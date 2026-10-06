@@ -6,7 +6,7 @@
 
 *Tahoe-100M on a laptop: every cell in one plot, and a subset that stays interactive*, a figure
 of the AnnZarro paper (Otto, Baasri and Setty, in preparation). Panels a to d are the plot areas
-of app screenshots (`figures/scale/` in the paper repository); e to g are browser measurements.
+of app screenshots; e to g are browser measurements.
 ```
 
 All 95,624,334 cells of Tahoe-100M {cite:p}`zhang2025tahoe`, on a UMAP fitted to 999,073
@@ -29,7 +29,7 @@ every cell is bounded by the tab's JavaScript heap. The steps behind each view a
 | d | live: the default subset, part 1 | default subset |
 | e, part step | live: the next part of the default subset | default subset, part 2 |
 | e, balanced subset | live: 100,000 cells balanced across the 50 cell lines | balanced subset |
-| e to g, times and memory | measured by the benchmark, not a view | `benchmark/scale/` of the paper repository |
+| e to g, times and memory | measured by the paper's browser benchmark, not a view | ({ref}`paper-companion`) |
 
 ## Differences from the paper figure
 
@@ -43,7 +43,7 @@ every cell is bounded by the tab's JavaScript heap. The steps behind each view a
   more with the mouse to match.
 - **The box and the panel labels** in a are drawn on the figure, not in the app.
 - **Panels e to g** are measured, not drawn: medians over 3 cold runs per dataset size, from
-  `benchmark/scale/results/` in the paper repository. They have no view. On your own machine, the
+  the paper's benchmark results ({ref}`paper-companion`). They have no view. On your own machine, the
   times depend on the disk, the browser and the GPU.
 - **Times are the paper's.** The views were not timed for this page; on a 95.6-million-cell store
   expect several seconds per every-cell view (6.3 to 7.6 s in the paper's runs).
@@ -102,7 +102,8 @@ Loading one restores the dataset, the subset, the focus and the layout, like the
 ({doc}`../user-guide/panel-sets`).
 
 The views are written by `docs/_tools/start_links.py scale` from the view files of the paper's
-screenshots (`figures/scale/v030/*.view.json` in the paper repository). The script adds what
+screenshots (`figures/scale/v030/*.view.json` in the paper's companion repository,
+{ref}`paper-companion`). The script adds what
 the screenshot script set through the app: the subset, the part, and the zoom and point size of
 panel c.
 
@@ -121,27 +122,34 @@ store `tahoe_panel_95.6M_plot.zarr` holds:
 will be linked here when they are deposited. Until then, build the store yourself as below.
 ```
 
-Build it from the public release: Tahoe-100M on Hugging Face (`tahoebio/Tahoe-100M`, CC0 1.0),
-3,388 parquet shards of about 28,000 cells each. The scripts are in `benchmark/scale/` of the
-paper repository ([settylab/annzarro-paper](https://github.com/settylab/annzarro-paper)); the
-paper's run used these stages, in this order (each script's docstring gives its arguments):
+**Download the data.** Tahoe-100M is public on Hugging Face as the dataset `tahoebio/Tahoe-100M`
+(CC0 1.0) {cite:p}`zhang2025tahoe`: 3,388 parquet shards of about 28,000 cells each, one record per
+cell with its gene tokens, raw counts and metadata, and the gene vocabulary in
+`metadata/gene_metadata.parquet`. With the Hugging Face command line tool:
 
-1. `build_tahoe.py obs`: per-cell metadata from the parquet shards.
-2. `umap_tahoe.py sample`: a reference set of 999,073 cells, the same number from every plate ×
-   cell line stratum (at most 1,430, seed 0).
-3. `build_tahoe.py refit`, `master --n-pcs 50`, `panel`, `panel-master`, `store --genes`: PCA
-   fitted on the reference cells, every cell projected, the counts written as a chunked zarr store
-   over the 5,000 genes of highest variance.
-4. `umap_tahoe.py fit`, `place`, `validate`, `write`: UMAP on the reference cells, every other
-   cell placed at the distance-weighted mean of its 15 nearest reference cells in PC space
-   (faiss; recall 0.997 against exact search), written to `obsm/X_umap`.
-5. `build_tahoe.py plot-copy`: the slim store used for the figure (16 GB), with values for 200
-   panel genes and no layers.
+```bash
+pip install -U huggingface_hub
+huggingface-cli download tahoebio/Tahoe-100M --repo-type dataset --local-dir tahoe-100m
+```
 
-The full build ran on an HPC cluster; its numbers and deviations are in
-`benchmark/scale/NOTES.md` and `benchmark/scale/results/hpc/README.md`. A smaller store of the
-first N cells shows the same views with fewer parts: the subset links work on any store above
-200,000 cells, and every-cell links switch to large-plot mode above 1 million.
+**Build the store.** The script that turns the shards into this store will be published with the
+paper; it is not public yet, and this page will link it then. What it does, so that you can
+reproduce the store with your own code in the meantime:
+
+1. Per-cell metadata (`obs`) from the shards, in shard order.
+2. A reference set of 999,073 cells, the same number from every plate × cell line stratum (at
+   most 1,430, seed 0).
+3. PCA (50 components) of normalised, log-transformed counts, fitted on the reference cells; every
+   cell projected exactly. The counts are written as a chunked zarr store (CSC `X`) over the 5,000
+   genes of highest variance.
+4. A UMAP (umap-learn, 15 neighbours, `min_dist` 0.3, seed 0) fitted on the reference cells'
+   PCs; every other cell placed at the distance-weighted mean of its 15 nearest reference cells
+   in PC space (faiss; recall 0.997 against exact search), written to `obsm/X_umap`.
+5. For the figure, a slim copy (16 GB) with values for 200 panel genes and no layers.
+
+The full build ran on an HPC cluster. A smaller store of the first N cells shows the same views
+with fewer parts: the subset links work on any store above 200,000 cells, and every-cell links
+switch to large-plot mode above 1 million.
 
 If you build the store under another name, change `dataset_path=` in the links
 ({ref}`tut-start-links`).
