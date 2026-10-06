@@ -235,12 +235,14 @@ the app produced rather than writing them from scratch. A plot config without `p
 them (`autoPointSize: true` / `autoPointOpacity: true` mark a saved value as automatic).
 
 A Gene Set Analysis panel (`gene-set-…`) saves its settings and nothing derived from the
-data: never the genes, a result or a consent.
+data: never the genes or a result.
 
 | Field | Meaning |
 |---|---|
 | `tableFilter` | id of the source Gene Table, or `none`; remapped with the table's id like a plot's |
-| `idColumn` | the `var` column whose values are sent and linked; `_index` for the var index |
+| `idColumn` | the `var` column whose values are sent and linked; `_index` for the var index; `auto` (default) finds one (`gene_id`, `gene_ids`, `gene_name`, `symbol`, ...) |
+| `idType` | how those values are read: `auto` (default, from the values), `symbol`, `ensembl` or `entrez` |
+| `consent` | optional `{selection, hosts}`: the services agreed to for the selection whose gene-id hash is `selection`; applies to that selection only (see the user guide's Consent) |
 | `autoUpdate` | `true`: refresh when the table changes (from the first Run after opening) |
 | `sections` | `{<section id>: {visible, params}}`; params at their default are left out; ids this build does not know are kept |
 | `sectionOrder` | section ids in the order shown; `links` is the Links section |

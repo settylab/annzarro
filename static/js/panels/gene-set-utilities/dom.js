@@ -97,7 +97,8 @@ export function makeDom(doc) {
 export function sci(v) {
     const n = Number(v);
     if (!Number.isFinite(n)) return '';
-    if (n === 0) return '0';
+    // a service's 0 is a p below what it can compute, not an impossibility
+    if (n === 0) return '< 1e-16';
     return n < 1e-3 ? n.toExponential(2) : n.toPrecision(3).replace(/\.?0+$/, '');
 }
 

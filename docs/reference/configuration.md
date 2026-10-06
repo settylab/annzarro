@@ -168,7 +168,7 @@ the browser calls them itself, the server never does.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `external_requests` | `ask` | Whether the panel may send gene ids to external services. `ask`: the user is asked once per service (Enrichr and Reactome, which keep what they are sent where others can read it, every time). `on`: without asking, for a site whose users agreed beforehand. `off`: never; the panel's Links still work. Quote the value in YAML (`"off"`): a bare off is read as false (which also means off). The environment variable `ANNZARRO_EXTERNAL_REQUESTS=off\|ask\|on` overrides it. |
+| `external_requests` | `ask` | Whether the panel may send gene ids to external services. `ask`: the user is asked once per service (Enrichr and Reactome, which keep what they are sent where others can read it, every time). `on`: without asking, for a site whose users agreed beforehand. `off`: never; the panel's Links still work. `ask` leaves it to the browser: the user's answers per service and a share link's consent for its selection (order in the user guide's Consent section). Quote the value in YAML (`"off"`): a bare off is read as false (which also means off). The environment variable `ANNZARRO_EXTERNAL_REQUESTS=off\|ask\|on` overrides it. |
 | `gene_set.services` | `null` | The sections offered, by adapter id (`string-network`) or service (`string`, `gprofiler`, `mygene`, `enrichr`, `reactome`, `hpa`). `null`: all of them. |
 | `gene_set.timeout_ms` | `20000` | Time one request may take, in ms. A timed-out request is tried once more. |
 | `string_db.base_url` | `https://version-12-5.string-db.org/api` | STRING's API. A versioned host, so a result can be reproduced; it says its version in the section. |
