@@ -97,6 +97,44 @@ on top** (on by default) the genes with the largest |ρ| are drawn last, so they
 grey core; hover to find them, or sort a table ({ref}`tut-gene-check`). A module built from
 DE genes alone could not contain them.
 
+9. To fade the weak correlations, open the controls and choose **Map** `Blues`, press
+   **Reverse** so that the pale end is low, and type `0.3` in **Min** (Max stays 1). **Lock
+   Range** is still on from step 5; if it is off, press it. Genes below 0.3, the anti-correlated
+   ones included, now take the pale colour, and only H2-Q7's positive partners are blue. The
+   pale end of Plotly's Blues is light grey (rgb 220, 220, 220), not white, so faded genes stay
+   visible.
+
+   ```{figure} ../_static/screens/tutorials/we2-fade-controls.png
+   :class: screenshot
+   :alt: Colour controls: Map "Blues (dark → light)", Min 0.3, Max 1, Reverse and Lock Range on.
+   :width: 60%
+
+   The controls after step 9.
+   ```
+
+   ```{figure} ../_static/screens/tutorials/we2-fade.png
+   :class: screenshot
+   :alt: The volcano with H2-Q7 focused, coloured from light grey at 0.3 to dark blue at 1; most genes grey, H2-Q6 and a few genes along the upper right arm and in the core blue.
+   :width: 100%
+
+   Correlation with H2-Q7, faded below 0.3.
+   ```
+
+   The range holds as the focus moves: click H2-Aa (step 1 of section 2) and the scale stays 0.3
+   to 1, now showing H2-Aa's class II partners in blue.
+
+   ```{figure} ../_static/screens/tutorials/we2-fade-h2aa.png
+   :class: screenshot
+   :alt: The same faded volcano after focusing H2-Aa: its class II neighbours at the top, among them H2-Eb1 and Cd74, dark blue, H2-Q7 at the top right now grey.
+   :width: 100%
+
+   The same scale for H2-Aa.
+   ```
+
+   In this view **Strong on top** does not help on v0.4.0: it orders points by |ρ|, so the
+   strongly anti-correlated genes, pale here, are drawn over the blue ones in the dense core.
+   Hover, or sort a table, to find the partners there.
+
 :::{note}
 **Paper, gene by gene, panel a.** This view is panel a of the paper figure.
 :::
