@@ -182,7 +182,7 @@ export function panelStaleness(snapshot, current) {
     }
     if (current.idColumn !== snapshot.idColumn) {
         reasons.push('idColumn');
-        parts.push(`ID column changed to ${current.idColumn}`);
+        parts.push(`IDs changed to ${current.idColumn}`);
     }
     return reasons.length ? { reasons, text: parts.join('; ') } : null;
 }
@@ -265,7 +265,7 @@ export function needsFetch(run, key) {
  * @param {{genes: string[], focus: Object|null, taxonomyId: string, speciesName: string, idType: string}} input
  * @returns {null|{kind: string, message: string}}
  */
-export function blockedReason(adapter, input) {
+export function blockedReason(adapter, input, { force = false } = {}) {
     const label = `${adapter.provider.name} ${adapter.label.toLowerCase()}`;
     if (adapter.kind === 'gene') {
         if (!input.focus || !input.focus.id) {
@@ -278,8 +278,11 @@ export function blockedReason(adapter, input) {
         if (n < min) {
             return { kind: 'empty', message: `${fmt(n)} gene${n === 1 ? '' : 's'}; ${label} needs at least ${fmt(min)}.` };
         }
-        if (n > adapter.limits.maxGenes) {
-            return { kind: 'capped', message: `${fmt(n)} genes; ${label} accepts at most ${fmt(adapter.limits.maxGenes)}. Filter the table to fewer genes.` };
+        // over the limit: not sent, unless the user asks to try anyway (the
+        // service then answers for itself, and its refusal is shown as is)
+        if (n > adapter.limits.maxGenes && !force) {
+            return { kind: 'capped', message: `${fmt(n)} genes; ${label} accepts at most ${fmt(adapter.limits.maxGenes)}. `
+                + 'Filter the table to fewer genes, or try anyway.' };
         }
     }
     let supported;
@@ -301,10 +304,50 @@ export function blockedReason(adapter, input) {
 }
 
 // ---------------------------------------------------------------------------
+// gene identifiers
+
+/** How the values of the ID column are read; 'auto' looks at them. */
+export const ID_TYPES = Object.freeze(['auto', 'symbol', 'ensembl', 'entrez']);
+
+/**
+ * The var columns that usually hold gene identifiers, best first: ids
+ * before names, as the operator asked (gene_id; gene_ensembl_id, ensembl_id,
+ * gene_ids; gene_name; gene_symbol, symbol), each with common variants
+ * (feature_id, feature_name as cellxgene writes them, ...). Case-insensitive.
+ */
+export const ID_COLUMN_PREFERENCE = Object.freeze([
+    ['gene_id', 'geneid', 'feature_id'],
+    ['gene_ensembl_id', 'ensembl_id', 'gene_ids', 'ensembl_gene_id', 'ensembl', 'gene_ensembl', 'ensembl_ids'],
+    ['gene_name', 'gene_names', 'genename', 'feature_name', 'name'],
+    ['gene_symbol', 'gene_symbols', 'symbol', 'symbols', 'hgnc_symbol', 'mgi_symbol']
+]);
+
+/**
+ * The ID column a panel set to 'auto' uses: the first var column in
+ * ID_COLUMN_PREFERENCE order, else the var index ('_index').
+ * @param {string[]} columns - the dataset's var columns
+ */
+export function pickIdColumn(columns) {
+    const byLower = new Map();
+    for (const c of columns || []) if (typeof c === 'string' && !byLower.has(c.toLowerCase())) byLower.set(c.toLowerCase(), c);
+    for (const group of ID_COLUMN_PREFERENCE) {
+        for (const name of group) if (byLower.has(name)) return byLower.get(name);
+    }
+    return '_index';
+}
+
+/** A deep link's consent, kept only when well formed: {selection, hosts}. */
+export function readLinkConsent(c) {
+    if (!c || typeof c !== 'object' || typeof c.selection !== 'string' || !c.selection || !Array.isArray(c.hosts)) return null;
+    const hosts = [...new Set(c.hosts.filter(h => typeof h === 'string' && /^[a-z0-9.-]+$/i.test(h)))].slice(0, 16);
+    return hosts.length ? { selection: c.selection, hosts } : null;
+}
+
+// ---------------------------------------------------------------------------
 // persisted settings
 
 /** The keys getConfig() writes, and nothing else (see configOf). */
-export const CONFIG_KEYS = Object.freeze(['id', 'title', 'tableFilter', 'idColumn', 'autoUpdate',
+export const CONFIG_KEYS = Object.freeze(['id', 'title', 'tableFilter', 'idColumn', 'idType', 'consent', 'autoUpdate',
     'sections', 'sectionOrder', 'links', 'controlsVisible']);
 
 /**
@@ -381,7 +424,11 @@ export function normalizeConfig(stored, adapters, warn = () => {}) {
     const links = cfg.links && typeof cfg.links === 'object' ? cfg.links : {};
     return {
         tableFilter: typeof cfg.tableFilter === 'string' && cfg.tableFilter ? cfg.tableFilter : 'none',
-        idColumn: typeof cfg.idColumn === 'string' && cfg.idColumn ? cfg.idColumn : '_index',
+        // 'auto': the first var column named like gene ids or names (pickIdColumn)
+        idColumn: typeof cfg.idColumn === 'string' && cfg.idColumn ? cfg.idColumn : 'auto',
+        // 'auto': from the values (Ensembl-like, digits, else symbols)
+        idType: ID_TYPES.includes(cfg.idType) ? cfg.idType : 'auto',
+        consent: readLinkConsent(cfg.consent),
         autoUpdate: cfg.autoUpdate === true,
         sections,
         sectionOrder,
@@ -415,11 +462,13 @@ export function configOf({ id, title, settings, controlsVisible, adapters = [] }
         id, title,
         tableFilter: settings.tableFilter,
         idColumn: settings.idColumn,
+        idType: settings.idType,
         autoUpdate: !!settings.autoUpdate,
         sections,
         sectionOrder: settings.sectionOrder.slice(),
         links: { columns: settings.links.columns ? settings.links.columns.slice() : null, listOpen: !!settings.links.listOpen }
     };
+    if (settings.consent) out.consent = { selection: settings.consent.selection, hosts: settings.consent.hosts.slice() };
     if (controlsVisible !== undefined) out.controlsVisible = !!controlsVisible;
     return out;
 }

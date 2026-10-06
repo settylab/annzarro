@@ -26,7 +26,7 @@ const { ADAPTERS } = await import('../../../static/js/panels/gene-set-utilities/
 const { remapPanelReferences, serializableConfig, panelSetToView, encodeView, decodeView } = await import('../../../static/js/utils/deeplink.js');
 const { createConsent, STORAGE_KEY, _resetSessionConsent } = await import('../../../static/js/panels/gene-set-utilities/consent.js');
 
-const SECTION6_KEYS = ['id', 'title', 'tableFilter', 'idColumn', 'autoUpdate', 'sections', 'sectionOrder', 'links', 'controlsVisible'];
+const SECTION6_KEYS = ['id', 'title', 'tableFilter', 'idColumn', 'idType', 'autoUpdate', 'sections', 'sectionOrder', 'links', 'controlsVisible'];
 
 function configFor(stored, extra = {}) {
     const settings = S.normalizeConfig(stored, ADAPTERS);
@@ -36,7 +36,7 @@ function configFor(stored, extra = {}) {
 test('getConfig has exactly the saved keys, nothing derived, and stays small at 30k genes', () => {
     const cfg = configFor({ tableFilter: 'gene-table-1759000000000' }, { controlsVisible: true });
     assert.deepEqual(Object.keys(cfg).sort(), [...SECTION6_KEYS].sort());
-    assert.deepEqual(S.CONFIG_KEYS.slice().sort(), [...SECTION6_KEYS].sort());
+    assert.deepEqual(S.CONFIG_KEYS.slice().sort(), [...SECTION6_KEYS, 'consent'].sort(), 'consent only when given');
     // a snapshot of 30k genes and its results live elsewhere: nothing of them is saved
     const snapshot = S.makeSnapshot({ genes: Array.from({ length: 30000 }, (_, i) => `GENE${i}`),
         names: Array.from({ length: 30000 }, (_, i) => `GENE${i}`), sourceId: 'gene-table-1', sourceTitle: 'T',
@@ -52,7 +52,11 @@ test('getConfig has exactly the saved keys, nothing derived, and stays small at 
     assert.equal(cfg.sections.links.visible, true);
     assert.equal(cfg.sectionOrder[0], 'links');
     assert.equal(cfg.autoUpdate, false, 'auto-update is off by default');
-    assert.equal(cfg.idColumn, '_index');
+    assert.equal(cfg.idColumn, 'auto', 'the id column is found in var by default');
+    assert.equal(cfg.idType, 'auto', 'and read by its values');
+    // the dataset as background by default, the genome on request
+    assert.equal(S.normalizeConfig({}, ADAPTERS).sections['string-enrichment'].params.background, 'dataset');
+    assert.equal(S.normalizeConfig({}, ADAPTERS).sections['gprofiler-gost'].params.background, 'dataset');
     assert.equal(serializableConfig(cfg).tableFilter, 'gene-table-1759000000000', 'not a derived key');
     // params at their default are not saved; a changed one is, and reads back
     assert.deepEqual(cfg.sections['string-network'].params, {});
@@ -135,27 +139,75 @@ function memoryStorage(initial = {}) {
     return { data, getItem: (k) => (k in data ? data[k] : null), setItem: (k, v) => { data[k] = String(v); } };
 }
 
-test('consent: asked for each host once; "always" remembered, never for a service that publishes lists', () => {
+const STRING_HOST = { host: 'version-12-5.string-db.org', persistable: true };
+const GP = { host: 'biit.cs.ut.ee', persistable: true };
+const ENRICHR = { host: 'maayanlab.cloud', persistable: false };
+
+test('consent: asked once per host; "Always" remembered, never for a service that publishes lists', () => {
     _resetSessionConsent();
     const storage = memoryStorage();
     const c = createConsent({ policy: 'ask', storage });
-    const reqs = [{ host: 'string-db.org', persistable: true }, { host: 'maayanlab.cloud', persistable: false },
-        { host: 'string-db.org', persistable: true }];
-    assert.deepEqual(c.missing(reqs).map(r => r.host), ['string-db.org', 'maayanlab.cloud']);
+    const reqs = [STRING_HOST, ENRICHR, STRING_HOST];
+    assert.deepEqual(c.missing(reqs).map(r => r.host), [STRING_HOST.host, ENRICHR.host]);
     c.grant(c.missing(reqs), { always: true });
-    assert.deepEqual(JSON.parse(storage.data[STORAGE_KEY]), ['string-db.org'], 'Enrichr is never remembered');
+    assert.deepEqual(JSON.parse(storage.data[STORAGE_KEY]), { [STRING_HOST.host]: 'allow' }, 'Enrichr is never remembered');
     assert.deepEqual(c.missing(reqs), [], 'this page: both agreed');
     _resetSessionConsent();
-    assert.deepEqual(createConsent({ policy: 'ask', storage }).missing(reqs).map(r => r.host), ['maayanlab.cloud'],
+    assert.deepEqual(createConsent({ policy: 'ask', storage }).missing(reqs).map(r => r.host), [ENRICHR.host],
         'next page: STRING remembered, Enrichr asked again');
-    // on: never asks; off: the panel sends nothing (it does not ask either)
-    assert.deepEqual(createConsent({ policy: 'on', storage: null }).missing(reqs), []);
-    assert.deepEqual(createConsent({ policy: 'off', storage: null }).missing(reqs), []);
+    // the earlier stored form (a list of hosts) still reads as "always"
+    _resetSessionConsent();
+    const legacy = memoryStorage({ [STORAGE_KEY]: JSON.stringify([GP.host]) });
+    assert.equal(createConsent({ policy: 'ask', storage: legacy }).decide(GP).answer, 'send');
     // storage that throws: asked again, nothing breaks
     _resetSessionConsent();
     const broken = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
     const b = createConsent({ policy: 'ask', storage: broken });
     assert.equal(b.missing(reqs).length, 2);
     assert.doesNotThrow(() => b.grant(reqs, { always: true }));
+    assert.doesNotThrow(() => b.deny(reqs));
     _resetSessionConsent();
+});
+
+test('consent precedence: server off > server on > the user\'s Never > a link for this selection > the page\'s or the user\'s yes > ask', () => {
+    _resetSessionConsent();
+    const link = { selection: 'sel-A', hosts: [STRING_HOST.host, ENRICHR.host] };
+    const storage = memoryStorage({ [STORAGE_KEY]: JSON.stringify({ [GP.host]: 'deny' }) });
+    const at = (policy, selection, extra = {}) => createConsent({ policy, storage, link, selection, ...extra });
+    // the server's off wins over everything, its on over the user's Never and the link
+    assert.deepEqual(at('off', 'sel-A').decide(STRING_HOST), { answer: 'deny', why: 'server' });
+    assert.deepEqual(at('on', 'sel-A').decide(GP), { answer: 'send', why: 'server' });
+    // ask: the link's consent covers exactly its selection
+    assert.deepEqual(at('ask', 'sel-A').decide(STRING_HOST), { answer: 'send', why: 'link' });
+    assert.equal(at('ask', 'sel-B').decide(STRING_HOST).answer, 'ask', 'another selection falls back to the user (here: ask)');
+    assert.equal(at('ask', null).decide(STRING_HOST).answer, 'ask');
+    // never for a service that publishes lists, even when the link names it
+    assert.equal(at('ask', 'sel-A').decide(ENRICHR).answer, 'ask');
+    // the user's stored Never stays a Never, also under a link that names the host
+    const withGp = createConsent({ policy: 'ask', storage, link: { selection: 'sel-A', hosts: [GP.host] }, selection: 'sel-A' });
+    assert.deepEqual(withGp.decide(GP), { answer: 'deny', why: 'user' });
+    assert.deepEqual(withGp.denied([GP, STRING_HOST]), [GP.host]);
+    // the user's earlier Always applies when the link does not
+    const s2 = memoryStorage({ [STORAGE_KEY]: JSON.stringify({ [STRING_HOST.host]: 'allow' }) });
+    assert.deepEqual(createConsent({ policy: 'ask', storage: s2, link, selection: 'sel-B' }).decide(STRING_HOST), { answer: 'send', why: 'user' });
+    // Never, then forgotten: asked again
+    const s3 = memoryStorage();
+    const c = createConsent({ policy: 'ask', storage: s3 });
+    c.deny([STRING_HOST, ENRICHR]);
+    assert.deepEqual(JSON.parse(s3.data[STORAGE_KEY]), { [STRING_HOST.host]: 'deny' });
+    assert.equal(c.decide(STRING_HOST).answer, 'deny');
+    c.forget([STRING_HOST.host]);
+    assert.equal(c.decide(STRING_HOST).answer, 'ask');
+    _resetSessionConsent();
+});
+
+test('a link\'s consent is kept only when well formed, and saved with the panel', () => {
+    assert.equal(S.readLinkConsent(null), null);
+    assert.equal(S.readLinkConsent({ selection: '', hosts: ['a.org'] }), null);
+    assert.equal(S.readLinkConsent({ selection: 'x', hosts: [] }), null);
+    assert.deepEqual(S.readLinkConsent({ selection: 'x', hosts: ['a.org', 'a.org', 'bad host/', 7] }), { selection: 'x', hosts: ['a.org'] });
+    const settings = S.normalizeConfig({ consent: { selection: 'h1', hosts: ['string-db.org'] } }, ADAPTERS);
+    const cfg = S.configOf({ id: 'g', title: 't', settings, adapters: ADAPTERS });
+    assert.deepEqual(cfg.consent, { selection: 'h1', hosts: ['string-db.org'] });
+    assert.ok(!('consent' in configFor({})), 'no consent, no key');
 });

@@ -157,3 +157,32 @@ test('params are checked against their spec; bad values fall back to defaults wi
     assert.equal(warnings.length, 2);
     assert.deepEqual(S.checkParams(specs, undefined), { score: 400, lib: 'a', src: ['x'], flag: false });
 });
+
+test('the id column is found in var: ids first, then names, any case, common variants; else the var index', () => {
+    assert.equal(S.pickIdColumn(['gene_symbol', 'gene_name', 'gene_ids', 'gene_id']), 'gene_id');
+    assert.equal(S.pickIdColumn(['gene_symbol', 'gene_name', 'Gene_IDs']), 'Gene_IDs');
+    assert.equal(S.pickIdColumn(['symbol', 'ensembl_id']), 'ensembl_id');
+    assert.equal(S.pickIdColumn(['gene_ensembl_id', 'gene_ids']), 'gene_ensembl_id');
+    assert.equal(S.pickIdColumn(['highly_variable', 'feature_name']), 'feature_name');
+    assert.equal(S.pickIdColumn(['means', 'GENE_SYMBOL']), 'GENE_SYMBOL');
+    assert.equal(S.pickIdColumn(['means', 'dispersions']), '_index');
+    assert.equal(S.pickIdColumn([]), '_index');
+    // bm_aging's var: gene_ids (Ensembl) before the symbols of the index
+    assert.equal(S.pickIdColumn(['gene_ids', 'feature_types', 'genome', 'highly_variable']), 'gene_ids');
+    assert.deepEqual(S.ID_TYPES, ['auto', 'symbol', 'ensembl', 'entrez']);
+    const cfg = S.normalizeConfig({ idType: 'nonsense' }, []);
+    assert.equal(cfg.idType, 'auto');
+    assert.equal(S.normalizeConfig({ idType: 'entrez', idColumn: 'gene_id' }, []).idType, 'entrez');
+});
+
+test('over the limit: refused with the limit, unless forced (Try anyway); the list is never cut', () => {
+    const base = { genes: Array.from({ length: 2001 }, (_, i) => `G${i}`), focus: null, taxonomyId: '9606', speciesName: '', idType: 'symbol' };
+    const refused = S.blockedReason(adapter(), base);
+    assert.equal(refused.kind, 'capped');
+    assert.match(refused.message, /accepts at most 2,000\. Filter the table to fewer genes, or try anyway\./);
+    assert.equal(S.blockedReason(adapter(), base, { force: true }), null);
+    assert.equal(base.genes.length, 2001);
+    // forcing lifts only the limit
+    assert.equal(S.blockedReason(adapter(), { ...base, genes: [] }, { force: true }).kind, 'empty');
+    assert.equal(S.blockedReason(adapter({ supportsSpecies: () => false }), base, { force: true }).kind, 'species');
+});

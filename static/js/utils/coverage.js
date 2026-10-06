@@ -143,7 +143,8 @@ const KIND_LABEL = Object.freeze({
     request: 'request failed',
     unsupported: 'not covered by the service',
     'over-limit': "over the service's limit",
-    disabled: 'external services are turned off'
+    disabled: 'external services are turned off',
+    declined: 'not sent: declined for this service'
 });
 
 /**
