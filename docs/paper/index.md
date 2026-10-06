@@ -67,6 +67,28 @@ stay valid when the paper's figures are renumbered.
 :::
 ::::
 
+(paper-data)=
+## Data for the views
+
+The share links on these pages open a store on a local AnnZarro server: they are written for
+`http://127.0.0.1:8000` with the store's file name in the server's data directory
+({doc}`../getting-started/quickstart`; to change the address or the store path, see
+{ref}`tut-start-links`). Each page needs one of three stores.
+
+| Page | Store | How to get it |
+|---|---|---|
+| {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance` | `bm_aging.zarr` (4.5 GiB) | Build it from the public raw data with the paper repository's `data_prep/` scripts: {doc}`../data/demo-data` |
+| {doc}`cell-by-cell`, {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_showcase.zarr` (5.7 GB) | `bm_aging.zarr` plus precomputed fields, built from it in about 15 s: {doc}`../data/showcase-store` |
+| {doc}`scale` | the Tahoe-100M store (95,624,334 cells) | Build it from the public Tahoe-100M release: {ref}`paper-scale-store` |
+| {doc}`deployment` | none | The figure is a diagram |
+
+```{important}
+**Placeholder: Zenodo deposit.** The processed AnnZarro-ready stores and the panel sets used for
+the figures will be deposited on Zenodo with the paper's release. The record does not exist yet;
+its DOI and download instructions will be added here when it does. Until then, build the stores
+as described in the table.
+```
+
 ```{toctree}
 :hidden:
 :maxdepth: 1
