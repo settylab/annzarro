@@ -19,7 +19,8 @@ is one cell. **d**, The default subset, part 1 of 957 (100,000 cells), in the re
 hover and focus. **e** to **g**, Time and memory against dataset size, from 1 million cells
 (prefixes of Tahoe-100M) to all 95.6 million: the default subset stays interactive, and drawing
 every cell is bounded by the tab's JavaScript heap. The steps behind each view are in
-{doc}`../user-guide/subsets`; the paper's Procedure covers them as Worked example 6.
+{doc}`../user-guide/subsets`; the paper's Procedure covers them as Worked example 6, and
+{doc}`../tutorials/millions` carries it out step by step.
 
 | Panel | In AnnZarro | View |
 |---|---|---|

@@ -20,7 +20,7 @@ to the view it ends on, as a share link and a panel set file.
 | Data preparation: Kompot, a kernel in obsp, correlations in varp, a zarr store | {doc}`../data/demo-data`, {doc}`../data/preparing-a-store`, {doc}`../data/chunking` |
 | Starting AnnZarro: server, dataset, panels | {doc}`../getting-started/quickstart` |
 | Worked examples 1 to 5 | {ref}`paper-procedure-examples` |
-| Worked example 6: millions of cells | {doc}`scale`, {doc}`../user-guide/subsets` |
+| Worked example 6: millions of cells | {doc}`../tutorials/millions`, {doc}`scale`, {doc}`../user-guide/subsets` |
 | Saving, sharing: panel sets, links, export | {doc}`../user-guide/panel-sets`, {doc}`../user-guide/share-links`, {doc}`../user-guide/export` |
 | (Optional) Hosting for a lab | {doc}`../deployment/lab-server`, {doc}`../deployment/authentication`, {doc}`../deployment/hosting-checklist` |
 
@@ -88,7 +88,8 @@ HSCs with a differential abundance z-score above 2, masking a UMAP. Tutorial:
 
 ::::{dropdown} Worked example 6: datasets of millions of cells
 The default subset, the next part, a subset balanced across cell lines and every cell in
-large-plot mode, on Tahoe-100M. The links, and how to get the store, are on {doc}`scale`.
+large-plot mode, on Tahoe-100M. Tutorial: {doc}`../tutorials/millions`. The links, and how to
+get the store, are on {doc}`scale`.
 
 ```{literalinclude} ../_static/panelsets/paper/scale-default-subset.url.txt
 :language: text

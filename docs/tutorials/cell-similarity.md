@@ -76,7 +76,7 @@ ID in each row is a link: clicking it focuses that cell.
 ```
 
 5. In the table, click the cell ID in the row `LMPP (1/3 of path)`
-   (`HSPC_Old_2#ACTCTCGCAAACCGGA-1`), then `GMP (2/3 of path)`, then the monocyte (step 12).
+   (`HSPC_Old_2#ACTCTCGCAAACCGGA-1`), then `GMP (2/3 of path)`, then the monocyte (path step 12).
    In a small tile the last rows sit below the visible part of the table; scroll it, or type
    `Mature_Young_2#TCAATTCAGTGAGGCT-1` into **Focused Cell**.
 
@@ -117,12 +117,25 @@ Monocyte (end)
 :::
 ::::
 
+6. Step back along the path with the history arrows left of **Focused Cell**: the left arrow
+   ("Previous cell") returns to the previous focused cell (the GMP, then the LMPP, then the HSC),
+   and the right arrow ("Next cell") goes forward again.
+   Each step re-reads one row, so the walk panel follows.
+
+```{figure} ../_static/screens/tutorials/we1-history.png
+:class: screenshot
+:alt: The Focused Cell box with its back and forward arrows, holding HSPC_Old_1#GAAGCCC… after two steps back.
+:width: 45%
+
+Two steps back from the GMP: the HSC is focused again.
+```
+
 The walk spreads as it leaves the stem cell and contracts again in the monocytes. The row maxima
 are 0.0126 (HSC), 0.0078 (LMPP), 0.0063 (GMP) and 0.0099 (monocyte). The HSC keeps 90.7% of
 its walk mass among HSCs and the monocyte 88.6% among monocytes, while the GMP keeps only 24.3%
 among GMPs (`figures/NOTES.md` of the paper): a progenitor is similar to many states at once.
 
-6. To compare the four rows on one scale, focus the HSC first, open the walk panel's controls and
+7. To compare the four rows on one scale, focus the HSC first, open the walk panel's controls and
    click **Lock Range**. The colour range stays at the HSC's, 0 to 0.0126, which is also the
    largest value in the four rows. Click **Lock Range** again to let each row scale itself.
 
@@ -130,6 +143,22 @@ among GMPs (`figures/NOTES.md` of the paper): a progenitor is similar to many st
 **Paper, cell by cell, panel a.** The four frames are panel a of the paper figure, there drawn with a log colour
 scale and the path as a line ({ref}`differences <cell-by-cell-differences>`).
 :::
+
+8. (Optional) Compare neighbourhood definitions for the same cell. Click **Split side by side**
+   in the walk panel's header and, in the new pane under **Duplicate or Reopen Panel**, click the
+   card "5-step diffusion walk from the focused cell". A copy opens beside it. In the copy's
+   controls set **Color** to `obsp` · `DM_Kernel` (the diffusion kernel the walk is built from;
+   `distances`, the kNN distance graph, works the same way). The row selector reads "Focused
+   cell"; both panels follow the focus.
+
+```{figure} ../_static/screens/tutorials/we1-duplicate.png
+:class: screenshot
+:alt: Two UMAPs side by side for the GMP HSPC_Old_3#ATTTCACTCGTAGTGT-1. Left, the five-step walk, a broad blue band through the middle of the central cluster, maximum 0.006. Right, the copy coloured by DM_Kernel, a few dozen blue cells next to the focused cell, maximum 0.8.
+:width: 90%
+
+The GMP's five-step walk (left) and its row of `DM_Kernel` (right): the kernel reaches only the
+cell's nearest neighbours; five steps of the walk spread over the central cluster.
+```
 
 Along this trajectory the UMAP is a fair guide: the walk from each stop lands on its UMAP
 neighbours. The next section finds where that fails.
@@ -149,8 +178,8 @@ A cell plot can take a row of obsp as an axis, not only as a colour. With the fo
 each point is another cell, at x = its UMAP distance to the focus and y = its diffusion distance.
 Where the two agree the points fall on a rising band; where they disagree they leave it.
 
-7. Set **Focused Cell** to the plasma cell `Mature_Mid_1#GCCATGGAGTATGATG-1`.
-8. Add a **Cell Plot** (split a tile). Set **X** `obsp` · `umap_distance` and **Y**
+9. Set **Focused Cell** to the plasma cell `Mature_Mid_1#GCCATGGAGTATGATG-1`.
+10. Add a **Cell Plot** (split a tile). Set **X** `obsp` · `umap_distance` and **Y**
    `obsp` · `diffusion_distance`. The third dropdown of each reads "Focused cell
    Mature_Mid_1#…". Set **Color** `obs` · `fig3_plasma_groups` and leave **Palette** at
    "As stored in adata.uns".
@@ -179,7 +208,7 @@ Panel set file: {download}`cell-by-cell-umap-vs-diffusion.json <../_static/panel
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
-9. Add a second **Cell Plot** with UMAP axes and **Color** `obs` · `fig3_plasma_groups`.
+11. Add a second **Cell Plot** with UMAP axes and **Color** `obs` · `fig3_plasma_groups`.
 
 ```{figure} ../_static/screens/paper/fig3-bc.png
 :class: screenshot
@@ -204,7 +233,7 @@ The plasma cells are a small population that UMAP placed between clusters; acros
 cells the UMAP keeps the global rank order of diffusion distances well (median per-cell Spearman
 ρ 0.85) but not local neighbourhoods (median 14 of 30 nearest neighbours shared).
 
-10. Click any other cell in the right-hand panel. The left panel redraws as that cell's
+12. Click any other cell in the right-hand panel. The left panel redraws as that cell's
     distances, because both axes follow the focus; the colours stay the plasma cell's groups,
     since `fig3_plasma_groups` is a fixed obs column. Lock both axes (their padlocks) first to
     keep the plasma cell's distances while you explore.
