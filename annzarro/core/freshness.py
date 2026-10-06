@@ -170,7 +170,7 @@ def token(dataset_path) -> Optional[str]:
 #: (a store too large to fingerprint fully, e.g. 95.6M cells).
 DEEP_BUDGET_S = 3.0
 #: A refresh walks a dataset at most this often (``server.refresh_min_interval_s``);
-#: one asked for sooner answers with the last walk's finding and its age.
+#: one asked for sooner waits for the next walk (``revalidate``).
 REFRESH_MIN_INTERVAL_S = 10.0
 
 
@@ -243,60 +243,78 @@ def _record_check(dataset_path, body) -> None:
         logger.warning(f"Refresh of {dataset_path} not recorded: {exc}")
 
 
-# one walk per dataset at a time in this process; callers meanwhile share its result
+# the next walk per dataset in this process; every caller that arrived before
+# it starts shares it
 _walks = {}
 _walks_lock = threading.Lock()
 
 
 def revalidate(dataset_path, min_interval_s: float = REFRESH_MIN_INTERVAL_S,
-               budget_s: float = DEEP_BUDGET_S, inspect=None) -> dict:
-    """A refresh: compare the store with what the last refresh found and start
-    a new generation if it differs.
+               budget_s: float = DEEP_BUDGET_S, inspect=None, sleep=time.sleep) -> dict:
+    """A refresh: walk the store and start a new generation if it changed
+    since the last walk.
 
-    Any user may ask for this, so it is bounded three ways. An unchanged store
-    keeps its generation, and so its ETags and every user's cached reads: no
-    user can make the server drop and re-read a store that did not change.
-    Concurrent calls in a process share one walk, and a dataset is walked at
-    most once per ``min_interval_s`` across processes (the last walk is
-    recorded beside the generation file); a call within the window answers
-    ``status: "recent"`` with that walk's age. A walk stops at ``budget_s``:
-    a store too large to fingerprint fully answers ``status: "partial"`` and
-    is not bumped (an admin's cache/reset still is). ``inspect()`` returns
-    further state recorded with the walk (whether the consolidated metadata
-    is stale); a change in it is a change of the store.
+    Any user may ask for this, so it is bounded, but never answered with a
+    walk older than the call: a user who writes from Jupyter and presses
+    Refresh must see the write.
 
-    Returns ``{"changed", "checked", "status", "checked_ago_s", ...inspected}``.
+    * An unchanged store keeps its generation, and so its ETags and every
+      user's cached reads: no user can make the server re-read a store that
+      did not change.
+    * A dataset is walked at most once per ``min_interval_s``, across
+      processes (the last walk is recorded beside the generation file). A
+      call inside the window waits for one walk at the window's end
+      (trailing edge, at most ``min_interval_s``), shared by every caller
+      that arrived before it started; ``waited_s`` says how long.
+    * A walk stops at ``budget_s``: a store too large to fingerprint fully
+      answers ``status: "partial"`` and is not bumped (an admin's
+      cache/reset still is).
+
+    ``inspect()`` returns further state recorded with the walk (whether the
+    consolidated metadata is stale); a change in it is a change of the store.
+    Returns ``{"changed", "checked", "status", "waited_s", ...inspected}``.
     """
     key = _key(dataset_path)
-    with _walks_lock:
-        walk = _walks.get(key)
-        if walk is None:
-            walk = {"done": threading.Event(), "result": None}
-            _walks[key] = walk
-            mine = True
-        else:
-            mine = False
-    if not mine:
-        walk["done"].wait(budget_s + 30)
-        if walk["result"] is not None:
-            return {**walk["result"], "shared": True}
-    try:
-        result = _revalidate(dataset_path, min_interval_s, budget_s, inspect)
-        walk["result"] = result
-        return result
-    finally:
-        walk["done"].set()
+    arrived = time.time()
+    while True:
         with _walks_lock:
-            if _walks.get(key) is walk:
-                del _walks[key]
+            walk = _walks.get(key)
+            if walk is not None and walk["started"] is None:
+                mine = False                      # not started yet: it is after this call
+            elif walk is not None:
+                mine = None                       # running since before this call: wait, then a new one
+            else:
+                previous = last_check(dataset_path).get("started", 0)
+                walk = {"done": threading.Event(), "result": None, "started": None,
+                        "at": max(arrived, previous + min_interval_s)}
+                _walks[key] = walk
+                mine = True
+        if mine is None:
+            walk["done"].wait(budget_s + 30)
+            continue
+        if mine is False:
+            walk["done"].wait(min_interval_s + budget_s + 30)
+            if walk["result"] is not None:
+                return {**walk["result"], "waited_s": round(time.time() - arrived, 1), "shared": True}
+            continue
+        try:
+            delay = walk["at"] - time.time()
+            if delay > 0:
+                sleep(min(delay, min_interval_s))
+            with _walks_lock:
+                walk["started"] = time.time()
+            result = _walk(dataset_path, budget_s, inspect, walk["started"])
+            walk["result"] = result
+            return {**result, "waited_s": round(walk["started"] - arrived, 1)}
+        finally:
+            walk["done"].set()
+            with _walks_lock:
+                if _walks.get(key) is walk:
+                    del _walks[key]
 
 
-def _revalidate(dataset_path, min_interval_s, budget_s, inspect):
+def _walk(dataset_path, budget_s, inspect, started):
     previous = last_check(dataset_path)
-    age = time.time() - previous.get("time", 0)
-    if previous and 0 <= age < min_interval_s:
-        return {"changed": False, "checked": previous.get("status") == "full", "status": "recent",
-                "checked_ago_s": round(age, 1), **previous.get("inspected", {})}
     deep, complete = deep_fingerprint(dataset_path, budget_s)
     inspected = inspect() if inspect else {}
     status = "remote" if (deep is None and complete) else ("full" if complete else "partial")
@@ -306,10 +324,10 @@ def _revalidate(dataset_path, min_interval_s, budget_s, inspect):
         changed = True
     if changed:
         bump(dataset_path, reason="refresh", **inspected)
-    _record_check(dataset_path, {"time": time.time(), "deep": deep if status == "full" else previous.get("deep"),
+    _record_check(dataset_path, {"started": started, "time": time.time(),
+                                 "deep": deep if status == "full" else previous.get("deep"),
                                  "status": status, "inspected": inspected})
-    result = {"changed": changed, "checked": status == "full", "status": status, "checked_ago_s": 0.0,
-              **inspected}
+    result = {"changed": changed, "checked": status == "full", "status": status, **inspected}
     if status == "partial":
         result["message"] = (f"Store too large to fingerprint fully in {budget_s:g} s: changes that only "
                              "overwrite chunk files are not detected. An admin's cache reset serves them.")

@@ -253,41 +253,48 @@ def test_zarr_format_3_consolidated_additions(server, tmp_path):
     assert server.get("/api/v1/data/obs", query_string=q).status_code == 200
 
 
-def test_refresh_walks_a_dataset_at_most_once_per_interval(tmp_path):
-    """Any user may refresh, so a loop of refreshes must not walk a large
-    store in a loop: within server.refresh_min_interval_s a refresh answers
-    with the last walk's finding and its age."""
+def test_a_refresh_inside_the_interval_waits_for_a_walk_after_it(tmp_path):
+    """Any user may refresh, so a dataset is walked at most once per
+    server.refresh_min_interval_s; but a refresh must never be answered with
+    a walk older than itself. Write, refresh at t=0, write again, refresh at
+    t=1: the second refresh waits for the walk at the interval's end and the
+    second write is served."""
+    import time as _time
     from annzarro.server.core import create_app
     import annzarro.core as core
     core.zarr_reader.clear_cache()
     client = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "l.log"),
-                         "refresh_min_interval_s": 60}).test_client()
+                         "refresh_min_interval_s": 3}).test_client()
     path = make_rich_store(tmp_path / "r.zarr")
     q = {"dataset_path": path}
-    assert client.post("/api/v1/data/refresh", query_string=q).get_json()["status"] == "full"
     old = _first_total_counts(client, path)
     _slice_write(path, old + 1000)
-    soon = client.post("/api/v1/data/refresh", query_string=q).get_json()
-    assert soon["status"] == "recent" and soon["changed"] is False
-    assert 0 <= soon["checked_ago_s"] < 60
-    assert _first_total_counts(client, path) == old, "not walked again within the interval"
+    t0 = _time.monotonic()
+    first = client.post("/api/v1/data/refresh", query_string=q).get_json()
+    assert first["status"] == "full" and first["waited_s"] == 0
+    assert _first_total_counts(client, path) == old + 1000
+    _slice_write(path, old + 2000)
+    _time.sleep(1)
+    second = client.post("/api/v1/data/refresh", query_string=q).get_json()
+    assert _time.monotonic() - t0 >= 3, "walked again inside the interval"
+    assert second["changed"] is True and 1.5 <= second["waited_s"] <= 3
+    assert _first_total_counts(client, path) == old + 2000
     core.zarr_reader.clear_cache()
 
 
-def test_concurrent_refreshes_share_one_walk(tmp_path):
+def test_refreshes_waiting_for_the_next_walk_share_it(tmp_path):
     import threading
-    import time as _time
     from annzarro.core import freshness
     path = make_rich_store(tmp_path / "r.zarr")
+    freshness.revalidate(path, min_interval_s=0)           # the walk the window starts from
     walks = []
 
     def inspect():
         walks.append(1)
-        _time.sleep(0.5)
         return {}
     results = []
     threads = [threading.Thread(target=lambda: results.append(
-        freshness.revalidate(path, min_interval_s=0, inspect=inspect))) for _ in range(5)]
+        freshness.revalidate(path, min_interval_s=1.5, inspect=inspect))) for _ in range(5)]
     for t in threads:
         t.start()
     for t in threads:

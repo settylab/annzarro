@@ -1,7 +1,7 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
-import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase } from './plot-make.js';
+import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator } from './plot-make.js';
 import { hoverInfoFromSelection } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
@@ -309,8 +309,15 @@ export function setupPlotControlListeners(
     // --- Refresh Plot Button ---
     const $refreshPlotButton = $controlsContainer.find(`#refresh-plot-${id}`);
     // reloads the panel's data: re-checked on the server, past this browser's copies
+    // (the server may wait for its next walk of the dataset, up to
+    // server.refresh_min_interval_s: the panel shows it is busy meanwhile)
     $refreshPlotButton.on('click', async () => {
-      await DataManager.reloadDatasetData();
+      loadingIndicator.show(plotContainer, 'refresh');
+      try {
+        await DataManager.reloadDatasetData();
+      } finally {
+        loadingIndicator.hide(plotContainer, 'refresh');
+      }
       loadDataAndCreatePlot();
     });
     
