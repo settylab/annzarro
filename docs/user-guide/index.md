@@ -8,6 +8,7 @@ focus-and-lock
 cell-and-gene-plots
 colour-scales
 tables-and-filters
+gene-set
 panel-sets
 share-links
 export

@@ -78,6 +78,7 @@ ui:
     - gene-plot
     - cell-table
     - gene-table
+    - gene-set
   defaults:
     max_cells: 10000
     max_genes: 10000
@@ -94,9 +95,13 @@ ui:
 ### External Integrations
 ```yaml
 integrations:
+  external_requests: "ask"   # Gene Set Analysis panel: ask | "on" | "off"
+  gene_set:
+    services: null           # all; or e.g. [string, gprofiler, mygene]
+    timeout_ms: 20000
   string_db:
-    base_url: https://string-db.org/api
-    version: "11.5"
+    base_url: https://version-12-5.string-db.org/api
+    version: "12.5"
 ```
 
 ## Configuration Precedence

@@ -1,0 +1,511 @@
+"""The Gene Set Analysis panel in a real browser, every external service mocked.
+
+Headless Chromium on the committed 200-cell fixture (genes GENE000-GENE019):
+a Gene Table searched for "GENE00" (10 genes) and a Gene Set Analysis panel
+following it. Every request that does not go to the local server is
+recorded; the known services (STRING, g:Profiler, MyGene.info, the Human
+Protein Atlas, Enrichr, Reactome) answer from the replies recorded in
+annzarro/tests/js/gene-set-fixtures/, anything else is aborted and fails
+the test. A page error fails the test.
+
+1. Opening a link with the panel makes no external request: the bar says
+   "Not run yet", the Links show the focused gene, safely.
+2. Run asks first (external_requests: ask), Send fetches the visible
+   sections; the strips say what each service did not know; the network is a
+   blob: image.
+3. A changed selection makes the panel stale without a request; Refresh
+   fetches each visible section once.
+4. Auto-update: five selection changes in half a second make one refresh.
+5. A hidden section is not fetched; shown again, it fetches.
+6. A failing service (no connection, then 503) fails its section only, with
+   Retry; the table still works; Retry fetches it.
+7. Clicking a gene in the table moves the Links to it.
+8. The saved config has only the panel's settings; reopened, nothing is
+   fetched.
+9. external_requests: off: Run sends nothing, the Links work.
+10. A closed source table: its frozen selection is used; one restored closed
+    (no selection) is said to be unknown.
+11. With cross-origin isolation on, the network image still shows (blob:).
+
+Needs Playwright with Chromium; skipped otherwise, unless
+ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
+"""
+import base64
+import json
+import os
+import re
+import urllib.parse
+
+import pytest
+
+if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
+    import playwright.sync_api as playwright  # noqa: E402
+else:
+    playwright = pytest.importorskip("playwright.sync_api")
+
+from annzarro.tests.browser.test_memory_guard import STORE, _serve  # noqa: E402
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIX = os.path.join(os.path.dirname(HERE), "js", "gene-set-fixtures")
+GS = '.tile[data-tile-id="gene-set-G"]'
+TABLE = '.tile[data-tile-id="gene-table-A"]'
+
+# service endpoint (regex on the URL) -> recorded reply
+REPLIES = [
+    ("string-ids", r"string-db\.org/api/json/get_string_ids$", "string-get_string_ids.json", "application/json"),
+    ("string-enrichment", r"string-db\.org/api/json/enrichment$", "string-enrichment.json", "application/json"),
+    ("string-ppi", r"string-db\.org/api/json/ppi_enrichment$", "string-ppi_enrichment.json", "application/json"),
+    ("string-svg", r"string-db\.org/api/svg/network$", "string-network.svg", "image/svg+xml"),
+    ("string-partners", r"string-db\.org/api/json/interaction_partners$", "string-interaction_partners.json", "application/json"),
+    ("gprofiler", r"biit\.cs\.ut\.ee/gprofiler/api/gost/profile/$", "gprofiler-profile.json", "application/json"),
+    ("mygene-card", r"mygene\.info/v3/query\?", "mygene-card.json", "application/json"),
+    ("mygene-lookup", r"mygene\.info/v3/query$", None, "application/json"),
+    ("hpa", r"proteinatlas\.org/api/search_download\.php", "hpa-search.json", "application/json"),
+    ("enrichr-add", r"maayanlab\.cloud/Enrichr/addList$", "enrichr-addList.json", "application/json"),
+    ("enrichr", r"maayanlab\.cloud/Enrichr/enrich\?", "enrichr-enrich.json", "application/json"),
+    ("reactome", r"reactome\.org/AnalysisService/identifiers/projection", "reactome-projection.json", "application/json"),
+]
+
+
+def _read(name):
+    with open(os.path.join(FIX, name), "rb") as fh:
+        return fh.read()
+
+
+class Services:
+    """Every non-local request: answered from a recording, failed on purpose, or recorded as unmocked."""
+
+    def __init__(self, root):
+        self.root = root
+        self.calls = []        # (endpoint, method, url)
+        self.unmocked = []
+        self.fail = {}         # endpoint -> list of outcomes to use first: 'timedout', 503, ...
+
+    def handle(self, route):
+        req = route.request
+        url = req.url
+        if url.startswith(self.root) or url.startswith(("data:", "blob:")):
+            return route.continue_()
+        for endpoint, pattern, name, ctype in REPLIES:
+            if re.search(pattern, url):
+                self.calls.append((endpoint, req.method, url))
+                queued = self.fail.get(endpoint)
+                if queued:
+                    outcome = queued.pop(0)
+                    if outcome == "timedout":
+                        return route.abort("timedout")
+                    return route.fulfill(status=outcome, body="", headers={"Access-Control-Allow-Origin": "*"})
+                if endpoint == "mygene-lookup":
+                    name = "mygene-query-alias.json" if "scopes=alias" in (req.post_data or "") else "mygene-query-symbol.json"
+                return route.fulfill(status=200, body=_read(name), headers={"Content-Type": ctype, "Access-Control-Allow-Origin": "*"})
+        self.unmocked.append(url)
+        return route.abort()
+
+    def count(self, endpoint=None):
+        return len([c for c in self.calls if endpoint is None or c[0] == endpoint])
+
+    def counts(self):
+        out = {}
+        for endpoint, _, _ in self.calls:
+            out[endpoint] = out.get(endpoint, 0) + 1
+        return out
+
+
+@pytest.fixture(scope="module")
+def server(tmp_path_factory):
+    root, proc = _serve(tmp_path_factory)
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
+@pytest.fixture(scope="module")
+def browser():
+    with playwright.sync_playwright() as p:
+        b = p.chromium.launch()
+        yield b
+        b.close()
+
+
+def _open(browser, root):
+    context = browser.new_context(viewport={"width": 1500, "height": 1100})
+    page = context.new_page()
+    services = Services(root)
+    page.route("**/*", services.handle)
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    return context, page, services, errors
+
+
+@pytest.fixture
+def env(browser, server):
+    context, page, services, errors = _open(browser, server)
+    yield page, services, server
+    assert not errors, errors
+    assert not services.unmocked, f"unmocked external requests: {services.unmocked}"
+    context.close()
+
+
+def _link(root, gs=None, search="GENE00", focus="GENE003", table_open=True, taxonomy="9606"):
+    cfgs = {
+        "gene-table-A": {"id": "gene-table-A", "title": "Gene Table 1", "searchText": search,
+                         "columns": [{"type": "var", "key": "gene_name", "column": ""}]},
+        "gene-set-G": {"id": "gene-set-G", "title": "Gene Set Analysis 1", "tableFilter": "gene-table-A", **(gs or {})},
+    }
+    tiles = [{"type": "tile", "id": "gene-set-G"}]
+    if table_open:
+        tiles.insert(0, {"type": "tile", "id": "gene-table-A"})
+    hierarchy = tiles if len(tiles) == 1 else [{"type": "split", "direction": "horizontal", "height": 1000,
+                                                "panes": [{"percentage": 35}, {"percentage": 65}], "children": tiles}]
+    view = {"v": 1, "constants": {"focusedGene": focus, "taxonomyId": taxonomy},
+            "layout": {"v": 1, "hierarchy": hierarchy, "controlState": {}, "panelConfigs": cfgs}}
+    enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+    return f"{root}/?dataset_path={urllib.parse.quote(STORE, safe='/')}#view={enc}"
+
+
+def until(page, js, arg=None, timeout=30.0):
+    """Poll with page.wait_for_timeout (not time.sleep: route handlers run only while Playwright waits)."""
+    steps = int(timeout * 10)
+    for _ in range(steps):
+        value = page.evaluate(js, arg)
+        if value:
+            return value
+        page.wait_for_timeout(100)
+    raise AssertionError(f"timed out waiting for: {js[:160]}")
+
+
+STATE = "() => window.PanelManager.getPanel('gene-set-G')._debugState()"
+
+
+def state(page):
+    return page.evaluate(STATE)
+
+
+def runs(page):
+    return {k: v["status"] for k, v in state(page)["runs"].items()}
+
+
+def bar(page):
+    return " ".join(page.inner_text(f"{GS} .gs-bar__text").split())
+
+
+VISIBLE = ["mygene-card", "string-enrichment", "gprofiler-gost", "string-network", "mygene-mapping"]
+
+
+def _ready(page):
+    page.wait_for_selector(f"{TABLE} .dataTables_scrollBody tbody tr", timeout=30000)
+    until(page, "() => { const p = window.PanelManager.getPanel('gene-set-G'); return p && p._debugState().source.status === 'open' && p._debugState().source.count > 0; }")
+
+
+def _all_ok(page, ids=VISIBLE):
+    until(page, f"() => {{ const r = window.PanelManager.getPanel('gene-set-G')._debugState().runs; return {json.dumps(ids)}.every(id => r[id].status === 'ok'); }}")
+
+
+def _run_and_send(page):
+    page.click(f"{GS} .gs-run")
+    page.wait_for_selector(f"{GS} .gs-consent:not([hidden])")
+    page.click(f"{GS} .gs-consent button:has-text('Send')")
+    _all_ok(page)
+
+
+def _search(page, text):
+    page.fill(f'{TABLE} input[type="search"]', text)
+
+
+def test_opening_makes_no_request_and_links_are_safe(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    page.wait_for_timeout(1500)
+    assert services.calls == [], services.calls
+    s = state(page)
+    assert s["gate"] is None and s["snapshot"] is None and s["armed"] is False
+    assert all(r == "idle" for r in runs(page).values())
+    assert bar(page).startswith("Not run yet. Run sends 10 gene ids to")
+    links = page.locator(f'{GS} .gs-links__focus a')
+    assert " ".join(page.inner_text(f"{GS} .gs-links__focus .gs-links__title").split()).startswith("Focused gene GENE003")
+    assert links.count() >= 8
+    for i in range(links.count()):
+        a = links.nth(i)
+        assert a.get_attribute("href").startswith("https://")
+        assert a.get_attribute("target") == "_blank"
+        assert "noopener" in a.get_attribute("rel")
+        assert a.get_attribute("referrerpolicy") == "no-referrer"
+        assert "opens in a new tab" in a.get_attribute("aria-label")
+    ncbi = page.get_attribute(f'{GS} .gs-links__focus a:has-text("NCBI Gene")', "href")
+    assert ncbi == "https://www.ncbi.nlm.nih.gov/gene/?term=GENE003%5Bsym%5D%20AND%209606%5Btaxid%5D"
+    # hidden sections say so; nothing was fetched for them
+    assert "hidden, not fetched" in page.inner_text(f'{GS} .gs-section[data-section="enrichr"] .gs-badge')
+
+
+def test_run_asks_then_fetches_and_states_coverage(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    page.click(f"{GS} .gs-run")
+    page.wait_for_selector(f"{GS} .gs-consent:not([hidden])")
+    consent = page.inner_text(f"{GS} .gs-consent")
+    for host in ("version-12-5.string-db.org", "biit.cs.ut.ee", "mygene.info"):
+        assert host in consent
+    assert services.calls == [], "nothing before the answer"
+    page.click(f"{GS} .gs-consent button:has-text('Send')")
+    _all_ok(page)
+    counts = services.counts()
+    assert counts["string-ids"] == 1, "the STRING id mapping is shared by its sections"
+    assert all(c[1] == "POST" for c in services.calls if c[0] != "mygene-card")
+    for _, _, url in services.calls:
+        assert "GENE00" not in url or url.startswith("https://mygene.info/v3/query?q=symbol"), f"a gene list in a URL: {url}"
+    # what each service did not know is stated in its section's strip
+    strip = page.get_attribute(f'{GS} .gs-section[data-section="string-enrichment"] .plot-status', "data-summary")
+    assert strip.startswith("5 of 10 genes shown"), strip
+    assert "STRING: not found by the service (5 genes)" in strip
+    gp = page.get_attribute(f'{GS} .gs-section[data-section="gprofiler-gost"] .plot-status', "data-summary")
+    assert gp.startswith("9 of 10 genes shown"), gp
+    src = page.get_attribute(f'{GS} .gs-section[data-section="string-network"] img.gs-image', "src")
+    assert src.startswith("blob:")
+    alt = page.get_attribute(f'{GS} .gs-section[data-section="string-network"] img.gs-image', "alt")
+    assert re.match(r"STRING network, 5 genes, \d+ interactions", alt)
+    assert bar(page).startswith('✓ Results for 10 genes from "Gene Table 1" · Homo sapiens')
+    # the term named as HTML is text
+    page.click(f'{GS} .gs-section[data-section="string-enrichment"] button:has-text("Show all")')
+    assert "<img src=x onerror=alert(1)>" in page.inner_text(f'{GS} .gs-section[data-section="string-enrichment"]')
+    # the gene card's ids make the focused gene's links direct
+    assert page.get_attribute(f'{GS} .gs-links__focus a:has-text("NCBI Gene")', "href") == "https://www.ncbi.nlm.nih.gov/gene/7157"
+
+
+def test_a_changed_selection_is_stale_without_a_request_and_refresh_fetches_once(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    _run_and_send(page)
+    before = len(services.calls)
+    _search(page, "GENE0")
+    until(page, "() => /Selection changed/.test(document.querySelector('%s .gs-bar__text').textContent)" % GS)
+    assert 'Selection changed: "Gene Table 1" now has 20 genes; results are for 10' in bar(page)
+    page.wait_for_timeout(1200)
+    assert len(services.calls) == before, "auto-update is off: nothing is fetched"
+    for sid in ("string-enrichment", "gprofiler-gost", "string-network", "mygene-mapping"):
+        assert "stale" in page.inner_text(f'{GS} .gs-section[data-section="{sid}"] .gs-badge'), sid
+        assert "gs-section--stale" in page.get_attribute(f'{GS} .gs-section[data-section="{sid}"]', "class")
+    page.click(f'{GS} .gs-bar__actions button:has-text("Refresh")')
+    _all_ok(page)
+    until(page, "() => /^✓ Results for 20 genes/.test(document.querySelector('%s .gs-bar__text').textContent)" % GS)
+    new = {}
+    for endpoint, _, _ in services.calls[before:]:
+        new[endpoint] = new.get(endpoint, 0) + 1
+    # each set section once (MyGene's lookup is two: symbols, then the misses as aliases); the
+    # focused gene did not change, so its card is not asked again
+    assert new == {"string-ids": 1, "string-enrichment": 1, "string-ppi": 1, "string-svg": 1, "gprofiler": 1, "mygene-lookup": 2}, new
+
+
+def test_auto_update_makes_one_refresh_for_a_burst_of_changes(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    _run_and_send(page)
+    page.click(f"{GS} .gs-auto")
+    assert page.get_attribute(f"{GS} .gs-auto", "aria-pressed") == "true"
+    page.wait_for_timeout(500)
+    before = len(services.calls)
+    for text in ("GENE01", "GENE0", "GENE1", "GENE00", "GENE01"):
+        _search(page, text)
+        page.wait_for_timeout(90)
+    until(page, "() => /^✓ Results for 10 genes/.test(document.querySelector('%s .gs-bar__text').textContent)"
+          " && window.PanelManager.getPanel('gene-set-G')._debugState().stale === null" % GS)
+    _all_ok(page)
+    page.wait_for_timeout(1500)
+    new = {}
+    for endpoint, _, _ in services.calls[before:]:
+        new[endpoint] = new.get(endpoint, 0) + 1
+    assert new == {"string-ids": 1, "string-enrichment": 1, "string-ppi": 1, "string-svg": 1, "gprofiler": 1, "mygene-lookup": 2}, new
+
+
+def test_a_hidden_section_is_not_fetched_and_fetches_when_shown(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    _run_and_send(page)
+    page.click(f'{GS} .gs-section[data-section="string-network"] .gs-section__toggle')
+    assert page.get_attribute(f'{GS} .gs-section[data-section="string-network"] .gs-section__toggle', "aria-expanded") == "false"
+    _search(page, "GENE0")
+    until(page, "() => /Selection changed/.test(document.querySelector('%s .gs-bar__text').textContent)" % GS)
+    before = len(services.calls)
+    page.click(f'{GS} .gs-bar__actions button:has-text("Refresh")')
+    _all_ok(page, ["string-enrichment", "gprofiler-gost", "mygene-mapping"])
+    page.wait_for_timeout(1500)
+    endpoints = [c[0] for c in services.calls[before:]]
+    assert "string-svg" not in endpoints and "string-ppi" not in endpoints, endpoints
+    # shown again (through the Sections menu): it fetches, for the current snapshot
+    page.click(f"{GS} .gs-sections-btn")
+    page.click(f'{GS} .gs-menu [data-section="string-network"]')
+    _all_ok(page, ["string-network"])
+    endpoints = [c[0] for c in services.calls[before:]]
+    assert endpoints.count("string-svg") == 1 and endpoints.count("string-ppi") == 1
+
+
+def test_a_failing_service_fails_its_section_only(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    services.fail["string-enrichment"] = ["timedout", 503]
+    page.click(f"{GS} .gs-run")
+    page.wait_for_selector(f"{GS} .gs-consent:not([hidden])")
+    page.click(f"{GS} .gs-consent button:has-text('Send')")
+    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().runs['string-enrichment'].status === 'error'")
+    _all_ok(page, ["string-network", "gprofiler-gost", "mygene-mapping", "mygene-card"])
+    s = state(page)["runs"]["string-enrichment"]
+    assert s["error"]["kind"] == "http" and s["error"]["status"] == 503 and s["error"]["attempts"] == 2, s
+    section = f'{GS} .gs-section[data-section="string-enrichment"]'
+    text = page.inner_text(section)
+    assert "Could not get enrichment from STRING. Other sections are not affected." in text
+    assert "HTTP 503" in text and "2 attempts" in text
+    assert page.locator(f"{section} .coverage-placeholder--error").count() == 1
+    # the table still filters while the section is failed
+    _search(page, "GENE01")
+    page.wait_for_selector(f'{TABLE} td:has-text("GENE015")')
+    _search(page, "GENE00")
+    page.wait_for_selector(f'{TABLE} td:has-text("GENE005")')
+    page.click(f'{section} .gs-placeholder-do button:has-text("Retry")')
+    _all_ok(page, ["string-enrichment"])
+    assert services.count("string-enrichment") == 3
+
+
+def test_clicking_a_gene_moves_the_links(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    page.click(f'{TABLE} .entity-index-value:has-text("GENE007")')
+    until(page, "() => /GENE007/.test(document.querySelector('%s .gs-links__focus').textContent)" % GS)
+    href = page.get_attribute(f'{GS} .gs-links__focus a:has-text("GeneCards")', "href")
+    assert href == "https://www.genecards.org/cgi-bin/carddisp.pl?gene=GENE007"
+    # the list of the selection: a gene there is a button that focuses it
+    page.click(f'{GS} .gs-links__list button:has-text("Show list")')
+    page.click(f'{GS} .gs-links__table button[aria-label="Focus GENE002"]')
+    until(page, "() => /GENE002/.test(document.querySelector('%s .gs-links__focus').textContent)" % GS)
+    assert page.locator(f'{GS} .gs-links__table tbody tr').count() == 10
+    assert services.calls == []
+
+
+def test_the_saved_config_holds_settings_only_and_reopens_without_a_request(env, browser):
+    page, services, root = env
+    page.goto(_link(root, gs={"sections": {"string-network": {"visible": False, "params": {}}}}))
+    _ready(page)
+    saved = page.evaluate("() => window.PanelManager.saveLayout()")
+    cfg = saved["panelConfigs"]["gene-set-G"]
+    assert set(cfg) <= {"id", "title", "tableFilter", "idColumn", "autoUpdate", "sections", "sectionOrder", "links", "controlsVisible"}, set(cfg)
+    assert cfg["tableFilter"] == "gene-table-A"
+    assert cfg["sections"]["string-network"]["visible"] is False
+    assert len(json.dumps(cfg)) < 1024
+    view = {"v": 1, "constants": {"focusedGene": "GENE003", "taxonomyId": "9606"}, "layout": saved}
+    enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+    page.goto("about:blank")
+    page.goto(f"{root}/?dataset_path={urllib.parse.quote(STORE, safe='/')}#view={enc}")
+    _ready(page)
+    page.wait_for_timeout(1500)
+    s = state(page)
+    assert s["settings"]["sections"]["string-network"]["visible"] is False
+    assert all(r == "idle" for r in runs(page).values())
+    assert services.calls == []
+
+
+def test_a_closed_source_uses_its_frozen_selection(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    page.evaluate("() => window.PanelManager.closePanel('gene-table-A')")
+    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().source.status === 'closed'")
+    assert "source table closed" in bar(page)
+    assert page.locator(f'{GS} .gs-bar__actions button:has-text("Reopen table")').count() == 1
+    assert state(page)["source"]["count"] == 10
+    page.click(f"{GS} .gs-run")
+    page.click(f"{GS} .gs-consent button:has-text('Send')")
+    _all_ok(page)
+    assert state(page)["snapshot"]["count"] == 10
+    # a table restored closed from a panel set has no selection: said so, nothing sent
+    page.evaluate("""() => {
+        window.PanelManager.registerClosedPanel('gene-table', {id: 'gene-table-Z', title: 'Restored closed'});
+        window.PanelManager.updateSourcePanelSelection();
+    }""")
+    page.select_option(f"{GS} #gs-source-gene-set-G", "gene-table-Z")
+    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().gate === 'closed-unknown'")
+    assert 'Source table "Restored closed" is closed and its selection is not known; reopen it.' in bar(page)
+
+
+@pytest.fixture(scope="module")
+def off_server(tmp_path_factory):
+    root, proc = _serve(tmp_path_factory, 'integrations:\n  external_requests: "off"\n')
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
+def test_external_requests_off_sends_nothing_and_links_work(browser, off_server):
+    context, page, services, errors = _open(browser, off_server)
+    try:
+        page.goto(_link(off_server))
+        _ready(page)
+        assert "External services are turned off on this server" in bar(page)
+        page.click(f"{GS} .gs-run")
+        page.wait_for_timeout(1000)
+        placeholder = page.inner_text(f'{GS} .gs-section[data-section="string-enrichment"] .coverage-placeholder')
+        assert "External services are turned off on this server; the Links section still works." in placeholder
+        assert page.locator(f"{GS} .gs-consent:not([hidden])").count() == 0
+        assert page.locator(f'{GS} .gs-links__focus a').count() >= 8
+        # the species search offers no remote lookup either
+        page.fill(f"{GS} #gs-species-gene-set-G", "zebra")
+        page.wait_for_timeout(400)
+        assert "Search NCBI" not in page.inner_text(f"{GS} .gs-species")
+        assert services.calls == [] and services.unmocked == []
+        assert not errors, errors
+    finally:
+        context.close()
+
+
+@pytest.fixture(scope="module")
+def coep_server(tmp_path_factory):
+    root, proc = _serve(tmp_path_factory, 'server:\n  cross_origin_isolation: "on"\n')
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
+def test_cross_origin_isolation_keeps_the_network_image(browser, coep_server):
+    context, page, services, errors = _open(browser, coep_server)
+    console = []
+    page.on("console", lambda m: console.append(m.text) if m.type == "error" else None)
+    try:
+        page.goto(_link(coep_server))
+        _ready(page)
+        assert page.evaluate("() => self.crossOriginIsolated") is True
+        _run_and_send(page)
+        img = f'{GS} .gs-section[data-section="string-network"] img.gs-image'
+        assert page.get_attribute(img, "src").startswith("blob:")
+        until(page, "(sel) => { const i = document.querySelector(sel); return i && i.complete && i.naturalWidth > 0; }", img)
+        assert not [c for c in console if "Cross-Origin" in c or "COEP" in c or "blocked" in c.lower()], console
+        assert not errors and not services.unmocked
+    finally:
+        context.close()
+
+
+def test_species_from_the_picker_makes_the_panel_stale(env):
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    _run_and_send(page)
+    species = f"{GS} #gs-species-gene-set-G"
+    page.click(species)
+    page.fill(species, "mouse")
+    page.wait_for_selector(f'{GS} .name-picker-option:has-text("Mus musculus")')
+    page.click(f'{GS} .name-picker-option:has-text("Mus musculus")')
+    until(page, "() => /Species changed to Mus musculus/.test(document.querySelector('%s .gs-bar__text').textContent)" % GS)
+    assert page.evaluate("async () => (await import('/static/js/data-manager.js')).DataManager.getTaxonomyId()") == "10090"
+    # human-only links are gone for mouse; MGI is there
+    labels = page.locator(f"{GS} .gs-links__focus a").all_inner_texts()
+    assert "MGI" in labels and "GeneCards" not in labels and "HPA" not in labels
+    # a taxonomy id typed directly
+    page.click(species)
+    page.fill(species, "7955")
+    page.wait_for_selector(f'{GS} .name-picker-option:has-text("Danio rerio")')
+    page.keyboard.press("Enter")
+    until(page, "async () => (await import('/static/js/data-manager.js')).DataManager.getTaxonomyId() === '7955'")
+    assert services.counts().get("mygene-card", 0) == 1, "no request while picking"

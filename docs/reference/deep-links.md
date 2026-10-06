@@ -234,6 +234,22 @@ the app produced rather than writing them from scratch. A plot config without `p
 `pointOpacity` gets automatic values that follow the number of points drawn; one with them keeps
 them (`autoPointSize: true` / `autoPointOpacity: true` mark a saved value as automatic).
 
+A Gene Set Analysis panel (`gene-set-…`) saves its settings and nothing derived from the
+data: never the genes, a result or a consent.
+
+| Field | Meaning |
+|---|---|
+| `tableFilter` | id of the source Gene Table, or `none`; remapped with the table's id like a plot's |
+| `idColumn` | the `var` column whose values are sent and linked; `_index` for the var index |
+| `autoUpdate` | `true`: refresh when the table changes (from the first Run after opening) |
+| `sections` | `{<section id>: {visible, params}}`; params at their default are left out; ids this build does not know are kept |
+| `sectionOrder` | section ids in the order shown; `links` is the Links section |
+| `links` | `{columns, listOpen}`: the resources of the Links list (`null`: the species' default), and whether the list is open |
+
+Section ids: `mygene-card`, `string-enrichment`, `gprofiler-gost`, `string-network`,
+`mygene-mapping`, `string-partners`, `hpa`, `enrichr`, `reactome`, `links`. The species is
+not a panel field: it is `constants.taxonomyId`.
+
 ## Why the fragment, and why compressed
 
 In the query string the view is part of the HTTP request line, which gunicorn caps at 4,094
