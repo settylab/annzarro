@@ -8,12 +8,13 @@ a minimal wrapper that loads the same packages and TikZ libraries as manuscript/
 rendered with pdftocairo and trimmed. Images named by the earlier figure numbers (fig1.png ...)
 are deleted.
 
-Run: .venv-docs/bin/python docs/_tools/make_paper_figs.py [--paper ~/gits/annzarro-paper]
+Run: .venv-docs/bin/python docs/_tools/make_paper_figs.py [--paper PATH]   (or set ANNZARRO_PAPER)
 Refresh some figures after the paper regenerates them (e.g. figures/fig_scale.py and
 figures/fig6_performance.py, which write manuscript/figures/fig_scale.png and fig6_performance.png):
      .venv-docs/bin/python docs/_tools/make_paper_figs.py --only scale performance
 Needs pdflatex (TeX Live) and pdftocairo (poppler) on PATH.
 """
+import os
 import argparse
 import shutil
 import subprocess
@@ -90,10 +91,13 @@ def save(im: Image.Image, n: str) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--paper", type=Path, default=Path.home() / "gits/annzarro-paper")
+    ap.add_argument("--paper", type=Path, default=os.environ.get("ANNZARRO_PAPER"),
+                    help="a checkout of the paper's companion repository (default: $ANNZARRO_PAPER)")
     ap.add_argument("--only", nargs="*", help="pages whose figure to (re)make, e.g. scale")
     a = ap.parse_args()
-    figs = a.paper / "manuscript" / "figures"
+    if not a.paper:
+        ap.error("give --paper or set ANNZARRO_PAPER")
+    figs = Path(a.paper) / "manuscript" / "figures"
     OUT.mkdir(parents=True, exist_ok=True)
     want = set(a.only or list(RASTER) + list(TIKZ))
     for f in RETIRED:

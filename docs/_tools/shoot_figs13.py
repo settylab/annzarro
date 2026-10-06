@@ -29,7 +29,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from shots import Session, panelset_file, split, start_link, tile, z1  # noqa: E402
+from shots import DATA_DIR, Session, panelset_file, split, start_link, tile, z1  # noqa: E402
 
 DOCS = HERE.parent
 OUT = DOCS / "_static" / "screens" / "paper"
@@ -542,7 +542,7 @@ if __name__ == "__main__":
     ap.add_argument("--only", nargs="*", default=["fig1", "fig2", "fig3"])
     a = ap.parse_args()
     write_artefacts()
-    showcase = (Path.home() / "gits/annzarro-paper/data/bm_aging_showcase.READY").exists()
+    showcase = (DATA_DIR / "bm_aging_showcase.zarr").exists()
     with Session(a.port, OUT) as s:
         if "fig1" in a.only:
             shoot_fig1(s)

@@ -10,6 +10,7 @@ the OS page cache is warm. Client wall time from request to the last byte, with
 """
 from __future__ import annotations
 
+import os
 import argparse
 import csv
 import statistics
@@ -20,7 +21,7 @@ import numpy as np
 import requests
 
 HERE = Path(__file__).resolve().parent
-STORE = str(Path.home() / "gits/annzarro-paper/data/bm_aging.zarr")
+STORE = str(Path(os.environ.get("ANNZARRO_DOCS_DATA", Path.home() / "annzarro-data")) / "bm_aging.zarr")
 N_CELLS, N_GENES = 8090, 16285
 REPS = 10
 

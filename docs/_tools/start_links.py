@@ -15,7 +15,7 @@ Run:
 
 `check` serves bm_aging.zarr, bm_aging_showcase.zarr and neuro_demo/celegans_connectome_cengen.zarr
 (when built, by docs/_tools/datasets/celegans_connectome.py) from ANNZARRO_DOCS_DATA (default
-~/gits/annzarro-paper/data) through a temporary data directory of symlinks, opens every link with
+~/annzarro-data) through a temporary data directory of symlinks, opens every link with
 its host:port swapped for the test server, and fails on a page error or a panel that does not
 draw. It also reports panel settings the app dropped while loading (renamed or retired keys).
 Links to a store that is not available are skipped; set ANNZARRO_SCALE_STORE to a Tahoe-100M
@@ -45,7 +45,13 @@ from shots import DATA_DIR, START_BASE, panelset_file, start_link  # noqa: E402
 
 REPO = HERE.parent.parent
 PANELSETS = REPO / "docs" / "_static" / "panelsets"
-PAPER = Path(os.environ.get("ANNZARRO_PAPER", Path.home() / "gits" / "annzarro-paper"))
+PAPER_ENV = os.environ.get("ANNZARRO_PAPER")   # a checkout of settylab/annzarro-paper (protocol, scale)
+
+
+def paper() -> Path:
+    if not PAPER_ENV:
+        raise SystemExit("set ANNZARRO_PAPER to a checkout of the paper's companion repository")
+    return Path(PAPER_ENV)
 PROTOCOL = {  # paper view file -> docs name
     "A_kernel_walk": "protocol-A-kernel-walk",
     "B_volcano_spearman": "protocol-B-volcano-spearman",
@@ -86,7 +92,7 @@ def import_protocol() -> None:
     out = PANELSETS / "protocol"
     out.mkdir(parents=True, exist_ok=True)
     for src, name in PROTOCOL.items():
-        view = json.loads((PAPER / "data_prep" / "demo_panelsets" / f"{src}.view.json").read_text())
+        view = json.loads((paper() / "data_prep" / "demo_panelsets" / f"{src}.view.json").read_text())
         (out / f"{name}.json").write_text(
             json.dumps(panelset_file(name, view, PROTOCOL_DATASET), indent=2) + "\n")
         print("wrote", out / f"{name}.json")
@@ -95,7 +101,7 @@ def import_protocol() -> None:
 def import_scale() -> None:
     out = PANELSETS / "paper"
     for name, (src, subset, title, changes) in SCALE.items():
-        given = json.loads((PAPER / "figures" / "scale" / "v030" / f"{src}.view.json").read_text())
+        given = json.loads((paper() / "figures" / "scale" / "v030" / f"{src}.view.json").read_text())
         assert Path(given["store"]).name == SCALE_STORE, given["store"]
         view = {k: v for k, v in given["view"].items() if k != "subset"}
         view["subset"] = subset
