@@ -240,6 +240,8 @@ def test_zarr_format_3_consolidated_additions(server, tmp_path):
     import shutil
     import numpy as np
     import zarr
+    if int(zarr.__version__.split(".")[0]) < 3:
+        pytest.skip("zarr format 3 needs zarr>=3")
     src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "fixture_small_v3.zarr")
     path = str(tmp_path / "v3.zarr")
     shutil.copytree(src, path)
