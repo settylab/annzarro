@@ -139,7 +139,7 @@ const KIND_LABEL = Object.freeze({
     mode: 'not available in large-plot mode',
     // a categorical column with more categories than can be coloured by
     // (utils/categories.js): nothing failed and nothing is missing
-    categories: 'not coloured',
+    categories: 'too many categories to colour by',
     // the gene set panel's external services: ids a service does not know,
     // a request that failed, a request not made (species, limit, turned off)
     unmapped: 'not found by the service',
@@ -869,7 +869,7 @@ export function classifyError(error, { unit = 'values', source = '', total = nul
     // all drawn; the message says what to use instead.
     if (serverReason === 'too_many_categories') {
         return new Coverage({ shown: total, total, unit, role,
-            gaps: [{ reason: GAP.UNAVAILABLE, detail: message, source, count: 0, kind: 'categories' }] });
+            gaps: [{ reason: GAP.UNAVAILABLE, detail: body.detail || message, source, count: 0, kind: 'categories' }] });
     }
     if (serverReason === 'not_found' || serverReason === 'key_not_found') {
         return Coverage.missing(GAP.UNAVAILABLE, message, { source, unit, total, role });

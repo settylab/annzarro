@@ -70,16 +70,18 @@ class TooManyCategories(Exception):
     def __init__(self, column: str, count: int, limit: int, purpose: str):
         self.column, self.count, self.limit, self.purpose = column, int(count), int(limit), purpose
         if purpose == "colour":
-            message = (f"'{column}' has {self.count:,} distinct values, too many to colour by "
-                       f"(the limit is {self.limit:,}). Show it in the hover or in a table instead.")
+            detail = (f"{self.count:,} distinct values (the limit is {self.limit:,}): "
+                      "show it in the hover or in a table instead")
+            message = f"'{column}' has {self.count:,} distinct values, too many to colour by (the limit is {self.limit:,})."
         else:
-            message = (f"'{column}' has {self.count:,} distinct values; labelling {purpose} would send "
-                       f"more than {self.limit:,} of them. Use a cell subset to label fewer rows.")
+            detail = (f"{self.count:,} distinct values; labelling {purpose} would send more than "
+                      f"{self.limit:,} of them: use a cell subset to label fewer rows")
+            message = f"'{column}' has {self.count:,} distinct values; " + detail.split("; ", 1)[1] + "."
         super().__init__(message)
-        self.message = message
+        self.message, self.detail = message, detail
 
     def body(self) -> dict:
-        return {"error": self.message, "reason": self.reason, "column": self.column,
+        return {"error": self.message, "detail": self.detail, "reason": self.reason, "column": self.column,
                 "count": self.count, "limit": self.limit, "purpose": self.purpose}
 
 

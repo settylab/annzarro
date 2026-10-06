@@ -226,9 +226,9 @@ structure):
   and shows every coloured point. Hovering a point names its category. "As stored in adata.uns"
   colours are not used here.
 - **More than 10,000** (`ui.defaults.category_colour_limit`, {doc}`../reference/configuration`):
-  the plot is drawn without colour and the panel says why, for example "obs.barcode has 1,000,000
-  distinct values, too many to colour by (the limit is 10,000): show it in the hover or in a table
-  instead". Nothing is downloaded for the colour.
+  the plot is drawn without colour and its status line says why: "obs.barcode: too many
+  categories to colour by", and in its details "1,000,000 distinct values (the limit is 10,000):
+  show it in the hover or in a table instead". Nothing is downloaded for the colour.
 
 Such a column works in the hover (the panel's **Hover** list, {ref}`hover-columns`) and as a
 table column at any size: AnnZarro reads its labels only for the cells shown, not its whole

@@ -107,6 +107,7 @@ def test_colouring_past_the_limit_is_refused_before_reading(many, monkeypatch):
     assert body["reason"] == "too_many_categories"
     assert body["count"] == HUGE and body["limit"] == category_rules.DEFAULT_COLOUR_LIMIT
     assert "too many to colour by" in body["error"]
+    assert body["detail"] == "70,000 distinct values (the limit is 10,000): show it in the hover or in a table instead"
     assert reads == []
     # below the limit the same request is served with every category
     few = _codes(client, path, "few", categories="all")
@@ -174,7 +175,7 @@ def test_a_reply_needing_too_many_labels_is_refused(many, monkeypatch):
     resp = _codes(client, path, "huge")
     assert resp.status_code == 413
     assert resp.get_json()["reason"] == "too_many_categories"
-    assert "Use a cell subset" in resp.get_json()["error"]
+    assert "use a cell subset" in resp.get_json()["detail"]
     assert _codes(client, path, "huge", rows="1,2,3").status_code == 200
     assert _codes(client, path, "few").status_code == 200
 

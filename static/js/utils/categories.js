@@ -53,10 +53,18 @@ export function categoryCount(structure, slot, key) {
     return typeof n === 'number' ? n : null;
 }
 
-/** The sentence a panel shows for a column it does not colour by. */
+/**
+ * What a panel says about a column it does not colour by, after the column's
+ * name ("obs.barcode: too many categories to colour by -- ..."); also the
+ * server's `detail` (core/categories.py).
+ */
+export function tooManyCategoriesDetail(count, limit = categoryColourLimit()) {
+    return `${fmt(count)} distinct values (the limit is ${fmt(limit)}): show it in the hover or in a table instead`;
+}
+
+/** The whole sentence, column included (logs, the Error's message). */
 export function tooManyCategoriesMessage(column, count, limit = categoryColourLimit()) {
-    return `${column} has ${fmt(count)} distinct values, too many to colour by `
-        + `(the limit is ${fmt(limit)}): show it in the hover or in a table instead`;
+    return `${column} has ${fmt(count)} distinct values, too many to colour by (the limit is ${fmt(limit)})`;
 }
 
 /**
@@ -66,7 +74,8 @@ export function tooManyCategoriesMessage(column, count, limit = categoryColourLi
 export function tooManyCategoriesError(column, count, limit = categoryColourLimit()) {
     const err = new Error(tooManyCategoriesMessage(column, count, limit));
     err.status = 413;
-    err.data = { reason: TOO_MANY_CATEGORIES, column, count, limit, purpose: 'colour' };
+    err.data = { reason: TOO_MANY_CATEGORIES, column, count, limit, purpose: 'colour',
+                 detail: tooManyCategoriesDetail(count, limit) };
     return err;
 }
 

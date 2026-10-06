@@ -104,8 +104,8 @@ test('colouring by a one-per-cell column is refused before any request, with one
     await assert.rejects(loadAxisData(axis, 'cells', null, { role: 'colour' }), (err) => {
         const lines = err.coverage.lines();
         assert.equal(lines.length, 1);
-        assert.match(lines[0], /obs\.barcode has 2,000,000 distinct values, too many to colour by/);
-        assert.match(lines[0], /show it in the hover or in a table/);
+        assert.equal(lines[0], 'obs.barcode: too many categories to colour by -- 2,000,000 distinct values '
+            + '(the limit is 10,000): show it in the hover or in a table instead');
         assert.equal(err.coverage.headline(), 'Not coloured: too many categories');
         return true;
     });
@@ -144,11 +144,14 @@ test('the colour limit follows the server setting', () => {
 });
 
 test("the server's 413 reads the same as the client's own refusal", () => {
+    // the 413 body as core/categories.py sends it
     const err = new Error("'barcode' has 95,600,000 distinct values, too many to colour by (the limit is 10,000).");
-    err.data = { reason: 'too_many_categories', count: 95600000, limit: 10000 };
-    const cov = classifyError(err, { unit: 'cells', source: 'colour', total: 10 });
+    err.data = { reason: 'too_many_categories', count: 95600000, limit: 10000,
+                 detail: '95,600,000 distinct values (the limit is 10,000): show it in the hover or in a table instead' };
+    const cov = classifyError(err, { unit: 'cells', source: 'obs.barcode', total: 10 });
     assert.equal(cov.headline(), 'Not coloured: too many categories');
-    assert.match(cov.lines()[0], /colour: not coloured -- 'barcode' has 95,600,000 distinct values/);
+    assert.equal(cov.lines()[0], 'obs.barcode: too many categories to colour by -- 95,600,000 distinct values '
+        + '(the limit is 10,000): show it in the hover or in a table instead');
 });
 
 function panel(nCategories, nPoints) {
