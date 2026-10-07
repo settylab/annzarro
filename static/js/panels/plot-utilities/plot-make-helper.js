@@ -1,6 +1,7 @@
 import { DataManager } from '../../data-manager.js';
 import { generateDiscreteColors } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
+import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName } from '../../utils/categories.js';
 
 /**
  * Generates a Plotly layout configuration based on the provided settings.
@@ -358,11 +359,25 @@ export function keptViewRanges(settings) {
       slotOf[idx] = slot;
     }
 
+    // Past GROUP_COLOURS categories (utils/categories.js) they are drawn in
+    // colour groups: ranked by their points, rank r in colour r mod 64, one
+    // trace and one legend entry per colour. A trace and a legend entry per
+    // category hung the panel at a few thousand categories.
+    const many = grouped(categories.length);
+
     // Generate a color palette
     let selectedPalette;
     
     // Check if custom colors are provided in settings.
-    if (
+    if (many) {
+      // uns colours, one per category, would be a trace each again
+      const name = settings.categoryPalette && settings.categoryPalette !== 'uns' ? settings.categoryPalette : undefined;
+      try {
+        selectedPalette = generateDiscreteColors(GROUP_COLOURS, name);
+      } catch {
+        selectedPalette = generateDiscreteColors(GROUP_COLOURS);
+      }
+    } else if (
       settings?.categoryPalette === "uns" &&
       customColors &&
       customColors.length > 0
@@ -444,6 +459,45 @@ export function keptViewRanges(settings) {
       const naTrace = makeTrace(blankIndices, NO_VALUE_CATEGORY, 'rgba(200, 200, 200, 1.)', 'no value');
       naTrace.legendrank = 1001;
       traces.push(naTrace);
+    }
+
+    if (many) {
+      // Each category's rank over the WHOLE column (data.colorRankOf, from
+      // the server's cached ranking) decides its colour, rank mod
+      // GROUP_COLOURS: the same in every panel, subset, part and filter.
+      // Without it (an older server) the points here are ranked instead.
+      const global = data.colorRankOf instanceof Map ? data.colorRankOf : null;
+      const local = global ? null : frequencyRanks(Uint32Array.from(bySlot, s => s.length));
+      const rankOfSlot = (i) => {
+        if (!global) return local.rankOf[i];
+        const r = global.get(categories[i]);
+        return r === undefined ? -1 : r;
+      };
+      // per colour: its categories on this plot, by rank (the legend names
+      // the largest present ones first)
+      const present = selectedPalette.map(() => []);
+      const byColour = selectedPalette.map(() => []);
+      let unranked = categories.length;
+      bySlot.forEach((indices, i) => {
+        if (indices.length === 0) return;
+        let r = rankOfSlot(i);
+        if (r < 0) r = unranked++;     // a value the ranking does not know: after every ranked one
+        const g = groupOf(r);
+        present[g].push([r, i]);
+        for (const idx of indices) byColour[g].push(idx);
+      });
+      byColour.forEach((indices, g) => {
+        if (indices.length === 0) return;
+        const members = present[g].sort((p, q) => p[0] - q[0]);
+        const name = groupLegendName(members.map(([, i]) => categories[i]));
+        const trace = makeTrace(indices, name, selectedPalette[g], null);
+        trace._azLabels = indices.map(idx => String(categories[slotOf[idx]]));
+        trace.hovertext = trace._azLabels.map(label => `<br>${label}`);
+        trace.hovertemplate = trace.hovertemplate.replace('<extra></extra>', '%{hovertext}<extra></extra>');
+        trace.legendrank = g + 1;
+        traces.push(trace);
+      });
+      return withLegendProxies(traces, settings);
     }
 
     categories.forEach((category, i) => {

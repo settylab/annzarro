@@ -41,6 +41,7 @@ import { classifyFilterStats, compactCount, exactCount } from '../../utils/cover
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount } from '../../utils/categories.js';
 
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
 export function largePlotPoints() {
@@ -105,7 +106,10 @@ async function loadSeries(s, datasetPath, structure) {
   const info = structure && structure.obs && structure.obs.columns_info
     && structure.obs.columns_info[s.key];
   if (info && info.type === 'categorical') {
-    return DataManager.loadCategoryCodes(datasetPath, s.key);
+    // past GROUP_COLOURS categories: codes ranked by the server and the
+    // legend's few labels, never the column's label list
+    return DataManager.loadCategoryCodes(datasetPath, s.key,
+      { ranked: grouped(categoryCount(structure, 'obs', s.key) ?? 0) });
   }
   const v = await DataManager.loadVector(Config.API.OBS, { dataset_path: datasetPath, columns: s.key });
   if (!v) throw new Error(`obs.${s.key} is neither categorical nor numeric`);
@@ -325,8 +329,13 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   const only = { coords: 0, table: 0, nan: 0, outliers: 0 };
 
   if (cs && cs.codes) {
-    // categorical: key = category, missing values last-but-drawn-first
-    const nc = cs.categories.length;
+    // categorical: key = category, missing values last-but-drawn-first.
+    // Ranked codes (more than GROUP_COLOURS categories): each cell's
+    // category's rank over the whole column; key = colour group, rank mod
+    // 64, one legend entry per group (utils/categories.js).
+    const many = !!cs.ranked;
+    const ncAll = many ? cs.used : cs.categories.length;
+    const nc = many ? Math.min(ncAll, GROUP_COLOURS) : ncAll;
     const key = new Uint16Array(n);
     const NA = nc, DROP = nc + 1;
     for (let i = 0; i < n; i++) {
@@ -335,14 +344,48 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       else if (c === cs.MISSING) {
         key[i] = settings.hideNaN ? DROP : NA;
         if (settings.hideNaN) only.nan++;
-      } else key[i] = c;
+      } else key[i] = many ? groupOf(c) : c;
     }
     const { X, Y, start, kept } = groupByKey(x, y, key, nc + 1, DROP);
     filtered = n - kept;
+    // Colour groups: per group, the distinct ranks drawn (a bit set over the
+    // ranks) and the three lowest, whose labels the legend names
+    let groupNames = null;
+    if (many) {
+      const seen = new Uint8Array(Math.ceil(ncAll / 8) || 1);
+      const distinct = new Float64Array(GROUP_COLOURS);
+      const lowest = Array.from({ length: GROUP_COLOURS }, () => []);
+      for (let i = 0; i < n; i++) {
+        if (key[i] >= nc) continue;                 // NA or dropped
+        const r = cs.codes[i];
+        if (seen[r >> 3] & (1 << (r & 7))) continue;
+        seen[r >> 3] |= 1 << (r & 7);
+        const g = groupOf(r);
+        distinct[g]++;
+        const low = lowest[g];
+        if (low.length < LEGEND_NAMES || r < low[low.length - 1]) {
+          low.push(r);
+          low.sort((a, b) => a - b);
+          if (low.length > LEGEND_NAMES) low.pop();
+        }
+      }
+      let labels = new Map();
+      try {
+        labels = await DataManager.loadCategoryLabels(datasetPath, settings.color.key, lowest.flat(),
+          settings.color.type === 'var' ? 'var' : 'obs');
+      } catch (err) {
+        console.warn('Legend labels not loaded:', err && err.message);
+      }
+      groupNames = lowest.map((low, g) => {
+        const names = low.map(r => labels.get(r) ?? `#${r}`);
+        while (names.length < distinct[g]) names.push(null);   // counted for "+N more", never shown
+        return groupLegendName(names);
+      });
+    }
     // The regular path's palette rule (processCategories): the colours stored
     // in uns.<key>_colors when the palette is 'uns' and they exist
     let palette = null;
-    if (settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
+    if (!many && settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
       try {
         const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors` });
         if (r && r.data) palette = Array.isArray(r.data) ? r.data : [r.data];
@@ -351,15 +394,17 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       }
     }
     if (!palette || !palette.length) {
-      palette = generateDiscreteColors(nc, settings.categoryPalette && settings.categoryPalette !== 'uns'
-        ? settings.categoryPalette : undefined);
+      // colour groups use the same 64-colour palette in every path
+      palette = generateDiscreteColors(many ? GROUP_COLOURS : nc,
+        settings.categoryPalette && settings.categoryPalette !== 'uns' ? settings.categoryPalette : undefined);
     }
     // blank values at the bottom, then the categories interleaved; legend
     // entries in category order with NA last, as the regular path lists them
     traces.push(...chunkTraces(X, Y, start[NA], start[NA + 1], 'NA', NA_COLOR, settings));
     const groups = [];
     for (let k = 0; k < nc; k++) {
-      const name = String(cs.categories[k]), color = palette[k % palette.length];
+      const name = many ? groupNames[k] : String(cs.categories[k]);
+      const color = palette[k % palette.length];
       if (start[k + 1] > start[k]) {
         groups.push(chunkTraces(X, Y, start[k], start[k + 1], name, color, settings));
         traces.push(legendTrace(name, color, settings, k + 1));

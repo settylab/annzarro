@@ -533,7 +533,8 @@ def cached_method(func):
 
         elif method_name == 'get_obs_var_codes':
             cache_key = (f"path:{encoded_path}:{method_name}:{arg.get('entity')}:"
-                         f"{arg.get('column_name')}:{idx_key('indices', arg.get('indices'))}")
+                         f"{arg.get('column_name')}:{idx_key('indices', arg.get('indices'))}:"
+                         f"{'used' if arg.get('used_only') else 'all'}:{'ranked' if arg.get('ranked') else ''}")
 
         elif method_name == 'open_dataset_by_path':
             cache_key = (f"path:{encoded_path}:root:{arg.get('metadata', True)}:"

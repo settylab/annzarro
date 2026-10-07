@@ -58,3 +58,31 @@ test('a boolean condition saved as num "true" becomes string "Yes", also nested'
     assert.deepEqual(pre.criteria[1].criteria[1], saved.criteria[1].criteria[1], 'a numeric column is untouched');
     assert.equal(saved.criteria[0].value[0], 'true', 'the saved config itself is not mutated');
 });
+
+// --- columns with too many values to list -----------------------------------
+
+test('a column with more distinct values than the list limit is filtered by typing', async () => {
+    const { moreDistinctThan, textOnlyConditions, TEXT_ONLY_TYPE } = await import('../../../static/js/utils/search-builder.js');
+    assert.equal(TEXT_ONLY_TYPE, 'az-text');
+    assert.equal(moreDistinctThan(['a', 'b', 'a'], 2), false);
+    assert.equal(moreDistinctThan(['a', 'b', 'c'], 2), true);
+    const ids = Array.from({ length: 1e6 }, (_, i) => `BC${i}`);
+    const t0 = Date.now();
+    assert.equal(moreDistinctThan(ids, 10000), true);
+    assert.ok(Date.now() - t0 < 200, 'stops counting at the limit');
+    const select = () => 'select', input = () => 'input';
+    const Criteria = {
+        initInput: input, inputValueInput: input, isInputValidInput: input,
+        stringConditions: {
+            '=': { conditionName: 'Equals', init: select, inputValue: select, isInputValid: select, search: (t, v) => t === v[0] },
+            '!=': { conditionName: 'Not', init: select, inputValue: select, isInputValid: select, search: (t, v) => t !== v[0] },
+            contains: { conditionName: 'Contains', init: input }
+        }
+    };
+    const c = textOnlyConditions(Criteria);
+    assert.equal(c['='].init, input);
+    assert.equal(c['!='].isInputValid, input);
+    assert.equal(c['='].search('x', ['x']), true);
+    assert.equal(c.contains, Criteria.stringConditions.contains);
+    assert.equal(Criteria.stringConditions['='].init, select, 'the shared string conditions are not changed');
+});

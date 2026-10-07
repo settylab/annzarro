@@ -20,6 +20,7 @@ import { Config } from '../../config.js';
 import { colourKind } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { categoryCount, grouped, colourCostError, colourAllowed } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
@@ -203,12 +204,16 @@ if (typeof window !== 'undefined') {
  * @param {Object} settings - Axis settings object.
  * @param {string} [plotType=null] - Optional plot type ('cells' or 'genes') to determine context.
  * @param {HTMLElement} [plotContainer=null] - Container to show loading indicator in.
+ * @param {{role?: 'colour'|null}} [opts] - role 'colour': an obs/var column with
+ *    up to GROUP_COLOURS categories is loaded with every category (palette and
+ *    legend order); one with more, with the labels of the points only, which
+ *    are drawn in colour groups (utils/categories.js).
  * @returns {Promise<Object>} - Resolves to an object with:
  *    - values: The data values,
  *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
  *    - categories: (optional) Category definitions.
  */
-export async function loadAxisData(settings, plotType = null, plotContainer = null) {
+export async function loadAxisData(settings, plotType = null, plotContainer = null, { role = null } = {}) {
   if (!settings) {
     throw new Error(`loadAxisData: settings is undefined`);
   }
@@ -292,6 +297,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
     let data, values, dataType;
     let categories = null;
+    let rankOf = null;   // colour groups: category label -> rank over the whole column
 
     // --- Helper Functions ---
     // Returns at most maxSample elements of an array.
@@ -350,7 +356,30 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       case 'obs':
       case 'var': {
         const loadMethod = type === 'obs' ? DataManager.loadObs : DataManager.loadVar;
-        data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr });
+        let categoriesWanted;
+        if (role === 'colour') {
+          // the structure says how many categories the column has
+          let structure = null;
+          try {
+            structure = await DataManager.getDatasetStructure(datasetPath);
+          } catch {
+            structure = null;
+          }
+          const count = categoryCount(structure, type, key);
+          categoriesWanted = count !== null && grouped(count) ? 'used' : 'all';
+          // a grouped colour that needs one hover label per point asks first
+          const panelId = plotContainer && plotContainer.id ? plotContainer.id.replace(/^plot-container-/, '') : null;
+          const shownEntities = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
+          const points = shownEntities && typeof shownEntities.length === 'number' ? shownEntities.length : 0;
+          const costly = colourCostError(`${type}.${key}`, count, points);
+          if (costly && !(panelId && colourAllowed(panelId, `${type}.${key}`))) throw costly;
+        }
+        // Colour groups (utils/categories.js): each point's category's rank
+        // over the WHOLE column, so a category's colour does not depend on
+        // the cells shown (subset, part, filter) or on the panel
+        const ranked = categoriesWanted === 'used'
+          ? DataManager.loadCategoryCodes(datasetPath, key, { ranked: true, slot: type }) : null;
+        data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr, categories: categoriesWanted });
         // classifyColumn encodes the server's measured semantics: key ABSENT
         // means the column is not in this dataset; key present but empty on a
         // non-empty dataset means the read FAILED. Those two look identical in
@@ -365,6 +394,15 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           throw err;
         }
         values = data.data[key];
+        if (ranked) {
+          const r = await ranked;
+          if (r && r.ranked && r.codes.length === values.length) {
+            rankOf = new Map();
+            for (let i = 0; i < values.length; i++) {
+              if (r.codes[i] !== r.MISSING && !rankOf.has(values[i])) rankOf.set(values[i], r.codes[i]);
+            }
+          }
+        }
         if (data.categories && data.categories[key]) {
           dataType = 'categorical';
           categories = data.categories[key];
@@ -582,7 +620,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           ? classifyMatrixColumn({ values, expected, unit, source, key: settings.key })
           : classifyValues({ values, expected, unit, source });
     }
-    return { values, type: dataType, categories, coverage };
+    return { values, type: dataType, categories, coverage, rankOf };
   } catch (error) {
     console.error('Error loading data for settings', settings, 'error:', error);
     const wrapped = new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
@@ -878,9 +916,17 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           // back to a constant colour, and STATE that the colour is missing.
           let colorData;
           try {
-            colorData = await loadAxisData(settings.color, plotType, plotContainer);
+            colorData = await loadAxisData(settings.color, plotType, plotContainer, { role: 'colour' });
+            setStatusTag(plotContainer, 'colour-cost', null);
           } catch (colorError) {
             if (colorError && colorError.name === 'AbortError') throw colorError;
+            const cost = colorError && colorError.coverage && colorError.coverage.gaps
+              && colorError.coverage.gaps.find(g => g.kind === 'colour-cost');
+            // Colouring costly: grey, and the status line offers to colour anyway
+            setStatusTag(plotContainer, 'colour-cost', cost ? {
+              text: 'Not coloured yet', severity: 'warning', title: cost.detail,
+              pop: { text: `${cost.source}: ${cost.detail}.`, actions: [['colour-anyway', 'Colour anyway']] }
+            } : null);
             console.warn('Colour data unavailable; plotting uncoloured:', colorError);
             const n = (DataManager[isGenePlot ? 'getGenes' : 'getCells']() || []).length;
             // Every point is still drawn in the fallback colour, so this
@@ -906,6 +952,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           data.colorType = colorData.type;
           applyLogColor(data, settings);
           data.colorCategories = colorData.categories;
+          data.colorRankOf = colorData.rankOf || null;
           data.colorCoverage = colorData.coverage || null;
           // Update any color control UI in the container.
           updateColorControlsVisibility(container, data.colorType, id);
@@ -1318,6 +1365,9 @@ export function hoverTemplateFor(trace, settings, data) {
   if (settings.z) t += '<br>z: %{z:.4~g}';
   if (trace.marker && Array.isArray(trace.marker.color) && trace.marker.colorscale !== undefined) {
     t += data.colorLog ? '<br>log10 c: %{marker.color:.4~g}' : '<br>c: %{marker.color:.4~g}';
+  } else if (Array.isArray(trace._azLabels)) {
+    // a colour group's trace (many categories): each point's category is in hovertext
+    return t + '%{hovertext}<extra></extra>';
   } else if (data.colorType === 'categorical' && trace.name && trace.name !== 'Not in table') {
     t += `<br>${trace.name}`;
   }
@@ -1335,14 +1385,16 @@ export async function applyHoverInfo(plotContainer, data, settings) {
     if (!trace || !Array.isArray(trace.text) || (typeof trace.name === 'string' && trace.name.includes('Focused'))) return;
     indices.push(i);
     templates.push(hoverTemplateFor(trace, settings, data));
-    hovertexts.push(rowOf ? trace.text.map(name => {
-      const r = rowOf.get(name);
-      return r === undefined ? '' : extra.map(e => `<br>${e.label}: ${formatHoverValue(e.values[r])}`).join('');
+    const labels = Array.isArray(trace._azLabels) ? trace._azLabels : null;
+    hovertexts.push(rowOf || labels ? trace.text.map((name, j) => {
+      const r = rowOf ? rowOf.get(name) : undefined;
+      const own = labels ? `<br>${labels[j]}` : '';
+      return own + (r === undefined ? '' : extra.map(e => `<br>${e.label}: ${formatHoverValue(e.values[r])}`).join(''));
     }) : null);
   });
   if (!indices.length) return;
   const update = { hovertemplate: templates };
-  if (rowOf) update.hovertext = hovertexts;
+  if (hovertexts.some(h => h !== null)) update.hovertext = hovertexts.map((h, k) => h || plotContainer.data[indices[k]].hovertext || null);
   try {
     await Plotly.restyle(plotContainer, update, indices);
   } catch (err) {

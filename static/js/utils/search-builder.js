@@ -71,3 +71,33 @@ export function searchBuilderPreDefined(saved, booleanKeys = []) {
         logic: saved?.logic === 'OR' ? 'OR' : 'AND'
     };
 }
+
+/**
+ * SearchBuilder type of a column with too many distinct values to list: its
+ * "Equals" and "Not" take typed text instead of a dropdown of every value.
+ * The dropdown of a one-per-cell column (a barcode, the Cell ID) held one
+ * option per row (utils/categories.js VALUE_LIST_MAX).
+ */
+export const TEXT_ONLY_TYPE = 'az-text';
+
+/** True when `values` holds more than `max` distinct values (stops counting there). */
+export function moreDistinctThan(values, max) {
+    const seen = new Set();
+    for (let i = 0; i < values.length; i++) {
+        seen.add(values[i]);
+        if (seen.size > max) return true;
+    }
+    return false;
+}
+
+/**
+ * The SearchBuilder conditions of TEXT_ONLY_TYPE: the string conditions, with
+ * "Equals" and "Not" on a text box.
+ * @param {Object} Criteria  $.fn.dataTable.Criteria (SearchBuilder)
+ */
+export function textOnlyConditions(Criteria) {
+    const base = Criteria.stringConditions;
+    const typed = (c) => ({ ...c, init: Criteria.initInput, inputValue: Criteria.inputValueInput,
+                            isInputValid: Criteria.isInputValidInput });
+    return { ...base, '=': typed(base['=']), '!=': typed(base['!=']) };
+}

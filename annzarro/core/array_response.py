@@ -54,6 +54,18 @@ bytes (a multiple of 4, so the codes that follow are aligned), then n
 little-endian codes. Code k is categories[k]. A client that does not send
 ``categorical=codes`` (every client before this encoding) still gets JSON.
 
+A column with more than 65,536 categories (a barcode column has one per
+cell), or a request with ``categories=used``, gets only the categories the
+returned codes use, renumbered, and the header
+``X-Annzarro-Categories-Total`` with the column's count.
+
+``categories=ranked``: code r means the r-th largest category of the WHOLE
+column (by cells; ties by stored code), the same in every subset; the prefix
+is empty, ``X-Annzarro-Categories-Used`` the number of categories with
+cells and ``X-Annzarro-Categories-Order: ranked`` says so. It is what
+colouring by colour group needs; the few names a legend shows come from
+``category_ranks=`` (core/categories.py).
+
 JSON
 ----
 JSON stays the default and keeps its shape contract (an n x 1 slice is still a
@@ -78,8 +90,12 @@ HEADER_DTYPE = "X-Annzarro-Dtype"
 HEADER_ENCODING = "X-Annzarro-Encoding"
 HEADER_NNZ = "X-Annzarro-Nnz"
 HEADER_CATEGORIES_BYTES = "X-Annzarro-Categories-Bytes"
+HEADER_CATEGORIES_TOTAL = "X-Annzarro-Categories-Total"
+HEADER_CATEGORIES_USED = "X-Annzarro-Categories-Used"
+HEADER_CATEGORIES_ORDER = "X-Annzarro-Categories-Order"
 EXPOSED_HEADERS = ", ".join((HEADER_SHAPE, HEADER_DTYPE, HEADER_ENCODING, HEADER_NNZ,
-                             HEADER_CATEGORIES_BYTES, "ETag"))
+                             HEADER_CATEGORIES_BYTES, HEADER_CATEGORIES_TOTAL,
+                             HEADER_CATEGORIES_USED, HEADER_CATEGORIES_ORDER, "ETag"))
 
 _F32_EXACT_INT = 2 ** 24
 
@@ -162,12 +178,21 @@ def code_dtype(n_categories: int) -> np.dtype:
     return np.dtype("<i4")
 
 
-def categorical_response(codes: np.ndarray, categories) -> Response:
-    """A categorical column as codes plus its categories (module docstring)."""
+def categorical_response(codes: np.ndarray, categories, total=None, used=None, ranked=False) -> Response:
+    """A categorical column as codes plus its categories (module docstring).
+
+    ``total``: the column's number of categories when ``categories`` holds
+    only those the codes use (core/categories.py); sent as
+    X-Annzarro-Categories-Total, so a client never takes the short list for
+    the column's. ``ranked``: the codes are ranks in the column's ranking,
+    ``categories`` empty, and ``used`` the number of categories with cells
+    (X-Annzarro-Categories-Used).
+    """
     categories = [c.item() if isinstance(c, np.generic) else c for c in categories]
     codes = np.asarray(codes).reshape(-1)
-    bad = (codes < 0) | (codes >= len(categories))
-    wire = codes.astype(code_dtype(len(categories)))
+    span = int(used) if ranked else len(categories)
+    bad = (codes < 0) | (codes >= span)
+    wire = codes.astype(code_dtype(span))
     if bad.any():
         wire[bad] = -1
     prefix = json.dumps(categories, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -179,6 +204,11 @@ def categorical_response(codes: np.ndarray, categories) -> Response:
         HEADER_CATEGORIES_BYTES: str(len(prefix)),
         "Access-Control-Expose-Headers": EXPOSED_HEADERS,
     }
+    if total is not None:
+        headers[HEADER_CATEGORIES_TOTAL] = str(int(total))
+    if ranked:
+        headers[HEADER_CATEGORIES_USED] = str(int(used))
+        headers[HEADER_CATEGORIES_ORDER] = "ranked"
     return Response(prefix + wire.tobytes(), mimetype=BINARY_MIMETYPE, headers=headers)
 
 

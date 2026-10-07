@@ -216,6 +216,43 @@ genes without a module, drawn in grey as **NA**. View:
 {download}`userguide-categorical-na.json <../_tools/views/userguide-categorical-na.json>`.
 ```
 
+(many-categories)=
+### Columns with many categories
+
+A categorical column can have as many categories as cells: a barcode or a sample-cell id stored as
+a categorical. How it is coloured depends on its number of categories (shown in the dataset
+structure):
+
+- **Up to 64**: one colour and one legend entry per category, as above.
+- **More than 64**: the categories are ranked by their number of cells over the whole column,
+  most frequent first (ties in stored order), and rank *r* is drawn in colour *r* mod 64. The
+  plot has one trace and one legend entry per colour, so at most 64. Each legend entry names the
+  three most frequent categories of its colour among the points shown and counts the rest, for
+  example "S1, S65, S129 +18 more"; clicking it hides and shows that colour. Hovering a point
+  names its own category. "As stored in adata.uns" colours are not used here.
+
+The ranking is computed once per column on the server, over all cells, and kept, so a category
+keeps its colour across the parts of a subset ({doc}`subsets`), under a table filter and in every
+panel coloured by the same column. Only the points shown change; the colours do not move. Ranking
+a column of 95.6 million cells takes under half a second the first time (M3 Max), a few
+milliseconds after that.
+
+One case asks first. With more than 500,000 distinct categories among the points of a regular
+(not large-plot) panel, for example a barcode column on a million cells, every point needs its
+own hover label, which made the plot about 60 % slower and used 150 MB more memory. The plot is
+then drawn without colour and its status line carries the tag **Not coloured yet**. Its details
+name the count and the cost, for example "1,000,000 distinct values on 1,000,000 points: colouring
+loads about 29 MB of labels for the hover and takes a few seconds longer", with a **Colour anyway**
+button that colours that panel. Under a subset of 100,000 cells nothing is asked.
+
+Such a column also works in the hover (the panel's **Hover** list, {ref}`hover-columns`) and as a
+table column at any size: AnnZarro reads its labels only for the cells shown, never its whole
+category list. In a table, a column with more than 10,000 distinct values is filtered with a typed
+value: **Equals** and **Not** take a text box instead of a list of every value
+({doc}`tables-and-filters`). Balancing a subset across a column with more than 10,000 categories is not
+offered ({doc}`subsets`).
+
+(hover-columns)=
 ## Hover
 
 Hovering a point shows its name, its x and y (and z) values and its colour value `c` (for a
