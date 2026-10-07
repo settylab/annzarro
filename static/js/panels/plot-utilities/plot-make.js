@@ -10,7 +10,7 @@ import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
-import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag, setPlotNotice } from '../../utils/panel-surface.js';
+import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag } from '../../utils/panel-surface.js';
 import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
@@ -18,7 +18,7 @@ import { Config } from '../../config.js';
 import { colourKind } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
-import { categoryCount, grouped, colourCostError, colourAllowed, COLOUR_COST } from '../../utils/categories.js';
+import { categoryCount, grouped, colourCostError, colourAllowed } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
@@ -620,9 +620,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     }
     return { values, type: dataType, categories, coverage, rankOf };
   } catch (error) {
-    // a colour that asks first is no error (utils/categories.js colourCostError)
-    if (error && error.data && error.data.reason === COLOUR_COST) console.info(error.message);
-    else console.error('Error loading data for settings', settings, 'error:', error);
+    console.error('Error loading data for settings', settings, 'error:', error);
     const wrapped = new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
     // Carry the classification with the error so the panel can state a REASON
     // rather than only a symptom. An error raised before any classification
@@ -904,7 +902,6 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           try {
             colorData = await loadAxisData(settings.color, plotType, plotContainer, { role: 'colour' });
             setStatusTag(plotContainer, 'colour-cost', null);
-            setPlotNotice(plotContainer, null);
           } catch (colorError) {
             if (colorError && colorError.name === 'AbortError') throw colorError;
             const cost = colorError && colorError.coverage && colorError.coverage.gaps
@@ -914,13 +911,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
               text: 'Not coloured yet', severity: 'warning', title: cost.detail,
               pop: { text: `${cost.source}: ${cost.detail}.`, actions: [['colour-anyway', 'Colour anyway']] }
             } : null);
-            // ... and says so over the plot, where it is seen
-            setPlotNotice(plotContainer, cost ? {
-              headline: 'Not coloured yet', text: `${cost.source}: ${cost.detail}.`,
-              actions: [['colour-anyway', 'Colour anyway']]
-            } : null);
-            // a colour that asks first was logged where it was decided (loadAxisData)
-            if (!cost) console.warn('Colour data unavailable; plotting uncoloured:', colorError);
+            console.warn('Colour data unavailable; plotting uncoloured:', colorError);
             const n = (DataManager[isGenePlot ? 'getGenes' : 'getCells']() || []).length;
             // Every point is still drawn in the fallback colour, so this
             // coverage must not drag the panel's merged `shown` to zero and
@@ -1385,18 +1376,13 @@ export async function applyHoverInfo(plotContainer, data, settings) {
     if (!trace || !Array.isArray(trace.text) || (typeof trace.name === 'string' && trace.name.includes('Focused'))) return;
     const template = hoverTemplateFor(trace, settings, data);
     const labels = Array.isArray(trace._azLabels) ? trace._azLabels : null;
-    const hoverOf = (name, label) => {
+    const hovertext = rowOf || labels ? trace.text.map((name, j) => {
       const r = rowOf ? rowOf.get(name) : undefined;
-      const own = label !== null ? `<br>${label}` : '';
+      const own = labels ? `<br>${labels[j]}` : '';
       return own + (r === undefined ? '' : extra.map(e => `<br>${e.label}: ${formatHoverValue(e.values[r])}`).join(''));
-    };
-    // a colour-group trace keeps every point's hover text, also of the
-    // groups hidden from the legend (plot-make-helper.js groupView)
-    const groups = trace._azGroups;
-    if (groups) groups.all.hovertext = groups.all.names.map((name, j) => hoverOf(name, groups.all.labels[j]));
-    const hovertext = rowOf || labels ? trace.text.map((name, j) => hoverOf(name, labels ? labels[j] : null)) : null;
-    // A restyle recomputes the whole trace: 1.3 s for one of 1M points with
-    // a colour each. Only traces whose hover changes are restyled.
+    }) : null;
+    // A restyle recomputes the whole figure (1.3 s at 1M points with a
+    // colour each): only traces whose hover changes are restyled.
     if (template === trace.hovertemplate && sameHovertext(hovertext, trace.hovertext)) return;
     indices.push(i);
     templates.push(template);

@@ -3211,21 +3211,6 @@ button.dtsb-button.dtsb-clear:hover {
 }
 .coverage-placeholder__do .ps-action:hover { text-decoration: underline; }
 
-/* a notice over the plot area (setPlotNotice): the plot is drawn, without what it offers */
-.az-plot-notice {
-    position: absolute; top: 48px; left: 50%; transform: translateX(-50%); z-index: 5;
-    max-width: min(560px, calc(100% - 32px)); padding: 10px 14px; border-radius: 4px;
-    border: 1px solid #faebcc; border-left: 4px solid #8a6d3b; background: #fcf8e3; color: #7a5f34;
-    font-size: 13px; line-height: 1.5; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-}
-.az-plot-notice__headline { font-weight: 600; margin-bottom: 2px; }
-.az-plot-notice__do { margin-top: 8px; }
-.az-plot-notice__do .ps-action {
-    padding: 3px 12px; border: 1px solid #8a6d3b; border-radius: 4px; background: #fff; color: #7a5f34;
-    font: inherit; font-weight: 600; cursor: pointer;
-}
-.az-plot-notice__do .ps-action:hover { background: #8a6d3b; color: #fff; }
-
 .coverage-placeholder--notice {
     background: #e7f3f8; border-color: #bce8f1; border-left-color: #31708f; color: #245269;
 }
