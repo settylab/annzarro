@@ -357,6 +357,11 @@ const App = (function() {
             if (choice !== 'open') return { status: 'no-data', message: 'The store differs; opened without data' };
         }
         datasetPath = located.path;
+        // A store of the data directory is named as the listing (and so the
+        // dropdown) names it, whichever spelling reached here: the server's
+        // path for it, or the path relative to the data directory
+        // (rel_path, as a share link or saved set records it).
+        datasetPath = await _listedPathFor(datasetPath, located.probe && located.probe.relPath);
         _leaveNoDataMode();
 
         // 0. The cells the view shows. A view without `subset` keeps the
@@ -491,6 +496,19 @@ const App = (function() {
      * @private
      */
     const savedHasData = (saved) => !!(saved && hasDataTier(saved.fp));
+
+    /**
+     * The path the dataset listing uses for a store: the entry whose path is
+     * `path`, or whose rel_path is the store's `relPath`. `path` itself when
+     * the store is not listed (a remote URL, outside the data directory).
+     * @private
+     */
+    async function _listedPathFor(path, relPath) {
+        const listing = (await DataManager.loadDatasets().catch(() => [])) || [];
+        const hit = listing.find(d => d && d.path === path)
+            || (relPath && listing.find(d => d && d.rel_path === relPath));
+        return hit ? hit.path : path;
+    }
 
     async function _locateStore(datasetPath, view, { exact = false } = {}) {
         const saved = savedStoreOf(view, datasetPath);

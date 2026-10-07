@@ -139,23 +139,37 @@ def resolve_relative_dataset_paths():
 
     A share link written by hand or by another tool (``?dataset_path=
     bm_aging_showcase.zarr``) named a path relative to the server's working
-    directory, so it opened nothing (500 from /data/info). When the path does
-    not exist there but does under ``data_dir``, the request is rewritten to
-    that absolute path, before confinement checks it.
+    directory, so it opened nothing (500 from /data/info). A relative path now
+    means ``data_dir`` / path, before confinement checks it.
+
+    The result is spelled exactly as the dataset listing spells that entry
+    (``os.path.join(data_dir, name)``, NOT an absolute or resolved path): the
+    dropdown, ``_locateStore`` and saved sets compare it with the listing's
+    ``path``, and a data directory given as a relative path (``../data``) or
+    an entry that is a symlink must not turn it into a second, absolute
+    identity. Where the server is confined, a relative path ALWAYS means the
+    data directory (never the working directory), and ``..`` out of it is
+    refused by ``enforce`` like any path outside the allowed roots. Elsewhere
+    a name that exists in the data directory is read from there, and any
+    other keeps its old meaning (relative to the working directory).
     """
     data_dir = current_app.config.get("data_dir")
     if not data_dir:
         return None
+    confined = is_confined(current_app.config)
+    base = os.path.expanduser(data_dir)
     args = None
     for name in ("dataset_path", "dataset_id"):
         value = request.args.get(name)
         if not value or is_remote_path(value) or os.path.isabs(os.path.expanduser(value)):
             continue
-        candidate = os.path.join(os.path.expanduser(data_dir), value)
-        if not os.path.exists(value) and os.path.exists(candidate):
+        if "://" in value:
+            continue   # file:// and other schemes are not names in the data dir: enforce refuses them
+        candidate = os.path.join(base, os.path.normpath(value))
+        if confined or os.path.exists(candidate):
             if args is None:
                 args = request.args.copy()
-            args[name] = os.path.abspath(candidate)
+            args[name] = candidate
     if args is not None:
         from werkzeug.datastructures import ImmutableMultiDict
         request.args = ImmutableMultiDict(args)
