@@ -5,7 +5,8 @@
  * The app's default (5 px, opaque) suits thousands of cells; at tens of
  * millions it is a solid blob. Until the user sets a value, a panel draws
  * size and opacity as a smooth function of the points it draws (the subset,
- * or every cell), recomputed whenever that number changes.
+ * or every cell), recomputed whenever that number changes. In a zoomed 2D
+ * view the number is the points in view (view-point-style.js).
  *
  * Automatic means: the panel config had no value (a new panel, or a link
  * written without one), or it was saved while automatic

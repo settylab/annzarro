@@ -711,7 +711,7 @@ export function updateColorControlsVisibility(container, colorType, id) {
  */
 export function showPointStyle(id, settings) {
   const show = (name, scale, value, auto, what, note = '') => {
-    const tip = (auto ? `${what}: auto, follows the number of points drawn (not the panel size)` : `${what} (set)`) + note;
+    const tip = (auto ? `${what}: auto, follows the number of points in view (not the panel size)` : `${what} (set)`) + note;
     const $slider = jQuery(`#${name}-${id}`);
     if ($slider.length) $slider.val(trackValue(scale, value)).attr('title', `${tip} (log scale)`);
     const $input = jQuery(`#${name}-input-${id}`);
@@ -719,8 +719,8 @@ export function showPointStyle(id, settings) {
     const $auto = jQuery(`#${name}-auto-${id}`);
     if ($auto.length) {
       $auto.toggleClass('active', !!auto).attr('aria-pressed', String(!!auto)).attr('title', auto
-        ? `${what} is automatic: it follows the number of points drawn, not the panel size${note}`
-        : `Make the ${what.toLowerCase()} automatic again: follow the number of points drawn${note}`);
+        ? `${what} is automatic: it follows the number of points in view, not the panel size${note}`
+        : `Make the ${what.toLowerCase()} automatic again: follow the number of points in view${note}`);
     }
   };
   show('point-size', pointSizeScale, settings.pointSize, settings.autoPointSize, 'Marker size');

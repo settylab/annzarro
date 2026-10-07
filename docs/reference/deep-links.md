@@ -232,7 +232,8 @@ with `restoreLayout`. To pre-register a cell plot in a split, give its tile node
 Other fields (`pointSize`, `pointOpacity`, `colorScale`, `colorReversed`, `hoverInfo`,
 `highlightFocusedCell`, `tableFilter`, ...) are whatever the panel saved; copy them from a link
 the app produced rather than writing them from scratch. A plot config without `pointSize` or
-`pointOpacity` gets automatic values that follow the number of points drawn; one with them keeps
+`pointOpacity` gets automatic values that follow the number of points drawn (in a zoomed 2D
+view, the points in view); one with them keeps
 them (`autoPointSize: true` / `autoPointOpacity: true` mark a saved value as automatic).
 
 A Gene Set Analysis panel (`gene-set-…`) saves its settings and nothing derived from the

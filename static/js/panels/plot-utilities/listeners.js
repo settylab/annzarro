@@ -1,6 +1,7 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
+import { autoPointCount } from '../../utils/view-point-style.js';
 import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator } from './plot-make.js';
 import { hoverInfoFromSelection } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
@@ -13,7 +14,7 @@ import {
   createPopoverContent
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
-import { aspectUpdate } from './plot-make-helper.js';
+import { aspectUpdate, keepsOwnMarker } from './plot-make-helper.js';
 import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
 import { notify } from '../../utils/notify.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig, snapPointSize } from '../../utils/slider-scales.js';
@@ -246,7 +247,7 @@ export function setupPlotControlListeners(
       });
       $controlsContainer.find(`#${name}-auto-${id}`).on('click', () => {
         settings[autoKey] = true;
-        applyAutoPointStyle(settings, plotContainer._pointCount, pointStyleBase());
+        applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
         showPointStyle(id, settings);
         redrawStyling();
       });

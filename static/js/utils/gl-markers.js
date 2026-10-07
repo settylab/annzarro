@@ -23,6 +23,8 @@
  * are not as expected, it returns false and the caller restyles.
  */
 
+import { OPACITY_IN_SCENE } from './gl-colors.js';
+
 let warned = false;
 
 /**
@@ -49,7 +51,9 @@ function sceneOf(gd) {
  * Set marker size and opacity per trace: `styleOf(trace)` returns
  * { size?, opacity? } (a scalar each; what is left out is kept) or null to
  * leave the trace alone. Returns false (after one console.warn) when the
- * scene cannot be reached; nothing has changed then.
+ * scene cannot be reached, and false when an opacity would go to a trace
+ * whose per-point colours Plotly made (they carry the old opacity); nothing
+ * has changed then.
  */
 export function setGlMarkers(gd, styleOf) {
   const scene = sceneOf(gd);
@@ -60,9 +64,16 @@ export function setGlMarkers(gd, styleOf) {
     }
     return false;
   }
+  // Plotly folds the marker opacity into per-point colours (its own, not
+  // gl-colors.js ones): a scene opacity would come on top of it
+  const styles = scene.markerOptions.map((opts, i) => (opts && gd.data[i] ? styleOf(gd.data[i]) : null));
+  if (styles.some((st, i) => st && st.opacity !== undefined && Array.isArray(scene.markerOptions[i].colors)
+      && !scene.markerOptions[i][OPACITY_IN_SCENE])) {
+    return false;
+  }
   const update = scene.markerOptions.map((opts, i) => {
     const trace = gd.data[i];
-    const style = opts && trace ? styleOf(trace) : null;
+    const style = styles[i];
     if (!style) return {};                                   // {}: this group unchanged
     const change = {};
     for (const key of ['size', 'opacity']) {
