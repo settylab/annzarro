@@ -104,13 +104,15 @@ GEOM = """(tid) => {
   const last = rows[rows.length - 1].getBoundingClientRect();
   const bodyBox = body.getBoundingClientRect();
   const cont = t.querySelector('.table-container');
+  const headBox = t.querySelector('.dataTables_scrollHead').getBoundingClientRect();
   const ths = [...t.querySelectorAll('.dataTables_scrollHead th')].map(e => e.getBoundingClientRect());
   const tds = [...body.querySelectorAll('tbody tr:first-child td')].map(e => e.getBoundingClientRect());
   return { body: box(body), pager: box(pager), cont: box(cont), tile: box(t), nrows: rows.length,
            lastB: last.bottom, lastT: last.top, bodyScrolls: body.scrollHeight - body.clientHeight > 1,
            scrollTop: body.scrollTop, maxTop: body.scrollHeight - body.clientHeight,
            headL: ths.map(r => [r.left, r.width]), bodyL: tds.map(r => [r.left, r.width]),
-           headScroll: t.querySelector('.dataTables_scrollHead').getBoundingClientRect().height };
+           headScroll: headBox.height, headB: headBox.bottom,
+           firstT: body.querySelector('tbody tr').getBoundingClientRect().top };
 }"""
 
 
@@ -134,6 +136,10 @@ def _aligned(g):
         assert abs(hl - bl) <= 2 and abs(hw - bw) <= 2, ("header over body columns", g)
 
 
+def _no_band_under_header(g):
+    assert g["firstT"] - g["headB"] < 4, ("blank band between the header and the first row", g)
+
+
 def _pager_at_bottom(g):
     assert g["pager"]["b"] <= g["cont"]["b"] + 1, ("pager below the panel content", g)
     assert g["cont"]["b"] - g["pager"]["b"] <= 8, ("pager not at the panel bottom", g)
@@ -154,6 +160,7 @@ def test_tall_panel_shows_all_rows_pager_at_bottom(server, tid):
             assert g["lastB"] <= g["body"]["b"] + 1, g
             _pager_at_bottom(g)
             _aligned(g)
+            _no_band_under_header(g)
             _shot(page, f"tall_{tid}")
             # the body fills the space: no band between the last row and the pager
             # when the panel is just tall enough. Make it so by sizing the tile.
@@ -183,6 +190,7 @@ def test_short_panel_scrolls_body_last_row_reachable(server, tid, width):
             _pager_at_bottom(g)
             assert g["pager"]["b"] <= g["tile"]["b"] + 1, ("pager out of the tile", g)
             _aligned(g)
+            _no_band_under_header(g)
             _shot(page, f"short_{width}_{tid}")
             sel = f'.tile[data-tile-id="{tid}"] .dataTables_scrollBody'
             page.eval_on_selector(sel, "e => { e.scrollTop = e.scrollHeight; }")

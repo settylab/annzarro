@@ -687,8 +687,11 @@ body {
   height: auto !important;
   overflow: auto !important;
 }
-/* keep the body's own table from adding a band under the last row */
-.table-container > [id$="_wrapper"] .dataTables_scrollBody table.dataTable {
+/* No band under the last row, and none under the header: the header's own
+   table carried the 1rem bottom margin of `table.dataTable`, a blank strip
+   between the header text and the first row. */
+.table-container > [id$="_wrapper"] .dataTables_scrollBody table.dataTable,
+.table-container > [id$="_wrapper"] .dataTables_scrollHead table.dataTable {
   margin-bottom: 0;
 }
 
