@@ -613,14 +613,18 @@ body {
   width: 100%;
 }
 
-/* 3) Pin the first row (search/header) & last row (info/paging) to natural height */
+/* 3) Pin the SearchBuilder row, the search row and the last row (info/paging)
+      to their natural height */
 .table-container > [id$="_wrapper"] > .row:first-child,
+.table-container > [id$="_wrapper"] > .row.az-search-row,
 .table-container > [id$="_wrapper"] > .row:last-child {
   flex: 0 0 auto;
 }
 
-/* 4) Let the *middle* row (the actual <table>) flex and get the scroll bar */
-.table-container > [id$="_wrapper"] > .row:nth-child(2) {
+/* 4) Let the table's row flex and get the scroll bar. By class, not
+      position: with the search on its own row the table is the THIRD row,
+      and nth-child(2) stretched the search row into an empty band. */
+.table-container > [id$="_wrapper"] > .row.az-table-row {
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: auto;   /* show horizontal scroll only when content overflows */

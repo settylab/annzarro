@@ -722,7 +722,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         // width), a table in a split panel squeezed both, and the search box
         // and its label overflowed onto the builder.
         dom: '<"row az-sb-row"<"col-12"Q>><"row az-search-row"<"col-12"f>>' +
-             '<"row"<"col-sm-12"tr>>' +
+             '<"row az-table-row"<"col-sm-12"tr>>' +
              '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>',
         responsive: false, // Never use responsive mode
         scrollX: true, // Always enable horizontal scrolling
@@ -958,8 +958,8 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         
         // Ensure DOM includes SearchBuilder (Q) before filter (f)
         if (!tableOptions.dom.includes('Q')) {
-            tableOptions.dom = '<"row"<"col-sm-12 col-md-9"Q><"col-sm-12 col-md-3 d-flex align-items-end justify-content-end"f>>' +
-                               '<"row"<"col-sm-12"tr>>' +
+            tableOptions.dom = '<"row az-sb-row"<"col-12"Q>><"row az-search-row"<"col-12"f>>' +
+                               '<"row az-table-row"<"col-sm-12"tr>>' +
                                '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>';
         }
         

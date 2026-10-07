@@ -4,7 +4,7 @@ v0.4.1 operator report: the search box clipped the advanced search builder.
 The two sat side by side (DataTables dom columns sized by the VIEWPORT), so a
 table in a split panel squeezed both and the search box and its label ran onto
 the builder. Now the builder has a full-width row and the search a slim
-full-width row directly below it.
+full-width row directly below it, with the table header right under that.
 
 Checked at a panel half the window wide (split) and a narrow window, with the
 builder empty and with two conditions, in a cell and a gene table: the search
@@ -113,11 +113,13 @@ GEOM = """(tab) => {
   const box = e => { const b = e.getBoundingClientRect(); return {l: b.left, t: b.top, r: b.right, b: b.bottom}; };
   const builder = box(t.querySelector('.dtsb-searchBuilder'));
   const row = box(t.querySelector('.dt-search-container'));
+  const searchRow = box(t.querySelector('.az-search-row'));
+  const header = box(t.querySelector('.dataTables_scrollHead'));
   const parts = [...t.querySelectorAll('.dt-search-container label, .dt-search-container input, .dt-search-option')]
       .map(box);
   const tile = box(t);
   const dt = jQuery(t.querySelector('table[id^=DataTables_Table]')).DataTable();
-  return { builder, row, parts, tile, rows: dt.rows({search: 'applied'}).count(),
+  return { builder, row, searchRow, header, parts, tile, rows: dt.rows({search: 'applied'}).count(),
            total: dt.rows().count(), value: t.querySelector('.dataTables_filter input').value };
 }"""
 
@@ -145,6 +147,10 @@ def test_search_row_is_below_the_builder_and_filters(server, width, conditions):
                     assert not _overlap(g["builder"], part), (part, g)
                     assert part["r"] <= g["tile"]["r"] + 1, ("search row runs out of the panel", part, g)
                 assert g["row"]["b"] - g["row"]["t"] <= 40, ("the search row is one slim line", g)
+                # the header follows the search row: no band between them (a
+                # flex rule meant for the table row stretched the search row)
+                assert g["searchRow"]["b"] - g["searchRow"]["t"] <= 40, ("the search row holds no band", g)
+                assert g["header"]["t"] - g["row"]["b"] < 16, ("gap above the table header", g)
                 before = g["rows"]
                 if conditions:
                     assert before < n if tab == "cell-table-C" else before == n
