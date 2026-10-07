@@ -136,7 +136,10 @@ export function installWheelHandover(root, win = window) {
         // The innermost scroller scrolls natively while it has room and no glide of ours is running on it
         if (!scrollers.length) return;
         const inner = scrollers[0];
-        if (!liveRun(inner) && hasRoom(inner, dy)) return;
+        // (a tick bigger than its remaining room is split here: the browser
+        // would scroll to the end and drop the rest of the tick)
+        const roomLeft = dy > 0 ? inner.scrollHeight - inner.clientHeight - inner.scrollTop : inner.scrollTop;
+        if (!liveRun(inner) && roomLeft >= Math.abs(dy)) return;
         const shares = splitDelta(scrollers, dy, posOf);
         if (!shares.length) return;
         // The browser would scroll nothing (or, at a gesture's start, chain on its

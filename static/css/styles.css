@@ -687,12 +687,14 @@ body {
   height: auto !important;
   overflow: auto !important;
 }
-/* No band under the last row, and none under the header: the header's own
-   table carried the 1rem bottom margin of `table.dataTable`, a blank strip
-   between the header text and the first row. */
-.table-container > [id$="_wrapper"] .dataTables_scrollBody table.dataTable,
-.table-container > [id$="_wrapper"] .dataTables_scrollHead table.dataTable {
-  margin-bottom: 0;
+/* No band under the last row, and none under the header. The tables DataTables
+   builds carry Bootstrap's `.table` (margin-bottom 1rem), which won over the
+   rules for `table.dataTable`; the header's 1rem stayed inside the clipped
+   .dataTables_scrollHead as a blank strip between the header text and the
+   first row. */
+.table-container > [id$="_wrapper"] .dataTables_scrollBody table,
+.table-container > [id$="_wrapper"] .dataTables_scrollHead table {
+  margin-bottom: 0 !important;
 }
 
 /* Compact row height for all DataTables */

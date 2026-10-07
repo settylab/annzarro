@@ -104,7 +104,7 @@ GEOM = """(tid) => {
   const last = rows[rows.length - 1].getBoundingClientRect();
   const bodyBox = body.getBoundingClientRect();
   const cont = t.querySelector('.table-container');
-  const headBox = t.querySelector('.dataTables_scrollHead').getBoundingClientRect();
+  const headBox = t.querySelector('.dataTables_scrollHead th').getBoundingClientRect();
   const ths = [...t.querySelectorAll('.dataTables_scrollHead th')].map(e => e.getBoundingClientRect());
   const tds = [...body.querySelectorAll('tbody tr:first-child td')].map(e => e.getBoundingClientRect());
   return { body: box(body), pager: box(pager), cont: box(cont), tile: box(t), nrows: rows.length,
@@ -112,7 +112,8 @@ GEOM = """(tid) => {
            scrollTop: body.scrollTop, maxTop: body.scrollHeight - body.clientHeight,
            headL: ths.map(r => [r.left, r.width]), bodyL: tds.map(r => [r.left, r.width]),
            headScroll: headBox.height, headB: headBox.bottom,
-           firstT: body.querySelector('tbody tr').getBoundingClientRect().top };
+           firstT: body.querySelector('tbody tr:first-child td').getBoundingClientRect().top,
+           headBox: t.querySelector('.dataTables_scrollHead').getBoundingClientRect().bottom };
 }"""
 
 
@@ -127,7 +128,7 @@ def _shot(page, name):
     d = os.environ.get("AZ_SHOT_DIR")
     if d:
         os.makedirs(d, exist_ok=True)
-        page.screenshot(path=os.path.join(d, name + ".png"))
+        page.screenshot(path=os.path.join(d, name + ".png"), full_page=True)
 
 
 def _aligned(g):
@@ -137,7 +138,7 @@ def _aligned(g):
 
 
 def _no_band_under_header(g):
-    assert g["firstT"] - g["headB"] < 4, ("blank band between the header and the first row", g)
+    assert g["firstT"] - g["headB"] < 4 and g["firstT"] - g["headBox"] < 4, ("blank band between the header and the first row", g)
 
 
 def _pager_at_bottom(g):
@@ -151,7 +152,7 @@ def test_tall_panel_shows_all_rows_pager_at_bottom(server, tid):
     root, store = server
     with playwright.sync_playwright() as pw:
         browser = pw.chromium.launch()
-        page = browser.new_page(viewport={"width": 1400, "height": 1500})
+        page = browser.new_page(viewport={"width": 1400, "height": 2000})
         try:
             _open(page, root, store, height=1500)
             g = page.evaluate(GEOM, tid)
