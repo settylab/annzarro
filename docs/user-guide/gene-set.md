@@ -178,6 +178,7 @@ With **Auto-update** on, the panel refreshes after each change of the table; a b
 focus in the same way.
 
 (gene-set-consent)=
+(gs-consent)=
 ## Consent
 
 Whether gene ids may be sent to a service is decided in the browser, within what the server
@@ -199,6 +200,14 @@ allows. The first rule that applies wins:
 Enrichr and Reactome are never covered by a link or by "Always". Opening a link or a session
 sends nothing unless auto-update is on and every service is agreed to by these rules; otherwise
 the panel waits for **Run**.
+
+**One more request, only after a failure.** When a request you agreed to fails without any
+answer (fetch gives the browser's bare network error), the panel makes one plain `GET` of that
+same host's root (`https://host/`, for example `https://mygene.info/`) to tell "could not connect"
+from "the browser blocked the reply" ({ref}`gs-when-a-service-fails`). It carries nothing: no
+genes, no query, no body, no cookie and no referrer, and its reply is not read. It goes only to a
+host you already agreed to send to, once per failed attempt, and never when the browser is
+offline or the server has external requests turned off.
 
 ## Links
 
@@ -242,13 +251,32 @@ Xenopus, pig, macaque, chicken), a number is taken as a taxonomy id, and **Searc
 for "..."** asks NCBI (only the text typed) for anything else. Sections whose service does not
 cover the species say so instead of fetching.
 
+(gs-when-a-service-fails)=
 ## When a service fails
 
-A section that cannot get its result says why, in its place, and the others are not affected:
-"timed out after 20 s (2 attempts)", "could not reach *host*", "the service rejected the request
-(HTTP 400): …", "HTTP 503". A timeout, no connection, an error of the service (5xx) or a request
-to slow down (429) is tried once more automatically; then **Retry** tries again. A browser that is
-offline says so, and the Links still work.
+A section that cannot get its result says which of these happened, in its place, with **Retry**,
+and the others are not affected:
+
+| What happened | What the section says |
+|---|---|
+| The browser is offline | "this browser is offline" |
+| No connection to the service: no network, the address does not resolve, the service is down | "could not connect to *host*: no network, the address did not resolve, or the service is down" |
+| The service answered, but the browser kept the reply from the page: the service does not allow this site (CORS), or a browser setting or extension blocks it | "*host* answered, but the browser blocked its reply …" |
+| No answer within `integrations.gene_set.timeout_ms` (20 s by default) | "timed out after 20 s: *host* did not answer in time" |
+| Too many requests (HTTP 429) | "*host* is limiting how often it may be asked (HTTP 429)" |
+| The service is down or overloaded (HTTP 502, 503, 504) | "*host* is down or overloaded (HTTP 503); try again later" |
+| An error on the service's side (another 5xx) | "*host* failed on this request (HTTP 500, …)" |
+| An address the service does not serve (HTTP 404, 410): its API moved, or the STRING version asked for is retired | "*host* has no such address (HTTP 404) …" |
+| The service rejected the request (another 4xx) | "the service rejected the request (HTTP 400): …" |
+
+A section says the service knows none of the genes only when the service answered that: STRING's
+"did not find any matches", Reactome's own "not found" reply, or a reply in which every gene
+failed. Any other 404 is an address that is not there, not an answer about the genes.
+
+To tell no connection from a blocked reply, the panel asks the same host once more for its root
+page, without reading the reply and without sending anything of the request (see {ref}`gs-consent`). A timeout, no connection, a 429 and a 5xx are tried once more automatically; then
+**Retry** tries again. A browser that is offline before **Run** says so, and the Links still work.
+In the desktop app the panel asks before anything is sent, exactly as in a browser.
 
 ## Settings kept with the panel
 
