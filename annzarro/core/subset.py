@@ -1000,15 +1000,21 @@ class SubsetView:
 
     def get_obsm_varm(self, entity="cells", key=None, dataset_path=None, indices=None,
                       col_indices=None, column_name=None):
-        if entity != "cells" or indices is not None:
-            rows = indices if entity != "cells" else self._rows(indices)
-            return self._reader.get_obsm_varm(entity=entity, key=key, dataset_path=dataset_path,
-                                              indices=rows, col_indices=col_indices,
-                                              column_name=column_name)
-        data = self._reader.get_obsm_varm(entity=entity, key=key, dataset_path=dataset_path,
-                                          indices=None, col_indices=col_indices,
+        # The subset's rows are read by index, as obs columns are: the reader
+        # gathers them chunk by chunk (a random subset touches every chunk, so
+        # the time stays O(N), but memory is one chunk plus the subset). Read
+        # whole and then cut, a 100,000-cell subset of a 1B-cell store
+        # materialised the full X_umap column: 4.4 GiB per request
+        # (settylab/annzarro#77).
+        if entity != "cells":
+            rows = indices
+        elif indices is None:
+            rows = self.subset.indices.tolist()
+        else:
+            rows = self._rows(indices)
+        return self._reader.get_obsm_varm(entity=entity, key=key, dataset_path=dataset_path,
+                                          indices=rows, col_indices=col_indices,
                                           column_name=column_name)
-        return _take_rows(data, self.subset.indices)
 
     def get_obsp_varp(self, key=None, entity="cells", dataset_path=None,
                       row_indices=None, col_indices=None):

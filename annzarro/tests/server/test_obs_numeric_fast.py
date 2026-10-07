@@ -15,6 +15,7 @@ and without a subset, from zarr and h5ad; and the read no longer allocates
 the list (a peak-memory bound that fails on 49e2a19).
 """
 import json
+import sys
 import tracemalloc
 
 import h5py
@@ -204,3 +205,54 @@ def test_a_long_list_is_costed_from_a_sample():
     assert cache._estimate_memory_usage(floats) == pytest.approx(200_000 * 32 / 2 ** 20, rel=0.01)
     exact = sum(57 + len(s) for s in strings) / 2 ** 20
     assert cache._estimate_memory_usage(strings) == pytest.approx(exact, rel=0.05)
+
+
+@pytest.mark.parametrize("column", ["0", "1"])
+def test_a_subset_obsm_read_holds_the_subset_not_the_column(tmp_path, monkeypatch, column):
+    """settylab/annzarro#77: a subset read of an obsm column read the whole
+    column (1B cells: 3.7 GiB for X_umap's) and then cut it to the subset.
+    It now gathers the subset's rows chunk by chunk: 8,000,000 cells in
+    65,536-row chunks, a 10,000-cell subset; the 32 MB column is never held (half of it is the bound)."""
+    zarr_reader.clear_cache()
+    cell_subset.clear()
+    # blocks of 1 MiB here (64 MiB by default): the bound is one block plus
+    # the subset, whatever N is
+    # (the module: `annzarro.core.zarr_reader` the attribute is the reader)
+    zr = sys.modules["annzarro.core.zarr_reader"]
+    monkeypatch.setattr(zr, "GATHER_BLOCK_BYTES", 1 << 20, raising=False)
+    data = tmp_path / "data"
+    data.mkdir()
+    n = 8_000_000
+    path = str(data / "wide.zarr")
+    root = open_group(path)
+    root.attrs.update({"encoding-type": "anndata", "encoding-version": "0.1.0"})
+    x = write_array(root, "X", np.zeros((n, 1), dtype=np.float32), chunks=(1 << 20, 1))
+    x.attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
+    g = root.create_group("obs")
+    g.attrs.update({"encoding-type": "dataframe", "encoding-version": "0.2.0", "_index": "_index", "column-order": []})
+    write_strings(g, "_index", [f"c{i}" for i in range(n)], chunks=(1 << 20,))
+    m = root.create_group("obsm")
+    umap = np.random.default_rng(2).random((n, 2), dtype=np.float32)
+    a = write_array(m, "X_umap", umap, chunks=(1 << 16, 2))
+    a.attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
+    client = create_app({"TESTING": True, "data_dir": str(data), "log_file": str(tmp_path / "t.log"),
+                         "auth_enabled": False}).test_client()
+    sub = json.dumps({"n": 10_000, "seed": 1})
+    info = client.get("/api/v1/data/subset", query_string={"dataset_path": path, "subset": sub})
+    assert info.status_code == 200, info.get_json()
+    rows = np.asarray(cell_subset.parse_spec(sub) and cell_subset.resolve(
+        zarr_reader, path, sub).indices)
+    q = {"dataset_path": path, "column_name": column, "format": "f32", "subset": sub}
+    tracemalloc.start()
+    r = client.get("/api/v1/data/obsm/X_umap", query_string=q)
+    body = r.get_data()
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    zarr_reader.clear_cache()
+    cell_subset.clear()
+    assert r.status_code == 200
+    got = np.frombuffer(body, dtype="<f4")
+    assert np.array_equal(got, umap[rows, int(column)]), "the subset's rows, in order"
+    # zarr 3 decodes a few chunks at once (about 10 MiB here), zarr 2 one
+    # 1 MiB block; reading the column held 40 MiB
+    assert peak < 16 * 2 ** 20, f"peak {peak / 2 ** 20:.1f} MiB for a 10,000-cell subset of a 32 MB column"
