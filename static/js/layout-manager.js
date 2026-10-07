@@ -98,7 +98,7 @@ const LayoutManager = (function() {
             const node = child ? buildLayoutHierarchy(child) : null;
             // and its height, set by DEFAULT_PANEL_HEIGHT or its handle, so a
             // restore gives the panel the same room (the CSS cap still applies)
-            const height = parseFloat(element.style.height);
+            const height = parseFloat(element.style.getPropertyValue('--panel-height'));
             if (node && height > 0) node.height = Math.round(height);
             return node;
         }
@@ -509,7 +509,7 @@ const LayoutManager = (function() {
             
             // Apply new height if it's valid (minimum height)
             if (newHeight >= MIN_PANEL_HEIGHT) {
-                panelElement.style.height = `${newHeight}px`;
+                panelElement.style.setProperty('--panel-height', `${newHeight}px`);
             }
         };
         
@@ -617,7 +617,7 @@ const LayoutManager = (function() {
               );
             // make the otherTile use the whole hight of the wrapper
             if (otherTile) {
-                otherTile.style.height = '100%';
+                otherTile.style.height = '';
             }
         }
 
@@ -700,10 +700,7 @@ const LayoutManager = (function() {
         // shows, at most DEFAULT_PANEL_HEIGHT: at 1000 px fixed it ran past a
         // window under about 1110 px, and the plot's x axis opened below the
         // fold (v0.3.0). The chooser is a scroll away.
-        panelWrapper.style.height = `${height > 0 ? height : initialPanelHeight(container)}px`;
-        panelWrapper.style.width = '100%';
-        panelWrapper.style.overflow = 'hidden';
-        panelWrapper.style.position = 'relative';
+        panelWrapper.style.setProperty('--panel-height', `${height > 0 ? height : initialPanelHeight(container)}px`);
         panelWrapper.dataset.panelWrapper = 'true';
 
         // A horizontal handle that resizes the wrapper's height
@@ -744,8 +741,6 @@ const LayoutManager = (function() {
         const panelElement = document.createElement('div');
         panelElement.className = 'tile';
         panelElement.style.width = '100%';
-        panelElement.style.height = '100%';
-        panelElement.style.overflow = 'auto'; // Ensure content is scrollable if needed
         
         // Add panel to wrapper
         panelWrapper.appendChild(panelElement);
@@ -772,7 +767,7 @@ const LayoutManager = (function() {
         const innerTile = [...panelElement.children].find(c => c.classList && c.classList.contains('tile'));
         if (innerTile) {
             innerTile.style.width = '100%';
-            innerTile.style.height = '100%';
+            innerTile.style.height = '';
             if (panelElement.dataset.isInSplitPane) innerTile.dataset.isInSplitPane = panelElement.dataset.isInSplitPane;
             panelWrapper.replaceChild(innerTile, panelElement);
         } else {

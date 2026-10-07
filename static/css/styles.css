@@ -380,7 +380,7 @@ body {
     background-color: white;
     border: 1px solid #dee2e6;
     border-radius: 0.25rem;
-    overflow: hidden;
+    overflow: clip; /* clips, but is not a scroller: the tile grows instead */
     position: relative;
     min-height: 300px;
     flex: 1; /* Fill available space */
@@ -413,7 +413,38 @@ body {
 
 .tile-container > .panel-wrapper {
     flex-shrink: 0;
-    min-height: 360px;
+    /* 360 px at least; the layout's saved or dragged height (--panel-height,
+       layout-manager.js) is the minimum above that: the row grows past it */
+    min-height: max(360px, var(--panel-height, 0px));
+}
+
+/* A panel row (.panel-wrapper) is AT LEAST as tall as the layout gives it
+   (--panel-height: the saved or dragged height, set by layout-manager.js) and
+   grows when its content needs more (wrapped controls in a narrow panel). A
+   panel body never scrolls inside; the page does. The tile, or the split,
+   inside takes the whole row, so side-by-side tiles stay one height: the row
+   grows to its tallest tile and the others stretch. */
+.panel-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: auto;
+    position: relative;
+    overflow: clip;
+}
+.panel-wrapper > .tile,
+.panel-wrapper > .tile-selector,
+.panel-wrapper > .split-container {
+    flex: 1 0 auto;
+    height: auto;
+    min-height: 0;
+}
+/* A tile is clipped, not scrolled, so its automatic minimum width would be its
+   content's: a narrow pane must stay as narrow as the split makes it. */
+.tile,
+.tile-selector,
+.split-container {
+    min-width: 0;
 }
 
 .tile-header {
@@ -456,8 +487,11 @@ body {
 }
 
 .tile-content {
-    flex: 1;
-    overflow: auto;
+    /* grows with its content and never scrolls (operator decision): the tile
+       and the page do. Inner scrollers are the table body, Plotly legends,
+       the gene-set sections and multi-select lists. */
+    flex: 1 0 auto;
+    overflow: visible;
     position: relative;
     /* The panel inside fills the tile. 'height: 100%' on the panel did not
        resolve here (the tile's height is a flex result), so a lone plot tile
@@ -468,16 +502,18 @@ body {
 }
 
 .tile-content > .plot-panel,
-.tile-content > .table-panel {
-    flex: 1 1 auto;
+.tile-content > .table-panel,
+.tile-content > .gs-panel {
+    flex: 1 0 auto;
     min-height: 0;
+    height: auto;
 }
 
 /* Split Tiles */
 .split-container {
     display: flex;
     width: 100%;
-    height: 100%;
+    height: auto;
     position: relative;
     flex: 1;
 }
@@ -495,9 +531,11 @@ body {
     flex: 1;
     display: flex;
     min-width: 0;
-    min-height: 0;
+    /* content height is the minimum: a pane grows with its tile, and its
+       neighbour in the row stretches to match */
+    min-height: auto;
     position: relative;
-    overflow: hidden;
+    overflow: clip;
 }
 
 .split-handle {
@@ -554,7 +592,7 @@ body {
 .plot-panel {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    height: auto;
 }
 
 /* Plot controls: the layout is under "Plot controls grid" below. JS sets
@@ -580,11 +618,20 @@ body {
     position: relative;
 }
 
+/* The plot fills what the tile leaves after the controls, and the figure
+   Plotly drew in it does not count toward the tile's content height:
+   otherwise a tile that was made smaller could never shrink below the
+   plot's last size, and a ResizeObserver redraw would feed on itself. (Only
+   the panel's own container: Plotly's inner div has this class too.) */
+.plot-panel > .plot-container {
+    contain: size;
+}
+
 /* Table Panel Styles */
 .table-panel {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    height: auto;
     position: relative;
     overflow-x: hidden;
 }
@@ -1238,7 +1285,7 @@ button.dtsb-button.dtsb-clear:hover {
 .gs-panel {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    height: auto;
     min-height: 0;
     position: relative;
 }
@@ -1309,7 +1356,7 @@ button.dtsb-button.dtsb-clear:hover {
 .gs-consent__note { color: #6c757d; font-size: 0.75rem; margin-bottom: 0.25rem; }
 .gs-consent__do { display: flex; flex-wrap: wrap; gap: 6px; }
 
-.gs-sections { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 6px 12px; }
+.gs-sections { flex: 1 1 auto; min-height: 12rem; contain: size; overflow: auto; padding: 4px 6px 12px; }
 .gs-section { border: 1px solid #dee2e6; border-radius: 4px; margin: 6px 0; background: #fff; }
 .gs-section__head { display: flex; align-items: center; gap: 6px; padding: 2px 6px; background: #f8f9fa; border-radius: 4px; }
 .gs-section__toggle {

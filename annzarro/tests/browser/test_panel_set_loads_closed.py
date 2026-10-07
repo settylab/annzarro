@@ -111,7 +111,7 @@ TREE_JS = r"""
   const walk = (el) => {
     if (el.classList.contains('panel-wrapper')) {
       const c = kids(el, ['split-container', 'tile'])[0];
-      return c ? {row: el.style.height, content: walk(c)} : null;
+      return c ? {row: el.style.getPropertyValue('--panel-height'), content: walk(c)} : null;
     }
     if (el.classList.contains('tile')) return el.dataset.tileId;
     if (el.classList.contains('split-container')) {

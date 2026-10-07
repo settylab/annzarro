@@ -761,7 +761,6 @@ const PanelManager = (function() {
                 );
                 if (node.type === 'tile' && built) {
                     built.style.width = '100%';
-                    built.style.height = '100%';
                     wrapper.dataset.wrapperId = node.id;
                 }
             });

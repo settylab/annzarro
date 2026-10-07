@@ -39,8 +39,15 @@ def test_panels_fill_their_tile():
     css = open(CSS, encoding="utf-8").read()
     content = _rule(css, ".tile-content")
     assert "display: flex" in content and "flex-direction: column" in content
-    fill = _rule(css, ".tile-content > .plot-panel,\n.tile-content > .table-panel")
-    assert "flex: 1 1 auto" in fill and "min-height: 0" in fill
+    # a panel body grows with its content and never scrolls inside: the tile
+    # grows and the page scrolls (inner scrollers are the table body, Plotly
+    # legends, the gene-set sections and multi-select lists)
+    assert "overflow: visible" in content and "overflow: auto" not in content
+    fill = _rule(css, ".tile-content > .plot-panel,\n.tile-content > .table-panel,\n.tile-content > .gs-panel")
+    assert "flex: 1 0 auto" in fill
+    wrap = _rule(css, ".panel-wrapper")
+    assert "display: flex" in wrap and "height: auto" in wrap
+    assert "var(--panel-height" in _rule(css, ".tile-container > .panel-wrapper")
 
 
 def test_small_selects_keep_room_for_their_arrow():

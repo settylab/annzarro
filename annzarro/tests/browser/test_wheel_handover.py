@@ -15,8 +15,9 @@ scroller ended up:
 - a long table (25 rows): the table scrolls to its end, the page takes the rest,
   so the two add up to the gesture (the page used to stay at 0);
 - the plot controls of a panel that fits: the page takes the gesture;
-- a narrow layout where the plot panel is taller than its tile: the panel
-  scrolls to its end, then the page.
+- a narrow layout where the plot panel is taller than the layout's height: the
+  tile grows instead and never scrolls inside (operator decision), so the page
+  takes the whole gesture.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -196,10 +197,10 @@ def test_narrow_panel_scrolls_then_hands_over(server, browser):
     page = _open(browser, server, 25, 700)
     try:
         maxes = page.evaluate(MAXES)
-        assert maxes["plotTile"] > 100, maxes               # controls + plot taller than the tile
+        assert maxes["plotTile"] <= 1, maxes                # the tile grows: no inner scroller
+        assert maxes["page"] > GESTURE, maxes
         pos = _gesture(page, f"{PLOT} .plot-controls")
-        assert pos["plotTile"] == maxes["plotTile"] and pos["page"] > 50, pos
-        assert abs(pos["plotTile"] + pos["page"] - GESTURE) <= 40, pos
+        assert pos["plotTile"] == 0 and abs(pos["page"] - GESTURE) <= 40, pos
     finally:
         page.close()
 

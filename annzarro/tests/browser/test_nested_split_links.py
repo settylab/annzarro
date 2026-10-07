@@ -95,7 +95,7 @@ TREE_JS = r"""
   const walk = (el) => {
     if (el.classList.contains('panel-wrapper')) {
       const c = kids(el, ['split-container', 'tile', 'tile-selector'])[0];
-      return c ? {row: el.style.height, content: walk(c)} : null;
+      return c ? {row: el.style.getPropertyValue('--panel-height'), content: walk(c)} : null;
     }
     if (el.classList.contains('tile-selector')) {
       const header = el.querySelector('.tile-selection-header');
@@ -282,8 +282,12 @@ def test_nested_layout_round_trips_through_a_share_link(server, browser, case):
         before = opened.evaluate(SIZES_JS)
         handles = opened.locator(".tile-container .split-container > .split-handle")
         for i in range(handles.count()):
+            # rows grow with their content now, so a handle can be below the window
+            handles.nth(i).scroll_into_view_if_needed()
             box = handles.nth(i).bounding_box()
             x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+            if box["height"] > 400:   # a tall handle: grab it inside the window
+                y = max(box["y"], 0) + 100
             opened.mouse.move(x, y)
             opened.mouse.down()
             opened.mouse.move(x + 40, y + 40, steps=4)

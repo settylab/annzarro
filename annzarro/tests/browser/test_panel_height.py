@@ -83,7 +83,7 @@ GEOM = """() => {
   const w = document.querySelector('.tile-container > .panel-wrapper');
   const s = document.querySelector('.tile-container > .tile-selector');
   const c = document.querySelector('.tile-container');
-  return {wrap: w.getBoundingClientRect().height, style: parseFloat(w.style.height),
+  return {wrap: w.getBoundingClientRect().height, style: parseFloat(w.style.getPropertyValue('--panel-height')),
           selClient: s.clientHeight, selScroll: s.scrollHeight,
           page: c.clientHeight, pageScroll: c.scrollHeight};
 }"""
