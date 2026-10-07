@@ -259,36 +259,45 @@ def test_zarr_format_3_consolidated_additions(server, tmp_path):
     assert server.get("/api/v1/data/obs", query_string=q).status_code == 200
 
 
-def test_a_refresh_inside_the_interval_waits_for_a_walk_after_it(tmp_path):
+def test_a_refresh_inside_the_interval_is_answered_at_once_and_served_later(tmp_path):
     """Any user may refresh, so a dataset is walked at most once per
     server.refresh_min_interval_s; but a refresh must never be answered with
-    a walk older than itself. Write, refresh at t=0, write again, refresh at
-    t=1: the second refresh waits for the walk at the interval's end and the
-    second write is served."""
+    a walk older than itself, and must never hold the request (issue #83: a
+    sleeping refresh pinned a sync gunicorn worker). Write, refresh at t=0,
+    write again, refresh at t=1: the second answers at once "scheduled";
+    asked again with its `after` once the interval is over, it reports the
+    change and the second write is served."""
     import time as _time
     from annzarro.server.core import create_app
     import annzarro.core as core
     core.zarr_reader.clear_cache()
     client = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "l.log"),
-                         "refresh_min_interval_s": 3}).test_client()
+                         "refresh_min_interval_s": 2}).test_client()
     path = make_rich_store(tmp_path / "r.zarr")
     q = {"dataset_path": path}
     old = _first_total_counts(client, path)
     _slice_write(path, old + 1000)
-    t0 = _time.monotonic()
     first = client.post("/api/v1/data/refresh", query_string=q).get_json()
     assert first["status"] == "full" and first["waited_s"] == 0
     assert _first_total_counts(client, path) == old + 1000
     _slice_write(path, old + 2000)
-    _time.sleep(1)
+    _time.sleep(0.5)
+    t = _time.monotonic()
     second = client.post("/api/v1/data/refresh", query_string=q).get_json()
-    assert _time.monotonic() - t0 >= 3, "walked again inside the interval"
-    assert second["changed"] is True and 1.5 <= second["waited_s"] <= 3
+    assert _time.monotonic() - t < 0.5, "the request waited for the interval"
+    assert second["status"] == "scheduled" and second["checked"] is False
+    assert 1.0 <= second["retry_after_s"] <= 2.5
+    # too early: still scheduled, and no second walk is queued
+    early = client.post("/api/v1/data/refresh", query_string={**q, "after": second["after"]}).get_json()
+    assert early["status"] == "scheduled"
+    _time.sleep(second["retry_after_s"] + 0.5)
+    done = client.post("/api/v1/data/refresh", query_string={**q, "after": second["after"]}).get_json()
+    assert done["status"] == "full" and done["changed"] is True, done
     assert _first_total_counts(client, path) == old + 2000
     core.zarr_reader.clear_cache()
 
 
-def test_refreshes_waiting_for_the_next_walk_share_it(tmp_path):
+def test_refreshes_inside_the_interval_share_one_scheduled_walk(tmp_path):
     import threading
     from annzarro.core import freshness
     path = make_rich_store(tmp_path / "r.zarr")
@@ -300,13 +309,43 @@ def test_refreshes_waiting_for_the_next_walk_share_it(tmp_path):
         return {}
     results = []
     threads = [threading.Thread(target=lambda: results.append(
-        freshness.revalidate(path, min_interval_s=1.5, inspect=inspect))) for _ in range(5)]
+        freshness.revalidate(path, min_interval_s=1.0, inspect=inspect))) for _ in range(5)]
     for t in threads:
         t.start()
     for t in threads:
-        t.join()
+        t.join(timeout=0.5)
+    assert len(results) == 5 and all(r["status"] == "scheduled" for r in results), results
+    import time as _time
+    _time.sleep(1.6)
     assert len(walks) == 1, walks
-    assert len(results) == 5 and sum(1 for r in results if r.get("shared")) == 4
+    after = min(r["after"] for r in results)
+    assert freshness.revalidate(path, min_interval_s=1.0, after=after)["shared"] is True
+    assert len(walks) == 1
+
+
+def test_a_sleeping_refresh_does_not_stall_other_requests(tmp_path):
+    """Issue #83 end to end: while refreshes inside the interval are pending,
+    another request on the same (single-threaded) app is answered at once."""
+    import time as _time
+    from annzarro.server.core import create_app
+    client = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "l.log"),
+                         "refresh_min_interval_s": 10}).test_client()
+    path = make_rich_store(tmp_path / "r.zarr")
+    q = {"dataset_path": path}
+    client.post("/api/v1/data/refresh", query_string=q)
+    t = _time.monotonic()
+    for _ in range(5):
+        assert client.post("/api/v1/data/refresh", query_string=q).get_json()["status"] == "scheduled"
+    assert client.get("/api/v1/status").status_code == 200
+    assert _time.monotonic() - t < 2, "refreshes inside the interval held the worker"
+
+
+def test_after_must_be_a_number(tmp_path):
+    from annzarro.server.core import create_app
+    client = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "l.log")}).test_client()
+    path = make_rich_store(tmp_path / "r.zarr")
+    resp = client.post("/api/v1/data/refresh", query_string={"dataset_path": path, "after": "soon"})
+    assert resp.status_code == 400 and resp.get_json()["reason"] == "bad_after"
 
 
 def test_a_store_too_large_to_walk_is_partial_not_bumped(tmp_path):

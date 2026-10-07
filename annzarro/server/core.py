@@ -350,6 +350,7 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     
     # A shared server only opens paths inside its data directory (see confinement.py)
     from annzarro.server import confinement
+    confinement.arbitrary_paths_mode(app.config)   # refuse a misspelt value at startup
     confinement.warn_about_escaping_links(app.config)
     # /datasets/<path> segments resolve against data_dir (#45); a relative
     # ?dataset_path= does too when it is not a path from the working directory

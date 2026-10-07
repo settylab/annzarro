@@ -270,7 +270,8 @@ def test_auth_disabled_allows_everything(open_app):
 
 def test_auth_me(app, open_app):
     me = _client(app, "root").get("/api/v1/auth/me").get_json()
-    assert me == {"auth_enabled": True, "username": "root", "is_admin": True, "exposed": False}
+    assert me == {"auth_enabled": True, "username": "root", "is_admin": True, "exposed": False,
+                  "may_open_any_path": True}
     assert _client(app, "bob").get("/api/v1/auth/me").get_json()["is_admin"] is False
     assert app.test_client().get("/api/v1/auth/me").status_code == 401
 

@@ -122,16 +122,20 @@ def register_core_routes(app, api_version):
         beyond this machine with login disabled -- anyone who can reach it can
         then edit and delete every shared panel set.
 
+        ``may_open_any_path`` says whether this requester may open dataset
+        paths outside the data directories (``server.arbitrary_paths``).
+
         Returns:
-            JSON ``{auth_enabled, username, is_admin, exposed}``
+            JSON ``{auth_enabled, username, is_admin, exposed, may_open_any_path}``
         """
-        from .. import permissions
+        from .. import confinement, permissions
         username, is_admin = permissions.current_user()
         return jsonify({
             "auth_enabled": permissions.auth_enabled(),
             "username": username,
             "is_admin": is_admin,
             "exposed": permissions.is_exposed(app.config),
+            "may_open_any_path": confinement.may_open_any_path(app.config),
         })
 
     @app.route(f"/api/{api_version}/status", methods=["GET"])

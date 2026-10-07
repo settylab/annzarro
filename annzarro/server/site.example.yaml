@@ -22,6 +22,8 @@ server:
   # url_prefix: /explore
   # Each gunicorn worker keeps its own cache of up to cache_memory_mb
   workers: 4
+  # Threads per worker (gthread): requests served at once = workers x threads
+  threads: 4
   log_file: /var/log/annzarro/server.log
 
 auth:

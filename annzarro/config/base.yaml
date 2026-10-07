@@ -35,6 +35,19 @@ server:
   # relative to the directory annzarro is started from; the default is the
   # folder the desktop app uses.
   data_dir: "~/annzarro-data"
+  # Directories beyond data_dir a shared server may read datasets from, e.g.
+  # ["/lab/atlases"]. Every dataset path must resolve (symlinks and ".."
+  # followed) inside data_dir or one of these.
+  # allowed_dirs: []
+  # Who may open a dataset path outside those directories:
+  #   admins - admins of a shared server with login: an admin login can read
+  #            any file the server process can read (each open is logged
+  #            with the admin's name); other users never. On a local server
+  #            (loopback, no login: the laptop, the desktop app) its one user.
+  #   local-only - only that local single user; on a shared server
+  #            nobody, admins included
+  #   none   - nobody, local servers included (lock-down)
+  arbitrary_paths: admins
   
   # Logging configuration
   # null = ~/.annzarro/logs/annzarro_server.log (or $ANNZARRO_HOME/logs/...).

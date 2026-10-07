@@ -82,6 +82,32 @@ test('a refresh asks the server to re-check the dataset, for every user', async 
     assert.equal(await DataManager.revalidateDataset('/x.zarr'), null);
 });
 
+test('a refresh the server scheduled is asked again with after, waiting in the browser (#83)', async () => {
+    const calls = [];
+    const replies = [
+        { status: 'scheduled', after: 1700000000.5, retry_after_s: 2.4, checked: false, changed: null },
+        { status: 'scheduled', after: 1700000000.5, retry_after_s: 0.3, checked: false, changed: null },
+        { status: 'full', changed: true, checked: true },
+    ];
+    globalThis.fetch = async (url) => {
+        calls.push(String(url));
+        return new Response(JSON.stringify(replies.shift()), { status: 200 });
+    };
+    const waits = [];
+    const r = await DataManager.revalidateDataset('/x.zarr', { wait: async ms => { waits.push(ms); } });
+    assert.equal(r.changed, true);
+    assert.equal(calls.length, 3);
+    assert.doesNotMatch(calls[0], /after=/);
+    assert.match(calls[1], /after=1700000000\.5/);
+    assert.match(calls[2], /after=1700000000\.5/);
+    assert.deepEqual(waits, [2400, 300]);
+    // and it gives up after maxPolls rather than polling forever
+    globalThis.fetch = async () => new Response(JSON.stringify(
+        { status: 'scheduled', after: 1, retry_after_s: 0.2 }), { status: 200 });
+    const last = await DataManager.revalidateDataset('/x.zarr', { wait: async () => {}, maxPolls: 2 });
+    assert.equal(last.status, 'scheduled');
+});
+
 test('a panel Refresh re-checks the dataset and reads past the cached replies', async () => {
     // Refresh used to redraw from CacheManager: within 60 s of a load it sent
     // no request at all, though the docs say it reloads the panel's data.
