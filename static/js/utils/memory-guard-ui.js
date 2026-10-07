@@ -86,8 +86,8 @@ function _observed() {
     return ledger.observed ? ledger.observed.bytes : 0;
 }
 
-function _check(need, heldNow, panels) {
-    return check(need, heldNow, limits(), settings(), { observed: _observed(), panels });
+function _check(need, heldNow, panels, largePoints = 0) {
+    return check(need, heldNow, limits(), settings(), { observed: _observed(), panels, largePoints });
 }
 
 /** "Browser memory: 2.1 of 4.0 GB JS memory free with 2 plots open (estimated)". */
@@ -110,7 +110,7 @@ export function drawCheck({ id, kind, n, large = false, colour = 'numeric', thre
     const need = { ...add, contexts: livePlot ? 0 : cost.contexts };
     let h = held([id]);
     if (old) h = addCost(h, { ...old.resident, contexts: 0 });
-    return _check(need, h, ledger.plotCount() + (old ? 0 : 1));
+    return _check(need, h, ledger.plotCount() + (old ? 0 : 1), large ? n : 0);
 }
 
 /** Before a recolour of the drawn regular plot `gd` (large-plot mode redraws, and is checked as a draw). */
@@ -123,7 +123,7 @@ export function recolourCheck(gd) {
 export function newPanelCheck(kind, { n, large = false, colour = 'numeric', threeD = false } = {}) {
     if (kind !== 'cell-plot' && kind !== 'gene-plot') return _check({ heap: 0, off: 0, gpu: 0, contexts: 0 }, held(), ledger.plotCount());
     const need = panelCost({ kind, n, large, colour, threeD }).peak;
-    return _check(need, held(), ledger.plotCount() + 1);
+    return _check(need, held(), ledger.plotCount() + 1, large ? n : 0);
 }
 
 /**
@@ -155,7 +155,9 @@ export function subsetCheck(n, threshold) {
         gpu: Math.max(0, base.gpu + peak.gpu - now.gpu),
         contexts: 0
     };
-    return { ..._check(need, now, ledger.plotCount()), changed };
+    // Cell Plots above the threshold draw in large-plot mode, n points each
+    const large = n > threshold && panels.some(p => p.kind === 'cell-plot' && !p.threeD) ? n : 0;
+    return { ..._check(need, now, ledger.plotCount(), large), changed };
 }
 
 /** The largest subset (cells, at most `eligible`) that subsetCheck lets through, or 0. */
@@ -167,6 +169,8 @@ export function maxSubsetCells(eligible, threshold) {
 
 /** The sentence beside a refused control: why, and the ways out. */
 export function refusalText(result, advice) {
+    // above the largest plot tested, closing other plots does not help
+    if (result && result.binding === 'tested') advice = advice.replace(/^Close a plot, or s/, 'S');
     return `${result.why ? result.why.charAt(0).toUpperCase() + result.why.slice(1) : 'Not enough browser memory'}. ${advice}`;
 }
 

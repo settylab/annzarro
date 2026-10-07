@@ -317,7 +317,7 @@ ui:
           default: null
         total_gb:
           type: [number, "null"]
-          description: Everything the tab may hold (JS heap and typed arrays), in GB; null = no limit except on devices with 4 GB or less
+          description: Everything the tab may hold (JS heap and typed arrays), in GB; null = this computer's RAM less a quarter (at least 4 GB) for a browser on the server's computer, 16 for any other, at most half of a device with 4 GB or less
           default: null
         margin:
           type: number

@@ -34,7 +34,7 @@ import { buildPlotLayout, withSubsetCoverage } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors } from './colors.js';
-import { LEGEND_PROXY, LEGEND_POINTS, attachViewportTracking } from './plot-make-helper.js';
+import { LEGEND_PROXY, LEGEND_POINTS, COLOUR_BAR, attachViewportTracking } from './plot-make-helper.js';
 import { drawPlot, clearForDraw, fitToContainer, setStatusTag, nudgeStatusTag, resolveColorscale } from '../../utils/panel-surface.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
@@ -430,7 +430,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       if (ticks) Object.assign(bar, { tickvals: ticks.tickvals, ticktext: ticks.ticktext });
     }
     traces.push({
-      type: 'scattergl', mode: 'markers', x: [X[0]], y: [Y[0]], hoverinfo: 'skip', showlegend: false,
+      type: 'scattergl', mode: 'markers', x: [X[0]], y: [Y[0]], hoverinfo: 'skip', showlegend: false, meta: COLOUR_BAR,
       marker: { size: 0.1, opacity: 0, color: [cmin], cmin, cmax, colorscale: plotlyColorscale(settings.colorScale),
         reversescale: !!settings.colorReversed, showscale: true, colorbar: bar }
     });
