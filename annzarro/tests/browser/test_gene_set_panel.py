@@ -85,6 +85,7 @@ class Services:
         self.calls = []        # (endpoint, method, url)
         self.unmocked = []
         self.fail = {}         # endpoint -> list of outcomes to use first: 'timedout', 503, ...
+        self.bodies = {}       # endpoint -> reply body to use instead of the recording
 
     def handle(self, route):
         req = route.request
@@ -100,6 +101,9 @@ class Services:
                     if outcome == "timedout":
                         return route.abort("timedout")
                     return route.fulfill(status=outcome, body="", headers={"Access-Control-Allow-Origin": "*"})
+                if endpoint in self.bodies:
+                    return route.fulfill(status=200, body=self.bodies[endpoint],
+                                         headers={"Content-Type": ctype, "Access-Control-Allow-Origin": "*"})
                 if endpoint == "mygene-lookup":
                     name = "mygene-query-alias.json" if "scopes=alias" in (req.post_data or "") else "mygene-query-symbol.json"
                 return route.fulfill(status=200, body=_read(name), headers={"Content-Type": ctype, "Access-Control-Allow-Origin": "*"})
@@ -1022,3 +1026,65 @@ def test_string_finding_nothing_is_an_answer_that_names_the_species(browser, spe
         assert not errors
     finally:
         context.close()
+
+
+ENRICH = f'{GS} .gs-section[data-section="string-enrichment"]'
+
+
+def _refresh_after_change(page, text):
+    _search(page, text)
+    until(page, "() => /Selection changed/.test(document.querySelector('%s .gs-bar__text').textContent)" % GS)
+    page.click(f'{GS} .gs-bar__actions button:has-text("Refresh")')
+    _all_ok(page)
+    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().stale === null")
+    page.wait_for_timeout(300)
+
+
+def _enrichment_view(page):
+    return page.evaluate("""(sel) => { const s = document.querySelector(sel);
+        const f = s.querySelector('.gs-filter');
+        const cats = [...s.querySelectorAll('.gs-long tbody tr')].map(r => r.cells[0].textContent);
+        const note = s.querySelector('.gs-category-reset');
+        const more = s.querySelector('.gs-more button');
+        return { filter: f ? f.value : null, rows: cats.length, cats: [...new Set(cats)],
+                 note: note ? note.textContent : null, more: more ? more.textContent : null }; }""", ENRICH)
+
+
+def test_a_rerun_keeps_the_category_and_the_full_table(env):
+    """A rerun (Refresh after the selection changed) redraws STRING's enrichment. It used to come
+    back on "All categories" and on the first 25 rows, so the reader picked GO Process again."""
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    _run_and_send(page)
+
+    # the full table, then a rerun: still the full table
+    page.click(f'{ENRICH} button:has-text("Show all")')
+    full = _enrichment_view(page)
+    assert full["rows"] > 25 and full["more"] == "Show fewer", full
+    _refresh_after_change(page, "GENE01")
+    v = _enrichment_view(page)
+    assert (v["rows"], v["more"], v["filter"]) == (full["rows"], "Show fewer", ""), v
+
+    # a category, then a rerun: still that category
+    page.select_option(f"{ENRICH} .gs-filter", "Process")
+    v = _enrichment_view(page)
+    assert v["filter"] == "Process" and v["cats"] == ["GO Process"], v
+    _refresh_after_change(page, "GENE00")
+    v = _enrichment_view(page)
+    assert v["filter"] == "Process" and v["cats"] == ["GO Process"] and v["note"] is None, v
+
+    # results without that category: all categories, and the panel says why
+    rows = json.loads(_read("string-enrichment.json"))
+    services.bodies["string-enrichment"] = json.dumps([r for r in rows if r["category"] != "Process"]).encode()
+    _refresh_after_change(page, "GENE0")          # a new selection: results already fetched are reused
+    v = _enrichment_view(page)
+    assert v["filter"] == "" and "GO Process" not in v["cats"] and len(v["cats"]) > 1, v
+    assert v["note"] == "GO Process is not among these results: showing all categories.", v
+
+    # and back: the choice was kept, so it applies again when the category is back
+    del services.bodies["string-enrichment"]
+    _refresh_after_change(page, "GENE00")
+    v = _enrichment_view(page)
+    assert v["filter"] == "Process" and v["note"] is None, v
+    assert not services.unmocked, services.unmocked
