@@ -232,6 +232,8 @@ def test_clear_checkbox_empties_storage_and_starts_as_a_first_visit(server):
             assert after["local"] == [], after
             assert after["session"] == [] and after["idb"] == [] and after["caches"] == [], after
             assert "annzarro_autosave" not in after["local"]
+            # memory-guard writes on pagehide too: the page leaves nothing behind
+            assert page.evaluate("() => [Object.keys(localStorage), Object.keys(sessionStorage)]") == [[], []]
             # a plain reload restores nothing either
             page.reload()
             _landed_first_visit(page)

@@ -79,3 +79,10 @@ test('bare URL drops the query and the fragment, keeps the path', () => {
     assert.equal(bareUrl({ origin: 'http://h:1', pathname: '/explore/', search: '?dataset_path=/x', hash: '#view=abc' }),
         'http://h:1/explore/');
 });
+
+test('clearSiteStorageNow empties both synchronous stores', async () => {
+    const { clearSiteStorageNow } = await import('../../../static/js/utils/site-storage.js');
+    const { env } = fakeEnv();
+    clearSiteStorageNow(env);
+    assert.equal(env.localStorage.m.size + env.sessionStorage.m.size, 0);
+});

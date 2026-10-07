@@ -15,7 +15,7 @@ import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatc
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
-import { clearSiteStorage, bareUrl } from './utils/site-storage.js';
+import { clearSiteStorage, clearSiteStorageNow, bareUrl } from './utils/site-storage.js';
 import { sameSubset } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
@@ -1342,6 +1342,11 @@ const App = (function() {
             // A link that differs only by its #view changes the fragment in
             // place without loading anything: reload that case by hand.
             const onlyFragment = !window.location.search;
+            // Handlers that run as the page goes (memory-guard's pagehide, a
+            // draw that began a crash marker) may write keys again: clear the
+            // synchronous stores once more last, after them.
+            window.addEventListener('pagehide', () => clearSiteStorageNow(window));
+            clearSiteStorageNow(window);
             window.location.replace(bareUrl(window.location));
             if (onlyFragment) window.location.reload();
         } finally {

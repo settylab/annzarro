@@ -30,6 +30,12 @@ function clearArea(area, keep) {
     kept.forEach((value, key) => area.setItem(key, value));
 }
 
+/** Clear localStorage and sessionStorage at once (they are synchronous), e.g. on pagehide. */
+export function clearSiteStorageNow(env = globalThis) {
+    try { clearArea(env.localStorage, KEEP.local); } catch { /* blocked */ }
+    try { clearArea(env.sessionStorage, KEEP.session); } catch { /* blocked */ }
+}
+
 /**
  * Clear the site's browser storage. Each store is cleared on its own: one
  * that fails (blocked, unsupported) is listed in `failed` and the rest are
