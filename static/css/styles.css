@@ -2347,6 +2347,12 @@ button.dtsb-button.dtsb-clear:hover {
     text-align: center;
 }
 
+.saved-layout-offer {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
 .source-selection-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

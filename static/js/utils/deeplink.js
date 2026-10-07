@@ -392,6 +392,41 @@ export function panelSetToView(panelSet) {
 }
 
 /**
+ * The same plan with every panel closed: what loading a panel set the user
+ * chose applies. Opening every panel of a large set at once could overload
+ * the machine, so the set's dataset, subset and focus are restored and each
+ * of its panels is listed closed with its full config, open ones first in
+ * layout order; the user reopens the ones wanted. The set's own view is kept
+ * as `savedView` (null when it opens no panel), so "Open saved layout" can
+ * apply it later exactly as a share link would. A share link applies its
+ * view as is and never comes here.
+ * @param {{datasetPath: string|null, view: Object, closedPanels: Array, legacy: boolean}|null} plan
+ * @returns {Object|null} a new plan, with `savedView` and `savedCount` (its
+ *   panels); the input is not changed
+ */
+export function closePlanPanels(plan) {
+    if (!plan) return plan;
+    const view = { ...(plan.view || {}) };
+    const opened = [];
+    if (view.layout) {
+        const configs = view.layout.panelConfigs || {};
+        collectTileIds(view.layout.hierarchy).forEach(id =>
+            opened.push({ id, type: panelTypeFromTileId(id), config: { ...(configs[id] || {}), id } }));
+    }
+    // the legacy flat list (a hand-written view): its panels may have no id
+    (Array.isArray(view.panels) ? view.panels : []).forEach(panel => {
+        const type = String(panel.type || '').replace(/_/g, '-');
+        const config = { ...(panel.config || {}) };
+        if (panel.title && !config.title) config.title = panel.title;
+        opened.push({ id: config.id || null, type, config });
+    });
+    delete view.layout;
+    delete view.panels;
+    return { ...plan, view, closedPanels: [...opened, ...(plan.closedPanels || [])],
+             savedView: opened.length ? plan.view : null, savedCount: opened.length };
+}
+
+/**
  * Rewrite references between panels after ids changed: a plot's
  * `tableFilter` holds the id of the table it is filtered by.
  * @param {Object[]} configs - panel configs, rewritten in place

@@ -7,7 +7,7 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView,
+    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels,
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
@@ -289,6 +289,8 @@ const App = (function() {
      * @private
      */
     async function _applyView({ datasetPath, view }) {
+        // a share link or another view replaces what the offer would restore
+        _clearSavedLayout();
 
         // 0. The cells the view shows. A view without `subset` keeps the
         //    subset of an already open dataset (or the default for a new
@@ -398,12 +400,22 @@ const App = (function() {
      * A set saved on another dataset than the open one asks first, in a
      * notice that does not block the page; nothing changes unless the user
      * agrees.
+     *
+     * `openPanels: false` (a set the user chose to load) restores the
+     * dataset, subset and focus but lists every panel of the set closed, with
+     * its settings: opening all of a large set at once could overload the
+     * machine. Its layout is kept and offered as "Open saved layout" (see
+     * _offerSavedLayout). The autosave restore, the subset change and the
+     * Load dialog's "Load and open layout" keep their panels open.
      * @param {{datasetPath: string|null, view: Object, closedPanels: Array, legacy: boolean}} plan
      * @param {Object} panelSet - the stored panel set
+     * @param {{openPanels?: boolean}} [options]
      * @returns {Promise<{status: string, message: string}>}
      * @private
      */
-    async function _applyPanelSet(plan, panelSet) {
+    async function _applyPanelSet(plan, panelSet, { openPanels = true } = {}) {
+        if (!openPanels) plan = closePlanPanels(plan);
+        _clearSavedLayout();
         const name = (panelSet && panelSet.name) || 'panel set';
         const current = DataManager.getCurrentDataset();
         const target = plan.datasetPath || current;
@@ -429,28 +441,91 @@ const App = (function() {
         // so the set's panel gets that id back unchanged.
         const incoming = new Set([
             ...(plan.view && plan.view.layout ? collectTileIds(plan.view.layout.hierarchy) : []),
-            ...plan.closedPanels.map(p => p.id)
+            ...plan.closedPanels.map(p => p.id).filter(Boolean)
         ]);
         PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
         incoming.forEach(id => PanelManager.removePanel(id));
 
         // keep the open store's own path when the set names it differently
         const sameStore = current && sameDatasetPath(target, current, listing);
-        await _applyView({ datasetPath: sameStore ? current : target, view: plan.view });
+        const datasetPath = sameStore ? current : target;
+        await _applyView({ datasetPath, view: plan.view });
 
         // Panels that were closed when the set was saved come back closed.
         const idMap = new Map();
         const closedConfigs = plan.closedPanels.map(p => {
             const config = JSON.parse(JSON.stringify(p.config));
             PanelManager.registerClosedPanel(p.type, config);
-            if (config.id !== p.id) idMap.set(p.id, config.id);
+            if (p.id && config.id !== p.id) idMap.set(p.id, config.id);
             return config;
         });
         if (idMap.size) remapPanelReferences(closedConfigs, idMap);
 
         PanelManager.updateSourcePanelSelection();
         PanelManager.ensureWelcomeFallback();
+        if (plan.savedView) _offerSavedLayout(plan.savedView, datasetPath, name, plan.savedCount);
         return { status: 'success', message: `Loaded "${name}"` };
+    }
+
+    // The layout of the panel set last loaded with its panels closed, offered
+    // as "Open saved layout" until the next set load, dataset switch or
+    // share link: {view, datasetPath, cancel?}
+    let _savedLayout = null;
+
+    /**
+     * After a set is loaded with its panels closed, offer its saved layout in
+     * a notice with one action. The notice stays until it is answered or
+     * dismissed, or the offer lapses (_clearSavedLayout).
+     * @private
+     */
+    function _offerSavedLayout(view, datasetPath, name, count) {
+        const offer = { view, datasetPath };
+        _savedLayout = offer;
+        // and above the closed panels, where it stays when the notice is dismissed
+        PanelManager.setSavedLayoutOffer({ count, open: () => _openSavedLayout() });
+        const panels = `${count} panel${count === 1 ? '' : 's'}`;
+        _askNotification(`Loaded "${name}"`,
+            `Its ${panels} are listed closed under Duplicate or Reopen Panel. Reopen single ones there, ` +
+            'or open the whole saved layout at once.',
+            [{ key: 'open', label: `Open saved layout (${panels})`, primary: true }],
+            { type: 'success', handle: offer })
+            .then(choice => {
+                if (choice === 'open' && _savedLayout === offer) _openSavedLayout();
+            });
+        const notice = [...document.querySelectorAll('.notification-ask')].pop();
+        if (notice) notice.dataset.offer = 'saved-layout';
+    }
+
+    /**
+     * Withdraw the "Open saved layout" offer (its notice too).
+     * @private
+     */
+    function _clearSavedLayout() {
+        const offer = _savedLayout;
+        _savedLayout = null;
+        if (!offer) return;
+        if (offer.cancel) offer.cancel();
+        PanelManager.setSavedLayoutOffer(null);
+    }
+
+    /**
+     * Apply the offered saved layout exactly as a share link applies its view:
+     * the same _applyView path and panel ids, so each closed entry of the set
+     * is reopened in place, not duplicated.
+     * @private
+     */
+    async function _openSavedLayout() {
+        const offer = _savedLayout;
+        if (!offer) return;
+        _clearSavedLayout();
+        try {
+            await _applyView({ datasetPath: offer.datasetPath, view: offer.view });
+        } catch (error) {
+            console.error('Opening the saved layout failed:', error);
+            _showNotification('Saved layout not opened', error.message || String(error), 'error');
+        }
+        PanelManager.updateSourcePanelSelection();
+        PanelManager.ensureWelcomeFallback();
     }
 
     /**
@@ -629,9 +704,9 @@ const App = (function() {
      * @returns {Promise<string|null>} the chosen key, null if dismissed
      * @private
      */
-    function _askNotification(title, message, actions) {
+    function _askNotification(title, message, actions, { type = 'warning', handle = null } = {}) {
         return new Promise(resolve => {
-            const id = _showNotification(title, message, 'warning', 24 * 3600 * 1000);
+            const id = _showNotification(title, message, type, 24 * 3600 * 1000);
             const el = document.getElementById(id);
             if (!el) { resolve(null); return; }
             el.classList.add('notification-ask');
@@ -660,6 +735,8 @@ const App = (function() {
             el.appendChild(bar);
             const close = el.querySelector('.notification-close');
             if (close) close.addEventListener('click', () => finish(null));
+            // lets the caller withdraw the question (resolves with null)
+            if (handle) handle.cancel = () => finish(null);
             const primary = bar.querySelector('.btn-primary');
             if (primary) primary.focus();
         });
@@ -1079,6 +1156,8 @@ const App = (function() {
                 console.log(`Skipping duplicate dataset load: ${datasetPath}`);
                 return;
             }
+            // another dataset: a saved layout offered for this one lapses
+            _clearSavedLayout();
             
             // If we're already loading something, abort it
             if (_isLoadingDataset && _currentLoadingAbortController) {
@@ -1715,6 +1794,10 @@ const App = (function() {
                         </button>` : 
                         `<button class="btn btn-sm btn-outline-secondary session-export" title="Export">
                             <i class="fas fa-download"></i> Export
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary session-load-open"
+                            title="Load and open every panel in the saved layout at once (a large set takes memory)">
+                            <i class="fas fa-th-large"></i> Load and open layout
                         </button>`;
                     
                     // Create panel preview icons based on session data
@@ -1815,6 +1898,23 @@ const App = (function() {
                     });
                 });
                 
+                // "Load and open layout": the set with its panels open, as the
+                // user chose explicitly (Load lists them closed)
+                document.querySelectorAll('.session-load-open').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const sessionName = e.target.closest('.session-card').dataset.sessionName;
+                        const result = await SessionManager.loadSession(sessionName, { openPanels: true });
+                        if (result.status === 'success') {
+                            _sessionModal.hide();
+                        } else if (result.status === 'cancelled') {
+                            _showNotification('Panel set not loaded', result.message, 'info', 5000);
+                        } else {
+                            _showNotification('Failed to load panel set', result.message, 'error');
+                        }
+                    });
+                });
+
                 // Add export button handlers
                 document.querySelectorAll('.session-export').forEach(btn => {
                     btn.addEventListener('click', (e) => {
