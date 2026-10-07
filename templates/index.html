@@ -124,6 +124,7 @@
                                     <button id="btn-save-session" class="btn btn-primary" title="Save Panel Set"><i class="fas fa-save"></i> <span class="btn-label">Save Panel Set</span></button>
                                     <button id="btn-load-session" class="btn btn-secondary" title="Load Panel Set"><i class="fas fa-folder-open"></i> <span class="btn-label">Load Panel Set</span></button>
                                     <button id="btn-share-link" class="btn btn-outline-secondary" title="Copy a link that reopens this dataset, layout and focus"><i class="fas fa-link"></i> <span class="btn-label btn-share-label">Share Link</span></button>
+                                    <button id="btn-close-all" class="btn btn-outline-secondary" title="Close all panels"><i class="fas fa-times-circle"></i> <span class="btn-label">Close All</span></button>
                                 </div>
                                 <!-- Shown only when the clipboard is unavailable (e.g. plain http on a cluster node) -->
                                 <div id="share-link-fallback" class="share-link-fallback input-group input-group-sm mt-1" hidden>
@@ -201,6 +202,30 @@
                         <button id="change-dataset-open-path" class="btn btn-outline-primary" type="button">Open</button>
                     </div>
                     <div id="change-dataset-error" class="small text-danger mt-1" hidden></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Close all panels (and optionally start over as a first visit) -->
+    <div class="modal fade" id="close-all-modal" tabindex="-1" aria-labelledby="close-all-title" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="close-all-title">Close all panels?</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Every open panel is closed. Closed panels stay under <em>Duplicate or Reopen Panel</em>, as with the &times; on a panel.</p>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="close-all-clear">
+                        <label class="form-check-label" for="close-all-clear">Also clear everything this site stored in this browser and reload as a first visit</label>
+                    </div>
+                    <p class="form-text mb-0 mt-2">That removes the autosaved layout, the closed panels and other settings kept in this browser. Not affected: panel sets saved on the server, and your login.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="btn-confirm-close-all">Close all</button>
                 </div>
             </div>
         </div>

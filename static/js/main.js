@@ -144,7 +144,9 @@ const App = (function() {
             }
             
             // Add event listener to save state before the page unloads
+            // (not while starting over: that is what was just cleared)
             window.addEventListener('beforeunload', async () => {
+                if (_clearingSiteData) return;
                 await SessionManager.saveToLocalStorage();
             });
 
@@ -261,6 +263,75 @@ const App = (function() {
         }
     }
     let _shareLabelTimer = null;
+
+    // Set while "Close all" clears the site's storage and reloads: nothing
+    // may write the autosave back on the way out
+    let _clearingSiteData = false;
+
+    /**
+     * Header "Close all panels": a dialog, then close every open panel (they
+     * stay under Duplicate or Reopen Panel, as with a panel's x). Its
+     * checkbox also clears what this site stored in this browser and reloads
+     * as a first visit.
+     * @private
+     */
+    function _showCloseAllDialog() {
+        const el = document.getElementById('close-all-modal');
+        if (!el || !window.bootstrap) return;
+        document.getElementById('close-all-clear').checked = false;
+        window.bootstrap.Modal.getOrCreateInstance(el).show();
+    }
+
+    async function _confirmCloseAll() {
+        const el = document.getElementById('close-all-modal');
+        const clear = document.getElementById('close-all-clear').checked;
+        if (clear) {
+            await _startOver();
+            return;
+        }
+        PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
+        PanelManager.updateSourcePanelSelection();
+        if (el && window.bootstrap) window.bootstrap.Modal.getOrCreateInstance(el).hide();
+    }
+
+    /**
+     * Clear everything this origin stored in this browser (local and session
+     * storage, IndexedDB, Cache Storage, service workers) and reload the bare
+     * URL, so the app starts as on a first visit. Cookies are not touched:
+     * the login is a server-side session behind an HttpOnly cookie, and no
+     * auth or CSRF state is kept in storage, so the user stays logged in.
+     * @private
+     */
+    async function _startOver() {
+        _clearingSiteData = true;
+        SessionManager.stopAutosave();
+        const clearStorage = () => {
+            try { window.localStorage.clear(); } catch (e) { /* storage unavailable */ }
+            try { window.sessionStorage.clear(); } catch (e) { /* storage unavailable */ }
+        };
+        clearStorage();
+        try {
+            if (window.indexedDB && indexedDB.databases) {
+                const dbs = await indexedDB.databases();
+                await Promise.all(dbs.filter(d => d.name).map(d => new Promise(resolve => {
+                    const req = indexedDB.deleteDatabase(d.name);
+                    req.onsuccess = req.onerror = req.onblocked = () => resolve();
+                })));
+            }
+        } catch (e) { console.warn('Clearing IndexedDB failed:', e); }
+        try {
+            if (window.caches) await Promise.all((await caches.keys()).map(k => caches.delete(k)));
+        } catch (e) { console.warn('Clearing Cache Storage failed:', e); }
+        try {
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+                await Promise.all((await navigator.serviceWorker.getRegistrations()).map(r => r.unregister()));
+            }
+        } catch (e) { console.warn('Unregistering service workers failed:', e); }
+        // anything written on the way out (an unload handler) goes too
+        window.addEventListener('pagehide', clearStorage);
+        clearStorage();
+        window.location.replace(window.location.origin + window.location.pathname);
+    }
 
     /**
      * Said when a view is saved before the open store's cell and gene names
@@ -700,7 +771,7 @@ const App = (function() {
                 if (close) close.click();
             }
         });
-        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
         const list = document.getElementById('change-dataset-list');
         const savedLine = document.getElementById('change-dataset-saved');
         const error = document.getElementById('change-dataset-error');
@@ -1493,6 +1564,10 @@ const App = (function() {
         if (shareLinkBtn) {
             shareLinkBtn.addEventListener('click', _shareCurrentView);
         }
+        const closeAllBtn = document.getElementById('btn-close-all');
+        if (closeAllBtn) closeAllBtn.addEventListener('click', _showCloseAllDialog);
+        const confirmCloseAll = document.getElementById('btn-confirm-close-all');
+        if (confirmCloseAll) confirmCloseAll.addEventListener('click', _confirmCloseAll);
         // The share field selects its whole link on focus, ready to copy, but
         // keeps the START in view (host and dataset_path), not the tail of a
         // 1,300-character #view= payload.

@@ -23,7 +23,7 @@ rule in the narrowest panel a split allows (11% of a 1280 px window), and
 in panels of 320, 600 and 1600 px, where nothing may reach past the panel's
 edge or scroll the page sideways; for a numerical colour, after switching to a
 categorical one (most toggles hidden) and back, with 3D on, and with the
-header's Save / Load / Share group missing its last and then its first button.
+header's Save / Load / Share / Close All group missing its last and then its first button.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -204,10 +204,11 @@ def test_buttons_round_only_their_free_corners(server, width):
             _assert_corners(page, "3D on")
 
             # A joined group missing its last button, then its first: the ends that show round.
-            share, save = "#btn-share-link", "#btn-save-session"
+            # (Close All is the group's last button since it joined Save / Load / Share)
+            share, save = "#btn-close-all", "#btn-save-session"
             page.evaluate(f"() => {{ document.querySelector('{share}').style.display = 'none'; }}")
-            _assert_corners(page, "Share Link hidden")
-            radius = page.evaluate("""() => getComputedStyle(document.querySelector('#btn-load-session'))
+            _assert_corners(page, "Close All hidden")
+            radius = page.evaluate("""() => getComputedStyle(document.querySelector('#btn-share-link'))
                                           .borderTopRightRadius""")
             assert radius not in ("0px", ""), radius
             page.evaluate(f"""() => {{ document.querySelector('{share}').style.display = '';

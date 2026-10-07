@@ -30,6 +30,8 @@ The header. Numbers match the list below.
 7. **Save Panel Set** stores the current panels on the server ({doc}`panel-sets`).
 8. **Load Panel Set** opens the list of stored panel sets.
 9. **Share Link** copies a URL that reopens this dataset, layout and focus ({doc}`share-links`).
+10. **Close All** (right of Share Link; not in this picture) closes every open panel, and can
+    start over as a first visit ({ref}`ui-close-all`).
 
 Below the header, the statistics bar shows the number of cells (8,090) with a badge, **All
 cells**, the number of genes (16285) and the dataset's display name. Datasets with more than
@@ -168,6 +170,27 @@ links, so a shared layout opens with the same proportions on any screen.
    title). This works for open and closed panels.
 5. The small **×** on a closed card forgets that panel. **Clear closed panels** forgets all
    closed panels after a confirmation.
+
+(ui-close-all)=
+### Close all panels, or start over
+
+**Close All** in the header (an icon only on narrow screens) asks "Close all panels?". **Close
+all** closes every open panel; like a panel's **×**, it keeps them under **Duplicate or Reopen
+Panel**. **Cancel** changes nothing.
+
+```{figure} ../_static/screens/user-guide/ui-close-all.png
+:class: screenshot
+:width: 50%
+:alt: The dialog "Close all panels?" with the checked box "Also clear everything this site stored in this browser and reload as a first visit", the note that panel sets saved on the server and the login are not affected, and the buttons Cancel and Close all.
+
+The Close all dialog, with the box checked.
+```
+
+With **Also clear everything this site stored in this browser and reload as a first visit**
+checked, AnnZarro also removes what it keeps in this browser for this server (the autosaved
+layout, the closed panels, and other remembered settings such as your answers to external-service
+questions) and reloads without a dataset or view in the address, so it opens as on a first visit.
+Not affected: panel sets saved on the server, other browsers, and your login (you stay signed in).
 
 ## The browser remembers your last layout
 
