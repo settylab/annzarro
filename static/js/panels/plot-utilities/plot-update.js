@@ -950,7 +950,10 @@ export async function loadColorDataAndUpdatePlot(
             refreshPlot();
         }
     } catch (error) {
-        console.error('Error updating color data:', error);
+        // a colour that asks first (utils/categories.js) is drawn by the full path, which asks
+        const asks = error && error.coverage && error.coverage.gaps && error.coverage.gaps.some(g => g.kind === 'colour-cost');
+        if (asks) console.info(error.message);
+        else console.error('Error updating color data:', error);
         // Fall back to recreating the plot.
         refreshPlot();
     } finally {

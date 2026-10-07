@@ -1,5 +1,5 @@
 import { DataManager } from '../../data-manager.js';
-import { generateDiscreteColors } from './colors.js';
+import { generateDiscreteColors, groupColours } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
 import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName } from '../../utils/categories.js';
 
@@ -168,6 +168,7 @@ export function nextOverlappingEntity(gd, point, clicked, current, mouse = null,
 }
 
 export function attachClickHandler(plotContainer, traces, data, settings) {
+    attachGroupLegend(plotContainer);
     if (!plotContainer.__pointerTracked && plotContainer.addEventListener) {
       plotContainer.__pointerTracked = true;
       plotContainer.addEventListener('pointerdown', (ev) => {
@@ -365,9 +366,9 @@ export function keptViewRanges(settings) {
       // uns colours, one per category, would be a trace each again
       const name = settings.categoryPalette && settings.categoryPalette !== 'uns' ? settings.categoryPalette : undefined;
       try {
-        selectedPalette = generateDiscreteColors(GROUP_COLOURS, name);
+        selectedPalette = groupColours(GROUP_COLOURS, name);
       } catch {
-        selectedPalette = generateDiscreteColors(GROUP_COLOURS);
+        selectedPalette = groupColours(GROUP_COLOURS);
       }
     } else if (
       settings?.categoryPalette === "uns" &&
@@ -465,31 +466,55 @@ export function keptViewRanges(settings) {
         const r = global.get(categories[i]);
         return r === undefined ? -1 : r;
       };
-      // per colour: its categories on this plot, by rank (the legend names
-      // the largest present ones first)
+      // One trace in dataset order, each point in its group's colour: a trace
+      // per colour drew the last colour over the other 63 wherever points
+      // overlap. The legend rows are proxies (one per colour), and clicking
+      // one hides that colour's points (attachGroupLegend).
       const present = selectedPalette.map(() => []);
-      const byColour = selectedPalette.map(() => []);
+      const groupOfSlot = new Int16Array(categories.length).fill(-1);
       let unranked = categories.length;
       bySlot.forEach((indices, i) => {
         if (indices.length === 0) return;
         let r = rankOfSlot(i);
         if (r < 0) r = unranked++;     // a value the ranking does not know: after every ranked one
-        const g = groupOf(r);
-        present[g].push([r, i]);
-        for (const idx of indices) byColour[g].push(idx);
+        groupOfSlot[i] = groupOf(r);
+        present[groupOfSlot[i]].push([r, i]);
       });
-      byColour.forEach((indices, g) => {
-        if (indices.length === 0) return;
-        const members = present[g].sort((p, q) => p[0] - q[0]);
-        const name = groupLegendName(members.map(([, i]) => categories[i]));
-        const trace = makeTrace(indices, name, selectedPalette[g], null);
-        trace._azLabels = indices.map(idx => String(categories[slotOf[idx]]));
-        trace.hovertext = trace._azLabels.map(label => `<br>${label}`);
-        trace.hovertemplate = trace.hovertemplate.replace('<extra></extra>', '%{hovertext}<extra></extra>');
-        trace.legendrank = g + 1;
-        traces.push(trace);
+      const shown = [];
+      for (let idx = 0; idx < slotOf.length; idx++) {
+        const slot = slotOf[idx];
+        if (slot >= 0 && groupOfSlot[slot] >= 0 && bySlot[slot].length && (!isTableFilterActive || inTable(idx))) shown.push(idx);
+      }
+      const all = {
+        x: shown.map(idx => data.x.values[idx]),
+        y: shown.map(idx => data.y.values[idx]),
+        z: settings.z && data.z ? shown.map(idx => data.z.values[idx]) : null,
+        names: shown.map(idx => data[entityKey][idx]),
+        labels: shown.map(idx => String(categories[slotOf[idx]])),
+        group: Uint8Array.from(shown, idx => groupOfSlot[slotOf[idx]]),
+        hovertext: null
+      };
+      const trace = makeTrace([], 'colour groups', [], null);
+      trace.showlegend = false;
+      trace.meta = GROUP_POINTS;
+      trace._azGroups = { all, palette: selectedPalette, hidden: new Set() };
+      const view = groupView(trace._azGroups);
+      trace.marker.color = view.marker.color;
+      delete view.marker;
+      Object.assign(trace, view);
+      trace.hovertemplate = trace.hovertemplate.replace('<extra></extra>', '%{hovertext}<extra></extra>');
+      traces.push(trace);
+      const proxies = [];
+      present.forEach((members, g) => {
+        if (members.length === 0) return;
+        members.sort((p, q) => p[0] - q[0]);
+        const p = { type: trace.type, mode: 'markers', name: groupLegendName(members.map(([, i]) => categories[i])),
+          legendgroup: `az-group-${g}`, showlegend: true, meta: LEGEND_PROXY, x: [null], y: [null], hoverinfo: 'skip',
+          marker: { size: settings.pointSize, opacity: 1, color: selectedPalette[g] }, legendrank: g + 1, _azGroup: g };
+        if (settings.z) p.z = [null];
+        proxies.push(p);
       });
-      return withLegendProxies(traces, settings);
+      return withLegendProxies(traces, settings).concat(proxies);
     }
 
     categories.forEach((category, i) => {
@@ -503,6 +528,95 @@ export function keptViewRanges(settings) {
   /** Trace `meta` of a legend proxy, and of the point traces whose legend entry it carries. */
   export const LEGEND_PROXY = 'az-legend';
   export const LEGEND_POINTS = 'az-points';
+  /** Trace `meta` of the one trace that holds every colour group's points. */
+  export const GROUP_POINTS = 'az-groups';
+
+  /**
+   * The points a colour-group trace shows: those of the groups not hidden,
+   * in dataset order, with their colours, names and hover labels.
+   * @param {{all: Object, palette: string[], hidden: Set<number>}} groups
+   */
+  export function groupView(groups) {
+    const { all, palette, hidden } = groups;
+    const keep = [];
+    for (let i = 0; i < all.group.length; i++) if (!hidden.has(all.group[i])) keep.push(i);
+    const pick = (a) => keep.map(i => a[i]);
+    const view = {
+      x: pick(all.x), y: pick(all.y), text: pick(all.names), customdata: pick(all.names),
+      _azLabels: pick(all.labels),
+      hovertext: all.hovertext ? pick(all.hovertext) : keep.map(i => `<br>${all.labels[i]}`)
+    };
+    view.marker = { color: keep.map(i => palette[all.group[i]]) };
+    if (all.z) view.z = pick(all.z);
+    return view;
+  }
+
+  /**
+   * Hide or show colour groups of `gd`'s colour-group trace: a click on a
+   * group's legend row toggles it, a double click shows only it (or, when it
+   * is the only one shown, all again), as Plotly's legend does for traces.
+   * @returns {boolean} whether `gd` has such a trace and `g` was handled
+   */
+  export function toggleColourGroup(gd, g, isolate = false) {
+    const at = (gd.data || []).findIndex(t => t && t.meta === GROUP_POINTS && t._azGroups);
+    if (at < 0) return false;
+    const trace = gd.data[at];
+    const groups = trace._azGroups;
+    const rows = gd.data.map((t, i) => [t, i]).filter(([t]) => t && t._azGroup !== undefined);
+    if (isolate) {
+      const onlyThis = rows.every(([t]) => t._azGroup === g || groups.hidden.has(t._azGroup)) && !groups.hidden.has(g);
+      groups.hidden = new Set(onlyThis ? [] : rows.map(([t]) => t._azGroup).filter(k => k !== g));
+    } else if (groups.hidden.has(g)) {
+      groups.hidden.delete(g);
+    } else {
+      groups.hidden.add(g);
+    }
+    const view = groupView(groups);
+    trace._azLabels = view._azLabels;
+    const update = { x: [view.x], y: [view.y], text: [view.text], customdata: [view.customdata],
+      hovertext: [view.hovertext], 'marker.color': [view.marker.color] };
+    if (view.z) update.z = [view.z];
+    // one after the other: a restyle sent while one is drawing was lost
+    const visible = rows.map(([t]) => (groups.hidden.has(t._azGroup) ? 'legendonly' : true));
+    Promise.resolve(Plotly.restyle(gd, update, [at]))
+      .then(() => Plotly.restyle(gd, { visible }, rows.map(([, i]) => i)))
+      .catch((err) => console.warn('Colour group not toggled:', err && err.message));
+    return true;
+  }
+
+  /** Legend clicks on colour-group rows (once per graph; the handlers read gd.data when clicked). */
+  export function attachGroupLegend(gd) {
+    if (!gd || gd.__azGroupLegend || typeof gd.on !== 'function') return;
+    gd.__azGroupLegend = true;
+    // Plotly sends a click for each click of a double click, then the double
+    // click: a click waits out the double-click delay, as Plotly's own legend
+    // does, and the second click of a pair cancels the first
+    let pending = null;
+    const groupOfEvent = (e) => {
+      const t = e && e.data && e.data[e.curveNumber];
+      return t && t._azGroup !== undefined ? t._azGroup : null;
+    };
+    gd.on('plotly_legendclick', (e) => {
+      const g = groupOfEvent(e);
+      if (g === null) return true;
+      if (pending) {
+        clearTimeout(pending);
+        pending = null;
+        return false;
+      }
+      const delay = (gd._context && gd._context.doubleClickDelay) || 300;
+      pending = setTimeout(() => { pending = null; toggleColourGroup(gd, g); }, delay);
+      return false;
+    });
+    gd.on('plotly_legenddoubleclick', (e) => {
+      const g = groupOfEvent(e);
+      if (g === null) return true;
+      if (pending) clearTimeout(pending);
+      pending = null;
+      toggleColourGroup(gd, g, true);
+      return false;
+    });
+  }
 
   /** True for a legend proxy trace (no points; styling restyles skip it). */
   export function isLegendProxy(trace) {

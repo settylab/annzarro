@@ -307,6 +307,36 @@ export function setStatusTag(host, kind, tag) {
     return paint(host);
 }
 
+/**
+ * A notice drawn over the plot area, for a plot drawn without something the
+ * user asked for that one click gives (a colour that asks first): the
+ * status-strip tag alone was easy to miss. Painted again after every draw
+ * (drawPlot), which empties the container first.
+ * @param {HTMLElement} host - the plot container
+ * @param {{headline: string, text: string, actions?: Array<[string, string]>}|null} notice
+ */
+export function setPlotNotice(host, notice) {
+    if (!host) return;
+    stateOf(host).notice = notice || null;
+    paintPlotNotice(host);
+}
+
+function paintPlotNotice(host) {
+    const s = _state.get(host);
+    const old = host.querySelector && host.querySelector(':scope > .az-plot-notice');
+    if (old) old.remove();
+    if (!s || !s.notice || typeof document === 'undefined') return;
+    const el = document.createElement('div');
+    el.className = 'az-plot-notice';
+    el.setAttribute('role', 'status');
+    const todo = actionButtons(s.notice.actions, host);
+    el.innerHTML = `<div class="az-plot-notice__headline">${escapeHtml(s.notice.headline)}</div>`
+        + `<div>${escapeHtml(s.notice.text)}</div>`
+        + (todo ? `<div class="az-plot-notice__do">${todo}</div>` : '');
+    if (window.getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    host.appendChild(el);
+}
+
 /** Tag popovers already opened by a nudge, `${panel}:${kind}`: once per session. */
 const _nudged = new Set();
 
@@ -365,7 +395,7 @@ function wireStrips() {
     }, true);
     document.addEventListener('click', (e) => {
         // an action offered by a placeholder (drawPlaceholder's actions)
-        const placeholder = e.target.closest && e.target.closest('.coverage-placeholder');
+        const placeholder = e.target.closest && e.target.closest('.coverage-placeholder, .az-plot-notice');
         const placed = placeholder && e.target.closest('[data-ps-action]');
         if (placed && placeholder.parentNode) {
             _actions.run(placed.dataset.psAction, placeholder.parentNode);
@@ -620,6 +650,7 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
         withCoverageExportButton(config)
     );
     watchContextLoss(plotContainer);
+    paintPlotNotice(plotContainer);
     // long axis / colour-bar titles: shortened to fit, full text on hover
     keepTitlesFitted(plotContainer);
     fitToContainer(plotContainer);

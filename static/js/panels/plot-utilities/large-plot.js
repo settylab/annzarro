@@ -32,7 +32,7 @@ import { Config } from '../../config.js';
 import { buildPlotLayout, withSubsetCoverage } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
-import { generateDiscreteColors } from './colors.js';
+import { generateDiscreteColors, groupColours } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, attachViewportTracking } from './plot-make-helper.js';
 import { drawPlot, clearForDraw, fitToContainer, setStatusTag, nudgeStatusTag, resolveColorscale } from '../../utils/panel-surface.js';
 import { releasePlot } from '../../utils/release-plot.js';
@@ -394,8 +394,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     }
     if (!palette || !palette.length) {
       // colour groups use the same 64-colour palette in every path
-      palette = generateDiscreteColors(many ? GROUP_COLOURS : nc,
-        settings.categoryPalette && settings.categoryPalette !== 'uns' ? settings.categoryPalette : undefined);
+      const name = settings.categoryPalette && settings.categoryPalette !== 'uns' ? settings.categoryPalette : undefined;
+      palette = many ? groupColours(GROUP_COLOURS, name) : generateDiscreteColors(nc, name);
     }
     // blank values at the bottom, then the categories interleaved; legend
     // entries in category order with NA last, as the regular path lists them

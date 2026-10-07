@@ -3,9 +3,10 @@
  * (static/js/utils/categories.js, annzarro/core/categories.py).
  *
  *  - Past 64 categories a plot is coloured by colour group: categories ranked
- *    by their points, rank r in colour r mod 64, one trace and one legend
- *    entry per colour naming its largest categories ("k0, k64, k128 +N
- *    more"). v0.4.0 drew a trace and a legend entry per category and hung at
+ *    by their points, rank r in colour r mod 64, one legend entry per colour
+ *    naming its largest categories ("k0, k64, k128 +N more"), the points in
+ *    one trace in dataset order (a trace per colour drew the last colour
+ *    over the others). v0.4.0 drew a trace and a legend entry per category and hung at
  *    a few thousand; at a one-per-cell column it asked for every category
  *    (a GB-sized reply at 95.6M cells) and then failed on it.
  *  - The colour request for such a column asks for the labels of the points
@@ -45,7 +46,8 @@ globalThis.fetch = async () => ({ ok: false, statusText: 'test' });
 const { CacheManager } = await import('../../../static/js/cache-manager.js');
 const { DataManager } = await import('../../../static/js/data-manager.js');
 const { loadAxisData, hoverTemplateFor } = await import('../../../static/js/panels/plot-utilities/plot-make.js');
-const { processCategories, isLegendProxy } = await import('../../../static/js/panels/plot-utilities/plot-make-helper.js');
+const { processCategories, isLegendProxy, toggleColourGroup, GROUP_POINTS } = await import('../../../static/js/panels/plot-utilities/plot-make-helper.js');
+const { groupColours } = await import('../../../static/js/panels/plot-utilities/colors.js');
 const { classifyError } = await import('../../../static/js/utils/coverage.js');
 const cats = await import('../../../static/js/utils/categories.js');
 
@@ -184,37 +186,104 @@ const columnRanks = (categories) => new Map(categories.map((c, k) => [c, k]));
 
 function colourOfEach(traces) {
     const out = new Map();
-    for (const t of traces.filter(t => !isLegendProxy(t) && t._azLabels)) {
-        t._azLabels.forEach(l => out.set(l, t.marker.color));
+    for (const t of traces.filter(t => t.meta === GROUP_POINTS)) {
+        t._azLabels.forEach((l, j) => out.set(l, t.marker.color[j]));
     }
     return out;
 }
 
-test('hundreds of categories: 64 colour groups by rank, one legend entry each, every point drawn', () => {
+test('hundreds of categories: 64 colour groups by rank, one legend entry each, every point drawn in data order', () => {
     const { settings, data } = panel(500);
     data.colorRankOf = columnRanks(data.colorCategories);
     // categories listed in an order unrelated to their ranks
     const traces = processCategories(settings, data, data.colorCategories.slice().reverse());
     const legend = traces.filter(isLegendProxy);
+    const groupRows = legend.filter(t => t._azGroup !== undefined);
     const points = traces.filter(t => !isLegendProxy(t));
-    const groups = points.filter(t => t._azLabels);
-    assert.equal(groups.length, cats.GROUP_COLOURS);
+    const [all] = points.filter(t => t.meta === GROUP_POINTS);
+    assert.equal(points.filter(t => t.meta === GROUP_POINTS).length, 1);
+    assert.equal(groupRows.length, cats.GROUP_COLOURS);
     assert.equal(legend.length, cats.GROUP_COLOURS + 1);               // and NA
     assert.equal(points.reduce((n, t) => n + t.x.length, 0), data.color.length);
     // colour group g is led by rank g: k0 leads group 0, with k64, k128, ...
-    const first = groups.find(t => t.name.startsWith('k0,'));
-    assert.ok(first, groups.map(t => t.name).slice(0, 5).join(' | '));
-    assert.equal(first.name, 'k0, k64, k128 +5 more');
-    for (const t of groups) {
-        const members = new Set();
-        t.customdata.forEach((cell, j) => {
-            assert.equal(t._azLabels[j], data.color[Number(cell.slice(1))]);
-            assert.equal(t.hovertext[j], `<br>${t._azLabels[j]}`);
-            members.add(Number(t._azLabels[j].slice(1)) % cats.GROUP_COLOURS);
-        });
-        assert.equal(members.size, 1, `${t.name}: one colour group`);
-        assert.match(hoverTemplateFor(t, settings, data), /%\{hovertext\}<extra><\/extra>$/);
+    assert.equal(groupRows.find(t => t._azGroup === 0).name, 'k0, k64, k128 +5 more');
+    // the points in dataset order, each in its rank's colour, hover naming it
+    const rows = all.customdata.map(cell => Number(cell.slice(1)));
+    assert.ok(rows.every((r, j) => j === 0 || r > rows[j - 1]), 'dataset order');
+    const palette = groupColours(cats.GROUP_COLOURS);
+    all.customdata.forEach((cell, j) => {
+        const label = data.color[Number(cell.slice(1))];
+        assert.equal(all._azLabels[j], label);
+        assert.equal(all.hovertext[j], `<br>${label}`);
+        assert.equal(all.marker.color[j], palette[Number(label.slice(1)) % cats.GROUP_COLOURS]);
+    });
+    assert.equal(all.marker.size, settings.pointSize);
+    for (const t of groupRows) assert.equal(t.marker.color, palette[t._azGroup]);
+    assert.match(hoverTemplateFor(all, settings, data), /%\{hovertext\}<extra><\/extra>$/);
+});
+
+test("a colour group's legend row hides its points; a double click shows it alone", async () => {
+    const { settings, data } = panel(200);
+    data.colorRankOf = columnRanks(data.colorCategories);
+    const gd = { data: processCategories(settings, data, data.colorCategories) };
+    const at = gd.data.findIndex(t => t.meta === GROUP_POINTS);
+    const restyles = [];
+    const saved = globalThis.Plotly;
+    globalThis.Plotly = { restyle: (_gd, update, idx) => { restyles.push([update, idx]); return Promise.resolve(); } };
+    try {
+        const n = gd.data[at].x.length;
+        const settle = () => new Promise(r => setTimeout(r, 0));
+        assert.equal(toggleColourGroup(gd, 0), true);
+        await settle();
+        let [update, idx] = restyles[0];
+        assert.deepEqual(idx, [at]);
+        const kept = update.customdata[0];
+        assert.ok(kept.length < n && update._azLabels === undefined);
+        assert.ok(gd.data[at]._azLabels.every(l => Number(l.slice(1)) % cats.GROUP_COLOURS !== 0));
+        assert.equal(kept.length, gd.data[at]._azLabels.length);
+        const visible = restyles[1][0].visible;
+        assert.equal(visible.filter(v => v === 'legendonly').length, 1);
+        toggleColourGroup(gd, 0);                    // shown again
+        await settle();
+        assert.equal(restyles[2][0].customdata[0].length, n);
+        toggleColourGroup(gd, 5, true);              // only group 5
+        assert.ok(gd.data[at]._azLabels.every(l => Number(l.slice(1)) % cats.GROUP_COLOURS === 5));
+        toggleColourGroup(gd, 5, true);              // all again
+        await settle();
+        assert.equal(restyles.filter(([u]) => u.customdata).at(-1)[0].customdata[0].length, n);
+        assert.ok(restyles.filter(([u]) => u.visible).at(-1)[0].visible.every(v => v === true));
+    } finally {
+        globalThis.Plotly = saved;
     }
+});
+
+test('colour groups: the ten largest get ten clearly different colours, and no two neighbours are alike', () => {
+    // CIELAB distance (D65): 25 or more reads as clearly different colours
+    const rgbOf = (c) => {
+        if (!c.startsWith('hsl')) { const n = parseInt(c.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255].map(v => v / 255); }
+        const [h, sat, l] = c.slice(4, -1).split(',').map(v => parseFloat(v));
+        const S = sat / 100, L = l / 100, a = S * Math.min(L, 1 - L);
+        const f = (k0) => { const k = (k0 + h / 30) % 12; return L - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+        return [f(0), f(8), f(4)];
+    };
+    const labOf = (c) => {
+        const [r, g, b] = rgbOf(c).map(v => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+        const xyz = [(0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047, 0.2126 * r + 0.7152 * g + 0.0722 * b,
+                     (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883].map(t => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116));
+        return [116 * xyz[1] - 16, 500 * (xyz[0] - xyz[1]), 200 * (xyz[1] - xyz[2])];
+    };
+    const far = (a, b) => {
+        const p1 = labOf(a), p2 = labOf(b);
+        return Math.hypot(p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]) >= 25;
+    };
+    const p = groupColours(cats.GROUP_COLOURS);
+    assert.equal(new Set(p).size, cats.GROUP_COLOURS);
+    for (let i = 1; i < p.length; i++) assert.ok(far(p[i - 1], p[i]), `${i}: ${p[i - 1]} ${p[i]}`);
+    for (let i = 0; i < 10; i++) for (let j = i + 1; j < 10; j++) assert.ok(far(p[i], p[j]), `${p[i]} ${p[j]}`);
+    // a continuous palette is stepped through, not walked
+    const v = groupColours(cats.GROUP_COLOURS, 'viridis');
+    assert.equal(new Set(v).size, cats.GROUP_COLOURS);
+    assert.notEqual(v[1], groupColours(cats.GROUP_COLOURS, 'viridis').sort()[1]);
 });
 
 test('a category keeps its colour across parts and a table filter', () => {
