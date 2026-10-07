@@ -13,7 +13,7 @@ import { PanelManager } from './panel-manager.js';
 import { getColumnKey } from './panels/table-utilities/table-data.js';
 import {
     SUBSET_OPS, MAX_SEED, canonicalSubset, subsetParam, describeSubset,
-    describeCondition, searchBuilderToWhere, describeParts, partSpec
+    describeCondition, searchBuilderToWhere, MAX_NEEDLE, describeParts, partSpec
 } from './utils/subset.js';
 import {
     presetSizes, partsFor, initialSize, largestRegularSize, DEFAULT_LARGE_PLOT_POINTS, BROWSER_POINT_CEILING, shortCount, estimateLoad, formatSeconds, recordServer, serverSeconds, loadSamples
@@ -489,11 +489,26 @@ const SubsetControl = (function() {
         _conditions.forEach((cond, i) => {
             const row = document.createElement('div');
             row.className = 'subset-condition';
+            if (cond.any || cond.all) {
+                // a group (an OR, or a nested AND) copied from a table: shown in words, removed as a whole
+                row.innerHTML = `<span class="subset-group flex-grow-1 small">${escapeHtml(describeCondition(cond))}</span>
+                    <button type="button" class="btn btn-sm btn-outline-danger subset-remove" title="Remove this group">&times;</button>`;
+                row.querySelector('.subset-remove').addEventListener('click', () => {
+                    _conditions.splice(i, 1); _renderConditions(); _schedulePreview();
+                });
+                box.appendChild(row);
+                return;
+            }
             const opInfo = SUBSET_OPS.find(o => o.op === cond.op) || SUBSET_OPS[0];
             const value = opInfo.kind === 'text'
                 ? `<input type="text" class="form-control form-control-sm subset-value" placeholder="values, comma separated"
                      value="${escapeHtml((cond.values || []).join(', '))}" list="subset-values-${i}">
                    <datalist id="subset-values-${i}"></datalist>`
+                : opInfo.kind === 'string'
+                  ? `<input type="text" class="form-control form-control-sm subset-string" placeholder="text (any case)"
+                       maxlength="${MAX_NEEDLE}" value="${escapeHtml(String(cond.value ?? ''))}">`
+                : opInfo.kind === 'none'
+                  ? ''
                 : opInfo.kind === 'range'
                     ? `<input type="number" class="form-control form-control-sm subset-lo" placeholder="low" value="${escapeHtml(String((cond.value || [])[0] ?? ''))}">
                        <input type="number" class="form-control form-control-sm subset-hi" placeholder="high" value="${escapeHtml(String((cond.value || [])[1] ?? ''))}">`
@@ -512,12 +527,16 @@ const SubsetControl = (function() {
                 cond.op = e.target.value;
                 const kind = (SUBSET_OPS.find(o => o.op === cond.op) || {}).kind;
                 if (kind === 'text') { cond.values = cond.values || []; delete cond.value; }
+                else if (kind === 'string') { delete cond.values; cond.value = typeof cond.value === 'string' ? cond.value : ''; }
+                else if (kind === 'none') { delete cond.values; delete cond.value; }
                 else { delete cond.values; cond.value = kind === 'range' ? ['', ''] : ''; }
                 _renderConditions(); _schedulePreview();
             });
             row.querySelector('.subset-remove').addEventListener('click', () => {
                 _conditions.splice(i, 1); _renderConditions(); _schedulePreview();
             });
+            const str = row.querySelector('.subset-string');
+            if (str) str.addEventListener('input', () => { cond.value = str.value; _schedulePreview(); });
             const text = row.querySelector('.subset-value');
             if (text) {
                 text.addEventListener('input', () => {

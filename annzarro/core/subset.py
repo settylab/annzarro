@@ -13,6 +13,8 @@ query parameter (compact JSON)::
     {"n": 100000, "seed": 0, "balance": "batch"}     as even across batches as the sizes allow
     {"n": null, "seed": 0, "where": [...]}           every cell passing the filter
     {"n": 5000, "seed": 3, "where": [{"col": "cluster", "op": "in", "values": ["3", "5"]}]}
+    {"n": null, "seed": 0, "where": [{"col": "drug", "op": "contains", "value": "mab"}]}
+    {"n": null, "seed": 0, "where": [{"any": [{"col": "a", "op": "empty"}, {"col": "b", "op": ">", "value": 3}]}]}
 
 Which cells: every cell gets a rank key, ``splitmix64(splitmix64(seed) ^ row)``,
 and the subset is the ``n`` eligible cells with the smallest keys. That is a
@@ -61,6 +63,20 @@ MAX_SEED = 2**32 - 1
 
 #: Ops on a column's text form (categorical/string/bool columns, any column).
 TEXT_OPS = ("in", "not_in")
+#: Ops on a column's text, case-insensitively, with one text ``value`` (the
+#: needle): the cell table's SearchBuilder "contains", "starts with" and
+#: "ends with" and their negations (a "does not contain" keeps a cell whose
+#: text is empty, as the table does).
+STRING_OPS = ("contains", "not_contains", "starts_with", "not_starts_with",
+              "ends_with", "not_ends_with")
+#: Ops with no value: the text is empty (a missing value is empty here, as in
+#: the table) or is not.
+EMPTY_OPS = ("empty", "not_empty")
+#: A needle is a typed word, not a list.
+MAX_NEEDLE = 200
+#: Groups of conditions inside ``where``: {"any": [...]} (OR) or {"all": [...]}
+#: (AND), nested at most this deep.
+MAX_GROUP_DEPTH = 2
 #: Ops on a column's numeric value. "between" is inclusive at both ends.
 NUMERIC_OPS = (">", ">=", "<", "<=", "==", "!=", "between")
 
@@ -93,9 +109,29 @@ class Condition:
     def canonical(self) -> Dict[str, Any]:
         if self.op in TEXT_OPS:
             return {"col": self.col, "op": self.op, "values": list(self.values)}
+        if self.op in EMPTY_OPS:
+            return {"col": self.col, "op": self.op}
         if self.op == "between":
             return {"col": self.col, "op": self.op, "value": list(self.values)}
         return {"col": self.col, "op": self.op, "value": self.values[0]}
+
+
+@dataclass(frozen=True)
+class Group:
+    """Conditions joined by OR (``any``) or AND (``all``); items may be groups."""
+    logic: str                      # "any" | "all"
+    items: Tuple[Any, ...] = ()
+
+    def canonical(self) -> Dict[str, Any]:
+        return {self.logic: [i.canonical() for i in self.items]}
+
+
+def leaves(items) -> List[Condition]:
+    """Every condition in ``items``, groups unfolded."""
+    out: List[Condition] = []
+    for item in items:
+        out.extend(leaves(item.items) if isinstance(item, Group) else [item])
+    return out
 
 
 @dataclass(frozen=True)
@@ -103,7 +139,7 @@ class SubsetSpec:
     n: Optional[int]
     seed: int = DEFAULT_SEED
     balance: Optional[str] = None
-    where: Tuple[Condition, ...] = field(default_factory=tuple)
+    where: Tuple[Any, ...] = field(default_factory=tuple)   # Condition | Group
     part: int = 0
 
     def canonical(self) -> Dict[str, Any]:
@@ -124,7 +160,7 @@ class SubsetSpec:
         return json.dumps(self.canonical(), separators=(",", ":"), sort_keys=False)
 
     def columns(self) -> List[str]:
-        cols = [c.col for c in self.where]
+        cols = [c.col for c in leaves(self.where)]
         if self.balance is not None:
             cols.append(self.balance)
         return list(dict.fromkeys(cols))
@@ -168,6 +204,15 @@ def _condition(raw) -> Condition:
             raise SubsetError(f"subset condition on {col!r} lists more than {MAX_VALUES} values")
         text = sorted({value_text(v) for v in values})
         return Condition(col, op, tuple(text))
+    if op in STRING_OPS:
+        needle = raw.get("value")
+        if not isinstance(needle, str) or not needle:
+            raise SubsetError(f"subset condition '{op}' on {col!r} needs a non-empty text 'value'")
+        if len(needle) > MAX_NEEDLE:
+            raise SubsetError(f"subset condition '{op}' on {col!r} has text longer than {MAX_NEEDLE} characters")
+        return Condition(col, op, (needle,))
+    if op in EMPTY_OPS:
+        return Condition(col, op, ())
     if op == "between":
         bounds = raw.get("value")
         if not isinstance(bounds, list) or len(bounds) != 2:
@@ -179,7 +224,22 @@ def _condition(raw) -> Condition:
     if op in NUMERIC_OPS:
         return Condition(col, op, (_number(raw.get("value"), "value"),))
     raise SubsetError(f"unknown subset condition op {op!r}; "
-                      f"use one of {', '.join(TEXT_OPS + NUMERIC_OPS)}")
+                      f"use one of {', '.join(TEXT_OPS + STRING_OPS + EMPTY_OPS + NUMERIC_OPS)}")
+
+
+def _where_item(raw, depth: int):
+    """A condition, or a group {"any"|"all": [...]} at nesting ``depth`` (1 = in ``where``)."""
+    if isinstance(raw, dict) and ("any" in raw or "all" in raw):
+        logic = "any" if "any" in raw else "all"
+        if len(raw) != 1:
+            raise SubsetError("a subset condition group has only one key, 'any' or 'all'")
+        if depth > MAX_GROUP_DEPTH:
+            raise SubsetError(f"subset condition groups nest at most {MAX_GROUP_DEPTH} deep")
+        members = raw[logic]
+        if not isinstance(members, list) or not members:
+            raise SubsetError(f"subset condition group '{logic}' needs a non-empty list")
+        return Group(logic, tuple(_where_item(m, depth + 1) for m in members))
+    return _condition(raw)
 
 
 def parse_spec(raw) -> Optional[SubsetSpec]:
@@ -219,7 +279,9 @@ def parse_spec(raw) -> Optional[SubsetSpec]:
         raise SubsetError("subset where must be a list of conditions")
     if len(where) > MAX_CONDITIONS:
         raise SubsetError(f"subset where has more than {MAX_CONDITIONS} conditions")
-    conditions = tuple(_condition(c) for c in where)
+    conditions = tuple(_where_item(c, 1) for c in where)
+    if len(leaves(conditions)) > MAX_CONDITIONS:
+        raise SubsetError(f"subset where has more than {MAX_CONDITIONS} conditions")
     if n is None and balance is not None:
         raise SubsetError("subset balance needs a cell count n")
     part = _int(raw.get("part", 0), "part", 0, 2**62)
@@ -454,9 +516,64 @@ def _numeric(values: Sequence) -> np.ndarray:
     return out
 
 
-def _condition_mask(cond: Condition, values: Sequence) -> np.ndarray:
-    """True where a cell passes; a missing value passes no condition."""
+def _text_of(v) -> str:
+    """The text a cell table matches a value as: a missing value is empty."""
+    return "" if _is_missing(v) else value_text(v)
+
+
+def _text_test(cond: Condition) -> Callable[[str], bool]:
+    """The SearchBuilder string condition on a text, case-insensitively
+    (it lower-cases both sides; "Equals" is exact and is ``in``)."""
+    op = cond.op
+    if op == "empty":
+        return lambda t: not t
+    if op == "not_empty":
+        return lambda t: bool(t)
+    needle = cond.values[0].lower()
+    negate = op.startswith("not_")
+    kind = op[4:] if negate else op
+    if kind == "contains":
+        test = lambda t: needle in t               # noqa: E731
+    elif kind == "starts_with":
+        test = lambda t: t.startswith(needle)      # noqa: E731
+    else:
+        test = lambda t: t.endswith(needle)        # noqa: E731
+    return (lambda t: not test(t.lower())) if negate else (lambda t: test(t.lower()))
+
+
+#: Distinct texts remembered while a string column is tested, so a column of
+#: few distinct values is tested once per value, not once per cell.
+_TEXT_MEMO_MAX = 100_000
+
+
+def _string_mask(cond: Condition, values: Sequence) -> np.ndarray:
+    """A string condition on a plain column, a block of cells at a time (the
+    output is the only thing as long as the column)."""
     n = len(values)
+    out = np.empty(n, dtype=bool)
+    test, memo = _text_test(cond), {}
+    for start in range(0, n, _KEY_BLOCK):
+        stop = min(start + _KEY_BLOCK, n)
+        block = values[start:stop]
+        res = []
+        for v in block:
+            key = v if isinstance(v, (str, bytes)) else (type(v), v if not _is_missing(v) else None)
+            hit = memo.get(key)
+            if hit is None:
+                hit = test(_text_of(v))
+                if len(memo) < _TEXT_MEMO_MAX:
+                    memo[key] = hit
+            res.append(hit)
+        out[start:stop] = res
+    return out
+
+
+def _condition_mask(cond: Condition, values: Sequence) -> np.ndarray:
+    """True where a cell passes; a missing value passes no condition, except
+    the text conditions, which see it as empty text like the table does."""
+    n = len(values)
+    if cond.op in STRING_OPS or cond.op in EMPTY_OPS:
+        return _string_mask(cond, values)
     if cond.op in TEXT_OPS:
         wanted = set(cond.values)
         hit = np.fromiter((not _is_missing(v) and value_text(v) in wanted for v in values),
@@ -532,7 +649,12 @@ class _Codes:
         return np.where((c < 0) | (c >= self.k), self.k, c)
 
     def mask(self, cond: Condition) -> np.ndarray:
-        if cond.op in TEXT_OPS:
+        if cond.op in STRING_OPS or cond.op in EMPTY_OPS:
+            # asked once per category; the extra slot is a missing value
+            test = _text_test(cond)
+            lut = np.array([test(_text_of(None if m else c))
+                            for c, m in zip(self.categories, self.missing)] + [test("")], dtype=bool)
+        elif cond.op in TEXT_OPS:
             wanted = set(cond.values)
             hit = np.array([not m and value_text(c) in wanted
                             for c, m in zip(self.categories, self.missing)] + [False], dtype=bool)
@@ -570,13 +692,39 @@ def _column_reader(n_obs: int, read_column, read_codes):
     return column
 
 
+def _group_mask(items, logic: str, column) -> np.ndarray:
+    out = None
+    for item in items:
+        if isinstance(item, Group):
+            mask = _group_mask(item.items, item.logic, column)
+        else:
+            mask = column(item.col).mask(item)
+        if out is None:
+            out = mask
+        elif logic == "all":
+            out &= mask
+        else:
+            out |= mask
+    return out
+
+
 def _eligible_rows(spec: SubsetSpec, column) -> Optional[np.ndarray]:
-    """The rows the spec's filter keeps, as a mask; None without a filter."""
-    eligible = None
-    for cond in spec.where:
-        mask = column(cond.col).mask(cond)
-        eligible = mask if eligible is None else (eligible & mask)
-    return eligible
+    """The rows the spec's filter keeps, as a mask; None without a filter.
+
+    ``where`` is an AND; a group is an OR (``any``) or a nested AND (``all``).
+    Only the column last asked about is kept, so a column named by several
+    conditions in a row is read once and two are never held together.
+    """
+    if not spec.where:
+        return None
+    last: List[Any] = [None, None]
+
+    def one(name):
+        if last[0] != name:
+            last[0], last[1] = name, column(name)
+        return last[1]
+
+    return _group_mask(spec.where, "all", one)
 
 
 def parts_of_rows(n_obs: int, spec: SubsetSpec, rows: Sequence[int],

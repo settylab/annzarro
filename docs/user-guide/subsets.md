@@ -94,11 +94,22 @@ show the dialog. On a large dataset the steps are the same.
    1,000 cells from each of Mid, Old and Young.
 6. **Filter**: click **Add condition** and choose an obs column, an
    operator and a value. Text columns offer "is one of" and "is not one of" (values comma
-   separated); numeric columns offer >, ≥, <, ≤, =, ≠ and "between". Conditions are joined by AND;
-   a cell with a missing value passes no condition. Here, `n_genes_by_counts ≥ 1000`.
-   **Use** next to a cell table copies that table's filter of an open cell table instead (a top-level AND of conditions
-   on obs columns; anything else is reported as not copied). Unlike the table, which only holds
-   the cells already loaded, the subset applies the conditions to every cell of the dataset.
+   separated), and "contains", "does not contain", "starts with", "does not start with", "ends with",
+   "does not end with", "is empty" and "is not empty" (one piece of text, upper and lower case
+   alike, as in a cell table); numeric columns offer >, ≥, <, ≤, =, ≠ and "between". Conditions
+   are joined by AND. A cell with a missing value passes no "is one of", "is not one of" or
+   number condition; for the text conditions it counts as empty text, as it does in a cell table, so
+   it passes "is empty" and every "does not ..." condition. Here, `n_genes_by_counts ≥ 1000`.
+   **Use** next to a cell table copies that table's filter of an open cell table instead: conditions on obs
+   columns joined by AND or OR, in groups nested up to two deep, with =, ≠, the text conditions above, "empty"
+   and "not empty" on text, and the number conditions on numbers. A group copied this way is shown
+   in words with a remove button. Anything the subset cannot apply to all cells is reported as not
+   copied (a column that is not an obs column, a number's "not between", a text condition on a
+   Yes/No column, deeper groups); an OR that has such a condition inside it is not copied at all, since
+   leaving that side out would keep fewer cells than the table does. Unlike the table, which only holds
+   the cells already loaded, the subset applies the conditions to every cell of the dataset. On a
+   categorical column the server tests each category once and then makes one pass over the codes, so
+   a text filter on 95 million cells costs about as much as "is one of".
 7. The preview line under the form says how many cells will be shown, how many pass the filter
    and, for balanced sampling, how many are taken per group. It warns when the subset is so large
    that drawing it can make the browser slow.

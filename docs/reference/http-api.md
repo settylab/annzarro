@@ -238,8 +238,12 @@ A subset is described by a spec, sent as the `subset=` query parameter (compact 
 {"n": null, "seed": 0, "where": [{"col": "Age", "op": "in", "values": ["Old"]}]}
 ```
 
-`n: null` means every cell that passes `where`, an AND of conditions on obs columns (`in`,
-`not_in`, `>`, `>=`, `<`, `<=`, `==`, `!=`, `between`). The same spec selects the same cells on
+`n: null` means every cell that passes `where`, an AND of conditions on obs columns: `in`,
+`not_in` (`values`), `>`, `>=`, `<`, `<=`, `==`, `!=`, `between` (numbers), the case-insensitive
+text conditions `contains`, `not_contains`, `starts_with`, `not_starts_with`, `ends_with`,
+`not_ends_with` (one non-empty text `value`) and `empty`, `not_empty` (no value; a missing value
+is empty text). An item of `where` may also be a group, `{"any": [...]}` (OR) or `{"all": [...]}`
+(AND), whose members are conditions or groups, nested at most 2 deep (16 conditions in all). The same spec selects the same cells on
 every machine and release.
 
 `"part": j` (0-based, default 0) selects part j of the partition of the eligible cells into
