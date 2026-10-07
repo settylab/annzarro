@@ -13,9 +13,12 @@
  * This drives the REAL setupTableEventListeners -> updateTableOnFocusChange
  * chain and counts what it does to the table.
  *
- * Issue #9: such a column is reloaded IN PLACE (its cells and header), never
- * by rebuilding the whole table, and a column picked from the focus now names
- * its entity and does not follow the focus at all.
+ * Issue #9: a table column depends on its cell or gene, never on the fact
+ * that it was focused. A column picked from the focus names its entity, and
+ * a "focused cell/gene" placeholder from an older view is pinned to a name
+ * when its panel is made (table-focus-pin.test.mjs). So NO column is
+ * reloaded on a focus change, placeholder or not, and the table is never
+ * rebuilt for one.
  *
  * Run:  node --test annzarro/tests/js/table-focus.test.mjs
  */
@@ -33,7 +36,7 @@ globalThis.CustomEvent = class extends Event {
 
 const { DataManager } = await import('../../../static/js/data-manager.js');
 const { setupTableEventListeners } = await import('../../../static/js/panels/table-utilities/listeners.js');
-const { focusChangeAffectsColumns, getColumnKey } = await import('../../../static/js/panels/table-utilities/table-data.js');
+const { getColumnKey } = await import('../../../static/js/panels/table-utilities/table-data.js');
 
 DataManager.getCurrentDataset = () => '/fixture.zarr';
 DataManager.getDatasetStructure = async () => ({});
@@ -108,12 +111,13 @@ async function refreshesAfter(tableEntityType, columns, changed) {
 
 const CASES = [
     // table,   column,                                                    expected refreshes on [cell change, gene change]
-    ['cells', { type: 'obsp', key: 'connectivities', column: 'focused_cell' }, [1, 0]],
-    ['cells', { type: 'obsp', key: 'connectivities', column: '_focused_cell' }, [1, 0]],
-    ['cells', { type: 'layer', key: 'counts', column: 'focused_gene' }, [0, 1]],
-    ['genes', { type: 'varp', key: 'corr', column: 'focused_gene' }, [0, 1]],
-    ['genes', { type: 'layer', key: 'counts', column: 'focused_cell' }, [1, 0]],
-    // A FIXED entity does not follow focus at all.
+    // A placeholder that reaches a live table does not follow the focus either
+    ['cells', { type: 'obsp', key: 'connectivities', column: 'focused_cell' }, [0, 0]],
+    ['cells', { type: 'obsp', key: 'connectivities', column: '_focused_cell' }, [0, 0]],
+    ['cells', { type: 'layer', key: 'counts', column: 'focused_gene' }, [0, 0]],
+    ['genes', { type: 'varp', key: 'corr', column: 'focused_gene' }, [0, 0]],
+    ['genes', { type: 'layer', key: 'counts', column: 'focused_cell' }, [0, 0]],
+    // A named entity does not follow focus at all.
     ['cells', { type: 'obsp', key: 'connectivities', column: 'cell_9' }, [0, 0]],
     ['genes', { type: 'varp', key: 'corr', column: 'GENE_9' }, [0, 0]],
     ['cells', { type: 'obs', key: 'celltype' }, [0, 0]],
@@ -129,24 +133,16 @@ for (const [table, column, [onCell, onGene]] of CASES) {
     });
 }
 
-test('the reloaded column gets the new values and header; other columns are untouched', async () => {
-    const cols = [{ type: 'obs', key: 'celltype' }, { type: 'obsp', key: 'connectivities', column: 'focused_cell' }];
-    const { log } = await afterFocusChange('cells', cols, 'cells');
-    const key = getColumnKey(cols[1]);
-    assert.deepEqual(log.rowsData.map(r => r[key]), [0.1, 0.2, 0.3]);
-    assert.equal(log.headers[2].textContent, 'connectivities: c1 (follows focus)');
-    assert.equal(log.headers[1].textContent, 'old');
-    assert.ok(log.rowsData.every(r => !(getColumnKey(cols[0]) in r)));
-});
-
-test('a following column missing from the table falls back to one rebuild', async () => {
-    const { refreshes, inPlace } = await afterFocusChange('cells',
-        [{ type: 'obsp', key: 'connectivities', column: 'focused_cell' }], 'cells', { inTable: false });
-    assert.equal(refreshes, 1);
-    assert.equal(inPlace, 0);
-});
-
-test('focusChangeAffectsColumns tolerates junk input', () => {
-    assert.equal(focusChangeAffectsColumns(undefined, 'cells'), false);
-    assert.equal(focusChangeAffectsColumns([{ column: 'focused_cell' }], 'bogus'), false);
+test('a focus change leaves every column, its values and its header as they were', async () => {
+    const cols = [{ type: 'obs', key: 'celltype' }, { type: 'obsp', key: 'connectivities', column: 'c1' },
+                  { type: 'layer', key: 'counts', column: 'g0' }];
+    const before = structuredClone(cols);
+    for (const changed of ['cells', 'genes']) {
+        const { refreshes, inPlace, log } = await afterFocusChange('cells', cols, changed);
+        assert.equal(refreshes, 0);
+        assert.equal(inPlace, 0);
+        assert.ok(log.rowsData.every(r => Object.keys(r).length === 1), 'no column value was written');
+        assert.ok(log.headers.slice(1).every(h => h.textContent === 'old'), 'no header was renamed');
+    }
+    assert.deepEqual(cols, before);
 });
