@@ -311,6 +311,7 @@ test('ranked codes without labels: a trace per colour, legend names given, no ho
         const g = Number(t.name.slice(5));
         assert.equal(t.marker.color, palette[g]);
         assert.equal(t.hoverinfo, 'none');
+        assert.equal(t.hovertemplate, '');
         assert.equal(t._azLabels, undefined);
         t.customdata.forEach(cell => assert.equal(ranks[Number(cell.slice(1))] % cats.GROUP_COLOURS, g));
     }

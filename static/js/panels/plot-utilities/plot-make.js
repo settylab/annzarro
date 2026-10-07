@@ -1417,9 +1417,11 @@ export async function applyHoverInfo(plotContainer, data, settings) {
   const templates = [], hovertexts = [], hoverinfos = [], indices = [];
   plotContainer.data.forEach((trace, i) => {
     if (!trace || !Array.isArray(trace.text) || (typeof trace.name === 'string' && trace.name.includes('Focused'))) return;
-    const template = hoverTemplateFor(trace, settings, data);
-    // "No hover" (settings.hoverOff): no label, the click still focuses
-    const hoverinfo = hoverIsOff(settings.hoverOff) ? 'none' : 'all';
+    // "No hover" (settings.hoverOff): no label, the click still focuses. A
+    // hovertemplate overrides hoverinfo, so it is emptied too.
+    const off = hoverIsOff(settings.hoverOff);
+    const template = off ? '' : hoverTemplateFor(trace, settings, data);
+    const hoverinfo = off ? 'none' : 'all';
     const labels = Array.isArray(trace._azLabels) ? trace._azLabels : null;
     const hovertext = rowOf || labels ? trace.text.map((name, j) => {
       const r = rowOf ? rowOf.get(name) : undefined;
@@ -1428,7 +1430,7 @@ export async function applyHoverInfo(plotContainer, data, settings) {
     }) : null;
     // A restyle recomputes the whole figure (1.3 s at 1M points with a
     // colour each): only traces whose hover changes are restyled.
-    if (template === trace.hovertemplate && hoverinfo === (trace.hoverinfo || 'all')
+    if (template === (trace.hovertemplate || '') && hoverinfo === (trace.hoverinfo || 'all')
         && sameHovertext(hovertext, trace.hovertext)) return;
     indices.push(i);
     templates.push(template);

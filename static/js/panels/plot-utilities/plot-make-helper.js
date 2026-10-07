@@ -490,7 +490,9 @@ export function keptViewRanges(settings) {
           : groupLegendName(members.map(([, i]) => categories[i]));
         const trace = makeTrace(indices, name, selectedPalette[g], null);
         if (ranked) {
+          // no label to show: no hover box (a template would override hoverinfo)
           trace.hoverinfo = 'none';
+          trace.hovertemplate = '';
         } else {
           trace._azLabels = indices.map(idx => String(categories[slotOf[idx]]));
           trace.hovertext = trace._azLabels.map(label => `<br>${label}`);
