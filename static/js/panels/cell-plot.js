@@ -211,6 +211,12 @@ const CellPlotPanel = (function() {
         }
 
         async function handleFocusedCellChanged(focusedCell) {
+            // A panel made while the dataset is still opening is already listening,
+            // and the focus is resolved before its own load has set its axes. That
+            // is a legitimate early event: the load reads the focus itself, so
+            // there is nothing to refresh yet.
+            if (!(_settings.x && _settings.y)) return;
+
             // whether the new focus is a point here: also with highlighting
             // off, and in large-plot mode, where nothing else is redrawn
             noteFocusOutside(_plotContainer, _data, _settings, _plotType);
@@ -278,6 +284,12 @@ const CellPlotPanel = (function() {
         }
 
         async function handleFocusedGeneChanged(focusedGene) {
+            // A panel made while the dataset is still opening is already listening,
+            // and the focus is resolved before its own load has set its axes. That
+            // is a legitimate early event: the load reads the focus itself, so
+            // there is nothing to refresh yet.
+            if (!(_settings.x && _settings.y)) return;
+
             // Determine if any setting uses layer data
             const usesLayerData = _settings.x.type === 'layer' ||
                                   _settings.y.type === 'layer' ||
