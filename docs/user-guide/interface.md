@@ -31,6 +31,8 @@ The header. Numbers match the list below.
 8. **Load Panel Set** opens the list of stored panel sets.
 9. **Share Link** copies a URL that reopens this dataset, layout and focus ({doc}`share-links`).
 
+A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).
+
 Below the header, the statistics bar shows the number of cells (8,090) with a badge, **All
 cells**, the number of genes (16285) and the dataset's display name. Datasets with more than
 200,000 cells open on a reproducible subset of 100,000 cells; the badge then reads **Subset ·

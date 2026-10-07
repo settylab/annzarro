@@ -187,3 +187,23 @@ Saving writes one JSON file to `<data_dir>/sessions/`; the file holds the panel 
 data. Loading reads it back. Each panel then requests its vectors like any new panel. The
 server never writes to the dataset itself.
 ```
+
+(close-all-panels)=
+
+## Close all panels and start over
+
+Because the browser autosaves the layout, the next visit brings it back. **Close all** in the
+header (next to Share Link; icon only on narrower windows, tooltip "Close all panels") starts over.
+It asks "Close all panels?" and offers **Close all** or **Cancel**. Close all closes every open
+panel; each goes to the closed list under Duplicate or Reopen Panel, exactly as with the panel's
+own X, so nothing is lost until you clear that list.
+
+The dialog has one tick box, off by default: **Also clear everything this site stored in this
+browser and reload as a first visit**. Ticked, Close all also clears this site's local storage
+(which holds the autosave), session storage, IndexedDB databases, Cache Storage and service-worker
+registrations, then reloads the bare address, without `#view` or `?dataset_path`. The app starts
+as on a first visit: nothing is restored from the autosave, and the closed list is gone too.
+
+Not affected, whichever way you answer: panel sets saved on the server, and your login. The login
+is a server cookie; cookies are left alone, and AnnZarro keeps no sign-in or CSRF state in the
+browser's storage. Other sites' data is never touched; the clear covers this address only.
