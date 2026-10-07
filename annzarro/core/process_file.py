@@ -177,24 +177,24 @@ def extract_cells_genes(dataset_path: str, type: Literal["cells", "genes"], read
     
 def extract_obs_var_codes(dataset_path: str, reader: Reader, indices, column: str,
                           type: Literal["cells", "genes"], used_only: bool = False,
-                          n_categories: Optional[int] = None, ranked_top: Optional[int] = None):
+                          n_categories: Optional[int] = None, ranked: bool = False):
     """One categorical obs/var column as codes + categories (binary), or None
     when the column is not categorical or the reader cannot give codes; the
     caller then answers as before. With ``used_only`` (or past
     READ_ALL_MAX categories) the categories are those the rows use, and the
-    reply says the column's full count. With ``ranked_top``, codes are
-    frequency ranks and only the first ``ranked_top`` labels are sent
+    reply says the column's full count. With ``ranked``, each row's code is
+    its category's rank over the whole column and no label is sent
     (core/categories.py)."""
     get_codes = getattr(reader, "get_obs_var_codes", None)
     if get_codes is None:
         return None
-    if ranked_top is not None:
+    if ranked:
         result = get_codes(entity=type, dataset_path=dataset_path, column_name=column, indices=indices,
-                           ranked_top=ranked_top)
+                           ranked=True)
         if result is None:
             return None
-        ranks, labels, used = result
-        return categorical_response(ranks, labels, total=n_categories, used=used, ranked=True)
+        ranks, used = result
+        return categorical_response(ranks, [], total=n_categories, used=used, ranked=True)
     result = get_codes(entity=type, dataset_path=dataset_path, column_name=column, indices=indices,
                        used_only=used_only)
     if result is None:

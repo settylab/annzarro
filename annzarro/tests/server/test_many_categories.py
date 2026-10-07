@@ -8,9 +8,10 @@ cells a GB-sized list built in server memory, which the client then refused
 
 - the dataset structure says how many categories a column has (from the
   categories array's shape, without reading it);
-- ``categories=ranked`` gives each cell's code as its category's frequency
-  rank among the rows, and the labels of the first ranks only: what colouring
-  by colour group needs, at any number of categories;
+- ``categories=ranked`` gives each cell its category's rank in the column's
+  ranking over ALL its cells (cached per store and column), the same under
+  any subset or part; ``category_ranks=`` gives the labels of a few ranks:
+  what colouring by colour group needs, at any number of categories;
 - past READ_ALL_MAX categories a reply carries only the categories its rows
   use, and says the column's count;
 - a reply that would still need more than MAX_LABELS labels is refused;
@@ -90,66 +91,86 @@ def test_structure_says_how_many_categories(many):
     assert info["huge"]["n_categories"] == HUGE
 
 
-def test_ranked_codes_and_the_legend_labels_only(many, monkeypatch):
-    """categories=ranked: code r is the r-th most frequent category of the
-    rows, the prefix the labels of the first ranks only, and the categories
-    read are those few, not the column's 70,000."""
+def _labels(client, path, column, ranks, **query):
+    return client.get("/api/v1/data/obs", query_string={
+        "dataset_path": path, "columns": column, "category_ranks": ",".join(map(str, ranks)), **query})
+
+
+def test_ranked_codes_are_the_whole_columns_ranks(many, monkeypatch):
+    """categories=ranked: code r is the r-th largest category of the whole
+    column (ties by stored code), no label is sent, and category_ranks= gives
+    a few labels, reading only those categories."""
     client, path, labels = many
+    resp = _codes(client, path, "few", categories="ranked")
+    assert resp.status_code == 200
+    h = resp.headers
+    assert h["X-Annzarro-Categories-Order"] == "ranked"
+    assert h["X-Annzarro-Categories-Used"] == "4" and h["X-Annzarro-Categories-Total"] == "4"
+    ranks, prefix = decode(resp)
+    assert prefix == []
+    counts = {}
+    for v in labels["few"]:
+        counts[v] = counts.get(v, 0) + 1
+    order = sorted(counts, key=lambda v: (-counts[v], "abcd".index(v)))
+    assert [order[r] for r in ranks.tolist()] == labels["few"]
+    named = _labels(client, path, "few", [1, 0, 7]).get_json()
+    assert named["labels"] == [order[1], order[0], None]
+
     sizes = []
     reader = get_reader(path)
     real = reader._read_member
     monkeypatch.setattr(reader, "_read_member",
                         lambda member, indices=None: sizes.append(
                             member.shape[0] if indices is None else len(indices)) or real(member, indices))
-    resp = _codes(client, path, "few", categories="ranked", labels="2")
-    assert resp.status_code == 200
-    h = resp.headers
-    assert h["X-Annzarro-Categories-Order"] == "ranked"
-    assert h["X-Annzarro-Categories-Used"] == "4" and h["X-Annzarro-Categories-Total"] == "4"
-    ranks, top = decode(resp)
-    counts = {}
-    for v in labels["few"]:
-        counts[v] = counts.get(v, 0) + 1
-    order = sorted(counts, key=lambda v: (-counts[v], "abcd".index(v)))
-    assert top == order[:2]
-    assert [order[r] for r in ranks.tolist()] == labels["few"]
-
-    sizes.clear()
     huge = _codes(client, path, "huge", categories="ranked")
-    ranks, top = decode(huge)
-    present = [v for v in labels["huge"] if v is not None]
-    assert huge.headers["X-Annzarro-Categories-Used"] == str(len(set(present)))
+    ranks, _ = decode(huge)
+    present = sorted({v for v in labels["huge"] if v is not None})   # one cell each: ties by code
+    assert huge.headers["X-Annzarro-Categories-Used"] == str(len(present))
     assert huge.headers["X-Annzarro-Categories-Total"] == str(HUGE)
-    # one cell per category: ties keep the stored order, so rank = order of code
-    by_code = sorted(set(present))
-    assert top == by_code[:category_rules.RANKED_LABELS]
-    assert [None if r < 0 else by_code[r] for r in ranks.tolist()] == labels["huge"]
-    assert max(sizes) <= category_rules.RANKED_LABELS     # the legend's labels, not 70,000
+    assert [None if r < 0 else present[r] for r in ranks.tolist()] == labels["huge"]
+    assert _labels(client, path, "huge", [0, 2]).get_json()["labels"] == [present[0], present[2]]
+    assert max(sizes) <= 2                                # two labels read, not 70,000
 
 
-def test_ranked_codes_follow_the_subset(many):
+def test_a_category_has_the_same_rank_in_every_subset_and_part(many):
+    """The rank is the column's: under a subset, in each of its parts, and
+    without one, the same cell gets the same rank (and so the same colour)."""
     client, path, labels = many
-    spec = json.dumps({"n": 60, "seed": 2})
-    names = client.get("/api/v1/data/cells", query_string={"dataset_path": path, "subset": spec}).get_json()["cells"]
-    rows = [int(n[1:]) for n in names]
-    resp = _codes(client, path, "barcode", categories="ranked", labels="5", subset=spec)
-    ranks, top = decode(resp)
-    shown = [labels["barcode"][r] for r in rows]
-    assert resp.headers["X-Annzarro-Categories-Used"] == "60"
-    assert len(top) == 5 and all(t in shown for t in top)
-    assert len(set(ranks.tolist())) == 60
+    full, _ = decode(_codes(client, path, "few", categories="ranked"))
+    for spec in ({"n": 60, "seed": 2}, {"n": 60, "seed": 2, "part": 1}, {"n": 25, "seed": 9}):
+        sub = json.dumps(spec)
+        names = client.get("/api/v1/data/cells", query_string={"dataset_path": path, "subset": sub}).get_json()["cells"]
+        rows = [int(n[1:]) for n in names]
+        ranks, _ = decode(_codes(client, path, "few", categories="ranked", subset=sub))
+        assert ranks.tolist() == [full[r] for r in rows], spec
+        assert _labels(client, path, "few", [0], subset=sub).get_json()["labels"] == \
+            _labels(client, path, "few", [0]).get_json()["labels"]
 
 
-def test_ranked_ranks_by_frequency_in_linear_time():
+def test_the_column_ranking_is_computed_once(many, monkeypatch):
+    client, path, _ = many
+    category_rules.clear_rankings()
+    calls = []
+    real = category_rules.rank_codes
+    monkeypatch.setattr(category_rules, "rank_codes", lambda *a: calls.append(1) or real(*a))
+    for rows in ("1,2", "3,4", None):
+        q = {"rows": rows} if rows else {}
+        assert _codes(client, path, "huge", categories="ranked", **q).status_code == 200
+    _labels(client, path, "huge", [0])
+    assert len(calls) == 1
+
+
+def test_rank_codes_by_count_then_code():
     rng = np.random.default_rng(0)
     codes = rng.integers(-1, 1000, 50_000)
-    ranks, top, used = category_rules.ranked(codes, 1000, lambda pos: np.array([f"k{p}" for p in pos]), 3)
+    ranking = category_rules.rank_codes(codes, 1000)
     counts = np.bincount(codes[codes >= 0], minlength=1000)
-    expected_order = sorted(range(1000), key=lambda k: (-counts[k], k))
-    assert used == int((counts > 0).sum())
-    assert top == [f"k{k}" for k in expected_order[:3]]
-    rank_of = {k: r for r, k in enumerate(expected_order)}
-    assert ranks.tolist() == [-1 if c < 0 else rank_of[c] for c in codes.tolist()]
+    expected = sorted((k for k in range(1000) if counts[k]), key=lambda k: (-counts[k], k))
+    assert ranking.used == len(expected)
+    assert ranking.order.tolist() == expected
+    assert ranking.ranks(codes).tolist() == [-1 if c < 0 else expected.index(c) for c in codes.tolist()]
+    one_each = category_rules.rank_codes(np.random.default_rng(1).permutation(100_000), 100_000)
+    assert one_each.order.tolist() == list(range(100_000))
 
 
 def test_a_reply_carries_only_the_categories_its_rows_use(many, monkeypatch):

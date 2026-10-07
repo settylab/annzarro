@@ -4,7 +4,6 @@
  */
 import { Config } from './config.js';
 import { subsetParam } from './utils/subset.js';
-import { RANKED_LABELS } from './utils/categories.js';
 import { notify } from './utils/notify.js';
 import { CacheManager } from './cache-manager.js';
 import { BINARY_FORMAT, categoricalValues, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
@@ -2085,13 +2084,14 @@ const DataManager = (function() {
      * plus its categories, read as a stream (utils/packed-names.js): the JSON
      * body of a large dataset does not fit in one string.
      */
-    async function loadCategoryCodes(datasetPath, column, { ranked = false } = {}) {
-        // ranked: codes as frequency ranks plus the legend's few labels
-        // (utils/categories.js); otherwise every category
-        const params = _withSubset(Config.API.OBS, ranked
-            ? { dataset_path: datasetPath, columns: column, categories: 'ranked', labels: String(RANKED_LABELS) }
+    async function loadCategoryCodes(datasetPath, column, { ranked = false, slot = 'obs' } = {}) {
+        // ranked: each cell's category's rank over the whole column
+        // (utils/categories.js), no labels; otherwise every category
+        const url = slot === 'var' ? Config.API.VAR : Config.API.OBS;
+        const params = _withSubset(url, ranked
+            ? { dataset_path: datasetPath, columns: column, categories: 'ranked' }
             : { dataset_path: datasetPath, columns: column });
-        const fullUrl = `${Config.API.OBS}?${new URLSearchParams(params).toString()}`;
+        const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
         const key = `${fullUrl}#codes`;
         const cached = CacheManager.get(key);
         if (cached !== undefined) return cached;
@@ -2110,6 +2110,27 @@ const DataManager = (function() {
         })().finally(() => _inflight.delete(key));
         _inflight.set(key, pending);
         return pending;
+    }
+
+    /**
+     * Labels of a few ranks of a categorical column's whole-column ranking
+     * (`categories=ranked`): the names a colour group's legend entry shows.
+     * @param {string} datasetPath
+     * @param {string} column
+     * @param {number[]} ranks
+     * @param {'obs'|'var'} [slot]
+     * @returns {Promise<Map<number, string>>} rank -> label
+     */
+    async function loadCategoryLabels(datasetPath, column, ranks, slot = 'obs') {
+        const out = new Map();
+        const wanted = [...new Set(ranks)].sort((a, b) => a - b);
+        for (let i = 0; i < wanted.length; i += 1000) {
+            const part = wanted.slice(i, i + 1000);
+            const body = await _fetchWithCache(slot === 'var' ? Config.API.VAR : Config.API.OBS,
+                { dataset_path: datasetPath, columns: column, category_ranks: part.join(',') });
+            (body.ranks || part).forEach((r, k) => out.set(Number(r), body.labels[k]));
+        }
+        return out;
     }
 
     /**
@@ -2226,6 +2247,7 @@ const DataManager = (function() {
         loadByPath,
         loadVector,
         loadCategoryCodes,
+        loadCategoryLabels,
         setFocusedCell,
         setFocusedGene,
         setTaxonomyId,

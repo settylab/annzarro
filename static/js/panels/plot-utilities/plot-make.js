@@ -295,6 +295,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
     let data, values, dataType;
     let categories = null;
+    let rankOf = null;   // colour groups: category label -> rank over the whole column
 
     // --- Helper Functions ---
     // Returns at most maxSample elements of an array.
@@ -365,6 +366,11 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           const count = categoryCount(structure, type, key);
           categoriesWanted = count !== null && grouped(count) ? 'used' : 'all';
         }
+        // Colour groups (utils/categories.js): each point's category's rank
+        // over the WHOLE column, so a category's colour does not depend on
+        // the cells shown (subset, part, filter) or on the panel
+        const ranked = categoriesWanted === 'used'
+          ? DataManager.loadCategoryCodes(datasetPath, key, { ranked: true, slot: type }) : null;
         data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr, categories: categoriesWanted });
         // classifyColumn encodes the server's measured semantics: key ABSENT
         // means the column is not in this dataset; key present but empty on a
@@ -380,6 +386,15 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           throw err;
         }
         values = data.data[key];
+        if (ranked) {
+          const r = await ranked;
+          if (r && r.ranked && r.codes.length === values.length) {
+            rankOf = new Map();
+            for (let i = 0; i < values.length; i++) {
+              if (r.codes[i] !== r.MISSING && !rankOf.has(values[i])) rankOf.set(values[i], r.codes[i]);
+            }
+          }
+        }
         if (data.categories && data.categories[key]) {
           dataType = 'categorical';
           categories = data.categories[key];
@@ -597,7 +612,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           ? classifyMatrixColumn({ values, expected, unit, source, key: settings.key })
           : classifyValues({ values, expected, unit, source });
     }
-    return { values, type: dataType, categories, coverage };
+    return { values, type: dataType, categories, coverage, rankOf };
   } catch (error) {
     console.error('Error loading data for settings', settings, 'error:', error);
     const wrapped = new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
@@ -907,6 +922,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           data.colorType = colorData.type;
           applyLogColor(data, settings);
           data.colorCategories = colorData.categories;
+          data.colorRankOf = colorData.rankOf || null;
           data.colorCoverage = colorData.coverage || null;
           // Update any color control UI in the container.
           updateColorControlsVisibility(container, data.colorType, id);

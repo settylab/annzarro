@@ -992,13 +992,13 @@ class SubsetView:
                                         include_categories=include_categories)
 
     def get_obs_var_codes(self, entity="cells", dataset_path=None, column_name=None, indices=None,
-                          used_only=False, ranked_top=None):
+                          used_only=False, ranked=False):
         if entity == "cells":
             indices = (self.subset.indices.tolist() if indices is None
                        else self._rows(indices))
         return self._reader.get_obs_var_codes(entity=entity, dataset_path=dataset_path,
                                               column_name=column_name, indices=indices,
-                                              used_only=used_only, ranked_top=ranked_top)
+                                              used_only=used_only, ranked=ranked)
 
     def get_obsm_varm(self, entity="cells", key=None, dataset_path=None, indices=None,
                       col_indices=None, column_name=None):

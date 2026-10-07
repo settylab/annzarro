@@ -454,19 +454,34 @@ export function keptViewRanges(settings) {
     }
 
     if (many) {
-      // Rank the categories by their points on this plot; rank r goes to
-      // colour r mod GROUP_COLOURS, so the largest categories each lead a
-      // colour. Each point's category goes to its hover through `_azLabels`.
-      const { rankOf, order, used } = frequencyRanks(Uint32Array.from(bySlot, s => s.length));
+      // Each category's rank over the WHOLE column (data.colorRankOf, from
+      // the server's cached ranking) decides its colour, rank mod
+      // GROUP_COLOURS: the same in every panel, subset, part and filter.
+      // Without it (an older server) the points here are ranked instead.
+      const global = data.colorRankOf instanceof Map ? data.colorRankOf : null;
+      const local = global ? null : frequencyRanks(Uint32Array.from(bySlot, s => s.length));
+      const rankOfSlot = (i) => {
+        if (!global) return local.rankOf[i];
+        const r = global.get(categories[i]);
+        return r === undefined ? -1 : r;
+      };
+      // per colour: its categories on this plot, by rank (the legend names
+      // the largest present ones first)
+      const present = selectedPalette.map(() => []);
       const byColour = selectedPalette.map(() => []);
+      let unranked = categories.length;
       bySlot.forEach((indices, i) => {
         if (indices.length === 0) return;
-        const target = byColour[groupOf(rankOf[i])];
-        for (const idx of indices) target.push(idx);
+        let r = rankOfSlot(i);
+        if (r < 0) r = unranked++;     // a value the ranking does not know: after every ranked one
+        const g = groupOf(r);
+        present[g].push([r, i]);
+        for (const idx of indices) byColour[g].push(idx);
       });
       byColour.forEach((indices, g) => {
         if (indices.length === 0) return;
-        const name = groupLegendName(g, r => categories[order[r]], used);
+        const members = present[g].sort((p, q) => p[0] - q[0]);
+        const name = groupLegendName(members.map(([, i]) => categories[i]));
         const trace = makeTrace(indices, name, selectedPalette[g], null);
         trace._azLabels = indices.map(idx => String(categories[slotOf[idx]]));
         trace.hovertext = trace._azLabels.map(label => `<br>${label}`);

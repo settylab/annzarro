@@ -632,9 +632,9 @@ class h5adReader(CacheSettings):
     @cached_method
     def get_obs_var_codes(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
                           column_name: Optional[str] = None, indices: Optional[List[int]] = None,
-                          used_only: bool = False, ranked_top: Optional[int] = None):
+                          used_only: bool = False, ranked: bool = False):
         """``(codes, categories)`` of a categorical obs/var column, or None,
-        as ZarrReader.get_obs_var_codes."""
+        as ZarrReader.get_obs_var_codes (``ranked``: ``(ranks, used)``)."""
         with _open(dataset_path) as f:
             layer = "obs" if entity == "cells" else "var"
             if layer not in f or column_name not in f[layer]:
@@ -649,12 +649,35 @@ class h5adReader(CacheSettings):
                 if not isinstance(ref, h5py.Reference):
                     return None
                 codes_ds, categories_ds = obj, f[ref]
-            if ranked_top is not None:
+            if ranked:
+                ranking = category_rules.column_ranking(dataset_path, entity, column_name,
+                                                        int(categories_ds.shape[0]), lambda: codes_ds[()])
                 codes = np.asarray(_values(codes_ds, None if indices is None else np.asarray(indices, dtype=np.int64)))
-                return category_rules.ranked(codes, int(categories_ds.shape[0]),
-                                             lambda positions: _values(categories_ds, positions), ranked_top)
+                return ranking.ranks(codes), ranking.used
             codes, categories = _coded(codes_ds, categories_ds, indices, used_only)
             return np.asarray(codes), categories
+
+    def get_category_labels(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                            column_name: Optional[str] = None, ranks=()):
+        """Labels at ``ranks`` of a column's whole-column ranking, as
+        ZarrReader.get_category_labels."""
+        with _open(dataset_path) as f:
+            layer = "obs" if entity == "cells" else "var"
+            if layer not in f or column_name not in f[layer]:
+                return None
+            obj = f[layer][column_name]
+            if isinstance(obj, h5py.Group):
+                if not ("codes" in obj and "categories" in obj):
+                    return None
+                codes_ds, categories_ds = obj["codes"], obj["categories"]
+            else:
+                ref = obj.attrs.get("categories")
+                if not isinstance(ref, h5py.Reference):
+                    return None
+                codes_ds, categories_ds = obj, f[ref]
+            ranking = category_rules.column_ranking(dataset_path, entity, column_name,
+                                                    int(categories_ds.shape[0]), lambda: codes_ds[()])
+            return category_rules.labels_of_ranks(ranking, ranks, lambda positions: _values(categories_ds, positions))
 
     @cached_method
     def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"], rows) -> list[str]:

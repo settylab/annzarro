@@ -8,11 +8,14 @@ up after downloading it (16-bit codes). Now:
 
 **Colouring needs codes, not labels.** Past :data:`GROUP_COLOURS` (64)
 categories the client colours by colour group: categories ranked by how many
-of the shown cells they hold, rank r drawn in colour r mod 64, so the 64
-largest categories each lead a colour (static/js/utils/categories.js). A
-``categories=ranked`` reply gives exactly that: each cell's code renumbered
-to its category's frequency rank among the requested rows, and the labels of
-the first ``labels`` ranks only (the legend's few names per colour).
+cells of the WHOLE column they hold, rank r drawn in colour r mod 64, so the
+64 largest categories each lead a colour (static/js/utils/categories.js).
+The rank is the column's, not the view's, so a category keeps its colour in
+every panel, subset, part and filter; ties (every count is 1 in a column with
+a category per cell) break by stored code. The ranking is computed once per
+store and column from all codes and cached (:func:`column_ranking`). A
+``categories=ranked`` reply gives each requested cell its category's rank;
+``category_ranks=`` gives the labels of a few ranks (the legend's names).
 
 **Labels are read for the rows asked.** Above :data:`READ_ALL_MAX`
 categories a reader reads the codes of the requested rows, then only the
@@ -30,16 +33,19 @@ nothing.
 
 from __future__ import annotations
 
+import threading
+import time
+from collections import OrderedDict
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 
+from . import freshness
+from .name_index import _signature as _store_signature
+
 #: Colours of the palette a column with more categories is grouped into.
 GROUP_COLOURS = 64
-
-#: Labels a ranked reply carries by default: three names per colour group
-#: for the legend ("S1, S7, S12 +18 more").
-RANKED_LABELS = 3 * GROUP_COLOURS
 
 #: Above this many categories a reader reads only the categories the
 #: requested rows use. Below it reading them all is cheaper than finding which
@@ -106,41 +112,107 @@ def compact(codes: np.ndarray, read_categories):
     return out, labels
 
 
-def ranked(codes: np.ndarray, n_categories: int, read_categories, top: int = RANKED_LABELS):
-    """``(ranks, labels, used)``: each code renumbered to its category's
-    frequency rank among ``codes`` (0 = the most cells; ties by stored code),
-    the labels of ranks ``0..top-1``, and the number of categories used.
+@dataclass
+class ColumnRanking:
+    """A column's categories ranked by their cells over the whole column.
 
-    A code outside the column's categories stays -1 (missing). Counting is
-    one bincount over the categories; the ranking sorts the counts with a
-    stable radix sort when they fit 16 bits (the usual case: no category
-    holds 32,768 of the rows), so a column with a category per cell ranks in
-    linear time.
+    ``rank_of[code]`` is the rank (0 = most cells; ties by code), -1 for a
+    category no cell uses; ``order[rank]`` the code at that rank; ``used``
+    the number of categories with cells.
     """
+    rank_of: np.ndarray
+    order: np.ndarray
+    used: int
+    seconds: float = 0.0
+
+    @property
+    def nbytes(self) -> int:
+        return int(self.rank_of.nbytes + self.order.nbytes)
+
+    def ranks(self, codes) -> np.ndarray:
+        """Ranks of ``codes`` (-1 for a missing code)."""
+        codes = np.asarray(codes).reshape(-1)
+        valid = (codes >= 0) & (codes < len(self.rank_of))
+        out = np.full(codes.shape, -1, dtype=np.int64)
+        out[valid] = self.rank_of[codes[valid]]
+        return out
+
+
+def rank_codes(codes: np.ndarray, n_categories: int) -> ColumnRanking:
+    """Rank a column's categories by their cells in ``codes`` (all of them).
+
+    One bincount over the categories, then a stable sort of the counts:
+    a radix sort when they fit 16 bits (no category holds 32,768 cells, as in
+    a column with a category per cell), so that case ranks in linear time.
+    """
+    t0 = time.perf_counter()
     codes = np.asarray(codes).reshape(-1)
     valid = (codes >= 0) & (codes < n_categories)
-    c = codes[valid].astype(np.int64, copy=False)
-    counts = np.bincount(c, minlength=n_categories)
-    neg = -counts
-    if counts.size and counts.max(initial=0) < 2 ** 15:
-        neg = neg.astype(np.int16)
-    order = np.argsort(neg, kind="stable")
+    counts = np.bincount(codes[valid] if not valid.all() else codes, minlength=n_categories)
     used = int(np.count_nonzero(counts))
-    order = order[:used]
-    rank_of = np.empty(n_categories, dtype=np.int64)
-    rank_of[order] = np.arange(used, dtype=np.int64)
-    out = np.full(codes.shape, -1, dtype=np.int64)
-    out[valid] = rank_of[c]
-    head = order[:top]
-    if len(head):
-        positions = np.sort(head)
-        got = read_categories(positions)
-        got = got.tolist() if hasattr(got, "tolist") else list(got)
-        by_code = dict(zip(positions.tolist(), got))
-        labels = [by_code[int(k)] for k in head]
+    if used == n_categories and (counts.size == 0 or counts.min() == counts.max()):
+        order = np.arange(n_categories)            # every category equally large: code order
     else:
-        labels = []
-    return out, labels, used
+        neg = -counts
+        if counts.size and counts.max(initial=0) < 2 ** 15:
+            neg = neg.astype(np.int16)
+        order = np.argsort(neg, kind="stable")[:used]
+    index = np.int32 if n_categories < 2 ** 31 else np.int64
+    order = order.astype(index, copy=False)
+    rank_of = np.full(n_categories, -1, dtype=index)
+    rank_of[order] = np.arange(used, dtype=index)
+    return ColumnRanking(rank_of, order, used, time.perf_counter() - t0)
+
+
+#: Bytes of rankings kept (a column with 95.6M categories takes ~765 MB and
+#: is ranked again on each request instead of displacing every other).
+RANKING_CACHE_BYTES = 512 * 2 ** 20
+_rankings: "OrderedDict[tuple, ColumnRanking]" = OrderedDict()
+_rank_lock = threading.Lock()
+
+
+def column_ranking(dataset_path: str, entity: str, column: str, n_categories: int,
+                   read_all_codes) -> ColumnRanking:
+    """The cached ranking of one column over all its cells
+    (``read_all_codes()`` reads every code), computed on first use and again
+    when the store changes (its stat signature, as the name index)."""
+    # the store's stat signature and freshness token: a rewrite or a cache
+    # reset (which bumps the token in every worker) ranks again
+    key = (str(dataset_path), _store_signature(str(dataset_path)), freshness.current(str(dataset_path)),
+           entity, column, int(n_categories))
+    with _rank_lock:
+        hit = _rankings.get(key)
+        if hit is not None:
+            _rankings.move_to_end(key)
+            return hit
+    ranking = rank_codes(read_all_codes(), n_categories)
+    if ranking.nbytes <= RANKING_CACHE_BYTES:
+        with _rank_lock:
+            _rankings[key] = ranking
+            while sum(r.nbytes for r in _rankings.values()) > RANKING_CACHE_BYTES:
+                _rankings.popitem(last=False)
+    return ranking
+
+
+def clear_rankings(dataset_path: Optional[str] = None) -> None:
+    with _rank_lock:
+        for key in [k for k in _rankings if dataset_path is None or k[0] == str(dataset_path)]:
+            del _rankings[key]
+
+
+def labels_of_ranks(ranking: ColumnRanking, ranks, read_categories) -> list:
+    """Labels of the categories at ``ranks`` (None for a rank past ``used``)."""
+    ranks = [int(r) for r in ranks]
+    codes = [int(ranking.order[r]) if 0 <= r < ranking.used else None for r in ranks]
+    wanted = sorted({c for c in codes if c is not None})
+    got = read_categories(np.asarray(wanted, dtype=np.int64)) if wanted else []
+    got = got.tolist() if hasattr(got, "tolist") else list(got)
+    by_code = dict(zip(wanted, got))
+    return [None if c is None else by_code[c] for c in codes]
+
+
+#: Most ranks one category_ranks request may name (the legend asks for ~192).
+MAX_RANK_LABELS = 5000
 
 
 def check_labels(column: str, n_categories: Optional[int], n_rows: int) -> None:

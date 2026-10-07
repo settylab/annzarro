@@ -59,12 +59,12 @@ cell), or a request with ``categories=used``, gets only the categories the
 returned codes use, renumbered, and the header
 ``X-Annzarro-Categories-Total`` with the column's count.
 
-``categories=ranked`` (with ``labels=<k>``, default 192): code r is the r-th
-most frequent category among the returned rows (ties by stored code), the
-prefix holds the labels of ranks 0..k-1 only, ``X-Annzarro-Categories-Used``
-the number of categories the rows use and ``X-Annzarro-Categories-Order:
-ranked`` says so. It is what colouring by colour group needs: codes and a
-few names, never the column's label list (core/categories.py).
+``categories=ranked``: code r means the r-th largest category of the WHOLE
+column (by cells; ties by stored code), the same in every subset; the prefix
+is empty, ``X-Annzarro-Categories-Used`` the number of categories with
+cells and ``X-Annzarro-Categories-Order: ranked`` says so. It is what
+colouring by colour group needs; the few names a legend shows come from
+``category_ranks=`` (core/categories.py).
 
 JSON
 ----
@@ -184,9 +184,9 @@ def categorical_response(codes: np.ndarray, categories, total=None, used=None, r
     ``total``: the column's number of categories when ``categories`` holds
     only those the codes use (core/categories.py); sent as
     X-Annzarro-Categories-Total, so a client never takes the short list for
-    the column's. ``ranked``: the codes are frequency ranks among these rows,
-    ``categories`` the labels of the first ranks only, and ``used`` the number
-    of categories the rows use (X-Annzarro-Categories-Used).
+    the column's. ``ranked``: the codes are ranks in the column's ranking,
+    ``categories`` empty, and ``used`` the number of categories with cells
+    (X-Annzarro-Categories-Used).
     """
     categories = [c.item() if isinstance(c, np.generic) else c for c in categories]
     codes = np.asarray(codes).reshape(-1)

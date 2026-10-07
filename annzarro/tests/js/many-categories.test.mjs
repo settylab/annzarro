@@ -75,6 +75,18 @@ function installServer() {
                                               defaults: { threshold: 100, size: 50, seed: 0 } });
         if (path === 'cells') return json({ cells: NAMES });
         if (path === 'genes') return json({ genes: ['g0'] });
+        if (path === 'obs' && q.columns === 'barcode' && q.categories === 'ranked') {
+            // the column's ranking over all its cells: cell i's category has rank N-1-i
+            const buf = new ArrayBuffer(4 + 4 * N);
+            new Uint8Array(buf, 0, 4).set([0x5b, 0x5d, 0x20, 0x20]);   // "[]  "
+            const codes = new Int32Array(buf, 4, N);
+            for (let i = 0; i < N; i++) codes[i] = N - 1 - i;
+            return new Response(buf, { status: 200, headers: {
+                'Content-Type': 'application/octet-stream', 'X-Annzarro-Encoding': 'categorical',
+                'X-Annzarro-Shape': String(N), 'X-Annzarro-Dtype': 'int32', 'X-Annzarro-Categories-Bytes': '4',
+                'X-Annzarro-Categories-Used': '2000000', 'X-Annzarro-Categories-Order': 'ranked',
+                'X-Annzarro-Categories-Total': '2000000' } });
+        }
         if (path === 'obs' && q.columns === 'barcode') {
             // what the server sends for hover/table: these rows' labels only
             return json({ data: { barcode: BARCODES }, categories: { barcode: BARCODES },
@@ -96,11 +108,14 @@ async function open() {
     return calls;
 }
 
-test('colouring a column with more than 64 categories asks for the labels of the points only', async () => {
+test('colouring a column with more than 64 categories: labels of the points, ranks of the whole column', async () => {
     const calls = await open();
     const loaded = await loadAxisData({ type: 'obs', key: 'barcode', column: '' }, 'cells', null, { role: 'colour' });
     assert.deepEqual(loaded.values, BARCODES);
-    assert.equal(calls.find(c => c.path === 'obs').q.categories, 'used');
+    const obs = calls.filter(c => c.path === 'obs');
+    assert.deepEqual(obs.map(c => c.q.categories).sort(), ['ranked', 'used']);
+    assert.ok(loaded.rankOf instanceof Map);
+    BARCODES.forEach((b, i) => assert.equal(loaded.rankOf.get(b), N - 1 - i));
 });
 
 test('up to 64 categories a colouring asks for every category', async () => {
@@ -127,16 +142,10 @@ test('frequency ranks: most cells first, ties by category, in linear time', () =
     assert.equal(ones.order[999999], 999999);
 });
 
-test('a colour group names its largest categories, then how many more', () => {
-    const label = r => `S${r}`;
-    assert.equal(cats.groupLegendName(0, label, 1344), 'S0, S64, S128 +18 more');
-    assert.equal(cats.groupLegendName(63, label, 1344), 'S63, S127, S191 +18 more');
-    assert.equal(cats.groupLegendName(63, label, 1343), 'S63, S127, S191 +17 more');
-    assert.equal(cats.groupLegendName(5, label, 70), 'S5, S69');
-    assert.equal(cats.groupLegendName(6, label, 70), 'S6');
-    assert.equal(cats.groupLegendName(3, label, 200), 'S3, S67, S131 +1 more');
-    assert.equal(cats.groupSize(3, 200), 4);
-    assert.equal(cats.groupSize(10, 5), 0);
+test('a colour group names its largest categories on the plot, then how many more', () => {
+    assert.equal(cats.groupLegendName(['S1', 'S7', 'S12', 'S20', 'S33']), 'S1, S7, S12 +2 more');
+    assert.equal(cats.groupLegendName(['S5', 'S69']), 'S5, S69');
+    assert.equal(cats.groupLegendName(['S1', 'S7', 'S12', ...Array(1000).fill(null)]), 'S1, S7, S12 +1,000 more');
     assert.equal(cats.groupOf(130), 2);
 });
 
@@ -170,24 +179,32 @@ function panel(nCategories, base = nCategories + 20) {
     };
 }
 
-test('hundreds of categories: 64 colour groups by frequency, one legend entry each, every point drawn', () => {
+/** The column's ranking, as the server sends it: category k has rank k. */
+const columnRanks = (categories) => new Map(categories.map((c, k) => [c, k]));
+
+function colourOfEach(traces) {
+    const out = new Map();
+    for (const t of traces.filter(t => !isLegendProxy(t) && t._azLabels)) {
+        t._azLabels.forEach(l => out.set(l, t.marker.color));
+    }
+    return out;
+}
+
+test('hundreds of categories: 64 colour groups by rank, one legend entry each, every point drawn', () => {
     const { settings, data } = panel(500);
-    // categories in an order unrelated to their sizes: ranks come from the points
-    const listed = data.colorCategories.slice().reverse();
-    const traces = processCategories(settings, data, listed);
+    data.colorRankOf = columnRanks(data.colorCategories);
+    // categories listed in an order unrelated to their ranks
+    const traces = processCategories(settings, data, data.colorCategories.slice().reverse());
     const legend = traces.filter(isLegendProxy);
     const points = traces.filter(t => !isLegendProxy(t));
     const groups = points.filter(t => t._azLabels);
     assert.equal(groups.length, cats.GROUP_COLOURS);
     assert.equal(legend.length, cats.GROUP_COLOURS + 1);               // and NA
     assert.equal(points.reduce((n, t) => n + t.x.length, 0), data.color.length);
-    // colour group i is led by the i-th largest category: k0 leads group 0
-    const byName = new Map(groups.map(t => [t.name, t]));
+    // colour group g is led by rank g: k0 leads group 0, with k64, k128, ...
     const first = groups.find(t => t.name.startsWith('k0,'));
     assert.ok(first, groups.map(t => t.name).slice(0, 5).join(' | '));
-    assert.match(first.name, /^k0, k64, k128 \+\d+ more$/);
-    assert.ok(byName.size === groups.length, 'one entry per colour');
-    // the hover names each point's own category, and the group holds it
+    assert.equal(first.name, 'k0, k64, k128 +5 more');
     for (const t of groups) {
         const members = new Set();
         t.customdata.forEach((cell, j) => {
@@ -198,6 +215,34 @@ test('hundreds of categories: 64 colour groups by frequency, one legend entry ea
         assert.equal(members.size, 1, `${t.name}: one colour group`);
         assert.match(hoverTemplateFor(t, settings, data), /%\{hovertext\}<extra><\/extra>$/);
     }
+});
+
+test('a category keeps its colour across parts and a table filter', () => {
+    const { settings, data } = panel(500);
+    const rankOf = columnRanks(data.colorCategories);
+    const view = (keep) => {
+        const idx = data.color.map((_, i) => i).filter(keep);
+        return { ...data, colorRankOf: rankOf, color: idx.map(i => data.color[i]), cells: idx.map(i => data.cells[i]),
+                 x: { values: idx.map(i => data.x.values[i]) }, y: { values: idx.map(i => data.y.values[i]) } };
+    };
+    // two parts that hold different sizes of the same categories: ranked by
+    // the cells shown, their colours would differ
+    const part0 = view(i => i % 3 === 0), part1 = view(i => i % 3 !== 0 && data.color[i] !== 'k0');
+    const whole = colourOfEach(processCategories(settings, view(() => true), data.colorCategories));
+    const c0 = colourOfEach(processCategories(settings, part0, data.colorCategories));
+    const c1 = colourOfEach(processCategories(settings, part1, data.colorCategories));
+    let compared = 0;
+    for (const [label, colour] of c0) {
+        assert.equal(colour, whole.get(label), label);
+        if (c1.has(label)) { assert.equal(c1.get(label), colour, label); compared++; }
+    }
+    assert.ok(compared > 400);
+    // a table filter that removes the largest categories' points
+    const filtered = { ...view(() => true), tableEntities: new Set(data.cells.filter((_, i) => !['k0', 'k1', 'k2'].includes(data.color[i]))) };
+    const cf = colourOfEach(processCategories({ ...settings, tableFilter: 'cell-table', removeNonTableEntries: true },
+        filtered, data.colorCategories));
+    for (const [label, colour] of cf) assert.equal(colour, whole.get(label), label);
+    assert.ok(!cf.has('k0') && cf.has('k3'));
 });
 
 test('up to 64 categories the legend lists each one, as before', () => {

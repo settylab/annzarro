@@ -4,10 +4,11 @@ The committed 200-cell fixture plus two categorical obs columns: `barcode`,
 one category per cell, and `clone`, 120 categories (clone000-079 two cells
 each, clone080-119 one).
 
-- Colouring by either draws every point in 64 colour groups, ranked by
-  frequency, with one legend entry per colour naming its largest categories,
-  and a hover naming each point's category. The colour request asks for the
-  labels of the points only.
+- Colouring by either draws every point in 64 colour groups, by the
+  column's ranking over all its cells, with one legend entry per colour
+  naming its largest categories, and a hover naming each point's category.
+  The colour requests ask for the labels of the points and the column's
+  ranks, never every category.
 - `barcode` also works as a hover column and as a table column.
 
 Needs Playwright with Chromium; skipped otherwise, unless
@@ -165,8 +166,9 @@ def test_many_categories_are_drawn_in_64_colour_groups(server, column, first):
             assert not any("categor" in c for c in s["chips"])
             for cell, label, hover in s["labelled"]:
                 assert hover.startswith(f"<br>{label}")
-            colour_requests = [u for u in requests if f"columns={column}" in u]
-            assert colour_requests and all("categories=used" in u for u in colour_requests), colour_requests
+            # the points' labels (for the hover) and the column's ranks, never all categories
+            kinds = {u.split("categories=")[1].split("&")[0] for u in requests if f"columns={column}" in u}
+            assert kinds == {"used", "ranked"}, requests
         finally:
             browser.close()
 

@@ -3,15 +3,18 @@
  * cell (annzarro/core/categories.py).
  *
  * Up to GROUP_COLOURS (64) categories: one trace and one legend entry per
- * category, as always. Past that, colour GROUPS: the categories are ranked by
- * how many of the shown cells they hold, rank r is drawn in colour r mod 64,
- * so the 64 largest categories each lead a colour. One trace per colour (64
- * at most), and one legend entry per colour naming its largest categories:
- * "S1, S7, S12 +18 more". The hover names each point's exact category.
+ * category, as always. Past that, colour GROUPS: the column's categories are
+ * ranked by how many cells of the WHOLE column they hold (ties by stored
+ * code), and rank r is drawn in colour r mod 64, so the 64 largest
+ * categories each lead a colour. The rank is the column's, computed once by
+ * the server and cached, so a category keeps its colour in every panel,
+ * subset, part, table filter and zoom. One trace per colour (64 at most), and
+ * one legend entry per colour naming its categories on the plot, largest
+ * first: "S1, S7, S12 +18 more". The hover names each point's exact category.
  *
- * Colouring this way needs each cell's code and the codes' ranks, never the
- * column's label list: the large-plot path asks the server for codes already
- * ranked plus the few labels the legend shows (categories=ranked).
+ * Colouring this way needs each cell's rank (categories=ranked) and the
+ * labels of the few categories a legend names, never the column's label
+ * list.
  *
  * Pure, so Node tests cover it.
  */
@@ -21,9 +24,6 @@ export const GROUP_COLOURS = 64;
 
 /** Category names a group's legend entry lists before "+N more". */
 export const LEGEND_NAMES = 3;
-
-/** Labels the large-plot path asks the server for: the legend's names. */
-export const RANKED_LABELS = LEGEND_NAMES * GROUP_COLOURS;
 
 /**
  * Most groups a subset may be balanced across (annzarro/core/categories.py
@@ -90,23 +90,13 @@ export function groupOf(rank) {
     return rank % GROUP_COLOURS;
 }
 
-/** Number of categories in group `g` when `used` categories have cells. */
-export function groupSize(g, used) {
-    return used > g ? Math.floor((used - 1 - g) / GROUP_COLOURS) + 1 : 0;
-}
-
 /**
- * The legend entry of colour group `g`: its largest categories, largest
- * first, then "+N more".
- * @param {number} g
- * @param {(rank: number) => *} labelOfRank  label of a rank (only the first
- *   LEGEND_NAMES ranks of each group are asked for)
- * @param {number} used  categories with cells
+ * The legend entry of a colour group: the names of its categories on the
+ * plot, largest (lowest rank) first, then "+N more".
+ * @param {Array<*>} names  the group's categories present, in rank order
  */
-export function groupLegendName(g, labelOfRank, used) {
-    const size = groupSize(g, used);
-    const names = [];
-    for (let j = 0; j < Math.min(LEGEND_NAMES, size); j++) names.push(String(labelOfRank(g + j * GROUP_COLOURS)));
-    const more = size - names.length;
-    return more > 0 ? `${names.join(', ')} +${more.toLocaleString('en-US')} more` : names.join(', ');
+export function groupLegendName(names) {
+    const shown = names.slice(0, LEGEND_NAMES).map(String);
+    const more = names.length - shown.length;
+    return more > 0 ? `${shown.join(', ')} +${more.toLocaleString('en-US')} more` : shown.join(', ');
 }
