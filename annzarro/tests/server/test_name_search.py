@@ -120,3 +120,58 @@ def test_endpoint_rejects_bad_input(client_and_store):
     missing = client.get("/api/v1/data/names", query_string={
         "dataset_path": store + "_missing", "q": "x"})
     assert missing.status_code == 404
+
+
+def test_one_build_at_a_time_and_its_state_is_reported(tmp_path):
+    """The first search of a large dataset builds its index (about 30 s at
+    95.6M cells). Searches that arrive meanwhile wait for that build instead
+    of each starting their own, and index_state says 'building' so the
+    picker can say so instead of "no match"."""
+    import threading
+    store = str(tmp_path / "s.zarr")
+    os.makedirs(store)
+    started, release = threading.Event(), threading.Event()
+    builds = []
+
+    def load():
+        builds.append(1)
+        started.set()
+        release.wait(10)
+        return ["cell_a", "cell_b"]
+
+    name_index.clear()
+    assert name_index.index_state(store, "cells") == "absent"
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(name_index.get_index(store, "cells", load)))
+               for _ in range(4)]
+    threads[0].start()
+    assert started.wait(5)
+    for t in threads[1:]:
+        t.start()
+    assert name_index.index_state(store, "cells") == "building"
+    release.set()
+    for t in threads:
+        t.join(10)
+    assert len(builds) == 1, "every waiting search got the one build"
+    assert len(results) == 4 and all(r is results[0] for r in results)
+    assert name_index.index_state(store, "cells") == "ready"
+    name_index.clear()
+
+
+def test_a_failed_build_lets_the_next_search_build_again(tmp_path):
+    store = str(tmp_path / "f.zarr")
+    os.makedirs(store)
+    name_index.clear()
+    with pytest.raises(RuntimeError):
+        name_index.get_index(store, "cells", lambda: (_ for _ in ()).throw(RuntimeError("read failed")))
+    assert name_index.index_state(store, "cells") == "absent"
+    assert len(name_index.get_index(store, "cells", lambda: ["x"])) == 1
+
+
+def test_status_route_says_absent_then_ready(client_and_store):
+    client, store = client_and_store
+    q = {"dataset_path": store, "entity": "cells"}
+    assert client.get("/api/v1/data/names/status", query_string=q).get_json() == {"state": "absent"}
+    assert client.get("/api/v1/data/names", query_string={**q, "q": "cell"}).status_code == 200
+    assert client.get("/api/v1/data/names/status", query_string=q).get_json() == {"state": "ready"}
+    assert client.get("/api/v1/data/names/status", query_string={**q, "entity": "x"}).status_code == 400

@@ -73,6 +73,11 @@ test("header text: counts, seed, filter, and every cell", () => {
     where: [{ col: "cluster", op: "in", values: ["3", "5"] }] }, n: 10, n_total: 500, n_eligible: 42 });
   assert.match(filtered.title, /seed 4, balanced by batch, cluster in \{3, 5\}/);
   assert.match(filtered.title, /42 cells pass the filter/);
+  // the balance and the filter are in the badge itself, not only its tooltip
+  assert.equal(filtered.badge, "Subset · seed 4 · balanced by batch · filtered");
+  assert.deepEqual(filtered.badgeParts, ["Subset", "seed 4", "balanced by batch", "filtered"]);
+  const balanced = describeSubset({ subset: { n: 100000, seed: 0, balance: "cell_line_id" }, n: 100000, n_total: 95624334, n_eligible: 95624334 });
+  assert.equal(balanced.badge, "Subset · seed 0 · balanced by cell_line_id");
 
   const all = describeSubset({ subset: null, n: 8090, n_total: 8090 });
   assert.equal(all.count, "8,090");

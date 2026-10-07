@@ -1175,6 +1175,39 @@ def register_data_routes(app, api_version):
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
+    @app.route(f"/api/{api_version}/data/names/status", methods=["GET"])
+    def names_index_status():
+        """
+        Whether a name search answers at once or waits for its index to be
+        built (the first search of a large dataset; about 30 s at 95.6M
+        cells). Never builds anything: the pickers ask while a search waits,
+        to say "building name index" instead of "no match".
+
+        Query parameters: dataset_path, entity, subset, scope, as for
+        /data/names.
+
+        Returns:
+            {"state": "ready" | "building" | "absent"}; absent means the
+            next search builds it.
+        """
+        dataset_path_str = request.args.get("dataset_path")
+        if not dataset_path_str:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        entity = request.args.get("entity", "cells")
+        if entity not in ("cells", "genes"):
+            return jsonify({"error": "entity must be 'cells' or 'genes'"}), 400
+        scope = request.args.get("scope", "subset")
+        if scope not in ("subset", "dataset"):
+            return jsonify({"error": "scope must be 'subset' or 'dataset'"}), 400
+        try:
+            reader = _reader_for(dataset_path_str)
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
+        subset = reader.subset if isinstance(reader, cell_subset.SubsetView) and entity == "cells" else None
+        searched = subset if scope == "subset" else None
+        index_key = entity if searched is None else f"cells@{searched.spec.key()}"
+        return jsonify({"state": name_index.index_state(dataset_path_str, index_key)})
+
     @app.route(f"/api/{api_version}/data/names", methods=["GET"])
     def search_names():
         """

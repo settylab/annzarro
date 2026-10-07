@@ -53,7 +53,10 @@ followed the focus are listed as "*matrix*: follows the focused gene (…)" and 
   `kompot_de_Young_to_Old_mahalanobis` put H2-Q7 (15.2217) first.
 - The search box above the table filters rows by text in any column. The buttons next to it
   switch on regular expressions (`.*`), smart search (the wand; on by default) and case
-  sensitivity (`Aa`).
+  sensitivity (`Aa`). Smart search finds rows holding every word typed, in any order; it does not
+  apply to a regular expression, which is searched as written: `Mid|Old` finds rows with either
+  (the wand is greyed out while `.*` is on). A plot filtered by the table and **Export CSV** use
+  the same rows.
 - Click a **Gene ID** (or **Cell ID**) to make it the focused gene (cell). The focus history and
   every focus-dependent panel follow ({doc}`focus-and-lock`).
 
