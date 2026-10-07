@@ -30,6 +30,7 @@ import {
 } from './utils/view-store.js';
 import { probeStore, prewarmStore, appVersion } from './utils/store-identity.js';
 import { defaultHierarchy } from './utils/deeplink.js';
+import { installWheelHandover } from './utils/wheel-handover.js';
 
 const App = (function() {
     // Private variables
@@ -3488,6 +3489,8 @@ const App = (function() {
 document.addEventListener('DOMContentLoaded', () => {
     // Start initialization immediately since we're using modules
     App.init();
+    // A panel's scroller hands the wheel to the page at its end (utils/wheel-handover.js)
+    installWheelHandover(document.getElementById('tile-container'));
     
     // Register for app close events if in Electron environment
     if (window.api && typeof window.api.onWillQuit === 'function') {
