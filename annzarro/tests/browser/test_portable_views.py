@@ -360,6 +360,12 @@ def _upload(page, root, file_path):
         ask.first.click()
     except playwright.Error:
         pass
+    # a loaded set lists its panels closed (v0.4.1); its view is one click away.
+    # The load's notice (where it opened) is what the user reads before that click.
+    page.wait_for_selector(".notification-ask[data-offer='saved-layout']", timeout=30000)
+    at_load = _notices(page)
+    page.locator(".open-saved-layout-btn").first.click(timeout=30000)
+    return at_load
 
 
 def test_a_panel_set_from_A_opens_on_B_and_C_with_the_same_view_and_svg(browser, servers, tmp_path):
@@ -393,7 +399,7 @@ def test_a_panel_set_from_A_opens_on_B_and_C_with_the_same_view_and_svg(browser,
     for name, note in (("C", None), ("B", "Opened on another path")):
         ctx, page, errors = _page(browser)
         try:
-            _upload(page, roots[name], file_path)
+            at_load = _upload(page, roots[name], file_path)
             _drawn(page)
             assert _state(page) == on_a, name
             svg = _svg(page)
@@ -404,7 +410,7 @@ def test_a_panel_set_from_A_opens_on_B_and_C_with_the_same_view_and_svg(browser,
                 # another name: the same drawing; the recipe names the store as B has it
                 assert _strip_recipe(svg) == _strip_recipe(svg_a), "the drawing on B differs from A's"
                 assert '"dataset":"datasets/moved.zarr"' in svg
-            text = " ".join(_notices(page))
+            text = " ".join(at_load + _notices(page))
             if note:
                 assert note in text and "same cells and genes" in text, text
             assert "Dataset not found" not in text

@@ -119,6 +119,11 @@ def test_an_older_view_opens_with_its_layout_and_panels(server, browser, folder,
             page.click("#toggle-upload-btn")
             page.set_input_files("#session-file-upload", os.path.join(folder, entry["panel_set"]))
             page.click("#btn-confirm-session")
+            # a loaded set lists its panels closed (v0.4.1); its view is one click away,
+            # and the load's notice says where it opened
+            page.wait_for_selector(".notification-ask[data-offer='saved-layout']", timeout=30000)
+            at_load = " ".join(page.eval_on_selector_all(".notification", "els => els.map(e => e.innerText)"))
+            page.locator(".open-saved-layout-btn").first.click(timeout=30000)
         _settle(page)
         state = page.evaluate(STATE_JS)
         want = entry["restored"]
@@ -127,6 +132,8 @@ def test_an_older_view_opens_with_its_layout_and_panels(server, browser, folder,
         assert sorted(p["type"] for p in state["panels"]) == sorted(p["type"] for p in want["panels"])
         assert state["focusedGene"] == want["focusedGene"]
         notices = " ".join(page.eval_on_selector_all(".notification", "els => els.map(e => e.innerText)"))
+        if kind == "panel_set":
+            notices = at_load + " " + notices
         assert "Opened on another path" in notices and "same name" in notices, notices
         assert not errors, errors
     finally:
