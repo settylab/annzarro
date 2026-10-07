@@ -91,13 +91,60 @@ export function moreDistinctThan(values, max) {
 }
 
 /**
+ * SearchBuilder type of a NUMERIC column with too many distinct values to
+ * list: the number conditions (Greater Than, Between, ...), with "Equals" and
+ * "Not" on a text box. Numeric columns used to get TEXT_ONLY_TYPE too, which
+ * offered only string conditions on a gene table's float columns (v0.4.1
+ * report: a focused-cell layer row in the bm_aging gene table, 16,285 rows).
+ */
+export const TEXT_ONLY_NUM_TYPE = 'az-num';
+
+/** True if every present value is a number (and at least one is). */
+export function isNumericColumn(values) {
+    let seen = false;
+    for (let i = 0; i < values.length; i++) {
+        const v = values[i];
+        if (v === null || v === undefined) continue;
+        if (typeof v !== 'number') return false;
+        seen = true;
+    }
+    return seen;
+}
+
+/** `base` with "Equals" and "Not" taking a typed value instead of a list. */
+function typedEquals(base, Criteria) {
+    const typed = (c) => ({ ...c, init: Criteria.initInput, inputValue: Criteria.inputValueInput,
+                            isInputValid: Criteria.isInputValidInput });
+    return { ...base, '=': typed(base['=']), '!=': typed(base['!=']) };
+}
+
+/**
  * The SearchBuilder conditions of TEXT_ONLY_TYPE: the string conditions, with
  * "Equals" and "Not" on a text box.
  * @param {Object} Criteria  $.fn.dataTable.Criteria (SearchBuilder)
  */
 export function textOnlyConditions(Criteria) {
-    const base = Criteria.stringConditions;
-    const typed = (c) => ({ ...c, init: Criteria.initInput, inputValue: Criteria.inputValueInput,
-                            isInputValid: Criteria.isInputValidInput });
-    return { ...base, '=': typed(base['=']), '!=': typed(base['!=']) };
+    return typedEquals(Criteria.stringConditions, Criteria);
+}
+
+/**
+ * The SearchBuilder conditions of TEXT_ONLY_NUM_TYPE: the number conditions,
+ * with "Equals" and "Not" on a text box.
+ * @param {Object} Criteria  $.fn.dataTable.Criteria (SearchBuilder)
+ */
+export function textOnlyNumConditions(Criteria) {
+    return typedEquals(Criteria.numConditions, Criteria);
+}
+
+/**
+ * SearchBuilder type for a column with too many distinct values to list, or
+ * null when its values fit in the "Equals" dropdown (the detected type then
+ * stands). A numeric column keeps the number conditions.
+ * @param {Array} values
+ * @param {number} max  utils/categories.js VALUE_LIST_MAX
+ * @returns {string|null}
+ */
+export function manyValuesType(values, max) {
+    if (!moreDistinctThan(values, max)) return null;
+    return isNumericColumn(values) ? TEXT_ONLY_NUM_TYPE : TEXT_ONLY_TYPE;
 }

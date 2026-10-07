@@ -86,3 +86,31 @@ test('a column with more distinct values than the list limit is filtered by typi
     assert.equal(c.contains, Criteria.stringConditions.contains);
     assert.equal(Criteria.stringConditions['='].init, select, 'the shared string conditions are not changed');
 });
+
+test('a numeric column with too many values to list keeps the number conditions (v0.4.1)', async () => {
+    const { manyValuesType, isNumericColumn, textOnlyNumConditions, TEXT_ONLY_TYPE, TEXT_ONLY_NUM_TYPE } =
+        await import('../../../static/js/utils/search-builder.js');
+    // a focused-cell layer row of the bm_aging gene table: 16,285 floats
+    const floats = Array.from({ length: 16285 }, (_, i) => i / 7);
+    assert.equal(manyValuesType(floats, 10000), TEXT_ONLY_NUM_TYPE);
+    assert.equal(manyValuesType([...floats.slice(0, 12000), null, null], 10000), TEXT_ONLY_NUM_TYPE,
+        'missing values do not make a column text');
+    assert.equal(manyValuesType(floats.map(String), 10000), TEXT_ONLY_TYPE);
+    assert.equal(manyValuesType(floats.slice(0, 500), 10000), null, 'few values: detected type stands');
+    assert.equal(isNumericColumn([null, undefined]), false);
+    assert.equal(isNumericColumn([1, 'a']), false);
+    const select = () => 'select', input = () => 'input';
+    const Criteria = {
+        initInput: input, inputValueInput: input, isInputValidInput: input,
+        numConditions: {
+            '=': { conditionName: 'Equals', init: select, inputValue: select, isInputValid: select, search: (t, v) => +t === +v[0] },
+            '!=': { conditionName: 'Not', init: select, inputValue: select, isInputValid: select, search: (t, v) => +t !== +v[0] },
+            '>': { conditionName: 'Greater Than', init: input, search: (t, v) => +t > +v[0] }
+        }
+    };
+    const c = textOnlyNumConditions(Criteria);
+    assert.equal(c['='].init, input);
+    assert.equal(c['>'], Criteria.numConditions['>']);
+    assert.equal(c['>'].search(0.6, ['0.5']), true);
+    assert.equal(Criteria.numConditions['='].init, select, 'the shared number conditions are not changed');
+});
