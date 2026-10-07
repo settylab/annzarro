@@ -8,6 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/settylab/annzarro/blob/main/LICENSE)
 [![Docs](https://readthedocs.org/projects/annzarro/badge/?version=latest)](https://annzarro.readthedocs.io)
 [![Tests](https://github.com/settylab/annzarro/actions/workflows/tests.yml/badge.svg)](https://github.com/settylab/annzarro/actions/workflows/tests.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23222216.svg)](https://doi.org/10.5281/zenodo.23222216)
 
 A read-only browser viewer for AnnData in zarr (or h5ad) built around the matrices other viewers
 leave out: cell x cell kernels and distances (`obsp`) and gene x gene similarities (`varp`),
@@ -70,8 +71,21 @@ similarity, the user guide, data preparation, deployment, and the CLI, configura
 ## Citation
 
 Citation metadata are in [`CITATION.cff`](https://github.com/settylab/annzarro/blob/main/CITATION.cff)
-(GitHub's "Cite this repository"). Otto D.J., Baasri S. and Setty M. AnnZarro.
-Protocol preprint in preparation.
+(GitHub's "Cite this repository"). From v0.4.1, each release is archived on Zenodo with a DOI.
+The DOI below always resolves to the latest release; cite the version DOI of the release you used,
+listed on the Zenodo record (v0.4.1: [10.5281/zenodo.23222217](https://doi.org/10.5281/zenodo.23222217)):
+
+```bibtex
+@software{otto_annzarro_software,
+  author    = {Otto, Dominik J. and Baasri, Siddharth and Setty, Manu},
+  title     = {AnnZarro},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.23222216},
+  url       = {https://doi.org/10.5281/zenodo.23222216}
+}
+```
+
+The paper describing AnnZarro: Otto D.J., Baasri S. and Setty M. Protocol preprint in preparation.
 
 ```bibtex
 % PLACEHOLDER: replace with the preprint entry once it has a DOI.

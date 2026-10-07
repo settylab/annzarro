@@ -24,6 +24,12 @@ contact:
     given-names: Dominik J.
     email: dotto@fredhutch.org
     orcid: "https://orcid.org/0009-0009-3295-1234"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.23222216"
+    description: >-
+      Concept DOI of all AnnZarro releases on Zenodo; it resolves to the latest release.
+      Cite the version DOI of the release you used, listed on the Zenodo record.
 license: MIT
 repository-code: "https://github.com/settylab/annzarro"
 url: "https://annzarro.readthedocs.io"

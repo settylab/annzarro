@@ -85,11 +85,24 @@ The AppImage keeps the X11 libraries libXss and libXtst (MIT), with their notice
 
 The citation metadata are in
 [`CITATION.cff`](https://github.com/settylab/annzarro/blob/main/CITATION.cff) at the top of the
-repository; GitHub's "Cite this repository" button reads it. To cite the software, cite the
-release you used:
+repository; GitHub's "Cite this repository" button reads it. From v0.4.1, each release is
+archived on Zenodo with a DOI, with the same authors (`.zenodo.json`).
 
-Otto, D. J., Baasri, S. and Setty, M. AnnZarro (software), version X.Y.Z.
-<https://github.com/settylab/annzarro>
+Otto, D. J., Baasri, S. and Setty, M. AnnZarro (software). Zenodo.
+<https://doi.org/10.5281/zenodo.23222216>
+
+This DOI always resolves to the latest release. To cite the version you used, take its version
+DOI from the Zenodo record (each release has its own).
+
+```bibtex
+@software{otto_annzarro_software,
+  author    = {Otto, Dominik J. and Baasri, Siddharth and Setty, Manu},
+  title     = {AnnZarro},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.23222216},
+  url       = {https://doi.org/10.5281/zenodo.23222216}
+}
+```
 
 The paper describing AnnZarro is in preparation: Otto, D. J., Baasri, S. and Setty, M. AnnZarro:
 scalable, interactive exploration of cell-by-cell and gene-by-gene relationships in single-cell
