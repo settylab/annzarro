@@ -313,11 +313,16 @@ def shoot(sh, store: str) -> None:
     page.wait_for_timeout(1500)
     log("rerun bar: " + page.locator(f"{GS} .gs-bar__text").inner_text())
     cat2 = section("string-enrichment").locator("select:has(option:text-matches('^All categories'))").first
-    log(f"rerun: the category list reads '{cat2.evaluate('s => s.options[s.selectedIndex].text')}'")
-    go2 = next((x for x in cat2.evaluate("s => [...s.options].map(o => o.text)") if x.startswith("GO Process")), None)
-    if go2:
-        cat2.select_option(label=go2)
-        page.wait_for_timeout(800)
+    kept = cat2.evaluate('s => s.options[s.selectedIndex].text')
+    log(f"rerun: the category list reads '{kept}'")
+    # since v0.4.1 a rerun keeps the category (the page says so); before, it went back to
+    # All categories and the reader picked GO Process again
+    if not kept.startswith("GO Process"):
+        log("rerun: WARNING the category was not kept; picking GO Process again")
+        go2 = next((x for x in cat2.evaluate("s => [...s.options].map(o => o.text)") if x.startswith("GO Process")), None)
+        if go2:
+            cat2.select_option(label=go2)
+            page.wait_for_timeout(800)
     log("rerun STRING rows: " + json.dumps(rows("string-enrichment")))
     page.evaluate(f"""() => {{ for (const e of document.querySelectorAll('{GS} *'))
         if (e.scrollTop) e.scrollTop = 0; window.scrollTo(0, 0); }}""")
