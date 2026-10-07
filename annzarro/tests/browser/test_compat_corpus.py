@@ -118,12 +118,10 @@ def test_an_older_view_opens_with_its_layout_and_panels(server, browser, folder,
             page.wait_for_selector("#session-modal", state="visible")
             page.click("#toggle-upload-btn")
             page.set_input_files("#session-file-upload", os.path.join(folder, entry["panel_set"]))
-            # the uploaded file's card: "Load with panels closed" lists them closed, the view one click away
-            page.locator("#upload-card .session-load-closed").click(timeout=30000)
-            # the load's notice says where it opened
-            page.wait_for_selector(".notification-ask[data-offer='saved-layout']", timeout=30000)
+            # the uploaded file's card: Load opens the layout, and the load's notice says where it opened
+            page.locator("#upload-card .session-load").click(timeout=30000)
+            page.wait_for_selector(".tile[data-tile-id]", timeout=30000)
             at_load = " ".join(page.eval_on_selector_all(".notification", "els => els.map(e => e.innerText)"))
-            page.locator(".open-saved-layout-btn").first.click(timeout=30000)
         _settle(page)
         state = page.evaluate(STATE_JS)
         want = entry["restored"]

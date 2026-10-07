@@ -329,9 +329,6 @@ const App = (function() {
      * @private
      */
     async function _applyView({ datasetPath, view }, { exact = false, located = null, trust = false } = {}) {
-        // a share link or another view replaces what the offer would restore
-        _clearSavedLayout();
-
         // Where the view's store is here: its path, the path relative to the
         // data directory, or a store in the data directory with the same
         // cells and genes (or, for a view without a fingerprint, the same
@@ -870,20 +867,17 @@ const App = (function() {
      * - `keepDataset` / `onDataset`: load onto the open dataset, or onto the
      *   store the user picked, instead of the set's own (a store the user
      *   chose is not asked about again if its cells differ: a notice says so)
-     * - `openPanels: false`: restore the dataset, subset and focus but list
-     *   every panel of the set closed, with its settings. Its layout is kept
-     *   and offered as "Open saved layout" (see _offerSavedLayout).
      * - `add: true`: keep the open view as it is and only add the set's
      *   panels to the closed list (_addPanelSet).
      *
      * The autosave restore and the subset change keep their panels open.
      * @param {{datasetPath: string|null, view: Object, closedPanels: Array, legacy: boolean}} plan
      * @param {Object} panelSet - the stored panel set
-     * @param {{openPanels?: boolean, add?: boolean, keepDataset?: boolean, onDataset?: string|null}} [options]
+     * @param {{add?: boolean, keepDataset?: boolean, onDataset?: string|null}} [options]
      * @returns {Promise<{status: string, message: string}>}
      * @private
      */
-    async function _applyPanelSet(plan, panelSet, { openPanels = true, add = false, keepDataset = false, onDataset = null } = {}) {
+    async function _applyPanelSet(plan, panelSet, { add = false, keepDataset = false, onDataset = null } = {}) {
         const name = (panelSet && panelSet.name) || 'panel set';
         const current = DataManager.getCurrentDataset();
         if (add) return _addPanelSet(plan, name);
@@ -903,8 +897,6 @@ const App = (function() {
             return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
         }
         const total = closePlanPanels(plan).closedPanels.length;
-        if (!openPanels) plan = closePlanPanels(plan);
-        _clearSavedLayout();
 
         // The set replaces the open view. Open panels are closed (they stay
         // available to reopen); a panel with an id the set brings is removed,
@@ -936,14 +928,8 @@ const App = (function() {
         const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
         // A toast replaces the one before it: these keep what the view's
         // notice said (opened on another path, another version)
-        if (plan.savedView) {
-            // the layout of the panels open when the set was saved
-            _offerSavedLayout(plan.savedView, datasetPath, name, total, plan.savedCount);
-        } else if (!openPanels) {
-            _showNotification(`Loaded "${name}"`, _carriedViewNotice() + `${listed} under Duplicate or Reopen Panel; ` +
-                'none was open when the set was saved.', 'success', 8000);
-        } else if (!(plan.view && plan.view.layout && collectTileIds(plan.view.layout.hierarchy).length)) {
-            // "Load and open layout" of a set saved with no panel open
+        if (!(plan.view && plan.view.layout && collectTileIds(plan.view.layout.hierarchy).length)) {
+            // a set saved with no panel open
             _showNotification(`Loaded "${name}"`, _carriedViewNotice() + `No panel was open when the set was saved, so none ` +
                 `opened; its ${listed} under Duplicate or Reopen Panel.`, 'success', 8000);
         }
@@ -996,72 +982,6 @@ const App = (function() {
             (other ? ` The set was saved on ${other}: its panels are marked "other dataset".` : ''),
             'success', 8000);
         return { status: 'success', message: `Added ${panels} of "${name}" to the closed panels` };
-    }
-
-    // The layout of the panel set last loaded with its panels closed, offered
-    // as "Open saved layout" until the next set load, dataset switch or
-    // share link: {view, datasetPath, cancel?}
-    let _savedLayout = null;
-
-    /**
-     * After a set is loaded with its panels closed, offer its saved layout in
-     * a notice with one action. The notice stays until it is answered or
-     * dismissed, or the offer lapses (_clearSavedLayout).
-     * @private
-     */
-    function _offerSavedLayout(view, datasetPath, name, total, count) {
-        const offer = { view, datasetPath };
-        _savedLayout = offer;
-        // and above the closed panels, where it stays when the notice is dismissed
-        PanelManager.setSavedLayoutOffer({ count, open: () => _openSavedLayout() });
-        const panels = `${count} panel${count === 1 ? '' : 's'}`;
-        const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
-        const wereOpen = count === total
-            ? (total === 1 ? 'it was open' : total === 2 ? 'both were open' : `all ${total} were open`)
-            : `${count} ${count === 1 ? 'was' : 'were'} open`;
-        _askNotification(`Loaded "${name}"`,
-            _carriedViewNotice() +
-            `${listed} under Duplicate or Reopen Panel; ${wereOpen} when the set was saved. ` +
-            'Reopen single ones there, or open the saved layout at once.',
-            [{ key: 'open', label: `Open saved layout (${panels})`, primary: true }],
-            { type: 'success', handle: offer })
-            .then(choice => {
-                if (choice === 'open' && _savedLayout === offer) _openSavedLayout();
-            });
-        const notice = [...document.querySelectorAll('.notification-ask')].pop();
-        if (notice) notice.dataset.offer = 'saved-layout';
-    }
-
-    /**
-     * Withdraw the "Open saved layout" offer (its notice too).
-     * @private
-     */
-    function _clearSavedLayout() {
-        const offer = _savedLayout;
-        _savedLayout = null;
-        if (!offer) return;
-        if (offer.cancel) offer.cancel();
-        PanelManager.setSavedLayoutOffer(null);
-    }
-
-    /**
-     * Apply the offered saved layout exactly as a share link applies its view:
-     * the same _applyView path and panel ids, so each closed entry of the set
-     * is reopened in place, not duplicated.
-     * @private
-     */
-    async function _openSavedLayout() {
-        const offer = _savedLayout;
-        if (!offer) return;
-        _clearSavedLayout();
-        try {
-            await _applyView({ datasetPath: offer.datasetPath, view: offer.view });
-        } catch (error) {
-            console.error('Opening the saved layout failed:', error);
-            _showNotification('Saved layout not opened', error.message || String(error), 'error');
-        }
-        PanelManager.updateSourcePanelSelection();
-        PanelManager.ensureWelcomeFallback();
     }
 
     /**
@@ -1840,8 +1760,6 @@ const App = (function() {
                 console.log(`Skipping duplicate dataset load: ${datasetPath}`);
                 return;
             }
-            // another dataset: a saved layout offered for this one lapses
-            _clearSavedLayout();
             
             // If we're already loading something, abort it
             if (_isLoadingDataset && _currentLoadingAbortController) {

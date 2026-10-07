@@ -353,13 +353,11 @@ def _upload(page, root, file_path):
     page.wait_for_selector("#session-modal", state="visible")
     page.click("#toggle-upload-btn")
     page.set_input_files("#session-file-upload", str(file_path))
-    # the file's card: "Load with panels closed" switches dataset and lists them closed
-    page.locator("#upload-card .session-load-closed").click(timeout=30000)
-    # its view is one click away.
-    # The load's notice (where it opened) is what the user reads before that click.
-    page.wait_for_selector(".notification-ask[data-offer='saved-layout']", timeout=30000)
+    # the file's card: Load switches dataset and opens the saved layout; its notice (where it
+    # opened) is what the user reads
+    page.locator("#upload-card .session-load").click(timeout=30000)
+    page.wait_for_selector(".tile[data-tile-id]", timeout=30000)
     at_load = _notices(page)
-    page.locator(".open-saved-layout-btn").first.click(timeout=30000)
     return at_load
 
 

@@ -402,8 +402,7 @@ server can load it, so a lab can keep a shared library of views ({doc}`../user-g
     dataset (with "available here" or "not found here") and one icon per panel; **Export**
     downloads the set as a JSON file. **Load** switches to the set's dataset and opens the panels
     that were open when it was saved, in their layout, as a share link would; the small icon
-    buttons beside it load on the current dataset, with the panels closed, or only add the
-    panels to the closed list ({doc}`../user-guide/panel-sets`). Panels it replaces stay in the
+    buttons beside it load on the current dataset, or only add the panels to the closed list ({doc}`../user-guide/panel-sets`). Panels it replaces stay in the
     closed list under "Duplicate or Reopen Panel".
 
     ```{figure} ../_static/screens/paper/fig2-load-panel-set.png
@@ -430,41 +429,24 @@ The tutorials and paper-figure pages offer their views as panel set files. To lo
    ```
 
 2. The panel set names its dataset by file name (`bm_aging.zarr`), and the server finds it in
-   its data directory ("available here"). That is the dataset already open. To see the panels
-   listed first, click the **Load with panels closed** icon (an eye with a slash); plain **Load**
-   opens them at once. Either way a notice reads "Panel set was imported and loaded
-   successfully", the panel set replaces the open panels, and the panels that were open before
-   are in the closed list under "Duplicate or Reopen Panel". With the panels closed, same dataset,
-   same focused cell and gene, every panel of the set is listed **closed** with its settings, and
-   nothing opens by itself, so a large set cannot overload the computer.
-
-   ```{figure} ../_static/screens/paper/fig2-panel-set-loaded.png
-   :class: screenshot
-   :alt: After loading the panel set file: no panel open, its four panels listed closed under Duplicate or Reopen Panel, and a notice "Loaded" with the button Open saved layout (4 panels); Focused Gene H2-Q7 and Focused Cell HSPC_Old_1#GAAG in the header.
-   :width: 100%
-
-   After loading the panel set of section 4: its focus is set, its four panels are listed
-   closed, and the notice offers its saved layout.
-   ```
-
-3. Click **Open saved layout (4 panels)** in the notice (or, if you closed the notice,
-   **Open saved layout (4)** above the closed panels). The four panels open in their saved
-   layout, with their settings, exactly as the share link of this view opens them
-   ({ref}`tut-tour-share`). To open a single panel instead, click **Closed** (**Reopen** under
-   the pointer) on it in the list.
+   its data directory ("available here"). That is the dataset already open. Click **Load**. A
+   notice reads "Panel set was imported and loaded successfully", the panel set replaces the open
+   panels, and the panels that were open before are in the closed list under "Duplicate or
+   Reopen Panel". Same dataset, same focused cell and gene, and the panels of the set open in
+   their saved layout, with their settings, exactly as the share link of this view opens them
+   ({ref}`tut-tour-share`). Panels that were closed when the set was saved are listed closed.
 
    ```{figure} ../_static/screens/paper/fig2-panel-set-opened.png
    :class: screenshot
    :alt: The four panels of section 4 restored in their 2 x 2 layout, with Focused Gene H2-Q7 and Focused Cell HSPC_Old_1#GAAG.
    :width: 100%
 
-   After **Open saved layout**: its four panels in their layout, with its focus.
+   After **Load**: its four panels in their layout, with its focus.
    ```
 
 ```{important}
 A panel set stores what a share link holds (dataset, focus, layout and panel settings), but it
-is stored on the server under a name. **Load** opens its panels as a share link would; **Load
-with panels closed** lists them and waits for **Open saved layout** (or you reopen single ones). An
+is stored on the server under a name. **Load** opens its panels as a share link would. An
 uploaded file also becomes a saved panel set on that server, visible to its other users.
 ```
 
@@ -511,7 +493,7 @@ http://127.0.0.1:8000/?dataset_path=bm_aging.zarr#view=z1...
 - **3. The view**: everything after `#view=` (layout, panels, focus). Copy it unchanged.
 
 The same panels as a file: download the box's panel set file and load it with **Load Panel Set** >
-**Upload file** ({ref}`tut-tour-load-file`), then click **Open saved layout** in the notice;
+**Upload file** ({ref}`tut-tour-load-file`), then **Load**;
 the link opens the layout directly. The file names its store by
 file name too, and does not depend on the server address.
 
@@ -555,8 +537,7 @@ The same panels as panel set files ({ref}`tut-tour-load-file`):
 - A lock pins a panel to its current cell or gene, so two states can be compared.
 - A table filter combines conditions with AND or OR and masks linked plots without new reads.
 - A share link opens the dataset, focus, layout and panels; a panel set, stored on the server
-  under a name, restores the dataset and focus and lists its panels closed, and **Open saved
-  layout** opens them in their layout.
+  under a name, opens the dataset, focus and panels in their layout with **Load**.
 
 Next: {doc}`cell-similarity` asks how similar cells really are, reading a kernel or distance row
 instead of trusting the UMAP.

@@ -421,8 +421,7 @@ def shoot_fig2(s) -> None:
 
 
 def shoot_fig2_sets(s) -> None:
-    """Share link field, Load Panel Set dialog, a panel set file loaded (its panels listed
-    closed, with the Open saved layout notice) and that layout opened."""
+    """Share link field, Load Panel Set dialog, a panel set file loaded (its layout opens)."""
     page = s.open(fig2_filter_view(), clipboard_denied=True)
     page.click("#btn-share-link")
     page.wait_for_selector("#share-link-fallback:not([hidden])", timeout=10000)
@@ -448,29 +447,14 @@ def shoot_fig2_sets(s) -> None:
     page.set_input_files("#session-file-upload", str(PANELSETS / "overview-focus-model.json"))
     time.sleep(0.5)
     crop(page, "#session-modal .modal-content", OUT / "fig2-upload-panel-set.png")
-    # the chosen file gets a card with the Load buttons; "Load with panels closed" lists the
-    # panels closed and offers "Open saved layout" (plain Load would open them at once)
-    page.locator("#upload-card .session-load-closed").click(timeout=30000)
+    # the chosen file gets a card with the Load buttons; plain Load opens its panels at once
+    page.locator("#upload-card .session-load").click(timeout=30000)
     try:
-        offer = page.locator(".notification[data-offer='saved-layout']")
-        offer.wait_for(timeout=30000)
+        page.wait_for_selector(".tile-container .tile[data-tile-id]", timeout=60000)
         s.ready(page)
         time.sleep(1.0)
         s.toasts(page, "fig2 upload")
-        # the other notices go; the offer stays in the shot
-        hide = page.add_style_tag(content=".notification:not([data-offer]) { display: none !important; }")
-        page.mouse.move(2, 2)
-        page.screenshot(path=str(OUT / "fig2-panel-set-loaded.png"))
-        s.log.append("fig2 loaded: open tiles " + str(page.evaluate(
-            "[...new Set([...document.querySelectorAll('.tile-container .tile')].map(t => t.dataset.tileId))]"))
-            + ", closed " + str(page.evaluate(
-            "[...document.querySelectorAll('.source-panel-option.closed-panel')].map(e => e.dataset.id)"))
-            + ", offer: " + offer.locator("button[data-action='open']").inner_text())
         s.log.append("fig2 loaded focus: " + focused(page, "cell") + " / " + focused(page, "gene"))
-        offer.locator("button[data-action='open']").click()
-        s.ready(page)
-        time.sleep(1.0)
-        hide.evaluate("e => e.remove()")
         page.add_style_tag(content="#notification-container, .notification { display: none !important; }")
         page.mouse.move(2, 2)
         page.screenshot(path=str(OUT / "fig2-panel-set-opened.png"))

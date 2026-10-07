@@ -365,9 +365,7 @@ const SessionManager = (function() {
      * @param {{mode?: string}} [options] - mode is the button used (see
      *   utils/panelset-load.js): `full` (the default, and the autosave's):
      *   switch to the set's dataset and open its panels in their layout, as a
-     *   share link would; `current`: the same on the open dataset; `closed`:
-     *   switch dataset, list the panels closed (the saved layout stays
-     *   offered); `add`: keep dataset and open panels, add the set's panels
+     *   share link would; `current`: the same on the open dataset; `add`: keep dataset and open panels, add the set's panels
      *   to the closed list; `choose`: ask for a dataset, then `full` on it.
      *   Nothing asks for confirmation: the panels a load replaces stay in the
      *   closed list.
@@ -471,7 +469,7 @@ const SessionManager = (function() {
                 if (!onDataset) return { status: 'cancelled', message: `No dataset chosen; "${name}" was not loaded.` };
             }
             const applied = await _applyPanelSet(sessionData, {
-                openPanels: options.openPanels, add: options.add,
+                add: options.add,
                 onDataset: onDataset || (options.keepDataset ? DataManager.getCurrentDataset() || null : null),
                 keepDataset: options.keepDataset
             });

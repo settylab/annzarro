@@ -4,12 +4,9 @@
  *
  * One primary button, "Load", restores the set exactly as a share link would:
  * it switches to the set's dataset and opens every panel that was open when
- * the set was saved, in its layout. Small icon buttons are the ablations of
- * that, two choices each:
- *
- *                       open the set's panels      list them closed
- *   switch dataset      Load (primary)             "full"  -> `closed`
- *   keep the dataset    `current`                  `add` (open panels stay)
+ * the set was saved, in its layout. Two small icon buttons are its ablations:
+ * `current` (keep the open dataset, open the panels there) and `add` (keep
+ * dataset and open panels, only add the set's panels to the closed list).
  *
  * When the set's dataset is not on this server, "switch dataset" has nothing
  * to switch to: the primary becomes "Load on the current dataset" (or, with
@@ -17,13 +14,12 @@
  * onto any store the user picks.
  */
 
-export const MODES = ['full', 'current', 'closed', 'add', 'choose'];
+export const MODES = ['full', 'current', 'add', 'choose'];
 
 /** The icons (Font Awesome) each mode wears, here so the help popover shows the same. */
 export const MODE_ICONS = {
     full: 'fa-arrow-right-to-bracket',
     current: 'fa-thumbtack',
-    closed: 'fa-eye-slash',
     add: 'fa-folder-plus',
     choose: 'fa-database'
 };
@@ -111,15 +107,6 @@ export function loadChoices(status = {}) {
           title: hasCurrent
             ? `Load on the current dataset: keep ${cur} and open ${panels} in the saved layout there. ${keepNote}`
             : 'Load on the current dataset is not available: no dataset is open.' },
-        { mode: 'closed', icon: MODE_ICONS.closed, label: 'Load with panels closed',
-          visible: primary.mode !== 'choose', enabled: canSwitch && !none,
-          title: missing
-            ? 'Load with panels closed is not available: the set\'s dataset is not on this server.'
-            : none
-                ? 'Load with panels closed is not needed: no panel was open when this set was saved, ' +
-                  'so Load already lists them closed.'
-                : 'Load with panels closed: switch to the set\'s dataset and list its panels closed. ' +
-                  '"Open saved layout" stays one click away.' },
         { mode: 'add', icon: MODE_ICONS.add, label: 'Add panels closed',
           visible: true, enabled: true,
           title: 'Add panels closed: keep the dataset and the open panels; add the set\'s ' +
@@ -136,15 +123,14 @@ export function loadChoices(status = {}) {
  * The options SessionManager.loadSession applies for a button's mode.
  * `choose` also needs the dataset the user picks (`onDataset`).
  * @param {string} mode
- * @returns {{openPanels: boolean, add: boolean, keepDataset: boolean, choose: boolean}}
+ * @returns {{add: boolean, keepDataset: boolean, choose: boolean}}
  */
 export function modeOptions(mode) {
     switch (mode) {
-        case 'current': return { openPanels: true, add: false, keepDataset: true, choose: false };
-        case 'closed': return { openPanels: false, add: false, keepDataset: false, choose: false };
-        case 'add': return { openPanels: false, add: true, keepDataset: true, choose: false };
-        case 'choose': return { openPanels: true, add: false, keepDataset: false, choose: true };
+        case 'current': return { add: false, keepDataset: true, choose: false };
+        case 'add': return { add: true, keepDataset: true, choose: false };
+        case 'choose': return { add: false, keepDataset: false, choose: true };
         case 'full':
-        default: return { openPanels: true, add: false, keepDataset: false, choose: false };
+        default: return { add: false, keepDataset: false, choose: false };
     }
 }

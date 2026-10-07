@@ -100,7 +100,7 @@ export function createLoadActions({ compact = false, getCurrent = () => ({}), on
     const icons = document.createElement('div');
     icons.className = 'load-icons';
     const buttons = {};
-    for (const mode of ['current', 'closed', 'add', 'choose']) {
+    for (const mode of ['current', 'add', 'choose']) {
         buttons[mode] = iconButton(mode, MODE_ICONS[mode]);
         icons.appendChild(buttons[mode]);
     }
@@ -190,28 +190,24 @@ export function createLoadActions({ compact = false, getCurrent = () => ({}), on
 }
 
 /**
- * The help ("?") popover: the 2x2 of what each button does.
+ * The help ("?") popover: the three ways to load.
  * @returns {HTMLElement} the HTML of its body
  */
 export function helpContent() {
     const wrap = document.createElement('div');
     wrap.className = 'load-help';
     wrap.innerHTML = `
-        <table class="load-help-table">
-            <thead><tr><th></th><th>Panels open</th><th>Panels closed</th></tr></thead>
-            <tbody>
-                <tr><th>Switch to the set's dataset</th>
-                    <td><span class="btn btn-primary btn-sm load-help-load">Load</span></td>
-                    <td><span class="btn btn-outline-secondary btn-sm load-icon-btn"><i class="fas ${MODE_ICONS.closed}"></i></span></td></tr>
-                <tr><th>Keep the current dataset</th>
-                    <td><span class="btn btn-outline-secondary btn-sm load-icon-btn"><i class="fas ${MODE_ICONS.current}"></i></span></td>
-                    <td><span class="btn btn-outline-secondary btn-sm load-icon-btn"><i class="fas ${MODE_ICONS.add}"></i></span></td></tr>
-            </tbody>
-        </table>
-        <p><b>Load</b> restores the set as a share link would: its dataset, and the panels that were open
-        when it was saved, in their layout. Panels it replaces stay in the closed list.</p>
-        <p><i class="fas ${MODE_ICONS.add}"></i> <b>Add panels closed</b> leaves the dataset and the open
-        panels as they are.</p>
+        <ul class="load-help-list">
+            <li><span class="btn btn-primary btn-sm load-help-load">Load</span>
+                <span><b>Load</b> switches to the set's dataset and opens the panels that were open when
+                it was saved, in their layout, as a share link would. Panels it replaces stay in the
+                closed list.</span></li>
+            <li><span class="btn btn-outline-secondary btn-sm load-icon-btn"><i class="fas ${MODE_ICONS.current}"></i></span>
+                <span><b>Load on the current dataset</b> does the same on the dataset that is open.</span></li>
+            <li><span class="btn btn-outline-secondary btn-sm load-icon-btn"><i class="fas ${MODE_ICONS.add}"></i></span>
+                <span><b>Add panels closed</b> only adds the set's panels to the closed list; the dataset
+                and the open panels stay.</span></li>
+        </ul>
         <p><span class="session-dataset-badge" data-state="missing">not found here</span> means the set's dataset
         is not on this server: Load then uses the open dataset, and <i class="fas ${MODE_ICONS.choose}"></i>
         <b>Choose dataset</b> picks another.</p>`;

@@ -6,8 +6,6 @@ opens the panels that were open when the set was saved, in their layout,
 exactly as a share link would. Small icon buttons are its ablations:
 
     Load on the current dataset   keep the open dataset, open the set's panels
-    Load with panels closed       switch dataset, list the panels closed (and
-                                  offer "Open saved layout")
     Add panels closed             keep dataset and open panels, add the set's
                                   panels to the closed list
 
@@ -85,9 +83,6 @@ def server(tmp_path_factory):
 
 
 OPEN_TILES = "() => [...document.querySelectorAll('.tile-container .tile[data-tile-id]')].map(t => t.dataset.tileId)"
-CLOSED_LISTED = """() => [...document.querySelectorAll(
-    '.tile-container > .tile-selector .source-panel-option.closed-panel')]
-    .filter(e => e.offsetParent !== null).map(e => e.dataset.id)"""
 # Each panel's saved config. `_closed` only marks how a closed panel was
 # registered (selection-tile.js clears it on reopen), not a setting; a key set
 # to null is no setting either (an open plot reports showBackdrop: null once
@@ -172,16 +167,6 @@ def _wait_open(page, ids):
     page.wait_for_timeout(800)
 
 
-def _assert_closed(page, ids, saved):
-    # the offer is the last step of a load: before it, the panels replaced
-    # (same ids, in the replace case) may still be there
-    page.locator(".notification[data-offer='saved-layout']").wait_for(timeout=30000)
-    page.wait_for_timeout(500)
-    assert _tile_ids(page) == []
-    assert sorted(page.evaluate(CLOSED_LISTED)) == sorted(ids)
-    assert page.evaluate(CONFIGS, ids) == saved
-
-
 def _on(server, store):
     """The app's URL with `store` (a name in the data directory) open."""
     return server.replace("fixture_small.zarr", store)
@@ -249,49 +234,6 @@ def browser():
         b.close()
 
 
-def test_load_with_panels_closed_lists_its_panels_closed(server, browser):
-    ctx = browser.new_context(viewport={"width": 1400, "height": 1000})
-    fresh = browser.new_context(viewport={"width": 1400, "height": 1000})
-    try:
-        page = ctx.new_page()
-        errors = []
-        page.on("pageerror", lambda e: errors.append(str(e)))
-        page.goto(server)
-        page.wait_for_selector(".panel-type-option[data-type='cell-plot']", timeout=30000)
-        ids = _build(page)
-        saved = page.evaluate(CONFIGS, ids)
-        assert saved[0]["title"] == "Renamed plot"
-
-        page.click("#btn-save-session")
-        page.fill("#session-name", SET_NAME)
-        page.click("#btn-confirm-session")
-        page.wait_for_function("() => document.getElementById('session-modal').offsetParent === null")
-
-        # 1. the dialog's list, over the open panels: they are replaced, and
-        #    nothing of the set opens
-        page.wait_for_selector(".modal-backdrop", state="detached")
-        _open_dialog(page)
-        _card(page, SET_NAME).locator(".session-load-closed").click()
-        _wait_dialog_closed(page)
-        _assert_closed(page, ids, saved)
-
-        # a closed panel reopens with its settings
-        page.locator(f".tile-container > .tile-selector .panel-closed-btn[data-id='{ids[0]}']").click()
-        page.wait_for_selector(f".tile[data-tile-id='{ids[0]}'] .js-plotly-plot", timeout=30000)
-        assert page.input_value(f".tile[data-tile-id='{ids[0]}'] .tile-title") == "Renamed plot"
-
-        # 2. the welcome screen's list, in a browser with nothing open
-        other = fresh.new_page()
-        other.on("pageerror", lambda e: errors.append(str(e)))
-        other.goto(server)
-        _item(other, SET_NAME).locator(".session-load-closed").click()
-        _assert_closed(other, ids, saved)
-        assert not errors, errors
-    finally:
-        ctx.close()
-        fresh.close()
-
-
 def test_share_link_still_opens_its_panels(server, browser):
     ctx = browser.new_context(viewport={"width": 1400, "height": 1000},
                               permissions=["clipboard-read", "clipboard-write"])
@@ -339,46 +281,6 @@ def _build_and_share(page, server, name):
     return ids, _share_link(page)
 
 
-def test_open_saved_layout_matches_the_share_link(server, browser):
-    ctx = browser.new_context(viewport={"width": 1400, "height": 1000},
-                              permissions=["clipboard-read", "clipboard-write"])
-    by_link = browser.new_context(viewport={"width": 1400, "height": 1000})
-    by_set = browser.new_context(viewport={"width": 1400, "height": 1000})
-    try:
-        page = ctx.new_page()
-        ids, link = _build_and_share(page, server, "layout-offer")
-
-        linked = by_link.new_page()
-        linked.goto(link)
-        _wait_open(linked, ids)
-        want_tree, want_configs = linked.evaluate(TREE_JS), linked.evaluate(CONFIGS, ids)
-        assert want_tree[0]["content"]["sizes"] != [50, 50], want_tree
-
-        loaded = by_set.new_page()
-        errors = []
-        loaded.on("pageerror", lambda e: errors.append(str(e)))
-        loaded.goto(server)
-        _item(loaded, "layout-offer").locator(".session-load-closed").click()
-        offer = loaded.locator(".notification[data-offer='saved-layout']")
-        offer.wait_for(timeout=30000)
-        assert _tile_ids(loaded) == []
-        button = offer.locator("button[data-action='open']")
-        assert button.inner_text().strip() == "Open saved layout (2 panels)"
-        button.click()
-        _wait_open(loaded, ids)
-        assert loaded.evaluate(TREE_JS) == want_tree
-        assert loaded.evaluate(CONFIGS, ids) == want_configs
-        # the closed entries were reopened in place, not duplicated
-        assert loaded.evaluate(CLOSED_ALL) == []
-        assert loaded.evaluate("() => PanelManager.getAllPanels().length") == len(ids)
-        assert loaded.locator(".notification[data-offer='saved-layout']").count() == 0
-        assert not errors, errors
-    finally:
-        ctx.close()
-        by_link.close()
-        by_set.close()
-
-
 def test_load_opens_the_layout_exactly_as_the_share_link_does(server, browser):
     ctx = browser.new_context(viewport={"width": 1400, "height": 1000},
                               permissions=["clipboard-read", "clipboard-write"])
@@ -415,46 +317,6 @@ def test_load_opens_the_layout_exactly_as_the_share_link_does(server, browser):
         ctx.close()
         by_link.close()
         fresh.close()
-
-
-def test_open_saved_layout_from_the_list_after_dismissing_the_notice(server, browser):
-    """Notices are dismissed by reflex: the offer stays above the closed panels."""
-    ctx = browser.new_context(viewport={"width": 1400, "height": 1000},
-                              permissions=["clipboard-read", "clipboard-write"])
-    by_link = browser.new_context(viewport={"width": 1400, "height": 1000})
-    by_set = browser.new_context(viewport={"width": 1400, "height": 1000})
-    try:
-        page = ctx.new_page()
-        ids, link = _build_and_share(page, server, "layout-list")
-        linked = by_link.new_page()
-        linked.goto(link)
-        _wait_open(linked, ids)
-        want_tree, want_configs = linked.evaluate(TREE_JS), linked.evaluate(CONFIGS, ids)
-
-        loaded = by_set.new_page()
-        errors = []
-        loaded.on("pageerror", lambda e: errors.append(str(e)))
-        loaded.goto(server)
-        _item(loaded, "layout-list").locator(".session-load-closed").click()
-        offer = loaded.locator(".notification[data-offer='saved-layout']")
-        offer.wait_for(timeout=30000)
-        offer.locator(".notification-close").click()
-        offer.wait_for(state="detached", timeout=10000)
-
-        listed = loaded.locator(".tile-container > .tile-selector .open-saved-layout-btn")
-        assert listed.inner_text().strip() == "Open saved layout (2)"
-        listed.click()
-        _wait_open(loaded, ids)
-        assert loaded.evaluate(TREE_JS) == want_tree
-        assert loaded.evaluate(CONFIGS, ids) == want_configs
-        assert loaded.evaluate(CLOSED_ALL) == []
-        # used up: gone from every list
-        assert loaded.locator(".open-saved-layout-btn").count() == 0
-        assert not errors, errors
-    finally:
-        ctx.close()
-        by_link.close()
-        by_set.close()
 
 
 ALL_IDS = "() => PanelManager.getAllPanels().map(p => p.getId())"
@@ -581,8 +443,8 @@ def test_add_to_closed_from_the_welcome_list_and_another_dataset(server, browser
 
 
 # Sets saved with all, some or none of their panels open, and a legacy one:
-# the closed list holds all five, "Open saved layout (N)" counts and opens
-# only the panels that were open at save, in their layout.
+# Load opens only the panels that were open at save, in their layout; the
+# others are listed closed.
 FIVE = ["cell-plot-P1", "cell-plot-P2", "cell-plot-P3", "cell-table-T1", "cell-table-T2"]
 
 
@@ -657,8 +519,7 @@ def _page(browser, server, store="fixture_small.zarr"):
 
 # ---- the buttons, by what each does to the dataset and to the panels -------
 
-BTN = {"full": ".session-load", "current": ".session-load-current", "closed": ".session-load-closed",
-       "add": ".session-add-closed", "choose": ".session-load-choose"}
+BTN = {"full": ".session-load", "current": ".session-load-current", "add": ".session-add-closed", "choose": ".session-load-choose"}
 
 
 @pytest.mark.parametrize("where", ["dialog", "welcome"])
@@ -683,17 +544,17 @@ def test_a_card_has_one_blue_load_and_four_icons_with_tooltips(server, browser, 
         assert "btn-primary" in primary.get_attribute("class")
         # exactly one highlighted button
         assert card.locator(".btn-primary").count() == 1
-        tips = {m: card.locator(BTN[m]).get_attribute("data-tip") for m in ("current", "closed", "add")}
+        tips = {m: card.locator(BTN[m]).get_attribute("data-tip") for m in ("current", "add")}
         assert tips["current"].startswith("Load on the current dataset")
-        assert tips["closed"].startswith("Load with panels closed")
+        assert card.locator(".session-load-closed").count() == 0     # no "panels closed" button
         assert tips["add"].startswith("Add panels closed")
         # the choose icon only shows when the dataset is missing
         assert card.locator(BTN["choose"]).is_hidden()
         assert card.locator(".session-dataset-badge").inner_text().strip() == "\u2713 available here"
         # a real tooltip appears on hover
-        card.locator(BTN["closed"]).hover()
+        card.locator(BTN["current"]).hover()
         page.locator(".tooltip").wait_for(timeout=5000)
-        assert "switch to the set's dataset" in page.locator(".tooltip").inner_text().lower()
+        assert "keep the open dataset" in page.locator(".tooltip").inner_text().lower()
         _no_prompts(page, seen)
     finally:
         ctx.close()
@@ -710,6 +571,9 @@ def test_load_switches_dataset_and_opens_the_saved_layout(server, browser):
         _wait_dataset(page, "fixture_small.zarr")
         _wait_tiles(page, 2)
         _wait_dialog_closed(page)
+        # the click's tooltip is not left behind on the page
+        page.wait_for_timeout(1000)
+        assert page.locator(".tooltip").count() == 0
         assert sorted(_tile_ids(page)) == ["cell-plot-P1", "cell-table-T1"]
         # the panel it replaced is in the closed list, not lost
         assert old in page.evaluate(CLOSED_ALL)
@@ -734,27 +598,6 @@ def test_load_on_the_current_dataset_keeps_the_dataset_and_opens_the_panels(serv
         # not switched
         assert page.evaluate(SHOWN).endswith("other_small.zarr")
         assert old in page.evaluate(CLOSED_ALL)
-        _no_prompts(page, seen)
-    finally:
-        ctx.close()
-
-
-def test_load_with_panels_closed_switches_dataset_and_keeps_the_layout_offer(server, browser):
-    _write_set("btn-closed", ["cell-plot-P1", "cell-table-T1"])
-    ctx, page, seen = _page(browser, server, "other_small.zarr")
-    try:
-        old = _choose(page, ".tile-selector", "cell-plot")
-        _open_dialog(page)
-        _card(page, "btn-closed").locator(BTN["closed"]).click()
-        _wait_dataset(page, "fixture_small.zarr")
-        page.locator(".notification[data-offer='saved-layout']").wait_for(timeout=30000)
-        page.wait_for_timeout(1500)
-        # the click's tooltip is not left behind on the page
-        assert page.locator(".tooltip").count() == 0
-        assert _tile_ids(page) == []
-        assert set(FIVE) | {old} <= set(page.evaluate(CLOSED_ALL))
-        assert page.locator(".tile-container > .tile-selector .open-saved-layout-btn").inner_text().strip() \
-            == "Open saved layout (2)"
         _no_prompts(page, seen)
     finally:
         ctx.close()
@@ -831,8 +674,6 @@ def test_missing_dataset_badge_and_load_on_the_current_dataset(server, browser):
         assert "btn-primary" in primary.get_attribute("class")
         # the ablation that is the primary is not repeated; closed has nothing to switch to
         assert card.locator(BTN["current"]).is_hidden()
-        assert card.locator(BTN["closed"]).get_attribute("aria-disabled") == "true"
-        assert "not on this server" in card.locator(BTN["closed"]).get_attribute("data-tip")
         assert card.locator(BTN["choose"]).is_visible()
         assert card.locator(BTN["choose"]).get_attribute("data-tip").startswith("Choose dataset")
         primary.click()
@@ -934,9 +775,6 @@ def test_load_opens_only_the_panels_open_at_save(server, browser, case, open_ids
         primary = card.locator(BTN["full"])
         if k == 0:
             assert primary.inner_text().strip() == "Load (no panels were open)"
-            # "closed" would be the same as Load: its icon says so
-            assert card.locator(BTN["closed"]).get_attribute("aria-disabled") == "true"
-            assert "already lists them closed" in card.locator(BTN["closed"]).get_attribute("data-tip")
         else:
             assert primary.inner_text().strip() == "Load"
             assert f"open {k} panel" in primary.get_attribute("data-tip")
@@ -963,50 +801,6 @@ def test_load_opens_only_the_panels_open_at_save(server, browser, case, open_ids
         ctx.close()
 
 
-@pytest.mark.parametrize("case,open_ids,legacy", [
-    ("all-open", FIVE, False),
-    ("some-open", ["cell-plot-P1", "cell-table-T1"], False),
-    ("none-open", [], False),
-    ("legacy-mixed", ["cell-plot-P1", "cell-plot-P2", "cell-table-T2"], True),
-])
-def test_closed_load_offers_only_the_panels_open_at_save(server, browser, case, open_ids, legacy):
-    name = f"count-{case}"
-    _write_set(name, open_ids, legacy)
-    ctx = browser.new_context(viewport={"width": 1400, "height": 1000})
-    try:
-        page = ctx.new_page()
-        seen = _guard(page)
-        page.goto(server)
-        _item(page, name).locator(BTN["closed"] if open_ids else BTN["full"]).click()
-        notice = page.locator(".notification", has_text=f'Loaded "{name}"')
-        notice.wait_for(timeout=30000)
-        page.wait_for_timeout(500)
-        assert _tile_ids(page) == []
-        assert sorted(page.evaluate(CLOSED_ALL)) == sorted(FIVE)
-        text = notice.inner_text()
-        assert "5 panels listed closed" in text
-        k = len(open_ids)
-        offer = page.locator(".notification[data-offer='saved-layout'] button[data-action='open']")
-        listed = page.locator(".tile-container > .tile-selector .open-saved-layout-btn")
-        if k == 0:
-            assert "none was open" in text or "none opened" in text
-            assert offer.count() == 0 and listed.count() == 0
-            return
-        assert ("all 5 were open" if k == 5 else f"{k} were open") in text
-        assert offer.inner_text().strip() == f"Open saved layout ({k} panels)"
-        assert listed.inner_text().strip() == f"Open saved layout ({k})"
-        listed.click()
-        _wait_tiles(page, k)
-        assert sorted(_tile_ids(page)) == sorted(open_ids)
-        tree = page.evaluate(TREE_JS)
-        assert len(tree) == 1 and tree[0]["content"] == _shape(_stack(open_ids))
-        assert sorted(page.evaluate(CLOSED_ALL)) == sorted(set(FIVE) - set(open_ids))
-        _no_prompts(page, seen)
-    finally:
-        ctx.close()
-
-
-# ---- an uploaded file --------------------------------------------------------
 
 def _choose_file(page, path):
     _open_dialog(page)
@@ -1089,13 +883,13 @@ def test_help_popover_shows_the_two_by_two(server, browser):
         help_btn.hover()
         pop = page.locator(".load-help-popover")
         pop.wait_for(timeout=5000)
-        cells = pop.locator(".load-help-table tbody td")
-        assert cells.count() == 4
-        assert pop.locator("thead").inner_text().replace("\n", " ").split() == ["Panels", "open", "Panels", "closed"]
-        assert cells.nth(0).inner_text().strip() == "Load"
-        assert cells.nth(1).locator("i.fa-eye-slash").count() == 1
-        assert cells.nth(2).locator("i.fa-thumbtack").count() == 1
-        assert cells.nth(3).locator("i.fa-folder-plus").count() == 1
+        items = pop.locator(".load-help-list li")
+        assert items.count() == 3
+        assert items.nth(0).locator(".btn-primary").inner_text().strip() == "Load"
+        assert items.nth(1).locator("i.fa-thumbtack").count() == 1
+        assert items.nth(2).locator("i.fa-folder-plus").count() == 1
+        assert pop.locator("i.fa-eye-slash").count() == 0
+        assert "not found here" in pop.inner_text()
         # moving away closes it; a click pins it
         page.locator("#session-modal-title").hover()
         pop.wait_for(state="hidden", timeout=5000)

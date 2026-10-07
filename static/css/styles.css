@@ -1906,29 +1906,38 @@ button.dtsb-button.dtsb-clear:hover {
     margin: 0.5rem 0 0;
 }
 
-.load-help-table {
-    width: 100%;
-    border-collapse: collapse;
-    text-align: center;
+.load-help-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
 }
 
-.load-help-table th {
-    font-weight: 600;
-    color: #495057;
-    padding: 3px 4px;
+.load-help-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 6px 0;
 }
 
-.load-help-table tbody th {
-    text-align: left;
-    width: 38%;
-}
-
-.load-help-table td {
-    padding: 4px;
-}
-
-.load-help-table tbody tr + tr > * {
+.load-help-list li + li {
     border-top: 1px solid #e9ecef;
+}
+
+.load-help-list .btn {
+    flex: 0 0 auto;
+    min-width: 32px;
+    align-self: flex-start;
+}
+
+.load-help-list .load-icon-btn {
+    width: 40px;
+    height: 30px;
+}
+
+.load-help-list .load-help-load {
+    width: 40px;
+    padding-left: 0;
+    padding-right: 0;
 }
 
 .load-help .btn {
@@ -2725,12 +2734,6 @@ button.dtsb-button.dtsb-clear:hover {
 .panel-origin-tag.other-dataset {
     color: #664d03;
     background-color: #fff3cd;
-}
-
-.saved-layout-offer {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 1rem;
 }
 
 .source-selection-grid {

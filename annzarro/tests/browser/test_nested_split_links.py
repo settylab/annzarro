@@ -17,8 +17,7 @@ match, and the bottom chooser must come back once, below the rows. After a
 restore every plot must be drawn inside its tile and above the chooser, and
 every split handle must still resize its own split. One case also saves a
 panel set: the stored layout keeps every level; loading the set in a fresh
-context lists its panels closed (a loaded set opens none of them), and its
-"Open saved layout" brings back the same tree, sizes and settings.
+context (its Load button) brings back the same tree, sizes and settings.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -329,16 +328,8 @@ def test_nested_layout_round_trips_through_a_panel_set(server, browser):
 
         opened = fresh.new_page()
         errors += _open(opened, url)
-        opened.locator(".session-item", has_text="nested-splits").first.locator(".session-load-closed").click()
-        _settle(opened)
-        ids = sorted(_configs(page))
-        opened.wait_for_function("ids => ids.every(id => !!PanelManager.getPanel(id))", arg=ids)
-        assert opened.evaluate(
-            "() => document.querySelectorAll('.tile-container .tile[data-tile-id]').length") == 0
-        assert sorted(opened.evaluate(
-            "() => [...document.querySelectorAll('.source-panel-option.closed-panel')].map(e => e.dataset.id)")) == ids
-
-        opened.locator(".notification[data-offer='saved-layout'] button[data-action='open']").click()
+        opened.locator(".session-item", has_text="nested-splits").first.locator(".session-load").click()
+        opened.wait_for_selector(".tile[data-tile-id]", timeout=30000)
         _settle(opened)
         assert opened.evaluate(TREE_JS) == built
         assert _configs(opened) == _configs(page)

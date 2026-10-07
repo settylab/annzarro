@@ -17,7 +17,7 @@ test('a set whose dataset is here: Load switches and opens, three icons', () => 
     const c = loadChoices(here);
     assert.deepEqual([c.primary.mode, c.primary.label], ['full', 'Load']);
     assert.match(c.primary.title, /open 2 panels/);
-    assert.deepEqual(c.actions.filter(a => a.visible).map(a => a.mode), ['current', 'closed', 'add']);
+    assert.deepEqual(c.actions.filter(a => a.visible).map(a => a.mode), ['current', 'add']);
     assert.ok(c.actions.filter(a => a.visible).every(a => a.enabled));
     assert.match(by(c, 'add').title, /5 panels/);
 });
@@ -28,25 +28,21 @@ test('"Load on the current dataset" is disabled, with the reason, when no datase
     const current = by(c, 'current');
     assert.equal(current.enabled, false);
     assert.match(current.title, /no dataset is open/);
-    assert.equal(by(c, 'closed').enabled, true);
+    assert.equal(by(c, 'closed'), undefined);      // no "panels closed" button
 });
 
-test('a set with no panel open: Load says so and loads closed; the closed icon is redundant', () => {
+test('a set with no panel open: Load says so and lists the panels closed', () => {
     const c = loadChoices({ ...here, open: 0 });
     assert.equal(c.primary.label, 'Load (no panels were open)');
     assert.equal(c.primary.mode, 'full');
-    assert.equal(by(c, 'closed').enabled, false);
-    assert.match(by(c, 'closed').title, /already lists them closed/);
 });
 
 test('a dataset that is not here: Load becomes "Load on the current dataset", with a Choose icon', () => {
     const c = loadChoices({ ...here, found: false });
     assert.deepEqual([c.primary.mode, c.primary.label], ['current', 'Load on the current dataset']);
     assert.match(c.primary.title, /bm_aging\.zarr/);
-    // the ablation that is now the primary is not repeated; switching has nothing to switch to
+    // the ablation that is now the primary is not repeated
     assert.equal(by(c, 'current').visible, false);
-    assert.equal(by(c, 'closed').enabled, false);
-    assert.match(by(c, 'closed').title, /not on this server/);
     assert.equal(by(c, 'choose').visible, true);
     assert.equal(by(c, 'add').enabled, true);
 });
@@ -56,7 +52,6 @@ test('a dataset that is not here and none open: the primary chooses one', () => 
     assert.deepEqual([c.primary.mode, c.primary.label], ['choose', 'Choose dataset…']);
     assert.equal(by(c, 'choose').visible, false);      // not repeated
     assert.equal(by(c, 'current').enabled, false);
-    assert.equal(by(c, 'closed').visible, false);
 });
 
 test('a set that names no dataset uses the open one, or asks for one', () => {
@@ -71,15 +66,14 @@ test('before the set is known the buttons still have labels and tooltips', () =>
 });
 
 test('every mode maps to what it does to the dataset and to the panels', () => {
-    assert.deepEqual(MODES, ['full', 'current', 'closed', 'add', 'choose']);
-    const flags = m => { const o = modeOptions(m); return [o.openPanels, o.keepDataset, o.add, o.choose].map(Number).join(''); };
-    //            open keep add choose
-    assert.equal(flags('full'), '1000');                       // switch, open
-    assert.equal(flags('current'), '1100');                   // keep dataset, open
-    assert.equal(flags('closed'), '0000');                    // switch, closed
-    assert.equal(flags('add'), '0110');                       // keep, closed, add
-    assert.equal(flags('choose'), '1001');                    // pick a dataset, open
-    assert.equal(flags('anything else'), '1000');
+    assert.deepEqual(MODES, ['full', 'current', 'add', 'choose']);
+    const flags = m => { const o = modeOptions(m); return [o.keepDataset, o.add, o.choose].map(Number).join(''); };
+    //            keep add choose
+    assert.equal(flags('full'), '000');       // switch dataset, open the panels
+    assert.equal(flags('current'), '100');    // keep the dataset, open the panels
+    assert.equal(flags('add'), '110');        // keep dataset and open panels, add closed
+    assert.equal(flags('choose'), '001');     // pick a dataset, then as Load
+    assert.equal(flags('anything else'), '000');
 });
 
 test('the badge: available, missing (with the reason) or none', () => {

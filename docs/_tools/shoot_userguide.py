@@ -693,26 +693,15 @@ def shoot_panelsets(sh, data_dir):
     page.locator("#session-help-btn").hover(); time.sleep(0.6)
     capture(sh, page, "panelsets-help", "#session-modal .modal-content")
     page.mouse.move(2, 2); time.sleep(0.3)
-    # "Load with panels closed" lists the set's panels closed and offers its saved layout in a notice
-    page.locator(f"{first} .session-load-closed").click()
+    # plain Load opens the set's panels in their saved layout
+    page.locator(f"{first} .session-load").click()
+    page.wait_for_selector(".tile-container .tile[data-tile-id]", timeout=60000)
     page.mouse.move(700, 900)                           # off the buttons, so no hover state is shot
-    offer = page.locator(".notification[data-offer='saved-layout']")
-    offer.wait_for(state="attached", timeout=30000)     # hidden by the dialog shot's clean()
-    time.sleep(1.0)
-    sh.ready(page)
-    page.evaluate("window.scrollTo(0, 0)")
-    capture(sh, page, "panelsets-loaded", None, keep_offer=True, marks=[
-        (1, ".tile-container > .tile-selector .source-panel-option.closed-panel >> nth=0"),
-        (2, ".notification[data-offer='saved-layout'] button[data-action='open']")])
-    sh.log.append("panelsets: after load, focus = " + json.dumps(page.evaluate(
-        "[document.getElementById('focused-gene').value, document.getElementById('focused-cell').value,"
-        " [...document.querySelectorAll('.tile-container .tile')].map(t => t.dataset.tileId),"
-        " [...document.querySelectorAll('.source-panel-option.closed-panel')].map(e => e.dataset.id)]")))
-    offer.locator("button[data-action='open']").click(); time.sleep(3)
+    time.sleep(3)
     sh.ready(page)
     page.evaluate("window.scrollTo(0, 0)")
     capture(sh, page, "panelsets-opened", None)
-    sh.log.append("panelsets: after Open saved layout = " + json.dumps(page.evaluate(
+    sh.log.append("panelsets: after Load = " + json.dumps(page.evaluate(
         "[...document.querySelectorAll('.tile-container .tile')].map(t => t.dataset.tileId)")))
     page.context.close()
 
