@@ -70,14 +70,14 @@ def server(request, tmp_path_factory):
     proc.wait(10)
 
 
-def _link(root, colour, **extra):
+def _link(root, colour, controls=True, **extra):
     plot = {"id": PID,
             "x": {"type": "obsm", "key": "X_umap", "column": "0"},
             "y": {"type": "obsm", "key": "X_umap", "column": "1"},
             "z": None, "color": colour, **extra}
     view = {"v": 1, "subset": None,
-            "layout": {"v": 1, "hierarchy": [{"type": "tile", "id": PID, "controlsVisible": True}],
-                       "controlState": {PID: True}, "panelConfigs": {PID: plot}}}
+            "layout": {"v": 1, "hierarchy": [{"type": "tile", "id": PID, "controlsVisible": controls}],
+                       "controlState": {PID: controls}, "panelConfigs": {PID: plot}}}
     payload = base64.urlsafe_b64encode(json.dumps(view, separators=(",", ":")).encode()).decode().rstrip("=")
     return f"{root}/?dataset_path={urllib.parse.quote(STORE, safe='/')}#view={payload}"
 
@@ -151,10 +151,13 @@ ZOOM = """async (frac) => {
 }""" % GRAPH
 
 
+# hidden controls: the panel's control listeners are not set up; the view
+# must still be followed (a link opened with the controls closed did not)
+@pytest.mark.parametrize("controls", [True, False], ids=["controls", "no-controls"])
 @pytest.mark.parametrize("colour", [NUMERIC, {"type": "obs", "key": "cell_type", "column": ""}], ids=["numeric", "category"])
-def test_automatic_style_follows_the_view(server, page, colour):
+def test_automatic_style_follows_the_view(server, page, colour, controls):
     root, large = server
-    page.goto(_link(root, colour))
+    page.goto(_link(root, colour, controls))
     _wait(page, lambda s: True)
     page.evaluate(f"() => {{ {GRAPH}._pointCount = 5000000; }}")
     page.evaluate(f"async () => Plotly.relayout({GRAPH}, {{'xaxis.autorange': true, 'yaxis.autorange': true}})")
@@ -170,6 +173,8 @@ def test_automatic_style_follows_the_view(server, page, colour):
     assert all(abs(v - near["size"]) < 1e-9 for v in s["sceneSizes"]), s
     assert all(abs(v - near["opacity"]) < 1e-9 for v in s["sceneOpacities"]), s
 
+    if not controls:
+        return
     # a size the user sets stays; the opacity is still automatic
     box = page.locator(f"#point-size-input-{PID}")
     box.fill("3")

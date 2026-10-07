@@ -1,8 +1,8 @@
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
 import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker } from './plot-make-helper.js';
-import { pointsInView } from '../../utils/view-point-style.js';
-import { highlightFocusedEntity, noteFocusOutside, updatePlotElements } from './plot-update.js';
+import { autoPointCount, debounced } from '../../utils/view-point-style.js';
+import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
@@ -677,8 +677,19 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     plotContainer._pointCount = nPoints;
     // in a zoomed view kept from the graph drawn now, the points in that view
     // (utils/view-point-style.js; checked again once the new graph is drawn)
-    const inView = settings.viewport2D && !settings.z ? pointsInView(plotContainer, keepsOwnMarker) : null;
-    applyAutoPointStyle(settings, inView === null ? nPoints : inView, pointStyleBase());
+    applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
+    // and after every zoom or pan, once it has settled (plot-make-helper.js
+    // attachViewportTracking calls it). Here, not with the controls: a panel
+    // whose controls are hidden has none.
+    if (plotContainer.__azFollowView) plotContainer.__azFollowView.cancel();
+    plotContainer.__azFollowView = debounced(() => {
+      if (!settings.autoPointSize && !settings.autoPointOpacity) return;
+      if (!plotContainer._fullLayout) return;
+      if (applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase())) {
+        showPointStyle(id, settings);
+        restyleMarkers(plotContainer, settings).catch(err => console.warn('Point size/opacity not updated:', err && err.message));
+      }
+    });
     showPointStyle(id, settings);
     showColorSortControl(id, settings);
 

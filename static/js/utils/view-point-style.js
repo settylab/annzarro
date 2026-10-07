@@ -57,6 +57,15 @@ export function pointsInView(gd, skip = () => false) {
 }
 
 /**
+ * The count automatic values follow: in a zoomed or panned 2D view the
+ * points in it, else every point drawn (`gd._pointCount`).
+ */
+export function autoPointCount(gd, settings, skip) {
+  const inView = settings && settings.viewport2D && !settings.z ? pointsInView(gd, skip) : null;
+  return inView === null ? gd._pointCount : inView;
+}
+
+/**
  * A trailing debounce: `run` once, `delay` ms after the last call.
  * @param {Function} run
  * @param {number} [delay]
