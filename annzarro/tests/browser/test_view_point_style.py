@@ -151,8 +151,7 @@ ZOOM = """async (frac) => {
 }""" % GRAPH
 
 
-# hidden controls: the panel's control listeners are not set up; the view
-# must still be followed (a link opened with the controls closed did not)
+# with the controls open and closed: the view is followed either way
 @pytest.mark.parametrize("controls", [True, False], ids=["controls", "no-controls"])
 @pytest.mark.parametrize("colour", [NUMERIC, {"type": "obs", "key": "cell_type", "column": ""}], ids=["numeric", "category"])
 def test_automatic_style_follows_the_view(server, page, colour, controls):
