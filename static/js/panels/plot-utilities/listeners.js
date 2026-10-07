@@ -667,6 +667,11 @@ export function setupColorControls(
         if (data.colorRaw && data.colorLog) data.color = data.colorRaw;   // back to linear values
         applyLogColor(data, settings);
         if (!settings.lockColorRange) { settings.colorMin = null; settings.colorMax = null; }
+        // The range, the Min/Max boxes and the slider scales in the new units
+        // now, as a Refresh would set them: the incremental restyle below
+        // writes cmin/cmax only when they are set, so the trace kept the old
+        // units' range (103..9950 against log10 colours) until a Refresh.
+        updateColorSliderUI(controlsContainer, data, settings, id);
         _updatePlotElements({ colors: true, colorRange: true });
     };
     $logColorButton.on('click', () => {

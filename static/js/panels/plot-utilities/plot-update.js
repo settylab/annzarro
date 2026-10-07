@@ -600,12 +600,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     update['marker.reversescale'] = settings.colorReversed;
                 }
                 
-                if (settings.colorMin !== null && (updateOptions.colorRange || updateOptions.colors)) {
-                    update['marker.cmin'] = settings.colorMin;
-                }
-                
-                if (settings.colorMax !== null && (updateOptions.colorRange || updateOptions.colors)) {
-                    update['marker.cmax'] = settings.colorMax;
+                // An unset bound goes back to Plotly's auto range (null): skipping
+                // it kept the previous colour values' range on the trace
+                if (updateOptions.colorRange || updateOptions.colors) {
+                    update['marker.cmin'] = settings.colorMin ?? null;
+                    update['marker.cmax'] = settings.colorMax ?? null;
                 }
                 
                 if (Object.keys(update).length > 0) {
