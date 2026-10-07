@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 const {
     GB, MB, memorySettings, readLimits, HEAP_USABLE_SHARE, FALLBACK_HEAP_GB, MAX_WEBGL_CONTEXTS, CONTEXTS_PER_PLOT,
-    colourKind, panelCost, exportCost, snapshotCost, recolourCost, Ledger, check, headroom, largestFitting,
+    REMOTE_TOTAL_GB, LARGEST_TESTED_POINTS, colourKind, panelCost, exportCost, snapshotCost, recolourCost, Ledger, check, headroom, largestFitting,
     predictSubsetChange, formatGB, headroomLine, markPending, clearPending, takeCrashed, learnedMargin,
     learnFromCrash, DEFAULT_MODEL, DEFAULT_SETTINGS, zero
 } = await import('../../../static/js/utils/memory-guard.js');
@@ -26,7 +26,9 @@ function storage() {
 }
 
 test('ui.memory settings: defaults, YAML booleans, and malformed values fall back', () => {
-    assert.deepEqual(memorySettings(undefined), { ...DEFAULT_SETTINGS });
+    assert.deepEqual(memorySettings(undefined), { ...DEFAULT_SETTINGS, hostBytes: null });
+    assert.equal(memorySettings({ host_memory_bytes: 16e9 }).hostBytes, 16e9);
+    assert.equal(memorySettings({ host_memory_bytes: 'x' }).hostBytes, null);
     assert.equal(memorySettings({ enforce: 'warn' }).enforce, 'warn');
     assert.equal(memorySettings({ enforce: 'OFF' }).enforce, 'off');
     // YAML 1.1: an unquoted `enforce: off` arrives as false
@@ -46,7 +48,9 @@ test('ceilings: Chrome reports its heap limit, other browsers fall back, config 
     // what may be FILLED: the benchmark tab died at 4.03 GB used
     assert.ok(Math.abs(chrome.heap.bytes - 4027182277) < 10, chrome.heap.bytes);
     assert.equal(chrome.browserLimit, true);
-    assert.equal(chrome.total.bytes, null);
+    // the server reported no RAM: a browser on another computer, 16 GB
+    assert.equal(chrome.total.bytes, REMOTE_TOTAL_GB * GB);
+    assert.match(chrome.total.source, /another computer/);
     assert.equal(chrome.contexts, MAX_WEBGL_CONTEXTS);
 
     const ff = readLimits(FIREFOX, s);
@@ -59,9 +63,18 @@ test('ceilings: Chrome reports its heap limit, other browsers fall back, config 
     assert.match(cfg.heap.source, /heap_gb/);
     assert.equal(cfg.total.bytes, 6 * GB);
 
-    // a small device gets a total budget of half its memory; 8 GB (the API's cap) gets none
+    // a small device gets a total budget of half its memory; 8 GB (the API's cap) the remote default
     assert.equal(readLimits({ ...CHROME, navigator: { deviceMemory: 4 } }, s).total.bytes, 2 * GB);
-    assert.equal(readLimits({ ...CHROME, navigator: { deviceMemory: 8 } }, s).total.bytes, null);
+    assert.equal(readLimits({ ...CHROME, navigator: { deviceMemory: 8 } }, s).total.bytes, REMOTE_TOTAL_GB * GB);
+    // on the server's computer: its RAM less a quarter, at least 4 GB
+    const host = (gb) => readLimits(CHROME, memorySettings({ host_memory_bytes: gb * GB })).total;
+    assert.equal(host(128).bytes, 96 * GB);
+    assert.match(host(128).source, /this computer's 128 GB less 32 GB/);
+    assert.equal(host(16).bytes, 12 * GB);
+    assert.equal(host(8).bytes, 4 * GB);
+    assert.equal(host(3).bytes, 0);
+    // total_gb wins over both
+    assert.equal(readLimits(CHROME, memorySettings({ total_gb: 40, host_memory_bytes: 128 * GB })).total.bytes, 40 * GB);
 });
 
 test('colour kind: categorical obs columns, numeric everything else, none', () => {
@@ -191,22 +204,36 @@ test('check: block, warn and off; the binding ceiling; risky actions; WebGL cont
     assert.match(measured.why, /measured\)$/);
 });
 
-test('one every-cell plot: the heap no longer bounds large-plot mode; a total budget does', () => {
+test('one every-cell plot: the total budget binds large-plot mode, from the RAM where known; 200M is the cap', () => {
     // v0.4.1 keeps large-plot positions outside the V8 heap: 200M drew with 35 MB of heap
-    const s = memorySettings({});
-    const limits = readLimits(CHROME, s);
+    // and 13.6 GB of renderer memory on a 128 GB computer
     const L = new Ledger();
-    const fitsWith = (st) => (n) => check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(),
-        readLimits(CHROME, st), st).fits;
-    assert.equal(limits.total.bytes, null, 'no total budget by default on an 8 GB+ device');
-    assert.equal(fitsWith(s)(200e6), true);
-    // with a total budget the points' memory outside the heap is what binds:
-    // 65 B/point plus the margin, 13 GB at 200M (renderer RSS 13.56 GB measured)
-    const t16 = memorySettings({ total_gb: 16 });
-    assert.equal(fitsWith(t16)(150e6), true);
-    assert.equal(fitsWith(t16)(210e6), false);
-    const max = largestFitting(fitsWith(t16), 1, 400e6);
-    assert.ok(max > 190e6 && max < 210e6, max);
+    const verdict = (memory, n) => {
+        const st = memorySettings(memory);
+        return check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(), readLimits(CHROME, st), st,
+            { largePoints: n });
+    };
+    // browser on the server's computer, 128 GB: 200M draws
+    assert.equal(verdict({ host_memory_bytes: 128 * GB }, 200e6).verdict, 'ok');
+    // 16 GB: refused on the total, with its numbers
+    const small = verdict({ host_memory_bytes: 16 * GB }, 200e6);
+    assert.equal(small.verdict, 'block');
+    assert.equal(small.binding, 'total');
+    assert.match(small.why, /^needs ~16 GB of browser memory; 12 GB free \(of 12 GB, estimated\)$/);
+    // a browser on another computer: 16 GB by default, which binds just above 200M
+    // (13 GB at 200M, times the margin)
+    const st = memorySettings({});
+    const remote = (n) => check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(), readLimits(CHROME, st), st);
+    assert.equal(remote(150e6).verdict, 'ok');
+    assert.equal(remote(205e6).binding, 'total');
+    // above the largest plot tested, refused whatever the budget
+    const big = verdict({ host_memory_bytes: 1024 * GB }, 250e6);
+    assert.equal(big.verdict, 'block');
+    assert.equal(big.binding, 'tested');
+    assert.equal(big.why, `250,000,000 points is above ${LARGEST_TESTED_POINTS.toLocaleString('en-US')}, the largest plot tested to draw`);
+    assert.equal(verdict({ host_memory_bytes: 1024 * GB }, LARGEST_TESTED_POINTS).verdict, 'ok');
+    // the guard off lets everything through
+    assert.equal(verdict({ host_memory_bytes: 1024 * GB, enforce: 'off' }, 250e6).verdict, 'ok');
 });
 
 test('largestFitting: the largest n that fits, or one below the range', () => {
@@ -274,7 +301,7 @@ test('words: GB rounding and the headroom line', () => {
     assert.equal(formatGB(0.2 * MB), '1 MB');
     const limits = readLimits(CHROME, memorySettings({}));
     const line = headroomLine({ heap: 1 * GB, off: 0, gpu: 0, contexts: 0 }, limits, { panels: 1 });
-    assert.equal(line, 'Browser memory: 3.0 GB of 4.0 GB JS memory free with 1 plot open (estimated)');
+    assert.equal(line, 'Browser memory: 3.0 GB of 4.0 GB JS memory free, 15 GB of 16 GB in total with 1 plot open (estimated)');
     const tight = readLimits(CHROME, memorySettings({ total_gb: 8 }));
     assert.match(headroomLine({ heap: 1 * GB, off: 2 * GB, gpu: 0, contexts: 0 }, tight, { panels: 2, measured: true }),
         /, 5\.0 GB of 8\.0 GB in total with 2 plots open \(measured\)$/);

@@ -33,7 +33,10 @@ def site(tmp_path, monkeypatch):
 def test_ui_memory_defaults_reach_the_browser(site):
     app = create_wsgi_app(config_path=site())
     memory = app.test_client().get("/api/v1/config").get_json()["ui"]["memory"]
-    assert memory == {"enforce": "block", "heap_gb": None, "total_gb": None, "margin": 0.2}
+    # the test client's requests come from 127.0.0.1: this computer's RAM comes along
+    import psutil
+    assert memory == {"enforce": "block", "heap_gb": None, "total_gb": None, "margin": 0.2,
+                      "host_memory_bytes": psutil.virtual_memory().total}
 
 
 def test_ui_memory_set_by_an_admin(site):

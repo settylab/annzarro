@@ -51,6 +51,27 @@ export const DEFAULT_SETTINGS = Object.freeze({
 export const HEAP_USABLE_SHARE = 4027182277 / 4395630592;
 /** The heap ceiling where the browser reports none (Firefox, Safari): Chrome's, which is the tightest known. */
 export const FALLBACK_HEAP_GB = 4.40;
+/**
+ * Total budget where ui.memory.total_gb is not set (GB). The guard cannot
+ * see the computer's memory: Chrome reports at most 8 GB (navigator.deviceMemory).
+ * - Browser on the server's computer (the server reports its RAM, see
+ *   routes/core.py): that RAM less a reserve for the system and the browser,
+ *   HOST_RESERVE_SHARE of it and at least HOST_RESERVE_MIN_GB.
+ * - Browser on another computer: REMOTE_TOTAL_GB, a budget a 32 GB computer
+ *   can give a tab; with the margin it binds just above 200M large-plot
+ *   points (13.6 GB of renderer memory measured at 200M).
+ * ui.memory.total_gb (server-wide) replaces either.
+ */
+export const HOST_RESERVE_SHARE = 0.25;
+export const HOST_RESERVE_MIN_GB = 4;
+export const REMOTE_TOTAL_GB = 16;
+/**
+ * The largest large plot drawn in a test (synthetic 200M-cell store, every
+ * cell, v0.4.1, Chrome on an M3 Max with 128 GB: 13.6 GB renderer, 35 MB of
+ * V8 heap). Larger plots are refused whatever the budget until a larger
+ * run says more.
+ */
+export const LARGEST_TESTED_POINTS = 200000000;
 /** navigator.deviceMemory at or below this (GB) sets a total budget of half of it. */
 export const SMALL_DEVICE_GB = 4;
 /**
@@ -150,10 +171,13 @@ export function memorySettings(memory) {
     const heapGb = num(m.heap_gb);
     const totalGb = num(m.total_gb);
     const margin = num(m.margin);
+    // the server's RAM, which it reports only to a browser on its own computer
+    const hostBytes = num(m.host_memory_bytes);
     return {
         enforce,
         heapGb: heapGb !== null && heapGb > 0 ? heapGb : null,
         totalGb: totalGb !== null && totalGb > 0 ? totalGb : null,
+        hostBytes: hostBytes !== null && hostBytes > 0 ? hostBytes : null,
         margin: margin !== null && margin >= 0 && margin <= 5 ? margin : DEFAULT_SETTINGS.margin
     };
 }
@@ -179,11 +203,19 @@ export function readLimits(env = {}, settings = DEFAULT_SETTINGS) {
     } else {
         heap = { bytes: FALLBACK_HEAP_GB * GB * HEAP_USABLE_SHARE, source: `Chrome's JS heap limit (${FALLBACK_HEAP_GB} GB); this browser reports none` };
     }
-    let total = { bytes: null, source: 'no limit set' };
+    let total;
     const device = nav && Number(nav.deviceMemory) > 0 ? Number(nav.deviceMemory) : null;
     if (settings.totalGb) {
         total = { bytes: settings.totalGb * GB, source: `ui.memory.total_gb (${settings.totalGb} GB)` };
-    } else if (device !== null && device <= SMALL_DEVICE_GB) {
+    } else if (settings.hostBytes) {
+        const reserve = Math.max(HOST_RESERVE_SHARE * settings.hostBytes, HOST_RESERVE_MIN_GB * GB);
+        total = { bytes: Math.max(0, settings.hostBytes - reserve),
+            source: `this computer's ${formatGB(settings.hostBytes)} less ${formatGB(reserve)} for the system and the browser` };
+    } else {
+        total = { bytes: REMOTE_TOTAL_GB * GB,
+            source: `${REMOTE_TOTAL_GB} GB for a browser on another computer than the server (ui.memory.total_gb)` };
+    }
+    if (device !== null && device <= SMALL_DEVICE_GB && !settings.totalGb && device * GB / 2 < total.bytes) {
         total = { bytes: device * GB / 2, source: `half of this device's ${device} GB` };
     }
     return { heap, total, contexts: MAX_WEBGL_CONTEXTS, browserLimit: !!reported && !settings.heapGb };
@@ -456,6 +488,7 @@ export function headroom(held, limits) {
  * @param {Object} [opts]
  * @param {number} [opts.observed] - a measured total of held memory (bytes); the larger of it and the estimate counts
  * @param {number} [opts.panels] - plot panels open (for the sentence)
+ * @param {number} [opts.largePoints] - points of a large plot the action draws; above LARGEST_TESTED_POINTS it is refused
  * @returns {{verdict: 'ok'|'warn'|'block', fits: boolean, risky: boolean, binding: string|null,
  *            needBytes: number, freeBytes: number, limitBytes: number, measured: boolean, why: string}}
  */
@@ -477,7 +510,8 @@ export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}
         if (c.need > c.free && (!binding || c.need - c.free > binding.need - binding.free)) binding = c;
     }
     const contextsShort = need.contexts > 0 && need.contexts > free.contexts;
-    const fits = !binding && !contextsShort;
+    const untested = opts.largePoints > LARGEST_TESTED_POINTS;
+    const fits = !binding && !contextsShort && !untested;
     const main = checks[0];
     const shown = binding || main;
     const risky = fits && (held2.heap + need.heap * k) > RISKY_SHARE * limits.heap.bytes;
@@ -490,10 +524,13 @@ export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}
     } else if (contextsShort) {
         why = `the browser keeps at most ${limits.contexts} WebGL canvases; ${limits.contexts - free.contexts} are in use`
             + ' and the oldest plot would go blank';
+    } else if (untested) {
+        why = `${Math.round(opts.largePoints).toLocaleString('en-US')} points is above ${LARGEST_TESTED_POINTS.toLocaleString('en-US')},`
+            + ' the largest plot tested to draw';
     }
     const verdict = fits || settings.enforce === 'off' ? 'ok' : settings.enforce === 'warn' ? 'warn' : 'block';
     return {
-        verdict, fits, risky, binding: binding ? binding.name : (contextsShort ? 'contexts' : null),
+        verdict, fits, risky, binding: binding ? binding.name : (contextsShort ? 'contexts' : untested ? 'tested' : null),
         needBytes: shown.need, freeBytes: Math.max(0, shown.free), limitBytes: shown.limit, measured, why
     };
 }

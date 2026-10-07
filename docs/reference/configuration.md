@@ -108,7 +108,7 @@ Defaults sent to the browser through `/api/v1/config`.
 | `defaults.subset_size`, `defaults.subset_seed` | `100000`, `0` | Cells in that default subset, and its seed. See {doc}`../design/subsetting`. |
 | `memory.enforce` | `block` | Browser memory guard: what happens when an action would not fit in the browser tab's memory. `block` disables it and says why, `warn` says so and lets it run, `off` never interferes. See [Browser memory](#browser-memory-uimemory). |
 | `memory.heap_gb` | `null` | JavaScript memory the tab may use, in GB. `null`: what the browser reports (Chrome: 4.4 GB on a 64-bit computer), 4.4 where it reports nothing. |
-| `memory.total_gb` | `null` | Everything the tab may hold, JavaScript and typed arrays, in GB. `null`: no limit, except half the device's memory on devices that report 4 GB or less. |
+| `memory.total_gb` | `null` | Everything the tab may hold, JavaScript and typed arrays, in GB. `null`: for a browser on the server's computer (the desktop app, or a browser on localhost), that computer's memory less a quarter, at least 4 GB, for the system and the browser; for a browser on another computer, 16; at most half the device's memory on devices that report 4 GB or less. |
 | `memory.margin` | `0.2` | Predictions are multiplied by 1 + margin before they are compared. |
 | `cache.max_entries`, `cache.max_size_mb` | `1000`, `1024` | Browser-side cache. |
 | `autosave.*` | enabled, every 10,000 ms | Autosave of the current layout to the browser's local storage. |
@@ -141,11 +141,15 @@ prediction by 1 + `margin` and adds 0.25 to the margin in a browser whose tab cl
 marked action. Firefox and Safari report no memory figures; they are held to Chrome's limit.
 
 **Defaults.** `enforce: block`, `heap_gb: null` (the browser's own limit), `total_gb: null`,
-`margin: 0.2`. With these the heap limits regular plots (a few million points) but no longer
-large-plot mode: its points are charged to the total, which has no limit unless `total_gb` is set
-(or the device reports 4 GB or less). Set `total_gb` to what the tab may use on the computers
-that open the app: with `total_gb: 16`, a single large plot of up to about 200 million points is
-allowed.
+`margin: 0.2`. With these the heap limits regular plots (a few million points) and the total
+limits large-plot mode, whose points are outside the heap (about 65 bytes per point). A browser
+cannot see the computer's memory, so the server tells a browser on its own computer how much
+there is (a loopback request no proxy forwarded); the budget is that memory less a quarter,
+at least 4 GB, for the system and the browser. On a 16 GB computer that is 12 GB, and a large
+plot of 200 million points (13.6 GB measured) is refused; on 128 GB it is drawn. A browser on
+another computer gets 16 GB unless `total_gb` says otherwise (server-wide; there is no
+per-browser setting). Whatever the budget, a large plot of more than 200 million points, the
+largest tested to draw, is refused, and the refusal says so.
 
 **When to change them.**
 

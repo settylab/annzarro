@@ -150,8 +150,10 @@ ui:
     # JS heap the tab may use, in GB. null: what the browser reports
     # (Chrome: 4.4 GB on a 64-bit desktop), or 4.4 where it reports nothing.
     heap_gb: null
-    # Everything the tab may hold (JS heap, typed arrays), in GB. null: no
-    # limit, except half the device's memory on devices with 4 GB or less.
+    # Everything the tab may hold (JS heap, typed arrays), in GB. null: for a
+    # browser on this computer, its RAM less a reserve for the system and the
+    # browser (a quarter, at least 4 GB); for a browser on another computer,
+    # 16; at most half the device's memory on devices with 4 GB or less.
     total_gb: null
     # Predictions are multiplied by 1 + margin before they are compared.
     margin: 0.2

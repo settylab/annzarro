@@ -51,6 +51,21 @@ class TestServer(unittest.TestCase):
         from annzarro.core.remote import hosted_reasons
         self.assertTrue(hosted_reasons({'host': '127.0.0.1', 'auth_enabled': True}))
 
+    def test_config_reports_ram_only_to_a_browser_on_this_computer(self):
+        """The memory guard budgets a tab from the computer's RAM, which a
+        browser cannot see: the server gives it to a loopback request no proxy
+        forwarded, and to no one else."""
+        import psutil
+        ram = psutil.virtual_memory().total
+        get = lambda **kw: json.loads(self.client.get('/api/v1/config', **kw).data)
+        local = get(environ_base={'REMOTE_ADDR': '127.0.0.1'})
+        self.assertEqual(local['ui']['memory']['host_memory_bytes'], ram)
+        self.assertEqual(get(environ_base={'REMOTE_ADDR': '::1'})['ui']['memory']['host_memory_bytes'], ram)
+        for kw in ({'environ_base': {'REMOTE_ADDR': '10.0.0.7'}},
+                   {'environ_base': {'REMOTE_ADDR': '127.0.0.1'}, 'headers': {'X-Forwarded-For': '10.0.0.7'}}):
+            remote = get(**kw)
+            self.assertNotIn('host_memory_bytes', (remote.get('ui') or {}).get('memory') or {}, kw)
+
     def test_get_status(self):
         """Test getting server status."""
         response = self.client.get('/api/v1/status')
