@@ -1,21 +1,21 @@
 /**
  * Per-point colours of 2D plots computed outside Plotly
- * (static/js/utils/gl-colors.js): the wrapped scattergl calc runs Plotly
+ * (static/js/utils/scattergl-calc.js): the wrapped scattergl calc runs Plotly
  * with a placeholder colour and hands the scene the colours computed here.
  * That they equal Plotly's own colours is tested in a browser against
  * Plotly (annzarro/tests/browser/test_point_colours.py); here the parts that
  * need no Plotly: the scale function, the colour range, which traces it
  * takes, and what the wrapper leaves behind.
  *
- * Run:  node --test annzarro/tests/js/gl-colors.test.mjs
+ * Run:  node --test annzarro/tests/js/scattergl-calc.test.mjs
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const {
     parseScaleColor, scaleColorFunction, colorRange, eligible, wrapScatterglModule,
-    OPACITY_IN_SCENE, _setGlColorsDisabled
-} = await import('../../../static/js/utils/gl-colors.js');
+    OPACITY_IN_SCENE, _setGlColorsDisabled, typedPositions, _setTypedPositionsDisabled
+} = await import('../../../static/js/utils/scattergl-calc.js');
 
 test('scale colours: the forms Plotly scales use; anything else is not read', () => {
     assert.deepEqual(parseScaleColor('#fff'), [255, 255, 255, 1]);
@@ -134,4 +134,45 @@ test('wrapped calc: other traces, and the switch for tests, go straight to Plotl
         _setGlColorsDisabled(false);
     }
     assert.equal(wrapScatterglModule({ name: 'scatter', calc() {} }), false);
+});
+
+test('typed positions: the stash and every scene option holding them get one Float64Array; ids typed', () => {
+    const positions = [1, 2, NaN, 4.25];
+    const scene = { markerOptions: [{ positions }], lineOptions: [{ positions }], textOptions: [{ positions: [9] }] };
+    const cd = [{ t: { _scene: scene, index: 0, positions, ids: [0, 1] } }];
+    assert.equal(typedPositions(cd), true);
+    const t = cd[0].t;
+    assert.ok(t.positions instanceof Float64Array);
+    assert.deepEqual(Array.from(t.positions), positions);
+    assert.equal(scene.markerOptions[0].positions, t.positions);
+    assert.equal(scene.lineOptions[0].positions, t.positions);
+    assert.deepEqual(scene.textOptions[0].positions, [9], 'other arrays are left alone');
+    assert.ok(t.ids instanceof Uint32Array);
+    assert.deepEqual(Array.from(t.ids), [0, 1]);
+    assert.equal(typedPositions(cd), false, 'already typed');
+    assert.equal(typedPositions(null), false);
+});
+
+test('wrapped calc: typed positions only in a graph without hover', () => {
+    const scene = { markerOptions: [] };
+    const module = {
+        name: 'scattergl',
+        calc(gd, trace) {
+            const positions = [0, 0, 1, 1];
+            scene.markerOptions.push({ positions, color: [0, 0, 0, 255] });
+            return [{ t: { _scene: scene, index: scene.markerOptions.length - 1, positions, ids: [0, 1] } }];
+        }
+    };
+    wrapScatterglModule(module);
+    const trace = { type: 'scattergl', visible: true, opacity: 1, _length: 2, marker: { color: '#123456' } };
+    const hover = module.calc({ _fullLayout: { hovermode: 'closest' } }, trace);
+    assert.ok(Array.isArray(hover[0].t.positions));
+    const none = module.calc({ _fullLayout: { hovermode: false } }, trace);
+    assert.ok(none[0].t.positions instanceof Float64Array);
+    _setTypedPositionsDisabled(true);
+    try {
+        assert.ok(Array.isArray(module.calc({ _fullLayout: { hovermode: false } }, trace)[0].t.positions));
+    } finally {
+        _setTypedPositionsDisabled(false);
+    }
 });

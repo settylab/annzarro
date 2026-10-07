@@ -108,9 +108,9 @@ test('restyleMarkers: 2D plots go to the scene (the highlight at twice the size)
 // Plotly folds the marker opacity into the per-point colours it makes, and
 // draws them at scene opacity 1: an opacity set in the scene came on top
 // (0.4 colours at 0.8 drew at 0.32 until the next full redraw). Those traces
-// restyle; per-point colours from gl-colors.js keep the opacity in the scene.
-test('opacity: refused for Plotly\'s per-point colours, applied to gl-colors ones', async () => {
-    const { OPACITY_IN_SCENE } = await import('../../../static/js/utils/gl-colors.js');
+// restyle; per-point colours from scattergl-calc.js keep the opacity in the scene.
+test('opacity: refused for Plotly\'s per-point colours, applied to scattergl-calc.js ones', async () => {
+    const { OPACITY_IN_SCENE } = await import('../../../static/js/utils/scattergl-calc.js');
     const { gd, calls } = fakeGd();
     const opts = gd._fullLayout._plots.xy._scene.markerOptions;
     opts[2].colors = [[1, 0, 0, 0.4], [0, 1, 0, 0.4]];

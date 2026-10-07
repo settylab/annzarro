@@ -42,7 +42,7 @@ import { keepTitlesFitted } from './plot-titles.js';
 import { releasePlot } from './release-plot.js';
 import { forget } from './memory-guard-ui.js';
 import { withShownCamera } from './scene-camera.js';
-import { installGlColors } from './gl-colors.js';
+import { installGlColors } from './scattergl-calc.js';
 
 /** Class of the status strip; styled in static/css/styles.css. */
 const STRIP_CLASS = 'plot-status';
@@ -412,7 +412,7 @@ function wireStrips() {
 wireStrips();
 
 /**
- * Plotly's scattergl trace module, for utils/gl-colors.js: Plotly exports no
+ * Plotly's scattergl trace module, for utils/scattergl-calc.js: Plotly exports no
  * trace modules, so a detached graph with one invisible scattergl trace is
  * drawn, read and purged. It is not a panel and states no Coverage.
  * @returns {Promise<Object>}

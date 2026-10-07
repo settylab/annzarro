@@ -1,28 +1,35 @@
 /**
- * Per-point colours of 2D (scattergl) traces without Plotly's per-point
- * colour strings.
+ * Plotly's scattergl calc step, wrapped: what it builds per point is built
+ * here in a cheaper form, and the drawing is the same.
  *
- * For a trace coloured by a number per point, Plotly 2.20 runs every value
- * through its colour scale function, which returns a CSS string
- * ("rgb(68, 1, 84)") that is parsed straight back into numbers, then gives
- * the scene one more parsed colour per point for the (invisible) border. At
- * 1M points that was 0.78 s of the 1.13 s Plotly.react after a recolour
- * (issue #82): 0.66 s formatting colours, 0.12 s on the border colours.
+ * 1. Per-point colours (issue #82). For a trace coloured by a number per
+ *    point, Plotly 2.20 runs every value through its colour scale function,
+ *    which returns a CSS string ("rgb(68, 1, 84)") that is parsed straight
+ *    back into numbers, then gives the scene one more parsed colour per
+ *    point for the (invisible) border. At 1M points that was 0.78 s of the
+ *    1.13 s Plotly.react after a recolour. For a trace it can handle
+ *    (`eligible`), calc runs with a placeholder single colour, so Plotly
+ *    builds no per-point colours, and the scene then gets the colours
+ *    computed here: the same scale, interpolation and rounding as Plotly's
+ *    (d3 v3 linear scale, clamped, through tinycolor's integer RGB), equal
+ *    colour for equal value, so a recolour draws what it drew before.
+ *    `gd.data`, `gd._fullData` and hover read the numeric colour array, the
+ *    colour bar is Plotly's, and the colour range is the one Plotly's own
+ *    colour scale step computes (`colorRange` follows it).
  *
- * `installGlColors` wraps the scattergl calc step. For a trace it can
- * handle (`eligible`), calc runs with a placeholder single colour, so Plotly
- * builds no per-point colours, and the scene then gets the colours computed
- * here: the same scale, interpolation and rounding as Plotly's (d3 v3 linear
- * scale, clamped, through tinycolor's integer RGB), equal colour for equal
- * value, so a recolour draws what it drew before. Everything else Plotly
- * keeps: `gd.data`, `gd._fullData` and hover read the numeric colour array,
- * the colour bar is Plotly's, and the colour range is the one Plotly's own
- * colour scale step computes (`colorRange` follows it).
+ *    One difference from Plotly's per-point colours: the marker opacity is
+ *    not folded into each colour's alpha but drawn as the scene opacity, as
+ *    Plotly does for single-colour traces. Changing the opacity in the
+ *    scene (gl-markers.js) then means the same for both kinds of trace.
  *
- * One difference from Plotly's per-point colours: the marker opacity is not
- * folded into each colour's alpha but drawn as the scene opacity, as Plotly
- * does for single-colour traces. Changing the opacity in the scene
- * (gl-markers.js) then means the same for both kinds of trace.
+ * 2. Positions off the JS heap (graphs without hover: large-plot mode).
+ *    calc keeps each trace's positions as a plain Array of doubles (16 B a
+ *    point) and, below 100,000 points, point ids as a plain Array (4 B):
+ *    20.1 B a point of V8 heap in a 10M-point large plot, 3.5 GB at 175M,
+ *    and at 200M the tab died of a V8 out-of-memory (its heap is capped
+ *    near 4 GB whatever the machine has). Here they become a Float64Array
+ *    and a Uint32Array, the same numbers in ArrayBuffers, which live outside
+ *    that heap.
  *
  * It relies on Plotly's scattergl internals (vendored Plotly 2.20): the
  * calc step's stash and scene options. A trace it cannot handle goes
@@ -41,6 +48,7 @@ export const OPACITY_IN_SCENE = '_azOpacityInScene';
 
 let installing = null;
 let disabled = false;
+let positionsDisabled = false;
 
 const isTyped = (v) => ArrayBuffer.isView(v) && !(v instanceof DataView);
 const isArrayLike = (v) => Array.isArray(v) || isTyped(v);
@@ -195,42 +203,83 @@ function sceneOptions(cd) {
   return opts && typeof opts === 'object' ? opts : null;
 }
 
+/** Plotly's calc with the per-point colours computed here (1.), or plain. */
+function colouredCalc(calc, self, args, trace) {
+  if (disabled || !eligible(trace)) return calc.apply(self, args);
+  const m = trace.marker;
+  const values = m.color;
+  const [cmin, cmax] = colorRange(m, values);
+  const colorOf = scaleColorFunction(m.colorscale, !!m.reversescale, cmin, cmax);
+  if (!colorOf) return calc.apply(self, args);
+  const cauto = m.cauto;
+  // Plotly's colour scale step keeps a set range; the one it would have
+  // computed from the values is set here.
+  m.color = PLACEHOLDER;
+  m.cmin = cmin;
+  m.cmax = cmax;
+  m.cauto = false;
+  let cd;
+  try {
+    cd = calc.apply(self, args);
+  } finally {
+    m.color = values;
+    m.cauto = cauto;
+  }
+  const opts = sceneOptions(cd);
+  if (!opts) {
+    // Not the internals this was written for: the trace is drawn in the
+    // placeholder colour once, and every later calc goes through Plotly.
+    disabled = true;
+    console.warn('Point colours: Plotly scattergl internals not found; using Plotly\'s colours');
+    return cd;
+  }
+  const n = trace._length;
+  const colors = new Array(n);
+  for (let i = 0; i < n; i++) colors[i] = colorOf(values[i]);
+  delete opts.color;
+  opts.colors = colors;
+  opts[OPACITY_IN_SCENE] = true;
+  return cd;
+}
+
+const SCENE_OPTIONS = ['markerOptions', 'markerSelectedOptions', 'markerUnselectedOptions', 'lineOptions',
+  'fillOptions', 'textOptions', 'textSelectedOptions', 'textUnselectedOptions'];
+
+/**
+ * Move a trace's calc positions and point ids into typed arrays (2.): the
+ * stash's and every scene option that holds the same positions array.
+ */
+export function typedPositions(cd) {
+  const stash = Array.isArray(cd) && cd[0] && cd[0].t;
+  if (!stash) return false;
+  let moved = false;
+  const old = stash.positions;
+  if (Array.isArray(old)) {
+    const typed = Float64Array.from(old);
+    const scene = stash._scene;
+    if (scene && typeof stash.index === 'number') {
+      for (const key of SCENE_OPTIONS) {
+        const o = Array.isArray(scene[key]) ? scene[key][stash.index] : null;
+        if (o && o.positions === old) o.positions = typed;
+      }
+    }
+    stash.positions = typed;
+    moved = true;
+  }
+  if (Array.isArray(stash.ids)) {
+    stash.ids = Uint32Array.from(stash.ids);
+    moved = true;
+  }
+  return moved;
+}
+
+/** A graph whose points have no hover: large-plot mode (hovermode false). */
+const noHover = (gd) => !!(gd && gd._fullLayout && gd._fullLayout.hovermode === false);
+
 function wrapCalc(calc) {
   const wrapped = function (gd, trace) {
-    if (disabled || !eligible(trace)) return calc.apply(this, arguments);
-    const m = trace.marker;
-    const values = m.color;
-    const [cmin, cmax] = colorRange(m, values);
-    const colorOf = scaleColorFunction(m.colorscale, !!m.reversescale, cmin, cmax);
-    if (!colorOf) return calc.apply(this, arguments);
-    const cauto = m.cauto;
-    // Plotly's colour scale step keeps a set range; the one it would have
-    // computed from the values is set here.
-    m.color = PLACEHOLDER;
-    m.cmin = cmin;
-    m.cmax = cmax;
-    m.cauto = false;
-    let cd;
-    try {
-      cd = calc.apply(this, arguments);
-    } finally {
-      m.color = values;
-      m.cauto = cauto;
-    }
-    const opts = sceneOptions(cd);
-    if (!opts) {
-      // Not the internals this was written for: the trace is drawn in the
-      // placeholder colour once, and every later calc goes through Plotly.
-      disabled = true;
-      console.warn('Point colours: Plotly scattergl internals not found; using Plotly\'s colours');
-      return cd;
-    }
-    const n = trace._length;
-    const colors = new Array(n);
-    for (let i = 0; i < n; i++) colors[i] = colorOf(values[i]);
-    delete opts.color;
-    opts.colors = colors;
-    opts[OPACITY_IN_SCENE] = true;
+    const cd = colouredCalc(calc, this, arguments, trace);
+    if (!positionsDisabled && noHover(gd)) typedPositions(cd);
     return cd;
   };
   wrapped.__azGlColors = calc;
@@ -271,3 +320,6 @@ export function installGlColors(probeModule) {
 
 /** For tests: go back to Plotly's own colours (or on again). */
 export function _setGlColorsDisabled(v) { disabled = !!v; }
+
+/** For tests: keep Plotly's own position arrays (or typed again). */
+export function _setTypedPositionsDisabled(v) { positionsDisabled = !!v; }

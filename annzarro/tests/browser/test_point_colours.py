@@ -2,7 +2,7 @@
 
 1. Colours (issue #82). A recolour at 1M points spent 0.78 s of its 1.13 s
    Plotly.react turning colour values into CSS strings and back. The
-   scattergl calc is now wrapped (static/js/utils/gl-colors.js) and the
+   scattergl calc is now wrapped (static/js/utils/scattergl-calc.js) and the
    scene gets colours computed outside Plotly. They must be Plotly's: the
    scene colours of a drawn panel are compared, point by point, with the
    ones Plotly makes for the same trace with the wrapper off.
@@ -137,7 +137,7 @@ def page(server):
 # Each per-point-coloured trace of the panel against the colours Plotly makes
 # for the same trace with the wrapper off (on a detached graph).
 COMPARE = """async () => {
-  const G = await import('/static/js/utils/gl-colors.js');
+  const G = await import('/static/js/utils/scattergl-calc.js');
   const g = %s;
   const sc = g._fullLayout._plots.xy._scene;
   const out = [];
