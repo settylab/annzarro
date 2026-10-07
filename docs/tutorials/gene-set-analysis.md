@@ -217,7 +217,7 @@ Stale results say so.
 The results for the new set.
 ```
 
-After a rerun the category list starts again at **All categories**; pick **GO Process** again.
+The category stays on **GO Process** after the rerun.
 Antigen processing and presentation stays at the top (9 of 90, FDR 3.1e-8), and the network has
 59 interactions among the 36 genes STRING knows, against 9 expected (p below 1e-16).
 
