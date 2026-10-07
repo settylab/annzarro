@@ -338,3 +338,108 @@ def test_slow_recolour_shows_busy(server, slow):
             page.close()
         finally:
             browser.close()
+
+
+LINEAR = {"type": "obs", "key": "total_counts", "column": ""}
+LO, HI = 102.97683205853679, 9949.681746793087   # total_counts, the data range
+
+
+def _toggle_log(page):
+    page.click(f"#log-color-{PID}")
+    page.wait_for_timeout(1200)
+
+
+@pytest.mark.parametrize("mode", ["regular", "large"])
+def test_log_toggle_redraws_without_refresh(request, mode):
+    """Clicking Log rescales the colours and the colour bar at once (range, 1-2-5 ticks, Min/Max boxes),
+    on and off, unlocked: it used to keep the previous units' cmin/cmax until the panel's Refresh."""
+    server = request.getfixturevalue("server" if mode == "regular" else "large_server")
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=LINEAR))
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(LO), pytest.approx(HI))
+            assert bar["tickvals"] is None
+
+            _toggle_log(page)
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(math.log10(LO)), pytest.approx(math.log10(HI))), bar
+            assert bar["ticktext"] == ["200", "500", "1000", "2000", "5000"], bar
+            assert [10 ** v for v in bar["tickvals"]] == [pytest.approx(float(t)) for t in bar["ticktext"]]
+            assert page.input_value(f"#color-min-{PID}") == "103"
+            assert page.input_value(f"#color-max-{PID}") == "9950"
+            cfg = _saved(page)
+            assert cfg["color"]["log"] is True and cfg["colorRangeUnits"] == "data", cfg
+            assert cfg["colorMax"] == pytest.approx(HI)
+            if mode == "regular":   # the colours themselves are log10 values
+                colours = page.evaluate(f"""() => document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot')
+                                            .data[0].marker.color.filter(Number.isFinite)""")
+                assert max(colours) == pytest.approx(math.log10(HI))
+
+            # a typed Max under Log, then Log off: back to the linear data range (not locked)
+            _toggle_log(page)
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(LO), pytest.approx(HI)), bar
+            assert bar["tickvals"] is None and bar["ticktext"] is None, bar
+            assert page.input_value(f"#color-max-{PID}") == "9950"
+            assert _saved(page)["color"].get("log") is False
+
+            # and on again: the same as the first time
+            _toggle_log(page)
+            bar = page.evaluate(BAR)
+            assert bar["cmax"] == pytest.approx(math.log10(HI)), bar
+            assert bar["ticktext"] == ["200", "500", "1000", "2000", "5000"], bar
+
+            # a locked range after toggling: a share link built from the saved config opens the same
+            _type(page, f"#color-max-{PID}", 5000)
+            page.click(f"#lock-range-{PID}")
+            _toggle_log(page)                      # off, locked: the same data values, linear
+            cfg = _saved(page)
+            assert (cfg["colorMax"], cfg["lockColorRange"]) == (pytest.approx(5000), True), cfg
+            assert page.evaluate(BAR)["cmax"] == pytest.approx(5000)
+            assert not errors, errors
+            page.close()
+
+            keep = {k: cfg[k] for k in ("color", "colorMin", "colorMax", "lockColorRange", "colorRangeUnits") if k in cfg}
+            page, errors = _open(browser, _link(server, **keep))
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(LO), pytest.approx(5000)), bar
+            assert page.input_value(f"#color-max-{PID}") == "5000"
+            _toggle_log(page)                      # on again from the link: still 5000, in log units
+            assert page.evaluate(BAR)["cmax"] == pytest.approx(math.log10(5000))
+            assert page.input_value(f"#color-max-{PID}") == "5000"
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("mode", ["regular", "large"])
+def test_log_untick_redraws_without_refresh(request, mode):
+    """The other direction on its own: a panel opened WITH Log, Log unticked, no Refresh. The colour
+    bar goes back to the linear data range with Plotly's own ticks, and the boxes follow."""
+    server = request.getfixturevalue("server" if mode == "regular" else "large_server")
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=LOG))
+            bar = page.evaluate(BAR)
+            assert bar["cmax"] == pytest.approx(math.log10(HI)), bar
+            assert bar["ticktext"] == ["200", "500", "1000", "2000", "5000"], bar
+
+            _toggle_log(page)
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(LO), pytest.approx(HI)), bar
+            assert bar["tickvals"] is None and bar["ticktext"] is None, bar
+            assert page.input_value(f"#color-min-{PID}") == "103"
+            assert page.input_value(f"#color-max-{PID}") == "9950"
+            assert _saved(page)["color"].get("log") is False
+            if mode == "regular":   # the colours themselves are back to data values
+                colours = page.evaluate(f"""() => document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot')
+                                            .data[0].marker.color.filter(Number.isFinite)""")
+                assert max(colours) == pytest.approx(HI)
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
