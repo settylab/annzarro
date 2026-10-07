@@ -5,10 +5,11 @@ the split layout with its sizes, and every panel with its settings, the same thi
 {doc}`share link <share-links>` carries. Panel sets are stored **on the server**, in the
 `sessions` folder of its data directory, so every user of the same server sees the same list.
 They are the way to keep views for later and to hand them to colleagues on a shared server; a
-share link sends one view as a URL instead. Loading a panel set opens its dataset with its subset
-and focus and lists its panels closed; one click (**Open saved layout**) then opens them all in
-their saved layout, which a share link does directly. The differences are summarised at the end of
-this page.
+share link sends one view as a URL instead. **Load** opens a panel set exactly as its share link
+would: its dataset, subset and focus, and the panels that were open when it was saved, in their
+saved layout. Small icon buttons beside it do less of that: load on the dataset that is open,
+list the panels closed, or only add them to the closed list. The differences are summarised at
+the end of this page.
 
 ## Save a panel set
 
@@ -35,113 +36,127 @@ name") and keeps the dialog open.
 
 ## Load a panel set
 
-1. Click **Load Panel Set**. The dialog lists every panel set on the server, newest first.
+Click **Load Panel Set**. The dialog lists every panel set on the server, newest first.
 
-   ```{figure} ../_static/screens/user-guide/panelsets-load.png
-   :class: screenshot
-   :alt: The Load Panel Set dialog: a search field (1), a card for HSC_walk_and_H2-Q7_fold_change with dataset name, two panel icons and date (2), an Export button (3), Upload file (4), Load (5), Load and open layout (6) and Add to closed panels (7).
+```{figure} ../_static/screens/user-guide/panelsets-load.png
+:class: screenshot
+:alt: The Load Panel Set dialog with numbered marks: the search field (1), a card (2), its badge "available here" (3), the blue Load button (4), three small icon buttons (5), the question mark in the header (6) and Upload file (7).
 
-   The Load Panel Set dialog.
-   ```
+The Load Panel Set dialog.
+```
 
-   - The search field (1) filters the list by name.
-   - Each card (2) shows the name, the dataset, one icon per panel and the date; on a server with
-     login it also shows the owner. The red bin deletes the panel set after a confirmation.
-   - **Export** (3) downloads the panel set as a JSON file.
-   - **Upload file** (4) adds a panel set from such a JSON file (also the panel-set files offered
-     for download in these docs).
-   - **Load and open layout** (6) loads the panel set and opens, in the saved layout, the panels
-     that were open when it was saved (the others are listed closed). A large set opened at once
-     takes as much memory as all those panels together. A set saved with no panel open opens
-     none, and the notice says so.
-   - **Add to closed panels** (7) adds the set's panels to the closed ones and changes nothing
-     else ({ref}`below <panelsets-add>`).
-2. Click a card to select it and click **Load** (5). If panels are open or closed already,
-   AnnZarro asks first ({ref}`below <panelsets-add>`); **Replace** goes on as described here.
-3. AnnZarro opens the panel set's dataset with the cell subset and the focused cell and gene it
-   was saved with. Its panels are **not opened**: each is listed closed, with its settings, under
-   **Duplicate or Reopen Panel** (1). A large panel set opened all at once could overload the
-   computer, so you choose:
+- The search field (1) filters the list by name or dataset.
+- Each card (2) shows the name, the dataset, one icon per panel and the date; on a server with
+  login it also shows the owner. The download button exports the panel set as a JSON file; the
+  red bin deletes it after a confirmation.
+- The badge (3) says whether the set's dataset is on this server: **available here**, or **not
+  found here** ({ref}`below <panelsets-missing>`). It is found by the store's path or, failing
+  that, by a store with the same cells and genes, as for a {doc}`share link <share-links>`.
+- **Load** (4), the one blue button, does the whole job: it switches to the set's dataset and
+  opens the panels that were open when the set was saved, in their saved layout, exactly as the
+  set's share link would. The panels that were open before are closed, but stay in the list under
+  **Duplicate or Reopen Panel**, so nothing is lost and nothing asks first.
+- The icon buttons (5) each do less than Load. Hover one for its tooltip:
 
-   - **Open saved layout (N panels)** (2), in the notice, opens the N panels that were open when
-     the set was saved, in their saved layout, exactly as the set's
-     {doc}`share link <share-links>` would; panels that were closed then stay closed. The same
-     button, **Open saved layout (N)**, stays above the closed panels when you dismiss the
-     notice. The notice says how many panels are listed and how many were open ("5 panels listed
-     closed … 2 were open when the set was saved"). A set saved with no panel open offers no
-     layout.
-   - **Closed** (it reads **Reopen** under the pointer) on a panel in the list opens that panel
-     alone, below the others; split and resize it as usual ({doc}`interface`).
+  | | Panels open | Panels closed |
+  |---|---|---|
+  | **Switch to the set's dataset** | **Load** | **Load with panels closed** (eye with a slash) |
+  | **Keep the current dataset** | **Load on the current dataset** (pin) | **Add panels closed** (folder with a plus) |
 
-   The offer lasts until you load another panel set, switch datasets or open a share link. The
-   panels that were open before are closed too and stay in the same list.
+  - **Load on the current dataset** keeps the dataset that is open and opens the set's panels in
+    their layout there. It is disabled, with the reason in its tooltip, when no dataset is open.
+  - **Load with panels closed** switches the dataset and lists the set's panels closed. A large set
+    opened all at once takes as much memory as all its panels together; here you choose. The
+    notice offers **Open saved layout (N panels)**, which opens the N panels that were open when
+    the set was saved, exactly as Load would have; the same button stays above the closed panels
+    when you dismiss the notice, until you load another set, switch datasets or open a share link.
+    **Closed** (it reads **Reopen** under the pointer) on a panel in the list opens that panel
+    alone ({doc}`interface`).
+  - **Add panels closed** keeps the dataset and the open panels and only adds the set's panels to
+    the closed list ({ref}`below <panelsets-add>`).
+- The **?** in the header (6) shows this table with the icons, on hover or click.
+- **Upload file** (7) adds a panel set from a JSON file (also the panel-set files offered for
+  download in these docs). The chosen file gets a card with the same Load button, icons and badge;
+  using one of them imports the file as a saved panel set on the server and loads it.
 
-   ```{figure} ../_static/screens/user-guide/panelsets-loaded.png
-   :class: screenshot
-   :alt: After loading: no panel open; the Create New Panel chooser lists the two panels of the set as closed under Duplicate or Reopen Panel (1), and a notice offers Open saved layout (2 panels) (2), with H2-Q7 and the HSC in the header.
+```{figure} ../_static/screens/user-guide/panelsets-help.png
+:class: screenshot
+:width: 80%
+:alt: The Load Panel Set dialog with the help popover open: a table of the four ways to load, with Load, the eye-slash, pin and folder-plus icons, and a few lines of text.
 
-   After **Load**: the dataset and focus as saved, the set's panels listed closed (1), and the
-   offer to open its saved layout (2).
-   ```
+The help popover.
+```
 
-   ```{figure} ../_static/screens/user-guide/panelsets-opened.png
-   :class: screenshot
-   :alt: After Open saved layout: the two panels side by side as saved, the diffusion walk from the HSC on the left and the H2-Q7 fold change on the right, with H2-Q7 and the HSC in the header.
+Which panels count as "open": the panels that were open when the set was saved. A set saved with
+none open shows **Load (no panels were open)**: it loads the dataset and lists the panels closed,
+and the notice says so. A set saved by an older version of AnnZarro holds the panels, the dataset
+and the focus but no layout; Load opens the panels that were open when it was saved, laid out in
+rows of two, from left to right and top to bottom.
 
-   After **Open saved layout**: layout, panels and focus as saved.
-   ```
+The welcome list, **Load Saved Panel Set**, offers the same Load button, icons and badge on each
+item, in a compact form.
 
-4. If the panel set was saved on another dataset than the one open, AnnZarro asks first. A
-   panel set that names the open store by another path (`bm_aging.zarr` for
-   `/data/bm_aging.zarr`) counts as the same dataset and loads without asking.
-   **Switch and load** opens the panel set's dataset and lists its panels (or, from **Load and
-   open layout**, opens them); **Add to closed panels** stays on the open dataset and only adds
-   the set's panels ({ref}`below <panelsets-add>`); **Keep current** leaves everything as it
-   is. This is the only question asked: a set from another dataset is not asked about twice.
+```{figure} ../_static/screens/user-guide/panelsets-loaded.png
+:class: screenshot
+:alt: After Load with panels closed: no panel open; the Create New Panel chooser lists the two panels of the set as closed under Duplicate or Reopen Panel (1), and a notice offers Open saved layout (2 panels) (2), with H2-Q7 and the HSC in the header.
 
-   ```{figure} ../_static/screens/user-guide/panelsets-switch.png
-   :class: screenshot
-   :width: 50%
-   :alt: A yellow notice "Switch dataset?" naming the dataset the panel set was saved on and the open dataset, with the buttons "Switch and load", "Add to closed panels" and "Keep current".
+After **Load with panels closed**: the dataset and focus as saved, the set's panels listed
+closed (1), and the offer to open its saved layout (2).
+```
 
-   Loading a panel set made on `bm_aging.zarr` while `spatial_demo.zarr` is open.
-   ```
+```{figure} ../_static/screens/user-guide/panelsets-opened.png
+:class: screenshot
+:alt: After Load, or Open saved layout: the two panels side by side as saved, the diffusion walk from the HSC on the left and the H2-Q7 fold change on the right, with H2-Q7 and the HSC in the header.
+
+After **Load** (or **Open saved layout**): layout, panels and focus as saved.
+```
 
 A panel set names its dataset relative to the server's data directory (`bm_aging.zarr`), with the
 store's fingerprint, so its file opens on any other server or desktop app that has the store, even
 under another name: {doc}`reproducing` says how the store is found, and what happens when it is
-missing or differs.
+missing or differs. A set that names the open store by another path (`bm_aging.zarr` for
+`/data/bm_aging.zarr`) counts as the same dataset. Fields the chosen dataset lacks are marked on
+each panel, and a notice names them.
 
-Panel sets saved by older versions of AnnZarro hold the panels, the dataset and the focus, but
-no layout. They load the same way: dataset and focus, every panel listed closed. **Open saved
-layout** opens the panels that were open when the set was saved, laid out in rows of two, from
-left to right and top to bottom.
+(panelsets-missing)=
+### When the set's dataset is not on this server
+
+```{figure} ../_static/screens/user-guide/panelsets-load-missing.png
+:class: screenshot
+:width: 50%
+:alt: A card with the badge "not found here" (1), the blue button "Load on the current dataset" (2), a disabled eye-slash icon, a folder-plus icon and a database icon (3).
+
+A card whose dataset is not here.
+```
+
+The badge reads **not found here** (1; its tooltip says why: not on this server, outside the data
+directory this server shares, or unreadable). Switching to that dataset is impossible, so the card
+changes:
+
+- the blue button becomes **Load on the current dataset** (2): the set's panels open in their
+  layout on the dataset that is open. Panels whose fields it lacks say so. With no dataset open,
+  the blue button reads **Choose dataset...** and opens the picker;
+- **Load with panels closed** is disabled (its tooltip says there is nothing to switch to);
+- the database icon, **Choose dataset...** (3), opens the picker of {doc}`reproducing` (the
+  stores of this server, those with the same cells and genes first, and a field for a path) and
+  loads the set onto the store you pick, opening its panels. Close the picker without choosing and
+  nothing is loaded.
+
+A store you chose yourself (the open one, or one from the picker) is used as asked: if its cells or
+genes differ from the saved ones, a notice says so instead of asking first.
 
 (panelsets-add)=
 ## Add a panel set to the closed panels
 
-Loading a panel set while panels exist (open or closed) asks first (a set saved on another
-dataset asks in the "Switch dataset?" notice above instead, with the same three choices):
-
-```{figure} ../_static/screens/user-guide/panelsets-replace-or-add.png
-:class: screenshot
-:width: 50%
-:alt: A notice "Load panel set?" saying how many panels the set holds, with the buttons Replace, Add to closed panels and Cancel.
-
-Loading a panel set while panels are open.
-```
-
-**Replace** loads it as described above. **Add to closed panels** keeps everything as it is (the
-open panels, the dataset, the cell subset, the focused cell and gene) and only adds the set's
-panels to **Duplicate or Reopen Panel**, each with its settings and a small "from *set name*"
-tag; a notice says how many were added. A panel whose title is in use already gets the set's name
-after it, for example "Cell Plot 1 (walk_three_panels)". A panel whose id is in use already gets a
-new one, and a
-plot filtered by a table of the same set stays filtered by that table. A panel set saved on
-another dataset is added without switching datasets; its panels are tagged "other dataset" and
-may need other columns than the open dataset has. The same action is a button on each card of the
-Load Panel Set dialog and of the "Load Saved Panel Set" list, so it works without the question.
-Nothing is replaced, so no saved layout is offered.
+**Add panels closed** (folder with a plus; on every card, in the dialog and the welcome list) keeps
+everything as it is (the open panels, the dataset, the cell subset, the focused cell and gene) and
+only adds the set's panels to **Duplicate or Reopen Panel**, each with its settings and a small
+"from *set name*" tag; a notice says how many were added. A panel whose title is in use already
+gets the set's name after it, for example "Cell Plot 1 (walk_three_panels)". A panel whose id is in
+use already gets a new one, and a plot filtered by a table of the same set stays filtered by that
+table. A panel set saved on another dataset is added without switching datasets; its panels are
+tagged "other dataset" and may need other columns than the open dataset has. Nothing is replaced,
+so no saved layout is offered.
 
 ## Who can change a panel set
 
@@ -177,9 +192,12 @@ case ({doc}`../deployment/hosting-checklist`).
 | Stored | on the server, `<data_dir>/sessions/*.json` | in the URL fragment, nowhere on the server | in your browser's local storage |
 | Visible to | every user of the server | whoever has the URL | you, in this browser |
 | Panels and settings | yes | yes | yes |
-| Split layout and sizes | yes, opened by **Open saved layout** | yes | yes |
+| Split layout and sizes | yes, opened by **Load** (or **Open saved layout**) | yes | yes |
 | Focused cell and gene, cell subset | yes | yes | yes |
-| Reopens as | its dataset and focus, panels listed closed; one click opens the full layout | the full layout, panels open | the full layout, panels open, on your next visit |
+| Reopens as | the full layout, panels open (**Load**), or listed closed (**Load with panels closed**) | the full layout, panels open | the full layout, panels open, on your next visit |
+
+The autosave opens the dataset it was saved on when the page starts. When a dataset is open
+already it never switches it: its panels open on the dataset that is open.
 
 ```{admonition} What happens on the server
 :class: note

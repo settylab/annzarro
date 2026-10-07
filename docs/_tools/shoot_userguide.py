@@ -662,16 +662,40 @@ def shoot_panelsets(sh, data_dir):
     page.click("#btn-confirm-session"); time.sleep(2.5)
     page.context.close()
 
+    # A second set that names a store this server does not have (older, so it is listed last)
+    sessions = Path(data_dir) / "sessions"
+    for _ in range(40):
+        saved = sorted(sessions.glob("HSC_walk*.json")) if sessions.exists() else []
+        if saved:
+            break
+        time.sleep(0.25)
+    lost = json.loads(saved[0].read_text())
+    lost.update(name="Cohort_walk_lost_dataset", dataset="/cohorts/lost_cohort.zarr",
+                datasetName="lost_cohort", timestamp="2026-01-01T09:00:00.000Z")
+    lost.get("view", {}).pop("store", None)
+    (sessions / "Cohort_walk_lost_dataset.json").write_text(json.dumps(lost))
+
     page = open_plain(sh, D)
     page.click("#btn-load-session"); time.sleep(1.5)
+    page.locator("#session-grid .load-actions[data-status='ready']").first.wait_for(timeout=30000)
+    page.locator(".session-card[data-session-name='Cohort_walk_lost_dataset'] .load-actions[data-status='ready']") \
+        .wait_for(timeout=30000)
+    time.sleep(0.8)
+    first = "#session-grid > .session-card:first-child"
     capture(sh, page, "panelsets-load", "#session-modal .modal-content", marks=[
-        (1, "#session-search"), (2, "#session-grid > * >> nth=0"),
-        (3, "#session-grid button:has-text('Export')"), (4, "#toggle-upload-btn"),
-        (5, "#btn-confirm-session"), (6, "#session-grid .session-load-open >> nth=0"),
-        (7, "#session-grid .session-add-closed >> nth=0")])
-    page.locator("#session-grid > *").first.click(); time.sleep(0.3)
-    page.click("#btn-confirm-session")
-    # Load lists the set's panels closed and offers its saved layout in a notice
+        (1, "#session-search"), (2, first),
+        (3, f"{first} .session-dataset-badge"), (4, f"{first} .session-load"),
+        (5, f"{first} .load-icons"), (6, "#session-help-btn"), (7, "#toggle-upload-btn")])
+    capture(sh, page, "panelsets-load-missing", ".session-card[data-session-name='Cohort_walk_lost_dataset']", marks=[
+        (1, ".session-card[data-session-name='Cohort_walk_lost_dataset'] .session-dataset-badge"),
+        (2, ".session-card[data-session-name='Cohort_walk_lost_dataset'] .session-load"),
+        (3, ".session-card[data-session-name='Cohort_walk_lost_dataset'] .session-load-choose")])
+    page.locator("#session-help-btn").hover(); time.sleep(0.6)
+    capture(sh, page, "panelsets-help", "#session-modal .modal-content")
+    page.mouse.move(2, 2); time.sleep(0.3)
+    # "Load with panels closed" lists the set's panels closed and offers its saved layout in a notice
+    page.locator(f"{first} .session-load-closed").click()
+    page.mouse.move(700, 900)                           # off the buttons, so no hover state is shot
     offer = page.locator(".notification[data-offer='saved-layout']")
     offer.wait_for(state="attached", timeout=30000)     # hidden by the dialog shot's clean()
     time.sleep(1.0)
@@ -690,40 +714,6 @@ def shoot_panelsets(sh, data_dir):
     capture(sh, page, "panelsets-opened", None)
     sh.log.append("panelsets: after Open saved layout = " + json.dumps(page.evaluate(
         "[...document.querySelectorAll('.tile-container .tile')].map(t => t.dataset.tileId)")))
-
-    # Load a set while panels are open: AnnZarro asks Replace, Add to closed panels or Cancel
-    page.wait_for_selector(".modal-backdrop", state="detached")
-    page.click("#btn-load-session"); time.sleep(1.5)
-    page.locator("#session-grid > *").first.click(); time.sleep(0.3)
-    page.click("#btn-confirm-session")
-    ask = page.locator(".notification-ask", has_text="Load panel set?")
-    ask.wait_for(state="attached", timeout=20000)
-    time.sleep(1.0)                                   # let the notice finish fading in
-    # undo the earlier clean() styles for this notice (more specific than both)
-    page.add_style_tag(content="#notification-container { display: block !important; } "
-                               ".notification.notification-ask:not([data-offer]) { display: block !important; }")
-    ask.screenshot(path=str(OUT / "panelsets-replace-or-add.png"))
-    finish(OUT / "panelsets-replace-or-add.png")
-    sh.log.append("wrote panelsets-replace-or-add.png: " + ask.inner_text().replace("\n", " | "))
-    ask.locator("button[data-action='cancel']").click()
-    page.context.close()
-
-    # Load the same panel set while another dataset is open: AnnZarro asks first
-    page = open_plain(sh, ds("spatial_demo.zarr", data_dir))
-    page.click("#btn-load-session"); time.sleep(1.5)
-    page.locator("#session-grid > *").first.click(); time.sleep(0.3)
-    page.click("#btn-confirm-session")
-    ask = page.locator(".notification-ask").first
-    ask.wait_for(timeout=20000)
-    time.sleep(1.0)                                   # let the notice finish fading in
-    ask.screenshot(path=str(OUT / "panelsets-switch.png"))
-    finish(OUT / "panelsets-switch.png")
-    sh.log.append("wrote panelsets-switch.png")
-    ask.locator("button", has_text="Switch and load").click()
-    time.sleep(3)
-    sh.ready(page)
-    sh.log.append("panelsets: after Switch and load, dataset = " +
-                  page.evaluate("document.getElementById('dataset-path').textContent"))
     page.context.close()
 
 

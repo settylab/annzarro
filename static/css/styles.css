@@ -1584,7 +1584,7 @@ button.dtsb-button.dtsb-clear:hover {
 /* Improved session list grid */
 .session-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 12px;
     padding: 8px;
 }
@@ -1596,7 +1596,6 @@ button.dtsb-button.dtsb-clear:hover {
     padding: 12px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     transition: all 0.2s;
-    cursor: pointer;
     position: relative;
     overflow: hidden;
 }
@@ -1668,10 +1667,10 @@ button.dtsb-button.dtsb-clear:hover {
 .session-card-header {
     margin-bottom: 8px;
     position: relative;
-    padding-right: 30px;
 }
 
 .session-card-title {
+    padding-right: 64px;
     font-size: 1rem;
     font-weight: 500;
     margin: 0;
@@ -1719,10 +1718,215 @@ button.dtsb-button.dtsb-clear:hover {
     margin-top: 8px;
 }
 
-/* the third button of a card takes its own row: three in one were
-   squeezed to a word per line */
-.session-card-footer .session-add-closed {
-    flex-basis: 100%;
+/* The Load buttons (panelset-load-ui.js): one highlighted Load, and small
+   icon buttons for its ablations */
+.session-card-footer .load-actions {
+    flex: 1 1 100%;
+}
+
+.load-actions {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.load-actions .session-load {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: normal;
+}
+
+.load-icons {
+    display: flex;
+    gap: 4px;
+    flex: 0 0 auto;
+}
+
+.load-icon-btn {
+    width: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+}
+
+.load-icon-btn[hidden] {
+    display: none;
+}
+
+/* An icon that does not apply: still hoverable, so its tooltip says why */
+.load-icon-btn.load-off {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: transparent;
+}
+
+.load-icon-btn.load-off:hover {
+    background: transparent;
+    color: #6c757d;
+}
+
+.load-actions-compact .session-load {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.5rem;
+}
+
+.load-actions-compact .load-icon-btn {
+    width: 28px;
+    font-size: 0.78rem;
+}
+
+/* Where the set's dataset is: a badge beside its name */
+.session-card-dataset {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin-top: 2px;
+}
+
+.session-card-dataset .session-card-subtitle {
+    margin-top: 0;
+}
+
+.session-dataset-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.5;
+    padding: 0 7px;
+    border-radius: 10px;
+    white-space: nowrap;
+    cursor: help;
+    background: #e6f4ea;
+    color: #1e6b34;
+}
+
+.session-dataset-badge[data-state="missing"] {
+    background: #fff3cd;
+    color: #7a5b00;
+}
+
+.session-dataset-badge[hidden] {
+    display: none;
+}
+
+/* The hover tooltips of the Load buttons: Bootstrap's own look, above the dialog
+   (the app's plain .tooltip rule is for other things) */
+.tooltip.load-tip {
+    position: absolute;
+    z-index: 1090;
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+    font-size: 0.78rem;
+    max-width: none;
+}
+
+.tooltip.load-tip .tooltip-inner {
+    max-width: 250px;
+    text-align: left;
+    padding: 6px 9px;
+}
+
+/* the welcome list's dataset line: its name, then its badge */
+.session-dataset-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.session-dataset-row .session-dataset {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+/* the chosen file of the upload view */
+.upload-card {
+    margin: 12px 8px 4px;
+    padding: 12px;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.upload-card .load-actions {
+    margin-top: 10px;
+}
+
+.upload-card[hidden] {
+    display: none;
+}
+
+/* the "?" in the Load dialog's header and its popover */
+.session-help-btn {
+    padding: 0 6px;
+    margin-left: 4px;
+    color: #6c757d;
+    font-size: 1.05rem;
+    line-height: 1;
+    text-decoration: none;
+}
+
+.session-help-btn:hover,
+.session-help-btn[aria-pressed="true"] {
+    color: #0d6efd;
+}
+
+.session-help-btn[hidden] {
+    display: none;
+}
+
+.load-help-popover {
+    position: absolute;
+    width: 360px;
+    max-width: calc(100% - 16px);
+    font-size: 0.8rem;
+    z-index: 1090;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.load-help-popover[hidden] {
+    display: none;
+}
+
+.load-help p {
+    margin: 0.5rem 0 0;
+}
+
+.load-help-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: center;
+}
+
+.load-help-table th {
+    font-weight: 600;
+    color: #495057;
+    padding: 3px 4px;
+}
+
+.load-help-table tbody th {
+    text-align: left;
+    width: 38%;
+}
+
+.load-help-table td {
+    padding: 4px;
+}
+
+.load-help-table tbody tr + tr > * {
+    border-top: 1px solid #e9ecef;
+}
+
+.load-help .btn {
+    pointer-events: none;
 }
 
 /* Subtle styling for autosave session cards */
@@ -2644,7 +2848,10 @@ button.dtsb-button.dtsb-clear:hover {
     border-radius: 0.5rem;
     background-color: white;
     transition: all 0.2s;
-    cursor: pointer;
+}
+
+.session-item .load-actions {
+    margin-top: 10px;
 }
 
 .session-item:hover {

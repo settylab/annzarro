@@ -398,11 +398,13 @@ server can load it, so a lab can keep a shared library of views ({doc}`../user-g
     :width: 60%
     ```
 
-30. To reopen it, click **Load Panel Set**, click its card and click **Load**. Each card shows
-    the dataset and one icon per panel; **Export** downloads the set as a JSON file. Loading
-    sets the dataset and focus and lists the set's panels closed; click **Open saved layout** in
-    the notice to open them all in their layout, or reopen single ones under "Duplicate or
-    Reopen Panel". **Load and open layout** on a card does both in one step.
+30. To reopen it, click **Load Panel Set** and click **Load** on its card. Each card shows the
+    dataset (with "available here" or "not found here") and one icon per panel; **Export**
+    downloads the set as a JSON file. **Load** switches to the set's dataset and opens the panels
+    that were open when it was saved, in their layout, as a share link would; the small icon
+    buttons beside it load on the current dataset, with the panels closed, or only add the
+    panels to the closed list ({doc}`../user-guide/panel-sets`). Panels it replaces stay in the
+    closed list under "Duplicate or Reopen Panel".
 
     ```{figure} ../_static/screens/paper/fig2-load-panel-set.png
     :class: screenshot
@@ -418,8 +420,8 @@ server can load it, so a lab can keep a shared library of views ({doc}`../user-g
 
 The tutorials and paper-figure pages offer their views as panel set files. To load one:
 
-1. Click **Load Panel Set**, then **Upload file** (bottom left), **Browse files**, pick the
-   file, and click **Load**.
+1. Click **Load Panel Set**, then **Upload file** (bottom left), **Browse files** and pick the
+   file. The file gets a card with the same buttons as a saved set.
 
    ```{figure} ../_static/screens/paper/fig2-upload-panel-set.png
    :class: screenshot
@@ -428,13 +430,13 @@ The tutorials and paper-figure pages offer their views as panel set files. To lo
    ```
 
 2. The panel set names its dataset by file name (`bm_aging.zarr`), and the server finds it in
-   its data directory. That is the dataset already open. Panels are open, so AnnZarro asks
-   whether to **Replace** them, **Add to closed panels** or **Cancel**; click **Replace**. A
-   notice reads "Panel set was imported and loaded successfully." The panel set replaces the
-   open panels:
-   same dataset, same focused cell and gene, and every panel of the set listed **closed**, with
-   its settings, under "Duplicate or Reopen Panel". The panels that were open before are in the
-   same list. Nothing opens by itself, so a large set cannot overload the computer.
+   its data directory ("available here"). That is the dataset already open. To see the panels
+   listed first, click the **Load with panels closed** icon (an eye with a slash); plain **Load**
+   opens them at once. Either way a notice reads "Panel set was imported and loaded
+   successfully", the panel set replaces the open panels, and the panels that were open before
+   are in the closed list under "Duplicate or Reopen Panel". With the panels closed, same dataset,
+   same focused cell and gene, every panel of the set is listed **closed** with its settings, and
+   nothing opens by itself, so a large set cannot overload the computer.
 
    ```{figure} ../_static/screens/paper/fig2-panel-set-loaded.png
    :class: screenshot
@@ -461,9 +463,9 @@ The tutorials and paper-figure pages offer their views as panel set files. To lo
 
 ```{important}
 A panel set stores what a share link holds (dataset, focus, layout and panel settings), but it
-is stored on the server under a name, and loading it opens none of its panels until you click
-**Open saved layout** (or reopen single ones). An uploaded file also becomes a saved panel set on
-that server, visible to its other users.
+is stored on the server under a name. **Load** opens its panels as a share link would; **Load
+with panels closed** lists them and waits for **Open saved layout** (or you reopen single ones). An
+uploaded file also becomes a saved panel set on that server, visible to its other users.
 ```
 
 (tut-tour-share)=

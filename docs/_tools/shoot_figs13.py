@@ -448,20 +448,10 @@ def shoot_fig2_sets(s) -> None:
     page.set_input_files("#session-file-upload", str(PANELSETS / "overview-focus-model.json"))
     time.sleep(0.5)
     crop(page, "#session-modal .modal-content", OUT / "fig2-upload-panel-set.png")
-    page.click("#btn-confirm-session")
-    # panels are open, so the load asks first: Replace them
-    choose = page.locator(".notification-ask", has_text="Load panel set?")
-    choose.wait_for(timeout=20000)
-    choose.locator("button[data-action='replace']").click()
+    # the chosen file gets a card with the Load buttons; "Load with panels closed" lists the
+    # panels closed and offers "Open saved layout" (plain Load would open them at once)
+    page.locator("#upload-card .session-load-closed").click(timeout=30000)
     try:
-        ask = page.locator(".notification-ask:not([data-offer])")      # "Switch dataset?", not the offer
-        try:
-            ask.first.wait_for(timeout=8000)
-            time.sleep(1.0)      # let the notice finish fading in
-            s.log.append("fig2 upload asked: " + ask.first.inner_text().replace("\n", " | ")[:300])
-            ask.first.get_by_text("Switch and load").click()
-        except Exception:
-            s.log.append("fig2 upload: no Switch dataset? notice")
         offer = page.locator(".notification[data-offer='saved-layout']")
         offer.wait_for(timeout=30000)
         s.ready(page)

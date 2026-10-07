@@ -14,7 +14,8 @@ import { PanelManager } from './panel-manager.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { errorFromResponse } from './utils/session-permissions.js';
 import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
-import { storeRecord } from './utils/view-store.js';
+import { storeRecord, storeName } from './utils/view-store.js';
+import { modeOptions } from './utils/panelset-load.js';
 import { knownStore, settleStore, appVersion } from './utils/store-identity.js';
 
 const SessionManager = (function() {
@@ -25,6 +26,14 @@ const SessionManager = (function() {
     // main.js registers how a view is applied (dataset switch, focus, layout);
     // see setViewApplier. Without one, loading falls back to closed panels.
     let _viewApplier = null;
+    // main.js also says where a set's dataset is (its card's badge) and lets
+    // the user pick a dataset for a set (setPanelSetHelpers)
+    let _statusProvider = null;
+    let _datasetChooser = null;
+    // Stored sets as fetched for the Load dialog's cards, kept briefly so the
+    // preview and the status check share one request
+    const _setCache = new Map();
+    const SET_CACHE_MS = 60000;
     // The store of a view open without data (its store was not found): a
     // view saved now keeps naming it. See setDetachedStore.
     let _detachedStore = null;
@@ -79,6 +88,53 @@ const SessionManager = (function() {
      * Let the app apply a loaded panel set through its deep-link path.
      * @param {(plan: {datasetPath, view, closedPanels, legacy}, panelSet: Object) => Promise<Object>} fn
      */
+    function setPanelSetHelpers({ status, chooseDataset } = {}) {
+        _statusProvider = typeof status === 'function' ? status : null;
+        _datasetChooser = typeof chooseDataset === 'function' ? chooseDataset : null;
+    }
+
+    /** Whether a dataset is open, and its name: what the Load buttons depend on. */
+    function getCurrentDatasetInfo() {
+        const path = DataManager.getCurrentDataset();
+        return { hasCurrent: !!path, currentName: path ? storeName(path) : '' };
+    }
+
+    /** Forget fetched sets (a set was saved, imported or deleted). */
+    function invalidatePanelSets() {
+        _setCache.clear();
+    }
+
+    /**
+     * A stored panel set by name, fetched once a minute at most.
+     * @param {string} name
+     * @returns {Promise<Object|null>} the stored set, or null when it cannot be read
+     */
+    function fetchPanelSet(name) {
+        const hit = _setCache.get(name);
+        if (hit && Date.now() - hit.at < SET_CACHE_MS) return hit.promise;
+        const promise = fetch(`${Config.API.SESSIONS_LOAD}?name=${encodeURIComponent(name)}`)
+            .then(r => (r.ok ? r.json() : null))
+            .catch(() => null);
+        _setCache.set(name, { at: Date.now(), promise });
+        promise.then(v => { if (!v) _setCache.delete(name); });
+        return promise;
+    }
+
+    /**
+     * What a card shows about a set: its dataset (here or not), its panels,
+     * and whether a dataset is open. `source` is a stored set's name, or the
+     * set itself (an uploaded file).
+     * @returns {Promise<Object|null>} null when it is not a panel set
+     */
+    async function getPanelSetStatus(source) {
+        const data = typeof source === 'string' ? await fetchPanelSet(source) : source;
+        if (!data || !_statusProvider) return null;
+        try { return await _statusProvider(data); } catch (error) {
+            console.error('Panel set status failed:', error);
+            return null;
+        }
+    }
+
     function setViewApplier(fn) {
         _viewApplier = typeof fn === 'function' ? fn : null;
     }
@@ -197,6 +253,7 @@ const SessionManager = (function() {
      * @returns {Promise<Object>} - Save result
      */
     async function saveSession(name) {
+        _setCache.clear();
         if (!name) {
             console.error('Panel set name is required');
             return { status: 'error', message: 'Panel set name is required' };
@@ -305,19 +362,23 @@ const SessionManager = (function() {
     /**
      * Load a panel set by name
      * @param {string} name - Panel set name
-     * @param {{openPanels?: boolean, add?: boolean}} [options] - openPanels:
-     *   open the set's panels in its layout (the Load dialog's "Load and open
-     *   layout"); otherwise they are listed closed. add: only add the set's
-     *   panels to the closed ones, keeping the open view ("Add to closed
-     *   panels"). Without add, the user is asked first while panels exist.
-     *   The autosave always reopens.
+     * @param {{mode?: string}} [options] - mode is the button used (see
+     *   utils/panelset-load.js): `full` (the default, and the autosave's):
+     *   switch to the set's dataset and open its panels in their layout, as a
+     *   share link would; `current`: the same on the open dataset; `closed`:
+     *   switch dataset, list the panels closed (the saved layout stays
+     *   offered); `add`: keep dataset and open panels, add the set's panels
+     *   to the closed list; `choose`: ask for a dataset, then `full` on it.
+     *   Nothing asks for confirmation: the panels a load replaces stay in the
+     *   closed list.
      * @returns {Promise<Object>} - Load result
      */
-    async function loadSession(name, { openPanels = false, add = false } = {}) {
+    async function loadSession(name, { mode = 'full' } = {}) {
         if (!name) {
             console.error('Panel set name is required');
             return { status: 'error', message: 'Panel set name is required' };
         }
+        const options = modeOptions(mode);
         
         try {
             // Check if this is the autosave session
@@ -329,7 +390,13 @@ const SessionManager = (function() {
                 }
 
                 if (autosaveData.view && _viewApplier) {
-                    const applied = await _applyPanelSet(autosaveData);
+                    // The autosave restores what was open when the page was
+                    // left. At start nothing is open, so it opens its own
+                    // dataset; with a dataset open it never switches: its
+                    // panels open on the one that is (a changed dataset is
+                    // marked per panel, as for a view on another store)
+                    const applied = await _applyPanelSet(autosaveData,
+                        { keepDataset: !!DataManager.getCurrentDataset() });
                     return applied && applied.status
                         ? applied
                         : { status: 'success', message: 'Autosaved session loaded successfully' };
@@ -396,10 +463,18 @@ const SessionManager = (function() {
             }
             
             const sessionData = await response.json();
-            // A set the user chose opens with its panels closed, to be
-            // reopened one by one or all at once ("Open saved layout"),
-            // unless the user asked for them open; the autosave above reopens
-            const applied = await _applyPanelSet(sessionData, { openPanels, add, ask: !add });
+            let onDataset = null;
+            if (options.choose) {
+                const plan = panelSetToView(sessionData);
+                if (!plan) throw new Error('Not a panel set');
+                onDataset = _datasetChooser ? await _datasetChooser(plan, sessionData) : null;
+                if (!onDataset) return { status: 'cancelled', message: `No dataset chosen; "${name}" was not loaded.` };
+            }
+            const applied = await _applyPanelSet(sessionData, {
+                openPanels: options.openPanels, add: options.add,
+                onDataset: onDataset || (options.keepDataset ? DataManager.getCurrentDataset() || null : null),
+                keepDataset: options.keepDataset
+            });
             if (applied && applied.status && applied.status !== 'success') return applied;
             
             return { status: 'success', message: `Session ${name} loaded successfully` };
@@ -415,6 +490,7 @@ const SessionManager = (function() {
      * @returns {Promise<Object>} - Delete result
      */
     async function deleteSession(name) {
+        _setCache.clear();
         if (!name) {
             console.error('Panel set name is required');
             return { status: 'error', message: 'Panel set name is required' };
@@ -495,6 +571,7 @@ const SessionManager = (function() {
      * @returns {Promise<Object>} - Import result
      */
     async function importSession(file) {
+        _setCache.clear();
         if (!file) {
             console.error('Panel set file is required');
             return { status: 'error', message: 'Panel set file is required' };
@@ -789,6 +866,11 @@ const SessionManager = (function() {
         clearAutosave,
         notifyPanelUpdate,
         setViewApplier,
+        setPanelSetHelpers,
+        fetchPanelSet,
+        getPanelSetStatus,
+        getCurrentDatasetInfo,
+        invalidatePanelSets,
         captureView,
         setDetachedStore,
         settleStoreOfView,

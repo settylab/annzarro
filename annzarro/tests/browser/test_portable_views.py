@@ -353,14 +353,9 @@ def _upload(page, root, file_path):
     page.wait_for_selector("#session-modal", state="visible")
     page.click("#toggle-upload-btn")
     page.set_input_files("#session-file-upload", str(file_path))
-    page.click("#btn-confirm-session")
-    ask = page.locator(".notification-ask button[data-action='switch']")
-    try:
-        ask.first.wait_for(timeout=5000)
-        ask.first.click()
-    except playwright.Error:
-        pass
-    # a loaded set lists its panels closed (v0.4.1); its view is one click away.
+    # the file's card: "Load with panels closed" switches dataset and lists them closed
+    page.locator("#upload-card .session-load-closed").click(timeout=30000)
+    # its view is one click away.
     # The load's notice (where it opened) is what the user reads before that click.
     page.wait_for_selector(".notification-ask[data-offer='saved-layout']", timeout=30000)
     at_load = _notices(page)
@@ -428,6 +423,51 @@ def test_an_old_absolute_link_still_opens(browser, servers):
         _drawn(page)
         assert _notices(page) == []
         assert _plot_config(page)["color"]["key"] == "leiden"
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+@pytest.mark.parametrize("store,says", [("fields.zarr", "obs/leiden is not in this store"),
+                                         ("cells.zarr", "differs from the one the view was saved on")])
+def test_load_on_the_current_dataset_says_what_differs_and_does_not_ask(browser, servers, store, says):
+    """The user chose the open store with a button: a store with other fields or cells is
+    noted in a notice and marked per panel, never asked about first."""
+    roots, dirs = servers
+    name = f"pv-current-{store.split('.')[0]}"
+    ctx, page, errors = _page(browser)
+    try:
+        page.goto(_link(roots["A"], dirs["A"] / "fixture_small.zarr", VIEW))
+        _drawn(page)
+        page.click("#btn-save-session")
+        page.fill("#session-name", name)
+        page.click("#btn-confirm-session")
+        page.wait_for_function("() => document.getElementById('session-modal').offsetParent === null")
+        for _ in range(40):
+            try:
+                urllib.request.urlopen(f"{roots['A']}/api/v1/sessions/export?name={name}").read()
+                break
+            except urllib.error.HTTPError:
+                time.sleep(0.25)
+    finally:
+        ctx.close()
+    ctx, page, errors = _page(browser)
+    try:
+        page.goto(f"{roots['A']}/?dataset_path={urllib.parse.quote(str(dirs['A'] / store), safe='/')}")
+        page.wait_for_function("() => window.sessionManager && window.sessionManager.getCurrentDatasetInfo().hasCurrent",
+                               timeout=30000)
+        page.click("#btn-load-session")
+        card = page.locator(f".session-card[data-session-name='{name}']")
+        card.locator(".load-actions[data-status='ready']").wait_for(timeout=30000)
+        card.locator(".session-load-current").click()
+        _drawn(page)
+        text = " ".join(_notices(page))
+        assert says in text, text
+        # no question, no placeholder: the panels opened on the open store
+        assert page.query_selector(".notification-ask:not([data-offer])") is None
+        assert page.query_selector(".panel-no-data") is None
+        assert _missing_marked(page)
+        assert page.evaluate("() => document.getElementById('dataset-selector').value").endswith(store)
         assert not errors, errors
     finally:
         ctx.close()

@@ -329,7 +329,7 @@ def test_nested_layout_round_trips_through_a_panel_set(server, browser):
 
         opened = fresh.new_page()
         errors += _open(opened, url)
-        opened.locator(".session-item", has_text="nested-splits").first.click()
+        opened.locator(".session-item", has_text="nested-splits").first.locator(".session-load-closed").click()
         _settle(opened)
         ids = sorted(_configs(page))
         opened.wait_for_function("ids => ids.every(id => !!PanelManager.getPanel(id))", arg=ids)

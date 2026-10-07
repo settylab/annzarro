@@ -32,6 +32,7 @@ import {
 import { probeStore, prewarmStore, appVersion } from './utils/store-identity.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
+import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
 
 const App = (function() {
     // Private variables
@@ -96,6 +97,7 @@ const App = (function() {
 
             // Loading a panel set restores its whole view through _applyView
             SessionManager.setViewApplier(_applyPanelSet);
+            SessionManager.setPanelSetHelpers({ status: _panelSetStatus, chooseDataset: _chooseDatasetForSet });
 
             // Every exported figure carries its recipe; `annzarro export`
             // drives the same export through window.annzarroExport
@@ -321,9 +323,12 @@ const App = (function() {
      * layout tree (or the legacy flat panel list). Shared by deep links and
      * loaded panel sets, so both restore exactly the same way.
      * @param {{datasetPath: string, view: Object|null}} target
+     * @param {{exact?: boolean, located?: Object, trust?: boolean}} [opts] - trust:
+     *   the user chose this store (a Load button): cells or genes that differ
+     *   are said in a notice, not asked about first
      * @private
      */
-    async function _applyView({ datasetPath, view }, { exact = false, located = null } = {}) {
+    async function _applyView({ datasetPath, view }, { exact = false, located = null, trust = false } = {}) {
         // a share link or another view replaces what the offer would restore
         _clearSavedLayout();
 
@@ -339,7 +344,7 @@ const App = (function() {
         const savedFp = located.saved ? located.saved.fp : null;
         const cmp = compareStores(savedFp, located.probe.fingerprint);
         const said = describeComparison(cmp, located.path);
-        if (said && said.strong) {
+        if (said && said.strong && !trust) {
             // Open the layout without data while the user decides
             await _applyViewWithoutData(view, { ...located, differs: true, missing: located.path });
             if (_sessionModal) _sessionModal.hide();
@@ -453,7 +458,7 @@ const App = (function() {
                 });
             }
         }
-        _afterViewOpened(view, located, cmp, said);
+        _afterViewOpened(view, located, cmp, trust && said ? { ...said, strong: false } : said);
         return { status: 'success' };
     }
 
@@ -607,6 +612,71 @@ const App = (function() {
             .then(choice => { if (choice === 'change') _showChangeDataset(); });
     }
 
+    // Where a set's dataset is, for the cards of the Load dialog and the welcome
+    // list. Sets saved on one store share one search (it can fingerprint every
+    // store of the same size), kept for half a minute.
+    const _locateCache = new Map();
+
+    function _locateForCard(plan) {
+        const saved = savedStoreOf(plan.view, plan.datasetPath);
+        const key = JSON.stringify([plan.datasetPath, saved && saved.path, saved && saved.fp && saved.fp.data]);
+        const hit = _locateCache.get(key);
+        if (hit && Date.now() - hit.at < 30000) return hit.promise;
+        const promise = _locateStore(plan.datasetPath, plan.view).catch(error => ({
+            path: null, saved, missing: plan.datasetPath, failed: { path: plan.datasetPath, error: error.message }
+        }));
+        _locateCache.set(key, { at: Date.now(), promise });
+        return promise;
+    }
+
+    /**
+     * What a panel set's card shows: its dataset and whether it is on this
+     * server (_locateStore: its path, or the store with the same cells and
+     * genes), its panels (open at save / all), and whether a dataset is open.
+     * @param {Object} data - the stored panel set
+     * @returns {Promise<Object|null>} null when it is not a panel set
+     * @private
+     */
+    async function _panelSetStatus(data) {
+        const plan = panelSetToView(data);
+        if (!plan) return null;
+        const closed = closePlanPanels(plan);
+        const status = {
+            named: plan.datasetPath || null, found: null,
+            open: closed.savedCount, total: closed.closedPanels.length
+        };
+        if (plan.datasetPath) {
+            const located = await _locateForCard(plan);
+            status.found = !!located.path;
+            status.foundPath = located.path || null;
+            status.repointed = located.repointed || null;
+            status.refused = located.refused || null;
+            status.failed = located.failed || null;
+        }
+        return status;
+    }
+
+    /**
+     * "Choose dataset...": the Change dataset picker, for a set. Resolves to
+     * the path the user picked, or null when the picker is closed without one.
+     * @private
+     */
+    function _chooseDatasetForSet(plan) {
+        return new Promise(resolve => {
+            let picked = false;
+            if (_sessionModal) _sessionModal.hide();
+            const modalEl = document.getElementById('change-dataset-modal');
+            if (modalEl) {
+                modalEl.addEventListener('hidden.bs.modal', () => { if (!picked) resolve(null); }, { once: true });
+            }
+            _showChangeDataset({
+                pending: { view: plan.view, saved: savedStoreOf(plan.view, plan.datasetPath),
+                    missing: plan.datasetPath || null },
+                onChoose: async (path) => { picked = true; resolve(path); }
+            });
+        });
+    }
+
     /** A dataset is open again: the view is no longer without data. @private */
     function _leaveNoDataMode() {
         _noDataView = null;
@@ -688,10 +758,10 @@ const App = (function() {
      * warning if it differs.
      * @private
      */
-    async function _showChangeDataset() {
+    async function _showChangeDataset({ pending: given = null, onChoose = null } = {}) {
         const modalEl = document.getElementById('change-dataset-modal');
         if (!modalEl) return;
-        const pending = _noDataView || {
+        const pending = given || _noDataView || {
             view: SessionManager.captureView(),
             saved: SessionManager.storeOfView(),
             missing: DataManager.getCurrentDataset()
@@ -718,6 +788,8 @@ const App = (function() {
 
         const choose = async (path) => {
             modal.hide();
+            // a caller that asked for a store (the Load dialog) takes it from here
+            if (onChoose) { await onChoose(path); return; }
             const view = pending.view || { v: VIEW_SCHEMA_VERSION };
             await _applyView({ datasetPath: path, view }, { exact: true });
             PanelManager.ensureWelcomeFallback();
@@ -789,68 +861,44 @@ const App = (function() {
      * panel's settings. Panel ids are kept, so a plot's tableFilter still
      * names its table.
      *
-     * A set saved on another dataset than the open one asks first, in a
-     * notice that does not block the page; nothing changes unless the user
-     * agrees.
+     * Nothing asks first: each Load button says what it does, and the open
+     * panels a load replaces stay in the closed list, one click from
+     * reopening. The options are the ablations of a plain Load (which
+     * switches to the set's dataset and opens its panels, as a share link
+     * does):
      *
-     * `openPanels: false` (a set the user chose to load) restores the
-     * dataset, subset and focus but lists every panel of the set closed, with
-     * its settings: opening all of a large set at once could overload the
-     * machine. Its layout is kept and offered as "Open saved layout" (see
-     * _offerSavedLayout). The autosave restore, the subset change and the
-     * Load dialog's "Load and open layout" keep their panels open.
+     * - `keepDataset` / `onDataset`: load onto the open dataset, or onto the
+     *   store the user picked, instead of the set's own (a store the user
+     *   chose is not asked about again if its cells differ: a notice says so)
+     * - `openPanels: false`: restore the dataset, subset and focus but list
+     *   every panel of the set closed, with its settings. Its layout is kept
+     *   and offered as "Open saved layout" (see _offerSavedLayout).
+     * - `add: true`: keep the open view as it is and only add the set's
+     *   panels to the closed list (_addPanelSet).
      *
-     * `add: true` ("Add to closed panels") keeps the open view as it is and
-     * only adds the set's panels to the closed list (_addPanelSet). `ask:
-     * true` (a set the user chose) asks first, while any panels exist,
-     * whether to replace them or add to them.
+     * The autosave restore and the subset change keep their panels open.
      * @param {{datasetPath: string|null, view: Object, closedPanels: Array, legacy: boolean}} plan
      * @param {Object} panelSet - the stored panel set
-     * @param {{openPanels?: boolean, add?: boolean, ask?: boolean}} [options]
+     * @param {{openPanels?: boolean, add?: boolean, keepDataset?: boolean, onDataset?: string|null}} [options]
      * @returns {Promise<{status: string, message: string}>}
      * @private
      */
-    async function _applyPanelSet(plan, panelSet, { openPanels = true, add = false, ask = false } = {}) {
+    async function _applyPanelSet(plan, panelSet, { openPanels = true, add = false, keepDataset = false, onDataset = null } = {}) {
         const name = (panelSet && panelSet.name) || 'panel set';
         const current = DataManager.getCurrentDataset();
-        const target = plan.datasetPath || current;
-        // Where its store is here (its name in the data directory, or the
-        // store with the same cells and genes); the same store named
-        // relative vs absolute is not a switch
-        const located = target ? await _locateStore(target, plan.view) : { path: null };
-        const listing = await DataManager.loadDatasets().catch(() => []);
-        const otherDataset = !!(current && target && !(located.path && sameDatasetPath(located.path, current, listing)));
-
-        // One question at most. A set the user chose asks while panels exist
-        // (Replace, Add to closed panels, Cancel), and a set saved on another
-        // dataset asks in the same notice whether to switch; any other load
-        // that would switch datasets asks only that.
-        if (!add && ((ask && PanelManager.getAllPanels().length > 0) || otherDataset)) {
-            const n = closePlanPanels(plan).closedPanels.length;
-            const panels = `${n} panel${n === 1 ? '' : 's'}`;
-            const actions = otherDataset
-                ? [{ key: 'replace', label: 'Switch and load', primary: true }]
-                : [{ key: 'replace', label: 'Replace', primary: true }];
-            if (ask) actions.push({ key: 'add', label: 'Add to closed panels' });
-            actions.push({ key: 'cancel', label: otherDataset ? 'Keep current' : 'Cancel' });
-            const addLine = ask ? ' Add to closed panels keeps everything as it is and only adds its panels.' : '';
-            const where = located.path
-                ? (located.path === target ? located.path : `${target}\n(here: ${located.path})`)
-                : `${target}\n(not on this server: it opens without data)`;
-            if (_sessionModal) _sessionModal.hide();
-            const choice = otherDataset
-                ? await _askNotification('Switch dataset?',
-                    `"${name}" was saved on\n${where}\n\nThe open dataset is\n${current}\n\n` +
-                    `Loading it switches datasets and replaces the open panels.${addLine}`, actions)
-                : await _askNotification('Load panel set?',
-                    `"${name}" holds ${panels}. Replace the open view with it?${addLine}`, actions);
-            if (choice === 'add') add = true;
-            else if (choice !== 'replace') {
-                return { status: 'cancelled', message: otherDataset
-                    ? `Kept ${current}; "${name}" was not loaded.` : `"${name}" was not loaded.` };
-            }
-        }
         if (add) return _addPanelSet(plan, name);
+        // A store the user chose (the open one, or one picked) is opened
+        // as asked; otherwise the set's own, found by its name in the data
+        // directory or by the store with the same cells and genes
+        const chosen = keepDataset ? current : onDataset;
+        if (keepDataset && !current) {
+            return { status: 'error', message: `No dataset is open to load "${name}" onto.` };
+        }
+        const target = chosen || plan.datasetPath || current;
+        const located = target
+            ? await _locateStore(target, plan.view, { exact: !!chosen })
+            : { path: null };
+        const listing = await DataManager.loadDatasets().catch(() => []);
         if (!target) {
             return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
         }
@@ -870,7 +918,7 @@ const App = (function() {
 
         // keep the open store's own path when the set names it differently
         if (current && located.path && sameDatasetPath(located.path, current, listing)) located.path = current;
-        const applied = await _applyView({ datasetPath: target, view: plan.view }, { located });
+        const applied = await _applyView({ datasetPath: target, view: plan.view }, { located, trust: !!chosen });
         const datasetPath = located.path || target;
 
         // Panels that were closed when the set was saved come back closed.
@@ -2091,6 +2139,9 @@ const App = (function() {
         document.getElementById('file-upload-section').style.display = 'none';
         document.getElementById('toggle-upload-btn').style.display = 'none';
         document.getElementById('btn-confirm-session').textContent = 'Save';
+        document.getElementById('btn-confirm-session').style.display = '';
+        document.getElementById('session-cancel-btn').textContent = 'Cancel';
+        _setLoadHelp(false);
         
         // Set modal data attribute for type
         document.getElementById('session-modal').dataset.modalType = 'save';
@@ -2173,7 +2224,12 @@ const App = (function() {
         document.getElementById('session-list-container').style.display = 'block';
         document.getElementById('file-upload-section').style.display = 'none';
         document.getElementById('toggle-upload-btn').style.display = 'block';
-        document.getElementById('btn-confirm-session').textContent = 'Load';
+        // every card has its own buttons: the footer's Load is not needed
+        document.getElementById('btn-confirm-session').style.display = 'none';
+        document.getElementById('session-cancel-btn').textContent = 'Close';
+        _setLoadHelp(true);
+        _resetUploadCard();
+        _locateCache.clear();
         
         // Set modal data attribute for type
         document.getElementById('session-modal').dataset.modalType = 'load';
@@ -2338,6 +2394,8 @@ const App = (function() {
                 
                 // Clear any selected session
                 document.querySelector('.session-card.selected')?.classList.remove('selected');
+                // its card, with the same Load buttons a saved set has
+                _showUploadCard(file);
             }
         }
         
@@ -2356,6 +2414,7 @@ const App = (function() {
                 toggleUploadBtn.innerHTML = '<i class="fas fa-file-upload me-1"></i> Upload file';
                 // Reset upload mode
                 document.getElementById('session-modal').dataset.uploadMode = 'false';
+                _resetUploadCard();
             }
         };
         
@@ -2435,22 +2494,12 @@ const App = (function() {
                         '<div class="browser-storage-indicator"><i class="fas fa-laptop"></i> Stored in browser</div>' : 
                         '';
                     
-                    // For autosave, show a restore button instead of export
-                    const footerButtons = isAutosave ? 
+                    // The autosave has one Restore button; a saved set has the Load
+                    // buttons (panelset-load-ui.js), drawn below
+                    const footerButtons = isAutosave ?
                         `<button class="btn btn-sm btn-info session-restore" title="Restore this autosaved session">
                             <i class="fas fa-history me-1"></i> Restore
-                        </button>` : 
-                        `<button class="btn btn-sm btn-outline-secondary session-export" title="Export">
-                            <i class="fas fa-download"></i> Export
-                        </button>
-                        <button class="btn btn-sm btn-outline-primary session-load-open"
-                            title="Load and open every panel in the saved layout at once (a large set takes memory)">
-                            <i class="fas fa-th-large"></i> Load and open layout
-                        </button>
-                        <button class="btn btn-sm btn-outline-secondary session-add-closed"
-                            title="Add this set's panels to the closed panels; the open view stays as it is">
-                            <i class="fas fa-plus"></i> Add to closed panels
-                        </button>`;
+                        </button>` : '';
                     
                     // Create panel preview icons based on session data
                     // Panel configurations might not be included in the session list API
@@ -2465,8 +2514,11 @@ const App = (function() {
                     card.innerHTML = `
                         <div class="session-card-header">
                             <h5 class="session-card-title">${titleHTML}</h5>
-                            <div class="session-card-subtitle">${datasetDisplay}</div>
+                            <div class="session-card-dataset"><span class="session-card-subtitle">${datasetDisplay}</span></div>
                             <div class="session-card-actions">
+                                ${isAutosave ? '' : `<button class="btn btn-sm btn-outline-secondary session-export session-action-button" title="Export this panel set as a file" aria-label="Export">
+                                    <i class="fas fa-download"></i>
+                                </button>`}
                                 ${locked ? `
                                 <span class="session-lock session-action-button" title="${escapeHtml(lockText)}" aria-label="${escapeHtml(lockText)}">
                                     <i class="fas fa-lock"></i>
@@ -2491,15 +2543,7 @@ const App = (function() {
                     `;
                     
                     sessionGrid.appendChild(card);
-                    
-                    // Add click handler for selection
-                    card.addEventListener('click', (e) => {
-                        if (!e.target.closest('button')) {
-                            document.querySelectorAll('.session-card.selected')
-                                .forEach(el => el.classList.remove('selected'));
-                            card.classList.add('selected');
-                        }
-                    });
+                    if (!isAutosave) _addLoadButtons(card, session.name);
                 });
                 
                 // Asynchronously load panel previews for all sessions
@@ -2550,38 +2594,6 @@ const App = (function() {
                     });
                 });
                 
-                // "Load and open layout": the set with its panels open, as the
-                // user chose explicitly (Load lists them closed)
-                document.querySelectorAll('.session-load-open').forEach(btn => {
-                    btn.addEventListener('click', async (e) => {
-                        e.stopPropagation();
-                        const sessionName = e.target.closest('.session-card').dataset.sessionName;
-                        const result = await SessionManager.loadSession(sessionName, { openPanels: true });
-                        if (result.status === 'success') {
-                            _sessionModal.hide();
-                        } else if (result.status === 'cancelled') {
-                            _showNotification('Panel set not loaded', result.message, 'info', 5000);
-                        } else {
-                            _showNotification('Failed to load panel set', result.message, 'error');
-                        }
-                    });
-                });
-
-                // "Add to closed panels": the set's panels join the closed
-                // ones; the open view, dataset and focus stay
-                document.querySelectorAll('.session-add-closed').forEach(btn => {
-                    btn.addEventListener('click', async (e) => {
-                        e.stopPropagation();
-                        const sessionName = e.target.closest('.session-card').dataset.sessionName;
-                        const result = await SessionManager.loadSession(sessionName, { add: true });
-                        if (result.status === 'success') {
-                            _sessionModal.hide();
-                        } else {
-                            _showNotification('Failed to add panel set', result.message, 'error');
-                        }
-                    });
-                });
-
                 // Add export button handlers
                 document.querySelectorAll('.session-export').forEach(btn => {
                     btn.addEventListener('click', (e) => {
@@ -2643,6 +2655,174 @@ const App = (function() {
     }
     
     /**
+     * Draw a saved set's Load buttons and dataset badge on its card, then
+     * fill them in once the set is fetched and its dataset located.
+     * @private
+     */
+    function _addLoadButtons(card, name) {
+        const badge = createDatasetBadge();
+        card.querySelector('.session-card-dataset').appendChild(badge.el);
+        const actions = createLoadActions({
+            getCurrent: SessionManager.getCurrentDatasetInfo,
+            onLoad: async (mode) => {
+                actions.setBusy(true);
+                try {
+                    await _runLoad(() => SessionManager.loadSession(name, { mode }));
+                } finally {
+                    actions.setBusy(false);
+                }
+            }
+        });
+        card.querySelector('.session-card-footer').appendChild(actions.el);
+        const status = SessionManager.getPanelSetStatus(name).then(st => {
+            if (!card.isConnected) return;
+            actions.update(st);
+            badge.update(st);
+        });
+        actions.setReady(status);
+    }
+
+    /**
+     * Run a load started from the Load dialog and say how it went: the dialog
+     * closes on success (or when the set opened without data, which has its
+     * own notice); a refusal is a notice.
+     * @private
+     */
+    async function _runLoad(load) {
+        const result = await load();
+        if (result.status === 'success' || result.status === 'no-data') {
+            _sessionModal.hide();
+        } else if (result.status === 'cancelled') {
+            // the user closed the dataset picker: nothing to report
+            if (!/No dataset chosen/.test(result.message || '')) {
+                _showNotification('Panel set not loaded', result.message, 'info', 5000);
+            }
+        } else {
+            _showNotification('Failed to load panel set', result.message, 'error');
+        }
+        return result;
+    }
+
+    /**
+     * Show or hide the "?" in the dialog's header (the Load dialog only). Its
+     * popover is drawn here, not by Bootstrap's: hovering the "?" shows it, a
+     * click pins it (another click, the Esc key or closing the dialog hides it).
+     * @private
+     */
+    function _setLoadHelp(show) {
+        const button = document.getElementById('session-help-btn');
+        if (!button) return;
+        button.hidden = !show;
+        let pop = document.getElementById('session-help-pop');
+        if (!show) { if (pop) pop.hidden = true; return; }
+        if (pop) return;
+        const host = document.querySelector('#session-modal .modal-content');
+        pop = document.createElement('div');
+        pop.id = 'session-help-pop';
+        pop.className = 'popover bs-popover-auto load-help-popover';
+        pop.setAttribute('role', 'tooltip');
+        pop.hidden = true;
+        const head = document.createElement('h3');
+        head.className = 'popover-header';
+        head.textContent = 'What the Load buttons do';
+        const body = document.createElement('div');
+        body.className = 'popover-body';
+        body.appendChild(helpContent());
+        pop.append(head, body);
+        host.appendChild(pop);
+        let pinned = false;
+        const place = () => {
+            const box = host.getBoundingClientRect();
+            const at = button.getBoundingClientRect();
+            pop.style.left = `${Math.max(8, at.left - box.left - 16)}px`;
+            pop.style.top = `${at.bottom - box.top + 8}px`;
+        };
+        const open = () => { place(); pop.hidden = false; };
+        const close = () => { if (!pinned) pop.hidden = true; };
+        button.addEventListener('mouseenter', open);
+        button.addEventListener('focus', open);
+        button.addEventListener('mouseleave', close);
+        button.addEventListener('blur', close);
+        button.addEventListener('click', () => {
+            pinned = !pinned;
+            button.setAttribute('aria-pressed', String(pinned));
+            if (pinned) open(); else pop.hidden = true;
+        });
+        const reset = () => {
+            pinned = false;
+            button.setAttribute('aria-pressed', 'false');
+            pop.hidden = true;
+        };
+        document.getElementById('session-modal').addEventListener('hidden.bs.modal', reset);
+        document.getElementById('session-modal').addEventListener('hide.bs.modal', clearTips);
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !pop.hidden) reset(); });
+    }
+
+    /**
+     * The card of a chosen file in the Load dialog's upload view: the same
+     * buttons as a saved set's. The file is read here for its dataset and
+     * panels; it is imported (and then loaded) when a button is used.
+     * @private
+     */
+    async function _showUploadCard(file) {
+        const host = document.getElementById('upload-card');
+        host.hidden = false;
+        host.innerHTML = '';
+        const data = await file.text().then(text => JSON.parse(text)).catch(() => null);
+        const st = data ? await SessionManager.getPanelSetStatus(data) : null;
+        host.innerHTML = '';
+        const title = document.createElement('h5');
+        title.className = 'session-card-title';
+        title.textContent = file.name;
+        host.appendChild(title);
+        if (!st) {
+            const bad = document.createElement('div');
+            bad.className = 'small text-danger mt-1';
+            bad.textContent = 'This file is not a panel set that AnnZarro can read.';
+            host.appendChild(bad);
+            return;
+        }
+        const dataset = document.createElement('div');
+        dataset.className = 'session-card-dataset';
+        const label = document.createElement('span');
+        label.className = 'session-card-subtitle';
+        label.textContent = (data.datasetName || (data.dataset ? String(data.dataset).split('/').pop() : '')) || 'no dataset named';
+        const badge = createDatasetBadge();
+        dataset.append(label, badge.el);
+        host.appendChild(dataset);
+        const actions = createLoadActions({
+            getCurrent: SessionManager.getCurrentDatasetInfo,
+            onLoad: async (mode) => {
+                actions.setBusy(true);
+                try {
+                    const imported = await SessionManager.importSession(file);
+                    if (imported.status !== 'success') {
+                        const { title: t, type } = describeFailure(imported, 'Failed to import panel set');
+                        _showNotification(t, imported.message, type);
+                        return;
+                    }
+                    const result = await _runLoad(() => SessionManager.loadSession(imported.name, { mode }));
+                    if (result.status === 'success' && Date.now() - _viewNoticeAt > 5000 && mode !== 'add') {
+                        _showSuccess('Session Loaded', 'Panel set was imported and loaded successfully.');
+                    }
+                } catch (error) {
+                    _showNotification('Error', error.message, 'error');
+                } finally {
+                    actions.setBusy(false);
+                }
+            }
+        });
+        host.appendChild(actions.el);
+        actions.update(st);
+        badge.update(st);
+    }
+
+    function _resetUploadCard() {
+        const host = document.getElementById('upload-card');
+        if (host) { host.hidden = true; host.innerHTML = ''; }
+    }
+
+    /**
      * Load panel previews for all sessions asynchronously
      * @param {Array} sessions - List of session objects
      * @private
@@ -2670,14 +2850,11 @@ const App = (function() {
                         _updatePanelPreview(session);
                     }
                 } else {
-                    // Fetch session data from the server
-                    const response = await fetch(`${Config.API.SESSIONS_LOAD}?name=${encodeURIComponent(session.name)}`);
-                    if (response.ok) {
-                        const sessionData = await response.json();
-                        if (sessionData && sessionData.panelConfigs) {
-                            session.panelConfigs = sessionData.panelConfigs;
-                            _updatePanelPreview(session);
-                        }
+                    // Fetch session data from the server (shared with the card's status)
+                    const sessionData = await SessionManager.fetchPanelSet(session.name);
+                    if (sessionData && sessionData.panelConfigs) {
+                        session.panelConfigs = sessionData.panelConfigs;
+                        _updatePanelPreview(session);
                     }
                 }
             } catch (error) {
@@ -2837,77 +3014,8 @@ const App = (function() {
                 const { title, type } = describeFailure(result, 'Failed to save panel set');
                 _showNotification(title, result.message, type);
             }
-        } else if (modalType === 'load') {
-            // Check if we're in file upload mode
-            if (document.getElementById('session-modal').dataset.uploadMode === 'true') {
-                // Handle file upload
-                const fileInput = document.getElementById('session-file-upload');
-                if (fileInput.files.length === 0) {
-                    _invalid(fileInput, 'Choose a file to upload');
-                    return;
-                }
-                
-                // Show loading indicator
-                const confirmBtn = document.getElementById('btn-confirm-session');
-                const originalText = confirmBtn.innerHTML;
-                confirmBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Loading...`;
-                confirmBtn.disabled = true;
-                
-                try {
-                    const file = fileInput.files[0];
-                    const result = await SessionManager.importSession(file);
-                    
-                    if (result.status === 'success') {
-                        // If import successful, load the session
-                        const loadResult = await SessionManager.loadSession(result.name);
-                        
-                        if (loadResult.status === 'success') {
-                            _sessionModal.hide();
-                            // not over a notice about where or how the view opened
-                            if (Date.now() - _viewNoticeAt > 5000) {
-                                _showSuccess('Session Loaded', `Panel set was imported and loaded successfully.`);
-                            }
-                        } else if (loadResult.status === 'no-data') {
-                            // its own notice says which dataset is missing
-                            _sessionModal.hide();
-                        } else if (loadResult.status === 'cancelled') {
-                            _showNotification('Panel set imported, not loaded', loadResult.message, 'info', 5000);
-                        } else {
-                            _showNotification('Failed to load imported panel set', loadResult.message, 'error');
-                        }
-                    } else {
-                        const { title, type } = describeFailure(result, 'Failed to import panel set');
-                        _showNotification(title, result.message, type);
-                    }
-                } catch (error) {
-                    _showNotification('Error', error.message, 'error');
-                } finally {
-                    // Restore button
-                    confirmBtn.innerHTML = originalText;
-                    confirmBtn.disabled = false;
-                }
-            } else {
-                // Handle load from list
-                const selectedCard = document.querySelector('.session-card.selected');
-                
-                if (!selectedCard) {
-                    _showNotification('No panel set selected', 'Select a panel set to load, or switch to upload mode.', 'warning', 4000);
-                    return;
-                }
-                
-                const sessionName = selectedCard.dataset.sessionName;
-                
-                const result = await SessionManager.loadSession(sessionName);
-                
-                if (result.status === 'success' || result.status === 'no-data') {
-                    _sessionModal.hide();
-                } else if (result.status === 'cancelled') {
-                    _showNotification('Panel set not loaded', result.message, 'info', 5000);
-                } else {
-                    _showNotification('Failed to load panel set', result.message, 'error');
-                }
-            }
         }
+        // (the Load dialog has no confirm button: each card's own buttons load)
     }
     
     /**

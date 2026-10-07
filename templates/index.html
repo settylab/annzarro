@@ -213,6 +213,8 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="session-modal-title">Manage Panel Sets</h5>
+                    <button type="button" id="session-help-btn" class="btn btn-link session-help-btn" hidden
+                        aria-label="What the Load buttons do"><i class="far fa-circle-question"></i></button>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -251,6 +253,8 @@
                             <input type="file" id="session-file-upload" class="file-input" accept=".json">
                             <span id="file-name-display" class="file-name"></span>
                         </div>
+                        <!-- the chosen file, with the same Load buttons as a saved set (main.js _showUploadCard) -->
+                        <div id="upload-card" class="upload-card" hidden></div>
                     </div>
                 </div>
                 <div class="modal-footer" id="session-modal-footer">
@@ -259,7 +263,7 @@
                             <i class="fas fa-file-upload me-1"></i> Upload file
                         </button>
                     </div>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" id="session-cancel-btn" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" id="btn-confirm-session" class="btn btn-primary">Load</button>
                 </div>
             </div>
