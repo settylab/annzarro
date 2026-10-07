@@ -614,7 +614,7 @@ body {
   display: flex;           /* ← you were missing this */
   flex-direction: column;
   height: 100%;            /* or whatever your splitter gives it */
-  min-height: 0;           /* ← allows it to actually shrink */
+  min-height: min-content; /* grows past a too-short panel, which scrolls */
 }
 
 /* 2) Target the DT wrapper (it’ll be <div id="…_wrapper" class="dt-container…">) */
@@ -622,7 +622,10 @@ body {
   display: flex;           /* ← turn *that* into a flex‑column as well */
   flex-direction: column;
   flex: 1 1 auto;          /* ← fill the .table‑container */
-  min-height: 0;           /* ← let it shrink below its contents */
+  /* shrinks with the panel, but not below the builder, the search row, the
+     header, the body's minimum and the pager: a panel too short for those
+     scrolls instead (its tile does), never clips */
+  min-height: min-content;
   width: 100%;
 }
 
@@ -634,43 +637,59 @@ body {
   flex: 0 0 auto;
 }
 
-/* 4) Let the table's row flex and get the scroll bar. By class, not
-      position: with the search on its own row the table is the THIRD row,
-      and nth-child(2) stretched the search row into an empty band. */
+/* 4) The table's row takes the height left between the search row and the
+      info/pager row; the scroll body inside it fills that, and is the only
+      thing that scrolls. By class, not position: with the search on its own
+      row the table is the THIRD row, and nth-child(2) stretched the search
+      row into an empty band. The row's own scrollbars are off so the body's
+      is the one the wheel handover sees. */
 .table-container > [id$="_wrapper"] > .row.az-table-row {
   flex: 1 1 auto;
-  overflow-y: auto;
-  overflow-x: auto;   /* show horizontal scroll only when content overflows */
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.table-container > [id$="_wrapper"] > .row.az-table-row > [class*="col-"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
-/* 1) Turn .dt-scroll into a flex‐column that fills your panel */
-.table-container > [id$="_wrapper"] .dt-scroll {
-    display: flex !important;
-    flex-direction: column !important;
-    height: 100% !important;
-    overflow: hidden !important; /* hide any stray scrollbars here */
+/* The info and pager row stays pinned at the panel's bottom. */
+.table-container > [id$="_wrapper"] > .row:last-child {
+  flex: 0 0 auto;
+  margin-top: auto;
 }
-  
-/* 2) Pin the DT head at the top */
-.table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-head {
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 2 !important;
+
+/* DataTables 1.x: .dataTables_scroll holds the header and the body. The body
+   gets an inline max-height (the scrollY option) that would cap it; the CSS
+   overrides it so the body fills the panel instead of a fixed height. */
+.table-container > [id$="_wrapper"] .dataTables_scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
-  
-  /* 3) Pin the DT footer at the bottom */
-.table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-foot {
-    position: sticky !important;
-    bottom: 0 !important;
-    z-index: 2 !important;
+.table-container > [id$="_wrapper"] .dataTables_scroll .dataTables_scrollHead {
+  flex: 0 0 auto;
 }
-  
-  /* 4) Let *only* the body flex & scroll both ways */
-.table-container > [id$="_wrapper"] .dt-scroll .dt-scroll-body {
-    flex: 1 1 0 !important;
-    min-height: 0 !important;
-    min-width: 0 !important;
-    overflow: auto !important;
+.table-container > [id$="_wrapper"] .dataTables_scroll .dataTables_scrollBody {
+  flex: 1 1 0;
+  /* a small panel still shows about five rows; the panel then grows or the
+     page scrolls, as before */
+  min-height: var(--az-table-body-min, 170px);
+  max-height: none !important;
+  height: auto !important;
+  overflow: auto !important;
+}
+/* keep the body's own table from adding a band under the last row */
+.table-container > [id$="_wrapper"] .dataTables_scrollBody table.dataTable {
+  margin-bottom: 0;
 }
 
 /* Compact row height for all DataTables */

@@ -11,7 +11,7 @@ Each case starts with everything at the top and sends ONE scroll gesture
 600 px down at a point, or a run of mouse-wheel notches, and reads where every
 scroller ended up:
 
-- a short table (10 rows, fits its 350 px body): the page takes the gesture;
+- a short table (10 rows, fits its body): the page takes the gesture;
 - a long table (25 rows): the table scrolls to its end, the page takes the rest,
   so the two add up to the gesture (the page used to stay at 0);
 - the plot controls of a panel that fits: the page takes the gesture;
@@ -215,7 +215,8 @@ ROW_SUM = """() => {
 
 
 def test_nested_row_scroller_loses_no_ticks(server, browser):
-    """Narrow table panel: table body, then the DataTables .row wrapper, then the page.
+    """Narrow table panel: table body, then the page (the DataTables .row wrapper no longer
+    scrolls: the body fills the panel and is the one scroller).
 
     A tick that exceeds the nearest scroller's room must pass the rest outward, and
     ticks during a glide must not keep feeding a scroller that is already going to
@@ -226,9 +227,9 @@ def test_nested_row_scroller_loses_no_ticks(server, browser):
         page.evaluate(RESET)
         page.wait_for_timeout(150)
         before = page.evaluate(ROW_SUM)
-        assert before["roomRow"] and before["roomRow"] > 50, before     # the nested .row scroller exists
+        assert not before["roomRow"] or before["roomRow"] <= 1, before  # one scroller in the table, not two
         ticks, delta = 12, 100
-        room = before["roomBody"] + before["roomRow"] + before["roomPage"]
+        room = before["roomBody"] + before["roomPage"]
         assert room >= ticks * delta + 100, before                      # room for every tick
         page.mouse.move(*_at(page, f"{TABLE} .dataTables_scrollBody"))
         for _ in range(ticks):
@@ -236,7 +237,7 @@ def test_nested_row_scroller_loses_no_ticks(server, browser):
             page.wait_for_timeout(30)
         page.wait_for_timeout(900)
         after = page.evaluate(ROW_SUM)
-        moved = after["body"] + after["row"] + after["page"]
+        moved = after["body"] + after["page"]
         assert abs(moved - ticks * delta) <= 50, (moved, after)
     finally:
         page.close()

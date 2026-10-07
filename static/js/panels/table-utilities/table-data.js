@@ -726,8 +726,11 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
              '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>',
         responsive: false, // Never use responsive mode
         scrollX: true, // Always enable horizontal scrolling
-        scrollY: '350px',
-        scrollCollapse: true, // Always collapse scroll
+        // The body's height is the panel's (styles.css overrides the inline
+        // max-height DataTables sets from this); scrollY only has to be set for
+        // DataTables to build a header and a scrolling body. It is the floor.
+        scrollY: '170px',
+        scrollCollapse: true,
         fixedHeader: false,
         select: true, // Enable row selection
         hover: true,
@@ -1077,8 +1080,31 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         type: entityType 
     });
     
+    // The body follows the panel: CSS gives it the height, DataTables needs
+    // telling when the width changes so the header columns stay over the body's.
+    watchPanelSize(tableContainer, dataTable);
+
     // Return the DataTables instance
     return dataTable;
+}
+
+/**
+ * Re-align the header and body columns when the table's box changes size
+ * (layout split, window resize), debounced to one adjust per burst.
+ */
+function watchPanelSize(container, dataTable) {
+    if (!window.ResizeObserver || !container) return;
+    let timer = null;
+    const ro = new ResizeObserver(() => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            try {
+                if (container.isConnected) dataTable.columns.adjust();
+            } catch (e) { /* table destroyed meanwhile */ }
+        }, 80);
+    });
+    ro.observe(container);
+    dataTable.on('destroy.dt', () => { clearTimeout(timer); ro.disconnect(); });
 }
 
 
