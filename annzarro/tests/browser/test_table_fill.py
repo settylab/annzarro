@@ -166,7 +166,7 @@ def test_tall_panel_shows_all_rows_pager_at_bottom(server, tid):
             # the body fills the space: no band between the last row and the pager
             # when the panel is just tall enough. Make it so by sizing the tile.
             need = g["lastB"] - g["tile"]["t"] + (g["pager"]["b"] - g["body"]["b"]) + 2
-            page.evaluate("h => { document.querySelector('.panel-wrapper').style.height = h + 'px'; }", int(need))
+            page.evaluate("h => { document.querySelector('.panel-wrapper').style.setProperty('--panel-height', h + 'px'); }", int(need))
             page.wait_for_timeout(500)
             g = page.evaluate(GEOM, tid)
             assert not g["bodyScrolls"], g
@@ -208,9 +208,11 @@ def test_body_follows_the_layout_split(server):
     root, store = server
     with playwright.sync_playwright() as pw:
         browser = pw.chromium.launch()
-        page = browser.new_page(viewport={"width": 1400, "height": 1400})
+        page = browser.new_page(viewport={"width": 1400, "height": 2400})
         try:
-            _open(page, root, store, percentages=(30, 70), direction="vertical")
+            # the layout's height is the row's minimum: tall enough that 30 % of it holds a
+            # table's controls, or the pane grows past its share (tile-grow)
+            _open(page, root, store, percentages=(30, 70), direction="vertical", height=2200)
             small, big = page.evaluate(GEOM, CELLS), page.evaluate(GEOM, GENES)
             hb = lambda g: g["body"]["b"] - g["body"]["t"]
             assert hb(small) < hb(big), (small, big)
