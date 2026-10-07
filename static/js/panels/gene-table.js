@@ -6,7 +6,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
-import { loadTableData, initializeDataTable, freezeTableState, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv } from './table-utilities/table-data.js';
+import { loadTableData, initializeDataTable, freezeTableState, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
@@ -46,6 +46,10 @@ const GeneTablePanel = (function() {
         
         // Override with provided options
         Object.assign(_settings, options);
+        // A "focused cell/gene" placeholder from an older view names the
+        // entity focused now (the view's own focus is restored first), and
+        // never follows the focus after that (issue #9)
+        pinPanelFocusPlaceholders(_settings, _title);
         
         /**
          * Initialize the panel
