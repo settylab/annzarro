@@ -20,7 +20,7 @@ from typing import Literal, Tuple, Dict, Any, List, Optional
 import numpy as np
 import scipy.sparse as sp
 from .caching import CacheSettings, DatasetCache, cached_method
-from .zarr_reader import MissingKeyError, StoreReadError, UnsupportedEncodingError
+from .zarr_reader import MissingKeyError, StoreReadError, UnsupportedEncodingError, densify
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +245,7 @@ def _matrix(obj, rows=None, cols=None) -> np.ndarray:
     if isinstance(obj, h5py.Group):
         m = _sparse(obj, rows, cols)
         if m is not None:
-            return m.toarray()
+            return densify(m)
         logger.warning(f"Unsupported matrix encoding '{_encoding(obj)}' at {obj.name}")
     return np.array([])
 
@@ -620,6 +620,24 @@ class h5adReader(CacheSettings):
                 codes_ds, categories = obj, _values(f[ref])
             codes = _values(codes_ds, None if indices is None else np.asarray(indices, dtype=np.int64))
             return np.asarray(codes), categories.tolist()
+
+    @cached_method
+    def get_obs_var_numeric(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                            column_name: Optional[str] = None,
+                            indices: Optional[List[int]] = None) -> Optional[np.ndarray]:
+        """One numeric obs/var column as an ndarray, or None, as
+        ZarrReader.get_obs_var_numeric (no list round trip)."""
+        with _open(dataset_path) as f:
+            layer = "obs" if entity == "cells" else "var"
+            if layer not in f or column_name not in f[layer]:
+                return None
+            values, cats = _column(f, f[layer][column_name], indices)
+        if cats:
+            return None
+        values = np.asarray(values)
+        if values.ndim != 1 or values.dtype.kind not in "iuf":
+            return None
+        return values
 
     @cached_method
     def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"], rows) -> list[str]:
