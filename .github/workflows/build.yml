@@ -124,6 +124,20 @@ jobs:
           npx electron-builder "${args[@]}"
           ls -la dist
 
+      - name: Remove GPL/LGPL libraries from the AppImage
+        # electron-builder always copies libindicator (GPL-3.0),
+        # libappindicator, libgconf-2 and libnotify into the AppImage's usr/lib;
+        # AnnZarro needs none of them. Repack without them (mksquashfs behind
+        # the original AppImage runtime, as electron-builder packs it), then
+        # make sure the repacked AppImage starts.
+        if: runner.os == 'Linux'
+        run: |
+          command -v mksquashfs || sudo apt-get install -y -qq squashfs-tools
+          for a in annzarro/desktop/electron/dist/AnnZarro-*.AppImage; do
+            python annzarro/desktop/scripts/repack_appimage.py "$a"
+            APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a python annzarro/desktop/scripts/smoke_app.py "$a" --no-sandbox
+          done
+
       - name: Smoke-test the app (twice at once)
         # Two self-tests start together, each with its own profile: they race
         # for the same free port, and each must end up with its own server.
@@ -183,6 +197,55 @@ jobs:
           cp annzarro/desktop/electron/dist/AnnZarro-"$VERSION"-* out/
           rm -f out/*.blockmap
           ls -la out
+
+      - name: Licence check of the release files
+        # Unpacks each release file as a user gets it and checks every
+        # executable and shared library in it against the server's inventory
+        # and Electron's file list: no GPL/AGPL component, no unknown licence,
+        # LGPL only as a separate shared library, nothing linking GNU
+        # Readline or ncurses, all notices present. Fails the release otherwise.
+        run: |
+          set -o pipefail
+          root=$PWD
+          check=$root/annzarro/desktop/scripts/licence_check.py
+          mkdir -p "$root/licence-check"
+          status=0
+          run_check() {  # <label> <unpacked app>
+            echo "::group::licence check: $1"
+            python "$check" "$2" --json "$root/licence-check/$1.json" \
+              | tee "$root/licence-check/$1.txt" || status=1
+            echo "::endgroup::"
+          }
+          cd out
+          case "$RUNNER_OS" in
+            Linux)
+              dpkg-deb -x AnnZarro-*.deb ../unpack-deb
+              run_check deb ../unpack-deb/opt/AnnZarro
+              mkdir -p ../unpack-appimage && cp AnnZarro-*.AppImage ../unpack-appimage/a.AppImage
+              (cd ../unpack-appimage && chmod +x a.AppImage && ./a.AppImage --appimage-extract >/dev/null)
+              run_check appimage ../unpack-appimage/squashfs-root ;;
+            macOS)
+              ditto -x -k AnnZarro-*.zip ../unpack-zip
+              run_check macos-zip ../unpack-zip/AnnZarro.app
+              hdiutil attach -nobrowse -readonly -mountpoint ../unpack-dmg AnnZarro-*.dmg >/dev/null
+              run_check macos-dmg ../unpack-dmg/AnnZarro.app
+              hdiutil detach ../unpack-dmg >/dev/null ;;
+            Windows)
+              python -m zipfile -e AnnZarro-*-windows-*.zip ../unpack-zip
+              run_check windows-zip ../unpack-zip
+              7z x -y -o../unpack-setup AnnZarro-*-setup.exe >/dev/null
+              7z x -y -o../unpack-setup/app ../unpack-setup/\$PLUGINSDIR/app-64.7z >/dev/null
+              run_check windows-setup ../unpack-setup/app ;;
+          esac
+          cd ..
+          exit $status
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: licence-check-${{ matrix.name }}
+          path: licence-check/*
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         with:

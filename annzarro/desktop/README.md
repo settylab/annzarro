@@ -138,6 +138,19 @@ fixtures, packages the app and launches it in self-test mode. A `v*` tag then
 creates a draft release with every file and `SHA256SUMS.txt`;
 `workflow_dispatch` only builds (files are kept as workflow artifacts).
 
+## Licences in the app
+
+`scripts/build_server.py` ends by writing `server/THIRD_PARTY_NOTICES/`
+(`scripts/notices.py`): CPython's licence and acknowledgements, the licence
+files of every pip distribution PyInstaller froze in (read from PyInstaller's
+TOC files, so exactly what is in the bundle), and the licences of native
+libraries copied from the build machine, from `notices/`. The build stops if
+a native library has no known notice, or if GNU Readline or ncurses (GPL) got
+in: `freeze.EXCLUDES` keeps Python's `readline` module out. Electron's and
+Chromium's licences ship as `LICENSE.electron.txt` and
+`LICENSES.chromium.html` (on macOS through `mac.extraResources` from
+`node_modules/electron/dist`, which `npm ci` populates via `install-electron`).
+
 ## Code signing
 
 Release builds are unsigned (macOS: ad-hoc signed). To sign, add repository
