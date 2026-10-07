@@ -1,0 +1,8 @@
+Microsoft Visual C++ Redistributable and Universal C Runtime (Windows only)
+
+VCRUNTIME140.dll, VCRUNTIME140_1.dll, MSVCP140.dll, ucrtbase.dll and the
+api-ms-win-*.dll forwarders are Microsoft runtime libraries, Copyright (c)
+Microsoft Corporation. They are distributed with Python for Windows (and so
+with this app) as "Distributable Code" under the Microsoft Software License
+Terms for Microsoft Visual Studio / the Windows SDK, which permit their
+redistribution with an application that uses them.
