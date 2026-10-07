@@ -50,6 +50,8 @@ def test_every_setting_in_the_module_is_valid_for_gunicorn(site_yaml):
         cfg.set(name, value)  # raises on a value gunicorn rejects
     assert cfg.bind == ["127.0.0.1:8839"]
     assert "user" not in settings, "the account belongs to systemd User=, not a hard-coded www-data"
+    # issue #83: one slow request must not hold a whole worker process
+    assert cfg.worker_class_str == "gthread" and cfg.threads == 4
 
 
 def test_gunicorn_check_config_accepts_it(site_yaml, tmp_path):
@@ -72,3 +74,10 @@ def test_deploy_files_use_the_importable_config():
     for name in ("run_gunicorn.sh", "annzarro.service"):
         text = open(os.path.join(server, name)).read()
         assert "-c python:annzarro.server.gunicorn_config" in text, name
+
+
+def test_threads_come_from_the_configuration(site_yaml, monkeypatch):
+    site_yaml.write_text(site_yaml.read_text().replace("  port: 8839\n", "  port: 8839\n  threads: 2\n  workers: 1\n"))
+    import annzarro.server.gunicorn_config as module
+    module = importlib.reload(module)
+    assert (module.workers, module.threads, module.worker_class) == (1, 2, "gthread")

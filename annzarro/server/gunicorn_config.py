@@ -27,7 +27,13 @@ bind = f"{_annzarro.get('host', '127.0.0.1')}:{_annzarro.get('port', 8000)}"
 # of up to cache_memory_mb, so the default is small rather than 2*CPUs+1,
 # which on a 64-core node meant 129 caches.
 workers = int(_annzarro.get('workers') or min(multiprocessing.cpu_count() * 2 + 1, 4))
-worker_class = 'sync'
+# Threads per worker (server.threads). A sync worker serves one request at a
+# time, so any slow request (a large read, a remote store) held a whole
+# process; gthread lets the others through. The app is thread-safe: `annzarro
+# start` serves it threaded too. (Refresh no longer sleeps in a request at
+# all, issue #83.)
+worker_class = 'gthread'
+threads = int(_annzarro.get('threads') or 4)
 timeout = 60
 keepalive = 5
 
