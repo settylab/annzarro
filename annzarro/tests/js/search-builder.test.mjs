@@ -86,3 +86,41 @@ test('a column with more distinct values than the list limit is filtered by typi
     assert.equal(c.contains, Criteria.stringConditions.contains);
     assert.equal(Criteria.stringConditions['='].init, select, 'the shared string conditions are not changed');
 });
+
+test('Equals lists each value once, in one pass over the rows, sorted and preselected as SearchBuilder does', async () => {
+    const { fastSelectInit, fastSelectConditions } = await import('../../../static/js/utils/search-builder.js');
+    // a jQuery of the calls fastSelectInit makes
+    const $ = (tag, attrs = {}) => {
+        const el = { tag, attrs, classes: new Set(), children: [], props: {}, store: {} };
+        Object.assign(el, {
+            addClass(c) { el.classes.add(c); return el; }, removeClass(c) { el.classes.delete(c); return el; },
+            append(c) { el.children.push(...(Array.isArray(c) ? c : [c])); return el; }, on() { return el; },
+            data(k, v) { el.store[k] = v; return el; }, html(h) { el.text = h; return el; },
+            prop(k, v) { el.props[k] = v; return el; }, removeProp(k) { delete el.props[k]; return el; }
+        });
+        return el;
+    };
+    const Criteria = { classes: { value: 'v', dropDown: 'd', italic: 'i', select: 's', greyscale: 'g' },
+        stringConditions: { '=': { init: null }, '!=': { init: null }, contains: {} }, numConditions: { '=': {}, '!=': {} } };
+    const rows = ['b', 'a', 'c', 'a', 'b', null, 'c', 'a'];
+    let reads = 0;
+    const that = (type, rowsIn) => ({
+        dom: { data: { children: () => ({ val: () => 0 }) }, valueTitle: $('<option>') },
+        c: { orthogonal: { search: 'filter', display: 'display' }, greyscale: false },
+        classes: { option: 'o', notItalic: 'n' },
+        s: { type, dt: { rows: () => ({ indexes: () => ({ toArray: () => rowsIn.map((_, i) => i) }) }),
+            settings: () => [{ oApi: { _fnGetCellData: (_s, row) => { reads++; return rowsIn[row]; } } }] } }
+    });
+    const init = fastSelectInit(Criteria, $);
+    const select = init(that('string', rows), () => {}, ['b']);
+    const options = select.children.slice(1);
+    assert.deepEqual(options.map(o => o.attrs.value), [null, 'a', 'b', 'c']);    // '' sorts first
+    assert.equal(options.find(o => o.attrs.value === 'b').props.selected, true);
+    assert.ok(!select.classes.has('i'), 'a preselected value is not shown in italics');
+    assert.ok(reads <= rows.length + 4, `one pass: ${reads} reads`);             // + a display read per value
+    const nums = init(that('num', [10, 9, 100, 9]), () => {}).children.slice(1).map(o => o.attrs.value);
+    assert.deepEqual(nums, [9, 10, 100]);
+    const conds = fastSelectConditions(Criteria, $);
+    assert.equal(conds.string['='].init, conds.string['!='].init);
+    assert.ok(conds.string.contains && conds.num['='].init);
+});

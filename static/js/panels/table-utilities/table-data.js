@@ -2,7 +2,7 @@
  * Utilities for loading and processing table data
  */
 import { notify } from '../../utils/notify.js';
-import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, moreDistinctThan, textOnlyConditions } from '../../utils/search-builder.js';
+import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, moreDistinctThan, textOnlyConditions, fastSelectConditions } from '../../utils/search-builder.js';
 import { VALUE_LIST_MAX } from '../../utils/categories.js';
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
@@ -658,8 +658,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 // boolean conditions saved as num 'true' translated to Yes/No
                 preDefined: searchBuilderPreDefined(settings.searchBuilderConfig, tableData.booleanColumns || []),
                 display: 'block', // Always display
-                // typed "Equals" for columns with too many values to list
-                conditions: $.fn.dataTable.Criteria ? { [TEXT_ONLY_TYPE]: textOnlyConditions($.fn.dataTable.Criteria) } : {},
+                // "Equals" lists the values in one pass; typed for columns
+                // with too many values to list
+                conditions: $.fn.dataTable.Criteria ? {
+                    ...fastSelectConditions($.fn.dataTable.Criteria, $),
+                    [TEXT_ONLY_TYPE]: textOnlyConditions($.fn.dataTable.Criteria)
+                } : {},
                 depthLimit: 2, // Limit depth to prevent overly complex queries
                 layout: 'columns-2', // Modern layout with columns
                 filterChanged: true, // Update table in real-time with changes
