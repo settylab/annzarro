@@ -441,3 +441,24 @@ test('heap-bound model: a larger redraw in place is charged its whole growth wit
 function addCostLocal(a, b) {
     return { heap: a.heap + b.heap, off: a.off + b.off, gpu: a.gpu + b.gpu, contexts: a.contexts };
 }
+
+test('hover labels: the measured cost, no count cap, the guard decides', async () => {
+    const { labelCost } = await import('../../../static/js/utils/memory-guard.js');
+    // the two measurements the model was fitted to (heap after GC, hover on minus off, 1M points)
+    const barcode = labelCost({ points: 1e6, labels: 999998, chars: 21.9 }).heap;
+    const cat65k = labelCost({ points: 1e6, labels: 65000, chars: 8 }).heap;
+    // resident +114.1 / +37.9 MB, plus the reply's JSON while loading (3 B + 1 B per character per label)
+    assert.ok(Math.abs(barcode - (114.1 + 24.9) * MB) < 3 * MB, `${barcode / MB} MB`);
+    assert.ok(Math.abs(cat65k - (37.9 + 0.7) * MB) < 3 * MB, `${cat65k / MB} MB`);
+    const s = memorySettings({});
+    const chrome = readLimits(CHROME, s);
+    const held = { heap: 0.6 * GB, off: 0.2 * GB, gpu: 0, contexts: 2 };
+    // 2.5M barcodes on 2.5M points: past the old 2M cap, and it fits a desktop browser
+    const big = check(labelCost({ points: 2.5e6, labels: 2.5e6, chars: 22 }), held, chrome, s);
+    assert.equal(big.verdict, 'ok');
+    // a browser that cannot hold them: refused with the guard's usual numbers
+    const small = readLimits(CHROME, memorySettings({ heap_gb: 0.8 }));
+    const refused = check(labelCost({ points: 2.5e6, labels: 2.5e6, chars: 22 }), held, small, s, { panels: 1 });
+    assert.equal(refused.verdict, 'block');
+    assert.match(refused.why, /^needs ~[\d.]+ (GB|MB) of browser JS memory; [\d.]+ (GB|MB) free with 1 plot open/);
+});

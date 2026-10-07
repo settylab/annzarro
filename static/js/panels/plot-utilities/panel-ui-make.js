@@ -482,7 +482,7 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   showPointStyle(id, settings);
   
   // Hover columns picker (settings.hoverInfo)
-  populateHoverSelect(document.getElementById(`hover-columns-${id}`), plotType, datasetStructure, settings.hoverInfo);
+  populateHoverSelect(document.getElementById(`hover-columns-${id}`), plotType, datasetStructure, settings.hoverInfo, settings.hoverOff);
 
   // Initialize table filter dropdown
   updateTableFilterSelect(controlsContainer, id, plotType, settings.tableFilter);

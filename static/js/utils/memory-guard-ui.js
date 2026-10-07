@@ -15,7 +15,7 @@
 import { Config } from '../config.js';
 import { CacheManager } from '../cache-manager.js';
 import {
-    Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, check, addCost, predictSubsetChange, drawNeed,
+    Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, labelCost, check, addCost, predictSubsetChange, drawNeed,
     largestFitting, headroomLine, markPending, clearPending, takeCrashed, learnedMargin, learnFromCrash,
     formatGB, CONTEXTS_PER_PLOT
 } from './memory-guard.js';
@@ -111,6 +111,16 @@ export function drawCheck({ id, kind, n, large = false, colour = 'numeric', thre
     let h = held([id]);
     if (old) h = addCost(h, { ...old.resident, contexts: 0 });
     return _check(need, h, ledger.plotCount() + (old ? 0 : 1), large ? n : 0);
+}
+
+/**
+ * Before a plot reads the hover labels of a categorical column: `labels`
+ * distinct labels of about `chars` characters over `points` points
+ * (memory-guard.js labelCost). A refusal leaves the plot coloured, its
+ * hover off.
+ */
+export function hoverLabelsCheck({ points, labels, chars }) {
+    return _check(labelCost({ points, labels, chars }), held(), ledger.plotCount());
 }
 
 /** Before a recolour of the drawn regular plot `gd` (large-plot mode redraws, and is checked as a draw). */

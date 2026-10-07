@@ -2,7 +2,8 @@
  * Utilities for loading and processing table data
  */
 import { notify } from '../../utils/notify.js';
-import { isBooleanColumn, renderBoolean, searchBuilderPreDefined } from '../../utils/search-builder.js';
+import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, moreDistinctThan, textOnlyConditions, fastSelectConditions } from '../../utils/search-builder.js';
+import { VALUE_LIST_MAX } from '../../utils/categories.js';
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
 import { freezeSelection } from '../../utils/closed-table.js';
@@ -156,6 +157,18 @@ export async function loadTableData(settings, entityType, signal = null) {
             throw new DOMException('Table data loading aborted before completion', 'AbortError');
         }
         
+        // A column with more distinct values than VALUE_LIST_MAX (the Cell
+        // ID, a barcode) is filtered by typing: SearchBuilder's "Equals"
+        // dropdown would hold one option per row.
+        const textOnlyColumns = [];
+        columnDefinitions.forEach(def => {
+            const values = def.data === '_index' ? entityIndex : data.map(row => row[def.data]);
+            if (moreDistinctThan(values, VALUE_LIST_MAX)) {
+                def.searchBuilderType = TEXT_ONLY_TYPE;
+                textOnlyColumns.push(def.title);
+            }
+        });
+
         return {
             coverage: Coverage.merge(
                 columnCoverages.length ? columnCoverages : [Coverage.complete(entityIndex.length, entityType)],
@@ -164,6 +177,7 @@ export async function loadTableData(settings, entityType, signal = null) {
             data: data,
             columns: columnDefinitions,
             booleanColumns: booleanColumns,
+            textOnlyColumns: textOnlyColumns,
             entityIndex: entityIndex
         };
         
@@ -748,6 +762,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 // boolean conditions saved as num 'true' translated to Yes/No
                 preDefined: searchBuilderPreDefined(settings.searchBuilderConfig, tableData.booleanColumns || []),
                 display: 'block', // Always display
+                // "Equals" lists the values in one pass; typed for columns
+                // with too many values to list
+                conditions: $.fn.dataTable.Criteria ? {
+                    ...fastSelectConditions($.fn.dataTable.Criteria, $),
+                    [TEXT_ONLY_TYPE]: textOnlyConditions($.fn.dataTable.Criteria)
+                } : {},
                 depthLimit: 2, // Limit depth to prevent overly complex queries
                 layout: 'columns-2', // Modern layout with columns
                 filterChanged: true, // Update table in real-time with changes
@@ -790,6 +810,15 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             
             // Access the search container - find it relative to the table container
             const tableContainer = this.api().table().container();
+
+            // Say which columns are filtered by typing rather than from a list
+            const textOnly = tableData.textOnlyColumns || [];
+            if (textOnly.length) {
+                const $note = $('<div class="small text-muted sb-text-only-note"></div>').text(
+                    `${textOnly.join(', ')}: more than ${VALUE_LIST_MAX.toLocaleString('en-US')} distinct values, `
+                    + 'so Equals and Not take a typed value instead of a list.');
+                $(tableContainer).find('.dtsb-searchBuilder').first().after($note);
+            }
             // For Bootstrap 5 integration, the search input is in a different location
             const $searchInput = $(tableContainer).find('div.dataTables_filter input');
             

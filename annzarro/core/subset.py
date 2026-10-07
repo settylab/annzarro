@@ -50,6 +50,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from .name_index import _signature as _store_signature
+from . import categories as category_rules
 
 #: Limits: a spec rides in the query string of every cell-axis request, and
 #: gunicorn refuses a request line over 4094 bytes.
@@ -849,6 +850,14 @@ def resolve(reader, dataset_path: str, raw, config=None) -> Optional[Subset]:
         spec = parse_spec(raw)
     if spec is None:
         return None
+    if spec.balance is not None:
+        # One group per category: past the colour limit (a barcode column has
+        # a category per cell) a balanced sample is every group's one cell.
+        count = category_rules.category_count(reader.get_metadata(dataset_path), "cells", spec.balance)
+        limit = category_rules.MAX_BALANCE_GROUPS
+        if count is not None and count > limit:
+            raise SubsetError(f"Cannot balance across '{spec.balance}': it has {count:,} categories "
+                              f"(the limit is {limit:,}).", "too_many_categories")
     if not spec.where and (spec.n is None or spec.n >= _n_obs(reader, dataset_path)):
         if spec.part:
             raise SubsetError(f"subset part {spec.part} does not exist: these cells form one part (part 0)",
@@ -991,12 +1000,14 @@ class SubsetView:
                        else self._rows(indices))
         return take(entity=entity, dataset_path=dataset_path, column_name=column_name, indices=indices)
 
-    def get_obs_var_codes(self, entity="cells", dataset_path=None, column_name=None, indices=None):
+    def get_obs_var_codes(self, entity="cells", dataset_path=None, column_name=None, indices=None,
+                          used_only=False, ranked=False):
         if entity == "cells":
             indices = (self.subset.indices.tolist() if indices is None
                        else self._rows(indices))
         return self._reader.get_obs_var_codes(entity=entity, dataset_path=dataset_path,
-                                              column_name=column_name, indices=indices)
+                                              column_name=column_name, indices=indices,
+                                              used_only=used_only, ranked=ranked)
 
     def get_obsm_varm(self, entity="cells", key=None, dataset_path=None, indices=None,
                       col_indices=None, column_name=None):

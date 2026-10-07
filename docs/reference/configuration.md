@@ -121,7 +121,7 @@ Defaults sent to the browser through `/api/v1/config`.
 **What it limits.** A browser closes a tab that runs out of memory, with everything on screen.
 Before every action whose memory grows with the number of points (drawing a Cell Plot, opening or
 duplicating one, applying a larger subset or every cell, a full-resolution image export, a
-recolour), the browser estimates what the action needs and compares it with what is left after
+recolour, reading the hover labels of a column with more than 65,536 categories), the browser estimates what the action needs and compares it with what is left after
 the panels already open. An action that does not fit is refused (`enforce: block`) with what it
 needs, what is free and what helps; the user guide shows how it looks ({ref}`browser-memory`).
 
@@ -136,7 +136,10 @@ points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in lar
 its points outside the JavaScript heap (0.1 bytes of heap per point; about 65 bytes per point of
 typed arrays, and 200 million points drew with a 13.6 GB tab and 35 MB of heap). Before v0.4.1 it
 held 20.2 bytes of heap per point and a tab died at 182 to 200 million points; a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
-million); the app itself 0.17 GB. A full-resolution image export draws the plot again and needs
+million); the app itself 0.17 GB; hover labels of a categorical column 34 bytes per point plus 62 bytes
+and 2 per character per distinct label (measured at a million points: 999,998 barcodes 114 MB,
+65,000 labels 38 MB, plus the reply while it loads). There is no cap on the number of labels: a
+hover whose labels do not fit stays off, and the plot stays coloured. A full-resolution image export draws the plot again and needs
 about the plot's own share again while it runs. Some costs are still estimated from the code
 rather than measured (the export, a recolour, 3D, a table row); the guard multiplies every
 prediction by 1 + `margin` and adds 0.25 to the margin in a browser whose tab closed during a

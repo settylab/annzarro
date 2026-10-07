@@ -19,6 +19,7 @@ import {
     presetSizes, partsFor, initialSize, largestRegularSize, DEFAULT_LARGE_PLOT_POINTS, BROWSER_POINT_CEILING, shortCount, estimateLoad, formatSeconds, recordServer, serverSeconds, loadSamples
 } from './utils/subset-presets.js';
 import { escapeHtml } from './utils/session-permissions.js';
+import { MAX_BALANCE_GROUPS, VALUE_LIST_MAX } from './utils/categories.js';
 import { subsetCheck, maxSubsetCells, headroomText, refusalText, ledger, formatGB, MEMORY_EVENT } from './utils/memory-guard-ui.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
@@ -255,7 +256,9 @@ const SubsetControl = (function() {
         const info = (structure.obs && structure.obs.columns_info) || {};
         _columns = ((structure.obs && structure.obs.columns) || [])
             .filter(name => name !== '_index')
-            .map(name => ({ name, type: (info[name] && info[name].type) || '' }));
+            .map(name => ({ name, type: (info[name] && info[name].type) || '',
+                            nCategories: info[name] && typeof info[name].n_categories === 'number'
+                                ? info[name].n_categories : null }));
 
         _nTotal = nTotal;
         _eligible = (current && current.n_eligible) || nTotal;
@@ -267,9 +270,16 @@ const SubsetControl = (function() {
         q('subset-seed').value = String(spec ? spec.seed : defaults.seed);
 
         const balance = q('subset-balance');
+        // A column with more than MAX_BALANCE_GROUPS categories is offered
+        // disabled, with its count: one group per cell (a barcode column) is
+        // no balance, and the server refuses it (too_many_categories).
+        const limit = MAX_BALANCE_GROUPS;
         balance.innerHTML = '<option value="">Uniform</option>' + _columns
             .filter(c => /categor|bool|str|object/i.test(c.type))
-            .map(c => `<option value="${escapeHtml(c.name)}">Balanced across ${escapeHtml(c.name)}</option>`)
+            .map(c => (c.nCategories !== null && c.nCategories > limit
+                ? `<option value="${escapeHtml(c.name)}" disabled>Balanced across ${escapeHtml(c.name)} `
+                  + `(${c.nCategories.toLocaleString('en-US')} categories, over ${limit.toLocaleString('en-US')})</option>`
+                : `<option value="${escapeHtml(c.name)}">Balanced across ${escapeHtml(c.name)}</option>`))
             .join('');
         balance.value = spec && spec.balance ? spec.balance : '';
 
@@ -532,8 +542,16 @@ const SubsetControl = (function() {
     /** Offer a categorical column's categories as suggestions. */
     async function _fillCategories(col, datalist) {
         if (!datalist || !col) return;
+        // The suggestions are the column's whole category list: not for a
+        // column with more than VALUE_LIST_MAX (a barcode column), where that
+        // list is the size of the dataset.
+        const column = _columns.find(c => c.name === col);
+        if (column && column.nCategories !== null && column.nCategories > VALUE_LIST_MAX) {
+            datalist.innerHTML = '';
+            return;
+        }
         try {
-            const reply = await DataManager.loadObs({ columns: [col], rows: [0] });
+            const reply = await DataManager.loadObs({ columns: [col], rows: [0], categories: 'all' });
             const categories = (reply && reply.categories && reply.categories[col]) || [];
             datalist.innerHTML = categories.slice(0, 500)
                 .map(c => `<option value="${escapeHtml(String(c))}"></option>`).join('');

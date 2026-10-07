@@ -1171,11 +1171,14 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - Observation data
      */
     async function loadObs(options) {
-        const { datasetPath, columns, rows, maxCells } = options;
+        const { datasetPath, columns, rows, maxCells, categories } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
         };
+        // 'all' to colour by a categorical column (refused past the colour
+        // limit), 'used' for its labels only (annzarro/core/categories.py)
+        if (categories) params.categories = categories;
         
         if (columns && columns.length > 0) {
             params.columns = columns.join(',');
@@ -1213,11 +1216,12 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - Variable data
      */
     async function loadVar(options) {
-        const { datasetPath, columns, cols, maxGenes } = options;
+        const { datasetPath, columns, cols, maxGenes, categories } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
         };
+        if (categories) params.categories = categories;   // as loadObs
         
         if (columns && columns.length > 0) {
             params.columns = columns.join(',');
@@ -2070,13 +2074,19 @@ const DataManager = (function() {
      * The codes route's reply in loadCategoryCodes' shape: Uint16 codes with
      * 0xFFFF for missing (the route sends int8/16/32 with -1).
      */
-    function _categoryCodesFromBinary(decoded) {
-        const MISSING = 0xFFFF;
+    function _categoryCodesFromBinary(decoded, headers = null) {
+        const used = headers ? Number(headers.get('X-Annzarro-Categories-Used')) : NaN;
+        const ranked = !!headers && headers.get('X-Annzarro-Categories-Order') === 'ranked';
+        // ranked: the codes are frequency ranks of up to `used` categories,
+        // and `categories` the labels of the first ranks only
+        const span = ranked ? used : decoded.categories.length;
+        const wide = span >= 0xFFFF;
+        const MISSING = wide ? 0xFFFFFFFF : 0xFFFF;
         const src = decoded.values, n = src.length;
-        if (decoded.categories.length >= MISSING) throw new RangeError('more than 65534 categories');
-        const codes = new Uint16Array(n);
+        const codes = wide ? new Uint32Array(n) : new Uint16Array(n);
         for (let i = 0; i < n; i++) { const c = src[i]; codes[i] = c < 0 ? MISSING : c; }
-        return { codes, categories: decoded.categories, MISSING };
+        return ranked ? { codes, categories: decoded.categories, MISSING, ranked: true, used }
+            : { codes, categories: decoded.categories, MISSING };
     }
 
     /**
@@ -2084,9 +2094,14 @@ const DataManager = (function() {
      * plus its categories, read as a stream (utils/packed-names.js): the JSON
      * body of a large dataset does not fit in one string.
      */
-    async function loadCategoryCodes(datasetPath, column) {
-        const params = _withSubset(Config.API.OBS, { dataset_path: datasetPath, columns: column });
-        const fullUrl = `${Config.API.OBS}?${new URLSearchParams(params).toString()}`;
+    async function loadCategoryCodes(datasetPath, column, { ranked = false, slot = 'obs' } = {}) {
+        // ranked: each cell's category's rank over the whole column
+        // (utils/categories.js), no labels; otherwise every category
+        const url = slot === 'var' ? Config.API.VAR : Config.API.OBS;
+        const params = _withSubset(url, ranked
+            ? { dataset_path: datasetPath, columns: column, categories: 'ranked' }
+            : { dataset_path: datasetPath, columns: column });
+        const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
         const key = `${fullUrl}#codes`;
         const cached = CacheManager.get(key);
         if (cached !== undefined) return cached;
@@ -2098,13 +2113,34 @@ const DataManager = (function() {
             const response = await fetch(`${fullUrl}&format=${BINARY_FORMAT}&categorical=codes`);
             if (!response.ok) await _readResponse(response);   // throws with the server's reason
             const result = isBinaryResponse(response)
-                ? _categoryCodesFromBinary(decodeVector(await response.arrayBuffer(), response.headers))
+                ? _categoryCodesFromBinary(decodeVector(await response.arrayBuffer(), response.headers), response.headers)
                 : await categoryCodesFromJSON(response, column, (_cells || []).length);
             CacheManager.set(key, result);
             return result;
         })().finally(() => _inflight.delete(key));
         _inflight.set(key, pending);
         return pending;
+    }
+
+    /**
+     * Labels of a few ranks of a categorical column's whole-column ranking
+     * (`categories=ranked`): the names a colour group's legend entry shows.
+     * @param {string} datasetPath
+     * @param {string} column
+     * @param {number[]} ranks
+     * @param {'obs'|'var'} [slot]
+     * @returns {Promise<Map<number, string>>} rank -> label
+     */
+    async function loadCategoryLabels(datasetPath, column, ranks, slot = 'obs') {
+        const out = new Map();
+        const wanted = [...new Set(ranks)].sort((a, b) => a - b);
+        for (let i = 0; i < wanted.length; i += 1000) {
+            const part = wanted.slice(i, i + 1000);
+            const body = await _fetchWithCache(slot === 'var' ? Config.API.VAR : Config.API.OBS,
+                { dataset_path: datasetPath, columns: column, category_ranks: part.join(',') });
+            (body.ranks || part).forEach((r, k) => out.set(Number(r), body.labels[k]));
+        }
+        return out;
     }
 
     /**
@@ -2221,6 +2257,7 @@ const DataManager = (function() {
         loadByPath,
         loadVector,
         loadCategoryCodes,
+        loadCategoryLabels,
         setFocusedCell,
         setFocusedGene,
         setTaxonomyId,

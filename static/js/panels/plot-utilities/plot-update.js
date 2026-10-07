@@ -907,7 +907,7 @@ export async function loadColorDataAndUpdatePlot(
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
-        const colorData = await loadAxisData(settings.color, data.entities, plotContainer);
+        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour', panel: settings });
 
         if (colorData && colorData.values) {
             // Update the data cache with new color information.
@@ -915,6 +915,9 @@ export async function loadColorDataAndUpdatePlot(
             data.colorType = colorData.type;
             applyLogColor(data, settings);
             data.colorCategories = colorData.categories;
+            data.colorRankOf = colorData.rankOf || null;
+            data.colorRanked = !!colorData.ranked;
+            data.colorGroupNames = colorData.groupNames || null;
             // Colour DESCRIBES the points (see ROLE). Without this the panel
             // kept announcing the PREVIOUS colour column's coverage -- and, on
             // a refocus, said nothing about a varp/obsp/layer row that came back
