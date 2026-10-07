@@ -12,6 +12,7 @@ from flask import jsonify, request, current_app as app
 
 from ...core import zarr_reader, h5ad_reader_obj
 from ...core import name_index
+from ...core import categories as category_rules
 from ...core import freshness
 from ...core.zarr_reader import consolidated_staleness, consolidated_notice
 
@@ -85,6 +86,7 @@ def register_zarr_routes(app, api_version):
             h5ad_reader_obj.clear_cache(dataset_path=dataset_path)
             # The name search index is a cache too: a reset must rebuild it.
             name_index.clear(dataset_path)
+            category_rules.clear_rankings(dataset_path)
             # A new generation: the ETags change (an in-place chunk write
             # kept the old ones, so the browser was answered 304 with its old
             # body), and every other process, each gunicorn worker, drops
@@ -113,6 +115,13 @@ def register_zarr_routes(app, api_version):
 
         Query parameters:
             dataset_path: the dataset to check (required).
+            after: from an earlier ``scheduled`` answer: return the result of
+                the first walk that started at or after it.
+
+        Never waits for the rate limit (issue #83): inside
+        ``server.refresh_min_interval_s`` it schedules one walk at the
+        interval's end and answers at once ``status: "scheduled"`` with
+        ``after`` and ``retry_after_s``; the client asks again with ``after``.
 
         Open to every user who may read the dataset, unlike cache/reset: it
         walks the store's files (core/freshness.py ``revalidate``) and starts
@@ -132,9 +141,14 @@ def register_zarr_routes(app, api_version):
             return jsonify({"error": str(exc), "reason": "not_found"}), 404
         except (ValueError, PermissionError, ImportError) as exc:
             return jsonify({"error": str(exc)}), 400
+        after = request.args.get("after")
+        try:
+            after = float(after) if after not in (None, "") else None
+        except ValueError:
+            return jsonify({"error": f"after must be a number, got {after!r}", "reason": "bad_after"}), 400
         result = freshness.revalidate(
             dataset_path, min_interval_s=float(app.config.get("refresh_min_interval_s", 10)),
-            inspect=lambda: {"consolidated_stale": consolidated_staleness(dataset_path)})
+            inspect=lambda: {"consolidated_stale": consolidated_staleness(dataset_path)}, after=after)
         stale = result.pop("consolidated_stale", None)
         return jsonify({**result, "result": "success", "dataset_path": dataset_path,
                         "consolidated_metadata": consolidated_notice(stale)})

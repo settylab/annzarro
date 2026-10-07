@@ -97,6 +97,44 @@ on top** (on by default) the genes with the largest |ρ| are drawn last, so they
 grey core; hover to find them, or sort a table ({ref}`tut-gene-check`). A module built from
 DE genes alone could not contain them.
 
+9. To fade the weak correlations, open the controls and choose **Map** `Blues`, press
+   **Reverse** so that the pale end is low, and type `0.3` in **Min** (Max stays 1). **Lock
+   Range** is still on from step 5; if it is off, press it. Genes below 0.3, the anti-correlated
+   ones included, now take the pale colour, and only H2-Q7's positive partners are blue. The
+   pale end of Plotly's Blues is light grey (rgb 220, 220, 220), not white, so faded genes stay
+   visible.
+
+   ```{figure} ../_static/screens/tutorials/we2-fade-controls.png
+   :class: screenshot
+   :alt: Colour controls: Map "Blues (dark → light)", Min 0.3, Max 1, Reverse and Lock Range on.
+   :width: 60%
+
+   The controls after step 9.
+   ```
+
+   ```{figure} ../_static/screens/tutorials/we2-fade.png
+   :class: screenshot
+   :alt: The volcano with H2-Q7 focused, coloured from light grey at 0.3 to dark blue at 1; most genes grey, H2-Q6 and a few genes along the upper right arm and in the core blue.
+   :width: 100%
+
+   Correlation with H2-Q7, faded below 0.3.
+   ```
+
+   The range holds as the focus moves: click H2-Aa (step 1 of section 2) and the scale stays 0.3
+   to 1, now showing H2-Aa's class II partners in blue.
+
+   ```{figure} ../_static/screens/tutorials/we2-fade-h2aa.png
+   :class: screenshot
+   :alt: The same faded volcano after focusing H2-Aa: its class II neighbours at the top, among them H2-Eb1 and Cd74, dark blue, H2-Q7 at the top right now grey.
+   :width: 100%
+
+   The same scale for H2-Aa.
+   ```
+
+   Keep **Strong on top** on: it draws the top end of the colour bar last, so the strongly
+   correlated genes, dark blue, are drawn over the dense core, and the anti-correlated ones, pale
+   at the bar's bottom, stay underneath ({ref}`drawing order <colour-strong-on-top>`).
+
 :::{note}
 **Paper, gene by gene, panel a.** This view is panel a of the paper figure.
 :::
@@ -278,7 +316,8 @@ Python from the same stored columns and match the paper's `figures/numbers/fig3.
 ```{note}
 The `rho_fc_*` and `rho_smoothed_*` columns of the showcase store hold H2-Q7's (and S100a9's,
 H2-Aa's) rows of `varp/…` as fixed columns. A gene table can also show a `varp` row directly: on
-its `varp` tab, `spearman_fold_change: H2-Q7 (focused)` follows the focused gene. The boolean
+its `varp` tab, `spearman_fold_change: H2-Q7 (focused)` adds H2-Q7's row, which stays H2-Q7's
+when you focus another gene ({doc}`gene-groups`). The boolean
 `kompot_de_Young_to_Old_is_de` works as a filter too: **Equals** `Yes` keeps the 190 DE genes.
 ```
 
@@ -311,7 +350,7 @@ The same panels as panel-set files:
 {download}`gene-by-gene-ab.json <../_static/panelsets/paper/gene-by-gene-ab.json>`,
 {download}`gene-by-gene-c.json <../_static/panelsets/paper/gene-by-gene-c.json>`,
 {download}`gene-by-gene-d.json <../_static/panelsets/paper/gene-by-gene-d.json>`. **Load Panel Set** >
-upload restores a set like its link: dataset, focus, layout and panel settings
+upload, then **Load**, opens the panels in their layout with the dataset and focus (or use the links above)
 ({ref}`tut-tour-load-file`, {doc}`../user-guide/panel-sets`).
 
 ## What you learned

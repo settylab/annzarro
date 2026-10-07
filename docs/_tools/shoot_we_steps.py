@@ -5,6 +5,8 @@ Each one starts from a tutorial's view and then does the step as a user would:
 - Worked example 1, Steps 16-17 (cell-similarity.md): step the focus back with the history
   arrows; duplicate the walk panel from "Duplicate or Reopen Panel" and colour the copy by
   DM_Kernel.
+- Worked example 2, Step 21 (gene-similarity.md): fade weak correlations with Blues, Reverse,
+  Min 0.3 and the locked range, then move the focus.
 - Worked example 4, Step 26 (cells-and-genes.md): set Color to varp spearman_fold_change,
   row Focused gene.
 - Worked example 5, Steps 29 and 31 (tour.md): a regular expression in the table's search box;
@@ -155,6 +157,55 @@ def walk(sh, data):
     page.context.close()
 
 
+def fade(sh, data):
+    v, ds = view_of("gene-by-gene-ab")
+    page = sh.open(v, dataset=str(data / ds))
+    G = next(k for k in v["layout"]["panelConfigs"] if k.startswith("gene-plot"))
+    g = T(G)
+    toggle_controls(sh, page, G)
+    page.select_option(f"{g} [id^=color-scale-]", "Blues")
+    sh.ready(page)
+    page.locator(f"{g} [id^=reverse-colormap]").first.click()
+    sh.ready(page)
+    mn = page.locator(f"{g} [id^=color-min-]:not([id*=slider])").first
+    mn.fill("0.3")
+    mn.press("Enter")
+    mn.dispatch_event("change")
+    sh.ready(page)
+    state = lambda: page.evaluate(f"""() => {{  // noqa: E731
+        const q = s => document.querySelector('{g} ' + s);
+        return {{min: q('[id^=color-min-]:not([id*=slider])').value, max: q('[id^=color-max-]:not([id*=slider])').value,
+                lock: q('[id^=lock-range]').getAttribute('aria-pressed'),
+                reverse: q('[id^=reverse-colormap]').getAttribute('aria-pressed'),
+                strong: q('[id^=sort-by-color]').getAttribute('aria-pressed'),
+                scale: q('[id^=color-scale-]').value}}; }}""")
+    sh.log.append("WE2 step 21: controls = " + json.dumps(state()))
+    crop(page, "we2-fade-controls", [f"{g} .color-range-controls"], pad=6)
+    toggle_controls(sh, page, G)
+    order = lambda: page.evaluate(f"""() => {{  // noqa: E731
+        const gd = document.querySelector('{g} .js-plotly-plot');
+        const t = gd._fullData.find(t => t.marker && Array.isArray(t.marker.color) && t.marker.color.length > 1000);
+        const c = t.marker.color, n = c.length, last = c.slice(n - 500);
+        return {{n, colorscale0: JSON.stringify(t.marker.colorscale[0]), cmin: t.marker.cmin, cmax: t.marker.cmax,
+                last500_below_0_3: last.filter(v => v < 0.3).length, below_minus_0_3: c.filter(v => v < -0.3).length}}; }}""")
+    # Strong on top (on by default) draws the colour bar's top end last: count how many of
+    # the 500 points drawn last are below Min, i.e. pale (0 since v0.4.1; v0.4.0 ordered by
+    # |value| and drew 285 there, anti-correlated genes among them)
+    sh.log.append("WE2 step 21: draw order = " + json.dumps(order()))
+    crop(page, "we2-fade", [f"{g} .tile-content"], pad=0)
+    # the range holds as the focus moves
+    page.click("#focused-gene")
+    page.keyboard.press("Meta+A")
+    page.keyboard.type("H2-Aa", delay=10)
+    page.keyboard.press("Enter")
+    page.keyboard.press("Escape")
+    sh.ready(page)
+    sh.log.append("WE2 step 21: focus " + page.evaluate("document.getElementById('focused-gene').value")
+                  + " -> " + json.dumps(order()))
+    crop(page, "we2-fade-h2aa", [f"{g} .tile-content"], pad=0)
+    page.context.close()
+
+
 def rows(sh, data):
     v, ds = view_of("cells-and-genes-d")
     page = sh.open(v, dataset=str(data / ds))
@@ -230,12 +281,12 @@ def table(sh, data):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8871)
+    ap.add_argument("--only", nargs="*", default=["walk", "fade", "rows", "table"])
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     with Session(a.port, OUT, data_dir=DATA_DIR) as sh:
-        walk(sh, DATA_DIR)
-        rows(sh, DATA_DIR)
-        table(sh, DATA_DIR)
+        for step in a.only:
+            {"walk": walk, "fade": fade, "rows": rows, "table": table}[step](sh, DATA_DIR)
 
 
 if __name__ == "__main__":

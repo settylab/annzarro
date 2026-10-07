@@ -44,6 +44,9 @@
  *     constants: {                           // global focus state (all optional)
  *       focusedGene, focusedCell, taxonomyId
  *     },
+ *     store: { path, abs?, name, fp? },      // the store it was saved on and its
+ *                                            //   fingerprint (utils/view-store.js)
+ *     annzarro: '0.4.1',                     // the version that saved it
  *     subset: { n, seed, balance?, where? }  // the cells shown (utils/subset.js);
  *             | null                         //   null: every cell; absent: the
  *                                            //   server's default for the dataset
@@ -274,6 +277,12 @@ export function normalizeView(view) {
         out.constants = view.constants;
     }
 
+    // Which store it was saved on and with which AnnZarro (utils/view-store.js)
+    if (view.store && typeof view.store === 'object' && typeof view.store.path === 'string') {
+        out.store = view.store;
+    }
+    if (typeof view.annzarro === 'string') out.annzarro = view.annzarro;
+
     // Absent stays absent (the dataset's default); a malformed subset is
     // dropped rather than failing the whole link.
     const subset = normalizeViewSubset(view.subset);
@@ -389,6 +398,74 @@ export function panelSetToView(panelSet) {
         };
     }
     return { datasetPath, view, closedPanels, legacy: true };
+}
+
+/**
+ * The same plan with every panel closed: what loading a panel set the user
+ * chose applies. Opening every panel of a large set at once could overload
+ * the machine, so the set's dataset, subset and focus are restored and each
+ * of its panels is listed closed with its full config, open ones first in
+ * layout order; the user reopens the ones wanted. The set's own view is kept
+ * as `savedView` (null when it opens no panel), so "Open saved layout" can
+ * apply it later exactly as a share link would. A share link applies its
+ * view as is and never comes here.
+ * @param {{datasetPath: string|null, view: Object, closedPanels: Array, legacy: boolean}|null} plan
+ * @returns {Object|null} a new plan, with `savedView` and `savedCount` (its
+ *   panels); the input is not changed
+ */
+export function closePlanPanels(plan) {
+    if (!plan) return plan;
+    const view = { ...(plan.view || {}) };
+    const opened = [];
+    if (view.layout) {
+        const configs = view.layout.panelConfigs || {};
+        collectTileIds(view.layout.hierarchy).forEach(id =>
+            opened.push({ id, type: panelTypeFromTileId(id), config: { ...(configs[id] || {}), id } }));
+    }
+    // the legacy flat list (a hand-written view): its panels may have no id
+    (Array.isArray(view.panels) ? view.panels : []).forEach(panel => {
+        const type = String(panel.type || '').replace(/_/g, '-');
+        const config = { ...(panel.config || {}) };
+        if (panel.title && !config.title) config.title = panel.title;
+        opened.push({ id: config.id || null, type, config });
+    });
+    delete view.layout;
+    delete view.panels;
+    return { ...plan, view, closedPanels: [...opened, ...(plan.closedPanels || [])],
+             savedView: opened.length ? plan.view : null, savedCount: opened.length };
+}
+
+/**
+ * The panels of a plan, ready to add to the closed list beside the panels
+ * already there ("Add to closed panels"): every panel of the set, open ones
+ * first in layout order, each with its full config. An id that is taken (or
+ * repeated) gets a fresh one from `freshId`, and references between the
+ * set's own panels (a plot's tableFilter) follow the rename, so they stay
+ * inside the set instead of landing on an open panel with the old id.
+ * @param {Object|null} plan - from panelSetToView
+ * @param {(id: string) => boolean} isTaken - is this id in use already?
+ * @param {(type: string) => string} freshId - a new id for a panel of this type
+ * @returns {Array<{type: string, config: Object}>} configs are copies
+ */
+export function panelsToAdd(plan, isTaken, freshId) {
+    if (!plan) return [];
+    const used = new Set();
+    const idMap = new Map();
+    const added = closePlanPanels(plan).closedPanels.map(p => {
+        const config = JSON.parse(JSON.stringify(p.config || {}));
+        let id = p.id || config.id;
+        if (!id || isTaken(id) || used.has(id)) {
+            let fresh;
+            do { fresh = freshId(p.type); } while (isTaken(fresh) || used.has(fresh));
+            if (id && !idMap.has(id)) idMap.set(id, fresh);
+            id = fresh;
+        }
+        used.add(id);
+        config.id = id;
+        return { type: p.type, config };
+    });
+    remapPanelReferences(added.map(p => p.config), idMap);
+    return added;
 }
 
 /**

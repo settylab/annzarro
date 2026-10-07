@@ -30,10 +30,11 @@ export function longTable(ctx, caption, columns, rows, noun) {
             box.appendChild(el('div', { class: 'gs-more' },
                 el('span', { text: all ? `All ${rows.length.toLocaleString('en-US')} ${noun}` : `First ${shown.length} of ${rows.length.toLocaleString('en-US')} ${noun}` }),
                 el('button', { type: 'button', class: 'btn btn-link btn-sm', text: all ? 'Show fewer' : `Show all ${rows.length.toLocaleString('en-US')}`,
-                    on: { click: () => draw(!all) } })));
+                    on: { click: () => { if (ctx.view) ctx.view.set(`all:${caption}`, !all); draw(!all); } } })));
         }
     };
-    draw(false);
+    // shown in full before a rerun: still in full
+    draw(!!(ctx.view && ctx.view.get(`all:${caption}`)));
     return box;
 }
 

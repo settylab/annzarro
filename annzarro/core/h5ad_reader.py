@@ -20,7 +20,8 @@ from typing import Literal, Tuple, Dict, Any, List, Optional
 import numpy as np
 import scipy.sparse as sp
 from .caching import CacheSettings, DatasetCache, cached_method
-from .zarr_reader import MissingKeyError, StoreReadError, UnsupportedEncodingError
+from . import categories as category_rules
+from .zarr_reader import MissingKeyError, StoreReadError, UnsupportedEncodingError, densify
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +246,7 @@ def _matrix(obj, rows=None, cols=None) -> np.ndarray:
     if isinstance(obj, h5py.Group):
         m = _sparse(obj, rows, cols)
         if m is not None:
-            return m.toarray()
+            return densify(m)
         logger.warning(f"Unsupported matrix encoding '{_encoding(obj)}' at {obj.name}")
     return np.array([])
 
@@ -272,6 +273,26 @@ def _categorical(codes: np.ndarray, categories: np.ndarray) -> np.ndarray:
     return values
 
 
+def _coded(codes_ds, categories_ds, indices=None, used_only=False):
+    """``(codes, categories)`` of a categorical column; with ``used_only`` or
+    past READ_ALL_MAX categories, only the categories the codes use, the
+    codes renumbered into them (core/categories.py)."""
+    codes = np.asarray(_values(codes_ds, None if indices is None else np.asarray(indices, dtype=np.int64)))
+    if used_only or categories_ds.shape[0] > category_rules.READ_ALL_MAX:
+        return category_rules.compact(codes, lambda positions: _values(categories_ds, positions))
+    return codes, _values(categories_ds).tolist()
+
+
+def _category_total(f: h5py.File, obj) -> Optional[int]:
+    """Number of categories of a categorical column, from its shape; or None."""
+    if isinstance(obj, h5py.Group):
+        if "codes" in obj and "categories" in obj:
+            return int(obj["categories"].shape[0])
+        return None
+    ref = obj.attrs.get("categories")
+    return int(f[ref].shape[0]) if isinstance(ref, h5py.Reference) else None
+
+
 def _column(f: h5py.File, obj, indices=None) -> Tuple[np.ndarray, Optional[list]]:
     """One obs/var (or dataframe) column: (values, categories or None).
 
@@ -283,8 +304,8 @@ def _column(f: h5py.File, obj, indices=None) -> Tuple[np.ndarray, Optional[list]
     enc = _encoding(obj)
     if isinstance(obj, h5py.Group):
         if enc == "categorical" or ("codes" in obj and "categories" in obj):
-            categories = _values(obj["categories"])
-            return _categorical(_values(obj["codes"], indices), categories), categories.tolist()
+            codes, categories = _coded(obj["codes"], obj["categories"], indices)
+            return _categorical(codes, categories), categories
         if (enc or "").startswith("nullable") or ("values" in obj and "mask" in obj):
             values = _values(obj["values"], indices)
             mask = np.asarray(_values(obj["mask"], indices), dtype=bool)
@@ -298,8 +319,8 @@ def _column(f: h5py.File, obj, indices=None) -> Tuple[np.ndarray, Optional[list]
                                        f"(children: {list(obj.keys())})")
     ref = obj.attrs.get("categories")
     if isinstance(ref, h5py.Reference):
-        categories = _values(f[ref])
-        return _categorical(_values(obj, indices), categories), categories.tolist()
+        codes, categories = _coded(obj, f[ref], indices)
+        return _categorical(codes, categories), categories
     return _values(obj, indices), None
 
 
@@ -444,18 +465,27 @@ class h5adReader(CacheSettings):
                 continue
             obj = group[col]
             enc = _encoding(obj)
+            n_categories = None
             if isinstance(obj, h5py.Group):
                 if enc == "categorical" or "codes" in obj:
                     col_type = "categorical"
+                    if "categories" in obj:
+                        n_categories = int(obj["categories"].shape[0])
                 elif enc:
                     col_type = enc
                 else:
                     col_type = "other"
             elif isinstance(obj.attrs.get("categories"), h5py.Reference) or enc == "categorical":
                 col_type = "categorical"
+                ref = obj.attrs.get("categories")
+                if isinstance(ref, h5py.Reference):
+                    n_categories = int(file[ref].shape[0])
             else:
                 col_type = str(obj.dtype)
             obj_columns_info[col] = {"type": col_type}
+            if n_categories is not None:
+                # from the dataset's shape, not its contents (core/categories.py)
+                obj_columns_info[col]["n_categories"] = n_categories
         return obj_columns_info
 
     def _get_h5ad_layers_metadata(self, file: h5py.File) -> dict:
@@ -601,9 +631,10 @@ class h5adReader(CacheSettings):
 
     @cached_method
     def get_obs_var_codes(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
-                          column_name: Optional[str] = None, indices: Optional[List[int]] = None):
+                          column_name: Optional[str] = None, indices: Optional[List[int]] = None,
+                          used_only: bool = False, ranked: bool = False):
         """``(codes, categories)`` of a categorical obs/var column, or None,
-        as ZarrReader.get_obs_var_codes."""
+        as ZarrReader.get_obs_var_codes (``ranked``: ``(ranks, used)``)."""
         with _open(dataset_path) as f:
             layer = "obs" if entity == "cells" else "var"
             if layer not in f or column_name not in f[layer]:
@@ -612,14 +643,59 @@ class h5adReader(CacheSettings):
             if isinstance(obj, h5py.Group):
                 if not (_encoding(obj) == "categorical" or ("codes" in obj and "categories" in obj)):
                     return None
-                codes_ds, categories = obj["codes"], _values(obj["categories"])
+                codes_ds, categories_ds = obj["codes"], obj["categories"]
             else:
                 ref = obj.attrs.get("categories")
                 if not isinstance(ref, h5py.Reference):
                     return None
-                codes_ds, categories = obj, _values(f[ref])
-            codes = _values(codes_ds, None if indices is None else np.asarray(indices, dtype=np.int64))
-            return np.asarray(codes), categories.tolist()
+                codes_ds, categories_ds = obj, f[ref]
+            if ranked:
+                ranking = category_rules.column_ranking(dataset_path, entity, column_name,
+                                                        int(categories_ds.shape[0]), lambda: codes_ds[()])
+                codes = np.asarray(_values(codes_ds, None if indices is None else np.asarray(indices, dtype=np.int64)))
+                return ranking.ranks(codes), ranking.used
+            codes, categories = _coded(codes_ds, categories_ds, indices, used_only)
+            return np.asarray(codes), categories
+
+    def get_category_labels(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                            column_name: Optional[str] = None, ranks=()):
+        """Labels at ``ranks`` of a column's whole-column ranking, as
+        ZarrReader.get_category_labels."""
+        with _open(dataset_path) as f:
+            layer = "obs" if entity == "cells" else "var"
+            if layer not in f or column_name not in f[layer]:
+                return None
+            obj = f[layer][column_name]
+            if isinstance(obj, h5py.Group):
+                if not ("codes" in obj and "categories" in obj):
+                    return None
+                codes_ds, categories_ds = obj["codes"], obj["categories"]
+            else:
+                ref = obj.attrs.get("categories")
+                if not isinstance(ref, h5py.Reference):
+                    return None
+                codes_ds, categories_ds = obj, f[ref]
+            ranking = category_rules.column_ranking(dataset_path, entity, column_name,
+                                                    int(categories_ds.shape[0]), lambda: codes_ds[()])
+            return category_rules.labels_of_ranks(ranking, ranks, lambda positions: _values(categories_ds, positions))
+
+    @cached_method
+    def get_obs_var_numeric(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                            column_name: Optional[str] = None,
+                            indices: Optional[List[int]] = None) -> Optional[np.ndarray]:
+        """One numeric obs/var column as an ndarray, or None, as
+        ZarrReader.get_obs_var_numeric (no list round trip)."""
+        with _open(dataset_path) as f:
+            layer = "obs" if entity == "cells" else "var"
+            if layer not in f or column_name not in f[layer]:
+                return None
+            values, cats = _column(f, f[layer][column_name], indices)
+        if cats:
+            return None
+        values = np.asarray(values)
+        if values.ndim != 1 or values.dtype.kind not in "iuf":
+            return None
+        return values
 
     @cached_method
     def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"], rows) -> list[str]:
@@ -654,6 +730,7 @@ class h5adReader(CacheSettings):
 
             data = {}
             categories = {}
+            n_categories = {}
             if column_names is not None:
                 columns_to_get = [col for col in column_names if col in group]
             else:
@@ -685,8 +762,14 @@ class h5adReader(CacheSettings):
                 data[col_name] = values.tolist()
                 if cats:
                     categories[col_name] = cats
+                total = _category_total(f, group[col_name])
+                if total is not None and total > category_rules.READ_ALL_MAX:
+                    # the list holds only the categories these rows use
+                    n_categories[col_name] = total
 
             result = {'data': data}
+            if n_categories:
+                result['n_categories'] = n_categories
             if errors:
                 result['errors'] = errors
             if include_categories and categories:

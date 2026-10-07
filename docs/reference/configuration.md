@@ -47,8 +47,10 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `port` | `8000` | Port for `annzarro start` and the bundled gunicorn configuration. |
 | `url_prefix` | `""` | Path the app is served under behind a reverse proxy, e.g. `/explore`; empty means the root. A value that is not a plain path (`..`, `//`, `?`, `#`, spaces, a URL) stops the server at startup. Env `ANNZARRO_SERVER_URL_PREFIX`. See {doc}`../deployment/lab-server`. |
 | `workers` * | 2 x CPUs + 1, at most 4 | gunicorn worker processes, read by `annzarro.server.gunicorn_config`. Each has its own cache. |
+| `threads` | `4` | Threads per gunicorn worker. The bundled configuration uses the `gthread` worker class, so a slow request does not hold a whole worker; the server answers `workers x threads` requests at once. |
 | `data_dir` | `~/annzarro-data` | Data directory: the datasets offered in the picker (stores at its top level and in its `datasets/` subdirectory), and `sessions/` for panel sets. A configured relative path is taken from the working directory; `~` is expanded. |
 | `allowed_dirs` * | none | Extra directory trees a shared server may open, e.g. targets of symlinks in `data_dir`. Every store under them can be opened by path. |
+| `arbitrary_paths` | `admins` | Who may open a dataset path outside `data_dir` and `allowed_dirs` (after symlinks and `..` are resolved). `admins`: admins of a shared server with login, so an admin login can read any file the server process can (each such open is logged with the admin's name), and the one user of a local server (loopback, no login: a laptop, the desktop app); other users never. `local-only`: only that local user; on a shared server nobody, admins included. `none`: nobody, local servers included. Any other value stops the server at startup. Env `ANNZARRO_SERVER_ARBITRARY_PATHS`. |
 | `hosted` * | unset | `true` forces shared-server behaviour (path confinement, remote policy, compression, exposure warning) whatever the host; `false` forces local behaviour. Unset: decided by login and host. The gunicorn entry point sets `true` unless you set `false`. |
 | `proxy_count` | `0` | Number of reverse proxies whose `X-Forwarded-For/-Proto/-Host` headers are trusted. Set `1` behind nginx or Apache; never more than the proxies you run, or clients can forge their address. Any value above 0 also counts as "shared" for the remote-store policy `auto`. |
 | `debug` | `false` | Flask debug mode (reloader and interactive debugger). `true` only in the `development` layer; never on a reachable server. |
@@ -60,7 +62,7 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `cache_enabled` | `true` | Server-side cache of dataset metadata and read results. |
 | `cache_memory_mb` | `4000` | Memory bound of that cache, per process (per gunicorn worker). `base.yaml` alone: 1000. |
 | `cache_dataset_limit` | `20` | Datasets kept open in the cache. |
-| `refresh_min_interval_s` | `10` | `POST /api/v1/data/refresh` (Refresh dataset, open to every user) walks a dataset's files at most this often, in all workers together. A refresh sooner waits for the next walk, at the end of the interval (at most this long), shared by everyone waiting: a refresh is never answered by a walk older than itself. Each walk stops after 3 s: a store with more files than that (the 95.6M-cell Tahoe store) answers `status: "partial"`, and an in-place chunk write to it needs an admin's `POST /api/v1/cache/reset`. |
+| `refresh_min_interval_s` | `10` | `POST /api/v1/data/refresh` (Refresh dataset, open to every user) walks a dataset's files at most this often, in all workers together. A refresh sooner does not wait in the server: it schedules one walk for the end of the interval, shared by everyone, and answers at once `status: "scheduled"`; the browser asks again after `retry_after_s` with `after=`, and gets that walk's result. A refresh is never answered by a walk older than itself. Each walk stops after 3 s: a store with more files than that (the 95.6M-cell Tahoe store) answers `status: "partial"`, and an in-place chunk write to it needs an admin's `POST /api/v1/cache/reset`. |
 | `remote_stores` | `auto` | `auto`, `allow` or `deny` for `s3://`, `gs://`, `gcs://`, `http(s)://` stores (no other scheme is remote); see {doc}`../deployment/authentication`. |
 | `remote_allowlist` | `[]` | URL prefixes remote stores must start with, e.g. `["s3://lab-bucket/atlases/"]`. |
 | `remote_credentials` | `anonymous` | `anonymous` (unsigned requests) or `environment` (the AWS and Google standard credential chains of the server account). |
@@ -108,7 +110,7 @@ Defaults sent to the browser through `/api/v1/config`.
 | `defaults.subset_size`, `defaults.subset_seed` | `100000`, `0` | Cells in that default subset, and its seed. See {doc}`../design/subsetting`. |
 | `memory.enforce` | `block` | Browser memory guard: what happens when an action would not fit in the browser tab's memory. `block` disables it and says why, `warn` says so and lets it run, `off` never interferes. See [Browser memory](#browser-memory-uimemory). |
 | `memory.heap_gb` | `null` | JavaScript memory the tab may use, in GB. `null`: what the browser reports (Chrome: 4.4 GB on a 64-bit computer), 4.4 where it reports nothing. |
-| `memory.total_gb` | `null` | Everything the tab may hold, JavaScript and typed arrays, in GB. `null`: no limit, except half the device's memory on devices that report 4 GB or less. |
+| `memory.total_gb` | `null` | Everything the tab may hold, JavaScript and typed arrays, in GB. `null`: for a browser on the server's computer (the desktop app, or a browser on localhost), that computer's memory less a quarter, at least 4 GB, for the system and the browser; for a browser on another computer, 16; at most half the device's memory on devices that report 4 GB or less. |
 | `memory.margin` | `0.2` | Predictions are multiplied by 1 + margin before they are compared. |
 | `cache.max_entries`, `cache.max_size_mb` | `1000`, `1024` | Browser-side cache. |
 | `autosave.*` | enabled, every 10,000 ms | Autosave of the current layout to the browser's local storage. |
@@ -119,31 +121,40 @@ Defaults sent to the browser through `/api/v1/config`.
 **What it limits.** A browser closes a tab that runs out of memory, with everything on screen.
 Before every action whose memory grows with the number of points (drawing a Cell Plot, opening or
 duplicating one, applying a larger subset or every cell, a full-resolution image export, a
-recolour), the browser estimates what the action needs and compares it with what is left after
+recolour, reading the hover labels of a column with more than 65,536 categories), the browser estimates what the action needs and compares it with what is left after
 the panels already open. An action that does not fit is refused (`enforce: block`) with what it
 needs, what is free and what helps; the user guide shows how it looks ({ref}`browser-memory`).
 
 **What binds.** Chrome gives a tab's JavaScript heap 4.4 GB on a 64-bit computer (it reports this
 as `performance.memory.jsHeapSizeLimit`), and no flag raises it; a test tab died at 4.03 GB used.
 Typed arrays are outside that heap and are limited only by the computer's memory. So `heap_gb`
-is the setting that matters; `total_gb` is for computers with little memory.
+is the setting that matters for regular plots; large-plot mode keeps its points in typed arrays,
+and for it `total_gb` is the limit to set.
 
-**How the estimates were made.** On an Apple M3 Max laptop with Chrome, in the paper's scale
-benchmark ({ref}`paper-companion`): a Cell Plot in large-plot mode holds 20.2 bytes of the
-JavaScript heap per point (1.94 GB at 95.6 million points); a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
-million); the app itself 0.17 GB. A full-resolution image export draws the plot again and needs
+**How the estimates were made.** On an Apple M3 Max laptop with Chrome, drawing up to 182 million
+points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in large-plot mode keeps
+its points outside the JavaScript heap (0.1 bytes of heap per point; about 65 bytes per point of
+typed arrays, and 200 million points drew with a 13.6 GB tab and 35 MB of heap). Before v0.4.1 it
+held 20.2 bytes of heap per point and a tab died at 182 to 200 million points; a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
+million); the app itself 0.17 GB; hover labels of a categorical column 34 bytes per point plus 62 bytes
+and 2 per character per distinct label (measured at a million points: 999,998 barcodes 114 MB,
+65,000 labels 38 MB, plus the reply while it loads). There is no cap on the number of labels: a
+hover whose labels do not fit stays off, and the plot stays coloured. A full-resolution image export draws the plot again and needs
 about the plot's own share again while it runs. Some costs are still estimated from the code
 rather than measured (the export, a recolour, 3D, a table row); the guard multiplies every
 prediction by 1 + `margin` and adds 0.25 to the margin in a browser whose tab closed during a
 marked action. Firefox and Safari report no memory figures; they are held to Chrome's limit.
 
 **Defaults.** `enforce: block`, `heap_gb: null` (the browser's own limit), `total_gb: null`,
-`margin: 0.2`. With these, in the paper's v0.4.0 runs, a single plot of every cell was allowed in
-large-plot mode for stores up to 150 million cells and declined at 160 million ("Needs ~3.9 GB of
-browser JS memory; 3.9 GB free with 1 plot open (of 4.0 GB, estimated)"); two plots of 95.6
-million points are not allowed. Without the guard, the browser drew 175 million
-cells, and at 200 million the page stopped responding in 3 of 3 attempts: a hang, not a memory
-crash.
+`margin: 0.2`. With these the heap limits regular plots (a few million points) and the total
+limits large-plot mode, whose points are outside the heap (about 65 bytes per point). A browser
+cannot see the computer's memory, so the server tells a browser on its own computer how much
+there is (a loopback request no proxy forwarded); the budget is that memory less a quarter,
+at least 4 GB, for the system and the browser. On a 16 GB computer that is 12 GB, and a large
+plot of 200 million points (13.6 GB measured) is refused; on 128 GB it is drawn. A browser on
+another computer gets 16 GB unless `total_gb` says otherwise (server-wide; there is no
+per-browser setting). Whatever the budget, a large plot of more than 200 million points, the
+largest tested to draw, is refused, and the refusal says so.
 
 **When to change them.**
 

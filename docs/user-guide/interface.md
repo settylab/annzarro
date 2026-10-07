@@ -31,6 +31,8 @@ The header. Numbers match the list below.
 8. **Load Panel Set** opens the list of stored panel sets.
 9. **Share Link** copies a URL that reopens this dataset, layout and focus ({doc}`share-links`).
 
+A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).
+
 Below the header, the statistics bar shows the number of cells (8,090) with a badge, **All
 cells**, the number of genes (16285) and the dataset's display name. Datasets with more than
 200,000 cells open on a reproducible subset of 100,000 cells; the badge then reads **Subset ·
@@ -56,8 +58,10 @@ The gene picker after typing `H2-`: the regular-expression button (1) and the ma
 
 The **.\*** button (1) above the list switches to a case-insensitive regular expression, for
 example `^H2-(Aa|Ab1)$`. The **Focused Cell** picker works the same way on cell names; with a
-{doc}`cell subset <subsets>` it only finds cells in the subset. Because the list is fetched from
-the server, the pickers stay fast with millions of names.
+{doc}`cell subset <subsets>` it lists the subset's cells first and then the dataset's others,
+marked **not shown**. Because the list is fetched from the server, the pickers stay fast with
+millions of names; while a search is still running the line under the box says "searching…" (or
+"Building the name index…" for the first search of a very large dataset), never "No cell matches".
 
 Every focus change, whether from a picker, a plot click or a table click, is added to the
 history behind the arrow buttons. Going back and then choosing a new item discards the forward

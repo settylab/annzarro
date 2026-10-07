@@ -1,3 +1,4 @@
+import { plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { 
   loadAxisData, 
@@ -15,7 +16,7 @@ import {
   loadingIndicator
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
-import { processCategories, isLegendProxy, axisTitle } from './plot-make-helper.js';
+import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle } from './plot-make-helper.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
@@ -352,7 +353,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         size: settings.pointSize,
                         opacity: settings.pointOpacity,
                         color: data.color,
-                        colorscale: settings.colorScale,
+                        colorscale: plotlyColorscale(settings.colorScale),
                         reversescale: settings.colorReversed,
                         cmin: settings.colorMin !== null ? settings.colorMin : arrayMin(data.color.filter(v => !isNaN(v))),
                         cmax: settings.colorMax !== null ? settings.colorMax : arrayMax(data.color.filter(v => !isNaN(v))),
@@ -460,7 +461,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                   }
                   
                   if (updateOptions.colorScale || updateOptions.colors) {
-                      update['marker.colorscale'] = settings.colorScale;
+                      update['marker.colorscale'] = [plotlyColorscale(settings.colorScale)];   // [ ]: a stops array is one value, not one per trace
                       update['marker.reversescale'] = settings.colorReversed;
                   }
                   
@@ -554,7 +555,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         size: settings.pointSize,
                         opacity: settings.pointOpacity,
                         color: tableFilteredIndices.map(i => data.color[i]),
-                        colorscale: settings.colorScale,
+                        colorscale: plotlyColorscale(settings.colorScale),
                         reversescale: settings.colorReversed,
                         cmin: settings.colorMin !== null ? settings.colorMin : undefined,
                         cmax: settings.colorMax !== null ? settings.colorMax : undefined,
@@ -596,16 +597,15 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 }
                 
                 if (updateOptions.colorScale || updateOptions.colors) {
-                    update['marker.colorscale'] = settings.colorScale;
+                    update['marker.colorscale'] = [plotlyColorscale(settings.colorScale)];   // [ ]: a stops array is one value, not one per trace
                     update['marker.reversescale'] = settings.colorReversed;
                 }
                 
-                if (settings.colorMin !== null && (updateOptions.colorRange || updateOptions.colors)) {
-                    update['marker.cmin'] = settings.colorMin;
-                }
-                
-                if (settings.colorMax !== null && (updateOptions.colorRange || updateOptions.colors)) {
-                    update['marker.cmax'] = settings.colorMax;
+                // An unset bound goes back to Plotly's auto range (null): skipping
+                // it kept the previous colour values' range on the trace
+                if (updateOptions.colorRange || updateOptions.colors) {
+                    update['marker.cmin'] = settings.colorMin ?? null;
+                    update['marker.cmax'] = settings.colorMax ?? null;
                 }
                 
                 if (Object.keys(update).length > 0) {
@@ -907,7 +907,7 @@ export async function loadColorDataAndUpdatePlot(
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
-        const colorData = await loadAxisData(settings.color, data.entities, plotContainer);
+        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour', panel: settings });
 
         if (colorData && colorData.values) {
             // Update the data cache with new color information.
@@ -915,6 +915,9 @@ export async function loadColorDataAndUpdatePlot(
             data.colorType = colorData.type;
             applyLogColor(data, settings);
             data.colorCategories = colorData.categories;
+            data.colorRankOf = colorData.rankOf || null;
+            data.colorRanked = !!colorData.ranked;
+            data.colorGroupNames = colorData.groupNames || null;
             // Colour DESCRIBES the points (see ROLE). Without this the panel
             // kept announcing the PREVIOUS colour column's coverage -- and, on
             // a refocus, said nothing about a varp/obsp/layer row that came back
@@ -1293,11 +1296,11 @@ export async function restyleMarkers(plotContainer, settings) {
     // every trace: out of V8 heap at 95.6M points, the heap nearly doubled
     // at 5M (utils/gl-markers.js). The axes keep their range.
     const is3D = plotContainer.data.some(t => t && t.type === 'scatter3d');
-    if (!is3D && setGlMarkers(plotContainer, (trace) => (isLegendProxy(trace) ? null
+    if (!is3D && setGlMarkers(plotContainer, (trace) => (keepsOwnMarker(trace) ? null
         : isHighlight(trace) ? { size: settings.pointSize * 2 }
         : { size: settings.pointSize, opacity: settings.pointOpacity }))) return;
     plotContainer.data.forEach((trace, i) => {
-        if (isLegendProxy(trace)) return;   // legend entries stay at full opacity
+        if (keepsOwnMarker(trace)) return;   // legend entries stay at full opacity, the colour bar's point hidden
         (isHighlight(trace) ? highlightIdx : dataIdx).push(i);
     });
     if (dataIdx.length) {

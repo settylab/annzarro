@@ -31,7 +31,10 @@ A spec, sent as compact JSON:
   "where": [                // optional: AND of conditions on obs columns
     {"col": "cluster",  "op": "in",      "values": ["3", "5"]},
     {"col": "n_counts", "op": ">=",      "value": 500},
-    {"col": "age",      "op": "between", "value": [2, 18]} ],
+    {"col": "age",      "op": "between", "value": [2, 18]},
+    {"col": "drug",     "op": "contains", "value": "mab"},
+    {"any": [ {"col": "batch", "op": "empty"},          // a group: OR (or "all": AND)
+              {"col": "n_counts", "op": "<", "value": 100} ]} ],
   "part": 0 }               // optional: which part of the partition (below); 0 when absent
 ```
 
@@ -39,6 +42,18 @@ Ops: `in`, `not_in` (matched on the value's text: `3` and `3.0` are `"3"`,
 booleans are `"true"`/`"false"`), and `>`, `>=`, `<`, `<=`, `==`, `!=`,
 `between` (inclusive) on numbers. A missing value passes no condition, including
 `!=` and `not_in`.
+
+Text conditions are the cell table's SearchBuilder string conditions: `contains`,
+`not_contains`, `starts_with`, `not_starts_with`, `ends_with`, `not_ends_with` (one `value`,
+compared case-insensitively: SearchBuilder lower-cases both sides) and `empty`, `not_empty`. They
+see a missing value as empty text, as the table does, so a missing value passes `empty` and
+every `not_*`. Groups `{"any": [...]}` / `{"all": [...]}` nest at most two deep.
+
+Evaluation stays one pass over the cells at any size. A categorical column answers each text
+condition once per category (a lookup table over the codes), so its cost is the codes' read and
+one lookup per cell; a plain string column is tested a block of one million cells at a time,
+with each distinct text tested once. Groups combine the conditions' masks in place; only the
+column last named is held.
 
 **Which cells.** Every row gets a rank key `splitmix64(splitmix64(seed) ^ row)`;
 the subset is the `n` eligible rows with the smallest keys, in dataset order.

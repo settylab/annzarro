@@ -60,6 +60,26 @@ function hostsFor(input) {
 }
 
 /**
+ * Whether a failed request is STRING's 404 "did not find any matches"
+ * (gene-set-fixtures/string-404-nothing-found.json): its JSON error body,
+ * not the status alone.
+ * @param {*} error
+ */
+export function isNoMatches(error) {
+    if (!error || error.status !== 404 || typeof error.body !== 'string') return false;
+    let j;
+    try {
+        j = JSON.parse(error.body);
+    } catch {
+        return false;
+    }
+    const e = Array.isArray(j) ? j[0] : j;
+    if (!e || typeof e !== 'object') return false;
+    return /^nothing found$/i.test(String(e.Error || '').trim())
+        || /did not find any matches/i.test(String(e.ErrorMessage || ''));
+}
+
+/**
  * The genes as STRING ids: [{query, stringId, preferredName}] for those it
  * knows, and the names it does not. Shared by the sections of one panel
  * for the same genes (io.memo).
@@ -74,8 +94,10 @@ export async function mapToString(io, input, genes, genesHash) {
             });
         } catch (error) {
             // 404 "nothing found" is STRING's answer that it knows none of
-            // the ids, not a failure: an empty mapping (the section then says so)
-            if (error && error.kind === 'http' && error.status === 404) rows = [];
+            // the ids, not a failure: an empty mapping (the section then says
+            // so). Any other 404 is an address STRING does not serve (a
+            // retired version host, a moved API) and stays that failure.
+            if (isNoMatches(error)) rows = [];
             else throw error;
         }
         if (!Array.isArray(rows)) throw parseError('STRING sent no id list');
@@ -178,6 +200,13 @@ export const stringEnrichment = {
         const select = cats.length > 1 ? ctx.el('select', { class: 'form-select form-select-sm gs-filter', aria: { label: 'Category' } },
             ctx.el('option', { value: '', text: `All categories (${result.terms.length})` }),
             cats.map(c => ctx.el('option', { value: c, text: `${CATEGORY_LABELS[c] || c} (${result.terms.filter(t => t.category === c).length})` }))) : null;
+        // the category chosen before a rerun, if these results have it; if not, say so
+        const view = ctx.view || { get: () => undefined, set: () => {} };
+        const kept = view.get('category');
+        let lost = null;
+        if (kept) {
+            if (cats.includes(kept)) { if (select) select.value = kept; } else lost = `${CATEGORY_LABELS[kept] || kept} is not among these results: showing all categories.`;
+        }
         const draw = () => {
             ctx.clear(body);
             const terms = select && select.value ? result.terms.filter(t => t.category === select.value) : result.terms;
@@ -192,8 +221,9 @@ export const stringEnrichment = {
                     { text: t.description, title: `${t.term}${t.names.length ? `: ${t.names.join(', ')}` : ''}` },
                     { text: `${t.genes} / ${t.background}`, cls: 'gs-num' }, { text: ctx.sci(t.fdr), cls: 'gs-num' }]), 'terms'));
         };
-        if (select) select.addEventListener('change', draw);
-        el.append(ctx.el('div', { class: 'gs-result-head' }, ctx.el('span', { text: summary }), select), body,
+        if (select) select.addEventListener('change', () => { view.set('category', select.value); draw(); });
+        el.append(ctx.el('div', { class: 'gs-result-head' }, ctx.el('span', { text: summary }), select),
+            lost ? ctx.el('p', { class: 'gs-note gs-category-reset', text: lost }) : '', body,
             attribution(ctx, provider(input), result.backgroundSize !== null
                 ? `background: ${result.backgroundSize.toLocaleString('en-US')} of the dataset's genes` : 'background: whole genome'));
         draw();

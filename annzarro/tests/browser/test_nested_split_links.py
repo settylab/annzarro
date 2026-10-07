@@ -13,10 +13,11 @@ buttons, the pane's chooser, dragging the handles, hiding a panel's
 controls), clicks Share Link and opens the link in a fresh browser context,
 so no autosave can help. The tile tree, the pane sizes, the panel types and
 configs, which controls are shown, and the height of each panel row must
-match, and the bottom chooser must come back once, below the rows. One case
-also saves a panel set and loads it in another fresh context. After a
+match, and the bottom chooser must come back once, below the rows. After a
 restore every plot must be drawn inside its tile and above the chooser, and
-every split handle must still resize its own split.
+every split handle must still resize its own split. One case also saves a
+panel set: the stored layout keeps every level; loading the set in a fresh
+context (its Load button) brings back the same tree, sizes and settings.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -93,7 +94,7 @@ TREE_JS = r"""
   const walk = (el) => {
     if (el.classList.contains('panel-wrapper')) {
       const c = kids(el, ['split-container', 'tile', 'tile-selector'])[0];
-      return c ? {row: el.style.height, content: walk(c)} : null;
+      return c ? {row: el.style.getPropertyValue('--panel-height'), content: walk(c)} : null;
     }
     if (el.classList.contains('tile-selector')) {
       const header = el.querySelector('.tile-selection-header');
@@ -280,8 +281,12 @@ def test_nested_layout_round_trips_through_a_share_link(server, browser, case):
         before = opened.evaluate(SIZES_JS)
         handles = opened.locator(".tile-container .split-container > .split-handle")
         for i in range(handles.count()):
+            # rows grow with their content now, so a handle can be below the window
+            handles.nth(i).scroll_into_view_if_needed()
             box = handles.nth(i).bounding_box()
             x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+            if box["height"] > 400:   # a tall handle: grab it inside the window
+                y = max(box["y"], 0) + 100
             opened.mouse.move(x, y)
             opened.mouse.down()
             opened.mouse.move(x + 40, y + 40, steps=4)
@@ -305,14 +310,26 @@ def test_nested_layout_round_trips_through_a_panel_set(server, browser):
         page.wait_for_selector(".panel-type-option[data-type='cell-plot']", timeout=30000)
         _build(page, "horizontal-then-vertical-left")
         built = page.evaluate(TREE_JS)
+        hierarchy = page.evaluate("() => PanelManager.saveLayout().hierarchy")
         page.click("#btn-save-session")
         page.fill("#session-name", "nested-splits")
         page.click("#btn-confirm-session")
         page.wait_for_function("() => document.getElementById('session-modal').offsetParent === null")
 
+        # the dialog closes before the server has written the file
+        stored = {}
+        for _ in range(40):
+            stored = page.evaluate("() => fetch('/api/v1/sessions/load?name=nested-splits').then(r => r.json())")
+            if "view" in stored:
+                break
+            time.sleep(0.25)
+        assert stored["view"]["layout"]["hierarchy"] == hierarchy
+        assert hierarchy[0]["children"][0]["type"] == "split"  # the nested level
+
         opened = fresh.new_page()
         errors += _open(opened, url)
-        opened.locator(".session-item", has_text="nested-splits").first.click()
+        opened.locator(".session-item", has_text="nested-splits").first.locator(".session-load").click()
+        opened.wait_for_selector(".tile[data-tile-id]", timeout=30000)
         _settle(opened)
         assert opened.evaluate(TREE_JS) == built
         assert _configs(opened) == _configs(page)

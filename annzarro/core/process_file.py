@@ -3,7 +3,8 @@ from pathlib import Path
 from .reader import Reader
 from .remote import raise_if_timeout
 from .array_response import array_response, binary_response, categorical_response, numeric_array
-from typing import Literal
+from . import categories as category_rules
+from typing import Literal, Optional
 import logging
 from . import freshness
 from .zarr_reader import consolidated_notice
@@ -175,21 +176,51 @@ def extract_cells_genes(dataset_path: str, type: Literal["cells", "genes"], read
         }), 500
     
 def extract_obs_var_codes(dataset_path: str, reader: Reader, indices, column: str,
-                          type: Literal["cells", "genes"]):
+                          type: Literal["cells", "genes"], used_only: bool = False,
+                          n_categories: Optional[int] = None, ranked: bool = False):
     """One categorical obs/var column as codes + categories (binary), or None
     when the column is not categorical or the reader cannot give codes; the
-    caller then answers as before."""
+    caller then answers as before. With ``used_only`` (or past
+    READ_ALL_MAX categories) the categories are those the rows use, and the
+    reply says the column's full count. With ``ranked``, each row's code is
+    its category's rank over the whole column and no label is sent
+    (core/categories.py)."""
     get_codes = getattr(reader, "get_obs_var_codes", None)
     if get_codes is None:
         return None
-    result = get_codes(entity=type, dataset_path=dataset_path, column_name=column, indices=indices)
+    if ranked:
+        result = get_codes(entity=type, dataset_path=dataset_path, column_name=column, indices=indices,
+                           ranked=True)
+        if result is None:
+            return None
+        ranks, used = result
+        return categorical_response(ranks, [], total=n_categories, used=used, ranked=True)
+    result = get_codes(entity=type, dataset_path=dataset_path, column_name=column, indices=indices,
+                       used_only=used_only)
     if result is None:
         return None
     codes, categories = result
-    return categorical_response(codes, categories)
+    compact = used_only or (n_categories is not None and n_categories > category_rules.READ_ALL_MAX)
+    return categorical_response(codes, categories, total=n_categories if compact else None)
 
 
 def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], column_names: list[str], include_categories: bool, type: Literal["cells", "genes"], binary: bool = False):
+    if binary and column_names and len(column_names) == 1:
+        # One numeric column, binary: the array as read, without the Python
+        # list get_obs_var builds for JSON (95.6M floats: ~3 GB of objects,
+        # costed for the cache item by item). The same bytes as the list
+        # path below; anything else (categorical, string, boolean, a missing
+        # entry) falls through to it.
+        take = getattr(reader, "get_obs_var_numeric", None)
+        values = None
+        if take is not None:
+            try:
+                values = take(entity=type, dataset_path=dataset_path, column_name=column_names[0], indices=indices)
+            except Exception as e:
+                raise_if_timeout(e)
+                values = None       # the list path reads it again and states the error
+        if values is not None:
+            return binary_response(values)
     try:
         result = reader.get_obs_var(
             dataset_path=dataset_path, 

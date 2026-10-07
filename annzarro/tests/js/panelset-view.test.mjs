@@ -17,7 +17,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const {
-    panelSetToView, defaultHierarchy, remapPanelReferences, collectTileIds, VIEW_SCHEMA_VERSION
+    panelSetToView, defaultHierarchy, remapPanelReferences, collectTileIds, closePlanPanels, panelsToAdd, VIEW_SCHEMA_VERSION
 } = await import('../../../static/js/utils/deeplink.js');
 
 const legacyE = () => ({
@@ -141,4 +141,92 @@ test('the same store named relative and absolute is not a dataset switch', async
     assert.equal(sameDatasetPath('/a/x.zarr', '/b/x.zarr'), false);
     assert.equal(sameDatasetPath('s3://bucket/x.zarr', 's3://bucket/x.zarr'), true);
     assert.equal(sameDatasetPath('', '/data/x.zarr'), false);
+});
+
+// A panel set the user loads opens none of its panels: on a large set that
+// could overload the machine (operator report). closePlanPanels keeps the
+// dataset, subset and focus and lists every panel closed with its config.
+test('closePlanPanels lists every panel of a set closed, open ones first', () => {
+    const plan = panelSetToView({ ...legacyE(), view: { v: 1, subset: { n: 500, seed: 0 },
+        constants: { focusedCell: 'c9' },
+        layout: { v: 1, hierarchy: [{ type: 'split', direction: 'horizontal',
+            panes: [{ percentage: 50 }, { percentage: 50 }],
+            children: [{ type: 'tile', id: 'cell-table-1' }, { type: 'tile', id: 'cell-plot-2' }] }],
+            panelConfigs: { 'cell-table-1': { id: 'cell-table-1', title: 't' },
+                            'cell-plot-2': { id: 'cell-plot-2', tableFilter: 'cell-table-1', pointSize: 3 },
+                            'gene-plot-3': { id: 'gene-plot-3' } } } } });
+    const before = JSON.parse(JSON.stringify(plan));
+    const closed = closePlanPanels(plan);
+    assert.deepEqual(plan, before, 'the input plan is not changed');
+    assert.equal(closed.view.layout, undefined);
+    // the set's view is kept whole for "Open saved layout"
+    assert.deepEqual(closed.savedView, before.view);
+    assert.equal(closed.savedCount, 2);
+    assert.equal(closed.view.panels, undefined);
+    assert.deepEqual(closed.view.subset, { n: 500, seed: 0 });
+    assert.deepEqual(closed.view.constants, { focusedCell: 'c9' });
+    assert.equal(closed.datasetPath, '/data/bm_aging.zarr');
+    assert.deepEqual(closed.closedPanels, [
+        { id: 'cell-table-1', type: 'cell-table', config: { id: 'cell-table-1', title: 't' } },
+        { id: 'cell-plot-2', type: 'cell-plot', config: { id: 'cell-plot-2', tableFilter: 'cell-table-1', pointSize: 3 } },
+        { id: 'gene-plot-3', type: 'gene-plot', config: { id: 'gene-plot-3' } }
+    ]);
+});
+
+test('closePlanPanels closes a legacy set\'s panels too, settings kept', () => {
+    const closed = closePlanPanels(panelSetToView(legacyE()));
+    assert.equal(closed.view.layout, undefined);
+    assert.deepEqual(closed.closedPanels.map(p => p.id), ['cell-table-E1', 'cell-plot-E2', 'cell-plot-old']);
+    assert.equal(closed.closedPanels[1].config.tableFilter, 'cell-table-E1');
+    assert.equal(closed.closedPanels[0].config.searchBuilderConfig.criteria[0].value[0], 'HSC');
+});
+
+test('closePlanPanels takes the flat panel list of a hand-written view', () => {
+    const closed = closePlanPanels({ datasetPath: '/d', legacy: false, closedPanels: [],
+        view: { v: 1, panels: [{ type: 'cell_plot', title: 'P', config: { pointSize: 4 } }] } });
+    assert.equal(closed.view.panels, undefined);
+    assert.deepEqual(closed.closedPanels, [{ id: null, type: 'cell-plot', config: { pointSize: 4, title: 'P' } }]);
+    assert.equal(closed.savedCount, 1);
+    assert.equal(closePlanPanels(null), null);
+});
+
+test('closePlanPanels offers no saved layout for a set that opens nothing', () => {
+    const closed = closePlanPanels(panelSetToView({ name: 'x', dataset: '/d', panelConfigs: {} }));
+    assert.equal(closed.savedView, null);
+    assert.equal(closed.savedCount, 0);
+});
+
+// "Add to closed panels" (operator follow-up): the set's panels join the
+// closed list beside what is open. Clashing ids get fresh ones, and a plot's
+// tableFilter follows its own table's rename instead of landing on the open
+// panel that has the old id.
+const counter = () => { let n = 0; return type => `${type}-new${++n}`; };
+
+test('panelsToAdd keeps ids that are free, with every config', () => {
+    const added = panelsToAdd(panelSetToView(legacyE()), () => false, counter());
+    assert.deepEqual(added.map(p => [p.type, p.config.id]),
+        [['cell-table', 'cell-table-E1'], ['cell-plot', 'cell-plot-E2'], ['cell-plot', 'cell-plot-old']]);
+    assert.equal(added[1].config.tableFilter, 'cell-table-E1');
+    assert.equal(added[0].config.searchBuilderConfig.criteria[0].value[0], 'HSC');
+});
+
+test('panelsToAdd renames clashing ids and keeps tableFilter inside the set', () => {
+    const open = new Set(['cell-table-E1', 'cell-plot-E2']);   // the same set is open already
+    const added = panelsToAdd(panelSetToView(legacyE()), id => open.has(id), counter());
+    const ids = added.map(p => p.config.id);
+    assert.deepEqual(ids, ['cell-table-new1', 'cell-plot-new2', 'cell-plot-old']);
+    assert.equal(new Set(ids).size, ids.length);
+    // the plot filters by the ADDED table, not the open one with the old id
+    assert.equal(added[1].config.tableFilter, 'cell-table-new1');
+});
+
+test('panelsToAdd leaves the plan alone and gives every panel an id', () => {
+    const plan = panelSetToView(legacyE());
+    const before = JSON.parse(JSON.stringify(plan));
+    panelsToAdd(plan, id => !id.includes('-new'), counter());   // every saved id taken
+    assert.deepEqual(plan, before);
+    const flat = panelsToAdd({ datasetPath: '/d', legacy: false, closedPanels: [],
+        view: { v: 1, panels: [{ type: 'cell_plot' }, { type: 'cell_plot' }] } }, () => false, counter());
+    assert.deepEqual(flat.map(p => p.config.id), ['cell-plot-new1', 'cell-plot-new2']);
+    assert.deepEqual(panelsToAdd(null, () => false, counter()), []);
 });

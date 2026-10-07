@@ -84,13 +84,22 @@ class Services:
         self.root = root
         self.calls = []        # (endpoint, method, url)
         self.unmocked = []
-        self.fail = {}         # endpoint -> list of outcomes to use first: 'timedout', 503, ...
+        self.fail = {}         # endpoint -> list of outcomes to use first: 'timedout', 'net', 'blocked', 503, ...
+        self.probes = []       # the panel's no-cors checks of a failed host's root
+        self.hosts_answer = set()  # hosts whose root answers that check
+        self.bodies = {}       # endpoint -> reply body to use instead of the recording
 
     def handle(self, route):
         req = route.request
         url = req.url
         if url.startswith(self.root) or url.startswith(("data:", "blob:")):
             return route.continue_()
+        root = re.match(r"^https://([^/]+)/$", url)
+        if root:
+            self.probes.append(root.group(1))
+            if root.group(1) in self.hosts_answer:
+                return route.fulfill(status=200, body="")
+            return route.abort("internetdisconnected")
         for endpoint, pattern, name, ctype in REPLIES:
             if re.search(pattern, url):
                 self.calls.append((endpoint, req.method, url))
@@ -99,7 +108,16 @@ class Services:
                     outcome = queued.pop(0)
                     if outcome == "timedout":
                         return route.abort("timedout")
+                    if outcome == "net":
+                        return route.abort("internetdisconnected")
+                    if outcome == "blocked":
+                        # the browser keeps the request from the page (as for a missing CORS
+                        # header or an extension): fetch fails, the host itself answers
+                        return route.abort("blockedbyclient")
                     return route.fulfill(status=outcome, body="", headers={"Access-Control-Allow-Origin": "*"})
+                if endpoint in self.bodies:
+                    return route.fulfill(status=200, body=self.bodies[endpoint],
+                                         headers={"Content-Type": ctype, "Access-Control-Allow-Origin": "*"})
                 if endpoint == "mygene-lookup":
                     name = "mygene-query-alias.json" if "scopes=alias" in (req.post_data or "") else "mygene-query-symbol.json"
                 return route.fulfill(status=200, body=_read(name), headers={"Content-Type": ctype, "Access-Control-Allow-Origin": "*"})
@@ -258,6 +276,8 @@ def test_run_asks_then_fetches_and_states_coverage(env):
     page.click(f"{GS} .gs-run")
     page.wait_for_selector(f"{GS} .gs-consent:not([hidden])")
     consent = page.inner_text(f"{GS} .gs-consent")
+    # the one request beyond those listed is named before anything is sent
+    assert "asks that service once for its home page (a bare GET, nothing of yours in it)" in " ".join(consent.split())
     for host in ("version-12-5.string-db.org", "biit.cs.ut.ee", "mygene.info"):
         assert host in consent
     assert services.calls == [], "nothing before the answer"
@@ -372,7 +392,7 @@ def test_a_failing_service_fails_its_section_only(env):
     until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().runs['string-enrichment'].status === 'error'")
     _all_ok(page, ["string-network", "gprofiler-gost", "mygene-mapping", "mygene-card"])
     s = state(page)["runs"]["string-enrichment"]
-    assert s["error"]["kind"] == "http" and s["error"]["status"] == 503 and s["error"]["attempts"] == 2, s
+    assert s["error"]["kind"] == "down" and s["error"]["status"] == 503 and s["error"]["attempts"] == 2, s
     section = f'{GS} .gs-section[data-section="string-enrichment"]'
     text = page.inner_text(section)
     assert "Could not get enrichment from STRING. Other sections are not affected." in text
@@ -386,6 +406,46 @@ def test_a_failing_service_fails_its_section_only(env):
     page.click(f'{section} .gs-placeholder-do button:has-text("Retry")')
     _all_ok(page, ["string-enrichment"])
     assert services.count("string-enrichment") == 3
+
+
+def test_each_failure_is_named_and_offers_retry(env):
+    """No connection (route abort), a request the browser blocks while its
+    host answers, and a 404 that is not STRING's "no matches": each section says
+    which happened, offers Retry, and none calls it "not found"."""
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    services.fail["string-enrichment"] = ["net", "net"]
+    services.fail["gprofiler"] = ["blocked"]
+    services.hosts_answer.add("biit.cs.ut.ee")
+    services.fail["mygene-card"] = [404]
+    page.click(f"{GS} .gs-run")
+    page.wait_for_selector(f"{GS} .gs-consent:not([hidden])")
+    page.click(f"{GS} .gs-consent button:has-text('Send')")
+    for sid in ("string-enrichment", "gprofiler-gost", "mygene-card"):
+        until(page, f"() => window.PanelManager.getPanel('gene-set-G')._debugState().runs['{sid}'].status === 'error'")
+    runs_ = state(page)["runs"]
+    assert runs_["string-enrichment"]["error"]["kind"] == "unreachable", runs_["string-enrichment"]
+    assert runs_["string-enrichment"]["error"]["attempts"] == 2
+    assert runs_["gprofiler-gost"]["error"]["kind"] == "blocked", runs_["gprofiler-gost"]
+    assert runs_["mygene-card"]["error"]["kind"] == "endpoint", runs_["mygene-card"]
+    said = {
+        "string-enrichment": "could not connect to version-12-5.string-db.org: no network, the address did not resolve, "
+                             "or the service is down",
+        "gprofiler-gost": "biit.cs.ut.ee answered, but the browser blocked its reply: the service does not allow "
+                          "requests from this page (CORS)",
+        "mygene-card": "mygene.info has no such address (HTTP 404)",
+    }
+    for sid, text in said.items():
+        section = f'{GS} .gs-section[data-section="{sid}"]'
+        shown = " ".join(page.inner_text(section).split())
+        assert text in shown, shown
+        assert "knows none" not in shown and "not found" not in shown.lower(), shown
+        assert page.locator(f'{section} .gs-placeholder-do button:has-text("Retry")').count() == 1
+    assert "version-12-5.string-db.org" in services.probes and "biit.cs.ut.ee" in services.probes
+    # Retry, with the network back: the section fetches and shows its result
+    page.click(f'{GS} .gs-section[data-section="string-enrichment"] .gs-placeholder-do button:has-text("Retry")')
+    _all_ok(page, ["string-enrichment"])
 
 
 def test_clicking_a_gene_moves_the_links(env):
@@ -1022,3 +1082,65 @@ def test_string_finding_nothing_is_an_answer_that_names_the_species(browser, spe
         assert not errors
     finally:
         context.close()
+
+
+ENRICH = f'{GS} .gs-section[data-section="string-enrichment"]'
+
+
+def _refresh_after_change(page, text):
+    _search(page, text)
+    until(page, "() => /Selection changed/.test(document.querySelector('%s .gs-bar__text').textContent)" % GS)
+    page.click(f'{GS} .gs-bar__actions button:has-text("Refresh")')
+    _all_ok(page)
+    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().stale === null")
+    page.wait_for_timeout(300)
+
+
+def _enrichment_view(page):
+    return page.evaluate("""(sel) => { const s = document.querySelector(sel);
+        const f = s.querySelector('.gs-filter');
+        const cats = [...s.querySelectorAll('.gs-long tbody tr')].map(r => r.cells[0].textContent);
+        const note = s.querySelector('.gs-category-reset');
+        const more = s.querySelector('.gs-more button');
+        return { filter: f ? f.value : null, rows: cats.length, cats: [...new Set(cats)],
+                 note: note ? note.textContent : null, more: more ? more.textContent : null }; }""", ENRICH)
+
+
+def test_a_rerun_keeps_the_category_and_the_full_table(env):
+    """A rerun (Refresh after the selection changed) redraws STRING's enrichment. It used to come
+    back on "All categories" and on the first 25 rows, so the reader picked GO Process again."""
+    page, services, root = env
+    page.goto(_link(root))
+    _ready(page)
+    _run_and_send(page)
+
+    # the full table, then a rerun: still the full table
+    page.click(f'{ENRICH} button:has-text("Show all")')
+    full = _enrichment_view(page)
+    assert full["rows"] > 25 and full["more"] == "Show fewer", full
+    _refresh_after_change(page, "GENE01")
+    v = _enrichment_view(page)
+    assert (v["rows"], v["more"], v["filter"]) == (full["rows"], "Show fewer", ""), v
+
+    # a category, then a rerun: still that category
+    page.select_option(f"{ENRICH} .gs-filter", "Process")
+    v = _enrichment_view(page)
+    assert v["filter"] == "Process" and v["cats"] == ["GO Process"], v
+    _refresh_after_change(page, "GENE00")
+    v = _enrichment_view(page)
+    assert v["filter"] == "Process" and v["cats"] == ["GO Process"] and v["note"] is None, v
+
+    # results without that category: all categories, and the panel says why
+    rows = json.loads(_read("string-enrichment.json"))
+    services.bodies["string-enrichment"] = json.dumps([r for r in rows if r["category"] != "Process"]).encode()
+    _refresh_after_change(page, "GENE0")          # a new selection: results already fetched are reused
+    v = _enrichment_view(page)
+    assert v["filter"] == "" and "GO Process" not in v["cats"] and len(v["cats"]) > 1, v
+    assert v["note"] == "GO Process is not among these results: showing all categories.", v
+
+    # and back: the choice was kept, so it applies again when the category is back
+    del services.bodies["string-enrichment"]
+    _refresh_after_change(page, "GENE00")
+    v = _enrichment_view(page)
+    assert v["filter"] == "Process" and v["note"] is None, v
+    assert not services.unmocked, services.unmocked

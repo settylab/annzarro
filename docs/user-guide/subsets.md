@@ -29,7 +29,10 @@ Every cell is shown: the badge reads **All cells**.
 :width: 35%
 :alt: The statistics bar reading Cells 3,000 of 8,090 with the yellow badge Subset · seed 0 (1).
 
-A subset is active: **Cells: 3,000 of 8,090** and the badge **Subset · seed 0**.
+A subset is active: **Cells: 3,000 of 8,090** and the badge **Subset · seed 0**. A balanced
+subset says so in the badge too, for example **Subset · seed 0 · balanced by cell_line_id**, and a
+filtered one adds **filtered**; in a narrow window the badge drops the word "Subset" first, and its
+tooltip has the full description.
 ```
 
 Hover over the badge for the details, for example "Showing 3,000 of 8,090 cells (seed 0, balanced by
@@ -91,11 +94,22 @@ show the dialog. On a large dataset the steps are the same.
    1,000 cells from each of Mid, Old and Young.
 6. **Filter**: click **Add condition** and choose an obs column, an
    operator and a value. Text columns offer "is one of" and "is not one of" (values comma
-   separated); numeric columns offer >, ≥, <, ≤, =, ≠ and "between". Conditions are joined by AND;
-   a cell with a missing value passes no condition. Here, `n_genes_by_counts ≥ 1000`.
-   **Use** next to a cell table copies that table's filter of an open cell table instead (a top-level AND of conditions
-   on obs columns; anything else is reported as not copied). Unlike the table, which only holds
-   the cells already loaded, the subset applies the conditions to every cell of the dataset.
+   separated), and "contains", "does not contain", "starts with", "does not start with", "ends with",
+   "does not end with", "is empty" and "is not empty" (one piece of text, upper and lower case
+   alike, as in a cell table); numeric columns offer >, ≥, <, ≤, =, ≠ and "between". Conditions
+   are joined by AND. A cell with a missing value passes no "is one of", "is not one of" or
+   number condition; for the text conditions it counts as empty text, as it does in a cell table, so
+   it passes "is empty" and every "does not ..." condition. Here, `n_genes_by_counts ≥ 1000`.
+   **Use** next to a cell table copies that table's filter of an open cell table instead: conditions on obs
+   columns joined by AND or OR, in groups nested up to two deep, with =, ≠, the text conditions above, "empty"
+   and "not empty" on text, and the number conditions on numbers. A group copied this way is shown
+   in words with a remove button. Anything the subset cannot apply to all cells is reported as not
+   copied (a column that is not an obs column, a number's "not between", a text condition on a
+   Yes/No column, deeper groups); an OR that has such a condition inside it is not copied at all, since
+   leaving that side out would keep fewer cells than the table does. Unlike the table, which only holds
+   the cells already loaded, the subset applies the conditions to every cell of the dataset. On a
+   categorical column the server tests each category once and then makes one pass over the codes, so
+   a text filter on 95 million cells costs about as much as "is one of".
 7. The preview line under the form says how many cells will be shown, how many pass the filter
    and, for balanced sampling, how many are taken per group. It warns when the subset is so large
    that drawing it can make the browser slow.
@@ -155,6 +169,8 @@ with the subset applied as above.
 ### Balanced parts
 
 With **Balanced across** a column, every part is as balanced as the cells not yet shown allow.
+A column with more than 10,000 categories is listed but cannot be chosen: one group per cell is
+no balance.
 Small groups are used up in the first parts, so later parts hold the larger groups only. Here
 `bm_aging.zarr` is split into nine parts of 1,000 cells balanced across `highres_celltype` (31
 cell types). By part 7, 28 of them have been shown in full, and the part holds the three largest
@@ -248,6 +264,8 @@ In large-plot mode:
   Focusing a cell by name asks the server for it; on a dataset with tens of millions of cells the
   first such search waits while the server builds its name index (about 7 s for 50 million cells;
   a server running on your own computer builds it in the background as soon as the plot is drawn).
+  Meanwhile the picker says "Building the name index (first search of this dataset)…", and it
+  answers once the index is ready; it says "No cell matches" only when the search is done.
 - **Settings it cannot draw are refused, not attempted.** A view that asks for one, such as a
   share link colouring by an obsp row, shows a message instead of the plot: "Colour by an obsp
   column is not available for 95.6M points: turn on a subset, or choose an obs column or a gene".

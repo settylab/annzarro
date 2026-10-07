@@ -14,6 +14,7 @@ import { Config } from './config.js';
 import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds, serializableConfig } from './utils/deeplink.js';
 import { setControlsVisible, controlsElementOf } from './utils/controls-visibility.js';
 import { notifyEach } from './utils/notify-panels.js';
+import { createPlaceholderPanel } from './utils/placeholder-panel.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -704,9 +705,13 @@ const PanelManager = (function() {
     /**
      * Restore layout dimensions and structure
      * @param {Object} layout - Layout configuration
+     * @param {Object} [options]
+     * @param {Object} [options.placeholder] - open the layout without data:
+     *     every tile gets a placeholder that keeps its saved settings
+     *     (utils/placeholder-panel.js), given {message, onChangeDataset}
      * @returns {Promise<void>} - Promise that resolves when all panels are initialized
      */
-    async function restoreLayout(layout) {
+    async function restoreLayout(layout, options = {}) {
         if (!layout) return;
         
         console.log('Restoring layout:', layout);
@@ -756,7 +761,6 @@ const PanelManager = (function() {
                 );
                 if (node.type === 'tile' && built) {
                     built.style.width = '100%';
-                    built.style.height = '100%';
                     wrapper.dataset.wrapperId = node.id;
                 }
             });
@@ -838,7 +842,19 @@ const PanelManager = (function() {
                 let panel = _panels.get(id);
                 let promise;
 
-                if (!panel) {
+                // Without data, or replacing a placeholder: a placeholder
+                // is never reused for a real panel, nor the other way round
+                if (panel && !!panel.isPlaceholder !== !!options.placeholder) {
+                    removePanel(id);
+                    panel = null;
+                }
+
+                if (!panel && options.placeholder) {
+                    panel = createPlaceholderPanel(contentContainer, type, { ...panelConfig, id },
+                        options.placeholder);
+                    _panels.set(id, panel);
+                    _panelsByType.get(type).add(panel);
+                } else if (!panel) {
                     const Constructor = _panelTypes.get(type);
                     panel = new Constructor(contentContainer, panelConfig);
                     _panels.set(id, panel);
@@ -1017,24 +1033,17 @@ const PanelManager = (function() {
      * @param {string} [id] - Optional panel ID (will be generated if not provided)
      * @returns {Object} - The created panel instance
      */
-    function registerClosedPanel(type, config) {
+    function registerClosedPanel(type, config, { keepTitle = false } = {}) {
         if (!_panelTypes.has(type)) {
             console.error(`Unknown panel type: ${type}`);
             return null;
         }
         
         // Make sure ID is unique but only update if really needed:
-        if (config.id) {
-            // Check if this ID already exists in panels
-            if (_panels.has(config.id)) {
-                // Only generate a new ID if there's a collision
-                config.id = `${type}-${Date.now()}`;
-            }
-        } else {
-            // No ID provided, generate one
-            config.id = `${type}-${Date.now()}`;
-        }
-        config.title = _generateUniqueName(config.title, type);
+        if (!config.id || _panels.has(config.id)) config.id = freshPanelId(type);
+        // keepTitle: a panel added from a panel set keeps the title it was
+        // saved with (the list tags where it came from)
+        if (!keepTitle || !config.title) config.title = _generateUniqueName(config.title, type);
 
         // Create a "zombie" panel (stored but not active)
         const Constructor = _panelTypes.get(type);
@@ -1074,6 +1083,19 @@ const PanelManager = (function() {
 
     // Removed getCounters function as counters are no longer used
     
+    /**
+     * An id no panel has: `<type>-<n>`. Date.now() alone repeats when two
+     * panels are registered in the same millisecond, and the second then
+     * replaced the first in the panel map.
+     * @param {string} type
+     * @returns {string}
+     */
+    function freshPanelId(type) {
+        let n = Date.now();
+        while (_panels.has(`${type}-${n}`)) n++;
+        return `${type}-${n}`;
+    }
+
     // Public API
     return {
         init,

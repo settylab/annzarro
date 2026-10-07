@@ -1,0 +1,122 @@
+{
+  "entries": {
+    "four-panels": {
+      "link": "{root}/?dataset_path=%2Fvar%2Ffolders%2Fh_%2F5f32jgps7yq4np44vpfbx4300000gn%2FT%2Faz-corpus-zofk0uq5%2Fdata%2Ffixture_small.zarr#view=z1.7Vdtb9s2EP4rwe0rM8hBU2z6lqZOMqDNjCbbghZBQEtn6RCaFEhKkWP4vw9HvVhq7DTtNgzDKn2wdbw3Hp-7R1pDBfFEQGK081J7B_EaFiYpHabnqBFiOJ9eTqPoGEQnP0WlIIYElbqLoigCEf5_MA_BeiuPo81GgJIrU3peaULlhFbaJF9B_GkNflVwEFco8iAgJYuJJ6Mhhgqtp0Qq9p-TSi3qL5nkxtKj0X6vkSeFIIDSdgOHhTL-cAKhAt4a5X4nR3OFEHtb4kbst_RyrvAZ01sBhdToQvgCbYLaywwhfh3tMFlI5UK4oear_Zq3g9T-ciUy1PhtlQiW31yJ4xdX4hnN22f8H7-40vs1bwXkSFnuIf7p58mw7Kgw8cYCq7TGV1567LqgK2moghijppUNKz8UjdQ2zf7UqdELytwT9-tdePbkeQ_A3XowU4YBUrNum72ZuyUIuMcVxHBzVy5lEQ5QlUvGD3d1Ts4bu2KjoB2vG3VdKtWpcjabDff56uXOJ1_t_HGwYOwg0k0fZjun-jjjMDdfiFEY0v6KHhk4P07a518LmZBfhcklS29mW6XmuHphr9meNid6lchwCDNjvZI65eSkx8zY1Uwq9IwVKLWDVv896dFG38t69PwBK7QO0xabAnJTof1FL8ywtc3c9VW5I51iHSDqyrnjkGGAu85vTileGn0VFnu_LjcP55Zh1exGmeT-NGQgdYbb8JTlinvjbEgNjQnWhbH-D0p9DvHkKIo60UXXTSwK4eXlKPBJTe6a4es6X530nZyjeiolPVb9iNa0woHbd5ih7nc0z04bKMEPi3CBgMxS2kvxNd8gQNbkemkUtZTnsfZPpY9t5H4lCRcImMvkPrWm2EaN-G79s01XqiaPsaTzu5V4Su7fonYBcgGFgaE7cE6OmqczuSTFGieWpBIHF6gqZFoVB05qd-jQEm99KW1GoRlA8dEIsM2Pb37mDW8VMoX41UaAY2RPw3n2RVahwDPjqCUhGw5aAGoeZx-NWfbgCJKZ1MNju9iCuRGGKXhGyiNXTBvNvGNxaSqG7DWvTrW3NDhonuhoSWcniadqi9SK8IGTPXo7biiG82-a-MUHUuklbD4f1OudnD8aryETGEyUT9xuyG85b0pSKdpp2G8PPouuMNoNE1xQjekFypT32tZk6KEZ_jysuoVrrD0Puc1nNLLeRepdvvxSt4sOKmn7mcGWd1oucf8sZfWX08Hf7nwvHbQYaULtjxDU_idsMCz-LjZgRPwzbNB8QHxng-9s8F9mg_H7-Hrnd89ouv67bMC2XKJRY_NI-xM",
+      "panel_set": "four-panels.panelset.json",
+      "restored": {
+        "focusedCell": "cell_0000",
+        "focusedGene": "GENE005",
+        "panels": [
+          {
+            "id": "cell-plot-1791324235189",
+            "type": "cell-plot"
+          },
+          {
+            "id": "cell-table-1791324235189",
+            "type": "cell-table"
+          },
+          {
+            "id": "gene-plot-1791324235189",
+            "type": "gene-plot"
+          },
+          {
+            "id": "gene-table-1791324235189",
+            "type": "gene-table"
+          }
+        ],
+        "tree": [
+          {
+            "content": {
+              "panes": [
+                {
+                  "panes": [
+                    {
+                      "id": "cell-plot-1"
+                    },
+                    {
+                      "id": "cell-table-1"
+                    }
+                  ],
+                  "sizes": [
+                    60,
+                    40
+                  ],
+                  "split": "horizontal"
+                },
+                {
+                  "panes": [
+                    {
+                      "id": "gene-plot-1"
+                    },
+                    {
+                      "id": "gene-table-1"
+                    }
+                  ],
+                  "sizes": [
+                    50,
+                    50
+                  ],
+                  "split": "horizontal"
+                }
+              ],
+              "sizes": [
+                55,
+                45
+              ],
+              "split": "vertical"
+            }
+          },
+          "selector"
+        ]
+      }
+    },
+    "subset-by-leiden": {
+      "link": "{root}/?dataset_path=%2Fvar%2Ffolders%2Fh_%2F5f32jgps7yq4np44vpfbx4300000gn%2FT%2Faz-corpus-zofk0uq5%2Fdata%2Ffixture_small.zarr#view=z1.lVXbbtswDP2VgntVB6fY2k5vRa8D2i5ouws6DIViMzZRRQokOk0a-N8Hypck6IBt8oPjo6NDijpU1rAAPVKQexfZOI6g1zD1eR2xuESHoOHy_PY8yzJQPX6K1oKGHK19yrJsBCr9vvMvafUG16OmUWDNytcsM22oijCYkFcr0D_XwKu5BGGyCAqo6IT359bzfpL2joO38RtFmlgEzaFGBRVSWTHo48NPjRpkIlrM2Qdofg0r79kw9on1ukmlUTA3Du2pd1Mq4xvO-k_5MLFkAVKFvbH1DAqWwu1S8JM4AwXPuAINP57qmZmnXdh65kCD1LGiyD6sZFFi63VLd7W1PVWyaRqp3-rfxUf_Lf66NeHDbqQhkEUq0G0HehPnL2Hmnhzf0yuC_vh-1H1_mZuceJVMYWr24w2pPeMBHJgtnnK9z006h7EPbI0rJD3DWPqwGhuLLGcOtYvQ8W_I7ez1xix3vu9wgSFiAXpqbBSH-QWGz27qt326XZYncgUuk9ViPYkSMvVG7HUrKvDWu_s0OejGyr9cBnFWuxvr8-fTlIFxJW7CU1lZ8fjFdte1S3A594G_U8EV6E9Z1iNXXVMcCRSlQOcJH5pGEjK3O6mcLCk-iKdjz-rRazNB-xYlt0t9xOA7cEv2Gkt0wx4n5WnrL3g3TQMUlIGKAcVDeUCBWVIc0CwNaTpc8lv0tYs8zORpgIKJyZ-L4OebqJk8nb6s6Yo3avPYRXrdDcKUP5-hi8mEyZfpOuztOjpovy7MjKwwTgIZq_au0C6QKTdqLxoX9yMGkq3PTCgptQdY0MeZgtC-uH1NQB9mcjkVoD_IFZqKOfaRmLz0X0jnrACdmVh89H42WCMhY-O2j-hqY-UWZCFdkGWU6jjv5PINOPMLMeyDzJ47DrR1qAvCF_HSwdnQNugYA7nyJGdabJybD2b-6kj-UaAwbCBdBLHrhTU4KZvYFKXnjprmNw",
+      "panel_set": "subset-by-leiden.panelset.json",
+      "restored": {
+        "focusedCell": "cell_0001",
+        "focusedGene": "GENE000",
+        "panels": [
+          {
+            "id": "cell-plot-1791324245076",
+            "type": "cell-plot"
+          }
+        ],
+        "tree": [
+          {
+            "content": {
+              "id": "cell-plot-1"
+            }
+          },
+          "selector"
+        ]
+      }
+    },
+    "umap-by-cell-type": {
+      "link": "{root}/?dataset_path=%2Fvar%2Ffolders%2Fh_%2F5f32jgps7yq4np44vpfbx4300000gn%2FT%2Faz-corpus-zofk0uq5%2Fdata%2Ffixture_small.zarr#view=z1.lVVtb9owEP4r1e2rK4Vuard8qyhtJ7UdKt2LOk2VSY7khLGRfaGkiP8-nUNCEJO2OR9CHp_vuZfnzAZWkA4UZM4G1pYDpBuYuawKmN-gRUjhZvQwSpL3oFp8iMZAChka85IkyQWo-PvRvcbTezy92G4VGF27imWnoSoJvfZZWUP6cwNcL4WEySAooHzn-HRpHJ8OIEbG3pnwjQJNDULKvkIFJVJRMqQfPw22qnMT0GDGzsP2V3dywpqxDaz1G71sFSy1RTN0dkZFOLLZ_CkeJpYoQKpwMjaOQcFabHchuGlYgII51pDCj5dqoZcxC1MtLKSQgFQgsPO1HIrW6aYxt5UxralEs91K_ep_dz74b-dvvQ3nD5k6otjRiPe4jqj-wrR0ZHlCbwjpxe7ry1JnxHVUha7YjfcmM20C9tDOtOl-jHaS6diJsfNstM0lOs1YOF-PtUGWrkNlA-zs78keZHuv1wffj7hCHzDv2Eu3Qv_Zzlxfqf3CvJDNcR3FFqppEMo4HaH1W1KOD85O4mbnN5Tu9caLtppsjMvmwxiBtsU--ZKK0ojKr_tz1xzB9dJ5_k45l5AOzpKkhW7buRAo0uuHA-LLNYUn0XBofbXonZ6iOUbJHpo-o3c7sOf2Dgu0XUbTYtjoCd7N4gIFhae8Q_FcHlCg1xQ6NIlLhgzXfIy-7Zi7nSwuUDDV2Tz3brlnTeTZ-ZczbamaOA6R1u8eYcrmV2hDlFxUYbz-WnUOzpqva70gIxaXnrRRJ7doVsiUaXUStA2nAT1J6gvtC4qzAEZao8A3L25eU0jPE7mMckg_bBUEUfYo9rMrsokFHrtATE4G0MdGK0CrpwafnVt04ojIWNt-2273Ym5AFqNrMoxSMeusjLfHhVuJZJ9kd2TZU6_RK8JXCersqhsctIyebHGZMa322s06OX-1JP8qkGvWIFfBbw",
+      "panel_set": "umap-by-cell-type.panelset.json",
+      "restored": {
+        "focusedCell": "cell_0007",
+        "focusedGene": "GENE003",
+        "panels": [
+          {
+            "id": "cell-plot-1791324230820",
+            "type": "cell-plot"
+          }
+        ],
+        "tree": [
+          {
+            "content": {
+              "id": "cell-plot-1"
+            }
+          },
+          "selector"
+        ]
+      }
+    }
+  },
+  "made_with": "git tag v0.4.0 (49e2a19)",
+  "saved_path": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/az-corpus-zofk0uq5/data/fixture_small.zarr",
+  "store": "fixture_small.zarr",
+  "version": "v0.4.0"
+}

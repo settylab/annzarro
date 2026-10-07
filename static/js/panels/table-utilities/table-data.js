@@ -2,7 +2,8 @@
  * Utilities for loading and processing table data
  */
 import { notify } from '../../utils/notify.js';
-import { isBooleanColumn, renderBoolean, searchBuilderPreDefined } from '../../utils/search-builder.js';
+import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, TEXT_ONLY_NUM_TYPE, manyValuesType, textOnlyConditions, textOnlyNumConditions, fastSelectConditions } from '../../utils/search-builder.js';
+import { VALUE_LIST_MAX } from '../../utils/categories.js';
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
 import { freezeSelection } from '../../utils/closed-table.js';
@@ -156,6 +157,20 @@ export async function loadTableData(settings, entityType, signal = null) {
             throw new DOMException('Table data loading aborted before completion', 'AbortError');
         }
         
+        // A column with more distinct values than VALUE_LIST_MAX (the Cell
+        // ID, a barcode, a float column of a gene table) is filtered by
+        // typing: SearchBuilder's "Equals" dropdown would hold one option per
+        // row. A numeric one keeps the number conditions (manyValuesType).
+        const textOnlyColumns = [];
+        columnDefinitions.forEach(def => {
+            const values = def.data === '_index' ? entityIndex : data.map(row => row[def.data]);
+            const type = manyValuesType(values, VALUE_LIST_MAX);
+            if (type) {
+                def.searchBuilderType = type;
+                textOnlyColumns.push(def.title);
+            }
+        });
+
         return {
             coverage: Coverage.merge(
                 columnCoverages.length ? columnCoverages : [Coverage.complete(entityIndex.length, entityType)],
@@ -164,6 +179,7 @@ export async function loadTableData(settings, entityType, signal = null) {
             data: data,
             columns: columnDefinitions,
             booleanColumns: booleanColumns,
+            textOnlyColumns: textOnlyColumns,
             entityIndex: entityIndex
         };
         
@@ -222,6 +238,19 @@ async function loadColumnData(column, entityType, signal = null) {
         // Paths with no response body to inspect say for themselves what they
         // could not find; everything else goes through the same value
         // classifier the plot uses.
+        if (loaded.unresolved) {
+            // A placeholder the panel should have pinned when it was made
+            // (pinFocusPlaceholders). Reading the current focus here would
+            // make the column follow it, so it is reported, not guessed.
+            return {
+                values: loaded.values,
+                coverage: Coverage.missing(GAP.UNREPORTED,
+                    `this column names no ${loaded.unresolved}: it is a "focused ${loaded.unresolved}" `
+                    + `placeholder that was not resolved to a ${loaded.unresolved} -- remove it and add `
+                    + `the ${loaded.unresolved} you want`,
+                    { ...opts, total: expected })
+            };
+        }
         if (loaded.unavailable) {
             // One sentence, shared with the plot -- see missingEntity().
             const { kind, name, cell } = loaded.unavailable;
@@ -342,39 +371,23 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 });
                 return { values: obsmData.data, matrixKey: key };
             } else if (type === 'obsp') {
-                // The focused cell, or a fixed one; a cell the subset does
-                // not show is read by its dataset row (DataManager.locateCell)
-                const focused = columnName === 'focused_cell' || columnName === '_focused_cell';
-                const name = focused ? DataManager.getFocusedCell() : columnName;
+                // The named cell; a cell the subset does not show is read by
+                // its dataset row (DataManager.locateCell)
+                if (FOCUSED_CELL_COLUMNS.has(columnName)) return unresolvedPlaceholder('cell', DataManager.getCells().length);
+                const name = columnName;
                 const cell = await DataManager.locateCell(name);
                 if (DataManager.cellRowParams(cell)) {
                     const obspData = await DataManager.loadObsp({ obspKey: key, cell });
                     return { values: firstRow(obspData.data), matrixKey: key,
-                             slice: { kind: 'cell', name, focused } };
+                             slice: { kind: 'cell', name, focused: false } };
                 }
                 return {
                     values: Array(DataManager.getCells().length).fill(null),
                     unavailable: { kind: 'cell', name, cell }
                 };
             } else if (type === 'layer') {
-                // Check if using focused gene or specific gene
-                if (columnName === 'focused_gene' || columnName === '_focused_gene') {
-                    // For focused gene in layer
-                    const focusedGene = DataManager.getFocusedGene();
-                    const geneIndex = DataManager.getGeneIndex(focusedGene);
-                    
-                    if (geneIndex >= 0) {
-                        const layerData = await DataManager.loadLayer({
-                            layerName: key,
-                            cols: [geneIndex]
-                        });
-                        return { values: layerData.data, matrixKey: key,
-                                 slice: { kind: 'gene', name: focusedGene, focused: true } };
-                    }
-                    return {
-                        values: Array(DataManager.getCells().length).fill(null),
-                        unavailable: { kind: 'gene', name: focusedGene }
-                    };
+                if (FOCUSED_GENE_COLUMNS.has(columnName)) {
+                    return unresolvedPlaceholder('gene', DataManager.getCells().length);
                 } else {
                     // For fixed gene in layer
                     const geneIndex = DataManager.getGeneIndex(columnName);
@@ -408,24 +421,8 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 });
                 return { values: varmData.data, matrixKey: key };
             } else if (type === 'varp') {
-                // Check if using focused gene or specific gene
-                if (columnName === 'focused_gene' || columnName === '_focused_gene') {
-                    // For focused gene in varp
-                    const focusedGene = DataManager.getFocusedGene();
-                    const geneIndex = DataManager.getGeneIndex(focusedGene);
-                    
-                    if (geneIndex >= 0) {
-                        const varpData = await DataManager.loadVarp({
-                            varpKey: key,
-                            rows: [geneIndex]
-                        });
-                        return { values: firstRow(varpData.data), matrixKey: key,
-                                 slice: { kind: 'gene', name: focusedGene, focused: true } };
-                    }
-                    return {
-                        values: Array(DataManager.getGenes().length).fill(null),
-                        unavailable: { kind: 'gene', name: focusedGene }
-                    };
+                if (FOCUSED_GENE_COLUMNS.has(columnName)) {
+                    return unresolvedPlaceholder('gene', DataManager.getGenes().length);
                 } else {
                     // For fixed gene in varp
                     const geneIndex = DataManager.getGeneIndex(columnName);
@@ -444,15 +441,15 @@ async function _loadColumnValues(column, entityType, signal = null) {
                     };
                 }
             } else if (type === 'layer') {
-                // The focused cell's expression row, or a fixed cell's; also
-                // for a cell the subset does not show (see obsp above)
-                const focused = columnName === 'focused_cell' || columnName === '_focused_cell';
-                const name = focused ? DataManager.getFocusedCell() : columnName;
+                // The named cell's expression row; also for a cell the
+                // subset does not show (see obsp above)
+                if (FOCUSED_CELL_COLUMNS.has(columnName)) return unresolvedPlaceholder('cell', DataManager.getGenes().length);
+                const name = columnName;
                 const cell = await DataManager.locateCell(name);
                 if (DataManager.cellRowParams(cell)) {
                     const layerData = await DataManager.loadLayer({ layerName: key, cell });
                     return { values: layerData.data, matrixKey: key,
-                             slice: { kind: 'cell', name, focused } };
+                             slice: { kind: 'cell', name, focused: false } };
                 }
                 return {
                     values: Array(DataManager.getGenes().length).fill(null),
@@ -475,6 +472,116 @@ async function _loadColumnValues(column, entityType, signal = null) {
 const FOCUSED_CELL_COLUMNS = new Set(['focused_cell', '_focused_cell']);
 const FOCUSED_GENE_COLUMNS = new Set(['focused_gene', '_focused_gene']);
 
+/** All-null values for a placeholder column that names no entity. */
+function unresolvedPlaceholder(kind, n) {
+    return { values: Array(n).fill(null), unresolved: kind };
+}
+
+/**
+ * Pin the `focused_cell` / `focused_gene` placeholder columns of a restored
+ * table to the entity focused right now, before the table is built.
+ *
+ * A table column depends on a cell or gene, never on the fact that the
+ * entity was focused (issue #9). Columns chosen from the focus have stored
+ * the entity's name since v0.4.0; only sessions, panel sets and view JSON
+ * written earlier still hold a placeholder. Such a view is restored with its
+ * focus first (main.js `_applyView`), so the entity focused when the panel
+ * is made is the one the saved view showed. The placeholder becomes that
+ * name, and its filter conditions are carried over to the renamed column
+ * (SearchBuilder finds a column by its data key, `origData`).
+ *
+ * With nothing focused the placeholder named no entity and held no values.
+ * It is removed, with the conditions on it: a column that names nothing can
+ * never be filled, and keeping it would only keep a condition that hides
+ * rows for no reason. The caller says so.
+ *
+ * @param {Array<Object>} columns - the table's columns
+ * @param {{criteria?: Array, logic?: string}|undefined} searchBuilderConfig
+ * @param {{cell?: string|null, gene?: string|null}} focus - the focus now
+ * @returns {{columns: Array<Object>, searchBuilderConfig: Object|undefined,
+ *            pinned: Array<{from: Object, to: Object}>, dropped: Array<Object>}}
+ *     New objects; the inputs are not changed. `pinned` and `dropped` are
+ *     empty when there was no placeholder.
+ */
+export function pinFocusPlaceholders(columns, searchBuilderConfig, { cell = null, gene = null } = {}) {
+    const pinned = [];
+    const dropped = [];
+    if (!Array.isArray(columns)) return { columns, searchBuilderConfig, pinned, dropped };
+    const renames = new Map();     // old data key -> {key, title} or null (dropped)
+    const out = [];
+    const has = (col) => out.some(c => c.type === col.type && c.key === col.key && c.column === col.column);
+    for (const col of columns) {
+        const kind = !col ? null : FOCUSED_CELL_COLUMNS.has(col.column) ? 'cell'
+            : FOCUSED_GENE_COLUMNS.has(col.column) ? 'gene' : null;
+        if (!kind) {
+            out.push(col);
+            continue;
+        }
+        const name = kind === 'cell' ? cell : gene;
+        if (!name) {
+            dropped.push(col);
+            renames.set(getColumnKey(col), null);
+            continue;
+        }
+        const to = { ...col, column: name };
+        pinned.push({ from: col, to });
+        renames.set(getColumnKey(col), { key: getColumnKey(to), title: `${to.key}: ${name}` });
+        // the same entity already a column of this table: one column, both conditions
+        if (!has(to)) out.push(to);
+    }
+    if (!renames.size) return { columns, searchBuilderConfig, pinned, dropped };
+    return {
+        columns: out,
+        searchBuilderConfig: remapCriteria(searchBuilderConfig, renames),
+        pinned, dropped
+    };
+}
+
+/**
+ * A SearchBuilder configuration with its conditions moved to renamed columns
+ * (`renames`: old data key -> {key, title}) or removed (old key -> null).
+ * A group left with no condition is removed too.
+ */
+function remapCriteria(config, renames) {
+    if (!config || !Array.isArray(config.criteria)) return config;
+    const walk = (nodes) => nodes.flatMap(node => {
+        if (!node || typeof node !== 'object') return [node];
+        if (Array.isArray(node.criteria)) {
+            const criteria = walk(node.criteria);
+            return criteria.length ? [{ ...node, criteria }] : [];
+        }
+        if (!renames.has(node.origData)) return [node];
+        const to = renames.get(node.origData);
+        return to ? [{ ...node, origData: to.key, data: to.title }] : [];
+    });
+    return { ...config, criteria: walk(config.criteria) };
+}
+
+/**
+ * Pin a table panel's placeholder columns (pinFocusPlaceholders) to the
+ * current focus, in its settings, and say what was removed. Called once, when
+ * the panel is made from saved settings.
+ * @param {Object} settings - the panel's settings (columns, searchBuilderConfig)
+ * @param {string} [title] - the panel title, for the notice
+ */
+export function pinPanelFocusPlaceholders(settings, title = 'Table') {
+    const desc = Object.getOwnPropertyDescriptor(settings, 'searchBuilderConfig');
+    const plain = !desc || !desc.get;
+    const r = pinFocusPlaceholders(settings.columns,
+        plain ? settings.searchBuilderConfig : undefined,
+        { cell: DataManager.getFocusedCell() ?? null, gene: DataManager.getFocusedGene() ?? null });
+    if (!r.pinned.length && !r.dropped.length) return r;
+    settings.columns = r.columns;
+    if (plain) settings.searchBuilderConfig = r.searchBuilderConfig;
+    if (r.dropped.length) {
+        const what = r.dropped.map(c => `${c.key} (${FOCUSED_CELL_COLUMNS.has(c.column) ? 'focused cell' : 'focused gene'})`);
+        notify('Column removed', `${title}: ${what.join(', ')} followed the focus in an older view, and `
+            + 'nothing was focused when it was restored, so it named no cell or gene. It was removed with '
+            + 'any filter condition on it; add it again from the cell or gene you want.', 'warning');
+    }
+    return r;
+}
+
 /**
  * Get a unique key for a column
  * @param {Object} column - The column object
@@ -489,8 +596,9 @@ export function getColumnKey(column) {
  * Get display name for a column
  *
  * A column picked from a cell or gene is named after it ("connectivities:
- * HSPC_Old_1#..."). Only a placeholder column from an older session follows
- * the focus; it names the entity it shows right now and says that it follows.
+ * HSPC_Old_1#..."). A placeholder column from an older session is pinned to
+ * a name when its panel is made (pinFocusPlaceholders); one that reaches here
+ * names no entity and says so.
  * @param {Object} column - The column object
  * @returns {string} - The display name
  */
@@ -503,10 +611,9 @@ export function getColumnDisplayName(column) {
         // a cell the subset does not show is still a column, and says so
         const notShown = name => (DataManager.cellShown(name) === false ? ' (not shown)' : '');
         if (FOCUSED_CELL_COLUMNS.has(column.column)) {
-            const focused = DataManager.getFocusedCell();
-            return `${column.key}: ${focused ?? 'no focused cell'} (follows focus)${notShown(focused)}`;
+            return `${column.key}: no cell (unresolved placeholder)`;
         } else if (FOCUSED_GENE_COLUMNS.has(column.column)) {
-            return `${column.key}: ${DataManager.getFocusedGene() ?? 'no focused gene'} (follows focus)`;
+            return `${column.key}: no gene (unresolved placeholder)`;
         } else if (column.column) {
             return `${column.key}: ${column.column}${notShown(column.column)}`;
         }
@@ -565,6 +672,19 @@ export function freezeTableState(settings, { rowNames = null, rows = 0 } = {}) {
     }
 }
 
+/**
+ * The `smart` flag DataTables is given: smart search splits the term at
+ * spaces and wraps each word as ^(?=.*?WORD).*$, which breaks a regular
+ * expression (`Mid|Old` became (?=.*?Mid|Old), so Old matched only at the
+ * start of a row). A regular expression is searched as written.
+ * @param {boolean} regex
+ * @param {boolean} smart - the Smart Search button
+ * @returns {boolean}
+ */
+export function searchSmart(regex, smart) {
+    return !!smart && !regex;
+}
+
 export function initializeDataTable(tableContainer, tableData, settings, entityType) {
     // Clear the container and add a table element
     tableContainer.innerHTML = '<table class="table table-sm table-striped" style="width:100%"></table>';
@@ -594,17 +714,23 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             // the search box as saved (Reopen, panel sets, share links)
             search:         settings.searchText || '',
             regex:          useRegex,
-            smart:          useSmart,
+            smart:          searchSmart(useRegex, useSmart),
             caseInsensitive: useCaseInsensitive
         },
-        // Standard Bootstrap 5 DataTables layout with SearchBuilder and search box
-        dom: '<"row"<"col-sm-12 col-md-9"Q><"col-sm-12 col-md-3 d-flex align-items-end justify-content-end"f>>' +
-             '<"row"<"col-sm-12"tr>>' +
+        // SearchBuilder on its own full-width row, the text search on a slim
+        // full-width row below it. Side by side (9/3 columns by VIEWPORT
+        // width), a table in a split panel squeezed both, and the search box
+        // and its label overflowed onto the builder.
+        dom: '<"row az-sb-row"<"col-12"Q>><"row az-search-row"<"col-12"f>>' +
+             '<"row az-table-row"<"col-sm-12"tr>>' +
              '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>',
         responsive: false, // Never use responsive mode
         scrollX: true, // Always enable horizontal scrolling
-        scrollY: '350px',
-        scrollCollapse: true, // Always collapse scroll
+        // The body's height is the panel's (styles.css overrides the inline
+        // max-height DataTables sets from this); scrollY only has to be set for
+        // DataTables to build a header and a scrolling body. It is the floor.
+        scrollY: '170px',
+        scrollCollapse: true,
         fixedHeader: false,
         select: true, // Enable row selection
         hover: true,
@@ -644,6 +770,14 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 // boolean conditions saved as num 'true' translated to Yes/No
                 preDefined: searchBuilderPreDefined(settings.searchBuilderConfig, tableData.booleanColumns || []),
                 display: 'block', // Always display
+                // "Equals" lists the values in one pass; typed for columns
+                // with too many values to list (text, or numbers keeping
+                // their number conditions)
+                conditions: $.fn.dataTable.Criteria ? {
+                    ...fastSelectConditions($.fn.dataTable.Criteria, $),
+                    [TEXT_ONLY_TYPE]: textOnlyConditions($.fn.dataTable.Criteria),
+                    [TEXT_ONLY_NUM_TYPE]: textOnlyNumConditions($.fn.dataTable.Criteria)
+                } : {},
                 depthLimit: 2, // Limit depth to prevent overly complex queries
                 layout: 'columns-2', // Modern layout with columns
                 filterChanged: true, // Update table in real-time with changes
@@ -686,6 +820,15 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             
             // Access the search container - find it relative to the table container
             const tableContainer = this.api().table().container();
+
+            // Say which columns are filtered by typing rather than from a list
+            const textOnly = tableData.textOnlyColumns || [];
+            if (textOnly.length) {
+                const $note = $('<div class="small text-muted sb-text-only-note"></div>').text(
+                    `${textOnly.join(', ')}: more than ${VALUE_LIST_MAX.toLocaleString('en-US')} distinct values, `
+                    + 'so Equals and Not take a typed value instead of a list.');
+                $(tableContainer).find('.dtsb-searchBuilder').first().after($note);
+            }
             // For Bootstrap 5 integration, the search input is in a different location
             const $searchInput = $(tableContainer).find('div.dataTables_filter input');
             
@@ -739,31 +882,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     // Clear the parent and build our new structure
                     $searchParent.empty();
                     
-                    // Create a container with flex column direction to stack elements
-                    $container.removeClass('d-flex align-items-center').addClass('d-flex flex-column');
-                    
-                    // Create a row for the label and search input
-                    const $searchRow = $('<div class="d-flex align-items-center w-100 mb-2"></div>');
-                    $searchRow.append($newLabel);
-                    
-                    // Create an input group to hold the search input
+                    // One slim row: label, input (takes the width), options
+                    $container.removeClass('mb-2').addClass('az-search-line');
                     const $inputGroup = $('<div class="input-group input-group-sm flex-grow-1"></div>');
                     $inputGroup.append($searchInput);
-                    $searchRow.append($inputGroup);
-                    
-                    // Add the search row to the container
-                    $container.append($searchRow);
-                    
-                    // Create a row for search options with proper styling
-                    const $optionsRow = $('<div class="d-flex justify-content-end align-items-center w-100"></div>');
-                    
-                    // Add a descriptive label for the search options
-                    const $optionsLabel = $('<small class="text-muted me-2">Search options:</small>');
-                    $optionsRow.append($optionsLabel);
-                    $optionsRow.append($searchOptions);
-                    
-                    // Add the options row below the search input
-                    $container.append($optionsRow);
+                    $searchOptions.attr('aria-label', 'Search options');
+                    $container.append($newLabel, $inputGroup, $searchOptions);
                     
                     // Add the container to the search parent
                     $searchParent.append($container);
@@ -772,10 +896,16 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     $searchOptions.insertAfter($searchInput);
                 }
                 
-                // 5) A small helper to re-draw with current flags
+                // 5) A small helper to re-draw with current flags. Smart
+                // search does not apply to a regular expression: DataTables
+                // would split it at spaces and put each word in a lookahead,
+                // ^(?=.*?Mid|Old).*$, where `Old` then matches only at the
+                // start, so `Mid|Old` found only Mid.
                 function applySearch() {
                     const term = $searchInput.val();
-                    api.search(term, useRegex, useSmart, useCaseInsensitive).draw();
+                    api.search(term, useRegex, searchSmart(useRegex, useSmart), useCaseInsensitive).draw();
+                    $(`#${btnSmartId}`).prop('disabled', useRegex)
+                        .attr('title', useRegex ? 'Smart search does not apply to a regular expression' : 'Smart Search (default)');
                 }
     
                 // 6) Wire up clicks
@@ -831,8 +961,8 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         
         // Ensure DOM includes SearchBuilder (Q) before filter (f)
         if (!tableOptions.dom.includes('Q')) {
-            tableOptions.dom = '<"row"<"col-sm-12 col-md-9"Q><"col-sm-12 col-md-3 d-flex align-items-end justify-content-end"f>>' +
-                               '<"row"<"col-sm-12"tr>>' +
+            tableOptions.dom = '<"row az-sb-row"<"col-12"Q>><"row az-search-row"<"col-12"f>>' +
+                               '<"row az-table-row"<"col-sm-12"tr>>' +
                                '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>';
         }
         
@@ -950,72 +1080,33 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         type: entityType 
     });
     
+    // The body follows the panel: CSS gives it the height, DataTables needs
+    // telling when the width changes so the header columns stay over the body's.
+    watchPanelSize(tableContainer, dataTable);
+
     // Return the DataTables instance
     return dataTable;
 }
 
-
 /**
- * The selected columns that read the focus that just changed.
- *
- * A column follows the focus only through its `focused_cell` / `focused_gene`
- * placeholder, which only older sessions hold: a column picked from the
- * focus now stores the entity's name and does not move (issue #9).
- * @param {Array<Object>} columns - The table's selected columns
- * @param {string} changedEntityType - Which focus changed ('cells' or 'genes')
- * @returns {Array<Object>}
+ * Re-align the header and body columns when the table's box changes size
+ * (layout split, window resize), debounced to one adjust per burst.
  */
-export function columnsFollowingFocus(columns, changedEntityType) {
-    const placeholders = changedEntityType === 'cells' ? FOCUSED_CELL_COLUMNS
-        : changedEntityType === 'genes' ? FOCUSED_GENE_COLUMNS : null;
-    if (!placeholders || !Array.isArray(columns)) return [];
-    return columns.filter(col => col && placeholders.has(col.column));
+function watchPanelSize(container, dataTable) {
+    if (!window.ResizeObserver || !container) return;
+    let timer = null;
+    const ro = new ResizeObserver(() => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            try {
+                if (container.isConnected) dataTable.columns.adjust();
+            } catch (e) { /* table destroyed meanwhile */ }
+        }, 80);
+    });
+    ro.observe(container);
+    dataTable.on('destroy.dt', () => { clearTimeout(timer); ro.disconnect(); });
 }
 
-/**
- * Whether any selected column reads the focus that just changed.
- * @param {Array<Object>} columns - The table's selected columns
- * @param {string} changedEntityType - Which focus changed ('cells' or 'genes')
- * @returns {boolean}
- */
-export function focusChangeAffectsColumns(columns, changedEntityType) {
-    return columnsFollowingFocus(columns, changedEntityType).length > 0;
-}
-
-/**
- * Reload the given columns into the live table, leaving every other column,
- * the paging and the SearchBuilder state as they are.
- *
- * Used for placeholder columns that follow the focus. Rebuilding the whole
- * table for them reloaded every column and re-created the DataTable on each
- * focus change.
- * @param {Object} dataTable - The DataTables API instance
- * @param {Array<Object>} columns - Columns to reload
- * @param {string} tableEntityType - The table's rows ('cells' or 'genes')
- * @returns {Promise<boolean>} false when a column is not in the table (it was
- *     left out when it last failed to load), so the caller must rebuild
- */
-export async function reloadColumnsInPlace(dataTable, columns, tableEntityType) {
-    const aoColumns = dataTable.settings()[0].aoColumns || [];
-    const rows = dataTable.rows();
-    const n = rows.count();
-    let changed = false;
-    for (const column of columns) {
-        const key = getColumnKey(column);
-        const colIdx = aoColumns.findIndex(c => c.mData === key || c.data === key);
-        if (colIdx < 0) return false;
-        const { values } = await loadColumnData(column, tableEntityType);
-        const fits = Array.isArray(values) && values.length === n;
-        rows.every(function (rowIdx) {
-            this.data()[key] = fits ? values[rowIdx] : null;
-        });
-        const header = dataTable.column(colIdx).header();
-        if (header) header.textContent = getColumnDisplayName(column);
-        changed = true;
-    }
-    if (changed) rows.invalidate('data').draw(false);
-    return true;
-}
 
 /**
  * Put new rows into a table that has the same columns, keeping the table:
@@ -1103,9 +1194,10 @@ export async function refreshColumnChooser(panelSettings, tableRows) {
 /**
  * Update table when focus changes
  *
- * The table itself changes only for placeholder columns that follow the
- * focus, and then only those columns are reloaded. The column chooser is
- * always rebuilt, since it offers the new focused entity.
+ * Only the column chooser is rebuilt, since it offers the new focused
+ * entity. The table itself never changes: every column names its cell or
+ * gene (issue #9), so a focus change cannot move a column, its values or the
+ * filter conditions on it.
  * @param {Object} dataTable - The DataTables instance
  * @param {string} entity - The focused entity
  * @param {string} entityType - Which focus changed ('cells' or 'genes')
@@ -1119,22 +1211,6 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType, ta
         return;
     }
     const tableRows = tableEntityType || (entityType === 'genes' ? 'cells' : 'genes');
-
-    const following = columnsFollowingFocus(panelSettings.columns, entityType);
-    if (following.length) {
-        let inPlace = false;
-        try {
-            inPlace = await reloadColumnsInPlace(dataTable, following, tableRows);
-        } catch (error) {
-            console.error('Reloading focus-following columns failed, rebuilding the table:', error);
-        }
-        if (!inPlace) {
-            document.dispatchEvent(new CustomEvent('refreshTable', {
-                detail: { id: panelSettings.id }
-            }));
-        }
-    }
-
     await refreshColumnChooser(panelSettings, tableRows);
 }
 

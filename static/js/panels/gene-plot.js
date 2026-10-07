@@ -219,6 +219,12 @@ const GenePlotPanel = (function() {
          *  @private
          */
         async function handleFocusedGeneChanged(focusedGene) {
+            // A panel made while the dataset is still opening is already listening,
+            // and the focus is resolved before its own load has set its axes. That
+            // is a legitimate early event: the load reads the focus itself, so
+            // there is nothing to refresh yet.
+            if (!(_settings.x && _settings.y)) return;
+
         
              // Determine if any setting uses varp data
              const usesVarpData = _settings.x.type === 'varp' ||
@@ -283,6 +289,12 @@ const GenePlotPanel = (function() {
         }
 
         async function handleFocusedCellChanged(focusedCell) {
+            // A panel made while the dataset is still opening is already listening,
+            // and the focus is resolved before its own load has set its axes. That
+            // is a legitimate early event: the load reads the focus itself, so
+            // there is nothing to refresh yet.
+            if (!(_settings.x && _settings.y)) return;
+
             
             // Check if we're using layer data anywhere in the plot
             const usesLayerData = _settings.x.type === 'layer' || 

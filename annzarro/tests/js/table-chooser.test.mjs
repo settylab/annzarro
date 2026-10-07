@@ -163,13 +163,13 @@ test('the obsm search box filters the accordion lists below it (#27)', () => {
     assert.deepEqual(visible.sort(), ['X_pca:PC1', 'X_pca:PC2', 'X_pca:PC3']);
 });
 
-test('a layer "focused cell" column is labelled with the focused cell, not the gene (#27)', () => {
+test('a placeholder column names no entity, never the focus; a named one names it (#27, #9)', () => {
     focusedCell = 'cell_Q';
     focusedGene = 'Gata1';
     assert.equal(getColumnDisplayName({ type: 'layer', key: 'X', column: 'focused_cell' }),
-        'X: cell_Q (follows focus)');
+        'X: no cell (unresolved placeholder)');
     assert.equal(getColumnDisplayName({ type: 'layer', key: 'X', column: 'focused_gene' }),
-        'X: Gata1 (follows focus)');
+        'X: no gene (unresolved placeholder)');
     assert.equal(getColumnDisplayName({ type: 'layer', key: 'X', column: 'Gata1' }), 'X: Gata1');
 });
 

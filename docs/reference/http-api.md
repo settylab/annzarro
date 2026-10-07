@@ -55,6 +55,22 @@ Paths
   as integer codes plus its category list, one byte per cell up to 128 categories
   ({ref}`categorical-codes`). Without it a categorical column answers JSON, as it always has.
 
+`categories=used` or `categories=ranked`
+: On `/data/obs` and `/data/var` with one categorical column and `categorical=codes`. `used`: only
+  the categories the returned rows use, the codes renumbered into them; the reply says the
+  column's count (`X-Annzarro-Categories-Total`, or `n_categories` in JSON). A column with more
+  than 65,536 categories is always answered the `used` way. `ranked`: no labels; each row's
+  category is sent as its rank in the whole column, most cells first, ties in stored order
+  (`X-Annzarro-Categories-Order: ranked`, `X-Annzarro-Categories-Used` categories used in the
+  whole column). The ranking is computed once per store and column and cached (512 MB at most);
+  the web client colours a column of more than 64 categories by rank mod 64
+  ({ref}`categorical-codes`, {ref}`many-categories`).
+
+`category_ranks=r1,r2,...`
+: On `/data/obs` and `/data/var` with one categorical column: JSON
+  `{"column", "ranks", "labels"}`, the labels of those ranks of the column's ranking, at most
+  5,000 per request. The web client asks for the legend's names this way.
+
 Errors
 : JSON `{"error": "<sentence>", "reason": "<code>", ...}`. `reason` is machine-readable (table
   below); older routes send only `error`.
@@ -222,8 +238,12 @@ A subset is described by a spec, sent as the `subset=` query parameter (compact 
 {"n": null, "seed": 0, "where": [{"col": "Age", "op": "in", "values": ["Old"]}]}
 ```
 
-`n: null` means every cell that passes `where`, an AND of conditions on obs columns (`in`,
-`not_in`, `>`, `>=`, `<`, `<=`, `==`, `!=`, `between`). The same spec selects the same cells on
+`n: null` means every cell that passes `where`, an AND of conditions on obs columns: `in`,
+`not_in` (`values`), `>`, `>=`, `<`, `<=`, `==`, `!=`, `between` (numbers), the case-insensitive
+text conditions `contains`, `not_contains`, `starts_with`, `not_starts_with`, `ends_with`,
+`not_ends_with` (one non-empty text `value`) and `empty`, `not_empty` (no value; a missing value
+is empty text). An item of `where` may also be a group, `{"any": [...]}` (OR) or `{"all": [...]}`
+(AND), whose members are conditions or groups, nested at most 2 deep (16 conditions in all). The same spec selects the same cells on
 every machine and release.
 
 `"part": j` (0-based, default 0) selects part j of the partition of the eligible cells into
@@ -320,6 +340,7 @@ $ curl -s "http://127.0.0.1:8812/api/v1/data/subset/locate?dataset_path=$DS&subs
 |---|---|
 | `GET /datasets` | list of `{name, path, rel_path, cells, genes, is_link}` for the stores at the top of the data directory and in its `datasets/` subdirectory (`rel_path` says which); a store the server's zarr cannot read is listed with `cells: null` and an `error` sentence |
 | `GET /data/dataset_structure?dataset_path=` | everything the menus need: `shape`, `n_obs`, `n_vars`, and per slot `available`, `keys` / `columns`, `info` (shape and type per key), `columns_info` (dtype per obs/var column), dataframe columns of `obsm`/`varm`. A store without `X` has `"X": {"available": false, "shape": null}` |
+| `GET /data/fingerprint?dataset_path=&wait=` | the store's fingerprint for saved views: `{status, fingerprint, path, rel_path, annzarro_version}`. `status` is `ready`, or `pending` while a large store's cell and gene names are hashed in the background (then `fingerprint` holds `n_obs`, `n_var`, `meta`, `groups` and `fields` only); `wait` (seconds, at most 10) waits for it. `rel_path` is the path relative to the data directory, `null` outside it. Missing store: 404 `not_found` ({doc}`../user-guide/reproducing`) |
 | `GET /data/info?dataset_path=` | a shorter summary: `shape`, `has_*` flags, `obs_columns`, `var_columns`, `layers`, `embeddings` |
 | `GET /data/genes?dataset_path=` | `{"genes": [...], "dataset_path": ...}`, all `var_names` (146 kB here) |
 | `GET /data/cells?dataset_path=` | `{"cells": [...], ...}`, all `obs_names` (275 kB here). With `subset=`, the subset's names only, in dataset order; the server reads just those (below) |
@@ -365,12 +386,12 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 
 | Route | Returns |
 |---|---|
-| `GET /auth/me` | `{auth_enabled, username, is_admin, exposed}`; `exposed` is true when the server listens beyond localhost with login off |
+| `GET /auth/me` | `{auth_enabled, username, is_admin, exposed, may_open_any_path}`; `exposed` is true when the server listens beyond localhost with login off; `may_open_any_path` says whether this requester may open paths outside the data directories (`server.arbitrary_paths`) |
 | `GET /config` | the `public` tier of the configuration ({doc}`configuration`): `server` (`host`, `port`, `https_enabled`, `unified_server`), `auth.enabled` (when set), `branding`, `ui` and `integrations`, plus the flat keys the web client reads (`host`, `port`, `app_name`, `project_description`, `contact_info`, `enabled_panel_types`, `integrations`, `ui_*`) and the flags `electron_mode` and `local_mode`. Never `data_dir`, log or users-file paths, limits, cache or remote-store settings |
 | `GET /status` | version, uptime, memory, data directory checks |
 | `GET /cache/info` | the server's result cache of the process that answers: datasets, items, `memory_usage_mb` (exactly what the cache holds), `max_memory_mb` |
 | `POST /cache/reset` | clear it, for all datasets or `?dataset_path=`, and start a new generation of them (new ETags, {ref}`revalidation`). On a shared server admins only (`403 admin_only` otherwise). Each gunicorn worker has its own cache: the one that answers clears it now, the others drop the dataset's entries on their next request, when they see the new generation |
-| `POST /data/refresh?dataset_path=` | check the dataset against the disk (every file's modification time and size) and, if it changed, start a new generation, so every worker serves the change and the browser's revalidations get new tags. Open to every user who may read the dataset; an unchanged store keeps its generation and everyone's cached reads. Bounded: concurrent refreshes in a worker share one walk; a dataset is walked at most once per `server.refresh_min_interval_s` (10 s) across workers, and a refresh sooner waits (at most that long) for the walk at the interval's end, which every refresh waiting meanwhile shares, so the answer always comes from a walk that started after the request (`waited_s` says how long it waited); a walk stops after 3 s, and a store too large to fingerprint fully answers `status: "partial"` (with a `message`) and is not bumped: an admin's `POST /cache/reset` serves its in-place chunk writes. Answers `{"status": "full" or "partial" or "remote", "changed": bool, "checked": bool, "waited_s", "consolidated_metadata": null or {"stale": true, "detail", "message", "fix"}}`; when the store's consolidated metadata no longer describes it (an element added or rewritten without `zarr.consolidate_metadata`), the store is read without it until it is consolidated again, and `dataset_structure` carries the same `consolidated_metadata` notice. The header's Refresh dataset and each panel's Refresh call it |
+| `POST /data/refresh?dataset_path=` | check the dataset against the disk (every file's modification time and size) and, if it changed, start a new generation, so every worker serves the change and the browser's revalidations get new tags. Open to every user who may read the dataset; an unchanged store keeps its generation and everyone's cached reads. Bounded: concurrent refreshes in a worker share one walk; a dataset is walked at most once per `server.refresh_min_interval_s` (10 s) across workers, and a refresh sooner never waits in the server: it schedules one walk for the interval's end, shared by every refresh meanwhile, and answers at once `{"status": "scheduled", "after", "retry_after_s"}`; `POST /data/refresh?dataset_path=&after=<after>` then returns the result of the first walk that started at or after `after` (or `scheduled` again until there is one), so the answer always comes from a walk that started after the first request (the browser does this); a walk stops after 3 s, and a store too large to fingerprint fully answers `status: "partial"` (with a `message`) and is not bumped: an admin's `POST /cache/reset` serves its in-place chunk writes. Answers `{"status": "full" or "partial" or "remote" or "scheduled", "changed": bool, "checked": bool, "waited_s", "consolidated_metadata": null or {"stale": true, "detail", "message", "fix"}}`; when the store's consolidated metadata no longer describes it (an element added or rewritten without `zarr.consolidate_metadata`), the store is read without it until it is consolidated again, and `dataset_structure` carries the same `consolidated_metadata` notice. The header's Refresh dataset and each panel's Refresh call it |
 | `GET /directories/home`, `GET /directories/list?path=` | the data directory and its entries (dataset browser) |
 | `GET /zarr/url?url=` | whether a URL is an acceptable remote store |
 
@@ -395,12 +416,13 @@ one that is not a dataset `400 unsupported_type`.
 | 400 | `rows_conflict`, `dataset_rows_unsupported` | `rows` and `dataset_rows` in one request; `dataset_rows` on a route that does not read cells by dataset row |
 | 400 | (none) | a required parameter is missing, e.g. `{"error":"dataset_path parameter is required"}` |
 | 401 | (none) | login on, no session; checked first |
-| 403 | `outside_data_dir` | hosted server, local path outside the data directory and `allowed_dirs` (the message names no server directories) |
+| 403 | `outside_data_dir` | local path outside the data directory and `allowed_dirs`, on a shared server (or anywhere with `server.arbitrary_paths: none`), for a requester `server.arbitrary_paths` does not let through (the message names no server directories) |
 | 403 | `access_denied` | remote store refused by the remote-store policy |
 | 403 | `not_owner`, `legacy_admin_only`, `admin_only` | panel-set permissions; `admin_only` also for `POST /cache/reset` on a shared server |
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
+| 400 | `too_many_categories` | `/data/subset` balancing across a column of more than 10,000 categories. No reply is refused for its number of labels: a categorical codes reply (`format=f32&categorical=codes`, one column) is streamed in bounded memory. A JSON reply, and any request for several columns, is not: it builds every label of the rows asked at once, so for a column with millions of categories (a barcode on every cell) ask for that column alone through the codes route |
 | 500 | `stale_metadata` | the store's consolidated metadata (`.zmetadata`) no longer matches an array on disk, usually after an in-place rewrite. `POST /data/refresh` (Refresh dataset) reads the store without the stale metadata from then on; re-consolidate (`zarr.consolidate_metadata(path)`) and refresh again |
 | 500 | `read_failed` | any other failure to read an array the store lists, with the exception text |
 | 501 | `missing_dependency` | a remote store without the `annzarro[remote]` extras |
@@ -434,6 +456,7 @@ HTTP 400
 |---|---|---|---|
 | `server.max_response_elements` | 10,000,000 | rows × cols of the slice, from metadata, before reading | `413 response_too_large` |
 | `max_cells=` / `max_genes=` query parameters | none | number of requested cell / gene indices | `400 cap_exceeded` |
+| groups for subset balancing | 10,000 | a column's categories (metadata) | `400 too_many_categories` |
 
 One full row or one full column always passes the size guard, at any dataset size: that is the
 unit every view asks for. `max_cells=` and `max_genes=` are the client's own guard against

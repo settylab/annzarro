@@ -641,6 +641,11 @@ class ConfigManager:
             if value is None or value == "":
                 errors.append(f"Missing required configuration: {section}.{field}")
 
+        server_section = self.config.get("server") if isinstance(self.config.get("server"), dict) else {}
+        mode = server_section.get("arbitrary_paths", "admins")
+        if str(mode).strip().lower() not in ("admins", "local-only", "none"):
+            errors.append(f"Invalid server.arbitrary_paths: {mode!r} (expected admins, local-only or none)")
+
         port = self.config.get("server", {}).get("port") if isinstance(self.config.get("server"), dict) else None
         if port is not None and (isinstance(port, bool) or not isinstance(port, int) or not 0 < port < 65536):
             errors.append(f"Invalid server.port: {port!r} (expected an integer 1-65535)")

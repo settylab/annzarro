@@ -27,19 +27,21 @@
  * settings it cannot draw are refused with a message (largePlotRefusal):
  * far above the threshold the regular path would close the tab.
  */
+import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
 import { buildPlotLayout, withSubsetCoverage } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
-import { generateDiscreteColors } from './colors.js';
-import { LEGEND_PROXY, LEGEND_POINTS, attachViewportTracking } from './plot-make-helper.js';
+import { generateDiscreteColors, groupColours } from './colors.js';
+import { LEGEND_PROXY, LEGEND_POINTS, COLOUR_BAR, attachViewportTracking } from './plot-make-helper.js';
 import { drawPlot, clearForDraw, fitToContainer, setStatusTag, nudgeStatusTag, resolveColorscale } from '../../utils/panel-surface.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount } from '../../utils/categories.js';
 
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
 export function largePlotPoints() {
@@ -104,7 +106,10 @@ async function loadSeries(s, datasetPath, structure) {
   const info = structure && structure.obs && structure.obs.columns_info
     && structure.obs.columns_info[s.key];
   if (info && info.type === 'categorical') {
-    return DataManager.loadCategoryCodes(datasetPath, s.key);
+    // past GROUP_COLOURS categories: codes ranked by the server and the
+    // legend's few labels, never the column's label list
+    return DataManager.loadCategoryCodes(datasetPath, s.key,
+      { ranked: grouped(categoryCount(structure, 'obs', s.key) ?? 0) });
   }
   const v = await DataManager.loadVector(Config.API.OBS, { dataset_path: datasetPath, columns: s.key });
   if (!v) throw new Error(`obs.${s.key} is neither categorical nor numeric`);
@@ -324,8 +329,13 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   const only = { coords: 0, table: 0, nan: 0, outliers: 0 };
 
   if (cs && cs.codes) {
-    // categorical: key = category, missing values last-but-drawn-first
-    const nc = cs.categories.length;
+    // categorical: key = category, missing values last-but-drawn-first.
+    // Ranked codes (more than GROUP_COLOURS categories): each cell's
+    // category's rank over the whole column; key = colour group, rank mod
+    // 64, one legend entry per group (utils/categories.js).
+    const many = !!cs.ranked;
+    const ncAll = many ? cs.used : cs.categories.length;
+    const nc = many ? Math.min(ncAll, GROUP_COLOURS) : ncAll;
     const key = new Uint16Array(n);
     const NA = nc, DROP = nc + 1;
     for (let i = 0; i < n; i++) {
@@ -334,14 +344,48 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       else if (c === cs.MISSING) {
         key[i] = settings.hideNaN ? DROP : NA;
         if (settings.hideNaN) only.nan++;
-      } else key[i] = c;
+      } else key[i] = many ? groupOf(c) : c;
     }
     const { X, Y, start, kept } = groupByKey(x, y, key, nc + 1, DROP);
     filtered = n - kept;
+    // Colour groups: per group, the distinct ranks drawn (a bit set over the
+    // ranks) and the three lowest, whose labels the legend names
+    let groupNames = null;
+    if (many) {
+      const seen = new Uint8Array(Math.ceil(ncAll / 8) || 1);
+      const distinct = new Float64Array(GROUP_COLOURS);
+      const lowest = Array.from({ length: GROUP_COLOURS }, () => []);
+      for (let i = 0; i < n; i++) {
+        if (key[i] >= nc) continue;                 // NA or dropped
+        const r = cs.codes[i];
+        if (seen[r >> 3] & (1 << (r & 7))) continue;
+        seen[r >> 3] |= 1 << (r & 7);
+        const g = groupOf(r);
+        distinct[g]++;
+        const low = lowest[g];
+        if (low.length < LEGEND_NAMES || r < low[low.length - 1]) {
+          low.push(r);
+          low.sort((a, b) => a - b);
+          if (low.length > LEGEND_NAMES) low.pop();
+        }
+      }
+      let labels = new Map();
+      try {
+        labels = await DataManager.loadCategoryLabels(datasetPath, settings.color.key, lowest.flat(),
+          settings.color.type === 'var' ? 'var' : 'obs');
+      } catch (err) {
+        console.warn('Legend labels not loaded:', err && err.message);
+      }
+      groupNames = lowest.map((low, g) => {
+        const names = low.map(r => labels.get(r) ?? `#${r}`);
+        while (names.length < distinct[g]) names.push(null);   // counted for "+N more", never shown
+        return groupLegendName(names);
+      });
+    }
     // The regular path's palette rule (processCategories): the colours stored
     // in uns.<key>_colors when the palette is 'uns' and they exist
     let palette = null;
-    if (settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
+    if (!many && settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
       try {
         const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors` });
         if (r && r.data) palette = Array.isArray(r.data) ? r.data : [r.data];
@@ -350,15 +394,17 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       }
     }
     if (!palette || !palette.length) {
-      palette = generateDiscreteColors(nc, settings.categoryPalette && settings.categoryPalette !== 'uns'
-        ? settings.categoryPalette : undefined);
+      // colour groups use the same 64-colour palette in every path
+      const name = settings.categoryPalette && settings.categoryPalette !== 'uns' ? settings.categoryPalette : undefined;
+      palette = many ? groupColours(GROUP_COLOURS, name) : generateDiscreteColors(nc, name);
     }
     // blank values at the bottom, then the categories interleaved; legend
     // entries in category order with NA last, as the regular path lists them
     traces.push(...chunkTraces(X, Y, start[NA], start[NA + 1], 'NA', NA_COLOR, settings));
     const groups = [];
     for (let k = 0; k < nc; k++) {
-      const name = String(cs.categories[k]), color = palette[k % palette.length];
+      const name = many ? groupNames[k] : String(cs.categories[k]);
+      const color = palette[k % palette.length];
       if (start[k + 1] > start[k]) {
         groups.push(chunkTraces(X, Y, start[k], start[k + 1], name, color, settings));
         traces.push(legendTrace(name, color, settings, k + 1));
@@ -396,9 +442,12 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     if (container && id !== null) updateColorSliderUI(container, { color: v }, settings, id, keepRange);
     const cmin = settings.colorMin ?? lo, cmax = settings.colorMax ?? hi;
     const width = (cmax - cmin) / COLOR_BINS || 1;
-    // draw order: |bin centre| ascending, so the strongest values are on top
+    // draw order: the colour bar's top end last (|value| on a centred or
+    // diverging map, else position on the bar: utils/color-scales.js strongOnTopKey)
+    const strong = strongOnTopKey({ scale: settings.colorScale, centred: !!settings.centeringActive,
+      min: cmin, max: cmax });
     const order = [...Array(COLOR_BINS).keys()]
-      .sort((a, b) => Math.abs(cmin + (a + 0.5) * width) - Math.abs(cmin + (b + 0.5) * width) || a - b);
+      .sort((a, b) => strong(cmin + (a + 0.5) * width) - strong(cmin + (b + 0.5) * width) || a - b);
     const rank = new Uint16Array(COLOR_BINS);
     order.forEach((bin, r) => { rank[bin] = r + 1; });       // 0 = no value
     const DROP = COLOR_BINS + 1;
@@ -426,8 +475,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       if (ticks) Object.assign(bar, { tickvals: ticks.tickvals, ticktext: ticks.ticktext });
     }
     traces.push({
-      type: 'scattergl', mode: 'markers', x: [X[0]], y: [Y[0]], hoverinfo: 'skip', showlegend: false,
-      marker: { size: 0.1, opacity: 0, color: [cmin], cmin, cmax, colorscale: settings.colorScale,
+      type: 'scattergl', mode: 'markers', x: [X[0]], y: [Y[0]], hoverinfo: 'skip', showlegend: false, meta: COLOUR_BAR,
+      marker: { size: 0.1, opacity: 0, color: [cmin], cmin, cmax, colorscale: plotlyColorscale(settings.colorScale),
         reversescale: !!settings.colorReversed, showscale: true, colorbar: bar }
     });
     layout.showlegend = false;

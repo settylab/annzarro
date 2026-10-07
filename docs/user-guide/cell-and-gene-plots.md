@@ -47,7 +47,10 @@ Cell plot controls, coloured by a categorical obs column.
     UMAP and its 1M, 10M and 100,000-cell parts. Between the two smallest settings compared there,
     0.7 px / 0.1 and the chosen one, only the opacity differed: both sizes draw at 0.784 px. An
     automatic value is shown in grey italics and changes when the number of points does, for
-    example when you turn the subset off. In a 3D plot the automatic opacity is always 1: below 1,
+    example when you turn the subset off. In a 2D plot it also follows the zoom: once a zoom or
+    pan has settled, the count is the points inside the view, so a close view of a dense
+    region gets larger, more opaque points; Reset axes (or a double click) goes back to the
+    value for every point drawn. In a 3D plot the automatic opacity is always 1: below 1,
     Plotly draws 3D points out of depth order (far points over near ones). An opacity you choose is
     kept in 3D as well; its tooltip warns about the drawing order. Moving a slider or typing a value
     sets it; it then stays
@@ -213,12 +216,55 @@ genes without a module, drawn in grey as **NA**. View:
 {download}`userguide-categorical-na.json <../_tools/views/userguide-categorical-na.json>`.
 ```
 
+(many-categories)=
+### Columns with many categories
+
+A categorical column can have as many categories as cells: a barcode or a sample-cell id stored as
+a categorical. How it is coloured depends on its number of categories (shown in the dataset
+structure):
+
+- **Up to 64**: one colour and one legend entry per category, as above.
+- **More than 64**: the categories are ranked by their number of cells over the whole column,
+  most frequent first (ties in stored order), and rank *r* is drawn in colour *r* mod 64. The
+  legend has one entry per colour, so at most 64. Each names the three most frequent categories
+  of its colour among the points shown and counts the rest, for example "S1, S65, S129 +18 more";
+  clicking it hides and shows that colour, and double-clicking shows that colour alone. The
+  ten most frequent ranks get ten clearly different colours. The colours are drawn one after
+  the other, so where categories mix the last colours drawn cover the earlier ones. Hovering a
+  point names its own category. "As stored in adata.uns" colours are not used here.
+
+The ranking is computed once per column on the server, over all cells, and kept, so a category
+keeps its colour across the parts of a subset ({doc}`subsets`), under a table filter and in every
+panel coloured by the same column. Only the points shown change; the colours do not move. Ranking
+a column of 95.6 million cells takes under half a second the first time (M3 Max), a few
+milliseconds after that.
+
+With more than 500,000 distinct categories among the points of a regular (not large-plot)
+panel, for example a barcode column on a million cells, the hover would need one label per
+point. Such a plot is coloured at once and starts with its hover off: **No hover** is selected
+in its **Hover** list, and no label is read; the legend's names are read on their own (three
+per colour). Pick hover columns to turn the hover on: the labels are then read, at any count, if
+they fit the browser's memory ({ref}`browser-memory`); if they do not, the hover stays off and
+the status line says what they need and what is free. Under a subset of 100,000 cells the hover
+is on as usual.
+
+Such a column also works in the hover (the panel's **Hover** list, {ref}`hover-columns`) and as a
+table column at any size: AnnZarro reads its labels only for the cells shown, never its whole
+category list. In a table, a column with more than 10,000 distinct values is filtered with a typed
+value: **Equals** and **Not** take a text box instead of a list of every value
+({doc}`tables-and-filters`). Balancing a subset across a column with more than 10,000 categories is not
+offered ({doc}`subsets`).
+
+(hover-columns)=
 ## Hover
 
 Hovering a point shows its name, its x and y (and z) values and its colour value `c` (for a
 categorical colour, the category), with numbers to 4 significant digits. Below them it lists the
-panel's hover columns. Pick them in the panel's **Hover** list, which offers the obs columns
-(Cell Plot) or var columns (Gene Plot); Ctrl-click or Cmd-click selects several. A change loads
+panel's hover columns. Pick them in the panel's **Hover** list, which offers **No hover**, then the
+obs columns (Cell Plot) or var columns (Gene Plot); Ctrl-click or Cmd-click selects several.
+**No hover** shows no hover label at all (a click still focuses the point); it is the `hoverOff`
+setting, and a plot coloured by a column of very many categories starts with it
+({ref}`many-categories`). A change loads
 only those columns and relabels the points without redrawing the plot. The choice is the panel's
 `hoverInfo` setting, kept in panel sets and share links ({doc}`../reference/deep-links`). In a
 view's JSON it can also name other sources, such as a layer column:

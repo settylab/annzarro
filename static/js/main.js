@@ -7,26 +7,37 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView,
+    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
-import { mountNamePicker, fetchNameMatches, mergeScopedMatches } from './utils/name-picker.js';
+import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
+import { clearSiteStorage, clearSiteStorageNow, bareUrl } from './utils/site-storage.js';
 import { sameSubset } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
 import { registerStatusActions } from './utils/panel-surface.js';
-import { canSnapshot, exportImage } from './utils/plot-export.js';
+import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
+import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
 import { overrideOnce } from './utils/memory-guard-ui.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
+import {
+    compareStores, describeComparison, versionNotice, orderCandidates, automaticCandidate,
+    savedStoreOf, storeName, hasDataTier
+} from './utils/view-store.js';
+import { probeStore, prewarmStore, appVersion } from './utils/store-identity.js';
+import { defaultHierarchy } from './utils/deeplink.js';
+import { installWheelHandover } from './utils/wheel-handover.js';
+import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
 
 const App = (function() {
     // Private variables
     let _isInitialized = false;
+    let _closeAllAsking = false; // the Close all question is open
     let _sessionModal = null;
     
     /**
@@ -86,6 +97,12 @@ const App = (function() {
 
             // Loading a panel set restores its whole view through _applyView
             SessionManager.setViewApplier(_applyPanelSet);
+            SessionManager.setPanelSetHelpers({ status: _panelSetStatus, chooseDataset: _chooseDatasetForSet });
+
+            // Every exported figure carries its recipe; `annzarro export`
+            // drives the same export through window.annzarroExport
+            setRecipeProvider(_figureRecipe);
+            _installExportHooks();
 
             // Notices raised by modules that cannot import main.js (utils/notify.js)
             document.addEventListener(NOTIFY_EVENT, (e) => {
@@ -194,9 +211,11 @@ const App = (function() {
      * @returns {Promise<string>} absolute URL, ?dataset_path= plus #view=
      */
     async function _buildShareView(datasetPath) {
-        const path = datasetPath || _lastLoadedDatasetPath || '';
         // The same capture a saved panel set stores (SessionManager.captureView)
         const view = SessionManager.captureView();
+        // The store as the view records it: relative to the data directory
+        // when it is inside it, so the link opens on any server holding it
+        const path = (view.store && view.store.path) || datasetPath || _lastLoadedDatasetPath || '';
         return buildDeepLinkUrl(window.location.origin + window.location.pathname,
             path, await encodeViewPayload(view));
     }
@@ -212,7 +231,7 @@ const App = (function() {
         const button = document.getElementById('btn-share-link');
         const fallback = document.getElementById('share-link-fallback');
         const field = document.getElementById('share-link-field');
-        const datasetPath = _lastLoadedDatasetPath || DataManager.getCurrentDataset();
+        const datasetPath = (_noDataView && _noDataView.missing) || _lastLoadedDatasetPath || DataManager.getCurrentDataset();
         if (!datasetPath) {
             _showNotification('Nothing to share', 'Open a dataset first.', 'warning', 3000);
             return;
@@ -220,6 +239,10 @@ const App = (function() {
 
         let link;
         try {
+            // A large store's names may still be being fingerprinted: wait
+            // briefly, then share with what is known and say so
+            const settled = _noDataView ? { complete: true } : await SessionManager.settleStoreOfView(3000);
+            if (!settled.complete) _noticeFingerprintPending();
             link = await _buildShareView(datasetPath);
         } catch (error) {
             console.error('Building share link failed:', error);
@@ -243,6 +266,20 @@ const App = (function() {
         }
     }
     let _shareLabelTimer = null;
+
+    /**
+     * Said when a view is saved before the open store's cell and gene names
+     * are fingerprinted (a large store, just opened). The view records the
+     * counts and the fields; only the names are not checked when it opens.
+     * @private
+     */
+    function _noticeFingerprintPending() {
+        _showNotification('Saved without the cell and gene check',
+            'This store is still being fingerprinted (a large store takes a few seconds once). ' +
+            'The view records its size and fields, but not yet its cell and gene names, so a store ' +
+            'with other names of the same size is not detected when it opens. Save again in a moment to include them.',
+            'info', 10000);
+    }
 
     /**
      * Select all of an input's text with the caret at the start, so the
@@ -286,9 +323,46 @@ const App = (function() {
      * layout tree (or the legacy flat panel list). Shared by deep links and
      * loaded panel sets, so both restore exactly the same way.
      * @param {{datasetPath: string, view: Object|null}} target
+     * @param {{exact?: boolean, located?: Object, trust?: boolean}} [opts] - trust:
+     *   the user chose this store (a Load button): cells or genes that differ
+     *   are said in a notice, not asked about first
      * @private
      */
-    async function _applyView({ datasetPath, view }) {
+    async function _applyView({ datasetPath, view }, { exact = false, located = null, trust = false } = {}) {
+        // Where the view's store is here: its path, the path relative to the
+        // data directory, or a store in the data directory with the same
+        // cells and genes (or, for a view without a fingerprint, the same
+        // name). Not found: the layout opens without data.
+        located = located || await _locateStore(datasetPath, view, { exact });
+        if (!located.path) {
+            await _applyViewWithoutData(view, located);
+            return { status: 'no-data', message: `${located.missing || datasetPath} was not found` };
+        }
+        const savedFp = located.saved ? located.saved.fp : null;
+        const cmp = compareStores(savedFp, located.probe.fingerprint);
+        const said = describeComparison(cmp, located.path);
+        if (said && said.strong && !trust) {
+            // Open the layout without data while the user decides
+            await _applyViewWithoutData(view, { ...located, differs: true, missing: located.path });
+            if (_sessionModal) _sessionModal.hide();
+            const choice = await _askNotification(said.title, said.message, [
+                { key: 'open', label: 'Open anyway', primary: true },
+                { key: 'change', label: 'Change dataset' },
+                { key: 'none', label: 'Keep without data' }
+            ]);
+            if (choice === 'change') {
+                _showChangeDataset();
+                return { status: 'no-data', message: 'The store differs; choose a dataset' };
+            }
+            if (choice !== 'open') return { status: 'no-data', message: 'The store differs; opened without data' };
+        }
+        datasetPath = located.path;
+        // A store of the data directory is named as the listing (and so the
+        // dropdown) names it, whichever spelling reached here: the server's
+        // path for it, or the path relative to the data directory
+        // (rel_path, as a share link or saved set records it).
+        datasetPath = await _listedPathFor(datasetPath, located.probe && located.probe.relPath);
+        _leaveNoDataMode();
 
         // 0. The cells the view shows. A view without `subset` keeps the
         //    subset of an already open dataset (or the default for a new
@@ -386,6 +460,413 @@ const App = (function() {
                 });
             }
         }
+        _afterViewOpened(view, located, cmp, trust && said ? { ...said, strong: false } : said);
+        return { status: 'success' };
+    }
+
+    // ── Where a view's store is, and a view without one ───────────────────
+
+    /** A view open without data: {view, saved, missing}; null otherwise. */
+    let _noDataView = null;
+    /** When the last notice about an opened view was shown (a later toast would hide it). */
+    let _viewNoticeAt = 0;
+    // what that notice said, so a notice that replaces it can carry it on
+    let _viewNotice = null;
+
+    /** The last view notice, if it is from this load, to begin a notice that replaces it. @private */
+    function _carriedViewNotice() {
+        return _viewNotice && Date.now() - _viewNoticeAt < 3000 ? `${_viewNotice}\n\n` : '';
+    }
+
+    /**
+     * Find the store a view names on this server.
+     *
+     * In order: the path as given (a relative name resolves in the data
+     * directory, server side), the path the view recorded, the absolute path
+     * it had where it was saved. If none is here, a store in the data
+     * directory with the same cells and genes (by fingerprint), or for a view
+     * without a fingerprint the one store with the same file name, is opened
+     * instead, and the user is told. A path the server refuses (outside the
+     * data directory, server.arbitrary_paths) is never opened.
+     * @param {string|null} datasetPath
+     * @param {Object|null} view
+     * @param {{exact?: boolean}} [opts] - exact: only this path (the user chose it)
+     * @returns {Promise<{path: string|null, probe?: Object, saved: Object|null,
+     *           repointed?: Object, missing?: string, refused?: Object, candidates?: Array}>}
+     * @private
+     */
+    const savedHasData = (saved) => !!(saved && hasDataTier(saved.fp));
+
+    /**
+     * The path the dataset listing uses for a store: the entry whose path is
+     * `path`, or whose rel_path is the store's `relPath`. `path` itself when
+     * the store is not listed (a remote URL, outside the data directory).
+     * @private
+     */
+    async function _listedPathFor(path, relPath) {
+        const listing = (await DataManager.loadDatasets().catch(() => [])) || [];
+        const hit = listing.find(d => d && d.path === path)
+            || (relPath && listing.find(d => d && d.rel_path === relPath));
+        return hit ? hit.path : path;
+    }
+
+    async function _locateStore(datasetPath, view, { exact = false } = {}) {
+        const saved = savedStoreOf(view, datasetPath);
+        const tries = [...new Set([datasetPath, ...(exact ? [] : [saved && saved.path])].filter(Boolean))];
+        let refused = null, failed = null;
+        // A view with the cells-and-genes tier waits up to 1 s for the
+        // store's (a small store's takes milliseconds; a large one's is
+        // compared later, in the background: _verifyCellsLater)
+        const wait = savedHasData(saved) ? 1 : 0;
+        for (const path of tries) {
+            const probe = await probeStore(path, { wait });
+            if (probe.ok) return { path: probe.path || path, probe, saved };
+            if (probe.httpStatus === 403) refused = refused || { path, ...probe };
+            else if (probe.reason !== 'not_found') failed = failed || { path, ...probe };
+        }
+        const missing = datasetPath || (saved && saved.path) || null;
+        if (exact || failed) return { path: null, saved, missing, refused, failed };
+        const candidates = await _storeCandidates(saved);
+        const pick = automaticCandidate(candidates, saved);
+        if (pick) {
+            const probe = await probeStore(pick.path);
+            if (probe.ok) {
+                return { path: probe.path || pick.path, probe, saved,
+                    repointed: { from: missing, to: pick.path, match: pick.match } };
+            }
+        }
+        // Last, the absolute path the view had where it was saved: a hint,
+        // for a server whose data directory moved (confined as any path)
+        if (saved && saved.abs && !tries.includes(saved.abs)) {
+            const probe = await probeStore(saved.abs, { wait });
+            if (probe.ok) {
+                return { path: probe.path || saved.abs, probe, saved,
+                    repointed: { from: missing, to: saved.abs, match: 'abs' } };
+            }
+        }
+        return { path: null, saved, missing, refused, candidates };
+    }
+
+    /**
+     * The data directory's stores, ordered for a saved store: the ones with
+     * the same counts are fingerprinted (the server waits up to 2 s each;
+     * a large store still being hashed counts as "same size").
+     * @param {Object|null} saved - view.store
+     * @returns {Promise<Array>} orderCandidates output
+     * @private
+     */
+    async function _storeCandidates(saved) {
+        DataManager.clearCache(Config.API.DATASETS);
+        const listing = (await DataManager.loadDatasets().catch(() => [])) || [];
+        const entries = listing.filter(d => d && d.path && !d.error).map(d => ({ ...d }));
+        const fp = saved && saved.fp;
+        if (fp && Number.isFinite(fp.n_obs)) {
+            const same = entries.filter(e => e.cells === fp.n_obs && e.genes === fp.n_var).slice(0, 12);
+            await Promise.all(same.map(async entry => {
+                const probe = await probeStore(entry.path, { wait: 2 }).catch(() => null);
+                if (probe && probe.ok) entry.cmp = compareStores(fp, probe.fingerprint);
+            }));
+            entries.forEach(e => {
+                if (!e.cmp && Number.isFinite(e.cells)
+                    && (e.cells !== fp.n_obs || e.genes !== fp.n_var)) {
+                    e.cmp = { level: 'different', dataKnown: true, changes: [] };
+                }
+            });
+        }
+        return orderCandidates(entries, saved);
+    }
+
+    /**
+     * Open a view's layout without data: every panel a placeholder that keeps
+     * its settings, a notice naming the store that is not here, and "Change
+     * dataset" to open the view on a store of this server.
+     * @private
+     */
+    async function _applyViewWithoutData(view, located) {
+        const saved = located.saved || null;
+        const missing = located.missing || (saved && saved.path) || 'its dataset';
+        _noDataView = { view, saved, missing, differs: !!located.differs };
+        SessionManager.setDetachedStore(saved, view);
+        const button = document.getElementById('btn-change-dataset');
+        if (button) button.hidden = false;
+        const pathLabel = document.getElementById('dataset-path');
+        if (pathLabel) pathLabel.textContent = `No data: ${missing}`;
+
+        let layout = view && view.layout;
+        if (!layout && view && Array.isArray(view.panels) && view.panels.length) {
+            const panelConfigs = {};
+            const ids = view.panels.map((panel, i) => {
+                const type = (panel.type || '').replace(/_/g, '-');
+                const id = (panel.config && panel.config.id && String(panel.config.id).startsWith(type + '-'))
+                    ? panel.config.id : `${type}-${i + 1}`;
+                panelConfigs[id] = { ...(panel.config || {}), id, ...(panel.title ? { title: panel.title } : {}) };
+                return id;
+            });
+            layout = { v: VIEW_SCHEMA_VERSION, hierarchy: defaultHierarchy(ids), controlState: {}, panelConfigs };
+        }
+        const message = located.differs
+            ? `The store at ${missing} differs from the one this view was saved on. Its settings are kept.`
+            : `This view's dataset, ${missing}, is not on this server. Its settings are kept.`;
+        if (layout) {
+            PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
+            await PanelManager.restoreLayout(layout, {
+                placeholder: { message, onChangeDataset: () => _showChangeDataset() }
+            });
+        }
+        if (located.differs) return;
+        const why = located.refused
+            ? `${located.refused.path} is outside the data directory this server shares, so it cannot be opened here.`
+            : located.failed
+                ? `${located.failed.path} could not be read: ${located.failed.error}`
+                : `${missing} is not on this server, and no store in its data directory matches it.`;
+        // not awaited: the view is open, the answer can come any time
+        _askNotification('Dataset not found',
+            `${why}\n\nThe layout is open without data, every panel keeping its settings. ` +
+            'Choose a dataset to open the view on.',
+            [{ key: 'change', label: 'Change dataset', primary: true }, { key: 'later', label: 'Later' }])
+            .then(choice => { if (choice === 'change') _showChangeDataset(); });
+    }
+
+    // Where a set's dataset is, for the cards of the Load dialog and the welcome
+    // list. Sets saved on one store share one search (it can fingerprint every
+    // store of the same size), kept for half a minute.
+    const _locateCache = new Map();
+
+    function _locateForCard(plan) {
+        const saved = savedStoreOf(plan.view, plan.datasetPath);
+        const key = JSON.stringify([plan.datasetPath, saved && saved.path, saved && saved.fp && saved.fp.data]);
+        const hit = _locateCache.get(key);
+        if (hit && Date.now() - hit.at < 30000) return hit.promise;
+        const promise = _locateStore(plan.datasetPath, plan.view).catch(error => ({
+            path: null, saved, missing: plan.datasetPath, failed: { path: plan.datasetPath, error: error.message }
+        }));
+        _locateCache.set(key, { at: Date.now(), promise });
+        return promise;
+    }
+
+    /**
+     * What a panel set's card shows: its dataset and whether it is on this
+     * server (_locateStore: its path, or the store with the same cells and
+     * genes), its panels (open at save / all), and whether a dataset is open.
+     * @param {Object} data - the stored panel set
+     * @returns {Promise<Object|null>} null when it is not a panel set
+     * @private
+     */
+    async function _panelSetStatus(data) {
+        const plan = panelSetToView(data);
+        if (!plan) return null;
+        const closed = closePlanPanels(plan);
+        const status = {
+            named: plan.datasetPath || null, found: null,
+            open: closed.savedCount, total: closed.closedPanels.length
+        };
+        if (plan.datasetPath) {
+            const located = await _locateForCard(plan);
+            status.found = !!located.path;
+            status.foundPath = located.path || null;
+            status.repointed = located.repointed || null;
+            status.refused = located.refused || null;
+            status.failed = located.failed || null;
+        }
+        return status;
+    }
+
+    /**
+     * "Choose dataset...": the Change dataset picker, for a set. Resolves to
+     * the path the user picked, or null when the picker is closed without one.
+     * @private
+     */
+    function _chooseDatasetForSet(plan) {
+        return new Promise(resolve => {
+            let picked = false;
+            if (_sessionModal) _sessionModal.hide();
+            const modalEl = document.getElementById('change-dataset-modal');
+            if (modalEl) {
+                modalEl.addEventListener('hidden.bs.modal', () => { if (!picked) resolve(null); }, { once: true });
+            }
+            _showChangeDataset({
+                pending: { view: plan.view, saved: savedStoreOf(plan.view, plan.datasetPath),
+                    missing: plan.datasetPath || null },
+                onChoose: async (path) => { picked = true; resolve(path); }
+            });
+        });
+    }
+
+    /** A dataset is open again: the view is no longer without data. @private */
+    function _leaveNoDataMode() {
+        _noDataView = null;
+        SessionManager.setDetachedStore(null);
+        const button = document.getElementById('btn-change-dataset');
+        if (button) button.hidden = true;
+    }
+
+    /**
+     * After a view opened on a store: say what is worth saying (opened on
+     * another path, other fields, another AnnZarro version), then check the
+     * cells and genes once a large store's names are hashed.
+     * @private
+     */
+    function _afterViewOpened(view, located, cmp, said) {
+        if (!located) return;
+        // One notice (a toast replaces the one before it), every point in it
+        const parts = [];
+        let title = null;
+        if (located.repointed) {
+            const how = located.repointed.match === 'same' || located.repointed.match === 'fields'
+                ? 'has the same cells and genes'
+                : located.repointed.match === 'abs'
+                    ? 'is where the view was saved'
+                    : 'has the same name (this view records no fingerprint to check it by)';
+            title = 'Opened on another path';
+            parts.push(`${located.repointed.from} is not on this server. Opened ${located.repointed.to}, which ${how}.`);
+        }
+        if (said && !said.strong) {
+            title = title || said.title;
+            parts.push(said.message);
+        }
+        const version = versionNotice(view && view.annzarro, appVersion());
+        if (version) {
+            title = title || 'Saved with another AnnZarro version';
+            parts.push(version);
+        }
+        if (parts.length) {
+            _viewNoticeAt = Date.now();
+            _viewNotice = `${title}: ${parts.join('\n\n')}`;
+            _showNotification(title, parts.join('\n\n'), 'info', 12000);
+        }
+        const savedFp = located.saved && located.saved.fp;
+        if (cmp && hasDataTier(savedFp) && !cmp.dataKnown && cmp.level !== 'different') {
+            _verifyCellsLater(savedFp, located.path);
+        }
+    }
+
+    /**
+     * A large store's cell and gene names are hashed in the background on the
+     * server; compare them when they are, without holding up the view.
+     * @private
+     */
+    async function _verifyCellsLater(savedFp, path) {
+        for (let i = 0; i < 12; i++) {
+            const probe = await probeStore(path, { wait: 10 }).catch(() => null);
+            if (!probe || !probe.ok) return;
+            if (DataManager.getCurrentDataset() !== path) return;
+            if (probe.status !== 'ready') continue;
+            const said = describeComparison(compareStores(savedFp, probe.fingerprint), path);
+            if (said && said.strong) {
+                const choice = await _askNotification(said.title, said.message,
+                    [{ key: 'change', label: 'Change dataset', primary: true }, { key: 'keep', label: 'Keep' }]);
+                if (choice === 'change') {
+                    _noDataView = { view: SessionManager.captureView(), saved: { path, name: storeName(path) },
+                        missing: path, differs: true };
+                    _showChangeDataset();
+                }
+            }
+            return;
+        }
+    }
+
+    /**
+     * "Change dataset": open the view on a store of this server. Lists the
+     * data directory's stores with the same cells and genes first, then any
+     * other store, and takes a path (which the server confines as always).
+     * The view is then opened on the chosen store, behind the fingerprint
+     * warning if it differs.
+     * @private
+     */
+    async function _showChangeDataset({ pending: given = null, onChoose = null } = {}) {
+        const modalEl = document.getElementById('change-dataset-modal');
+        if (!modalEl) return;
+        const pending = given || _noDataView || {
+            view: SessionManager.captureView(),
+            saved: SessionManager.storeOfView(),
+            missing: DataManager.getCurrentDataset()
+        };
+        // the notice that offered this has been answered
+        document.querySelectorAll('.notification-ask').forEach(el => {
+            if ((el.dataset.key || '').includes('Dataset not found')) {
+                const close = el.querySelector('.notification-close');
+                if (close) close.click();
+            }
+        });
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        const list = document.getElementById('change-dataset-list');
+        const savedLine = document.getElementById('change-dataset-saved');
+        const error = document.getElementById('change-dataset-error');
+        const saved = pending.saved;
+        const fp = saved && saved.fp;
+        savedLine.textContent = `This view was saved on ${saved ? saved.path : 'an unknown store'}` +
+            (fp && Number.isFinite(fp.n_obs) ? ` (${fp.n_obs.toLocaleString('en-US')} cells x ${fp.n_var.toLocaleString('en-US')} genes)` : '') +
+            (fp ? '.' : '; it records no fingerprint, so stores are matched by name only.');
+        error.hidden = true;
+        list.textContent = 'Looking for matching stores...';
+        modal.show();
+
+        const choose = async (path) => {
+            modal.hide();
+            // a caller that asked for a store (the Load dialog) takes it from here
+            if (onChoose) { await onChoose(path); return; }
+            const view = pending.view || { v: VIEW_SCHEMA_VERSION };
+            await _applyView({ datasetPath: path, view }, { exact: true });
+            PanelManager.ensureWelcomeFallback();
+        };
+        const openPath = document.getElementById('change-dataset-open-path');
+        const input = document.getElementById('change-dataset-path');
+        openPath.onclick = async () => {
+            const path = input.value.trim();
+            if (!path) return;
+            const probe = await probeStore(path);
+            if (!probe.ok) {
+                error.textContent = probe.error || `${path} could not be opened`;
+                error.hidden = false;
+                return;
+            }
+            await choose(probe.path || path);
+        };
+
+        const ordered = await _storeCandidates(saved);
+        list.textContent = '';
+        const groups = [
+            ['Same cells and genes', e => e.match === 'same' || e.match === 'fields'],
+            ['Same size (cell and gene names not compared yet)', e => e.match === 'counts'],
+            ['Same name, other cells or genes', e => e.match === 'name-different'],
+            ['Same name', e => e.match === 'name'],
+            ['Other datasets in the data directory', e => e.match === 'other' || e.match === 'different']
+        ];
+        for (const [title, test] of groups) {
+            const members = ordered.filter(test);
+            if (!members.length) continue;
+            const group = document.createElement('div');
+            group.className = 'change-dataset-group';
+            const h = document.createElement('h6');
+            h.textContent = title;
+            group.appendChild(h);
+            for (const entry of members) {
+                const row = document.createElement('div');
+                row.className = 'change-dataset-item';
+                row.dataset.path = entry.path;
+                row.dataset.match = entry.match;
+                const label = document.createElement('div');
+                const name = document.createElement('div');
+                name.textContent = entry.rel_path || entry.name || entry.path;
+                const meta = document.createElement('div');
+                meta.className = 'change-dataset-meta';
+                const counts = Number.isFinite(entry.cells)
+                    ? `${entry.cells.toLocaleString('en-US')} cells x ${entry.genes.toLocaleString('en-US')} genes` : '';
+                const fields = entry.cmp && entry.cmp.level === 'fields' && entry.cmp.changes.length
+                    ? `; fields differ: ${entry.cmp.changes.slice(0, 3).join('; ')}` : '';
+                meta.textContent = counts + fields;
+                label.append(name, meta);
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn btn-sm btn-outline-primary';
+                button.textContent = 'Open';
+                button.addEventListener('click', () => choose(entry.path));
+                row.append(label, button);
+                group.appendChild(row);
+            }
+            list.appendChild(group);
+        }
+        if (!list.children.length) list.textContent = 'No dataset in the data directory.';
     }
 
     /**
@@ -395,62 +876,130 @@ const App = (function() {
      * panel's settings. Panel ids are kept, so a plot's tableFilter still
      * names its table.
      *
-     * A set saved on another dataset than the open one asks first, in a
-     * notice that does not block the page; nothing changes unless the user
-     * agrees.
+     * Nothing asks first: each Load button says what it does, and the open
+     * panels a load replaces stay in the closed list, one click from
+     * reopening. The options are the ablations of a plain Load (which
+     * switches to the set's dataset and opens its panels, as a share link
+     * does):
+     *
+     * - `keepDataset` / `onDataset`: load onto the open dataset, or onto the
+     *   store the user picked, instead of the set's own (a store the user
+     *   chose is not asked about again if its cells differ: a notice says so)
+     * - `add: true`: keep the open view as it is and only add the set's
+     *   panels to the closed list (_addPanelSet).
+     *
+     * The autosave restore and the subset change keep their panels open.
      * @param {{datasetPath: string|null, view: Object, closedPanels: Array, legacy: boolean}} plan
      * @param {Object} panelSet - the stored panel set
+     * @param {{add?: boolean, keepDataset?: boolean, onDataset?: string|null}} [options]
      * @returns {Promise<{status: string, message: string}>}
      * @private
      */
-    async function _applyPanelSet(plan, panelSet) {
+    async function _applyPanelSet(plan, panelSet, { add = false, keepDataset = false, onDataset = null } = {}) {
         const name = (panelSet && panelSet.name) || 'panel set';
         const current = DataManager.getCurrentDataset();
-        const target = plan.datasetPath || current;
+        if (add) return _addPanelSet(plan, name);
+        // A store the user chose (the open one, or one picked) is opened
+        // as asked; otherwise the set's own, found by its name in the data
+        // directory or by the store with the same cells and genes
+        const chosen = keepDataset ? current : onDataset;
+        if (keepDataset && !current) {
+            return { status: 'error', message: `No dataset is open to load "${name}" onto.` };
+        }
+        const target = chosen || plan.datasetPath || current;
+        const located = target
+            ? await _locateStore(target, plan.view, { exact: !!chosen })
+            : { path: null };
+        const listing = await DataManager.loadDatasets().catch(() => []);
         if (!target) {
             return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
         }
-        // the same store named relative vs absolute is not a switch
-        const listing = await DataManager.loadDatasets().catch(() => []);
-        if (current && !sameDatasetPath(target, current, listing)) {
-            if (_sessionModal) _sessionModal.hide();
-            const choice = await _askNotification(
-                'Switch dataset?',
-                `"${name}" was saved on\n${target}\n\nThe open dataset is\n${current}\n\nLoading it switches datasets and replaces the open panels.`,
-                [{ key: 'switch', label: 'Switch and load', primary: true }, { key: 'cancel', label: 'Keep current' }]
-            );
-            if (choice !== 'switch') {
-                return { status: 'cancelled', message: `Kept ${current}; "${name}" was not loaded.` };
-            }
-        }
+        const total = closePlanPanels(plan).closedPanels.length;
 
         // The set replaces the open view. Open panels are closed (they stay
         // available to reopen); a panel with an id the set brings is removed,
         // so the set's panel gets that id back unchanged.
         const incoming = new Set([
             ...(plan.view && plan.view.layout ? collectTileIds(plan.view.layout.hierarchy) : []),
-            ...plan.closedPanels.map(p => p.id)
+            ...plan.closedPanels.map(p => p.id).filter(Boolean)
         ]);
         PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
         incoming.forEach(id => PanelManager.removePanel(id));
 
         // keep the open store's own path when the set names it differently
-        const sameStore = current && sameDatasetPath(target, current, listing);
-        await _applyView({ datasetPath: sameStore ? current : target, view: plan.view });
+        if (current && located.path && sameDatasetPath(located.path, current, listing)) located.path = current;
+        const applied = await _applyView({ datasetPath: target, view: plan.view }, { located, trust: !!chosen });
+        const datasetPath = located.path || target;
 
         // Panels that were closed when the set was saved come back closed.
         const idMap = new Map();
         const closedConfigs = plan.closedPanels.map(p => {
             const config = JSON.parse(JSON.stringify(p.config));
             PanelManager.registerClosedPanel(p.type, config);
-            if (config.id !== p.id) idMap.set(p.id, config.id);
+            if (p.id && config.id !== p.id) idMap.set(p.id, config.id);
             return config;
         });
         if (idMap.size) remapPanelReferences(closedConfigs, idMap);
 
         PanelManager.updateSourcePanelSelection();
         PanelManager.ensureWelcomeFallback();
+        const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
+        // A toast replaces the one before it: these keep what the view's
+        // notice said (opened on another path, another version)
+        if (!(plan.view && plan.view.layout && collectTileIds(plan.view.layout.hierarchy).length)) {
+            // a set saved with no panel open
+            _showNotification(`Loaded "${name}"`, _carriedViewNotice() + `No panel was open when the set was saved, so none ` +
+                `opened; its ${listed} under Duplicate or Reopen Panel.`, 'success', 8000);
+        }
+        if (applied && applied.status === 'no-data') {
+            return { status: 'no-data', message: `Loaded "${name}" without data: ${applied.message}` };
+        }
         return { status: 'success', message: `Loaded "${name}"` };
+    }
+
+    // Fresh ids for panels added from a panel set: `<type>-<n>`, n never repeating
+    let _addedIdCounter = Date.now();
+
+    /**
+     * "Add to closed panels": the set's panels join the closed list, each
+     * with its full config and title; the open panels, dataset, subset and
+     * focus stay as they are. Ids the app already uses get fresh ones, and
+     * the set's references between its own panels follow (panelsToAdd). A
+     * set saved on another dataset is added too, its panels marked so, and
+     * the dataset is not switched. Nothing was replaced, so no saved layout
+     * is offered.
+     * @private
+     */
+    async function _addPanelSet(plan, name) {
+        const current = DataManager.getCurrentDataset();
+        let other = null;
+        if (plan.datasetPath) {
+            const listing = await DataManager.loadDatasets().catch(() => []);
+            if (!current || !sameDatasetPath(plan.datasetPath, current, listing)) other = plan.datasetPath;
+        }
+        const added = panelsToAdd(plan, id => !!PanelManager.getPanel(id),
+            type => `${type}-${++_addedIdCounter}`);
+        // A title the app shows already (table-filter menus, notices) gets the
+        // set's name after it: "Cell Plot 1 (walk_three_panels)"
+        const titles = new Set(PanelManager.getAllPanels().map(p => p.getTitle()));
+        added.forEach(p => {
+            if (p.config.title && titles.has(p.config.title)) p.config.title = `${p.config.title} (${name})`;
+            titles.add(p.config.title);
+        });
+        let n = 0;
+        added.forEach(p => {
+            const panel = PanelManager.registerClosedPanel(p.type, p.config, { keepTitle: true });
+            if (!panel) return;
+            panel._addedFrom = { set: name, otherDataset: other };
+            n++;
+        });
+        PanelManager.updateSourcePanelSelection();
+        const panels = `${n} panel${n === 1 ? '' : 's'}`;
+        _showNotification(`Added "${name}"`,
+            `${panels} added to the closed panels under Duplicate or Reopen Panel; the open view is unchanged.` +
+            (other ? ` The set was saved on ${other}: its panels are marked "other dataset".` : ''),
+            'success', 8000);
+        return { status: 'success', message: `Added ${panels} of "${name}" to the closed panels` };
     }
 
     /**
@@ -621,6 +1170,73 @@ const App = (function() {
     }
 
     /**
+     * The recipe an exported figure carries (utils/plot-export.js): the view
+     * as a panel set, the panel, the export's size, and the AnnZarro
+     * version. `annzarro export --from fig.png` makes the figure again from
+     * it; with the same store and version, the same figure.
+     * @param {HTMLElement} gd
+     * @param {{how: string, format: string, width: number, height: number, scale: number}} info
+     * @private
+     */
+    function _figureRecipe(gd, info) {
+        const tile = gd && gd.closest ? gd.closest('.tile') : null;
+        const view = SessionManager.captureView();
+        // A figure is published: it names its store by name in the data
+        // directory and by fingerprint, never by this server's absolute path
+        // (unless the store is outside the data directory, where that path
+        // is all there is)
+        if (view.store && view.store.abs) {
+            view.store = { ...view.store };
+            delete view.store.abs;
+        }
+        const store = view.store || null;
+        const panelSet = { name: 'figure', dataset: store ? store.path : DataManager.getCurrentDataset(), view };
+        return {
+            annzarro_recipe: 1,
+            annzarro_version: appVersion(),
+            panel: tile ? tile.dataset.tileId : null,
+            export: { how: info.how, format: info.format, width: info.width, height: info.height, scale: info.scale },
+            panel_set: panelSet
+        };
+    }
+
+    /**
+     * Hooks `annzarro export` (annzarro/export.py) calls in a headless browser:
+     *   annzarroPlots()             the open plot panels' tile ids
+     *   annzarroPlotState()         a signature of what is drawn (stable = done)
+     *   annzarroExport(id, format)  the panel's image, exactly as its Export
+     *                               button makes it (size and scale from its
+     *                               settings, coverage notice, recipe)
+     * @private
+     */
+    function _installExportHooks() {
+        const plotOf = (id) => {
+            const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(id)}"]`);
+            return tile ? tile.querySelector('.js-plotly-plot') : null;
+        };
+        window.annzarroPlots = () => [...document.querySelectorAll('.tile-container .tile[data-tile-id]')]
+            .filter(t => t.querySelector('.js-plotly-plot')).map(t => t.dataset.tileId);
+        window.annzarroPlotState = () => JSON.stringify({
+            loading: _isLoadingDataset,
+            noData: !!_noDataView,
+            plots: window.annzarroPlots().map(id => {
+                const gd = plotOf(id);
+                const fl = gd && gd._fullLayout;
+                return [id, !!fl, ((gd && gd.data) || []).map(t => [t.type, (t.x || []).length,
+                    t.marker && t.marker.color && t.marker.color.length]),
+                fl ? [fl.width, fl.height, JSON.stringify(fl.annotations || []).length] : null];
+            })
+        });
+        window.annzarroExport = async (id, format = 'svg') => {
+            const gd = plotOf(id);
+            if (!gd) throw new Error(`Panel ${id} has no plot`);
+            const panel = PanelManager.getPanel(id);
+            const settings = (panel && panel.getConfig && panel.getConfig()) || {};
+            return exportImageData(gd, 'full', { format, ...exportOptions(settings) });
+        };
+    }
+
+    /**
      * A notice that asks: like _showNotification, but it stays until one of
      * its buttons (or the close cross) is clicked. Never a modal dialog.
      * @param {string} title
@@ -629,9 +1245,9 @@ const App = (function() {
      * @returns {Promise<string|null>} the chosen key, null if dismissed
      * @private
      */
-    function _askNotification(title, message, actions) {
+    function _askNotification(title, message, actions, { type = 'warning', handle = null, checkbox = null } = {}) {
         return new Promise(resolve => {
-            const id = _showNotification(title, message, 'warning', 24 * 3600 * 1000);
+            const id = _showNotification(title, message, type, 24 * 3600 * 1000);
             const el = document.getElementById(id);
             if (!el) { resolve(null); return; }
             el.classList.add('notification-ask');
@@ -660,9 +1276,79 @@ const App = (function() {
             el.appendChild(bar);
             const close = el.querySelector('.notification-close');
             if (close) close.addEventListener('click', () => finish(null));
+            // lets the caller withdraw the question (resolves with null)
+            if (handle) handle.cancel = () => finish(null);
+            // an optional tick box above the buttons; its state is read from `handle.checked`
+            if (checkbox) {
+                const label = document.createElement('label');
+                label.className = 'notification-check';
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.id = checkbox.id || '';
+                box.addEventListener('change', () => { if (handle) handle.checked = box.checked; });
+                label.appendChild(box);
+                label.appendChild(document.createTextNode(' ' + checkbox.label));
+                el.insertBefore(label, bar);
+                if (checkbox.note) {
+                    // calm reassurance under the tick box
+                    const note = document.createElement('div');
+                    note.className = 'notification-check-note';
+                    note.textContent = checkbox.note;
+                    el.insertBefore(note, bar);
+                }
+            }
             const primary = bar.querySelector('.btn-primary');
             if (primary) primary.focus();
         });
+    }
+
+    /**
+     * "Close all panels": ask, then close every open panel (each goes to the
+     * closed list, as with its X). With the tick box, also clear what this
+     * site stored in this browser and reload to the bare URL, a first visit.
+     * Cookies, so the login, and panel sets saved on the server are untouched.
+     * @private
+     */
+    async function _closeAllPanels() {
+        if (_closeAllAsking) return;
+        _closeAllAsking = true;
+        try {
+            const handle = { checked: false };
+            const choice = await _askNotification('Close all panels?',
+                'Every open panel closes and is listed under Duplicate or Reopen Panel.\n\n' +
+                'Not affected: panel sets saved on the server, and your login.',
+                [{ key: 'close', label: 'Close all', primary: true }, { key: 'cancel', label: 'Cancel' }],
+                { type: 'info', handle, checkbox: { id: 'close-all-clear-storage',
+                    label: 'Also clear everything this site stored in this browser and reload as a first visit',
+                    note: 'A fresh start for this browser only: it forgets the remembered layout and settings, ' +
+                        'then reloads. Nothing is deleted. Saved panel sets (yours and other users\'), ' +
+                        'datasets and files on the server are not touched. Safe to use for a full refresh.' } });
+            if (choice !== 'close') return;
+
+            if (handle.checked) {
+                // nothing may save the layout back into the storage being cleared
+                SessionManager.holdAutosave();
+            }
+            PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
+            PanelManager.updateSourcePanelSelection();
+            PanelManager.ensureWelcomeFallback();
+            if (!handle.checked) return;
+
+            const result = await clearSiteStorage(window);
+            if (result.failed.length) console.warn('Could not clear:', result.failed.join(', '));
+            // A link that differs only by its #view changes the fragment in
+            // place without loading anything: reload that case by hand.
+            const onlyFragment = !window.location.search;
+            // Handlers that run as the page goes (memory-guard's pagehide, a
+            // draw that began a crash marker) may write keys again: clear the
+            // synchronous stores once more last, after them.
+            window.addEventListener('pagehide', () => clearSiteStorageNow(window));
+            clearSiteStorageNow(window);
+            window.location.replace(bareUrl(window.location));
+            if (onlyFragment) window.location.reload();
+        } finally {
+            _closeAllAsking = false;
+        }
     }
 
     /**
@@ -857,6 +1543,12 @@ const App = (function() {
             loadSessionBtn.addEventListener('click', _showLoadSessionModal);
         }
 
+        const closeAllBtn = document.getElementById('btn-close-all');
+        if (closeAllBtn) closeAllBtn.addEventListener('click', _closeAllPanels);
+
+        const changeDatasetBtn = document.getElementById('btn-change-dataset');
+        if (changeDatasetBtn) changeDatasetBtn.addEventListener('click', () => _showChangeDataset());
+
         const shareLinkBtn = document.getElementById('btn-share-link');
         if (shareLinkBtn) {
             shareLinkBtn.addEventListener('click', _shareCurrentView);
@@ -881,7 +1573,7 @@ const App = (function() {
         const focusedGeneInput = document.getElementById('focused-gene');
         if (focusedGeneInput) {
             _pickers.genes = mountNamePicker({
-                input: focusedGeneInput, noun: 'gene', search: _nameSearch('genes'),
+                input: focusedGeneInput, noun: 'gene', search: _nameSearch('genes'), indexState: _nameIndexState('genes'),
                 onPick: name => DataManager.setFocusedGene(name)
             });
         }
@@ -918,7 +1610,7 @@ const App = (function() {
         const focusedCellInput = document.getElementById('focused-cell');
         if (focusedCellInput) {
             _pickers.cells = mountNamePicker({
-                input: focusedCellInput, noun: 'cell', search: _nameSearch('cells'),
+                input: focusedCellInput, noun: 'cell', search: _nameSearch('cells'), indexState: _nameIndexState('cells'),
                 onPick: (name, match) => {
                     // the search said where the cell is: no second lookup
                     if (match) DataManager.rememberCell(name, match);
@@ -1056,7 +1748,14 @@ const App = (function() {
             .off('select2:select')
             .on('select2:select', e => {
               const datasetPath = e.params.data.id;
-              if (datasetPath) _loadDataset(datasetPath);
+              if (!datasetPath) return;
+              // a view open without data opens on the chosen dataset
+              if (_noDataView) {
+                  _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
+                      .then(() => PanelManager.ensureWelcomeFallback());
+              } else {
+                  _loadDataset(datasetPath);
+              }
             });
         }
       }
@@ -1152,6 +1851,12 @@ const App = (function() {
             // Update last loaded dataset path and reset loading flag
             _isLoadingDataset = false;
             _currentLoadingAbortController = null;
+
+            // Fingerprint the store for saved views, after the first draw
+            // has had its turn (the server hashes the names in the background)
+            setTimeout(() => {
+                if (DataManager.getCurrentDataset() === datasetPath) prewarmStore(datasetPath);
+            }, 5000);
         } catch (error) {
             // Check if this is an abort error 
             if (error && error.name === 'AbortError') {
@@ -1235,6 +1940,22 @@ const App = (function() {
             return shown.then(first => ({
                 ...first, more: all.then(rest => mergeScopedMatches(first, rest, opts.limit))
             }));
+        };
+    }
+
+    /**
+     * Whether the search a picker waits for is waiting for its name index:
+     * the dataset-wide one for the cells a subset does not show ('more'),
+     * else the one asked.
+     * @private
+     */
+    function _nameIndexState(entity) {
+        return (pending) => {
+            const datasetPath = DataManager.getCurrentDataset();
+            if (!datasetPath) return Promise.resolve(null);
+            const subset = DataManager.getSubsetParam();
+            return fetchNameIndexState(Config.API.NAMES, { datasetPath, entity, subset,
+                scope: pending === 'more' ? 'dataset' : 'subset' });
         };
     }
 
@@ -1364,6 +2085,9 @@ const App = (function() {
         document.getElementById('file-upload-section').style.display = 'none';
         document.getElementById('toggle-upload-btn').style.display = 'none';
         document.getElementById('btn-confirm-session').textContent = 'Save';
+        document.getElementById('btn-confirm-session').style.display = '';
+        document.getElementById('session-cancel-btn').textContent = 'Cancel';
+        _setLoadHelp(false);
         
         // Set modal data attribute for type
         document.getElementById('session-modal').dataset.modalType = 'save';
@@ -1446,7 +2170,12 @@ const App = (function() {
         document.getElementById('session-list-container').style.display = 'block';
         document.getElementById('file-upload-section').style.display = 'none';
         document.getElementById('toggle-upload-btn').style.display = 'block';
-        document.getElementById('btn-confirm-session').textContent = 'Load';
+        // every card has its own buttons: the footer's Load is not needed
+        document.getElementById('btn-confirm-session').style.display = 'none';
+        document.getElementById('session-cancel-btn').textContent = 'Close';
+        _setLoadHelp(true);
+        _resetUploadCard();
+        _locateCache.clear();
         
         // Set modal data attribute for type
         document.getElementById('session-modal').dataset.modalType = 'load';
@@ -1611,6 +2340,8 @@ const App = (function() {
                 
                 // Clear any selected session
                 document.querySelector('.session-card.selected')?.classList.remove('selected');
+                // its card, with the same Load buttons a saved set has
+                _showUploadCard(file);
             }
         }
         
@@ -1629,6 +2360,7 @@ const App = (function() {
                 toggleUploadBtn.innerHTML = '<i class="fas fa-file-upload me-1"></i> Upload file';
                 // Reset upload mode
                 document.getElementById('session-modal').dataset.uploadMode = 'false';
+                _resetUploadCard();
             }
         };
         
@@ -1708,14 +2440,12 @@ const App = (function() {
                         '<div class="browser-storage-indicator"><i class="fas fa-laptop"></i> Stored in browser</div>' : 
                         '';
                     
-                    // For autosave, show a restore button instead of export
-                    const footerButtons = isAutosave ? 
+                    // The autosave has one Restore button; a saved set has the Load
+                    // buttons (panelset-load-ui.js), drawn below
+                    const footerButtons = isAutosave ?
                         `<button class="btn btn-sm btn-info session-restore" title="Restore this autosaved session">
                             <i class="fas fa-history me-1"></i> Restore
-                        </button>` : 
-                        `<button class="btn btn-sm btn-outline-secondary session-export" title="Export">
-                            <i class="fas fa-download"></i> Export
-                        </button>`;
+                        </button>` : '';
                     
                     // Create panel preview icons based on session data
                     // Panel configurations might not be included in the session list API
@@ -1730,8 +2460,11 @@ const App = (function() {
                     card.innerHTML = `
                         <div class="session-card-header">
                             <h5 class="session-card-title">${titleHTML}</h5>
-                            <div class="session-card-subtitle">${datasetDisplay}</div>
+                            <div class="session-card-dataset"><span class="session-card-subtitle">${datasetDisplay}</span></div>
                             <div class="session-card-actions">
+                                ${isAutosave ? '' : `<button class="btn btn-sm btn-outline-secondary session-export session-action-button" title="Export this panel set as a file" aria-label="Export">
+                                    <i class="fas fa-download"></i>
+                                </button>`}
                                 ${locked ? `
                                 <span class="session-lock session-action-button" title="${escapeHtml(lockText)}" aria-label="${escapeHtml(lockText)}">
                                     <i class="fas fa-lock"></i>
@@ -1756,15 +2489,7 @@ const App = (function() {
                     `;
                     
                     sessionGrid.appendChild(card);
-                    
-                    // Add click handler for selection
-                    card.addEventListener('click', (e) => {
-                        if (!e.target.closest('button')) {
-                            document.querySelectorAll('.session-card.selected')
-                                .forEach(el => el.classList.remove('selected'));
-                            card.classList.add('selected');
-                        }
-                    });
+                    if (!isAutosave) _addLoadButtons(card, session.name);
                 });
                 
                 // Asynchronously load panel previews for all sessions
@@ -1876,6 +2601,174 @@ const App = (function() {
     }
     
     /**
+     * Draw a saved set's Load buttons and dataset badge on its card, then
+     * fill them in once the set is fetched and its dataset located.
+     * @private
+     */
+    function _addLoadButtons(card, name) {
+        const badge = createDatasetBadge();
+        card.querySelector('.session-card-dataset').appendChild(badge.el);
+        const actions = createLoadActions({
+            getCurrent: SessionManager.getCurrentDatasetInfo,
+            onLoad: async (mode) => {
+                actions.setBusy(true);
+                try {
+                    await _runLoad(() => SessionManager.loadSession(name, { mode }));
+                } finally {
+                    actions.setBusy(false);
+                }
+            }
+        });
+        card.querySelector('.session-card-footer').appendChild(actions.el);
+        const status = SessionManager.getPanelSetStatus(name).then(st => {
+            if (!card.isConnected) return;
+            actions.update(st);
+            badge.update(st);
+        });
+        actions.setReady(status);
+    }
+
+    /**
+     * Run a load started from the Load dialog and say how it went: the dialog
+     * closes on success (or when the set opened without data, which has its
+     * own notice); a refusal is a notice.
+     * @private
+     */
+    async function _runLoad(load) {
+        const result = await load();
+        if (result.status === 'success' || result.status === 'no-data') {
+            _sessionModal.hide();
+        } else if (result.status === 'cancelled') {
+            // the user closed the dataset picker: nothing to report
+            if (!/No dataset chosen/.test(result.message || '')) {
+                _showNotification('Panel set not loaded', result.message, 'info', 5000);
+            }
+        } else {
+            _showNotification('Failed to load panel set', result.message, 'error');
+        }
+        return result;
+    }
+
+    /**
+     * Show or hide the "?" in the dialog's header (the Load dialog only). Its
+     * popover is drawn here, not by Bootstrap's: hovering the "?" shows it, a
+     * click pins it (another click, the Esc key or closing the dialog hides it).
+     * @private
+     */
+    function _setLoadHelp(show) {
+        const button = document.getElementById('session-help-btn');
+        if (!button) return;
+        button.hidden = !show;
+        let pop = document.getElementById('session-help-pop');
+        if (!show) { if (pop) pop.hidden = true; return; }
+        if (pop) return;
+        const host = document.querySelector('#session-modal .modal-content');
+        pop = document.createElement('div');
+        pop.id = 'session-help-pop';
+        pop.className = 'popover bs-popover-auto load-help-popover';
+        pop.setAttribute('role', 'tooltip');
+        pop.hidden = true;
+        const head = document.createElement('h3');
+        head.className = 'popover-header';
+        head.textContent = 'What the Load buttons do';
+        const body = document.createElement('div');
+        body.className = 'popover-body';
+        body.appendChild(helpContent());
+        pop.append(head, body);
+        host.appendChild(pop);
+        let pinned = false;
+        const place = () => {
+            const box = host.getBoundingClientRect();
+            const at = button.getBoundingClientRect();
+            pop.style.left = `${Math.max(8, at.left - box.left - 16)}px`;
+            pop.style.top = `${at.bottom - box.top + 8}px`;
+        };
+        const open = () => { place(); pop.hidden = false; };
+        const close = () => { if (!pinned) pop.hidden = true; };
+        button.addEventListener('mouseenter', open);
+        button.addEventListener('focus', open);
+        button.addEventListener('mouseleave', close);
+        button.addEventListener('blur', close);
+        button.addEventListener('click', () => {
+            pinned = !pinned;
+            button.setAttribute('aria-pressed', String(pinned));
+            if (pinned) open(); else pop.hidden = true;
+        });
+        const reset = () => {
+            pinned = false;
+            button.setAttribute('aria-pressed', 'false');
+            pop.hidden = true;
+        };
+        document.getElementById('session-modal').addEventListener('hidden.bs.modal', reset);
+        document.getElementById('session-modal').addEventListener('hide.bs.modal', clearTips);
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !pop.hidden) reset(); });
+    }
+
+    /**
+     * The card of a chosen file in the Load dialog's upload view: the same
+     * buttons as a saved set's. The file is read here for its dataset and
+     * panels; it is imported (and then loaded) when a button is used.
+     * @private
+     */
+    async function _showUploadCard(file) {
+        const host = document.getElementById('upload-card');
+        host.hidden = false;
+        host.innerHTML = '';
+        const data = await file.text().then(text => JSON.parse(text)).catch(() => null);
+        const st = data ? await SessionManager.getPanelSetStatus(data) : null;
+        host.innerHTML = '';
+        const title = document.createElement('h5');
+        title.className = 'session-card-title';
+        title.textContent = file.name;
+        host.appendChild(title);
+        if (!st) {
+            const bad = document.createElement('div');
+            bad.className = 'small text-danger mt-1';
+            bad.textContent = 'This file is not a panel set that AnnZarro can read.';
+            host.appendChild(bad);
+            return;
+        }
+        const dataset = document.createElement('div');
+        dataset.className = 'session-card-dataset';
+        const label = document.createElement('span');
+        label.className = 'session-card-subtitle';
+        label.textContent = (data.datasetName || (data.dataset ? String(data.dataset).split('/').pop() : '')) || 'no dataset named';
+        const badge = createDatasetBadge();
+        dataset.append(label, badge.el);
+        host.appendChild(dataset);
+        const actions = createLoadActions({
+            getCurrent: SessionManager.getCurrentDatasetInfo,
+            onLoad: async (mode) => {
+                actions.setBusy(true);
+                try {
+                    const imported = await SessionManager.importSession(file);
+                    if (imported.status !== 'success') {
+                        const { title: t, type } = describeFailure(imported, 'Failed to import panel set');
+                        _showNotification(t, imported.message, type);
+                        return;
+                    }
+                    const result = await _runLoad(() => SessionManager.loadSession(imported.name, { mode }));
+                    if (result.status === 'success' && Date.now() - _viewNoticeAt > 5000 && mode !== 'add') {
+                        _showSuccess('Session Loaded', 'Panel set was imported and loaded successfully.');
+                    }
+                } catch (error) {
+                    _showNotification('Error', error.message, 'error');
+                } finally {
+                    actions.setBusy(false);
+                }
+            }
+        });
+        host.appendChild(actions.el);
+        actions.update(st);
+        badge.update(st);
+    }
+
+    function _resetUploadCard() {
+        const host = document.getElementById('upload-card');
+        if (host) { host.hidden = true; host.innerHTML = ''; }
+    }
+
+    /**
      * Load panel previews for all sessions asynchronously
      * @param {Array} sessions - List of session objects
      * @private
@@ -1903,14 +2796,11 @@ const App = (function() {
                         _updatePanelPreview(session);
                     }
                 } else {
-                    // Fetch session data from the server
-                    const response = await fetch(`${Config.API.SESSIONS_LOAD}?name=${encodeURIComponent(session.name)}`);
-                    if (response.ok) {
-                        const sessionData = await response.json();
-                        if (sessionData && sessionData.panelConfigs) {
-                            session.panelConfigs = sessionData.panelConfigs;
-                            _updatePanelPreview(session);
-                        }
+                    // Fetch session data from the server (shared with the card's status)
+                    const sessionData = await SessionManager.fetchPanelSet(session.name);
+                    if (sessionData && sessionData.panelConfigs) {
+                        session.panelConfigs = sessionData.panelConfigs;
+                        _updatePanelPreview(session);
                     }
                 }
             } catch (error) {
@@ -2064,76 +2954,14 @@ const App = (function() {
             
             if (result.status === 'success') {
                 _sessionModal.hide();
+                if (result.fingerprintPending) _noticeFingerprintPending();
                 //_showSuccess('Panel Set saved', `Panel Set "${sanitizedName}" saved successfully`);
             } else {
                 const { title, type } = describeFailure(result, 'Failed to save panel set');
                 _showNotification(title, result.message, type);
             }
-        } else if (modalType === 'load') {
-            // Check if we're in file upload mode
-            if (document.getElementById('session-modal').dataset.uploadMode === 'true') {
-                // Handle file upload
-                const fileInput = document.getElementById('session-file-upload');
-                if (fileInput.files.length === 0) {
-                    _invalid(fileInput, 'Choose a file to upload');
-                    return;
-                }
-                
-                // Show loading indicator
-                const confirmBtn = document.getElementById('btn-confirm-session');
-                const originalText = confirmBtn.innerHTML;
-                confirmBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Loading...`;
-                confirmBtn.disabled = true;
-                
-                try {
-                    const file = fileInput.files[0];
-                    const result = await SessionManager.importSession(file);
-                    
-                    if (result.status === 'success') {
-                        // If import successful, load the session
-                        const loadResult = await SessionManager.loadSession(result.name);
-                        
-                        if (loadResult.status === 'success') {
-                            _sessionModal.hide();
-                            _showSuccess('Session Loaded', `Panel set was imported and loaded successfully.`);
-                        } else if (loadResult.status === 'cancelled') {
-                            _showNotification('Panel set imported, not loaded', loadResult.message, 'info', 5000);
-                        } else {
-                            _showNotification('Failed to load imported panel set', loadResult.message, 'error');
-                        }
-                    } else {
-                        const { title, type } = describeFailure(result, 'Failed to import panel set');
-                        _showNotification(title, result.message, type);
-                    }
-                } catch (error) {
-                    _showNotification('Error', error.message, 'error');
-                } finally {
-                    // Restore button
-                    confirmBtn.innerHTML = originalText;
-                    confirmBtn.disabled = false;
-                }
-            } else {
-                // Handle load from list
-                const selectedCard = document.querySelector('.session-card.selected');
-                
-                if (!selectedCard) {
-                    _showNotification('No panel set selected', 'Select a panel set to load, or switch to upload mode.', 'warning', 4000);
-                    return;
-                }
-                
-                const sessionName = selectedCard.dataset.sessionName;
-                
-                const result = await SessionManager.loadSession(sessionName);
-                
-                if (result.status === 'success') {
-                    _sessionModal.hide();
-                } else if (result.status === 'cancelled') {
-                    _showNotification('Panel set not loaded', result.message, 'info', 5000);
-                } else {
-                    _showNotification('Failed to load panel set', result.message, 'error');
-                }
-            }
         }
+        // (the Load dialog has no confirm button: each card's own buttons load)
     }
     
     /**
@@ -2778,6 +3606,8 @@ const App = (function() {
 document.addEventListener('DOMContentLoaded', () => {
     // Start initialization immediately since we're using modules
     App.init();
+    // A panel's scroller hands the wheel to the page at its end (utils/wheel-handover.js)
+    installWheelHandover(document.getElementById('tile-container'));
     
     // Register for app close events if in Electron environment
     if (window.api && typeof window.api.onWillQuit === 'function') {

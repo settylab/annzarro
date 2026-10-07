@@ -108,6 +108,25 @@ Build and run the Electron desktop app. Works only from a source checkout with N
 | `desktop build [--platform windows\|win\|mac\|macos\|linux\|all] [--rebuild] [--bundle-venv \| --no-bundle-venv] [--venv-path PATH] [--icon PNG]` | Build installers into `annzarro/desktop/electron/dist/` (default: current platform, with a bundled Python environment). |
 | `desktop icons --icon PNG [--desktop-icons] [--web-icons] [--all]` | Generate app icons and web favicons from one high-resolution PNG (needs Pillow). |
 
+## `annzarro export`
+
+Write a saved view's plots as PNG or SVG files, as each plot's **Export** button would, from a
+headless browser ({doc}`../user-guide/reproducing`). Needs `pip install 'annzarro[export]'` and
+`python -m playwright install chromium`.
+
+| Option | Meaning |
+|---|---|
+| `SOURCE` | A panel set file (`.json`) or a share link. |
+| `--from FIGURE` | Instead of `SOURCE`: an exported PNG or SVG, made again from the recipe it carries. |
+| `--store PATH` | The store to draw from (required). A store with other cells or genes than the view was saved on stops the command. |
+| `--out FILE` | `.png` or `.svg`. Several plots: one file per plot, `<stem>-<panel id>.<ext>`. |
+| `--panel ID` | Only this plot (its tile id, e.g. `cell-plot-1`). |
+| `--allow-other-store` | Export even from a store with other cells or genes. |
+| `--timeout S` | Seconds to wait for the plots to be drawn (default 600). |
+| `--verbose` | Show the local server's log and page errors. |
+
+Exit status 0 on success, 2 when the view, store or output cannot be used (the message says why).
+
 ## Environment variables
 
 | Variable | Effect |

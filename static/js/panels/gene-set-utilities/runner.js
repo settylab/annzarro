@@ -144,7 +144,7 @@ export function asServiceError(error, signal) {
  * @param {Map} [deps.queues] - host queues (default: the page's)
  */
 export function createRunner({ fetchImpl, setTimeout: setT, clearTimeout: clearT, now, random = Math.random,
-    timeoutMs = DEFAULT_TIMEOUT_MS, onChange = () => {}, queues = _sharedQueues }) {
+    timeoutMs = DEFAULT_TIMEOUT_MS, onChange = () => {}, queues = _sharedQueues, online = undefined }) {
     const runs = new Map();
     const controllers = new Map();
     const cache = new Map();          // key -> {result, at}
@@ -205,7 +205,7 @@ export function createRunner({ fetchImpl, setTimeout: setT, clearTimeout: clearT
                 let error;
                 try {
                     return await fetchWithPolicy(full, init, { signal, timeoutMs: opts.timeoutMs || attemptTimeout(adapter),
-                        as, fetchImpl, setTimeout: setT, clearTimeout: clearT, now });
+                        as, fetchImpl, setTimeout: setT, clearTimeout: clearT, now, online });
                 } catch (e) {
                     error = e;
                 } finally {

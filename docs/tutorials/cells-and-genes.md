@@ -318,7 +318,7 @@ The same panels as panel-set files:
 {download}`cells-and-genes-a-cells.json <../_static/panelsets/paper/cells-and-genes-a-cells.json>`,
 {download}`cells-and-genes-d.json <../_static/panelsets/paper/cells-and-genes-d.json>`,
 {download}`cells-and-genes-d-noise.json <../_static/panelsets/paper/cells-and-genes-d-noise.json>`. **Load Panel Set** >
-upload restores a set like its link: dataset, focus, layout and panel settings
+upload, then **Load**, opens the panels in their layout with the dataset and focus (or use the links above)
 ({ref}`tut-tour-load-file`, {doc}`../user-guide/panel-sets`).
 
 ## What you learned

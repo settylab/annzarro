@@ -9,7 +9,9 @@
  * bites is the V8 heap: 4.40 GB under pointer compression, whatever the
  * flags, and the tab dies at about 4.03 GB used (the paper's benchmark,
  * annzarro-paper benchmark/scale/NOTES.md). Large-plot mode drew 175M points
- * and crashed at 182M; the regular path stops near 5M.
+ * and crashed at 182M until v0.4.1, which keeps its positions outside that
+ * heap (utils/scattergl-calc.js; 200M then drew with 35 MB of heap); the
+ * regular path stops near 5M.
  *
  * The browser cannot be asked how close it is. `performance.memory`
  * counts ArrayBuffers in usedJSHeapSize (so it is not comparable with
@@ -49,6 +51,27 @@ export const DEFAULT_SETTINGS = Object.freeze({
 export const HEAP_USABLE_SHARE = 4027182277 / 4395630592;
 /** The heap ceiling where the browser reports none (Firefox, Safari): Chrome's, which is the tightest known. */
 export const FALLBACK_HEAP_GB = 4.40;
+/**
+ * Total budget where ui.memory.total_gb is not set (GB). The guard cannot
+ * see the computer's memory: Chrome reports at most 8 GB (navigator.deviceMemory).
+ * - Browser on the server's computer (the server reports its RAM, see
+ *   routes/core.py): that RAM less a reserve for the system and the browser,
+ *   HOST_RESERVE_SHARE of it and at least HOST_RESERVE_MIN_GB.
+ * - Browser on another computer: REMOTE_TOTAL_GB, a budget a 32 GB computer
+ *   can give a tab; with the margin it binds just above 200M large-plot
+ *   points (13.6 GB of renderer memory measured at 200M).
+ * ui.memory.total_gb (server-wide) replaces either.
+ */
+export const HOST_RESERVE_SHARE = 0.25;
+export const HOST_RESERVE_MIN_GB = 4;
+export const REMOTE_TOTAL_GB = 16;
+/**
+ * The largest large plot drawn in a test (synthetic 200M-cell store, every
+ * cell, v0.4.1, Chrome on an M3 Max with 128 GB: 13.6 GB renderer, 35 MB of
+ * V8 heap). Larger plots are refused whatever the budget until a larger
+ * run says more.
+ */
+export const LARGEST_TESTED_POINTS = 200000000;
 /** navigator.deviceMemory at or below this (GB) sets a total budget of half of it. */
 export const SMALL_DEVICE_GB = 4;
 /**
@@ -69,12 +92,20 @@ export const RISKY_SHARE = 0.7;
  * Sources (annzarro-paper benchmark/scale/NOTES.md, Chrome on an M3 Max):
  * - app: 0.17 GB heap, 0.04 GB ArrayBuffers with a 100k-cell plot open
  *   (measured).
- * - large, heap: 20.2 B/point (measured: 1.94 GB at 95.6M, 3.53 GB at
- *   175M). It is Plotly's scattergl calc, positions = new Array(2N) and
- *   _ids = new Array(N) (plotly 2.20).
- * - large, off: 45 B/point beyond the 1 GB client cache (5.28 GB at 95.6M,
- *   7.41 GB at 175M; measured run maxima, the split provisional).
- * - large, gpu: 19 B/point (GPU-process RSS 2.02 GB at 95.6M; measured).
+ * - large, heap: 0.1 B/point resident, 0.2 peak. Plotly's scattergl calc
+ *   keeps positions and point ids as plain Arrays (20.1 B/point of heap,
+ *   1.94 GB at 95.6M, 3.53 GB at 175M, a V8 out-of-memory at 200M);
+ *   utils/scattergl-calc.js moves them into typed arrays in large-plot
+ *   mode. Measured after a forced GC on synthetic stores: 12.3 MB at
+ *   2.5M and 12.9 MB at 10M points (0.08 B/point; before the move 62.2 and
+ *   212.9 MB, 20.1 B/point); peak 35 MB of V8 heap drawing 200M points.
+ * - large, off: 65 B/point beyond the 1 GB client cache: 45 B/point
+ *   (5.28 GB at 95.6M, 7.41 GB at 175M; run maxima, the split provisional)
+ *   plus the 20 B/point the typed arrays moved there (ArrayBuffers 36.0 ->
+ *   56.0 B/point between 2.5M and 10M, measured). Renderer RSS for
+ *   comparison: 76 B/point between 2.5M and 10M, 13.56 GB at 200M.
+ * - large, gpu: 19 B/point (GPU-process RSS 2.02 GB at 95.6M; 17.0 B/point
+ *   between 2.5M and 10M, 3.65 GB at 200M; measured).
  * - regular, colour by gene: 640 B/point heap peak (3.36 GB at 5M, run
  *   maximum); resident 560 (provisional). Categorical and uncoloured plots
  *   are lighter (provisional, from large-plot.js's 400-900 B/point).
@@ -93,26 +124,37 @@ export const DEFAULT_MODEL = {
         threeD: 1.3
     },
     large: {
-        resident: 20.2, peak: 20.2,
-        off: 45, gpu: 19
+        resident: 0.1, peak: 0.2,
+        off: 65, gpu: 19
     },
     /**
      * Transient costs on top of what the panel holds.
      * - export: a full-resolution export draws the plot again off screen:
-     *   Plotly's calc (large 20.2 B/point heap; regular calc, the hover index
-     *   and per-point colours, 100 B/point), new GPU buffers, and float32
-     *   copies of the positions on their way to the GPU (16 B/point).
+     *   Plotly's calc (large: 20 B/point, as typed arrays outside the heap
+     *   like the panel's; regular calc, the hover index and per-point
+     *   colours, 100 B/point), new GPU buffers, and float32 copies of the
+     *   positions on their way to the GPU (16 B/point).
      *   Code-derived, provisional. Its canvas: 4 bytes per pixel, three
      *   copies (canvas, image, encoded file).
      * - recolour: the benchmark recoloured 175M points in large-plot mode
      *   without growing the heap (3.53 GB max); regular 80 B/point. Provisional.
      */
     export: {
-        large: { heap: 20.2, off: 16, gpu: 19 },
+        large: { heap: 0.2, off: 36, gpu: 19 },
         regular: { heap: 100, off: 20, gpu: 56 },
         pixelCopies: 3
     },
     recolour: { large: 2, regular: 80 },
+    /**
+     * Hover labels of a categorical column (a colour of many categories, or
+     * a hover column): per point its label's reference and hover text, per
+     * distinct label its string, plus while loading the reply's JSON blob.
+     * Measured at 1M points (Chromium, heap after GC, hover on minus off):
+     * 999,998 barcodes of 21.9 characters +114.1 MB, 65,000 labels of 8
+     * characters +37.9 MB, which give 34 B per point and 59 B + 1 B per
+     * character per label; the blob adds 3 B + 1 B per character per label.
+     */
+    hoverLabels: { perPoint: 34, perLabel: 62, perChar: 2 },
     /** A cell table row (DataTables with deferRender): its data array and row object. Provisional. */
     tableRow: { heap: 300 },
     /** Numbers still to be measured (listed by the docs and the report). */
@@ -139,10 +181,13 @@ export function memorySettings(memory) {
     const heapGb = num(m.heap_gb);
     const totalGb = num(m.total_gb);
     const margin = num(m.margin);
+    // the server's RAM, which it reports only to a browser on its own computer
+    const hostBytes = num(m.host_memory_bytes);
     return {
         enforce,
         heapGb: heapGb !== null && heapGb > 0 ? heapGb : null,
         totalGb: totalGb !== null && totalGb > 0 ? totalGb : null,
+        hostBytes: hostBytes !== null && hostBytes > 0 ? hostBytes : null,
         margin: margin !== null && margin >= 0 && margin <= 5 ? margin : DEFAULT_SETTINGS.margin
     };
 }
@@ -168,11 +213,19 @@ export function readLimits(env = {}, settings = DEFAULT_SETTINGS) {
     } else {
         heap = { bytes: FALLBACK_HEAP_GB * GB * HEAP_USABLE_SHARE, source: `Chrome's JS heap limit (${FALLBACK_HEAP_GB} GB); this browser reports none` };
     }
-    let total = { bytes: null, source: 'no limit set' };
+    let total;
     const device = nav && Number(nav.deviceMemory) > 0 ? Number(nav.deviceMemory) : null;
     if (settings.totalGb) {
         total = { bytes: settings.totalGb * GB, source: `ui.memory.total_gb (${settings.totalGb} GB)` };
-    } else if (device !== null && device <= SMALL_DEVICE_GB) {
+    } else if (settings.hostBytes) {
+        const reserve = Math.max(HOST_RESERVE_SHARE * settings.hostBytes, HOST_RESERVE_MIN_GB * GB);
+        total = { bytes: Math.max(0, settings.hostBytes - reserve),
+            source: `this computer's ${formatGB(settings.hostBytes)} less ${formatGB(reserve)} for the system and the browser` };
+    } else {
+        total = { bytes: REMOTE_TOTAL_GB * GB,
+            source: `${REMOTE_TOTAL_GB} GB for a browser on another computer than the server (ui.memory.total_gb)` };
+    }
+    if (device !== null && device <= SMALL_DEVICE_GB && !settings.totalGb && device * GB / 2 < total.bytes) {
         total = { bytes: device * GB / 2, source: `half of this device's ${device} GB` };
     }
     return { heap, total, contexts: MAX_WEBGL_CONTEXTS, browserLimit: !!reported && !settings.heapGb };
@@ -297,6 +350,17 @@ export function exportCost({ n, large = false, width = 1200, height = 800, scale
 export function snapshotCost({ width = 1200, height = 800, ratio = 2 }, model = DEFAULT_MODEL) {
     const pixels = Math.max(1, width) * Math.max(1, height) * Math.max(1, ratio) ** 2;
     return { heap: 4 * pixels, off: 4 * pixels * model.export.pixelCopies, gpu: 0, contexts: 0 };
+}
+
+/**
+ * What reading the hover labels of a categorical column needs: `labels`
+ * distinct labels of `chars` characters on average, over `points` points.
+ */
+export function labelCost({ points, labels, chars }, model = DEFAULT_MODEL) {
+    const m = model.hoverLabels;
+    const n = Math.max(0, Number(labels) || 0);
+    const heap = Math.max(0, Number(points) || 0) * m.perPoint + n * (m.perLabel + m.perChar * Math.max(0, Number(chars) || 0));
+    return { heap, off: 0, gpu: 0, contexts: 0 };
 }
 
 /** The extra a recolour of a drawn plot needs while it runs. */
@@ -445,6 +509,7 @@ export function headroom(held, limits) {
  * @param {Object} [opts]
  * @param {number} [opts.observed] - a measured total of held memory (bytes); the larger of it and the estimate counts
  * @param {number} [opts.panels] - plot panels open (for the sentence)
+ * @param {number} [opts.largePoints] - points of a large plot the action draws; above LARGEST_TESTED_POINTS it is refused
  * @returns {{verdict: 'ok'|'warn'|'block', fits: boolean, risky: boolean, binding: string|null,
  *            needBytes: number, freeBytes: number, limitBytes: number, measured: boolean, why: string}}
  */
@@ -466,7 +531,8 @@ export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}
         if (c.need > c.free && (!binding || c.need - c.free > binding.need - binding.free)) binding = c;
     }
     const contextsShort = need.contexts > 0 && need.contexts > free.contexts;
-    const fits = !binding && !contextsShort;
+    const untested = opts.largePoints > LARGEST_TESTED_POINTS;
+    const fits = !binding && !contextsShort && !untested;
     const main = checks[0];
     const shown = binding || main;
     const risky = fits && (held2.heap + need.heap * k) > RISKY_SHARE * limits.heap.bytes;
@@ -479,10 +545,13 @@ export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}
     } else if (contextsShort) {
         why = `the browser keeps at most ${limits.contexts} WebGL canvases; ${limits.contexts - free.contexts} are in use`
             + ' and the oldest plot would go blank';
+    } else if (untested) {
+        why = `${Math.round(opts.largePoints).toLocaleString('en-US')} points is above ${LARGEST_TESTED_POINTS.toLocaleString('en-US')},`
+            + ' the largest plot tested to draw';
     }
     const verdict = fits || settings.enforce === 'off' ? 'ok' : settings.enforce === 'warn' ? 'warn' : 'block';
     return {
-        verdict, fits, risky, binding: binding ? binding.name : (contextsShort ? 'contexts' : null),
+        verdict, fits, risky, binding: binding ? binding.name : (contextsShort ? 'contexts' : untested ? 'tested' : null),
         needBytes: shown.need, freeBytes: Math.max(0, shown.free), limitBytes: shown.limit, measured, why
     };
 }

@@ -16,8 +16,16 @@ allowed roots: ``data_dir`` plus any ``allowed_dirs`` from the configuration.
 Anything else is refused with a 403 (after the login check, and without
 naming the roots: absolute server paths stay in the server log).
 
-Local single-user mode (localhost, login disabled -- including the desktop
-app) is unchanged: free browsing.
+Who may open a path OUTSIDE those roots is ``server.arbitrary_paths``
+(``may_open_any_path``):
+
+* ``admins`` (default): admins of a shared server with login, every such
+  open logged with the admin's name; other users never. On a local
+  single-user server (localhost, login disabled: a laptop, the desktop app)
+  its one user, who owns the machine and its files anyway.
+* ``local-only``: only that local single-user; on a shared server nobody, admins
+  included.
+* ``none``: nobody, local servers included (the lock-down setting).
 
 Remote stores (a scheme in ``core.remote.REMOTE_SCHEMES``: ``s3://``,
 ``gs://``, ``gcs://``, ``http(s)://``) are not local paths and are left alone
@@ -28,7 +36,7 @@ here; they get their own allowlist elsewhere. Any other ``scheme://`` string
 import logging
 import os
 
-from flask import current_app, jsonify, request
+from flask import current_app, has_request_context, jsonify, request
 
 from ..core.remote import is_remote_path
 
@@ -43,6 +51,41 @@ PATH_ARGS = ("dataset_path", "dataset_id", "dir")
 #: Endpoints whose ``path`` argument is a filesystem directory. Elsewhere
 #: (``data/by_path``) ``path`` names an array INSIDE a dataset, not a file.
 DIRECTORY_PATH_ENDPOINTS = ("list_directory",)
+
+
+ARBITRARY_PATH_MODES = ("admins", "local-only", "none")
+DEFAULT_ARBITRARY_PATHS = "admins"
+
+
+def arbitrary_paths_mode(config):
+    """``server.arbitrary_paths``, validated (``admins`` when unset)."""
+    mode = str(config.get("arbitrary_paths") or DEFAULT_ARBITRARY_PATHS).strip().lower()
+    if mode not in ARBITRARY_PATH_MODES:
+        raise ValueError(f"server.arbitrary_paths must be one of {', '.join(ARBITRARY_PATH_MODES)}, "
+                         f"not {config.get('arbitrary_paths')!r}")
+    return mode
+
+
+def may_open_any_path(config):
+    """Whether the current requester may open paths outside the allowed roots.
+
+    Needs a request context for ``admins`` (the admin flag is read from the
+    user store, not the cookie, so revoking admin takes effect at once).
+    """
+    mode = arbitrary_paths_mode(config)
+    if mode == "none":
+        return False
+    if not is_hosted(config):
+        return True
+    if mode == "admins":
+        from . import permissions
+        return permissions.current_user()[1]
+    return False
+
+
+def is_confined(config):
+    """Whether anyone at all is held to the allowed roots on this server."""
+    return is_hosted(config) or arbitrary_paths_mode(config) == "none"
 
 
 def is_hosted(config):
@@ -96,23 +139,37 @@ def resolve_relative_dataset_paths():
 
     A share link written by hand or by another tool (``?dataset_path=
     bm_aging_showcase.zarr``) named a path relative to the server's working
-    directory, so it opened nothing (500 from /data/info). When the path does
-    not exist there but does under ``data_dir``, the request is rewritten to
-    that absolute path, before confinement checks it.
+    directory, so it opened nothing (500 from /data/info). A relative path now
+    means ``data_dir`` / path, before confinement checks it.
+
+    The result is spelled exactly as the dataset listing spells that entry
+    (``os.path.join(data_dir, name)``, NOT an absolute or resolved path): the
+    dropdown, ``_locateStore`` and saved sets compare it with the listing's
+    ``path``, and a data directory given as a relative path (``../data``) or
+    an entry that is a symlink must not turn it into a second, absolute
+    identity. Where the server is confined, a relative path ALWAYS means the
+    data directory (never the working directory), and ``..`` out of it is
+    refused by ``enforce`` like any path outside the allowed roots. Elsewhere
+    a name that exists in the data directory is read from there, and any
+    other keeps its old meaning (relative to the working directory).
     """
     data_dir = current_app.config.get("data_dir")
     if not data_dir:
         return None
+    confined = is_confined(current_app.config)
+    base = os.path.expanduser(data_dir)
     args = None
     for name in ("dataset_path", "dataset_id"):
         value = request.args.get(name)
         if not value or is_remote_path(value) or os.path.isabs(os.path.expanduser(value)):
             continue
-        candidate = os.path.join(os.path.expanduser(data_dir), value)
-        if not os.path.exists(value) and os.path.exists(candidate):
+        if "://" in value:
+            continue   # file:// and other schemes are not names in the data dir: enforce refuses them
+        candidate = os.path.join(base, os.path.normpath(value))
+        if confined or os.path.exists(candidate):
             if args is None:
                 args = request.args.copy()
-            args[name] = os.path.abspath(candidate)
+            args[name] = candidate
     if args is not None:
         from werkzeug.datastructures import ImmutableMultiDict
         request.args = ImmutableMultiDict(args)
@@ -122,7 +179,7 @@ def resolve_relative_dataset_paths():
 def enforce():
     """``before_request`` hook: refuse local paths outside the allowed roots."""
     config = current_app.config
-    if not is_hosted(config):
+    if not is_confined(config):
         return None
     paths = _requested_paths()
     if not paths:
@@ -135,20 +192,27 @@ def enforce():
         if not is_logged_in():
             return login_required_response()
     roots = allowed_roots(config)
-    for path in paths:
-        if not is_inside(path, roots):
-            # The roots go to the log for the administrator, never to the
-            # client: absolute server paths are nobody else's business.
-            logger.warning(f"Refused path outside the data directory: {path!r} "
-                           f"({request.path}); allowed roots: {', '.join(roots)}")
-            return jsonify({
-                "error": (f"'{path}' is outside the data directory this server "
-                          f"shares, so it cannot be opened here. Open a dataset "
-                          f"from the dataset list, or ask an administrator to "
-                          f"add its directory to server.allowed_dirs."),
-                "reason": "outside_data_dir",
-                "path": path,
-            }), 403
+    outside = [path for path in paths if not is_inside(path, roots)]
+    if outside and may_open_any_path(config):
+        if is_hosted(config):
+            from . import permissions
+            logger.info(f"Admin {permissions.current_user()[0]!r} opened a path outside the "
+                        f"data directory: {outside[0]!r} ({request.path})")
+        return None
+    if outside:
+        path = outside[0]
+        # The roots go to the log for the administrator, never to the
+        # client: absolute server paths are nobody else's business.
+        logger.warning(f"Refused path outside the data directory: {path!r} "
+                       f"({request.path}); allowed roots: {', '.join(roots)}")
+        return jsonify({
+            "error": (f"'{path}' is outside the data directory this server "
+                      f"shares, so it cannot be opened here. Open a dataset "
+                      f"from the dataset list, or ask an administrator to "
+                      f"add its directory to server.allowed_dirs."),
+            "reason": "outside_data_dir",
+            "path": path,
+        }), 403
     return None
 
 
@@ -159,9 +223,11 @@ def listable(config, path):
     allowed root, so listing it only offers a dataset that fails with 403
     when clicked. Local single-user mode lists everything.
     """
-    if not is_hosted(config):
+    if not is_confined(config):
         return True
-    return is_inside(path, allowed_roots(config))
+    if is_inside(path, allowed_roots(config)):
+        return True
+    return has_request_context() and may_open_any_path(config)
 
 
 def warn_about_escaping_links(config):
@@ -171,7 +237,7 @@ def warn_about_escaping_links(config):
     In hosted mode a link whose target is outside every allowed root is
     refused, so say so at startup rather than at the first 403.
     """
-    if not is_hosted(config):
+    if not is_confined(config):
         return
     data_dir = config.get("data_dir") or default_data_dir()
     roots = allowed_roots(config)

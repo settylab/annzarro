@@ -1,8 +1,9 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
-import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator } from './plot-make.js';
-import { hoverInfoFromSelection } from './hover-columns.js';
+import { autoPointCount } from '../../utils/view-point-style.js';
+import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator, hoverPickFits, showHoverChoice } from './plot-make.js';
+import { hoverInfoFromSelection, hoverOffFromSelection, NO_HOVER } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
 import { 
@@ -13,7 +14,7 @@ import {
   createPopoverContent
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
-import { aspectUpdate } from './plot-make-helper.js';
+import { aspectUpdate, keepsOwnMarker } from './plot-make-helper.js';
 import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
 import { notify } from '../../utils/notify.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig, snapPointSize } from '../../utils/slider-scales.js';
@@ -246,7 +247,7 @@ export function setupPlotControlListeners(
       });
       $controlsContainer.find(`#${name}-auto-${id}`).on('click', () => {
         settings[autoKey] = true;
-        applyAutoPointStyle(settings, plotContainer._pointCount, pointStyleBase());
+        applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
         showPointStyle(id, settings);
         redrawStyling();
       });
@@ -260,9 +261,28 @@ export function setupPlotControlListeners(
     let hoverGeneration = 0;
     $hoverSelect.on('change', async (e) => {
       const selected = Array.from(e.target.selectedOptions, o => o.value);
-      settings.hoverInfo = hoverInfoFromSelection(plotType, selected, settings.hoverInfo);
+      const before = { hoverOff: settings.hoverOff, hoverInfo: settings.hoverInfo };
+      const off = hoverOffFromSelection(selected, settings.hoverOff);
+      settings.hoverOff = off;
+      settings.hoverInfo = hoverInfoFromSelection(plotType, off ? [] : selected, settings.hoverInfo);
+      for (const o of e.target.options) o.selected = off ? o.value === NO_HOVER : o.value !== NO_HOVER && selected.includes(o.value);
+      // labels that do not fit the browser are not read: the pick is undone
+      // and the status line gives the memory guard's numbers
+      if (!off && !(await hoverPickFits(settings, plotType, plotContainer, !!data.colorRanked))) {
+        Object.assign(settings, before);
+        if (before.hoverOff === undefined) delete settings.hoverOff;
+        const prior = new Set((before.hoverInfo || []).map(h => h && h.key));
+        for (const o of e.target.options) o.selected = o.value !== NO_HOVER && prior.has(o.value);
+        showHoverChoice(plotContainer, settings);
+        return;
+      }
+      // a colour of many categories drawn without labels reads them now
+      if (!off && data.colorRanked) {
+        loadDataAndCreatePlot();
+        return;
+      }
       const mine = ++hoverGeneration;
-      const extra = await loadHoverColumns(settings, plotType);
+      const extra = await loadHoverColumns(settings, plotType, plotContainer);
       if (mine !== hoverGeneration) return;   // a newer selection is loading
       data.hoverExtra = extra;
       await applyHoverInfo(plotContainer, data, settings);
@@ -667,6 +687,11 @@ export function setupColorControls(
         if (data.colorRaw && data.colorLog) data.color = data.colorRaw;   // back to linear values
         applyLogColor(data, settings);
         if (!settings.lockColorRange) { settings.colorMin = null; settings.colorMax = null; }
+        // The range, the Min/Max boxes and the slider scales in the new units
+        // now, as a Refresh would set them: the incremental restyle below
+        // writes cmin/cmax only when they are set, so the trace kept the old
+        // units' range (103..9950 against log10 colours) until a Refresh.
+        updateColorSliderUI(controlsContainer, data, settings, id);
         _updatePlotElements({ colors: true, colorRange: true });
     };
     $logColorButton.on('click', () => {

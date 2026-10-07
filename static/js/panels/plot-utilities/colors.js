@@ -107,6 +107,61 @@ export function generateDiscreteColors(n, colormap = 'hue', reverse = false) {
     throw new Error(`Unknown colormap: ${colormap}`);
   }
 
+// Colour groups (utils/categories.js): the ten largest categories in ten
+// clearly different colours, the next ten in light versions of most of
+// them, the rest around the hue wheel by the golden angle at three
+// lightness levels, so no two consecutive ranks get similar colours.
+// (tab10 with teal and navy for its cyan, too near its blue, and its grey,
+// too near the grey of points without a value)
+const GROUP_FIRST = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#006d5b', '#e377c2', '#bcbd22', '#393b79', '#8c564b',
+    '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5', '#9edae5', '#f7b6d2', '#dbdb8d', '#6b6ecf', '#ce6dbd'];
+
+/**
+ * The `n` colours of colour groups, in rank order. Without a palette (or
+ * 'hue'), GROUP_FIRST and then golden-angle hues. A named discrete palette
+ * keeps its order (it repeats, and its neighbours already differ); any
+ * other palette, sampled in order, is stepped through by a stride of about
+ * 0.39 n, so neighbouring ranks sit far apart on it.
+ * @param {number} n
+ * @param {string} [colormap]
+ * @returns {string[]}
+ */
+export function groupColours(n, colormap) {
+    if (!colormap || colormap === 'hue') {
+        const out = GROUP_FIRST.slice(0, n);
+        const lightness = [45, 65, 55];
+        for (let i = out.length; i < n; i++) {
+            const k = i - GROUP_FIRST.length;
+            out.push(hslHex((k * 137.508) % 360, 70, lightness[k % 3]));
+        }
+        return out;
+    }
+    const colors = generateDiscreteColors(n, colormap);
+    if (discreteColormaps[colormap] || n < 3) return colors;
+    let stride = Math.round(n * 0.382);
+    while (gcd(stride, n) !== 1) stride++;
+    return colors.map((_, r) => colors[(r * stride) % n]);
+}
+
+/**
+ * hsl() as #rrggbb: the per-point colour path (utils/gl-colors.js) reads hex
+ * and rgb() scale colours only, and hands any other scale back to Plotly's
+ * slow per-point colour strings.
+ */
+function hslHex(h, s, l) {
+    const S = s / 100, L = l / 100, a = S * Math.min(L, 1 - L);
+    const f = (n) => {
+        const k = (n + h / 30) % 12;
+        const v = L - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+        return Math.round(v * 255).toString(16).padStart(2, '0');
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+function gcd(a, b) {
+    return b ? gcd(b, a % b) : a;
+}
+
 /**
  * Lists all available colormaps grouped by type.
  *

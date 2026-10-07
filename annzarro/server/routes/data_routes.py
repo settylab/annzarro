@@ -22,6 +22,7 @@ from ...core import subset as cell_subset
 from .. import confinement, permissions
 from .. import http_cache
 from ...core.array_response import wants_binary, wants_codes
+from ...core import categories as category_rules
 from ...core.remote import is_remote_path, is_timeout, timeout_message
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,52 @@ def _probe_dataset_counts(entry_path, probe):
         counts = None
     _LISTING_PROBE_CACHE[entry_path] = (signature, counts)
     return counts
+
+
+def _category_rules_for(reader, dataset_path, entity, column_names, n_rows):
+    """Apply core/categories.py to one obs/var request before it reads.
+
+    Returns ``(n_categories, used_only, ranked)`` for a single requested
+    column (None, False, False otherwise). No reply is refused for its
+    labels: a compact one is streamed (core/array_response.py).
+    """
+    if not column_names or len(column_names) != 1:
+        return None, False, False
+    column = column_names[0]
+    count = category_rules.category_count(reader.get_metadata(dataset_path), entity, column)
+    wanted = (request.args.get("categories") or "").lower()
+    if wanted == "ranked":
+        return count, False, True
+    return count, wanted == "used", False
+
+
+def _category_labels_response(reader, dataset_path, entity, column_names):
+    """``category_ranks=r1,r2,...`` with one column: the labels of those ranks
+    of the column's whole-column ranking (the legend's names), or None when
+    the request does not ask for them."""
+    raw = request.args.get("category_ranks")
+    if raw is None:
+        return None
+    if not column_names or len(column_names) != 1:
+        raise DataRequestError(400, "bad_request", "category_ranks needs exactly one column")
+    ranks = _parse_indices(raw) or []
+    if len(ranks) > category_rules.MAX_RANK_LABELS:
+        raise DataRequestError(400, "cap_exceeded",
+                               f"at most {category_rules.MAX_RANK_LABELS} category_ranks per request")
+    get_labels = getattr(reader, "get_category_labels", None)
+    labels = get_labels(entity=entity, dataset_path=dataset_path, column_name=column_names[0],
+                        ranks=ranks) if get_labels else None
+    if labels is None:
+        raise DataRequestError(400, "not_categorical", f"'{column_names[0]}' is not a categorical column")
+    return jsonify({"column": column_names[0], "ranks": ranks, "labels": labels})
+
+
+def _axis_rows(reader, dataset_path, indices, axis):
+    """Rows a request reads: those named, else the axis length."""
+    if indices:
+        return len(indices)
+    shape = (reader.get_metadata(dataset_path) or {}).get("shape") or (0, 0)
+    return int(shape[axis]) if len(shape) > axis else 0
 
 
 def _reader_error_response(exc, dataset_path):
@@ -499,6 +546,65 @@ def register_data_routes(app, api_version):
             logger.error(f"Error getting dataset info for path {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500
     
+    @app.route(f"/api/{api_version}/data/fingerprint", methods=["GET"])
+    def get_fingerprint():
+        """
+        The store's fingerprint (core/fingerprint.py), for a saved view.
+
+        Query parameters:
+            dataset_path: Path to the dataset.
+            wait: seconds to wait for the cell and gene names to be hashed
+                (default 0, at most 10). Until they are, ``status`` is
+                ``pending`` and the fingerprint holds the metadata tier only.
+
+        Also returns ``rel_path``, the path relative to the data directory
+        when the store is inside it (what a saved view records, so it opens
+        on another server with another data directory), and the server's
+        AnnZarro version. A missing store is a 404 with reason ``not_found``.
+        """
+        from ...core import fingerprint
+        from annzarro import __version__
+        dataset_path = request.args.get("dataset_path")
+        if not dataset_path:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        try:
+            wait = min(max(float(request.args.get("wait", 0) or 0), 0.0), 10.0)
+        except ValueError:
+            return jsonify({"error": "wait must be a number of seconds"}), 400
+        try:
+            reader = get_reader(dataset_path)
+            result = fingerprint.get(reader, dataset_path, wait=wait)
+            if result["status"] != "ready":
+                # the counts, from the metadata every route reads anyway
+                if reader is zarr_reader:
+                    counts = zarr_reader.get_basic_counts(dataset_path)
+                    shape = (counts["cell_count"], counts["gene_count"])
+                else:
+                    shape = reader.get_metadata(dataset_path).get("shape", (None, None))
+                result["fingerprint"]["n_obs"], result["fingerprint"]["n_var"] = int(shape[0]), int(shape[1])
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path)
+        result["path"] = dataset_path
+        result["rel_path"] = _relative_to_data_dir(dataset_path)
+        result["annzarro_version"] = __version__
+        return jsonify(result)
+
+    def _relative_to_data_dir(dataset_path):
+        """``dataset_path`` relative to the data directory, or None when it
+        is outside it (or remote). Compared without following symlinks: an
+        entry of the data directory that links elsewhere is still named by
+        its name there, as the dataset listing names it."""
+        if not dataset_path or is_remote_path(dataset_path):
+            return None
+        data_dir = app.config.get("data_dir")
+        if not data_dir:
+            return None
+        base = os.path.abspath(os.path.expanduser(data_dir))
+        path = os.path.abspath(os.path.expanduser(dataset_path))
+        if path == base or not path.startswith(base.rstrip(os.sep) + os.sep):
+            return None
+        return os.path.relpath(path, base).replace(os.sep, "/")
+
     @app.route(f"/api/{api_version}/data/dataset_structure", methods=["GET"])
     @http_cache.conditional
     def get_dataset_structure():
@@ -643,6 +749,11 @@ def register_data_routes(app, api_version):
             format: "f32" for the binary encoding of one numeric column.
             categorical: "codes" (with format=f32) for one categorical column
                 as integer codes plus its categories (core/array_response.py).
+            categories: "used" (only the categories the rows use) or "ranked"
+                (each row's category's rank over the whole column, no labels);
+                core/categories.py.
+            category_ranks: comma-separated ranks of that ranking: their labels,
+                as {"labels": [...]} (the legend's names).
             
         Returns:
             JSON response with observation annotations
@@ -676,9 +787,16 @@ def register_data_routes(app, api_version):
         try:
             reader = _reader_for(dataset_path_str, dataset_rows=by_dataset_row)
             _check_request(dataset_path_str, reader, "obs", rows=row_indices, columns=column_names)
+            labels = _category_labels_response(reader, dataset_path_str, "cells", column_names)
+            if labels is not None:
+                return labels
+            n_categories, used_only, ranked = _category_rules_for(
+                reader, dataset_path_str, "cells", column_names,
+                _axis_rows(reader, dataset_path_str, row_indices, 0))
             if wants_codes(request.args) and column_names and len(column_names) == 1:
                 coded = process_file.extract_obs_var_codes(dataset_path_str, reader, row_indices,
-                                                           column_names[0], "cells")
+                                                           column_names[0], "cells", used_only, n_categories,
+                                                           ranked)
                 if coded is not None:
                     return coded
             return process_file.extract_obs_var(dataset_path_str, reader, row_indices, column_names, include_categories, "cells",
@@ -701,6 +819,7 @@ def register_data_routes(app, api_version):
             format: "f32" for the binary encoding of one numeric column.
             categorical: "codes" (with format=f32) for one categorical column
                 as integer codes plus its categories (core/array_response.py).
+            categories: "used" or "ranked", as on /data/obs.
             
         Returns:
             JSON response with variable annotations
@@ -734,9 +853,16 @@ def register_data_routes(app, api_version):
         try:
             reader = get_reader(dataset_path_str)
             _check_request(dataset_path_str, reader, "var", cols=col_indices, columns=column_names)
+            labels = _category_labels_response(reader, dataset_path_str, "genes", column_names)
+            if labels is not None:
+                return labels
+            n_categories, used_only, ranked = _category_rules_for(
+                reader, dataset_path_str, "genes", column_names,
+                _axis_rows(reader, dataset_path_str, col_indices, 1))
             if wants_codes(request.args) and column_names and len(column_names) == 1:
                 coded = process_file.extract_obs_var_codes(dataset_path_str, reader, col_indices,
-                                                           column_names[0], "genes")
+                                                           column_names[0], "genes", used_only, n_categories,
+                                                           ranked)
                 if coded is not None:
                     return coded
             return process_file.extract_obs_var(dataset_path_str, reader, col_indices, column_names, include_categories, "genes",
@@ -1175,6 +1301,39 @@ def register_data_routes(app, api_version):
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
+    @app.route(f"/api/{api_version}/data/names/status", methods=["GET"])
+    def names_index_status():
+        """
+        Whether a name search answers at once or waits for its index to be
+        built (the first search of a large dataset; about 30 s at 95.6M
+        cells). Never builds anything: the pickers ask while a search waits,
+        to say "building name index" instead of "no match".
+
+        Query parameters: dataset_path, entity, subset, scope, as for
+        /data/names.
+
+        Returns:
+            {"state": "ready" | "building" | "absent"}; absent means the
+            next search builds it.
+        """
+        dataset_path_str = request.args.get("dataset_path")
+        if not dataset_path_str:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        entity = request.args.get("entity", "cells")
+        if entity not in ("cells", "genes"):
+            return jsonify({"error": "entity must be 'cells' or 'genes'"}), 400
+        scope = request.args.get("scope", "subset")
+        if scope not in ("subset", "dataset"):
+            return jsonify({"error": "scope must be 'subset' or 'dataset'"}), 400
+        try:
+            reader = _reader_for(dataset_path_str)
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path_str)
+        subset = reader.subset if isinstance(reader, cell_subset.SubsetView) and entity == "cells" else None
+        searched = subset if scope == "subset" else None
+        index_key = entity if searched is None else f"cells@{searched.spec.key()}"
+        return jsonify({"state": name_index.index_state(dataset_path_str, index_key)})
+
     @app.route(f"/api/{api_version}/data/names", methods=["GET"])
     def search_names():
         """

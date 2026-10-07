@@ -192,13 +192,13 @@
     {
       "name": "Plotly.js",
       "version": "2.20.0",
-      "license": "MIT AND BSD-3-Clause",
+      "license": "MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense",
       "homepage": "https://plotly.com/javascript/",
       "license_files": [
         "plotly.txt",
         "plotly-bundled.txt"
       ],
-      "notes": "The minified bundle includes third-party modules listed in plotly-bundled.txt (upstream plotly-2.20.0.min.js.LICENSE.txt): all MIT except ieee754 (BSD-3-Clause).",
+      "notes": "The minified bundle includes npm modules under MIT, ISC (d3-color, d3-interpolate, earcut, geojson-vt, supercluster, topojson-client, ...), BSD-3-Clause (mapbox-gl 1.10.1, @plotly/d3, d3-*, pbf, @mapbox/vector-tile, ieee754, ...), BSD-2-Clause (@mapbox/tiny-sdf, @mapbox/unitbezier, ...), Zlib (gl-mat4) and Unlicense (mumath). plotly-bundled.txt keeps the bundle's own licence banners and the licence text of every package in plotly.js 2.20.0's production dependency tree (scripts/plotly_licences.py), a superset of the bundle that also lists one Apache-2.0 and one BlueOak-1.0.0 package.",
       "files": [
         {
           "path": "js/plotly-2.20.0.min.js",

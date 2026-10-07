@@ -17,6 +17,11 @@ from . import freshness
 
 logger = logging.getLogger(__name__)
 
+#: lists longer than this are costed from _SAMPLE_SIZE evenly spaced items
+_SAMPLE_ABOVE = 16384
+_SAMPLE_SIZE = 4096
+
+
 def _scalar_bytes(item) -> int:
     """Bytes one Python scalar in a cached list or dict costs (object + slot).
 
@@ -310,6 +315,13 @@ class DatasetCache:
         
         # Lists, tuples, and dicts
         if isinstance(data, (list, tuple)):
+            # A long list is costed from an even sample of its items: walking
+            # every one of 95.6M floats took 10 s at 95.6M cells (a third of
+            # a whole-column obs read), and an estimate needs no more
+            if len(data) > _SAMPLE_ABOVE:
+                step = len(data) / _SAMPLE_SIZE
+                sample = [data[int(i * step)] for i in range(_SAMPLE_SIZE)]
+                return self._estimate_memory_usage(sample) * (len(data) / _SAMPLE_SIZE)
             # Approximation for nested structures
             size = 0
             for item in data:
@@ -521,7 +533,8 @@ def cached_method(func):
 
         elif method_name == 'get_obs_var_codes':
             cache_key = (f"path:{encoded_path}:{method_name}:{arg.get('entity')}:"
-                         f"{arg.get('column_name')}:{idx_key('indices', arg.get('indices'))}")
+                         f"{arg.get('column_name')}:{idx_key('indices', arg.get('indices'))}:"
+                         f"{'used' if arg.get('used_only') else 'all'}:{'ranked' if arg.get('ranked') else ''}")
 
         elif method_name == 'open_dataset_by_path':
             cache_key = (f"path:{encoded_path}:root:{arg.get('metadata', True)}:"

@@ -73,6 +73,11 @@ EXCLUDES = [
     "pydoc_data",
     "curses",
     "xmlrpc",
+    # Interactive line editing, imported only by `flask shell`. On Linux
+    # the readline module links GNU Readline (GPL-3.0) and ncurses, which
+    # PyInstaller would otherwise copy into the bundle.
+    "readline",
+    "rlcompleter",
 ]
 
 #: Subpackages of annzarro that the server never imports.

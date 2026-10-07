@@ -85,6 +85,9 @@
                                     <button id="select-directory" class="btn btn-outline-secondary ms-1" title="Select directory" style="display: none;">
                                         <i class="fas fa-folder-open"></i>
                                     </button>
+                                    <button id="btn-change-dataset" class="btn btn-outline-warning ms-1" title="Choose the dataset this view opens on" hidden>
+                                        <i class="fas fa-exchange-alt"></i> <span class="btn-label">Change dataset</span>
+                                    </button>
                                 </div>
                             </div>
                             <div class="col">
@@ -120,6 +123,7 @@
                                 <div class="btn-group">
                                     <button id="btn-save-session" class="btn btn-primary" title="Save Panel Set"><i class="fas fa-save"></i> <span class="btn-label">Save Panel Set</span></button>
                                     <button id="btn-load-session" class="btn btn-secondary" title="Load Panel Set"><i class="fas fa-folder-open"></i> <span class="btn-label">Load Panel Set</span></button>
+                                    <button id="btn-close-all" class="btn btn-outline-secondary" title="Close all panels"><i class="fas fa-times-circle"></i> <span class="btn-label">Close all</span></button>
                                     <button id="btn-share-link" class="btn btn-outline-secondary" title="Copy a link that reopens this dataset, layout and focus"><i class="fas fa-link"></i> <span class="btn-label btn-share-label">Share Link</span></button>
                                 </div>
                                 <!-- Shown only when the clipboard is unavailable (e.g. plain http on a cluster node) -->
@@ -181,12 +185,36 @@
         </div>
     </template>
 
+    <!-- Change dataset: the store a view opens on (main.js _showChangeDataset) -->
+    <div class="modal fade" id="change-dataset-modal" tabindex="-1" aria-hidden="true" aria-labelledby="change-dataset-title">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="change-dataset-title">Change dataset</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="change-dataset-saved" class="small text-muted"></p>
+                    <div id="change-dataset-list" class="change-dataset-list"></div>
+                    <label for="change-dataset-path" class="form-label mt-3 small">Or open a path on this server</label>
+                    <div class="input-group input-group-sm">
+                        <input id="change-dataset-path" type="text" class="form-control" placeholder="name in the data directory, or a full path">
+                        <button id="change-dataset-open-path" class="btn btn-outline-primary" type="button">Open</button>
+                    </div>
+                    <div id="change-dataset-error" class="small text-danger mt-1" hidden></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Panel Set Management Modal -->
     <div class="modal fade" id="session-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="session-modal-title">Manage Panel Sets</h5>
+                    <button type="button" id="session-help-btn" class="btn btn-link session-help-btn" hidden
+                        aria-label="What the Load buttons do"><i class="far fa-circle-question"></i></button>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -225,6 +253,8 @@
                             <input type="file" id="session-file-upload" class="file-input" accept=".json">
                             <span id="file-name-display" class="file-name"></span>
                         </div>
+                        <!-- the chosen file, with the same Load buttons as a saved set (main.js _showUploadCard) -->
+                        <div id="upload-card" class="upload-card" hidden></div>
                     </div>
                 </div>
                 <div class="modal-footer" id="session-modal-footer">
@@ -233,7 +263,7 @@
                             <i class="fas fa-file-upload me-1"></i> Upload file
                         </button>
                     </div>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" id="session-cancel-btn" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" id="btn-confirm-session" class="btn btn-primary">Load</button>
                 </div>
             </div>

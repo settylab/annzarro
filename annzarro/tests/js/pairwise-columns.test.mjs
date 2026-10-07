@@ -38,12 +38,13 @@ test('varp items are named after the matrices', () => {
     assert.ok(items.some(i => i.type === 'varp' && i.key === 'spearman_fold_change' && i.column === 'S100a9'));
 });
 
-test('a restored placeholder column is still listed, so it can be removed', () => {
+test('an unresolved placeholder column is still listed, so it can be removed, and never as the focus', () => {
     const items = getVarpColumnsForGeneTable(structure,
         [{ type: 'varp', key: 'spearman_fold_change', column: 'focused_gene' }]);
     const restored = items.find(i => i.column === 'focused_gene');
     assert.ok(restored);
-    assert.equal(restored.label, 'spearman_fold_change: follows the focused gene (S100a9)');
+    assert.equal(restored.label, 'spearman_fold_change: no gene (unresolved placeholder)');
+    assert.equal(restored.source, 'table');
 });
 
 test('obsp items are named after the matrices', () => {

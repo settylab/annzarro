@@ -1,0 +1,556 @@
+{
+  "constants": {
+    "cellRows": {
+      "cell_0000": 0
+    },
+    "focusedCell": "cell_0000",
+    "focusedGene": "GENE005"
+  },
+  "created_at": "2026-10-06T15:04:04.479373",
+  "dataset": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/az-corpus-zofk0uq5/data/fixture_small.zarr",
+  "datasetName": "",
+  "modified_at": "2026-10-06T15:04:04.479373",
+  "modified_by": null,
+  "name": "four-panels",
+  "owner": null,
+  "panelConfigs": {
+    "cell-plot-1791324235189": {
+      "config": {
+        "autoPointOpacity": true,
+        "autoPointSize": true,
+        "axisColor": "#000000",
+        "axisLineWidth": 1,
+        "backdropColor": "#f0f0f0",
+        "bgColor": "#ffffff",
+        "categoryPalette": "uns",
+        "centeringActive": false,
+        "color": {
+          "column": "",
+          "history": {
+            "X": {
+              "columns": {},
+              "key": null
+            }
+          },
+          "key": "GENE005",
+          "type": "X"
+        },
+        "colorMax": null,
+        "colorMin": null,
+        "colorRangeUnits": "data",
+        "colorReversed": false,
+        "colorScale": "Portland",
+        "enablePan": true,
+        "enableZoom": true,
+        "exportHeight": 800,
+        "exportWidth": 1200,
+        "fontFamily": "Arial, Helvetica, sans-serif",
+        "fontSize": 12,
+        "gridColor": "#e6e6e6",
+        "gridLineWidth": 1,
+        "hideNaN": false,
+        "hideNonSubset": false,
+        "highlightFocusedCell": true,
+        "hoverInfo": [
+          {
+            "key": "_index",
+            "type": "obs"
+          }
+        ],
+        "legendPosition": "right",
+        "lockColorRange": false,
+        "margins": {
+          "b": 60,
+          "l": 80,
+          "pad": 4,
+          "r": 80,
+          "t": 80
+        },
+        "pointOpacity": 1,
+        "pointSize": 5.1,
+        "removeNonTableEntries": false,
+        "scaleExport": false,
+        "showAxisLabels": true,
+        "showAxisLines": true,
+        "showAxisTitles": true,
+        "showGrid": true,
+        "showHoverInfo": true,
+        "showLegend": true,
+        "showZeroLines": false,
+        "subsettedCells": null,
+        "tableFilter": "none",
+        "textColor": "#000000",
+        "tickDensity": "auto",
+        "title": "Cell Plot",
+        "viewport2D": null,
+        "x": {
+          "column": "0",
+          "history": {
+            "obsm": {
+              "columns": {},
+              "key": null
+            }
+          },
+          "key": "X_umap",
+          "type": "obsm"
+        },
+        "y": {
+          "column": "1",
+          "history": {
+            "obsm": {
+              "columns": {},
+              "key": null
+            }
+          },
+          "key": "X_umap",
+          "type": "obsm"
+        },
+        "z": null,
+        "zeroLineColor": "#cccccc",
+        "zeroLineWidth": 1
+      },
+      "id": "cell-plot-1791324235189",
+      "isSelectionTile": false,
+      "title": "Cell Plot",
+      "type": "cell-plot"
+    },
+    "cell-table-1791324235189": {
+      "config": {
+        "columns": [],
+        "fixedHeader": true,
+        "responsive": false,
+        "searchBuilderConfig": {},
+        "searchBuilderEnabled": true,
+        "searchText": "",
+        "title": "Cell Table"
+      },
+      "id": "cell-table-1791324235189",
+      "isSelectionTile": false,
+      "title": "Cell Table",
+      "type": "cell-table"
+    },
+    "gene-plot-1791324235189": {
+      "config": {
+        "autoPointOpacity": true,
+        "autoPointSize": true,
+        "axisColor": "#000000",
+        "axisLineWidth": 1,
+        "backdropColor": "#f0f0f0",
+        "bgColor": "#ffffff",
+        "categoryPalette": "uns",
+        "centeringActive": false,
+        "color": {
+          "column": "",
+          "history": {
+            "none": {
+              "columns": {},
+              "key": null
+            }
+          },
+          "key": "",
+          "type": "none"
+        },
+        "colorMax": null,
+        "colorMin": null,
+        "colorRangeUnits": "data",
+        "colorReversed": false,
+        "colorScale": "Portland",
+        "enablePan": true,
+        "enableZoom": true,
+        "exportHeight": 800,
+        "exportWidth": 1200,
+        "fontFamily": "Arial, Helvetica, sans-serif",
+        "fontSize": 12,
+        "gridColor": "#e6e6e6",
+        "gridLineWidth": 1,
+        "hideNaN": false,
+        "hideNonSubset": false,
+        "highlightFocusedGene": true,
+        "hoverInfo": [
+          {
+            "key": "_index",
+            "type": "var"
+          }
+        ],
+        "legendPosition": "right",
+        "lockColorRange": false,
+        "margins": {
+          "b": 60,
+          "l": 80,
+          "pad": 4,
+          "r": 80,
+          "t": 80
+        },
+        "pointOpacity": 1,
+        "pointSize": 5.1,
+        "removeNonTableEntries": false,
+        "scaleExport": false,
+        "showAxisLabels": true,
+        "showAxisLines": true,
+        "showAxisTitles": true,
+        "showGrid": true,
+        "showHoverInfo": true,
+        "showLegend": true,
+        "showZeroLines": false,
+        "subsettedGenes": null,
+        "tableFilter": "none",
+        "textColor": "#000000",
+        "tickDensity": "auto",
+        "title": "Gene Plot",
+        "viewport2D": null,
+        "x": {
+          "column": "",
+          "history": {
+            "var": {
+              "columns": {},
+              "key": null
+            }
+          },
+          "key": "gene_name",
+          "type": "var"
+        },
+        "y": {
+          "column": "",
+          "history": {
+            "var": {
+              "columns": {},
+              "key": null
+            }
+          },
+          "key": "gene_name",
+          "type": "var"
+        },
+        "z": null,
+        "zeroLineColor": "#cccccc",
+        "zeroLineWidth": 1
+      },
+      "id": "gene-plot-1791324235189",
+      "isSelectionTile": false,
+      "title": "Gene Plot",
+      "type": "gene-plot"
+    },
+    "gene-table-1791324235189": {
+      "config": {
+        "columns": [],
+        "filteredGenes": null,
+        "fixedHeader": true,
+        "responsive": false,
+        "searchBuilderConfig": {},
+        "searchBuilderEnabled": true,
+        "searchText": "",
+        "title": "Gene Table"
+      },
+      "id": "gene-table-1791324235189",
+      "isSelectionTile": false,
+      "title": "Gene Table",
+      "type": "gene-table"
+    }
+  },
+  "timestamp": "2026-10-06T22:04:04.477Z",
+  "view": {
+    "constants": {
+      "cellRows": {
+        "cell_0000": 0
+      },
+      "focusedCell": "cell_0000",
+      "focusedGene": "GENE005"
+    },
+    "layout": {
+      "controlState": {
+        "cell-plot-1": true,
+        "cell-table-1": true,
+        "gene-plot-1": true,
+        "gene-table-1": true
+      },
+      "hierarchy": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "controlsVisible": true,
+                  "id": "cell-plot-1",
+                  "type": "tile"
+                },
+                {
+                  "controlsVisible": true,
+                  "id": "cell-table-1",
+                  "type": "tile"
+                }
+              ],
+              "direction": "horizontal",
+              "panes": [
+                {
+                  "controlsVisible": false,
+                  "percentage": 60
+                },
+                {
+                  "controlsVisible": false,
+                  "percentage": 40
+                }
+              ],
+              "type": "split"
+            },
+            {
+              "children": [
+                {
+                  "controlsVisible": true,
+                  "id": "gene-plot-1",
+                  "type": "tile"
+                },
+                {
+                  "controlsVisible": true,
+                  "id": "gene-table-1",
+                  "type": "tile"
+                }
+              ],
+              "direction": "horizontal",
+              "panes": [
+                {
+                  "controlsVisible": false,
+                  "percentage": 50
+                },
+                {
+                  "controlsVisible": false,
+                  "percentage": 50
+                }
+              ],
+              "type": "split"
+            }
+          ],
+          "direction": "vertical",
+          "height": 891,
+          "panes": [
+            {
+              "controlsVisible": false,
+              "percentage": 55
+            },
+            {
+              "controlsVisible": false,
+              "percentage": 45
+            }
+          ],
+          "type": "split"
+        },
+        {
+          "type": "selector"
+        }
+      ],
+      "panelConfigs": {
+        "cell-plot-1": {
+          "autoPointOpacity": true,
+          "autoPointSize": true,
+          "axisColor": "#000000",
+          "axisLineWidth": 1,
+          "backdropColor": "#f0f0f0",
+          "bgColor": "#ffffff",
+          "categoryPalette": "uns",
+          "centeringActive": false,
+          "color": {
+            "column": "",
+            "history": {
+              "X": {
+                "columns": {},
+                "key": null
+              }
+            },
+            "key": "GENE005",
+            "type": "X"
+          },
+          "colorMax": null,
+          "colorMin": null,
+          "colorRangeUnits": "data",
+          "colorReversed": false,
+          "colorScale": "Portland",
+          "enablePan": true,
+          "enableZoom": true,
+          "exportHeight": 800,
+          "exportWidth": 1200,
+          "fontFamily": "Arial, Helvetica, sans-serif",
+          "fontSize": 12,
+          "gridColor": "#e6e6e6",
+          "gridLineWidth": 1,
+          "hideNaN": false,
+          "hideNonSubset": false,
+          "highlightFocusedCell": true,
+          "hoverInfo": [
+            {
+              "key": "_index",
+              "type": "obs"
+            }
+          ],
+          "id": "cell-plot-1",
+          "legendPosition": "right",
+          "lockColorRange": false,
+          "margins": {
+            "b": 60,
+            "l": 80,
+            "pad": 4,
+            "r": 80,
+            "t": 80
+          },
+          "pointOpacity": 1,
+          "pointSize": 5.1,
+          "removeNonTableEntries": false,
+          "scaleExport": false,
+          "showAxisLabels": true,
+          "showAxisLines": true,
+          "showAxisTitles": true,
+          "showGrid": true,
+          "showHoverInfo": true,
+          "showLegend": true,
+          "showZeroLines": false,
+          "subsettedCells": null,
+          "tableFilter": "none",
+          "textColor": "#000000",
+          "tickDensity": "auto",
+          "title": "Cell Plot",
+          "viewport2D": null,
+          "x": {
+            "column": "0",
+            "history": {
+              "obsm": {
+                "columns": {},
+                "key": null
+              }
+            },
+            "key": "X_umap",
+            "type": "obsm"
+          },
+          "y": {
+            "column": "1",
+            "history": {
+              "obsm": {
+                "columns": {},
+                "key": null
+              }
+            },
+            "key": "X_umap",
+            "type": "obsm"
+          },
+          "z": null,
+          "zeroLineColor": "#cccccc",
+          "zeroLineWidth": 1
+        },
+        "cell-table-1": {
+          "columns": [],
+          "fixedHeader": true,
+          "id": "cell-table-1",
+          "responsive": false,
+          "searchBuilderConfig": {},
+          "searchBuilderEnabled": true,
+          "searchText": "",
+          "title": "Cell Table"
+        },
+        "gene-plot-1": {
+          "autoPointOpacity": true,
+          "autoPointSize": true,
+          "axisColor": "#000000",
+          "axisLineWidth": 1,
+          "backdropColor": "#f0f0f0",
+          "bgColor": "#ffffff",
+          "categoryPalette": "uns",
+          "centeringActive": false,
+          "color": {
+            "column": "",
+            "history": {
+              "none": {
+                "columns": {},
+                "key": null
+              }
+            },
+            "key": "",
+            "type": "none"
+          },
+          "colorMax": null,
+          "colorMin": null,
+          "colorRangeUnits": "data",
+          "colorReversed": false,
+          "colorScale": "Portland",
+          "enablePan": true,
+          "enableZoom": true,
+          "exportHeight": 800,
+          "exportWidth": 1200,
+          "fontFamily": "Arial, Helvetica, sans-serif",
+          "fontSize": 12,
+          "gridColor": "#e6e6e6",
+          "gridLineWidth": 1,
+          "hideNaN": false,
+          "hideNonSubset": false,
+          "highlightFocusedGene": true,
+          "hoverInfo": [
+            {
+              "key": "_index",
+              "type": "var"
+            }
+          ],
+          "id": "gene-plot-1",
+          "legendPosition": "right",
+          "lockColorRange": false,
+          "margins": {
+            "b": 60,
+            "l": 80,
+            "pad": 4,
+            "r": 80,
+            "t": 80
+          },
+          "pointOpacity": 1,
+          "pointSize": 5.1,
+          "removeNonTableEntries": false,
+          "scaleExport": false,
+          "showAxisLabels": true,
+          "showAxisLines": true,
+          "showAxisTitles": true,
+          "showGrid": true,
+          "showHoverInfo": true,
+          "showLegend": true,
+          "showZeroLines": false,
+          "subsettedGenes": null,
+          "tableFilter": "none",
+          "textColor": "#000000",
+          "tickDensity": "auto",
+          "title": "Gene Plot",
+          "viewport2D": null,
+          "x": {
+            "column": "",
+            "history": {
+              "var": {
+                "columns": {},
+                "key": null
+              }
+            },
+            "key": "gene_name",
+            "type": "var"
+          },
+          "y": {
+            "column": "",
+            "history": {
+              "var": {
+                "columns": {},
+                "key": null
+              }
+            },
+            "key": "gene_name",
+            "type": "var"
+          },
+          "z": null,
+          "zeroLineColor": "#cccccc",
+          "zeroLineWidth": 1
+        },
+        "gene-table-1": {
+          "columns": [],
+          "filteredGenes": null,
+          "fixedHeader": true,
+          "id": "gene-table-1",
+          "responsive": false,
+          "searchBuilderConfig": {},
+          "searchBuilderEnabled": true,
+          "searchText": "",
+          "title": "Gene Table"
+        }
+      },
+      "v": 1
+    },
+    "v": 1
+  }
+}

@@ -2,6 +2,8 @@ import { Config } from './config.js';
 import { DataManager } from './data-manager.js';
 import { colourKind } from './utils/memory-guard.js';
 import { newPanelCheck, refusalText, MEMORY_EVENT } from './utils/memory-guard-ui.js';
+import { createLoadActions, createDatasetBadge } from './panelset-load-ui.js';
+import { notify } from './utils/notify.js';
 
 export class SelectionTile {
     /**
@@ -326,12 +328,27 @@ export class SelectionTile {
           <i class="${typeIcon} fa-3x"></i>
         </div>
         <div class="tile-type-label">${panelTitle}</div>
+        <div class="panel-origin-tag" hidden></div>
         ${!this.activePanels.has(panel) ? `
           <div class="panel-status panel-closed-btn" data-id="${id}" data-type="${panelType}">Closed</div>
           <button class="delete-panel-btn" data-id="${id}" title="Delete">×</button>
         ` : ''}
       `;
       
+      // A panel added from a panel set ("Add to closed panels") says which,
+      // and that it was saved on another dataset when it was
+      const origin = panel._addedFrom;
+      const tag = option.querySelector('.panel-origin-tag');
+      if (origin && tag) {
+        tag.hidden = false;
+        // "other dataset" first: a long set name is cut at the end
+        tag.textContent = (origin.otherDataset ? 'other dataset · ' : '') + `from ${origin.set}`;
+        tag.title = origin.otherDataset
+          ? `Added from the panel set "${origin.set}", saved on ${origin.otherDataset}`
+          : `Added from the panel set "${origin.set}"`;
+        if (origin.otherDataset) tag.classList.add('other-dataset');
+      }
+
       // Add hover effect to change "Closed" to "Reopen" for closed panels
       const statusBtn = option.querySelector('.panel-closed-btn');
       if (statusBtn) {
@@ -461,10 +478,9 @@ export class SelectionTile {
       if (!hasPanels) {
         grid.innerHTML = '<div class="no-sessions">No panels available to clone</div>';
       }
-      
       return hasPanels;
     }
-    
+
     /**
      * Update the visibility of the clear button based on whether there are closed panels
      * @param {boolean} hasClosedPanels - Whether there are closed panels
@@ -657,25 +673,52 @@ export class SelectionTile {
               : ''}
           </div>
           <div class="session-date">${new Date(session.timestamp).toLocaleDateString()}</div>
-          <div class="session-dataset truncate-text" title="${session.datasetName || session.dataset}">${session.datasetName || session.dataset}</div>
+          <div class="session-dataset-row"><div class="session-dataset truncate-text" title="${session.datasetName || session.dataset}">${session.datasetName || session.dataset}</div></div>
         </div>
         ${panelPreview}
       `;
-      
+
       // Use either provided sessionManager or global window.sessionManager
       const sessionManager = this.sessionManager || window.sessionManager;
-      
-      item.addEventListener('click', async () => {
-        if (this.variant != "welcome") {
-            this.remove();
+
+      if (!session.isAutosave) {
+        // The same Load buttons as the Load dialog, compact: one highlighted
+        // Load and small icons for its ablations (panelset-load-ui.js)
+        const badge = createDatasetBadge();
+        item.querySelector('.session-dataset-row').appendChild(badge.el);
+        const actions = createLoadActions({
+          compact: true,
+          getCurrent: () => (sessionManager && sessionManager.getCurrentDatasetInfo
+            ? sessionManager.getCurrentDatasetInfo() : {}),
+          onLoad: async (mode) => {
+            if (!sessionManager) { console.error('SessionManager not available, cannot load session'); return; }
+            actions.setBusy(true);
+            try {
+              if (this.variant != "welcome") this.remove();
+              const result = await sessionManager.loadSession(session.name, { mode });
+              if (result && result.status === 'error') notify('Failed to load panel set', result.message, 'error');
+            } finally {
+              if (item.isConnected) actions.setBusy(false);
+            }
+          }
+        });
+        item.appendChild(actions.el);
+        if (sessionManager && sessionManager.getPanelSetStatus) {
+          actions.setReady(sessionManager.getPanelSetStatus(session.name).then(st => {
+            if (!item.isConnected) return;
+            actions.update(st);
+            badge.update(st);
+          }));
         }
-        if (sessionManager) {
-          await sessionManager.loadSession(session.name);
-        } else {
-          console.error('SessionManager not available, cannot load session');
-        }
-      });
-      
+      } else {
+        // the autosave restores whole, as before
+        item.style.cursor = 'pointer';
+        item.addEventListener('click', async () => {
+          if (this.variant != "welcome") this.remove();
+          if (sessionManager) await sessionManager.loadSession(session.name);
+        });
+      }
+
       return item;
     }
   
@@ -889,3 +932,6 @@ export class SelectionTile {
       }
     }
   }
+
+// The saved layout of the panel set last loaded with its panels closed:
+// {count, open()} or null. Every chooser shows it above its panel list.

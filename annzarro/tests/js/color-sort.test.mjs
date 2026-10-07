@@ -32,6 +32,33 @@ const { colorSortOrder, sortTracesByColor, unsortTraces, colorSortApplies } =
 
 test('order: by |colour| ascending, missing first, stable for ties', () => {
     assert.deepEqual(colorSortOrder([3, -5, null, 0.1, NaN, -3]), [2, 4, 3, 0, 5, 1]);
+    assert.deepEqual(colorSortOrder([]), []);
+    assert.deepEqual(colorSortOrder([NaN, undefined, Infinity]), [0, 1, 2]);
+    assert.deepEqual(colorSortOrder([0, -0, 2, 2, 0]), [0, 1, 4, 2, 3]);
+});
+
+// The radix sort against the comparison sort it replaced, on value sets that
+// stress it: mostly zeros (a sparse gene), float32 values (zero low bits),
+// wide magnitudes with missing values, few distinct values.
+test('order: the same as a stable comparison sort over many inputs', () => {
+    const reference = (colors) => {
+        const key = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.abs(v) : -Infinity);
+        return colors.map((_, i) => i).sort((a, b) => key(colors[a]) - key(colors[b]) || a - b);
+    };
+    let s = 11;
+    const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const kinds = {
+        sparse: () => (rnd() < 0.7 ? 0 : Math.round(rnd() * 400) / 100),
+        float32: () => Math.fround(rnd() * 8 - 1),
+        wide: () => (rnd() < 0.05 ? (rnd() < 0.5 ? NaN : null) : (rnd() - 0.5) * 10 ** Math.round(rnd() * 40 - 20)),
+        few: () => [-2, -1, 0, 1, 2][Math.floor(rnd() * 5)],
+    };
+    for (const [kind, draw] of Object.entries(kinds)) {
+        for (const n of [1, 7, 1000, 70000]) {
+            const c = Array.from({ length: n }, draw);
+            assert.deepEqual(colorSortOrder(c), reference(c), `${kind} n=${n}`);
+        }
+    }
 });
 
 const gd = () => ({ data: [
@@ -81,4 +108,53 @@ test('3D: depth decides what is in front, so strong-on-top does not reorder', as
     const stray = { data: [trace()] };                                          // a scatter3d trace is never sorted
     await sortTracesByColor(stray, { sortByColor: true });
     assert.deepEqual(stray.data[0].x, [1, 2, 3]);
+});
+
+const { strongOnTopKey } = await import('../../../static/js/utils/color-scales.js');
+const order = (vals, o) => colorSortOrder(vals, strongOnTopKey(o)).map(i => vals[i]);
+
+test('sequential map, pale low (Blues + Reverse), Min 0.3 locked: clamped pale values go underneath', () => {
+    // the issue: -0.9 is clamped to the pale end but has the largest |value|; it was drawn on top
+    const vals = [0.5, -0.9, 0.95, 0.31, -0.4, null, 0.1];
+    const got = order(vals, { scale: 'Blues', reversed: true, min: 0.3, max: 1 });
+    assert.deepEqual(got, [null, -0.9, -0.4, 0.1, 0.31, 0.5, 0.95], 'clamped ties keep data order, then by position');
+});
+
+test('sequential maps: the top end of the colour bar (Max) is drawn last, Reverse or not', () => {
+    const vals = [0.2, 0.9, 0.5];
+    for (const scale of ['Blues', 'Reds', 'Viridis', 'Portland']) {
+        for (const reversed of [false, true]) {
+            assert.deepEqual(order(vals, { scale, reversed, min: 0, max: 1 }), [0.2, 0.5, 0.9], `${scale} ${reversed}`);
+        }
+    }
+    // clamped to the bar: everything at or above Max ties at the top, at or below Min at the bottom
+    assert.deepEqual(order([2, 1.5, -3, -1], { scale: 'Blues', min: -1, max: 1 }), [-3, -1, 2, 1.5]);
+});
+
+test('centred (Center at 0) and diverging maps keep |value|', () => {
+    const vals = [0.5, -0.9, 0.95, -0.1];
+    const abs = [-0.1, 0.5, -0.9, 0.95];
+    assert.deepEqual(order(vals, { scale: 'Blues', reversed: true, centred: true, min: -1, max: 1 }), abs);
+    for (const scale of ['RdBu', 'Picnic', 'Bluered']) assert.deepEqual(order(vals, { scale, min: 0.3, max: 1 }), abs, scale);
+    // a constant range: nothing to place on a scale
+    assert.deepEqual(order(vals, { scale: 'Blues', min: 1, max: 1 }), abs);
+});
+
+test('non-negative values on an unlocked range: the same order |value| gave', () => {
+    const vals = [3, 0, 7.5, 1, null, 2];
+    for (const scale of ['Viridis', 'Portland', 'Reds']) {
+        assert.deepEqual(order(vals, { scale, min: 0, max: 7.5 }), order(vals, { scale: 'RdBu', min: 0, max: 7.5 }), scale);
+    }
+});
+
+test('maps Plotly has no name for go to it as stops; the others by name', async () => {
+    const { plotlyColorscale, EXTRA_SCALES } = await import('../../../static/js/utils/color-scales.js');
+    for (const name of ['Inferno', 'Magma', 'Plasma']) {
+        const stops = plotlyColorscale(name);
+        assert.ok(Array.isArray(stops) && stops.length === 11, name);
+        assert.deepEqual(stops, EXTRA_SCALES[name]);
+        assert.equal(stops[0][0], 0); assert.equal(stops[10][0], 1);
+        assert.ok(stops.every(([t, c], i) => t === i / 10 && /^#[0-9a-f]{6}$/.test(c)), name);
+    }
+    for (const name of ['RdBu', 'Viridis', 'Blues', 'Portland', 'toString']) assert.equal(plotlyColorscale(name), name);
 });

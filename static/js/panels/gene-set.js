@@ -102,6 +102,10 @@ const GeneSetPanel = (function() {
         let _picker = null;
         const _blobUrls = new Map();  // section -> object URLs to revoke
         const _disposers = new Map(); // section -> render disposer
+        // section -> view choices made in a drawn result (STRING's category,
+        // a table shown in full): a rerun redraws the section from scratch, and
+        // these used to go back to their defaults with it (renderCtx view)
+        const _views = new Map();
         const _listeners = [];
         let _dom = null;              // element references, after init
         let D = null;                 // el/table/link builders
@@ -120,6 +124,8 @@ const GeneSetPanel = (function() {
                 clearTimeout: (t) => window.clearTimeout(t),
                 now: () => Date.now(),
                 timeoutMs: Config.INTEGRATIONS.timeoutMs,
+                // tells "this browser is offline" from a host that does not answer
+                online: () => (typeof navigator !== 'undefined' && 'onLine' in navigator ? navigator.onLine : undefined),
                 onChange: (sid) => {
                     paintSection(sid);
                     // the gene card's ids make the focused gene's links direct
@@ -1101,7 +1107,12 @@ const GeneSetPanel = (function() {
                 },
                 hasGene,
                 nameOf: nameOfId,
-                focusGene: (idOrName) => DataManager.setFocusedGene(nameOfId(idOrName))
+                focusGene: (idOrName) => DataManager.setFocusedGene(nameOfId(idOrName)),
+                // what the user chose in this section's result, kept across reruns
+                view: {
+                    get: (key) => (_views.get(sid) || {})[key],
+                    set: (key, value) => { _views.set(sid, { ...(_views.get(sid) || {}), [key]: value }); }
+                }
             };
         }
 
@@ -1252,6 +1263,10 @@ const GeneSetPanel = (function() {
             box.append(el('div', { class: 'gs-consent__text', text: 'Send these to the services below? Nothing else leaves this browser '
                 + '(no dataset name, no cell data, no address of this page).' }),
             el('ul', { class: 'gs-consent__list' }, lines),
+            // fetch-policy.js hostAnswers: the one request beyond those listed
+            el('div', { class: 'gs-consent__note', text: 'If a request fails without an answer, the panel asks that service '
+                + 'once for its home page (a bare GET, nothing of yours in it) to tell "could not connect" from '
+                + '"blocked by the browser".' }),
             el('div', { class: 'gs-consent__do' },
                 barButton('Send', () => answerConsent('send'), 'btn-primary'),
                 persistable ? barButton('Always send to these services', () => answerConsent('always')) : '',

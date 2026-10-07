@@ -8,7 +8,7 @@
  *   { n: <cells, or null for every cell passing the filter>,
  *     seed: <0 .. 2^32-1>,
  *     balance?: <obs column>,            equal-as-possible groups
- *     where?: [ condition, ... ],        AND of conditions on obs columns
+ *     where?: [ condition, ... ],        AND of conditions (or groups) on obs columns
  *     part?: <0-based part> }            which of the k = ceil(eligible / n)
  *                                        disjoint parts; absent means 0
  *
@@ -18,6 +18,11 @@
  * part 2).
  *
  *   condition := { col, op: 'in'|'not_in', values: [...] }
+ *              | { col, op: 'contains'|'not_contains'|'starts_with'|'not_starts_with'
+ *                         |'ends_with'|'not_ends_with', value: <text> }   case-insensitive
+ *              | { col, op: 'empty'|'not_empty' }
+ *              | { any: [ condition|group, ... ] }    OR      (also { all: [...] }, AND,
+ *                                                       nested at most MAX_GROUP_DEPTH deep)
  *              | { col, op: '>'|'>='|'<'|'<='|'=='|'!=', value: <number> }
  *              | { col, op: 'between', value: [low, high] }
  *
@@ -30,6 +35,14 @@
 export const SUBSET_OPS = [
     { op: 'in', label: 'is one of', kind: 'text' },
     { op: 'not_in', label: 'is not one of', kind: 'text' },
+    { op: 'contains', label: 'contains', kind: 'string' },
+    { op: 'not_contains', label: 'does not contain', kind: 'string' },
+    { op: 'starts_with', label: 'starts with', kind: 'string' },
+    { op: 'not_starts_with', label: 'does not start with', kind: 'string' },
+    { op: 'ends_with', label: 'ends with', kind: 'string' },
+    { op: 'not_ends_with', label: 'does not end with', kind: 'string' },
+    { op: 'empty', label: 'is empty', kind: 'none' },
+    { op: 'not_empty', label: 'is not empty', kind: 'none' },
     { op: '>', label: '>', kind: 'number' },
     { op: '>=', label: '≥', kind: 'number' },
     { op: '<', label: '<', kind: 'number' },
@@ -41,12 +54,58 @@ export const SUBSET_OPS = [
 
 const TEXT_OPS = new Set(['in', 'not_in']);
 const NUMBER_OPS = new Set(['>', '>=', '<', '<=', '==', '!=']);
+const STRING_OPS = new Set(SUBSET_OPS.filter(o => o.kind === 'string').map(o => o.op));
+const EMPTY_OPS = new Set(['empty', 'not_empty']);
+/** Longest text a string condition takes (server: MAX_NEEDLE). */
+export const MAX_NEEDLE = 200;
+/** Groups nest at most this deep inside `where` (server: MAX_GROUP_DEPTH). */
+export const MAX_GROUP_DEPTH = 2;
+/** Conditions in a spec, groups unfolded (server: MAX_CONDITIONS). */
+export const MAX_CONDITIONS = 16;
 export const MAX_SEED = 2 ** 32 - 1;
 /** The spec rides in every cell-axis request's query string (server: MAX_SPEC_CHARS). */
 export const MAX_SPEC_CHARS = 2000;
 
 function _isInt(v) {
     return typeof v === 'number' && Number.isInteger(v);
+}
+
+/** A condition or group in canonical form; throws on a malformed one. */
+function canonicalCondition(c, depth) {
+    if (c && (Array.isArray(c.any) || Array.isArray(c.all))) {
+        const logic = Array.isArray(c.any) ? 'any' : 'all';
+        if (depth > MAX_GROUP_DEPTH) throw new Error(`Groups of conditions nest at most ${MAX_GROUP_DEPTH} deep`);
+        if (!c[logic].length) throw new Error('A group of conditions needs at least one condition');
+        return { [logic]: c[logic].map(m => canonicalCondition(m, depth + 1)) };
+    }
+    if (!c || !c.col) throw new Error('Every filter condition needs a column');
+    if (TEXT_OPS.has(c.op)) {
+        const values = [...new Set((c.values || []).map(v => String(v)))].sort();
+        if (!values.length) throw new Error(`Choose at least one value for ${c.col}`);
+        return { col: c.col, op: c.op, values };
+    }
+    if (STRING_OPS.has(c.op)) {
+        const value = c.value === undefined || c.value === null ? '' : String(c.value);
+        if (!value) throw new Error(`${c.col}: type the text to look for`);
+        if (value.length > MAX_NEEDLE) throw new Error(`${c.col}: the text is at most ${MAX_NEEDLE} characters`);
+        return { col: c.col, op: c.op, value };
+    }
+    if (EMPTY_OPS.has(c.op)) return { col: c.col, op: c.op };
+    if (c.op === 'between') {
+        const [lo, hi] = (c.value || []).map(Number);
+        if (!Number.isFinite(lo) || !Number.isFinite(hi)) throw new Error(`${c.col}: between needs two numbers`);
+        return { col: c.col, op: c.op, value: lo <= hi ? [lo, hi] : [hi, lo] };
+    }
+    if (NUMBER_OPS.has(c.op)) {
+        const value = Number(c.value);
+        if (c.value === '' || c.value === null || !Number.isFinite(value)) throw new Error(`${c.col}: ${c.op} needs a number`);
+        return { col: c.col, op: c.op, value };
+    }
+    throw new Error(`Unknown filter operator ${c.op}`);
+}
+
+function countConditions(items) {
+    return items.reduce((n, c) => n + (c.any || c.all ? countConditions(c.any || c.all) : 1), 0);
 }
 
 /**
@@ -69,25 +128,8 @@ export function canonicalSubset(spec) {
     }
     const where = Array.isArray(spec.where) ? spec.where : [];
     if (where.length) {
-        out.where = where.map(c => {
-            if (!c || !c.col) throw new Error('Every filter condition needs a column');
-            if (TEXT_OPS.has(c.op)) {
-                const values = [...new Set((c.values || []).map(v => String(v)))].sort();
-                if (!values.length) throw new Error(`Choose at least one value for ${c.col}`);
-                return { col: c.col, op: c.op, values };
-            }
-            if (c.op === 'between') {
-                const [lo, hi] = (c.value || []).map(Number);
-                if (!Number.isFinite(lo) || !Number.isFinite(hi)) throw new Error(`${c.col}: between needs two numbers`);
-                return { col: c.col, op: c.op, value: lo <= hi ? [lo, hi] : [hi, lo] };
-            }
-            if (NUMBER_OPS.has(c.op)) {
-                const value = Number(c.value);
-                if (c.value === '' || c.value === null || !Number.isFinite(value)) throw new Error(`${c.col}: ${c.op} needs a number`);
-                return { col: c.col, op: c.op, value };
-            }
-            throw new Error(`Unknown filter operator ${c.op}`);
-        });
+        out.where = where.map(c => canonicalCondition(c, 1));
+        if (countConditions(out.where) > MAX_CONDITIONS) throw new Error(`A filter has at most ${MAX_CONDITIONS} conditions`);
     }
     const part = spec.part === undefined || spec.part === null ? 0 : spec.part;
     if (!(_isInt(part) && part >= 0)) throw new Error('The part must be a whole number of at least 0');
@@ -131,6 +173,15 @@ const fmt = (n) => Number(n).toLocaleString('en-US');
 
 /** "cluster in {3, 5}" etc., for the header and the widget. */
 export function describeCondition(c) {
+    if (c.any || c.all) {
+        const members = (c.any || c.all).map(m => ((m.any || m.all) ? `(${describeCondition(m)})` : describeCondition(m)));
+        return members.join(c.any ? ' or ' : ' and ');
+    }
+    if (STRING_OPS.has(c.op)) {
+        const label = (SUBSET_OPS.find(o => o.op === c.op) || {}).label || c.op;
+        return `${c.col} ${label} "${c.value}"`;
+    }
+    if (EMPTY_OPS.has(c.op)) return `${c.col} ${c.op === 'empty' ? 'is empty' : 'is not empty'}`;
     if (TEXT_OPS.has(c.op)) {
         const shown = c.values.length > 4 ? [...c.values.slice(0, 3), `… ${c.values.length - 3} more`] : c.values;
         return `${c.col} ${c.op === 'in' ? 'in' : 'not in'} {${shown.join(', ')}}`;
@@ -177,9 +228,15 @@ export function describeSubset(info, total = null) {
         }
     }
     lines.push('Every panel shows these same cells. Click to change the subset.');
+    // the badge names what shapes the cells, not just the seed: a balance
+    // (it was only in the tooltip) and that a filter applies
+    const badgeParts = ['Subset', `seed ${spec.seed}`];
+    if (spec.balance) badgeParts.push(`balanced by ${spec.balance}`);
+    if (spec.where && spec.where.length) badgeParts.push('filtered');
     return {
         count: `${fmt(info.n)} of ${fmt(info.n_total)}`,
-        badge: `Subset · seed ${spec.seed}`,
+        badge: badgeParts.join(' · '),
+        badgeParts,
         title: lines.join('\n'),
         active: true
     };
@@ -225,15 +282,27 @@ export function outsideDetail(info) {
     return parts ? `not in part ${fmt(parts.display)} of ${fmt(parts.parts)}` : 'not in the cell subset';
 }
 
+/** SearchBuilder string conditions and the subset op that means the same (both lower-case the text). */
+const STRING_CONDITIONS = {
+    contains: 'contains', '!contains': 'not_contains',
+    starts: 'starts_with', '!starts': 'not_starts_with',
+    ends: 'ends_with', '!ends': 'not_ends_with'
+};
+
 /**
  * Translate a cell table's SearchBuilder filter into subset conditions, so
  * the server can apply it to EVERY cell (the table itself only holds the
  * cells already loaded).
  *
- * Only what the server can evaluate with the same meaning is translated: a
- * top-level AND (or a single condition) over obs columns, with =, != on text
- * and =, !=, <, <=, >, >=, between on numbers. Anything else is reported in
- * `unsupported` and NOT silently dropped by the caller.
+ * Only what the server can evaluate with the same meaning is translated:
+ * conditions over obs columns (text: =, !=, contains, starts with, ends with
+ * and their negations, empty, not empty; numbers: =, !=, <, <=, >, >=,
+ * between, empty, not empty), joined by AND or OR in groups nested up to
+ * MAX_GROUP_DEPTH deep. Anything else is reported in `unsupported` and NOT
+ * silently dropped by the caller. A dropped member of an AND only makes the
+ * subset broader than the table; a dropped member of an OR would make it
+ * narrower, so an OR with a condition that cannot be translated is not
+ * copied at all.
  *
  * @param {{criteria?: Array, logic?: string}} details - SearchBuilder getDetails()
  * @param {Array<{type: string, key: string, column?: string}>} columns - the table's columns
@@ -242,46 +311,87 @@ export function outsideDetail(info) {
  * @returns {{where: Array, unsupported: string[]}}
  */
 export function searchBuilderToWhere(details, columns, columnKey, booleanCols = new Set()) {
-    const where = [];
     const unsupported = [];
-    const criteria = (details && Array.isArray(details.criteria)) ? details.criteria : [];
-    if (criteria.length > 1 && details.logic === 'OR') {
-        return { where: [], unsupported: ['conditions joined by OR (only AND can be applied to all cells)'] };
-    }
     const byKey = new Map((columns || []).map(c => [columnKey(c), c]));
-    for (const crit of criteria) {
-        if (!crit || Array.isArray(crit.criteria)) {
-            unsupported.push('a nested group of conditions');
-            continue;
-        }
+
+    function leaf(crit) {
         const column = byKey.get(crit.origData) || byKey.get(crit.data);
         const label = crit.data || crit.origData || '?';
         if (!column || column.type !== 'obs') {
             unsupported.push(`${label} (only obs columns can filter the subset)`);
-            continue;
+            return null;
         }
         const col = column.key;
+        const cond = crit.condition;
         const values = Array.isArray(crit.value) ? crit.value : [];
         const isNum = crit.type === 'num' || crit.type === 'num-fmt' || crit.type === 'html-num';
-        if (!isNum) {
-            if ((crit.condition === '=' || crit.condition === '!=') && values.length) {
-                let v = values[0];
-                if (booleanCols.has(col)) v = { yes: 'true', no: 'false' }[String(v).toLowerCase()] ?? v;
-                where.push({ col, op: crit.condition === '=' ? 'in' : 'not_in', values: [String(v)] });
-            } else {
-                unsupported.push(`${label} ${crit.condition || ''} (text conditions other than = and ≠)`);
+        const isBool = booleanCols.has(col);
+        if (cond === 'null' || cond === '!null') {
+            if (isBool) {
+                unsupported.push(`${label} ${cond === 'null' ? 'is empty' : 'is not empty'} (on a Yes/No column)`);
+                return null;
             }
-            continue;
+            return { col, op: cond === 'null' ? 'empty' : 'not_empty' };
+        }
+        if (!isNum) {
+            if ((cond === '=' || cond === '!=') && values.length) {
+                let v = values[0];
+                if (isBool) v = { yes: 'true', no: 'false' }[String(v).toLowerCase()] ?? v;
+                return { col, op: cond === '=' ? 'in' : 'not_in', values: [String(v)] };
+            }
+            if (STRING_CONDITIONS[cond]) {
+                const text = values.length ? String(values[0]) : '';
+                if (isBool) {
+                    unsupported.push(`${label} ${cond} (text conditions on a Yes/No column)`);
+                    return null;
+                }
+                if (!text || text.length > MAX_NEEDLE) {
+                    unsupported.push(`${label} ${cond} (${text ? `text over ${MAX_NEEDLE} characters` : 'no text typed'})`);
+                    return null;
+                }
+                return { col, op: STRING_CONDITIONS[cond], value: text };
+            }
+            unsupported.push(`${label} ${cond || ''} (no equivalent in a subset)`);
+            return null;
         }
         const nums = values.map(Number);
-        if (['<', '<=', '>', '>=', '=', '!='].includes(crit.condition) && Number.isFinite(nums[0])) {
-            const op = crit.condition === '=' ? '==' : crit.condition;
-            where.push({ col, op, value: nums[0] });
-        } else if (crit.condition === 'between' && nums.length >= 2 && nums.every(Number.isFinite)) {
-            where.push({ col, op: 'between', value: [nums[0], nums[1]] });
-        } else {
-            unsupported.push(`${label} ${crit.condition || ''}`);
+        if (['<', '<=', '>', '>=', '=', '!='].includes(cond) && Number.isFinite(nums[0])) {
+            return { col, op: cond === '=' ? '==' : cond, value: nums[0] };
         }
+        if (cond === 'between' && nums.length >= 2 && nums.every(Number.isFinite)) {
+            return { col, op: 'between', value: [nums[0], nums[1]] };
+        }
+        unsupported.push(`${label} ${cond || ''}`);
+        return null;
     }
-    return { where, unsupported };
+
+    /** The items a group translates to (an array), or null when an OR cannot be. */
+    function group(det, depth) {
+        const items = [];
+        let lost = false;
+        for (const crit of (det && Array.isArray(det.criteria)) ? det.criteria : []) {
+            if (crit && Array.isArray(crit.criteria)) {
+                if (!crit.criteria.length) continue;             // an empty group filters nothing
+                if (depth >= MAX_GROUP_DEPTH) {
+                    unsupported.push(`a group of conditions nested more than ${MAX_GROUP_DEPTH} deep`);
+                    lost = true;
+                    continue;
+                }
+                const inner = group(crit, depth + 1);
+                if (inner === null) { lost = true; continue; }
+                if (inner.length) items.push(crit.logic === 'OR' && inner.length > 1 ? { any: inner } : (inner.length > 1 ? { all: inner } : inner[0]));
+                continue;
+            }
+            const one = crit ? leaf(crit) : null;
+            if (one) items.push(one); else lost = true;
+        }
+        // a member lost from an OR would narrow it: give the whole OR up
+        if (det && det.logic === 'OR' && lost) return null;
+        return items;
+    }
+
+    const top = group(details, 0);
+    if (top === null) return { where: [], unsupported };
+    const isOr = details && details.logic === 'OR' && top.length > 1;
+    return { where: isOr ? [{ any: top }] : top, unsupported };
 }

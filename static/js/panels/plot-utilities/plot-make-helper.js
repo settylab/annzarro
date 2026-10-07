@@ -1,6 +1,7 @@
 import { DataManager } from '../../data-manager.js';
-import { generateDiscreteColors } from './colors.js';
+import { generateDiscreteColors, groupColours } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
+import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName } from '../../utils/categories.js';
 
 /**
  * Generates a Plotly layout configuration based on the provided settings.
@@ -247,23 +248,28 @@ export function attachViewportTracking(plotContainer, settings) {
   if (plotContainer.__azViewportHandler && typeof plotContainer.removeListener === 'function') {
     plotContainer.removeListener('plotly_relayout', plotContainer.__azViewportHandler);
   }
+  const followView = () => { if (typeof plotContainer.__azFollowView === 'function') plotContainer.__azFollowView(); };
   const onRelayout = (eventData) => {
     if (!eventData) return;
+    // automatic point size and opacity for the points now in view (listeners.js)
+    if (trackView(eventData) && !settings.z) followView();
+  };
+  const trackView = (eventData) => {
     if (settings.z) {
       const camera = eventData['scene.camera'];
       if (camera) settings.viewport3D = { eye: camera.eye, up: camera.up, center: camera.center };
-      return;
+      return !!camera;
     }
     // Reset axes / double click: back to the axes Plotly fits
     if (eventData['xaxis.autorange'] === true || eventData['yaxis.autorange'] === true) {
       settings.viewport2D = null;
-      return;
+      return true;
     }
     const range = (axis) => eventData[`${axis}.range`]
       || (eventData[`${axis}.range[0]`] !== undefined && eventData[`${axis}.range[1]`] !== undefined
         ? [eventData[`${axis}.range[0]`], eventData[`${axis}.range[1]`]] : null);
     const xrange = range('xaxis'), yrange = range('yaxis');
-    if (!xrange && !yrange) return;
+    if (!xrange && !yrange) return false;
     // A zoom along one axis (a drag on its edge) keeps the other as drawn
     const fl = plotContainer._fullLayout || {};
     const shown = (axis) => (fl[axis] && Array.isArray(fl[axis].range) ? [...fl[axis].range] : null);
@@ -271,9 +277,12 @@ export function attachViewportTracking(plotContainer, settings) {
       xrange: xrange ? [...xrange] : (settings.viewport2D && settings.viewport2D.xrange) || shown('xaxis'),
       yrange: yrange ? [...yrange] : (settings.viewport2D && settings.viewport2D.yrange) || shown('yaxis')
     };
+    return true;
   };
   plotContainer.__azViewportHandler = onRelayout;
   plotContainer.on('plotly_relayout', onRelayout);
+  // a redraw that keeps a zoomed view was drawn with the style for every point
+  if (settings.viewport2D && !settings.z) followView();
 }
 
 /**
@@ -350,11 +359,27 @@ export function keptViewRanges(settings) {
       slotOf[idx] = slot;
     }
 
+    // Past GROUP_COLOURS categories (utils/categories.js) they are drawn in
+    // colour groups: ranked by their points, rank r in colour r mod 64, one
+    // trace and one legend entry per colour. A trace and a legend entry per
+    // category hung the panel at a few thousand categories.
+    // ranked codes without labels (hover off, plot-make.js loadAxisData) are
+    // always colour groups: the values are the ranks
+    const many = !!data.colorRanked || grouped(categories.length);
+
     // Generate a color palette
     let selectedPalette;
     
     // Check if custom colors are provided in settings.
-    if (
+    if (many) {
+      // uns colours, one per category, would be a trace each again
+      const name = settings.categoryPalette && settings.categoryPalette !== 'uns' ? settings.categoryPalette : undefined;
+      try {
+        selectedPalette = groupColours(GROUP_COLOURS, name);
+      } catch {
+        selectedPalette = groupColours(GROUP_COLOURS);
+      }
+    } else if (
       settings?.categoryPalette === "uns" &&
       customColors &&
       customColors.length > 0
@@ -438,6 +463,55 @@ export function keptViewRanges(settings) {
       traces.push(naTrace);
     }
 
+    if (many) {
+      // Each category's rank over the WHOLE column (data.colorRankOf, from
+      // the server's cached ranking) decides its colour, rank mod
+      // GROUP_COLOURS: the same in every panel, subset, part and filter.
+      // Without it (an older server) the points here are ranked instead.
+      const ranked = !!data.colorRanked;
+      const global = data.colorRankOf instanceof Map ? data.colorRankOf : null;
+      const local = ranked || global ? null : frequencyRanks(Uint32Array.from(bySlot, s => s.length));
+      const rankOfSlot = (i) => {
+        if (ranked) return categories[i];
+        if (!global) return local.rankOf[i];
+        const r = global.get(categories[i]);
+        return r === undefined ? -1 : r;
+      };
+      // per colour: its categories on this plot, by rank (the legend names
+      // the largest present ones first)
+      const present = selectedPalette.map(() => []);
+      const byColour = selectedPalette.map(() => []);
+      let unranked = categories.length;
+      bySlot.forEach((indices, i) => {
+        if (indices.length === 0) return;
+        let r = rankOfSlot(i);
+        if (r < 0) r = unranked++;     // a value the ranking does not know: after every ranked one
+        const g = groupOf(r);
+        present[g].push([r, i]);
+        for (const idx of indices) byColour[g].push(idx);
+      });
+      byColour.forEach((indices, g) => {
+        if (indices.length === 0) return;
+        const members = present[g].sort((p, q) => p[0] - q[0]);
+        // ranked: no labels were read; the legend's names came with the ranks
+        const name = ranked ? (data.colorGroupNames && data.colorGroupNames[g]) || ''
+          : groupLegendName(members.map(([, i]) => categories[i]));
+        const trace = makeTrace(indices, name, selectedPalette[g], null);
+        if (ranked) {
+          // no label to show: no hover box (a template would override hoverinfo)
+          trace.hoverinfo = 'none';
+          trace.hovertemplate = '';
+        } else {
+          trace._azLabels = indices.map(idx => String(categories[slotOf[idx]]));
+          trace.hovertext = trace._azLabels.map(label => `<br>${label}`);
+          trace.hovertemplate = trace.hovertemplate.replace('<extra></extra>', '%{hovertext}<extra></extra>');
+        }
+        trace.legendrank = g + 1;
+        traces.push(trace);
+      });
+      return withLegendProxies(traces, settings);
+    }
+
     categories.forEach((category, i) => {
       if (bySlot[i].length === 0) return; // Skip this category if there are no points
       traces.push(makeTrace(bySlot[i], category, selectedPalette[i % selectedPalette.length], category));
@@ -449,10 +523,17 @@ export function keptViewRanges(settings) {
   /** Trace `meta` of a legend proxy, and of the point traces whose legend entry it carries. */
   export const LEGEND_PROXY = 'az-legend';
   export const LEGEND_POINTS = 'az-points';
+  /** Trace `meta` of the one invisible point that carries a large plot's colour bar. */
+  export const COLOUR_BAR = 'az-colorbar';
 
   /** True for a legend proxy trace (no points; styling restyles skip it). */
   export function isLegendProxy(trace) {
     return !!trace && trace.meta === LEGEND_PROXY;
+  }
+
+  /** True for a trace the point size and opacity leave alone: a legend proxy or a colour bar's point. */
+  export function keepsOwnMarker(trace) {
+    return isLegendProxy(trace) || (!!trace && trace.meta === COLOUR_BAR);
   }
 
   /**

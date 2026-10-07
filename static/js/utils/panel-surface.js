@@ -37,11 +37,13 @@
  * cannot be routed around without the guard going red.
  */
 
+import { plotlyColorscale } from './color-scales.js';
 import { Coverage, GAP, breakdown, compactCount, exactCount } from './coverage.js';
 import { keepTitlesFitted } from './plot-titles.js';
 import { releasePlot } from './release-plot.js';
 import { forget } from './memory-guard-ui.js';
 import { withShownCamera } from './scene-camera.js';
+import { installGlColors } from './scattergl-calc.js';
 
 /** Class of the status strip; styled in static/css/styles.css. */
 const STRIP_CLASS = 'plot-status';
@@ -411,6 +413,22 @@ function wireStrips() {
 wireStrips();
 
 /**
+ * Plotly's scattergl trace module, for utils/scattergl-calc.js: Plotly exports no
+ * trace modules, so a detached graph with one invisible scattergl trace is
+ * drawn, read and purged. It is not a panel and states no Coverage.
+ * @returns {Promise<Object>}
+ */
+export async function scatterglModule() {
+    const div = document.createElement('div');
+    try {
+        await Plotly.newPlot(div, [{ type: 'scattergl', visible: false }]);
+        return div._fullData && div._fullData[0] && div._fullData[0]._module;
+    } finally {
+        Plotly.purge(div);
+    }
+}
+
+/**
  * The stops ([[t, colour], ...]) Plotly draws for a colour scale given by name
  * ('Portland') or as stops. Plotly resolves names only while it draws, so this
  * draws a one-point plot off screen and reads them back. That plot is not a
@@ -424,7 +442,7 @@ export async function resolveColorscale(scale) {
     div.style.cssText = 'position:absolute;left:-9999px;width:40px;height:40px';
     document.body.appendChild(div);
     try {
-        await Plotly.newPlot(div, [{ type: 'scatter', x: [0], y: [0], marker: { color: [0], colorscale: scale } }],
+        await Plotly.newPlot(div, [{ type: 'scatter', x: [0], y: [0], marker: { color: [0], colorscale: plotlyColorscale(scale) } }],
             { width: 40, height: 40 }, { staticPlot: true });
         return div._fullData[0].marker.colorscale;
     } finally {
@@ -612,6 +630,8 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
     renderCoverageNotice(plotContainer, cov, unit, { persistent: true });
     // a fresh draw clears a lost-context tag; before the draw, for the same reason
     setStatusTag(plotContainer, 'webgl', null);
+    // per-point colours without Plotly's colour strings (once per page)
+    if (typeof Plotly !== 'undefined' && typeof Plotly.newPlot === 'function') await installGlColors(scatterglModule);
     // a graph redrawn in place keeps the camera the user turned it to; the
     // camera saved in the settings is for a new graph
     const result = await Plotly.react(

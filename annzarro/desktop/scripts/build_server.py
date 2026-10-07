@@ -15,12 +15,16 @@ result runs only on the platform and architecture it was built on.
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
 import sys
 import venv
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import notices  # noqa: E402  (annzarro/desktop/scripts/notices.py)
 
 REPO = Path(__file__).resolve().parents[3]
 DESKTOP = REPO / "annzarro" / "desktop"
@@ -100,6 +104,18 @@ def main(argv=None):
     freeze = subprocess.run([str(py), "-m", "pip", "freeze", "--exclude-editable"],
                             check=True, capture_output=True, text=True).stdout
     (out / "server-requirements.txt").write_text(freeze)
+
+    # Licences of everything frozen in: CPython, each pip distribution, each
+    # native library. Fails the build on a library with no known notice or
+    # one that must not ship (GNU Readline).
+    paths = json.loads(subprocess.run(
+        [str(py), "-c", "import json, sys, sysconfig; print(json.dumps("
+         "[sysconfig.get_paths()['purelib'], sys.base_prefix]))"],
+        check=True, capture_output=True, text=True).stdout)
+    exe_name = NAME + (".exe" if os.name == "nt" else "")
+    inventory = notices.write_notices(out, BUILD / "pyinstaller" / NAME, paths[0], paths[1],
+                                      exe_name=exe_name)
+    print(f"Third-party notices: {len(inventory)} components in {out / notices.OUT_NAME}")
 
     exe = out / (NAME + (".exe" if os.name == "nt" else ""))
     if not exe.is_file():

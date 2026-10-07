@@ -48,13 +48,13 @@ def _free_port():
         return s.getsockname()[1]
 
 
-def _serve(home, *extra):
+def _serve(home, *extra, data_dir=DATA_DIR):
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
     # this checkout's package, not whatever "annzarro" is installed
     proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
-                             "--port", str(port), "--data-dir", DATA_DIR, "--no-browser", "--auth-disabled", *extra],
+                             "--port", str(port), "--data-dir", str(data_dir), "--no-browser", "--auth-disabled", *extra],
                             env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     root = f"http://127.0.0.1:{port}"
     for _ in range(120):
@@ -334,6 +334,306 @@ def test_slow_recolour_shows_busy(server, slow):
             }}""", timeout=15000)
             after = page.evaluate(LEGEND)
             assert after["names"] != before["names"] and not after["busy"], after
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+LINEAR = {"type": "obs", "key": "total_counts", "column": ""}
+LO, HI = 102.97683205853679, 9949.681746793087   # total_counts, the data range
+
+
+def _toggle_log(page):
+    page.click(f"#log-color-{PID}")
+    page.wait_for_timeout(1200)
+
+
+@pytest.mark.parametrize("mode", ["regular", "large"])
+def test_log_toggle_redraws_without_refresh(request, mode):
+    """Clicking Log rescales the colours and the colour bar at once (range, 1-2-5 ticks, Min/Max boxes),
+    on and off, unlocked: it used to keep the previous units' cmin/cmax until the panel's Refresh."""
+    server = request.getfixturevalue("server" if mode == "regular" else "large_server")
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=LINEAR))
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(LO), pytest.approx(HI))
+            assert bar["tickvals"] is None
+
+            _toggle_log(page)
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(math.log10(LO)), pytest.approx(math.log10(HI))), bar
+            assert bar["ticktext"] == ["200", "500", "1000", "2000", "5000"], bar
+            assert [10 ** v for v in bar["tickvals"]] == [pytest.approx(float(t)) for t in bar["ticktext"]]
+            assert page.input_value(f"#color-min-{PID}") == "103"
+            assert page.input_value(f"#color-max-{PID}") == "9950"
+            cfg = _saved(page)
+            assert cfg["color"]["log"] is True and cfg["colorRangeUnits"] == "data", cfg
+            assert cfg["colorMax"] == pytest.approx(HI)
+            if mode == "regular":   # the colours themselves are log10 values
+                colours = page.evaluate(f"""() => document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot')
+                                            .data[0].marker.color.filter(Number.isFinite)""")
+                assert max(colours) == pytest.approx(math.log10(HI))
+
+            # a typed Max under Log, then Log off: back to the linear data range (not locked)
+            _toggle_log(page)
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(LO), pytest.approx(HI)), bar
+            assert bar["tickvals"] is None and bar["ticktext"] is None, bar
+            assert page.input_value(f"#color-max-{PID}") == "9950"
+            assert _saved(page)["color"].get("log") is False
+
+            # and on again: the same as the first time
+            _toggle_log(page)
+            bar = page.evaluate(BAR)
+            assert bar["cmax"] == pytest.approx(math.log10(HI)), bar
+            assert bar["ticktext"] == ["200", "500", "1000", "2000", "5000"], bar
+
+            # a locked range after toggling: a share link built from the saved config opens the same
+            _type(page, f"#color-max-{PID}", 5000)
+            page.click(f"#lock-range-{PID}")
+            _toggle_log(page)                      # off, locked: the same data values, linear
+            cfg = _saved(page)
+            assert (cfg["colorMax"], cfg["lockColorRange"]) == (pytest.approx(5000), True), cfg
+            assert page.evaluate(BAR)["cmax"] == pytest.approx(5000)
+            assert not errors, errors
+            page.close()
+
+            keep = {k: cfg[k] for k in ("color", "colorMin", "colorMax", "lockColorRange", "colorRangeUnits") if k in cfg}
+            page, errors = _open(browser, _link(server, **keep))
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(LO), pytest.approx(5000)), bar
+            assert page.input_value(f"#color-max-{PID}") == "5000"
+            _toggle_log(page)                      # on again from the link: still 5000, in log units
+            assert page.evaluate(BAR)["cmax"] == pytest.approx(math.log10(5000))
+            assert page.input_value(f"#color-max-{PID}") == "5000"
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("mode", ["regular", "large"])
+def test_log_untick_redraws_without_refresh(request, mode):
+    """The other direction on its own: a panel opened WITH Log, Log unticked, no Refresh. The colour
+    bar goes back to the linear data range with Plotly's own ticks, and the boxes follow."""
+    server = request.getfixturevalue("server" if mode == "regular" else "large_server")
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=LOG))
+            bar = page.evaluate(BAR)
+            assert bar["cmax"] == pytest.approx(math.log10(HI)), bar
+            assert bar["ticktext"] == ["200", "500", "1000", "2000", "5000"], bar
+
+            _toggle_log(page)
+            bar = page.evaluate(BAR)
+            assert (bar["cmin"], bar["cmax"]) == (pytest.approx(LO), pytest.approx(HI)), bar
+            assert bar["tickvals"] is None and bar["ticktext"] is None, bar
+            assert page.input_value(f"#color-min-{PID}") == "103"
+            assert page.input_value(f"#color-max-{PID}") == "9950"
+            assert _saved(page)["color"].get("log") is False
+            if mode == "regular":   # the colours themselves are back to data values
+                colours = page.evaluate(f"""() => document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot')
+                                            .data[0].marker.color.filter(Number.isFinite)""")
+                assert max(colours) == pytest.approx(HI)
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+SIGNED = {"type": "obsm", "key": "X_umap", "column": "0"}   # about -3.9 .. 2.4: both signs
+
+ORDER = f"""() => {{
+    const gd = document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot');
+    // large-plot mode: one single-colour trace per colour step, drawn in trace order
+    const lum = c => {{ const m = c.match(/[\\d.]+/g).map(Number); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; }};
+    const steps = gd.data.filter(t => t.meta === 'az-points' && typeof t.marker.color === 'string'
+                                      && t.marker.color.startsWith('rgb'));
+    if (steps.length) return {{ lums: steps.map(t => lum(t.marker.color)) }};
+    const t = gd.data.find(t => t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+    return {{ values: t.marker.color }};
+}}"""
+
+
+@pytest.mark.parametrize("mode", ["regular", "large"])
+def test_strong_on_top_follows_a_sequential_map(request, mode):
+    """Blues with Reverse (pale = low), Min 0.3 locked: values far below 0.3 are clamped to the pale end
+    and are drawn underneath; the strong blue ones (high) are on top. |value| put them over the blue."""
+    server = request.getfixturevalue("server" if mode == "regular" else "large_server")
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            # large-plot mode bins over [Min, Max]: a Min below 0 puts pale bins on both sides of 0,
+            # where |bin centre| drew the palest ones (near Min) over the middle ones
+            page, errors = _open(browser, _link(server, color=SIGNED, colorScale="Blues", colorReversed=True,
+                                                colorMin=0.3 if mode == "regular" else -2, colorMax=2.4,
+                                                lockColorRange=True))
+            got = page.evaluate(ORDER)
+            if mode == "regular":
+                v = [x for x in got["values"] if x is not None]
+                below = [i for i, x in enumerate(v) if x <= 0.3]
+                above = [i for i, x in enumerate(v) if x > 0.3]
+                assert below and above and max(below) < min(above), "pale (clamped) points first, strong blue last"
+                assert [v[i] for i in above] == sorted(v[i] for i in above)
+                assert min(v) < -1 and v.index(min(v)) < min(above), "the most negative value is underneath"
+            else:
+                lums = got["lums"]
+                assert len(lums) > 2 and all(a >= b - 1e-9 for a, b in zip(lums, lums[1:])), lums
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_strong_on_top_centred_is_unchanged(server):
+    """Center at 0: still |value| ascending (the strongest of either sign on top)."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=SIGNED, colorScale="RdBu", centeringActive=True))
+            v = [x for x in page.evaluate(ORDER)["values"] if x is not None]
+            assert [abs(x) for x in v] == sorted(abs(x) for x in v)
+            page.click(f"#color-scale-{PID}")                    # a sequential map, still centred: |value|
+            page.select_option(f"#color-scale-{PID}", "Blues")
+            page.wait_for_timeout(1000)
+            v = [x for x in page.evaluate(ORDER)["values"] if x is not None]
+            assert [abs(x) for x in v] == sorted(abs(x) for x in v)
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+@pytest.fixture(scope="module")
+def volcano_server(tmp_path_factory):
+    """The fixture with two gene-by-gene matrices (varp), so a gene plot can be the issue's volcano:
+    GENE000's rows of spearman_smoothed (x) and spearman_fold_change (y, and the colour)."""
+    import shutil
+    import numpy as np
+    import zarr
+    data = tmp_path_factory.mktemp("volcano-data")
+    store = data / "fixture_small.zarr"
+    shutil.copytree(os.path.join(DATA_DIR, "fixture_small.zarr"), store)
+    g = zarr.open_group(str(store), mode="r+")
+    n = g["var"]["_index"].shape[0]
+    rng = np.random.default_rng(7)
+    fold = rng.uniform(-0.95, 0.95, size=(n, n)).astype("float32")
+    fold[0, :4] = [-0.9, -0.6, 0.95, 0.4]          # strongly anti-correlated and strongly correlated partners
+    for name, values in (("spearman_fold_change", fold), ("spearman_smoothed", fold * 0.8)):
+        arr = g["varp"].create_array(name, shape=values.shape, dtype="float32")
+        arr[:] = values
+        arr.attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
+    zarr.consolidate_metadata(str(store))
+    home = tmp_path_factory.mktemp("home-volcano")
+    proc, root = _serve(home, data_dir=data)
+    yield root, str(store)
+    proc.terminate()
+    proc.wait(10)
+
+
+def test_strong_on_top_volcano_blues_reverse_min_locked(volcano_server):
+    """The issue's setup: a volcano coloured by a gene's spearman_fold_change row, Blues with Reverse
+    (pale = low), Min 0.3 and Lock Range. The strongly positive partners (the bar's top end) are drawn
+    last; the strongly anti-correlated ones, clamped to the pale bottom of the bar, stay underneath.
+    On 0.4.0 |value| drew them on top of the blue ones."""
+    root, store = volcano_server
+    gid = "gene-plot-v"
+    row = lambda key: {"type": "varp", "key": key, "column": "GENE000", "locked": False}
+    plot = {"id": gid, "x": row("spearman_smoothed"), "y": row("spearman_fold_change"), "z": None,
+            "color": row("spearman_fold_change"), "colorScale": "Blues", "colorReversed": True,
+            "colorMin": 0.3, "colorMax": 0.95, "lockColorRange": True}
+    view = {"v": 1, "constants": {"focusedGene": "GENE000"},
+            "layout": {"v": 1, "hierarchy": [{"type": "tile", "id": gid, "controlsVisible": False}],
+                       "panelConfigs": {gid: plot}}}
+    payload = base64.urlsafe_b64encode(json.dumps(view, separators=(",", ":")).encode()).decode().rstrip("=")
+    url = f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={payload}"
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 1100})
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(url)
+            page.wait_for_selector(f'.tile[data-tile-id="{gid}"] .js-plotly-plot', timeout=30000)
+            page.wait_for_timeout(1000)
+            got = page.evaluate("""(gid) => { const gd = document.querySelector('.tile[data-tile-id="' + gid + '"] .js-plotly-plot');
+                const t = gd.data.find(t => t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+                return { type: t.type, values: t.marker.color, reversed: !!t.marker.reversescale, cmin: t.marker.cmin }; }""", gid)
+            assert got["type"] == "scattergl" and got["reversed"] and got["cmin"] == pytest.approx(0.3), got
+            v = [x for x in got["values"] if x is not None]
+            above = [i for i, x in enumerate(v) if x > 0.3]
+            anti = [i for i, x in enumerate(v) if x < -0.3]
+            assert above and anti
+            assert max(anti) < min(above), "anti-correlated (pale, clamped) genes are drawn under the strong blue ones"
+            assert [v[i] for i in above] == sorted(v[i] for i in above), "and the strongest blue last"
+            assert v[-1] == pytest.approx(max(v))
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+COUNTS = {"type": "obs", "key": "total_counts", "column": ""}
+
+DRAWN_SCALE = f"""() => {{
+    const gd = document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot');
+    const i = gd.data.findIndex(t => t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+    return {{ stops: gd._fullData[i].marker.colorscale,
+              steps: gd.data.filter(t => t.meta === 'az-points' && typeof t.marker.color === 'string').map(t => t.marker.color),
+              swatch: (document.querySelector('.tile[data-tile-id="{PID}"] .color-scale-swatch, .tile[data-tile-id="{PID}"] [id^=color-scale-swatch]') || {{}}).style?.backgroundImage || '' }};
+}}"""
+
+
+def _pick_map(page, name):
+    page.select_option(f"#color-scale-{PID}", name)
+    page.wait_for_timeout(700)
+
+
+def test_every_map_draws_its_own_colours(server):
+    """Each map the picker offers reaches Plotly as itself. Inferno, Magma and Plasma are not Plotly
+    names: passed by name they silently drew Plotly's default (RdBu's stops)."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=COUNTS))
+            names = page.evaluate(f"() => [...document.querySelectorAll('#color-scale-{PID} option')].map(o => o.value)")
+            assert {"Inferno", "Magma", "Plasma", "RdBu", "Viridis"} <= set(names), names
+            drawn = {}
+            for name in names:
+                _pick_map(page, name)
+                drawn[name] = json.dumps(page.evaluate(DRAWN_SCALE)["stops"])
+            same = {}
+            for name, stops in drawn.items():
+                same.setdefault(stops, []).append(name)
+            assert all(len(v) == 1 for v in same.values()), [v for v in same.values() if len(v) > 1]
+            ends = {n: json.loads(drawn[n]) for n in ("Inferno", "Magma", "Plasma")}
+            assert (ends["Inferno"][0][1], ends["Inferno"][-1][1]) == ("#000004", "#fcffa4")
+            assert (ends["Magma"][0][1], ends["Magma"][-1][1]) == ("#000004", "#fcfdbf")
+            assert (ends["Plasma"][0][1], ends["Plasma"][-1][1]) == ("#0d0887", "#f0f921")
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_large_plot_maps_draw_their_own_colours(large_server):
+    """Large-plot mode colours its steps from the resolved stops: Inferno's are not RdBu's."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(large_server, color=COUNTS, colorScale="RdBu"))
+            rdbu = page.evaluate(DRAWN_SCALE)["steps"]
+            _pick_map(page, "Inferno")
+            page.wait_for_timeout(800)
+            inferno = page.evaluate(DRAWN_SCALE)["steps"]
+            assert rdbu and inferno and set(rdbu) != set(inferno)
+            # Inferno runs black -> pale yellow: its darkest step is near black
+            lum = lambda c: sum(w * float(x) for w, x in zip((0.2126, 0.7152, 0.0722), c[c.index("(") + 1:-1].split(",")[:3]))
+            assert min(lum(c) for c in inferno) < 40, inferno
             assert not errors, errors
             page.close()
         finally:

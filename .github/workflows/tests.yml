@@ -73,7 +73,8 @@ jobs:
         if: matrix.browser
         id: playwright
         run: |
-          pip install playwright
+          # gunicorn: test_admin_vs_user.py serves the app as deployed
+          pip install playwright gunicorn
           echo "version=$(python -c 'from importlib.metadata import version; print(version("playwright"))')" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright's Chromium

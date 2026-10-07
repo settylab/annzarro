@@ -151,7 +151,7 @@ export function createPanelStructure(container, id, settings) {
             </div>
 
             <div class="btn-toolbar ctl-toggles" role="toolbar" aria-label="Colour scale options">
-              <div class="btn-group" role="group">
+              <div class="ctl-toggle-set" role="group">
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${id}" aria-pressed="false">Center at 0</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="reverse-colormap-${id}" aria-pressed="false">Reverse</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="lock-range-${id}" aria-pressed="false">Lock Range</button>
@@ -175,7 +175,7 @@ export function createPanelStructure(container, id, settings) {
                        title="Marker size in px (log scale)" aria-label="Point size (log scale)">
                 <input type="number" class="form-control form-control-sm" min="0" step="any" value="${settings.pointSize}" id="point-size-input-${id}" title="Marker size in px">
                 <span class="point-auto"><button type="button" class="btn btn-sm btn-outline-secondary point-auto-btn" id="point-size-auto-${id}"
-                      title="Automatic size: follows the number of points drawn">auto</button></span>
+                      title="Automatic size: follows the number of points in view">auto</button></span>
               </div>
               <div class="point-opacity-control ctl-row ctl-slider">
                 <label class="ctl-label" for="point-opacity-input-${id}">Opacity</label>
@@ -183,7 +183,7 @@ export function createPanelStructure(container, id, settings) {
                        title="Marker opacity (log scale)" aria-label="Point opacity (log scale)">
                 <input type="number" class="form-control form-control-sm" min="0" max="1" step="any" value="${settings.pointOpacity}" id="point-opacity-input-${id}" title="Marker opacity, 0 to 1">
                 <span class="point-auto"><button type="button" class="btn btn-sm btn-outline-secondary point-auto-btn" id="point-opacity-auto-${id}"
-                      title="Automatic opacity: follows the number of points drawn">auto</button></span>
+                      title="Automatic opacity: follows the number of points in view">auto</button></span>
               </div>
             </div>
 
@@ -482,7 +482,7 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   showPointStyle(id, settings);
   
   // Hover columns picker (settings.hoverInfo)
-  populateHoverSelect(document.getElementById(`hover-columns-${id}`), plotType, datasetStructure, settings.hoverInfo);
+  populateHoverSelect(document.getElementById(`hover-columns-${id}`), plotType, datasetStructure, settings.hoverInfo, settings.hoverOff);
 
   // Initialize table filter dropdown
   updateTableFilterSelect(controlsContainer, id, plotType, settings.tableFilter);

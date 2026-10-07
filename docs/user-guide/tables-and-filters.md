@@ -44,8 +44,11 @@ The `obsp`, `varp` and `layers` tabs list one choice per matrix and cell or gene
 A cell table offers obsp rows and layer columns (genes); a gene table offers varp rows and layer
 rows (cells). A column keeps the cell or gene it was added for: picking `H2-Q7 (focused)` and then
 focusing Cd74 leaves the column `spearman_fold_change: H2-Q7`, and the table is not rebuilt. To
-add Cd74's row, pick it on the tab while Cd74 is focused. Columns saved by an older version that
-followed the focus are listed as "*matrix*: follows the focused gene (…)" and still follow it.
+add Cd74's row, pick it on the tab while Cd74 is focused. A link, panel set or session that names
+a column only as "the focused gene" (or cell) instead of by name gets that column pinned when it
+opens: to the gene or cell the view itself focuses, with the filter conditions on it kept. If the
+view focuses none, the column is removed with its conditions and a notice says so. No table
+column follows the focus.
 
 ## Sort and search
 
@@ -53,7 +56,10 @@ followed the focus are listed as "*matrix*: follows the focused gene (…)" and 
   `kompot_de_Young_to_Old_mahalanobis` put H2-Q7 (15.2217) first.
 - The search box above the table filters rows by text in any column. The buttons next to it
   switch on regular expressions (`.*`), smart search (the wand; on by default) and case
-  sensitivity (`Aa`).
+  sensitivity (`Aa`). Smart search finds rows holding every word typed, in any order; it does not
+  apply to a regular expression, which is searched as written: `Mid|Old` finds rows with either
+  (the wand is greyed out while `.*` is on). A plot filtered by the table and **Export CSV** use
+  the same rows.
 - Click a **Gene ID** (or **Cell ID**) to make it the focused gene (cell). The focus history and
   every focus-dependent panel follow ({doc}`focus-and-lock`).
 
@@ -87,6 +93,12 @@ Groups nest further: the **>** of a condition inside a group makes a group insid
 removes that group and **Clear All** removes every condition. Numeric columns offer Equals, Not,
 Less Than, Less Than Equal To, Greater Than Equal To, Greater Than, Between, Not Between, Empty and
 Not Empty; text columns offer the text conditions (Equals, Contains, Starts With, …).
+
+Equals and Not on a text column list its distinct values to pick from. A column with more than
+10,000 distinct values among the table's rows, such as a barcode, takes a typed value instead,
+and a note under the Advanced Search box says so: "Cell ID, barcode: more than 10,000 distinct values,
+so Equals and Not take a typed value instead of a list." Listing a million barcodes took seconds
+and made the dropdown unusable.
 
 The 159 can be checked in Python:
 

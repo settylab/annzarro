@@ -110,7 +110,36 @@ def register_core_routes(app, api_version):
         # (the cell-name index prewarm).
         from annzarro.core.remote import hosted_reasons
         client["single_user"] = not hosted_reasons(app.config)
+        # The browser memory guard budgets a tab from the computer's memory,
+        # which a browser cannot see. A browser on this computer (a loopback
+        # request that no proxy forwarded) gets this computer's RAM; any
+        # other gets none and the guard's default for a remote browser.
+        host_memory = _host_memory_bytes()
+        if host_memory:
+            ui = dict(client.get("ui") or {})
+            memory = dict(ui.get("memory") or {})
+            memory["host_memory_bytes"] = host_memory
+            ui["memory"] = memory
+            client["ui"] = ui
+        # recorded in saved views and exported figures (same version, same
+        # rendering; another version says it may differ)
+        from annzarro import __version__
+        client["annzarro_version"] = __version__
         return jsonify(client)
+
+    def _host_memory_bytes():
+        """This computer's RAM in bytes for a browser on it, else None."""
+        import ipaddress
+        try:
+            local = ipaddress.ip_address(request.remote_addr or "").is_loopback
+        except ValueError:
+            local = False
+        if not local or request.headers.get("X-Forwarded-For") or request.headers.get("Forwarded"):
+            return None
+        try:
+            return int(psutil.virtual_memory().total)
+        except Exception:  # psutil missing or failing: the remote default applies
+            return None
         
     @app.route(f"/api/{api_version}/auth/me", methods=["GET"])
     def get_current_user():
@@ -122,16 +151,20 @@ def register_core_routes(app, api_version):
         beyond this machine with login disabled -- anyone who can reach it can
         then edit and delete every shared panel set.
 
+        ``may_open_any_path`` says whether this requester may open dataset
+        paths outside the data directories (``server.arbitrary_paths``).
+
         Returns:
-            JSON ``{auth_enabled, username, is_admin, exposed}``
+            JSON ``{auth_enabled, username, is_admin, exposed, may_open_any_path}``
         """
-        from .. import permissions
+        from .. import confinement, permissions
         username, is_admin = permissions.current_user()
         return jsonify({
             "auth_enabled": permissions.auth_enabled(),
             "username": username,
             "is_admin": is_admin,
             "exposed": permissions.is_exposed(app.config),
+            "may_open_any_path": confinement.may_open_any_path(app.config),
         })
 
     @app.route(f"/api/{api_version}/status", methods=["GET"])
