@@ -260,6 +260,94 @@ def zarr_format_problem(dataset_path) -> Optional[str]:
     return None
 
 
+#: At most this many stored columns (CSC) or rows (CSR) are densified by
+#: scatter (densify); more go through scipy's toarray.
+SCATTER_MAX_MAJOR = 64
+
+
+def densify(m) -> np.ndarray:
+    """``m.toarray()`` for a scipy sparse matrix, the same array.
+
+    A gene column of a CSC matrix (the whole-dataset colour of a plot) went
+    through scipy's toarray, which converts CSC to CSR first (0.17 s) and
+    then fills the dense vector (0.07 s): 0.24 s of the 0.47 s a 95.6M-cell
+    column with a value in every cell took on the server. A few stored
+    columns (or rows of a CSR) are written into a zero array directly
+    instead; that column now takes 0.37 s, the scatter of its 95.6M values
+    about 0.1 s of it. Duplicate or unsorted entries, which
+    toarray sums, and wider selections keep toarray.
+    """
+    fmt = getattr(m, "format", None)
+    if fmt not in ("csc", "csr"):
+        return m.toarray()
+    n_major = m.shape[1] if fmt == "csc" else m.shape[0]
+    if n_major > SCATTER_MAX_MAJOR or not m.has_canonical_format:
+        return m.toarray()
+    out = np.zeros(m.shape, dtype=m.dtype)
+    ptr, idx, data = m.indptr, m.indices, m.data
+    for j in range(n_major):
+        a, b = int(ptr[j]), int(ptr[j + 1])
+        if a == b:
+            continue
+        if fmt == "csc":
+            out[idx[a:b], j] = data[a:b]
+        else:
+            out[j, idx[a:b]] = data[a:b]
+    return out
+
+
+#: Bytes of stored rows one step of take_rows reads at once: several chunks,
+#: so zarr still decodes them in parallel, and never the whole column.
+GATHER_BLOCK_BYTES = 32 * 2 ** 20
+
+
+def take_rows(array, rows, cols=None) -> np.ndarray:
+    """``array[rows]`` (``array[rows][:, cols]`` for 2-D), read a block of
+    chunks at a time and keeping only the selected rows.
+
+    A cell subset is a sorted list of rows spread over the whole axis.
+    Reading the column and then cutting it held the column itself: 3.7 GiB
+    for X_umap's at 1B cells (settylab/annzarro#77). zarr 3's orthogonal
+    selection already gathers chunk by chunk (bounded and parallel); zarr 2's
+    held about the whole selection's chunks at once, so there the rows are
+    read a block of chunks at a time: memory one block plus the result.
+    ``rows`` may be unsorted or repeat; the result follows their order.
+    """
+    rows = np.asarray(rows, dtype=np.int64).reshape(-1)
+    n = array.shape[0]
+    if rows.size and (rows.min() < 0 or rows.max() >= n):
+        bad = int(rows[(rows < 0) | (rows >= n)][0])
+        raise IndexError(f"index {bad} is out of bounds for axis 0 with size {n}")
+    two_d = len(array.shape) == 2
+    width = (len(cols) if cols is not None else array.shape[1]) if two_d else 1
+    out_shape = (rows.size, width) if two_d else (rows.size,)
+    out = np.empty(out_shape, dtype=array.dtype)
+    if rows.size == 0:
+        return out
+    if _ZARR3 and hasattr(array, "oindex"):
+        # zarr 3 gathers an orthogonal integer selection chunk by chunk,
+        # decoding a bounded number at once and in parallel: memory is
+        # those chunks plus the result, and it is faster than blocks here
+        sel = (rows, np.asarray(cols, dtype=np.int64)) if (two_d and cols is not None) else (rows,)
+        return np.asarray(array.oindex[sel])
+    order = np.argsort(rows, kind="stable")
+    srows = rows[order]
+    chunk = int(array.chunks[0]) if getattr(array, "chunks", None) else n
+    cols_ix = np.asarray(cols, dtype=np.int64) if (two_d and cols is not None) else None
+    row_bytes = max(1, int(np.dtype(array.dtype).itemsize) * width)
+    step = max(chunk, (GATHER_BLOCK_BYTES // (row_bytes * chunk)) * chunk)
+    # only the blocks some selected row falls in are read
+    starts = np.unique((srows // step) * step)
+    for start in starts.tolist():
+        stop = min(start + step, n)
+        lo, hi = np.searchsorted(srows, [start, stop])
+        # only the selected columns' chunks: a dense layer stored a column
+        # per chunk is not read four times over for one gene
+        block = np.asarray(array.oindex[start:stop, cols_ix] if cols_ix is not None else array[start:stop])
+        out[order[lo:hi]] = block[srows[lo:hi] - start]
+    return out
+
+
 class ZarrReader(CacheSettings):
     """
     Class for reading AnnData objects from zarr sources with lazy loading.
@@ -1347,9 +1435,10 @@ class ZarrReader(CacheSettings):
                     # For non-2D arrays, flatten indices won't work right
                     logger.warning(f"Array {path} is not 2D, ignoring col_indices for subsetting")
                     return array[row_indices]
-                return array[row_indices, :][:, col_indices]
+                # only the selected rows, a block of chunks at a time
+                return take_rows(array, row_indices, col_indices)
             elif row_indices is not None:
-                return array[row_indices]
+                return take_rows(array, row_indices)
             elif col_indices is not None:
                 if len(array.shape) != 2:
                     # For non-2D arrays, can't subset columns
@@ -1389,7 +1478,7 @@ class ZarrReader(CacheSettings):
             sparse_matrix = self._load_sparse_matrix(root['X'], row_indices, col_indices)
             if sparse_matrix is not None:
                 # Convert to dense array for consistent return type
-                return sparse_matrix.toarray()
+                return densify(sparse_matrix)
         
         # Handle as dense array
         return self._get_dense_array('X', root, row_indices, col_indices)
@@ -1430,7 +1519,7 @@ class ZarrReader(CacheSettings):
             sparse_matrix = self._load_sparse_matrix(layer, row_indices, col_indices)
             if sparse_matrix is not None:
                 # Convert to dense array for consistent return type
-                return sparse_matrix.toarray()
+                return densify(sparse_matrix)
         
         # Handle as dense array
         return self._get_dense_array(f'layers/{layer_name}', root, row_indices, col_indices)
@@ -1508,13 +1597,13 @@ class ZarrReader(CacheSettings):
             numpy.ndarray of values, with None in missing positions
         """
         if not self._is_nullable_group(member):
-            return member[indices] if indices is not None else member[:]
+            return take_rows(member, indices) if indices is not None else member[:]
 
         values = member['values']
         mask = member['mask']
 
-        data = values[indices] if indices is not None else values[:]
-        mask_data = mask[indices] if indices is not None else mask[:]
+        data = take_rows(values, indices) if indices is not None else values[:]
+        mask_data = take_rows(mask, indices) if indices is not None else mask[:]
 
         # mask=True marks a missing value, per the AnnData nullable encoding.
         mask_data = np.asarray(mask_data, dtype=bool)
@@ -1589,7 +1678,7 @@ class ZarrReader(CacheSettings):
                 # Get codes and categories
                 categories = self._read_member(group['categories'])
                 if indices is not None:
-                    codes = group['codes'][indices]
+                    codes = take_rows(group['codes'], indices)
                 else:
                     codes = group['codes'][:]
                 
@@ -1747,6 +1836,33 @@ class ZarrReader(CacheSettings):
         return result
     
     @cached_method
+    def get_obs_var_numeric(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
+                            column_name: Optional[str] = None,
+                            indices: Optional[List[int]] = None) -> Optional[np.ndarray]:
+        """One numeric obs/var column as the ndarray it is stored as, or None
+        when it is not one (absent, categorical, string, boolean, or nullable
+        with a missing entry); the caller then answers through get_obs_var.
+
+        For the binary wire format: get_obs_var turns a column into a Python
+        list for JSON, and the binary path turned it back into an array. At
+        95.6M cells that round trip, plus costing the list for the cache, was
+        most of a 16.6 s read. Same values as numeric_array(get_obs_var(...)):
+        the nullable mask is applied the same way (_read_member), and a
+        column with a missing entry is left to the JSON path, which says null.
+        """
+        root = self._get_root(dataset_path=dataset_path)
+        obj = "obs" if entity == "cells" else "var"
+        if root is None or obj not in root or column_name not in root[obj]:
+            return None
+        member = root[obj][column_name]
+        if self._is_group(member) and not self._is_nullable_group(member):
+            return None
+        values = np.asarray(self._read_member(member, indices))
+        if values.ndim != 1 or values.dtype.kind not in "iuf":
+            return None
+        return values
+
+    @cached_method
     def get_obs_var_codes(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
                           column_name: Optional[str] = None, indices: Optional[List[int]] = None):
         """``(codes, categories)`` of a categorical obs/var column, or None
@@ -1766,7 +1882,7 @@ class ZarrReader(CacheSettings):
             return None
         try:
             categories = self._read_member(group['categories'])
-            codes = group['codes'][indices] if indices is not None else group['codes'][:]
+            codes = take_rows(group['codes'], indices) if indices is not None else group['codes'][:]
         except Exception as e:
             raise_if_timeout(e)
             raise store_read_error(group, e) from e
@@ -1809,7 +1925,7 @@ class ZarrReader(CacheSettings):
             # column" walks it element by element under zarr 3 (see _is_group).
             if self._is_group(column) and '0' in column:
                 data_array = column['0']
-                return data_array[indices] if indices is not None else data_array[:]
+                return take_rows(data_array, indices) if indices is not None else data_array[:]
             return self._get_categorical_values(column, indices)
         except (StoreReadError, UnsupportedEncodingError):
             raise
@@ -1877,7 +1993,7 @@ class ZarrReader(CacheSettings):
                 raise UnsupportedEncodingError(
                     f"{obj} '{key}' is a {sparse_format} this reader cannot load "
                     f"(children: {list(member.keys())})")
-            dense = matrix.toarray() if hasattr(matrix, 'toarray') else np.asarray(matrix)
+            dense = densify(matrix) if hasattr(matrix, 'toarray') else np.asarray(matrix)
             return dense[:, 0] if position is not None else dense
 
         if self._is_group(member):
@@ -1942,7 +2058,7 @@ class ZarrReader(CacheSettings):
             # For sparse matrices, pass distinct row and column indices.
             sparse_matrix = self._load_sparse_matrix(obj, row_indices, col_indices)
             if sparse_matrix is not None:
-                return sparse_matrix.toarray()
+                return densify(sparse_matrix)
     
         # For dense obsp matrices, allow separate row and column selection.
         try:
@@ -2095,6 +2211,12 @@ class ZarrReader(CacheSettings):
             
             # Fall back to regular loading for simpler cases
             if row_indices is not None and col_indices is not None:
+                # rows and columns in one orthogonal selection: the chunks
+                # covering those rows are read one at a time and only the
+                # selected cells kept (array[rows, :] first held every
+                # column of the selected rows)
+                if hasattr(array, 'oindex'):
+                    return array.oindex[np.asarray(row_indices, dtype=np.int64), np.asarray(col_indices, dtype=np.int64)]
                 return array[row_indices, :][:, col_indices]
             elif row_indices is not None:
                 return array[row_indices, :]

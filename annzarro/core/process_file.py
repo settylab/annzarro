@@ -190,6 +190,22 @@ def extract_obs_var_codes(dataset_path: str, reader: Reader, indices, column: st
 
 
 def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], column_names: list[str], include_categories: bool, type: Literal["cells", "genes"], binary: bool = False):
+    if binary and column_names and len(column_names) == 1:
+        # One numeric column, binary: the array as read, without the Python
+        # list get_obs_var builds for JSON (95.6M floats: ~3 GB of objects,
+        # costed for the cache item by item). The same bytes as the list
+        # path below; anything else (categorical, string, boolean, a missing
+        # entry) falls through to it.
+        take = getattr(reader, "get_obs_var_numeric", None)
+        values = None
+        if take is not None:
+            try:
+                values = take(entity=type, dataset_path=dataset_path, column_name=column_names[0], indices=indices)
+            except Exception as e:
+                raise_if_timeout(e)
+                values = None       # the list path reads it again and states the error
+        if values is not None:
+            return binary_response(values)
     try:
         result = reader.get_obs_var(
             dataset_path=dataset_path, 
