@@ -102,6 +102,10 @@ const GeneSetPanel = (function() {
         let _picker = null;
         const _blobUrls = new Map();  // section -> object URLs to revoke
         const _disposers = new Map(); // section -> render disposer
+        // section -> view choices made in a drawn result (STRING's category,
+        // a table shown in full): a rerun redraws the section from scratch, and
+        // these used to go back to their defaults with it (renderCtx view)
+        const _views = new Map();
         const _listeners = [];
         let _dom = null;              // element references, after init
         let D = null;                 // el/table/link builders
@@ -1103,7 +1107,12 @@ const GeneSetPanel = (function() {
                 },
                 hasGene,
                 nameOf: nameOfId,
-                focusGene: (idOrName) => DataManager.setFocusedGene(nameOfId(idOrName))
+                focusGene: (idOrName) => DataManager.setFocusedGene(nameOfId(idOrName)),
+                // what the user chose in this section's result, kept across reruns
+                view: {
+                    get: (key) => (_views.get(sid) || {})[key],
+                    set: (key, value) => { _views.set(sid, { ...(_views.get(sid) || {}), [key]: value }); }
+                }
             };
         }
 
