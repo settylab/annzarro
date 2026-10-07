@@ -1368,6 +1368,13 @@ export function hoverTemplateFor(trace, settings, data) {
   return t + '<extra></extra>';
 }
 
+function sameHovertext(a, b) {
+  if (a === null) return b === undefined || b === null;
+  if (!Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 export async function applyHoverInfo(plotContainer, data, settings) {
   if (!plotContainer || !Array.isArray(plotContainer.data) || typeof Plotly === 'undefined') return;
   const names = data[data.entities] || [];
@@ -1376,8 +1383,7 @@ export async function applyHoverInfo(plotContainer, data, settings) {
   const templates = [], hovertexts = [], indices = [];
   plotContainer.data.forEach((trace, i) => {
     if (!trace || !Array.isArray(trace.text) || (typeof trace.name === 'string' && trace.name.includes('Focused'))) return;
-    indices.push(i);
-    templates.push(hoverTemplateFor(trace, settings, data));
+    const template = hoverTemplateFor(trace, settings, data);
     const labels = Array.isArray(trace._azLabels) ? trace._azLabels : null;
     const hoverOf = (name, label) => {
       const r = rowOf ? rowOf.get(name) : undefined;
@@ -1388,7 +1394,13 @@ export async function applyHoverInfo(plotContainer, data, settings) {
     // groups hidden from the legend (plot-make-helper.js groupView)
     const groups = trace._azGroups;
     if (groups) groups.all.hovertext = groups.all.names.map((name, j) => hoverOf(name, groups.all.labels[j]));
-    hovertexts.push(rowOf || labels ? trace.text.map((name, j) => hoverOf(name, labels ? labels[j] : null)) : null);
+    const hovertext = rowOf || labels ? trace.text.map((name, j) => hoverOf(name, labels ? labels[j] : null)) : null;
+    // A restyle recomputes the whole trace: 1.3 s for one of 1M points with
+    // a colour each. Only traces whose hover changes are restyled.
+    if (template === trace.hovertemplate && sameHovertext(hovertext, trace.hovertext)) return;
+    indices.push(i);
+    templates.push(template);
+    hovertexts.push(hovertext);
   });
   if (!indices.length) return;
   const update = { hovertemplate: templates };
