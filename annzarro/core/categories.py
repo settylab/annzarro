@@ -112,60 +112,85 @@ def compact(codes: np.ndarray, read_categories):
     return out, labels
 
 
+#: rank_of entry of a category no cell uses
+UNUSED = np.uint32(0xFFFFFFFF)
+
+
 @dataclass
 class ColumnRanking:
-    """A column's categories ranked by their cells over the whole column.
+    """A column's categories ranked by their cells over the whole column
+    (0 = most cells; ties by stored code).
 
-    ``rank_of[code]`` is the rank (0 = most cells; ties by code), -1 for a
-    category no cell uses; ``order[rank]`` the code at that rank; ``used``
-    the number of categories with cells.
+    ``rank_of[code]`` is the rank as uint32 (UNUSED for a category no cell
+    uses), or None when the rank IS the code: every category used and all
+    equally large, as in a column with a category per cell, which then costs
+    no ranking and no memory. ``used`` is the number of categories with cells.
     """
-    rank_of: np.ndarray
-    order: np.ndarray
+    rank_of: Optional[np.ndarray]
     used: int
+    n_categories: int
     seconds: float = 0.0
 
     @property
     def nbytes(self) -> int:
-        return int(self.rank_of.nbytes + self.order.nbytes)
+        return 0 if self.rank_of is None else int(self.rank_of.nbytes)
 
     def ranks(self, codes) -> np.ndarray:
         """Ranks of ``codes`` (-1 for a missing code)."""
         codes = np.asarray(codes).reshape(-1)
-        valid = (codes >= 0) & (codes < len(self.rank_of))
+        valid = (codes >= 0) & (codes < self.n_categories)
         out = np.full(codes.shape, -1, dtype=np.int64)
-        out[valid] = self.rank_of[codes[valid]]
+        out[valid] = codes[valid] if self.rank_of is None else self.rank_of[codes[valid]]
         return out
+
+    def codes_of(self, ranks) -> list:
+        """The codes at ``ranks`` (None past ``used``): a scan of rank_of,
+        done for the few ranks a legend names."""
+        ranks = [int(r) for r in ranks]
+        if self.rank_of is None:
+            return [r if 0 <= r < self.used else None for r in ranks]
+        wanted = np.asarray(sorted({r for r in ranks if 0 <= r < self.used}), dtype=np.uint32)
+        # a lookup table over the wanted ranks: one linear pass, not one per rank
+        hits = (np.flatnonzero(np.isin(self.rank_of, wanted, kind="table")) if len(wanted)
+                else np.array([], dtype=np.int64))
+        by_rank = dict(zip(self.rank_of[hits].tolist(), hits.tolist()))
+        return [by_rank.get(r) for r in ranks]
 
 
 def rank_codes(codes: np.ndarray, n_categories: int) -> ColumnRanking:
     """Rank a column's categories by their cells in ``codes`` (all of them).
 
-    One bincount over the categories, then a stable sort of the counts:
-    a radix sort when they fit 16 bits (no category holds 32,768 cells, as in
-    a column with a category per cell), so that case ranks in linear time.
+    One bincount over the categories. When every category used holds the same
+    number of cells (one each, in a barcode column) the order is the code
+    order: no sort, and with every category used no table at all. Otherwise a
+    stable sort of the counts, a radix sort when they fit 16 bits.
     """
     t0 = time.perf_counter()
     codes = np.asarray(codes).reshape(-1)
     valid = (codes >= 0) & (codes < n_categories)
-    counts = np.bincount(codes[valid] if not valid.all() else codes, minlength=n_categories)
-    used = int(np.count_nonzero(counts))
-    if used == n_categories and (counts.size == 0 or counts.min() == counts.max()):
-        order = np.arange(n_categories)            # every category equally large: code order
-    else:
-        neg = -counts
-        if counts.size and counts.max(initial=0) < 2 ** 15:
-            neg = neg.astype(np.int16)
-        order = np.argsort(neg, kind="stable")[:used]
-    index = np.int32 if n_categories < 2 ** 31 else np.int64
-    order = order.astype(index, copy=False)
-    rank_of = np.full(n_categories, -1, dtype=index)
-    rank_of[order] = np.arange(used, dtype=index)
-    return ColumnRanking(rank_of, order, used, time.perf_counter() - t0)
+    counts = np.bincount(codes if valid.all() else codes[valid], minlength=n_categories)
+    nonzero = counts > 0
+    used = int(np.count_nonzero(nonzero))
+    present = counts[nonzero]
+    if used == 0 or present.min() == present.max():
+        if used == n_categories:
+            return ColumnRanking(None, used, n_categories, time.perf_counter() - t0)
+        # code order among the categories used
+        rank_of = np.full(n_categories, UNUSED, dtype=np.uint32)
+        rank_of[nonzero] = np.arange(used, dtype=np.uint32)
+        return ColumnRanking(rank_of, used, n_categories, time.perf_counter() - t0)
+    neg = -counts
+    if counts.max(initial=0) < 2 ** 15:
+        neg = neg.astype(np.int16)
+    order = np.argsort(neg, kind="stable")[:used]
+    del neg, counts
+    rank_of = np.full(n_categories, UNUSED, dtype=np.uint32)
+    rank_of[order] = np.arange(used, dtype=np.uint32)
+    return ColumnRanking(rank_of, used, n_categories, time.perf_counter() - t0)
 
 
-#: Bytes of rankings kept (a column with 95.6M categories takes ~765 MB and
-#: is ranked again on each request instead of displacing every other).
+#: Bytes of rankings kept: 4 bytes per category (a 95.6M-category column
+#: takes 382 MB, and none when the rank is the code).
 RANKING_CACHE_BYTES = 512 * 2 ** 20
 _rankings: "OrderedDict[tuple, ColumnRanking]" = OrderedDict()
 _rank_lock = threading.Lock()
@@ -202,8 +227,7 @@ def clear_rankings(dataset_path: Optional[str] = None) -> None:
 
 def labels_of_ranks(ranking: ColumnRanking, ranks, read_categories) -> list:
     """Labels of the categories at ``ranks`` (None for a rank past ``used``)."""
-    ranks = [int(r) for r in ranks]
-    codes = [int(ranking.order[r]) if 0 <= r < ranking.used else None for r in ranks]
+    codes = ranking.codes_of(ranks)
     wanted = sorted({c for c in codes if c is not None})
     got = read_categories(np.asarray(wanted, dtype=np.int64)) if wanted else []
     got = got.tolist() if hasattr(got, "tolist") else list(got)

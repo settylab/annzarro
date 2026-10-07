@@ -167,10 +167,18 @@ def test_rank_codes_by_count_then_code():
     counts = np.bincount(codes[codes >= 0], minlength=1000)
     expected = sorted((k for k in range(1000) if counts[k]), key=lambda k: (-counts[k], k))
     assert ranking.used == len(expected)
-    assert ranking.order.tolist() == expected
+    assert ranking.codes_of(range(len(expected))) == expected
+    assert ranking.rank_of.dtype == np.uint32
     assert ranking.ranks(codes).tolist() == [-1 if c < 0 else expected.index(c) for c in codes.tolist()]
+    # one cell per category: the rank is the code; nothing sorted, nothing stored
     one_each = category_rules.rank_codes(np.random.default_rng(1).permutation(100_000), 100_000)
-    assert one_each.order.tolist() == list(range(100_000))
+    assert one_each.rank_of is None and one_each.nbytes == 0 and one_each.used == 100_000
+    assert one_each.ranks([5, -1, 99_999]).tolist() == [5, -1, 99_999]
+    assert one_each.codes_of([0, 7, 100_000]) == [0, 7, None]
+    # equal counts with categories unused: code order among those used, no sort
+    some = category_rules.rank_codes(np.array([4, 1, 4, 1, 9, 9]), 12)
+    assert some.ranks([1, 4, 9]).tolist() == [0, 1, 2] and some.used == 3
+    assert some.codes_of([2, 0, 3]) == [9, 1, None]
 
 
 def test_a_reply_carries_only_the_categories_its_rows_use(many, monkeypatch):
