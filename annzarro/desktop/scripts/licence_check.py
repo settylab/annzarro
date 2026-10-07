@@ -35,7 +35,8 @@ ELECTRON = [
     ("AnnZarro", "Electron / Chromium (app executable)", CHROMIUM, "Electron executable"),
     ("AnnZarro.exe", "Electron / Chromium (app executable)", CHROMIUM, "Electron executable"),
     ("annzarro-desktop", "Electron / Chromium (app executable)", CHROMIUM, "Electron executable"),
-    ("AnnZarro Helper*", "Electron / Chromium (helper)", CHROMIUM, "Electron helper executable"),
+    ("AnnZarro Helper*", "Electron helper (macOS launcher stub; Chromium code is in Electron Framework)",
+     "MIT AND BSD-3-Clause", "Electron helper executable"),
     ("Electron Framework", "Electron / Chromium (framework)", CHROMIUM, "Electron framework"),
     ("chrome_crashpad_handler", "Crashpad", "Apache-2.0", "separate executable"),
     ("chrome-sandbox", "Chromium setuid sandbox", "BSD-3-Clause", "separate executable"),
@@ -64,6 +65,15 @@ ELECTRON = [
     ("Squirrel", "Squirrel.Mac (updater framework)", "MIT", "separate framework"),
     ("ShipIt", "Squirrel.Mac (updater framework)", "MIT", "separate executable"),
 ]
+
+#: Statically linked LGPL accepted in exactly these files: the Electron
+#: executable (and, on macOS, the Electron Framework it consists of), which
+#: contains Chromium's LGPL WebKit/Blink code. Operator decision 2026-10-07:
+#: standard Electron practice, with LICENSES.chromium.html shipped. Any other
+#: LGPL that is not a separate shared library fails the check.
+LGPL_STATIC_ALLOWED = {"AnnZarro", "AnnZarro.exe", "annzarro-desktop", "Electron Framework"}
+LGPL_STATIC_VERDICT = ("lgpl-static (Chromium/Blink, accepted: standard Electron practice, "
+                       "LICENSES.chromium.html shipped)")
 
 #: Notices every app must carry, relative to its resources folder (macOS)
 #: or install folder (Windows, Linux); per platform.
@@ -189,8 +199,12 @@ def check(app):
         electron.setdefault(entry[1:], []).append(rel)
     for (component, licence, shipped), files in sorted(electron.items()):
         verdict = classify(licence)
-        if "statically linked" in licence and "lgpl" in licence.lower():
-            verdict = "lgpl-static (Chromium/Blink, see LICENSES.chromium.html)"
+        if verdict == "lgpl" and not shipped.startswith("separate shared library"):
+            if all(os.path.basename(f) in LGPL_STATIC_ALLOWED for f in files):
+                verdict = LGPL_STATIC_VERDICT
+            else:
+                failures.append(f"app: {component} ({', '.join(files)}) is LGPL but not a "
+                                "separate shared library")
         rows.append((component, licence, shipped, verdict, len(files)))
         if verdict in ("gpl", "unknown"):
             failures.append(f"app: {component}: licence {licence!r} is {verdict}")

@@ -351,3 +351,22 @@ def test_licence_check_passes_a_clean_app_and_catches_problems(tmp_path):
     (app / "LICENSES.chromium.html").unlink()
     _, _, failures = lc.check(app)
     assert any("LICENSES.chromium.html" in f for f in failures)
+
+
+def test_static_lgpl_is_accepted_only_in_the_electron_executable(tmp_path, monkeypatch):
+    """Operator decision 2026-10-07: Chromium's statically linked LGPL
+    WebKit/Blink code is accepted in the Electron executable, nowhere else."""
+    lc = _licence_check()
+    _, rows, failures = lc.check(_fake_linux_app(tmp_path / "ok"))
+    assert failures == []
+    row = [r for r in rows if r[0] == "Electron / Chromium (app executable)"][0]
+    assert row[3] == lc.LGPL_STATIC_VERDICT
+
+    # The same licence on any other binary fails.
+    app = _fake_linux_app(tmp_path / "other")
+    (app / "chrome_crashpad_handler").write_bytes(b"\x7fELF" + b"\0" * 64)
+    table = [("chrome_crashpad_handler", "Crashpad", lc.CHROMIUM, "separate executable")] + \
+        [e for e in lc.ELECTRON if e[0] != "chrome_crashpad_handler"]
+    monkeypatch.setattr(lc, "ELECTRON", table)
+    _, _, failures = lc.check(app)
+    assert any("Crashpad" in f and "not a separate shared library" in f for f in failures)

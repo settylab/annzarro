@@ -69,7 +69,10 @@ replaceable shared library. What remains under a copyleft licence:
   libquadmath from NumPy's wheel;
 - Chromium itself contains LGPL code from WebKit/Blink, linked into the Electron executable,
   as in every Electron application; its sources are published by the Chromium and Electron
-  projects and listed in `LICENSES.chromium.html`.
+  projects and listed in `LICENSES.chromium.html`. Decision (2026-10-07): this is accepted as
+  standard Electron practice, with `LICENSES.chromium.html` shipped. The check allows
+  statically linked LGPL in exactly the Electron executable (on macOS, the Electron Framework
+  it consists of) and fails on it anywhere else.
 
 The v0.4.0 Linux packages also contained GNU Readline (GPL-3.0) and, in the AppImage,
 libindicator (GPL-3.0) and three LGPL desktop-integration libraries; from v0.4.1 on they are
