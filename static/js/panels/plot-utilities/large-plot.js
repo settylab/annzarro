@@ -27,6 +27,7 @@
  * settings it cannot draw are refused with a message (largePlotRefusal):
  * far above the threshold the regular path would close the tab.
  */
+import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
 import { buildPlotLayout, withSubsetCoverage } from './plot-make.js';
@@ -396,9 +397,12 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     if (container && id !== null) updateColorSliderUI(container, { color: v }, settings, id, keepRange);
     const cmin = settings.colorMin ?? lo, cmax = settings.colorMax ?? hi;
     const width = (cmax - cmin) / COLOR_BINS || 1;
-    // draw order: |bin centre| ascending, so the strongest values are on top
+    // draw order: the colour bar's top end last (|value| on a centred or
+    // diverging map, else position on the bar: utils/color-scales.js strongOnTopKey)
+    const strong = strongOnTopKey({ scale: settings.colorScale, centred: !!settings.centeringActive,
+      min: cmin, max: cmax });
     const order = [...Array(COLOR_BINS).keys()]
-      .sort((a, b) => Math.abs(cmin + (a + 0.5) * width) - Math.abs(cmin + (b + 0.5) * width) || a - b);
+      .sort((a, b) => strong(cmin + (a + 0.5) * width) - strong(cmin + (b + 0.5) * width) || a - b);
     const rank = new Uint16Array(COLOR_BINS);
     order.forEach((bin, r) => { rank[bin] = r + 1; });       // 0 = no value
     const DROP = COLOR_BINS + 1;
@@ -427,7 +431,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     }
     traces.push({
       type: 'scattergl', mode: 'markers', x: [X[0]], y: [Y[0]], hoverinfo: 'skip', showlegend: false,
-      marker: { size: 0.1, opacity: 0, color: [cmin], cmin, cmax, colorscale: settings.colorScale,
+      marker: { size: 0.1, opacity: 0, color: [cmin], cmin, cmax, colorscale: plotlyColorscale(settings.colorScale),
         reversescale: !!settings.colorReversed, showscale: true, colorbar: bar }
     });
     layout.showlegend = false;

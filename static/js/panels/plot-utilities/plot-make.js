@@ -1,3 +1,4 @@
+import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
 import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges } from './plot-make-helper.js';
@@ -1339,8 +1340,10 @@ export async function applyHoverInfo(plotContainer, data, settings) {
  *
  * scattergl draws points in array order, so in a dense core a few large
  * values were buried under hundreds of small ones. For continuously
- * coloured traces the point arrays are reordered by |colour| ascending
- * (missing values first, so they sit at the bottom). On by default;
+ * coloured traces the point arrays are reordered weakest first (missing
+ * values first, so they sit at the bottom): the top end of the colour bar
+ * last, i.e. by |colour| on a centred or diverging map and by position on
+ * the bar on any other (utils/color-scales.js strongOnTopKey). On by default;
  * settings.sortByColor = false keeps data order.
  *
  * Incremental updates write arrays in DATA order, so updatePlotElements
@@ -1362,9 +1365,28 @@ function _permuted(trace, order) {
   return update;
 }
 
-export function colorSortOrder(colors) {
-  const key = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.abs(v) : -Infinity);
-  return colors.map((_, i) => i).sort((a, b) => key(colors[a]) - key(colors[b]) || a - b);
+export function colorSortOrder(colors, key = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.abs(v) : -Infinity)) {
+  const keys = colors.map(key);
+  return colors.map((_, i) => i).sort((a, b) => keys[a] - keys[b] || a - b);
+}
+
+/**
+ * Strong on top's key for these colour values under the panel's settings
+ * (utils/color-scales.js strongOnTopKey): the drawn range is the set
+ * Min/Max, else the values' own.
+ */
+export function colorSortKey(colors, settings, trace = null) {
+  let min = settings.colorMin, max = settings.colorMax;
+  if (min == null || max == null) {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of colors) if (typeof v === 'number' && Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (min == null) min = lo;
+    if (max == null) max = hi;
+  }
+  // the map as the trace draws it, else as the settings name it
+  const m = (trace && trace.marker) || {};
+  const scale = typeof m.colorscale === 'string' ? m.colorscale : settings.colorScale;
+  return strongOnTopKey({ scale, centred: !!settings.centeringActive, min, max });
 }
 
 /**
@@ -1383,7 +1405,7 @@ export async function sortTracesByColor(gd, settings) {
     if (t && t.type === 'scatter3d') continue;
     const colors = t && t.marker && t.marker.color;
     if (!Array.isArray(colors) || t.marker.colorscale === undefined || t._azOrder) continue;
-    const order = colorSortOrder(colors);
+    const order = colorSortOrder(colors, colorSortKey(colors, settings, t));
     if (order.every((v, k) => v === k)) continue;
     try {
       await Plotly.restyle(gd, _permuted(t, order), [i]);
@@ -2484,7 +2506,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
             size: settings.pointSize,
             opacity: settings.pointOpacity,
             color: tableFilteredIndices.map(idx => filteredData.color[idx]),
-            colorscale: settings.colorScale,
+            colorscale: plotlyColorscale(settings.colorScale),
             reversescale: settings.colorReversed,
             cmin: cmin,
             cmax: cmax,
@@ -2521,7 +2543,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     else {
       // Numerical coloring branch.
       baseTrace.marker.color = filteredData.color;
-      baseTrace.marker.colorscale = settings.colorScale;
+      baseTrace.marker.colorscale = plotlyColorscale(settings.colorScale);
       baseTrace.marker.reversescale = settings.colorReversed;
       
       // Update color sliders with the loaded data while preserving saved settings

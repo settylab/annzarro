@@ -37,6 +37,7 @@
  * cannot be routed around without the guard going red.
  */
 
+import { plotlyColorscale } from './color-scales.js';
 import { Coverage, GAP, breakdown, compactCount, exactCount } from './coverage.js';
 import { keepTitlesFitted } from './plot-titles.js';
 import { releasePlot } from './release-plot.js';
@@ -424,7 +425,7 @@ export async function resolveColorscale(scale) {
     div.style.cssText = 'position:absolute;left:-9999px;width:40px;height:40px';
     document.body.appendChild(div);
     try {
-        await Plotly.newPlot(div, [{ type: 'scatter', x: [0], y: [0], marker: { color: [0], colorscale: scale } }],
+        await Plotly.newPlot(div, [{ type: 'scatter', x: [0], y: [0], marker: { color: [0], colorscale: plotlyColorscale(scale) } }],
             { width: 40, height: 40 }, { staticPlot: true });
         return div._fullData[0].marker.colorscale;
     } finally {
