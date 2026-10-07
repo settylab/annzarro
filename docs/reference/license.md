@@ -103,7 +103,3 @@ DOI from the Zenodo record (each release has its own).
   url       = {https://doi.org/10.5281/zenodo.23222216}
 }
 ```
-
-The paper describing AnnZarro is in preparation: Otto, D. J., Baasri, S. and Setty, M. AnnZarro:
-scalable, interactive exploration of cell-by-cell and gene-by-gene relationships in single-cell
-data. Once it has a DOI, it will be added to `CITATION.cff` as the preferred citation.

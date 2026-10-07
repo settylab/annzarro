@@ -85,18 +85,6 @@ listed on the Zenodo record (v0.4.1: [10.5281/zenodo.23222217](https://doi.org/1
 }
 ```
 
-The paper describing AnnZarro: Otto D.J., Baasri S. and Setty M. Protocol preprint in preparation.
-
-```bibtex
-% PLACEHOLDER: replace with the preprint entry once it has a DOI.
-@unpublished{otto_annzarro,
-  author = {Otto, Dominik J. and Baasri, Siddharth and Setty, Manu},
-  title  = {AnnZarro},
-  note   = {Preprint in preparation},
-  year   = {2026}
-}
-```
-
 ## Development
 
 `npm ci` once (Node.js 22+), then `python -m pytest` runs the Python tests, every JS suite and
