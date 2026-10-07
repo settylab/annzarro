@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use AnnZarro, please cite it as below."
+type: software
+title: AnnZarro
+abstract: >-
+  A read-only browser viewer for AnnData in zarr (or h5ad) built around the matrices other
+  viewers leave out: cell x cell kernels and distances (obsp) and gene x gene similarities
+  (varp), explored one focused cell or gene at a time and linked to the cell x gene layers.
+authors:
+  - family-names: Otto
+    given-names: Dominik J.
+    affiliation: "Basic Sciences Division, Fred Hutchinson Cancer Center, Seattle, WA, USA"
+    alias: katosh
+    orcid: "https://orcid.org/0009-0009-3295-1234"
+  - family-names: Baasri
+    given-names: Siddharth
+    affiliation: "Basic Sciences Division, Fred Hutchinson Cancer Center, Seattle, WA, USA; University of Washington, Seattle, WA, USA"
+  - family-names: Setty
+    given-names: Manu
+    affiliation: "Basic Sciences Division, Fred Hutchinson Cancer Center, Seattle, WA, USA"
+    orcid: "https://orcid.org/0000-0002-0344-2627"
+contact:
+  - family-names: Otto
+    given-names: Dominik J.
+    email: dotto@fredhutch.org
+    orcid: "https://orcid.org/0009-0009-3295-1234"
+license: MIT
+repository-code: "https://github.com/settylab/annzarro"
+url: "https://annzarro.readthedocs.io"
+keywords:
+  - single-cell
+  - visualization
+  - genomics
+  - anndata
+  - zarr
