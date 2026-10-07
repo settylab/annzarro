@@ -126,12 +126,14 @@ needs, what is free and what helps; the user guide shows how it looks ({ref}`bro
 **What binds.** Chrome gives a tab's JavaScript heap 4.4 GB on a 64-bit computer (it reports this
 as `performance.memory.jsHeapSizeLimit`), and no flag raises it; a test tab died at 4.03 GB used.
 Typed arrays are outside that heap and are limited only by the computer's memory. So `heap_gb`
-is the setting that matters; `total_gb` is for computers with little memory.
+is the setting that matters for regular plots; large-plot mode keeps its points in typed arrays,
+and for it `total_gb` is the limit to set.
 
 **How the estimates were made.** On an Apple M3 Max laptop with Chrome, drawing up to 182 million
-points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in large-plot mode holds 20.2 bytes of the
-JavaScript heap per point (1.94 GB at 95.6 million points, 3.53 GB at 175 million; 182 million
-crashed); a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
+points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in large-plot mode keeps
+its points outside the JavaScript heap (0.1 bytes of heap per point; about 65 bytes per point of
+typed arrays, and 200 million points drew with a 13.6 GB tab and 35 MB of heap). Before v0.4.1 it
+held 20.2 bytes of heap per point and a tab died at 182 to 200 million points; a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
 million); the app itself 0.17 GB. A full-resolution image export draws the plot again and needs
 about the plot's own share again while it runs. Some costs are still estimated from the code
 rather than measured (the export, a recolour, 3D, a table row); the guard multiplies every
@@ -139,8 +141,11 @@ prediction by 1 + `margin` and adds 0.25 to the margin in a browser whose tab cl
 marked action. Firefox and Safari report no memory figures; they are held to Chrome's limit.
 
 **Defaults.** `enforce: block`, `heap_gb: null` (the browser's own limit), `total_gb: null`,
-`margin: 0.2`. With these, a single plot of up to about 160 million points is allowed in
-large-plot mode, and two plots of 95.6 million points are not.
+`margin: 0.2`. With these the heap limits regular plots (a few million points) but no longer
+large-plot mode: its points are charged to the total, which has no limit unless `total_gb` is set
+(or the device reports 4 GB or less). Set `total_gb` to what the tab may use on the computers
+that open the app: with `total_gb: 16`, a single large plot of up to about 200 million points is
+allowed.
 
 **When to change them.**
 

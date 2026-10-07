@@ -9,7 +9,9 @@
  * bites is the V8 heap: 4.40 GB under pointer compression, whatever the
  * flags, and the tab dies at about 4.03 GB used (the paper's benchmark,
  * annzarro-paper benchmark/scale/NOTES.md). Large-plot mode drew 175M points
- * and crashed at 182M; the regular path stops near 5M.
+ * and crashed at 182M until v0.4.1, which keeps its positions outside that
+ * heap (utils/scattergl-calc.js; 200M then drew with 35 MB of heap); the
+ * regular path stops near 5M.
  *
  * The browser cannot be asked how close it is. `performance.memory`
  * counts ArrayBuffers in usedJSHeapSize (so it is not comparable with
@@ -69,12 +71,20 @@ export const RISKY_SHARE = 0.7;
  * Sources (annzarro-paper benchmark/scale/NOTES.md, Chrome on an M3 Max):
  * - app: 0.17 GB heap, 0.04 GB ArrayBuffers with a 100k-cell plot open
  *   (measured).
- * - large, heap: 20.2 B/point (measured: 1.94 GB at 95.6M, 3.53 GB at
- *   175M). It is Plotly's scattergl calc, positions = new Array(2N) and
- *   _ids = new Array(N) (plotly 2.20).
- * - large, off: 45 B/point beyond the 1 GB client cache (5.28 GB at 95.6M,
- *   7.41 GB at 175M; measured run maxima, the split provisional).
- * - large, gpu: 19 B/point (GPU-process RSS 2.02 GB at 95.6M; measured).
+ * - large, heap: 0.1 B/point resident, 0.2 peak. Plotly's scattergl calc
+ *   keeps positions and point ids as plain Arrays (20.1 B/point of heap,
+ *   1.94 GB at 95.6M, 3.53 GB at 175M, a V8 out-of-memory at 200M);
+ *   utils/scattergl-calc.js moves them into typed arrays in large-plot
+ *   mode. Measured after a forced GC on synthetic stores: 12.3 MB at
+ *   2.5M and 12.9 MB at 10M points (0.08 B/point; before the move 62.2 and
+ *   212.9 MB, 20.1 B/point); peak 35 MB of V8 heap drawing 200M points.
+ * - large, off: 65 B/point beyond the 1 GB client cache: 45 B/point
+ *   (5.28 GB at 95.6M, 7.41 GB at 175M; run maxima, the split provisional)
+ *   plus the 20 B/point the typed arrays moved there (ArrayBuffers 36.0 ->
+ *   56.0 B/point between 2.5M and 10M, measured). Renderer RSS for
+ *   comparison: 76 B/point between 2.5M and 10M, 13.56 GB at 200M.
+ * - large, gpu: 19 B/point (GPU-process RSS 2.02 GB at 95.6M; 17.0 B/point
+ *   between 2.5M and 10M, 3.65 GB at 200M; measured).
  * - regular, colour by gene: 640 B/point heap peak (3.36 GB at 5M, run
  *   maximum); resident 560 (provisional). Categorical and uncoloured plots
  *   are lighter (provisional, from large-plot.js's 400-900 B/point).
@@ -93,22 +103,23 @@ export const DEFAULT_MODEL = {
         threeD: 1.3
     },
     large: {
-        resident: 20.2, peak: 20.2,
-        off: 45, gpu: 19
+        resident: 0.1, peak: 0.2,
+        off: 65, gpu: 19
     },
     /**
      * Transient costs on top of what the panel holds.
      * - export: a full-resolution export draws the plot again off screen:
-     *   Plotly's calc (large 20.2 B/point heap; regular calc, the hover index
-     *   and per-point colours, 100 B/point), new GPU buffers, and float32
-     *   copies of the positions on their way to the GPU (16 B/point).
+     *   Plotly's calc (large: 20 B/point, as typed arrays outside the heap
+     *   like the panel's; regular calc, the hover index and per-point
+     *   colours, 100 B/point), new GPU buffers, and float32 copies of the
+     *   positions on their way to the GPU (16 B/point).
      *   Code-derived, provisional. Its canvas: 4 bytes per pixel, three
      *   copies (canvas, image, encoded file).
      * - recolour: the benchmark recoloured 175M points in large-plot mode
      *   without growing the heap (3.53 GB max); regular 80 B/point. Provisional.
      */
     export: {
-        large: { heap: 20.2, off: 16, gpu: 19 },
+        large: { heap: 0.2, off: 36, gpu: 19 },
         regular: { heap: 100, off: 20, gpu: 56 },
         pixelCopies: 3
     },

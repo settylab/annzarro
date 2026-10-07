@@ -74,10 +74,14 @@ test('colour kind: categorical obs columns, numeric everything else, none', () =
     assert.equal(colourKind({ color: { type: 'obs', key: 'cell_type' } }, null), 'numeric');
 });
 
-test('panel cost: large-plot mode is the measured 20.2 B/point on the heap; regular is far costlier', () => {
+test('panel cost: large-plot mode keeps almost nothing on the heap, its points outside it; regular is far costlier', () => {
     const big = panelCost({ kind: 'cell-plot', n: 95624334, large: true });
-    // 1.94 GB measured at 95.6M
-    assert.ok(Math.abs(big.resident.heap - 1.94 * GB) < 0.02 * GB, formatGB(big.resident.heap));
+    // 0.08 B/point measured (2.5M-10M, after a forced GC); 35 MB peak drawing 200M
+    assert.ok(big.resident.heap < 0.02 * GB, formatGB(big.resident.heap));
+    const huge = panelCost({ kind: 'cell-plot', n: 2e8, large: true });
+    assert.ok(huge.peak.heap < 0.1 * GB, formatGB(huge.peak.heap));
+    // what the heap no longer holds is charged outside it: 13 GB at 200M (renderer RSS 13.56 GB measured)
+    assert.ok(Math.abs(huge.resident.off - 13 * GB) < 0.1 * GB, formatGB(huge.resident.off));
     assert.equal(big.resident.contexts, CONTEXTS_PER_PLOT);
     const reg = panelCost({ kind: 'cell-plot', n: 5e6, colour: 'numeric' });
     // 3.36 GB measured at 5M by gene (run maximum, with the app's 0.17 GB)
@@ -104,8 +108,9 @@ test('export cost is the points, not the pixels; as shown is the pixels only', (
     const big = exportCost({ n: 95624334, large: true, width: 1200, height: 800, scale: 2 });
     const small = exportCost({ n: 95624334, large: true, width: 600, height: 400, scale: 1 });
     // a quarter-size image at scale 1 saves only the canvas
-    assert.ok(small.heap > 0.95 * big.heap);
-    assert.ok(big.heap > 1.9 * GB);
+    assert.ok(small.heap + small.off > 0.95 * (big.heap + big.off));
+    // large: Plotly's calc again, its positions in typed arrays (36 B/point outside the heap)
+    assert.ok(big.off > 3.4 * GB, formatGB(big.off));
     assert.ok(exportCost({ n: 1e6 }).heap > exportCost({ n: 1e6, large: true }).heap);
     const shown = snapshotCost({ width: 1200, height: 800, ratio: 2 });
     assert.ok(shown.heap < 20 * MB && shown.contexts === 0);
@@ -186,19 +191,22 @@ test('check: block, warn and off; the binding ceiling; risky actions; WebGL cont
     assert.match(measured.why, /measured\)$/);
 });
 
-test('one every-cell plot: 150M fits with the default margin, 182M (the measured crash) does not', () => {
-    const limits = readLimits(CHROME, memorySettings({}));
+test('one every-cell plot: the heap no longer bounds large-plot mode; a total budget does', () => {
+    // v0.4.1 keeps large-plot positions outside the V8 heap: 200M drew with 35 MB of heap
+    const s = memorySettings({});
+    const limits = readLimits(CHROME, s);
     const L = new Ledger();
-    const fitsN = (n) => check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(), limits, memorySettings({})).fits;
-    assert.equal(fitsN(95624334), true);
-    assert.equal(fitsN(150e6), true);
-    assert.equal(fitsN(182e6), false);
-    const max = largestFitting(fitsN, 1, 300e6);
-    assert.ok(max > 150e6 && max < 175e6, max);
-    // with margin 0, up to the crash point less the app
-    const bare = largestFitting(n => check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(), limits,
-        memorySettings({ margin: 0 })).fits, 1, 300e6);
-    assert.ok(bare > 185e6 && bare < 195e6, bare);
+    const fitsWith = (st) => (n) => check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(),
+        readLimits(CHROME, st), st).fits;
+    assert.equal(limits.total.bytes, null, 'no total budget by default on an 8 GB+ device');
+    assert.equal(fitsWith(s)(200e6), true);
+    // with a total budget the points' memory outside the heap is what binds:
+    // 65 B/point plus the margin, 13 GB at 200M (renderer RSS 13.56 GB measured)
+    const t16 = memorySettings({ total_gb: 16 });
+    assert.equal(fitsWith(t16)(150e6), true);
+    assert.equal(fitsWith(t16)(210e6), false);
+    const max = largestFitting(fitsWith(t16), 1, 400e6);
+    assert.ok(max > 190e6 && max < 210e6, max);
 });
 
 test('largestFitting: the largest n that fits, or one below the range', () => {
@@ -239,7 +247,8 @@ test('a subset change redraws every Cell Plot and cell table at once; gene panel
 
 test('more open plots, fewer cells fit: the largest subset shrinks as panels are added', () => {
     const limits = readLimits(CHROME, memorySettings({}));
-    const threshold = 5e6;
+    // the regular path, where the heap still binds (large-plot mode keeps its points outside it)
+    const threshold = 1e9;
     const maxFor = (count) => {
         const L = new Ledger();
         for (let i = 0; i < count; i++) L.commit(`p${i}`, { kind: 'cell-plot', n: 1e5, colour: 'numeric', large: false });
@@ -254,9 +263,8 @@ test('more open plots, fewer cells fit: the largest subset shrinks as panels are
     };
     const m1 = maxFor(1), m2 = maxFor(2), m4 = maxFor(4);
     assert.ok(m1 > m2 && m2 > m4, `${m1} ${m2} ${m4}`);
-    // one plot: every cell of the 95.6M store fits; four: not
-    assert.ok(m1 > 95624334);
-    assert.ok(m4 < 95624334);
+    // regular plots by gene: a few million points (5M measured at 3.36 GB)
+    assert.ok(m1 > 2e6 && m1 < 6e6, m1);
 });
 
 test('words: GB rounding and the headroom line', () => {
@@ -328,7 +336,12 @@ test('overlapping draws of one panel: the first one ending does not settle the s
     assert.equal(L.get('c'), null);
 });
 
-test('95.6M every cell: a recolour or part step is allowed, a second plot, a full export and 182M are not', async () => {
+// v0.4.0's large-plot costs (20.2 B/point on the V8 heap): the in-place
+// redraw arithmetic is checked where the heap binds, as it did then
+const HEAP_BOUND = { ...DEFAULT_MODEL, large: { resident: 20.2, peak: 20.2, off: 45, gpu: 19 },
+    export: { ...DEFAULT_MODEL.export, large: { heap: 20.2, off: 16, gpu: 19 } } };
+
+test('heap-bound model, 95.6M every cell: a recolour or part step is allowed, a second plot, a full export and 182M are not', async () => {
     // the regression on 12f93f8: a large-mode recolour is a full redraw, and the
     // guard added the new plot's peak to the old plot it replaces (4.43 GB
     // against 4.03). Measured at 95.6M: 1.94 GB before, 1.96 GB peak, 1.94 GB
@@ -337,13 +350,13 @@ test('95.6M every cell: a recolour or part step is allowed, a second plot, a ful
     const N = 95624334;
     const s = memorySettings({});
     const limits = readLimits(CHROME, s);
-    const L = new Ledger();
+    const L = new Ledger(HEAP_BOUND);
     L.commit('a', { kind: 'cell-plot', n: N, large: true, colour: 'numeric' });
     const old = L.get('a');
     const heldWithOld = addCostLocal(L.totals({ exclude: ['a'] }), old.resident);
 
     // recolour (gene -> category): redraw in place
-    const peak = panelCost({ kind: 'cell-plot', n: N, large: true, colour: 'categorical' }).peak;
+    const peak = panelCost({ kind: 'cell-plot', n: N, large: true, colour: 'categorical' }, HEAP_BOUND).peak;
     assert.equal(replacesInPlace(old, true), true);
     const recolour = check({ ...drawNeed(peak, old, true, s.margin), contexts: 0 }, heldWithOld, limits, s);
     assert.equal(recolour.verdict, 'ok', recolour.why);
@@ -355,47 +368,47 @@ test('95.6M every cell: a recolour or part step is allowed, a second plot, a ful
     assert.equal(check({ ...peak, contexts: 0 }, heldWithOld, limits, s).verdict, 'block');
 
     // a part step or a larger subset in large-plot mode: replaces too
-    const step = predictSubsetChange(N, L.panels(), 1e6);
+    const step = predictSubsetChange(N, L.panels(), 1e6, HEAP_BOUND);
     const now = L.totals();
     const base = L.totals({ exclude: ['a'] });
     const need = { heap: base.heap + step.peak.heap - now.heap, off: 0, gpu: 0, contexts: 0 };
     assert.equal(check(need, now, limits, s).verdict, 'ok');
 
     // a second every-cell plot: refused
-    const second = panelCost({ kind: 'cell-plot', n: N, large: true }).peak;
+    const second = panelCost({ kind: 'cell-plot', n: N, large: true }, HEAP_BOUND).peak;
     assert.equal(check(drawNeed(second, null, true, s.margin), L.totals(), limits, s).verdict, 'block');
     // a full-resolution export (the measured F1 crash): refused
-    assert.equal(check(exportCost({ n: N, large: true, width: 1200, height: 800, scale: 2 }), L.totals(), limits, s).verdict, 'block');
+    assert.equal(check(exportCost({ n: N, large: true, width: 1200, height: 800, scale: 2 }, HEAP_BOUND), L.totals(), limits, s).verdict, 'block');
     // 182M first draw (the measured V8 OOM): refused
-    const first = panelCost({ kind: 'cell-plot', n: 182e6, large: true }).peak;
-    assert.equal(check(first, new Ledger().totals(), limits, s).verdict, 'block');
+    const first = panelCost({ kind: 'cell-plot', n: 182e6, large: true }, HEAP_BOUND).peak;
+    assert.equal(check(first, new Ledger(HEAP_BOUND).totals(), limits, s).verdict, 'block');
     // a regular plot redrawn keeps old + new (not measured as a replace)
     assert.equal(replacesInPlace({ large: false, resident: zero() }, false), false);
     assert.deepEqual(drawNeed(first, { large: false, resident: first }, true, s.margin), first);
 });
 
-test('a larger redraw in place is charged its whole growth with the margin; 150M recolours, 175M is never drawn', async () => {
+test('heap-bound model: a larger redraw in place is charged its whole growth with the margin; 150M recolours, 175M is never drawn', async () => {
     const { drawNeed } = await import('../../../static/js/utils/memory-guard.js');
     const s = memorySettings({});
     const limits = readLimits(CHROME, s);
-    const at = (n) => { const L = new Ledger(); L.commit('a', { kind: 'cell-plot', n, large: true }); return L; };
+    const at = (n) => { const L = new Ledger(HEAP_BOUND); L.commit('a', { kind: 'cell-plot', n, large: true }); return L; };
     // a subset step up, 50M -> 95.6M: 1.2 x 1.94 - 1.02 = 1.31 GB
     const L = at(50e6);
     const old = L.get('a');
-    const peak = panelCost({ kind: 'cell-plot', n: 95624334, large: true }).peak;
+    const peak = panelCost({ kind: 'cell-plot', n: 95624334, large: true }, HEAP_BOUND).peak;
     const need = drawNeed(peak, old, true, s.margin);
     assert.ok(Math.abs(1.2 * need.heap - (1.2 * peak.heap - old.resident.heap)) < 1e3);
     assert.ok(1.2 * need.heap > 1.3 * GB);
     // a step down is charged the margin of the new plot only if it exceeds the old: 0
-    assert.equal(drawNeed(panelCost({ kind: 'cell-plot', n: 10e6, large: true }).peak, old, true, s.margin).heap, 0);
+    assert.equal(drawNeed(panelCost({ kind: 'cell-plot', n: 10e6, large: true }, HEAP_BOUND).peak, old, true, s.margin).heap, 0);
     // recolour at 150M: 3.21 held + 0.61 = 3.81 of 4.03, allowed
     const L150 = at(150e6);
     const o150 = L150.get('a');
     const held150 = { ...L150.totals({ exclude: ['a'] }), heap: L150.totals({ exclude: ['a'] }).heap + o150.resident.heap };
-    const p150 = panelCost({ kind: 'cell-plot', n: 150e6, large: true }).peak;
+    const p150 = panelCost({ kind: 'cell-plot', n: 150e6, large: true }, HEAP_BOUND).peak;
     assert.equal(check({ ...drawNeed(p150, o150, true, s.margin), contexts: 0 }, held150, limits, s).verdict, 'ok');
     // 175M: the first draw is refused (4.25 vs 3.86), so its recolour never arises
-    assert.equal(check(panelCost({ kind: 'cell-plot', n: 175e6, large: true }).peak, new Ledger().totals(), limits, s).verdict, 'block');
+    assert.equal(check(panelCost({ kind: 'cell-plot', n: 175e6, large: true }, HEAP_BOUND).peak, new Ledger(HEAP_BOUND).totals(), limits, s).verdict, 'block');
 });
 
 function addCostLocal(a, b) {
