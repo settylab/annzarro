@@ -18,7 +18,7 @@ import { Config } from '../../config.js';
 import { colourKind } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
-import { categoryCount, grouped } from '../../utils/categories.js';
+import { categoryCount, grouped, colourCostError, colourAllowed } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
@@ -365,6 +365,12 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           }
           const count = categoryCount(structure, type, key);
           categoriesWanted = count !== null && grouped(count) ? 'used' : 'all';
+          // a grouped colour that needs one hover label per point asks first
+          const panelId = plotContainer && plotContainer.id ? plotContainer.id.replace(/^plot-container-/, '') : null;
+          const shownEntities = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
+          const points = shownEntities && typeof shownEntities.length === 'number' ? shownEntities.length : 0;
+          const costly = colourCostError(`${type}.${key}`, count, points);
+          if (costly && !(panelId && colourAllowed(panelId, `${type}.${key}`))) throw costly;
         }
         // Colour groups (utils/categories.js): each point's category's rank
         // over the WHOLE column, so a category's colour does not depend on
@@ -895,8 +901,16 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           let colorData;
           try {
             colorData = await loadAxisData(settings.color, plotType, plotContainer, { role: 'colour' });
+            setStatusTag(plotContainer, 'colour-cost', null);
           } catch (colorError) {
             if (colorError && colorError.name === 'AbortError') throw colorError;
+            const cost = colorError && colorError.coverage && colorError.coverage.gaps
+              && colorError.coverage.gaps.find(g => g.kind === 'colour-cost');
+            // Colouring costly: grey, and the status line offers to colour anyway
+            setStatusTag(plotContainer, 'colour-cost', cost ? {
+              text: 'Not coloured yet', severity: 'warning', title: cost.detail,
+              pop: { text: `${cost.source}: ${cost.detail}.`, actions: [['colour-anyway', 'Colour anyway']] }
+            } : null);
             console.warn('Colour data unavailable; plotting uncoloured:', colorError);
             const n = (DataManager[isGenePlot ? 'getGenes' : 'getCells']() || []).length;
             // Every point is still drawn in the fallback colour, so this

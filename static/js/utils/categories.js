@@ -100,3 +100,49 @@ export function groupLegendName(names) {
     const more = names.length - shown.length;
     return more > 0 ? `${shown.join(', ')} +${more.toLocaleString('en-US')} more` : shown.join(', ');
 }
+
+/**
+ * Labels past which a grouped colouring in the regular path asks first. The
+ * hover needs every point's label: with a category per point that is one
+ * label per point. Measured at 1M points (M3 Max): a one-per-cell column took
+ * 3.7 s and 423 MB of heap against 2.3 s and 276 MB for 64 categories (+61 %);
+ * at 100,000 points, 1.1 s against 1.0 s; a 65,000-category column at 1M
+ * points 2.6 s (+13 %). So from 500,000 distinct labels the plot is drawn
+ * grey and the panel offers "Colour anyway".
+ */
+export const COLOUR_ASK_LABELS = 500000;
+
+/** Reason of the Error a colour load throws while it waits to be asked. */
+export const COLOUR_COST = 'colour_cost';
+
+const _allowed = new Set();
+
+/** Let panel `id` colour by `column` despite its cost (the "Colour anyway" action). */
+export function allowColour(id, column) {
+    _allowed.add(`${id}\u0000${column}`);
+}
+
+/** Whether panel `id` was allowed to colour by `column`. */
+export function colourAllowed(id, column) {
+    return _allowed.has(`${id}\u0000${column}`);
+}
+
+/**
+ * Null when colouring by a column needs no asking, otherwise the Error a
+ * colour load throws instead (the plot is drawn grey, the panel's status
+ * line says what colouring costs and offers "Colour anyway").
+ * @param {string} column  e.g. 'obs.barcode'
+ * @param {number|null} categories  the column's number of categories
+ * @param {number} points  points in the plot
+ */
+export function colourCostError(column, categories, points) {
+    if (categories === null || !grouped(categories)) return null;
+    const labels = Math.min(categories, points);
+    if (labels <= COLOUR_ASK_LABELS) return null;
+    const mb = Math.max(1, Math.round(labels * 29 / 1e6));   // measured: 28.9 MB for 1M barcodes
+    const detail = `${labels.toLocaleString('en-US')} distinct values on ${points.toLocaleString('en-US')} points: `
+        + `colouring loads about ${mb} MB of labels for the hover and takes a few seconds longer`;
+    const err = new Error(`${column} not coloured yet: ${detail}`);
+    err.data = { reason: COLOUR_COST, column, detail, labels };
+    return err;
+}

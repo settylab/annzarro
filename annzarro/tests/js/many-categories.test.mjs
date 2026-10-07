@@ -251,3 +251,18 @@ test('up to 64 categories the legend lists each one, as before', () => {
     assert.equal(legend.length, cats.GROUP_COLOURS + 1);    // and NA
     assert.ok(!legend.some(t => /more$/.test(t.name)));
 });
+
+test('a grouped colour needing more than 500,000 hover labels asks first', () => {
+    assert.equal(cats.colourCostError('obs.barcode', 1000000, 100000), null);       // 100,000 labels
+    assert.equal(cats.colourCostError('obs.cat_64', 64, 1000000), null);             // not grouped
+    assert.equal(cats.colourCostError('obs.cat_65k', 65000, 1000000), null);         // 65,000 labels
+    const err = cats.colourCostError('obs.barcode', 1000000, 1000000);
+    assert.equal(err.data.reason, 'colour_cost');
+    assert.match(err.data.detail, /^1,000,000 distinct values on 1,000,000 points: colouring loads about 29 MB of labels/);
+    const cov = classifyError(err, { unit: 'cells', source: 'obs.barcode', total: 1000000 });
+    assert.match(cov.lines()[0], /^obs\.barcode: not coloured yet -- 1,000,000 distinct values/);
+    assert.equal(cats.colourAllowed('p1', 'obs.barcode'), false);
+    cats.allowColour('p1', 'obs.barcode');
+    assert.equal(cats.colourAllowed('p1', 'obs.barcode'), true);
+    assert.equal(cats.colourAllowed('p2', 'obs.barcode'), false);
+});
