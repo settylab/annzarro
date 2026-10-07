@@ -224,7 +224,9 @@ test('hundreds of categories: 64 colour groups by rank, one legend entry each, e
     assert.ok(all.marker.color instanceof Uint8Array, 'numbers through a colorscale, not a colour string per point');
     assert.deepEqual([all.marker.cmin, all.marker.cmax, all.marker.showscale], [-0.5, cats.GROUP_COLOURS - 0.5, false]);
     for (const t of groupRows) assert.equal(t.marker.color, palette[t._azGroup]);
-    assert.match(hoverTemplateFor(all, settings, data), /%\{hovertext\}<extra><\/extra>$/);
+    // drawn with the template applyHoverInfo would set, so it restyles nothing
+    assert.equal(all.hovertemplate, hoverTemplateFor(all, settings, data));
+    assert.match(all.hovertemplate, /%\{hovertext\}<extra><\/extra>$/);
 });
 
 test("a colour group's legend row hides its points; a double click shows it alone", async () => {

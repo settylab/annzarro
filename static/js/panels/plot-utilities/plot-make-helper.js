@@ -502,7 +502,10 @@ export function keptViewRanges(settings) {
       Object.assign(trace.marker, groupColorscale(selectedPalette), { color: view.marker.color });
       delete view.marker;
       Object.assign(trace, view);
-      trace.hovertemplate = trace.hovertemplate.replace('<extra></extra>', '%{hovertext}<extra></extra>');
+      // the template applyHoverInfo (plot-make.js hoverTemplateFor) sets: the
+      // same one here spares a restyle of every point after the draw
+      trace.hovertemplate = '%{text}<br>x: %{x:.4~g}<br>y: %{y:.4~g}' + (settings.z ? '<br>z: %{z:.4~g}' : '')
+        + '%{hovertext}<extra></extra>';
       traces.push(trace);
       const proxies = [];
       present.forEach((members, g) => {
