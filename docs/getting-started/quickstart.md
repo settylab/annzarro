@@ -91,7 +91,8 @@ step.
 ## 5. Keep the view
 
 - **Save Panel Set** stores the layout under a name on the server; anyone using the same server
-  can reopen it from "Load Saved Panel Set" ({doc}`../user-guide/panel-sets`).
+  can load it from "Load Saved Panel Set": its dataset and focus are set and its panels listed
+  closed, and **Open saved layout** opens them all in their layout ({doc}`../user-guide/panel-sets`).
 - **Share Link** copies a URL that reopens this dataset with the same layout and focus
   ({doc}`../user-guide/share-links`).
 

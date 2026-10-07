@@ -7,7 +7,7 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView,
+    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
@@ -321,6 +321,8 @@ const App = (function() {
      * @private
      */
     async function _applyView({ datasetPath, view }, { exact = false, located = null } = {}) {
+        // a share link or another view replaces what the offer would restore
+        _clearSavedLayout();
 
         // Where the view's store is here: its path, the path relative to the
         // data directory, or a store in the data directory with the same
@@ -458,6 +460,13 @@ const App = (function() {
     let _noDataView = null;
     /** When the last notice about an opened view was shown (a later toast would hide it). */
     let _viewNoticeAt = 0;
+    // what that notice said, so a notice that replaces it can carry it on
+    let _viewNotice = null;
+
+    /** The last view notice, if it is from this load, to begin a notice that replaces it. @private */
+    function _carriedViewNotice() {
+        return _viewNotice && Date.now() - _viewNoticeAt < 3000 ? `${_viewNotice}\n\n` : '';
+    }
 
     /**
      * Find the store a view names on this server.
@@ -634,6 +643,7 @@ const App = (function() {
         }
         if (parts.length) {
             _viewNoticeAt = Date.now();
+            _viewNotice = `${title}: ${parts.join('\n\n')}`;
             _showNotification(title, parts.join('\n\n'), 'info', 12000);
         }
         const savedFp = located.saved && located.saved.fp;
@@ -779,44 +789,78 @@ const App = (function() {
      * A set saved on another dataset than the open one asks first, in a
      * notice that does not block the page; nothing changes unless the user
      * agrees.
+     *
+     * `openPanels: false` (a set the user chose to load) restores the
+     * dataset, subset and focus but lists every panel of the set closed, with
+     * its settings: opening all of a large set at once could overload the
+     * machine. Its layout is kept and offered as "Open saved layout" (see
+     * _offerSavedLayout). The autosave restore, the subset change and the
+     * Load dialog's "Load and open layout" keep their panels open.
+     *
+     * `add: true` ("Add to closed panels") keeps the open view as it is and
+     * only adds the set's panels to the closed list (_addPanelSet). `ask:
+     * true` (a set the user chose) asks first, while any panels exist,
+     * whether to replace them or add to them.
      * @param {{datasetPath: string|null, view: Object, closedPanels: Array, legacy: boolean}} plan
      * @param {Object} panelSet - the stored panel set
+     * @param {{openPanels?: boolean, add?: boolean, ask?: boolean}} [options]
      * @returns {Promise<{status: string, message: string}>}
      * @private
      */
-    async function _applyPanelSet(plan, panelSet) {
+    async function _applyPanelSet(plan, panelSet, { openPanels = true, add = false, ask = false } = {}) {
         const name = (panelSet && panelSet.name) || 'panel set';
         const current = DataManager.getCurrentDataset();
         const target = plan.datasetPath || current;
-        if (!target) {
-            return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
-        }
         // Where its store is here (its name in the data directory, or the
         // store with the same cells and genes); the same store named
         // relative vs absolute is not a switch
-        const located = await _locateStore(target, plan.view);
+        const located = target ? await _locateStore(target, plan.view) : { path: null };
         const listing = await DataManager.loadDatasets().catch(() => []);
-        if (current && !(located.path && sameDatasetPath(located.path, current, listing))) {
-            if (_sessionModal) _sessionModal.hide();
+        const otherDataset = !!(current && target && !(located.path && sameDatasetPath(located.path, current, listing)));
+
+        // One question at most. A set the user chose asks while panels exist
+        // (Replace, Add to closed panels, Cancel), and a set saved on another
+        // dataset asks in the same notice whether to switch; any other load
+        // that would switch datasets asks only that.
+        if (!add && ((ask && PanelManager.getAllPanels().length > 0) || otherDataset)) {
+            const n = closePlanPanels(plan).closedPanels.length;
+            const panels = `${n} panel${n === 1 ? '' : 's'}`;
+            const actions = otherDataset
+                ? [{ key: 'replace', label: 'Switch and load', primary: true }]
+                : [{ key: 'replace', label: 'Replace', primary: true }];
+            if (ask) actions.push({ key: 'add', label: 'Add to closed panels' });
+            actions.push({ key: 'cancel', label: otherDataset ? 'Keep current' : 'Cancel' });
+            const addLine = ask ? ' Add to closed panels keeps everything as it is and only adds its panels.' : '';
             const where = located.path
                 ? (located.path === target ? located.path : `${target}\n(here: ${located.path})`)
                 : `${target}\n(not on this server: it opens without data)`;
-            const choice = await _askNotification(
-                'Switch dataset?',
-                `"${name}" was saved on\n${where}\n\nThe open dataset is\n${current}\n\nLoading it switches datasets and replaces the open panels.`,
-                [{ key: 'switch', label: 'Switch and load', primary: true }, { key: 'cancel', label: 'Keep current' }]
-            );
-            if (choice !== 'switch') {
-                return { status: 'cancelled', message: `Kept ${current}; "${name}" was not loaded.` };
+            if (_sessionModal) _sessionModal.hide();
+            const choice = otherDataset
+                ? await _askNotification('Switch dataset?',
+                    `"${name}" was saved on\n${where}\n\nThe open dataset is\n${current}\n\n` +
+                    `Loading it switches datasets and replaces the open panels.${addLine}`, actions)
+                : await _askNotification('Load panel set?',
+                    `"${name}" holds ${panels}. Replace the open view with it?${addLine}`, actions);
+            if (choice === 'add') add = true;
+            else if (choice !== 'replace') {
+                return { status: 'cancelled', message: otherDataset
+                    ? `Kept ${current}; "${name}" was not loaded.` : `"${name}" was not loaded.` };
             }
         }
+        if (add) return _addPanelSet(plan, name);
+        if (!target) {
+            return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
+        }
+        const total = closePlanPanels(plan).closedPanels.length;
+        if (!openPanels) plan = closePlanPanels(plan);
+        _clearSavedLayout();
 
         // The set replaces the open view. Open panels are closed (they stay
         // available to reopen); a panel with an id the set brings is removed,
         // so the set's panel gets that id back unchanged.
         const incoming = new Set([
             ...(plan.view && plan.view.layout ? collectTileIds(plan.view.layout.hierarchy) : []),
-            ...plan.closedPanels.map(p => p.id)
+            ...plan.closedPanels.map(p => p.id).filter(Boolean)
         ]);
         PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
         incoming.forEach(id => PanelManager.removePanel(id));
@@ -824,23 +868,149 @@ const App = (function() {
         // keep the open store's own path when the set names it differently
         if (current && located.path && sameDatasetPath(located.path, current, listing)) located.path = current;
         const applied = await _applyView({ datasetPath: target, view: plan.view }, { located });
+        const datasetPath = located.path || target;
 
         // Panels that were closed when the set was saved come back closed.
         const idMap = new Map();
         const closedConfigs = plan.closedPanels.map(p => {
             const config = JSON.parse(JSON.stringify(p.config));
             PanelManager.registerClosedPanel(p.type, config);
-            if (config.id !== p.id) idMap.set(p.id, config.id);
+            if (p.id && config.id !== p.id) idMap.set(p.id, config.id);
             return config;
         });
         if (idMap.size) remapPanelReferences(closedConfigs, idMap);
 
         PanelManager.updateSourcePanelSelection();
         PanelManager.ensureWelcomeFallback();
+        const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
+        // A toast replaces the one before it: these keep what the view's
+        // notice said (opened on another path, another version)
+        if (plan.savedView) {
+            // the layout of the panels open when the set was saved
+            _offerSavedLayout(plan.savedView, datasetPath, name, total, plan.savedCount);
+        } else if (!openPanels) {
+            _showNotification(`Loaded "${name}"`, _carriedViewNotice() + `${listed} under Duplicate or Reopen Panel; ` +
+                'none was open when the set was saved.', 'success', 8000);
+        } else if (!(plan.view && plan.view.layout && collectTileIds(plan.view.layout.hierarchy).length)) {
+            // "Load and open layout" of a set saved with no panel open
+            _showNotification(`Loaded "${name}"`, _carriedViewNotice() + `No panel was open when the set was saved, so none ` +
+                `opened; its ${listed} under Duplicate or Reopen Panel.`, 'success', 8000);
+        }
         if (applied && applied.status === 'no-data') {
             return { status: 'no-data', message: `Loaded "${name}" without data: ${applied.message}` };
         }
         return { status: 'success', message: `Loaded "${name}"` };
+    }
+
+    // Fresh ids for panels added from a panel set: `<type>-<n>`, n never repeating
+    let _addedIdCounter = Date.now();
+
+    /**
+     * "Add to closed panels": the set's panels join the closed list, each
+     * with its full config and title; the open panels, dataset, subset and
+     * focus stay as they are. Ids the app already uses get fresh ones, and
+     * the set's references between its own panels follow (panelsToAdd). A
+     * set saved on another dataset is added too, its panels marked so, and
+     * the dataset is not switched. Nothing was replaced, so no saved layout
+     * is offered.
+     * @private
+     */
+    async function _addPanelSet(plan, name) {
+        const current = DataManager.getCurrentDataset();
+        let other = null;
+        if (plan.datasetPath) {
+            const listing = await DataManager.loadDatasets().catch(() => []);
+            if (!current || !sameDatasetPath(plan.datasetPath, current, listing)) other = plan.datasetPath;
+        }
+        const added = panelsToAdd(plan, id => !!PanelManager.getPanel(id),
+            type => `${type}-${++_addedIdCounter}`);
+        // A title the app shows already (table-filter menus, notices) gets the
+        // set's name after it: "Cell Plot 1 (walk_three_panels)"
+        const titles = new Set(PanelManager.getAllPanels().map(p => p.getTitle()));
+        added.forEach(p => {
+            if (p.config.title && titles.has(p.config.title)) p.config.title = `${p.config.title} (${name})`;
+            titles.add(p.config.title);
+        });
+        let n = 0;
+        added.forEach(p => {
+            const panel = PanelManager.registerClosedPanel(p.type, p.config, { keepTitle: true });
+            if (!panel) return;
+            panel._addedFrom = { set: name, otherDataset: other };
+            n++;
+        });
+        PanelManager.updateSourcePanelSelection();
+        const panels = `${n} panel${n === 1 ? '' : 's'}`;
+        _showNotification(`Added "${name}"`,
+            `${panels} added to the closed panels under Duplicate or Reopen Panel; the open view is unchanged.` +
+            (other ? ` The set was saved on ${other}: its panels are marked "other dataset".` : ''),
+            'success', 8000);
+        return { status: 'success', message: `Added ${panels} of "${name}" to the closed panels` };
+    }
+
+    // The layout of the panel set last loaded with its panels closed, offered
+    // as "Open saved layout" until the next set load, dataset switch or
+    // share link: {view, datasetPath, cancel?}
+    let _savedLayout = null;
+
+    /**
+     * After a set is loaded with its panels closed, offer its saved layout in
+     * a notice with one action. The notice stays until it is answered or
+     * dismissed, or the offer lapses (_clearSavedLayout).
+     * @private
+     */
+    function _offerSavedLayout(view, datasetPath, name, total, count) {
+        const offer = { view, datasetPath };
+        _savedLayout = offer;
+        // and above the closed panels, where it stays when the notice is dismissed
+        PanelManager.setSavedLayoutOffer({ count, open: () => _openSavedLayout() });
+        const panels = `${count} panel${count === 1 ? '' : 's'}`;
+        const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
+        const wereOpen = count === total
+            ? (total === 1 ? 'it was open' : total === 2 ? 'both were open' : `all ${total} were open`)
+            : `${count} ${count === 1 ? 'was' : 'were'} open`;
+        _askNotification(`Loaded "${name}"`,
+            _carriedViewNotice() +
+            `${listed} under Duplicate or Reopen Panel; ${wereOpen} when the set was saved. ` +
+            'Reopen single ones there, or open the saved layout at once.',
+            [{ key: 'open', label: `Open saved layout (${panels})`, primary: true }],
+            { type: 'success', handle: offer })
+            .then(choice => {
+                if (choice === 'open' && _savedLayout === offer) _openSavedLayout();
+            });
+        const notice = [...document.querySelectorAll('.notification-ask')].pop();
+        if (notice) notice.dataset.offer = 'saved-layout';
+    }
+
+    /**
+     * Withdraw the "Open saved layout" offer (its notice too).
+     * @private
+     */
+    function _clearSavedLayout() {
+        const offer = _savedLayout;
+        _savedLayout = null;
+        if (!offer) return;
+        if (offer.cancel) offer.cancel();
+        PanelManager.setSavedLayoutOffer(null);
+    }
+
+    /**
+     * Apply the offered saved layout exactly as a share link applies its view:
+     * the same _applyView path and panel ids, so each closed entry of the set
+     * is reopened in place, not duplicated.
+     * @private
+     */
+    async function _openSavedLayout() {
+        const offer = _savedLayout;
+        if (!offer) return;
+        _clearSavedLayout();
+        try {
+            await _applyView({ datasetPath: offer.datasetPath, view: offer.view });
+        } catch (error) {
+            console.error('Opening the saved layout failed:', error);
+            _showNotification('Saved layout not opened', error.message || String(error), 'error');
+        }
+        PanelManager.updateSourcePanelSelection();
+        PanelManager.ensureWelcomeFallback();
     }
 
     /**
@@ -1086,9 +1256,9 @@ const App = (function() {
      * @returns {Promise<string|null>} the chosen key, null if dismissed
      * @private
      */
-    function _askNotification(title, message, actions) {
+    function _askNotification(title, message, actions, { type = 'warning', handle = null } = {}) {
         return new Promise(resolve => {
-            const id = _showNotification(title, message, 'warning', 24 * 3600 * 1000);
+            const id = _showNotification(title, message, type, 24 * 3600 * 1000);
             const el = document.getElementById(id);
             if (!el) { resolve(null); return; }
             el.classList.add('notification-ask');
@@ -1117,6 +1287,8 @@ const App = (function() {
             el.appendChild(bar);
             const close = el.querySelector('.notification-close');
             if (close) close.addEventListener('click', () => finish(null));
+            // lets the caller withdraw the question (resolves with null)
+            if (handle) handle.cancel = () => finish(null);
             const primary = bar.querySelector('.btn-primary');
             if (primary) primary.focus();
         });
@@ -1546,6 +1718,8 @@ const App = (function() {
                 console.log(`Skipping duplicate dataset load: ${datasetPath}`);
                 return;
             }
+            // another dataset: a saved layout offered for this one lapses
+            _clearSavedLayout();
             
             // If we're already loading something, abort it
             if (_isLoadingDataset && _currentLoadingAbortController) {
@@ -2204,6 +2378,14 @@ const App = (function() {
                         </button>` : 
                         `<button class="btn btn-sm btn-outline-secondary session-export" title="Export">
                             <i class="fas fa-download"></i> Export
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary session-load-open"
+                            title="Load and open every panel in the saved layout at once (a large set takes memory)">
+                            <i class="fas fa-th-large"></i> Load and open layout
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary session-add-closed"
+                            title="Add this set's panels to the closed panels; the open view stays as it is">
+                            <i class="fas fa-plus"></i> Add to closed panels
                         </button>`;
                     
                     // Create panel preview icons based on session data
@@ -2304,6 +2486,38 @@ const App = (function() {
                     });
                 });
                 
+                // "Load and open layout": the set with its panels open, as the
+                // user chose explicitly (Load lists them closed)
+                document.querySelectorAll('.session-load-open').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const sessionName = e.target.closest('.session-card').dataset.sessionName;
+                        const result = await SessionManager.loadSession(sessionName, { openPanels: true });
+                        if (result.status === 'success') {
+                            _sessionModal.hide();
+                        } else if (result.status === 'cancelled') {
+                            _showNotification('Panel set not loaded', result.message, 'info', 5000);
+                        } else {
+                            _showNotification('Failed to load panel set', result.message, 'error');
+                        }
+                    });
+                });
+
+                // "Add to closed panels": the set's panels join the closed
+                // ones; the open view, dataset and focus stay
+                document.querySelectorAll('.session-add-closed').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const sessionName = e.target.closest('.session-card').dataset.sessionName;
+                        const result = await SessionManager.loadSession(sessionName, { add: true });
+                        if (result.status === 'success') {
+                            _sessionModal.hide();
+                        } else {
+                            _showNotification('Failed to add panel set', result.message, 'error');
+                        }
+                    });
+                });
+
                 // Add export button handlers
                 document.querySelectorAll('.session-export').forEach(btn => {
                     btn.addEventListener('click', (e) => {

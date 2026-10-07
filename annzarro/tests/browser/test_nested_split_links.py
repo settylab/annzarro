@@ -13,10 +13,12 @@ buttons, the pane's chooser, dragging the handles, hiding a panel's
 controls), clicks Share Link and opens the link in a fresh browser context,
 so no autosave can help. The tile tree, the pane sizes, the panel types and
 configs, which controls are shown, and the height of each panel row must
-match, and the bottom chooser must come back once, below the rows. One case
-also saves a panel set and loads it in another fresh context. After a
+match, and the bottom chooser must come back once, below the rows. After a
 restore every plot must be drawn inside its tile and above the chooser, and
-every split handle must still resize its own split.
+every split handle must still resize its own split. One case also saves a
+panel set: the stored layout keeps every level; loading the set in a fresh
+context lists its panels closed (a loaded set opens none of them), and its
+"Open saved layout" brings back the same tree, sizes and settings.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -305,14 +307,34 @@ def test_nested_layout_round_trips_through_a_panel_set(server, browser):
         page.wait_for_selector(".panel-type-option[data-type='cell-plot']", timeout=30000)
         _build(page, "horizontal-then-vertical-left")
         built = page.evaluate(TREE_JS)
+        hierarchy = page.evaluate("() => PanelManager.saveLayout().hierarchy")
         page.click("#btn-save-session")
         page.fill("#session-name", "nested-splits")
         page.click("#btn-confirm-session")
         page.wait_for_function("() => document.getElementById('session-modal').offsetParent === null")
 
+        # the dialog closes before the server has written the file
+        stored = {}
+        for _ in range(40):
+            stored = page.evaluate("() => fetch('/api/v1/sessions/load?name=nested-splits').then(r => r.json())")
+            if "view" in stored:
+                break
+            time.sleep(0.25)
+        assert stored["view"]["layout"]["hierarchy"] == hierarchy
+        assert hierarchy[0]["children"][0]["type"] == "split"  # the nested level
+
         opened = fresh.new_page()
         errors += _open(opened, url)
         opened.locator(".session-item", has_text="nested-splits").first.click()
+        _settle(opened)
+        ids = sorted(_configs(page))
+        opened.wait_for_function("ids => ids.every(id => !!PanelManager.getPanel(id))", arg=ids)
+        assert opened.evaluate(
+            "() => document.querySelectorAll('.tile-container .tile[data-tile-id]').length") == 0
+        assert sorted(opened.evaluate(
+            "() => [...document.querySelectorAll('.source-panel-option.closed-panel')].map(e => e.dataset.id)")) == ids
+
+        opened.locator(".notification[data-offer='saved-layout'] button[data-action='open']").click()
         _settle(opened)
         assert opened.evaluate(TREE_JS) == built
         assert _configs(opened) == _configs(page)

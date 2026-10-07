@@ -1034,24 +1034,17 @@ const PanelManager = (function() {
      * @param {string} [id] - Optional panel ID (will be generated if not provided)
      * @returns {Object} - The created panel instance
      */
-    function registerClosedPanel(type, config) {
+    function registerClosedPanel(type, config, { keepTitle = false } = {}) {
         if (!_panelTypes.has(type)) {
             console.error(`Unknown panel type: ${type}`);
             return null;
         }
         
         // Make sure ID is unique but only update if really needed:
-        if (config.id) {
-            // Check if this ID already exists in panels
-            if (_panels.has(config.id)) {
-                // Only generate a new ID if there's a collision
-                config.id = `${type}-${Date.now()}`;
-            }
-        } else {
-            // No ID provided, generate one
-            config.id = `${type}-${Date.now()}`;
-        }
-        config.title = _generateUniqueName(config.title, type);
+        if (!config.id || _panels.has(config.id)) config.id = freshPanelId(type);
+        // keepTitle: a panel added from a panel set keeps the title it was
+        // saved with (the list tags where it came from)
+        if (!keepTitle || !config.title) config.title = _generateUniqueName(config.title, type);
 
         // Create a "zombie" panel (stored but not active)
         const Constructor = _panelTypes.get(type);
@@ -1091,9 +1084,33 @@ const PanelManager = (function() {
 
     // Removed getCounters function as counters are no longer used
     
+    /**
+     * An id no panel has: `<type>-<n>`. Date.now() alone repeats when two
+     * panels are registered in the same millisecond, and the second then
+     * replaced the first in the panel map.
+     * @param {string} type
+     * @returns {string}
+     */
+    function freshPanelId(type) {
+        let n = Date.now();
+        while (_panels.has(`${type}-${n}`)) n++;
+        return `${type}-${n}`;
+    }
+
+    /**
+     * Show (or with null, withdraw) "Open saved layout" above the panel list
+     * of every chooser.
+     * @param {{count: number, open: Function}|null} offer
+     */
+    function setSavedLayoutOffer(offer) {
+        SelectionTile.savedLayout = offer || null;
+        updateSourcePanelSelection();
+    }
+
     // Public API
     return {
         init,
+        setSavedLayoutOffer,
         registerPanelType,
         createPanel,
         createPanelInLayout,

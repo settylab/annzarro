@@ -1596,8 +1596,16 @@ button.dtsb-button.dtsb-clear:hover {
 
 .session-card-footer {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
+    gap: 4px;
     margin-top: 8px;
+}
+
+/* the third button of a card takes its own row: three in one were
+   squeezed to a word per line */
+.session-card-footer .session-add-closed {
+    flex-basis: 100%;
 }
 
 /* Subtle styling for autosave session cards */
@@ -2368,6 +2376,34 @@ button.dtsb-button.dtsb-clear:hover {
     font-size: 1.25rem;
     color: #343a40;
     text-align: center;
+}
+
+/* "from <set>" on a panel added from a panel set: top left, opposite the
+   Closed badge (the card has a fixed height, so it cannot go below) */
+.panel-origin-tag {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    font-size: 0.7rem;
+    color: #495057;
+    background-color: #e9ecef;
+    border-radius: 10px;
+    padding: 1px 8px;
+    max-width: calc(100% - 120px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.panel-origin-tag.other-dataset {
+    color: #664d03;
+    background-color: #fff3cd;
+}
+
+.saved-layout-offer {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
 }
 
 .source-selection-grid {

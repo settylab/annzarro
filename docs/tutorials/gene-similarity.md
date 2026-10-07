@@ -350,7 +350,8 @@ The same panels as panel-set files:
 {download}`gene-by-gene-ab.json <../_static/panelsets/paper/gene-by-gene-ab.json>`,
 {download}`gene-by-gene-c.json <../_static/panelsets/paper/gene-by-gene-c.json>`,
 {download}`gene-by-gene-d.json <../_static/panelsets/paper/gene-by-gene-d.json>`. **Load Panel Set** >
-upload restores a set like its link: dataset, focus, layout and panel settings
+upload sets the dataset and focus and lists the panels closed; then click **Open saved layout**
+in the notice to open them in their layout (or use the links above)
 ({ref}`tut-tour-load-file`, {doc}`../user-guide/panel-sets`).
 
 ## What you learned

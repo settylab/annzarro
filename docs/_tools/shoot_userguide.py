@@ -131,15 +131,20 @@ def annotate(path: Path, marks):
     im.save(path)
 
 
-def clean(page):
-    page.add_style_tag(content="#notification-container, .notification { display: none !important; }")
+def clean(page, keep_offer=False):
+    if keep_offer:      # the "Open saved layout" notice stays in the shot, also after an earlier clean()
+        page.add_style_tag(content="#notification-container { display: block !important; } "
+                                   ".notification:not([data-offer]) { display: none !important; } "
+                                   ".notification[data-offer] { display: block !important; }")
+    else:
+        page.add_style_tag(content="#notification-container, .notification { display: none !important; }")
     time.sleep(0.3)
 
 
-def capture(sh, page, name, region=None, marks=(), hide_modebar=True, hover=False):
+def capture(sh, page, name, region=None, marks=(), hide_modebar=True, hover=False, keep_offer=False):
     """Screenshot `region` (a selector, or None for the viewport) to OUT/name.png and draw
     numbered callouts over the elements matched by `marks` [(label, selector), ...]."""
-    clean(page)
+    clean(page, keep_offer)
     nohover = None if hover else page.add_style_tag(content=".hoverlayer { display: none !important; }")
     style = page.add_style_tag(content=".modebar-container { display: none !important; }") \
         if hide_modebar else None
@@ -662,15 +667,45 @@ def shoot_panelsets(sh, data_dir):
     capture(sh, page, "panelsets-load", "#session-modal .modal-content", marks=[
         (1, "#session-search"), (2, "#session-grid > * >> nth=0"),
         (3, "#session-grid button:has-text('Export')"), (4, "#toggle-upload-btn"),
-        (5, "#btn-confirm-session")])
+        (5, "#btn-confirm-session"), (6, "#session-grid .session-load-open >> nth=0"),
+        (7, "#session-grid .session-add-closed >> nth=0")])
     page.locator("#session-grid > *").first.click(); time.sleep(0.3)
-    page.click("#btn-confirm-session"); time.sleep(4)
+    page.click("#btn-confirm-session")
+    # Load lists the set's panels closed and offers its saved layout in a notice
+    offer = page.locator(".notification[data-offer='saved-layout']")
+    offer.wait_for(state="attached", timeout=30000)     # hidden by the dialog shot's clean()
+    time.sleep(1.0)
     sh.ready(page)
     page.evaluate("window.scrollTo(0, 0)")
-    capture(sh, page, "panelsets-loaded", None)
+    capture(sh, page, "panelsets-loaded", None, keep_offer=True, marks=[
+        (1, ".tile-container > .tile-selector .source-panel-option.closed-panel >> nth=0"),
+        (2, ".notification[data-offer='saved-layout'] button[data-action='open']")])
     sh.log.append("panelsets: after load, focus = " + json.dumps(page.evaluate(
         "[document.getElementById('focused-gene').value, document.getElementById('focused-cell').value,"
-        " [...document.querySelectorAll('.tile')].map(t => t.dataset.tileId)]")))
+        " [...document.querySelectorAll('.tile-container .tile')].map(t => t.dataset.tileId),"
+        " [...document.querySelectorAll('.source-panel-option.closed-panel')].map(e => e.dataset.id)]")))
+    offer.locator("button[data-action='open']").click(); time.sleep(3)
+    sh.ready(page)
+    page.evaluate("window.scrollTo(0, 0)")
+    capture(sh, page, "panelsets-opened", None)
+    sh.log.append("panelsets: after Open saved layout = " + json.dumps(page.evaluate(
+        "[...document.querySelectorAll('.tile-container .tile')].map(t => t.dataset.tileId)")))
+
+    # Load a set while panels are open: AnnZarro asks Replace, Add to closed panels or Cancel
+    page.wait_for_selector(".modal-backdrop", state="detached")
+    page.click("#btn-load-session"); time.sleep(1.5)
+    page.locator("#session-grid > *").first.click(); time.sleep(0.3)
+    page.click("#btn-confirm-session")
+    ask = page.locator(".notification-ask", has_text="Load panel set?")
+    ask.wait_for(state="attached", timeout=20000)
+    time.sleep(1.0)                                   # let the notice finish fading in
+    # undo the earlier clean() styles for this notice (more specific than both)
+    page.add_style_tag(content="#notification-container { display: block !important; } "
+                               ".notification.notification-ask:not([data-offer]) { display: block !important; }")
+    ask.screenshot(path=str(OUT / "panelsets-replace-or-add.png"))
+    finish(OUT / "panelsets-replace-or-add.png")
+    sh.log.append("wrote panelsets-replace-or-add.png: " + ask.inner_text().replace("\n", " | "))
+    ask.locator("button[data-action='cancel']").click()
     page.context.close()
 
     # Load the same panel set while another dataset is open: AnnZarro asks first
