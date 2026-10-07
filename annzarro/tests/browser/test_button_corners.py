@@ -207,7 +207,8 @@ def test_buttons_round_only_their_free_corners(server, width):
             share, save = "#btn-share-link", "#btn-save-session"
             page.evaluate(f"() => {{ document.querySelector('{share}').style.display = 'none'; }}")
             _assert_corners(page, "Share Link hidden")
-            radius = page.evaluate("""() => getComputedStyle(document.querySelector('#btn-load-session'))
+            # Close all sits between Load and Share: with Share hidden it is the end that shows
+            radius = page.evaluate("""() => getComputedStyle(document.querySelector('#btn-close-all'))
                                           .borderTopRightRadius""")
             assert radius not in ("0px", ""), radius
             page.evaluate(f"""() => {{ document.querySelector('{share}').style.display = '';
