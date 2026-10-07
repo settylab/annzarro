@@ -221,7 +221,10 @@ async function rankedGroupNames(datasetPath, key, slot, codes, missing) {
 }
 
 /** Below this many labels a hover's labels are not worth a guard check (65,536: a few MB). */
-const HOVER_GUARD_MIN = 65536;
+let HOVER_GUARD_MIN = 65536;
+
+/** For tests: check hover labels from `n` labels on (a small fixture's). */
+export function _setHoverGuardMin(n) { HOVER_GUARD_MIN = n; }
 
 /**
  * Whether the hover labels of categorical column `slot.key` (`count`
@@ -251,8 +254,30 @@ async function hoverLabelsFit(datasetPath, slot, key, count, points, plotContain
   return !refused;
 }
 
+/**
+ * Whether turning a plot's hover on with `settings.hoverInfo` fits the
+ * browser: every categorical hover column, and the colour column's labels
+ * when the plot was coloured without them (`colourRanked`). Checked before
+ * the pick is applied, so a refused pick leaves the hover as it was.
+ */
+export async function hoverPickFits(settings, plotType, plotContainer, colourRanked) {
+  const datasetPath = DataManager.getCurrentDataset();
+  const structure = await DataManager.getDatasetStructure(datasetPath).catch(() => null);
+  const shown = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
+  const points = shown && typeof shown.length === 'number' ? shown.length : 0;
+  const columns = (Array.isArray(settings.hoverInfo) ? settings.hoverInfo : [])
+    .filter(h => h && (h.type === 'obs' || h.type === 'var') && h.key && h.key !== '_index' && !h.column);
+  const c = settings.color;
+  if (colourRanked && c && (c.type === 'obs' || c.type === 'var')) columns.push({ type: c.type, key: c.key });
+  for (const h of columns) {
+    const count = categoryCount(structure, h.type, h.key);
+    if (count !== null && !(await hoverLabelsFit(datasetPath, h.type, h.key, count, points, plotContainer))) return false;
+  }
+  return true;
+}
+
 /** Show a plot's hover setting in its Hover picker ("No hover" when off). */
-function showHoverChoice(plotContainer, panel) {
+export function showHoverChoice(plotContainer, panel) {
   const id = plotContainer && plotContainer.id ? plotContainer.id.replace(/^plot-container-/, '') : null;
   const select = id && typeof document !== 'undefined' ? document.getElementById(`hover-columns-${id}`) : null;
   if (!select || !select.options) return;

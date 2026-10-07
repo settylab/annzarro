@@ -1,7 +1,7 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
-import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator } from './plot-make.js';
+import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator, hoverPickFits, showHoverChoice } from './plot-make.js';
 import { hoverInfoFromSelection, hoverOffFromSelection, NO_HOVER } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { DataManager } from '../../data-manager.js';
@@ -260,10 +260,21 @@ export function setupPlotControlListeners(
     let hoverGeneration = 0;
     $hoverSelect.on('change', async (e) => {
       const selected = Array.from(e.target.selectedOptions, o => o.value);
+      const before = { hoverOff: settings.hoverOff, hoverInfo: settings.hoverInfo };
       const off = hoverOffFromSelection(selected, settings.hoverOff);
       settings.hoverOff = off;
       settings.hoverInfo = hoverInfoFromSelection(plotType, off ? [] : selected, settings.hoverInfo);
       for (const o of e.target.options) o.selected = off ? o.value === NO_HOVER : o.value !== NO_HOVER && selected.includes(o.value);
+      // labels that do not fit the browser are not read: the pick is undone
+      // and the status line gives the memory guard's numbers
+      if (!off && !(await hoverPickFits(settings, plotType, plotContainer, !!data.colorRanked))) {
+        Object.assign(settings, before);
+        if (before.hoverOff === undefined) delete settings.hoverOff;
+        const prior = new Set((before.hoverInfo || []).map(h => h && h.key));
+        for (const o of e.target.options) o.selected = o.value !== NO_HOVER && prior.has(o.value);
+        showHoverChoice(plotContainer, settings);
+        return;
+      }
       // a colour of many categories drawn without labels reads them now
       if (!off && data.colorRanked) {
         loadDataAndCreatePlot();

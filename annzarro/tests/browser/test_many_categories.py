@@ -10,11 +10,15 @@ each, clone080-119 one).
   The colour requests ask for the labels of the points and the column's
   ranks, never every category.
 - `barcode` also works as a hover column and as a table column.
+- A hover pick whose labels do not fit the browser's memory is refused: the
+  plot stays coloured, "No hover" stays selected, and the status line gives
+  the memory guard's "needs X; Y free".
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
 """
 import base64
+import re
 import json
 import os
 import shutil
@@ -88,7 +92,7 @@ def server(tmp_path_factory):
     proc.wait(10)
 
 
-def _link(root, store, colour=None, hover=None, table_columns=None):
+def _link(root, store, colour=None, hover=None, table_columns=None, hover_off=None):
     configs, tiles = {}, []
     if colour is not None or hover is not None:
         cfg = {"id": "cell-plot-M", "title": "umap", "z": None,
@@ -98,6 +102,8 @@ def _link(root, store, colour=None, hover=None, table_columns=None):
                else {"type": "none", "key": "", "column": ""}}
         if hover:
             cfg["hoverInfo"] = [{"type": "obs", "key": "_index"}, {"type": "obs", "key": hover}]
+        if hover_off is not None:
+            cfg["hoverOff"] = hover_off
         configs["cell-plot-M"] = cfg
         tiles.append({"type": "tile", "id": "cell-plot-M", "controlsVisible": True})
     if table_columns:
@@ -185,3 +191,50 @@ def test_a_one_per_cell_column_in_the_hover_and_a_table(server):
                 ".some(td => /^BC\\d{4}-1$/.test(td.textContent.trim()))", timeout=60000)
         finally:
             browser.close()
+
+
+# A JS heap ceiling of what the ledger holds now plus `free` bytes, and the
+# guard's check from the fixture's 200 labels on (test hooks, as in
+# test_memory_guard.py).
+TIGHT = """async (free) => {
+    const { Config } = await import('/static/js/config.js');
+    const g = await import('/static/js/utils/memory-guard-ui.js');
+    const m = await import('/static/js/utils/memory-guard.js');
+    (await import('/static/js/panels/plot-utilities/plot-make.js'))._setHoverGuardMin(0);
+    Config.DEFAULTS.MEMORY = { ...(Config.DEFAULTS.MEMORY || {}),
+        heap_gb: (g.held().heap + free) / (m.GB * m.HEAP_USABLE_SHARE), margin: 0.2, enforce: 'block' };
+    document.dispatchEvent(new CustomEvent(g.MEMORY_EVENT));
+}"""
+
+PICKER = """() => [...document.querySelector('.tile[data-tile-id="cell-plot-M"] select.hover-columns-select').selectedOptions]
+    .map(o => o.textContent)"""
+
+
+def test_a_hover_pick_that_does_not_fit_is_refused(server):
+    """The labels' measured cost over the browser's budget: the pick is undone."""
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, requests = _open(pw, _link(root, store, colour="clone", hover_off=True))
+        try:
+            before = _plot(page, lambda s: len(s["legend"]) == 64)
+            assert before["labelled"] == []                      # coloured from ranks, no labels
+            assert page.evaluate(PICKER) == ["No hover"]
+            page.evaluate(TIGHT, 1000)                           # 1 kB free
+            asked = len(requests)
+            page.select_option('.tile[data-tile-id="cell-plot-M"] select.hover-columns-select', label="barcode")
+            page.wait_for_function("""() => [...document.querySelectorAll('.tile[data-tile-id="cell-plot-M"] .plot-status .ps-tag')]
+                .some(t => /Hover off: browser memory/.test(t.textContent))""", timeout=30000)
+            assert page.evaluate(PICKER) == ["No hover"]
+            after = _plot(page, lambda s: True)
+            assert after["legend"] == before["legend"] and after["drawn"] == before["drawn"]   # still coloured
+            assert after["labelled"] == []
+            assert not any("barcode" in u and "category_ranks" not in u for u in requests[asked:])
+            page.click('.tile[data-tile-id="cell-plot-M"] .plot-status .ps-tag')
+            why = page.inner_text('.tile[data-tile-id="cell-plot-M"] .plot-status')
+            assert "Hover labels of obs.barcode" in why
+            assert re_needs.search(why), why
+        finally:
+            browser.close()
+
+
+re_needs = re.compile(r"needs ~[\d.]+ (?:GB|MB|kB) of browser (?:JS )?memory; [\d.]+ (?:GB|MB|kB) free")
