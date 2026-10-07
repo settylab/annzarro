@@ -935,6 +935,35 @@ button.dtsb-button.dtsb-clear:hover {
     box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
 }
 
+/* The text search: a slim full-width row below the SearchBuilder (table-data.js dom) */
+.az-search-row .dataTables_filter {
+    width: 100%;
+    margin: 0;
+    text-align: left;
+}
+
+.az-search-row .dt-search-container.az-search-line {
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.az-search-row .dataTables_filter input.form-control {
+    width: 100% !important;
+    min-width: 0;
+    margin-left: 0;
+}
+
+.az-search-line .dt-search-options {
+    margin-bottom: 0;
+    flex-shrink: 0;
+}
+
+.az-search-line .dt-search-option {
+    width: 30px;
+    height: 26px;
+}
+
 /* DataTables search options with Bootstrap 5 styling */
 .dt-search-options {
     display: flex;

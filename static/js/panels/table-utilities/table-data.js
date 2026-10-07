@@ -717,8 +717,11 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             smart:          searchSmart(useRegex, useSmart),
             caseInsensitive: useCaseInsensitive
         },
-        // Standard Bootstrap 5 DataTables layout with SearchBuilder and search box
-        dom: '<"row"<"col-sm-12 col-md-9"Q><"col-sm-12 col-md-3 d-flex align-items-end justify-content-end"f>>' +
+        // SearchBuilder on its own full-width row, the text search on a slim
+        // full-width row below it. Side by side (9/3 columns by VIEWPORT
+        // width), a table in a split panel squeezed both, and the search box
+        // and its label overflowed onto the builder.
+        dom: '<"row az-sb-row"<"col-12"Q>><"row az-search-row"<"col-12"f>>' +
              '<"row"<"col-sm-12"tr>>' +
              '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>',
         responsive: false, // Never use responsive mode
@@ -876,31 +879,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     // Clear the parent and build our new structure
                     $searchParent.empty();
                     
-                    // Create a container with flex column direction to stack elements
-                    $container.removeClass('d-flex align-items-center').addClass('d-flex flex-column');
-                    
-                    // Create a row for the label and search input
-                    const $searchRow = $('<div class="d-flex align-items-center w-100 mb-2"></div>');
-                    $searchRow.append($newLabel);
-                    
-                    // Create an input group to hold the search input
+                    // One slim row: label, input (takes the width), options
+                    $container.removeClass('mb-2').addClass('az-search-line');
                     const $inputGroup = $('<div class="input-group input-group-sm flex-grow-1"></div>');
                     $inputGroup.append($searchInput);
-                    $searchRow.append($inputGroup);
-                    
-                    // Add the search row to the container
-                    $container.append($searchRow);
-                    
-                    // Create a row for search options with proper styling
-                    const $optionsRow = $('<div class="d-flex justify-content-end align-items-center w-100"></div>');
-                    
-                    // Add a descriptive label for the search options
-                    const $optionsLabel = $('<small class="text-muted me-2">Search options:</small>');
-                    $optionsRow.append($optionsLabel);
-                    $optionsRow.append($searchOptions);
-                    
-                    // Add the options row below the search input
-                    $container.append($optionsRow);
+                    $searchOptions.attr('aria-label', 'Search options');
+                    $container.append($newLabel, $inputGroup, $searchOptions);
                     
                     // Add the container to the search parent
                     $searchParent.append($container);
