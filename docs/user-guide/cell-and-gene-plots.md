@@ -223,10 +223,12 @@ structure):
 - **Up to 64**: one colour and one legend entry per category, as above.
 - **More than 64**: the categories are ranked by their number of cells over the whole column,
   most frequent first (ties in stored order), and rank *r* is drawn in colour *r* mod 64. The
-  plot has one trace and one legend entry per colour, so at most 64. Each legend entry names the
-  three most frequent categories of its colour among the points shown and counts the rest, for
-  example "S1, S65, S129 +18 more"; clicking it hides and shows that colour. Hovering a point
-  names its own category. "As stored in adata.uns" colours are not used here.
+  legend has one entry per colour, so at most 64. Each names the three most frequent categories
+  of its colour among the points shown and counts the rest, for example "S1, S65, S129 +18 more";
+  clicking it hides and shows that colour, and double-clicking shows that colour alone. The
+  points are drawn in dataset order, so where categories mix no colour covers the others. The
+  ten most frequent ranks get ten clearly different colours. Hovering a point names its own
+  category. "As stored in adata.uns" colours are not used here.
 
 The ranking is computed once per column on the server, over all cells, and kept, so a category
 keeps its colour across the parts of a subset ({doc}`subsets`), under a table filter and in every
@@ -236,11 +238,13 @@ milliseconds after that.
 
 One case asks first. With more than 500,000 distinct categories among the points of a regular
 (not large-plot) panel, for example a barcode column on a million cells, every point needs its
-own hover label, which made the plot about 60 % slower and used 150 MB more memory. The plot is
-then drawn without colour and its status line carries the tag **Not coloured yet**. Its details
-name the count and the cost, for example "1,000,000 distinct values on 1,000,000 points: colouring
-loads about 29 MB of labels for the hover and takes a few seconds longer", with a **Colour anyway**
-button that colours that panel. Under a subset of 100,000 cells nothing is asked.
+own hover label, and colouring took about three times as long as 64 plain categories and three
+times the memory (7.0 s and 772 MB against 2.4 s and 276 MB at a million points). The plot is
+then drawn without colour, with a notice over it, **Not coloured yet**, that names the count and
+the cost, for example "obs.barcode: 999,998 distinct values on 1,000,000 points: colouring loads
+about 29 MB of labels for the hover and takes a few seconds longer", and a **Colour anyway** button
+that colours that panel. Its status line carries the same tag. Under a subset of 100,000 cells
+nothing is asked.
 
 Such a column also works in the hover (the panel's **Hover** list, {ref}`hover-columns`) and as a
 table column at any size: AnnZarro reads its labels only for the cells shown, never its whole

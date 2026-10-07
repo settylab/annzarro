@@ -104,11 +104,11 @@ export function groupLegendName(names) {
 /**
  * Labels past which a grouped colouring in the regular path asks first. The
  * hover needs every point's label: with a category per point that is one
- * label per point. Measured at 1M points (M3 Max): a one-per-cell column took
- * 3.7 s and 423 MB of heap against 2.3 s and 276 MB for 64 categories (+61 %);
- * at 100,000 points, 1.1 s against 1.0 s; a 65,000-category column at 1M
- * points 2.6 s (+13 %). So from 500,000 distinct labels the plot is drawn
- * grey and the panel offers "Colour anyway".
+ * label per point, about 29 MB at 1M points. Measured at 1M points (M3 Max,
+ * one trace in data order, df11b6f): a one-per-cell column took 7.0 s and
+ * 772 MB of heap to colour, a 65,000-category column 6.6 s and 680 MB, 64
+ * plain categories 2.4 s and 276 MB. So from 500,000 distinct labels the plot
+ * is drawn grey and the panel offers "Colour anyway".
  */
 export const COLOUR_ASK_LABELS = 500000;
 
