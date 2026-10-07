@@ -847,9 +847,11 @@ def main(argv: List[str] = None) -> int:
     user_add_parser.add_argument('--password', help="Password")
     user_add_parser.add_argument(
         '--admin', action='store_true',
-        help="Make user an admin: may delete, rename or overwrite ANY shared panel set "
-             "(others may only change sets they saved; sets saved before owners were "
-             "recorded are admin-only). Grants nothing else. A running server picks it up "
+        help="Make user an admin: may change any shared panel set and reassign its owner, "
+             "clear the server's dataset cache, and (server.arbitrary_paths: admins, the "
+             "default) open any dataset path the server account can read, not only the data "
+             "directories. No dataset writes, no user management in the app. To confine "
+             "admins, set server.arbitrary_paths to local-only. A running server picks it up "
              "without a restart.")
     
     # User remove command
@@ -868,7 +870,8 @@ def main(argv: List[str] = None) -> int:
     # Grant or revoke admin in place
     user_admin_parser = user_subparsers.add_parser(
         'set-admin', help="Make a user an admin, or with --no-admin revoke it "
-                          "(a running server picks it up without a restart)")
+                          "(a running server picks it up without a restart). Admin may also open any path "
+                          "the server account can read unless server.arbitrary_paths is local-only or none")
     user_admin_parser.add_argument('--username', help="Username")
     user_admin_parser.add_argument('--no-admin', action='store_true', help="Revoke admin instead")
     

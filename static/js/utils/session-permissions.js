@@ -101,7 +101,7 @@ export function authIndicator(me) {
         return {
             text: me.is_admin ? `${me.username} (admin)` : me.username,
             title: me.is_admin
-                ? `Signed in as ${me.username}, an admin: you can delete or overwrite any panel set. Click to log out.`
+                ? `Signed in as ${me.username}, an admin: you can change any panel set, clear the server cache and, unless the server restricts it, open any dataset path it can read. Click to log out.`
                 : `Signed in as ${me.username}: you can delete or overwrite the panel sets you saved. Click to log out.`,
             variant: 'user',
             href: appUrl('/logout'),
