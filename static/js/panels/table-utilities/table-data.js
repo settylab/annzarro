@@ -2,7 +2,7 @@
  * Utilities for loading and processing table data
  */
 import { notify } from '../../utils/notify.js';
-import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, moreDistinctThan, textOnlyConditions, fastSelectConditions } from '../../utils/search-builder.js';
+import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, TEXT_ONLY_NUM_TYPE, manyValuesType, textOnlyConditions, textOnlyNumConditions, fastSelectConditions } from '../../utils/search-builder.js';
 import { VALUE_LIST_MAX } from '../../utils/categories.js';
 import { DataManager } from '../../data-manager.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
@@ -158,13 +158,15 @@ export async function loadTableData(settings, entityType, signal = null) {
         }
         
         // A column with more distinct values than VALUE_LIST_MAX (the Cell
-        // ID, a barcode) is filtered by typing: SearchBuilder's "Equals"
-        // dropdown would hold one option per row.
+        // ID, a barcode, a float column of a gene table) is filtered by
+        // typing: SearchBuilder's "Equals" dropdown would hold one option per
+        // row. A numeric one keeps the number conditions (manyValuesType).
         const textOnlyColumns = [];
         columnDefinitions.forEach(def => {
             const values = def.data === '_index' ? entityIndex : data.map(row => row[def.data]);
-            if (moreDistinctThan(values, VALUE_LIST_MAX)) {
-                def.searchBuilderType = TEXT_ONLY_TYPE;
+            const type = manyValuesType(values, VALUE_LIST_MAX);
+            if (type) {
+                def.searchBuilderType = type;
                 textOnlyColumns.push(def.title);
             }
         });
@@ -763,10 +765,12 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 preDefined: searchBuilderPreDefined(settings.searchBuilderConfig, tableData.booleanColumns || []),
                 display: 'block', // Always display
                 // "Equals" lists the values in one pass; typed for columns
-                // with too many values to list
+                // with too many values to list (text, or numbers keeping
+                // their number conditions)
                 conditions: $.fn.dataTable.Criteria ? {
                     ...fastSelectConditions($.fn.dataTable.Criteria, $),
-                    [TEXT_ONLY_TYPE]: textOnlyConditions($.fn.dataTable.Criteria)
+                    [TEXT_ONLY_TYPE]: textOnlyConditions($.fn.dataTable.Criteria),
+                    [TEXT_ONLY_NUM_TYPE]: textOnlyNumConditions($.fn.dataTable.Criteria)
                 } : {},
                 depthLimit: 2, // Limit depth to prevent overly complex queries
                 layout: 'columns-2', // Modern layout with columns
