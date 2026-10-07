@@ -12,7 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const { hoverColumnOptions, hoverInfoFromSelection } =
+const { hoverColumnOptions, hoverInfoFromSelection, hoverOffFromSelection, NO_HOVER } =
     await import('../../../static/js/panels/plot-utilities/hover-columns.js');
 
 const structure = {
@@ -22,10 +22,11 @@ const structure = {
 
 test('the picker lists annotation columns and marks the configured ones', () => {
     const opts = hoverColumnOptions('cells', structure, [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' }]);
-    assert.deepEqual(opts.map(o => o.value), ['Age', 'highres_celltype', 'n_counts']);
+    assert.deepEqual(opts.map(o => o.value), [NO_HOVER, 'Age', 'highres_celltype', 'n_counts']);
+    assert.equal(opts[0].label, 'No hover');
     assert.deepEqual(opts.filter(o => o.selected).map(o => o.value), ['Age']);
-    assert.deepEqual(hoverColumnOptions('genes', structure, undefined).map(o => o.value), ['highly_variable', 'means']);
-    assert.deepEqual(hoverColumnOptions('cells', {}, []), []);
+    assert.deepEqual(hoverColumnOptions('genes', structure, undefined).map(o => o.value), [NO_HOVER, 'highly_variable', 'means']);
+    assert.deepEqual(hoverColumnOptions('cells', {}, []).map(o => o.value), [NO_HOVER]);
 });
 
 test('a selection becomes hoverInfo, keeping what the picker cannot show', () => {
@@ -42,6 +43,20 @@ test('a selection becomes hoverInfo, keeping what the picker cannot show', () =>
     // round trip: what is selected is what the options mark
     const opts = hoverColumnOptions('cells', structure, next);
     assert.deepEqual(opts.filter(o => o.selected).map(o => o.value), ['highres_celltype', 'n_counts']);
+});
+
+test('"No hover": shown selected when the hover is off, and picked or left by the selection', () => {
+    for (const off of [true, 'auto']) {
+        const opts = hoverColumnOptions('cells', structure, [{ type: 'obs', key: 'Age' }], off);
+        assert.deepEqual(opts.filter(o => o.selected).map(o => o.value), [NO_HOVER], String(off));
+    }
+    assert.equal(hoverOffFromSelection([NO_HOVER], undefined), true);              // picked
+    assert.equal(hoverOffFromSelection([NO_HOVER, 'Age'], 'auto'), false);         // a column picked while off
+    assert.equal(hoverOffFromSelection([NO_HOVER, 'Age'], false), true);           // "No hover" picked beside a column
+    assert.equal(hoverOffFromSelection(['Age'], true), false);
+    assert.equal(hoverOffFromSelection([], 'auto'), false);                        // everything cleared: names only
+    // "No hover" is no column
+    assert.deepEqual(hoverInfoFromSelection('cells', [NO_HOVER], undefined), [{ type: 'obs', key: '_index' }]);
 });
 
 test('the panel builds the picker and the listener writes hoverInfo', () => {

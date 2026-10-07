@@ -12,7 +12,6 @@ import {
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
 import { mountNamePicker, fetchNameMatches, mergeScopedMatches } from './utils/name-picker.js';
-import { allowColour } from './utils/categories.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
@@ -547,7 +546,7 @@ const App = (function() {
             case 'stop-table': return !!document.getElementById(`remove-non-table-entries-${id}`);
             case 'show-nan': return !!document.getElementById(`hide-nan-${id}`);
             case 'show-outliers': return !!document.getElementById(`hide-outliers-${id}`);
-            case 'draw-anyway': case 'redraw': case 'colour-anyway': {
+            case 'draw-anyway': case 'redraw': {
                 const panel = PanelManager.getPanel(id);
                 return !!(panel && typeof panel.refreshPlot === 'function');
             }
@@ -594,14 +593,9 @@ const App = (function() {
             case 'stop-table': click(`remove-non-table-entries-${id}`); break;
             case 'show-nan': click(`hide-nan-${id}`); break;
             case 'show-outliers': click(`hide-outliers-${id}`); break;
-            case 'draw-anyway': case 'redraw': case 'colour-anyway': {
+            case 'draw-anyway': case 'redraw': {
                 // draw-anyway: past the memory guard (or the crash marker), once
                 if (action === 'draw-anyway') overrideOnce(id);
-                // colour-anyway: a grouped colour that asked first (utils/categories.js)
-                if (action === 'colour-anyway') {
-                    const cfg = PanelManager.getPanel(id)?.getConfig?.();
-                    if (cfg && cfg.color) allowColour(id, `${cfg.color.type}.${cfg.color.key}`);
-                }
                 const panel = PanelManager.getPanel(id);
                 if (panel && typeof panel.refreshPlot === 'function') panel.refreshPlot().catch(() => {});
                 break;

@@ -285,17 +285,39 @@ test('up to 64 categories the legend lists each one, as before', () => {
     assert.ok(!legend.some(t => /more$/.test(t.name)));
 });
 
-test('a grouped colour needing more than 500,000 hover labels asks first', () => {
-    assert.equal(cats.colourCostError('obs.barcode', 1000000, 100000), null);       // 100,000 labels
-    assert.equal(cats.colourCostError('obs.cat_64', 64, 1000000), null);             // not grouped
-    assert.equal(cats.colourCostError('obs.cat_65k', 65000, 1000000), null);         // 65,000 labels
-    const err = cats.colourCostError('obs.barcode', 1000000, 1000000);
-    assert.equal(err.data.reason, 'colour_cost');
-    assert.match(err.data.detail, /^1,000,000 distinct values on 1,000,000 points: colouring loads about 29 MB of labels/);
-    const cov = classifyError(err, { unit: 'cells', source: 'obs.barcode', total: 1000000 });
-    assert.match(cov.lines()[0], /^obs\.barcode: not coloured yet -- 1,000,000 distinct values/);
-    assert.equal(cats.colourAllowed('p1', 'obs.barcode'), false);
-    cats.allowColour('p1', 'obs.barcode');
-    assert.equal(cats.colourAllowed('p1', 'obs.barcode'), true);
-    assert.equal(cats.colourAllowed('p2', 'obs.barcode'), false);
+test('past 500,000 colour labels a plot starts with its hover off; a choice made stays', () => {
+    assert.equal(cats.hoverOffFor(undefined, 1000000, 100000), undefined);    // 100,000 labels
+    assert.equal(cats.hoverOffFor(undefined, 64, 1000000), undefined);        // not grouped
+    assert.equal(cats.hoverOffFor(undefined, 65000, 1000000), undefined);     // 65,000 labels
+    assert.equal(cats.hoverOffFor(undefined, 1000000, 1000000), 'auto');
+    assert.equal(cats.hoverOffFor('auto', 50, 1000000), undefined);           // a smaller colour column: on again
+    assert.equal(cats.hoverOffFor(false, 1000000, 1000000), false);           // hover columns picked: stays on
+    assert.equal(cats.hoverOffFor(true, 50, 100), true);                      // "No hover" picked: stays off
+    assert.equal(cats.hoverIsOff('auto'), true);
+    assert.equal(cats.hoverIsOff(false), false);
+    assert.equal(cats.hoverIsOff(undefined), false);
 });
+
+test('ranked codes without labels: a trace per colour, legend names given, no hover', () => {
+    const { settings, data } = panel(500);
+    const ranks = data.color.map(c => (c === null ? null : Number(c.slice(1))));
+    const names = Array.from({ length: cats.GROUP_COLOURS }, (_, g) => `name ${g}`);
+    const ranked = { ...data, color: ranks, colorCategories: null, colorRanked: true, colorGroupNames: names };
+    const traces = processCategories(settings, ranked, null);
+    const groups = traces.filter(t => !isLegendProxy(t) && t.name && t.name.startsWith('name '));
+    assert.equal(groups.length, cats.GROUP_COLOURS);
+    const palette = groupColours(cats.GROUP_COLOURS);
+    for (const t of groups) {
+        const g = Number(t.name.slice(5));
+        assert.equal(t.marker.color, palette[g]);
+        assert.equal(t.hoverinfo, 'none');
+        assert.equal(t._azLabels, undefined);
+        t.customdata.forEach(cell => assert.equal(ranks[Number(cell.slice(1))] % cats.GROUP_COLOURS, g));
+    }
+    // a column with fewer categories present than colours is still grouped by rank
+    const few = processCategories(settings, { ...ranked, color: ranks.map(r => (r === null ? null : r % 10)) }, null);
+    assert.ok(few.filter(t => !isLegendProxy(t) && t.name && t.name.startsWith('name ')).length === 10);
+    assert.equal(cats.groupLegendLabel(['a', 'b', 'c'], 21), 'a, b, c +18 more');
+    assert.equal(cats.groupLegendLabel(['a'], 1), 'a');
+});
+

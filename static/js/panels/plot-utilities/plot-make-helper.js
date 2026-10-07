@@ -355,7 +355,9 @@ export function keptViewRanges(settings) {
     // colour groups: ranked by their points, rank r in colour r mod 64, one
     // trace and one legend entry per colour. A trace and a legend entry per
     // category hung the panel at a few thousand categories.
-    const many = grouped(categories.length);
+    // ranked codes without labels (hover off, plot-make.js loadAxisData) are
+    // always colour groups: the values are the ranks
+    const many = !!data.colorRanked || grouped(categories.length);
 
     // Generate a color palette
     let selectedPalette;
@@ -458,9 +460,11 @@ export function keptViewRanges(settings) {
       // the server's cached ranking) decides its colour, rank mod
       // GROUP_COLOURS: the same in every panel, subset, part and filter.
       // Without it (an older server) the points here are ranked instead.
+      const ranked = !!data.colorRanked;
       const global = data.colorRankOf instanceof Map ? data.colorRankOf : null;
-      const local = global ? null : frequencyRanks(Uint32Array.from(bySlot, s => s.length));
+      const local = ranked || global ? null : frequencyRanks(Uint32Array.from(bySlot, s => s.length));
       const rankOfSlot = (i) => {
+        if (ranked) return categories[i];
         if (!global) return local.rankOf[i];
         const r = global.get(categories[i]);
         return r === undefined ? -1 : r;
@@ -481,11 +485,17 @@ export function keptViewRanges(settings) {
       byColour.forEach((indices, g) => {
         if (indices.length === 0) return;
         const members = present[g].sort((p, q) => p[0] - q[0]);
-        const name = groupLegendName(members.map(([, i]) => categories[i]));
+        // ranked: no labels were read; the legend's names came with the ranks
+        const name = ranked ? (data.colorGroupNames && data.colorGroupNames[g]) || ''
+          : groupLegendName(members.map(([, i]) => categories[i]));
         const trace = makeTrace(indices, name, selectedPalette[g], null);
-        trace._azLabels = indices.map(idx => String(categories[slotOf[idx]]));
-        trace.hovertext = trace._azLabels.map(label => `<br>${label}`);
-        trace.hovertemplate = trace.hovertemplate.replace('<extra></extra>', '%{hovertext}<extra></extra>');
+        if (ranked) {
+          trace.hoverinfo = 'none';
+        } else {
+          trace._azLabels = indices.map(idx => String(categories[slotOf[idx]]));
+          trace.hovertext = trace._azLabels.map(label => `<br>${label}`);
+          trace.hovertemplate = trace.hovertemplate.replace('<extra></extra>', '%{hovertext}<extra></extra>');
+        }
         trace.legendrank = g + 1;
         traces.push(trace);
       });

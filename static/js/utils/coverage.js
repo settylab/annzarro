@@ -140,8 +140,6 @@ const KIND_LABEL = Object.freeze({
     // a categorical column whose labels for these rows would exceed the
     // server's label cap (annzarro/core/categories.py): use a subset
     categories: 'too many distinct values to label',
-    // a grouped colour that waits for "Colour anyway" (utils/categories.js)
-    'colour-cost': 'not coloured yet',
     // the gene set panel's external services: ids a service does not know,
     // a request that failed, a request not made (species, limit, turned off)
     unmapped: 'not found by the service',
@@ -869,10 +867,6 @@ export function classifyError(error, { unit = 'values', source = '', total = nul
     // `too_many_categories`: labels for these rows would exceed the server's
     // label cap (core/categories.py). The points are all there; the message
     // says to use a subset.
-    if (serverReason === 'colour_cost') {
-        return new Coverage({ shown: total, total, unit, role,
-            gaps: [{ reason: GAP.UNAVAILABLE, detail: body.detail || message, source, count: 0, kind: 'colour-cost' }] });
-    }
     if (serverReason === 'too_many_categories') {
         return new Coverage({ shown: total, total, unit, role,
             gaps: [{ reason: GAP.UNAVAILABLE, detail: body.detail || message, source, count: 0, kind: 'categories' }] });
