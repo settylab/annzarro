@@ -10,5 +10,7 @@ tour
 cell-similarity
 gene-similarity
 cells-and-genes
+gene-groups
+gene-set-analysis
 millions
 ```

@@ -1,0 +1,201 @@
+{
+ "name": "Gene groups: start",
+ "timestamp": "2026-10-06T22:34:35+00:00",
+ "dataset": "bm_aging.zarr",
+ "datasetName": "bm_aging",
+ "constants": {
+  "focusedGene": "H2-Q7",
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+  "taxonomyId": "10090"
+ },
+ "panelConfigs": {
+  "gene-table-g": {
+   "id": "gene-table-g",
+   "type": "gene-table",
+   "title": "Genes like H2-Q7 that rise in this HSC",
+   "config": {
+    "id": "gene-table-g",
+    "title": "Genes like H2-Q7 that rise in this HSC",
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mean_lfc",
+      "column": ""
+     }
+    ]
+   },
+   "isSelectionTile": false
+  },
+  "gene-plot-g": {
+   "id": "gene-plot-g",
+   "type": "gene-plot",
+   "title": "Volcano: genes in the table coloured by rho with H2-Q7, the rest grey",
+   "config": {
+    "id": "gene-plot-g",
+    "title": "Volcano: genes in the table coloured by rho with H2-Q7, the rest grey",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": ""
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "varp",
+     "key": "spearman_fold_change",
+     "column": "H2-Q7",
+     "locked": true
+    },
+    "colorScale": "RdBu",
+    "colorMin": -1,
+    "colorMax": 1,
+    "lockColorRange": true,
+    "pointSize": 6,
+    "pointOpacity": 0.9,
+    "highlightFocusedGene": true,
+    "tableFilter": "gene-table-g",
+    "removeNonTableEntries": false
+   },
+   "isSelectionTile": false
+  },
+  "gene-set-g": {
+   "id": "gene-set-g",
+   "type": "gene-set",
+   "title": "Gene Set Analysis",
+   "config": {
+    "id": "gene-set-g",
+    "title": "Gene Set Analysis",
+    "tableFilter": "gene-table-g"
+   },
+   "isSelectionTile": false
+  }
+ },
+ "view": {
+  "v": 1,
+  "constants": {
+   "focusedGene": "H2-Q7",
+   "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+   "taxonomyId": "10090"
+  },
+  "layout": {
+   "v": 1,
+   "hierarchy": [
+    {
+     "type": "split",
+     "direction": "vertical",
+     "panes": [
+      {
+       "percentage": 40,
+       "controlsVisible": false
+      },
+      {
+       "percentage": 60,
+       "controlsVisible": false
+      }
+     ],
+     "children": [
+      {
+       "type": "tile",
+       "id": "gene-table-g",
+       "controlsVisible": false
+      },
+      {
+       "type": "split",
+       "direction": "horizontal",
+       "panes": [
+        {
+         "percentage": 50,
+         "controlsVisible": false
+        },
+        {
+         "percentage": 50,
+         "controlsVisible": false
+        }
+       ],
+       "children": [
+        {
+         "type": "tile",
+         "id": "gene-plot-g",
+         "controlsVisible": false
+        },
+        {
+         "type": "tile",
+         "id": "gene-set-g",
+         "controlsVisible": false
+        }
+       ]
+      }
+     ],
+     "height": 2400
+    }
+   ],
+   "controlState": {
+    "gene-table-g": false,
+    "gene-plot-g": false,
+    "gene-set-g": true
+   },
+   "panelConfigs": {
+    "gene-table-g": {
+     "id": "gene-table-g",
+     "title": "Genes like H2-Q7 that rise in this HSC",
+     "columns": [
+      {
+       "type": "var",
+       "key": "kompot_de_Young_to_Old_mahalanobis",
+       "column": ""
+      },
+      {
+       "type": "var",
+       "key": "kompot_de_Young_to_Old_mean_lfc",
+       "column": ""
+      }
+     ]
+    },
+    "gene-plot-g": {
+     "id": "gene-plot-g",
+     "title": "Volcano: genes in the table coloured by rho with H2-Q7, the rest grey",
+     "x": {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mean_lfc",
+      "column": ""
+     },
+     "y": {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     "z": null,
+     "color": {
+      "type": "varp",
+      "key": "spearman_fold_change",
+      "column": "H2-Q7",
+      "locked": true
+     },
+     "colorScale": "RdBu",
+     "colorMin": -1,
+     "colorMax": 1,
+     "lockColorRange": true,
+     "pointSize": 6,
+     "pointOpacity": 0.9,
+     "highlightFocusedGene": true,
+     "tableFilter": "gene-table-g",
+     "removeNonTableEntries": false
+    },
+    "gene-set-g": {
+     "id": "gene-set-g",
+     "title": "Gene Set Analysis",
+     "tableFilter": "gene-table-g"
+    }
+   }
+  }
+ }
+}

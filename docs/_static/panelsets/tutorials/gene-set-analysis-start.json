@@ -1,0 +1,156 @@
+{
+ "name": "Gene set analysis: start",
+ "timestamp": "2026-10-06T22:38:16+00:00",
+ "dataset": "bm_aging.zarr",
+ "datasetName": "bm_aging",
+ "constants": {
+  "focusedGene": "H2-Q7",
+  "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1"
+ },
+ "panelConfigs": {
+  "gene-table-s": {
+   "id": "gene-table-s",
+   "type": "gene-table",
+   "title": "Up in old, DE, rising in the HSC",
+   "config": {
+    "id": "gene-table-s",
+    "title": "Up in old, DE, rising in the HSC",
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mean_lfc",
+      "column": ""
+     }
+    ]
+   },
+   "isSelectionTile": false
+  },
+  "gene-plot-s": {
+   "id": "gene-plot-s",
+   "type": "gene-plot",
+   "title": "Volcano: the table's genes in colour",
+   "config": {
+    "id": "gene-plot-s",
+    "title": "Volcano: the table's genes in colour",
+    "x": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mean_lfc",
+     "column": ""
+    },
+    "y": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_mahalanobis",
+     "column": ""
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": true
+    },
+    "colorScale": "RdBu",
+    "centeringActive": true,
+    "pointSize": 6,
+    "pointOpacity": 0.9,
+    "highlightFocusedGene": true,
+    "tableFilter": "gene-table-s",
+    "removeNonTableEntries": false
+   },
+   "isSelectionTile": false
+  }
+ },
+ "view": {
+  "v": 1,
+  "constants": {
+   "focusedGene": "H2-Q7",
+   "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1"
+  },
+  "layout": {
+   "v": 1,
+   "hierarchy": [
+    {
+     "type": "split",
+     "direction": "horizontal",
+     "panes": [
+      {
+       "percentage": 55,
+       "controlsVisible": false
+      },
+      {
+       "percentage": 45,
+       "controlsVisible": false
+      }
+     ],
+     "children": [
+      {
+       "type": "tile",
+       "id": "gene-table-s",
+       "controlsVisible": false
+      },
+      {
+       "type": "tile",
+       "id": "gene-plot-s",
+       "controlsVisible": false
+      }
+     ]
+    }
+   ],
+   "controlState": {
+    "gene-table-s": false,
+    "gene-plot-s": false
+   },
+   "panelConfigs": {
+    "gene-table-s": {
+     "id": "gene-table-s",
+     "title": "Up in old, DE, rising in the HSC",
+     "columns": [
+      {
+       "type": "var",
+       "key": "kompot_de_Young_to_Old_mahalanobis",
+       "column": ""
+      },
+      {
+       "type": "var",
+       "key": "kompot_de_Young_to_Old_mean_lfc",
+       "column": ""
+      }
+     ]
+    },
+    "gene-plot-s": {
+     "id": "gene-plot-s",
+     "title": "Volcano: the table's genes in colour",
+     "x": {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mean_lfc",
+      "column": ""
+     },
+     "y": {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     "z": null,
+     "color": {
+      "type": "layer",
+      "key": "kompot_de_Young_to_Old_fold_change",
+      "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+      "locked": true
+     },
+     "colorScale": "RdBu",
+     "centeringActive": true,
+     "pointSize": 6,
+     "pointOpacity": 0.9,
+     "highlightFocusedGene": true,
+     "tableFilter": "gene-table-s",
+     "removeNonTableEntries": false
+    }
+   }
+  }
+ }
+}

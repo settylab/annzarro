@@ -316,7 +316,8 @@ Python from the same stored columns and match the paper's `figures/numbers/fig3.
 ```{note}
 The `rho_fc_*` and `rho_smoothed_*` columns of the showcase store hold H2-Q7's (and S100a9's,
 H2-Aa's) rows of `varp/…` as fixed columns. A gene table can also show a `varp` row directly: on
-its `varp` tab, `spearman_fold_change: H2-Q7 (focused)` follows the focused gene. The boolean
+its `varp` tab, `spearman_fold_change: H2-Q7 (focused)` adds H2-Q7's row, which stays H2-Q7's
+when you focus another gene ({doc}`gene-groups`). The boolean
 `kompot_de_Young_to_Old_is_de` works as a filter too: **Equals** `Yes` keeps the 190 DE genes.
 ```
 
