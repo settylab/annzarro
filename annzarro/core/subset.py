@@ -1009,7 +1009,9 @@ class SubsetView:
         if entity != "cells":
             rows = indices
         elif indices is None:
-            rows = self.subset.indices.tolist()
+            # the array itself: a 100,000-item list and back cost 2.6 ms of
+            # a 15 ms UMAP column at 1M cells
+            rows = self.subset.indices
         else:
             rows = self._rows(indices)
         return self._reader.get_obsm_varm(entity=entity, key=key, dataset_path=dataset_path,
