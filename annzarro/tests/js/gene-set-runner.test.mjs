@@ -178,18 +178,19 @@ test('429 waits for Retry-After, then retries once; 400 is not retried and says 
     mock.timers.tick(1500);
     const e503 = await p503;
     assert.equal(k, 2);
-    assert.equal(e503.error.kind, 'http');
+    assert.equal(e503.error.kind, 'down');
     assert.equal(e503.error.attempts, 2);
-    // TypeError (offline, DNS, CORS): network, retried once
+    // TypeError, and the host's root does not answer either: unreachable, retried once
     let j = 0;
-    const rnet = runnerWith(() => { j++; return Promise.reject(new TypeError('Failed to fetch')); }, tm).runner;
+    const rnet = runnerWith((url, init) => { if (init.mode !== 'no-cors') j++; return Promise.reject(new TypeError('Failed to fetch')); }, tm).runner;
     const pnet = rnet.start('one', simple(), input, 'k');
     await flush();
     mock.timers.tick(1500);
+    await flush();
     const enet = await pnet;
     assert.equal(j, 2);
-    assert.equal(enet.error.kind, 'network');
-    assert.match(enet.error.message, /could not reach example\.org/);
+    assert.equal(enet.error.kind, 'unreachable');
+    assert.match(enet.error.message, /could not connect to example\.org/);
     assert.equal(tm.live.size, 0);
 });
 
@@ -291,7 +292,7 @@ test('bodyExcerpt, retryAfterMs and isRetryable', () => {
     assert.equal(P.retryAfterMs('120', 0), 30000, 'capped at 30 s');
     assert.equal(P.retryAfterMs(new Date(10000).toUTCString(), 4000), 6000);
     assert.equal(P.retryAfterMs('soon', 0), null);
-    assert.ok(P.isRetryable({ kind: 'http', status: 502 }));
-    assert.ok(!P.isRetryable({ kind: 'http', status: 404 }));
+    for (const kind of ['timeout', 'unreachable', 'rate-limit', 'down', 'server']) assert.ok(P.isRetryable({ kind }), kind);
+    for (const kind of ['offline', 'blocked', 'endpoint', 'http']) assert.ok(!P.isRetryable({ kind }), kind);
     assert.ok(!P.isRetryable({ kind: 'parse' }));
 });
