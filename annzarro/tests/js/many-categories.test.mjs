@@ -285,6 +285,8 @@ test('colour groups: the ten largest get ten clearly different colours, and no t
     };
     const p = groupColours(cats.GROUP_COLOURS);
     assert.equal(new Set(p).size, cats.GROUP_COLOURS);
+    // hex only: utils/gl-colors.js draws per-point colours itself for hex and rgb() scales
+    assert.ok(p.every(c => /^#[0-9a-f]{6}$/.test(c)), p.find(c => !/^#[0-9a-f]{6}$/.test(c)));
     for (let i = 1; i < p.length; i++) assert.ok(far(p[i - 1], p[i]), `${i}: ${p[i - 1]} ${p[i]}`);
     for (let i = 0; i < 10; i++) for (let j = i + 1; j < 10; j++) assert.ok(far(p[i], p[j]), `${p[i]} ${p[j]}`);
     // a continuous palette is stepped through, not walked

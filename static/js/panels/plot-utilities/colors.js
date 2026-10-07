@@ -132,7 +132,7 @@ export function groupColours(n, colormap) {
         const lightness = [45, 65, 55];
         for (let i = out.length; i < n; i++) {
             const k = i - GROUP_FIRST.length;
-            out.push(`hsl(${((k * 137.508) % 360).toFixed(1)}, 70%, ${lightness[k % 3]}%)`);
+            out.push(hslHex((k * 137.508) % 360, 70, lightness[k % 3]));
         }
         return out;
     }
@@ -141,6 +141,21 @@ export function groupColours(n, colormap) {
     let stride = Math.round(n * 0.382);
     while (gcd(stride, n) !== 1) stride++;
     return colors.map((_, r) => colors[(r * stride) % n]);
+}
+
+/**
+ * hsl() as #rrggbb: the per-point colour path (utils/gl-colors.js) reads hex
+ * and rgb() scale colours only, and hands any other scale back to Plotly's
+ * slow per-point colour strings.
+ */
+function hslHex(h, s, l) {
+    const S = s / 100, L = l / 100, a = S * Math.min(L, 1 - L);
+    const f = (n) => {
+        const k = (n + h / 30) % 12;
+        const v = L - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+        return Math.round(v * 255).toString(16).padStart(2, '0');
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
 }
 
 function gcd(a, b) {
