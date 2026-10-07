@@ -67,6 +67,12 @@ html, body {
     flex: none;
 }
 
+.notification-check-note {
+    margin: 4px 0 0 22px;
+    font-size: 0.85em;
+    opacity: 0.85;
+}
+
 .notification-error {
     background-color: #f8d7da;
     color: #721c24;

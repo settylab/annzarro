@@ -222,6 +222,11 @@ browser and reload as a first visit**. Ticked, Close all also clears this site's
 registrations, then reloads the bare address, without `#view` or `?dataset_path`. The app starts
 as on a first visit: nothing is restored from the autosave, and the closed list is gone too.
 
+The tick box is a safe way to get a full refresh. Under it the dialog says so: it is a fresh start
+for this browser only, it forgets the remembered layout and settings, and nothing is deleted. Saved
+panel sets (yours and other users'), datasets and files on the server are not touched. The only
+panel-set-like thing it resets is the autosaved current layout, which lives in this browser.
+
 Not affected, whichever way you answer: panel sets saved on the server, and your login. The login
 is a server cookie; cookies are left alone, and AnnZarro keeps no sign-in or CSRF state in the
 browser's storage. Other sites' data is never touched; the clear covers this address only.

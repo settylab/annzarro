@@ -1351,6 +1351,13 @@ const App = (function() {
                 label.appendChild(box);
                 label.appendChild(document.createTextNode(' ' + checkbox.label));
                 el.insertBefore(label, bar);
+                if (checkbox.note) {
+                    // calm reassurance under the tick box
+                    const note = document.createElement('div');
+                    note.className = 'notification-check-note';
+                    note.textContent = checkbox.note;
+                    el.insertBefore(note, bar);
+                }
             }
             const primary = bar.querySelector('.btn-primary');
             if (primary) primary.focus();
@@ -1373,8 +1380,11 @@ const App = (function() {
                 'Every open panel closes and is listed under Duplicate or Reopen Panel.\n\n' +
                 'Not affected: panel sets saved on the server, and your login.',
                 [{ key: 'close', label: 'Close all', primary: true }, { key: 'cancel', label: 'Cancel' }],
-                { handle, checkbox: { id: 'close-all-clear-storage',
-                    label: 'Also clear everything this site stored in this browser and reload as a first visit' } });
+                { type: 'info', handle, checkbox: { id: 'close-all-clear-storage',
+                    label: 'Also clear everything this site stored in this browser and reload as a first visit',
+                    note: 'A fresh start for this browser only: it forgets the remembered layout and settings, ' +
+                        'then reloads. Nothing is deleted. Saved panel sets (yours and other users\'), ' +
+                        'datasets and files on the server are not touched. Safe to use for a full refresh.' } });
             if (choice !== 'close') return;
 
             if (handle.checked) {

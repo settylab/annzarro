@@ -241,6 +241,47 @@ def test_clear_checkbox_empties_storage_and_starts_as_a_first_visit(server):
             browser.close()
 
 
+def test_clear_option_reassures_and_keeps_server_panel_sets(server):
+    """The tick box says plainly what it leaves alone, and that is true."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_context(viewport={"width": 1400, "height": 900}).new_page()
+            _open(page, server)
+            for name in ("keep-mine", "keep-theirs"):
+                req = urllib.request.Request(
+                    f"{server}/api/v1/sessions/save", method="POST",
+                    data=json.dumps({"name": name, "dataset": STORE}).encode(),
+                    headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=10).read()
+            listing = lambda: sorted(s["name"] for s in json.loads(
+                urllib.request.urlopen(f"{server}/api/v1/sessions/list", timeout=10).read()))
+            assert {"keep-mine", "keep-theirs"} <= set(listing())
+
+            ask = _ask(page)
+            note = ask.locator(".notification-check-note")
+            text = note.inner_text()
+            assert "fresh start for this browser only" in text
+            assert "Nothing is deleted" in text
+            assert "panel sets (yours and other users" in text
+            assert "datasets and files on the server are not touched" in text
+            # neutral styling: not the red/danger look
+            assert "notification-error" not in (ask.get_attribute("class") or "")
+            ask.locator("input[type=checkbox]").check()
+            page.wait_for_timeout(700)
+            _shot(page, "7-dialog-reassurance")
+            with page.expect_navigation(timeout=30000):
+                ask.get_by_role("button", name="Close all", exact=True).click()
+            _landed_first_visit(page)
+
+            assert {"keep-mine", "keep-theirs"} <= set(listing())
+            # and the app itself still lists them
+            names = page.evaluate("async () => (await (await fetch('api/v1/sessions/list')).json()).map(s => s.name)")
+            assert {"keep-mine", "keep-theirs"} <= set(names)
+        finally:
+            browser.close()
+
+
 def test_clear_keeps_the_login(login_server):
     root = login_server
     with playwright.sync_playwright() as p:
