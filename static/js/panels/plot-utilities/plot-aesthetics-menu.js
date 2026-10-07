@@ -1554,6 +1554,8 @@ function updateLegendVisibility(plotDiv, settings) {
     // 3) Per-trace toggles
     plotDiv.data.forEach((trace, i) => {
         if (typeof trace.name === 'string' && (trace.name.includes('Focused'))) return;
+        // colour groups: the colorscale only maps group numbers, never a colour bar
+        if (trace.meta === 'az-groups') return;
         const update = {};
         const hasMarkerCB = trace.marker && trace.marker.colorscale;
         const hasTraceCB  = ['heatmap','contour','surface'].includes(trace.type);

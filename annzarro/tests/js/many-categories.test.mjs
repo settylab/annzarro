@@ -187,7 +187,8 @@ const columnRanks = (categories) => new Map(categories.map((c, k) => [c, k]));
 function colourOfEach(traces) {
     const out = new Map();
     for (const t of traces.filter(t => t.meta === GROUP_POINTS)) {
-        t._azLabels.forEach((l, j) => out.set(l, t.marker.color[j]));
+        // a point's colour: its group number through the trace's stepped colorscale
+        t._azLabels.forEach((l, j) => out.set(l, t.marker.colorscale[2 * t.marker.color[j]][1]));
     }
     return out;
 }
@@ -215,9 +216,13 @@ test('hundreds of categories: 64 colour groups by rank, one legend entry each, e
         const label = data.color[Number(cell.slice(1))];
         assert.equal(all._azLabels[j], label);
         assert.equal(all.hovertext[j], `<br>${label}`);
-        assert.equal(all.marker.color[j], palette[Number(label.slice(1)) % cats.GROUP_COLOURS]);
+        const g = Number(label.slice(1)) % cats.GROUP_COLOURS;
+        assert.equal(all.marker.color[j], g);
+        assert.equal(all.marker.colorscale[2 * g][1], palette[g]);
     });
     assert.equal(all.marker.size, settings.pointSize);
+    assert.ok(all.marker.color instanceof Uint8Array, 'numbers through a colorscale, not a colour string per point');
+    assert.deepEqual([all.marker.cmin, all.marker.cmax, all.marker.showscale], [-0.5, cats.GROUP_COLOURS - 0.5, false]);
     for (const t of groupRows) assert.equal(t.marker.color, palette[t._azGroup]);
     assert.match(hoverTemplateFor(all, settings, data), /%\{hovertext\}<extra><\/extra>$/);
 });
