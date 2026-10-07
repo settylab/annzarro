@@ -419,7 +419,12 @@ body {
 
 .tile-controls {
     display: flex;
-    flex: none;
+    /* in a tile narrower than its buttons they wrap, right-aligned, rather
+       than push the close button past the edge */
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
     gap: 0.25rem;
 }
 
@@ -528,6 +533,9 @@ body {
 /* Plot controls: the layout is under "Plot controls grid" below. JS sets
    display flex/none on .plot-controls (controls-visibility.js). */
 .plot-controls {
+    /* never squeezed below its content (which then ran under the plot); a
+       panel too short for both scrolls instead */
+    flex-shrink: 0;
     padding: 0.5rem;
     border-bottom: 1px solid #dee2e6;
     background-color: #f8f9fa;
@@ -2743,9 +2751,24 @@ button.dtsb-button.dtsb-clear:hover {
     min-width: 0;
 }
 
-/* Toggles wrap; they never push the panel wider. */
+/* A joined .btn-group rounds only its outer ends. Bootstrap finds the ends
+   by :first-child/:last-child, which a hidden button still is, leaving the
+   end that shows square; round the first and last button that show. */
+.btn-group > .btn:not(.btn:not([hidden], .d-none, [style*="display: none"], [style*="display:none"]) ~ .btn) {
+    border-top-left-radius: var(--bs-btn-border-radius);
+    border-bottom-left-radius: var(--bs-btn-border-radius);
+}
+.btn-group > .btn:not(:has(~ .btn:not([hidden], .d-none, [style*="display: none"], [style*="display:none"]))) {
+    border-top-right-radius: var(--bs-btn-border-radius);
+    border-bottom-right-radius: var(--bs-btn-border-radius);
+}
+
+/* Toggles wrap; they never push the panel wider. They are separate buttons
+   with a gap between them, each fully rounded: a .btn-group here (as it
+   was) squared their right corners, since Bootstrap rounds a group's ends
+   by :first-child/:last-child and the Log span came last. */
 .ctl-toggles,
-.ctl-toggles > .btn-group,
+.ctl-toggle-set,
 .ctl-actions,
 .ctl-actions-toggles {
     display: flex;
@@ -2754,14 +2777,7 @@ button.dtsb-button.dtsb-clear:hover {
     align-items: center;
     min-width: 0;
 }
-/* Bootstrap's .btn-group joins and stretches its buttons; here they are
-   separate toggles of their own width. */
-.ctl-toggles > .btn-group > .btn,
-.ctl-log > .btn {
-    flex: 0 0 auto;
-    border-radius: 0.25rem;
-    margin-left: 0;
-}
+.ctl-toggle-set > .btn { flex: 0 0 auto; }
 .ctl-log {
     display: inline-flex;
     gap: var(--ctl-u);
@@ -2792,6 +2808,22 @@ button.dtsb-button.dtsb-clear:hover {
     font-size: 0.8125rem;
     line-height: calc(var(--ctl-h) - 2px);
     white-space: nowrap;
+}
+
+/* A very narrow panel (a 10% split): every label on its own line above its
+   field, an axis's type above its key and column, number boxes narrower and
+   button text free to wrap, so nothing reaches past the panel's edge. */
+@container plot-controls (max-width: 279px) {
+    .plot-controls { --ctl-num: 3.5rem; }
+    .ctl-row { grid-template-columns: minmax(0, 1fr); }
+    .ctl-row.ctl-slider { grid-template-columns: minmax(0, 1fr) var(--ctl-num); }
+    .ctl-row > .ctl-label { grid-column: 1 / -1; }
+    .ctl-row.ctl-slider > .point-auto { grid-column: 1 / -1; grid-row: 3; }
+    .plot-controls .btn-sm { white-space: normal; height: auto; }
+    .axis-selector { flex-wrap: wrap; }
+    .axis-selector .axis-type-select { flex: 1 1 100%; }
+    .ctl-log { flex-wrap: wrap; max-width: 100%; }
+    .ctl-log .log-floor-input { width: 5rem; }
 }
 
 /* The 3rd axis row only appears with 3D on; axis lock/refocus buttons only
