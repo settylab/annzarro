@@ -51,13 +51,32 @@ texts ship in the app:
   licence and acknowledgements, the licence files of every bundled Python package and the
   licences of the native libraries;
 - `LICENSE.electron.txt` and `LICENSES.chromium.html` in the app's resources (macOS) or install
-  folder (Windows, Linux);
+  folder (Windows, Linux); on macOS also `LICENSES.macos-frameworks.txt` (Electron's updater
+  frameworks Squirrel.Mac, Mantle and ReactiveObjC, MIT);
 - `LICENSE`: AnnZarro's own licence.
 
-The only GPL-licensed code in the apps comes with an exception for distribution in other
-programs: the GCC runtime libraries (GCC Runtime Library Exception) and PyInstaller's launcher
-(the PyInstaller bootloader exception). libquadmath, on Linux, is LGPL-2.1. The build refuses a
-server that would include GNU Readline or ncurses.
+Every release is checked before it is published: a CI step unpacks each release file (.deb,
+AppImage, Windows zip and installer, macOS zip and dmg) and accounts for every executable and
+shared library in it, with its licence (`annzarro/desktop/scripts/licence_check.py`). It fails
+on any GPL or AGPL component, on an unknown licence, and on LGPL code that is not a separate,
+replaceable shared library. What remains under a copyleft licence:
+
+- GPL with an exception for use in other programs: the GCC runtime libraries on Linux
+  (libstdc++, libgcc_s, libgfortran; GCC Runtime Library Exception) and PyInstaller's launcher
+  (bootloader exception);
+- LGPL-2.1 as separate shared libraries, with their notices: FFmpeg (`libffmpeg.so`,
+  `ffmpeg.dll`, `libffmpeg.dylib`, Chromium's build without GPL parts) and, on Linux,
+  libquadmath from NumPy's wheel;
+- Chromium itself contains LGPL code from WebKit/Blink, linked into the Electron executable,
+  as in every Electron application; its sources are published by the Chromium and Electron
+  projects and listed in `LICENSES.chromium.html`.
+
+The v0.4.0 Linux packages also contained GNU Readline (GPL-3.0) and, in the AppImage,
+libindicator (GPL-3.0) and three LGPL desktop-integration libraries; from v0.4.1 on they are
+gone: Python's `readline` module is left out of the server, and the AppImage is repacked
+without the libraries electron-builder adds (AnnZarro uses no tray icon and no notifications).
+The AppImage keeps the X11 libraries libXss and libXtst (MIT), with their notices in
+`LICENSES.appimage-libraries.txt`.
 
 ## Citing AnnZarro
 
