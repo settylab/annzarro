@@ -3205,6 +3205,9 @@ button.dtsb-button.dtsb-clear:hover {
     font: inherit;
     text-align: left;
     cursor: pointer;
+    /* the popovers are siblings of the button, not inside it, so this clips
+       only the 0.5 px the text row overflows by */
+    overflow: hidden;
 }
 .plot-status .ps-summary:disabled { cursor: default; }
 .plot-status .ps-text {

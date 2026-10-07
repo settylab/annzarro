@@ -202,3 +202,41 @@ def test_narrow_panel_scrolls_then_hands_over(server, browser):
         assert abs(pos["plotTile"] + pos["page"] - GESTURE) <= 40, pos
     finally:
         page.close()
+
+
+ROW_SUM = """() => {
+  const body = document.querySelector("%s .dataTables_scrollBody");
+  const row = body && body.closest('.row');
+  const page = document.querySelector('#tile-container');
+  const room = (e) => e ? e.scrollHeight - e.clientHeight : null;
+  return {body: body.scrollTop, row: row ? row.scrollTop : null, page: page.scrollTop,
+          roomBody: room(body), roomRow: room(row), roomPage: room(page)};
+}""" % TABLE
+
+
+def test_nested_row_scroller_loses_no_ticks(server, browser):
+    """Narrow table panel: table body, then the DataTables .row wrapper, then the page.
+
+    A tick that exceeds the nearest scroller's room must pass the rest outward, and
+    ticks during a glide must not keep feeding a scroller that is already going to
+    its end. The chain's total travel equals the sum of the deltas.
+    """
+    page = _open(browser, server, 25, 700)
+    try:
+        page.evaluate(RESET)
+        page.wait_for_timeout(150)
+        before = page.evaluate(ROW_SUM)
+        assert before["roomRow"] and before["roomRow"] > 50, before     # the nested .row scroller exists
+        ticks, delta = 12, 100
+        room = before["roomBody"] + before["roomRow"] + before["roomPage"]
+        assert room >= ticks * delta + 100, before                      # room for every tick
+        page.mouse.move(*_at(page, f"{TABLE} .dataTables_scrollBody"))
+        for _ in range(ticks):
+            page.mouse.wheel(0, delta)
+            page.wait_for_timeout(30)
+        page.wait_for_timeout(900)
+        after = page.evaluate(ROW_SUM)
+        moved = after["body"] + after["row"] + after["page"]
+        assert abs(moved - ticks * delta) <= 50, (moved, after)
+    finally:
+        page.close()

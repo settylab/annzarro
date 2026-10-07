@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isScroller, hasRoom, findScrollers, nextWithRoom, pixelDelta } from
+import { isScroller, hasRoom, findScrollers, nextWithRoom, splitDelta, pixelDelta } from
     '../../../static/js/utils/wheel-handover.js';
 
 /** A fake element: content height, box height, scroll offset, overflow-y, parent. */
@@ -73,4 +73,40 @@ test('wheel deltas in px, lines and pages', () => {
     assert.equal(pixelDelta({ deltaMode: 0, deltaY: 37 }, 900), 37);
     assert.equal(pixelDelta({ deltaMode: 1, deltaY: 3 }, 900), 48);
     assert.equal(pixelDelta({ deltaMode: 2, deltaY: -1 }, 900), -900);
+});
+
+test('splitDelta: each scroller takes up to its room, the rest passes outward', () => {
+    const body = box(775, 300, 400);      // 75 px of room
+    const row = box(434, 200, 100);       // 134 px of room
+    const page = box(2000, 900, 0);       // 1100 px of room
+    const parts = splitDelta([body, row, page], 300);
+    assert.deepEqual(parts.map(p => p.dy), [75, 134, 91]);
+    assert.deepEqual(parts.map(p => p.el), [body, row, page]);
+    assert.equal(parts.reduce((a, p) => a + p.dy, 0), 300);   // nothing lost
+});
+
+test('splitDelta: upward, and a scroller without room is skipped', () => {
+    const body = box(775, 300, 0);        // at its top
+    const row = box(434, 200, 50);
+    const page = box(2000, 900, 700);
+    const parts = splitDelta([body, row, page], -120);
+    assert.deepEqual(parts.map(p => p.dy), [-50, -70]);
+    assert.equal(parts[0].el, row);
+});
+
+test('splitDelta: what no scroller has room for is dropped', () => {
+    const page = box(1000, 900, 90);
+    assert.deepEqual(splitDelta([page], 300).map(p => p.dy), [10]);
+    assert.deepEqual(splitDelta([page], 300, () => 100), []);
+});
+
+test('splitDelta: a scroller mid-glide counts as already at its glide target', () => {
+    const body = box(775, 300, 400);
+    const row = box(434, 200, 0);         // gliding to 234 (its end) but still at 0
+    const page = box(2000, 900, 0);
+    const heading = new Map([[body, 475], [row, 234]]);
+    const posOf = (el) => heading.get(el) ?? el.scrollTop;
+    const parts = splitDelta([body, row, page], 100, posOf);
+    assert.deepEqual(parts.map(p => p.el), [page]);
+    assert.equal(parts[0].dy, 100);
 });

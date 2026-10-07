@@ -10,12 +10,16 @@
  *
  * installWheelHandover listens for wheel events on the page. When the innermost
  * scroller under the pointer cannot move further in the wheel's direction, it
- * scrolls the next scroller out that can (normally the page) by the same
- * amount, in the same gesture. While the inner one can still move, the browser
+ * splits the wheel over the scrollers out from it, each taking up to its room
+ * and passing the rest outward (a table body, then its DataTables .row wrapper,
+ * then the page), in the same gesture. A scroller that is mid-glide counts as
+ * already at its glide target, so ticks during a glide go on to the next one
+ * instead of piling onto a scroller that is about to run out. While the inner
+ * one can still move, the browser
  * scrolls it as usual. Zoom (ctrl/pinch), sideways wheels and wheels another
  * handler already took (Plotly's 3D zoom) are left alone.
  *
- * Pure helpers (findScrollers, nextWithRoom, pixelDelta) run under node --test.
+ * Pure helpers (findScrollers, nextWithRoom, splitDelta, pixelDelta) run under node --test.
  */
 
 /** A notch of a mouse wheel moves at least this many px; trackpads send less. */
@@ -59,6 +63,28 @@ export function nextWithRoom(scrollers, dy) {
     return scrollers.slice(1).find(el => hasRoom(el, dy)) || null;
 }
 
+/**
+ * Split a wheel of `dy` over `scrollers` (innermost first): each takes up to
+ * its room in that direction and the rest passes outward. `posOf(el)` is where
+ * the scroller is heading (its glide target while gliding, else its scrollTop).
+ * Returns [{el, dy}] for the scrollers that take a share; the part no scroller
+ * has room for is dropped.
+ */
+export function splitDelta(scrollers, dy, posOf = (el) => el.scrollTop) {
+    const out = [];
+    let left = dy;
+    for (const el of scrollers) {
+        if (Math.abs(left) < 0.5) break;
+        const pos = posOf(el);
+        const room = left > 0 ? el.scrollHeight - el.clientHeight - pos : pos;
+        if (room <= 0.5) continue;
+        const take = left > 0 ? Math.min(left, room) : Math.max(left, -room);
+        out.push({ el, dy: take });
+        left -= take;
+    }
+    return out;
+}
+
 /** The wheel's vertical delta in px (deltaMode 1 = lines, 2 = pages). */
 export function pixelDelta(event, pageHeight) {
     if (event.deltaMode === 1) return event.deltaY * 16;
@@ -78,20 +104,25 @@ export function installWheelHandover(root, win = window) {
     // Per scroller: where a run of smooth steps is heading, and when it was last extended
     const smooth = new WeakMap();
 
-    const scrollBy = (el, dy) => {
+    // Where `el` is heading: its glide target while a glide is running, else where it is
+    const liveRun = (el) => {
+        const run = smooth.get(el);
+        return run && win.performance.now() - run.at < SMOOTH_IDLE_MS ? run : null;
+    };
+    const posOf = (el) => liveRun(el)?.to ?? el.scrollTop;
+
+    // `glide`: the wheel was a mouse notch, so each share glides; else shares apply directly
+    const scrollBy = (el, dy, glide) => {
         const max = el.scrollHeight - el.clientHeight;
-        if (Math.abs(dy) < NOTCH_PX) {          // trackpad: already fine-grained
+        const to = Math.max(0, Math.min(max, posOf(el) + dy));
+        if (!glide) {                           // trackpad: already fine-grained
             smooth.delete(el);
-            el.scrollTop = Math.max(0, Math.min(max, el.scrollTop + dy));
+            el.scrollTop = to;
             return;
         }
         // Mouse wheel notch: glide like the browser's own wheel scrolling,
         // heading on from where the previous step was going
-        const now = win.performance.now();
-        const run = smooth.get(el);
-        const from = run && now - run.at < SMOOTH_IDLE_MS ? run.to : el.scrollTop;
-        const to = Math.max(0, Math.min(max, from + dy));
-        smooth.set(el, { to, at: now });
+        smooth.set(el, { to, at: win.performance.now() });
         el.scrollTo({ top: to, behavior: 'smooth' });
     };
 
@@ -102,12 +133,17 @@ export function installWheelHandover(root, win = window) {
         if (!dy) return;
         const target = event.target && event.target.nodeType === 1 ? event.target : event.target?.parentElement;
         const scrollers = findScrollers(target, root, getStyle);
-        const next = nextWithRoom(scrollers, dy);
-        if (!next) return;
+        // The innermost scroller scrolls natively while it has room and no glide of ours is running on it
+        if (!scrollers.length) return;
+        const inner = scrollers[0];
+        if (!liveRun(inner) && hasRoom(inner, dy)) return;
+        const shares = splitDelta(scrollers, dy, posOf);
+        if (!shares.length) return;
         // The browser would scroll nothing (or, at a gesture's start, chain on its
         // own): take the wheel so the page moves once, and moves now.
         if (event.cancelable) event.preventDefault();
-        scrollBy(next, dy);
+        const glide = Math.abs(dy) >= NOTCH_PX;
+        for (const { el, dy: part } of shares) scrollBy(el, part, glide);
     };
 
     root.addEventListener('wheel', onWheel, { passive: false });
