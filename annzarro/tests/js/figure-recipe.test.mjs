@@ -91,11 +91,12 @@ test("SVG: the recipe is the first child, escaped, and comes back; exported agai
 test("stableSvgIds: Plotly's random ids become fixed names, image data is untouched", () => {
   const svg = `<svg><defs id="defs-a1b2c3"><clipPath id="clipa1b2c3xyplot"/></defs>` +
     `<g clip-path="url(#clipa1b2c3xyplot)"/><use href="#legenda1b2c3"/>` +
-    `<g class="trace tracef00d42"/><image xlink:href="data:image/png;base64,ZZa1b2c3ZZ"/></svg>`;
+    `<g class="trace tracef00d42"/><rect style="fill: url('#ga1b2c3-cbf00d42');"/><image xlink:href="data:image/png;base64,ZZa1b2c3ZZ"/></svg>`;
   const out = pe.stableSvgIds(svg, ["a1b2c3", "f00d42"]);
   assert.ok(out.includes('id="defs-az0"') && out.includes('id="clipaz0xyplot"'));
   assert.ok(out.includes("url(#clipaz0xyplot)") && out.includes('href="#legendaz0"'));
   assert.ok(out.includes("base64,ZZa1b2c3ZZ"), "the token inside image data is kept");
-  assert.ok(out.includes('class="trace tracef00d42"'), "class names are not ids");
+  assert.ok(out.includes('class="trace traceaz1"'), "a trace's class carries its uid too");
+  assert.ok(out.includes("url('#gaz0-cbaz1')"), "a colour bar's gradient, quoted");
   assert.equal(pe.stableSvgIds(svg, []), svg);
 });

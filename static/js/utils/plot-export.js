@@ -378,8 +378,8 @@ export function embedRecipe(image, format, recipe) {
  * Plotly names an SVG's clip paths, gradients and defs after a random id per
  * plot (fullLayout._uid) and per trace (uid), so two exports of the same
  * view differed in those names alone. Each token is renamed, in order, to
- * a fixed name wherever it is used as a name (id="...", url(#...),
- * href="#..."), never inside image data. The SVG text is then a function of
+ * a fixed name wherever it is used as a name (id="...", class="..." such as
+ * a colour bar's "cb<uid>", url(#...), href="#..."), never inside image data. The SVG text is then a function of
  * the view.
  * @param {string} svg
  * @param {string[]} tokens - the random ids, e.g. uidTokens(gd)
@@ -389,7 +389,7 @@ export function stableSvgIds(svg, tokens) {
     const names = [...new Set((tokens || []).filter(t => typeof t === 'string' && t.length >= 4))];
     if (!names.length) return svg;
     const rename = (value) => names.reduce((v, token, i) => v.split(token).join(`az${i}`), value);
-    return svg.replace(/(\bid="|url\(#|url\(&quot;#|href="#)([^")&]+)/g, (m, pre, name) => pre + rename(name));
+    return svg.replace(/(\bid="|\bclass="|url\(['"]?#|url\(&quot;#|href="#)([^")'&]+)/g, (m, pre, name) => pre + rename(name));
 }
 
 /** The random ids Plotly gave a drawn plot: the layout's and each trace's. */

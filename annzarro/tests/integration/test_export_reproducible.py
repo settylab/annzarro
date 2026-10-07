@@ -51,7 +51,7 @@ PANEL_SET = {
                                        "color": {"type": "obs", "key": "cell_type", "column": ""},
                                        "exportWidth": 900, "exportHeight": 600},
                        "cell-plot-2": {"id": "cell-plot-2", **UMAP,
-                                       "color": {"type": "X", "key": "GENE004", "column": ""},
+                                       "color": {"type": "layer", "key": "X", "column": "GENE004"},
                                        "exportWidth": 700, "exportHeight": 700, "scaleExport": True}}},
     },
 }
