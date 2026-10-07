@@ -110,6 +110,10 @@ def register_core_routes(app, api_version):
         # (the cell-name index prewarm).
         from annzarro.core.remote import hosted_reasons
         client["single_user"] = not hosted_reasons(app.config)
+        # recorded in saved views and exported figures (same version, same
+        # rendering; another version says it may differ)
+        from annzarro import __version__
+        client["annzarro_version"] = __version__
         return jsonify(client)
         
     @app.route(f"/api/{api_version}/auth/me", methods=["GET"])

@@ -19,10 +19,17 @@ import { sameSubset } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
 import { registerStatusActions } from './utils/panel-surface.js';
-import { canSnapshot, exportImage } from './utils/plot-export.js';
+import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
+import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
 import { overrideOnce } from './utils/memory-guard-ui.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
+import {
+    compareStores, describeComparison, versionNotice, orderCandidates, automaticCandidate,
+    savedStoreOf, storeName, hasDataTier
+} from './utils/view-store.js';
+import { probeStore, prewarmStore, appVersion } from './utils/store-identity.js';
+import { defaultHierarchy } from './utils/deeplink.js';
 
 const App = (function() {
     // Private variables
@@ -86,6 +93,11 @@ const App = (function() {
 
             // Loading a panel set restores its whole view through _applyView
             SessionManager.setViewApplier(_applyPanelSet);
+
+            // Every exported figure carries its recipe; `annzarro export`
+            // drives the same export through window.annzarroExport
+            setRecipeProvider(_figureRecipe);
+            _installExportHooks();
 
             // Notices raised by modules that cannot import main.js (utils/notify.js)
             document.addEventListener(NOTIFY_EVENT, (e) => {
@@ -194,9 +206,11 @@ const App = (function() {
      * @returns {Promise<string>} absolute URL, ?dataset_path= plus #view=
      */
     async function _buildShareView(datasetPath) {
-        const path = datasetPath || _lastLoadedDatasetPath || '';
         // The same capture a saved panel set stores (SessionManager.captureView)
         const view = SessionManager.captureView();
+        // The store as the view records it: relative to the data directory
+        // when it is inside it, so the link opens on any server holding it
+        const path = (view.store && view.store.path) || datasetPath || _lastLoadedDatasetPath || '';
         return buildDeepLinkUrl(window.location.origin + window.location.pathname,
             path, await encodeViewPayload(view));
     }
@@ -212,7 +226,7 @@ const App = (function() {
         const button = document.getElementById('btn-share-link');
         const fallback = document.getElementById('share-link-fallback');
         const field = document.getElementById('share-link-field');
-        const datasetPath = _lastLoadedDatasetPath || DataManager.getCurrentDataset();
+        const datasetPath = (_noDataView && _noDataView.missing) || _lastLoadedDatasetPath || DataManager.getCurrentDataset();
         if (!datasetPath) {
             _showNotification('Nothing to share', 'Open a dataset first.', 'warning', 3000);
             return;
@@ -220,6 +234,10 @@ const App = (function() {
 
         let link;
         try {
+            // A large store's names may still be being fingerprinted: wait
+            // briefly, then share with what is known and say so
+            const settled = _noDataView ? { complete: true } : await SessionManager.settleStoreOfView(3000);
+            if (!settled.complete) _noticeFingerprintPending();
             link = await _buildShareView(datasetPath);
         } catch (error) {
             console.error('Building share link failed:', error);
@@ -243,6 +261,20 @@ const App = (function() {
         }
     }
     let _shareLabelTimer = null;
+
+    /**
+     * Said when a view is saved before the open store's cell and gene names
+     * are fingerprinted (a large store, just opened). The view records the
+     * counts and the fields; only the names are not checked when it opens.
+     * @private
+     */
+    function _noticeFingerprintPending() {
+        _showNotification('Saved without the cell and gene check',
+            'This store is still being fingerprinted (a large store takes a few seconds once). ' +
+            'The view records its size and fields, but not yet its cell and gene names, so a store ' +
+            'with other names of the same size is not detected when it opens. Save again in a moment to include them.',
+            'info', 10000);
+    }
 
     /**
      * Select all of an input's text with the caret at the start, so the
@@ -288,7 +320,37 @@ const App = (function() {
      * @param {{datasetPath: string, view: Object|null}} target
      * @private
      */
-    async function _applyView({ datasetPath, view }) {
+    async function _applyView({ datasetPath, view }, { exact = false, located = null } = {}) {
+
+        // Where the view's store is here: its path, the path relative to the
+        // data directory, or a store in the data directory with the same
+        // cells and genes (or, for a view without a fingerprint, the same
+        // name). Not found: the layout opens without data.
+        located = located || await _locateStore(datasetPath, view, { exact });
+        if (!located.path) {
+            await _applyViewWithoutData(view, located);
+            return { status: 'no-data', message: `${located.missing || datasetPath} was not found` };
+        }
+        const savedFp = located.saved ? located.saved.fp : null;
+        const cmp = compareStores(savedFp, located.probe.fingerprint);
+        const said = describeComparison(cmp, located.path);
+        if (said && said.strong) {
+            // Open the layout without data while the user decides
+            await _applyViewWithoutData(view, { ...located, differs: true, missing: located.path });
+            if (_sessionModal) _sessionModal.hide();
+            const choice = await _askNotification(said.title, said.message, [
+                { key: 'open', label: 'Open anyway', primary: true },
+                { key: 'change', label: 'Change dataset' },
+                { key: 'none', label: 'Keep without data' }
+            ]);
+            if (choice === 'change') {
+                _showChangeDataset();
+                return { status: 'no-data', message: 'The store differs; choose a dataset' };
+            }
+            if (choice !== 'open') return { status: 'no-data', message: 'The store differs; opened without data' };
+        }
+        datasetPath = located.path;
+        _leaveNoDataMode();
 
         // 0. The cells the view shows. A view without `subset` keeps the
         //    subset of an already open dataset (or the default for a new
@@ -386,6 +448,325 @@ const App = (function() {
                 });
             }
         }
+        _afterViewOpened(view, located, cmp, said);
+        return { status: 'success' };
+    }
+
+    // ── Where a view's store is, and a view without one ───────────────────
+
+    /** A view open without data: {view, saved, missing}; null otherwise. */
+    let _noDataView = null;
+    /** When the last notice about an opened view was shown (a later toast would hide it). */
+    let _viewNoticeAt = 0;
+
+    /**
+     * Find the store a view names on this server.
+     *
+     * In order: the path as given (a relative name resolves in the data
+     * directory, server side), the path the view recorded, the absolute path
+     * it had where it was saved. If none is here, a store in the data
+     * directory with the same cells and genes (by fingerprint), or for a view
+     * without a fingerprint the one store with the same file name, is opened
+     * instead, and the user is told. A path the server refuses (outside the
+     * data directory, server.arbitrary_paths) is never opened.
+     * @param {string|null} datasetPath
+     * @param {Object|null} view
+     * @param {{exact?: boolean}} [opts] - exact: only this path (the user chose it)
+     * @returns {Promise<{path: string|null, probe?: Object, saved: Object|null,
+     *           repointed?: Object, missing?: string, refused?: Object, candidates?: Array}>}
+     * @private
+     */
+    const savedHasData = (saved) => !!(saved && hasDataTier(saved.fp));
+
+    async function _locateStore(datasetPath, view, { exact = false } = {}) {
+        const saved = savedStoreOf(view, datasetPath);
+        const tries = [...new Set([datasetPath, ...(exact ? [] : [saved && saved.path])].filter(Boolean))];
+        let refused = null, failed = null;
+        // A view with the cells-and-genes tier waits up to 1 s for the
+        // store's (a small store's takes milliseconds; a large one's is
+        // compared later, in the background: _verifyCellsLater)
+        const wait = savedHasData(saved) ? 1 : 0;
+        for (const path of tries) {
+            const probe = await probeStore(path, { wait });
+            if (probe.ok) return { path: probe.path || path, probe, saved };
+            if (probe.httpStatus === 403) refused = refused || { path, ...probe };
+            else if (probe.reason !== 'not_found') failed = failed || { path, ...probe };
+        }
+        const missing = datasetPath || (saved && saved.path) || null;
+        if (exact || failed) return { path: null, saved, missing, refused, failed };
+        const candidates = await _storeCandidates(saved);
+        const pick = automaticCandidate(candidates, saved);
+        if (pick) {
+            const probe = await probeStore(pick.path);
+            if (probe.ok) {
+                return { path: probe.path || pick.path, probe, saved,
+                    repointed: { from: missing, to: pick.path, match: pick.match } };
+            }
+        }
+        // Last, the absolute path the view had where it was saved: a hint,
+        // for a server whose data directory moved (confined as any path)
+        if (saved && saved.abs && !tries.includes(saved.abs)) {
+            const probe = await probeStore(saved.abs, { wait });
+            if (probe.ok) {
+                return { path: probe.path || saved.abs, probe, saved,
+                    repointed: { from: missing, to: saved.abs, match: 'abs' } };
+            }
+        }
+        return { path: null, saved, missing, refused, candidates };
+    }
+
+    /**
+     * The data directory's stores, ordered for a saved store: the ones with
+     * the same counts are fingerprinted (the server waits up to 2 s each;
+     * a large store still being hashed counts as "same size").
+     * @param {Object|null} saved - view.store
+     * @returns {Promise<Array>} orderCandidates output
+     * @private
+     */
+    async function _storeCandidates(saved) {
+        DataManager.clearCache(Config.API.DATASETS);
+        const listing = (await DataManager.loadDatasets().catch(() => [])) || [];
+        const entries = listing.filter(d => d && d.path && !d.error).map(d => ({ ...d }));
+        const fp = saved && saved.fp;
+        if (fp && Number.isFinite(fp.n_obs)) {
+            const same = entries.filter(e => e.cells === fp.n_obs && e.genes === fp.n_var).slice(0, 12);
+            await Promise.all(same.map(async entry => {
+                const probe = await probeStore(entry.path, { wait: 2 }).catch(() => null);
+                if (probe && probe.ok) entry.cmp = compareStores(fp, probe.fingerprint);
+            }));
+            entries.forEach(e => {
+                if (!e.cmp && Number.isFinite(e.cells)
+                    && (e.cells !== fp.n_obs || e.genes !== fp.n_var)) {
+                    e.cmp = { level: 'different', dataKnown: true, changes: [] };
+                }
+            });
+        }
+        return orderCandidates(entries, saved);
+    }
+
+    /**
+     * Open a view's layout without data: every panel a placeholder that keeps
+     * its settings, a notice naming the store that is not here, and "Change
+     * dataset" to open the view on a store of this server.
+     * @private
+     */
+    async function _applyViewWithoutData(view, located) {
+        const saved = located.saved || null;
+        const missing = located.missing || (saved && saved.path) || 'its dataset';
+        _noDataView = { view, saved, missing, differs: !!located.differs };
+        SessionManager.setDetachedStore(saved, view);
+        const button = document.getElementById('btn-change-dataset');
+        if (button) button.hidden = false;
+        const pathLabel = document.getElementById('dataset-path');
+        if (pathLabel) pathLabel.textContent = `No data: ${missing}`;
+
+        let layout = view && view.layout;
+        if (!layout && view && Array.isArray(view.panels) && view.panels.length) {
+            const panelConfigs = {};
+            const ids = view.panels.map((panel, i) => {
+                const type = (panel.type || '').replace(/_/g, '-');
+                const id = (panel.config && panel.config.id && String(panel.config.id).startsWith(type + '-'))
+                    ? panel.config.id : `${type}-${i + 1}`;
+                panelConfigs[id] = { ...(panel.config || {}), id, ...(panel.title ? { title: panel.title } : {}) };
+                return id;
+            });
+            layout = { v: VIEW_SCHEMA_VERSION, hierarchy: defaultHierarchy(ids), controlState: {}, panelConfigs };
+        }
+        const message = located.differs
+            ? `The store at ${missing} differs from the one this view was saved on. Its settings are kept.`
+            : `This view's dataset, ${missing}, is not on this server. Its settings are kept.`;
+        if (layout) {
+            PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
+            await PanelManager.restoreLayout(layout, {
+                placeholder: { message, onChangeDataset: () => _showChangeDataset() }
+            });
+        }
+        if (located.differs) return;
+        const why = located.refused
+            ? `${located.refused.path} is outside the data directory this server shares, so it cannot be opened here.`
+            : located.failed
+                ? `${located.failed.path} could not be read: ${located.failed.error}`
+                : `${missing} is not on this server, and no store in its data directory matches it.`;
+        // not awaited: the view is open, the answer can come any time
+        _askNotification('Dataset not found',
+            `${why}\n\nThe layout is open without data, every panel keeping its settings. ` +
+            'Choose a dataset to open the view on.',
+            [{ key: 'change', label: 'Change dataset', primary: true }, { key: 'later', label: 'Later' }])
+            .then(choice => { if (choice === 'change') _showChangeDataset(); });
+    }
+
+    /** A dataset is open again: the view is no longer without data. @private */
+    function _leaveNoDataMode() {
+        _noDataView = null;
+        SessionManager.setDetachedStore(null);
+        const button = document.getElementById('btn-change-dataset');
+        if (button) button.hidden = true;
+    }
+
+    /**
+     * After a view opened on a store: say what is worth saying (opened on
+     * another path, other fields, another AnnZarro version), then check the
+     * cells and genes once a large store's names are hashed.
+     * @private
+     */
+    function _afterViewOpened(view, located, cmp, said) {
+        if (!located) return;
+        // One notice (a toast replaces the one before it), every point in it
+        const parts = [];
+        let title = null;
+        if (located.repointed) {
+            const how = located.repointed.match === 'same' || located.repointed.match === 'fields'
+                ? 'has the same cells and genes'
+                : located.repointed.match === 'abs'
+                    ? 'is where the view was saved'
+                    : 'has the same name (this view records no fingerprint to check it by)';
+            title = 'Opened on another path';
+            parts.push(`${located.repointed.from} is not on this server. Opened ${located.repointed.to}, which ${how}.`);
+        }
+        if (said && !said.strong) {
+            title = title || said.title;
+            parts.push(said.message);
+        }
+        const version = versionNotice(view && view.annzarro, appVersion());
+        if (version) {
+            title = title || 'Saved with another AnnZarro version';
+            parts.push(version);
+        }
+        if (parts.length) {
+            _viewNoticeAt = Date.now();
+            _showNotification(title, parts.join('\n\n'), 'info', 12000);
+        }
+        const savedFp = located.saved && located.saved.fp;
+        if (cmp && hasDataTier(savedFp) && !cmp.dataKnown && cmp.level !== 'different') {
+            _verifyCellsLater(savedFp, located.path);
+        }
+    }
+
+    /**
+     * A large store's cell and gene names are hashed in the background on the
+     * server; compare them when they are, without holding up the view.
+     * @private
+     */
+    async function _verifyCellsLater(savedFp, path) {
+        for (let i = 0; i < 12; i++) {
+            const probe = await probeStore(path, { wait: 10 }).catch(() => null);
+            if (!probe || !probe.ok) return;
+            if (DataManager.getCurrentDataset() !== path) return;
+            if (probe.status !== 'ready') continue;
+            const said = describeComparison(compareStores(savedFp, probe.fingerprint), path);
+            if (said && said.strong) {
+                const choice = await _askNotification(said.title, said.message,
+                    [{ key: 'change', label: 'Change dataset', primary: true }, { key: 'keep', label: 'Keep' }]);
+                if (choice === 'change') {
+                    _noDataView = { view: SessionManager.captureView(), saved: { path, name: storeName(path) },
+                        missing: path, differs: true };
+                    _showChangeDataset();
+                }
+            }
+            return;
+        }
+    }
+
+    /**
+     * "Change dataset": open the view on a store of this server. Lists the
+     * data directory's stores with the same cells and genes first, then any
+     * other store, and takes a path (which the server confines as always).
+     * The view is then opened on the chosen store, behind the fingerprint
+     * warning if it differs.
+     * @private
+     */
+    async function _showChangeDataset() {
+        const modalEl = document.getElementById('change-dataset-modal');
+        if (!modalEl) return;
+        const pending = _noDataView || {
+            view: SessionManager.captureView(),
+            saved: SessionManager.storeOfView(),
+            missing: DataManager.getCurrentDataset()
+        };
+        // the notice that offered this has been answered
+        document.querySelectorAll('.notification-ask').forEach(el => {
+            if ((el.dataset.key || '').includes('Dataset not found')) {
+                const close = el.querySelector('.notification-close');
+                if (close) close.click();
+            }
+        });
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        const list = document.getElementById('change-dataset-list');
+        const savedLine = document.getElementById('change-dataset-saved');
+        const error = document.getElementById('change-dataset-error');
+        const saved = pending.saved;
+        const fp = saved && saved.fp;
+        savedLine.textContent = `This view was saved on ${saved ? saved.path : 'an unknown store'}` +
+            (fp && Number.isFinite(fp.n_obs) ? ` (${fp.n_obs.toLocaleString('en-US')} cells x ${fp.n_var.toLocaleString('en-US')} genes)` : '') +
+            (fp ? '.' : '; it records no fingerprint, so stores are matched by name only.');
+        error.hidden = true;
+        list.textContent = 'Looking for matching stores...';
+        modal.show();
+
+        const choose = async (path) => {
+            modal.hide();
+            const view = pending.view || { v: VIEW_SCHEMA_VERSION };
+            await _applyView({ datasetPath: path, view }, { exact: true });
+            PanelManager.ensureWelcomeFallback();
+        };
+        const openPath = document.getElementById('change-dataset-open-path');
+        const input = document.getElementById('change-dataset-path');
+        openPath.onclick = async () => {
+            const path = input.value.trim();
+            if (!path) return;
+            const probe = await probeStore(path);
+            if (!probe.ok) {
+                error.textContent = probe.error || `${path} could not be opened`;
+                error.hidden = false;
+                return;
+            }
+            await choose(probe.path || path);
+        };
+
+        const ordered = await _storeCandidates(saved);
+        list.textContent = '';
+        const groups = [
+            ['Same cells and genes', e => e.match === 'same' || e.match === 'fields'],
+            ['Same size (cell and gene names not compared yet)', e => e.match === 'counts'],
+            ['Same name, other cells or genes', e => e.match === 'name-different'],
+            ['Same name', e => e.match === 'name'],
+            ['Other datasets in the data directory', e => e.match === 'other' || e.match === 'different']
+        ];
+        for (const [title, test] of groups) {
+            const members = ordered.filter(test);
+            if (!members.length) continue;
+            const group = document.createElement('div');
+            group.className = 'change-dataset-group';
+            const h = document.createElement('h6');
+            h.textContent = title;
+            group.appendChild(h);
+            for (const entry of members) {
+                const row = document.createElement('div');
+                row.className = 'change-dataset-item';
+                row.dataset.path = entry.path;
+                row.dataset.match = entry.match;
+                const label = document.createElement('div');
+                const name = document.createElement('div');
+                name.textContent = entry.rel_path || entry.name || entry.path;
+                const meta = document.createElement('div');
+                meta.className = 'change-dataset-meta';
+                const counts = Number.isFinite(entry.cells)
+                    ? `${entry.cells.toLocaleString('en-US')} cells x ${entry.genes.toLocaleString('en-US')} genes` : '';
+                const fields = entry.cmp && entry.cmp.level === 'fields' && entry.cmp.changes.length
+                    ? `; fields differ: ${entry.cmp.changes.slice(0, 3).join('; ')}` : '';
+                meta.textContent = counts + fields;
+                label.append(name, meta);
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn btn-sm btn-outline-primary';
+                button.textContent = 'Open';
+                button.addEventListener('click', () => choose(entry.path));
+                row.append(label, button);
+                group.appendChild(row);
+            }
+            list.appendChild(group);
+        }
+        if (!list.children.length) list.textContent = 'No dataset in the data directory.';
     }
 
     /**
@@ -410,13 +791,19 @@ const App = (function() {
         if (!target) {
             return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
         }
-        // the same store named relative vs absolute is not a switch
+        // Where its store is here (its name in the data directory, or the
+        // store with the same cells and genes); the same store named
+        // relative vs absolute is not a switch
+        const located = await _locateStore(target, plan.view);
         const listing = await DataManager.loadDatasets().catch(() => []);
-        if (current && !sameDatasetPath(target, current, listing)) {
+        if (current && !(located.path && sameDatasetPath(located.path, current, listing))) {
             if (_sessionModal) _sessionModal.hide();
+            const where = located.path
+                ? (located.path === target ? located.path : `${target}\n(here: ${located.path})`)
+                : `${target}\n(not on this server: it opens without data)`;
             const choice = await _askNotification(
                 'Switch dataset?',
-                `"${name}" was saved on\n${target}\n\nThe open dataset is\n${current}\n\nLoading it switches datasets and replaces the open panels.`,
+                `"${name}" was saved on\n${where}\n\nThe open dataset is\n${current}\n\nLoading it switches datasets and replaces the open panels.`,
                 [{ key: 'switch', label: 'Switch and load', primary: true }, { key: 'cancel', label: 'Keep current' }]
             );
             if (choice !== 'switch') {
@@ -435,8 +822,8 @@ const App = (function() {
         incoming.forEach(id => PanelManager.removePanel(id));
 
         // keep the open store's own path when the set names it differently
-        const sameStore = current && sameDatasetPath(target, current, listing);
-        await _applyView({ datasetPath: sameStore ? current : target, view: plan.view });
+        if (current && located.path && sameDatasetPath(located.path, current, listing)) located.path = current;
+        const applied = await _applyView({ datasetPath: target, view: plan.view }, { located });
 
         // Panels that were closed when the set was saved come back closed.
         const idMap = new Map();
@@ -450,6 +837,9 @@ const App = (function() {
 
         PanelManager.updateSourcePanelSelection();
         PanelManager.ensureWelcomeFallback();
+        if (applied && applied.status === 'no-data') {
+            return { status: 'no-data', message: `Loaded "${name}" without data: ${applied.message}` };
+        }
         return { status: 'success', message: `Loaded "${name}"` };
     }
 
@@ -618,6 +1008,73 @@ const App = (function() {
                     .catch(error => console.error('Export as shown failed:', error));
                 break;
         }
+    }
+
+    /**
+     * The recipe an exported figure carries (utils/plot-export.js): the view
+     * as a panel set, the panel, the export's size, and the AnnZarro
+     * version. `annzarro export --from fig.png` makes the figure again from
+     * it; with the same store and version, the same figure.
+     * @param {HTMLElement} gd
+     * @param {{how: string, format: string, width: number, height: number, scale: number}} info
+     * @private
+     */
+    function _figureRecipe(gd, info) {
+        const tile = gd && gd.closest ? gd.closest('.tile') : null;
+        const view = SessionManager.captureView();
+        // A figure is published: it names its store by name in the data
+        // directory and by fingerprint, never by this server's absolute path
+        // (unless the store is outside the data directory, where that path
+        // is all there is)
+        if (view.store && view.store.abs) {
+            view.store = { ...view.store };
+            delete view.store.abs;
+        }
+        const store = view.store || null;
+        const panelSet = { name: 'figure', dataset: store ? store.path : DataManager.getCurrentDataset(), view };
+        return {
+            annzarro_recipe: 1,
+            annzarro_version: appVersion(),
+            panel: tile ? tile.dataset.tileId : null,
+            export: { how: info.how, format: info.format, width: info.width, height: info.height, scale: info.scale },
+            panel_set: panelSet
+        };
+    }
+
+    /**
+     * Hooks `annzarro export` (annzarro/export.py) calls in a headless browser:
+     *   annzarroPlots()             the open plot panels' tile ids
+     *   annzarroPlotState()         a signature of what is drawn (stable = done)
+     *   annzarroExport(id, format)  the panel's image, exactly as its Export
+     *                               button makes it (size and scale from its
+     *                               settings, coverage notice, recipe)
+     * @private
+     */
+    function _installExportHooks() {
+        const plotOf = (id) => {
+            const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(id)}"]`);
+            return tile ? tile.querySelector('.js-plotly-plot') : null;
+        };
+        window.annzarroPlots = () => [...document.querySelectorAll('.tile-container .tile[data-tile-id]')]
+            .filter(t => t.querySelector('.js-plotly-plot')).map(t => t.dataset.tileId);
+        window.annzarroPlotState = () => JSON.stringify({
+            loading: _isLoadingDataset,
+            noData: !!_noDataView,
+            plots: window.annzarroPlots().map(id => {
+                const gd = plotOf(id);
+                const fl = gd && gd._fullLayout;
+                return [id, !!fl, ((gd && gd.data) || []).map(t => [t.type, (t.x || []).length,
+                    t.marker && t.marker.color && t.marker.color.length]),
+                fl ? [fl.width, fl.height, JSON.stringify(fl.annotations || []).length] : null];
+            })
+        });
+        window.annzarroExport = async (id, format = 'svg') => {
+            const gd = plotOf(id);
+            if (!gd) throw new Error(`Panel ${id} has no plot`);
+            const panel = PanelManager.getPanel(id);
+            const settings = (panel && panel.getConfig && panel.getConfig()) || {};
+            return exportImageData(gd, 'full', { format, ...exportOptions(settings) });
+        };
     }
 
     /**
@@ -857,6 +1314,9 @@ const App = (function() {
             loadSessionBtn.addEventListener('click', _showLoadSessionModal);
         }
 
+        const changeDatasetBtn = document.getElementById('btn-change-dataset');
+        if (changeDatasetBtn) changeDatasetBtn.addEventListener('click', () => _showChangeDataset());
+
         const shareLinkBtn = document.getElementById('btn-share-link');
         if (shareLinkBtn) {
             shareLinkBtn.addEventListener('click', _shareCurrentView);
@@ -1056,7 +1516,14 @@ const App = (function() {
             .off('select2:select')
             .on('select2:select', e => {
               const datasetPath = e.params.data.id;
-              if (datasetPath) _loadDataset(datasetPath);
+              if (!datasetPath) return;
+              // a view open without data opens on the chosen dataset
+              if (_noDataView) {
+                  _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
+                      .then(() => PanelManager.ensureWelcomeFallback());
+              } else {
+                  _loadDataset(datasetPath);
+              }
             });
         }
       }
@@ -1152,6 +1619,12 @@ const App = (function() {
             // Update last loaded dataset path and reset loading flag
             _isLoadingDataset = false;
             _currentLoadingAbortController = null;
+
+            // Fingerprint the store for saved views, after the first draw
+            // has had its turn (the server hashes the names in the background)
+            setTimeout(() => {
+                if (DataManager.getCurrentDataset() === datasetPath) prewarmStore(datasetPath);
+            }, 5000);
         } catch (error) {
             // Check if this is an abort error 
             if (error && error.name === 'AbortError') {
@@ -2064,6 +2537,7 @@ const App = (function() {
             
             if (result.status === 'success') {
                 _sessionModal.hide();
+                if (result.fingerprintPending) _noticeFingerprintPending();
                 //_showSuccess('Panel Set saved', `Panel Set "${sanitizedName}" saved successfully`);
             } else {
                 const { title, type } = describeFailure(result, 'Failed to save panel set');
@@ -2095,7 +2569,13 @@ const App = (function() {
                         
                         if (loadResult.status === 'success') {
                             _sessionModal.hide();
-                            _showSuccess('Session Loaded', `Panel set was imported and loaded successfully.`);
+                            // not over a notice about where or how the view opened
+                            if (Date.now() - _viewNoticeAt > 5000) {
+                                _showSuccess('Session Loaded', `Panel set was imported and loaded successfully.`);
+                            }
+                        } else if (loadResult.status === 'no-data') {
+                            // its own notice says which dataset is missing
+                            _sessionModal.hide();
                         } else if (loadResult.status === 'cancelled') {
                             _showNotification('Panel set imported, not loaded', loadResult.message, 'info', 5000);
                         } else {
@@ -2125,7 +2605,7 @@ const App = (function() {
                 
                 const result = await SessionManager.loadSession(sessionName);
                 
-                if (result.status === 'success') {
+                if (result.status === 'success' || result.status === 'no-data') {
                     _sessionModal.hide();
                 } else if (result.status === 'cancelled') {
                     _showNotification('Panel set not loaded', result.message, 'info', 5000);

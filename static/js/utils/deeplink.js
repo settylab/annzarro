@@ -44,6 +44,9 @@
  *     constants: {                           // global focus state (all optional)
  *       focusedGene, focusedCell, taxonomyId
  *     },
+ *     store: { path, abs?, name, fp? },      // the store it was saved on and its
+ *                                            //   fingerprint (utils/view-store.js)
+ *     annzarro: '0.4.1',                     // the version that saved it
  *     subset: { n, seed, balance?, where? }  // the cells shown (utils/subset.js);
  *             | null                         //   null: every cell; absent: the
  *                                            //   server's default for the dataset
@@ -273,6 +276,12 @@ export function normalizeView(view) {
     if (view.constants && typeof view.constants === 'object') {
         out.constants = view.constants;
     }
+
+    // Which store it was saved on and with which AnnZarro (utils/view-store.js)
+    if (view.store && typeof view.store === 'object' && typeof view.store.path === 'string') {
+        out.store = view.store;
+    }
+    if (typeof view.annzarro === 'string') out.annzarro = view.annzarro;
 
     // Absent stays absent (the dataset's default); a malformed subset is
     // dropped rather than failing the whole link.

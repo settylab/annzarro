@@ -938,6 +938,10 @@ def main(argv: List[str] = None) -> int:
     desktop_icons_parser.add_argument('--all', action='store_true', help="Generate all icon types")
     
     desktop_parser.set_defaults(func=desktop_command)
+
+    # Export command: a saved view's plots as files (annzarro/export.py)
+    from annzarro.export import add_parser as add_export_parser
+    add_export_parser(subparsers)
     
     # Parse arguments
     args = parser.parse_args(argv)

@@ -3294,3 +3294,29 @@ button.dtsb-button.dtsb-clear:hover {
     border: 1px solid #ced4da;
     border-radius: 2px;
 }
+
+/* A panel of a view open without data (utils/placeholder-panel.js) */
+.panel-no-data {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 100%;
+    min-height: 120px;
+    padding: 1rem;
+    text-align: center;
+    color: #6c757d;
+    background: repeating-linear-gradient(45deg, #fafafa, #fafafa 10px, #f3f3f3 10px, #f3f3f3 20px);
+}
+.panel-no-data-title { font-weight: 600; color: #495057; }
+.panel-no-data-message { max-width: 32rem; font-size: 0.875rem; overflow-wrap: anywhere; }
+
+/* Change dataset: stores grouped by how they match the view's store */
+.change-dataset-list .change-dataset-group { margin-bottom: 0.75rem; }
+.change-dataset-list .change-dataset-group h6 { font-size: 0.8rem; text-transform: uppercase; color: #6c757d; margin-bottom: 0.25rem; }
+.change-dataset-list .change-dataset-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+    padding: 0.25rem 0.5rem; border: 1px solid #e9ecef; border-radius: 4px; margin-bottom: 0.25rem;
+}
+.change-dataset-list .change-dataset-item .change-dataset-meta { font-size: 0.8rem; color: #6c757d; overflow-wrap: anywhere; }

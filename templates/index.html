@@ -85,6 +85,9 @@
                                     <button id="select-directory" class="btn btn-outline-secondary ms-1" title="Select directory" style="display: none;">
                                         <i class="fas fa-folder-open"></i>
                                     </button>
+                                    <button id="btn-change-dataset" class="btn btn-outline-warning ms-1" title="Choose the dataset this view opens on" hidden>
+                                        <i class="fas fa-exchange-alt"></i> <span class="btn-label">Change dataset</span>
+                                    </button>
                                 </div>
                             </div>
                             <div class="col">
@@ -180,6 +183,28 @@
             <div class="tile-content"></div>
         </div>
     </template>
+
+    <!-- Change dataset: the store a view opens on (main.js _showChangeDataset) -->
+    <div class="modal fade" id="change-dataset-modal" tabindex="-1" aria-hidden="true" aria-labelledby="change-dataset-title">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="change-dataset-title">Change dataset</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="change-dataset-saved" class="small text-muted"></p>
+                    <div id="change-dataset-list" class="change-dataset-list"></div>
+                    <label for="change-dataset-path" class="form-label mt-3 small">Or open a path on this server</label>
+                    <div class="input-group input-group-sm">
+                        <input id="change-dataset-path" type="text" class="form-control" placeholder="name in the data directory, or a full path">
+                        <button id="change-dataset-open-path" class="btn btn-outline-primary" type="button">Open</button>
+                    </div>
+                    <div id="change-dataset-error" class="small text-danger mt-1" hidden></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Panel Set Management Modal -->
     <div class="modal fade" id="session-modal" tabindex="-1" aria-hidden="true">

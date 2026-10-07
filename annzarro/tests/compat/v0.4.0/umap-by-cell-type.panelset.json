@@ -1,0 +1,243 @@
+{
+  "constants": {
+    "cellRows": {
+      "cell_0007": 7
+    },
+    "focusedCell": "cell_0007",
+    "focusedGene": "GENE003"
+  },
+  "created_at": "2026-10-06T15:03:54.570539",
+  "dataset": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/az-corpus-zofk0uq5/data/fixture_small.zarr",
+  "datasetName": "",
+  "modified_at": "2026-10-06T15:03:54.570539",
+  "modified_by": null,
+  "name": "umap-by-cell-type",
+  "owner": null,
+  "panelConfigs": {
+    "cell-plot-1791324230820": {
+      "config": {
+        "autoPointOpacity": true,
+        "autoPointSize": false,
+        "axisColor": "#000000",
+        "axisLineWidth": 1,
+        "backdropColor": "#f0f0f0",
+        "bgColor": "#ffffff",
+        "categoryPalette": "uns",
+        "centeringActive": false,
+        "color": {
+          "column": "",
+          "history": {
+            "obs": {
+              "columns": {},
+              "key": null
+            }
+          },
+          "key": "cell_type",
+          "type": "obs"
+        },
+        "colorMax": null,
+        "colorMin": null,
+        "colorRangeUnits": "data",
+        "colorReversed": false,
+        "colorScale": "Portland",
+        "enablePan": true,
+        "enableZoom": true,
+        "exportHeight": 800,
+        "exportWidth": 1200,
+        "fontFamily": "Arial, Helvetica, sans-serif",
+        "fontSize": 12,
+        "gridColor": "#e6e6e6",
+        "gridLineWidth": 1,
+        "hideNaN": false,
+        "hideNonSubset": false,
+        "highlightFocusedCell": true,
+        "hoverInfo": [
+          {
+            "key": "_index",
+            "type": "obs"
+          }
+        ],
+        "legendPosition": "right",
+        "lockColorRange": false,
+        "margins": {
+          "b": 60,
+          "l": 80,
+          "pad": 4,
+          "r": 80,
+          "t": 80
+        },
+        "pointOpacity": 1,
+        "pointSize": 7,
+        "removeNonTableEntries": false,
+        "scaleExport": false,
+        "showAxisLabels": true,
+        "showAxisLines": true,
+        "showAxisTitles": true,
+        "showGrid": true,
+        "showHoverInfo": true,
+        "showLegend": true,
+        "showZeroLines": false,
+        "subsettedCells": null,
+        "tableFilter": "none",
+        "textColor": "#000000",
+        "tickDensity": "auto",
+        "title": "Cell Plot",
+        "viewport2D": null,
+        "x": {
+          "column": "0",
+          "history": {
+            "obsm": {
+              "columns": {},
+              "key": null
+            }
+          },
+          "key": "X_umap",
+          "type": "obsm"
+        },
+        "y": {
+          "column": "1",
+          "history": {
+            "obsm": {
+              "columns": {},
+              "key": null
+            }
+          },
+          "key": "X_umap",
+          "type": "obsm"
+        },
+        "z": null,
+        "zeroLineColor": "#cccccc",
+        "zeroLineWidth": 1
+      },
+      "id": "cell-plot-1791324230820",
+      "isSelectionTile": false,
+      "title": "Cell Plot",
+      "type": "cell-plot"
+    }
+  },
+  "timestamp": "2026-10-06T22:03:54.568Z",
+  "view": {
+    "constants": {
+      "cellRows": {
+        "cell_0007": 7
+      },
+      "focusedCell": "cell_0007",
+      "focusedGene": "GENE003"
+    },
+    "layout": {
+      "controlState": {
+        "cell-plot-1": true
+      },
+      "hierarchy": [
+        {
+          "controlsVisible": true,
+          "height": 891,
+          "id": "cell-plot-1",
+          "type": "tile"
+        },
+        {
+          "type": "selector"
+        }
+      ],
+      "panelConfigs": {
+        "cell-plot-1": {
+          "autoPointOpacity": true,
+          "autoPointSize": false,
+          "axisColor": "#000000",
+          "axisLineWidth": 1,
+          "backdropColor": "#f0f0f0",
+          "bgColor": "#ffffff",
+          "categoryPalette": "uns",
+          "centeringActive": false,
+          "color": {
+            "column": "",
+            "history": {
+              "obs": {
+                "columns": {},
+                "key": null
+              }
+            },
+            "key": "cell_type",
+            "type": "obs"
+          },
+          "colorMax": null,
+          "colorMin": null,
+          "colorRangeUnits": "data",
+          "colorReversed": false,
+          "colorScale": "Portland",
+          "enablePan": true,
+          "enableZoom": true,
+          "exportHeight": 800,
+          "exportWidth": 1200,
+          "fontFamily": "Arial, Helvetica, sans-serif",
+          "fontSize": 12,
+          "gridColor": "#e6e6e6",
+          "gridLineWidth": 1,
+          "hideNaN": false,
+          "hideNonSubset": false,
+          "highlightFocusedCell": true,
+          "hoverInfo": [
+            {
+              "key": "_index",
+              "type": "obs"
+            }
+          ],
+          "id": "cell-plot-1",
+          "legendPosition": "right",
+          "lockColorRange": false,
+          "margins": {
+            "b": 60,
+            "l": 80,
+            "pad": 4,
+            "r": 80,
+            "t": 80
+          },
+          "pointOpacity": 1,
+          "pointSize": 7,
+          "removeNonTableEntries": false,
+          "scaleExport": false,
+          "showAxisLabels": true,
+          "showAxisLines": true,
+          "showAxisTitles": true,
+          "showGrid": true,
+          "showHoverInfo": true,
+          "showLegend": true,
+          "showZeroLines": false,
+          "subsettedCells": null,
+          "tableFilter": "none",
+          "textColor": "#000000",
+          "tickDensity": "auto",
+          "title": "Cell Plot",
+          "viewport2D": null,
+          "x": {
+            "column": "0",
+            "history": {
+              "obsm": {
+                "columns": {},
+                "key": null
+              }
+            },
+            "key": "X_umap",
+            "type": "obsm"
+          },
+          "y": {
+            "column": "1",
+            "history": {
+              "obsm": {
+                "columns": {},
+                "key": null
+              }
+            },
+            "key": "X_umap",
+            "type": "obsm"
+          },
+          "z": null,
+          "zeroLineColor": "#cccccc",
+          "zeroLineWidth": 1
+        }
+      },
+      "v": 1
+    },
+    "v": 1
+  }
+}
