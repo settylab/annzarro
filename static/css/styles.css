@@ -626,14 +626,18 @@ body {
   width: 100%;
 }
 
-/* 3) Pin the first row (search/header) & last row (info/paging) to natural height */
+/* 3) Pin the SearchBuilder row, the search row and the last row (info/paging)
+      to their natural height */
 .table-container > [id$="_wrapper"] > .row:first-child,
+.table-container > [id$="_wrapper"] > .row.az-search-row,
 .table-container > [id$="_wrapper"] > .row:last-child {
   flex: 0 0 auto;
 }
 
-/* 4) Let the *middle* row (the actual <table>) flex and get the scroll bar */
-.table-container > [id$="_wrapper"] > .row:nth-child(2) {
+/* 4) Let the table's row flex and get the scroll bar. By class, not
+      position: with the search on its own row the table is the THIRD row,
+      and nth-child(2) stretched the search row into an empty band. */
+.table-container > [id$="_wrapper"] > .row.az-table-row {
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: auto;   /* show horizontal scroll only when content overflows */
@@ -946,6 +950,35 @@ button.dtsb-button.dtsb-clear:hover {
     border-color: #86b7fe;
     outline: 0;
     box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* The text search: a slim full-width row below the SearchBuilder (table-data.js dom) */
+.az-search-row .dataTables_filter {
+    width: 100%;
+    margin: 0;
+    text-align: left;
+}
+
+.az-search-row .dt-search-container.az-search-line {
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.az-search-row .dataTables_filter input.form-control {
+    width: 100% !important;
+    min-width: 0;
+    margin-left: 0;
+}
+
+.az-search-line .dt-search-options {
+    margin-bottom: 0;
+    flex-shrink: 0;
+}
+
+.az-search-line .dt-search-option {
+    width: 30px;
+    height: 26px;
 }
 
 /* DataTables search options with Bootstrap 5 styling */
