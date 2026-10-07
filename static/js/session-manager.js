@@ -21,6 +21,7 @@ const SessionManager = (function() {
     // Private variables
     let _currentSession = null; // Stores the current panel set
     let _autosaveTimer = null; // Timer for autosave
+    let _autosaveHeld = false; // set while the browser's storage is being cleared: nothing may write it back
     // main.js registers how a view is applied (dataset switch, focus, layout);
     // see setViewApplier. Without one, loading falls back to closed panels.
     let _viewApplier = null;
@@ -616,6 +617,7 @@ const SessionManager = (function() {
      * @returns {Promise<Object>} - Save result
      */
     async function saveToLocalStorage() {
+        if (_autosaveHeld) return { status: 'skipped', message: 'Autosave is held' };
         try {
             // Only autosave if we have panels to save
             const allPanels = PanelManager.getAllPanels ? PanelManager.getAllPanels() : PanelManager.getActivePanels();
@@ -731,6 +733,12 @@ const SessionManager = (function() {
     /**
      * Stop autosave timer
      */
+    /** Stop autosaving for good (until reload), e.g. while the site's storage is cleared. */
+    function holdAutosave() {
+        _autosaveHeld = true;
+        stopAutosave();
+    }
+
     function stopAutosave() {
         if (_autosaveTimer) {
             clearInterval(_autosaveTimer);
@@ -776,6 +784,7 @@ const SessionManager = (function() {
         loadFromLocalStorage,
         startAutosave,
         stopAutosave,
+        holdAutosave,
         getAutosaveSession,
         clearAutosave,
         notifyPanelUpdate,

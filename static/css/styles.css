@@ -54,6 +54,19 @@ html, body {
     margin-top: 10px;
 }
 
+.notification-check {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    margin-top: 10px;
+    cursor: pointer;
+}
+
+.notification-check input {
+    margin-top: 0.25em;
+    flex: none;
+}
+
 .notification-error {
     background-color: #f8d7da;
     color: #721c24;

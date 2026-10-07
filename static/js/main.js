@@ -15,6 +15,7 @@ import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatc
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
+import { clearSiteStorage, bareUrl } from './utils/site-storage.js';
 import { sameSubset } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
@@ -34,6 +35,7 @@ import { defaultHierarchy } from './utils/deeplink.js';
 const App = (function() {
     // Private variables
     let _isInitialized = false;
+    let _closeAllAsking = false; // the Close all question is open
     let _sessionModal = null;
     
     /**
@@ -1256,7 +1258,7 @@ const App = (function() {
      * @returns {Promise<string|null>} the chosen key, null if dismissed
      * @private
      */
-    function _askNotification(title, message, actions, { type = 'warning', handle = null } = {}) {
+    function _askNotification(title, message, actions, { type = 'warning', handle = null, checkbox = null } = {}) {
         return new Promise(resolve => {
             const id = _showNotification(title, message, type, 24 * 3600 * 1000);
             const el = document.getElementById(id);
@@ -1289,9 +1291,62 @@ const App = (function() {
             if (close) close.addEventListener('click', () => finish(null));
             // lets the caller withdraw the question (resolves with null)
             if (handle) handle.cancel = () => finish(null);
+            // an optional tick box above the buttons; its state is read from `handle.checked`
+            if (checkbox) {
+                const label = document.createElement('label');
+                label.className = 'notification-check';
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.id = checkbox.id || '';
+                box.addEventListener('change', () => { if (handle) handle.checked = box.checked; });
+                label.appendChild(box);
+                label.appendChild(document.createTextNode(' ' + checkbox.label));
+                el.insertBefore(label, bar);
+            }
             const primary = bar.querySelector('.btn-primary');
             if (primary) primary.focus();
         });
+    }
+
+    /**
+     * "Close all panels": ask, then close every open panel (each goes to the
+     * closed list, as with its X). With the tick box, also clear what this
+     * site stored in this browser and reload to the bare URL, a first visit.
+     * Cookies, so the login, and panel sets saved on the server are untouched.
+     * @private
+     */
+    async function _closeAllPanels() {
+        if (_closeAllAsking) return;
+        _closeAllAsking = true;
+        try {
+            const handle = { checked: false };
+            const choice = await _askNotification('Close all panels?',
+                'Every open panel closes and is listed under Duplicate or Reopen Panel.\n\n' +
+                'Not affected: panel sets saved on the server, and your login.',
+                [{ key: 'close', label: 'Close all', primary: true }, { key: 'cancel', label: 'Cancel' }],
+                { handle, checkbox: { id: 'close-all-clear-storage',
+                    label: 'Also clear everything this site stored in this browser and reload as a first visit' } });
+            if (choice !== 'close') return;
+
+            if (handle.checked) {
+                // nothing may save the layout back into the storage being cleared
+                SessionManager.holdAutosave();
+            }
+            PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
+            PanelManager.updateSourcePanelSelection();
+            PanelManager.ensureWelcomeFallback();
+            if (!handle.checked) return;
+
+            const result = await clearSiteStorage(window);
+            if (result.failed.length) console.warn('Could not clear:', result.failed.join(', '));
+            // A link that differs only by its #view changes the fragment in
+            // place without loading anything: reload that case by hand.
+            const onlyFragment = !window.location.search;
+            window.location.replace(bareUrl(window.location));
+            if (onlyFragment) window.location.reload();
+        } finally {
+            _closeAllAsking = false;
+        }
     }
 
     /**
@@ -1485,6 +1540,9 @@ const App = (function() {
         if (loadSessionBtn) {
             loadSessionBtn.addEventListener('click', _showLoadSessionModal);
         }
+
+        const closeAllBtn = document.getElementById('btn-close-all');
+        if (closeAllBtn) closeAllBtn.addEventListener('click', _closeAllPanels);
 
         const changeDatasetBtn = document.getElementById('btn-change-dataset');
         if (changeDatasetBtn) changeDatasetBtn.addEventListener('click', () => _showChangeDataset());
