@@ -169,6 +169,8 @@ export function maxSubsetCells(eligible, threshold) {
 
 /** The sentence beside a refused control: why, and the ways out. */
 export function refusalText(result, advice) {
+    // above the largest plot tested, closing other plots does not help
+    if (result && result.binding === 'tested') advice = advice.replace(/^Close a plot, or s/, 'S');
     return `${result.why ? result.why.charAt(0).toUpperCase() + result.why.slice(1) : 'Not enough browser memory'}. ${advice}`;
 }
 
