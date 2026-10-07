@@ -137,9 +137,9 @@ const GAP_LABEL = Object.freeze({
 /** A label that says more than its reason's, for a gap of this kind. */
 const KIND_LABEL = Object.freeze({
     mode: 'not available in large-plot mode',
-    // a categorical column with more categories than can be coloured by
-    // (utils/categories.js): nothing failed and nothing is missing
-    categories: 'too many categories to colour by',
+    // a categorical column whose labels for these rows would exceed the
+    // server's label cap (annzarro/core/categories.py): use a subset
+    categories: 'too many distinct values to label',
     // the gene set panel's external services: ids a service does not know,
     // a request that failed, a request not made (species, limit, turned off)
     unmapped: 'not found by the service',
@@ -493,7 +493,7 @@ export class Coverage {
             return `${fmt(this.shown)} of ${fmt(this.total)} ${this.unit} shown`;
         }
         // Every entity is on screen, but something about them is missing.
-        if (this.gaps.length && this.gaps.every(g => g.kind === 'categories')) return 'Not coloured: too many categories';
+        if (this.gaps.length && this.gaps.every(g => g.kind === 'categories')) return 'Not labelled: too many distinct values';
         return REASON_HEADLINE[this.worstReason] || 'Incomplete data shown';
     }
 
@@ -864,9 +864,9 @@ export function classifyError(error, { unit = 'values', source = '', total = nul
         return new Coverage({ shown: 0, total, unit, role,
             gaps: [{ reason: GAP.UNAVAILABLE, detail: message, source, count: total, kind: 'mode' }] });
     }
-    // `too_many_categories`: a column with more categories than can be
-    // coloured by (core/categories.py, utils/categories.js). The points are
-    // all drawn; the message says what to use instead.
+    // `too_many_categories`: labels for these rows would exceed the server's
+    // label cap (core/categories.py). The points are all there; the message
+    // says to use a subset.
     if (serverReason === 'too_many_categories') {
         return new Coverage({ shown: total, total, unit, role,
             gaps: [{ reason: GAP.UNAVAILABLE, detail: body.detail || message, source, count: 0, kind: 'categories' }] });

@@ -4,6 +4,7 @@
  */
 import { Config } from './config.js';
 import { subsetParam } from './utils/subset.js';
+import { RANKED_LABELS } from './utils/categories.js';
 import { notify } from './utils/notify.js';
 import { CacheManager } from './cache-manager.js';
 import { BINARY_FORMAT, categoricalValues, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
@@ -2064,13 +2065,19 @@ const DataManager = (function() {
      * The codes route's reply in loadCategoryCodes' shape: Uint16 codes with
      * 0xFFFF for missing (the route sends int8/16/32 with -1).
      */
-    function _categoryCodesFromBinary(decoded) {
-        const MISSING = 0xFFFF;
+    function _categoryCodesFromBinary(decoded, headers = null) {
+        const used = headers ? Number(headers.get('X-Annzarro-Categories-Used')) : NaN;
+        const ranked = !!headers && headers.get('X-Annzarro-Categories-Order') === 'ranked';
+        // ranked: the codes are frequency ranks of up to `used` categories,
+        // and `categories` the labels of the first ranks only
+        const span = ranked ? used : decoded.categories.length;
+        const wide = span >= 0xFFFF;
+        const MISSING = wide ? 0xFFFFFFFF : 0xFFFF;
         const src = decoded.values, n = src.length;
-        if (decoded.categories.length >= MISSING) throw new RangeError('more than 65534 categories');
-        const codes = new Uint16Array(n);
+        const codes = wide ? new Uint32Array(n) : new Uint16Array(n);
         for (let i = 0; i < n; i++) { const c = src[i]; codes[i] = c < 0 ? MISSING : c; }
-        return { codes, categories: decoded.categories, MISSING };
+        return ranked ? { codes, categories: decoded.categories, MISSING, ranked: true, used }
+            : { codes, categories: decoded.categories, MISSING };
     }
 
     /**
@@ -2078,10 +2085,12 @@ const DataManager = (function() {
      * plus its categories, read as a stream (utils/packed-names.js): the JSON
      * body of a large dataset does not fit in one string.
      */
-    async function loadCategoryCodes(datasetPath, column) {
-        // every category: this is a colouring (large-plot.js), refused by the
-        // server past the colour limit
-        const params = _withSubset(Config.API.OBS, { dataset_path: datasetPath, columns: column, categories: 'all' });
+    async function loadCategoryCodes(datasetPath, column, { ranked = false } = {}) {
+        // ranked: codes as frequency ranks plus the legend's few labels
+        // (utils/categories.js); otherwise every category
+        const params = _withSubset(Config.API.OBS, ranked
+            ? { dataset_path: datasetPath, columns: column, categories: 'ranked', labels: String(RANKED_LABELS) }
+            : { dataset_path: datasetPath, columns: column });
         const fullUrl = `${Config.API.OBS}?${new URLSearchParams(params).toString()}`;
         const key = `${fullUrl}#codes`;
         const cached = CacheManager.get(key);
@@ -2094,7 +2103,7 @@ const DataManager = (function() {
             const response = await fetch(`${fullUrl}&format=${BINARY_FORMAT}&categorical=codes`);
             if (!response.ok) await _readResponse(response);   // throws with the server's reason
             const result = isBinaryResponse(response)
-                ? _categoryCodesFromBinary(decodeVector(await response.arrayBuffer(), response.headers))
+                ? _categoryCodesFromBinary(decodeVector(await response.arrayBuffer(), response.headers), response.headers)
                 : await categoryCodesFromJSON(response, column, (_cells || []).length);
             CacheManager.set(key, result);
             return result;

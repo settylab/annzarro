@@ -2,16 +2,15 @@
  * Categorical columns with many categories, up to one per cell
  * (static/js/utils/categories.js, annzarro/core/categories.py).
  *
- *  - Colouring by a column with more categories than the colour limit is
- *    refused before anything is requested, with one notice that says how
- *    many distinct values it has and to use the hover or a table instead.
- *    v0.4.0 asked for the column with every category (a GB-sized reply at
- *    95.6M cells) and then failed on it.
- *  - Between 100 categories and the limit the plot draws in 64 shared colours
- *    with a one-line legend; v0.4.0 drew a trace and a legend entry per
- *    category and hung at a few thousand.
- *  - The hover still names each point's category, and a one-per-cell column
- *    still loads for hover and tables.
+ *  - Past 64 categories a plot is coloured by colour group: categories ranked
+ *    by their points, rank r in colour r mod 64, one trace and one legend
+ *    entry per colour naming its largest categories ("k0, k64, k128 +N
+ *    more"). v0.4.0 drew a trace and a legend entry per category and hung at
+ *    a few thousand; at a one-per-cell column it asked for every category
+ *    (a GB-sized reply at 95.6M cells) and then failed on it.
+ *  - The colour request for such a column asks for the labels of the points
+ *    only (categories=used), not the column's list.
+ *  - The hover names each point's exact category.
  *
  * Run:  node --test annzarro/tests/js/many-categories.test.mjs
  */
@@ -45,7 +44,6 @@ globalThis.fetch = async () => ({ ok: false, statusText: 'test' });
 
 const { CacheManager } = await import('../../../static/js/cache-manager.js');
 const { DataManager } = await import('../../../static/js/data-manager.js');
-const { Config } = await import('../../../static/js/config.js');
 const { loadAxisData, hoverTemplateFor } = await import('../../../static/js/panels/plot-utilities/plot-make.js');
 const { processCategories, isLegendProxy } = await import('../../../static/js/panels/plot-utilities/plot-make-helper.js');
 const { classifyError } = await import('../../../static/js/utils/coverage.js');
@@ -98,101 +96,113 @@ async function open() {
     return calls;
 }
 
-test('colouring by a one-per-cell column is refused before any request, with one notice', async () => {
+test('colouring a column with more than 64 categories asks for the labels of the points only', async () => {
     const calls = await open();
-    const axis = { type: 'obs', key: 'barcode', column: '' };
-    await assert.rejects(loadAxisData(axis, 'cells', null, { role: 'colour' }), (err) => {
-        const lines = err.coverage.lines();
-        assert.equal(lines.length, 1);
-        assert.equal(lines[0], 'obs.barcode: too many categories to colour by -- 2,000,000 distinct values '
-            + '(the limit is 10,000): show it in the hover or in a table instead');
-        assert.equal(err.coverage.headline(), 'Not coloured: too many categories');
-        return true;
-    });
-    assert.deepEqual(calls.filter(c => c.path === 'obs'), [], 'nothing was requested for the column');
-});
-
-test('the same column still loads for the hover and the table, labels for the rows shown', async () => {
-    const calls = await open();
-    const loaded = await loadAxisData({ type: 'obs', key: 'barcode', column: '' }, 'cells');
+    const loaded = await loadAxisData({ type: 'obs', key: 'barcode', column: '' }, 'cells', null, { role: 'colour' });
     assert.deepEqual(loaded.values, BARCODES);
-    const obs = calls.filter(c => c.path === 'obs');
-    assert.equal(obs.length, 1);
-    assert.equal(obs[0].q.categories, undefined, 'not the colour request');
+    assert.equal(calls.find(c => c.path === 'obs').q.categories, 'used');
 });
 
-test('a colouring below the limit asks for every category', async () => {
+test('up to 64 categories a colouring asks for every category', async () => {
     const calls = await open();
     const loaded = await loadAxisData({ type: 'obs', key: 'few', column: '' }, 'cells', null, { role: 'colour' });
     assert.equal(loaded.type, 'categorical');
     assert.equal(calls.find(c => c.path === 'obs').q.categories, 'all');
 });
 
-test('the colour limit follows the server setting', () => {
-    const was = Config.DEFAULTS.CATEGORY_COLOUR_LIMIT;
-    try {
-        Config.DEFAULTS.CATEGORY_COLOUR_LIMIT = 1;
-        const structure = { obs: { columns_info: { few: { type: 'categorical', n_categories: 2 } } } };
-        const err = cats.colourRefusal({ type: 'obs', key: 'few' }, structure);
-        assert.equal(err.data.reason, 'too_many_categories');
-        assert.equal(err.data.limit, 1);
-        assert.equal(cats.colourRefusal({ type: 'obsm', key: 'X' }, structure), null);
-        assert.equal(cats.colourRefusal({ type: 'obs', key: 'unknown' }, structure), null);
-    } finally {
-        Config.DEFAULTS.CATEGORY_COLOUR_LIMIT = was;
-    }
+test('hover and table load a one-per-cell column as before', async () => {
+    const calls = await open();
+    const loaded = await loadAxisData({ type: 'obs', key: 'barcode', column: '' }, 'cells');
+    assert.deepEqual(loaded.values, BARCODES);
+    assert.equal(calls.find(c => c.path === 'obs').q.categories, undefined);
 });
 
-test("the server's 413 reads the same as the client's own refusal", () => {
-    // the 413 body as core/categories.py sends it
-    const err = new Error("'barcode' has 95,600,000 distinct values, too many to colour by (the limit is 10,000).");
-    err.data = { reason: 'too_many_categories', count: 95600000, limit: 10000,
-                 detail: '95,600,000 distinct values (the limit is 10,000): show it in the hover or in a table instead' };
+test('frequency ranks: most cells first, ties by category, in linear time', () => {
+    const r = cats.frequencyRanks(Uint32Array.from([3, 0, 5, 3, 1, 5]));
+    assert.deepEqual(Array.from(r.order), [2, 5, 0, 3, 4]);
+    assert.deepEqual(Array.from(r.rankOf), [2, -1, 0, 3, 4, 1]);
+    assert.equal(r.used, 5);
+    const ones = cats.frequencyRanks(new Uint32Array(1e6).fill(1));
+    assert.equal(ones.used, 1e6);
+    assert.equal(ones.order[999999], 999999);
+});
+
+test('a colour group names its largest categories, then how many more', () => {
+    const label = r => `S${r}`;
+    assert.equal(cats.groupLegendName(0, label, 1344), 'S0, S64, S128 +18 more');
+    assert.equal(cats.groupLegendName(63, label, 1344), 'S63, S127, S191 +18 more');
+    assert.equal(cats.groupLegendName(63, label, 1343), 'S63, S127, S191 +17 more');
+    assert.equal(cats.groupLegendName(5, label, 70), 'S5, S69');
+    assert.equal(cats.groupLegendName(6, label, 70), 'S6');
+    assert.equal(cats.groupLegendName(3, label, 200), 'S3, S67, S131 +1 more');
+    assert.equal(cats.groupSize(3, 200), 4);
+    assert.equal(cats.groupSize(10, 5), 0);
+    assert.equal(cats.groupOf(130), 2);
+});
+
+test("the server's label cap reads as such", () => {
+    const err = new Error("'barcode' has 95,600,000 distinct values; labelling 95,600,000 rows would send more than 2,000,000 of them.");
+    err.data = { reason: 'too_many_categories', count: 95600000, limit: 2000000,
+                 detail: '95,600,000 distinct values; labelling 95,600,000 rows would send more than 2,000,000 of them: use a cell subset to label fewer rows' };
     const cov = classifyError(err, { unit: 'cells', source: 'obs.barcode', total: 10 });
-    assert.equal(cov.headline(), 'Not coloured: too many categories');
-    assert.equal(cov.lines()[0], 'obs.barcode: too many categories to colour by -- 95,600,000 distinct values '
-        + '(the limit is 10,000): show it in the hover or in a table instead');
+    assert.equal(cov.headline(), 'Not labelled: too many distinct values');
+    assert.match(cov.lines()[0], /^obs\.barcode: too many distinct values to label -- 95,600,000 distinct values; .*use a cell subset/);
 });
 
-function panel(nCategories, nPoints) {
+/**
+ * `nCategories` categories, category k holding `base - k` points (distinct
+ * sizes, so the frequency order is k0, k1, k2, ...), plus a few points with
+ * no value, shuffled.
+ */
+function panel(nCategories, base = nCategories + 20) {
     const categories = Array.from({ length: nCategories }, (_, i) => `k${i}`);
-    const cells = Array.from({ length: nPoints }, (_, i) => `c${i}`);
-    const color = cells.map((_, i) => (i % 97 === 0 ? null : categories[(i * 7919) % nCategories]));
+    const color = [];
+    categories.forEach((c, k) => { for (let j = 0; j < base - k; j++) color.push(c); });
+    for (let j = 0; j < 30; j++) color.push(null);
+    const shuffled = color.map((_, i) => color[(i * 7919) % color.length]);
+    const cells = shuffled.map((_, i) => `c${i}`);
     return {
         settings: { hideNaN: false, hideOutliers: false, tableFilter: 'none', z: null, pointSize: 4, pointOpacity: 1,
                     categoryPalette: 'hue' },
         data: { entities: 'cells', cells, x: { values: cells.map((_, i) => i) }, y: { values: cells.map((_, i) => -i) },
-                color, colorType: 'categorical', colorCategories: categories },
+                color: shuffled, colorType: 'categorical', colorCategories: categories },
         categories
     };
 }
 
-test('a few thousand categories: 64 shared colours and a one-line legend, every point drawn', () => {
-    const { settings, data, categories } = panel(3000, 9000);
-    const traces = processCategories(settings, data, categories);
+test('hundreds of categories: 64 colour groups by frequency, one legend entry each, every point drawn', () => {
+    const { settings, data } = panel(500);
+    // categories in an order unrelated to their sizes: ranks come from the points
+    const listed = data.colorCategories.slice().reverse();
+    const traces = processCategories(settings, data, listed);
     const legend = traces.filter(isLegendProxy);
     const points = traces.filter(t => !isLegendProxy(t));
-    assert.deepEqual(legend.map(t => t.name).sort(), ['3,000 categories (colours shared)', 'NA']);
-    assert.ok(points.length <= cats.BUCKET_COLOURS + 1, `${points.length} traces`);
-    assert.equal(points.reduce((n, t) => n + t.x.length, 0), 9000);
-    // the hover names each point's own category
-    for (const t of points.filter(t => t._azLabels)) {
+    const groups = points.filter(t => t._azLabels);
+    assert.equal(groups.length, cats.GROUP_COLOURS);
+    assert.equal(legend.length, cats.GROUP_COLOURS + 1);               // and NA
+    assert.equal(points.reduce((n, t) => n + t.x.length, 0), data.color.length);
+    // colour group i is led by the i-th largest category: k0 leads group 0
+    const byName = new Map(groups.map(t => [t.name, t]));
+    const first = groups.find(t => t.name.startsWith('k0,'));
+    assert.ok(first, groups.map(t => t.name).slice(0, 5).join(' | '));
+    assert.match(first.name, /^k0, k64, k128 \+\d+ more$/);
+    assert.ok(byName.size === groups.length, 'one entry per colour');
+    // the hover names each point's own category, and the group holds it
+    for (const t of groups) {
+        const members = new Set();
         t.customdata.forEach((cell, j) => {
             assert.equal(t._azLabels[j], data.color[Number(cell.slice(1))]);
             assert.equal(t.hovertext[j], `<br>${t._azLabels[j]}`);
+            members.add(Number(t._azLabels[j].slice(1)) % cats.GROUP_COLOURS);
         });
+        assert.equal(members.size, 1, `${t.name}: one colour group`);
         assert.match(hoverTemplateFor(t, settings, data), /%\{hovertext\}<extra><\/extra>$/);
     }
-    // category k is drawn in colour k mod 64, so equal categories share a colour
-    const colourOf = new Map();
-    for (const t of points.filter(t => t._azLabels)) t._azLabels.forEach(l => colourOf.set(l, t.marker.color));
-    assert.equal(colourOf.get('k5'), colourOf.get(`k${5 + cats.BUCKET_COLOURS}`));
-    assert.notEqual(colourOf.get('k5'), colourOf.get('k6'));
 });
 
-test('up to 100 categories the legend lists each one, as before', () => {
-    const { settings, data, categories } = panel(cats.LEGEND_CATEGORIES, 1000);
+test('up to 64 categories the legend lists each one, as before', () => {
+    const { settings, data, categories } = panel(cats.GROUP_COLOURS);
     const legend = processCategories(settings, data, categories).filter(isLegendProxy);
-    assert.equal(legend.length, cats.LEGEND_CATEGORIES + 1);    // and NA
-    assert.ok(!legend.some(t => /categories/.test(t.name)));
+    assert.equal(legend.length, cats.GROUP_COLOURS + 1);    // and NA
+    assert.ok(!legend.some(t => /more$/.test(t.name)));
 });

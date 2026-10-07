@@ -1,7 +1,7 @@
 import { DataManager } from '../../data-manager.js';
 import { generateDiscreteColors } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
-import { BUCKET_COLOURS, bucketed, bucketLegendName } from '../../utils/categories.js';
+import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName } from '../../utils/categories.js';
 
 /**
  * Generates a Plotly layout configuration based on the provided settings.
@@ -351,10 +351,11 @@ export function keptViewRanges(settings) {
       slotOf[idx] = slot;
     }
 
-    // Over LEGEND_CATEGORIES (utils/categories.js) the categories share
-    // BUCKET_COLOURS colours, one trace per colour and a one-line legend: a
-    // trace and a legend entry per category hung the panel at a few thousand.
-    const many = bucketed(categories.length);
+    // Past GROUP_COLOURS categories (utils/categories.js) they are drawn in
+    // colour groups: ranked by their points, rank r in colour r mod 64, one
+    // trace and one legend entry per colour. A trace and a legend entry per
+    // category hung the panel at a few thousand categories.
+    const many = grouped(categories.length);
 
     // Generate a color palette
     let selectedPalette;
@@ -364,9 +365,9 @@ export function keptViewRanges(settings) {
       // uns colours, one per category, would be a trace each again
       const name = settings.categoryPalette && settings.categoryPalette !== 'uns' ? settings.categoryPalette : undefined;
       try {
-        selectedPalette = generateDiscreteColors(BUCKET_COLOURS, name);
+        selectedPalette = generateDiscreteColors(GROUP_COLOURS, name);
       } catch {
-        selectedPalette = generateDiscreteColors(BUCKET_COLOURS);
+        selectedPalette = generateDiscreteColors(GROUP_COLOURS);
       }
     } else if (
       settings?.categoryPalette === "uns" &&
@@ -453,27 +454,27 @@ export function keptViewRanges(settings) {
     }
 
     if (many) {
-      // Category i is drawn in colour i mod BUCKET_COLOURS; each point's
-      // category goes to its hover through `_azLabels` (applyHoverInfo).
+      // Rank the categories by their points on this plot; rank r goes to
+      // colour r mod GROUP_COLOURS, so the largest categories each lead a
+      // colour. Each point's category goes to its hover through `_azLabels`.
+      const { rankOf, order, used } = frequencyRanks(Uint32Array.from(bySlot, s => s.length));
       const byColour = selectedPalette.map(() => []);
-      bySlot.forEach((indices, i) => { for (const idx of indices) byColour[i % selectedPalette.length].push(idx); });
-      byColour.forEach((indices, b) => {
+      bySlot.forEach((indices, i) => {
         if (indices.length === 0) return;
-        const trace = makeTrace(indices, `${bucketLegendName(categories.length)}: colour ${b + 1}`, selectedPalette[b], null);
+        const target = byColour[groupOf(rankOf[i])];
+        for (const idx of indices) target.push(idx);
+      });
+      byColour.forEach((indices, g) => {
+        if (indices.length === 0) return;
+        const name = groupLegendName(g, r => categories[order[r]], used);
+        const trace = makeTrace(indices, name, selectedPalette[g], null);
         trace._azLabels = indices.map(idx => String(categories[slotOf[idx]]));
         trace.hovertext = trace._azLabels.map(label => `<br>${label}`);
         trace.hovertemplate = trace.hovertemplate.replace('<extra></extra>', '%{hovertext}<extra></extra>');
-        trace.showlegend = false;
-        trace.legendgroup = BUCKETS_GROUP;
-        trace.meta = LEGEND_POINTS;
+        trace.legendrank = g + 1;
         traces.push(trace);
       });
-      const proxies = withLegendProxies(traces, settings);
-      proxies.push({ type: settings.z ? 'scatter3d' : 'scattergl', mode: 'markers', name: bucketLegendName(categories.length),
-        legendgroup: BUCKETS_GROUP, showlegend: true, meta: LEGEND_PROXY, x: [null], y: [null], hoverinfo: 'skip',
-        ...(settings.z ? { z: [null] } : {}),
-        marker: { size: settings.pointSize, opacity: 1, color: selectedPalette[0] } });
-      return proxies;
+      return withLegendProxies(traces, settings);
     }
 
     categories.forEach((category, i) => {
@@ -487,8 +488,6 @@ export function keptViewRanges(settings) {
   /** Trace `meta` of a legend proxy, and of the point traces whose legend entry it carries. */
   export const LEGEND_PROXY = 'az-legend';
   export const LEGEND_POINTS = 'az-points';
-  /** Legend group of the shared-colour traces of a column with many categories. */
-  const BUCKETS_GROUP = 'az-categories';
 
   /** True for a legend proxy trace (no points; styling restyles skip it). */
   export function isLegendProxy(trace) {

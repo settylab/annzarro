@@ -854,7 +854,7 @@ def resolve(reader, dataset_path: str, raw, config=None) -> Optional[Subset]:
         # One group per category: past the colour limit (a barcode column has
         # a category per cell) a balanced sample is every group's one cell.
         count = category_rules.category_count(reader.get_metadata(dataset_path), "cells", spec.balance)
-        limit = category_rules.colour_limit(config)
+        limit = category_rules.MAX_BALANCE_GROUPS
         if count is not None and count > limit:
             raise SubsetError(f"Cannot balance across '{spec.balance}': it has {count:,} categories "
                               f"(the limit is {limit:,}).", "too_many_categories")
@@ -992,13 +992,13 @@ class SubsetView:
                                         include_categories=include_categories)
 
     def get_obs_var_codes(self, entity="cells", dataset_path=None, column_name=None, indices=None,
-                          used_only=False):
+                          used_only=False, ranked_top=None):
         if entity == "cells":
             indices = (self.subset.indices.tolist() if indices is None
                        else self._rows(indices))
         return self._reader.get_obs_var_codes(entity=entity, dataset_path=dataset_path,
                                               column_name=column_name, indices=indices,
-                                              used_only=used_only)
+                                              used_only=used_only, ranked_top=ranked_top)
 
     def get_obsm_varm(self, entity="cells", key=None, dataset_path=None, indices=None,
                       col_indices=None, column_name=None):

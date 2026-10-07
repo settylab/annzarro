@@ -1779,7 +1779,7 @@ class ZarrReader(CacheSettings):
     @cached_method
     def get_obs_var_codes(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
                           column_name: Optional[str] = None, indices: Optional[List[int]] = None,
-                          used_only: bool = False):
+                          used_only: bool = False, ranked_top: Optional[int] = None):
         """``(codes, categories)`` of a categorical obs/var column, or None
         when the column is not categorical.
 
@@ -1787,8 +1787,10 @@ class ZarrReader(CacheSettings):
         decoded into one string per cell, which is what made a categorical
         column cost 12 B per cell on the wire (see array_response). With
         ``used_only``, or past READ_ALL_MAX categories, the categories are
-        only those the rows use and the codes index that list
-        (core/categories.py).
+        only those the rows use and the codes index that list. With
+        ``ranked_top``: ``(ranks, labels, used)``, each code renumbered to its
+        category's frequency rank among the rows and the labels of the first
+        ``ranked_top`` ranks only (core/categories.py).
         """
         root = self._get_root(dataset_path=dataset_path)
         obj = "obs" if entity == "cells" else "var"
@@ -1800,6 +1802,11 @@ class ZarrReader(CacheSettings):
             return None
         try:
             codes = np.asarray(group['codes'][indices] if indices is not None else group['codes'][:])
+            if ranked_top is not None:
+                member = group['categories']
+                return category_rules.ranked(codes, int(member.shape[0]),
+                                             lambda positions: self._read_member(member, positions),
+                                             ranked_top)
             if used_only:
                 member = group['categories']
                 codes, categories = category_rules.compact(

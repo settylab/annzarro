@@ -25,7 +25,6 @@ export function readUiSettings(server) {
         colorScale: pick(d.color_scale, 'ui_color_scale'),
         taxonomyId: pick(d.taxonomy_id, 'ui_taxonomy_id'),
         largePlotPoints: pick(d.large_plot_points, 'ui_large_plot_points'),
-        categoryColourLimit: pick(d.category_colour_limit, 'ui_category_colour_limit'),
         enabledPanelTypes: pick(ui.enabled_panel_types, 'enabled_panel_types'),
         cacheMaxEntries: pick(c.max_entries, 'ui_cache_max_entries'),
         cacheMaxSizeMb: pick(c.max_size_mb, 'ui_cache_max_size_mb'),
@@ -145,10 +144,6 @@ const Config = (function() {
         // keeps several regular plots open at once. Server key
         // ui.defaults.large_plot_points.
         LARGE_PLOT_POINTS: 1000000,
-        // Most categories a column may have to be coloured by; more are
-        // refused (utils/categories.js). Server key
-        // ui.defaults.category_colour_limit, as annzarro/core/categories.py.
-        CATEGORY_COLOUR_LIMIT: 10000,
         // Browser memory guard, server ui.memory (utils/memory-guard.js)
         MEMORY: null,
         COLOR_SCALE: 'Portland',
@@ -354,9 +349,6 @@ const Config = (function() {
                 if (ui.taxonomyId) DEFAULTS.TAXONOMY_ID = ui.taxonomyId;
                 if (ui.largePlotPoints !== null && ui.largePlotPoints >= 0) {
                     DEFAULTS.LARGE_PLOT_POINTS = Number(ui.largePlotPoints);
-                }
-                if (ui.categoryColourLimit !== null && ui.categoryColourLimit >= 1) {
-                    DEFAULTS.CATEGORY_COLOUR_LIMIT = Number(ui.categoryColourLimit);
                 }
                 if (ui.enabledPanelTypes) DEFAULTS.ENABLED_PANEL_TYPES = ui.enabledPanelTypes;
                 if (ui.cacheMaxEntries) CACHE.MAX_ENTRIES = ui.cacheMaxEntries;

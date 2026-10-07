@@ -8,12 +8,13 @@ cells a GB-sized list built in server memory, which the client then refused
 
 - the dataset structure says how many categories a column has (from the
   categories array's shape, without reading it);
-- ``categories=all`` (a client colouring by the column) is refused past the
-  colour limit with 413 ``too_many_categories``, before anything is read;
+- ``categories=ranked`` gives each cell's code as its category's frequency
+  rank among the rows, and the labels of the first ranks only: what colouring
+  by colour group needs, at any number of categories;
 - past READ_ALL_MAX categories a reply carries only the categories its rows
   use, and says the column's count;
 - a reply that would still need more than MAX_LABELS labels is refused;
-- balancing a subset across such a column is refused.
+- balancing a subset across more than MAX_BALANCE_GROUPS groups is refused.
 """
 import json
 
@@ -34,7 +35,7 @@ N_OBS = 400
 HUGE = 70_000
 
 
-def _store(tmp_path, colour_limit=None):
+def _store(tmp_path):
     rng = np.random.default_rng(3)
     path = str(tmp_path / "data" / "many.zarr")
     root = open_group(path)
@@ -59,8 +60,6 @@ def _store(tmp_path, colour_limit=None):
     _frame(root, "var", [f"g{i}" for i in range(3)], lambda g: None)
     config = {"TESTING": True, "data_dir": str(tmp_path / "data"),
               "log_file": str(tmp_path / "t.log"), "auth_enabled": False}
-    if colour_limit is not None:
-        config["ui_category_colour_limit"] = colour_limit
     client = create_app(config).test_client()
     labels = {"few": [["a", "b", "c", "d"][c] for c in few],
               "barcode": [f"BC{c:06d}-1" for c in barcode],
@@ -91,35 +90,66 @@ def test_structure_says_how_many_categories(many):
     assert info["huge"]["n_categories"] == HUGE
 
 
-def test_colouring_past_the_limit_is_refused_before_reading(many, monkeypatch):
-    """categories=all (the client colouring by the column) past the colour
-    limit: 413 with the count and the limit, and not one read of the
-    column's codes or categories."""
-    client, path, _ = many
-    client.get("/api/v1/data/dataset_structure", query_string={"dataset_path": path})
-    reads = []
+def test_ranked_codes_and_the_legend_labels_only(many, monkeypatch):
+    """categories=ranked: code r is the r-th most frequent category of the
+    rows, the prefix the labels of the first ranks only, and the categories
+    read are those few, not the column's 70,000."""
+    client, path, labels = many
+    sizes = []
     reader = get_reader(path)
     real = reader._read_member
-    monkeypatch.setattr(reader, "_read_member", lambda *a, **k: reads.append(a) or real(*a, **k))
-    resp = _codes(client, path, "huge", categories="all")
-    assert resp.status_code == 413, resp.get_data(as_text=True)[:300]
-    body = resp.get_json()
-    assert body["reason"] == "too_many_categories"
-    assert body["count"] == HUGE and body["limit"] == category_rules.DEFAULT_COLOUR_LIMIT
-    assert "too many to colour by" in body["error"]
-    assert body["detail"] == "70,000 distinct values (the limit is 10,000): show it in the hover or in a table instead"
-    assert reads == []
-    # below the limit the same request is served with every category
-    few = _codes(client, path, "few", categories="all")
-    assert few.status_code == 200 and decode(few)[1] == ["a", "b", "c", "d"]
+    monkeypatch.setattr(reader, "_read_member",
+                        lambda member, indices=None: sizes.append(
+                            member.shape[0] if indices is None else len(indices)) or real(member, indices))
+    resp = _codes(client, path, "few", categories="ranked", labels="2")
+    assert resp.status_code == 200
+    h = resp.headers
+    assert h["X-Annzarro-Categories-Order"] == "ranked"
+    assert h["X-Annzarro-Categories-Used"] == "4" and h["X-Annzarro-Categories-Total"] == "4"
+    ranks, top = decode(resp)
+    counts = {}
+    for v in labels["few"]:
+        counts[v] = counts.get(v, 0) + 1
+    order = sorted(counts, key=lambda v: (-counts[v], "abcd".index(v)))
+    assert top == order[:2]
+    assert [order[r] for r in ranks.tolist()] == labels["few"]
+
+    sizes.clear()
+    huge = _codes(client, path, "huge", categories="ranked")
+    ranks, top = decode(huge)
+    present = [v for v in labels["huge"] if v is not None]
+    assert huge.headers["X-Annzarro-Categories-Used"] == str(len(set(present)))
+    assert huge.headers["X-Annzarro-Categories-Total"] == str(HUGE)
+    # one cell per category: ties keep the stored order, so rank = order of code
+    by_code = sorted(set(present))
+    assert top == by_code[:category_rules.RANKED_LABELS]
+    assert [None if r < 0 else by_code[r] for r in ranks.tolist()] == labels["huge"]
+    assert max(sizes) <= category_rules.RANKED_LABELS     # the legend's labels, not 70,000
 
 
-def test_the_colour_limit_is_configurable(tmp_path):
-    zarr_reader.clear_cache()
-    client, path, _ = _store(tmp_path, colour_limit=3)
-    resp = _codes(client, path, "few", categories="all")
-    assert resp.status_code == 413 and resp.get_json()["limit"] == 3
-    zarr_reader.clear_cache()
+def test_ranked_codes_follow_the_subset(many):
+    client, path, labels = many
+    spec = json.dumps({"n": 60, "seed": 2})
+    names = client.get("/api/v1/data/cells", query_string={"dataset_path": path, "subset": spec}).get_json()["cells"]
+    rows = [int(n[1:]) for n in names]
+    resp = _codes(client, path, "barcode", categories="ranked", labels="5", subset=spec)
+    ranks, top = decode(resp)
+    shown = [labels["barcode"][r] for r in rows]
+    assert resp.headers["X-Annzarro-Categories-Used"] == "60"
+    assert len(top) == 5 and all(t in shown for t in top)
+    assert len(set(ranks.tolist())) == 60
+
+
+def test_ranked_ranks_by_frequency_in_linear_time():
+    rng = np.random.default_rng(0)
+    codes = rng.integers(-1, 1000, 50_000)
+    ranks, top, used = category_rules.ranked(codes, 1000, lambda pos: np.array([f"k{p}" for p in pos]), 3)
+    counts = np.bincount(codes[codes >= 0], minlength=1000)
+    expected_order = sorted(range(1000), key=lambda k: (-counts[k], k))
+    assert used == int((counts > 0).sum())
+    assert top == [f"k{k}" for k in expected_order[:3]]
+    rank_of = {k: r for r, k in enumerate(expected_order)}
+    assert ranks.tolist() == [-1 if c < 0 else rank_of[c] for c in codes.tolist()]
 
 
 def test_a_reply_carries_only_the_categories_its_rows_use(many, monkeypatch):
@@ -180,10 +210,11 @@ def test_a_reply_needing_too_many_labels_is_refused(many, monkeypatch):
     assert _codes(client, path, "few").status_code == 200
 
 
-def test_balance_across_a_one_per_cell_column_is_refused(tmp_path):
+def test_balance_across_a_one_per_cell_column_is_refused(tmp_path, monkeypatch):
     zarr_reader.clear_cache()
     cell_subset.clear()
-    client, path, _ = _store(tmp_path, colour_limit=100)
+    monkeypatch.setattr(category_rules, "MAX_BALANCE_GROUPS", 100)
+    client, path, _ = _store(tmp_path)
     resp = client.get("/api/v1/data/subset", query_string={
         "dataset_path": path, "subset": json.dumps({"n": 50, "seed": 0, "balance": "barcode"})})
     assert resp.status_code == 400
@@ -220,9 +251,3 @@ def test_h5ad_counts_and_reads_only_used_categories(tmp_path, monkeypatch):
     values = reader.get_obs_var("cells", path, column_names=["bc"])
     assert values["data"]["bc"] == ["k5", "k9", None, "k5", "k2"]
     assert values["n_categories"] == {"bc": 12} and values["categories"]["bc"] == ["k2", "k5", "k9"]
-
-
-def test_colour_limit_reads_the_config():
-    assert category_rules.colour_limit(None) == category_rules.DEFAULT_COLOUR_LIMIT
-    assert category_rules.colour_limit({"ui_category_colour_limit": 250}) == 250
-    assert category_rules.colour_limit({"ui_category_colour_limit": None}) == category_rules.DEFAULT_COLOUR_LIMIT

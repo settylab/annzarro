@@ -19,7 +19,7 @@ import {
     presetSizes, partsFor, initialSize, largestRegularSize, DEFAULT_LARGE_PLOT_POINTS, BROWSER_POINT_CEILING, shortCount, estimateLoad, formatSeconds, recordServer, serverSeconds, loadSamples
 } from './utils/subset-presets.js';
 import { escapeHtml } from './utils/session-permissions.js';
-import { categoryColourLimit } from './utils/categories.js';
+import { MAX_BALANCE_GROUPS, VALUE_LIST_MAX } from './utils/categories.js';
 import { subsetCheck, maxSubsetCells, headroomText, refusalText, ledger, formatGB, MEMORY_EVENT } from './utils/memory-guard-ui.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
@@ -260,10 +260,10 @@ const SubsetControl = (function() {
         q('subset-seed').value = String(spec ? spec.seed : defaults.seed);
 
         const balance = q('subset-balance');
-        // A column with more categories than can be coloured by is offered
-        // disabled, with its count: one group per category (a barcode column)
-        // is no balance, and the server refuses it (too_many_categories).
-        const limit = categoryColourLimit();
+        // A column with more than MAX_BALANCE_GROUPS categories is offered
+        // disabled, with its count: one group per cell (a barcode column) is
+        // no balance, and the server refuses it (too_many_categories).
+        const limit = MAX_BALANCE_GROUPS;
         balance.innerHTML = '<option value="">Uniform</option>' + _columns
             .filter(c => /categor|bool|str|object/i.test(c.type))
             .map(c => (c.nCategories !== null && c.nCategories > limit
@@ -533,10 +533,10 @@ const SubsetControl = (function() {
     async function _fillCategories(col, datalist) {
         if (!datalist || !col) return;
         // The suggestions are the column's whole category list: not for a
-        // column with more than can be coloured by (a barcode column), where
-        // that list is the size of the dataset.
+        // column with more than VALUE_LIST_MAX (a barcode column), where that
+        // list is the size of the dataset.
         const column = _columns.find(c => c.name === col);
-        if (column && column.nCategories !== null && column.nCategories > categoryColourLimit()) {
+        if (column && column.nCategories !== null && column.nCategories > VALUE_LIST_MAX) {
             datalist.innerHTML = '';
             return;
         }

@@ -1,41 +1,47 @@
 /**
- * Categorical columns with many categories (annzarro/core/categories.py).
+ * Colouring by a categorical column with many categories, up to one per
+ * cell (annzarro/core/categories.py).
  *
- * A barcode or cell-id column stored as a categorical has one category per
- * cell. Colouring by it used to download every category (gigabytes at 95.6M
- * cells) and then fail; a column with a few thousand categories drew one
- * trace and one legend entry per category and hung the panel.
+ * Up to GROUP_COLOURS (64) categories: one trace and one legend entry per
+ * category, as always. Past that, colour GROUPS: the categories are ranked by
+ * how many of the shown cells they hold, rank r is drawn in colour r mod 64,
+ * so the 64 largest categories each lead a colour. One trace per colour (64
+ * at most), and one legend entry per colour naming its largest categories:
+ * "S1, S7, S12 +18 more". The hover names each point's exact category.
  *
- *   - up to LEGEND_CATEGORIES (100): one trace and legend entry per category,
- *     as before;
- *   - up to the colour limit (Config.DEFAULTS.CATEGORY_COLOUR_LIMIT, 10,000):
- *     categories share BUCKET_COLOURS (64) colours, category k gets colour
- *     k mod 64, one trace per colour, and the legend is one line ("1,344
- *     categories"); the hover still names each point's category;
- *   - above it: not coloured. The panel says the column has N distinct
- *     values, too many to colour by, and to show it in the hover or a table,
- *     which read labels only for the cells shown.
+ * Colouring this way needs each cell's code and the codes' ranks, never the
+ * column's label list: the large-plot path asks the server for codes already
+ * ranked plus the few labels the legend shows (categories=ranked).
  *
- * Pure apart from reading Config, so Node tests cover it.
+ * Pure, so Node tests cover it.
  */
-import { Config } from '../config.js';
 
-/** Categories listed one per legend entry; more get the one-line legend. */
-export const LEGEND_CATEGORIES = 100;
+/** Colours of the palette a column with more categories is grouped into. */
+export const GROUP_COLOURS = 64;
 
-/** Colours shared by the categories of a column with more than LEGEND_CATEGORIES. */
-export const BUCKET_COLOURS = 64;
+/** Category names a group's legend entry lists before "+N more". */
+export const LEGEND_NAMES = 3;
 
-/** Server reason for a column refused for colour (core/categories.py). */
-export const TOO_MANY_CATEGORIES = 'too_many_categories';
+/** Labels the large-plot path asks the server for: the legend's names. */
+export const RANKED_LABELS = LEGEND_NAMES * GROUP_COLOURS;
 
-/** Most categories a column may have to be coloured by. */
-export function categoryColourLimit() {
-    const v = Config.DEFAULTS && Config.DEFAULTS.CATEGORY_COLOUR_LIMIT;
-    return typeof v === 'number' && v >= 1 ? v : 10000;
+/**
+ * Most groups a subset may be balanced across (annzarro/core/categories.py
+ * MAX_BALANCE_GROUPS): one group per cell is no balance.
+ */
+export const MAX_BALANCE_GROUPS = 10000;
+
+/**
+ * Most distinct values offered as a list to pick from (a table filter's
+ * "equals" dropdown, the subset filter's suggestions); a column with more is
+ * filtered by typing the value.
+ */
+export const VALUE_LIST_MAX = 10000;
+
+/** True when a column with `n` categories is drawn in colour groups. */
+export function grouped(n) {
+    return n > GROUP_COLOURS;
 }
-
-const fmt = (n) => Number(n).toLocaleString('en-US');
 
 /**
  * The number of categories of an obs/var column, from the dataset
@@ -54,51 +60,53 @@ export function categoryCount(structure, slot, key) {
 }
 
 /**
- * What a panel says about a column it does not colour by, after the column's
- * name ("obs.barcode: too many categories to colour by -- ..."); also the
- * server's `detail` (core/categories.py).
+ * Frequency ranks from per-category counts: `rankOf[k]` is category k's rank
+ * (0 = most cells; ties by k), -1 for a category with no cells; `order[r]` is
+ * the category at rank r; `used` the number of categories with cells.
+ * @param {ArrayLike<number>} counts
  */
-export function tooManyCategoriesDetail(count, limit = categoryColourLimit()) {
-    return `${fmt(count)} distinct values (the limit is ${fmt(limit)}): show it in the hover or in a table instead`;
+export function frequencyRanks(counts) {
+    // A counting sort over the counts (stable, so ties keep category order):
+    // linear in categories and cells, where a comparison sort of a million
+    // categories took a noticeable fraction of a second.
+    const k = counts.length;
+    let max = 0;
+    for (let i = 0; i < k; i++) if (counts[i] > max) max = counts[i];
+    const start = new Uint32Array(max + 2);       // start[c]: first rank of count c, from the largest
+    for (let i = 0; i < k; i++) if (counts[i] > 0) start[max - counts[i] + 1]++;
+    for (let c = 1; c <= max + 1; c++) start[c] += start[c - 1];
+    const used = start[max + 1];
+    const order = new Int32Array(used);
+    const rankOf = new Int32Array(k).fill(-1);
+    for (let i = 0; i < k; i++) {
+        const c = counts[i];
+        if (c > 0) { const r = start[max - c]++; order[r] = i; rankOf[i] = r; }
+    }
+    return { rankOf, order, used };
 }
 
-/** The whole sentence, column included (logs, the Error's message). */
-export function tooManyCategoriesMessage(column, count, limit = categoryColourLimit()) {
-    return `${column} has ${fmt(count)} distinct values, too many to colour by (the limit is ${fmt(limit)})`;
+/** The colour group of rank `r`. */
+export function groupOf(rank) {
+    return rank % GROUP_COLOURS;
+}
+
+/** Number of categories in group `g` when `used` categories have cells. */
+export function groupSize(g, used) {
+    return used > g ? Math.floor((used - 1 - g) / GROUP_COLOURS) + 1 : 0;
 }
 
 /**
- * An Error a colour load throws for such a column, shaped like the server's
- * 413 reply (`error.data.reason`), so coverage.js classifies both the same.
+ * The legend entry of colour group `g`: its largest categories, largest
+ * first, then "+N more".
+ * @param {number} g
+ * @param {(rank: number) => *} labelOfRank  label of a rank (only the first
+ *   LEGEND_NAMES ranks of each group are asked for)
+ * @param {number} used  categories with cells
  */
-export function tooManyCategoriesError(column, count, limit = categoryColourLimit()) {
-    const err = new Error(tooManyCategoriesMessage(column, count, limit));
-    err.status = 413;
-    err.data = { reason: TOO_MANY_CATEGORIES, column, count, limit, purpose: 'colour',
-                 detail: tooManyCategoriesDetail(count, limit) };
-    return err;
-}
-
-/**
- * Null when `axis` (a colour setting) can be coloured by, otherwise the Error
- * to throw before anything is requested.
- * @param {{type: string, key: string}} axis
- * @param {Object} structure
- */
-export function colourRefusal(axis, structure) {
-    if (!axis || (axis.type !== 'obs' && axis.type !== 'var')) return null;
-    const count = categoryCount(structure, axis.type, axis.key);
-    const limit = categoryColourLimit();
-    if (count === null || count <= limit) return null;
-    return tooManyCategoriesError(`${axis.type}.${axis.key}`, count, limit);
-}
-
-/** True when a column with `n` categories gets the shared palette and one-line legend. */
-export function bucketed(n) {
-    return n > LEGEND_CATEGORIES;
-}
-
-/** The one legend line for a bucketed column. */
-export function bucketLegendName(n) {
-    return `${fmt(n)} categories (colours shared)`;
+export function groupLegendName(g, labelOfRank, used) {
+    const size = groupSize(g, used);
+    const names = [];
+    for (let j = 0; j < Math.min(LEGEND_NAMES, size); j++) names.push(String(labelOfRank(g + j * GROUP_COLOURS)));
+    const more = size - names.length;
+    return more > 0 ? `${names.join(', ')} +${more.toLocaleString('en-US')} more` : names.join(', ');
 }

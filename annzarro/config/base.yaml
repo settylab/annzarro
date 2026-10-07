@@ -136,11 +136,6 @@ ui:
     large_plot_points: 1000000
     subset_size: 100000
     subset_seed: 0
-    # Colouring by a categorical obs/var column with more categories than
-    # this is refused (a barcode or cell-id column has one per cell): its
-    # colours could no longer tell groups apart. Such a column still shows in
-    # the hover and in tables. Over 100 categories the legend is one line.
-    category_colour_limit: 10000
 
   # Browser memory guard. Before an action that needs memory in proportion
   # to the number of points (a new or duplicated Cell Plot, a larger subset

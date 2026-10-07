@@ -1,16 +1,14 @@
 """Columns with many categories, in a real browser (static/js/utils/categories.js).
 
 The committed 200-cell fixture plus two categorical obs columns: `barcode`,
-one category per cell, and `clone`, 120 categories. The server's colour limit
-is set to 150 (ui.defaults.category_colour_limit), so `barcode` stands for a
-barcode column of a large dataset and `clone` for one between the legend
-size (100) and the limit.
+one category per cell, and `clone`, 120 categories (clone000-079 two cells
+each, clone080-119 one).
 
-- Colouring by `barcode` draws every point uncoloured, says why in the
-  panel's status strip, and requests nothing for the column.
-- Colouring by `clone` draws in shared colours with a one-line legend, and
-  the hover names each point's category.
-- `barcode` still works as a hover column and as a table column.
+- Colouring by either draws every point in 64 colour groups, ranked by
+  frequency, with one legend entry per colour naming its largest categories,
+  and a hover naming each point's category. The colour request asks for the
+  labels of the points only.
+- `barcode` also works as a hover column and as a table column.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
@@ -64,7 +62,7 @@ def server(tmp_path_factory):
     _categorical(obs, "barcode", np.arange(N)[::-1], [f"BC{i:04d}-1" for i in range(N)])
     _categorical(obs, "clone", np.arange(N) % CLONES, [f"clone{i:03d}" for i in range(CLONES)])
     zarr.consolidate_metadata(store)
-    (home / "c.yaml").write_text("ui:\n  defaults:\n    category_colour_limit: 150\n")
+    (home / "c.yaml").write_text("ui: {}\n")
     exe = shutil.which("annzarro", path=os.path.dirname(sys.executable)) or shutil.which("annzarro")
     if not exe:
         (pytest.fail if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1" else pytest.skip)(
@@ -120,7 +118,8 @@ PLOT = """() => {
   return {
     drawn: points.reduce((n, t) => n + (t.x ? t.x.filter(v => v !== null).length : 0), 0),
     traces: points.length,
-    legend: g.data.filter(t => t.meta === 'az-legend').map(t => t.name),
+    legend: g.data.filter(t => t.meta === 'az-legend' && t.name !== 'NA')
+        .sort((a, b) => (a.legendrank ?? 0) - (b.legendrank ?? 0)).map(t => t.name),
     labelled: points.filter(t => Array.isArray(t._azLabels))
         .map(t => [t.customdata[0], t._azLabels[0], String((t.hovertext || [])[0])]),
     hovertext: points.map(t => t.hovertext ? String(t.hovertext[0]) : null),
@@ -152,36 +151,22 @@ def _open(pw, link):
     return browser, page, requests
 
 
-def test_a_column_with_too_many_categories_is_not_coloured_and_says_why(server):
+@pytest.mark.parametrize("column,first", [("clone", "clone000, clone064"),
+                                            ("barcode", "BC0000-1, BC0064-1, BC0128-1 +1 more")])
+def test_many_categories_are_drawn_in_64_colour_groups(server, column, first):
     root, store = server
     with playwright.sync_playwright() as pw:
-        browser, page, requests = _open(pw, _link(root, store, colour="barcode"))
-        try:
-            s = _plot(page, lambda s: s["chips"])
-            # every point drawn; the strip says why there is no colour, and its
-            # popover says what to use instead
-            assert s["drawn"] == N and s["headline"] == "200 cells"
-            assert s["chips"] == ["obs.barcode: too many categories to colour by"]
-            assert s["notes"] == ["obs.barcode: too many categories to colour by -- 200 distinct values "
-                                  "(the limit is 150): show it in the hover or in a table instead"]
-            assert not [u for u in requests if "columns=barcode" in u], requests
-        finally:
-            browser.close()
-
-
-def test_between_100_categories_and_the_limit_one_legend_line_and_labelled_hover(server):
-    root, store = server
-    with playwright.sync_playwright() as pw:
-        browser, page, _ = _open(pw, _link(root, store, colour="clone"))
+        browser, page, requests = _open(pw, _link(root, store, colour=column))
         try:
             s = _plot(page, lambda s: s["legend"])
             assert s["drawn"] == N
-            assert s["legend"] == ["120 categories (colours shared)"]
-            assert s["traces"] <= 64
-            for cell, label, hover in s["labelled"]:
-                assert label == f"clone{int(cell.split('_')[-1]) % CLONES:03d}", (cell, label)
-                assert hover.startswith(f"<br>{label}")
+            assert s["traces"] <= 64 and len(s["legend"]) == 64, s["legend"][:5]
+            assert s["legend"][0] == first
             assert not any("categor" in c for c in s["chips"])
+            for cell, label, hover in s["labelled"]:
+                assert hover.startswith(f"<br>{label}")
+            colour_requests = [u for u in requests if f"columns={column}" in u]
+            assert colour_requests and all("categories=used" in u for u in colour_requests), colour_requests
         finally:
             browser.close()
 
