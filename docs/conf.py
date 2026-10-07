@@ -10,6 +10,20 @@ except PackageNotFoundError:
     release = "dev"
 version = release
 
+# The citation entries name the Zenodo concept DOI. Until the record exists they hold a placeholder
+# token; refuse to build docs that would publish it (annzarro/tests/static/test_no_zenodo_placeholder.py
+# guards the README and CITATION.cff the same way).
+import re as _re
+from pathlib import Path as _Path
+
+_root = _Path(__file__).resolve().parent.parent
+_token = _re.compile("ZENODO" + r"_[A-Z]+_RECID")
+_left = [f"{p.relative_to(_root)}" for p in [_root / "README.md", _root / "CITATION.cff",
+                                               *sorted(_root.joinpath("docs").rglob("*.md"))]
+         if p.exists() and _token.search(p.read_text(encoding="utf-8"))]
+if _left:
+    raise RuntimeError("Zenodo DOI placeholder not filled in: " + ", ".join(_left))
+
 extensions = [
     "myst_parser",
     "sphinx_copybutton",
