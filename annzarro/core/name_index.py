@@ -293,22 +293,58 @@ _cache: "OrderedDict[Tuple[str, str], Tuple[Tuple, NameIndex]]" = OrderedDict()
 _lock = threading.Lock()
 
 
+#: (dataset, axis) -> Event set when its index, being built, is in _cache
+_building: "Dict[Tuple[str, str], threading.Event]" = {}
+
+
 def get_index(dataset_path: str, entity: str, load_names: Callable[[], List[str]]) -> NameIndex:
-    """The cached NameIndex for one axis of one dataset, built on first use."""
+    """The cached NameIndex for one axis of one dataset, built on first use.
+
+    One build per (dataset, axis) at a time: a request that arrives while it
+    is built waits for that build rather than starting another (at 95.6M
+    cells a build takes about 30 s and 1-2 GB; a picker asks on every
+    keystroke). index_state() says whether one is being built.
+    """
     key = (dataset_path, entity)
     sig = _signature(dataset_path)
+    while True:
+        with _lock:
+            hit = _cache.get(key)
+            if hit is not None and hit[0] == sig:
+                _cache.move_to_end(key)
+                return hit[1]
+            pending = _building.get(key)
+            if pending is None:
+                pending = _building[key] = threading.Event()
+                mine = True
+            else:
+                mine = False
+        if not mine:
+            pending.wait()
+            continue            # built (or failed): read the cache again
+        try:
+            index = NameIndex(load_names())
+            with _lock:
+                _cache[key] = (sig, index)
+                _cache.move_to_end(key)
+                while len(_cache) > _CACHE_SIZE:
+                    _cache.popitem(last=False)
+            return index
+        finally:
+            with _lock:
+                _building.pop(key, None)
+            pending.set()
+
+
+def index_state(dataset_path: str, entity: str) -> str:
+    """'ready' (searches answer at once), 'building' (a search waits for a
+    build under way) or 'absent' (the next search builds it)."""
+    key = (dataset_path, entity)
     with _lock:
         hit = _cache.get(key)
-        if hit is not None and hit[0] == sig:
-            _cache.move_to_end(key)
-            return hit[1]
-    index = NameIndex(load_names())
-    with _lock:
-        _cache[key] = (sig, index)
-        _cache.move_to_end(key)
-        while len(_cache) > _CACHE_SIZE:
-            _cache.popitem(last=False)
-    return index
+        if hit is not None and hit[0] == _signature(dataset_path):
+            return "ready"
+        return "building" if key in _building else "absent"
 
 
 def clear(dataset_path: Optional[str] = None) -> None:

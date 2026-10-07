@@ -214,6 +214,20 @@ body {
     background: transparent;
     color: #495057;
 }
+/* the badge names the seed, a balance and a filter; a long balance column
+   is cut with an ellipsis (the title has the whole description), and a
+   narrow header drops the word "Subset" before anything else */
+.subset-badge {
+    max-width: min(28rem, 40vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+@media (max-width: 900px) {
+    .subset-badge .sb-first { display: none; }
+    .subset-badge .sb-first + .sb-part { margin-left: -0.6em; }
+}
 .subset-badge.subset-active {
     background-color: #fff3cd;
     border-color: #e0a800;

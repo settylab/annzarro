@@ -565,6 +565,19 @@ export function freezeTableState(settings, { rowNames = null, rows = 0 } = {}) {
     }
 }
 
+/**
+ * The `smart` flag DataTables is given: smart search splits the term at
+ * spaces and wraps each word as ^(?=.*?WORD).*$, which breaks a regular
+ * expression (`Mid|Old` became (?=.*?Mid|Old), so Old matched only at the
+ * start of a row). A regular expression is searched as written.
+ * @param {boolean} regex
+ * @param {boolean} smart - the Smart Search button
+ * @returns {boolean}
+ */
+export function searchSmart(regex, smart) {
+    return !!smart && !regex;
+}
+
 export function initializeDataTable(tableContainer, tableData, settings, entityType) {
     // Clear the container and add a table element
     tableContainer.innerHTML = '<table class="table table-sm table-striped" style="width:100%"></table>';
@@ -594,7 +607,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             // the search box as saved (Reopen, panel sets, share links)
             search:         settings.searchText || '',
             regex:          useRegex,
-            smart:          useSmart,
+            smart:          searchSmart(useRegex, useSmart),
             caseInsensitive: useCaseInsensitive
         },
         // Standard Bootstrap 5 DataTables layout with SearchBuilder and search box
@@ -772,10 +785,16 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     $searchOptions.insertAfter($searchInput);
                 }
                 
-                // 5) A small helper to re-draw with current flags
+                // 5) A small helper to re-draw with current flags. Smart
+                // search does not apply to a regular expression: DataTables
+                // would split it at spaces and put each word in a lookahead,
+                // ^(?=.*?Mid|Old).*$, where `Old` then matches only at the
+                // start, so `Mid|Old` found only Mid.
                 function applySearch() {
                     const term = $searchInput.val();
-                    api.search(term, useRegex, useSmart, useCaseInsensitive).draw();
+                    api.search(term, useRegex, searchSmart(useRegex, useSmart), useCaseInsensitive).draw();
+                    $(`#${btnSmartId}`).prop('disabled', useRegex)
+                        .attr('title', useRegex ? 'Smart search does not apply to a regular expression' : 'Smart Search (default)');
                 }
     
                 // 6) Wire up clicks

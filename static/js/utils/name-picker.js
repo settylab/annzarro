@@ -66,12 +66,60 @@ export function mergeScopedMatches(shown, all, limit) {
              truncated: !!((shown && shown.truncated) || (all && all.truncated) || dropped || out.length > limit) };
 }
 
+/**
+ * Ask the server whether a name search answers at once or waits for its
+ * name index to be built (/data/names/status). Null when the server cannot
+ * say (an older one) or the request failed.
+ * @param {string} url - the /data/names endpoint
+ * @returns {Promise<'ready'|'building'|'absent'|null>}
+ */
+export async function fetchNameIndexState(url, { datasetPath, entity, subset = null, scope = 'subset', signal = null }) {
+    const params = new URLSearchParams({ dataset_path: datasetPath, entity });
+    if (subset && entity === 'cells') params.set('subset', subset);
+    if (subset && entity === 'cells' && scope === 'dataset') params.set('scope', 'dataset');
+    try {
+        const resp = await fetch(`${url}/status?${params}`, { signal });
+        if (!resp.ok) return null;
+        const body = await resp.json();
+        return body && typeof body.state === 'string' ? body.state : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * What the picker's status line says while a search is answered. A search
+ * that has not answered is never "no match": the first search of a large
+ * dataset waits for its name index (about 30 s at 95.6M cells), and under a
+ * subset the cells not shown come from that slower search.
+ * @param {NameSearchModel} model
+ * @param {string} noun - 'cell' or 'gene'
+ */
+export function statusText(model, noun) {
+    const n = model.items.length;
+    const waiting = model.building ? 'building the name index (first search of this dataset)…'
+        : model.pending === 'more' ? `searching every ${noun}…` : 'searching…';
+    if (n === 0) {
+        if (model.pending) return waiting.charAt(0).toUpperCase() + waiting.slice(1);
+        return model.query ? `No ${noun} matches` : '';
+    }
+    const found = model.truncated ? `First ${n} matches, keep typing to narrow` : `${n} match${n === 1 ? '' : 'es'}`;
+    return model.pending ? `${found}; ${waiting}` : found;
+}
+
 export class NameSearchModel {
     /**
      * @param {(query:string, opts:{regex:boolean, signal:AbortSignal|null}) => Promise<{matches:Array, truncated:boolean}>} search
+     * @param {() => Promise<string|null>} [indexState] - whether the server is
+     *   building the name index a waiting search needs ('building', 'absent'
+     *   or 'ready'); asked only when a search has not answered in `slowMs`
      */
-    constructor(search) {
+    constructor(search, indexState = null, { slowMs = 400 } = {}) {
         this._search = search;
+        this._indexState = indexState;
+        this._slowMs = slowMs;
+        this.pending = null;    // 'query' (no answer yet) | 'more' (the dataset-wide part) | null
+        this.building = false;  // the server is building the index the pending search waits for
         this._seq = 0;
         this._abort = null;
         this.items = [];
@@ -90,6 +138,9 @@ export class NameSearchModel {
         const seq = ++this._seq;
         if (this._abort) this._abort.abort();
         this._abort = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        this.pending = 'query';
+        this.building = false;
+        this._watchSlow(seq);
         let result;
         try {
             result = await this._search(query, { regex, signal: this._abort ? this._abort.signal : null });
@@ -99,6 +150,8 @@ export class NameSearchModel {
             this.items = [];
             this.truncated = false;
             this.highlighted = -1;
+            this.pending = null;
+            this.building = false;
             this.error = error && error.message ? error.message : String(error);
             return true;
         }
@@ -107,6 +160,8 @@ export class NameSearchModel {
         this.truncated = !!(result && result.truncated);
         this.error = null;
         this.highlighted = this.items.length ? 0 : -1;
+        this.pending = result && result.more ? 'more' : null;
+        if (!this.pending) this.building = false;
         if (result && result.more) this._extend(seq, result.more);
         return true;
     }
@@ -119,14 +174,52 @@ export class NameSearchModel {
      */
     _extend(seq, more) {
         Promise.resolve(more).then(result => {
-            if (seq !== this._seq || !result) return;
-            const current = this.current();
-            this.items = result.matches || [];
-            this.truncated = !!result.truncated;
-            const keep = current ? this.items.findIndex(m => m.name === current.name) : -1;
-            this.highlighted = keep >= 0 ? keep : (this.items.length ? 0 : -1);
+            if (seq !== this._seq) return;
+            this.pending = null;
+            this.building = false;
+            if (result) {
+                const current = this.current();
+                this.items = result.matches || [];
+                this.truncated = !!result.truncated;
+                const keep = current ? this.items.findIndex(m => m.name === current.name) : -1;
+                this.highlighted = keep >= 0 ? keep : (this.items.length ? 0 : -1);
+            }
             if (this.onUpdate) this.onUpdate();
-        }, () => {});   // the shown cells' matches stand on their own
+        }, (error) => {
+            // the shown cells' matches stand on their own; with none, say
+            // why the rest could not be searched rather than "no match"
+            if (seq !== this._seq || (error && error.name === 'AbortError')) return;
+            this.pending = null;
+            this.building = false;
+            if (!this.items.length) this.error = `Could not search every name: ${error && error.message ? error.message : error}`;
+            if (this.onUpdate) this.onUpdate();
+        });
+    }
+
+    /**
+     * A search still unanswered after `slowMs`: ask whether it waits for the
+     * name index to be built, and say so (onUpdate). Polled until the search
+     * answers, so the line follows the server.
+     * @private
+     */
+    _watchSlow(seq) {
+        if (!this._indexState || typeof setTimeout === 'undefined') return;
+        let first = true;
+        const check = () => {
+            if (seq !== this._seq || !this.pending) return;
+            Promise.resolve(this._indexState(this.pending)).then(state => {
+                if (seq !== this._seq || !this.pending) return;
+                const building = state === 'building' || state === 'absent';
+                // the first check also shows "searching…" in place of the old line
+                if (building !== this.building || first) {
+                    first = false;
+                    this.building = building;
+                    if (this.onUpdate) this.onUpdate();
+                }
+                setTimeout(check, 1500);
+            }, () => {});
+        };
+        setTimeout(check, this._slowMs);
     }
 
     move(delta) {
@@ -148,6 +241,8 @@ export class NameSearchModel {
         this.error = null;
         this.highlighted = -1;
         this.query = '';
+        this.pending = null;
+        this.building = false;
     }
 }
 
@@ -161,12 +256,13 @@ let _pickerCount = 0;
  * @param {(query:string, opts:{regex:boolean, signal:AbortSignal|null}) => Promise} opts.search
  * @param {(name:string, item:Object) => void} opts.onPick - called with the chosen name
  *   and its match ({name, index, row, outside?})
+ * @param {(pending:'query'|'more') => Promise<string|null>} [opts.indexState] - see NameSearchModel
  * @param {number} [opts.debounceMs=120]
  * @returns {{setValue:(name:string|null)=>void, reset:()=>void, model:NameSearchModel, close:()=>void}}
  */
-export function mountNamePicker({ input, noun, search, onPick, debounceMs = 120 }) {
+export function mountNamePicker({ input, noun, search, onPick, indexState = null, debounceMs = 120 }) {
     const doc = input.ownerDocument;
-    const model = new NameSearchModel(search);
+    const model = new NameSearchModel(search, indexState);
     const id = `name-picker-${++_pickerCount}`;
     let committed = input.value || '';
     let timer = null;
@@ -244,10 +340,7 @@ export function mountNamePicker({ input, noun, search, onPick, debounceMs = 120 
             status.classList.add('text-danger');
         } else {
             status.classList.remove('text-danger');
-            const n = model.items.length;
-            status.textContent = n === 0
-                ? (model.query ? `No ${noun} matches` : '')
-                : model.truncated ? `First ${n} matches, keep typing to narrow` : `${n} match${n === 1 ? '' : 'es'}`;
+            status.textContent = statusText(model, noun);
         }
     }
 

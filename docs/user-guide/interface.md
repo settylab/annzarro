@@ -56,8 +56,10 @@ The gene picker after typing `H2-`: the regular-expression button (1) and the ma
 
 The **.\*** button (1) above the list switches to a case-insensitive regular expression, for
 example `^H2-(Aa|Ab1)$`. The **Focused Cell** picker works the same way on cell names; with a
-{doc}`cell subset <subsets>` it only finds cells in the subset. Because the list is fetched from
-the server, the pickers stay fast with millions of names.
+{doc}`cell subset <subsets>` it lists the subset's cells first and then the dataset's others,
+marked **not shown**. Because the list is fetched from the server, the pickers stay fast with
+millions of names; while a search is still running the line under the box says "searching…" (or
+"Building the name index…" for the first search of a very large dataset), never "No cell matches".
 
 Every focus change, whether from a picker, a plot click or a table click, is added to the
 history behind the arrow buttons. Going back and then choosing a new item discards the forward
