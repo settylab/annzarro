@@ -98,23 +98,16 @@ def _category_rules_for(reader, dataset_path, entity, column_names, n_rows):
     """Apply core/categories.py to one obs/var request before it reads.
 
     Returns ``(n_categories, used_only, ranked)`` for a single requested
-    column (None, False, False otherwise). Raises TooManyCategories (413) for
-    a reply that would need more than MAX_LABELS labels; a ranked reply
-    carries no label.
+    column (None, False, False otherwise). No reply is refused for its
+    labels: a compact one is streamed (core/array_response.py).
     """
     if not column_names or len(column_names) != 1:
-        if column_names:
-            meta = reader.get_metadata(dataset_path)
-            for column in column_names:
-                category_rules.check_labels(column, category_rules.category_count(meta, entity, column),
-                                            n_rows)
         return None, False, False
     column = column_names[0]
     count = category_rules.category_count(reader.get_metadata(dataset_path), entity, column)
     wanted = (request.args.get("categories") or "").lower()
     if wanted == "ranked":
         return count, False, True
-    category_rules.check_labels(column, count, n_rows)
     return count, wanted == "used", False
 
 
@@ -172,8 +165,6 @@ def _reader_error_response(exc, dataset_path):
     A remote store that stops answering is a 504: the failure is upstream of
     this server, and retrying later may well succeed, unlike a 500.
     """
-    if isinstance(exc, category_rules.TooManyCategories):
-        return jsonify(exc.body()), exc.status
     if isinstance(exc, DataRequestError):
         return _data_request_error_response(exc)
     if isinstance(exc, KeyError):

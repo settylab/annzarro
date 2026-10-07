@@ -150,15 +150,6 @@ test('a colour group names its largest categories on the plot, then how many mor
     assert.equal(cats.groupOf(130), 2);
 });
 
-test("the server's label cap reads as such", () => {
-    const err = new Error("'barcode' has 95,600,000 distinct values; labelling 95,600,000 rows would send more than 2,000,000 of them.");
-    err.data = { reason: 'too_many_categories', count: 95600000, limit: 2000000,
-                 detail: '95,600,000 distinct values; labelling 95,600,000 rows would send more than 2,000,000 of them: use a cell subset to label fewer rows' };
-    const cov = classifyError(err, { unit: 'cells', source: 'obs.barcode', total: 10 });
-    assert.equal(cov.headline(), 'Not labelled: too many distinct values');
-    assert.match(cov.lines()[0], /^obs\.barcode: too many distinct values to label -- 95,600,000 distinct values; .*use a cell subset/);
-});
-
 /**
  * `nCategories` categories, category k holding `base - k` points (distinct
  * sizes, so the frequency order is k0, k1, k2, ...), plus a few points with

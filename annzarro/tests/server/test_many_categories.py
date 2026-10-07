@@ -14,7 +14,8 @@ cells a GB-sized list built in server memory, which the client then refused
   what colouring by colour group needs, at any number of categories;
 - past READ_ALL_MAX categories a reply carries only the categories its rows
   use, and says the column's count;
-- a reply that would still need more than MAX_LABELS labels is refused;
+- no reply is refused for its labels: it is streamed, and a 2M-label reply
+  peaks at a bounded size, not every label as Python strings plus JSON;
 - balancing a subset across more than MAX_BALANCE_GROUPS groups is refused.
 """
 import json
@@ -228,15 +229,63 @@ def test_json_labels_of_a_one_per_cell_column_in_a_subset(many):
     assert values_of(codes, categories) == [labels["barcode"][r] for r in rows]
 
 
-def test_a_reply_needing_too_many_labels_is_refused(many, monkeypatch):
-    client, path, _ = many
-    monkeypatch.setattr(category_rules, "MAX_LABELS", 100)
+def test_no_reply_is_refused_for_its_labels(many):
+    """The 2M-label cap (413) is gone: the browser's memory guard decides."""
+    client, path, labels = many
+    assert not hasattr(category_rules, "MAX_LABELS")
     resp = _codes(client, path, "huge")
-    assert resp.status_code == 413
-    assert resp.get_json()["reason"] == "too_many_categories"
-    assert "use a cell subset" in resp.get_json()["detail"]
-    assert _codes(client, path, "huge", rows="1,2,3").status_code == 200
-    assert _codes(client, path, "few").status_code == 200
+    assert resp.status_code == 200
+    codes, categories = decode(resp)
+    assert values_of(codes, categories) == labels["huge"]
+
+
+@pytest.mark.parametrize("n, length", [(0, 0), (1, 1), (65_537, 3), (200_001, 9)])
+def test_a_streamed_reply_decodes_as_one(n, length):
+    """Chunk edges and the length pass: the stream is the same bytes as the
+    one-piece encoding it replaced."""
+    from annzarro.core.array_response import categorical_response
+    cats = np.array([f"L{i:0{length}d}é" for i in range(n)], dtype=object)
+    codes = np.arange(n, dtype=np.int64)[::-1].copy()
+    if n:
+        codes[0] = -1
+    resp = categorical_response(codes, cats, total=n + 5)
+    body = b"".join(resp.response)
+    assert len(body) == int(resp.headers["Content-Length"])
+    lead = int(resp.headers["X-Annzarro-Categories-Bytes"])
+    assert lead % 4 == 0
+    assert json.loads(body[:lead].decode("utf-8")) == cats.tolist()
+    assert body[:lead].rstrip(b" ") == json.dumps(cats.tolist(), ensure_ascii=False, separators=(",", ":")).encode()
+    got = np.frombuffer(body[lead:], dtype=np.dtype(resp.headers["X-Annzarro-Dtype"]).newbyteorder("<"))
+    assert got.tolist() == ([-1] + codes[1:].tolist() if n else [])
+
+
+def test_a_2m_label_reply_is_built_in_bounded_memory():
+    """Python allocations while building and sending 2M barcode labels (the
+    labels and codes themselves are the input, read before): a few MB per
+    piece, not 2M str objects (~120 MB) plus their JSON (~38 MB)."""
+    import tracemalloc
+    from annzarro.core.array_response import categorical_response
+    n = 2_000_000
+    cats = np.char.add(np.char.add("ACGTACGTACGT", np.arange(n).astype("U7")), "-1")
+    codes = np.arange(n, dtype=np.int32)
+    tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        base = tracemalloc.get_traced_memory()[0]
+        resp = categorical_response(codes, cats, total=n)
+        sent = 0
+        for piece in resp.response:
+            sent += len(piece)
+        peak = tracemalloc.get_traced_memory()[1] - base
+    finally:
+        tracemalloc.stop()
+    assert sent == int(resp.headers["Content-Length"]) > 40_000_000
+    # the codes on the wire (int32, 8 MB) and their checks, the encoded pieces
+    # the length pass keeps (KEEP_ENCODED_BYTES), and one piece of
+    # LABEL_CHUNK labels in flight: nothing that grows with the labels
+    from annzarro.core import array_response
+    bound = codes.nbytes + 2 * n + array_response.KEEP_ENCODED_BYTES + (12 << 20)
+    assert peak < bound, f"peak {peak / 2**20:.1f} MiB, bound {bound / 2**20:.1f} MiB"
 
 
 def test_balance_across_a_one_per_cell_column_is_refused(tmp_path, monkeypatch):

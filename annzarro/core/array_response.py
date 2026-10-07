@@ -178,6 +178,32 @@ def code_dtype(n_categories: int) -> np.dtype:
     return np.dtype("<i4")
 
 
+# Labels encoded per piece of a categorical reply: the reply is streamed, so
+# a request never holds every label as Python strings plus their JSON copy
+# (2M barcodes: about 120 MB of str objects and 30 MB of JSON before).
+LABEL_CHUNK = 65_536
+# Encoded label pieces kept from the length pass up to this size; past it
+# they are encoded again while streaming.
+KEEP_ENCODED_BYTES = 8 << 20
+# Bytes of codes per streamed piece.
+CODE_CHUNK_BYTES = 4 << 20
+
+
+def _label_pieces(categories):
+    """The JSON array of ``categories`` as UTF-8 pieces of LABEL_CHUNK labels."""
+    n = len(categories)
+    if n == 0:
+        yield b"[]"
+        return
+    for start in range(0, n, LABEL_CHUNK):
+        part = categories[start:start + LABEL_CHUNK]
+        items = part.tolist() if isinstance(part, np.ndarray) else [
+            c.item() if isinstance(c, np.generic) else c for c in part]
+        text = ",".join(json.dumps(c, ensure_ascii=False, separators=(",", ":")) for c in items)
+        yield (("[" if start == 0 else ",") + text).encode("utf-8")
+    yield b"]"
+
+
 def categorical_response(codes: np.ndarray, categories, total=None, used=None, ranked=False) -> Response:
     """A categorical column as codes plus its categories (module docstring).
 
@@ -187,29 +213,48 @@ def categorical_response(codes: np.ndarray, categories, total=None, used=None, r
     the column's. ``ranked``: the codes are ranks in the column's ranking,
     ``categories`` empty, and ``used`` the number of categories with cells
     (X-Annzarro-Categories-Used).
+
+    The reply is streamed: the labels are encoded LABEL_CHUNK at a time, once
+    to learn the prefix length the header announces and again while sending
+    (kept from the first pass when small), and the codes go out in slices.
     """
-    categories = [c.item() if isinstance(c, np.generic) else c for c in categories]
     codes = np.asarray(codes).reshape(-1)
     span = int(used) if ranked else len(categories)
     bad = (codes < 0) | (codes >= span)
     wire = codes.astype(code_dtype(span))
     if bad.any():
         wire[bad] = -1
-    prefix = json.dumps(categories, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    prefix += b" " * (-len(prefix) % 4)
+    del bad
+    kept, length = [], 0
+    for piece in _label_pieces(categories):
+        length += len(piece)
+        if kept is not None:
+            kept.append(piece)
+            if length > KEEP_ENCODED_BYTES:
+                kept = None
+    pad = b" " * (-length % 4)
     headers = {
         HEADER_ENCODING: "categorical",
         HEADER_SHAPE: str(int(wire.size)),
         HEADER_DTYPE: wire.dtype.name,
-        HEADER_CATEGORIES_BYTES: str(len(prefix)),
+        HEADER_CATEGORIES_BYTES: str(length + len(pad)),
         "Access-Control-Expose-Headers": EXPOSED_HEADERS,
+        "Content-Length": str(length + len(pad) + wire.nbytes),
     }
     if total is not None:
         headers[HEADER_CATEGORIES_TOTAL] = str(int(total))
     if ranked:
         headers[HEADER_CATEGORIES_USED] = str(int(used))
         headers[HEADER_CATEGORIES_ORDER] = "ranked"
-    return Response(prefix + wire.tobytes(), mimetype=BINARY_MIMETYPE, headers=headers)
+
+    def body():
+        yield from (kept if kept is not None else _label_pieces(categories))
+        yield pad
+        raw = memoryview(wire).cast("B")
+        for start in range(0, len(raw), CODE_CHUNK_BYTES):
+            yield raw[start:start + CODE_CHUNK_BYTES].tobytes()
+
+    return Response(body(), mimetype=BINARY_MIMETYPE, headers=headers)
 
 
 def numeric_json_text(arr: np.ndarray) -> str:

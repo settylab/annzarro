@@ -24,11 +24,12 @@ categories those codes use, and renumbers the codes into that short list (a
 columns of a subset of 100,000 cells thus read and send at most 100,000
 labels, whatever the column holds.
 
-**A reply has a size.** A compact reply can still need one label per row; it
-is refused above :data:`MAX_LABELS` labels (request a subset), instead of
-building gigabytes of strings. The column's number of categories comes from
-its metadata (the categories array's shape), so these decisions read
-nothing.
+**A reply has no label cap.** A compact reply can need one label per row; it
+is streamed in pieces (core/array_response.py categorical_response), so a
+request never holds every label as Python strings plus their JSON. What a
+browser can hold is its memory guard's call (static/js/utils/memory-guard.js).
+The column's number of categories comes from its metadata (the categories
+array's shape), so these decisions read nothing.
 """
 
 from __future__ import annotations
@@ -52,38 +53,10 @@ GROUP_COLOURS = 64
 #: are used (65,536 is also the client's 16-bit code range).
 READ_ALL_MAX = 65_536
 
-#: Most labels a compact reply may carry: 2M labels of ~20 characters is
-#: ~40 MB of JSON, more than any table or hover over a subset needs.
-MAX_LABELS = 2_000_000
-
 #: Most groups a subset may be balanced across. Balance takes a share of every
 #: group; with one group per cell (a barcode column) that is no balance, and
 #: the per-group bookkeeping grows with the groups.
 MAX_BALANCE_GROUPS = 10_000
-
-
-class TooManyCategories(Exception):
-    """A categorical column with more categories than a request can use.
-
-    ``status``/``reason`` are what the route answers (413
-    ``too_many_categories``); ``count`` is the column's number of categories
-    and ``limit`` the one it exceeds.
-    """
-
-    status = 413
-    reason = "too_many_categories"
-
-    def __init__(self, column: str, count: int, limit: int, rows: int):
-        self.column, self.count, self.limit = column, int(count), int(limit)
-        self.detail = (f"{self.count:,} distinct values; labelling {rows:,} rows would send more than "
-                       f"{self.limit:,} of them: use a cell subset to label fewer rows")
-        self.message = (f"'{column}' has {self.count:,} distinct values; labelling {rows:,} rows "
-                        f"would send more than {self.limit:,} of them. Use a cell subset to label fewer rows.")
-        super().__init__(self.message)
-
-    def body(self) -> dict:
-        return {"error": self.message, "detail": self.detail, "reason": self.reason,
-                "column": self.column, "count": self.count, "limit": self.limit}
 
 
 def category_count(metadata: Optional[dict], entity: str, column: str) -> Optional[int]:
@@ -238,8 +211,3 @@ def labels_of_ranks(ranking: ColumnRanking, ranks, read_categories) -> list:
 #: Most ranks one category_ranks request may name (the legend asks for ~192).
 MAX_RANK_LABELS = 5000
 
-
-def check_labels(column: str, n_categories: Optional[int], n_rows: int) -> None:
-    """Refuse a compact reply that could need more than MAX_LABELS labels."""
-    if n_categories is not None and n_categories > READ_ALL_MAX and min(n_categories, n_rows) > MAX_LABELS:
-        raise TooManyCategories(column, n_categories, MAX_LABELS, n_rows)
