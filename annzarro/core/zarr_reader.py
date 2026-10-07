@@ -260,6 +260,42 @@ def zarr_format_problem(dataset_path) -> Optional[str]:
     return None
 
 
+#: At most this many stored columns (CSC) or rows (CSR) are densified by
+#: scatter (densify); more go through scipy's toarray.
+SCATTER_MAX_MAJOR = 64
+
+
+def densify(m) -> np.ndarray:
+    """``m.toarray()`` for a scipy sparse matrix, the same array.
+
+    A gene column of a CSC matrix (the whole-dataset colour of a plot) went
+    through scipy's toarray, which converts CSC to CSR first (0.17 s) and
+    then fills the dense vector (0.07 s): 0.24 s of the 0.47 s a 95.6M-cell
+    column with a value in every cell took on the server. A few stored
+    columns (or rows of a CSR) are written into a zero array directly
+    instead; that column now takes 0.37 s, the scatter of its 95.6M values
+    about 0.1 s of it. Duplicate or unsorted entries, which
+    toarray sums, and wider selections keep toarray.
+    """
+    fmt = getattr(m, "format", None)
+    if fmt not in ("csc", "csr"):
+        return m.toarray()
+    n_major = m.shape[1] if fmt == "csc" else m.shape[0]
+    if n_major > SCATTER_MAX_MAJOR or not m.has_canonical_format:
+        return m.toarray()
+    out = np.zeros(m.shape, dtype=m.dtype)
+    ptr, idx, data = m.indptr, m.indices, m.data
+    for j in range(n_major):
+        a, b = int(ptr[j]), int(ptr[j + 1])
+        if a == b:
+            continue
+        if fmt == "csc":
+            out[idx[a:b], j] = data[a:b]
+        else:
+            out[j, idx[a:b]] = data[a:b]
+    return out
+
+
 #: Bytes of stored rows one step of take_rows reads at once: several chunks,
 #: so zarr still decodes them in parallel, and never the whole column.
 GATHER_BLOCK_BYTES = 32 * 2 ** 20
@@ -1442,7 +1478,7 @@ class ZarrReader(CacheSettings):
             sparse_matrix = self._load_sparse_matrix(root['X'], row_indices, col_indices)
             if sparse_matrix is not None:
                 # Convert to dense array for consistent return type
-                return sparse_matrix.toarray()
+                return densify(sparse_matrix)
         
         # Handle as dense array
         return self._get_dense_array('X', root, row_indices, col_indices)
@@ -1483,7 +1519,7 @@ class ZarrReader(CacheSettings):
             sparse_matrix = self._load_sparse_matrix(layer, row_indices, col_indices)
             if sparse_matrix is not None:
                 # Convert to dense array for consistent return type
-                return sparse_matrix.toarray()
+                return densify(sparse_matrix)
         
         # Handle as dense array
         return self._get_dense_array(f'layers/{layer_name}', root, row_indices, col_indices)
@@ -1957,7 +1993,7 @@ class ZarrReader(CacheSettings):
                 raise UnsupportedEncodingError(
                     f"{obj} '{key}' is a {sparse_format} this reader cannot load "
                     f"(children: {list(member.keys())})")
-            dense = matrix.toarray() if hasattr(matrix, 'toarray') else np.asarray(matrix)
+            dense = densify(matrix) if hasattr(matrix, 'toarray') else np.asarray(matrix)
             return dense[:, 0] if position is not None else dense
 
         if self._is_group(member):
@@ -2022,7 +2058,7 @@ class ZarrReader(CacheSettings):
             # For sparse matrices, pass distinct row and column indices.
             sparse_matrix = self._load_sparse_matrix(obj, row_indices, col_indices)
             if sparse_matrix is not None:
-                return sparse_matrix.toarray()
+                return densify(sparse_matrix)
     
         # For dense obsp matrices, allow separate row and column selection.
         try:

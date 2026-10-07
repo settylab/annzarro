@@ -20,7 +20,7 @@ from typing import Literal, Tuple, Dict, Any, List, Optional
 import numpy as np
 import scipy.sparse as sp
 from .caching import CacheSettings, DatasetCache, cached_method
-from .zarr_reader import MissingKeyError, StoreReadError, UnsupportedEncodingError
+from .zarr_reader import MissingKeyError, StoreReadError, UnsupportedEncodingError, densify
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +245,7 @@ def _matrix(obj, rows=None, cols=None) -> np.ndarray:
     if isinstance(obj, h5py.Group):
         m = _sparse(obj, rows, cols)
         if m is not None:
-            return m.toarray()
+            return densify(m)
         logger.warning(f"Unsupported matrix encoding '{_encoding(obj)}' at {obj.name}")
     return np.array([])
 
