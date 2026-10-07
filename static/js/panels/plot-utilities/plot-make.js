@@ -22,7 +22,7 @@ import { NO_HOVER } from './hover-columns.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import {
-  drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark
+  drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck
 } from '../../utils/memory-guard-ui.js';
 
 /**
@@ -220,6 +220,37 @@ async function rankedGroupNames(datasetPath, key, slot, codes, missing) {
   return lowest.map((ranks, g) => (total[g] ? groupLegendLabel(ranks.map(r => labels.get(r) ?? String(r)), total[g]) : ''));
 }
 
+/** Below this many labels a hover's labels are not worth a guard check (65,536: a few MB). */
+const HOVER_GUARD_MIN = 65536;
+
+/**
+ * Whether the hover labels of categorical column `slot.key` (`count`
+ * categories, `points` points) fit the browser: the memory guard's check
+ * with the cost measured for labels (memory-guard.js labelCost) and the
+ * column's label length from three of its labels. A refusal is said on the
+ * plot's status line with the guard's numbers; the plot stays coloured.
+ */
+async function hoverLabelsFit(datasetPath, slot, key, count, points, plotContainer) {
+  const labels = Math.min(count, points);
+  if (!(labels > HOVER_GUARD_MIN)) return true;
+  let chars = 16;   // when no label could be read: about a cell barcode
+  try {
+    const sample = [...(await DataManager.loadCategoryLabels(datasetPath, key, [0, 1, 2], slot)).values()].map(String);
+    if (sample.length) chars = sample.reduce((a, l) => a + l.length, 0) / sample.length;
+  } catch {
+    // the guard's estimate with the default length
+  }
+  const result = hoverLabelsCheck({ points, labels, chars });
+  const refused = result.verdict === 'block';
+  if (plotContainer) {
+    setStatusTag(plotContainer, `hover-memory-${slot}.${key}`, result.verdict === 'ok' ? null : {
+      text: refused ? 'Hover off: browser memory' : 'Hover over the memory budget', severity: 'warning', title: result.why,
+      pop: { text: `Hover labels of ${slot}.${key} (${labels.toLocaleString('en-US')}) ${refused ? 'not read' : 'read'}: ${result.why}.` }
+    });
+  }
+  return !refused;
+}
+
 /** Show a plot's hover setting in its Hover picker ("No hover" when off). */
 function showHoverChoice(plotContainer, panel) {
   const id = plotContainer && plotContainer.id ? plotContainer.id.replace(/^plot-container-/, '') : null;
@@ -409,6 +440,9 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           if (panel) {
             const off = hoverOffFor(panel.hoverOff, count, points);
             if (off === undefined) delete panel.hoverOff; else panel.hoverOff = off;
+            // hover on: its labels must fit the browser (the memory guard)
+            if (categoriesWanted === 'used' && !hoverIsOff(panel.hoverOff)
+                && !(await hoverLabelsFit(datasetPath, type, key, count, points, plotContainer))) panel.hoverOff = true;
             showHoverChoice(plotContainer, panel);
           }
           if (categoriesWanted === 'used' && panel && hoverIsOff(panel.hoverOff) && !rowsArr) {
@@ -1051,7 +1085,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (data.x && data.x.values && data.x.values.length > 0 &&
         data.y && data.y.values && data.y.values.length > 0) {
       console.log(`Creating plot with ${data.x.values.length} data points`);
-      data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells');
+      data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells', plotContainer);
       await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
       drawn = true;
       await applyHoverInfo(plotContainer, data, settings);
@@ -1361,11 +1395,18 @@ export function stableAxisRanges(data, settings) {
  * plus a per-point `hovertext` with the hoverInfo columns. Points are matched
  * to rows by their name (trace.text), so any trace split works.
  */
-export async function loadHoverColumns(settings, plotType) {
+export async function loadHoverColumns(settings, plotType, plotContainer = null) {
   const wanted = (Array.isArray(settings.hoverInfo) ? settings.hoverInfo : [])
     .filter(h => h && h.type && h.key && h.key !== '_index');
   const out = [];
+  const datasetPath = DataManager.getCurrentDataset();
+  const structure = wanted.length ? await DataManager.getDatasetStructure(datasetPath).catch(() => null) : null;
+  const shown = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
+  const points = shown && typeof shown.length === 'number' ? shown.length : 0;
   for (const h of wanted) {
+    // a categorical column's labels: only if they fit the browser
+    const count = (h.type === 'obs' || h.type === 'var') && !h.column ? categoryCount(structure, h.type, h.key) : null;
+    if (count !== null && !(await hoverLabelsFit(datasetPath, h.type, h.key, count, points, plotContainer))) continue;
     try {
       const loaded = await loadAxisData({ type: h.type, key: h.key, column: h.column || '' }, plotType);
       if (loaded && Array.isArray(loaded.values)) {

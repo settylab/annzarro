@@ -113,6 +113,16 @@ export const DEFAULT_MODEL = {
         pixelCopies: 3
     },
     recolour: { large: 2, regular: 80 },
+    /**
+     * Hover labels of a categorical column (a colour of many categories, or
+     * a hover column): per point its label's reference and hover text, per
+     * distinct label its string, plus while loading the reply's JSON blob.
+     * Measured at 1M points (Chromium, heap after GC, hover on minus off):
+     * 999,998 barcodes of 21.9 characters +114.1 MB, 65,000 labels of 8
+     * characters +37.9 MB, which give 34 B per point and 59 B + 1 B per
+     * character per label; the blob adds 3 B + 1 B per character per label.
+     */
+    hoverLabels: { perPoint: 34, perLabel: 62, perChar: 2 },
     /** A cell table row (DataTables with deferRender): its data array and row object. Provisional. */
     tableRow: { heap: 300 },
     /** Numbers still to be measured (listed by the docs and the report). */
@@ -297,6 +307,17 @@ export function exportCost({ n, large = false, width = 1200, height = 800, scale
 export function snapshotCost({ width = 1200, height = 800, ratio = 2 }, model = DEFAULT_MODEL) {
     const pixels = Math.max(1, width) * Math.max(1, height) * Math.max(1, ratio) ** 2;
     return { heap: 4 * pixels, off: 4 * pixels * model.export.pixelCopies, gpu: 0, contexts: 0 };
+}
+
+/**
+ * What reading the hover labels of a categorical column needs: `labels`
+ * distinct labels of `chars` characters on average, over `points` points.
+ */
+export function labelCost({ points, labels, chars }, model = DEFAULT_MODEL) {
+    const m = model.hoverLabels;
+    const n = Math.max(0, Number(labels) || 0);
+    const heap = Math.max(0, Number(points) || 0) * m.perPoint + n * (m.perLabel + m.perChar * Math.max(0, Number(chars) || 0));
+    return { heap, off: 0, gpu: 0, contexts: 0 };
 }
 
 /** The extra a recolour of a drawn plot needs while it runs. */

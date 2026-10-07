@@ -270,7 +270,7 @@ export function setupPlotControlListeners(
         return;
       }
       const mine = ++hoverGeneration;
-      const extra = await loadHoverColumns(settings, plotType);
+      const extra = await loadHoverColumns(settings, plotType, plotContainer);
       if (mine !== hoverGeneration) return;   // a newer selection is loading
       data.hoverExtra = extra;
       await applyHoverInfo(plotContainer, data, settings);
