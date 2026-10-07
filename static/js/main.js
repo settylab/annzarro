@@ -461,6 +461,8 @@ const App = (function() {
     let _noDataView = null;
     /** When the last notice about an opened view was shown (a later toast would hide it). */
     let _viewNoticeAt = 0;
+    // what that notice said, so a notice that replaces it can carry it on
+    let _viewNotice = null;
 
     /**
      * Find the store a view names on this server.
@@ -637,6 +639,7 @@ const App = (function() {
         }
         if (parts.length) {
             _viewNoticeAt = Date.now();
+            _viewNotice = `${title}: ${parts.join('\n\n')}`;
             _showNotification(title, parts.join('\n\n'), 'info', 12000);
         }
         const savedFp = located.saved && located.saved.fp;
@@ -875,7 +878,11 @@ const App = (function() {
         // and above the closed panels, where it stays when the notice is dismissed
         PanelManager.setSavedLayoutOffer({ count, open: () => _openSavedLayout() });
         const panels = `${count} panel${count === 1 ? '' : 's'}`;
+        // A toast replaces the one before it: keep what this load's view
+        // notice said (opened on another path, another version) in this one
+        const before = _viewNotice && Date.now() - _viewNoticeAt < 3000 ? `${_viewNotice}\n\n` : '';
         _askNotification(`Loaded "${name}"`,
+            before +
             `Its ${panels} are listed closed under Duplicate or Reopen Panel. Reopen single ones there, ` +
             'or open the whole saved layout at once.',
             [{ key: 'open', label: `Open saved layout (${panels})`, primary: true }],
