@@ -296,6 +296,12 @@ def densify(m) -> np.ndarray:
     return out
 
 
+#: Up to this many bytes (the rows times the selected columns) take_rows
+#: reads the whole column and indexes it in memory; above, it gathers. At
+#: normal sizes a whole read is faster (a 1M-cell UMAP column is 4 MB: 15 ms
+#: whole, 20 ms gathered); past it memory, not time, is what matters.
+WHOLE_READ_MAX_BYTES = 64 * 2 ** 20
+
 #: Bytes of stored rows one step of take_rows reads at once: several chunks,
 #: so zarr still decodes them in parallel, and never the whole column.
 GATHER_BLOCK_BYTES = 32 * 2 ** 20
@@ -311,6 +317,9 @@ def take_rows(array, rows, cols=None) -> np.ndarray:
     selection already gathers chunk by chunk (bounded and parallel); zarr 2's
     held about the whole selection's chunks at once, so there the rows are
     read a block of chunks at a time: memory one block plus the result.
+    A numeric column of at most WHOLE_READ_MAX_BYTES (the rows times the
+    selected columns) is read whole and indexed in memory instead: faster at
+    normal sizes, and bounded by that size.
     ``rows`` may be unsorted or repeat; the result follows their order.
     """
     rows = np.asarray(rows, dtype=np.int64).reshape(-1)
@@ -321,15 +330,21 @@ def take_rows(array, rows, cols=None) -> np.ndarray:
     two_d = len(array.shape) == 2
     width = (len(cols) if cols is not None else array.shape[1]) if two_d else 1
     out_shape = (rows.size, width) if two_d else (rows.size,)
-    out = np.empty(out_shape, dtype=array.dtype)
     if rows.size == 0:
-        return out
+        return np.empty(out_shape, dtype=array.dtype)
+    numeric = np.dtype(array.dtype).kind in "biuf"     # strings: their size is not itemsize
+    if numeric and n * width * int(np.dtype(array.dtype).itemsize) <= WHOLE_READ_MAX_BYTES:
+        # small enough to hold: one whole read, then the rows in memory
+        whole = np.asarray(array.oindex[:, np.asarray(cols, dtype=np.int64)] if (two_d and cols is not None)
+                           else array[:])
+        return whole[rows]
     if _ZARR3 and hasattr(array, "oindex"):
         # zarr 3 gathers an orthogonal integer selection chunk by chunk,
         # decoding a bounded number at once and in parallel: memory is
         # those chunks plus the result, and it is faster than blocks here
         sel = (rows, np.asarray(cols, dtype=np.int64)) if (two_d and cols is not None) else (rows,)
         return np.asarray(array.oindex[sel])
+    out = np.empty(out_shape, dtype=array.dtype)
     order = np.argsort(rows, kind="stable")
     srows = rows[order]
     chunk = int(array.chunks[0]) if getattr(array, "chunks", None) else n

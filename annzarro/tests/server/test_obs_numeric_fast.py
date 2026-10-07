@@ -220,6 +220,9 @@ def test_a_subset_obsm_read_holds_the_subset_not_the_column(tmp_path, monkeypatc
     # (the module: `annzarro.core.zarr_reader` the attribute is the reader)
     zr = sys.modules["annzarro.core.zarr_reader"]
     monkeypatch.setattr(zr, "GATHER_BLOCK_BYTES", 1 << 20, raising=False)
+    # a 32 MB column is read whole by default (WHOLE_READ_MAX_BYTES, 64 MiB);
+    # with a 1 MiB threshold it is gathered, which is what this bounds
+    monkeypatch.setattr(zr, "WHOLE_READ_MAX_BYTES", 1 << 20, raising=False)
     data = tmp_path / "data"
     data.mkdir()
     n = 8_000_000
@@ -256,3 +259,32 @@ def test_a_subset_obsm_read_holds_the_subset_not_the_column(tmp_path, monkeypatc
     # zarr 3 decodes a few chunks at once (about 10 MiB here), zarr 2 one
     # 1 MiB block; reading the column held 40 MiB
     assert peak < 16 * 2 ** 20, f"peak {peak / 2 ** 20:.1f} MiB for a 10,000-cell subset of a 32 MB column"
+
+
+@pytest.mark.parametrize("size, path", [(1_000, "whole"), (300_000, "gather")])
+def test_take_rows_reads_a_small_column_whole_and_gathers_a_large_one(tmp_path, monkeypatch, size, path):
+    """At or below WHOLE_READ_MAX_BYTES the column is read whole and indexed
+    (faster at normal sizes: a 1M-cell UMAP column is 4 MB); above it the
+    rows are gathered. Both give array[rows][:, cols]."""
+    zr = sys.modules["annzarro.core.zarr_reader"]
+    monkeypatch.setattr(zr, "WHOLE_READ_MAX_BYTES", 100_000)     # bytes: 1,000 x 2 f4 is whole, 300,000 is not
+    root = open_group(str(tmp_path / "t.zarr"))
+    values = np.random.default_rng(3).random((size, 2)).astype(np.float32)
+    arr = write_array(root, "u", values, chunks=(4096, 2))
+    whole_reads = []
+    real = type(arr).__getitem__
+
+    def spy(self, sel):
+        if isinstance(sel, slice) and sel == slice(None):
+            whole_reads.append(sel)
+        return real(self, sel)
+    monkeypatch.setattr(type(arr), "__getitem__", spy)
+    rows = np.sort(np.random.default_rng(4).choice(size, size // 10, replace=False))
+    got = zr.take_rows(arr, rows, [1])
+    assert np.array_equal(got[:, 0], values[rows, 1])
+    got1 = zr.take_rows(arr, rows)
+    assert np.array_equal(got1, values[rows])
+    if path == "whole":
+        assert whole_reads, "a small column is read whole"
+    else:
+        assert not whole_reads, "a large column is gathered, never read whole"
