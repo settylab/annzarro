@@ -14,6 +14,7 @@ import { Config } from './config.js';
 import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds, serializableConfig } from './utils/deeplink.js';
 import { setControlsVisible, controlsElementOf } from './utils/controls-visibility.js';
 import { notifyEach } from './utils/notify-panels.js';
+import { createPlaceholderPanel } from './utils/placeholder-panel.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -704,9 +705,13 @@ const PanelManager = (function() {
     /**
      * Restore layout dimensions and structure
      * @param {Object} layout - Layout configuration
+     * @param {Object} [options]
+     * @param {Object} [options.placeholder] - open the layout without data:
+     *     every tile gets a placeholder that keeps its saved settings
+     *     (utils/placeholder-panel.js), given {message, onChangeDataset}
      * @returns {Promise<void>} - Promise that resolves when all panels are initialized
      */
-    async function restoreLayout(layout) {
+    async function restoreLayout(layout, options = {}) {
         if (!layout) return;
         
         console.log('Restoring layout:', layout);
@@ -838,7 +843,19 @@ const PanelManager = (function() {
                 let panel = _panels.get(id);
                 let promise;
 
-                if (!panel) {
+                // Without data, or replacing a placeholder: a placeholder
+                // is never reused for a real panel, nor the other way round
+                if (panel && !!panel.isPlaceholder !== !!options.placeholder) {
+                    removePanel(id);
+                    panel = null;
+                }
+
+                if (!panel && options.placeholder) {
+                    panel = createPlaceholderPanel(contentContainer, type, { ...panelConfig, id },
+                        options.placeholder);
+                    _panels.set(id, panel);
+                    _panelsByType.get(type).add(panel);
+                } else if (!panel) {
                     const Constructor = _panelTypes.get(type);
                     panel = new Constructor(contentContainer, panelConfig);
                     _panels.set(id, panel);

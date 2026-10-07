@@ -363,7 +363,7 @@ export function createPopoverContent(id, settings) {
 }
 
 /** The export's pixel size and scale from the panel's settings. */
-function exportOptions(settings) {
+export function exportOptions(settings) {
   return { width: settings.exportWidth || 1200, height: settings.exportHeight || 800, scale: settings.scaleExport ? 2 : 1 };
 }
 

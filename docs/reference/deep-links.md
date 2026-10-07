@@ -121,6 +121,12 @@ docs from its panel set file, and opens each one in a headless browser.
     "cellRows":     { "cell-123": 4711 }   // dataset rows of the focused and locked cells, a hint
   },
 
+  // the store it was saved on, optional (v0.4.1 on; see "Store and version" below)
+  "store": { "path": "bm_aging.zarr", "abs": "/data/bm_aging.zarr", "name": "bm_aging.zarr",
+             "fp": { "v": 1, "n_obs": 8090, "n_var": 16285, "cells": "…", "genes": "…", "data": "…",
+                     "meta": "…", "groups": { "obs": "…", … }, "fields": { "obs": [ … ], … } } },
+  "annzarro": "0.4.1",             // the version that saved it
+
   // the cells every panel shows, optional (see "Cell subset" below)
   "subset": { "n": 100000, "seed": 0 },  // null: every cell; absent: server default; optional "part"
 
@@ -300,6 +306,20 @@ consumer. The deep link adopts that exact tree as its `layout` key:
   when re-instantiating a panel; `saveLayout` produces it (each panel's `getConfig()` plus its
   id), so a serialized layout reopens with real settings, not defaults.
 
+## Store and version
+
+`store.path` is the store relative to the data directory when it is inside it (and then also the
+link's `dataset_path`), else its absolute path; `abs` is the absolute path where the view was
+saved, a hint tried last. `fp` is the fingerprint from `GET /api/v1/data/fingerprint`
+(`annzarro/core/fingerprint.py`): `n_obs`, `n_var`, and `cells`, `genes`, `data` (digests of the
+cell and gene names by content, so independent of chunking, compression and zarr against h5ad)
+say which cells and genes the store has; `meta` (every metadata document), `groups` (one short
+digest per top-level group) and `fields` (the member names of obs, var, obsm, varm, obsp, varp,
+layers, uns) say which fields. `cells`, `genes` and `data` are missing when the view was saved
+before a large store's names were hashed. `annzarro` is the version that saved the view. How a
+view uses them on opening is in {doc}`../user-guide/reproducing`; the comparison is
+`static/js/utils/view-store.js`. Views without them (made before v0.4.1) open as before.
+
 ## Versioning and compatibility
 
 - `v` is stamped on every normalized `view` and on every `saveLayout` output. Bump it on a
@@ -318,6 +338,7 @@ or failed restore drops back to the Welcome tile instead of spinning forever. Se
 
 ## Limits of a link
 
-A link refers to the dataset by server path. It reproduces a view on the same server with an
-unchanged store, not across installations. The server logs `dataset_path` (it is in the query
-string) but never sees the view.
+A link refers to the dataset by its name in the data directory (an absolute path for a store
+outside it) and records the store's fingerprint, so it reproduces a view on any server with the
+same store and the same AnnZarro version ({doc}`../user-guide/reproducing`). The server logs
+`dataset_path` (it is in the query string) but never sees the view.

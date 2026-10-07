@@ -121,6 +121,10 @@ def register_core_routes(app, api_version):
             memory["host_memory_bytes"] = host_memory
             ui["memory"] = memory
             client["ui"] = ui
+        # recorded in saved views and exported figures (same version, same
+        # rendering; another version says it may differ)
+        from annzarro import __version__
+        client["annzarro_version"] = __version__
         return jsonify(client)
 
     def _host_memory_bytes():

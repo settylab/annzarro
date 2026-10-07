@@ -499,6 +499,65 @@ def register_data_routes(app, api_version):
             logger.error(f"Error getting dataset info for path {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500
     
+    @app.route(f"/api/{api_version}/data/fingerprint", methods=["GET"])
+    def get_fingerprint():
+        """
+        The store's fingerprint (core/fingerprint.py), for a saved view.
+
+        Query parameters:
+            dataset_path: Path to the dataset.
+            wait: seconds to wait for the cell and gene names to be hashed
+                (default 0, at most 10). Until they are, ``status`` is
+                ``pending`` and the fingerprint holds the metadata tier only.
+
+        Also returns ``rel_path``, the path relative to the data directory
+        when the store is inside it (what a saved view records, so it opens
+        on another server with another data directory), and the server's
+        AnnZarro version. A missing store is a 404 with reason ``not_found``.
+        """
+        from ...core import fingerprint
+        from annzarro import __version__
+        dataset_path = request.args.get("dataset_path")
+        if not dataset_path:
+            return jsonify({"error": "dataset_path parameter is required"}), 400
+        try:
+            wait = min(max(float(request.args.get("wait", 0) or 0), 0.0), 10.0)
+        except ValueError:
+            return jsonify({"error": "wait must be a number of seconds"}), 400
+        try:
+            reader = get_reader(dataset_path)
+            result = fingerprint.get(reader, dataset_path, wait=wait)
+            if result["status"] != "ready":
+                # the counts, from the metadata every route reads anyway
+                if reader is zarr_reader:
+                    counts = zarr_reader.get_basic_counts(dataset_path)
+                    shape = (counts["cell_count"], counts["gene_count"])
+                else:
+                    shape = reader.get_metadata(dataset_path).get("shape", (None, None))
+                result["fingerprint"]["n_obs"], result["fingerprint"]["n_var"] = int(shape[0]), int(shape[1])
+        except Exception as exc:
+            return _reader_error_response(exc, dataset_path)
+        result["path"] = dataset_path
+        result["rel_path"] = _relative_to_data_dir(dataset_path)
+        result["annzarro_version"] = __version__
+        return jsonify(result)
+
+    def _relative_to_data_dir(dataset_path):
+        """``dataset_path`` relative to the data directory, or None when it
+        is outside it (or remote). Compared without following symlinks: an
+        entry of the data directory that links elsewhere is still named by
+        its name there, as the dataset listing names it."""
+        if not dataset_path or is_remote_path(dataset_path):
+            return None
+        data_dir = app.config.get("data_dir")
+        if not data_dir:
+            return None
+        base = os.path.abspath(os.path.expanduser(data_dir))
+        path = os.path.abspath(os.path.expanduser(dataset_path))
+        if path == base or not path.startswith(base.rstrip(os.sep) + os.sep):
+            return None
+        return os.path.relpath(path, base).replace(os.sep, "/")
+
     @app.route(f"/api/{api_version}/data/dataset_structure", methods=["GET"])
     @http_cache.conditional
     def get_dataset_structure():

@@ -58,6 +58,10 @@ test = [
     "pandas>=1.3.0",  # test fixtures only; the server does not import pandas
     "Pillow>=9.0.0",  # browser tests compare screenshot pixels
 ]
+# `annzarro export`: headless Chromium; then `python -m playwright install chromium`
+export = [
+    "playwright>=1.40",
+]
 desktop = [
     "pyinstaller>=5.0.0",
     "Pillow>=9.0.0",

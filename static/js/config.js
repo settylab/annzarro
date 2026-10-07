@@ -84,6 +84,7 @@ const Config = (function() {
         DATASETS: `${API_BASE}/datasets`,
         DATASET_INFO: `${API_BASE}/data/info`,
         DATASET_STRUCTURE: `${API_BASE}/data/dataset_structure`,
+        FINGERPRINT: `${API_BASE}/data/fingerprint`,
         CELLS: `${API_BASE}/data/cells`,
         GENES: `${API_BASE}/data/genes`,
         NAMES: `${API_BASE}/data/names`,

@@ -141,15 +141,19 @@ const LayoutManager = (function() {
                 const pane1Percentage = parseFloat(pane1.dataset.flexPercentage || '50');
                 const pane2Percentage = parseFloat(pane2.dataset.flexPercentage || '50');
                 
-                // Add pane info to the container
+                // Add pane info to the container. A pane's controlsVisible
+                // is read from the DOM as a tile's is: its data attribute was
+                // set only by some paths (a drag), so the same layout saved
+                // after a link and after a panel set differed in it.
+                const paneControls = (pane) => pane.querySelector('.plot-controls')?.style.display !== 'none';
                 splitContainer.panes = [
                     {
                         percentage: pane1Percentage,
-                        controlsVisible: pane1.dataset.controlsVisible === 'true'
+                        controlsVisible: paneControls(pane1)
                     },
                     {
                         percentage: pane2Percentage,
-                        controlsVisible: pane2.dataset.controlsVisible === 'true'
+                        controlsVisible: paneControls(pane2)
                     }
                 ];
                 

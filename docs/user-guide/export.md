@@ -84,10 +84,11 @@ Every plot is fully described by its panel settings: the source of each axis and
 (type, key, column), the colour map and range, locks, the linked table and its filter. To redraw
 an exported figure:
 
-- **In AnnZarro**: keep the {doc}`share link <share-links>` or save a {doc}`panel set <panel-sets>`
-  (and **Export** it as JSON from the Load Panel Set dialog to keep a copy outside the server).
-  Opening it on a server with the same dataset gives the same plot, which you can export again at
-  another size or format.
+- **In AnnZarro**: every exported PNG and SVG carries its own recipe (the view, the store's
+  fingerprint, the AnnZarro version), and `annzarro export --from fig.png --store <store>` makes it
+  again, identical with the same store and version ({doc}`reproducing`). You can also keep the
+  {doc}`share link <share-links>` or save a {doc}`panel set <panel-sets>` (and **Export** it as
+  JSON from the Load Panel Set dialog to keep a copy outside the server).
 - **In Python**: read the same slots from the store. For the fold-change UMAP of H2-Q7 used
   throughout this guide:
 

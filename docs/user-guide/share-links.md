@@ -31,24 +31,26 @@ A link has two parts:
 http://<server>/?dataset_path=<path on the server>#view=z1.<compressed view>
 ```
 
-- `dataset_path` (query) is the dataset as the server sees it: a path inside its data directory, or
-  a remote URL ({doc}`remote-datasets`). A path that is not absolute, such as `bm_aging.zarr`, names
-  a store in the data directory, so such a link works on any server that has that store there
-  (the tutorials' links are written this way, {ref}`tut-start-links`).
+- `dataset_path` (query) is the dataset: its name in the server's data directory, such as
+  `bm_aging.zarr`, when it is inside it (links made before v0.4.1 hold the absolute path), an
+  absolute path for a store outside it, or a remote URL ({doc}`remote-datasets`). A name relative
+  to the data directory works on any server that has that store there (the tutorials' links are
+  written this way, {ref}`tut-start-links`).
 - `#view=` (fragment) holds the view: the focused cell, focused gene and taxonomy, the cell subset
   ({doc}`subsets`), and the layout tree (splits, pane sizes in percent, which panels have their
   controls open, and each panel's full settings, including locks, colour ranges and table
-  filters). Panels created from the Welcome tile are included like any other. The `z1.` prefix marks it as
-  deflate-compressed JSON in base64url.
+  filters). Panels created from the Welcome tile are included like any other. It also records
+  the store's fingerprint and the AnnZarro version, so a link opened on another store or version
+  says so ({doc}`reproducing`). The `z1.` prefix marks it as deflate-compressed JSON in base64url.
 
 The fragment is never sent to the server, so a link does not appear in server logs and has no
 server-side length limit. The grammar, and how to build a link by hand from a JSON `view`, are in
 {doc}`../reference/deep-links`; every view file offered for download in this guide (for example
 {download}`userguide-focus.json <../_tools/views/userguide-focus.json>`) is such a `view`.
 
-A link does **not** contain data. It only works on a server that can open the same
-`dataset_path`, which is why links are shared between users of one server. A link made on a laptop
-names a path on that laptop.
+A link does **not** contain data. It opens on any server whose data directory holds the same
+store; if the store is not there, the link opens its layout without data and lets you choose a
+store ({doc}`reproducing`).
 
 ## How long is a link?
 
