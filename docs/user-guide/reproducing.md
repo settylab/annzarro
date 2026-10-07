@@ -49,7 +49,7 @@ AnnZarro then compares the fingerprints:
 | saved with another AnnZarro version | the view opens, with a notice: "Saved with AnnZarro 0.4.1; this is 0.5.0. The view may look different." |
 
 A store with many cells is fingerprinted in the background the first time it is opened (about
-9.4 s for the 95.6 million cell names of Tahoe-100M on a laptop, then remembered across restarts),
+9 s for the 95.6 million cell names of Tahoe-100M on a laptop, with or without the files in the page cache; then remembered across restarts),
 so nothing waits for it. Until then a view is checked by its counts and fields, and the cell and
 gene names are checked when they are ready.
 
