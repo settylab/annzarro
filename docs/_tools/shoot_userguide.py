@@ -667,7 +667,8 @@ def shoot_panelsets(sh, data_dir):
     capture(sh, page, "panelsets-load", "#session-modal .modal-content", marks=[
         (1, "#session-search"), (2, "#session-grid > * >> nth=0"),
         (3, "#session-grid button:has-text('Export')"), (4, "#toggle-upload-btn"),
-        (5, "#btn-confirm-session"), (6, "#session-grid .session-load-open >> nth=0")])
+        (5, "#btn-confirm-session"), (6, "#session-grid .session-load-open >> nth=0"),
+        (7, "#session-grid .session-add-closed >> nth=0")])
     page.locator("#session-grid > *").first.click(); time.sleep(0.3)
     page.click("#btn-confirm-session")
     # Load lists the set's panels closed and offers its saved layout in a notice
@@ -689,6 +690,22 @@ def shoot_panelsets(sh, data_dir):
     capture(sh, page, "panelsets-opened", None)
     sh.log.append("panelsets: after Open saved layout = " + json.dumps(page.evaluate(
         "[...document.querySelectorAll('.tile-container .tile')].map(t => t.dataset.tileId)")))
+
+    # Load a set while panels are open: AnnZarro asks Replace, Add to closed panels or Cancel
+    page.wait_for_selector(".modal-backdrop", state="detached")
+    page.click("#btn-load-session"); time.sleep(1.5)
+    page.locator("#session-grid > *").first.click(); time.sleep(0.3)
+    page.click("#btn-confirm-session")
+    ask = page.locator(".notification-ask", has_text="Load panel set?")
+    ask.wait_for(state="attached", timeout=20000)
+    time.sleep(1.0)                                   # let the notice finish fading in
+    # undo the earlier clean() styles for this notice (more specific than both)
+    page.add_style_tag(content="#notification-container { display: block !important; } "
+                               ".notification.notification-ask:not([data-offer]) { display: block !important; }")
+    ask.screenshot(path=str(OUT / "panelsets-replace-or-add.png"))
+    finish(OUT / "panelsets-replace-or-add.png")
+    sh.log.append("wrote panelsets-replace-or-add.png: " + ask.inner_text().replace("\n", " | "))
+    ask.locator("button[data-action='cancel']").click()
     page.context.close()
 
     # Load the same panel set while another dataset is open: AnnZarro asks first

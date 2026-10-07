@@ -236,12 +236,15 @@ const SessionManager = (function() {
     /**
      * Load a panel set by name
      * @param {string} name - Panel set name
-     * @param {{openPanels?: boolean}} [options] - openPanels: open the set's
-     *   panels in its layout (the Load dialog's "Load and open layout");
-     *   otherwise they are listed closed. The autosave always reopens.
+     * @param {{openPanels?: boolean, add?: boolean}} [options] - openPanels:
+     *   open the set's panels in its layout (the Load dialog's "Load and open
+     *   layout"); otherwise they are listed closed. add: only add the set's
+     *   panels to the closed ones, keeping the open view ("Add to closed
+     *   panels"). Without add, the user is asked first while panels exist.
+     *   The autosave always reopens.
      * @returns {Promise<Object>} - Load result
      */
-    async function loadSession(name, { openPanels = false } = {}) {
+    async function loadSession(name, { openPanels = false, add = false } = {}) {
         if (!name) {
             console.error('Panel set name is required');
             return { status: 'error', message: 'Panel set name is required' };
@@ -327,7 +330,7 @@ const SessionManager = (function() {
             // A set the user chose opens with its panels closed, to be
             // reopened one by one or all at once ("Open saved layout"),
             // unless the user asked for them open; the autosave above reopens
-            const applied = await _applyPanelSet(sessionData, { openPanels });
+            const applied = await _applyPanelSet(sessionData, { openPanels, add, ask: !add });
             if (applied && applied.status && applied.status !== 'success') return applied;
             
             return { status: 'success', message: `Session ${name} loaded successfully` };

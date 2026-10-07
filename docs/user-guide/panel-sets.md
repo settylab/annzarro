@@ -39,7 +39,7 @@ name") and keeps the dialog open.
 
    ```{figure} ../_static/screens/user-guide/panelsets-load.png
    :class: screenshot
-   :alt: The Load Panel Set dialog: a search field (1), a card for HSC_walk_and_H2-Q7_fold_change with dataset name, two panel icons and date (2), an Export button (3), Upload file (4), Load (5) and Load and open layout (6).
+   :alt: The Load Panel Set dialog: a search field (1), a card for HSC_walk_and_H2-Q7_fold_change with dataset name, two panel icons and date (2), an Export button (3), Upload file (4), Load (5), Load and open layout (6) and Add to closed panels (7).
 
    The Load Panel Set dialog.
    ```
@@ -50,17 +50,26 @@ name") and keeps the dialog open.
    - **Export** (3) downloads the panel set as a JSON file.
    - **Upload file** (4) adds a panel set from such a JSON file (also the panel-set files offered
      for download in these docs).
-   - **Load and open layout** (6) loads the panel set and opens all its panels at once, in the
-     saved layout. A large set opened at once takes as much memory as all its panels together.
-2. Click a card to select it and click **Load** (5).
+   - **Load and open layout** (6) loads the panel set and opens, in the saved layout, the panels
+     that were open when it was saved (the others are listed closed). A large set opened at once
+     takes as much memory as all those panels together. A set saved with no panel open opens
+     none, and the notice says so.
+   - **Add to closed panels** (7) adds the set's panels to the closed ones and changes nothing
+     else ({ref}`below <panelsets-add>`).
+2. Click a card to select it and click **Load** (5). If panels are open or closed already,
+   AnnZarro asks first ({ref}`below <panelsets-add>`); **Replace** goes on as described here.
 3. AnnZarro opens the panel set's dataset with the cell subset and the focused cell and gene it
    was saved with. Its panels are **not opened**: each is listed closed, with its settings, under
    **Duplicate or Reopen Panel** (1). A large panel set opened all at once could overload the
    computer, so you choose:
 
-   - **Open saved layout (N panels)** (2), in the notice, opens every panel of the set in its
-     saved layout, exactly as the set's {doc}`share link <share-links>` would. The same button,
-     **Open saved layout (N)**, stays above the closed panels when you dismiss the notice.
+   - **Open saved layout (N panels)** (2), in the notice, opens the N panels that were open when
+     the set was saved, in their saved layout, exactly as the set's
+     {doc}`share link <share-links>` would; panels that were closed then stay closed. The same
+     button, **Open saved layout (N)**, stays above the closed panels when you dismiss the
+     notice. The notice says how many panels are listed and how many were open ("5 panels listed
+     closed … 2 were open when the set was saved"). A set saved with no panel open offers no
+     layout.
    - **Closed** (it reads **Reopen** under the pointer) on a panel in the list opens that panel
      alone, below the others; split and resize it as usual ({doc}`interface`).
 
@@ -86,19 +95,48 @@ name") and keeps the dialog open.
    panel set that names the open store by another path (`bm_aging.zarr` for
    `/data/bm_aging.zarr`) counts as the same dataset and loads without asking.
    **Switch and load** opens the panel set's dataset and lists its panels (or, from **Load and
-   open layout**, opens them); **Keep current** leaves everything as it is.
+   open layout**, opens them); **Add to closed panels** stays on the open dataset and only adds
+   the set's panels ({ref}`below <panelsets-add>`); **Keep current** leaves everything as it
+   is. This is the only question asked: a set from another dataset is not asked about twice.
 
    ```{figure} ../_static/screens/user-guide/panelsets-switch.png
    :class: screenshot
    :width: 50%
-   :alt: A yellow notice "Switch dataset?" naming the dataset the panel set was saved on and the open dataset, with the buttons "Switch and load" and "Keep current".
+   :alt: A yellow notice "Switch dataset?" naming the dataset the panel set was saved on and the open dataset, with the buttons "Switch and load", "Add to closed panels" and "Keep current".
 
    Loading a panel set made on `bm_aging.zarr` while `spatial_demo.zarr` is open.
    ```
 
 Panel sets saved by older versions of AnnZarro hold the panels, the dataset and the focus, but
 no layout. They load the same way: dataset and focus, every panel listed closed. **Open saved
-layout** lays their panels out in rows of two, from left to right and top to bottom.
+layout** opens the panels that were open when the set was saved, laid out in rows of two, from
+left to right and top to bottom.
+
+(panelsets-add)=
+## Add a panel set to the closed panels
+
+Loading a panel set while panels exist (open or closed) asks first (a set saved on another
+dataset asks in the "Switch dataset?" notice above instead, with the same three choices):
+
+```{figure} ../_static/screens/user-guide/panelsets-replace-or-add.png
+:class: screenshot
+:width: 50%
+:alt: A notice "Load panel set?" saying how many panels the set holds, with the buttons Replace, Add to closed panels and Cancel.
+
+Loading a panel set while panels are open.
+```
+
+**Replace** loads it as described above. **Add to closed panels** keeps everything as it is (the
+open panels, the dataset, the cell subset, the focused cell and gene) and only adds the set's
+panels to **Duplicate or Reopen Panel**, each with its settings and a small "from *set name*"
+tag; a notice says how many were added. A panel whose title is in use already gets the set's name
+after it, for example "Cell Plot 1 (walk_three_panels)". A panel whose id is in use already gets a
+new one, and a
+plot filtered by a table of the same set stays filtered by that table. A panel set saved on
+another dataset is added without switching datasets; its panels are tagged "other dataset" and
+may need other columns than the open dataset has. The same action is a button on each card of the
+Load Panel Set dialog and of the "Load Saved Panel Set" list, so it works without the question.
+Nothing is replaced, so no saved layout is offered.
 
 ## Who can change a panel set
 

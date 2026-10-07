@@ -326,12 +326,27 @@ export class SelectionTile {
           <i class="${typeIcon} fa-3x"></i>
         </div>
         <div class="tile-type-label">${panelTitle}</div>
+        <div class="panel-origin-tag" hidden></div>
         ${!this.activePanels.has(panel) ? `
           <div class="panel-status panel-closed-btn" data-id="${id}" data-type="${panelType}">Closed</div>
           <button class="delete-panel-btn" data-id="${id}" title="Delete">×</button>
         ` : ''}
       `;
       
+      // A panel added from a panel set ("Add to closed panels") says which,
+      // and that it was saved on another dataset when it was
+      const origin = panel._addedFrom;
+      const tag = option.querySelector('.panel-origin-tag');
+      if (origin && tag) {
+        tag.hidden = false;
+        // "other dataset" first: a long set name is cut at the end
+        tag.textContent = (origin.otherDataset ? 'other dataset · ' : '') + `from ${origin.set}`;
+        tag.title = origin.otherDataset
+          ? `Added from the panel set "${origin.set}", saved on ${origin.otherDataset}`
+          : `Added from the panel set "${origin.set}"`;
+        if (origin.otherDataset) tag.classList.add('other-dataset');
+      }
+
       // Add hover effect to change "Closed" to "Reopen" for closed panels
       const statusBtn = option.querySelector('.panel-closed-btn');
       if (statusBtn) {
@@ -687,10 +702,21 @@ export class SelectionTile {
           <div class="session-dataset truncate-text" title="${session.datasetName || session.dataset}">${session.datasetName || session.dataset}</div>
         </div>
         ${panelPreview}
+        ${session.isAutosave ? '' : `<button type="button" class="btn btn-sm btn-outline-secondary session-item-add"
+            title="Add this set's panels to the closed panels; the open view stays as it is">
+            <i class="fas fa-plus"></i> Add to closed panels</button>`}
       `;
       
       // Use either provided sessionManager or global window.sessionManager
       const sessionManager = this.sessionManager || window.sessionManager;
+
+      const addBtn = item.querySelector('.session-item-add');
+      if (addBtn) {
+        addBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (sessionManager) await sessionManager.loadSession(session.name, { add: true });
+        });
+      }
       
       item.addEventListener('click', async () => {
         if (this.variant != "welcome") {

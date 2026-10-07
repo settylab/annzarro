@@ -7,7 +7,7 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels,
+    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
@@ -407,34 +407,58 @@ const App = (function() {
      * machine. Its layout is kept and offered as "Open saved layout" (see
      * _offerSavedLayout). The autosave restore, the subset change and the
      * Load dialog's "Load and open layout" keep their panels open.
+     *
+     * `add: true` ("Add to closed panels") keeps the open view as it is and
+     * only adds the set's panels to the closed list (_addPanelSet). `ask:
+     * true` (a set the user chose) asks first, while any panels exist,
+     * whether to replace them or add to them.
      * @param {{datasetPath: string|null, view: Object, closedPanels: Array, legacy: boolean}} plan
      * @param {Object} panelSet - the stored panel set
-     * @param {{openPanels?: boolean}} [options]
+     * @param {{openPanels?: boolean, add?: boolean, ask?: boolean}} [options]
      * @returns {Promise<{status: string, message: string}>}
      * @private
      */
-    async function _applyPanelSet(plan, panelSet, { openPanels = true } = {}) {
-        if (!openPanels) plan = closePlanPanels(plan);
-        _clearSavedLayout();
+    async function _applyPanelSet(plan, panelSet, { openPanels = true, add = false, ask = false } = {}) {
         const name = (panelSet && panelSet.name) || 'panel set';
         const current = DataManager.getCurrentDataset();
         const target = plan.datasetPath || current;
+        // the same store named relative vs absolute is not a switch
+        const listing = await DataManager.loadDatasets().catch(() => []);
+        const otherDataset = !!(current && target && !sameDatasetPath(target, current, listing));
+
+        // One question at most. A set the user chose asks while panels exist
+        // (Replace, Add to closed panels, Cancel), and a set saved on another
+        // dataset asks in the same notice whether to switch; any other load
+        // that would switch datasets asks only that.
+        if (!add && ((ask && PanelManager.getAllPanels().length > 0) || otherDataset)) {
+            const n = closePlanPanels(plan).closedPanels.length;
+            const panels = `${n} panel${n === 1 ? '' : 's'}`;
+            const actions = otherDataset
+                ? [{ key: 'replace', label: 'Switch and load', primary: true }]
+                : [{ key: 'replace', label: 'Replace', primary: true }];
+            if (ask) actions.push({ key: 'add', label: 'Add to closed panels' });
+            actions.push({ key: 'cancel', label: otherDataset ? 'Keep current' : 'Cancel' });
+            const addLine = ask ? ' Add to closed panels keeps everything as it is and only adds its panels.' : '';
+            if (_sessionModal) _sessionModal.hide();
+            const choice = otherDataset
+                ? await _askNotification('Switch dataset?',
+                    `"${name}" was saved on\n${target}\n\nThe open dataset is\n${current}\n\n` +
+                    `Loading it switches datasets and replaces the open panels.${addLine}`, actions)
+                : await _askNotification('Load panel set?',
+                    `"${name}" holds ${panels}. Replace the open view with it?${addLine}`, actions);
+            if (choice === 'add') add = true;
+            else if (choice !== 'replace') {
+                return { status: 'cancelled', message: otherDataset
+                    ? `Kept ${current}; "${name}" was not loaded.` : `"${name}" was not loaded.` };
+            }
+        }
+        if (add) return _addPanelSet(plan, name);
         if (!target) {
             return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
         }
-        // the same store named relative vs absolute is not a switch
-        const listing = await DataManager.loadDatasets().catch(() => []);
-        if (current && !sameDatasetPath(target, current, listing)) {
-            if (_sessionModal) _sessionModal.hide();
-            const choice = await _askNotification(
-                'Switch dataset?',
-                `"${name}" was saved on\n${target}\n\nThe open dataset is\n${current}\n\nLoading it switches datasets and replaces the open panels.`,
-                [{ key: 'switch', label: 'Switch and load', primary: true }, { key: 'cancel', label: 'Keep current' }]
-            );
-            if (choice !== 'switch') {
-                return { status: 'cancelled', message: `Kept ${current}; "${name}" was not loaded.` };
-            }
-        }
+        const total = closePlanPanels(plan).closedPanels.length;
+        if (!openPanels) plan = closePlanPanels(plan);
+        _clearSavedLayout();
 
         // The set replaces the open view. Open panels are closed (they stay
         // available to reopen); a panel with an id the set brings is removed,
@@ -463,8 +487,64 @@ const App = (function() {
 
         PanelManager.updateSourcePanelSelection();
         PanelManager.ensureWelcomeFallback();
-        if (plan.savedView) _offerSavedLayout(plan.savedView, datasetPath, name, plan.savedCount);
+        const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
+        if (plan.savedView) {
+            // the layout of the panels open when the set was saved
+            _offerSavedLayout(plan.savedView, datasetPath, name, total, plan.savedCount);
+        } else if (!openPanels) {
+            _showNotification(`Loaded "${name}"`, `${listed} under Duplicate or Reopen Panel; ` +
+                'none was open when the set was saved.', 'success', 8000);
+        } else if (!(plan.view && plan.view.layout && collectTileIds(plan.view.layout.hierarchy).length)) {
+            // "Load and open layout" of a set saved with no panel open
+            _showNotification(`Loaded "${name}"`, `No panel was open when the set was saved, so none ` +
+                `opened; its ${listed} under Duplicate or Reopen Panel.`, 'success', 8000);
+        }
         return { status: 'success', message: `Loaded "${name}"` };
+    }
+
+    // Fresh ids for panels added from a panel set: `<type>-<n>`, n never repeating
+    let _addedIdCounter = Date.now();
+
+    /**
+     * "Add to closed panels": the set's panels join the closed list, each
+     * with its full config and title; the open panels, dataset, subset and
+     * focus stay as they are. Ids the app already uses get fresh ones, and
+     * the set's references between its own panels follow (panelsToAdd). A
+     * set saved on another dataset is added too, its panels marked so, and
+     * the dataset is not switched. Nothing was replaced, so no saved layout
+     * is offered.
+     * @private
+     */
+    async function _addPanelSet(plan, name) {
+        const current = DataManager.getCurrentDataset();
+        let other = null;
+        if (plan.datasetPath) {
+            const listing = await DataManager.loadDatasets().catch(() => []);
+            if (!current || !sameDatasetPath(plan.datasetPath, current, listing)) other = plan.datasetPath;
+        }
+        const added = panelsToAdd(plan, id => !!PanelManager.getPanel(id),
+            type => `${type}-${++_addedIdCounter}`);
+        // A title the app shows already (table-filter menus, notices) gets the
+        // set's name after it: "Cell Plot 1 (walk_three_panels)"
+        const titles = new Set(PanelManager.getAllPanels().map(p => p.getTitle()));
+        added.forEach(p => {
+            if (p.config.title && titles.has(p.config.title)) p.config.title = `${p.config.title} (${name})`;
+            titles.add(p.config.title);
+        });
+        let n = 0;
+        added.forEach(p => {
+            const panel = PanelManager.registerClosedPanel(p.type, p.config, { keepTitle: true });
+            if (!panel) return;
+            panel._addedFrom = { set: name, otherDataset: other };
+            n++;
+        });
+        PanelManager.updateSourcePanelSelection();
+        const panels = `${n} panel${n === 1 ? '' : 's'}`;
+        _showNotification(`Added "${name}"`,
+            `${panels} added to the closed panels under Duplicate or Reopen Panel; the open view is unchanged.` +
+            (other ? ` The set was saved on ${other}: its panels are marked "other dataset".` : ''),
+            'success', 8000);
+        return { status: 'success', message: `Added ${panels} of "${name}" to the closed panels` };
     }
 
     // The layout of the panel set last loaded with its panels closed, offered
@@ -478,15 +558,19 @@ const App = (function() {
      * dismissed, or the offer lapses (_clearSavedLayout).
      * @private
      */
-    function _offerSavedLayout(view, datasetPath, name, count) {
+    function _offerSavedLayout(view, datasetPath, name, total, count) {
         const offer = { view, datasetPath };
         _savedLayout = offer;
         // and above the closed panels, where it stays when the notice is dismissed
         PanelManager.setSavedLayoutOffer({ count, open: () => _openSavedLayout() });
         const panels = `${count} panel${count === 1 ? '' : 's'}`;
+        const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
+        const wereOpen = count === total
+            ? (total === 1 ? 'it was open' : total === 2 ? 'both were open' : `all ${total} were open`)
+            : `${count} ${count === 1 ? 'was' : 'were'} open`;
         _askNotification(`Loaded "${name}"`,
-            `Its ${panels} are listed closed under Duplicate or Reopen Panel. Reopen single ones there, ` +
-            'or open the whole saved layout at once.',
+            `${listed} under Duplicate or Reopen Panel; ${wereOpen} when the set was saved. ` +
+            'Reopen single ones there, or open the saved layout at once.',
             [{ key: 'open', label: `Open saved layout (${panels})`, primary: true }],
             { type: 'success', handle: offer })
             .then(choice => {
@@ -1798,6 +1882,10 @@ const App = (function() {
                         <button class="btn btn-sm btn-outline-primary session-load-open"
                             title="Load and open every panel in the saved layout at once (a large set takes memory)">
                             <i class="fas fa-th-large"></i> Load and open layout
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary session-add-closed"
+                            title="Add this set's panels to the closed panels; the open view stays as it is">
+                            <i class="fas fa-plus"></i> Add to closed panels
                         </button>`;
                     
                     // Create panel preview icons based on session data
@@ -1911,6 +1999,21 @@ const App = (function() {
                             _showNotification('Panel set not loaded', result.message, 'info', 5000);
                         } else {
                             _showNotification('Failed to load panel set', result.message, 'error');
+                        }
+                    });
+                });
+
+                // "Add to closed panels": the set's panels join the closed
+                // ones; the open view, dataset and focus stay
+                document.querySelectorAll('.session-add-closed').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const sessionName = e.target.closest('.session-card').dataset.sessionName;
+                        const result = await SessionManager.loadSession(sessionName, { add: true });
+                        if (result.status === 'success') {
+                            _sessionModal.hide();
+                        } else {
+                            _showNotification('Failed to add panel set', result.message, 'error');
                         }
                     });
                 });

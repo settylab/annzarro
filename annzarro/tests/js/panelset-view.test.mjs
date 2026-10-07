@@ -17,7 +17,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const {
-    panelSetToView, defaultHierarchy, remapPanelReferences, collectTileIds, closePlanPanels, VIEW_SCHEMA_VERSION
+    panelSetToView, defaultHierarchy, remapPanelReferences, collectTileIds, closePlanPanels, panelsToAdd, VIEW_SCHEMA_VERSION
 } = await import('../../../static/js/utils/deeplink.js');
 
 const legacyE = () => ({
@@ -194,4 +194,39 @@ test('closePlanPanels offers no saved layout for a set that opens nothing', () =
     const closed = closePlanPanels(panelSetToView({ name: 'x', dataset: '/d', panelConfigs: {} }));
     assert.equal(closed.savedView, null);
     assert.equal(closed.savedCount, 0);
+});
+
+// "Add to closed panels" (operator follow-up): the set's panels join the
+// closed list beside what is open. Clashing ids get fresh ones, and a plot's
+// tableFilter follows its own table's rename instead of landing on the open
+// panel that has the old id.
+const counter = () => { let n = 0; return type => `${type}-new${++n}`; };
+
+test('panelsToAdd keeps ids that are free, with every config', () => {
+    const added = panelsToAdd(panelSetToView(legacyE()), () => false, counter());
+    assert.deepEqual(added.map(p => [p.type, p.config.id]),
+        [['cell-table', 'cell-table-E1'], ['cell-plot', 'cell-plot-E2'], ['cell-plot', 'cell-plot-old']]);
+    assert.equal(added[1].config.tableFilter, 'cell-table-E1');
+    assert.equal(added[0].config.searchBuilderConfig.criteria[0].value[0], 'HSC');
+});
+
+test('panelsToAdd renames clashing ids and keeps tableFilter inside the set', () => {
+    const open = new Set(['cell-table-E1', 'cell-plot-E2']);   // the same set is open already
+    const added = panelsToAdd(panelSetToView(legacyE()), id => open.has(id), counter());
+    const ids = added.map(p => p.config.id);
+    assert.deepEqual(ids, ['cell-table-new1', 'cell-plot-new2', 'cell-plot-old']);
+    assert.equal(new Set(ids).size, ids.length);
+    // the plot filters by the ADDED table, not the open one with the old id
+    assert.equal(added[1].config.tableFilter, 'cell-table-new1');
+});
+
+test('panelsToAdd leaves the plan alone and gives every panel an id', () => {
+    const plan = panelSetToView(legacyE());
+    const before = JSON.parse(JSON.stringify(plan));
+    panelsToAdd(plan, id => !id.includes('-new'), counter());   // every saved id taken
+    assert.deepEqual(plan, before);
+    const flat = panelsToAdd({ datasetPath: '/d', legacy: false, closedPanels: [],
+        view: { v: 1, panels: [{ type: 'cell_plot' }, { type: 'cell_plot' }] } }, () => false, counter());
+    assert.deepEqual(flat.map(p => p.config.id), ['cell-plot-new1', 'cell-plot-new2']);
+    assert.deepEqual(panelsToAdd(null, () => false, counter()), []);
 });

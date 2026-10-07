@@ -19,11 +19,17 @@ cell table beside it), saves them as a panel set, then loads the set:
 3. the share link of the same view, in a fresh context: both panels open;
 4. "Open saved layout" after a closed load gives the same tiles, sizes and
    settings as that share link, and no closed duplicate is left;
-5. "Load and open layout" in the dialog opens the set's panels at once.
+5. "Load and open layout" in the dialog opens the set's panels at once;
+6. "Add to closed panels" (the Load dialog card, the prompt a load raises
+   while panels exist, the welcome list) keeps the open view and only adds
+   the set's panels to the closed list: clashing ids renamed, a plot's
+   tableFilter kept on the set's own table, a set from another dataset
+   added and marked, without switching.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
 """
+import json
 import os
 import shutil
 import socket
@@ -44,6 +50,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 FIXTURE = os.path.join(os.path.dirname(HERE), "data", "fixture_small.zarr")
 SET_NAME = "two-panels"
+DATA = {}      # the server's data directory, for panel sets written by hand
 
 
 def _free_port():
@@ -58,6 +65,9 @@ def server(tmp_path_factory):
     # panel sets are saved under the data dir: use a copy, not the repo's
     data_dir = tmp_path_factory.mktemp("data")
     shutil.copytree(FIXTURE, data_dir / "fixture_small.zarr")
+    # the same cells under another name: "another dataset" for add-to-closed
+    shutil.copytree(FIXTURE, data_dir / "other_small.zarr")
+    DATA["dir"] = data_dir
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
@@ -211,6 +221,8 @@ def test_loaded_panel_set_lists_its_panels_closed(server, browser):
         page.click("#btn-load-session")
         page.locator(f".session-card[data-session-name='{SET_NAME}']").click()
         page.click("#btn-confirm-session")
+        # panels exist, so the load asks first: Replace
+        page.locator(".notification-ask", has_text="Load panel set?").locator("button[data-action='replace']").click()
         page.wait_for_function("() => document.getElementById('session-modal').offsetParent === null")
         _assert_closed(page, ids, saved)
 
@@ -383,3 +395,275 @@ def test_open_saved_layout_from_the_list_after_dismissing_the_notice(server, bro
         ctx.close()
         by_link.close()
         by_set.close()
+
+
+ALL_IDS = "() => PanelManager.getAllPanels().map(p => p.getId())"
+TAGS = """() => Object.fromEntries([...document.querySelectorAll(
+    '.tile-container > .tile-selector .source-panel-option.closed-panel')]
+    .map(e => [e.dataset.id, (e.querySelector('.panel-origin-tag:not([hidden])') || {}).textContent || null]))"""
+RAW_CONFIG = """id => { const { _closed, ...c } = PanelManager.saveLayout().panelConfigs[id];
+    return Object.fromEntries(Object.entries(c).filter(([, v]) => v !== null && v !== undefined)); }"""
+
+
+def _filtered_set(page, server, name):
+    """A cell plot filtered by a cell table beside it, saved as `name`; returns (plot, table)."""
+    page.goto(server)
+    page.wait_for_selector(".panel-type-option[data-type='cell-plot']", timeout=30000)
+    plot, table = _build(page)
+    page.select_option(f".tile[data-tile-id='{plot}'] select.table-filter-select", table)
+    page.wait_for_timeout(800)
+    assert page.evaluate(RAW_CONFIG, plot)["tableFilter"] == table
+    _save_set(page, name)
+    return plot, table
+
+
+def _added(page, before):
+    """The panels added since `before` (a list of ids), as {old title: id}."""
+    return [i for i in page.evaluate(ALL_IDS) if i not in before]
+
+
+def _assert_added_copy(page, view_before, ids_before, plot, table, saved, set_name):
+    """The open view is untouched; two closed copies of plot and table were added."""
+    page.wait_for_function("n => PanelManager.getAllPanels().length === n", arg=len(ids_before) + 2, timeout=30000)
+    page.wait_for_timeout(500)
+    assert page.evaluate(TREE_JS) == view_before
+    assert sorted(_tile_ids(page)) == sorted([plot, table])
+    all_ids = page.evaluate(ALL_IDS)
+    assert len(set(all_ids)) == len(all_ids)
+    new = _added(page, ids_before)
+    new_plot = next(i for i in new if i.startswith("cell-plot-"))
+    new_table = next(i for i in new if i.startswith("cell-table-"))
+    # the ids clashed with the open panels: both renamed
+    assert new_plot != plot and new_table != table
+    # configs intact apart from the id, and the filter follows the set's own table
+    got_plot, got_table = page.evaluate(RAW_CONFIG, new_plot), page.evaluate(RAW_CONFIG, new_table)
+    assert got_plot["tableFilter"] == new_table
+    # the titles clash with the open panels': the set's name follows
+    assert got_plot["title"] == f"{saved[0]['title']} ({set_name})"
+    assert got_table["title"] == f"{saved[1]['title']} ({set_name})"
+    assert {**got_plot, "id": plot, "tableFilter": table, "title": saved[0]["title"]} == saved[0]
+    assert {**got_table, "id": table, "title": saved[1]["title"]} == saved[1]
+    return new_plot, new_table
+
+
+def test_add_to_closed_from_the_dialog_keeps_the_open_view(server, browser):
+    ctx = browser.new_context(viewport={"width": 1400, "height": 1000})
+    try:
+        page = ctx.new_page()
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        plot, table = _filtered_set(page, server, "add-me")
+        saved = [page.evaluate(RAW_CONFIG, plot), page.evaluate(RAW_CONFIG, table)]
+        view_before, ids_before = page.evaluate(TREE_JS), page.evaluate(ALL_IDS)
+        focus_before = page.input_value("#focused-cell")
+
+        page.click("#btn-load-session")
+        page.locator(".session-card[data-session-name='add-me'] .session-add-closed").click()
+        new_plot, new_table = _assert_added_copy(page, view_before, ids_before, plot, table, saved, "add-me")
+        tags = page.evaluate(TAGS)
+        assert tags[new_plot] == "from add-me" and tags[new_table] == "from add-me"
+        # the full name on hover, as the tag may be cut
+        assert page.locator(f".source-panel-option[data-id='{new_plot}'] .panel-origin-tag").get_attribute("title") \
+            == 'Added from the panel set "add-me"'
+        assert page.input_value("#focused-cell") == focus_before
+        assert page.locator(".notification", has_text="2 panels added to the closed panels").count() == 1
+        # nothing was replaced: no saved layout to offer
+        assert page.locator(".open-saved-layout-btn, .notification[data-offer]").count() == 0
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+def test_load_with_panels_open_asks_replace_add_or_cancel(server, browser):
+    ctx = browser.new_context(viewport={"width": 1400, "height": 1000})
+    try:
+        page = ctx.new_page()
+        plot, table = _filtered_set(page, server, "ask-me")
+        saved = [page.evaluate(RAW_CONFIG, plot), page.evaluate(RAW_CONFIG, table)]
+        view_before, ids_before = page.evaluate(TREE_JS), page.evaluate(ALL_IDS)
+
+        def ask():
+            page.wait_for_selector(".modal-backdrop", state="detached")
+            page.click("#btn-load-session")
+            page.locator(".session-card[data-session-name='ask-me']").click()
+            page.click("#btn-confirm-session")
+            prompt = page.locator(".notification-ask", has_text="Load panel set?")
+            prompt.wait_for(timeout=30000)
+            return prompt
+
+        prompt = ask()
+        assert [b.strip() for b in prompt.locator(".notification-actions button").all_inner_texts()] == \
+            ["Replace", "Add to closed panels", "Cancel"]
+        prompt.locator("button[data-action='cancel']").click()
+        page.wait_for_timeout(800)
+        assert page.evaluate(TREE_JS) == view_before and page.evaluate(ALL_IDS) == ids_before
+
+        ask().locator("button[data-action='add']").click()
+        _assert_added_copy(page, view_before, ids_before, plot, table, saved, "ask-me")
+    finally:
+        ctx.close()
+
+
+def test_add_to_closed_from_the_welcome_list_and_another_dataset(server, browser):
+    ctx = browser.new_context(viewport={"width": 1400, "height": 1000})
+    fresh = browser.new_context(viewport={"width": 1400, "height": 1000})
+    try:
+        page = ctx.new_page()
+        plot, table = _filtered_set(page, server, "elsewhere")
+        other = fresh.new_page()
+        errors = []
+        other.on("pageerror", lambda e: errors.append(str(e)))
+        other.goto(server.replace("fixture_small.zarr", "other_small.zarr"))
+        other.locator(".session-item", has_text="elsewhere").locator(".session-item-add").click()
+        other.wait_for_function("ids => ids.every(id => !!PanelManager.getPanel(id))", arg=[plot, table],
+                                timeout=30000)
+        other.wait_for_timeout(500)
+        assert _tile_ids(other) == []
+        # not switched: still the dataset that was open
+        assert other.evaluate("() => document.getElementById('dataset-selector').value").endswith("other_small.zarr")
+        tags = other.evaluate(TAGS)
+        assert tags[plot] == tags[table] == "other dataset · from elsewhere"
+        assert other.evaluate(RAW_CONFIG, plot)["tableFilter"] == table
+        assert not errors, errors
+    finally:
+        ctx.close()
+        fresh.close()
+
+
+# Sets saved with all, some or none of their panels open, and a legacy one:
+# the closed list holds all five, "Open saved layout (N)" counts and opens
+# only the panels that were open at save, in their layout.
+FIVE = ["cell-plot-P1", "cell-plot-P2", "cell-plot-P3", "cell-table-T1", "cell-table-T2"]
+
+
+def _config(pid):
+    umap = lambda c: {"type": "obsm", "key": "X_umap", "column": str(c)}
+    if pid.startswith("cell-plot"):
+        return {"id": pid, "title": f"Plot {pid[-2:]}", "x": umap(0), "y": umap(1), "color": {"type": "none"}}
+    return {"id": pid, "title": f"Table {pid[-2:]}"}
+
+
+def _stack(ids):
+    tile = lambda i: {"type": "tile", "id": i, "controlsVisible": True}
+    if len(ids) == 1:
+        return tile(ids[0])
+    if len(ids) == 2:
+        return {"type": "split", "direction": "horizontal",
+                "panes": [{"percentage": 50}, {"percentage": 50}], "children": [tile(ids[0]), tile(ids[1])]}
+    return {"type": "split", "direction": "vertical", "panes": [{"percentage": 50}, {"percentage": 50}],
+            "children": [_stack(ids[:2]), _stack(ids[2:])]}
+
+
+def _write_set(name, open_ids, legacy=False):
+    store = str(DATA["dir"] / "fixture_small.zarr")
+    if legacy:
+        doc = {"name": name, "dataset": store, "panelConfigs": {
+            i: {"id": i, "type": i.rsplit("-", 1)[0], "title": _config(i)["title"],
+                "config": {**_config(i), "active": i in open_ids}} for i in FIVE}}
+    else:
+        layout = {"v": 1, "hierarchy": [_stack(open_ids)] if open_ids else [],
+                  "controlState": {}, "panelConfigs": {i: _config(i) for i in FIVE}}
+        doc = {"name": name, "dataset": store, "view": {"v": 1, "layout": layout}}
+    sessions = DATA["dir"] / "sessions"
+    sessions.mkdir(exist_ok=True)
+    (sessions / f"{name}.json").write_text(json.dumps(doc))
+
+
+@pytest.mark.parametrize("case,open_ids,legacy", [
+    ("all-open", FIVE, False),
+    ("some-open", ["cell-plot-P1", "cell-table-T1"], False),
+    ("none-open", [], False),
+    ("legacy-mixed", ["cell-plot-P1", "cell-plot-P2", "cell-table-T2"], True),
+])
+def test_closed_load_offers_only_the_panels_open_at_save(server, browser, case, open_ids, legacy):
+    name = f"count-{case}"
+    _write_set(name, open_ids, legacy)
+    ctx = browser.new_context(viewport={"width": 1400, "height": 1000})
+    try:
+        page = ctx.new_page()
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(server)
+        page.locator(".session-item", has_text=name).first.click()
+        notice = page.locator(".notification", has_text=f'Loaded "{name}"')
+        notice.wait_for(timeout=30000)
+        page.wait_for_timeout(500)
+        assert _tile_ids(page) == []
+        assert sorted(page.evaluate(CLOSED_ALL)) == sorted(FIVE)
+        text = notice.inner_text()
+        assert "5 panels listed closed" in text
+        k = len(open_ids)
+        offer = page.locator(".notification[data-offer='saved-layout'] button[data-action='open']")
+        listed = page.locator(".tile-container > .tile-selector .open-saved-layout-btn")
+        if k == 0:
+            assert "none was open" in text
+            assert offer.count() == 0 and listed.count() == 0
+            return
+        assert ("all 5 were open" if k == 5 else f"{k} were open") in text
+        assert offer.inner_text().strip() == f"Open saved layout ({k} panels)"
+        assert listed.inner_text().strip() == f"Open saved layout ({k})"
+        listed.click()
+        page.wait_for_function("n => document.querySelectorAll('.tile-container .tile[data-tile-id]').length === n",
+                               arg=k, timeout=30000)
+        page.wait_for_timeout(1000)
+        assert sorted(_tile_ids(page)) == sorted(open_ids)
+        # in their layout: the open ones' tree as saved
+        tree = page.evaluate(TREE_JS)
+        assert len(tree) == 1 and tree[0]["content"] == _shape(_stack(open_ids))
+        assert sorted(page.evaluate(CLOSED_ALL)) == sorted(set(FIVE) - set(open_ids))
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+def _shape(node):
+    """A hierarchy node in TREE_JS's shape (sizes rounded, tiles as ids)."""
+    if node["type"] == "tile":
+        return node["id"]
+    return {"split": node["direction"], "sizes": [round(p["percentage"]) for p in node["panes"]],
+            "panes": [_shape(c) for c in node["children"]]}
+
+
+def test_load_and_open_layout_of_a_set_saved_with_none_open(server, browser):
+    _write_set("count-none-dialog", [])
+    ctx = browser.new_context(viewport={"width": 1400, "height": 1000})
+    try:
+        page = ctx.new_page()
+        page.goto(server)
+        page.wait_for_selector(".panel-type-option[data-type='cell-plot']", timeout=30000)
+        page.click("#btn-load-session")
+        page.locator(".session-card[data-session-name='count-none-dialog'] .session-load-open").click()
+        notice = page.locator(".notification", has_text='Loaded "count-none-dialog"')
+        notice.wait_for(timeout=30000)
+        assert "No panel was open when the set was saved, so none opened" in notice.inner_text()
+        assert _tile_ids(page) == []
+        assert sorted(page.evaluate(CLOSED_ALL)) == sorted(FIVE)
+        assert page.locator(".open-saved-layout-btn, .notification[data-offer]").count() == 0
+    finally:
+        ctx.close()
+
+
+def test_one_question_when_the_set_is_on_another_dataset(server, browser):
+    """Panels open and the set saved elsewhere: one notice asks both, never two in a row."""
+    _write_set("count-elsewhere", ["cell-plot-P1"])
+    ctx = browser.new_context(viewport={"width": 1400, "height": 1000})
+    try:
+        page = ctx.new_page()
+        page.goto(server.replace("fixture_small.zarr", "other_small.zarr"))
+        page.wait_for_selector(".panel-type-option[data-type='cell-plot']", timeout=30000)
+        _choose(page, ".tile-selector", "cell-plot")
+        page.click("#btn-load-session")
+        page.locator(".session-card[data-session-name='count-elsewhere']").click()
+        page.click("#btn-confirm-session")
+        ask = page.locator(".notification-ask", has_text="Switch dataset?")
+        ask.wait_for(timeout=30000)
+        assert page.locator(".notification-ask").count() == 1
+        assert [b.strip() for b in ask.locator(".notification-actions button").all_inner_texts()] == \
+            ["Switch and load", "Add to closed panels", "Keep current"]
+        ask.locator("button[data-action='replace']").click()
+        page.locator(".notification", has_text='Loaded "count-elsewhere"').wait_for(timeout=30000)
+        # no second question came
+        assert page.locator(".notification-ask:not([data-offer])").count() == 0
+        assert page.evaluate("() => document.getElementById('dataset-selector').value").endswith("fixture_small.zarr")
+    finally:
+        ctx.close()

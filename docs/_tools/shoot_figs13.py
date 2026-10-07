@@ -449,6 +449,10 @@ def shoot_fig2_sets(s) -> None:
     time.sleep(0.5)
     crop(page, "#session-modal .modal-content", OUT / "fig2-upload-panel-set.png")
     page.click("#btn-confirm-session")
+    # panels are open, so the load asks first: Replace them
+    choose = page.locator(".notification-ask", has_text="Load panel set?")
+    choose.wait_for(timeout=20000)
+    choose.locator("button[data-action='replace']").click()
     try:
         ask = page.locator(".notification-ask:not([data-offer])")      # "Switch dataset?", not the offer
         try:

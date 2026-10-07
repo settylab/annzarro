@@ -428,8 +428,10 @@ The tutorials and paper-figure pages offer their views as panel set files. To lo
    ```
 
 2. The panel set names its dataset by file name (`bm_aging.zarr`), and the server finds it in
-   its data directory. That is the dataset already open, so it loads at once. A notice reads
-   "Panel set was imported and loaded successfully." The panel set replaces the open panels:
+   its data directory. That is the dataset already open. Panels are open, so AnnZarro asks
+   whether to **Replace** them, **Add to closed panels** or **Cancel**; click **Replace**. A
+   notice reads "Panel set was imported and loaded successfully." The panel set replaces the
+   open panels:
    same dataset, same focused cell and gene, and every panel of the set listed **closed**, with
    its settings, under "Duplicate or Reopen Panel". The panels that were open before are in the
    same list. Nothing opens by itself, so a large set cannot overload the computer.

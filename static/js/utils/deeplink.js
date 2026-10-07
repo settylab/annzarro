@@ -427,6 +427,39 @@ export function closePlanPanels(plan) {
 }
 
 /**
+ * The panels of a plan, ready to add to the closed list beside the panels
+ * already there ("Add to closed panels"): every panel of the set, open ones
+ * first in layout order, each with its full config. An id that is taken (or
+ * repeated) gets a fresh one from `freshId`, and references between the
+ * set's own panels (a plot's tableFilter) follow the rename, so they stay
+ * inside the set instead of landing on an open panel with the old id.
+ * @param {Object|null} plan - from panelSetToView
+ * @param {(id: string) => boolean} isTaken - is this id in use already?
+ * @param {(type: string) => string} freshId - a new id for a panel of this type
+ * @returns {Array<{type: string, config: Object}>} configs are copies
+ */
+export function panelsToAdd(plan, isTaken, freshId) {
+    if (!plan) return [];
+    const used = new Set();
+    const idMap = new Map();
+    const added = closePlanPanels(plan).closedPanels.map(p => {
+        const config = JSON.parse(JSON.stringify(p.config || {}));
+        let id = p.id || config.id;
+        if (!id || isTaken(id) || used.has(id)) {
+            let fresh;
+            do { fresh = freshId(p.type); } while (isTaken(fresh) || used.has(fresh));
+            if (id && !idMap.has(id)) idMap.set(id, fresh);
+            id = fresh;
+        }
+        used.add(id);
+        config.id = id;
+        return { type: p.type, config };
+    });
+    remapPanelReferences(added.map(p => p.config), idMap);
+    return added;
+}
+
+/**
  * Rewrite references between panels after ids changed: a plot's
  * `tableFilter` holds the id of the table it is filtered by.
  * @param {Object[]} configs - panel configs, rewritten in place
