@@ -55,14 +55,21 @@ Paths
   as integer codes plus its category list, one byte per cell up to 128 categories
   ({ref}`categorical-codes`). Without it a categorical column answers JSON, as it always has.
 
-`categories=all` or `categories=used`
-: On `/data/obs` and `/data/var` with one column. `all`: every category of the column, which the
-  web client asks for to colour by it; refused with `413 too_many_categories` when the column has
-  more than `ui.defaults.category_colour_limit` categories, from the column's metadata, before
-  anything is read. `used`: only the categories the returned rows use, the codes renumbered into
-  them; the reply says the column's count (`X-Annzarro-Categories-Total`, or `n_categories` in
-  JSON). A column with more than 65,536 categories is always answered the `used` way
-  ({ref}`categorical-codes`).
+`categories=used` or `categories=ranked`
+: On `/data/obs` and `/data/var` with one categorical column and `categorical=codes`. `used`: only
+  the categories the returned rows use, the codes renumbered into them; the reply says the
+  column's count (`X-Annzarro-Categories-Total`, or `n_categories` in JSON). A column with more
+  than 65,536 categories is always answered the `used` way. `ranked`: no labels; each row's
+  category is sent as its rank in the whole column, most cells first, ties in stored order
+  (`X-Annzarro-Categories-Order: ranked`, `X-Annzarro-Categories-Used` categories used in the
+  whole column). The ranking is computed once per store and column and cached (512 MB at most);
+  the web client colours a column of more than 64 categories by rank mod 64
+  ({ref}`categorical-codes`, {ref}`many-categories`).
+
+`category_ranks=r1,r2,...`
+: On `/data/obs` and `/data/var` with one categorical column: JSON
+  `{"column", "ranks", "labels"}`, the labels of those ranks of the column's ranking, at most
+  5,000 per request. The web client asks for the legend's names this way.
 
 Errors
 : JSON `{"error": "<sentence>", "reason": "<code>", ...}`. `reason` is machine-readable (table
@@ -410,7 +417,7 @@ one that is not a dataset `400 unsupported_type`.
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
-| 413 | `too_many_categories` | `categories=all` for a column with more categories than `ui.defaults.category_colour_limit`; or a reply that would need more than 2,000,000 category labels (ask for fewer rows, e.g. under a subset). The body adds `column`, `count` and `limit`. Also `400` from `/data/subset` for balancing across such a column |
+| 413 | `too_many_categories` | a reply that would need more than 2,000,000 category labels (ask for fewer rows, e.g. under a subset, or `categories=ranked`, which carries none). The body adds `column`, `count` and `limit`. Also `400` from `/data/subset` for balancing across a column of more than 10,000 categories |
 | 500 | `stale_metadata` | the store's consolidated metadata (`.zmetadata`) no longer matches an array on disk, usually after an in-place rewrite. `POST /data/refresh` (Refresh dataset) reads the store without the stale metadata from then on; re-consolidate (`zarr.consolidate_metadata(path)`) and refresh again |
 | 500 | `read_failed` | any other failure to read an array the store lists, with the exception text |
 | 501 | `missing_dependency` | a remote store without the `annzarro[remote]` extras |
@@ -444,7 +451,7 @@ HTTP 400
 |---|---|---|---|
 | `server.max_response_elements` | 10,000,000 | rows × cols of the slice, from metadata, before reading | `413 response_too_large` |
 | `max_cells=` / `max_genes=` query parameters | none | number of requested cell / gene indices | `400 cap_exceeded` |
-| `ui.defaults.category_colour_limit` | 10,000 | a column's categories (metadata) for `categories=all` and subset balancing | `413` / `400 too_many_categories` |
+| groups for subset balancing | 10,000 | a column's categories (metadata) | `400 too_many_categories` |
 | labels in one categorical reply | 2,000,000 | the smaller of the rows asked and the column's categories, past 65,536 categories | `413 too_many_categories` |
 
 One full row or one full column always passes the size guard, at any dataset size: that is the

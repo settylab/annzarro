@@ -88,6 +88,12 @@ removes that group and **Clear All** removes every condition. Numeric columns of
 Less Than, Less Than Equal To, Greater Than Equal To, Greater Than, Between, Not Between, Empty and
 Not Empty; text columns offer the text conditions (Equals, Contains, Starts With, …).
 
+Equals and Not on a text column list its distinct values to pick from. A column with more than
+10,000 distinct values among the table's rows, such as a barcode, takes a typed value instead,
+and a note under the Advanced Search box says so: "Cell ID, barcode: more than 10,000 distinct values,
+so Equals and Not take a typed value instead of a list." Listing a million barcodes took seconds
+and made the dropdown unusable.
+
 The 159 can be checked in Python:
 
 ```python

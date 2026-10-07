@@ -155,8 +155,8 @@ with the subset applied as above.
 ### Balanced parts
 
 With **Balanced across** a column, every part is as balanced as the cells not yet shown allow.
-A column with more than 10,000 categories (`ui.defaults.category_colour_limit`) is listed but
-cannot be chosen: one group per cell is no balance.
+A column with more than 10,000 categories is listed but cannot be chosen: one group per cell is
+no balance.
 Small groups are used up in the first parts, so later parts hold the larger groups only. Here
 `bm_aging.zarr` is split into nine parts of 1,000 cells balanced across `highres_celltype` (31
 cell types). By part 7, 28 of them have been shown in full, and the part holds the three largest

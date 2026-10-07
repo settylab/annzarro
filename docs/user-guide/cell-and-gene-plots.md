@@ -220,19 +220,34 @@ A categorical column can have as many categories as cells: a barcode or a sample
 a categorical. How it is coloured depends on its number of categories (shown in the dataset
 structure):
 
-- **Up to 100**: one legend entry per category, as above.
-- **101 to 10,000**: the categories share 64 colours (category *k* is drawn in colour *k* mod 64),
-  and the legend is one line, for example "1,344 categories (colours shared)". Clicking it hides
-  and shows every coloured point. Hovering a point names its category. "As stored in adata.uns"
-  colours are not used here.
-- **More than 10,000** (`ui.defaults.category_colour_limit`, {doc}`../reference/configuration`):
-  the plot is drawn without colour and its status line says why: "obs.barcode: too many
-  categories to colour by", and in its details "1,000,000 distinct values (the limit is 10,000):
-  show it in the hover or in a table instead". Nothing is downloaded for the colour.
+- **Up to 64**: one colour and one legend entry per category, as above.
+- **More than 64**: the categories are ranked by their number of cells over the whole column,
+  most frequent first (ties in stored order), and rank *r* is drawn in colour *r* mod 64. The
+  plot has one trace and one legend entry per colour, so at most 64. Each legend entry names the
+  three most frequent categories of its colour among the points shown and counts the rest, for
+  example "S1, S65, S129 +18 more"; clicking it hides and shows that colour. Hovering a point
+  names its own category. "As stored in adata.uns" colours are not used here.
 
-Such a column works in the hover (the panel's **Hover** list, {ref}`hover-columns`) and as a
-table column at any size: AnnZarro reads its labels only for the cells shown, not its whole
-category list. Balancing a subset across it is not offered ({doc}`subsets`).
+The ranking is computed once per column on the server, over all cells, and kept, so a category
+keeps its colour across the parts of a subset ({doc}`subsets`), under a table filter and in every
+panel coloured by the same column. Only the points shown change; the colours do not move. Ranking
+a column of 95.6 million cells takes under half a second the first time (M3 Max), a few
+milliseconds after that.
+
+One case asks first. With more than 500,000 distinct categories among the points of a regular
+(not large-plot) panel, for example a barcode column on a million cells, every point needs its
+own hover label, which made the plot about 60 % slower and used 150 MB more memory. The plot is
+then drawn without colour and its status line carries the tag **Not coloured yet**. Its details
+name the count and the cost, for example "1,000,000 distinct values on 1,000,000 points: colouring
+loads about 29 MB of labels for the hover and takes a few seconds longer", with a **Colour anyway**
+button that colours that panel. Under a subset of 100,000 cells nothing is asked.
+
+Such a column also works in the hover (the panel's **Hover** list, {ref}`hover-columns`) and as a
+table column at any size: AnnZarro reads its labels only for the cells shown, never its whole
+category list. In a table, a column with more than 10,000 distinct values is filtered with a typed
+value: **Equals** and **Not** take a text box instead of a list of every value
+({doc}`tables-and-filters`). Balancing a subset across a column with more than 10,000 categories is not
+offered ({doc}`subsets`).
 
 (hover-columns)=
 ## Hover

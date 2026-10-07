@@ -106,7 +106,6 @@ Defaults sent to the browser through `/api/v1/config`.
 | `defaults.subset_threshold` | `200000` | A dataset with more cells than this opens on a reproducible cell subset; `0` means always. |
 | `defaults.large_plot_points` | `1000000` | A Cell Plot with more points than this is drawn in large-plot mode: hover, click and table filters are off (see {doc}`../user-guide/subsets`). |
 | `defaults.subset_size`, `defaults.subset_seed` | `100000`, `0` | Cells in that default subset, and its seed. See {doc}`../design/subsetting`. |
-| `defaults.category_colour_limit` | `10000` | Most categories an obs/var column may have to be coloured by. A column with more (a barcode or cell id has one per cell) is drawn uncoloured with a notice, and the server answers a colour request for it with `413 too_many_categories`. It still shows in the hover and in tables. See {ref}`many-categories`. |
 | `memory.enforce` | `block` | Browser memory guard: what happens when an action would not fit in the browser tab's memory. `block` disables it and says why, `warn` says so and lets it run, `off` never interferes. See [Browser memory](#browser-memory-uimemory). |
 | `memory.heap_gb` | `null` | JavaScript memory the tab may use, in GB. `null`: what the browser reports (Chrome: 4.4 GB on a 64-bit computer), 4.4 where it reports nothing. |
 | `memory.total_gb` | `null` | Everything the tab may hold, JavaScript and typed arrays, in GB. `null`: no limit, except half the device's memory on devices that report 4 GB or less. |
