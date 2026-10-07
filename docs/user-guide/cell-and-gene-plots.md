@@ -226,9 +226,9 @@ structure):
   legend has one entry per colour, so at most 64. Each names the three most frequent categories
   of its colour among the points shown and counts the rest, for example "S1, S65, S129 +18 more";
   clicking it hides and shows that colour, and double-clicking shows that colour alone. The
-  points are drawn in dataset order, so where categories mix no colour covers the others. The
-  ten most frequent ranks get ten clearly different colours. Hovering a point names its own
-  category. "As stored in adata.uns" colours are not used here.
+  ten most frequent ranks get ten clearly different colours. The colours are drawn one after
+  the other, so where categories mix the last colours drawn cover the earlier ones. Hovering a
+  point names its own category. "As stored in adata.uns" colours are not used here.
 
 The ranking is computed once per column on the server, over all cells, and kept, so a category
 keeps its colour across the parts of a subset ({doc}`subsets`), under a table filter and in every
@@ -236,15 +236,14 @@ panel coloured by the same column. Only the points shown change; the colours do 
 a column of 95.6 million cells takes under half a second the first time (M3 Max), a few
 milliseconds after that.
 
-One case asks first. With more than 500,000 distinct categories among the points of a regular
-(not large-plot) panel, for example a barcode column on a million cells, every point needs its
-own hover label, and colouring took about three times as long as 64 plain categories and three
-times the memory (7.0 s and 772 MB against 2.4 s and 276 MB at a million points). The plot is
-then drawn without colour, with a notice over it, **Not coloured yet**, that names the count and
-the cost, for example "obs.barcode: 999,998 distinct values on 1,000,000 points: colouring loads
-about 29 MB of labels for the hover and takes a few seconds longer", and a **Colour anyway** button
-that colours that panel. Its status line carries the same tag. Under a subset of 100,000 cells
-nothing is asked.
+With more than 500,000 distinct categories among the points of a regular (not large-plot)
+panel, for example a barcode column on a million cells, the hover would need one label per
+point. Such a plot is coloured at once and starts with its hover off: **No hover** is selected
+in its **Hover** list, and no label is read; the legend's names are read on their own (three
+per colour). Pick hover columns to turn the hover on: the labels are then read, at any count, if
+they fit the browser's memory ({ref}`browser-memory`); if they do not, the hover stays off and
+the status line says what they need and what is free. Under a subset of 100,000 cells the hover
+is on as usual.
 
 Such a column also works in the hover (the panel's **Hover** list, {ref}`hover-columns`) and as a
 table column at any size: AnnZarro reads its labels only for the cells shown, never its whole
@@ -258,8 +257,11 @@ offered ({doc}`subsets`).
 
 Hovering a point shows its name, its x and y (and z) values and its colour value `c` (for a
 categorical colour, the category), with numbers to 4 significant digits. Below them it lists the
-panel's hover columns. Pick them in the panel's **Hover** list, which offers the obs columns
-(Cell Plot) or var columns (Gene Plot); Ctrl-click or Cmd-click selects several. A change loads
+panel's hover columns. Pick them in the panel's **Hover** list, which offers **No hover**, then the
+obs columns (Cell Plot) or var columns (Gene Plot); Ctrl-click or Cmd-click selects several.
+**No hover** shows no hover label at all (a click still focuses the point); it is the `hoverOff`
+setting, and a plot coloured by a column of very many categories starts with it
+({ref}`many-categories`). A change loads
 only those columns and relabels the points without redrawing the plot. The choice is the panel's
 `hoverInfo` setting, kept in panel sets and share links ({doc}`../reference/deep-links`). In a
 view's JSON it can also name other sources, such as a layer column:

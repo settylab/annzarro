@@ -138,7 +138,8 @@ increasing order of their stored code, and the codes renumbered into that list.
 `X-Annzarro-Categories-Total` then gives the column's number of categories, so a client never
 takes the short list for the column's. The server reads only those categories: 100,000 cells of a
 column with a category per cell send at most 100,000 labels, whatever the dataset's size
-({ref}`many-categories`).
+({ref}`many-categories`). Such a reply has no cap on its labels: the server streams it, encoding
+65,536 labels at a time, so its memory per request does not grow with the labels.
 
 With `categories=ranked` the JSON prefix is an empty list, `[]` padded to 4 bytes, and each
 code is its category's rank in the whole column: categories ordered by their number of rows, most

@@ -417,7 +417,7 @@ one that is not a dataset `400 unsupported_type`.
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
-| 413 | `too_many_categories` | a reply that would need more than 2,000,000 category labels (ask for fewer rows, e.g. under a subset, or `categories=ranked`, which carries none). The body adds `column`, `count` and `limit`. Also `400` from `/data/subset` for balancing across a column of more than 10,000 categories |
+| 400 | `too_many_categories` | `/data/subset` balancing across a column of more than 10,000 categories. No reply is refused for its number of labels: a categorical reply is streamed |
 | 500 | `stale_metadata` | the store's consolidated metadata (`.zmetadata`) no longer matches an array on disk, usually after an in-place rewrite. `POST /data/refresh` (Refresh dataset) reads the store without the stale metadata from then on; re-consolidate (`zarr.consolidate_metadata(path)`) and refresh again |
 | 500 | `read_failed` | any other failure to read an array the store lists, with the exception text |
 | 501 | `missing_dependency` | a remote store without the `annzarro[remote]` extras |
@@ -452,7 +452,6 @@ HTTP 400
 | `server.max_response_elements` | 10,000,000 | rows × cols of the slice, from metadata, before reading | `413 response_too_large` |
 | `max_cells=` / `max_genes=` query parameters | none | number of requested cell / gene indices | `400 cap_exceeded` |
 | groups for subset balancing | 10,000 | a column's categories (metadata) | `400 too_many_categories` |
-| labels in one categorical reply | 2,000,000 | the smaller of the rows asked and the column's categories, past 65,536 categories | `413 too_many_categories` |
 
 One full row or one full column always passes the size guard, at any dataset size: that is the
 unit every view asks for. `max_cells=` and `max_genes=` are the client's own guard against
