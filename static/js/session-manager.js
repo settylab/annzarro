@@ -139,11 +139,11 @@ const SessionManager = (function() {
      * Apply a stored panel set (any version).
      * @private
      */
-    async function _applyPanelSet(sessionData) {
+    async function _applyPanelSet(sessionData, options) {
         const plan = panelSetToView(sessionData);
         if (!plan) throw new Error('Not a panel set');
         if (_viewApplier) {
-            return await _viewApplier(plan, sessionData);
+            return await _viewApplier(plan, sessionData, options);
         }
         await _applySessionPanels(sessionData);
         return { status: 'success', message: 'Panels added (closed)' };
@@ -304,9 +304,12 @@ const SessionManager = (function() {
     /**
      * Load a panel set by name
      * @param {string} name - Panel set name
+     * @param {{openPanels?: boolean}} [options] - openPanels: open the set's
+     *   panels in its layout (the Load dialog's "Load and open layout");
+     *   otherwise they are listed closed. The autosave always reopens.
      * @returns {Promise<Object>} - Load result
      */
-    async function loadSession(name) {
+    async function loadSession(name, { openPanels = false } = {}) {
         if (!name) {
             console.error('Panel set name is required');
             return { status: 'error', message: 'Panel set name is required' };
@@ -389,7 +392,10 @@ const SessionManager = (function() {
             }
             
             const sessionData = await response.json();
-            const applied = await _applyPanelSet(sessionData);
+            // A set the user chose opens with its panels closed, to be
+            // reopened one by one or all at once ("Open saved layout"),
+            // unless the user asked for them open; the autosave above reopens
+            const applied = await _applyPanelSet(sessionData, { openPanels });
             if (applied && applied.status && applied.status !== 'success') return applied;
             
             return { status: 'success', message: `Session ${name} loaded successfully` };

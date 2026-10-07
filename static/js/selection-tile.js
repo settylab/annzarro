@@ -461,8 +461,35 @@ export class SelectionTile {
       if (!hasPanels) {
         grid.innerHTML = '<div class="no-sessions">No panels available to clone</div>';
       }
+      this._renderSavedLayoutOffer(grid);
       
       return hasPanels;
+    }
+
+    /**
+     * "Open saved layout (N)" above the panel list while a panel set loaded
+     * with its panels closed offers its layout (SelectionTile.savedLayout,
+     * set through PanelManager.setSavedLayoutOffer). The notice offers the
+     * same; this one stays when the notice is dismissed.
+     * @private
+     */
+    _renderSavedLayoutOffer(grid) {
+      const old = grid.parentElement &&
+        [...grid.parentElement.children].find(c => c.classList.contains('saved-layout-offer'));
+      if (old) old.remove();
+      const offer = SelectionTile.savedLayout;
+      if (!offer || !grid.parentElement) return;
+      const bar = document.createElement('div');
+      bar.className = 'saved-layout-offer';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-sm btn-primary open-saved-layout-btn';
+      btn.innerHTML = '<i class="fas fa-th-large me-1"></i>';
+      btn.append(`Open saved layout (${offer.count})`);
+      btn.title = `Open the ${offer.count} panels of the loaded panel set in its saved layout`;
+      btn.addEventListener('click', () => offer.open());
+      bar.appendChild(btn);
+      grid.parentElement.insertBefore(bar, grid);
     }
     
     /**
@@ -889,3 +916,7 @@ export class SelectionTile {
       }
     }
   }
+
+// The saved layout of the panel set last loaded with its panels closed:
+// {count, open()} or null. Every chooser shows it above its panel list.
+SelectionTile.savedLayout = null;

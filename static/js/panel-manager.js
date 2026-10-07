@@ -1091,9 +1091,20 @@ const PanelManager = (function() {
 
     // Removed getCounters function as counters are no longer used
     
+    /**
+     * Show (or with null, withdraw) "Open saved layout" above the panel list
+     * of every chooser.
+     * @param {{count: number, open: Function}|null} offer
+     */
+    function setSavedLayoutOffer(offer) {
+        SelectionTile.savedLayout = offer || null;
+        updateSourcePanelSelection();
+    }
+
     // Public API
     return {
         init,
+        setSavedLayoutOffer,
         registerPanelType,
         createPanel,
         createPanelInLayout,

@@ -16,6 +16,7 @@ Writes
   docs/_static/panelsets/paper/links-figs13.json     compressed `#view=z1.` fragments per view
 
 Run: .venv-docs/bin/python docs/_tools/shoot_figs13.py [--port 8814] [--only fig1 fig2 fig3 check]
+(--only fig2-sets: only fig2's share link, Load Panel Set and panel-set-file shots)
 Fig 3 needs data/bm_aging_showcase.zarr (obsp umap_distance, diffusion_distance;
 obs fig3_plasma_groups).
 """
@@ -416,6 +417,12 @@ def shoot_fig2(s) -> None:
     crop(page, '.tile[data-tile-id="cell-table-E1"] .tile-content', OUT / "fig2-table-controls.png")
     page.context.close()
 
+    shoot_fig2_sets(s)
+
+
+def shoot_fig2_sets(s) -> None:
+    """Share link field, Load Panel Set dialog, a panel set file loaded (its panels listed
+    closed, with the Open saved layout notice) and that layout opened."""
     page = s.open(fig2_filter_view(), clipboard_denied=True)
     page.click("#btn-share-link")
     page.wait_for_selector("#share-link-fallback:not([hidden])", timeout=10000)
@@ -434,14 +441,16 @@ def shoot_fig2(s) -> None:
     # Upload the Fig 1 panel set file and load it. The file names its dataset by the bare
     # name bm_aging.zarr (resolved in the server's data directory). That is the open store
     # under another path, so it loads without asking (PR #58); older builds asked first, which
-    # the fallback below still accepts. Then shoot the restored layout. The uploaded set is deleted again so the shared list stays clean.
+    # the fallback below still accepts. A loaded set lists its panels closed and offers
+    # "Open saved layout": shoot that, then the layout it opens. The uploaded set is deleted
+    # again so the shared list stays clean.
     page.click("#toggle-upload-btn")
     page.set_input_files("#session-file-upload", str(PANELSETS / "overview-focus-model.json"))
     time.sleep(0.5)
     crop(page, "#session-modal .modal-content", OUT / "fig2-upload-panel-set.png")
     page.click("#btn-confirm-session")
     try:
-        ask = page.locator(".notification-ask")
+        ask = page.locator(".notification-ask:not([data-offer])")      # "Switch dataset?", not the offer
         try:
             ask.first.wait_for(timeout=8000)
             time.sleep(1.0)      # let the notice finish fading in
@@ -449,15 +458,30 @@ def shoot_fig2(s) -> None:
             ask.first.get_by_text("Switch and load").click()
         except Exception:
             s.log.append("fig2 upload: no Switch dataset? notice")
+        offer = page.locator(".notification[data-offer='saved-layout']")
+        offer.wait_for(timeout=30000)
         s.ready(page)
         time.sleep(1.0)
         s.toasts(page, "fig2 upload")
-        page.add_style_tag(content="#notification-container, .notification { display: none !important; }")
+        # the other notices go; the offer stays in the shot
+        hide = page.add_style_tag(content=".notification:not([data-offer]) { display: none !important; }")
         page.mouse.move(2, 2)
         page.screenshot(path=str(OUT / "fig2-panel-set-loaded.png"))
-        s.log.append("fig2 loaded tiles: " + str(page.evaluate(
-            "[...new Set([...document.querySelectorAll('.tile')].map(t => t.dataset.tileId))]")))
+        s.log.append("fig2 loaded: open tiles " + str(page.evaluate(
+            "[...new Set([...document.querySelectorAll('.tile-container .tile')].map(t => t.dataset.tileId))]"))
+            + ", closed " + str(page.evaluate(
+            "[...document.querySelectorAll('.source-panel-option.closed-panel')].map(e => e.dataset.id)"))
+            + ", offer: " + offer.locator("button[data-action='open']").inner_text())
         s.log.append("fig2 loaded focus: " + focused(page, "cell") + " / " + focused(page, "gene"))
+        offer.locator("button[data-action='open']").click()
+        s.ready(page)
+        time.sleep(1.0)
+        hide.evaluate("e => e.remove()")
+        page.add_style_tag(content="#notification-container, .notification { display: none !important; }")
+        page.mouse.move(2, 2)
+        page.screenshot(path=str(OUT / "fig2-panel-set-opened.png"))
+        s.log.append("fig2 opened tiles: " + str(page.evaluate(
+            "[...new Set([...document.querySelectorAll('.tile-container .tile')].map(t => t.dataset.tileId))]")))
     finally:
         s.log.append("fig2 delete uploaded set: " + str(page.evaluate(
             "fetch('/api/v1/sessions/delete?name=overview-focus-model', {method: 'DELETE'}).then(r => r.status)")))
@@ -548,6 +572,8 @@ if __name__ == "__main__":
             shoot_fig1(s)
         if "fig2" in a.only:
             shoot_fig2(s)
+        elif "fig2-sets" in a.only:
+            shoot_fig2_sets(s)
         if "fig3" in a.only:
             shoot_fig3(s, showcase)
         if "check" in a.only and showcase:
