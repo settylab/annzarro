@@ -74,6 +74,11 @@ name") and keeps the dialog open.
    Loading a panel set made on `bm_aging.zarr` while `spatial_demo.zarr` is open.
    ```
 
+A panel set names its dataset relative to the server's data directory (`bm_aging.zarr`), with the
+store's fingerprint, so its file opens on any other server or desktop app that has the store, even
+under another name: {doc}`reproducing` says how the store is found, and what happens when it is
+missing or differs.
+
 Panel sets saved by older versions of AnnZarro hold the panels, the dataset and the focus, but
 no layout. They load with their dataset and focus, and their open panels are laid out in rows of
 two, from left to right and top to bottom; split and resize them to taste ({doc}`interface`).

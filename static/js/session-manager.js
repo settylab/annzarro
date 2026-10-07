@@ -14,6 +14,8 @@ import { PanelManager } from './panel-manager.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { errorFromResponse } from './utils/session-permissions.js';
 import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
+import { storeRecord } from './utils/view-store.js';
+import { knownStore, settleStore, appVersion } from './utils/store-identity.js';
 
 const SessionManager = (function() {
     // Private variables
@@ -22,6 +24,55 @@ const SessionManager = (function() {
     // main.js registers how a view is applied (dataset switch, focus, layout);
     // see setViewApplier. Without one, loading falls back to closed panels.
     let _viewApplier = null;
+    // The store of a view open without data (its store was not found): a
+    // view saved now keeps naming it. See setDetachedStore.
+    let _detachedStore = null;
+    let _detachedView = null;
+
+    /**
+     * While a view is open without data, the store it names (view.store)
+     * and the view itself: its focus and cells are kept as saved, since no
+     * dataset is open to hold them. Both null once a dataset is open.
+     * @param {Object|null} store
+     * @param {Object|null} [view]
+     */
+    function setDetachedStore(store, view = null) {
+        _detachedStore = store && typeof store === 'object' ? store : null;
+        _detachedView = _detachedStore && view && typeof view === 'object' ? view : null;
+    }
+
+    /**
+     * The `store` record of the open dataset: its path relative to the data
+     * directory when it is inside it (the absolute path kept as a hint), and
+     * its fingerprint as far as it is known (utils/store-identity.js).
+     * @returns {Object|null}
+     */
+    function storeOfView() {
+        if (_detachedStore) return _detachedStore;
+        const path = DataManager.getCurrentDataset();
+        if (!path) return null;
+        const known = knownStore(path);
+        return storeRecord({ path, relPath: known ? known.relPath : null,
+            fingerprint: known ? known.fingerprint : null });
+    }
+
+    /**
+     * Wait up to `ms` for the open store's fingerprint before a view is
+     * saved, so a link or panel set made right after opening a large store
+     * still records it. Past that the view is saved with what is known
+     * (counts and the metadata tier) and `complete` is false.
+     * @returns {Promise<{complete: boolean}>}
+     */
+    async function settleStoreOfView(ms = 3000) {
+        const path = DataManager.getCurrentDataset();
+        if (!path) return { complete: true };
+        try {
+            const result = await settleStore(path, ms);
+            return { complete: !!(result && result.ok && result.status === 'ready') };
+        } catch (e) {
+            return { complete: false };
+        }
+    }
 
     /**
      * Let the app apply a loaded panel set through its deep-link path.
@@ -62,6 +113,12 @@ const SessionManager = (function() {
      * @returns {{v: number, constants: Object, layout: Object}}
      */
     function captureView() {
+        if (_detachedView) {
+            // no data: the saved view, in the layout as it is now
+            const view = { ..._detachedView, v: VIEW_SCHEMA_VERSION, layout: PanelManager.saveLayout() };
+            view.store = _detachedStore;
+            return view;
+        }
         const view = {
             v: VIEW_SCHEMA_VERSION,
             constants: _constants(),
@@ -70,6 +127,11 @@ const SessionManager = (function() {
         // The cells shown, so the link reopens on the same cells
         const subset = DataManager.getSubsetForView();
         if (subset !== undefined) view.subset = subset;
+        // The store it is on, and the version that saved it
+        const store = storeOfView();
+        if (store) view.store = store;
+        const version = appVersion();
+        if (version) view.annzarro = version;
         return view;
     }
 
@@ -145,8 +207,13 @@ const SessionManager = (function() {
             sessionData.name = name;
             sessionData.timestamp = new Date().toISOString();
             
-            // 1. Save dataset information
-            sessionData.dataset = DataManager.getCurrentDataset();
+            // 1. Save dataset information: relative to the data directory
+            //    when the store is inside it, so the set opens on another
+            //    server; the absolute path stays as a hint
+            const settled = await settleStoreOfView();
+            const store = storeOfView();
+            sessionData.dataset = store ? store.path : DataManager.getCurrentDataset();
+            if (store && store.abs) sessionData.datasetAbs = store.abs;
             // Get dataset name from URL parameter if available
             const urlParams = new URLSearchParams(window.location.search);
             const datasetName = urlParams.get('dataset_name');
@@ -225,6 +292,7 @@ const SessionManager = (function() {
             
             const result = await response.json();
             _currentSession = { name, ...sessionData };
+            if (!settled.complete) result.fingerprintPending = true;
             
             return result;
         } catch (error) {
@@ -555,7 +623,8 @@ const SessionManager = (function() {
             autosaveData.isAutosave = true;
             
             // Save dataset information
-            autosaveData.dataset = DataManager.getCurrentDataset();
+            const store = storeOfView();
+            autosaveData.dataset = store ? store.path : DataManager.getCurrentDataset();
             // Get dataset name from URL parameter if available
             const urlParams = new URLSearchParams(window.location.search);
             const datasetName = urlParams.get('dataset_name');
@@ -702,7 +771,10 @@ const SessionManager = (function() {
         clearAutosave,
         notifyPanelUpdate,
         setViewApplier,
-        captureView
+        captureView,
+        setDetachedStore,
+        settleStoreOfView,
+        storeOfView
     };
 })();
 
