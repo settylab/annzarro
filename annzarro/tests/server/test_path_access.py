@@ -44,6 +44,8 @@ ROUTES = [
     ("GET", "/api/v1/data/cells?dataset_path={p}"),
     ("GET", "/api/v1/data/genes?dataset_path={p}"),
     ("GET", "/api/v1/data/names?dataset_path={p}&axis=obs&q=cell"),
+    ("GET", "/api/v1/data/names/status?dataset_path={p}&entity=cells"),
+    ("GET", "/api/v1/data/fingerprint?dataset_path={p}"),
     ("GET", "/api/v1/data/subset?dataset_path={p}"),
     ("GET", "/api/v1/data/subset/locate?dataset_path={p}"),
     ("GET", "/api/v1/data/statistics?dataset_path={p}"),
