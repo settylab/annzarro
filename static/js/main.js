@@ -1161,6 +1161,7 @@ const App = (function() {
                 // overlay from here (the tiles keep the dimming until all are drawn)
                 handOverToPanels();
                 await PanelManager.notifyPanels('subsetChanged', { dataset: DataManager.getCurrentDataset() });
+                if (_subsetController === controller) _subsetController = null;
                 _schedulePrefetch();
                 return true;
             } finally {

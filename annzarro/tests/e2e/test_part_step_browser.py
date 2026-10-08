@@ -565,3 +565,19 @@ def test_a_cell_plot_made_after_the_dataset_opened_also_reads_the_next_part_ahea
             assert [u for u in s.requests_to("subset") if "priority=low" in u], "the next part was not read ahead"
         finally:
             s.close()
+
+
+def test_the_part_after_each_step_is_read_ahead_too(two_datasets):
+    base, dataset = two_datasets
+    with sync_api.sync_playwright() as pw:
+        s = _Page(pw, base, dataset, defaults={"prefetch_next_part": True})
+        try:
+            s.page.click("#subset-part-next")
+            s.wait_part(2)
+            s.sent.clear()
+            deadline = time.time() + 30
+            while time.time() < deadline and 2 not in _parts_of(s.coordinate_requests()):
+                s.page.wait_for_timeout(200)
+            assert 2 in _parts_of(s.coordinate_requests()), "after stepping to part 2, part 3 was not read ahead"
+        finally:
+            s.close()
