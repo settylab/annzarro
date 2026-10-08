@@ -12,7 +12,7 @@ const {
     BYTES, PROBE_MIN_BYTES, setAllocator, allocate, isAllocationFailure, probe, largePlotParts, blockParts,
     niceFloor, suggestSize, probeMessage, probeForDraw, AllocationProbeError
 } = await import('../../../static/js/utils/alloc-probe.js');
-const { check, panelCost, readLimits, memorySettings, Ledger, GB } = await import('../../../static/js/utils/memory-guard.js');
+const { check, panelCost, readLimits, memorySettings, Ledger, GB, DEFAULT_MODEL } = await import('../../../static/js/utils/memory-guard.js');
 
 /** An allocator that gives at most `limit` bytes in total (a browser with a cap) and counts calls. */
 function capped(limit) {
@@ -29,17 +29,17 @@ function capped(limit) {
     return Object.assign(fn, { s });
 }
 
-test('largePlotParts: 73 B per point in all, the build buffers kept, the rest transient', () => {
+test('largePlotParts: 81 B per point in all, the build buffers kept, the rest transient', () => {
     const n = 1000;
     const p = largePlotParts(n);
     const total = p.reduce((a, x) => a + x.length * BYTES[x.type], 0);
-    assert.equal(total, 73 * n);
+    assert.equal(total, 81 * n);
     assert.deepEqual(p.filter(x => !x.transient).map(x => [x.name, x.type]), [['key', 'u16'], ['X', 'f32'], ['Y', 'f32']]);
     assert.ok(p.filter(x => x.transient).every(x => x.name.startsWith('peak-')));
     assert.ok(largePlotParts(10, { log: true }).some(x => x.name === 'logged'));
-    // the model's figure, not a hand list: 250M points is 18.25 GB
-    const big = largePlotParts(250e6, { bytesPerPoint: 73 }).reduce((a, x) => a + x.length * BYTES[x.type], 0);
-    assert.equal(big, 73 * 250e6);
+    // the model's figure, not a hand list: 250M points is 20.25 GB
+    const big = largePlotParts(250e6, { bytesPerPoint: 81 }).reduce((a, x) => a + x.length * BYTES[x.type], 0);
+    assert.equal(big, 81 * 250e6);
     // blocks are cut into chunks
     assert.ok(largePlotParts(250e6).filter(x => x.transient).length > 20);
 });
@@ -55,7 +55,7 @@ test('probe succeeds: the kept buffers come back, the transient block is release
 });
 
 test('probe fails on a RangeError: everything allocated so far is released, the failing part named', () => {
-    // 250M points need 18.25 GB; a browser that gives 12 GB refuses, before any data
+    // 250M points need 20.25 GB; a browser that gives 12 GB refuses, before any data
     const a = capped(12e9);
     const r = probe(largePlotParts(250e6), { alloc: a });
     assert.equal(r.ok, false);
@@ -63,9 +63,9 @@ test('probe fails on a RangeError: everything allocated so far is released, the 
     assert.ok(isAllocationFailure(r.error));
     assert.equal(a.s.used, 0);
     assert.deepEqual(r.buffers, {});
-    // the benchmark laptop's tab holds 16.64 GB of ArrayBuffers: 225M (16.4 GB) fits, 240M (17.5 GB) does not
-    assert.equal(probe(largePlotParts(225e6), { alloc: capped(16.64e9) }).ok, true);
-    assert.equal(probe(largePlotParts(240e6), { alloc: capped(16.64e9) }).ok, false);
+    // the benchmark laptop's tab holds 16.64 GB of ArrayBuffers: 200M (16.2 GB) fits, 210M (17.0 GB) does not (81 B a point: 73 for the draw, 8 for the point index)
+    assert.equal(probe(largePlotParts(200e6), { alloc: capped(16.64e9) }).ok, true);
+    assert.equal(probe(largePlotParts(210e6), { alloc: capped(16.64e9) }).ok, false);
 });
 
 test('an error that is not a RangeError is not swallowed', () => {
@@ -149,16 +149,28 @@ test('the RAM budget still refuses on a small machine, whatever the probe could 
 });
 
 test('a redraw beside the plot it replaces asks only for what its first step adds', () => {
-    // the tab holds 16.64 GB of ArrayBuffers; a drawn gene plot holds 61 B per point of them
-    const held = (n) => 61 * n;
+    // the tab holds 16.64 GB of ArrayBuffers; a drawn gene plot holds 69 B per point of them (61 for the plot, 8 for its point index)
+    const held = (n) => 69 * n;
     const beside = (n) => probeForDraw({ n, bytesPerPoint: 14, alloc: capped(16.64e9 - held(n)) });
-    assert.equal(beside(210e6).key.length, 210e6);
+    assert.equal(beside(200e6).key.length, 200e6);
     assert.throws(() => beside(225e6), AllocationProbeError);
     // the subset suggested is sized for a fresh draw: the old plot's bytes are freed when it draws
     assert.throws(() => probeForDraw({ n: 225e6, bytesPerPoint: 14, credit: held(225e6), alloc: capped(16.64e9 - held(225e6)) }), (e) => {
         assert.ok(e.size >= 100e6, e.size);
-        assert.ok(e.size * 73 <= 16.64e9);
+        assert.ok(e.size * 81 <= 16.64e9);
         assert.match(e.message, /\(3 parts of 100,000,000\)$/);
         return true;
     });
+});
+
+test('the model counts the 8 B point index once per quantity: off 65+8, ArrayBuffers 73+8, held plot 61+8', () => {
+    const L = DEFAULT_MODEL.large;
+    assert.equal(L.off, 65 + 8);
+    assert.equal(L.arrayBuffers, 73 + 8);
+    assert.equal(L.heldPerPoint, 61 + 8);
+    // the redraw's first step adds no index: the old plot's is already in heldPerPoint
+    assert.equal(L.redrawBeside, 14);
+    // the probe sized from the model asks for the full 81 B
+    const total = largePlotParts(1000, { bytesPerPoint: L.arrayBuffers }).reduce((a, x) => a + x.length * BYTES[x.type], 0);
+    assert.equal(total, 81 * 1000);
 });

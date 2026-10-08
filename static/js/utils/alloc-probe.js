@@ -11,7 +11,7 @@
  * large-plot path (large-plot.js) allocates the buffers it will need first:
  *
  *   - `transient` parts stand for the rest of the draw's ArrayBuffer peak (the
- *     guard model's large.arrayBuffers, 73 B per point, less the build
+ *     guard model's large.arrayBuffers, 81 B per point (73 for the draw, 8 for the point index), less the build
  *     buffers: response bodies, Plotly's Float64Array position copies); they are allocated
  *     together with the rest to test the peak, then handed back before the
  *     requests go out;
@@ -128,7 +128,7 @@ export function blockParts(bytes, name = 'block') {
 
 /**
  * What a large plot of `n` points needs in ArrayBuffers while it draws:
- * `bytesPerPoint` per point (the guard model's large.arrayBuffers, 73 B:
+ * `bytesPerPoint` per point (the guard model's large.arrayBuffers, 81 B:
  * response bodies, Plotly's Float64Array position copies, the build
  * buffers; a tab can hold only so many ArrayBuffer bytes in all), of which the build buffers are
  * kept and reused by the draw (group keys, grouped x and y, and the
@@ -139,7 +139,7 @@ export function blockParts(bytes, name = 'block') {
  * @param {boolean} [o.log] - numeric colour on a log scale
  * @param {number} [o.bytesPerPoint] - guard model large.arrayBuffers
  */
-export function largePlotParts(n, { log = false, bytesPerPoint = 73 } = {}) {
+export function largePlotParts(n, { log = false, bytesPerPoint = 81 } = {}) {
     const kept = [
         { name: 'key', type: 'u16', length: n },
         { name: 'X', type: 'f32', length: n },
@@ -250,8 +250,8 @@ export class AllocationProbeError extends Error {
  * @param {boolean} [o.suggest] - false: fail without searching for a subset size (a first try)
  * @returns {{key, X, Y, logged?}}
  */
-export function probeForDraw({ n, log = false, bytesPerPoint = 73, eligible = n, alloc = allocate, suggest = true,
-    suggestBytesPerPoint = 73, credit = 0 }) {
+export function probeForDraw({ n, log = false, bytesPerPoint = 81, eligible = n, alloc = allocate, suggest = true,
+    suggestBytesPerPoint = 81, credit = 0 }) {
     const opts = { log, bytesPerPoint };
     const r = probe(largePlotParts(n, opts), { alloc });
     if (r.ok) return r.buffers;

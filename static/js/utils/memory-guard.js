@@ -149,13 +149,15 @@ export const DEFAULT_MODEL = {
          * against that limit says. A recolour that regroups positions holds
          * the old plot's buffers beside the new draw's (large-plot.js
          * probeOrRelease). Plus the point index built after the draw
-         * (utils/point-index.js: Uint32 order and rows, 8 B a point, the
-         * second term below): 73 + 8 = 81. The sum is an upper bound, not a
-         * measurement: the index is built after the response bodies are
-         * freed, so the peak with the index may be nearer 73 + 4 (its build
-         * buffer). Not yet re-measured at 200M+.
+         * (utils/point-index.js: Uint32 order and rows, 8 B a point): 73 + 8
+         * = 81. The sum is an upper bound, not a measurement: the index is
+         * built after the response bodies are freed, so the peak with the
+         * index may be nearer 73 + 4 (its build buffer). Not yet re-measured
+         * at 200M+. `off` above holds the same 8 B as renderer memory; the
+         * two are different quantities (renderer RSS, tab ArrayBuffer limit)
+         * and no code adds them.
          */
-        arrayBuffers: 73,
+        arrayBuffers: 73 + 8,
         /**
          * ArrayBuffer bytes per point a redraw adds while the plot it
          * replaces is still held: the build buffers (key, X, Y: 10) and the
@@ -168,7 +170,7 @@ export const DEFAULT_MODEL = {
          * (12.9 GB at 210M, measured) + 8 for its point index; freed when its
          * replacement draws.
          */
-        heldPerPoint: 61
+        heldPerPoint: 61 + 8
     },
     /**
      * Transient costs on top of what the panel holds.
