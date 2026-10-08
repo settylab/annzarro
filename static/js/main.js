@@ -1521,15 +1521,21 @@ const App = (function() {
         if (refreshDatasetBtn) {
             refreshDatasetBtn.addEventListener('click', async () => {
 
-                // Get current dataset path if one is selected
+                // The dataset that is open (the picker only shows it, and
+                // is empty while the list is read again), and one refresh at
+                // a time: a second click used to read the list again over the
+                // first and leave the picker on the first dataset
+                if (_refreshingDataset) return;
                 const datasetSelector = document.getElementById('dataset-selector');
-                const datasetPath = datasetSelector.value;
+                const datasetPath = _lastLoadedDatasetPath || DataManager.getCurrentDataset() || datasetSelector.value;
                 
                 // Reset backend cache for the current dataset (if one is selected)
                 if (!datasetPath) {
                     console.warn('No dataset selected for refresh');
                     return;
                 }
+                _refreshingDataset = true;
+                try {
                 _lastLoadedDatasetPath = null; // Reset last loaded dataset path to avoid duplicate loading
 
                 document.getElementById('cell-count').textContent = 'Loading.';
@@ -1563,6 +1569,9 @@ const App = (function() {
                     // Clear the DataManager's frontend cache for this dataset
                     DataManager.refreshCacheForDataset(datasetPath);
                     await _loadDataset(datasetPath);
+                }
+                } finally {
+                    _refreshingDataset = false;
                 }
             });
         }
@@ -1704,12 +1713,27 @@ const App = (function() {
      * Load available datasets
      * @private
      */
-    async function _loadDatasets() {
+    let _refreshingDataset = false;
+    let _datasetsLoading = null;
+
+    /**
+     * Fill the dataset picker from the server's list. One read at a time: a
+     * second call while the list is read joins it (it would see the empty
+     * placeholder as the selection and drop the open dataset from the picker).
+     */
+    function _loadDatasets() {
+        if (!_datasetsLoading) {
+            _datasetsLoading = _fillDatasetPicker().finally(() => { _datasetsLoading = null; });
+        }
+        return _datasetsLoading;
+    }
+
+    async function _fillDatasetPicker() {
         const sel = document.getElementById('dataset-selector');
         if (!sel) return;
       
-        // 0) remember current selection
-        const currentValue = sel.value;
+        // 0) remember current selection (the open dataset if the picker is empty)
+        const currentValue = sel.value || DataManager.getCurrentDataset() || '';
       
         // 1) destroy any existing Select2 so the native <select> is visible
         if (window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) {
@@ -1807,6 +1831,20 @@ const App = (function() {
     let _currentLoadingAbortController = null;
     let _datasetLoadDone = null;   // settles when the dataset load running now ends
     
+    /**
+     * Show `datasetPath` in the dataset picker without loading it (the
+     * picker's select2:select is what loads). A path the listing lacks (a
+     * link's, a remote URL) gets its own option.
+     * @private
+     */
+    function _showDatasetInPicker(datasetPath) {
+        const sel = document.getElementById('dataset-selector');
+        if (!sel || !datasetPath || sel.value === datasetPath) return;
+        if (![...sel.options].some(o => o.value === datasetPath)) sel.appendChild(new Option(datasetPath, datasetPath));
+        sel.value = datasetPath;
+        if (window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) $(sel).trigger('change.select2');
+    }
+
     async function _loadDataset(datasetPath, silent = false) {
         // This call's controller and its end. A load that a newer one aborted
         // must not reset the flag and the controller of the newer one (the
@@ -1843,6 +1881,10 @@ const App = (function() {
             // Set loading flag
             _isLoadingDataset = true;
             _lastLoadedDatasetPath = datasetPath;
+            // The picker names the dataset that is loading. It listed the
+            // first dataset until the load was done, and a Refresh made then
+            // opened that one instead.
+            _showDatasetInPicker(datasetPath);
             console.log(`Loading dataset: ${datasetPath}${silent ? ' (silent mode)' : ''}`);
             
             // Show loading indicators
