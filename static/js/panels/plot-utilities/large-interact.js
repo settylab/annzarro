@@ -24,6 +24,12 @@ import { colourTitle } from '../../utils/plot-titles.js';
 const HOVER_PX = 10;           // how close the pointer must be to a point
 const DWELL_MS = 100;          // the pointer rests this long before the server is asked
 const REMEMBERED = 200;        // rows whose name and colour are kept
+// A click focuses only when it is quick and still, decided on release: a pan or zoom that
+// starts on a point must not focus. The same rule and values as plot-make-helper.js
+// (CLICK_MAX_MS, CLICK_MAX_MOVE_PX on dominik/click-not-drag); mirrored here until that
+// branch is merged, when these two lines become an import.
+const CLICK_MAX_MS = 300;
+const CLICK_MAX_MOVE_PX = 5;
 
 const _cache = new Map();      // `${generation}:${row}:${colour}` -> {name, colour}
 let _tip = null;
@@ -164,13 +170,16 @@ export function attachLargeInteraction(gd, settings, index) {
   // pointer events, not click: Plotly's drag layer takes the mouse between
   // press and release, so no click reaches the graph
   gd.addEventListener('pointerdown', (e) => {
-    down = e.target.closest && e.target.closest('.draglayer, .nsewdrag') ? { x: e.clientX, y: e.clientY } : null;
+    down = e.isPrimary && (e.pointerType !== 'mouse' || e.button === 0)
+      && e.target.closest && e.target.closest('.draglayer, .nsewdrag')
+      ? { id: e.pointerId, t: e.timeStamp, x: e.clientX, y: e.clientY } : null;
   }, true);
   document.addEventListener('pointerup', (e) => {
     const s = gd.__largeState;
     const d = down;
     down = null;
-    if (!d || !s || !gd.isConnected || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
+    if (!d || e.pointerId !== d.id || !s || !gd.isConnected) return;
+    if (e.timeStamp - d.t > CLICK_MAX_MS || Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_MAX_MOVE_PX) return;
     const hit = pointAt(gd, s, e.clientX, e.clientY, e.target);
     if (hit) focusRow(gd, s, hit).catch((err) => console.warn('Focus by click failed:', err && err.message));
   }, true);

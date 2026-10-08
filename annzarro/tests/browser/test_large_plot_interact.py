@@ -222,6 +222,27 @@ def test_drag_zoom_works_with_the_highlight_and_the_marker_keeps_its_cell(page, 
     assert len(page.draws) == 2, "a zoom is not a redraw"
 
 
+def test_a_drag_or_a_long_press_that_starts_on_a_point_does_not_focus(page, server):
+    """The click rule of the regular plot (<= 300 ms and <= 5 px, decided on release)."""
+    page.goto(_link(server))
+    _wait(page, READY, P1)
+    a = _isolated(page, P1, 0)
+    before = page.input_value("#focused-cell")
+    assert before != f"cell_{a['row']:04d}"
+    page.mouse.move(a["x"], a["y"])
+    page.mouse.down()
+    page.wait_for_timeout(450)                                # a long, still press
+    page.mouse.up()
+    page.wait_for_timeout(600)
+    assert page.input_value("#focused-cell") == before
+    page.mouse.move(a["x"], a["y"])
+    page.mouse.down()
+    page.mouse.move(a["x"] + 60, a["y"] + 40, steps=8)       # a pan or zoom drag
+    page.mouse.up()
+    page.wait_for_timeout(800)
+    assert page.input_value("#focused-cell") == before
+
+
 def test_table_filter_is_still_refused(page, server):
     """A cell table cannot list this many cells (their names stay on the server), so a
     table filter has nothing to filter by: refused, as before."""
