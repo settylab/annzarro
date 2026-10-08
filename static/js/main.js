@@ -1666,6 +1666,23 @@ const App = (function() {
     }
     
     /**
+     * Select2 label for a dataset: its text, with a tooltip of the full name
+     * and, when it differs, the path (a custom entry's id is its path).
+     * @param {Object} data - Select2 option data
+     * @returns {string|HTMLElement} text, or a span for the entry
+     * @private
+     */
+    function _datasetOptionLabel(data) {
+        if (data.loading || !data.text) return data.text;
+        const span = document.createElement('span');
+        span.textContent = data.text;
+        const path = data.id && data.id !== data.text && !data.newTag
+            && data.text !== `${data.id} (Custom)` ? data.id : '';
+        span.title = path ? `${data.text}\n${path}` : data.text;
+        return span;
+    }
+
+    /**
      * Load available datasets
      * @private
      */
@@ -1730,6 +1747,12 @@ const App = (function() {
             tags:        true,
             placeholder: 'Select or enter a dataset path',
             width:       '100%',
+            // the open list may be wider than the box; CSS caps it
+            dropdownAutoWidth: true,
+            dropdownCssClass:  'dataset-select-dropdown',
+            // name and path as a tooltip, on list entries and the closed box
+            templateResult:    _datasetOptionLabel,
+            templateSelection: _datasetOptionLabel,
             createTag: params => {
               const term = params.term.trim();
               return term
@@ -1738,6 +1761,12 @@ const App = (function() {
             }
           });
       
+          // keep the wider list inside the viewport, however far right the box is
+          $(sel).off('select2:open.dsWidth').on('select2:open.dsWidth', () => {
+            const room = window.innerWidth - $(sel).next('.select2-container').offset().left - 8;
+            $('.dataset-select-dropdown').css('max-width', Math.min(room, 700, window.innerWidth * 0.9));
+          });
+
           // 8) restore selection in the Select2 widget
           if (currentValue) {
             $(sel).val(currentValue).trigger('change');

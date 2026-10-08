@@ -2362,6 +2362,22 @@ button.dtsb-button.dtsb-clear:hover {
     max-width: 200px !important;
 }
 
+/* The box itself: wide enough for a name's start (Select2 sizes it to its text) */
+#dataset-selector + .select2-container {
+    min-width: 180px;
+}
+
+/* The open dataset list may be wider than its box, up to the viewport;
+   entries still too long get an ellipsis (their tooltip has the full text) */
+.dataset-select-dropdown {
+    max-width: min(90vw, 700px); /* main.js narrows it to the room right of the box */
+}
+.dataset-select-dropdown .select2-results__option > span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Fix Select2 container width to match parent */
 .select2-container {
     width: auto !important;
