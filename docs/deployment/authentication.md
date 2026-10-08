@@ -109,9 +109,12 @@ stops working), `false` never sets it.
   for them, so ownership cannot be claimed by editing a JSON file and importing it.
 - A refused change is answered with HTTP 403 naming the owner, and the app shows it as a
   permission notice, suggesting to save under a new name instead.
-- **Admins** (`user add --admin`) may change any panel set and, on a shared server, clear the
-  server's dataset cache. Admin grants nothing else: no file access, no dataset writes, no user
-  management through the browser.
+- **Admins** (`user add --admin`) may change any panel set, reassign its owner, clear the
+  server's dataset cache and, with the default `server.arbitrary_paths: admins`, open any dataset
+  path the server account can read, not only the data directories (each open is logged). They
+  cannot write to datasets, and users are managed only with `annzarro user`, not in the app.
+  To confine admins to the data directories, set `server.arbitrary_paths: local-only` (or
+  `none`); see below.
 - Panel sets saved **before owners were recorded** have no owner and can only be changed by an
   admin. An admin can hand one to a user:
 

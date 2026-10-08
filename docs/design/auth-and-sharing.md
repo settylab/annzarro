@@ -26,8 +26,9 @@ Line numbers refer to the commit that added this document.
   (`annzarro/server/auth.py`: `_save_users`, `_reload_if_changed`).
   - Passwords are stored as scrypt hashes, or `pbkdf2:sha256` where `hashlib`
     has no scrypt (`_new_hash`).
-  - There are two roles, user and admin (`is_admin`). Admin only matters for
-    panel sets and the cache reset.
+  - There are two roles, user and admin (`is_admin`). Admin matters for
+    panel sets, the cache reset and, under the default `server.arbitrary_paths: admins`,
+    opening paths outside the data directories.
   - Users are managed only from the command line: `annzarro user
     add|remove|passwd|set-admin|list` (`annzarro/cli.py`). There is no web
     interface.

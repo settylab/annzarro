@@ -94,3 +94,15 @@ def test_user_commands_load_the_production_environment_like_start(users, monkeyp
     _, cfg = users
     assert cli.main(["user", "--config", cfg, "list"]) == 0, "--config after `user` is accepted"
     assert seen == ["production"]
+
+
+def test_user_add_help_states_what_admin_grants(capsys):
+    """`--admin` once said it "grants nothing else", but by default an admin may open
+    any path the server account can read (server.arbitrary_paths: admins)."""
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["user", "add", "--help"])
+    assert exc.value.code == 0
+    text = " ".join(capsys.readouterr().out.split())
+    assert "nothing else" not in text
+    for needle in ("any dataset path", "server.arbitrary_paths", "local-only", "reassign", "cache"):
+        assert needle in text, needle
