@@ -1031,6 +1031,7 @@ const App = (function() {
             // Wait for it, then swap the cells of the dataset that was opened.
             while (_isLoadingDataset && _datasetLoadDone) await _datasetLoadDone;
             if (DataManager.getCurrentDataset() !== datasetPath) return;   // another dataset took over
+            if (request <= _subsetCancelledSeq) return;                   // Cancel, while this waited
             if (!(await _swapSubset(spec))) {
                 return;     // a later request took over
             }
@@ -1115,9 +1116,11 @@ const App = (function() {
     let _subsetQueued = null;
     let _subsetController = null;      // AbortController of the swap reading cells
     let _subsetRequestSeq = 0;
+    let _subsetCancelledSeq = 0;
 
     /** The pill's Cancel: stop reading the cells and keep those shown. */
     function _cancelSubsetChange() {
+        _subsetCancelledSeq = _subsetRequestSeq;      // requests made so far, also those still waiting
         _subsetQueued = null;
         if (_subsetController) _subsetController.abort(new DOMException('Subset change cancelled', 'AbortError'));
         PanelManager.abortUpdates();

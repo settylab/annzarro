@@ -505,3 +505,46 @@ def test_a_step_stops_the_read_ahead_of_another_part(two_datasets):
             assert 1 not in _parts_of(s.coordinate_requests()), "the part read ahead was loaded though a later one was asked for"
         finally:
             s.close()
+
+
+# -- the focused-cell box ---------------------------------------------------------
+
+def test_clicking_into_the_focused_cell_box_asks_for_no_dataset_wide_index_on_a_huge_store(two_datasets):
+    """Focusing the box lists names; the app also searched every cell of the
+    dataset, which built an index of every name in the server (32 GB at 1B cells)."""
+    base, dataset = two_datasets
+    with sync_api.sync_playwright() as pw:
+        s = _Page(pw, base, dataset, wait=False)
+        try:
+            def too_big(route):
+                body = route.fetch().json()
+                route.fulfill(json={**body, "name_search": {"dataset": False}})
+            s.page.route("**/api/v1/data/subset?*", too_big)
+            s.page.goto(_link(base, dataset))
+            s.page.wait_for_selector("#subset-button:not([hidden])", timeout=60_000)
+            s.wait_drawn()
+            s.sent.clear()
+            s.page.click("#focused-cell")
+            s.page.wait_for_selector(".name-picker-menu:not([hidden]) .name-picker-option", timeout=15_000)
+            searched = [u for u in s.requests_to("names")]
+            assert searched, "the box listed no names"
+            assert not [u for u in searched if "scope=dataset" in u], f"every cell of the dataset was searched: {searched}"
+            s.page.fill("#focused-cell", "cell")
+            s.page.wait_for_timeout(1500)
+            assert not [u for u in s.requests_to("names") if "scope=dataset" in u]
+        finally:
+            s.close()
+
+
+def test_clicking_into_the_focused_cell_box_still_searches_the_dataset_when_it_can(two_datasets):
+    base, dataset = two_datasets
+    with sync_api.sync_playwright() as pw:
+        s = _Page(pw, base, dataset)
+        try:
+            s.sent.clear()
+            s.page.click("#focused-cell")
+            s.page.wait_for_selector(".name-picker-menu:not([hidden]) .name-picker-option", timeout=15_000)
+            s.page.wait_for_timeout(500)
+            assert [u for u in s.requests_to("names") if "scope=dataset" in u], "the cells outside the subset are not searched"
+        finally:
+            s.close()
