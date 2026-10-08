@@ -127,7 +127,10 @@ export const DEFAULT_MODEL = {
     },
     large: {
         resident: 0.1, peak: 0.2,
-        off: 65, gpu: 19
+        // 65 B plot + 8 B point index (utils/point-index.js: row and cell
+        // order, 4 B each, typed arrays); the table-filter mask (1 B) is
+        // transient and inside the peak's margin
+        off: 73, gpu: 19
     },
     /**
      * Transient costs on top of what the panel holds.

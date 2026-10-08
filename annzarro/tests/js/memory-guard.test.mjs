@@ -93,8 +93,9 @@ test('panel cost: large-plot mode keeps almost nothing on the heap, its points o
     assert.ok(big.resident.heap < 0.02 * GB, formatGB(big.resident.heap));
     const huge = panelCost({ kind: 'cell-plot', n: 2e8, large: true });
     assert.ok(huge.peak.heap < 0.1 * GB, formatGB(huge.peak.heap));
-    // what the heap no longer holds is charged outside it: 13 GB at 200M (renderer RSS 13.56 GB measured)
-    assert.ok(Math.abs(huge.resident.off - 13 * GB) < 0.1 * GB, formatGB(huge.resident.off));
+    // what the heap no longer holds is charged outside it: 13 GB at 200M (renderer RSS 13.56 GB
+    // measured) plus the point index of hover and click, 8 B per point (1.6 GB)
+    assert.ok(Math.abs(huge.resident.off - 14.6 * GB) < 0.1 * GB, formatGB(huge.resident.off));
     assert.equal(big.resident.contexts, CONTEXTS_PER_PLOT);
     const reg = panelCost({ kind: 'cell-plot', n: 5e6, colour: 'numeric' });
     // 3.36 GB measured at 5M by gene (run maximum, with the app's 0.17 GB)
@@ -218,7 +219,7 @@ test('one every-cell plot: the total budget binds large-plot mode, from the RAM 
     const small = verdict({ host_memory_bytes: 16 * GB }, 200e6);
     assert.equal(small.verdict, 'block');
     assert.equal(small.binding, 'total');
-    assert.match(small.why, /^needs ~16 GB of browser memory; 12 GB free \(of 12 GB, estimated\)$/);
+    assert.match(small.why, /^needs ~18 GB of browser memory; 12 GB free \(of 12 GB, estimated\)$/);
     // a browser on another computer: 16 GB by default, which binds just above 200M
     // (13 GB at 200M, times the margin)
     const st = memorySettings({});

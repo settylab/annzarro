@@ -1,6 +1,6 @@
 // When a Cell Plot uses the large-plot mode (static/js/panels/plot-utilities/
-// large-plot.js) and what it tells the user. The mode turns hover, click and
-// table filters off, so it must only start where the regular path cannot draw
+// large-plot.js) and what it tells the user. The mode turns 3D, table filters and extra hover
+// columns off, so it must only start where the regular path cannot draw
 // (default above 1M points, configurable) and must always say so on the panel.
 //
 // Run: `node --test annzarro/tests/js/large-plot.test.mjs` (node >= 18).
@@ -53,12 +53,13 @@ test("settings the mode cannot draw keep the regular path", () => {
 
 test("the strip tag names the mode; its popover the point count, the limit and the way out", () => {
   const tag = largePlotTag(95624334);
-  assert.equal(tag.text, "Large plot: no hover/click");
-  assert.equal(tag.title,
-    "Large-plot mode (95.6M points): hover, click and table filters are off; use a subset for them");
+  assert.equal(tag.text, "Large plot");
+  assert.equal(tag.title, "Large-plot mode (95.6M points): hover, click and the focus highlight work; "
+    + "table filters, 3D and the Hover picker are off; use a subset for them");
   assert.equal(tag.pop.text, `Over ${largePlotPoints().toLocaleString("en-US")} points (95.6M here): `
-    + "drawn without hover, click or table filters to stay within browser memory.");
-  assert.deepEqual(tag.pop.actions, [["subset-regular", "Subset to \u22641M to enable click"]]);
+    + "drawn in a lighter mode to stay within browser memory. Hover and click work; "
+    + "table filters, 3D and extra hover columns do not.");
+  assert.deepEqual(tag.pop.actions, [["subset-regular", "Subset to \u22641M for table filters"]]);
 });
 
 // --- the panel's controls above and below the threshold ------------------
@@ -93,7 +94,7 @@ function panel() {
 const opt = (p, axis, v) => p.items.find(e => e.axis === axis).options.find(o => o.value === v);
 const byCls = (p, c) => p.items.find(e => e.cls === c);
 
-test("above the threshold: unsupported types, 3D, Hover and table filter off with the tooltip", () => {
+test("above the threshold: unsupported types, 3D, Hover and table filter off with the tooltip; the highlight stays", () => {
   const p = panel();
   updateLargePlotControls(p, true, 1000000);
   const tip = largePlotTooltip(1000000);
@@ -111,11 +112,9 @@ test("above the threshold: unsupported types, 3D, Hover and table filter off wit
   assert.equal(p.items.find(e => e.axis === "z").disabled, true);
   assert.equal(p.items.find(e => e.id === "z-axis-toggle-7").disabled, true);
   const hl = p.items.find(e => e.id === "highlight-focused-cell-7");
-  assert.equal(hl.disabled, true);
-  assert.equal(hl.getAttribute("title"), tip);
-  // its on/off state is kept; styles.css draws it as off while data-large-off is set
+  assert.equal(hl.disabled, false, "the focus highlight is drawn in this mode");
+  assert.equal(hl.dataset.largeOff, undefined);
   assert.equal(hl.classList.contains("active"), true);
-  assert.equal(hl.dataset.largeOff, "1");
 });
 
 test("below the threshold (or a subset on) everything comes back, with its own tooltip", () => {
@@ -138,7 +137,7 @@ test("below the threshold (or a subset on) everything comes back, with its own t
   assert.equal(hl.getAttribute("title"), null);
 });
 
-test("a highlight toggle that was off stays off when the mode ends", () => {
+test("a highlight toggle keeps its state through the mode", () => {
   const p = panel();
   const hl = p.items.find(e => e.id === "highlight-focused-cell-7");
   hl.classList.remove("active");

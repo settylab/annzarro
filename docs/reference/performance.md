@@ -104,7 +104,7 @@ plots share the heap, so the default limit is 1 million points per regular plot.
 
 Above `ui.defaults.large_plot_points` (1 million by default) a Cell Plot keeps its data in typed
 arrays, outside that heap, and draws one single-colour layer per category or per colour step,
-without hover, click to focus, table filters, obsp colours or 3D. The panel says it is in this
+with hover and click to focus from a grid over the points (8 bytes per point, also outside the heap), without table filters, obsp colours or 3D. The panel says it is in this
 mode (see {doc}`../user-guide/subsets`). It holds about 20 bytes of heap per point (1.80 GiB at
 95.6 million cells). In the paper's runs:
 

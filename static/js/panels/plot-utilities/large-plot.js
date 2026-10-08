@@ -19,13 +19,17 @@
  *     100,000 points and more scattergl builds a spatial index for hover
  *     (point-cluster, about 50 B of heap per point); below it, it does not.
  *
- * What it gives up: hover and click on points (hovermode false; there are no
- * per-point names on the traces), the focused-cell highlight, table filters,
- * 3D, and incremental updates (any change redraws). It is used above
- * largePlotPoints() (default 1M, so several regular plots fit side by side). The panel says so (a status-strip tag), the
- * controls it cannot honour are disabled (large-plot-controls.js), and
- * settings it cannot draw are refused with a message (largePlotRefusal):
- * far above the threshold the regular path would close the tab.
+ * Plotly's own hover is off (hovermode false; there are no per-point names on
+ * the traces). Hover, click and the focused-cell highlight come from a point
+ * index over the drawn positions (utils/point-index.js, 8 B per point in typed
+ * arrays; large-interact.js). What it gives up: 3D, table filters (a cell
+ * table cannot list this many cells, so there is nothing to filter by), the
+ * Hover picker's extra columns, and incremental updates (any change redraws). It is
+ * used above largePlotPoints() (default 1M, so several regular plots fit side
+ * by side). The panel says so (a status-strip tag), the controls it cannot
+ * honour are disabled (large-plot-controls.js), and settings it cannot draw
+ * are refused with a message (largePlotRefusal): far above the threshold the
+ * regular path would close the tab.
  */
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
@@ -35,12 +39,14 @@ import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, COLOUR_BAR, attachViewportTracking } from './plot-make-helper.js';
-import { drawPlot, drawPlaceholder, clearForDraw, fitToContainer, setStatusTag, nudgeStatusTag, resolveColorscale, Coverage, GAP } from '../../utils/panel-surface.js';
+import { drawPlot, drawPlaceholder, clearForDraw, fitToContainer, setStatusTag, resolveColorscale, Coverage, GAP } from '../../utils/panel-surface.js';
 import { colourKind, DEFAULT_MODEL } from '../../utils/memory-guard.js';
 import { probeForDraw, niceFloor, probeMessage } from '../../utils/alloc-probe.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
+import { buildPointIndex } from '../../utils/point-index.js';
+import { attachLargeInteraction, highlightLargeFocus } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount } from '../../utils/categories.js';
@@ -156,7 +162,7 @@ async function sampleColorscale(scale, reverse, n) {
 
 /**
  * Group points by key with one counting sort: x/y permuted into contiguous
- * runs per key, as typed arrays. key[i] === drop leaves point i out. `pre` ({X, Y}) are buffers allocated
+ * runs per key, as typed arrays, and the row of each (R). key[i] === drop leaves point i out. `pre` ({X, Y}) are buffers allocated
  * earlier (probeDraw) to be filled; they may be longer than `kept`.
  */
 function groupByKey(x, y, key, nkeys, drop, pre = null) {
@@ -169,14 +175,16 @@ function groupByKey(x, y, key, nkeys, drop, pre = null) {
   // the probe's buffers (probeDraw), when big enough: filled, not copied
   const X = pre && pre.X && pre.X.length >= kept ? pre.X : new Float32Array(kept);
   const Y = pre && pre.Y && pre.Y.length >= kept ? pre.Y : new Float32Array(kept);
+  const R = new Uint32Array(kept);           // the row of each point, for hover and click
   for (let i = 0; i < n; i++) {
     const k = key[i];
     if (k === drop) continue;
     const p = fill[k]++;
     X[p] = x[i];
     Y[p] = y[i];
+    R[p] = i;
   }
-  return { X, Y, start, kept };
+  return { X, Y, R, start, kept };
 }
 
 /** Single-colour scattergl traces for points [a, b), cut below TRACE_POINTS. */
@@ -248,38 +256,15 @@ function colourBar(settings, title) {
 export function largePlotTag(n) {
   const limit = largePlotPoints();
   return {
-    text: 'Large plot: no hover/click',
-    title: `Large-plot mode (${formatPoints(n)} points): hover, click and table filters are off; use a subset for them`,
+    text: 'Large plot',
+    title: `Large-plot mode (${formatPoints(n)} points): hover, click and the focus highlight work; `
+      + 'table filters, 3D and the Hover picker are off; use a subset for them',
     pop: {
-      text: `Over ${exactCount(limit)} points (${compactCount(n)} here): drawn without hover, click or `
-        + 'table filters to stay within browser memory.',
-      actions: [['subset-regular', `Subset to \u2264${compactCount(limit)} to enable click`]]
+      text: `Over ${exactCount(limit)} points (${compactCount(n)} here): drawn in a lighter mode to stay within `
+        + 'browser memory. Hover and click work; table filters, 3D and extra hover columns do not.',
+      actions: [['subset-regular', `Subset to \u2264${compactCount(limit)} for table filters`]]
     }
   };
-}
-
-/**
- * A click on the plot area of a large plot, which has no click: pulse the
- * strip's tag, and the first time per panel open its popover. A drag (zoom,
- * pan) is not a click, and neither is one on the modebar or legend.
- * @param {HTMLElement} plotContainer
- */
-function watchLargeClicks(plotContainer) {
-  if (plotContainer.__largeClicks) return;
-  plotContainer.__largeClicks = true;
-  // pointer events, not click: Plotly's drag layer takes the mouse between
-  // press and release, so no click reaches the graph
-  let down = null;
-  plotContainer.addEventListener('pointerdown', (e) => {
-    down = plotContainer.__isLarge && e.target.closest && e.target.closest('.draglayer, .nsewdrag')
-      ? { x: e.clientX, y: e.clientY } : null;
-  }, true);
-  document.addEventListener('pointerup', (e) => {
-    if (!down || !plotContainer.isConnected) { down = null; return; }
-    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-    down = null;
-    if (moved <= 4) nudgeStatusTag(plotContainer, 'large');
-  }, true);
 }
 
 /** The probe's group-key buffer when it is the right size, else a new one. */
@@ -401,9 +386,12 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   if (DataManager.getDatasetGeneration() !== generation) {
     throw new DOMException('Plot data is from a previous dataset', 'AbortError');
   }
+  // the previous draw's index goes before the new one is built: never both
+  if (plotContainer.__largeState) plotContainer.__largeState.index = null;
   const t1 = performance.now();
   const x = xs.values, y = ys.values, n = x.length;
   const traces = [];
+  let pts;                       // the drawn points {X, Y, R}: what the point index is built over
   // the regular path's layout, so both modes look the same
   const layout = buildPlotLayout(settings, null);
   layout.hovermode = false;
@@ -429,7 +417,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
         if (settings.hideNaN) only.nan++;
       } else key[i] = many ? groupOf(c) : c;
     }
-    const { X, Y, start, kept } = groupByKey(x, y, key, nc + 1, DROP, pre);
+    const { X, Y, R, start, kept } = groupByKey(x, y, key, nc + 1, DROP, pre);
+    pts = { X, Y, R };
     filtered = n - kept;
     // Colour groups: per group, the distinct ranks drawn (a bit set over the
     // ranks) and the three lowest, whose labels the legend names
@@ -543,7 +532,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       const bin = Math.min(COLOR_BINS - 1, Math.max(0, Math.floor((c - cmin) / width)));
       key[i] = rank[bin];
     }
-    const { X, Y, start, kept } = groupByKey(x, y, key, COLOR_BINS + 1, DROP, pre);
+    const { X, Y, R, start, kept } = groupByKey(x, y, key, COLOR_BINS + 1, DROP, pre);
+    pts = { X, Y, R };
     filtered = n - kept;
     const colors = await sampleColorscale(settings.colorScale, settings.colorReversed, COLOR_BINS);
     pushTraces(traces, X, Y, start[0], start[1], 'no value', NA_COLOR, settings);
@@ -566,7 +556,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   } else {
     const key = keyBuffer(pre, n);
     for (let i = 0; i < n; i++) key[i] = (x[i] !== x[i] || y[i] !== y[i]) ? 1 : 0;
-    const { X, Y, start, kept } = groupByKey(x, y, key, 1, 1, pre);
+    const { X, Y, R, start, kept } = groupByKey(x, y, key, 1, 1, pre);
+    pts = { X, Y, R };
     filtered = n - kept;
     only.coords = filtered;
     pushTraces(traces, X, Y, start[0], start[1], 'cells', settings.pointColor || '#1f77b4', settings);
@@ -591,10 +582,9 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     coverage, 'cells');
   setStatusTag(plotContainer, 'large', largePlotTag(n));
   plotContainer.__isLarge = true;
-  watchLargeClicks(plotContainer);
   watchGpu(plotContainer, n);
   fitToContainer(plotContainer);
-  // no click handler here, but a zoom is kept like in the regular plot
+  // Plotly has no click handler here, but a zoom is kept like in the regular plot
   attachViewportTracking(plotContainer, settings);
   // the server's cell-name index, for a later focus by name (remote-names.js)
   DataManager.prewarmCellNames();
@@ -602,10 +592,18 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     updateColorControlsVisibility(container, cs && cs.codes ? 'categorical' : cs ? 'numerical' : 'constant', id);
   }
   const t3 = performance.now();
-  data.large = { n, traces: traces.length, filtered,
-    load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2 };
+  // hover, click and the focus highlight: the index over the drawn points
+  // the probe's buffers may be longer than the points kept
+  const kept = n - filtered;
+  const index = buildPointIndex(pts.X.subarray(0, kept), pts.Y.subarray(0, kept), pts.R);
+  attachLargeInteraction(plotContainer, settings, index);
+  highlightLargeFocus(plotContainer, settings);
+  const t4 = performance.now();
+  data.large = { n, traces: traces.length, filtered, index_bytes: index.bytes,
+    load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2, index_ms: t4 - t3 };
   data.coverage = coverage;
   data.generation = generation;
   console.info(`Large cell plot: ${n} points in ${traces.length} traces; `
-    + `load ${(t1 - t0).toFixed(0)} ms, build ${(t2 - t1).toFixed(0)} ms, draw ${(t3 - t2).toFixed(0)} ms`);
+    + `load ${(t1 - t0).toFixed(0)} ms, build ${(t2 - t1).toFixed(0)} ms, draw ${(t3 - t2).toFixed(0)} ms, `
+    + `index ${(t4 - t3).toFixed(0)} ms`);
 }

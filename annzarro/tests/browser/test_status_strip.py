@@ -348,28 +348,19 @@ def test_narrow_strip_keeps_the_total_and_details(server):
             browser.close()
 
 
-def test_large_plot_click_pulses_and_explains_once(large_server):
+def test_large_plot_tag_explains_and_offers_the_subset(large_server):
     root, store = large_server
     with playwright.sync_playwright() as pw:
         browser, page = _open(pw, _link(root, store, subset=None))
         try:
-            s = _wait(page, lambda s: s["tags"] == ["Large plot: no hover/click"])
+            s = _wait(page, lambda s: s["tags"] == ["Large plot"])
             assert s["open"] == [] and s["pulses"] == 0, "the limit is shown before any click"
+            # a click on empty plot area is no longer answered by the tag: points are clickable now
             area = page.query_selector(f"{TILE} .js-plotly-plot .nsewdrag").bounding_box()
-            cx, cy = area["x"] + area["width"] / 2, area["y"] + area["height"] / 2
-            cursor = page.evaluate(f"() => getComputedStyle(document.elementFromPoint({cx}, {cy})).cursor")
-            assert cursor != "pointer", "nothing here is clickable, so no hand"
-            opened = []
-            for _ in range(5):
-                page.mouse.click(cx, cy)
-                time.sleep(0.2)
-                s = page.evaluate(STRIP)
-                opened.append(s["open"] == ["large"])
-                page.keyboard.press("Escape")
+            page.mouse.click(area["x"] + 2, area["y"] + 2)
+            time.sleep(0.3)
             s = page.evaluate(STRIP)
-            assert opened == [True, False, False, False, False], opened
-            assert s["pulses"] == 5
-            assert page.evaluate("() => window.__toasts")["made"] == 0
+            assert s["open"] == [] and s["pulses"] == 0, s
 
             # the tag's own popover: why, and the subset that lifts the limit
             page.click(f'{TILE} .plot-status .ps-tag[data-tag="large"]')
@@ -393,6 +384,6 @@ def test_large_plot_strip_counts_hide_nan(large_server):
             s = _wait(page, lambda s: "nan" in _rows(s))
             assert _rows(s) == {"nan": len(NAN_ROWS)}, s
             assert _sums(s) == 200 - len(NAN_ROWS)
-            assert s["tags"] == ["Large plot: no hover/click"] and s["old"] == 0
+            assert s["tags"] == ["Large plot"] and s["old"] == 0
         finally:
             browser.close()

@@ -26,6 +26,7 @@ import { setGlMarkers } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { highlightLargeFocus, clearLargeFocus } from './large-interact.js';
 
 
 
@@ -983,7 +984,7 @@ export function noteFocusOutside(plotContainer, data, settings, entityType = nul
     if (!(cell && !cell.shown && cell.row !== null)) return clear();
     setStatusTag(plotContainer, 'focus', {
       text: `${name} not shown`,
-      title: `The focused cell ${name} is not in this part; large-plot mode draws no marker for it`,
+      title: `The focused cell ${name} is not in this part, so this plot has no marker for it`,
       pop: { text: `The focused cell ${name} is not among the cells shown.`,
              actions: [['focus-part', 'Go to its part']] }
     });
@@ -1007,8 +1008,8 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   noteFocusOutside(plotContainer, data, settings, entityType);
   // any ring still being read is for an older state
   if (plotContainer) plotContainer.__ringSeq = (plotContainer.__ringSeq || 0) + 1;
-  // A large plot (large-plot.js) draws no focused-cell marker
-  if (data && data.large) return;
+  // A large plot (large-plot.js) marks the focus with a layout shape, not a trace
+  if (data && data.large) return highlightLargeFocus(plotContainer, settings);
   // Capture current view state before making changes
   let currentLayout = null;
   let newXTitle = axisTitle(settings, 'x');
@@ -1323,6 +1324,7 @@ export async function restyleMarkers(plotContainer, settings) {
  */
 export function removeHighlight(plotContainer) {
     if (!plotContainer) return;
+    if (plotContainer.__isLarge) { clearLargeFocus(plotContainer); return; }
     try {
       if (!plotContainer.data || !Array.isArray(plotContainer.data)) return;
   

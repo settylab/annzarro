@@ -69,8 +69,8 @@ show the dialog. On a large dataset the steps are the same.
      which kind of estimate you are reading.
 
    Sizes above the large-plot limit (1,000,000 points by default, set by the server) come after a
-   dashed line that says so: large-plot mode draws them faster but without hover, click or table
-   filters ([Very large datasets](#very-large-datasets)). A size above 150 million points says
+   dashed line that says so: large-plot mode draws them faster, with hover and click but without
+   table filters or 3D ([Very large datasets](#very-large-datasets)). A size above 150 million points says
    **may exceed browser memory** and is never chosen for you: in the paper's v0.4.0 runs on a
    laptop, the memory guard allowed every cell up to 150 million and declined 160 million; with
    the guard off, Chrome drew 175 million points and stopped responding at 200 million. From v0.4.2 there is no fixed ceiling: a large plot asks the browser for its buffers
@@ -224,15 +224,13 @@ else does; at 1 million points several regular plots fit side by side, each with
 table filters.
 Large-plot mode keeps the points out of that memory and can draw the 95.6 million cells of
 Tahoe-100M on a laptop ({doc}`../reference/performance`). In exchange it leaves out what needs
-per-point bookkeeping, and the plot's status line says so with a tag, **Large plot: no
-hover/click**. Click the tag for why and for **Subset to ≤1M to enable click**, which opens the
-subset dialog with the largest size that is drawn the regular way already chosen. A click on the
-plot itself pulses the tag, and the first such click on a panel also opens it; nothing else pops
-up:
+per-point bookkeeping, and the plot's status line says so with a tag, **Large plot**. Click the
+tag for why and for **Subset to ≤1M for table filters**, which opens the subset dialog with the
+largest size that is drawn the regular way already chosen:
 
 ```{figure} ../_static/screens/user-guide/large-plot-all.png
 :class: screenshot
-:alt: A Cell Plot with every cell, in large-plot mode. The status line under the plot carries the tag Large plot: no hover/click. The 3D Plot button and the Hover list are greyed out.
+:alt: A Cell Plot with every cell, in large-plot mode. The status line under the plot carries the tag Large plot. The 3D Plot button, the Hover list and the table filter are greyed out.
 
 Every cell: large-plot mode. (Regenerated on the 8,090-cell demonstration store with the limit
 lowered to 5,000; `docs/_tools/shoot_large_plot.py`.)
@@ -247,11 +245,17 @@ The same panel on a 4,000-cell subset: the regular plot.
 
 In large-plot mode:
 
-- **No hover and no click on points.** Clicking a point does not focus a cell, and the focused
-  cell is not marked.
+- **Hover and click work on points.** Hovering near a point (within about 10 pixels) shows a
+  small label with the cell's name, its position and its colour value; clicking focuses the cell,
+  and every other panel follows. The name and colour value are read from the server for that one
+  cell, so the label shows the position first and fills in a moment later. If points overlap, the
+  nearest to the pointer is taken (the regular plot steps through overlapping points on repeated
+  clicks; this mode does not). The focused cell is marked by a red dot when **Highlight Focused
+  Cell** is on, and a cell the plot does not show is not marked.
 - **Controls that would need the regular plot are off**, with the tooltip "Not available above
   1M points (large-plot mode); turn on a subset to use it": the obsp axis and colour types, 3D and
-  its z axis, the Hover list and the table filter.
+  its z axis, the Hover list (extra hover columns) and the table filter. A table filter has
+  nothing to filter by here: the cell table cannot list this many cells either.
 - **Still available:** pan and zoom; colour by a category (cell type, cluster, cell line), by a
   numeric obs column or by a gene, with the colour palette, scale and range; point size and
   opacity. A gene's colour is drawn in 64 steps of the scale, the strongest values on top. Every
@@ -272,7 +276,7 @@ In large-plot mode:
   column is not available for 95.6M points: turn on a subset, or choose an obs column or a gene".
   A plot already on screen stays, with the message above it.
 
-Turning a subset on (or one small enough) brings the regular plot back with hover and click.
+Turning a subset on (or one small enough) brings the regular plot back with every control.
 Removing it again returns to large-plot mode.
 
 (browser-memory)=
