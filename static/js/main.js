@@ -1706,7 +1706,10 @@ const App = (function() {
         sel.innerHTML = '';
         if (datasets && datasets.length) {
           datasets.forEach(ds => {
-            sel.appendChild(new Option(ds.name || ds.path, ds.path));
+            const opt = new Option(ds.name || ds.path, ds.path);
+            // Select2 shows an option's title on its list entry and on the closed box
+            opt.title = ds.name && ds.name !== ds.path ? `${ds.name}\n${ds.path}` : ds.path;
+            sel.appendChild(opt);
           });
         } else {
           sel.appendChild(new Option('No datasets available', '', true, true));
@@ -1730,6 +1733,9 @@ const App = (function() {
             tags:        true,
             placeholder: 'Select or enter a dataset path',
             width:       '100%',
+            // the open list may be wider than the box; CSS caps it
+            dropdownAutoWidth: true,
+            dropdownCssClass:  'dataset-select-dropdown',
             createTag: params => {
               const term = params.term.trim();
               return term
@@ -1738,6 +1744,12 @@ const App = (function() {
             }
           });
       
+          // keep the wider list inside the viewport, however far right the box is
+          $(sel).off('select2:open.dsWidth').on('select2:open.dsWidth', () => {
+            const room = window.innerWidth - $(sel).next('.select2-container').offset().left - 8;
+            $('.dataset-select-dropdown').css('max-width', Math.min(room, 700, window.innerWidth * 0.9));
+          });
+
           // 8) restore selection in the Select2 widget
           if (currentValue) {
             $(sel).val(currentValue).trigger('change');
