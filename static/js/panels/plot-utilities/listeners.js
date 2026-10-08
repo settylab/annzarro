@@ -5,6 +5,8 @@ import { autoPointCount } from '../../utils/view-point-style.js';
 import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator, hoverPickFits, showHoverChoice } from './plot-make.js';
 import { hoverInfoFromSelection, hoverOffFromSelection, NO_HOVER } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
+import { beginLoad, endLoad, wasCancelled } from '../../utils/load-scope.js';
+import { showCancelled } from '../../utils/panel-surface.js';
 import { DataManager } from '../../data-manager.js';
 import { 
   setupAestheticsMenuListeners, 
@@ -1154,7 +1156,13 @@ function setupAxisSelectorListeners(
             loadDataAndCreatePlot
           )
     } else if (['x', 'y', 'z'].includes(axis)) {
-      loadAxisData(settings[axis], plotType, plotContainer).then(axisData => {
+      // A load is rebuilding the series from the settings before this change
+      // (or was cancelled): a new full load reads the current ones
+      if (data && data.generation === null) { loadDataAndCreatePlot(); return; }
+      // one load per axis: a newer change of it aborts this one
+      const signal = beginLoad(plotContainer, `axis:${axis}`);
+      loadAxisData(settings[axis], plotType, plotContainer, { signal }).then(axisData => {
+        if (signal.aborted) throw new DOMException('Axis load aborted', 'AbortError');
         if (axisData?.values) {
           data[axis] = axisData;
           updatePlotElements(
@@ -1173,7 +1181,14 @@ function setupAxisSelectorListeners(
         } else {
           loadDataAndCreatePlot();
         }
-      }).catch(() => loadDataAndCreatePlot());
+      }).catch(error => {
+        // stopped: a newer load took over, or Cancel leaves the plot as drawn
+        if (error && error.name === 'AbortError') {
+          if (wasCancelled(signal)) showCancelled(plotContainer, plotType, true);
+          return;
+        }
+        loadDataAndCreatePlot();
+      }).finally(() => endLoad(plotContainer, signal));
     } else {
       loadDataAndCreatePlot();
     }

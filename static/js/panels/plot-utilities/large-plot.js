@@ -86,11 +86,11 @@ export function largePlotReason(settings, n) {
   return largePlotRefusal(settings, n);
 }
 
-async function loadSeries(s, datasetPath, structure) {
+async function loadSeries(s, datasetPath, structure, signal) {
   if (s.type === 'none') return null;
   if (s.type === 'obsm') {
     const v = await DataManager.loadVector(`${Config.API.OBSM}/${s.key}`,
-      { dataset_path: datasetPath, column_name: String(s.column) });
+      { dataset_path: datasetPath, column_name: String(s.column) }, signal);
     if (!v) throw new Error(`obsm.${s.key}.${s.column} is not numeric`);
     return { values: v };
   }
@@ -98,7 +98,7 @@ async function loadSeries(s, datasetPath, structure) {
     const gi = DataManager.getGeneIndex(s.column);
     if (gi < 0) throw new Error(`gene ${s.column} is not in this dataset`);
     const v = await DataManager.loadVector(`${Config.API.LAYER}/${s.key}`,
-      { dataset_path: datasetPath, cols: String(gi) });
+      { dataset_path: datasetPath, cols: String(gi) }, signal);
     if (!v) throw new Error(`layer ${s.key} is not numeric`);
     return { values: v };
   }
@@ -109,9 +109,9 @@ async function loadSeries(s, datasetPath, structure) {
     // past GROUP_COLOURS categories: codes ranked by the server and the
     // legend's few labels, never the column's label list
     return DataManager.loadCategoryCodes(datasetPath, s.key,
-      { ranked: grouped(categoryCount(structure, 'obs', s.key) ?? 0) });
+      { ranked: grouped(categoryCount(structure, 'obs', s.key) ?? 0), signal });
   }
-  const v = await DataManager.loadVector(Config.API.OBS, { dataset_path: datasetPath, columns: s.key });
+  const v = await DataManager.loadVector(Config.API.OBS, { dataset_path: datasetPath, columns: s.key }, signal);
   if (!v) throw new Error(`obs.${s.key} is neither categorical nor numeric`);
   return { values: v };
 }
@@ -280,29 +280,58 @@ function watchLargeClicks(plotContainer) {
 // The draw in flight per panel. A panel's first load is usually asked for
 // twice (the table-filter update finds no plot yet and refreshes); at these
 // sizes a second concurrent load doubles the memory and the server's work.
+// Each caller brings its own abort signal; the draw stops when all of its
+// callers have gone. A caller that supersedes another (same settings) gets
+// the draw already running, so the download is not thrown away and restarted.
 const _inflight = new WeakMap();
+// how long a draw whose callers all left waits for a new one to join it
+const JOIN_GRACE_MS = 300;
 
 /**
  * Load the series and draw the panel. Fills `data` with what the panel's
  * other code reads (`large`, `entities`, `generation`, `coverage`). A call
- * with the same settings while a draw is in flight joins that draw.
+ * with the same settings while a draw is in flight joins that draw. The
+ * requests and the decoding stop when `signal` aborts (the Plotly draw
+ * itself, once it has begun, runs to its end: it is one synchronous call).
  */
-export function createLargePlot(plotContainer, settings, data, container = null, id = null) {
+export function createLargePlot(plotContainer, settings, data, container = null, id = null, signal = null) {
   const sig = JSON.stringify([DataManager.getDatasetGeneration(), settings.x, settings.y, settings.color,
     settings.pointSize, settings.pointOpacity, settings.hideNaN, settings.hideOutliers, settings.colorMin,
     settings.colorMax, settings.colorScale, settings.colorReversed, settings.categoryPalette]);
-  const current = _inflight.get(plotContainer);
-  if (current && current.sig === sig) return current.promise;
-  const promise = _drawLargePlot(plotContainer, settings, data, container, id).finally(() => {
-    if (_inflight.get(plotContainer) && _inflight.get(plotContainer).promise === promise) {
-      _inflight.delete(plotContainer);
-    }
+  let entry = _inflight.get(plotContainer);
+  if (!entry || entry.sig !== sig) {
+    const controller = new AbortController();
+    entry = { sig, controller, waiters: 0, promise: null };
+    const mine = entry;
+    entry.promise = _drawLargePlot(plotContainer, settings, data, container, id, controller.signal).finally(() => {
+      if (_inflight.get(plotContainer) === mine) _inflight.delete(plotContainer);
+    });
+    entry.promise.catch(() => {});
+    _inflight.set(plotContainer, entry);
+  }
+  const joined = entry;
+  if (!signal) return joined.promise;
+  if (signal.aborted) return Promise.reject(new DOMException('Plot creation aborted', 'AbortError'));
+  joined.waiters += 1;
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      joined.waiters -= 1;
+      if (!joined.waiters) {
+        setTimeout(() => { if (!joined.waiters) joined.controller.abort(new DOMException('Plot creation aborted', 'AbortError')); }, JOIN_GRACE_MS);
+      }
+      reject(new DOMException('Plot creation aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    joined.promise.then(
+      v => { signal.removeEventListener('abort', onAbort); resolve(v); },
+      e => { signal.removeEventListener('abort', onAbort); reject(e); });
   });
-  _inflight.set(plotContainer, { sig, promise });
-  return promise;
 }
 
-async function _drawLargePlot(plotContainer, settings, data, container, id) {
+async function _drawLargePlot(plotContainer, settings, data, container, id, signal) {
+  const stopped = () => {
+    if (signal.aborted) throw new DOMException('Plot creation aborted', 'AbortError');
+  };
   const t0 = performance.now();
   const datasetPath = DataManager.getCurrentDataset();
   const structure = await DataManager.getDatasetStructure();
@@ -311,10 +340,11 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   data.generation = null;
   data.entities = 'cells';
   const [xs, ys, cs] = await Promise.all([
-    loadSeries(settings.x, datasetPath, structure),
-    loadSeries(settings.y, datasetPath, structure),
-    loadSeries(settings.color, datasetPath, structure)
+    loadSeries(settings.x, datasetPath, structure, signal),
+    loadSeries(settings.y, datasetPath, structure, signal),
+    loadSeries(settings.color, datasetPath, structure, signal)
   ]);
+  stopped();
   if (DataManager.getDatasetGeneration() !== generation) {
     throw new DOMException('Plot data is from a previous dataset', 'AbortError');
   }
@@ -372,8 +402,9 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       let labels = new Map();
       try {
         labels = await DataManager.loadCategoryLabels(datasetPath, settings.color.key, lowest.flat(),
-          settings.color.type === 'var' ? 'var' : 'obs');
+          settings.color.type === 'var' ? 'var' : 'obs', signal);
       } catch (err) {
+        stopped();
         console.warn('Legend labels not loaded:', err && err.message);
       }
       groupNames = lowest.map((low, g) => {
@@ -387,9 +418,10 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     let palette = null;
     if (!many && settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
       try {
-        const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors` });
+        const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors`, signal });
         if (r && r.data) palette = Array.isArray(r.data) ? r.data : [r.data];
       } catch {
+        stopped();
         palette = null;
       }
     }
@@ -490,6 +522,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     layout.showlegend = false;
   }
   const t2 = performance.now();
+  stopped();
 
   // every series here is whole or threw, so the gaps are the points dropped
   const coverage = withSubsetCoverage(classifyFilterStats({

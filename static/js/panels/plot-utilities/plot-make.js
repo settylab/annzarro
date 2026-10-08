@@ -23,9 +23,13 @@ import { colourTitle } from '../../utils/plot-titles.js';
 import { NO_HOVER } from './hover-columns.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
+import { cancelLoads } from '../../utils/load-scope.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck
 } from '../../utils/memory-guard-ui.js';
+
+// the loads of a panel that the Cancel button can stop (utils/load-scope.js)
+const CANCELLABLE = new Set(['full-plot', 'axis-data', 'recolour', 'table-data']);
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -101,7 +105,15 @@ class LoadingIndicator {
       overlay.className = 'loading-overlay';
       overlay.dataset.operation = operation; // Store operation for fallback cleanup
       overlay.dataset.containerId = containerId; // Store containerId for fallback cleanup
-      overlay.innerHTML = '<div class="spinner"></div> Loading axis data...';
+      // Cancel appears after a moment (css), so a quick load does not flash it
+      const cancellable = CANCELLABLE.has(operation);
+      overlay.innerHTML = '<div class="spinner"></div> Loading axis data...' + (cancellable
+        ? '<button type="button" class="btn btn-sm btn-outline-secondary load-cancel" title="Stop loading and keep what is shown">Cancel</button>' : '');
+      if (cancellable) {
+        overlay.onclick = (e) => {
+          if (e.target.closest('.load-cancel')) cancelLoads(plotContainer, true);
+        };
+      }
       
       // Make sure container has position relative/absolute for proper overlay
       const containerPosition = window.getComputedStyle(plotContainer).position;
@@ -205,7 +217,7 @@ if (typeof window !== 'undefined') {
  * many more it has. Reads LEGEND_NAMES labels per colour, at most 192.
  * @returns {Promise<string[]>} GROUP_COLOURS names ('' for an empty colour)
  */
-async function rankedGroupNames(datasetPath, key, slot, codes, missing) {
+async function rankedGroupNames(datasetPath, key, slot, codes, missing, signal = null) {
   let top = 0;
   for (let i = 0; i < codes.length; i++) if (codes[i] !== missing && codes[i] > top) top = codes[i];
   const present = new Uint8Array(top + 1);
@@ -218,7 +230,7 @@ async function rankedGroupNames(datasetPath, key, slot, codes, missing) {
     total[g]++;
     if (lowest[g].length < LEGEND_NAMES) lowest[g].push(r);
   }
-  const labels = await DataManager.loadCategoryLabels(datasetPath, key, lowest.flat(), slot);
+  const labels = await DataManager.loadCategoryLabels(datasetPath, key, lowest.flat(), slot, signal);
   return lowest.map((ranks, g) => (total[g] ? groupLegendLabel(ranks.map(r => labels.get(r) ?? String(r)), total[g]) : ''));
 }
 
@@ -235,14 +247,15 @@ export function _setHoverGuardMin(n) { HOVER_GUARD_MIN = n; }
  * column's label length from three of its labels. A refusal is said on the
  * plot's status line with the guard's numbers; the plot stays coloured.
  */
-async function hoverLabelsFit(datasetPath, slot, key, count, points, plotContainer) {
+async function hoverLabelsFit(datasetPath, slot, key, count, points, plotContainer, signal = null) {
   const labels = Math.min(count, points);
   if (!(labels > HOVER_GUARD_MIN)) return true;
   let chars = 16;   // when no label could be read: about a cell barcode
   try {
-    const sample = [...(await DataManager.loadCategoryLabels(datasetPath, key, [0, 1, 2], slot)).values()].map(String);
+    const sample = [...(await DataManager.loadCategoryLabels(datasetPath, key, [0, 1, 2], slot, signal)).values()].map(String);
     if (sample.length) chars = sample.reduce((a, l) => a + l.length, 0) / sample.length;
-  } catch {
+  } catch (error) {
+    if (error && error.name === 'AbortError') throw error;
     // the guard's estimate with the default length
   }
   const result = hoverLabelsCheck({ points, labels, chars });
@@ -303,7 +316,7 @@ export function showHoverChoice(plotContainer, panel) {
  *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
  *    - categories: (optional) Category definitions.
  */
-export async function loadAxisData(settings, plotType = null, plotContainer = null, { role = null, panel = null } = {}) {
+export async function loadAxisData(settings, plotType = null, plotContainer = null, { role = null, panel = null, signal = null } = {}) {
   if (!settings) {
     throw new Error(`loadAxisData: settings is undefined`);
   }
@@ -469,14 +482,14 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
             if (off === undefined) delete panel.hoverOff; else panel.hoverOff = off;
             // hover on: its labels must fit the browser (the memory guard)
             if (categoriesWanted === 'used' && !hoverIsOff(panel.hoverOff)
-                && !(await hoverLabelsFit(datasetPath, type, key, count, points, plotContainer))) panel.hoverOff = true;
+                && !(await hoverLabelsFit(datasetPath, type, key, count, points, plotContainer, signal))) panel.hoverOff = true;
             showHoverChoice(plotContainer, panel);
           }
           if (categoriesWanted === 'used' && panel && hoverIsOff(panel.hoverOff) && !rowsArr) {
-            const r = await DataManager.loadCategoryCodes(datasetPath, key, { ranked: true, slot: type });
+            const r = await DataManager.loadCategoryCodes(datasetPath, key, { ranked: true, slot: type, signal });
             if (r && r.ranked && (typeof expected !== 'number' || r.codes.length === expected)) {
               values = Array.from(r.codes, c => (c === r.MISSING ? null : c));
-              groupNames = await rankedGroupNames(datasetPath, key, type, r.codes, r.MISSING);
+              groupNames = await rankedGroupNames(datasetPath, key, type, r.codes, r.MISSING, signal);
               return { values, type: 'categorical', categories: null, coverage: classifyValues({ values, expected, unit, source }),
                 rankOf: null, ranked: true, groupNames };
             }
@@ -486,8 +499,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         // over the WHOLE column, so a category's colour does not depend on
         // the cells shown (subset, part, filter) or on the panel
         const ranked = categoriesWanted === 'used'
-          ? DataManager.loadCategoryCodes(datasetPath, key, { ranked: true, slot: type }) : null;
-        data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr, categories: categoriesWanted });
+          ? DataManager.loadCategoryCodes(datasetPath, key, { ranked: true, slot: type, signal }) : null;
+        data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr, categories: categoriesWanted, signal });
         // classifyColumn encodes the server's measured semantics: key ABSENT
         // means the column is not in this dataset; key present but empty on a
         // non-empty dataset means the read FAILED. Those two look identical in
@@ -529,7 +542,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           datasetPath,
           [type === 'obsm' ? 'obsmKey' : 'varmKey']: key,
           columnName: column,
-          rows: rowsArr
+          rows: rowsArr,
+          signal
         });
         if (!data.data || data.data.length === 0) {
           // Measured live: a missing obsm/varm key returns 200 with "data": [].
@@ -573,14 +587,14 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
             ({ values, coverage, dataType } = blankCellSeries(cell, column));
             break;
           }
-          data = await DataManager.loadObsp({ datasetPath, obspKey: key, cell });
+          data = await DataManager.loadObsp({ datasetPath, obspKey: key, cell, signal });
         } else {
           const focusIndex = DataManager.getGeneIndex(column);
           if (focusIndex === -1) {
             ({ values, coverage, dataType } = blankFocusSeries('gene', column));
             break;
           }
-          data = await DataManager.loadVarp({ datasetPath, varpKey: key, rows: [focusIndex] });
+          data = await DataManager.loadVarp({ datasetPath, varpKey: key, rows: [focusIndex], signal });
         }
         if (data.data && Array.isArray(data.data) && data.data.length > 0) {
           const firstRow = data.data[0];
@@ -623,7 +637,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
             datasetPath,
             layerName: key,
             cell,
-            cols: null
+            cols: null,
+            signal
           });
           if (data.data && Array.isArray(data.data) && data.data.length > 0) {
             values = Array.isArray(data.data[0]) ? data.data[0] : data.data;
@@ -645,7 +660,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
             datasetPath,
             layerName: key,
             rows: rowsArr,
-            cols: [geneIndex]
+            cols: [geneIndex],
+            signal
           });
           if (data.data && Array.isArray(data.data)) {
             if (data.data.length > 0) {
@@ -730,6 +746,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     }
     return { values, type: dataType, categories, coverage, rankOf, ranked: false, groupNames };
   } catch (error) {
+    // a load that was stopped is not a failed read
+    if (error && error.name === 'AbortError') throw error;
     console.error('Error loading data for settings', settings, 'error:', error);
     const wrapped = new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
     // Carry the classification with the error so the panel can state a REASON
@@ -773,12 +791,14 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
   const started = performance.now();
   // the browser memory guard's ledger: reserved before the draw, committed
   // once it is drawn, cancelled otherwise (memoryGate)
-  let reserved = 0, drawn = false;
+  let reserved = 0, drawn = false, overlay = false;
   try {
     // Check if operation is already aborted before doing anything
     if (signal && signal.aborted) {
       throw new DOMException('Plot creation aborted', 'AbortError');
     }
+    // a load that was cancelled before has its tag until a new one starts
+    setStatusTag(plotContainer, 'cancelled', null);
     
     // Determine if this is a gene or cell plot based on settings
     const isGenePlot = data.entities == 'genes'
@@ -852,6 +872,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
 
     // Show loading indicator
     loadingIndicator.show(plotContainer, 'full-plot');
+    overlay = true;
 
     // Validate each axis (x, y, z, color) in settings.
     for (const axis of ['x', 'y', 'z', 'color']) {
@@ -925,7 +946,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           return;
         }
         setStatusTag(plotContainer, 'refused', null);
-        await createLargePlot(plotContainer, settings, data, container, id);
+        await createLargePlot(plotContainer, settings, data, container, id, signal);
         drawn = true;
         recordLoad({ n: nCells, seconds: (performance.now() - started) / 1000, large: true });
         // no marker in large-plot mode, but the line that the focus is not shown
@@ -990,13 +1011,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         if (signal && signal.aborted) {
           throw new DOMException('X axis data loading aborted', 'AbortError');
         }
-        data.x = await loadAxisData(settings.x, plotType, plotContainer);
+        data.x = await loadAxisData(settings.x, plotType, plotContainer, { signal });
       })(),
       (async () => {
         if (signal && signal.aborted) {
           throw new DOMException('Y axis data loading aborted', 'AbortError');
         }
-        data.y = await loadAxisData(settings.y, plotType, plotContainer);
+        data.y = await loadAxisData(settings.y, plotType, plotContainer, { signal });
       })()
     ];
 
@@ -1006,7 +1027,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           if (signal && signal.aborted) {
             throw new DOMException('Z axis data loading aborted', 'AbortError');
           }
-          data.z = await loadAxisData(settings.z, plotType, plotContainer);
+          data.z = await loadAxisData(settings.z, plotType, plotContainer, { signal });
         })()
       );
     }
@@ -1024,7 +1045,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           // back to a constant colour, and STATE that the colour is missing.
           let colorData;
           try {
-            colorData = await loadAxisData(settings.color, plotType, plotContainer, { role: 'colour', panel: settings });
+            colorData = await loadAxisData(settings.color, plotType, plotContainer, { role: 'colour', panel: settings, signal });
           } catch (colorError) {
             if (colorError && colorError.name === 'AbortError') throw colorError;
             console.warn('Colour data unavailable; plotting uncoloured:', colorError);
@@ -1090,21 +1111,15 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       
       // Single check for abortion after all promises complete or fail
       if (signal && signal.aborted) {
-        // Always clean up loading indicator before throwing
-        loadingIndicator.hide(plotContainer, 'full-plot');
         throw new DOMException('Plot creation aborted', 'AbortError');
       }
       // The dataset changed while this load was in flight: its series belong
       // to the previous dataset. Drop them; the load started for the new
       // dataset draws the plot.
       if (DataManager.getDatasetGeneration() !== generation) {
-        loadingIndicator.hide(plotContainer, 'full-plot');
         throw new DOMException('Plot data is from a previous dataset', 'AbortError');
       }
     } catch (error) {
-      // Always clean up loading indicator for any error
-      loadingIndicator.hide(plotContainer, 'full-plot');
-      
       // For abort errors, make sure we only throw a standardized error
       if (error.name === 'AbortError') {
         throw new DOMException('Plot creation aborted', 'AbortError');
@@ -1126,7 +1141,10 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (data.x && data.x.values && data.x.values.length > 0 &&
         data.y && data.y.values && data.y.values.length > 0) {
       console.log(`Creating plot with ${data.x.values.length} data points`);
-      data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells', plotContainer);
+      data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells', plotContainer, signal);
+      if (signal && signal.aborted) {
+        throw new DOMException('Plot creation aborted', 'AbortError');
+      }
       await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
       drawn = true;
       await applyHoverInfo(plotContainer, data, settings);
@@ -1226,8 +1244,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     }
   } finally {
     // Always hide the loading indicator in the finally block to ensure it happens
-    // regardless of success, error or abortion
-    loadingIndicator.hide(plotContainer, 'full-plot');
+    // regardless of success, error or abortion; once, and only if this load
+    // showed it: a newer load of the panel may have its own up by now
+    if (overlay) loadingIndicator.hide(plotContainer, 'full-plot');
     if (reserved) {
       unmark();
       if (drawn && plotContainer.isConnected) {
@@ -1436,7 +1455,7 @@ export function stableAxisRanges(data, settings) {
  * plus a per-point `hovertext` with the hoverInfo columns. Points are matched
  * to rows by their name (trace.text), so any trace split works.
  */
-export async function loadHoverColumns(settings, plotType, plotContainer = null) {
+export async function loadHoverColumns(settings, plotType, plotContainer = null, signal = null) {
   const wanted = (Array.isArray(settings.hoverInfo) ? settings.hoverInfo : [])
     .filter(h => h && h.type && h.key && h.key !== '_index');
   const out = [];
@@ -1447,13 +1466,14 @@ export async function loadHoverColumns(settings, plotType, plotContainer = null)
   for (const h of wanted) {
     // a categorical column's labels: only if they fit the browser
     const count = (h.type === 'obs' || h.type === 'var') && !h.column ? categoryCount(structure, h.type, h.key) : null;
-    if (count !== null && !(await hoverLabelsFit(datasetPath, h.type, h.key, count, points, plotContainer))) continue;
+    if (count !== null && !(await hoverLabelsFit(datasetPath, h.type, h.key, count, points, plotContainer, signal))) continue;
     try {
-      const loaded = await loadAxisData({ type: h.type, key: h.key, column: h.column || '' }, plotType);
+      const loaded = await loadAxisData({ type: h.type, key: h.key, column: h.column || '' }, plotType, null, { signal });
       if (loaded && Array.isArray(loaded.values)) {
         out.push({ label: h.column ? `${h.key}.${h.column}` : h.key, values: loaded.values });
       }
     } catch (err) {
+      if (err && err.name === 'AbortError') throw err;
       console.warn(`Hover column ${h.type}.${h.key} not loaded:`, err && err.message);
     }
   }

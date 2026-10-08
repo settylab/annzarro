@@ -360,12 +360,14 @@ async function _loadColumnValues(column, entityType, signal = null) {
             // Cell table data
             if (type === 'obs') {
                 const obsData = await DataManager.loadObs({
+                    signal,
                     columns: [key]
                 });
                 return { values: obsData.data ? obsData.data[key] : undefined,
                          response: obsData, column: key };
             } else if (type === 'obsm') {
                 const obsmData = await DataManager.loadObsm({
+                    signal,
                     obsmKey: key,
                     columnName: columnName
                 });
@@ -377,7 +379,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 const name = columnName;
                 const cell = await DataManager.locateCell(name);
                 if (DataManager.cellRowParams(cell)) {
-                    const obspData = await DataManager.loadObsp({ obspKey: key, cell });
+                    const obspData = await DataManager.loadObsp({ obspKey: key, cell, signal });
                     return { values: firstRow(obspData.data), matrixKey: key,
                              slice: { kind: 'cell', name, focused: false } };
                 }
@@ -394,6 +396,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                     
                     if (geneIndex >= 0) {
                         const layerData = await DataManager.loadLayer({
+                            signal,
                             layerName: key,
                             cols: [geneIndex]
                         });
@@ -410,12 +413,14 @@ async function _loadColumnValues(column, entityType, signal = null) {
             // Gene table data
             if (type === 'var') {
                 const varData = await DataManager.loadVar({
+                    signal,
                     columns: [key]
                 });
                 return { values: varData.data ? varData.data[key] : undefined,
                          response: varData, column: key };
             } else if (type === 'varm') {
                 const varmData = await DataManager.loadVarm({
+                    signal,
                     varmKey: key,
                     columnName: columnName
                 });
@@ -429,6 +434,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                     
                     if (geneIndex >= 0) {
                         const varpData = await DataManager.loadVarp({
+                            signal,
                             varpKey: key,
                             rows: [geneIndex]
                         });
@@ -447,7 +453,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 const name = columnName;
                 const cell = await DataManager.locateCell(name);
                 if (DataManager.cellRowParams(cell)) {
-                    const layerData = await DataManager.loadLayer({ layerName: key, cell });
+                    const layerData = await DataManager.loadLayer({ layerName: key, cell, signal });
                     return { values: layerData.data, matrixKey: key,
                              slice: { kind: 'cell', name, focused: false } };
                 }

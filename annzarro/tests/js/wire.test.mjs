@@ -274,12 +274,30 @@ test('when every waiter aborts, the request is cancelled and the next caller sta
     await new Promise(r => setTimeout(r, 0));
     ac.abort();
     await assert.rejects(a, { name: 'AbortError' });
+    // a moment is left for a newer load of the same panel to join (below)
+    await new Promise(r => setTimeout(r, 400));
     assert.equal(calls[0].signal.aborted, true);
     const b = DataManager.getDatasetStructure('/y.zarr');
     await new Promise(r => setTimeout(r, 0));
     assert.equal(calls.length, 2);
     pending[1].resolve(jsonResponse({ shape: [2, 2] }));
     assert.deepEqual(await b, { shape: [2, 2] });
+});
+
+test('a caller right after the last waiter left joins the request instead of restarting it', async () => {
+    CacheManager.clear();
+    const { calls, pending } = deferredFetch();
+    const ac = new AbortController();
+    const a = DataManager.getDatasetStructure('/w.zarr', ac.signal);
+    await new Promise(r => setTimeout(r, 0));
+    ac.abort();                       // a newer load of the panel replaces this one ...
+    await assert.rejects(a, { name: 'AbortError' });
+    const b = DataManager.getDatasetStructure('/w.zarr');   // ... and asks for the same slice
+    await new Promise(r => setTimeout(r, 400));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].signal.aborted, false);
+    pending[0].resolve(jsonResponse({ shape: [3, 3] }));
+    assert.deepEqual(await b, { shape: [3, 3] });
 });
 
 test('a failed shared request rejects every waiter and is not cached', async () => {

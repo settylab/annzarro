@@ -149,6 +149,35 @@ Plots fill their tile and resize with it (a plot is at least 260 px tall; a smal
 scrolls). The pane sizes are stored as percentages in panel layouts and share
 links, so a shared layout opens with the same proportions on any screen.
 
+## Loading, and stopping a load
+
+While a panel reads its data or builds its plot, a small box at the top left of the plot says
+"Loading axis data…". A table shows a spinner, or the same box when it keeps its rows while it
+loads other cells. A load that takes longer than about a second and a half adds a **Cancel**
+button to the box (a quick load never flashes it).
+
+**Cancel** stops that panel's requests and the work on them, and leaves only that panel changed:
+other panels go on loading.
+
+- A panel that already showed a plot keeps it, with a tag **Loading cancelled** at the right of
+  its status line. The plot may not match the controls (you had changed the colour, say). Click
+  the tag and press **Load**, or press **Refresh**, to read the data again.
+- A panel with nothing shown yet, and a table whose rows were replaced by the spinner, shows
+  "Loading cancelled" with a **Load** button.
+- A gene set analysis section has its own **Cancel**; it returns to what it showed before.
+
+Changing what a panel shows stops the load it is running without a click: another x, y, z or
+colour, a new subset or part, another dataset, the cell or gene it follows, or closing the panel.
+The old requests are cancelled, and a late reply never replaces the newer view. A request that
+another panel also needs keeps running for that panel.
+
+Two limits. The server finishes a read it has started (a request already being served is not
+interrupted; it stops sending when the browser has gone), so Cancel frees the browser and the
+connection at once and the server shortly after. And once a plot is handed to the drawing
+library (the last step, after the data is downloaded and arranged), the draw runs to its end:
+**Cancel** acts on the downloads and decoding before it, which are the long part of a very large
+plot.
+
 ## Close, reopen and duplicate panels
 
 1. Click **Close** on a tile. The neighbouring tile takes over its space.
