@@ -17,7 +17,8 @@ import {
   followDrawnPoints
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
-import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle } from './plot-make-helper.js';
+import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, NOT_IN_TABLE } from './plot-make-helper.js';
+import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
@@ -142,7 +143,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
 
         // Hiding or showing points changes the number drawn: automatic size
         // and opacity follow it (the styling step below restyles the markers)
-        if (followDrawnPoints(plotContainer, settings, filterStats.total - filterStats.filtered)) {
+        if (followDrawnPoints(plotContainer, settings, filterStats.shown)) {
             updateOptions.styling = true;
         }
         
@@ -528,8 +529,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                       x: nonTableIndices.map(i => data.x.values[i]),
                       y: nonTableIndices.map(i => data.y.values[i]),
                       marker: {
-                        size: settings.pointSize,
-                        opacity: settings.pointOpacity,
+                        ...greyMarker(settings, data.x.values.length),
                         color: 'rgba(180, 180, 180, 1.)',
                         showscale: false
                       },
@@ -669,8 +669,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 x: nonTableIndices.map(i => data.x.values[i]),
                                 y: nonTableIndices.map(i => data.y.values[i]),
                                 marker: {
-                                    size: settings.pointSize,
-                                    opacity: settings.pointOpacity,
+                                    ...greyMarker(settings, data.x.values.length),
                                     color: 'rgba(180, 180, 180, 1.)', // Lighter gray for non-table entities
                                     showscale: false
                                 },
@@ -777,7 +776,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             };
             
             const dataTraceIndices = plotContainer.data
-                .map((trace, i) => (trace && !isLegendProxy(trace)
+                .map((trace, i) => (trace && !isLegendProxy(trace) && trace.name !== NOT_IN_TABLE
                     && trace.name !== `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}` ? i : -1))
                 .filter(i => i !== -1);
             

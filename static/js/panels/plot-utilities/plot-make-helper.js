@@ -1,6 +1,7 @@
 import { DataManager } from '../../data-manager.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
+import { greyMarker } from '../../utils/point-style.js';
 import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName } from '../../utils/categories.js';
 
 /**
@@ -436,8 +437,8 @@ export function keptViewRanges(settings) {
         x: indices.map(idx => data.x.values[idx]),
         y: indices.map(idx => data.y.values[idx]),
         marker: {
-          size: settings.pointSize,
-          opacity: settings.pointOpacity,
+          ...(name === NOT_IN_TABLE ? greyMarker(settings, data.x.values.length)
+            : { size: settings.pointSize, opacity: settings.pointOpacity }),
           color: markerColor
         },
         showlegend: true
@@ -453,7 +454,7 @@ export function keptViewRanges(settings) {
 
     // One trace for all non-table entities, drawn first so it sits at the bottom.
     if (nonTableIndices.length > 0) {
-      traces.push(makeTrace(nonTableIndices, 'Not in table', 'rgba(180, 180, 180, 1.)', null));
+      traces.push(makeTrace(nonTableIndices, NOT_IN_TABLE, 'rgba(180, 180, 180, 1.)', null));
     }
 
     // Points with no value, under the categories and last in the legend.
@@ -531,9 +532,12 @@ export function keptViewRanges(settings) {
     return !!trace && trace.meta === LEGEND_PROXY;
   }
 
-  /** True for a trace the point size and opacity leave alone: a legend proxy or a colour bar's point. */
+  /** The trace of the points a table link greys out: behind the rest, in a style of its own (greyMarker). */
+  export const NOT_IN_TABLE = 'Not in table';
+
+  /** True for a trace the point size and opacity leave alone: a legend proxy, a colour bar's point or the greyed-out points. */
   export function keepsOwnMarker(trace) {
-    return isLegendProxy(trace) || (!!trace && trace.meta === COLOUR_BAR);
+    return isLegendProxy(trace) || (!!trace && (trace.meta === COLOUR_BAR || trace.name === NOT_IN_TABLE));
   }
 
   /**

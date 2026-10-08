@@ -14,6 +14,7 @@
  * number box or an older link that names one, stays as set.
  */
 import { roundSig, snapPointSize } from './slider-scales.js';
+import { Config } from '../config.js';
 
 /*
  * value(N) = base * (1 + N / N_HALF) ** -EXPONENT, rounded to 2 significant
@@ -94,4 +95,26 @@ export function applyAutoPointStyle(settings, n, base) {
     changed = true;
   }
   return changed;
+}
+
+/** The default size and opacity for few points: the app's (server) defaults. */
+export function pointStyleBase() {
+  const d = (Config && Config.DEFAULTS) || {};
+  return { size: d.POINT_SIZE || 5, opacity: d.POINT_OPACITY || 0.7 };
+}
+
+/**
+ * The marker of the grey points a table link leaves in the plot (the rows
+ * not in the table, drawn first so they sit behind). They do not count for
+ * the plot's automatic style, which follows the points shown in full; they
+ * keep the automatic style of everything drawn (`nAll` points), so a few
+ * chosen rows do not sit on a solid grey backdrop. A size or opacity the
+ * user set applies to them too.
+ */
+export function greyMarker(settings, nAll) {
+  const auto = autoPointStyle(nAll, pointStyleBase(), !!settings.z);
+  return {
+    size: settings.autoPointSize ? auto.size : settings.pointSize,
+    opacity: settings.autoPointOpacity ? auto.opacity : settings.pointOpacity
+  };
 }

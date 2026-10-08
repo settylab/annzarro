@@ -1,7 +1,9 @@
 """Automatic point size follows the points drawn, in every cell plot.
 
-Two cell plots filtered by one cell table (rows the table hides are removed
-from the plots), on the 200-cell fixture. The shipped curve does not move
+Two cell plots filtered by one cell table, on the 200-cell fixture, with the
+rows the table hides removed from the plots, or only greyed out (then only
+the points shown in full count; the grey ones, drawn behind, keep the style
+of all 200 points). The shipped curve does not move
 below a few thousand points, so the page gets a steep one (a route replaces
 AUTO_CURVE's size constants): then 200, 100 and 60 points draw at different
 sizes. The size of each plot must equal the curve's value for the points
@@ -63,10 +65,10 @@ def page(server):
             browser.close()
 
 
-def _link(root):
+def _link(root, remove=True):
     x = {"type": "obsm", "key": "X_umap", "column": "0"}
     y = {"type": "obsm", "key": "X_umap", "column": "1"}
-    cfgs = {p: {"id": p, "x": x, "y": y, "z": None, "tableFilter": TABLE, "removeNonTableEntries": True,
+    cfgs = {p: {"id": p, "x": x, "y": y, "z": None, "tableFilter": TABLE, "removeNonTableEntries": remove,
                 "color": {"type": "obs", "key": "cell_type", "column": ""}} for p in PLOTS}
     cfgs[TABLE] = {"id": TABLE, "title": "Table",
                    "columns": [{"type": "obs", "key": "cell_type", "column": ""}]}
@@ -84,8 +86,11 @@ def _link(root):
 STATE = """() => Object.fromEntries(%s.map(id => {
     const gd = document.querySelector(`.tile[data-tile-id="${id}"] .js-plotly-plot`);
     const pts = gd && gd.data ? gd.data.filter(t => t.meta !== 'az-legend' && t.meta !== 'az-colorbar'
-        && !/^focused/i.test(t.name || '') && t.x && t.x.length > 1) : [];
+        && !/^focused/i.test(t.name || '') && t.name !== 'Not in table' && t.x && t.x.length > 1) : [];
+    const grey = gd && gd.data ? gd.data.filter(t => t.name === 'Not in table' && t.meta !== 'az-legend' && t.x) : [];
     return [id, { n: pts.reduce((s, t) => s + t.x.length, 0),
+                  grey: grey.reduce((s, t) => s + t.x.length, 0),
+                  greySizes: [...new Set(grey.map(t => t.marker && t.marker.size))],
                   sizes: [...new Set(pts.map(t => t.marker && t.marker.size))],
                   opacities: [...new Set(pts.map(t => t.marker && t.marker.opacity))] }];
 }))""" % json.dumps(list(PLOTS))
@@ -152,5 +157,23 @@ def test_automatic_size_follows_table_filter_and_subset_in_every_plot(page, serv
     page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
     page.click("#subset-apply")
     page.wait_for_selector("#subset-modal", state="hidden")
+    page.fill(f'.tile[data-tile-id="{TABLE}"] input[type="search"]', "")
+    assert _check(page, 200) == full
+
+
+def test_greyed_out_points_do_not_count_and_stay_behind(page, server):
+    page.goto(_link(server, remove=False))
+    page.wait_for_selector(f'.tile[data-tile-id="{TABLE}"] .dataTables_scrollBody tbody tr', timeout=30000)
+    full = _check(page, 200)
+
+    # the table's search greys 100 rows out: 100 points in full, 100 grey
+    page.fill(f'.tile[data-tile-id="{TABLE}"] input[type="search"]', "cell_01")
+    narrowed = _check(page, 100)
+    assert narrowed["size"] != full["size"]
+    for pid, v in page.evaluate(STATE).items():
+        assert v["grey"] == 100, (pid, v)
+        # the grey ones keep the style of all 200 points, behind the others
+        assert v["greySizes"] == [full["size"]], (pid, v, full)
+
     page.fill(f'.tile[data-tile-id="{TABLE}"] input[type="search"]', "")
     assert _check(page, 200) == full

@@ -42,8 +42,11 @@ Cell plot controls, coloured by a categorical obs column.
 
     Until you set them, both are **automatic**: they follow the number of points drawn (not the
     size of the panel). That is the cells of the subset less the points the plot hides itself:
-    those a table link removes (**Remove non-table entries**), **Hide NaN** and **Hide outliers**;
-    points a table link only greys out are still drawn and still count. From the default
+    those a table link removes (**Remove non-table entries**), **Hide NaN** and **Hide outliers**,
+    and less the points a table link greys out: only the points shown in full count, so a table
+    search that picks a few rows gives them the larger size of a small plot. The grey points,
+    drawn behind, keep the automatic style of all the points drawn (or the size and opacity you
+    set), so they stay a quiet backdrop. From the default
     5.1 px and opaque at a few thousand points, the size falls by about half with every tenfold
     in points: 3.5 px / 0.87 at 10,000, 1.96 px / 0.64 at 100,000, 1.18 px / 0.43 at a million,
     and 0.39 px (one step, the smallest WebGL draws) from about 10 million, with opacity 0.28

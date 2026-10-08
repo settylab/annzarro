@@ -145,3 +145,11 @@ test('3D: automatic opacity is 1 at every N (Plotly draws translucent scatter3d 
     applyAutoPointStyle(chosen, 1e6, BASE);
     assert.equal(chosen.pointOpacity, 0.3);
 });
+
+test('greyMarker: the greyed-out points of a table link keep the style of all points drawn, or the set one', async () => {
+    const { greyMarker } = await import('../../../static/js/utils/point-style.js');
+    const auto = { autoPointSize: true, autoPointOpacity: true, pointSize: 1.18, pointOpacity: 0.43 };
+    assert.deepEqual(greyMarker(auto, 1e6), autoPointStyle(1e6, BASE));
+    const set = { autoPointSize: false, autoPointOpacity: false, pointSize: 2.2, pointOpacity: 0.3 };
+    assert.deepEqual(greyMarker(set, 1e6), { size: 2.2, opacity: 0.3 });
+});
