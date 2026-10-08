@@ -20,17 +20,15 @@
 import { DataManager } from '../../data-manager.js';
 import { nearestPoint, pointOfRow } from '../../utils/point-index.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { CLICK_MAX_MS, CLICK_MAX_MOVE_PX } from './plot-make-helper.js';
 
 const HOVER_PX = 10;           // how close the pointer must be to a point
 const HOVER_MS = 16;           // hover lookups are coalesced to one per this long
 const DWELL_MS = 100;          // the pointer rests this long before the server is asked
 const REMEMBERED = 200;        // rows whose name and colour are kept
 // A click focuses only when it is quick and still, decided on release: a pan or zoom that
-// starts on a point must not focus. The same rule and values as plot-make-helper.js
-// (CLICK_MAX_MS, CLICK_MAX_MOVE_PX on dominik/click-not-drag); mirrored here until that
-// branch is merged, when these two lines become an import.
-const CLICK_MAX_MS = 300;
-const CLICK_MAX_MOVE_PX = 5;
+// starts on a point must not focus. The rule and values are the regular plot's (CLICK_MAX_MS,
+// CLICK_MAX_MOVE_PX, imported above).
 
 const _cache = new Map();      // `${generation}:${row}:${colour}` -> {name, colour}
 const _names = new Map();      // `${generation}:${row}` -> name: a click after a hover needs no request
