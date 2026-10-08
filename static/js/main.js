@@ -19,6 +19,7 @@ import { clearSiteStorage, clearSiteStorageNow, bareUrl } from './utils/site-sto
 import { sameSubset } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
+import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/subset-loading.js';
 import { registerStatusActions } from './utils/panel-surface.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
@@ -1008,23 +1009,29 @@ const App = (function() {
      * changes: the panels are told `subsetChanged` and swap their points and
      * rows in place, so no tile, control or table is rebuilt and each plot
      * keeps the view the user chose. While a dataset is still loading, the
-     * view is reopened through the panel-set path as before.
+     * change waits for it (the panels are never closed for a part step).
+     * A newer request stops the one that is reading cells.
      * @param {Object|null} spec - subset spec, or null for every cell
      * @private
      */
     async function _changeSubset(spec, { step = false } = {}) {
         const datasetPath = DataManager.getCurrentDataset();
         if (!datasetPath) return;
-        // The focused and locked cells are found in the new subset by their
-        // dataset rows, learned now while this subset still shows them
-        await DataManager.recordCellRows(getFixedCells().map(c => c.cell));
+        // Say at once that other cells are coming: every tile is marked while
+        // the cells are read (that takes long on a very large dataset)
+        const request = ++_subsetRequestSeq;
+        const label = step && spec && Number.isInteger(spec.part) ? `Loading part ${spec.part + 1}...` : 'Loading cells...';
+        showSubsetLoading(label, () => _cancelSubsetChange());
         try {
-            if (_isLoadingDataset) {
-                const view = SessionManager.captureView();
-                view.subset = spec;
-                const plan = panelSetToView({ dataset: datasetPath, view });
-                await _applyPanelSet(plan, { name: step ? 'cell subset part' : 'cell subset' });
-            } else if (!(await _swapSubset(spec))) {
+            // The focused and locked cells are found in the new subset by their
+            // dataset rows, learned now while this subset still shows them
+            await DataManager.recordCellRows(getFixedCells().map(c => c.cell));
+            // A dataset still loading: its cells are not settled, and closing
+            // its panels to reopen them (what this used to do) loses the view.
+            // Wait for it, then swap the cells of the dataset that was opened.
+            while (_isLoadingDataset && _datasetLoadDone) await _datasetLoadDone;
+            if (DataManager.getCurrentDataset() !== datasetPath) return;   // another dataset took over
+            if (!(await _swapSubset(spec))) {
                 return;     // a later request took over
             }
             // No toast: the header and every plot's status strip say what is shown
@@ -1033,13 +1040,27 @@ const App = (function() {
             console.error('Changing the cell subset failed:', error);
             _showNotification('Cell subset not changed', error.message || String(error), 'error');
             SubsetControl.update();
+        } finally {
+            // the last request clears the mark; an earlier one leaves it to the later
+            if (request === _subsetRequestSeq) hideSubsetLoading();
         }
     }
 
     // One subset swap at a time; requests made meanwhile collapse into the
-    // last one, which runs next
+    // last one, which runs next. A newer request stops the swap that is
+    // reading cells (its requests are aborted), so clicking through parts
+    // 2, 3, 4 reads only 4.
     let _subsetSwap = null;
     let _subsetQueued = null;
+    let _subsetController = null;      // AbortController of the swap reading cells
+    let _subsetRequestSeq = 0;
+
+    /** The pill's Cancel: stop reading the cells and keep those shown. */
+    function _cancelSubsetChange() {
+        _subsetQueued = null;
+        if (_subsetController) _subsetController.abort(new DOMException('Subset change cancelled', 'AbortError'));
+        PanelManager.abortUpdates();
+    }
 
     /**
      * Read the cells of `spec` and let the open panels redraw on them.
@@ -1050,16 +1071,29 @@ const App = (function() {
     function _swapSubset(spec) {
         const request = { spec };
         _subsetQueued = request;
+        // the swap that is reading (or drawing) the cells of an earlier
+        // request has no use any more
+        if (_subsetController) _subsetController.abort(new DOMException('Superseded by a newer subset', 'AbortError'));
+        PanelManager.abortUpdates();
         const run = async () => {
             if (_subsetQueued !== request) return false;
             _subsetQueued = null;
-            DataManager.setSubsetRequest(spec);
-            await DataManager.reloadSubset();
-            SubsetControl.update();
-            await _resolveFocusForDataset('cells');
-            _updateFocusBadge();
-            await PanelManager.notifyPanels('subsetChanged', { dataset: DataManager.getCurrentDataset() });
-            return true;
+            const controller = _subsetController = new AbortController();
+            try {
+                DataManager.setSubsetRequest(spec);
+                await DataManager.reloadSubset(controller.signal);
+                if (controller.signal.aborted) throw new DOMException('Subset change aborted', 'AbortError');
+                SubsetControl.update();
+                await _resolveFocusForDataset('cells');
+                _updateFocusBadge();
+                // the panels draw the new cells; each shows its own loading
+                // overlay from here (the tiles keep the dimming until all are drawn)
+                handOverToPanels();
+                await PanelManager.notifyPanels('subsetChanged', { dataset: DataManager.getCurrentDataset() });
+                return true;
+            } finally {
+                if (_subsetController === controller) _subsetController = null;
+            }
         };
         const next = (_subsetSwap || Promise.resolve()).catch(() => {}).then(run);
         _subsetSwap = next;
@@ -1771,8 +1805,21 @@ const App = (function() {
     let _lastLoadedDatasetPath = null;
     let _isLoadingDataset = false;
     let _currentLoadingAbortController = null;
+    let _datasetLoadDone = null;   // settles when the dataset load running now ends
     
     async function _loadDataset(datasetPath, silent = false) {
+        // This call's controller and its end. A load that a newer one aborted
+        // must not reset the flag and the controller of the newer one (the
+        // abort ends this call while the newer is running).
+        let mine = null;
+        let finish = null;
+        const release = () => {
+            if (mine && _currentLoadingAbortController === mine) {
+                _isLoadingDataset = false;
+                _currentLoadingAbortController = null;
+            }
+            if (finish) finish();
+        };
         try {
             // Skip loading if it's the same as the last loaded (not just loading)
             if (datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset) {
@@ -1788,8 +1835,10 @@ const App = (function() {
             }
             
             // Create a new abort controller for this loading operation
-            _currentLoadingAbortController = new AbortController();
-            const signal = _currentLoadingAbortController.signal;
+            mine = _currentLoadingAbortController = new AbortController();
+            const signal = mine.signal;
+            // a subset change made meanwhile waits for this (see _changeSubset)
+            _datasetLoadDone = new Promise(resolve => { finish = resolve; });
             
             // Set loading flag
             _isLoadingDataset = true;
@@ -1803,7 +1852,6 @@ const App = (function() {
             // Check for abort before proceeding with each major step
             if (signal.aborted) {
                 console.log(`Dataset load aborted before loading: ${datasetPath}`);
-                _isLoadingDataset = false;
                 return;
             }
             
@@ -1812,7 +1860,6 @@ const App = (function() {
             
             if (signal.aborted) {
                 console.log(`Dataset load aborted after loading structure: ${datasetPath}`);
-                _isLoadingDataset = false;
                 return;
             }
             
@@ -1828,7 +1875,6 @@ const App = (function() {
             
             if (signal.aborted) {
                 console.log(`Dataset load aborted before populating selectors: ${datasetPath}`);
-                _isLoadingDataset = false;
                 return;
             }
             
@@ -1838,7 +1884,6 @@ const App = (function() {
             
             if (signal.aborted) {
                 console.log(`Dataset load aborted after resolving focus: ${datasetPath}`);
-                _isLoadingDataset = false;
                 return;
             }
             
@@ -1850,8 +1895,7 @@ const App = (function() {
             }
             
             // Update last loaded dataset path and reset loading flag
-            _isLoadingDataset = false;
-            _currentLoadingAbortController = null;
+            release();
 
             // Fingerprint the store for saved views, after the first draw
             // has had its turn (the server hashes the names in the background)
@@ -1908,9 +1952,9 @@ const App = (function() {
                 }
             }
             
-            // Reset loading flag on error
-            _isLoadingDataset = false;
-            _currentLoadingAbortController = null;
+        } finally {
+            // The flag and controller of this call only (not of a newer load)
+            release();
         }
     }
     

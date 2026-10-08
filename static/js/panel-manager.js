@@ -640,6 +640,18 @@ const PanelManager = (function() {
     }
     
     /**
+     * Stop the panel updates that are running (a newer subset change, or
+     * Cancel, makes them pointless). Each panel's loads end with an abort and
+     * its previous plot stays.
+     */
+    function abortUpdates() {
+        if (_currentUpdateAbortController) {
+            _currentUpdateAbortController.abort();
+            _currentUpdateAbortController = null;
+        }
+    }
+
+    /**
      * Reset all panels
      */
     function resetPanels() {
@@ -1128,6 +1140,7 @@ const PanelManager = (function() {
         getAllPanels,
         getAllActivePanels,
         notifyPanels,
+        abortUpdates,
         resetPanels,
         saveLayout,
         restoreLayout,

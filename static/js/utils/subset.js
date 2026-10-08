@@ -265,14 +265,20 @@ export function describeParts(info) {
  * The spec for another part of the same partition, or null if there is no
  * such part. `target` is 0-based; out-of-range targets are clamped only when
  * `clamp` is set (typed part numbers), otherwise refused (the buttons).
+ * `from` (0-based) is the part counted as the one shown, by default the
+ * info's.
  */
-export function partSpec(info, target, clamp = false) {
+export function partSpec(info, target, clamp = false, from = null) {
     const parts = describeParts(info);
     if (!parts) return null;
     let part = Math.trunc(Number(target));
     if (!Number.isFinite(part)) return null;
     if (clamp) part = Math.min(Math.max(part, 0), parts.parts - 1);
-    if (part < 0 || part >= parts.parts || part === parts.part) return null;
+    // `from`: the part the view is on or going to (a step made while another
+    // is still loading starts from the part requested, not from the reply
+    // that already says the next part)
+    const here = Number.isInteger(from) ? from : parts.part;
+    if (part < 0 || part >= parts.parts || part === here) return null;
     return canonicalSubset({ ...info.subset, part });
 }
 
