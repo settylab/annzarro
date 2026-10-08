@@ -18,8 +18,8 @@ const curve = (n, base = BASE) => ({
 
 test('small data keeps the default look', () => {
     for (const n of [0, 1, 200]) assert.deepEqual(curve(n), BASE, `n=${n}`);
-    const k = curve(1000);   // a thousand points: within 2%
-    assert.ok(k.size >= 4.9 && k.opacity >= 0.98, JSON.stringify(k));
+    const k = curve(1000);   // a thousand points: within 6% (size) and 2% (opacity)
+    assert.ok(k.size >= 4.7 && k.opacity >= 0.98, JSON.stringify(k));
 });
 
 test('large data gets smaller, fainter points; smooth and monotone in N', () => {
@@ -31,9 +31,38 @@ test('large data gets smaller, fainter points; smooth and monotone in N', () => 
         assert.ok(s.size >= prev.size * 0.9 && s.opacity >= prev.opacity * 0.9, `jump at n=1e${e}`);
         prev = s;
     }
+    // raw curve (before snapping to the smallest drawable step)
     const big = curve(95.6e6);
-    assert.ok(big.size >= 0.5 && big.size <= 1.5, `95.6M size ${big.size}`);
-    assert.ok(big.opacity >= 0.1 && big.opacity <= 0.3, `95.6M opacity ${big.opacity}`);
+    assert.equal(big.size, 0.27, `95.6M size ${big.size}`);
+    assert.equal(big.opacity, 0.19, `95.6M opacity ${big.opacity}`);
+});
+
+test('the curve in numbers, as drawn (snapped to scattergl steps): steep from 100 to 100k, smallest step from 10M', () => {
+    const drawn = (n) => { const { size, opacity } = autoPointStyle(n, BASE); return [size, opacity]; };
+    assert.deepEqual(drawn(100), [5.1, 1]);
+    assert.deepEqual(drawn(1e3), [4.71, 0.98]);
+    assert.deepEqual(drawn(1e4), [3.53, 0.87]);
+    assert.deepEqual(drawn(1e5), [1.96, 0.64]);
+    assert.deepEqual(drawn(1e6), [1.18, 0.43]);
+    assert.deepEqual(drawn(1e7), [0.392, 0.28]);
+    assert.deepEqual(drawn(95.6e6), [0.392, 0.19]);
+    // each tenfold between 1k and 1M takes the size down by a clear factor
+    for (const n of [1e3, 1e4, 1e5]) {
+        assert.ok(autoPointStyle(n * 10, BASE).size <= 0.8 * autoPointStyle(n, BASE).size, `n=${n}`);
+    }
+});
+
+test('snapped sizes are monotone in N and never below the smallest step scattergl draws', () => {
+    const step = 100 / 255;
+    let prev = Infinity;
+    for (let e = 0; e <= 9; e += 0.05) {
+        const { size } = autoPointStyle(10 ** e, BASE);
+        assert.ok(size <= prev, `size grew at n=1e${e}`);
+        assert.ok(size >= Number(step.toPrecision(3)), `n=1e${e}: ${size}`);
+        prev = size;
+    }
+    // 3D sizes are not snapped but have the same floor
+    assert.equal(autoPointStyle(1e9, BASE, true).size, 0.392);
 });
 
 test('a panel config without size or opacity is automatic; one that names them is not', () => {
@@ -87,11 +116,11 @@ test('automatic sizes are ones scattergl draws: whole steps of 100/255 px', () =
         assert.ok(k >= 1 && Math.round(255 * size / 100) === k, `n=${n}: ${size}`);
     }
     assert.equal(autoPointStyle(200, BASE).size, 5.1);       // the default 5 draws as 13 steps
-    assert.equal(autoPointStyle(95.6e6, BASE).size, 0.784);  // 0.92 draws as 2 steps
+    assert.equal(autoPointStyle(95.6e6, BASE).size, 0.392);  // the smallest step (the curve gives 0.27)
     // 3D (scatter3d) sizes are not quantised: no snapping there
     const settings = { z: { type: 'obsm' }, pointSize: 5, pointOpacity: 1, autoPointSize: true, autoPointOpacity: true };
     applyAutoPointStyle(settings, 95.6e6, BASE);
-    assert.equal(settings.pointSize, 0.92);
+    assert.equal(settings.pointSize, 0.392);   // the curve's 0.27 raised to the smallest step
 });
 
 test('3D: automatic opacity is 1 at every N (Plotly draws translucent scatter3d points out of depth order)', () => {

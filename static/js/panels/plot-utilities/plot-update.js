@@ -13,7 +13,8 @@ import {
   unsortTraces,
   applyLogColor,
   applyLogColorbar,
-  loadingIndicator
+  loadingIndicator,
+  followDrawnPoints
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle } from './plot-make-helper.js';
@@ -138,6 +139,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         
         // First create the mask and get statistics - always run this to count NaNs
         const { indexMask, filterStats } = createFilterMask(data, settings);
+
+        // Hiding or showing points changes the number drawn: automatic size
+        // and opacity follow it (the styling step below restyles the markers)
+        if (followDrawnPoints(plotContainer, settings, filterStats.total - filterStats.filtered)) {
+            updateOptions.styling = true;
+        }
         
         // Restate the panel's coverage. An incremental update changes what is
         // on screen, so a notice left over from the previous render would be

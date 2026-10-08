@@ -756,6 +756,24 @@ export function pointStyleBase() {
 }
 
 /**
+ * Make the automatic size and opacity follow the points actually drawn:
+ * those the subset holds, less the ones the plot's own filters hide (a
+ * table filter that removes the other rows, Hide NaN, Hide outliers).
+ * Points a table filter only greys out are still drawn and still count.
+ * @param {HTMLElement} plotContainer
+ * @param {Object} settings
+ * @param {number} drawn - points left after the filters
+ * @param {string|number} [id] - the panel, to refresh its size and opacity boxes
+ * @returns {boolean} whether size or opacity changed (markers need a restyle)
+ */
+export function followDrawnPoints(plotContainer, settings, drawn, id = plotContainer.__azPanelId) {
+  plotContainer._drawnCount = drawn;
+  const changed = applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
+  if (changed && id !== undefined) showPointStyle(id, settings);
+  return changed;
+}
+
+/**
  * Loads data for all axes and then creates the plot.
  *
  * @param {HTMLElement} container - The container element for the panel/controls.
@@ -822,6 +840,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // drawn: the subset, or every cell (utils/point-style.js)
     const nPoints = (isGenePlot ? DataManager.getGenes() : DataManager.getCells()).length;
     plotContainer._pointCount = nPoints;
+    plotContainer._drawnCount = nPoints;   // narrowed by the filters once the data is read (followDrawnPoints)
+    plotContainer.__azPanelId = id;
     // in a zoomed view kept from the graph drawn now, the points in that view
     // (utils/view-point-style.js; checked again once the new graph is drawn)
     applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
@@ -2483,6 +2503,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   // Create filter mask to gather statistics and handle filtering
   const { indexMask, filterStats } = createFilterMask(data, settings);
+  // automatic size and opacity follow the points that are left to draw
+  followDrawnPoints(plotContainer, settings, filterStats.total - filterStats.filtered, id);
 
   // What the loaders could not supply, plus what the filters removed. This is
   // the single value every draw call below is required to carry.
