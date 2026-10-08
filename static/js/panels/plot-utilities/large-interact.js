@@ -22,6 +22,7 @@ import { nearestPoint, pointOfRow } from '../../utils/point-index.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 
 const HOVER_PX = 10;           // how close the pointer must be to a point
+const HOVER_MS = 16;           // hover lookups are coalesced to one per this long
 const DWELL_MS = 100;          // the pointer rests this long before the server is asked
 const REMEMBERED = 200;        // rows whose name and colour are kept
 // A click focuses only when it is quick and still, decided on release: a pan or zoom that
@@ -76,7 +77,12 @@ async function describeRow(st, row) {
   const key = `${DataManager.getDatasetGeneration()}:${row}:${hasColour ? JSON.stringify(colour) : ''}`;
   if (_cache.has(key)) return _cache.get(key);
   const [name, value] = await Promise.all([
-    DataManager.cellNameAt(row),
+    // the name is remembered as soon as it is here: a click needs only that
+    DataManager.cellNameAt(row).then((n) => {
+      _names.set(`${DataManager.getDatasetGeneration()}:${row}`, n);
+      if (_names.size > REMEMBERED) _names.delete(_names.keys().next().value);
+      return n;
+    }),
     hasColour ? DataManager.loadCellValue(colour, { shown: true, position: row }).catch(() => null)
       : Promise.resolve(null)
   ]);
@@ -158,7 +164,8 @@ export function attachLargeInteraction(gd, settings, index) {
     const s = gd.__largeState;
     last = { x: e.clientX, y: e.clientY, target: e.target, buttons: e.buttons };
     if (frame) return;
-    frame = requestAnimationFrame(() => {
+    // a short timer, not requestAnimationFrame: frames are not run for an idle or hidden page
+    frame = setTimeout(() => {
       frame = 0;
       if (!s || gd.__largeState !== s || !last) return;
       const hit = last.buttons ? null : pointAt(gd, s, last.x, last.y, last.target);
@@ -168,7 +175,7 @@ export function attachLargeInteraction(gd, settings, index) {
       if (area) area.style.cursor = 'pointer';
       if (hit.p !== s.hovered) s.hovered = hit.p;
       showTip(gd, s, hit, last.x, last.y);
-    });
+    }, HOVER_MS);
   });
   gd.addEventListener('mouseleave', () => { if (gd.__largeState) hideTip(gd, gd.__largeState); });
   // pointer events, not click: Plotly's drag layer takes the mouse between
