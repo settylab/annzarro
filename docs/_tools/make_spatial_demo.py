@@ -24,6 +24,10 @@ Stored for AnnZarro (Zarr v2, consolidated, float32 dense, chunks by the aspect 
   obsm/spatial_upright  (x, -y): the same positions with the tissue upright in a plot
   obsm/X_umap, obsm/X_pca, obs/leiden (+ uns/leiden_colors)
   obsp/connectivities, obsp/distances  expression kNN graph (CSR)
+  obsp/expression_walk_t5  dense T^5, T = the row-normalised connectivities: where a 5-step
+                        random walk on the expression graph lands from each spot (as the
+                        bone-marrow demo's obsp/diffusion_walk_t5). Its row paints the
+                        spots that resemble the focused one; the kNN row alone has ~18.
   obsp/spatial_kernel   dense Gaussian kernel on spot distance, sigma = 2 spot pitches,
                         zero beyond 3 sigma, rows normalised to sum 1
   obsp/spatial_distance dense Euclidean spot distance in micrometres
@@ -57,6 +61,7 @@ SOURCE = {
 }
 SPOT_PITCH_UM = 100.0     # Visium centre-to-centre distance
 TARGET = 5e5
+WALK_STEPS = 5            # as obsp/diffusion_walk_t5 of the bone-marrow demo
 
 
 def matrix_chunks(n_rows, n_cols):
@@ -118,6 +123,9 @@ def main():
     K = (K / K.sum(1, keepdims=True)).astype(np.float32)
     X = np.asarray(a.X.todense() if sp.issparse(a.X) else a.X, dtype=np.float32)
     C = spearman_columns(X)
+    G = sp.csr_matrix(a.obsp["connectivities"], dtype=np.float64)
+    Tw = (sp.diags(1.0 / np.asarray(G.sum(1)).ravel()) @ G).toarray()
+    W5 = np.linalg.matrix_power(Tw, WALK_STEPS).astype(np.float32)
 
     out = ad.AnnData(X=X, obs=a.obs[["in_tissue", "array_row", "array_col", "n_counts", "leiden"]].copy(),
                      var=a.var[["gene_ids", "n_cells", "means", "dispersions", "dispersions_norm"]].copy())
@@ -130,12 +138,14 @@ def main():
     out.obsp["connectivities"] = sp.csr_matrix(a.obsp["connectivities"], dtype=np.float32)
     out.obsp["distances"] = sp.csr_matrix(a.obsp["distances"], dtype=np.float32)
     out.obsp["spatial_kernel"] = K
+    out.obsp[f"expression_walk_t{WALK_STEPS}"] = W5
     out.obsp["spatial_distance"] = D
     out.varp["spearman_hvg"] = C
     out.uns["leiden_colors"] = np.array(a.uns["leiden_colors"], dtype=object)
     proc = {"min_counts": 500, "min_cells": 10, "normalize_total": 1e4, "log1p": True, "n_hvg": 2000,
             "hvg_flavor": "seurat", "n_pcs": 30, "n_neighbors": 15, "leiden_resolution": 0.8,
             "spatial_kernel": f"Gaussian, sigma = {sigma:g} um, cut at 3 sigma, rows sum to 1",
+            "expression_walk": f"T^{WALK_STEPS}, T = row-normalised obsp/connectivities",
             "um_per_fullres_px": um_per_px, "scanpy": sc.__version__}
     # one-element string arrays: AnnZarro's uns reader slices with [:] and returns null for
     # 0-d (scalar) string arrays
@@ -151,7 +161,7 @@ def main():
     n, m = out.shape
     ad.io.write_elem(g, "X", X, dataset_kwargs={"chunks": matrix_chunks(n, m)})
     ad.io.write_elem(g["layers"], "log_normalized", X, dataset_kwargs={"chunks": matrix_chunks(n, m)})
-    for key, arr in (("spatial_kernel", K), ("spatial_distance", D)):
+    for key, arr in (("spatial_kernel", K), ("spatial_distance", D), (f"expression_walk_t{WALK_STEPS}", W5)):
         ad.io.write_elem(g["obsp"], key, arr, dataset_kwargs={"chunks": row_chunks(n, n)})
     ad.io.write_elem(g["varp"], "spearman_hvg", C, dataset_kwargs={"chunks": row_chunks(m, m)})
     zarr.consolidate_metadata(str(dst))
@@ -160,6 +170,7 @@ def main():
     size = sum(f.stat().st_size for f in dst.rglob("*") if f.is_file())
     summary = {"shape": list(out.shape), "n_leiden": int(out.obs["leiden"].nunique()),
                "kernel_nnz_per_row_median": float(np.median((K > 0).sum(1))),
+               "walk_n_eff_median": float(np.median(1 / (W5.astype(np.float64) ** 2).sum(1))),
                "um_per_px": um_per_px, "bytes": size, "seconds": round(time.perf_counter() - t0, 1)}
     print(json.dumps(summary, indent=1))
 
