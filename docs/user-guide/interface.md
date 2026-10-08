@@ -33,6 +33,12 @@ The header. Numbers match the list below.
 
 A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).
 
+**Which version is this?** Hold the pointer over the app name at the top left: the tooltip reads
+"AnnZarro 0.4.2" (the version the server runs; a custom app name comes first, as "Lab Atlas ·
+AnnZarro 0.4.2"). On a server with login, the tooltip of your user name under the app name ends with the
+same line. Say this version in a bug report. The desktop app shows its own, bundled version the
+same way.
+
 Below the header, the statistics bar shows the number of cells (8,090) with a badge, **All
 cells**, the number of genes (16285) and the dataset's display name. Datasets with more than
 200,000 cells open on a reproducible subset of 100,000 cells; the badge then reads **Subset ·

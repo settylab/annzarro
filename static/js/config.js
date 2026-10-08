@@ -322,6 +322,29 @@ const Config = (function() {
         integrations: null
     };
     
+    /**
+     * Show the running version where it costs no header space: a native
+     * tooltip on the app title, and a last line in the sign-in badge's
+     * tooltip. The version is what this server reports (/api/v1/config), so
+     * a server shows what it runs. Idempotent: safe to call again once the
+     * badge has been filled.
+     */
+    function showVersion() {
+        const version = SERVER_CONFIG.annzarro_version;
+        if (!version || typeof document === 'undefined') return;
+        const label = `AnnZarro ${version}`;
+        const title = document.querySelector('.app-title');
+        if (title) {
+            const name = (title.textContent || '').trim();
+            title.title = name && name !== 'AnnZarro' ? `${name} \u00b7 ${label}` : label;
+        }
+        const badge = document.getElementById('auth-indicator');
+        if (badge && !badge.hidden) {
+            if (badge.dataset.baseTitle === undefined) badge.dataset.baseTitle = badge.title || '';
+            badge.title = badge.dataset.baseTitle ? `${badge.dataset.baseTitle}\n${label}` : label;
+        }
+    }
+
     // Function to load server configuration
     async function loadServerConfig() {
         try {
@@ -368,6 +391,7 @@ const Config = (function() {
                 if (INTEGRATIONS.stringDb.version) STRING_DB.VERSION = INTEGRATIONS.stringDb.version;
                 
                 console.log('Loaded server configuration:', SERVER_CONFIG);
+                showVersion();
             } else {
                 console.error('Failed to load server configuration:', response.statusText);
             }
@@ -388,7 +412,8 @@ const Config = (function() {
         INTEGRATIONS,
         PANEL_TYPES,
         KEYBOARD_SHORTCUTS,
-        SERVER_CONFIG
+        SERVER_CONFIG,
+        showVersion
     };
 })();
 

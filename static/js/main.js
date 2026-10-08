@@ -2991,6 +2991,7 @@ const App = (function() {
             el.classList.add(`auth-indicator--${badge.variant}`);
             if (badge.href) el.href = badge.href;
             el.hidden = false;
+            Config.showVersion();
         } catch (error) {
             console.warn('Could not load sign-in status:', error);
         }
