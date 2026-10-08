@@ -1751,8 +1751,10 @@ const App = (function() {
       
           // keep the wider list inside the viewport, however far right the box is
           $(sel).off('select2:open.dsWidth').on('select2:open.dsWidth', () => {
-            const room = window.innerWidth - $(sel).next('.select2-container').offset().left - 8;
-            $('.dataset-select-dropdown').css('max-width', Math.min(room, 700, window.innerWidth * 0.9));
+            const box = $(sel).next('.select2-container');
+            const room = window.innerWidth - box.offset().left - 8;
+            // never narrower than the box itself (a narrow window gives the box the whole row)
+            $('.dataset-select-dropdown').css('max-width', Math.max(box.outerWidth(), Math.min(room, 700, window.innerWidth * 0.9)));
           });
 
           // 8) restore selection in the Select2 widget
