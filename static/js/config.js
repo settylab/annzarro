@@ -25,6 +25,7 @@ export function readUiSettings(server) {
         colorScale: pick(d.color_scale, 'ui_color_scale'),
         taxonomyId: pick(d.taxonomy_id, 'ui_taxonomy_id'),
         largePlotPoints: pick(d.large_plot_points, 'ui_large_plot_points'),
+        namesOnDemandAbove: pick(d.names_on_demand_above, 'ui_names_on_demand_above'),
         enabledPanelTypes: pick(ui.enabled_panel_types, 'enabled_panel_types'),
         cacheMaxEntries: pick(c.max_entries, 'ui_cache_max_entries'),
         cacheMaxSizeMb: pick(c.max_size_mb, 'ui_cache_max_size_mb'),
@@ -145,6 +146,15 @@ const Config = (function() {
         // keeps several regular plots open at once. Server key
         // ui.defaults.large_plot_points.
         LARGE_PLOT_POINTS: 1000000,
+        // A dataset with more cells than this does not download the names of
+        // the cells it shows, whatever the subset: a part or subset of cells
+        // spread over such a dataset touches nearly every chunk of its name
+        // column (the 100,000 cells of one part of a 1B-cell store: 477 chunk
+        // reads, 20-35 s at every part step), while hover, focus and a table's
+        // page need a few names. Below it a part's names are a few chunks (a
+        // 5M-cell store has 5) and come with the part. Server key
+        // ui.defaults.names_on_demand_above.
+        NAMES_ON_DEMAND_ABOVE: 5000000,
         // Browser memory guard, server ui.memory (utils/memory-guard.js)
         MEMORY: null,
         COLOR_SCALE: 'Portland',
@@ -350,6 +360,9 @@ const Config = (function() {
                 if (ui.taxonomyId) DEFAULTS.TAXONOMY_ID = ui.taxonomyId;
                 if (ui.largePlotPoints !== null && ui.largePlotPoints >= 0) {
                     DEFAULTS.LARGE_PLOT_POINTS = Number(ui.largePlotPoints);
+                }
+                if (ui.namesOnDemandAbove !== null && ui.namesOnDemandAbove >= 0) {
+                    DEFAULTS.NAMES_ON_DEMAND_ABOVE = Number(ui.namesOnDemandAbove);
                 }
                 if (ui.enabledPanelTypes) DEFAULTS.ENABLED_PANEL_TYPES = ui.enabledPanelTypes;
                 if (ui.cacheMaxEntries) CACHE.MAX_ENTRIES = ui.cacheMaxEntries;

@@ -1,5 +1,6 @@
 import { plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
+import { RemoteNames } from '../../utils/remote-names.js';
 import { 
   loadAxisData, 
   createFilterMask, 
@@ -194,7 +195,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                             x: [filteredData.x.values],
                             y: [filteredData.y.values],
                             'marker.color': [filteredData.color],
-                            text: [filteredData[entityType]],
+                            text: [DataManager.cellLabels(filteredData[entityType])],
                             customdata: [filteredData.customdata]
                         };
                         
@@ -217,7 +218,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 x: [filteredData.x.values],
                                 y: [filteredData.y.values],
                                 'marker.color': [filteredData.color],
-                                text: [filteredData[entityType]],
+                                text: [DataManager.cellLabels(filteredData[entityType])],
                                 customdata: [filteredData.customdata]
                             };
                             
@@ -235,7 +236,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 x: [filteredData.x.values],
                                 y: [filteredData.y.values],
                                 'marker.color': [filteredData.color],
-                                text: [filteredData[entityType]],
+                                text: [DataManager.cellLabels(filteredData[entityType])],
                                 customdata: [filteredData.customdata]
                             };
                             
@@ -254,7 +255,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         x: [filteredData.x.values],
                         y: [filteredData.y.values],
                         'marker.color': [filteredData.color],
-                        text: [filteredData[entityType]],
+                        text: [DataManager.cellLabels(filteredData[entityType])],
                         customdata: [filteredData.customdata]
                     };
                     
@@ -301,7 +302,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         if (updateOptions.xAxis && data.x?.values) update.x = [indices.map(idx => data.x.values[idx])];
                         if (updateOptions.yAxis && data.y?.values) update.y = [indices.map(idx => data.y.values[idx])];
                         if (updateOptions.zAxis && data.z?.values && shouldBe3D) update.z = [indices.map(idx => data.z.values[idx])];
-                        update.text = [entityNames];
+                        update.text = [DataManager.cellLabels(entityNames)];
                         update.customdata = [entityNames];
 
                         if (Object.keys(update).length > 0) {
@@ -345,7 +346,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     mode: 'markers',
                     x: data.x.values,
                     y: data.y.values,
-                    text: data[entityType],
+                    text: DataManager.cellLabels(data[entityType]),
                     customdata: data[entityType],
                     hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` +
                         (settings.z ? `<br>z: %{z}` : '') +
@@ -514,7 +515,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                       type: settings.z ? 'scatter3d' : 'scattergl',
                       mode: 'markers',
                       name: 'Not in table',
-                      text: nonTableIndices.map(i => entities[i]),
+                      text: DataManager.cellLabels(nonTableIndices.map(i => entities[i])),
                       customdata: nonTableIndices.map(i => entities[i]),
                       hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                     (settings.z ? `<br>z: %{z}` : '') + 
@@ -545,7 +546,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                       type: settings.z ? 'scatter3d' : 'scattergl',
                       mode: 'markers',
                       name: 'In table',
-                      text: tableFilteredIndices.map(i => entities[i]),
+                      text: DataManager.cellLabels(tableFilteredIndices.map(i => entities[i])),
                       customdata: tableFilteredIndices.map(i => entities[i]),
                       hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                     (settings.z ? `<br>z: %{z}` : '') + 
@@ -655,7 +656,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 type: settings.z ? 'scatter3d' : 'scattergl',
                                 mode: 'markers',
                                 name: 'Not in table',
-                                text: nonTableIndices.map(i => entities[i]),
+                                text: DataManager.cellLabels(nonTableIndices.map(i => entities[i])),
                                 customdata: nonTableIndices.map(i => entities[i]),
                                 hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                             (settings.z ? `<br>z: %{z}` : '') + 
@@ -686,7 +687,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 type: settings.z ? 'scatter3d' : 'scattergl',
                                 mode: 'markers',
                                 name: 'In table',
-                                text: tableIndices.map(i => entities[i]),
+                                text: DataManager.cellLabels(tableIndices.map(i => entities[i])),
                                 customdata: tableIndices.map(i => entities[i]),
                                 hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                             (settings.z ? `<br>z: %{z}` : '') + 
@@ -1059,6 +1060,24 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   let traceIndex = 0;
   const entityArray = data[entityType];
 
+  // A plot of cells whose names are fetched when needed holds a token per
+  // cell: the focused cell is found by the token of its position, which is
+  // known once the cell was named, picked or located
+  let focusedKey = focusedEntity;
+  if (entityType === 'cells' && RemoteNames.isToken(entityArray[0])) {
+    const cells = DataManager.getCells();
+    focusedKey = cells instanceof RemoteNames ? cells.tokenOf(focusedEntity) : null;
+    if (focusedKey === null) {
+      // not known to be among the shown cells: find out, and draw again if it is
+      DataManager.locateCell(focusedEntity).then(cell => {
+        if (cell && cell.shown && cells.tokenOf(focusedEntity) !== null
+            && DataManager.getFocusedCell() === focusedEntity && plotContainer.isConnected) {
+          highlightFocusedEntity(plotContainer, data, settings, entityType);
+        }
+      }).catch(() => {});
+    }
+  }
+
   if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
     console.warn("Plot data is not available for highlighting");
     return;
@@ -1073,8 +1092,9 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   if (isCategorical && hasMultipleTraces) {
     for (let i = 0; i < dataTraces.length; i++) {
       const trace = dataTraces[i];
-      if (trace && Array.isArray(trace.text)) {
-        const idx = trace.text.indexOf(focusedEntity);
+      const ids = trace && (Array.isArray(trace.customdata) ? trace.customdata : trace.text);
+      if (Array.isArray(ids)) {
+        const idx = focusedKey === null ? -1 : ids.indexOf(focusedKey);
         if (idx !== -1) {
           focusedIndex = idx;
           traceIndex = i;
@@ -1083,7 +1103,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
       }
     }
   } else {
-    focusedIndex = entityArray.indexOf(focusedEntity);
+    focusedIndex = focusedKey === null ? -1 : entityArray.indexOf(focusedKey);
   }
 
   if (focusedIndex === -1) {

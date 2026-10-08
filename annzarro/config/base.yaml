@@ -147,6 +147,13 @@ ui:
     # the subset off or larger than this. 1M keeps several regular plots
     # (400-900 B of browser heap per point) open side by side.
     large_plot_points: 1000000
+    # A dataset with more cells than this does not download the names of the
+    # cells it shows (a part of a 1B-cell store spread over every chunk of its
+    # name column took 20-35 s to name at every step). Hover, focus and a
+    # table's page ask for the names they show; sorting or searching a table
+    # on the names, or exporting them, loads them once. Smaller datasets name
+    # their cells with the part, as before.
+    names_on_demand_above: 5000000
     subset_size: 100000
     subset_seed: 0
 

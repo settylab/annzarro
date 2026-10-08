@@ -17,6 +17,7 @@ import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
+import { RemoteNames } from '../../utils/remote-names.js';
 import { colourKind } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
@@ -408,7 +409,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       loadingIndicator.show(plotContainer, 'axis-data');
     }
     const entities = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
-    expected = Array.isArray(entities) ? entities.length : null;
+    // (names kept on the server are not an array, but they count the cells)
+    expected = entities && typeof entities.length === 'number' ? entities.length : null;
 
     const { type, key, column } = settings;
     const datasetPath = DataManager.getCurrentDataset();
@@ -1000,7 +1002,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         coverage: null
       });
     } else {
-      const cells = DataManager.getCells();
+      // the names, or a token per cell when the names are fetched when needed
+      // (hover and click ask for the name; DataManager.getCellsForPanel)
+      const cells = DataManager.getCellsForPanel();
       Object.assign(data, {
         x: null,
         y: null,
@@ -1548,7 +1552,10 @@ export async function applyHoverInfo(plotContainer, data, settings) {
     const template = off ? '' : hoverTemplateFor(trace, settings, data);
     const hoverinfo = off ? 'none' : 'all';
     const labels = Array.isArray(trace._azLabels) ? trace._azLabels : null;
-    const hovertext = rowOf || labels ? trace.text.map((name, j) => {
+    // a point is found by the id the data holds (a name, or a token when the
+    // names are fetched when needed), which customdata keeps in step with it
+    const ids = Array.isArray(trace.customdata) ? trace.customdata : trace.text;
+    const hovertext = rowOf || labels ? ids.map((name, j) => {
       const r = rowOf ? rowOf.get(name) : undefined;
       const own = labels ? `<br>${labels[j]}` : '';
       return own + (r === undefined ? '' : extra.map(e => `<br>${e.label}: ${formatHoverValue(e.values[r])}`).join(''));
@@ -2016,17 +2023,34 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     && !window.PanelManager.getActivePanels().includes(tablePanel));
 
   if (closed) {
-    // by name, on the cells shown now
-    const { passing, unknown } = selectionOnCells(tableConfig.closedSelection || null, data[entityType] || []);
+    // by name, on the cells shown now. A plot holding tokens (names fetched
+    // when needed) loads the names once for this: the closed filter is kept
+    // as names
+    const tokens = entityType === 'cells' && entities instanceof RemoteNames
+      && RemoteNames.isToken((data[entityType] || [])[0]);
+    let passing, unknown;
+    if (tokens) {
+      const selection = tableConfig.closedSelection || null;
+      const names = selection ? await entities.all() : [];
+      const found = selectionOnCells(selection, names);
+      unknown = selection ? found.unknown : (data[entityType] || []).length;
+      passing = new Set();
+      names.forEach((name, i) => { if (found.passing.has(name)) passing.add(entities.tokenAt(i)); });
+    } else {
+      ({ passing, unknown } = selectionOnCells(tableConfig.closedSelection || null, data[entityType] || []));
+    }
     newTableEntities = passing;
     const name = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
     stale(unknown > 0 ? { table: settings.tableFilter, unknown, text: staleText(name, unknown, entityType) } : null);
   } else {
     stale(null);
-    // Get entity names based on indices in the table
+    // Get entity names based on indices in the table; a plot holding tokens
+    // (names fetched when needed) is filtered by the rows' tokens
+    const byToken = entityType === 'cells' && RemoteNames.isToken((data[entityType] || [])[0]) &&
+      entities instanceof RemoteNames;
     tableConfig.currentEntries.forEach(index => {
       if (entities && index < entities.length) {
-        const entityName = entities[index];
+        const entityName = byToken ? entities.tokenAt(index) : entities[index];
         if (entityName) {
           newTableEntities.add(entityName);
         }
@@ -2551,7 +2575,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     mode: 'markers',
     x: filteredData.x.values,
     y: filteredData.y.values,
-    text: filteredData[entityKey],
+    text: DataManager.cellLabels(filteredData[entityKey]),
     customdata: filteredData[entityKey],
     showlegend: false,
     hovertemplate:
@@ -2750,7 +2774,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: 'Not in table',
-          text: nonTableIndices.map(idx => filteredData[entityKey][idx]),
+          text: DataManager.cellLabels(nonTableIndices.map(idx => filteredData[entityKey][idx])),
           customdata: nonTableIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
@@ -2804,7 +2828,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: settings.color.key || 'Value',
-          text: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
+          text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
@@ -2947,7 +2971,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: 'Not in table',
-          text: nonTableIndices.map(idx => filteredData[entityKey][idx]),
+          text: DataManager.cellLabels(nonTableIndices.map(idx => filteredData[entityKey][idx])),
           customdata: nonTableIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
@@ -2992,7 +3016,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: 'Data points',
-          text: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
+          text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 

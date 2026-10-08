@@ -160,7 +160,7 @@ const { Coverage } = await import('../../../static/js/utils/coverage.js');
 const N = 400;
 const CELLS = Array.from({ length: N }, (_, i) => `c${i}`);
 Object.assign(DataManager, {
-    getCells: () => CELLS, getGenes: () => [], getCurrentDataset: () => '/a.zarr',
+    getCells: () => CELLS, getCellsForPanel: () => CELLS, cellLabels: (x) => x, getGenes: () => [], getCurrentDataset: () => '/a.zarr',
     getDatasetGeneration: () => 3, getCellIndex: (c) => CELLS.indexOf(c), getGeneIndex: () => -1,
     getFocusedCell: () => 'c17', getFocusedGene: () => null
 });

@@ -59,7 +59,7 @@ const N = 50;
 const GENES = Array.from({ length: N }, (_, i) => `GENE_${i}`);
 let varpRow = Array(N).fill(null);           // the uncovered gene's row
 Object.assign(DataManager, {
-    getGenes: () => GENES, getCells: () => [],
+    getGenes: () => GENES, getCells: () => [], getCellsForPanel: () => [], cellLabels: (x) => x,
     getCurrentDataset: () => '/fixture.zarr',
     getGeneIndex: (g) => GENES.indexOf(g),
     getCellIndex: () => -1,

@@ -80,10 +80,15 @@ test('the stepper in the stats bar shows the part and steps through onApply', as
     assert.equal(els['subset-part-count'].textContent, '957');
     assert.equal(els['subset-part-prev'].disabled, false);
 
+    // each request is shown (onApply returned) before the next click
+    const tick = () => new Promise(resolve => setTimeout(resolve, 0));
     els['subset-part-next'].fire('click');
+    await tick();
     els['subset-part-prev'].fire('click');
+    await tick();
     els['subset-part-input'].value = '900';
     els['subset-part-input'].fire('keydown', { key: 'Enter' });
+    await tick();
     assert.deepEqual(applied.map(([s]) => s.part ?? 0), [3, 1, 899]);
     assert.ok(applied.every(([, o]) => o.step));
 
