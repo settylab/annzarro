@@ -27,7 +27,9 @@
  * ArrayBuffers only; a lost WebGL context is handled by the plot itself
  * (large-plot.js watchGpu).
  *
- * Pure: no DOM, no imports. The allocator is injectable (setAllocator, or
+ * The probe allocates for real, so a pass means the bytes exist at that moment
+ * (not an estimate); a draw that fails after a pass ends in the same graceful
+ * placeholder as any failed read. Pure: no DOM, no imports. The allocator is injectable (setAllocator, or
  * `window.__annzarroAllocator` for browser tests).
  */
 
@@ -214,13 +216,19 @@ export class AllocationProbeError extends Error {
  * @param {number} [o.bytesPerPoint] - guard model large.arrayBuffers
  * @param {number} [o.eligible] - cells the subset parts are cut from
  * @param {Function} [o.alloc] - injectable allocator
+ * @param {number} [o.suggestBytesPerPoint] - what a drawn subset needs per point (the suggestion is sized with it)
+ * @param {boolean} [o.suggest] - false: fail without searching for a subset size (a first try)
  * @returns {{key, X, Y, logged?}}
  */
-export function probeForDraw({ n, log = false, bytesPerPoint = 73, eligible = n, alloc = allocate }) {
+export function probeForDraw({ n, log = false, bytesPerPoint = 73, eligible = n, alloc = allocate, suggest = true,
+    suggestBytesPerPoint = 73 }) {
     const opts = { log, bytesPerPoint };
     const r = probe(largePlotParts(n, opts), { alloc });
     if (r.ok) return r.buffers;
-    const size = suggestSize(n, m => largePlotParts(m, opts),
+    if (!suggest) {
+        throw new AllocationProbeError(probeMessage(n, null, eligible), { n, size: null, failed: r.failed, failedBytes: r.failedBytes, cause: r.error });
+    }
+    const size = suggestSize(n, m => largePlotParts(m, { log, bytesPerPoint: suggestBytesPerPoint }),
         { alloc, floor: Math.min(1000, Math.max(1, Math.floor(n / 100))) });
     throw new AllocationProbeError(probeMessage(n, size, eligible),
         { n, size, failed: r.failed, failedBytes: r.failedBytes, cause: r.error });

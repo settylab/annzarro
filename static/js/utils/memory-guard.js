@@ -142,9 +142,20 @@ export const DEFAULT_MODEL = {
          * 4.0, and the build buffers the probe keeps 10 (key 2, X 4, Y 4):
          * 73.4. Drew at 225M (16.5 GB), failed at 240M and 250M
          * (`RangeError` in scatter2d's `new Float64Array`), as 73 B/point
-         * against that limit says.
+         * against that limit says. A recolour that regroups positions holds
+         * the old plot's buffers beside the new draw's (large-plot.js
+         * probeOrRelease). The point index that large-plot-interact adds after
+         * the draw (8 B a point of typed array) must be added to this figure
+         * when that branch lands.
          */
-        arrayBuffers: 73
+        arrayBuffers: 73,
+        /**
+         * ArrayBuffer bytes per point a redraw adds while the plot it
+         * replaces is still held: the build buffers (key, X, Y: 10) and the
+         * new colour's response body (4). The probe tests this beside the
+         * old plot (large-plot.js probeOrRelease).
+         */
+        redrawBeside: 14
     },
     /**
      * Transient costs on top of what the panel holds.

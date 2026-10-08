@@ -296,12 +296,31 @@ function keyBuffer(pre, n) {
  * @param {Object} settings
  * @param {Object} structure
  */
-function probeDraw(settings, structure) {
+function probeDraw(settings, structure, suggest = true, bytesPerPoint = DEFAULT_MODEL.large.arrayBuffers) {
   const n = (DataManager.getCells() || []).length;
   return probeForDraw({ n, log: !!(settings.color && settings.color.log) && colourKind(settings, structure) === 'numeric',
-    bytesPerPoint: DEFAULT_MODEL.large.arrayBuffers,
-    eligible: n + (Number(DataManager.getCellsNotInSubset()) || 0) });
+    bytesPerPoint,
+    eligible: n + (Number(DataManager.getCellsNotInSubset()) || 0), suggest });
 }
+
+/**
+ * The probe of a redraw. The plot being replaced stays until the new points
+ * are built, so the browser still holds its buffers (about 61 B a point at
+ * 210M) when the new draw's first allocations come: on v0.4.1 a recolour of
+ * a drawn gene plot to a category failed in groupByKey at 225M points
+ * though a first plot of 225M draws, and drew at 190M and 210M. So beside a
+ * drawn plot the probe asks for what that first step adds, the build buffers
+ * and the new colour's body (model large.redrawBeside, 14 B a point), and
+ * the browser's answer includes what the old plot holds. The plot stays when
+ * the probe fails. The step after the old plot is released (the 73 B a point
+ * of the draw itself) is not tested: it can still fail for sizes within 5%
+ * above the edge, in the graceful placeholder.
+ */
+function probeOrRelease(plotContainer, settings, structure) {
+  const live = !!plotContainer._fullLayout;
+  return probeDraw(settings, structure, true, live ? DEFAULT_MODEL.large.redrawBeside : DEFAULT_MODEL.large.arrayBuffers);
+}
+
 
 /**
  * Show that a plot could not be held: on a plot already drawn, a warning
@@ -392,7 +411,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   data.entities = 'cells';
   // Before any request: the buffers this plot will need, allocated now. If the
   // browser cannot give them, nothing is requested (utils/alloc-probe.js).
-  const pre = probeDraw(settings, structure);
+  const pre = probeOrRelease(plotContainer, settings, structure);
   const [xs, ys, cs] = await Promise.all([
     loadSeries(settings.x, datasetPath, structure),
     loadSeries(settings.y, datasetPath, structure),

@@ -147,3 +147,13 @@ test('the RAM budget still refuses on a small machine, whatever the probe could 
     assert.equal(r.binding, 'total');
     assert.ok(PROBE_MIN_BYTES > 0);
 });
+
+test('a redraw beside the plot it replaces asks only for what its first step adds', () => {
+    // the tab holds 16.64 GB of ArrayBuffers; a drawn gene plot holds 61 B per point of them
+    const held = (n) => 61 * n;
+    const beside = (n) => probeForDraw({ n, bytesPerPoint: 14, alloc: capped(16.64e9 - held(n)) });
+    assert.equal(beside(210e6).key.length, 210e6);
+    assert.throws(() => beside(225e6), AllocationProbeError);
+    // the subset suggested is sized for a plot that draws on its own (73 B per point)
+    try { beside(225e6); } catch (e) { assert.ok(e.size === null || e.size * 73 <= 16.64e9); }
+});
