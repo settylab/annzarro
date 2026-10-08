@@ -5,7 +5,8 @@ import { createLayout, processCategories, attachClickHandler, isMissingCategory,
 import { autoPointCount, debounced } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
-import { applyAutoPointStyle } from '../../utils/point-style.js';
+import { applyAutoPointStyle, pointStyleBase, greyMarker } from '../../utils/point-style.js';
+export { pointStyleBase };
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
@@ -749,10 +750,22 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
 
 
-/** The default size and opacity for few points: the app's (server) defaults. */
-export function pointStyleBase() {
-  const d = (Config && Config.DEFAULTS) || {};
-  return { size: d.POINT_SIZE || 5, opacity: d.POINT_OPACITY || 0.7 };
+/**
+ * Make the automatic size and opacity follow the points actually drawn:
+ * those the subset holds, less the ones the plot's own filters hide (a
+ * table filter that removes the other rows, Hide NaN, Hide outliers) and
+ * the ones a table link greys out (filterStats.shown).
+ * @param {HTMLElement} plotContainer
+ * @param {Object} settings
+ * @param {number} drawn - points left after the filters
+ * @param {string|number} [id] - the panel, to refresh its size and opacity boxes
+ * @returns {boolean} whether size or opacity changed (markers need a restyle)
+ */
+export function followDrawnPoints(plotContainer, settings, drawn, id = plotContainer.__azPanelId) {
+  plotContainer._drawnCount = drawn;
+  const changed = applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
+  if (changed && id !== undefined) showPointStyle(id, settings);
+  return changed;
 }
 
 /**
@@ -822,6 +835,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // drawn: the subset, or every cell (utils/point-style.js)
     const nPoints = (isGenePlot ? DataManager.getGenes() : DataManager.getCells()).length;
     plotContainer._pointCount = nPoints;
+    plotContainer._drawnCount = nPoints;   // narrowed by the filters once the data is read (followDrawnPoints)
+    plotContainer.__azPanelId = id;
     // in a zoomed view kept from the graph drawn now, the points in that view
     // (utils/view-point-style.js; checked again once the new graph is drawn)
     applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
@@ -1883,12 +1898,17 @@ export function createFilterMask(data, settings) {
   // (a point passes when every mask has it)
   const indexMask = new Array(totalPts);
   let kept = 0;
+  let shown = 0;   // kept, and not greyed out by a table link: what the automatic point style counts
   for (let i = 0; i < totalPts; i++) {
     let keep = true;
     for (let m = 0; m < masks.length && keep; m++) keep = !!masks[m][i];
     indexMask[i] = keep;
-    if (keep) kept++;
+    if (keep) {
+      kept++;
+      if (!tableFilterMask || tableFilterMask[i]) shown++;
+    }
   }
+  filterStats.shown = shown;
 
   // 7. Compute filtered count
   filterStats.filtered = totalPts - kept;
@@ -2483,6 +2503,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   // Create filter mask to gather statistics and handle filtering
   const { indexMask, filterStats } = createFilterMask(data, settings);
+  // automatic size and opacity follow the points that are left to draw
+  followDrawnPoints(plotContainer, settings, filterStats.shown, id);
 
   // What the loaders could not supply, plus what the filters removed. This is
   // the single value every draw call below is required to carry.
@@ -2715,8 +2737,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           x: nonTableIndices.map(idx => filteredData.x.values[idx]),
           y: nonTableIndices.map(idx => filteredData.y.values[idx]),
           marker: {
-            size: settings.pointSize,
-            opacity: settings.pointOpacity,
+            ...greyMarker(settings, filteredData.x.values.length),
             color: 'rgba(180, 180, 180, 1.)',
           },
           showlegend: false
@@ -2912,8 +2933,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           x: nonTableIndices.map(idx => filteredData.x.values[idx]),
           y: nonTableIndices.map(idx => filteredData.y.values[idx]),
           marker: {
-            size: settings.pointSize,
-            opacity: settings.pointOpacity,
+            ...greyMarker(settings, filteredData.x.values.length),
             color: 'rgba(180, 180, 180, 1.)'
           },
           showlegend: true

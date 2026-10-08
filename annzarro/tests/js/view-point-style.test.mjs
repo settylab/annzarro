@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { pointsInView, debounced, SAMPLE } = await import('../../../static/js/utils/view-point-style.js');
+const { pointsInView, autoPointCount, debounced, SAMPLE } = await import('../../../static/js/utils/view-point-style.js');
 
 const graph = (traces, xrange = [0, 10], yrange = [0, 10], type = 'linear') => ({
     data: traces,
@@ -55,4 +55,10 @@ test('debounced: one run, after the last call', async () => {
     d(); d.cancel();
     await new Promise(r => setTimeout(r, 40));
     assert.equal(runs, 1);
+});
+
+test('autoPointCount: the points left after the plot filters, else the loaded ones', () => {
+    assert.equal(autoPointCount({ _pointCount: 1000 }, {}), 1000);
+    assert.equal(autoPointCount({ _pointCount: 1000, _drawnCount: 40 }, {}), 40);
+    assert.equal(autoPointCount({ _pointCount: 1000, _drawnCount: 0 }, {}), 0, 'all hidden is 0, not the loaded count');
 });

@@ -40,12 +40,19 @@ Cell plot controls, coloured by a categorical obs column.
     point is not drawn at all (8-bit alpha). The boxes take any value, also outside the sliders'
     range.
 
-    Until you set them, both are **automatic**: they follow the number of points drawn (the
-    subset, or every cell; not the size of the panel), from the default 5.1 px and opaque at a
-    few thousand points down to 3.14 px / 0.61 at 100,000, 1.96 px / 0.39 at a million and
-    0.784 px / 0.16 at 95.6 million. These values were picked on screenshots of a 95.6-million-cell
-    UMAP and its 1M, 10M and 100,000-cell parts. Between the two smallest settings compared there,
-    0.7 px / 0.1 and the chosen one, only the opacity differed: both sizes draw at 0.784 px. An
+    Until you set them, both are **automatic**: they follow the number of points drawn (not the
+    size of the panel). That is the cells of the subset less the points the plot hides itself:
+    those a table link removes (**Remove non-table entries**), **Hide NaN** and **Hide outliers**,
+    and less the points a table link greys out: only the points shown in full count, so a table
+    search that picks a few rows gives them the larger size of a small plot. The grey points,
+    drawn behind, keep the automatic style of all the points drawn (or the size and opacity you
+    set), so they stay a quiet backdrop. From the default
+    5.1 px and opaque at a few thousand points, the size falls by about half with every tenfold
+    in points: 3.5 px / 0.87 at 10,000, 1.96 px / 0.64 at 100,000, 1.18 px / 0.43 at a million,
+    and 0.39 px (one step, the smallest WebGL draws) from about 10 million, with opacity 0.28
+    there and 0.19 at 95.6 million.
+    The curve was set on screenshots of Tahoe-100M UMAPs and checked on 1, 2 and 5 million cells
+    at cell-line colours; sizes above 5 million points were not looked at again. An
     automatic value is shown in grey italics and changes when the number of points does, for
     example when you turn the subset off. In a 2D plot it also follows the zoom: once a zoom or
     pan has settled, the count is the points inside the view, so a close view of a dense

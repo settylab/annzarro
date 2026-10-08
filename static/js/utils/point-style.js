@@ -14,26 +14,35 @@
  * number box or an older link that names one, stays as set.
  */
 import { roundSig, snapPointSize } from './slider-scales.js';
+import { Config } from '../config.js';
 
 /*
  * value(N) = base * (1 + N / N_HALF) ** -EXPONENT, rounded to 2 significant
- * digits. Smooth in N, equal to base for small N (today's look up to a few
- * thousand points), a power law above.
- * Calibrated on Tahoe UMAP screenshots (cell-line colours, DSF 2) over a grid
- * of size/opacity at 200, 100k, 1M, 10M and 95.6M points. Chosen there:
- * 200: 5 / 1 (anything less vanishes), 100k: 3 / 0.6, 1M: 2 / 0.4,
- * 10M: 1.3 / 0.25, 95.6M: 0.9 / 0.15 (1 / 0.2 still fills the clusters;
- * 0.7 / 0.1 starts to lose the sparse ones). With base 5 / 1 the curve
- * gives 5 / 1, 3 / 0.61, 2 / 0.39, 1.4 / 0.25, 0.92 / 0.16; snapped to the
- * sizes scattergl draws: 5.1, 3.14, 1.96, 1.57, 0.784. The shots drew those
- * snapped sizes already (scattergl rounds to steps of 100/255 px): "0.92"
- * and the grid's "0.7" both drew 0.784, so 1 / 0.2 against 0.7 / 0.1 at
- * 95.6M differed in size by one step and the 0.7 / 0.1 against 0.92 / 0.16
- * comparison was opacity alone.
+ * digits. Smooth in N, equal to base for a few thousand points or fewer, a
+ * power law above.
+ *
+ * Size (base 5 px): N_HALF 6000, EXPONENT 0.3. A power law, so every tenfold
+ * in points takes the size down by the same factor (about 2) and the change
+ * is visible at every scale: 5.1 px at 100 points, 3.5 at 10k, 2.0 at 100k,
+ * 1.2 at 1M, 0.78 at 5M, and the smallest step scattergl draws (0.392 px) from
+ * about 10M. The first calibration (Tahoe UMAP screenshots, 200 to 95.6M
+ * points) chose an exponent of 0.175, which left points at 2 px at 1M and
+ * 1.6 px at 10M: clusters of a few million cells were already solid, and 100
+ * to 10k points hardly changed. Redone on 1M, 2M and 5M Tahoe cells (cell
+ * line colours): at 1M to 5M the old sizes merge neighbouring clusters, these
+ * keep their outlines and the sparse bridges between them.
+ *
+ * Opacity (base 1): N_HALF 9000, EXPONENT 0.18: 0.87 at 10k, 0.64 at 100k,
+ * 0.43 at 1M, 0.32 at 5M, 0.28 at 10M, 0.19 at 95.6M. Points are smaller than before, so
+ * a little more opaque than the first calibration (0.2); looked at to 5M
+ * points, not beyond.
+ *
+ * Sizes are snapped to the ones scattergl draws (scattergl rounds to steps of
+ * 100/255 px; slider-scales.js snapPointSize), never below one step.
  */
 export const AUTO_CURVE = Object.freeze({
-  size: Object.freeze({ nHalf: 6000, exponent: 0.175 }),
-  opacity: Object.freeze({ nHalf: 9000, exponent: 0.2 })
+  size: Object.freeze({ nHalf: 6000, exponent: 0.3 }),
+  opacity: Object.freeze({ nHalf: 9000, exponent: 0.18 })
 });
 
 /** The automatic value for `n` points, from the default for few points. */
@@ -47,12 +56,13 @@ export function autoValue(n, base, curve) {
  * whose automatic opacity is 1 at any N (below 1 Plotly draws its points
  * out of depth order, far ones over near ones) and whose sizes are not
  * snapped; 2D sizes are ones scattergl draws (slider-scales.js
- * snapPointSize).
+ * snapPointSize); both are at least one step (0.392 px).
  */
 export function autoPointStyle(n, base, is3D = false) {
   const size = autoValue(n, base.size, AUTO_CURVE.size);
   return {
-    size: is3D ? size : snapPointSize(size),
+    // never below the smallest step scattergl draws, 3D too
+    size: is3D ? Math.max(size, snapPointSize(0)) : snapPointSize(size),
     opacity: is3D ? 1 : Math.min(1, autoValue(n, base.opacity, AUTO_CURVE.opacity))
   };
 }
@@ -85,4 +95,26 @@ export function applyAutoPointStyle(settings, n, base) {
     changed = true;
   }
   return changed;
+}
+
+/** The default size and opacity for few points: the app's (server) defaults. */
+export function pointStyleBase() {
+  const d = (Config && Config.DEFAULTS) || {};
+  return { size: d.POINT_SIZE || 5, opacity: d.POINT_OPACITY || 0.7 };
+}
+
+/**
+ * The marker of the grey points a table link leaves in the plot (the rows
+ * not in the table, drawn first so they sit behind). They do not count for
+ * the plot's automatic style, which follows the points shown in full; they
+ * keep the automatic style of everything drawn (`nAll` points), so a few
+ * chosen rows do not sit on a solid grey backdrop. A size or opacity the
+ * user set applies to them too.
+ */
+export function greyMarker(settings, nAll) {
+  const auto = autoPointStyle(nAll, pointStyleBase(), !!settings.z);
+  return {
+    size: settings.autoPointSize ? auto.size : settings.pointSize,
+    opacity: settings.autoPointOpacity ? auto.opacity : settings.pointOpacity
+  };
 }
