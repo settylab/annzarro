@@ -1,7 +1,7 @@
 # Scale: Tahoe-100M
 
 ```{figure} ../_static/figures/paper/scale.png
-:alt: Seven panels. a, every one of 95.6 million Tahoe-100M cells on a UMAP coloured by cell line, one island per cell line, with a small box marked. b, the same cells coloured by FN1 counts. c, a zoom into the box where each dot is one cell. d, part 1 of 957 of the default 100,000-cell subset. e, browser time against dataset size for opening, recolouring, a balanced subset and a part step. f, time to the first plot with every cell. g, peak JavaScript heap at the first plot.
+:alt: Seven panels. a, every one of 95.6 million Tahoe-100M cells on a UMAP coloured by cell line, one island per cell line, with a small box marked. b, the same cells coloured by FN1 counts. c, a zoom into the box where each dot is one cell. d, part 1 of 957 of the default 100,000-cell subset. e, browser time against dataset size for opening, recolouring, a balanced subset and a part step. f, time to the first plot with every cell, with the large-plot threshold at 1 million points and the point where the memory guard declines at 250 million. g, peak JavaScript heap at the first plot against the tab's heap limit of 4.1 GiB, for every cell and for the default subset.
 :width: 100%
 
 *Tahoe-100M on a laptop: every cell in one plot, and a subset that stays interactive*, a figure
@@ -12,13 +12,19 @@ of app screenshots; e to g are browser measurements.
 All 95,624,334 cells of Tahoe-100M {cite:p}`zhang2025tahoe`, on a UMAP fitted to 999,073
 reference cells and extended to every other cell by nearest-neighbour placement, in headless
 Chromium on an Apple M3 Max laptop (128 GiB RAM). **a**, Every cell coloured by cell line in
-large-plot mode, point size 1 and opacity 0.2, drawn 6.4 s after the page was opened. **b**, The
+large-plot mode, point size 1 and opacity 0.2, drawn 6.8 s after the page was opened. **b**, The
 same cells coloured by FN1 counts, the colour scale capped at 30, the 99th percentile over all
 cells. **c**, A zoom into one cell line's island, every cell at point size 5 and opacity 1: each dot
 is one cell. **d**, The default subset, part 1 of 957 (100,000 cells), in the regular plot with
 hover and focus. **e** to **g**, Time and memory against dataset size, from 1 million cells
-(prefixes of Tahoe-100M) to all 95.6 million: the default subset stays interactive, and drawing
-every cell is bounded by the tab's JavaScript heap. The steps behind each view are in
+(prefixes of Tahoe-100M) to all 95.6 million: the default subset stays interactive. In **f** and
+**g** the series for every cell continue to larger stores, out to 150 million cells
+(described in the paper's Supplementary Note 1). The dotted rule at 1 million points marks the
+large-plot threshold, and the rule at 250 million marks where the memory guard declines the
+first plot at default settings, so larger stores are not shown. **g** shows the peak JavaScript
+(V8) heap at the first plot against the tab's heap limit under default Chromium flags (4.1 GiB,
+dashed line): the regular plot fills the heap fastest, large-plot mode keeps the positions off
+the heap (0.03 GiB at 150 million cells), and the default subset stays flat. The steps behind each view are in
 {doc}`../user-guide/subsets`; the paper's Procedure covers them as Worked example 6, and
 {doc}`../tutorials/millions` carries it out step by step.
 
@@ -48,7 +54,7 @@ every cell is bounded by the tab's JavaScript heap. The steps behind each view a
   times depend on the disk, the browser and the GPU.
 - **Times are the paper's.** The views were not timed for this page; on a 95.6-million-cell store
   expect several seconds per every-cell view. The paper's benchmark drew every cell in 5 to 6 s;
-  its screenshots of panels a, b and c were drawn 6.4, 7.3 and 6.3 s after the page was opened.
+  its screenshots of panels a, b and c were drawn 6.8, 7.1 and 6.5 s after the page was opened.
 
 (paper-scale-views)=
 ## Views
@@ -104,7 +110,7 @@ Loading one restores the dataset, the subset, the focus and the layout, like the
 ({doc}`../user-guide/panel-sets`).
 
 The views are written by `docs/_tools/start_links.py scale` from the view files of the paper's
-v0.4.0 screenshots (`figures/scale/*.view.json` in the paper's companion repository,
+v0.4.1 screenshots (`figures/scale/*.view.json` in the paper's companion repository,
 {ref}`paper-companion`). The script adds what
 the screenshot script set through the app: the subset, the part, and the zoom and point size of
 panel c.

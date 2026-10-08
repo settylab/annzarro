@@ -1,5 +1,6 @@
 {
  "dataset": "bm_aging.zarr (8,090 cells x 16,285 genes)",
+ "urls": "dataset_path shown as the store's name; the app sends its absolute path",
  "clicks": [
   {
    "click": "gene click",
@@ -7,7 +8,7 @@
    "requests": [
     {
      "url": "/api/v1/data/layer/kompot_de_Young_to_Old_fold_change?dataset_path=bm_aging.zarr&cols=1165&format=f32",
-     "ms": 14.2,
+     "ms": 22.8,
      "transfer": 32660,
      "body": 32360
     }
@@ -19,9 +20,16 @@
    "requests": [
     {
      "url": "/api/v1/data/layer/kompot_de_Young_to_Old_fold_change?dataset_path=bm_aging.zarr&rows=760&format=f32",
-     "ms": 34.2,
+     "ms": 20.5,
      "transfer": 65440,
      "body": 65140
+    },
+    {
+     "url": "/api/v1/data/fingerprint?dataset_path=bm_aging.zarr&wait=0",
+     "ms": 1.2,
+     "transfer": 2673,
+     "body": 2373,
+     "note": "the store's identity, polled in the background; not part of the click"
     }
    ]
   },
