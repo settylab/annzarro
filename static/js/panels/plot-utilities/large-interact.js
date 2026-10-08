@@ -147,17 +147,19 @@ async function focusRow(gd, st, hit) {
 }
 
 /**
- * Make the graph interactive from `index`. Safe to call on every draw: the
- * listeners are added once, the state replaced.
+ * Make the graph interactive from `index`, which may be null while it is
+ * still being built (`st.index` is set when it is ready; until then hover shows
+ * nothing and a click does nothing). Safe to call on every draw: the listeners
+ * are added once, the state replaced. Returns the state.
  * @param {HTMLElement} gd  the plot
  * @param {Object} settings  the panel's settings
- * @param {Object} index  from buildPointIndex
+ * @param {Object|null} index  from buildPointIndex
  */
 export function attachLargeInteraction(gd, settings, index) {
   const old = gd.__largeState;
   const st = gd.__largeState = { index, settings, hovered: -1, dwell: 0, lastFocus: null, seq: old ? old.seq : 0 };
   if (old) clearTimeout(old.dwell);
-  if (old && old.listening) { st.listening = true; return; }
+  if (old && old.listening) { st.listening = true; return st; }
   st.listening = true;
   let frame = 0, last = null, down = null;
   gd.addEventListener('mousemove', (e) => {
@@ -194,6 +196,7 @@ export function attachLargeInteraction(gd, settings, index) {
     const hit = pointAt(gd, s, e.clientX, e.clientY, e.target);
     if (hit) focusRow(gd, s, hit).catch((err) => console.warn('Focus by click failed:', err && err.message));
   }, true);
+  return st;
 }
 
 /** The shape that marks the focused cell: a filled circle sized in pixels, as the regular path's marker. */

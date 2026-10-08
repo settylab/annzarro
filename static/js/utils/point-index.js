@@ -19,6 +19,67 @@
 /** Average points per grid cell: at 95.6M points the cells are about a screen pixel wide. */
 export const POINTS_PER_CELL = 64;
 
+/** Points handled between two looks at the clock while building in slices. */
+const CHUNK = 1 << 17;
+
+/**
+ * The build as a generator: it yields after each CHUNK points (or cells) of
+ * work and returns the index, so one function serves the synchronous build
+ * and the time-sliced one.
+ */
+function* indexSteps(X, Y, rows) {
+  const n = X.length;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let a = 0; a < n; a += CHUNK) {
+    const e = Math.min(n, a + CHUNK);
+    for (let i = a; i < e; i++) {
+      const x = X[i], y = Y[i];
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+    yield;
+  }
+  if (n === 0) { x0 = y0 = 0; x1 = y1 = 1; }
+  const w = Math.max(x1 - x0, 1e-30), h = Math.max(y1 - y0, 1e-30);
+  const wanted = Math.max(1, Math.ceil(n / POINTS_PER_CELL));
+  const gx = Math.max(1, Math.min(wanted, Math.round(Math.sqrt(wanted * w / h))));
+  const gy = Math.max(1, Math.ceil(wanted / gx));
+  const cells = gx * gy;
+  const sx = gx / w, sy = gy / h;
+  const offsets = new Uint32Array(cells + 1);
+  // the cell of each point, kept between the two passes (4 B per point, freed on return)
+  const where = new Uint32Array(n);
+  for (let a = 0; a < n; a += CHUNK) {
+    const e = Math.min(n, a + CHUNK);
+    for (let i = a; i < e; i++) {
+      let cx = ((X[i] - x0) * sx) | 0, cy = ((Y[i] - y0) * sy) | 0;
+      if (cx >= gx) cx = gx - 1;
+      if (cy >= gy) cy = gy - 1;
+      const c = cy * gx + cx;
+      where[i] = c;
+      offsets[c + 1]++;
+    }
+    yield;
+  }
+  for (let a = 0; a < cells; a += CHUNK) {
+    const e = Math.min(cells, a + CHUNK);
+    for (let c = a; c < e; c++) offsets[c + 1] += offsets[c];
+    yield;
+  }
+  // fill from a copy of the cell starts, so `offsets` stays the table of starts
+  const order = new Uint32Array(n);
+  const fill = offsets.slice(0, cells);           // transient, cells x 4 B
+  for (let a = 0; a < n; a += CHUNK) {
+    const e = Math.min(n, a + CHUNK);
+    for (let i = a; i < e; i++) order[fill[where[i]]++] = i;
+    yield;
+  }
+  return { X, Y, rows, order, offsets, gx, gy, x0, y0, sx, sy,
+    bytes: order.byteLength + offsets.byteLength + rows.byteLength };
+}
+
 /**
  * @param {Float32Array} X  x of the drawn points (no NaN)
  * @param {Float32Array} Y  y of the drawn points (no NaN)
@@ -27,40 +88,53 @@ export const POINTS_PER_CELL = 64;
  *   x0: number, y0: number, sx: number, sy: number, bytes: number}}
  */
 export function buildPointIndex(X, Y, rows) {
-  const n = X.length;
-  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  for (let i = 0; i < n; i++) {
-    const x = X[i], y = Y[i];
-    if (x < x0) x0 = x;
-    if (x > x1) x1 = x;
-    if (y < y0) y0 = y;
-    if (y > y1) y1 = y;
+  const steps = indexSteps(X, Y, rows);
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
   }
-  if (n === 0) { x0 = y0 = 0; x1 = y1 = 1; }
-  const w = Math.max(x1 - x0, 1e-30), h = Math.max(y1 - y0, 1e-30);
-  const cells = Math.max(1, Math.ceil(n / POINTS_PER_CELL));
-  const gx = Math.max(1, Math.min(cells, Math.round(Math.sqrt(cells * w / h))));
-  const gy = Math.max(1, Math.ceil(cells / gx));
-  const sx = gx / w, sy = gy / h;
-  const offsets = new Uint32Array(gx * gy + 1);
-  const cells_ = gx * gy;
-  // the cell of each point, kept between the two passes (4 B per point, freed on return)
-  const where = new Uint32Array(n);
-  for (let i = 0; i < n; i++) {
-    let cx = ((X[i] - x0) * sx) | 0, cy = ((Y[i] - y0) * sy) | 0;
-    if (cx >= gx) cx = gx - 1;
-    if (cy >= gy) cy = gy - 1;
-    const c = cy * gx + cx;
-    where[i] = c;
-    offsets[c + 1]++;
+}
+
+let _channel = null;
+/** A turn of the event loop for the page's input (a MessageChannel: no timer clamp). */
+function _later() {
+  if (typeof MessageChannel !== 'function') return new Promise((r) => setTimeout(r, 0));
+  if (!_channel) {
+    const ch = _channel = { port: new MessageChannel(), resolve: null };
+    // node: a listening port keeps the process alive, so it is held only while a turn is awaited
+    ch.port.port1.onmessage = () => {
+      const r = ch.resolve;
+      ch.resolve = null;
+      if (ch.port.port1.unref) ch.port.port1.unref();
+      if (r) r();
+    };
+    if (ch.port.port1.unref) ch.port.port1.unref();
   }
-  for (let c = 0; c < cells_; c++) offsets[c + 1] += offsets[c];
-  // fill from a copy of the cell starts, so `offsets` stays the table of starts
-  const order = new Uint32Array(n);
-  const fill = offsets.slice(0, cells_);          // transient, cells x 4 B
-  for (let i = 0; i < n; i++) order[fill[where[i]]++] = i;
-  return { X, Y, rows, order, offsets, gx, gy, x0, y0, sx, sy,
-    bytes: order.byteLength + offsets.byteLength + rows.byteLength };
+  return new Promise((r) => {
+    _channel.resolve = r;
+    if (_channel.port.port1.ref) _channel.port.port1.ref();
+    _channel.port.port2.postMessage(0);
+  });
+}
+
+/**
+ * The same index, built in slices of about `sliceMs` of the main thread with a
+ * turn for the page between them (pan, zoom and other input stay responsive).
+ * `job.cancelled = true` stops it at the next slice and resolves to null.
+ * @param {Object} job  {cancelled: boolean}
+ * @param {number} [sliceMs]
+ */
+export async function buildPointIndexSliced(X, Y, rows, job = { cancelled: false }, sliceMs = 8) {
+  const steps = indexSteps(X, Y, rows);
+  for (;;) {
+    const t = performance.now();
+    do {
+      if (job.cancelled) return null;
+      const r = steps.next();
+      if (r.done) return r.value;
+    } while (performance.now() - t < sliceMs);
+    await _later();
+  }
 }
 
 /**

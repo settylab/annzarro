@@ -45,7 +45,7 @@ import { probeForDraw, niceFloor, probeMessage } from '../../utils/alloc-probe.j
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
-import { buildPointIndex } from '../../utils/point-index.js';
+import { buildPointIndexSliced } from '../../utils/point-index.js';
 import { attachLargeInteraction, highlightLargeFocus } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
@@ -386,7 +386,9 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   if (DataManager.getDatasetGeneration() !== generation) {
     throw new DOMException('Plot data is from a previous dataset', 'AbortError');
   }
-  // the previous draw's index goes before the new one is built: never both
+  // the previous draw's index goes before the new one is built: never both; a build
+  // still running for it is stopped
+  if (plotContainer.__indexBuild) plotContainer.__indexBuild.cancelled = true;
   if (plotContainer.__largeState) plotContainer.__largeState.index = null;
   const t1 = performance.now();
   const x = xs.values, y = ys.values, n = x.length;
@@ -592,18 +594,27 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     updateColorControlsVisibility(container, cs && cs.codes ? 'categorical' : cs ? 'numerical' : 'constant', id);
   }
   const t3 = performance.now();
-  // hover, click and the focus highlight: the index over the drawn points
-  // the probe's buffers may be longer than the points kept
+  // hover, click and the focus highlight: the index over the drawn points, built after the
+  // plot is visible and in slices of the main thread, so input stays responsive; until it is
+  // ready hover shows nothing and a click does nothing
+  // (the probe's buffers may be longer than the points kept)
   const kept = n - filtered;
-  const index = buildPointIndex(pts.X.subarray(0, kept), pts.Y.subarray(0, kept), pts.R);
-  attachLargeInteraction(plotContainer, settings, index);
-  highlightLargeFocus(plotContainer, settings);
-  const t4 = performance.now();
-  data.large = { n, traces: traces.length, filtered, index_bytes: index.bytes,
-    load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2, index_ms: t4 - t3 };
+  const job = { cancelled: false };
+  plotContainer.__indexBuild = job;
+  const st = attachLargeInteraction(plotContainer, settings, null);
+  const large = { n, traces: traces.length, filtered,
+    load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2, index_ms: null };
+  data.large = large;
+  buildPointIndexSliced(pts.X.subarray(0, kept), pts.Y.subarray(0, kept), pts.R, job).then((index) => {
+    if (!index || job.cancelled || plotContainer.__largeState !== st) return;
+    st.index = index;
+    large.index_ms = performance.now() - t3;
+    large.index_bytes = index.bytes;
+    console.info(`Point index ready ${large.index_ms.toFixed(0)} ms after the draw (hover and click)`);
+    highlightLargeFocus(plotContainer, settings);
+  }).catch((err) => console.warn('Point index not built:', err && err.message));
   data.coverage = coverage;
   data.generation = generation;
   console.info(`Large cell plot: ${n} points in ${traces.length} traces; `
-    + `load ${(t1 - t0).toFixed(0)} ms, build ${(t2 - t1).toFixed(0)} ms, draw ${(t3 - t2).toFixed(0)} ms, `
-    + `index ${(t4 - t3).toFixed(0)} ms`);
+    + `load ${(t1 - t0).toFixed(0)} ms, build ${(t2 - t1).toFixed(0)} ms, draw ${(t3 - t2).toFixed(0)} ms`);
 }

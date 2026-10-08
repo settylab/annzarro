@@ -248,7 +248,11 @@ In large-plot mode:
 - **Hover and click work on points.** Hovering near a point (within about 10 pixels) shows a
   small label with the cell's name, its position and its colour value; clicking focuses the cell,
   and every other panel follows. The name and colour value are read from the server for that one
-  cell, so the label shows the position first and fills in a moment later. If points overlap, the
+  cell, so the label shows the position first and fills in a moment later. A click on a point the
+  pointer has not rested on yet waits for the same request (about 100 ms), where a click after the
+  label has appeared is immediate. Hover and click start working a moment after the plot appears
+  (under a second for every cell of Tahoe-100M), while AnnZarro indexes the points in the
+  background; pan and zoom stay responsive meanwhile. If points overlap, the
   nearest to the pointer is taken (the regular plot steps through overlapping points on repeated
   clicks; this mode does not). The focused cell is marked by a red dot when **Highlight Focused
   Cell** is on, and a cell the plot does not show is not marked.

@@ -10,7 +10,7 @@ import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const js = p => pathToFileURL(path.resolve(__dirname, "../../../static/js", p)).href;
-const { buildPointIndex, nearestPoint, pointOfRow, POINTS_PER_CELL } = await import(js("utils/point-index.js"));
+const { buildPointIndex, buildPointIndexSliced, nearestPoint, pointOfRow, POINTS_PER_CELL } = await import(js("utils/point-index.js"));
 
 function lcg(seed) { let s = seed >>> 0; return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296); }
 
@@ -107,4 +107,21 @@ test("build and query cost: 2M points build in about a second, a query in micros
   console.log(`  2M points: build ${build.toFixed(0)} ms (${(build / n * 1e6).toFixed(0)} ns/point), query ${query.toFixed(3)} ms`);
   assert.ok(build < 3000, `${build} ms`);
   assert.ok(query < 5, `${query} ms`);
+});
+
+test("the sliced build gives the same index, in slices, and stops when cancelled", async () => {
+  const n = 600000, { X, Y, rows } = cloud(n, 21, { clusters: 5 });
+  const sync = buildPointIndex(X, Y, rows);
+  let turns = 0;
+  const tick = setInterval(() => { turns++; }, 1);
+  const sliced = await buildPointIndexSliced(X, Y, rows, { cancelled: false }, 1);
+  clearInterval(tick);
+  assert.deepEqual(Array.from(sliced.offsets.slice(0, 50)), Array.from(sync.offsets.slice(0, 50)));
+  assert.equal(sliced.order.length, sync.order.length);
+  assert.ok(sliced.order.every((v, i) => v === sync.order[i]));
+  assert.ok(turns > 0, "the event loop got turns during the build");
+  const job = { cancelled: false };
+  const p = buildPointIndexSliced(X, Y, rows, job, 1);
+  job.cancelled = true;
+  assert.equal(await p, null);
 });
