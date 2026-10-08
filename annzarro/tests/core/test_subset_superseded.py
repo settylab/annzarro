@@ -142,3 +142,31 @@ def test_the_claims_stay_few():
     for i in range(cell_subset._CLAIMS_MAX + 50):
         cell_subset.claim(f"page-{i}", "/d.zarr", "k")
     assert len(cell_subset._claims) == cell_subset._CLAIMS_MAX
+
+
+def test_the_step_to_the_part_read_ahead_waits_for_it_instead_of_computing_it_twice(monkeypatch):
+    gate = _Gate(monkeypatch)
+    ahead, out_ahead = _in_thread(3, low=True)
+    assert gate.reached.wait(10)
+    step, out_step = _in_thread(3)                              # the page now asks for that very part
+    step.join(0.3)
+    assert step.is_alive(), "the step did not wait for the read ahead"
+    gate.release.set()
+    ahead.join(10)
+    step.join(10)
+    assert "subset" in out_ahead, "asking for the very part stopped its read ahead"
+    assert out_step["subset"] is out_ahead["subset"], "the part was computed twice"
+    assert gate.blocks == N // BLOCK, "the rows were passed over more than once"
+
+
+def test_a_waiter_computes_it_itself_when_the_read_ahead_was_stopped(monkeypatch):
+    gate = _Gate(monkeypatch)
+    ahead, out_ahead = _in_thread(3, low=True)
+    assert gate.reached.wait(10)
+    step, out_step = _in_thread(3)
+    cell_subset.claim("page-1", "/d.zarr", _spec(5).key())      # another part is asked for: the read ahead stops
+    gate.release.set()
+    ahead.join(10)
+    step.join(10)
+    assert "error" in out_ahead
+    assert "subset" in out_step or "error" in out_step          # computed again, or stopped like the part it was for

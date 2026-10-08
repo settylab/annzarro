@@ -1020,7 +1020,9 @@ def claim(client: Optional[str], dataset_path: str, spec_key: str, low: bool = F
         if now is None:
             return
         if low:
-            if now[0] != seen:
+            # any real request for ANOTHER subset (the same one is the step to
+            # this very part, which then waits for this computation)
+            if now[0] != seen and now[1] != spec_key:
                 raise SubsetSuperseded()
         elif now != mine and now[1] != spec_key:
             raise SubsetSuperseded()
@@ -1037,11 +1039,33 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec, client: Optional[str
     """
     key = (dataset_path, _store_signature(dataset_path), spec.key())
     check = claim(client, dataset_path, spec.key(), low)
-    with _lock:
-        hit = _cache.get(key)
-        if hit is not None:
-            _cache.move_to_end(key)
-            return hit
+    while True:
+        with _lock:
+            hit = _cache.get(key)
+            if hit is not None:
+                _cache.move_to_end(key)
+                return hit
+            running = _computing.get(key)
+            if running is None:
+                _computing[key] = mine = threading.Event()
+        if running is None:
+            break
+        # the same subset is being computed (a read ahead of this very part):
+        # wait for it instead of making it twice, then look again
+        running.wait()
+    try:
+        return _compute_subset(reader, dataset_path, spec, key, check)
+    finally:
+        with _lock:
+            _computing.pop(key, None)
+        mine.set()
+
+
+#: subset key -> Event set when its computation ends, while it runs
+_computing: "Dict[Tuple, threading.Event]" = {}
+
+
+def _compute_subset(reader, dataset_path: str, spec: SubsetSpec, key, check) -> Subset:
 
     n_obs = _n_obs(reader, dataset_path)
     known = _obs_columns(reader, dataset_path)
