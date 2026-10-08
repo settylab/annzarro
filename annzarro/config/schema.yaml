@@ -298,6 +298,10 @@ ui:
           type: integer
           description: A dataset with more cells than this does not download the names of the cells it shows; hover, focus and a table's page ask for the names they need
           default: 5000000
+        prefetch_next_part:
+          type: [string, boolean]
+          description: Read the next part's cells and embedding coordinates in the background after a part is shown (auto - single-user servers only, true, false)
+          default: auto
         subset_threshold:
           type: integer
           description: A dataset with more cells than this opens on a reproducible cell subset (0 = always)

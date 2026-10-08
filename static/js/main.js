@@ -16,7 +16,7 @@ import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
 import { clearSiteStorage, clearSiteStorageNow, bareUrl } from './utils/site-storage.js';
-import { sameSubset } from './utils/subset.js';
+import { sameSubset, describeParts, partSpec } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
 import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/subset-loading.js';
@@ -1046,10 +1046,71 @@ const App = (function() {
         }
     }
 
+    // Read ahead: a while after a part is shown, the next part's cells and
+    // embedding coordinates are read at low priority, so the common forward
+    // step finds them. Any real subset request stops it (unless it asks for
+    // that very part, which then joins the read).
+    let _prefetchTimer = null;
+    let _prefetch = null;       // {key, controller} of the read under way
+
+    function _prefetchEnabled() {
+        const setting = Config.DEFAULTS.PREFETCH_NEXT_PART;
+        if (setting === true || setting === 'true' || setting === 'on') return true;
+        if (setting === false || setting === 'false' || setting === 'off') return false;
+        return !!(Config.SERVER_CONFIG && Config.SERVER_CONFIG.single_user);
+    }
+
+    function _stopPrefetch(exceptKey = null) {
+        clearTimeout(_prefetchTimer);
+        _prefetchTimer = null;
+        if (_prefetch && _prefetch.key !== exceptKey) {
+            _prefetch.controller.abort();
+            _prefetch = null;
+        }
+    }
+
+    /** The obsm keys and columns the open cell plots draw, once each. */
+    function _embeddingsDrawn() {
+        const seen = new Map();
+        for (const panel of PanelManager.getActivePanels()) {
+            if (!panel.getType || panel.getType() !== 'cell-plot') continue;
+            const config = panel.getConfig ? panel.getConfig() : null;
+            for (const axis of config ? [config.x, config.y, config.z] : []) {
+                if (axis && axis.type === 'obsm' && axis.key && axis.column !== '' && axis.column !== undefined) {
+                    if (!seen.has(axis.key)) seen.set(axis.key, new Set());
+                    seen.get(axis.key).add(String(axis.column));
+                }
+            }
+        }
+        return [...seen].map(([key, columns]) => ({ key, columns: [...columns] }));
+    }
+
+    function _schedulePrefetch() {
+        _stopPrefetch();
+        if (!_prefetchEnabled() || _subsetQueued || _subsetController || _isLoadingDataset) return;
+        const info = DataManager.getSubset();
+        const parts = describeParts(info);
+        if (!parts || !parts.canNext) return;
+        const spec = partSpec(info, parts.part + 1, false, parts.part);
+        if (!spec) return;
+        const dataset = DataManager.getCurrentDataset();
+        _prefetchTimer = setTimeout(() => {
+            _prefetchTimer = null;
+            const embeddings = _embeddingsDrawn();
+            if (!embeddings.length || DataManager.getCurrentDataset() !== dataset) return;
+            const controller = new AbortController();
+            const run = { key: JSON.stringify(spec), controller };
+            _prefetch = run;
+            DataManager.prefetchSubset(spec, embeddings, controller.signal)
+                .finally(() => { if (_prefetch === run) _prefetch = null; });
+        }, PREFETCH_IDLE_MS);
+    }
+
     // One subset swap at a time; requests made meanwhile collapse into the
     // last one, which runs next. A newer request stops the swap that is
     // reading cells (its requests are aborted), so clicking through parts
     // 2, 3, 4 reads only 4.
+    const PREFETCH_IDLE_MS = 1500;
     let _subsetSwap = null;
     let _subsetQueued = null;
     let _subsetController = null;      // AbortController of the swap reading cells
@@ -1071,6 +1132,7 @@ const App = (function() {
     function _swapSubset(spec) {
         const request = { spec };
         _subsetQueued = request;
+        _stopPrefetch(JSON.stringify(spec));
         // the swap that is reading (or drawing) the cells of an earlier
         // request has no use any more
         if (_subsetController) _subsetController.abort(new DOMException('Superseded by a newer subset', 'AbortError'));
@@ -1090,6 +1152,7 @@ const App = (function() {
                 // overlay from here (the tiles keep the dimming until all are drawn)
                 handOverToPanels();
                 await PanelManager.notifyPanels('subsetChanged', { dataset: DataManager.getCurrentDataset() });
+                _schedulePrefetch();
                 return true;
             } finally {
                 if (_subsetController === controller) _subsetController = null;
@@ -1938,6 +2001,8 @@ const App = (function() {
             
             // Update last loaded dataset path and reset loading flag
             release();
+
+            _schedulePrefetch();
 
             // Fingerprint the store for saved views, after the first draw
             // has had its turn (the server hashes the names in the background)

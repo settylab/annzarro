@@ -17,6 +17,8 @@ import { RemoteNames } from './utils/remote-names.js';
 // array, which every view accepts; only the large Cell Plot path
 // (large-plot.js) works with packed names; it takes over above 1M cells by default.
 const PACKED_NAMES_ABOVE_BYTES = 256 * 1024 * 1024;
+/** How long the coordinates read ahead for the next part are kept. */
+const PREFETCH_TTL_MS = 5 * 60 * 1000;
 
 // Marks a cached body that is a decoded binary slice, not parsed JSON.
 const BINARY_RESULT = Symbol('binarySlice');
@@ -1528,20 +1530,24 @@ const DataManager = (function() {
      * @param {string} [options.datasetPath]
      * @param {string} options.obsmKey
      * @param {Array<string|number>} options.columns - column positions
+     * @param {string} [options.subsetKey] - the key of another subset than the
+     *   one shown (the next part, read ahead)
+     * @param {number} [options.ttl] - how long the filed columns are kept, ms
      * @param {AbortSignal} [options.signal]
      * @returns {Promise<boolean>} whether the columns were filed
      */
-    async function prefetchObsmColumns({ datasetPath, obsmKey, columns, signal = null } = {}) {
+    async function prefetchObsmColumns({ datasetPath, obsmKey, columns, subsetKey = null, ttl = undefined, signal = null } = {}) {
         try {
             const path = datasetPath || _currentDataset;
             const wanted = [...new Set((columns || []).map(String))];
             if (!path || !obsmKey || wanted.length < 2 || !wanted.every(c => /^\d+$/.test(c))) return false;
             const url = `${Config.API.OBSM}/${obsmKey}`;
-            const query = (params) => `${url}?${new URLSearchParams(_withSubset(url, { ...params, format: BINARY_FORMAT })).toString()}`;
+            const also = subsetKey ? { subset: subsetKey } : {};
+            const query = (params) => `${url}?${new URLSearchParams(_withSubset(url, { ...params, format: BINARY_FORMAT, ...also })).toString()}`;
             const single = (c) => query({ dataset_path: path, column_name: c });
             if (wanted.every(c => CacheManager.get(single(c)) !== undefined)) return false;
             const pairParams = { dataset_path: path, cols: wanted.join(',') };
-            const body = await _fetchWithCache(url, { ...pairParams, format: BINARY_FORMAT }, signal);
+            const body = await _fetchWithCache(url, { ...pairParams, format: BINARY_FORMAT, ...also }, signal);
             // the block is not kept: its columns are (8 bytes per cell twice otherwise)
             CacheManager.remove(query(pairParams));
             if (!body || !body[BINARY_RESULT] || !Array.isArray(body.shape) || body.shape.length !== 2
@@ -1551,13 +1557,44 @@ const DataManager = (function() {
                 const values = new body.values.constructor(rows);
                 for (let r = 0; r < rows; r++) values[r] = body.values[r * width + k];
                 CacheManager.set(single(c), { [BINARY_RESULT]: true, values, shape: [rows],
-                    dtype: body.dtype, encoding: 'dense' });
+                    dtype: body.dtype, encoding: 'dense' }, ttl);
             });
             return true;
         } catch (error) {
             if (error && error.name === 'AbortError') throw error;
             console.warn('Columns of obsm could not be read together; reading them one by one:', error);
             return false;
+        }
+    }
+
+    /**
+     * Read the next part ahead, at low priority: its cells (/data/subset,
+     * which the server may drop for any real request) and the coordinates of
+     * the embeddings the plots draw, filed where the load of that part looks,
+     * so stepping to it needs no wait for the server. Names are not read (they
+     * stay on the server for a huge dataset). Best effort and quiet: nothing
+     * here is an error, and nothing waits for it.
+     * @param {Object} spec - the subset spec of that part
+     * @param {Array<{key: string, columns: Array}>} embeddings - obsm keys and the columns drawn
+     * @param {AbortSignal} signal
+     * @returns {Promise<string|null>} the part's subset key, null when not read
+     */
+    async function prefetchSubset(spec, embeddings, signal) {
+        const datasetPath = _currentDataset;
+        if (!datasetPath || !spec) return null;
+        try {
+            const info = await _fetchWithCache(Config.API.SUBSET,
+                { dataset_path: datasetPath, subset: subsetParam(spec), client: _clientId, priority: 'low' }, signal);
+            if (!info || !info.key) return null;
+            for (const e of embeddings || []) {
+                if (signal && signal.aborted) return null;
+                await prefetchObsmColumns({ datasetPath, obsmKey: e.key, columns: e.columns,
+                    subsetKey: info.key, ttl: PREFETCH_TTL_MS, signal });
+            }
+            return info.key;
+        } catch (error) {
+            if (!error || error.name !== 'AbortError') console.debug('Read-ahead of the next part skipped:', error && error.message);
+            return null;
         }
     }
 
@@ -2438,6 +2475,7 @@ const DataManager = (function() {
         loadVar,
         loadObsm,
         prefetchObsmColumns,
+        prefetchSubset,
         loadVarm,
         loadObsp,
         loadVarp,

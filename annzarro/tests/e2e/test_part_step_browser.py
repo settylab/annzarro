@@ -120,7 +120,7 @@ def _link(base, dataset, table=False, plot=True):
 
 
 class _Page:
-    def __init__(self, pw, base, dataset, on_demand=False, table=False, plot=True, delay=0, wait=True):
+    def __init__(self, pw, base, dataset, on_demand=False, table=False, plot=True, delay=0, wait=True, defaults=None):
         try:
             self.browser = pw.chromium.launch()
         except Exception as exc:
@@ -129,11 +129,14 @@ class _Page:
         self.page = self.browser.new_page(viewport={"width": 1600, "height": 1000})
         self.sent = []                    # data requests that reached the network
         self.page.on("request", lambda r: self.sent.append(r.url) if "/api/v1/data/" in r.url else None)
+        changed = dict(defaults or {})
         if on_demand:                     # the fixture's 200 cells are "very many"
+            changed["names_on_demand_above"] = 100
+        if changed:
             def patch(route):
                 config = route.fetch().json()
                 ui = dict(config.get("ui") or {})
-                ui["defaults"] = {**(ui.get("defaults") or {}), "names_on_demand_above": 100}
+                ui["defaults"] = {**(ui.get("defaults") or {}), **changed}
                 route.fulfill(json={**config, "ui": ui})
             self.page.route("**/api/v1/config", patch)
         self.page.add_init_script(f"window.addEventListener('DOMContentLoaded', ({DELAY}));")
@@ -181,6 +184,10 @@ class _Page:
 
     def requests_to(self, route):
         return [u for u in self.sent if f"/api/v1/data/{route}" in u]
+
+    def coordinate_requests(self):
+        """The embedding reads of the plot (not the focused cell's own, by dataset row)."""
+        return [u for u in self.requests_to("obsm") if "dataset_rows" not in u]
 
     def shot(self, name, tile=None):
         if SHOTS:
@@ -340,7 +347,7 @@ def test_clicking_on_loads_only_the_last_part(two_datasets):
             assert s.page.input_value("#subset-part-input") == "4"
             s.delay(0)
             s.wait_part(4)
-            parts = sorted(set(p for p in _parts_of(s.requests_to("obsm")) if p is not None))
+            parts = sorted(set(p for p in _parts_of(s.coordinate_requests()) if p is not None))
             assert parts == [3], f"the plot read the coordinates of parts {parts}, not only the last"
             assert s.state()["n"] == N_CELLS - 3 * N_PART
             assert s.page.is_disabled("#subset-part-next")
@@ -438,5 +445,63 @@ def test_refresh_while_a_link_loads_does_not_open_the_first_dataset(two_datasets
             s.page.wait_for_selector("#subset-button:not([hidden])", timeout=60_000)
             s.wait_drawn()
             assert s.page.evaluate("() => document.querySelector('#dataset-selector').value") == dataset
+        finally:
+            s.close()
+
+
+# -- reading ahead --------------------------------------------------------------
+
+def test_the_next_part_is_read_ahead_and_the_step_to_it_asks_for_no_coordinates(two_datasets):
+    base, dataset = two_datasets
+    with sync_api.sync_playwright() as pw:
+        s = _Page(pw, base, dataset, defaults={"prefetch_next_part": True})
+        try:
+            s.page.wait_for_function("() => true")
+            deadline = time.time() + 20
+            while time.time() < deadline and 1 not in _parts_of(s.coordinate_requests()):
+                s.page.wait_for_timeout(200)
+            ahead = _parts_of(s.coordinate_requests())
+            assert 1 in ahead, f"the coordinates of the next part were not read ahead: {ahead}"
+            low = [u for u in s.requests_to("subset") if "priority=low" in u]
+            assert low, "the next part's cells were not asked for at low priority"
+            sig = s.x_signature()
+            s.sent.clear()
+            s.page.click("#subset-part-next")
+            s.wait_part(2)
+            assert s.x_signature() != sig
+            assert _parts_of(s.coordinate_requests()) == [], "stepping to the part read ahead asked for its coordinates again"
+        finally:
+            s.close()
+
+
+def test_nothing_is_read_ahead_when_it_is_off(two_datasets):
+    base, dataset = two_datasets
+    with sync_api.sync_playwright() as pw:
+        s = _Page(pw, base, dataset, defaults={"prefetch_next_part": False})
+        try:
+            s.page.wait_for_timeout(4000)
+            assert 1 not in _parts_of(s.coordinate_requests())
+            assert not [u for u in s.requests_to("subset") if "priority=low" in u]
+        finally:
+            s.close()
+
+
+def test_a_step_stops_the_read_ahead_of_another_part(two_datasets):
+    base, dataset = two_datasets
+    with sync_api.sync_playwright() as pw:
+        s = _Page(pw, base, dataset, defaults={"prefetch_next_part": True}, delay=1200)
+        try:
+            # the read ahead of part 2 is under way (its request held in the page) ...
+            s.page.wait_for_function("() => window.__held.some(h => /priority=low/.test(h.url) && !h.aborted)", timeout=30_000)
+            assert 1 not in _parts_of(s.coordinate_requests())
+            # ... and a step to part 4 stops it
+            s.page.fill("#subset-part-input", "4")
+            s.page.press("#subset-part-input", "Enter")
+            s.page.wait_for_timeout(400)
+            assert s.page.evaluate("() => window.__held.filter(h => /priority=low/.test(h.url)).every(h => h.aborted)"), \
+                "the read ahead of part 2 was not stopped"
+            s.delay(0)
+            s.wait_part(4)
+            assert 1 not in _parts_of(s.coordinate_requests()), "the part read ahead was loaded though a later one was asked for"
         finally:
             s.close()

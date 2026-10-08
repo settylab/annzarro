@@ -26,6 +26,7 @@ export function readUiSettings(server) {
         taxonomyId: pick(d.taxonomy_id, 'ui_taxonomy_id'),
         largePlotPoints: pick(d.large_plot_points, 'ui_large_plot_points'),
         namesOnDemandAbove: pick(d.names_on_demand_above, 'ui_names_on_demand_above'),
+        prefetchNextPart: pick(d.prefetch_next_part, 'ui_prefetch_next_part'),
         enabledPanelTypes: pick(ui.enabled_panel_types, 'enabled_panel_types'),
         cacheMaxEntries: pick(c.max_entries, 'ui_cache_max_entries'),
         cacheMaxSizeMb: pick(c.max_size_mb, 'ui_cache_max_size_mb'),
@@ -155,6 +156,12 @@ const Config = (function() {
         // 5M-cell store has 5) and come with the part. Server key
         // ui.defaults.names_on_demand_above.
         NAMES_ON_DEMAND_ABOVE: 5000000,
+        // After a part is shown, the next part's cells and embedding coordinates
+        // are read in the background so stepping forward waits for little.
+        // 'auto': on a single-user server (the laptop, the desktop app) only,
+        // since a part nobody steps to costs a shared server memory and time;
+        // true / false force it. Server key ui.defaults.prefetch_next_part.
+        PREFETCH_NEXT_PART: 'auto',
         // Browser memory guard, server ui.memory (utils/memory-guard.js)
         MEMORY: null,
         COLOR_SCALE: 'Portland',
@@ -363,6 +370,9 @@ const Config = (function() {
                 }
                 if (ui.namesOnDemandAbove !== null && ui.namesOnDemandAbove >= 0) {
                     DEFAULTS.NAMES_ON_DEMAND_ABOVE = Number(ui.namesOnDemandAbove);
+                }
+                if (ui.prefetchNextPart !== null && ui.prefetchNextPart !== undefined) {
+                    DEFAULTS.PREFETCH_NEXT_PART = ui.prefetchNextPart;
                 }
                 if (ui.enabledPanelTypes) DEFAULTS.ENABLED_PANEL_TYPES = ui.enabledPanelTypes;
                 if (ui.cacheMaxEntries) CACHE.MAX_ENTRIES = ui.cacheMaxEntries;

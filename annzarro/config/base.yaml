@@ -160,6 +160,11 @@ ui:
     # on the names, or exporting them, loads them once. Smaller datasets name
     # their cells with the part, as before.
     names_on_demand_above: 5000000
+    # After a part is shown, read the next part's cells and embedding
+    # coordinates in the background (low priority, dropped for any real
+    # request), so stepping forward waits for little. auto: only on a
+    # single-user server (a laptop, the desktop app); true / false force it.
+    prefetch_next_part: auto
     subset_size: 100000
     subset_seed: 0
 
