@@ -27,6 +27,27 @@ MAX_LIMIT = 500
 DEFAULT_LIMIT = 50
 _CACHE_SIZE = 8
 
+#: What the cached indices may hold together, in MB (``server.name_index_max_mb``).
+#: A 95.6M-cell store keeps 4 GB; 1B cells would hold about 32 GB (24 GB of
+#: lower-cased names plus 8 GB of offsets) in the server process for good.
+DEFAULT_MAX_MB = 6144
+#: Bytes an index of a store needs per name, for the estimate made before the
+#: names are read: the name (about 19-24 characters) and its separator, and
+#: the offset (4 bytes below 4 GB of names, else 8). Measured 15-22 on stores.
+ESTIMATE_BYTES_PER_NAME = 32
+
+
+class NameIndexTooLarge(Exception):
+    """The index of this many names would not fit the memory set aside for
+    name indices. Answered 413 ``name_index_too_large`` (data_routes)."""
+
+    def __init__(self, names: int, estimate: int, limit: int):
+        self.names, self.estimate, self.limit = names, estimate, limit
+        super().__init__(
+            f"Searching all {names:,} names would need about {estimate / 2**30:.1f} GB of server memory "
+            f"(the limit is {limit / 2**30:.1f} GB, server.name_index_max_mb). "
+            "Search the cells of the subset instead, or raise the limit.")
+
 _SEP = "\n"
 
 
@@ -87,17 +108,26 @@ class NameIndex:
         self._n = n
         if not n:
             self._hay = bytearray(sep * 2)
-        lens = np.concatenate(self._hay_lens) if self._hay_lens else np.zeros(0, np.int32)
-        del self._hay_lens
         dtype = np.uint32 if len(self._hay) < 2 ** 32 else np.uint64
         starts = np.empty(n, dtype=dtype)
-        if n:
-            # start of name k: 1 + sum over j < k of (len_j + 1)
-            starts[0] = 1
-            acc = np.cumsum(lens[:-1], dtype=np.uint64)
-            acc += np.arange(2, n + 1, dtype=np.uint64)
-            starts[1:] = acc
-        del lens
+        # start of name k: 1 + sum over j < k of (len_j + 1), a chunk at a time
+        # (no n-long temporary: joining the lengths and the offsets of 1B names
+        # took 28 GB more than the index keeps)
+        pos, at = 1, 0
+        lens_list = self._hay_lens
+        for i, lens in enumerate(lens_list):
+            k = int(lens.size)
+            lens_list[i] = None
+            if not k:
+                continue
+            ends = np.cumsum(lens, dtype=np.int64)
+            ends += np.arange(1, k + 1, dtype=np.int64)
+            starts[at] = pos
+            if k > 1:
+                starts[at + 1:at + k] = ends[:-1] + pos
+            pos += int(ends[-1])
+            at += k
+        del self._hay_lens, lens_list
         self._starts = starts
         self._orig_first = np.array([c[0] for c in self._orig_chunks], dtype=np.int64)
         del self._n_added
@@ -158,6 +188,12 @@ class NameIndex:
 
     def __len__(self) -> int:
         return self._n
+
+    @property
+    def nbytes(self) -> int:
+        """What the index holds: the haystack, the offsets, the original spellings."""
+        orig = sum(len(blob) + off.nbytes for _, blob, off in self._orig_chunks)
+        return len(self._hay) + self._starts.nbytes + orig
 
     def name(self, row: int) -> str:
         """The original name of ``row``."""
@@ -293,18 +329,32 @@ _cache: "OrderedDict[Tuple[str, str], Tuple[Tuple, NameIndex]]" = OrderedDict()
 _lock = threading.Lock()
 
 
+def cached_bytes() -> int:
+    """What the cached indices hold together."""
+    with _lock:
+        return sum(index.nbytes for _, index in _cache.values())
+
+
 #: (dataset, axis) -> Event set when its index, being built, is in _cache
 _building: "Dict[Tuple[str, str], threading.Event]" = {}
 
 
-def get_index(dataset_path: str, entity: str, load_names: Callable[[], List[str]]) -> NameIndex:
+def get_index(dataset_path: str, entity: str, load_names: Callable[[], List[str]],
+              n_names: Optional[int] = None, max_mb: Optional[float] = None) -> NameIndex:
     """The cached NameIndex for one axis of one dataset, built on first use.
 
     One build per (dataset, axis) at a time: a request that arrives while it
     is built waits for that build rather than starting another (at 95.6M
     cells a build takes about 30 s and 1-2 GB; a picker asks on every
     keystroke). index_state() says whether one is being built.
+
+    The indices kept together are bounded by ``max_mb`` (DEFAULT_MAX_MB):
+    the least recently used go first, by size. With ``n_names`` (the number of
+    names to index) a build whose estimate alone would pass the bound is
+    refused before any name is read (NameIndexTooLarge); a build that turns
+    out larger is returned for this request and not kept.
     """
+    limit = int((DEFAULT_MAX_MB if max_mb is None else max_mb) * 2 ** 20)
     key = (dataset_path, entity)
     sig = _signature(dataset_path)
     while True:
@@ -323,11 +373,17 @@ def get_index(dataset_path: str, entity: str, load_names: Callable[[], List[str]
             pending.wait()
             continue            # built (or failed): read the cache again
         try:
+            if n_names is not None and n_names * ESTIMATE_BYTES_PER_NAME > limit:
+                raise NameIndexTooLarge(int(n_names), int(n_names) * ESTIMATE_BYTES_PER_NAME, limit)
             index = NameIndex(load_names())
             with _lock:
-                _cache[key] = (sig, index)
-                _cache.move_to_end(key)
-                while len(_cache) > _CACHE_SIZE:
+                if index.nbytes <= limit:
+                    _cache[key] = (sig, index)
+                    _cache.move_to_end(key)
+                # least recently used first, until the cache fits (the index
+                # just built is the newest, and the last to go)
+                while len(_cache) > _CACHE_SIZE or (
+                        len(_cache) > 1 and sum(i.nbytes for _, i in _cache.values()) > limit):
                     _cache.popitem(last=False)
             return index
         finally:

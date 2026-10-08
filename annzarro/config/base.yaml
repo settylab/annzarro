@@ -62,6 +62,12 @@ server:
   cache_enabled: true
   cache_memory_mb: 1000
   cache_dataset_limit: 10
+  # Memory for the cell- and gene-name indices behind the focus pickers' search
+  # ("every name that contains ...", built on first use and kept). A store
+  # whose index would not fit (about 32 bytes per name: 1B cells need 32 GB) is
+  # not searched dataset-wide (HTTP 413 name_index_too_large); the cells of
+  # the subset shown still are. The least recently used go first.
+  name_index_max_mb: 6144
   # POST /data/refresh (Refresh dataset; any user) walks a dataset's files at
   # most this often; a refresh sooner answers with the last walk's finding.
   refresh_min_interval_s: 10

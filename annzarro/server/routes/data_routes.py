@@ -430,7 +430,12 @@ def _reader_for(dataset_path, dataset_rows=False):
     if raw is None:
         return reader
     try:
-        resolved = cell_subset.resolve(reader, dataset_path, raw, app.config)
+        # `client` (a page's id, sent with /data/subset) lets a newer request of
+        # that page stop this subset's computation; `priority=low` is a
+        # prefetch that any real request stops (core/subset.py claim)
+        resolved = cell_subset.resolve(reader, dataset_path, raw, app.config,
+                                       client=request.args.get("client"),
+                                       low=request.args.get("priority") == "low")
     except cell_subset.SubsetError as exc:
         raise DataRequestError(exc.status, exc.reason, exc.message)
     if resolved is None:
@@ -1301,6 +1306,43 @@ def register_data_routes(app, api_version):
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
+    def _names_to_search(reader, dataset_path_str, entity, searched):
+        """How many names a search covers (None when the store does not say)."""
+        if searched is not None:
+            return len(searched)
+        shape = (reader.get_metadata(dataset_path_str) or {}).get("shape") or ()
+        at = 0 if entity == "cells" else 1
+        return int(shape[at]) if len(shape) > at else None
+
+    def _first_names(reader, searched, dataset_path_str, entity, count):
+        """The first ``count`` names of the searched axis, read for those rows
+        only; None when the reader cannot."""
+        base = reader.base if isinstance(reader, cell_subset.SubsetView) else reader
+        take = getattr(base, "get_cell_gene_names_at", None)
+        if take is None:
+            return None
+        n = _names_to_search(reader, dataset_path_str, entity, searched)
+        if n is None:
+            return None
+        positions = list(range(min(count, n)))
+        rows = positions if searched is None else searched.to_rows(positions)
+        return list(take(dataset_path_str, entity, [int(r) for r in rows]))
+
+    def _search_reply(result, subset, searched):
+        """A name search's matches with the cell's position among the cells
+        shown (``index``) and its dataset row (``row``)."""
+        matches = result["matches"]
+        found = [m["index"] for m in matches]
+        if subset is None:
+            rows, positions = found, found
+        elif searched is not None:
+            rows, positions = subset.to_rows(found), found
+        else:
+            rows, positions = found, [p if p >= 0 else None for p in subset.to_positions(found)]
+        for match, row, position in zip(matches, rows, positions):
+            match["index"], match["row"] = position, int(row)
+        return result
+
     @app.route(f"/api/{api_version}/data/names/status", methods=["GET"])
     def names_index_status():
         """
@@ -1332,7 +1374,17 @@ def register_data_routes(app, api_version):
         subset = reader.subset if isinstance(reader, cell_subset.SubsetView) and entity == "cells" else None
         searched = subset if scope == "subset" else None
         index_key = entity if searched is None else f"cells@{searched.spec.key()}"
-        return jsonify({"state": name_index.index_state(dataset_path_str, index_key)})
+        state = name_index.index_state(dataset_path_str, index_key)
+        if state == "absent":
+            try:
+                n_names = _names_to_search(reader.base if isinstance(reader, cell_subset.SubsetView) and searched is None
+                                           else reader, dataset_path_str, entity, searched)
+            except Exception:                # the status never fails for what it cannot tell
+                n_names = None
+            limit = (app.config.get("name_index_max_mb") or name_index.DEFAULT_MAX_MB) * 2 ** 20
+            if n_names is not None and n_names * name_index.ESTIMATE_BYTES_PER_NAME > limit:
+                state = "unavailable"        # the search is refused, not waiting for a build
+        return jsonify({"state": state})
 
     @app.route(f"/api/{api_version}/data/names", methods=["GET"])
     def search_names():
@@ -1389,6 +1441,20 @@ def register_data_routes(app, api_version):
             if subset is not None and searched is None:
                 reader = reader.base
             index_key = entity if searched is None else f"cells@{searched.spec.key()}"
+            n_names = _names_to_search(reader, dataset_path_str, entity, searched)
+
+            # The first names ask for no index: the pickers list them when the
+            # box is focused, and building the index of every cell for that
+            # (30-56 s at 95.6M cells, 32 GB at 1B) is what a click should not do
+            if query == "" and mode != "exact":
+                first = _first_names(reader, searched, dataset_path_str, entity, min(limit, name_index.MAX_LIMIT))
+                if first is not None:
+                    limit = max(1, min(limit, name_index.MAX_LIMIT))
+                    result = {"matches": [{"name": n, "index": i} for i, n in enumerate(first)],
+                              "truncated": bool(n_names is not None and n_names > len(first)),
+                              "total": int(n_names if n_names is not None else len(first))}
+                    return jsonify(_search_reply(result, subset, searched))
+
             def load_names():
                 # every name of the axis: read a zarr chunk at a time when the
                 # reader can (no list of every name); a subset's names are few
@@ -1399,7 +1465,11 @@ def register_data_routes(app, api_version):
                         return name_index.NameChunks(chunks)
                 return reader.get_cell_gene_names(dataset_path_str, entity, use_cache=True)
 
-            index = name_index.get_index(dataset_path_str, index_key, load_names)
+            index = name_index.get_index(dataset_path_str, index_key, load_names, n_names=n_names,
+                                         max_mb=app.config.get("name_index_max_mb"))
+        except name_index.NameIndexTooLarge as exc:
+            return jsonify({"error": str(exc), "reason": "name_index_too_large",
+                            "names": exc.names, "limit_mb": exc.limit // 2 ** 20}), 413
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
 
@@ -1408,17 +1478,7 @@ def register_data_routes(app, api_version):
         except re.error as exc:
             return jsonify({"error": f"Invalid regular expression: {exc}"}), 400
         result["total"] = len(index)
-        matches = result["matches"]
-        found = [m["index"] for m in matches]
-        if subset is None:
-            rows, positions = found, found
-        elif searched is not None:
-            rows, positions = subset.to_rows(found), found
-        else:
-            rows, positions = found, [p if p >= 0 else None for p in subset.to_positions(found)]
-        for match, row, position in zip(matches, rows, positions):
-            match["index"], match["row"] = position, int(row)
-        return jsonify(result)
+        return jsonify(_search_reply(result, subset, searched))
 
     @app.before_request
     def _refuse_unapplied_subset():
@@ -1467,6 +1527,10 @@ def register_data_routes(app, api_version):
                         "n_eligible": n_total}
             body["defaults"] = cell_subset.defaults(app.config)
             body["features"] = list(SUBSET_FEATURES)
+            # whether the names of every cell can be searched (scope=dataset):
+            # not on a store whose index would not fit name_index_max_mb
+            limit = (app.config.get("name_index_max_mb") or name_index.DEFAULT_MAX_MB) * 2 ** 20
+            body["name_search"] = {"dataset": bool(body["n_total"] * name_index.ESTIMATE_BYTES_PER_NAME <= limit)}
             return jsonify(body)
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)

@@ -28,6 +28,10 @@ const DataManager = (function() {
     // Bumped whenever the loaded cells/genes change (switch, revert, clear).
     // Plot data built under an older generation belongs to another dataset.
     let _datasetGeneration = 0;
+    // this page's id for the server: a newer subset request of the same page
+    // stops the computation of an older one (core/subset.py claim); another
+    // tab has its own, so tabs never stop each other's
+    const _clientId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     // Settles when the dataset being opened has its cell and gene names (or
     // failed to open); null when no open is in flight. Until then an empty
     // name list means "not read yet", not "this dataset has none".
@@ -542,7 +546,7 @@ const DataManager = (function() {
         try {
             const param = request === 'auto' ? 'auto' : subsetParam(request);
             info = await _fetchWithCache(Config.API.SUBSET,
-                { dataset_path: datasetPath, subset: param }, signal);
+                { dataset_path: datasetPath, subset: param, client: _clientId }, signal);
         } catch (error) {
             if (error && error.name === 'AbortError') throw error;
             if (request === 'auto') {
@@ -557,7 +561,7 @@ const DataManager = (function() {
             notify('Cell subset not applied',
                 `${error.message || error}\nShowing the default for this dataset instead.`, 'warning');
             info = await _fetchWithCache(Config.API.SUBSET,
-                { dataset_path: datasetPath, subset: 'auto' }, signal);
+                { dataset_path: datasetPath, subset: 'auto', client: _clientId }, signal);
         }
         _subsetReply = info ? { ...info, datasetPath } : null;
         return info && info.subset ? { ...info, datasetPath } : null;
@@ -594,6 +598,17 @@ const DataManager = (function() {
             return null;
         }
         return undefined;
+    }
+
+    /**
+     * Whether the cells of the whole dataset can be searched by name (the
+     * focus pickers' "not shown" matches, finding a focused cell outside the
+     * subset by name). False when the server says its index would not fit
+     * (a store of a billion cells): the search of the cells shown still works.
+     */
+    function canSearchDatasetNames() {
+        const reply = _subsetReply && _subsetReply.datasetPath === _currentDataset ? _subsetReply : null;
+        return !(reply && reply.name_search && reply.name_search.dataset === false);
     }
 
     /** The /data/subset reply for the open dataset (n_total, defaults), also without a subset. */
@@ -918,6 +933,7 @@ const DataManager = (function() {
 
     /** The cell's dataset row by an exact, dataset-wide name search; null if absent. */
     async function _searchRow(name) {
+        if (!canSearchDatasetNames()) return null;
         const params = { dataset_path: _currentDataset, entity: 'cells', q: name, mode: 'exact',
                          limit: 1, scope: 'dataset' };
         if (_openSubset()) params.subset = _openSubset().key;
@@ -2479,6 +2495,7 @@ const DataManager = (function() {
         getSubsetParam,
         getSubsetForView,
         getSubsetReply,
+        canSearchDatasetNames,
         getCellsNotInSubset,
         // Caching
         clearCache: (pattern) => CacheManager.clear(pattern),
