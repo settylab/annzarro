@@ -48,9 +48,10 @@ AnnZarro then compares the fingerprints:
 | not found at all | the layout opens **without data**: every panel shows "no data" and keeps all its settings. A notice names the missing path and offers **Change dataset** |
 | saved with another AnnZarro version | the view opens, with a notice: "Saved with AnnZarro 0.4.1; this is 0.5.0. The view may look different." |
 
-A store with many cells is fingerprinted in the background the first time it is opened (about
+Opening a store does not hash its cell and gene names. They are hashed in the background the
+first time a view is saved or shared, or a saved view is checked against the store (about
 9 s for the 95.6 million cell names of Tahoe-100M on a laptop, with or without the files in the page cache; then remembered across restarts),
-so nothing waits for it. Until then a view is checked by its counts and fields, and the cell and
+so nothing waits for it and the first plots of an opened store are not slowed. Until then a view is checked by its counts and fields, and the cell and
 gene names are checked when they are ready.
 
 ### Change dataset

@@ -5,9 +5,11 @@
  * which is synchronous) records what is known without waiting.
  *
  * The fingerprint of a large store is computed in the background on the
- * server (about 10 s at 95.6M cells, once; it is then persisted). Nothing
- * here blocks a first paint: the probe asks with wait=0 and gets the
- * metadata tier at once; `settle` waits a bounded time for the rest.
+ * server (about 10 s at 95.6M cells, once; it is then persisted), but only
+ * when something needs it: a probe with wait=0 (opening a dataset) gets the
+ * metadata tier and the counts at once and never starts the hash; `settle`
+ * (saving or sharing a view) asks with wait>0, which starts it and waits a
+ * bounded time.
  */
 import { Config } from '../config.js';
 

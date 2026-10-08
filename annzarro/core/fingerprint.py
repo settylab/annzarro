@@ -401,12 +401,20 @@ def start(reader, dataset_path: str):
 
 def get(reader, dataset_path: str, wait: float = 0.0) -> Dict[str, Any]:
     """``{"status": "ready", "fingerprint": ...}`` or, while the names are
-    still being hashed, ``{"status": "pending", "fingerprint": <the metadata
-    tier and the counts>}``. Waits at most ``wait`` seconds."""
+    not hashed, ``{"status": "pending", "fingerprint": <the metadata tier and
+    the counts>}``.
+
+    Hashing every name of a large store takes seconds to minutes and competes
+    with the user's data requests, so it is started only by a caller that
+    needs the full identity: ``wait > 0`` (saving or sharing a view, a link
+    restore that compares, a refresh check), which waits at most ``wait``
+    seconds and leaves it running when that is not enough. ``wait == 0``
+    (opening a dataset) answers from the cache or from a hash already
+    running and never starts one."""
     fp = cached(dataset_path)
-    if fp is None:
+    if fp is None and wait > 0:
         future = start(reader, dataset_path)
-        if future is not None and wait > 0:
+        if future is not None:
             try:
                 fp = future.result(timeout=wait)
             except FutureTimeout:
