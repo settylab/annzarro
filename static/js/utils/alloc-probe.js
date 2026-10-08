@@ -183,6 +183,35 @@ export function suggestSize(n, partsFor, { alloc = allocate, floor = 1000, steps
     return null;
 }
 
+/** Bytes the browser gives now, in 256 MiB pieces, up to `limit` (all released again). */
+export function headroom(alloc, limit) {
+    const piece = 256 * 1024 * 1024;
+    const got = [];
+    let bytes = 0;
+    try {
+        while (bytes < limit) {
+            got.push(alloc('u8', piece));
+            bytes += piece;
+        }
+    } catch (error) {
+        if (!isAllocationFailure(error)) throw error;
+    }
+    for (const a of got) freeNow(a);
+    return bytes;
+}
+
+/**
+ * The subset to suggest when a redraw was declined beside the plot it
+ * replaces: that plot's bytes (`credit`) are freed when the subset draws, so
+ * the size is what headroom plus credit holds at `perPoint`, cut by 20%, at
+ * most half of `n` (the redraw itself did not fit), rounded down to 1, 2, 5.
+ */
+export function suggestWithCredit(n, free, credit, perPoint, floor = 1000) {
+    const fits = Math.floor(0.8 * (free + credit) / perPoint);
+    const size = niceFloor(Math.min(fits, Math.floor(n / 2)));
+    return size >= floor ? size : null;
+}
+
 /**
  * The sentence for a plot that did not fit: "This browser cannot hold N
  * points; use a subset (k parts of m)".
@@ -217,19 +246,22 @@ export class AllocationProbeError extends Error {
  * @param {number} [o.eligible] - cells the subset parts are cut from
  * @param {Function} [o.alloc] - injectable allocator
  * @param {number} [o.suggestBytesPerPoint] - what a drawn subset needs per point (the suggestion is sized with it)
+ * @param {number} [o.credit] - bytes the old plot holds that its replacement frees (a redraw)
  * @param {boolean} [o.suggest] - false: fail without searching for a subset size (a first try)
  * @returns {{key, X, Y, logged?}}
  */
 export function probeForDraw({ n, log = false, bytesPerPoint = 73, eligible = n, alloc = allocate, suggest = true,
-    suggestBytesPerPoint = 73 }) {
+    suggestBytesPerPoint = 73, credit = 0 }) {
     const opts = { log, bytesPerPoint };
     const r = probe(largePlotParts(n, opts), { alloc });
     if (r.ok) return r.buffers;
     if (!suggest) {
         throw new AllocationProbeError(probeMessage(n, null, eligible), { n, size: null, failed: r.failed, failedBytes: r.failedBytes, cause: r.error });
     }
-    const size = suggestSize(n, m => largePlotParts(m, { log, bytesPerPoint: suggestBytesPerPoint }),
-        { alloc, floor: Math.min(1000, Math.max(1, Math.floor(n / 100))) });
+    const floor = Math.min(1000, Math.max(1, Math.floor(n / 100)));
+    const size = credit > 0
+        ? suggestWithCredit(n, headroom(alloc, n * suggestBytesPerPoint), credit, suggestBytesPerPoint, floor)
+        : suggestSize(n, m => largePlotParts(m, { log, bytesPerPoint: suggestBytesPerPoint }), { alloc, floor });
     throw new AllocationProbeError(probeMessage(n, size, eligible),
         { n, size, failed: r.failed, failedBytes: r.failedBytes, cause: r.error });
 }

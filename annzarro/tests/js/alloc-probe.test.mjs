@@ -154,6 +154,11 @@ test('a redraw beside the plot it replaces asks only for what its first step add
     const beside = (n) => probeForDraw({ n, bytesPerPoint: 14, alloc: capped(16.64e9 - held(n)) });
     assert.equal(beside(210e6).key.length, 210e6);
     assert.throws(() => beside(225e6), AllocationProbeError);
-    // the subset suggested is sized for a plot that draws on its own (73 B per point)
-    try { beside(225e6); } catch (e) { assert.ok(e.size === null || e.size * 73 <= 16.64e9); }
+    // the subset suggested is sized for a fresh draw: the old plot's bytes are freed when it draws
+    assert.throws(() => probeForDraw({ n: 225e6, bytesPerPoint: 14, credit: held(225e6), alloc: capped(16.64e9 - held(225e6)) }), (e) => {
+        assert.ok(e.size >= 100e6, e.size);
+        assert.ok(e.size * 73 <= 16.64e9);
+        assert.match(e.message, /\(3 parts of 100,000,000\)$/);
+        return true;
+    });
 });

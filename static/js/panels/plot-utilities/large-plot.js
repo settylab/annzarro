@@ -296,10 +296,11 @@ function keyBuffer(pre, n) {
  * @param {Object} settings
  * @param {Object} structure
  */
-function probeDraw(settings, structure, suggest = true, bytesPerPoint = DEFAULT_MODEL.large.arrayBuffers) {
+function probeDraw(settings, structure, suggest = true, bytesPerPoint = DEFAULT_MODEL.large.arrayBuffers, held = false) {
   const n = (DataManager.getCells() || []).length;
+  const credit = held ? DEFAULT_MODEL.large.heldPerPoint * n : 0;
   return probeForDraw({ n, log: !!(settings.color && settings.color.log) && colourKind(settings, structure) === 'numeric',
-    bytesPerPoint,
+    bytesPerPoint, credit,
     eligible: n + (Number(DataManager.getCellsNotInSubset()) || 0), suggest });
 }
 
@@ -318,7 +319,7 @@ function probeDraw(settings, structure, suggest = true, bytesPerPoint = DEFAULT_
  */
 function probeOrRelease(plotContainer, settings, structure) {
   const live = !!plotContainer._fullLayout;
-  return probeDraw(settings, structure, true, live ? DEFAULT_MODEL.large.redrawBeside : DEFAULT_MODEL.large.arrayBuffers);
+  return probeDraw(settings, structure, true, live ? DEFAULT_MODEL.large.redrawBeside : DEFAULT_MODEL.large.arrayBuffers, live);
 }
 
 

@@ -155,7 +155,9 @@ export const DEFAULT_MODEL = {
          * new colour's response body (4). The probe tests this beside the
          * old plot (large-plot.js probeOrRelease).
          */
-        redrawBeside: 14
+        redrawBeside: 14,
+        /** ArrayBuffer bytes per point a drawn plot holds (12.9 GB at 210M, measured): freed when its replacement draws. */
+        heldPerPoint: 61
     },
     /**
      * Transient costs on top of what the panel holds.
