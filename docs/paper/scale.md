@@ -1,7 +1,7 @@
 # Scale: Tahoe-100M
 
 ```{figure} ../_static/figures/paper/scale.png
-:alt: Seven panels. a, every one of 95.6 million Tahoe-100M cells on a UMAP coloured by cell line, one island per cell line, with a small box marked. b, the same cells coloured by FN1 counts. c, a zoom into the box where each dot is one cell. d, part 1 of 957 of the default 100,000-cell subset. e, browser time against dataset size for opening, recolouring, a balanced subset and a part step. f, time to the first plot with every cell. g, peak JavaScript heap at the first plot.
+:alt: Seven panels. a, every one of 95.6 million Tahoe-100M cells on a UMAP coloured by cell line, one island per cell line, with a small box marked. b, the same cells coloured by FN1 counts. c, a zoom into the box where each dot is one cell. d, part 1 of 957 of the default 100,000-cell subset. e, browser time against dataset size for opening, recolouring, a balanced subset and a part step. f, time to the first plot with every cell, with the large-plot threshold at 1 million points and the point where the memory guard declines at 250 million. g, peak JavaScript heap at the first plot against the tab's heap limit of 4.1 GiB, for every cell and for the default subset.
 :width: 100%
 
 *Tahoe-100M on a laptop: every cell in one plot, and a subset that stays interactive*, a figure
@@ -17,8 +17,14 @@ same cells coloured by FN1 counts, the colour scale capped at 30, the 99th perce
 cells. **c**, A zoom into one cell line's island, every cell at point size 5 and opacity 1: each dot
 is one cell. **d**, The default subset, part 1 of 957 (100,000 cells), in the regular plot with
 hover and focus. **e** to **g**, Time and memory against dataset size, from 1 million cells
-(prefixes of Tahoe-100M) to all 95.6 million: the default subset stays interactive, and drawing
-every cell is bounded by the tab's JavaScript heap. The steps behind each view are in
+(prefixes of Tahoe-100M) to all 95.6 million: the default subset stays interactive. In **f** and
+**g** the series for every cell continue to larger stores, out to 150 million cells
+(described in the paper's Supplementary Note 1). The dotted rule at 1 million points marks the
+large-plot threshold, and the rule at 250 million marks where the memory guard declines the
+first plot at default settings, so larger stores are not shown. **g** shows the peak JavaScript
+(V8) heap at the first plot against the tab's heap limit under default Chromium flags (4.1 GiB,
+dashed line): the regular plot fills the heap fastest, large-plot mode keeps the positions off
+the heap (0.03 GiB at 150 million cells), and the default subset stays flat. The steps behind each view are in
 {doc}`../user-guide/subsets`; the paper's Procedure covers them as Worked example 6, and
 {doc}`../tutorials/millions` carries it out step by step.
 

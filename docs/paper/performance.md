@@ -21,7 +21,7 @@ browser, see {doc}`scale`.
 |---|---|---|
 | a | bytes sent per click against the number of cells: gene column, cell row (5,000 genes), row of a dense pairwise matrix | at one million cells a 20 GB layer is shown through a 4 MB gene column, one part in 5,000 (binary float32, 4 bytes per value) |
 | b | latency per click on the laptop, cold and warm | gene columns stay under 1 s up to one million cells |
-| c | peak resident memory of the server against the uncompressed size of the matrix read | the server's peak stays at 81 to 102 MiB while the layer read grows a hundredfold, from 0.2 to 20 GB; the idle server uses 78 MiB |
+| c | peak resident memory of the server against the uncompressed size of the matrix read | the server's peak stays at 82 to 102 MiB while the layer read grows a hundredfold, from 0.2 to 20 GB; the idle server uses 79 MiB |
 | d | cold cell row against cold gene column, one point per chunk shape, 1 million × 5,000 | whole-gene chunks make one cell row decompress the whole layer (2.9 s); anndata's default chunks keep each read to a small part of the layer |
 
 Conditions: every number is AnnZarro v0.4.1 (tag `78c9da6`), with vectors sent in the binary float32 format the web client uses. Laptop: Apple
