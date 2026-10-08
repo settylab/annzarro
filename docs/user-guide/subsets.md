@@ -73,7 +73,8 @@ show the dialog. On a large dataset the steps are the same.
    filters ([Very large datasets](#very-large-datasets)). A size above 150 million points says
    **may exceed browser memory** and is never chosen for you: in the paper's v0.4.0 runs on a
    laptop, the memory guard allowed every cell up to 150 million and declined 160 million; with
-   the guard off, Chrome drew 175 million points and stopped responding at 200 million. For any other size, type it in **Cells**, here `3000`; the
+   the guard off, Chrome drew 175 million points and stopped responding at 200 million. From v0.4.2 there is no fixed ceiling: a large plot asks the browser for its buffers
+   first, and when it cannot hold them the panel offers a subset instead of drawing. For any other size, type it in **Cells**, here `3000`; the
    parts and estimate follow it. **All** keeps every cell that passes the conditions below
    instead of a fixed number.
 

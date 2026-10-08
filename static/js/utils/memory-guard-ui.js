@@ -20,6 +20,7 @@ import {
     formatGB, CONTEXTS_PER_PLOT
 } from './memory-guard.js';
 import { liveWebglContexts } from './release-plot.js';
+import { probe, blockParts, largePlotParts, PROBE_MIN_BYTES } from './alloc-probe.js';
 
 export const MEMORY_EVENT = 'annzarro:memory-changed';
 
@@ -86,8 +87,29 @@ function _observed() {
     return ledger.observed ? ledger.observed.bytes : 0;
 }
 
-function _check(need, heldNow, panels, largePoints = 0) {
-    return check(need, heldNow, limits(), settings(), { observed: _observed(), panels, largePoints });
+function _check(need, heldNow, panels) {
+    return check(need, heldNow, limits(), settings(), { observed: _observed(), panels });
+}
+
+/**
+ * The allocation probe for a step the RAM check let through: ask the browser
+ * for the step's transient buffers (`bytes`; released at once) and refuse
+ * the step if it says no. The RAM budget protects the machine; this asks
+ * the browser (utils/alloc-probe.js). Steps under PROBE_MIN_BYTES are not
+ * probed. The verdict follows ui.memory.enforce as the budget's does.
+ * @param {Object} result - from _check
+ * @param {number} bytes - what the step allocates at its peak
+ * @param {string} what - "export", "hover labels", ...
+ */
+export function probed(result, bytes, what) {
+    if (!result || !result.fits || !(bytes >= PROBE_MIN_BYTES)) return result;
+    const r = probe(blockParts(bytes));
+    r.release();
+    if (r.ok) return result;
+    const s = settings();
+    return { ...result, fits: false, binding: 'alloc', needBytes: bytes,
+        verdict: s.enforce === 'off' ? 'ok' : s.enforce === 'warn' ? 'warn' : 'block',
+        why: `this browser cannot allocate the ~${formatGB(bytes)} the ${what} needs` };
 }
 
 /** "Browser memory: 2.1 of 4.0 GB JS memory free with 2 plots open (estimated)". */
@@ -110,7 +132,7 @@ export function drawCheck({ id, kind, n, large = false, colour = 'numeric', thre
     const need = { ...add, contexts: livePlot ? 0 : cost.contexts };
     let h = held([id]);
     if (old) h = addCost(h, { ...old.resident, contexts: 0 });
-    return _check(need, h, ledger.plotCount() + (old ? 0 : 1), large ? n : 0);
+    return _check(need, h, ledger.plotCount() + (old ? 0 : 1));
 }
 
 /**
@@ -120,20 +142,23 @@ export function drawCheck({ id, kind, n, large = false, colour = 'numeric', thre
  * hover off.
  */
 export function hoverLabelsCheck({ points, labels, chars }) {
-    return _check(labelCost({ points, labels, chars }), held(), ledger.plotCount());
+    const need = labelCost({ points, labels, chars });
+    // labels live on the V8 heap, whose exhaustion cannot be caught: ask for
+    // as many bytes as a proxy for what the process can still commit
+    return probed(_check(need, held(), ledger.plotCount()), need.heap + need.off, 'hover labels');
 }
 
 /** Before a recolour of the drawn regular plot `gd` (large-plot mode redraws, and is checked as a draw). */
 export function recolourCheck(gd) {
     const need = recolourCost({ n: Number(gd && gd._pointCount) || 0, large: !!(gd && gd.__isLarge) });
-    return _check(need, held(), ledger.plotCount());
+    return probed(_check(need, held(), ledger.plotCount()), need.off, 'recolour');
 }
 
 /** Before a new or duplicated panel of `kind` with `config` (its colour and 3D) is created. */
 export function newPanelCheck(kind, { n, large = false, colour = 'numeric', threeD = false } = {}) {
     if (kind !== 'cell-plot' && kind !== 'gene-plot') return _check({ heap: 0, off: 0, gpu: 0, contexts: 0 }, held(), ledger.plotCount());
     const need = panelCost({ kind, n, large, colour, threeD }).peak;
-    return _check(need, held(), ledger.plotCount() + 1, large ? n : 0);
+    return probed(_check(need, held(), ledger.plotCount() + 1), large ? need.off : 0, 'new plot');
 }
 
 /**
@@ -143,7 +168,7 @@ export function newPanelCheck(kind, { n, large = false, colour = 'numeric', thre
 export function exportCheck(gd, { width = 1200, height = 800, scale = 1 } = {}) {
     const n = Number(gd && gd._pointCount) || ((gd && gd.data) || []).reduce((s, t) => s + ((t && t.x && t.x.length) || 0), 0);
     const need = exportCost({ n, large: !!(gd && gd.__isLarge), width, height, scale });
-    return _check(need, held(), ledger.plotCount());
+    return probed(_check(need, held(), ledger.plotCount()), need.off, 'export');
 }
 
 /**
@@ -165,9 +190,21 @@ export function subsetCheck(n, threshold) {
         gpu: Math.max(0, base.gpu + peak.gpu - now.gpu),
         contexts: 0
     };
-    // Cell Plots above the threshold draw in large-plot mode, n points each
-    const large = n > threshold && panels.some(p => p.kind === 'cell-plot' && !p.threeD) ? n : 0;
-    return { ..._check(need, now, ledger.plotCount(), large), changed };
+    return { ..._check(need, now, ledger.plotCount()), changed };
+}
+
+/**
+ * The allocation probe of a subset change to `n` cells (not part of
+ * subsetCheck, which the size chips ask many times): when Cell Plots will
+ * draw large at that size, allocate the buffers one needs, release them.
+ * @returns {{ok: boolean, why: string}}
+ */
+export function subsetProbe(n, threshold) {
+    if (!(n > threshold) || !ledger.panels().some(p => p.kind === 'cell-plot' && !p.threeD)) return { ok: true, why: '' };
+    const r = probe(largePlotParts(n, { colour: 'numeric' }));
+    r.release();
+    if (r.ok) return { ok: true, why: '' };
+    return { ok: false, why: `this browser cannot hold ${Math.round(n).toLocaleString('en-US')} points` };
 }
 
 /** The largest subset (cells, at most `eligible`) that subsetCheck lets through, or 0. */
@@ -179,8 +216,8 @@ export function maxSubsetCells(eligible, threshold) {
 
 /** The sentence beside a refused control: why, and the ways out. */
 export function refusalText(result, advice) {
-    // above the largest plot tested, closing other plots does not help
-    if (result && result.binding === 'tested') advice = advice.replace(/^Close a plot, or s/, 'S');
+    // a browser that cannot allocate: closing other plots may not help, a smaller step does
+    if (result && result.binding === 'alloc') advice = advice.replace(/^Close a plot, or s/, 'S');
     return `${result.why ? result.why.charAt(0).toUpperCase() + result.why.slice(1) : 'Not enough browser memory'}. ${advice}`;
 }
 

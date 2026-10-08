@@ -204,14 +204,13 @@ test('check: block, warn and off; the binding ceiling; risky actions; WebGL cont
     assert.match(measured.why, /measured\)$/);
 });
 
-test('one every-cell plot: the total budget binds large-plot mode, from the RAM where known; 200M is the cap', () => {
+test('one every-cell plot: the total budget binds large-plot mode, from the RAM where known; the size alone is not a cap', () => {
     // v0.4.1 keeps large-plot positions outside the V8 heap: 200M drew with 35 MB of heap
     // and 13.6 GB of renderer memory on a 128 GB computer
     const L = new Ledger();
     const verdict = (memory, n) => {
         const st = memorySettings(memory);
-        return check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(), readLimits(CHROME, st), st,
-            { largePoints: n });
+        return check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(), readLimits(CHROME, st), st);
     };
     // browser on the server's computer, 128 GB: 200M draws
     assert.equal(verdict({ host_memory_bytes: 128 * GB }, 200e6).verdict, 'ok');
@@ -226,12 +225,16 @@ test('one every-cell plot: the total budget binds large-plot mode, from the RAM 
     const remote = (n) => check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(), readLimits(CHROME, st), st);
     assert.equal(remote(150e6).verdict, 'ok');
     assert.equal(remote(205e6).binding, 'total');
-    // above the largest plot tested, refused whatever the budget
+    // above the size tested nothing is refused for the size alone: the budget decides
+    // (here 1 TB, so it fits) and the draw's allocation probe asks the browser
     const big = verdict({ host_memory_bytes: 1024 * GB }, 250e6);
-    assert.equal(big.verdict, 'block');
-    assert.equal(big.binding, 'tested');
-    assert.equal(big.why, `250,000,000 points is above ${LARGEST_TESTED_POINTS.toLocaleString('en-US')}, the largest plot tested to draw`);
-    assert.equal(verdict({ host_memory_bytes: 1024 * GB }, LARGEST_TESTED_POINTS).verdict, 'ok');
+    assert.equal(big.verdict, 'ok');
+    assert.equal(big.binding, null);
+    assert.equal(LARGEST_TESTED_POINTS, 200000000);   // information only
+    // ... and the RAM budget still refuses what the machine cannot hold
+    const bigSmall = verdict({ host_memory_bytes: 128 * GB }, 2e9);
+    assert.equal(bigSmall.verdict, 'block');
+    assert.equal(bigSmall.binding, 'total');
     // the guard off lets everything through
     assert.equal(verdict({ host_memory_bytes: 1024 * GB, enforce: 'off' }, 250e6).verdict, 'ok');
 });

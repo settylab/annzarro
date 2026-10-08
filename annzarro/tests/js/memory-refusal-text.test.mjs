@@ -1,7 +1,7 @@
 /**
  * The sentence beside a refused control (static/js/utils/memory-guard-ui.js
- * refusalText): the guard's reason, then the ways out. Above the largest
- * large plot tested, closing other plots does not help, so that advice goes.
+ * refusalText): the guard's reason, then the ways out. A browser that cannot allocate
+ * is not helped by closing other plots, so that advice goes.
  *
  * Run:  node --test annzarro/tests/js/memory-refusal-text.test.mjs
  */
@@ -20,7 +20,7 @@ test('memory: the reason and both ways out', () => {
         'Needs ~16 GB of browser memory; 12 GB free (of 12 GB, estimated). Close a plot, or show fewer cells (a smaller subset).');
 });
 
-test('above the largest plot tested: only fewer cells', () => {
-    assert.equal(refusalText({ binding: 'tested', why: '250,000,000 points is above 200,000,000, the largest plot tested to draw' }, ADVICE),
-        '250,000,000 points is above 200,000,000, the largest plot tested to draw. Show fewer cells (a smaller subset).');
+test('the browser cannot allocate: only a smaller step helps', () => {
+    assert.equal(refusalText({ binding: 'alloc', why: 'this browser cannot allocate the ~6.0 GB the export needs' }, ADVICE),
+        'This browser cannot allocate the ~6.0 GB the export needs. Show fewer cells (a smaller subset).');
 });

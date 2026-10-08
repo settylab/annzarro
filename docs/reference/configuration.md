@@ -153,8 +153,15 @@ there is (a loopback request no proxy forwarded); the budget is that memory less
 at least 4 GB, for the system and the browser. On a 16 GB computer that is 12 GB, and a large
 plot of 200 million points (13.6 GB measured) is refused; on 128 GB it is drawn. A browser on
 another computer gets 16 GB unless `total_gb` says otherwise (server-wide; there is no
-per-browser setting). Whatever the budget, a large plot of more than 200 million points, the
-largest tested to draw, is refused, and the refusal says so.
+per-browser setting). There is no cap on the number of points: 200 million is only the largest
+size tested (128 GB, Chrome). The budget is a guard for the computer, not for the browser, which
+can run out of array buffers at a size no table predicts (on that 128 GB computer, at 15 to 17 GB
+of tab memory, with 250 million points and up). So a large plot first asks the browser for the
+buffers it will need, before it requests any data; if the browser refuses, the panel says
+"This browser cannot hold N points; use a subset (k parts of m)" and offers the subset. The
+same question is asked before applying a larger subset, a full-resolution export, a hover-label
+read, a recolour and a new large panel, and a plot whose WebGL context is lost (the graphics
+memory ran out) is released with the same message and a Redraw.
 
 **When to change them.**
 

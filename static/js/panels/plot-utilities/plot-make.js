@@ -13,7 +13,7 @@ import {
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
 import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag } from '../../utils/panel-surface.js';
-import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot.js';
+import { largePlotPoints, largePlotRefusal, createLargePlot, showProbeFailure } from './large-plot.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
@@ -1145,8 +1145,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       drawPlaceholder(plotContainer, cov, unit);
     }
   } catch (error) {
-    // Skip error display for abort errors - they're expected during cancellation
-    if (error && error.name === 'AbortError') {
+    if (error && error.name === 'AllocationProbeError') {
+      // the browser could not hold the plot's buffers (utils/alloc-probe.js):
+      // nothing was requested; the panel says so and offers a subset
+      console.warn(error.message);
+      showProbeFailure(plotContainer, error);
+    } else if (error && error.name === 'AbortError') {
+      // Skip error display for abort errors - they're expected during cancellation
       if (window.Config && window.Config.DEBUG_MODE) {
         console.debug('Plot loading was aborted:', error.message);
       }

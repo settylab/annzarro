@@ -68,8 +68,10 @@ export const REMOTE_TOTAL_GB = 16;
 /**
  * The largest large plot drawn in a test (synthetic 200M-cell store, every
  * cell, v0.4.1, Chrome on an M3 Max with 128 GB: 13.6 GB renderer, 35 MB of
- * V8 heap). Larger plots are refused whatever the budget until a larger
- * run says more.
+ * V8 heap). Information only: it refuses nothing. What a browser can hold
+ * above it is found by asking it (utils/alloc-probe.js: the draw allocates
+ * its buffers before it requests any data); at 250M and up the same
+ * machine's tab ran out of array buffers at 15.4 to 17.4 GB.
  */
 export const LARGEST_TESTED_POINTS = 200000000;
 /** navigator.deviceMemory at or below this (GB) sets a total budget of half of it. */
@@ -509,7 +511,6 @@ export function headroom(held, limits) {
  * @param {Object} [opts]
  * @param {number} [opts.observed] - a measured total of held memory (bytes); the larger of it and the estimate counts
  * @param {number} [opts.panels] - plot panels open (for the sentence)
- * @param {number} [opts.largePoints] - points of a large plot the action draws; above LARGEST_TESTED_POINTS it is refused
  * @returns {{verdict: 'ok'|'warn'|'block', fits: boolean, risky: boolean, binding: string|null,
  *            needBytes: number, freeBytes: number, limitBytes: number, measured: boolean, why: string}}
  */
@@ -531,8 +532,7 @@ export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}
         if (c.need > c.free && (!binding || c.need - c.free > binding.need - binding.free)) binding = c;
     }
     const contextsShort = need.contexts > 0 && need.contexts > free.contexts;
-    const untested = opts.largePoints > LARGEST_TESTED_POINTS;
-    const fits = !binding && !contextsShort && !untested;
+    const fits = !binding && !contextsShort;
     const main = checks[0];
     const shown = binding || main;
     const risky = fits && (held2.heap + need.heap * k) > RISKY_SHARE * limits.heap.bytes;
@@ -545,13 +545,10 @@ export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}
     } else if (contextsShort) {
         why = `the browser keeps at most ${limits.contexts} WebGL canvases; ${limits.contexts - free.contexts} are in use`
             + ' and the oldest plot would go blank';
-    } else if (untested) {
-        why = `${Math.round(opts.largePoints).toLocaleString('en-US')} points is above ${LARGEST_TESTED_POINTS.toLocaleString('en-US')},`
-            + ' the largest plot tested to draw';
     }
     const verdict = fits || settings.enforce === 'off' ? 'ok' : settings.enforce === 'warn' ? 'warn' : 'block';
     return {
-        verdict, fits, risky, binding: binding ? binding.name : (contextsShort ? 'contexts' : untested ? 'tested' : null),
+        verdict, fits, risky, binding: binding ? binding.name : (contextsShort ? 'contexts' : null),
         needBytes: shown.need, freeBytes: Math.max(0, shown.free), limitBytes: shown.limit, measured, why
     };
 }

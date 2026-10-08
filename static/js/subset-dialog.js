@@ -20,7 +20,7 @@ import {
 } from './utils/subset-presets.js';
 import { escapeHtml } from './utils/session-permissions.js';
 import { MAX_BALANCE_GROUPS, VALUE_LIST_MAX } from './utils/categories.js';
-import { subsetCheck, maxSubsetCells, headroomText, refusalText, ledger, formatGB, MEMORY_EVENT } from './utils/memory-guard-ui.js';
+import { subsetCheck, subsetProbe, maxSubsetCells, headroomText, refusalText, ledger, formatGB, MEMORY_EVENT } from './utils/memory-guard-ui.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
 /** document event that opens the dialog; detail is open()'s options, e.g. { preset: 'largest-regular' } */
@@ -701,6 +701,17 @@ const SubsetControl = (function() {
         }
         _renderMemory(_threshold());
         if (_memoryBlocked) return;   // the footer says why
+        // the RAM budget fits it; does the browser give the buffers? (utils/alloc-probe.js)
+        const cells = _cellsOfSpec();
+        const probed = subsetProbe(cells, _threshold());
+        if (!probed.ok) {
+            const line = _el.querySelector('#subset-memory');
+            if (line) {
+                line.textContent = `${fmt(cells)} cells: ${probed.why}. Pick a smaller size.`;
+                line.classList.add('subset-memory--short');
+            }
+            return;
+        }
         _modal.hide();
         if (_onApply) await _onApply(spec);
     }

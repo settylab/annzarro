@@ -35,7 +35,9 @@ import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, COLOUR_BAR, attachViewportTracking } from './plot-make-helper.js';
-import { drawPlot, clearForDraw, fitToContainer, setStatusTag, nudgeStatusTag, resolveColorscale } from '../../utils/panel-surface.js';
+import { drawPlot, drawPlaceholder, clearForDraw, fitToContainer, setStatusTag, nudgeStatusTag, resolveColorscale, Coverage, GAP } from '../../utils/panel-surface.js';
+import { colourKind } from '../../utils/memory-guard.js';
+import { probeForDraw, niceFloor, probeMessage } from '../../utils/alloc-probe.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
@@ -154,16 +156,19 @@ async function sampleColorscale(scale, reverse, n) {
 
 /**
  * Group points by key with one counting sort: x/y permuted into contiguous
- * runs per key, as typed arrays. key[i] === drop leaves point i out.
+ * runs per key, as typed arrays. key[i] === drop leaves point i out. `pre` ({X, Y}) are buffers allocated
+ * earlier (probeDraw) to be filled; they may be longer than `kept`.
  */
-function groupByKey(x, y, key, nkeys, drop) {
+function groupByKey(x, y, key, nkeys, drop, pre = null) {
   const n = x.length;
   const start = new Float64Array(nkeys + 1);
   for (let i = 0; i < n; i++) { const k = key[i]; if (k !== drop) start[k + 1]++; }
   for (let k = 0; k < nkeys; k++) start[k + 1] += start[k];
   const kept = start[nkeys];
   const fill = start.slice(0, nkeys);
-  const X = new Float32Array(kept), Y = new Float32Array(kept);
+  // the probe's buffers (probeDraw), when big enough: filled, not copied
+  const X = pre && pre.X && pre.X.length >= kept ? pre.X : new Float32Array(kept);
+  const Y = pre && pre.Y && pre.Y.length >= kept ? pre.Y : new Float32Array(kept);
   for (let i = 0; i < n; i++) {
     const k = key[i];
     if (k === drop) continue;
@@ -277,6 +282,80 @@ function watchLargeClicks(plotContainer) {
   }, true);
 }
 
+/** The probe's group-key buffer when it is the right size, else a new one. */
+function keyBuffer(pre, n) {
+  return pre && pre.key && pre.key.length === n ? pre.key : new Uint16Array(n);
+}
+
+/**
+ * The allocation probe of a draw (utils/alloc-probe.js): allocate what the
+ * plot will need, now, before positions and colours are requested. Returns
+ * the buffers the draw fills ({key, X, Y, logged?}). When the browser
+ * refuses, throws an AllocationProbeError whose message offers a subset;
+ * plot-make.js shows it (showProbeFailure) and no data request has gone out.
+ * @param {Object} settings
+ * @param {Object} structure
+ */
+function probeDraw(settings, structure) {
+  const n = (DataManager.getCells() || []).length;
+  return probeForDraw({ n, colour: colourKind(settings, structure), log: !!(settings.color && settings.color.log),
+    eligible: n + (Number(DataManager.getCellsNotInSubset()) || 0) });
+}
+
+/**
+ * Show that a plot could not be held: on a plot already drawn, a warning
+ * tag in its strip (the plot stays); otherwise a placeholder with the
+ * message and the way out (a subset).
+ * @param {HTMLElement} plotContainer
+ * @param {{message: string, n?: number}} error
+ * @param {string} [source] - what ran out: 'browser memory' or 'WebGL'
+ */
+export function showProbeFailure(plotContainer, error, source = 'browser memory') {
+  const live = Array.isArray(plotContainer.data) && plotContainer.data.length && plotContainer._fullLayout;
+  const actions = [['subset', 'Subset…']];
+  if (live) {
+    setStatusTag(plotContainer, 'memory', { text: 'Not drawn: browser memory', severity: 'warning',
+      title: error.message, pop: { text: error.message, actions } });
+    return;
+  }
+  setStatusTag(plotContainer, 'memory', null);
+  drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, error.message,
+    { source, unit: 'cells', total: error.n ?? null }), 'cells', { actions });
+}
+
+/**
+ * A lost WebGL context (the GPU ran out of memory, or the driver reset) ends
+ * the plot: release it, say so in the words of a failed probe, offer a
+ * subset and Redraw. The context is told it may come back (preventDefault);
+ * when it does, the message says Redraw will work.
+ */
+function watchGpu(plotContainer, n) {
+  if (plotContainer.__gpuWatch) { plotContainer.__gpuWatch.n = n; return; }
+  const state = { n };
+  plotContainer.__gpuWatch = state;
+  // capture: the event does not bubble from the canvas
+  plotContainer.addEventListener('webglcontextlost', (e) => {
+    // a plot of ours that is up; releasePlot loses its contexts on purpose, after the plot is gone
+    if (!plotContainer.__isLarge || !plotContainer._fullLayout || !e.target || !plotContainer.contains(e.target)) return;
+    e.preventDefault();
+    const canvas = e.target;
+    const eligible = state.n + (Number(DataManager.getCellsNotInSubset()) || 0);
+    const message = probeMessage(state.n, niceFloor(state.n / 2), eligible);
+    plotContainer.__isLarge = false;
+    drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, message,
+      { source: 'WebGL', unit: 'cells', total: state.n }), 'cells',
+      { actions: [['subset', 'Subset…'], ['redraw', 'Redraw']] });
+    canvas.addEventListener('webglcontextrestored', () => {
+      const box = plotContainer.querySelector('.coverage-placeholder');
+      if (!box || box.querySelector('.coverage-placeholder__restored')) return;
+      const note = document.createElement('div');
+      note.className = 'coverage-placeholder__restored';
+      note.textContent = 'The graphics context is back; Redraw can draw the plot again.';
+      box.appendChild(note);
+    }, { once: true });
+  }, true);
+}
+
 // The draw in flight per panel. A panel's first load is usually asked for
 // twice (the table-filter update finds no plot yet and refreshes); at these
 // sizes a second concurrent load doubles the memory and the server's work.
@@ -310,6 +389,9 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   Object.keys(data).forEach(k => delete data[k]);
   data.generation = null;
   data.entities = 'cells';
+  // Before any request: the buffers this plot will need, allocated now. If the
+  // browser cannot give them, nothing is requested (utils/alloc-probe.js).
+  const pre = probeDraw(settings, structure);
   const [xs, ys, cs] = await Promise.all([
     loadSeries(settings.x, datasetPath, structure),
     loadSeries(settings.y, datasetPath, structure),
@@ -336,7 +418,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     const many = !!cs.ranked;
     const ncAll = many ? cs.used : cs.categories.length;
     const nc = many ? Math.min(ncAll, GROUP_COLOURS) : ncAll;
-    const key = new Uint16Array(n);
+    const key = keyBuffer(pre, n);
     const NA = nc, DROP = nc + 1;
     for (let i = 0; i < n; i++) {
       const c = cs.codes[i];
@@ -346,7 +428,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
         if (settings.hideNaN) only.nan++;
       } else key[i] = many ? groupOf(c) : c;
     }
-    const { X, Y, start, kept } = groupByKey(x, y, key, nc + 1, DROP);
+    const { X, Y, start, kept } = groupByKey(x, y, key, nc + 1, DROP, pre);
     filtered = n - kept;
     // Colour groups: per group, the distinct ranks drawn (a bit set over the
     // ranks) and the three lowest, whose labels the legend names
@@ -424,7 +506,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     if (settings.color.log) {
       let floor = settings.color.logFloor;
       if (!(floor > 0)) { floor = Infinity; for (let i = 0; i < n; i++) if (v[i] > 0 && v[i] < floor) floor = v[i]; }
-      const lv = new Float32Array(n), lf = Math.log10(floor);
+      const lv = pre && pre.logged && pre.logged.length === n ? pre.logged : new Float32Array(n), lf = Math.log10(floor);
       for (let i = 0; i < n; i++) lv[i] = v[i] !== v[i] ? NaN : (v[i] > floor ? Math.log10(v[i]) : lf);
       v = lv;
     }
@@ -451,7 +533,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     const rank = new Uint16Array(COLOR_BINS);
     order.forEach((bin, r) => { rank[bin] = r + 1; });       // 0 = no value
     const DROP = COLOR_BINS + 1;
-    const key = new Uint16Array(n);
+    const key = keyBuffer(pre, n);
     for (let i = 0; i < n; i++) {
       const c = v[i];
       if (x[i] !== x[i] || y[i] !== y[i]) { key[i] = DROP; only.coords++; continue; }
@@ -460,7 +542,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       const bin = Math.min(COLOR_BINS - 1, Math.max(0, Math.floor((c - cmin) / width)));
       key[i] = rank[bin];
     }
-    const { X, Y, start, kept } = groupByKey(x, y, key, COLOR_BINS + 1, DROP);
+    const { X, Y, start, kept } = groupByKey(x, y, key, COLOR_BINS + 1, DROP, pre);
     filtered = n - kept;
     const colors = await sampleColorscale(settings.colorScale, settings.colorReversed, COLOR_BINS);
     pushTraces(traces, X, Y, start[0], start[1], 'no value', NA_COLOR, settings);
@@ -481,9 +563,9 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     });
     layout.showlegend = false;
   } else {
-    const key = new Uint8Array(n);
+    const key = keyBuffer(pre, n);
     for (let i = 0; i < n; i++) key[i] = (x[i] !== x[i] || y[i] !== y[i]) ? 1 : 0;
-    const { X, Y, start, kept } = groupByKey(x, y, key, 1, 1);
+    const { X, Y, start, kept } = groupByKey(x, y, key, 1, 1, pre);
     filtered = n - kept;
     only.coords = filtered;
     pushTraces(traces, X, Y, start[0], start[1], 'cells', settings.pointColor || '#1f77b4', settings);
@@ -509,6 +591,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   setStatusTag(plotContainer, 'large', largePlotTag(n));
   plotContainer.__isLarge = true;
   watchLargeClicks(plotContainer);
+  watchGpu(plotContainer, n);
   fitToContainer(plotContainer);
   // no click handler here, but a zoom is kept like in the regular plot
   attachViewportTracking(plotContainer, settings);
