@@ -384,7 +384,7 @@ const DataManager = (function() {
     async function reloadSubset(signal = null) {
         const datasetPath = _currentDataset;
         if (!datasetPath) throw new Error('No dataset is open');
-        const previous = { cells: _cells, subset: _subset, generation: _datasetGeneration };
+        const previous = { cells: _cells, subset: _subset, reply: _subsetReply, generation: _datasetGeneration };
         try {
             _datasetGeneration++;
             // the cell routes read the subset from _subset
@@ -399,6 +399,7 @@ const DataManager = (function() {
             _datasetGeneration++;
             _cells = previous.cells;
             _subset = previous.subset;
+            _subsetReply = previous.reply;
             throw error;
         }
     }
@@ -1393,6 +1394,52 @@ const DataManager = (function() {
     }
     
     /**
+     * Read several columns of one obsm matrix in ONE request (`cols=0,1`)
+     * and file each column under the URL loadObsm({columnName}) asks for, so
+     * the loads that follow find them cached. A plot reads X_umap x and y:
+     * as two column requests the server decoded every chunk of the matrix
+     * twice (on the 1B-cell store 7 GB of decoded chunks for each axis).
+     * Best effort: columns that are not plain positions, columns already
+     * cached, a reply that is not numeric, and any failure leave the
+     * per-column loads to do their own requests, as before.
+     * @param {Object} options
+     * @param {string} [options.datasetPath]
+     * @param {string} options.obsmKey
+     * @param {Array<string|number>} options.columns - column positions
+     * @param {AbortSignal} [options.signal]
+     * @returns {Promise<boolean>} whether the columns were filed
+     */
+    async function prefetchObsmColumns({ datasetPath, obsmKey, columns, signal = null } = {}) {
+        try {
+            const path = datasetPath || _currentDataset;
+            const wanted = [...new Set((columns || []).map(String))];
+            if (!path || !obsmKey || wanted.length < 2 || !wanted.every(c => /^\d+$/.test(c))) return false;
+            const url = `${Config.API.OBSM}/${obsmKey}`;
+            const query = (params) => `${url}?${new URLSearchParams(_withSubset(url, { ...params, format: BINARY_FORMAT })).toString()}`;
+            const single = (c) => query({ dataset_path: path, column_name: c });
+            if (wanted.every(c => CacheManager.get(single(c)) !== undefined)) return false;
+            const pairParams = { dataset_path: path, cols: wanted.join(',') };
+            const body = await _fetchWithCache(url, { ...pairParams, format: BINARY_FORMAT }, signal);
+            // the block is not kept: its columns are (8 bytes per cell twice otherwise)
+            CacheManager.remove(query(pairParams));
+            if (!body || !body[BINARY_RESULT] || !Array.isArray(body.shape) || body.shape.length !== 2
+                || body.shape[1] !== wanted.length) return false;
+            const [rows, width] = body.shape;
+            wanted.forEach((c, k) => {
+                const values = new body.values.constructor(rows);
+                for (let r = 0; r < rows; r++) values[r] = body.values[r * width + k];
+                CacheManager.set(single(c), { [BINARY_RESULT]: true, values, shape: [rows],
+                    dtype: body.dtype, encoding: 'dense' });
+            });
+            return true;
+        } catch (error) {
+            if (error && error.name === 'AbortError') throw error;
+            console.warn('Columns of obsm could not be read together; reading them one by one:', error);
+            return false;
+        }
+    }
+
+    /**
      * Load varm data (multi-dimensional gene annotations)
      * @param {Object} options - Options for loading varm data
      * @param {string} options.datasetPath - Path to the dataset
@@ -2268,6 +2315,7 @@ const DataManager = (function() {
         loadObs,
         loadVar,
         loadObsm,
+        prefetchObsmColumns,
         loadVarm,
         loadObsp,
         loadVarp,

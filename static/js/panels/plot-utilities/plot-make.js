@@ -270,6 +270,22 @@ async function hoverLabelsFit(datasetPath, slot, key, count, points, plotContain
 }
 
 /**
+ * Read the axes that are columns of ONE obsm matrix (a cell plot's UMAP x and
+ * y) in a single request. Resolves when they are cached (or when that was not
+ * possible: the per-axis loads then read them one by one); rejects only with
+ * an abort.
+ * @returns {Promise<boolean>}
+ */
+export function readAxesTogether(settings, plotType, signal = null) {
+  if (plotType === 'genes' || !settings) return Promise.resolve(false);
+  const axes = [settings.x, settings.y, settings.z].filter(a => a && a.type === 'obsm' && a.key && a.column !== '');
+  if (axes.length < 2 || axes.some(a => a.key !== axes[0].key)) return Promise.resolve(false);
+  return DataManager.prefetchObsmColumns({
+    obsmKey: axes[0].key, columns: axes.map(a => a.column), signal
+  });
+}
+
+/**
  * Whether turning a plot's hover on with `settings.hoverInfo` fits the
  * browser: every categorical hover column, and the colour column's labels
  * when the plot was coloured without them (`colourRanked`). Checked before
@@ -1004,6 +1020,10 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       throw new DOMException('Plot creation aborted before data loading', 'AbortError');
     }
     
+    // Axes of one obsm matrix (an embedding's x and y) are read together in
+    // one request; each axis load below then finds its column cached.
+    const axesTogether = readAxesTogether(settings, plotType, signal);
+
     // Build an array of promises to load axis and color data concurrently.
     const loadPromises = [
       (async () => {
@@ -1011,12 +1031,14 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         if (signal && signal.aborted) {
           throw new DOMException('X axis data loading aborted', 'AbortError');
         }
+        await axesTogether;
         data.x = await loadAxisData(settings.x, plotType, plotContainer, { signal });
       })(),
       (async () => {
         if (signal && signal.aborted) {
           throw new DOMException('Y axis data loading aborted', 'AbortError');
         }
+        await axesTogether;
         data.y = await loadAxisData(settings.y, plotType, plotContainer, { signal });
       })()
     ];
@@ -1027,6 +1049,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           if (signal && signal.aborted) {
             throw new DOMException('Z axis data loading aborted', 'AbortError');
           }
+          await axesTogether;
           data.z = await loadAxisData(settings.z, plotType, plotContainer, { signal });
         })()
       );
