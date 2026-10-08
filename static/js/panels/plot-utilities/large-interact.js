@@ -32,6 +32,7 @@ const CLICK_MAX_MS = 300;
 const CLICK_MAX_MOVE_PX = 5;
 
 const _cache = new Map();      // `${generation}:${row}:${colour}` -> {name, colour}
+const _names = new Map();      // `${generation}:${row}` -> name: a click after a hover needs no request
 let _tip = null;
 
 function tooltip() {
@@ -81,6 +82,8 @@ async function describeRow(st, row) {
   ]);
   const out = { name, colour: value };
   _cache.set(key, out);
+  _names.set(`${DataManager.getDatasetGeneration()}:${row}`, name);
+  if (_names.size > REMEMBERED) _names.delete(_names.keys().next().value);
   if (_cache.size > REMEMBERED) _cache.delete(_cache.keys().next().value);
   return out;
 }
@@ -129,7 +132,8 @@ function hideTip(gd, st) {
 
 /** The regular path's click: focus the cell (other panels follow). */
 async function focusRow(gd, st, hit) {
-  const name = await DataManager.cellNameAt(hit.row);
+  const known = _names.get(`${DataManager.getDatasetGeneration()}:${hit.row}`);
+  const name = known ?? await DataManager.cellNameAt(hit.row);
   if (!name) return;
   DataManager.rememberCell(name, { index: hit.row });
   st.lastFocus = { name, row: hit.row, p: hit.p };
