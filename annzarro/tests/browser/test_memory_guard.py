@@ -603,10 +603,12 @@ def test_large_plot_redraw_lets_the_old_plot_go(large_server, page):
 # -- the allocation probe (static/js/utils/alloc-probe.js) --------------------------
 
 # Test hook: the probe's allocator refuses what a browser with a small array-buffer
-# budget would (here more than 120 elements; the fixture draws 200 points).
+# budget would (here a buffer of more than 7,800 bytes, 120 points at the model's
+# 65 B per point; the fixture draws 200 points).
 REFUSING_ALLOCATOR = """() => { window.__annzarroAllocator = (type, length) => {
-    if (length > 120) throw new RangeError('Array buffer allocation failed');
-    return new ({u8: Uint8Array, u16: Uint16Array, u32: Uint32Array, f32: Float32Array, f64: Float64Array}[type])(length);
+    const T = {u8: Uint8Array, u16: Uint16Array, u32: Uint32Array, f32: Float32Array, f64: Float64Array}[type];
+    if (length * T.BYTES_PER_ELEMENT > 7800) throw new RangeError('Array buffer allocation failed');
+    return new T(length);
 }; }"""
 
 # a plot's data requests: its series come in the binary encoding
@@ -623,7 +625,7 @@ def test_failed_probe_says_so_offers_a_subset_and_requests_nothing(large_server,
     page.goto(_link(large_server))
     page.wait_for_selector(PLACEHOLDER, timeout=30000)
     text = " ".join(page.inner_text(PLACEHOLDER).split())
-    # 200 cells: the largest size the hook lets through is 120 elements -> 112 probed -> 50; 4 parts
+    # 200 cells: the largest size the hook lets through is 120 points -> 112 probed -> 50; 4 parts
     assert "This browser cannot hold 200 points; use a subset (4 parts of 50)" in text, text
     # the way out: the subset dialog
     page.click(f"{PLACEHOLDER} button[data-ps-action='subset']")

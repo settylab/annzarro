@@ -36,7 +36,7 @@ import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, COLOUR_BAR, attachViewportTracking } from './plot-make-helper.js';
 import { drawPlot, drawPlaceholder, clearForDraw, fitToContainer, setStatusTag, nudgeStatusTag, resolveColorscale, Coverage, GAP } from '../../utils/panel-surface.js';
-import { colourKind } from '../../utils/memory-guard.js';
+import { colourKind, DEFAULT_MODEL } from '../../utils/memory-guard.js';
 import { probeForDraw, niceFloor, probeMessage } from '../../utils/alloc-probe.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
@@ -298,7 +298,8 @@ function keyBuffer(pre, n) {
  */
 function probeDraw(settings, structure) {
   const n = (DataManager.getCells() || []).length;
-  return probeForDraw({ n, colour: colourKind(settings, structure), log: !!(settings.color && settings.color.log),
+  return probeForDraw({ n, log: !!(settings.color && settings.color.log) && colourKind(settings, structure) === 'numeric',
+    offPerPoint: DEFAULT_MODEL.large.off,
     eligible: n + (Number(DataManager.getCellsNotInSubset()) || 0) });
 }
 

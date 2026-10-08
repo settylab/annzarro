@@ -29,36 +29,42 @@ function capped(limit) {
     return Object.assign(fn, { s });
 }
 
-test('largePlotParts: response bodies are transient, build buffers are kept', () => {
-    const p = largePlotParts(1000, { colour: 'categorical' });
-    assert.deepEqual(p.filter(x => x.transient).map(x => [x.name, x.type]), [['x-body', 'f32'], ['y-body', 'f32'], ['colour-body', 'u16']]);
+test('largePlotParts: 65 B per point in all, the build buffers kept, the rest transient', () => {
+    const n = 1000;
+    const p = largePlotParts(n);
+    const total = p.reduce((a, x) => a + x.length * BYTES[x.type], 0);
+    assert.equal(total, 65 * n);
     assert.deepEqual(p.filter(x => !x.transient).map(x => [x.name, x.type]), [['key', 'u16'], ['X', 'f32'], ['Y', 'f32']]);
-    assert.ok(largePlotParts(10, { colour: 'numeric', log: true }).some(x => x.name === 'logged'));
-    assert.ok(!largePlotParts(10, { colour: 'none' }).some(x => x.name === 'colour-body'));
+    assert.ok(p.filter(x => x.transient).every(x => x.name.startsWith('peak-')));
+    assert.ok(largePlotParts(10, { log: true }).some(x => x.name === 'logged'));
+    // the model's figure, not a hand list: 250M points is 16.25 GB
+    const big = largePlotParts(250e6, { offPerPoint: 65 }).reduce((a, x) => a + x.length * BYTES[x.type], 0);
+    assert.equal(big, 65 * 250e6);
+    // blocks are cut into chunks
+    assert.ok(largePlotParts(250e6).filter(x => x.transient).length > 20);
 });
 
-test('probe succeeds: the kept buffers come back, the transient ones are released at once', () => {
+test('probe succeeds: the kept buffers come back, the transient block is released at once', () => {
     const a = capped(1e9);
-    const r = probe(largePlotParts(1000, { colour: 'numeric' }), { alloc: a });
+    const r = probe(largePlotParts(1000), { alloc: a });
     assert.equal(r.ok, true);
     assert.deepEqual(Object.keys(r.buffers).sort(), ['X', 'Y', 'key']);
-    // 3 bodies of 4 kB are gone; key 2 kB + X, Y 4 kB each are held
     assert.equal(a.s.used, 2000 + 4000 + 4000);
     r.release();
     assert.equal(a.s.used, 0);
 });
 
 test('probe fails on a RangeError: everything allocated so far is released, the failing part named', () => {
-    // fits the bodies and the key, not X
-    const n = 1000;
-    const a = capped(3 * 4 * n + 2 * n + 100);
-    const r = probe(largePlotParts(n, { colour: 'numeric' }), { alloc: a });
+    // 250M points need 16.25 GB; a browser that gives 12 GB refuses, before any data
+    const a = capped(12e9);
+    const r = probe(largePlotParts(250e6), { alloc: a });
     assert.equal(r.ok, false);
-    assert.equal(r.failed, 'X');
-    assert.equal(r.failedBytes, 4 * n);
+    assert.match(r.failed, /^peak-\d+$/);
     assert.ok(isAllocationFailure(r.error));
     assert.equal(a.s.used, 0);
     assert.deepEqual(r.buffers, {});
+    // 200M (13 GB) in a 14 GB browser passes
+    assert.equal(probe(largePlotParts(200e6), { alloc: capped(14e9) }).ok, true);
 });
 
 test('an error that is not a RangeError is not swallowed', () => {
@@ -94,9 +100,8 @@ test('niceFloor and probeMessage', () => {
 });
 
 test('suggestSize: the largest probed size that fits, cut and rounded down', () => {
-    const opts = { colour: 'categorical' };
-    // 22 B per point at the peak for this colour (3 bodies 10 B + key 2 + X, Y 8)
-    const a = capped(22 * 120e6);
+    const opts = {};
+    const a = capped(65 * 120e6);
     const size = suggestSize(250e6, m => largePlotParts(m, opts), { alloc: a, floor: 1000 });
     assert.ok(size > 0 && size <= 120e6 * 0.8, size);
     assert.equal(size, niceFloor(size));
@@ -106,9 +111,9 @@ test('suggestSize: the largest probed size that fits, cut and rounded down', () 
 });
 
 test('probeForDraw: buffers when they fit; an AllocationProbeError with the subset when not', () => {
-    const ok = probeForDraw({ n: 500, colour: 'numeric', alloc: capped(1e9) });
+    const ok = probeForDraw({ n: 500, alloc: capped(1e9) });
     assert.equal(ok.X.length, 500);
-    assert.throws(() => probeForDraw({ n: 250e6, colour: 'categorical', eligible: 1e9, alloc: capped(22 * 120e6) }), (e) => {
+    assert.throws(() => probeForDraw({ n: 250e6, eligible: 1e9, alloc: capped(65 * 120e6) }), (e) => {
         assert.ok(e instanceof AllocationProbeError);
         assert.equal(e.name, 'AllocationProbeError');
         assert.match(e.message, /^This browser cannot hold 250,000,000 points; use a subset \(\d+ parts of [\d,]+\)$/);
@@ -122,11 +127,11 @@ test('after a failed probe no data request is issued', async () => {
     const requests = [];
     const request = async (what) => { requests.push(what); return what; };
     async function draw(alloc) {
-        const pre = probeForDraw({ n: 1000, colour: 'numeric', alloc });
+        const pre = probeForDraw({ n: 1000, alloc });
         await Promise.all(['x', 'y', 'colour'].map(request));
         return pre;
     }
-    await assert.rejects(draw(capped(100)), /cannot hold 1,000 points/);
+    await assert.rejects(draw(capped(1000)), /cannot hold 1,000 points/);
     assert.deepEqual(requests, []);
     await draw(capped(1e9));
     assert.deepEqual(requests, ['x', 'y', 'colour']);

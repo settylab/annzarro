@@ -201,7 +201,7 @@ export function subsetCheck(n, threshold) {
  */
 export function subsetProbe(n, threshold) {
     if (!(n > threshold) || !ledger.panels().some(p => p.kind === 'cell-plot' && !p.threeD)) return { ok: true, why: '' };
-    const r = probe(largePlotParts(n, { colour: 'numeric' }));
+    const r = probe(largePlotParts(n, { offPerPoint: ledger.model.large.off }));
     r.release();
     if (r.ok) return { ok: true, why: '' };
     return { ok: false, why: `this browser cannot hold ${Math.round(n).toLocaleString('en-US')} points` };

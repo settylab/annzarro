@@ -10,9 +10,11 @@
  * (v0.4.1, 250M points and up). Typed-array allocation is catchable, so the
  * large-plot path (large-plot.js) allocates the buffers it will need first:
  *
- *   - `transient` parts stand for the response bodies the data requests will
- *     land in (positions, colour); they are allocated together with the rest
- *     to test the peak, then handed back before the requests go out;
+ *   - `transient` parts stand for the rest of the draw's off-heap peak (the
+ *     guard model's 65 B per point less the build buffers: response bodies,
+ *     Plotly's calc and trace pieces, staging copies); they are allocated
+ *     together with the rest to test the peak, then handed back before the
+ *     requests go out;
  *   - the other parts are the build buffers (group keys, grouped x and y);
  *     the draw fills these very buffers, so the probe costs no second
  *     allocation.
@@ -107,33 +109,44 @@ export function probe(parts, { alloc = allocate } = {}) {
     };
 }
 
-/**
- * What a large plot of `n` points allocates (large-plot.js): the response
- * bodies of the x, y and colour series (transient), then the group keys,
- * and the grouped x and y (kept: groupByKey fills them), and the log-scaled
- * colour values.
- * @param {number} n
- * @param {Object} [o]
- * @param {'numeric'|'categorical'|'none'} [o.colour]
- * @param {boolean} [o.log] - numeric colour on a log scale
- */
-export function largePlotParts(n, { colour = 'numeric', log = false } = {}) {
-    const parts = [
-        { name: 'x-body', type: 'f32', length: n, transient: true },
-        { name: 'y-body', type: 'f32', length: n, transient: true }
-    ];
-    if (colour === 'categorical') parts.push({ name: 'colour-body', type: 'u16', length: n, transient: true });
-    else if (colour === 'numeric') parts.push({ name: 'colour-body', type: 'f32', length: n, transient: true });
-    if (colour === 'numeric' && log) parts.push({ name: 'logged', type: 'f32', length: n });
-    parts.push({ name: 'key', type: 'u16', length: n },
-        { name: 'X', type: 'f32', length: n },
-        { name: 'Y', type: 'f32', length: n });
+/** Transient blocks are cut into pieces of this many bytes: the sum is what is tested, not one contiguous run. */
+export const CHUNK_BYTES = 512 * 1024 * 1024;
+
+/** `bytes` as transient u8 parts (a step's transient buffers: an export, a label table, a draw's peak). */
+export function blockParts(bytes, name = 'block') {
+    const parts = [];
+    let left = Math.max(1, Math.ceil(bytes));
+    for (let i = 0; left > 0; i++) {
+        const c = Math.min(left, CHUNK_BYTES);
+        parts.push({ name: `${name}-${i}`, type: 'u8', length: c, transient: true });
+        left -= c;
+    }
     return parts;
 }
 
-/** One block of `bytes` (a step's transient buffers: an export, a label table). */
-export function blockParts(bytes) {
-    return [{ name: 'block', type: 'u8', length: Math.max(1, Math.ceil(bytes)), transient: true }];
+/**
+ * What a large plot of `n` points needs from the browser's off-heap memory
+ * while it draws: `offPerPoint` bytes per point (the guard model's
+ * large.off, 65 B: response bodies, Plotly's calc and trace pieces, staging
+ * copies, all measured as renderer memory), of which the build buffers are
+ * kept and reused by the draw (group keys, grouped x and y, and the
+ * log-scaled colour) and the rest is a transient block, allocated for the
+ * test and freed before the data is requested.
+ * @param {number} n
+ * @param {Object} [o]
+ * @param {boolean} [o.log] - numeric colour on a log scale
+ * @param {number} [o.offPerPoint] - guard model large.off
+ */
+export function largePlotParts(n, { log = false, offPerPoint = 65 } = {}) {
+    const kept = [
+        { name: 'key', type: 'u16', length: n },
+        { name: 'X', type: 'f32', length: n },
+        { name: 'Y', type: 'f32', length: n }
+    ];
+    if (log) kept.unshift({ name: 'logged', type: 'f32', length: n });
+    const keptPerPoint = kept.reduce((a, p) => a + BYTES[p.type], 0);
+    const transient = Math.max(0, n * offPerPoint - n * keptPerPoint);
+    return [...(transient > 0 ? blockParts(transient, 'peak') : []), ...kept];
 }
 
 const _sep = (v) => Math.round(v).toLocaleString('en-US');
@@ -197,14 +210,14 @@ export class AllocationProbeError extends Error {
  * caller has requested anything.
  * @param {Object} o
  * @param {number} o.n - points
- * @param {'numeric'|'categorical'|'none'} [o.colour]
  * @param {boolean} [o.log]
+ * @param {number} [o.offPerPoint] - guard model large.off
  * @param {number} [o.eligible] - cells the subset parts are cut from
  * @param {Function} [o.alloc] - injectable allocator
  * @returns {{key, X, Y, logged?}}
  */
-export function probeForDraw({ n, colour = 'numeric', log = false, eligible = n, alloc = allocate }) {
-    const opts = { colour, log };
+export function probeForDraw({ n, log = false, offPerPoint = 65, eligible = n, alloc = allocate }) {
+    const opts = { log, offPerPoint };
     const r = probe(largePlotParts(n, opts), { alloc });
     if (r.ok) return r.buffers;
     const size = suggestSize(n, m => largePlotParts(m, opts),
