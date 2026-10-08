@@ -12,7 +12,9 @@ Run: .venv-docs/bin/python docs/_tools/shoot_figs79.py [--port 8816] [--only fig
 """
 import argparse
 import json
+import re
 import sys
+from urllib.parse import quote, unquote
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -140,6 +142,19 @@ TIMING_JS = """() => performance.getEntriesByType('resource')
               transfer: e.transferSize, body: e.encodedBodySize}))"""
 
 
+def requests_of(page):
+    """The data requests since the last clear, with dataset_path as the store's name: the app sends
+    the store's absolute path on this machine, which says nothing about the click and should not
+    reach the docs."""
+    reqs = page.evaluate(TIMING_JS)
+    for r in reqs:
+        r["url"] = re.sub(r"dataset_path=([^&]*)",
+                          lambda m: "dataset_path=" + quote(Path(unquote(m.group(1))).name), r["url"])
+        if "/api/v1/data/fingerprint?" in r["url"]:
+            r["note"] = "the store's identity, polled in the background; not part of the click"
+    return reqs
+
+
 def fig9(s):
     a = cell_plot("cell-plot-P1", f"fold change of the focused gene ({GENE})",
                   {"type": "layer", "key": FC, "column": GENE, "locked": False},
@@ -154,7 +169,8 @@ def fig9(s):
     (VIEWS / "click-cost.json").write_text(json.dumps(view, indent=1))
     page = s.open(view)
     page.evaluate("performance.clearResourceTimings()")
-    record = {"dataset": "bm_aging.zarr (8,090 cells x 16,285 genes)", "clicks": []}
+    record = {"dataset": "bm_aging.zarr (8,090 cells x 16,285 genes)",
+              "urls": "dataset_path shown as the store's name; the app sends its absolute path", "clicks": []}
     # Focus a new gene by clicking it in the volcano, then a new cell in the embedding.
     for label, tid in (("gene click", b["id"]), ("cell click", a["id"])):
         page.evaluate("performance.clearResourceTimings()")
@@ -171,7 +187,7 @@ def fig9(s):
         }""", tid)
         s.ready(page)
         record["clicks"].append({"click": label, "point": clicked,
-                                 "requests": page.evaluate(TIMING_JS)})
+                                 "requests": requests_of(page)})
     # Back to the previous gene (header "Previous gene" button): a repeat of an earlier read.
     page.evaluate("performance.clearResourceTimings()")
     statuses = []
@@ -181,7 +197,7 @@ def fig9(s):
     s.ready(page)
     record["clicks"].append({"click": "Previous gene (repeat)", "point": page.input_value("#focused-gene")
                              if page.locator("#focused-gene").count() else None,
-                             "requests": page.evaluate(TIMING_JS),
+                             "requests": requests_of(page),
                              "http_status": [st for st, _ in statuses]})
     (OUT / "fig9-resource-timing.json").write_text(json.dumps(record, indent=1))
     s.shot(page, "fig9-after-clicks")

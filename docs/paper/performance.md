@@ -103,8 +103,11 @@ localhost (view `docs/_tools/views/click-cost.json`, measured by
 
 | Click | Request | Body | Duration |
 |---|---|---|---|
-| a gene in the volcano | `layer/kompot_de_Young_to_Old_fold_change?cols=…&format=f32` | 32,360 B (8,090 × 4 B) | 13 to 19 ms |
-| a cell in the embedding | `layer/kompot_de_Young_to_Old_fold_change?rows=…&format=f32` | 65,140 B (16,285 × 4 B) | 33 to 39 ms |
+| a gene in the volcano | `layer/kompot_de_Young_to_Old_fold_change?cols=…&format=f32` | 32,360 B (8,090 × 4 B) | 19 to 23 ms |
+| a cell in the embedding | `layer/kompot_de_Young_to_Old_fold_change?rows=…&format=f32` | 65,140 B (16,285 × 4 B) | 21 to 28 ms |
 | "Previous gene", back to one already shown | none | | |
+
+The Network tab may also show a `fingerprint` request of about 2 kB, taking a few ms: the app
+checks the open store's identity in the background. It is not part of the click.
 
 More on measuring and tuning on your own deployment is in {doc}`../reference/performance`.
