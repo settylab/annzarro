@@ -32,6 +32,7 @@ const {
   errorFromResponse,
   describeFailure,
   authIndicator,
+  partialRefreshNotice,
 } = await import(pathToFileURL(MODULE_PATH).href);
 
 function jsonResponse(status, body, statusText = "") {
@@ -150,4 +151,16 @@ test("a 403 from /cache/reset is an expected answer, not an error", async () => 
   } finally {
     console.error = origError;
   }
+});
+
+test("partialRefreshNotice speaks only for a partial check, and says who can serve chunk writes", () => {
+  assert.equal(partialRefreshNotice(null), null);
+  for (const status of ["full", "remote", "scheduled"]) assert.equal(partialRefreshNotice({ status }), null);
+  const user = partialRefreshNotice({ status: "partial" });
+  assert.match(user.message, /inside its data chunks may not show/);
+  assert.match(user.message, /admin/);
+  assert.match(user.message, /restart/);
+  const admin = partialRefreshNotice({ status: "partial" }, { cleared: true });
+  assert.match(admin.message, /cache/);
+  assert.doesNotMatch(admin.message, /may not show/);
 });

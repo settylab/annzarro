@@ -147,3 +147,31 @@ export function refreshPlan(me) {
             : "Reload this dataset, re-checked against the disk (only an admin can clear the server's shared cache)"
     };
 }
+
+/**
+ * What to tell the user when a refresh answered `status: "partial"`: the
+ * store has too many files to check within the server's time budget, so a
+ * change that only overwrote chunk files is not detected and the generation
+ * was not bumped. An admin's header Refresh also clears the server's cache,
+ * which does serve such changes; anyone else (and every panel's Refresh,
+ * which does not clear it) is told who can pick them up.
+ * @param {Object|null} result - the reply of POST data/refresh
+ * @param {{cleared?: boolean}} [options] - the server cache was cleared in this refresh
+ * @returns {{title: string, message: string}|null} null unless the check was partial
+ */
+export function partialRefreshNotice(result, { cleared = false } = {}) {
+    if (!result || result.status !== 'partial') return null;
+    if (cleared) {
+        return {
+            title: 'Large dataset refreshed',
+            message: 'This dataset is too large to check completely during a refresh, so the server\'s ' +
+                'cache for it was cleared instead. Changes inside its data chunks are shown.'
+        };
+    }
+    return {
+        title: 'Refresh may not show every change',
+        message: 'This dataset is too large to check completely during a refresh. Changes made only ' +
+            'inside its data chunks may not show yet. An admin\'s Refresh dataset (or a server ' +
+            'restart) will pick them up.'
+    };
+}
