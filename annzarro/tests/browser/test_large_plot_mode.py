@@ -7,8 +7,9 @@ headless Chromium session then:
 1. opens a Cell Plot on the 50-cell subset: the regular plot, hover and click
    work (a click focuses the cell under the pointer), every control enabled;
 2. turns the subset off in the subset dialog: large-plot mode, the panel's
-   notice, hover off, the obsp axis/colour types, 3D, Hover picker and table
-   filter disabled with the tooltip;
+   notice, Plotly's own hover off, the obsp axis/colour types, 3D and the Hover
+   picker and table filter disabled with the tooltip (hover, click and the
+   highlight work: test_large_plot_interact.py);
 3. turns the subset on again: back to 1.;
 4. opens a link colouring by an obsp row with every cell: no plot is drawn
    (the regular path would run out of memory at real sizes) and the panel says
@@ -198,12 +199,13 @@ def _assert_regular(page, s):
 
 def _assert_large(s):
     assert s["points"] == 200
-    assert s["notice"] == ("Large-plot mode (200 points): hover, click and table filters are off; "
-                           "use a subset for them")
+    assert s["notice"] == ("Large-plot mode (200 points): hover, click and the focus highlight work; "
+                           "table filters, 3D and the Hover picker are off; use a subset for them")
     assert s["hovermode"] is False
-    for c in ("colorObsp", "xObsp", "hover", "table", "z", "highlight"):
+    for c in ("colorObsp", "xObsp", "hover", "table", "z"):
         assert s[c] == {"disabled": True, "title": TOOLTIP}, c
-    assert s["highlightOn"] is False
+    assert s["highlight"]["disabled"] is False and s["highlight"]["title"] != TOOLTIP
+    assert s["highlightOn"] is True
     for c in ("colorObs", "colorLayer"):
         assert s[c]["disabled"] is False, c
 

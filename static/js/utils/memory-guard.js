@@ -127,7 +127,11 @@ export const DEFAULT_MODEL = {
     },
     large: {
         resident: 0.1, peak: 0.2,
-        off: 65, gpu: 19,
+        // renderer memory: 65 B plot + 8 B point index (utils/point-index.js:
+        // row and cell order, 4 B each, typed arrays); its build holds 4 B per
+        // point more for about a second. A different quantity from
+        // arrayBuffers below, which is the tab's ArrayBuffer-limit figure.
+        off: 73, gpu: 19,
         /**
          * ArrayBuffer bytes per point a large plot holds at its peak, the
          * quantity the allocation probe tests (utils/alloc-probe.js). Not
@@ -144,9 +148,12 @@ export const DEFAULT_MODEL = {
          * (`RangeError` in scatter2d's `new Float64Array`), as 73 B/point
          * against that limit says. A recolour that regroups positions holds
          * the old plot's buffers beside the new draw's (large-plot.js
-         * probeOrRelease). The point index that large-plot-interact adds after
-         * the draw (8 B a point of typed array) must be added to this figure
-         * when that branch lands.
+         * probeOrRelease). Plus the point index built after the draw
+         * (utils/point-index.js: Uint32 order and rows, 8 B a point, the
+         * second term below): 73 + 8 = 81. The sum is an upper bound, not a
+         * measurement: the index is built after the response bodies are
+         * freed, so the peak with the index may be nearer 73 + 4 (its build
+         * buffer). Not yet re-measured at 200M+.
          */
         arrayBuffers: 73,
         /**
@@ -156,7 +163,11 @@ export const DEFAULT_MODEL = {
          * old plot (large-plot.js probeOrRelease).
          */
         redrawBeside: 14,
-        /** ArrayBuffer bytes per point a drawn plot holds (12.9 GB at 210M, measured): freed when its replacement draws. */
+        /**
+         * ArrayBuffer bytes per point a drawn plot holds: 61 for the plot
+         * (12.9 GB at 210M, measured) + 8 for its point index; freed when its
+         * replacement draws.
+         */
         heldPerPoint: 61
     },
     /**

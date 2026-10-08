@@ -106,7 +106,7 @@ Defaults sent to the browser through `/api/v1/config`.
 | `defaults.max_cells`, `defaults.max_genes` | `1000000` | Client-side limits on the number of cells and genes. |
 | `defaults.taxonomy_id` | `9606` | NCBI taxonomy id for gene annotations (9606 human, 10090 mouse). |
 | `defaults.subset_threshold` | `200000` | A dataset with more cells than this opens on a reproducible cell subset; `0` means always. |
-| `defaults.large_plot_points` | `1000000` | A Cell Plot with more points than this is drawn in large-plot mode: hover, click and table filters are off (see {doc}`../user-guide/subsets`). |
+| `defaults.large_plot_points` | `1000000` | A Cell Plot with more points than this is drawn in large-plot mode: table filters and 3D are off (see {doc}`../user-guide/subsets`). |
 | `defaults.subset_size`, `defaults.subset_seed` | `100000`, `0` | Cells in that default subset, and its seed. See {doc}`../design/subsetting`. |
 | `memory.enforce` | `block` | Browser memory guard: what happens when an action would not fit in the browser tab's memory. `block` disables it and says why, `warn` says so and lets it run, `off` never interferes. See [Browser memory](#browser-memory-uimemory). |
 | `memory.heap_gb` | `null` | JavaScript memory the tab may use, in GB. `null`: what the browser reports (Chrome: 4.4 GB on a 64-bit computer), 4.4 where it reports nothing. |
@@ -147,7 +147,7 @@ marked action. Firefox and Safari report no memory figures; they are held to Chr
 
 **Defaults.** `enforce: block`, `heap_gb: null` (the browser's own limit), `total_gb: null`,
 `margin: 0.2`. With these the heap limits regular plots (a few million points) and the total
-limits large-plot mode, whose points are outside the heap (about 65 bytes per point). A browser
+limits large-plot mode, whose points are outside the heap (about 73 bytes per point, 8 of them the hover and click index). A browser
 cannot see the computer's memory, so the server tells a browser on its own computer how much
 there is (a loopback request no proxy forwarded); the budget is that memory less a quarter,
 at least 4 GB, for the system and the browser. On a 16 GB computer that is 12 GB, and a large

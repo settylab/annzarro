@@ -135,7 +135,7 @@ failed to read hides no points; it is listed without a count.
 
 The line keeps its height whatever it says, so the plot does not move when it changes. In a
 narrow panel it shortens to "28 of 200 shown · details". Tags at its right state a mode: in
-large-plot mode, **Large plot: no hover/click** ({ref}`large-plot-mode`). An exported PNG or SVG
+large-plot mode, **Large plot** ({ref}`large-plot-mode`). An exported PNG or SVG
 carries the same statement above the plot.
 
 ## Defaults of a new panel
