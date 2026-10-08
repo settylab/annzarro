@@ -35,6 +35,7 @@ ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
 import base64
 import json
 import os
+import re
 import socket
 import struct
 import subprocess
@@ -597,3 +598,78 @@ def test_large_plot_redraw_lets_the_old_plot_go(large_server, page):
         cdp.send("HeapProfiler.collectGarbage")
     assert page.evaluate("() => window.__oldGl.length > 0 && window.__oldGl.every(gl => gl.isContextLost())")
     assert page.evaluate("() => window.__oldCalc.deref() === undefined"), "the old plot's calcdata is still alive"
+
+
+# -- the allocation probe (static/js/utils/alloc-probe.js) --------------------------
+
+# Test hook: the probe's allocator refuses what a browser with a small array-buffer
+# budget would (here a buffer of more than 7,800 bytes, 120 points at the model's
+# 65 B per point; the fixture draws 200 points).
+REFUSING_ALLOCATOR = """() => { window.__annzarroAllocator = (type, length) => {
+    const T = {u8: Uint8Array, u16: Uint16Array, u32: Uint32Array, f32: Float32Array, f64: Float64Array}[type];
+    if (length * T.BYTES_PER_ELEMENT > 7800) throw new RangeError('Array buffer allocation failed');
+    return new T(length);
+}; }"""
+
+# a plot's data requests: its series come in the binary encoding
+DATA_REQUEST = re.compile(r'/api/v1/data/(obsm|layer)/|format=f32')
+PLACEHOLDER = '.tile[data-tile-id="cell-plot-a"] .coverage-placeholder'
+
+
+def test_failed_probe_says_so_offers_a_subset_and_requests_nothing(large_server, page):
+    """A large plot whose buffers the browser refuses is not drawn, and no plot
+    data is requested (the probe runs before the requests)."""
+    requests = []
+    page.on("request", lambda r: requests.append(r.url))
+    page.add_init_script(f"({REFUSING_ALLOCATOR})()")
+    page.goto(_link(large_server))
+    page.wait_for_selector(PLACEHOLDER, timeout=30000)
+    text = " ".join(page.inner_text(PLACEHOLDER).split())
+    # 200 cells: the largest size the hook lets through is 120 points -> 112 probed -> 50; 4 parts
+    assert "This browser cannot hold 200 points; use a subset (4 parts of 50)" in text, text
+    # the way out: the subset dialog
+    page.click(f"{PLACEHOLDER} button[data-ps-action='subset']")
+    page.wait_for_selector("#subset-apply", state="visible", timeout=10000)
+    # the tab is alive and nothing of the plot was asked for
+    assert page.evaluate("() => 1 + 1") == 2
+    data = [u for u in requests if DATA_REQUEST.search(u)]
+    assert data == [], data
+    assert page.locator('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot').count() == 0 or \
+        not page.evaluate("() => !!document.querySelector('.tile[data-tile-id=\"cell-plot-a\"] .js-plotly-plot')._fullLayout")
+
+
+def test_passing_probe_draws_and_asks_before_requesting(large_server, page):
+    """Control: with the real allocator the same link draws, and its data requests go out."""
+    requests = []
+    page.on("request", lambda r: requests.append(r.url))
+    page.goto(_link(large_server))
+    _drawn(page, "cell-plot-a")
+    assert page.locator(PLACEHOLDER).count() == 0
+    assert [u for u in requests if DATA_REQUEST.search(u)]
+
+
+def test_lost_webgl_context_releases_and_offers_a_subset(large_server, page):
+    """webglcontextlost on a large plot: released, the same message, Subset and
+    Redraw offered; the context coming back is said; Redraw draws again."""
+    page.goto(_link(large_server))
+    _drawn(page, "cell-plot-a")
+    page.evaluate("""() => {
+        const gd = document.querySelector('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot');
+        window.__ext = gd._fullLayout._glcanvas.data().filter(d => d.regl)
+            .map(d => d.regl._gl.getExtension('WEBGL_lose_context'));
+        window.__ext[0].loseContext();
+    }""")
+    page.wait_for_selector(PLACEHOLDER, timeout=10000)
+    text = " ".join(page.inner_text(PLACEHOLDER).split())
+    assert re.search(r"This browser cannot hold 200 points; use a subset \(\d+ parts? of \d+\)", text), text
+    assert page.locator(f"{PLACEHOLDER} button[data-ps-action='subset']").count() == 1
+    assert page.locator(f"{PLACEHOLDER} button[data-ps-action='redraw']").count() == 1
+    # the context returns: the panel says Redraw can work
+    page.evaluate("() => window.__ext[0].restoreContext()")
+    page.wait_for_function("""() => /graphics context is back/.test(
+        document.querySelector('.tile[data-tile-id="cell-plot-a"] .coverage-placeholder')?.textContent || '')""",
+        timeout=10000)
+    page.click(f"{PLACEHOLDER} button[data-ps-action='redraw']")
+    _drawn(page, "cell-plot-a")
+    page.wait_for_function("""() => !document.querySelector('.tile[data-tile-id="cell-plot-a"] .coverage-placeholder')
+        && !!document.querySelector('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot')?._fullLayout""", timeout=30000)
