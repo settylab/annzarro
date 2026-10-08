@@ -1666,23 +1666,6 @@ const App = (function() {
     }
     
     /**
-     * Select2 label for a dataset: its text, with a tooltip of the full name
-     * and, when it differs, the path (a custom entry's id is its path).
-     * @param {Object} data - Select2 option data
-     * @returns {string|HTMLElement} text, or a span for the entry
-     * @private
-     */
-    function _datasetOptionLabel(data) {
-        if (data.loading || !data.text) return data.text;
-        const span = document.createElement('span');
-        span.textContent = data.text;
-        const path = data.id && data.id !== data.text && !data.newTag
-            && data.text !== `${data.id} (Custom)` ? data.id : '';
-        span.title = path ? `${data.text}\n${path}` : data.text;
-        return span;
-    }
-
-    /**
      * Load available datasets
      * @private
      */
@@ -1723,7 +1706,10 @@ const App = (function() {
         sel.innerHTML = '';
         if (datasets && datasets.length) {
           datasets.forEach(ds => {
-            sel.appendChild(new Option(ds.name || ds.path, ds.path));
+            const opt = new Option(ds.name || ds.path, ds.path);
+            // Select2 shows an option's title on its list entry and on the closed box
+            opt.title = ds.name && ds.name !== ds.path ? `${ds.name}\n${ds.path}` : ds.path;
+            sel.appendChild(opt);
           });
         } else {
           sel.appendChild(new Option('No datasets available', '', true, true));
@@ -1750,9 +1736,6 @@ const App = (function() {
             // the open list may be wider than the box; CSS caps it
             dropdownAutoWidth: true,
             dropdownCssClass:  'dataset-select-dropdown',
-            // name and path as a tooltip, on list entries and the closed box
-            templateResult:    _datasetOptionLabel,
-            templateSelection: _datasetOptionLabel,
             createTag: params => {
               const term = params.term.trim();
               return term

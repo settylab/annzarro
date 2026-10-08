@@ -2368,14 +2368,9 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 /* The open dataset list may be wider than its box, up to the viewport;
-   entries still too long get an ellipsis (their tooltip has the full text) */
+   entries still too long get an ellipsis (their title has the full text) */
 .dataset-select-dropdown {
     max-width: min(90vw, 700px); /* main.js narrows it to the room right of the box */
-}
-.dataset-select-dropdown .select2-results__option > span {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 /* Fix Select2 container width to match parent */
