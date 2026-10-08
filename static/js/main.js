@@ -517,7 +517,9 @@ const App = (function() {
         // A view with the cells-and-genes tier waits up to 1 s for the
         // store's (a small store's takes milliseconds; a large one's is
         // compared later, in the background: _verifyCellsLater)
-        const wait = savedHasData(saved) ? 1 : 0;
+        // A large store (over 2M cells) is not hashed at open: that would
+        // compete with the first data requests; it is compared later too.
+        const wait = savedHasData(saved) && !(saved.fp.n_obs > 2e6) ? 1 : 0;
         for (const path of tries) {
             const probe = await probeStore(path, { wait });
             if (probe.ok) return { path: probe.path || path, probe, saved };
@@ -746,6 +748,9 @@ const App = (function() {
      * @private
      */
     async function _verifyCellsLater(savedFp, path) {
+        // Not while the first data requests of the open are in flight: the
+        // hash of a large store competes with them
+        await new Promise(resolve => setTimeout(resolve, 8000));
         for (let i = 0; i < 12; i++) {
             const probe = await probeStore(path, { wait: 10 }).catch(() => null);
             if (!probe || !probe.ok) return;
@@ -1864,8 +1869,9 @@ const App = (function() {
             _isLoadingDataset = false;
             _currentLoadingAbortController = null;
 
-            // Fingerprint the store for saved views, after the first draw
-            // has had its turn (the server hashes the names in the background)
+            // Ask the store's metadata tier for saved views, after the first
+            // draw has had its turn (this does not start the name hash: the
+            // server hashes the names when a view is saved or compared)
             setTimeout(() => {
                 if (DataManager.getCurrentDataset() === datasetPath) prewarmStore(datasetPath);
             }, 5000);

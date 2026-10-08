@@ -280,6 +280,21 @@ class TestRoute:
         assert r.status_code == 404
         assert r.get_json()["reason"] == "not_found"
 
+    def test_opening_a_dataset_does_not_hash_the_names(self, setup, monkeypatch):
+        client, _, store = setup
+
+        def boom(*a, **k):
+            raise AssertionError("the name hash was started")
+        monkeypatch.setattr(fingerprint, "data_part", boom)
+        body = client.get(f"/api/v1/data/fingerprint?dataset_path={store}&wait=0").get_json()
+        assert body["status"] == "pending"
+        assert body["fingerprint"]["n_obs"] == 200
+        monkeypatch.undo()
+        # saving or sharing (wait>0) hashes them, to the digests v0.4.1 gave
+        body = client.get(f"/api/v1/data/fingerprint?dataset_path={store}&wait=5").get_json()
+        assert body["status"] == "ready"
+        assert (body["fingerprint"]["cells"], body["fingerprint"]["genes"]) == (GOLDEN_CELLS, GOLDEN_GENES)
+
     def test_bad_wait(self, setup):
         client, _, store = setup
         assert client.get(f"/api/v1/data/fingerprint?dataset_path={store}&wait=x").status_code == 400
@@ -306,3 +321,62 @@ class TestRoute:
                           "hosted": True})
         r = app.test_client().get(f"/api/v1/data/fingerprint?dataset_path={other}")
         assert r.status_code == 403
+
+
+# --- when the names are hashed ---------------------------------------------
+
+# Digests computed by github/main (v0.4.1) on the fixture: the identity must
+# not change with when it is computed.
+GOLDEN_CELLS = "af717cf4052702e921b5895d70ec7a15"
+GOLDEN_GENES = "0282218ce5c7e2e273b119224799aabd"
+GOLDEN_DATA = "0cfa34b3b4a952c627fe2b45a6d45912"
+GOLDEN_META = "795506709bdc98c432166daae3eccc2a"
+
+
+def test_opening_does_not_start_the_hash(tmp_path, monkeypatch):
+    store = _copy(tmp_path)
+    reader = get_reader(str(store))
+
+    def boom(*a, **k):
+        raise AssertionError("the name hash was started")
+    monkeypatch.setattr(fingerprint, "data_part", boom)
+    monkeypatch.setattr(fingerprint, "index_digest", boom)
+    for _ in range(3):
+        out = fingerprint.get(reader, str(store), wait=0)
+        assert out["status"] == "pending"
+        assert out["fingerprint"]["meta"] == GOLDEN_META
+    assert fingerprint._pending == {}
+
+
+def test_saving_or_sharing_still_gets_the_same_fingerprint(tmp_path):
+    store = _copy(tmp_path)
+    reader = get_reader(str(store))
+    assert fingerprint.get(reader, str(store), wait=0)["status"] == "pending"
+    out = fingerprint.get(reader, str(store), wait=10)
+    assert out["status"] == "ready"
+    got = out["fingerprint"]
+    assert (got["cells"], got["genes"], got["data"], got["meta"]) == (
+        GOLDEN_CELLS, GOLDEN_GENES, GOLDEN_DATA, GOLDEN_META)
+    # once known, a wait=0 call (a later open) gets it too
+    assert fingerprint.get(reader, str(store), wait=0)["fingerprint"] == got
+
+
+def test_a_hash_already_running_is_reported_pending_not_restarted(tmp_path, monkeypatch):
+    import threading
+    store = _copy(tmp_path)
+    reader = get_reader(str(store))
+    gate, calls = threading.Event(), []
+    real = fingerprint.data_part
+
+    def slow(r, p):
+        calls.append(1)
+        gate.wait(10)
+        return real(r, p)
+    monkeypatch.setattr(fingerprint, "data_part", slow)
+    try:
+        assert fingerprint.get(reader, str(store), wait=0.05)["status"] == "pending"
+        assert fingerprint.get(reader, str(store), wait=0)["status"] == "pending"
+    finally:
+        gate.set()
+    assert fingerprint.get(reader, str(store), wait=10)["status"] == "ready"
+    assert len(calls) == 1
