@@ -299,7 +299,7 @@ function keyBuffer(pre, n) {
 function probeDraw(settings, structure) {
   const n = (DataManager.getCells() || []).length;
   return probeForDraw({ n, log: !!(settings.color && settings.color.log) && colourKind(settings, structure) === 'numeric',
-    offPerPoint: DEFAULT_MODEL.large.off,
+    bytesPerPoint: DEFAULT_MODEL.large.arrayBuffers,
     eligible: n + (Number(DataManager.getCellsNotInSubset()) || 0) });
 }
 

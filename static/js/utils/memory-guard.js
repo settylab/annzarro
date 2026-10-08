@@ -127,7 +127,24 @@ export const DEFAULT_MODEL = {
     },
     large: {
         resident: 0.1, peak: 0.2,
-        off: 65, gpu: 19
+        off: 65, gpu: 19,
+        /**
+         * ArrayBuffer bytes per point a large plot holds at its peak, the
+         * quantity the allocation probe tests (utils/alloc-probe.js). Not
+         * `off` (renderer memory): a tab can hold only so many ArrayBuffer
+         * bytes in all (16.6 GB on the benchmark laptop, found by
+         * allocating 512 MiB blocks until RangeError: 31 fit, the 32nd did
+         * not), and the draw fails when it needs more. Counted by wrapping
+         * the typed-array constructors in a 20M-point draw (vendored
+         * Plotly 2.20): Plotly's calc and scatter2d position arrays 31.8
+         * (two Float64Array copies of x and y, 16 B each) + 15.9 (one more
+         * Float64Array.from), the response bodies 11.7, the colour decode
+         * 4.0, and the build buffers the probe keeps 10 (key 2, X 4, Y 4):
+         * 73.4. Drew at 225M (16.5 GB), failed at 240M and 250M
+         * (`RangeError` in scatter2d's `new Float64Array`), as 73 B/point
+         * against that limit says.
+         */
+        arrayBuffers: 73
     },
     /**
      * Transient costs on top of what the panel holds.

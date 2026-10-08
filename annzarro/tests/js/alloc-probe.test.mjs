@@ -29,17 +29,17 @@ function capped(limit) {
     return Object.assign(fn, { s });
 }
 
-test('largePlotParts: 65 B per point in all, the build buffers kept, the rest transient', () => {
+test('largePlotParts: 73 B per point in all, the build buffers kept, the rest transient', () => {
     const n = 1000;
     const p = largePlotParts(n);
     const total = p.reduce((a, x) => a + x.length * BYTES[x.type], 0);
-    assert.equal(total, 65 * n);
+    assert.equal(total, 73 * n);
     assert.deepEqual(p.filter(x => !x.transient).map(x => [x.name, x.type]), [['key', 'u16'], ['X', 'f32'], ['Y', 'f32']]);
     assert.ok(p.filter(x => x.transient).every(x => x.name.startsWith('peak-')));
     assert.ok(largePlotParts(10, { log: true }).some(x => x.name === 'logged'));
-    // the model's figure, not a hand list: 250M points is 16.25 GB
-    const big = largePlotParts(250e6, { offPerPoint: 65 }).reduce((a, x) => a + x.length * BYTES[x.type], 0);
-    assert.equal(big, 65 * 250e6);
+    // the model's figure, not a hand list: 250M points is 18.25 GB
+    const big = largePlotParts(250e6, { bytesPerPoint: 73 }).reduce((a, x) => a + x.length * BYTES[x.type], 0);
+    assert.equal(big, 73 * 250e6);
     // blocks are cut into chunks
     assert.ok(largePlotParts(250e6).filter(x => x.transient).length > 20);
 });
@@ -55,7 +55,7 @@ test('probe succeeds: the kept buffers come back, the transient block is release
 });
 
 test('probe fails on a RangeError: everything allocated so far is released, the failing part named', () => {
-    // 250M points need 16.25 GB; a browser that gives 12 GB refuses, before any data
+    // 250M points need 18.25 GB; a browser that gives 12 GB refuses, before any data
     const a = capped(12e9);
     const r = probe(largePlotParts(250e6), { alloc: a });
     assert.equal(r.ok, false);
@@ -63,8 +63,9 @@ test('probe fails on a RangeError: everything allocated so far is released, the 
     assert.ok(isAllocationFailure(r.error));
     assert.equal(a.s.used, 0);
     assert.deepEqual(r.buffers, {});
-    // 200M (13 GB) in a 14 GB browser passes
-    assert.equal(probe(largePlotParts(200e6), { alloc: capped(14e9) }).ok, true);
+    // the benchmark laptop's tab holds 16.64 GB of ArrayBuffers: 225M (16.4 GB) fits, 240M (17.5 GB) does not
+    assert.equal(probe(largePlotParts(225e6), { alloc: capped(16.64e9) }).ok, true);
+    assert.equal(probe(largePlotParts(240e6), { alloc: capped(16.64e9) }).ok, false);
 });
 
 test('an error that is not a RangeError is not swallowed', () => {

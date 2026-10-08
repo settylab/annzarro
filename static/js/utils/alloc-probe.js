@@ -10,9 +10,9 @@
  * (v0.4.1, 250M points and up). Typed-array allocation is catchable, so the
  * large-plot path (large-plot.js) allocates the buffers it will need first:
  *
- *   - `transient` parts stand for the rest of the draw's off-heap peak (the
- *     guard model's 65 B per point less the build buffers: response bodies,
- *     Plotly's calc and trace pieces, staging copies); they are allocated
+ *   - `transient` parts stand for the rest of the draw's ArrayBuffer peak (the
+ *     guard model's large.arrayBuffers, 73 B per point, less the build
+ *     buffers: response bodies, Plotly's Float64Array position copies); they are allocated
  *     together with the rest to test the peak, then handed back before the
  *     requests go out;
  *   - the other parts are the build buffers (group keys, grouped x and y);
@@ -125,19 +125,19 @@ export function blockParts(bytes, name = 'block') {
 }
 
 /**
- * What a large plot of `n` points needs from the browser's off-heap memory
- * while it draws: `offPerPoint` bytes per point (the guard model's
- * large.off, 65 B: response bodies, Plotly's calc and trace pieces, staging
- * copies, all measured as renderer memory), of which the build buffers are
+ * What a large plot of `n` points needs in ArrayBuffers while it draws:
+ * `bytesPerPoint` per point (the guard model's large.arrayBuffers, 73 B:
+ * response bodies, Plotly's Float64Array position copies, the build
+ * buffers; a tab can hold only so many ArrayBuffer bytes in all), of which the build buffers are
  * kept and reused by the draw (group keys, grouped x and y, and the
  * log-scaled colour) and the rest is a transient block, allocated for the
  * test and freed before the data is requested.
  * @param {number} n
  * @param {Object} [o]
  * @param {boolean} [o.log] - numeric colour on a log scale
- * @param {number} [o.offPerPoint] - guard model large.off
+ * @param {number} [o.bytesPerPoint] - guard model large.arrayBuffers
  */
-export function largePlotParts(n, { log = false, offPerPoint = 65 } = {}) {
+export function largePlotParts(n, { log = false, bytesPerPoint = 73 } = {}) {
     const kept = [
         { name: 'key', type: 'u16', length: n },
         { name: 'X', type: 'f32', length: n },
@@ -145,7 +145,7 @@ export function largePlotParts(n, { log = false, offPerPoint = 65 } = {}) {
     ];
     if (log) kept.unshift({ name: 'logged', type: 'f32', length: n });
     const keptPerPoint = kept.reduce((a, p) => a + BYTES[p.type], 0);
-    const transient = Math.max(0, n * offPerPoint - n * keptPerPoint);
+    const transient = Math.max(0, n * bytesPerPoint - n * keptPerPoint);
     return [...(transient > 0 ? blockParts(transient, 'peak') : []), ...kept];
 }
 
@@ -211,13 +211,13 @@ export class AllocationProbeError extends Error {
  * @param {Object} o
  * @param {number} o.n - points
  * @param {boolean} [o.log]
- * @param {number} [o.offPerPoint] - guard model large.off
+ * @param {number} [o.bytesPerPoint] - guard model large.arrayBuffers
  * @param {number} [o.eligible] - cells the subset parts are cut from
  * @param {Function} [o.alloc] - injectable allocator
  * @returns {{key, X, Y, logged?}}
  */
-export function probeForDraw({ n, log = false, offPerPoint = 65, eligible = n, alloc = allocate }) {
-    const opts = { log, offPerPoint };
+export function probeForDraw({ n, log = false, bytesPerPoint = 73, eligible = n, alloc = allocate }) {
+    const opts = { log, bytesPerPoint };
     const r = probe(largePlotParts(n, opts), { alloc });
     if (r.ok) return r.buffers;
     const size = suggestSize(n, m => largePlotParts(m, opts),

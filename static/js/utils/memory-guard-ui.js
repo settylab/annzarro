@@ -91,6 +91,20 @@ function _check(need, heldNow, panels) {
     return check(need, heldNow, limits(), settings(), { observed: _observed(), panels });
 }
 
+// The create tiles ask on every memory change: one answer per size is kept for a few seconds.
+const PROBE_TTL_MS = 3000;
+const _answers = new Map();
+/** Whether the browser gives `bytes` now (utils/alloc-probe.js); false when it refuses. */
+function _probeAnswer(bytes) {
+    const key = Math.ceil(bytes / 1e6), now = Date.now();
+    const seen = _answers.get(key);
+    if (seen && now - seen.at < PROBE_TTL_MS) return seen.ok;
+    const r = probe(blockParts(bytes));
+    r.release();
+    _answers.set(key, { ok: r.ok, at: now });
+    return r.ok;
+}
+
 /**
  * The allocation probe for a step the RAM check let through: ask the browser
  * for the step's transient buffers (`bytes`; released at once) and refuse
@@ -103,9 +117,7 @@ function _check(need, heldNow, panels) {
  */
 export function probed(result, bytes, what) {
     if (!result || !result.fits || !(bytes >= PROBE_MIN_BYTES)) return result;
-    const r = probe(blockParts(bytes));
-    r.release();
-    if (r.ok) return result;
+    if (!_probeAnswer(bytes)) return result;
     const s = settings();
     return { ...result, fits: false, binding: 'alloc', needBytes: bytes,
         verdict: s.enforce === 'off' ? 'ok' : s.enforce === 'warn' ? 'warn' : 'block',
@@ -201,7 +213,7 @@ export function subsetCheck(n, threshold) {
  */
 export function subsetProbe(n, threshold) {
     if (!(n > threshold) || !ledger.panels().some(p => p.kind === 'cell-plot' && !p.threeD)) return { ok: true, why: '' };
-    const r = probe(largePlotParts(n, { offPerPoint: ledger.model.large.off }));
+    const r = probe(largePlotParts(n, { bytesPerPoint: ledger.model.large.arrayBuffers }));
     r.release();
     if (r.ok) return { ok: true, why: '' };
     return { ok: false, why: `this browser cannot hold ${Math.round(n).toLocaleString('en-US')} points` };
