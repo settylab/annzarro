@@ -113,7 +113,7 @@ def _link(base, dataset, table=False, plot=True):
         tiles.append({"type": "tile", "id": "cell-table-A"})
     row = tiles[0] if len(tiles) == 1 else {
         "type": "split", "direction": "vertical", "panes": [{"percentage": 50}] * len(tiles), "children": tiles}
-    layout = {"v": 1, "hierarchy": [row], "controlState": {}, "panelConfigs": configs}
+    layout = {"v": 1, "hierarchy": [row] if tiles else [], "controlState": {}, "panelConfigs": configs}
     view = {"v": 1, "subset": {"n": N_PART, "seed": 0}, "layout": layout}
     return (f"{base}/?dataset_path={dataset}#view="
             + base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("="))
@@ -142,7 +142,7 @@ class _Page:
         self.page.add_init_script(f"window.addEventListener('DOMContentLoaded', ({DELAY}));")
         if delay:
             self.page.add_init_script(f"window.addEventListener('DOMContentLoaded', () => {{ window.__delay = {delay}; }});")
-        self.page.goto(_link(base, dataset, table, plot))
+        self.page.goto(_link(base, dataset, table, bool(plot)))
         self.plot = plot
         if wait:
             self.page.wait_for_selector("#subset-button:not([hidden])", timeout=60_000)
@@ -546,5 +546,22 @@ def test_clicking_into_the_focused_cell_box_still_searches_the_dataset_when_it_c
             s.page.wait_for_selector(".name-picker-menu:not([hidden]) .name-picker-option", timeout=15_000)
             s.page.wait_for_timeout(500)
             assert [u for u in s.requests_to("names") if "scope=dataset" in u], "the cells outside the subset are not searched"
+        finally:
+            s.close()
+
+
+def test_a_cell_plot_made_after_the_dataset_opened_also_reads_the_next_part_ahead(two_datasets):
+    """Single-user servers read ahead by default ('auto'); the plot comes after the dataset."""
+    base, dataset = two_datasets
+    with sync_api.sync_playwright() as pw:
+        s = _Page(pw, base, dataset, plot=False)
+        try:
+            s.page.wait_for_timeout(3500)              # the dataset is open, no plot: nothing to read ahead
+            assert not [u for u in s.requests_to("subset") if "priority=low" in u]
+            s.page.click("text=Cell Plot")
+            deadline = time.time() + 30
+            while time.time() < deadline and not [u for u in s.requests_to("subset") if "priority=low" in u]:
+                s.page.wait_for_timeout(200)
+            assert [u for u in s.requests_to("subset") if "priority=low" in u], "the next part was not read ahead"
         finally:
             s.close()

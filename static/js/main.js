@@ -1086,7 +1086,7 @@ const App = (function() {
         return [...seen].map(([key, columns]) => ({ key, columns: [...columns] }));
     }
 
-    function _schedulePrefetch() {
+    function _schedulePrefetch(tries = 0) {
         _stopPrefetch();
         if (!_prefetchEnabled() || _subsetQueued || _subsetController || _isLoadingDataset) return;
         const info = DataManager.getSubset();
@@ -1097,8 +1097,13 @@ const App = (function() {
         const dataset = DataManager.getCurrentDataset();
         _prefetchTimer = setTimeout(() => {
             _prefetchTimer = null;
+            if (DataManager.getCurrentDataset() !== dataset) return;
             const embeddings = _embeddingsDrawn();
-            if (!embeddings.length || DataManager.getCurrentDataset() !== dataset) return;
+            if (!embeddings.length) {
+                // no cell plot yet (a view still opening, or none made yet): look again
+                if (tries < PREFETCH_LOOKS) _schedulePrefetch(tries + 1);
+                return;
+            }
             const controller = new AbortController();
             const run = { key: JSON.stringify(spec), controller };
             _prefetch = run;
@@ -1112,6 +1117,7 @@ const App = (function() {
     // reading cells (its requests are aborted), so clicking through parts
     // 2, 3, 4 reads only 4.
     const PREFETCH_IDLE_MS = 1500;
+    const PREFETCH_LOOKS = 40;      // x 1.5 s
     let _subsetSwap = null;
     let _subsetQueued = null;
     let _subsetController = null;      // AbortController of the swap reading cells
