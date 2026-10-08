@@ -167,13 +167,52 @@ export function nextOverlappingEntity(gd, point, clicked, current, mouse = null,
   return at >= 0 ? ordered[(at + 1) % ordered.length] : ordered[0];
 }
 
+// A click focuses only when it is quick and still. Plotly fires plotly_click
+// when the button goes down (3D), so a rotation or pan used to refocus.
+export const CLICK_MAX_MS = 300;
+export const CLICK_MAX_MOVE_PX = 5;
+
+/**
+ * Track the primary pointer on a graph div. `gd.__azGesture.settle(commit)`
+ * runs `commit` once the press ends if it was a click, at once if the press
+ * has already ended as a click (2D reports plotly_click after the release),
+ * and never for a long or moving press. Listeners live on the div, added once;
+ * the release is caught on window so a drag ending outside the plot still ends.
+ */
+function trackGesture(gd) {
+  if (gd.__azGesture || !gd.addEventListener) return gd.__azGesture;
+  const g = gd.__azGesture = { down: null, pending: null, lastClickAt: -Infinity, settle: null };
+  const finish = (ev) => {
+    const d = g.down;
+    if (!d || ev.pointerId !== d.id) return;
+    g.down = null;
+    window.removeEventListener('pointerup', finish, true);
+    window.removeEventListener('pointercancel', finish, true);
+    const isClick = ev.type === 'pointerup' && ev.timeStamp - d.t <= CLICK_MAX_MS
+      && Math.hypot(ev.clientX - d.x, ev.clientY - d.y) <= CLICK_MAX_MOVE_PX;
+    const commit = g.pending;
+    g.pending = null;
+    if (!isClick) return;
+    g.lastClickAt = ev.timeStamp;
+    if (commit) commit();
+  };
+  gd.addEventListener('pointerdown', (ev) => {
+    gd.__lastPointer = { clientX: ev.clientX, clientY: ev.clientY };
+    if (!ev.isPrimary || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+    g.down = { id: ev.pointerId, t: ev.timeStamp, x: ev.clientX, y: ev.clientY };
+    g.pending = null;
+    window.addEventListener('pointerup', finish, true);
+    window.addEventListener('pointercancel', finish, true);
+  }, true);
+  g.settle = (commit) => {
+    if (g.down) g.pending = commit;                       // pressed: decide on release
+    else if (performance.now() - g.lastClickAt < 50) commit(); // just released as a click
+  };
+  return g;
+}
+
 export function attachClickHandler(plotContainer, traces, data, settings) {
-    if (!plotContainer.__pointerTracked && plotContainer.addEventListener) {
-      plotContainer.__pointerTracked = true;
-      plotContainer.addEventListener('pointerdown', (ev) => {
-        plotContainer.__lastPointer = { clientX: ev.clientX, clientY: ev.clientY };
-      }, true);
-    }
+    const gesture = trackGesture(plotContainer);
     // One click handler per graph: every redraw used to add another, so a
     // click ran setFocusedCell once per redraw so far.
     if (plotContainer.__azClickHandler && typeof plotContainer.removeListener === 'function') {
@@ -216,11 +255,14 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
       const mouse = box && ev ? { x: ev.clientX - box.left, y: ev.clientY - box.top } : null;
       entityName = nextOverlappingEntity(plotContainer, point, entityName, current, mouse);
 
-      if (isGenePlot) {
-        DataManager.setFocusedGene(entityName, false);
-      } else {
-        DataManager.setFocusedCell(entityName, false);
-      }
+      const commit = () => {
+        if (isGenePlot) {
+          DataManager.setFocusedGene(entityName, false);
+        } else {
+          DataManager.setFocusedCell(entityName, false);
+        }
+      };
+      if (gesture) gesture.settle(commit); else commit();
     };
     plotContainer.__azClickHandler = onClick;
     plotContainer.on('plotly_click', onClick);
