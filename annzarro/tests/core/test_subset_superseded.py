@@ -163,10 +163,36 @@ def test_a_waiter_computes_it_itself_when_the_read_ahead_was_stopped(monkeypatch
     gate = _Gate(monkeypatch)
     ahead, out_ahead = _in_thread(3, low=True)
     assert gate.reached.wait(10)
+    # the step has claimed part 3 (and so waits for the read ahead) before the
+    # page asks for another part: in production the newest claim wins, so the
+    # order of two claims is the order the page made its requests in
+    stepped = threading.Event()
+    real_claim = cell_subset.claim
+
+    def claim(client, dataset_path, spec_key, low=False):
+        check = real_claim(client, dataset_path, spec_key, low)
+        if not low and spec_key == _spec(3).key():
+            stepped.set()
+        return check
+
+    monkeypatch.setattr(cell_subset, "claim", claim)
     step, out_step = _in_thread(3)
-    cell_subset.claim("page-1", "/d.zarr", _spec(5).key())      # another part is asked for: the read ahead stops
+    assert stepped.wait(10)
+    real_claim("page-1", "/d.zarr", _spec(5).key())      # another part is asked for: the read ahead stops
     gate.release.set()
     ahead.join(10)
     step.join(10)
     assert "error" in out_ahead
     assert "subset" in out_step or "error" in out_step          # computed again, or stopped like the part it was for
+
+
+def test_the_newest_claim_wins_whatever_thread_registers_it(monkeypatch):
+    """A page that asked for part 5 and then for the part read ahead keeps that read ahead."""
+    gate = _Gate(monkeypatch)
+    ahead, out_ahead = _in_thread(3, low=True)
+    assert gate.reached.wait(10)
+    cell_subset.claim("page-1", "/d.zarr", _spec(5).key())      # earlier request
+    cell_subset.claim("page-1", "/d.zarr", _spec(3).key())      # newest: the very part being read
+    gate.release.set()
+    ahead.join(10)
+    assert "subset" in out_ahead
