@@ -125,3 +125,50 @@ test('a subset the dataset cannot apply opens on the default, with a notice', as
     assert.match(notices[0].title, /not applied/);
     assert.ok(calls.some(c => c.path.endsWith('/data/subset') && c.q.subset === 'auto'));
 });
+
+test('a superseded part is dropped quietly: no console error, no notice, nothing cached, the last part is kept', async () => {
+    CacheManager.clear();
+    notices.length = 0;
+    installServer();
+    DataManager.setSubsetRequest('auto');
+    await DataManager.setCurrentDataset(BIG, true);
+
+    const real = globalThis.fetch;
+    const asked = [];
+    globalThis.fetch = async (url, init) => {
+        const u = new URL(url, 'http://localhost');
+        if (u.pathname.endsWith('/data/subset')) {
+            const part = JSON.parse(u.searchParams.get('subset')).part;
+            asked.push(part);
+            // the server answers the older part as superseded (200, not 409)
+            if (part === 1) return json({ superseded: true, reason: 'subset_superseded', error: 'newer subset asked' });
+            return json({ subset: { n: 2, seed: 0, part }, key: JSON.stringify({ n: 2, seed: 0, part }), n: 2,
+                          n_total: 4, n_eligible: 4, defaults: { threshold: 3, size: 2, seed: 0 } });
+        }
+        return real(url, init);
+    };
+    const errors = [];
+    const warns = [];
+    const { error, warn } = console;
+    console.error = (...a) => errors.push(a);
+    console.warn = (...a) => warns.push(a);
+    try {
+        DataManager.setSubsetRequest({ n: 2, seed: 0, part: 1 });
+        await assert.rejects(DataManager.reloadSubset(), { name: 'AbortError' });
+        DataManager.setSubsetRequest({ n: 2, seed: 0, part: 2 });
+        await DataManager.reloadSubset();
+        // the superseded reply was not cached: asking for part 1 again asks the server again
+        DataManager.setSubsetRequest({ n: 2, seed: 0, part: 1 });
+        await assert.rejects(DataManager.reloadSubset(), { name: 'AbortError' });
+        DataManager.setSubsetRequest({ n: 2, seed: 0, part: 2 });
+        await DataManager.reloadSubset();
+    } finally {
+        console.error = error;
+        console.warn = warn;
+    }
+    assert.deepEqual(errors, []);
+    assert.deepEqual(warns, []);
+    assert.deepEqual(notices, []);
+    assert.deepEqual(asked, [1, 2, 1]);   // the last part came from the cache
+    assert.equal(DataManager.getSubset().subset.part, 2);
+});
