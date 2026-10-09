@@ -800,6 +800,7 @@ const SessionManager = (function() {
         // Set up new timer
         _autosaveTimer = setInterval(async () => {
             await saveToLocalStorage();
+            _announceChange();
         }, Config.AUTOSAVE.INTERVAL);
         
         console.log('Autosave enabled, saving every', Config.AUTOSAVE.INTERVAL / 1000, 'seconds');
@@ -843,6 +844,22 @@ const SessionManager = (function() {
         if (Config.AUTOSAVE.ENABLED) {
             saveToLocalStorage();
         }
+        _announceChange();
+    }
+
+    // Who wants to know the view may have changed (the address bar follows it)
+    let _changeListener = null;
+    function _announceChange() {
+        if (!_changeListener) return;
+        try {
+            _changeListener();
+        } catch (error) {
+            console.error('View change listener failed:', error);
+        }
+    }
+    /** Call `fn` (cheap, no arguments) whenever panels or the autosave tick say the view may have changed. */
+    function onViewMayHaveChanged(fn) {
+        _changeListener = fn;
     }
     
     // Public API
@@ -863,6 +880,7 @@ const SessionManager = (function() {
         getAutosaveSession,
         clearAutosave,
         notifyPanelUpdate,
+        onViewMayHaveChanged,
         setViewApplier,
         setPanelSetHelpers,
         fetchPanelSet,
