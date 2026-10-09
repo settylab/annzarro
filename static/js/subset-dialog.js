@@ -58,22 +58,50 @@ const SubsetControl = (function() {
         }
     }
 
+    // The part asked for and not shown yet: {part}. The reply of /data/subset
+    // replaces DataManager's subset long before the plots show the cells, so
+    // the part to step from, the number in the box and the arrows follow this.
+    let _pending = null;
+
+    /** The 0-based part the view is on, or going to. */
+    function _partNow(info) {
+        const parts = describeParts(info);
+        return _pending ? _pending.part : (parts ? parts.part : null);
+    }
+
     /** Show the part `delta` away (the ‹ › buttons). Same view, other cells. */
     function step(delta) {
         const info = DataManager.getSubset();
-        const parts = describeParts(info);
-        if (!parts) return;
-        _goToSpec(partSpec(info, parts.part + delta));
+        const here = _partNow(info);
+        if (here === null) return;
+        _goToSpec(partSpec(info, here + delta, false, here), here + delta);
     }
 
     /** Show part `part` (0-based; a typed number past the end shows the last). */
     function goTo(part) {
-        _goToSpec(partSpec(DataManager.getSubset(), part, true));
+        const info = DataManager.getSubset();
+        const here = _partNow(info);
+        const parts = describeParts(info);
+        const target = parts && Number.isFinite(part) ? Math.min(Math.max(Math.trunc(part), 0), parts.parts - 1) : null;
+        _goToSpec(partSpec(info, part, true, here === null ? undefined : here), target);
         update();   // an unchanged or invalid entry snaps back to the current part
     }
 
-    function _goToSpec(spec) {
-        if (spec && _onApply) _onApply(spec, { step: true });
+    /**
+     * Ask for a part. The box and the arrows show it at once; the request
+     * runs on (onApply returns when the cells are shown, or a later request
+     * took over), and the box follows the last request until it is done.
+     */
+    function _goToSpec(spec, target) {
+        if (!spec || !_onApply) return;
+        const mine = _pending = { part: target };
+        update();
+        Promise.resolve(_onApply(spec, { step: true })).catch(() => {}).finally(() => {
+            if (_pending === mine) {
+                _pending = null;
+                update();
+            }
+        });
     }
 
     /** Refresh the header's cell count and badge from the DataManager. */
@@ -108,15 +136,20 @@ const SubsetControl = (function() {
         if (box) {
             box.hidden = !parts || !DataManager.getCurrentDataset();
             if (parts) {
+                // a part asked for shows as the part (the cells follow)
+                const shown = _pending ? Math.min(Math.max(_pending.part, 0), parts.parts - 1) : parts.part;
                 box.title = parts.title;
+                box.setAttribute('aria-busy', _pending ? 'true' : 'false');
+                box.classList.toggle('subset-parts-busy', !!_pending);
                 const input = document.getElementById('subset-part-input');
-                if (input) { input.value = String(parts.display); input.max = String(parts.parts); }
+                if (input) { input.value = String(shown + 1); input.max = String(parts.parts); }
                 const count = document.getElementById('subset-part-count');
                 if (count) count.textContent = fmt(parts.parts);
                 const prev = document.getElementById('subset-part-prev');
                 const next = document.getElementById('subset-part-next');
-                if (prev) prev.disabled = !parts.canPrev;
-                if (next) next.disabled = !parts.canNext;
+                // still clickable while loading: another step goes on from here
+                if (prev) prev.disabled = !(shown > 0);
+                if (next) next.disabled = !(shown < parts.parts - 1);
             }
         }
     }

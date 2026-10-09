@@ -59,7 +59,7 @@ const GENES = ['g0', 'g1', 'g2'];
 function stubDataManager({ entityIndex = -1 } = {}) {
     const saved = { ...DataManager };
     Object.assign(DataManager, {
-        getCells: () => CELLS,
+        getCells: () => CELLS, getCellsForPanel: () => CELLS, cellLabels: (x) => x,
         getGenes: () => GENES,
         getCurrentDataset: () => '/fixture.zarr',
         getCellIndex: () => entityIndex,

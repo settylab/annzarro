@@ -45,6 +45,7 @@ DataManager.getCurrentDataset = () => '/fixture.zarr';
 DataManager.getDatasetStructure = async () => ({});
 DataManager.isDatasetLoaded = () => false;
 DataManager.getCells = () => CELLS;
+DataManager.getCellsForPanel = () => CELLS;
 DataManager.getGenes = () => GENES;
 DataManager.getCellIndex = (c) => CELLS.indexOf(c);
 DataManager.cellShown = (c) => (CELLS.includes(c) ? true : undefined);   // as the real one: unknown names are undefined

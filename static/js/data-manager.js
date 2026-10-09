@@ -17,6 +17,8 @@ import { RemoteNames } from './utils/remote-names.js';
 // array, which every view accepts; only the large Cell Plot path
 // (large-plot.js) works with packed names; it takes over above 1M cells by default.
 const PACKED_NAMES_ABOVE_BYTES = 256 * 1024 * 1024;
+/** How long the coordinates read ahead for the next part are kept. */
+const PREFETCH_TTL_MS = 5 * 60 * 1000;
 
 // Marks a cached body that is a decoded binary slice, not parsed JSON.
 const BINARY_RESULT = Symbol('binarySlice');
@@ -28,6 +30,10 @@ const DataManager = (function() {
     // Bumped whenever the loaded cells/genes change (switch, revert, clear).
     // Plot data built under an older generation belongs to another dataset.
     let _datasetGeneration = 0;
+    // this page's id for the server: a newer subset request of the same page
+    // stops the computation of an older one (core/subset.py claim); another
+    // tab has its own, so tabs never stop each other's
+    const _clientId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     // Settles when the dataset being opened has its cell and gene names (or
     // failed to open); null when no open is in flight. Until then an empty
     // name list means "not read yet", not "this dataset has none".
@@ -384,14 +390,14 @@ const DataManager = (function() {
     async function reloadSubset(signal = null) {
         const datasetPath = _currentDataset;
         if (!datasetPath) throw new Error('No dataset is open');
-        const previous = { cells: _cells, subset: _subset, generation: _datasetGeneration };
+        const previous = { cells: _cells, subset: _subset, reply: _subsetReply, generation: _datasetGeneration };
         try {
             _datasetGeneration++;
             // the cell routes read the subset from _subset
             _subset = await _resolveSubset(datasetPath, previous.subset, signal);
             const structure = await getDatasetStructure(datasetPath, signal);
             const nShown = _subset ? _subset.n : (structure && structure.n_obs);
-            const cells = await loadCells(datasetPath, signal, nShown);
+            const cells = await loadCells(datasetPath, signal, nShown, structure && structure.n_obs);
             if (signal && signal.aborted) throw new DOMException('Subset change aborted', 'AbortError');
             _cells = cells;
             return _subset;
@@ -399,6 +405,7 @@ const DataManager = (function() {
             _datasetGeneration++;
             _cells = previous.cells;
             _subset = previous.subset;
+            _subsetReply = previous.reply;
             throw error;
         }
     }
@@ -451,7 +458,7 @@ const DataManager = (function() {
 
             // Load cells and genes
             const nShown = _subset ? _subset.n : (_datasetStructure && _datasetStructure.n_obs);
-            _cells = await loadCells(datasetPath, signal, nShown);
+            _cells = await loadCells(datasetPath, signal, nShown, _datasetStructure && _datasetStructure.n_obs);
             
             if (signal && signal.aborted) {
                 throw new DOMException("Dataset loading aborted", "AbortError");
@@ -541,7 +548,7 @@ const DataManager = (function() {
         try {
             const param = request === 'auto' ? 'auto' : subsetParam(request);
             info = await _fetchWithCache(Config.API.SUBSET,
-                { dataset_path: datasetPath, subset: param }, signal);
+                { dataset_path: datasetPath, subset: param, client: _clientId }, signal);
         } catch (error) {
             if (error && error.name === 'AbortError') throw error;
             if (request === 'auto') {
@@ -556,7 +563,7 @@ const DataManager = (function() {
             notify('Cell subset not applied',
                 `${error.message || error}\nShowing the default for this dataset instead.`, 'warning');
             info = await _fetchWithCache(Config.API.SUBSET,
-                { dataset_path: datasetPath, subset: 'auto' }, signal);
+                { dataset_path: datasetPath, subset: 'auto', client: _clientId }, signal);
         }
         _subsetReply = info ? { ...info, datasetPath } : null;
         return info && info.subset ? { ...info, datasetPath } : null;
@@ -657,7 +664,7 @@ const DataManager = (function() {
      * The names of the cells shown, kept on the server (utils/remote-names.js):
      * one name by index from obs/_index, one index by name from /data/names.
      */
-    function _remoteNames(datasetPath, n) {
+    function _remoteNames(datasetPath, n, { canLoadAll = false } = {}) {
         const fetchNames = async (indices) => {
             const params = _withSubset(Config.API.OBS,
                 { dataset_path: datasetPath, columns: '_index', rows: indices.join(',') });
@@ -673,7 +680,10 @@ const DataManager = (function() {
             if (hit && hit.name === name && typeof hit.row === 'number') _learnRow(datasetPath, name, hit.row);
             return hit && hit.name === name ? hit.index : -1;
         };
-        return RemoteNames.wrap(new RemoteNames(n, fetchNames, lookup));
+        // every name, for what cannot do without them (a table sorted or
+        // searched on the names, an export): the cells of the subset in effect
+        const fetchAll = canLoadAll ? () => _downloadCellNames(datasetPath, null) : null;
+        return RemoteNames.wrap(new RemoteNames(n, fetchNames, lookup, { fetchAll }));
     }
 
     /**
@@ -689,6 +699,9 @@ const DataManager = (function() {
     let _prewarmed = null;
     function prewarmCellNames() {
         if (!(_cells instanceof RemoteNames) || !_currentDataset) return;
+        // names that are on demand only because the dataset is big stay so: the
+        // index would read every one of them (the cost the part step avoids)
+        if (_cells.canLoadAll) return;
         if (!(Config.SERVER_CONFIG && Config.SERVER_CONFIG.single_user)) return;
         const key = `${_currentDataset}#${_datasetGeneration}`;
         if (_prewarmed === key) return;
@@ -714,6 +727,80 @@ const DataManager = (function() {
         if (!_cells) return undefined;
         if (_cells instanceof RemoteNames) return _cells.nameAt(i);
         return _cells[i];
+    }
+
+    /**
+     * Whether the names of the cells shown are fetched when needed instead of
+     * being in the browser (huge datasets; see loadCells), and not all yet.
+     */
+    function cellNamesOnDemand() {
+        return _cells instanceof RemoteNames && !_cells.allLoaded;
+    }
+
+    /**
+     * What a panel that draws many cells at once (a plot, a table) holds for
+     * "the cells shown": their names, or when the names are on demand and few
+     * enough to draw one by one, a token per cell (RemoteNames.tokens) in their
+     * place. A token identifies the cell inside the panel as a name would;
+     * cellLabels() gives the text to show, and nameOfCell() the name.
+     * @returns {ArrayLike<string>|null}
+     */
+    function getCellsForPanel() {
+        const cells = _cells;
+        if (!cells) return cells;
+        const large = Config.DEFAULTS.LARGE_PLOT_POINTS;
+        if (cells instanceof RemoteNames && !cells.allLoaded && cells.canLoadAll
+            && !(typeof large === 'number' && cells.length > large)) {
+            return cells.tokens();
+        }
+        if (cells instanceof RemoteNames && cells.allLoaded) return cells._full;
+        return cells;
+    }
+
+    /**
+     * The text to show for cells held as tokens (getCellsForPanel): the name
+     * where it is in the browser, '' where not yet. Names pass unchanged.
+     * @param {ArrayLike<string>} ids
+     * @returns {Array<string>}
+     */
+    function cellLabels(ids) {
+        const cells = _cells;
+        const first = ids && ids.length ? ids[0] : undefined;
+        if (!(cells instanceof RemoteNames) || !RemoteNames.isToken(first)) return ids;
+        const out = new Array(ids.length);
+        for (let i = 0; i < out.length; i++) {
+            const name = cells.peek(RemoteNames.tokenIndex(ids[i]));
+            out[i] = name === undefined ? '' : name;
+        }
+        return out;
+    }
+
+    /**
+     * The name of a cell held as a token (or a name, unchanged), asking the
+     * server for it when it is not in the browser.
+     * @param {string} id
+     * @returns {Promise<string|undefined>}
+     */
+    async function nameOfCell(id) {
+        if (!(_cells instanceof RemoteNames) || !RemoteNames.isToken(id)) return id;
+        return _cells.nameAt(RemoteNames.tokenIndex(id));
+    }
+
+    /** The names of these cells (positions among the cells shown) are in the browser after this. */
+    async function ensureCellNames(indices) {
+        if (_cells instanceof RemoteNames) await _cells.ensure(indices);
+    }
+
+    /**
+     * Every name of the cells shown, in the browser (fetched once when they
+     * are on demand). For what cannot do without them: a table sorted or
+     * searched on the names, an export, a filter kept over names. Rejects
+     * (names_not_loaded) where the set is too large to name.
+     * @returns {Promise<ArrayLike<string>>}
+     */
+    async function allCellNames() {
+        if (_cells instanceof RemoteNames) return _cells.all();
+        return _cells || [];
     }
 
     // ---------------------------------------------------------------------
@@ -1089,37 +1176,63 @@ const DataManager = (function() {
         }
     }
 
-    async function loadCells(datasetPath, signal = null, expected = null) {
+    /**
+     * Whether the names of the cells shown stay on the server: when more cells
+     * are shown than the large-plot threshold (large-plot mode shows none), or
+     * when the dataset has more than NAMES_ON_DEMAND_ABOVE cells, whatever the
+     * subset (a part of cells spread over a huge dataset touches nearly every
+     * chunk of its name column).
+     * @param {number|null} shown - cells shown
+     * @param {number|null} total - cells of the dataset
+     * @returns {'none'|'large'|'huge'} 'large': too many to name at all;
+     *   'huge': few enough to name on request, but not to name by default
+     */
+    function namesStayOnServer(shown, total) {
+        const large = Config.DEFAULTS.LARGE_PLOT_POINTS;
+        if (typeof shown === 'number' && typeof large === 'number' && shown > large) return 'large';
+        const huge = Config.DEFAULTS.NAMES_ON_DEMAND_ABOVE;
+        if (typeof total === 'number' && typeof huge === 'number' && total > huge && typeof shown === 'number') return 'huge';
+        return 'none';
+    }
+
+    /** Every name of the cells shown, from /data/cells (the subset in effect). */
+    async function _downloadCellNames(datasetPath, signal) {
+        const params = _withSubset(Config.API.CELLS, { dataset_path: datasetPath });
+        const fullUrl = `${Config.API.CELLS}?${new URLSearchParams(params).toString()}`;
+        const response = await fetch(fullUrl, { signal });
+        const size = Number(response.headers.get('Content-Length') || 0);
+        if (response.ok && size > PACKED_NAMES_ABOVE_BYTES) {
+            const t0 = performance.now();
+            const names = await PackedNames.fromJSON(response, 'cells', size);
+            console.info(`Cell names: ${names.length} read into packed form in ${(performance.now() - t0).toFixed(0)} ms`);
+            return names;
+        }
+        const data = await _readResponse(response);
+
+        // Check if response contains error information
+        if (data && data.status === 'error') {
+            throw new Error(data.message || data.error || 'Failed to load cells');
+        }
+
+        return data.cells || [];
+    }
+
+    async function loadCells(datasetPath, signal = null, expected = null, total = null) {
         try {
             // Check for abort before making request
             if (signal && signal.aborted) {
                 throw new DOMException("Cells loading aborted", "AbortError");
             }
-            
-            // Every cell of a dataset above the large-plot threshold: the names
-            // stay on the server (large-plot mode shows none)
-            const threshold = Config.DEFAULTS.LARGE_PLOT_POINTS;
-            if (typeof expected === 'number' && typeof threshold === 'number' && expected > threshold) {
-                return _remoteNames(datasetPath, expected);
+
+            // The names stay on the server (utils/remote-names.js) when too
+            // many cells are shown to name (large-plot mode shows none), and
+            // for a huge dataset whatever the subset: a part of it is named
+            // when something asks for a name, not at every part step
+            const stay = namesStayOnServer(expected, total);
+            if (stay !== 'none') {
+                return _remoteNames(datasetPath, expected, { canLoadAll: stay === 'huge' });
             }
-            const params = _withSubset(Config.API.CELLS, { dataset_path: datasetPath });
-            const fullUrl = `${Config.API.CELLS}?${new URLSearchParams(params).toString()}`;
-            const response = await fetch(fullUrl, { signal });
-            const size = Number(response.headers.get('Content-Length') || 0);
-            if (response.ok && size > PACKED_NAMES_ABOVE_BYTES) {
-                const t0 = performance.now();
-                const names = await PackedNames.fromJSON(response, 'cells', size);
-                console.info(`Cell names: ${names.length} read into packed form in ${(performance.now() - t0).toFixed(0)} ms`);
-                return names;
-            }
-            const data = await _readResponse(response);
-            
-            // Check if response contains error information
-            if (data && data.status === 'error') {
-                throw new Error(data.message || data.error || 'Failed to load cells');
-            }
-            
-            return data.cells || [];
+            return await _downloadCellNames(datasetPath, signal);
         } catch (error) {
             // Only log non-abort errors
             if (!error || error.name !== 'AbortError') {
@@ -1127,12 +1240,12 @@ const DataManager = (function() {
             } else if (Config.DEBUG_MODE) {
                 console.debug('Cells loading aborted');
             }
-            
+
             // Rethrow the error to propagate it up
             throw error;
         }
     }
-    
+
     /**
      * Load gene names from the dataset
      * @param {string} datasetPath - Path to the dataset
@@ -1392,6 +1505,87 @@ const DataManager = (function() {
         }
     }
     
+    /**
+     * Read several columns of one obsm matrix in ONE request (`cols=0,1`)
+     * and file each column under the URL loadObsm({columnName}) asks for, so
+     * the loads that follow find them cached. A plot reads X_umap x and y:
+     * as two column requests the server decoded every chunk of the matrix
+     * twice (on the 1B-cell store 7 GB of decoded chunks for each axis).
+     * Best effort: columns that are not plain positions, columns already
+     * cached, a reply that is not numeric, and any failure leave the
+     * per-column loads to do their own requests, as before.
+     * @param {Object} options
+     * @param {string} [options.datasetPath]
+     * @param {string} options.obsmKey
+     * @param {Array<string|number>} options.columns - column positions
+     * @param {string} [options.subsetKey] - the key of another subset than the
+     *   one shown (the next part, read ahead)
+     * @param {number} [options.ttl] - how long the filed columns are kept, ms
+     * @param {AbortSignal} [options.signal]
+     * @returns {Promise<boolean>} whether the columns were filed
+     */
+    async function prefetchObsmColumns({ datasetPath, obsmKey, columns, subsetKey = null, ttl = undefined, signal = null } = {}) {
+        try {
+            const path = datasetPath || _currentDataset;
+            const wanted = [...new Set((columns || []).map(String))];
+            if (!path || !obsmKey || wanted.length < 2 || !wanted.every(c => /^\d+$/.test(c))) return false;
+            const url = `${Config.API.OBSM}/${obsmKey}`;
+            const also = subsetKey ? { subset: subsetKey } : {};
+            const query = (params) => `${url}?${new URLSearchParams(_withSubset(url, { ...params, format: BINARY_FORMAT, ...also })).toString()}`;
+            const single = (c) => query({ dataset_path: path, column_name: c });
+            if (wanted.every(c => CacheManager.get(single(c)) !== undefined)) return false;
+            const pairParams = { dataset_path: path, cols: wanted.join(',') };
+            const body = await _fetchWithCache(url, { ...pairParams, format: BINARY_FORMAT, ...also }, signal);
+            // the block is not kept: its columns are (8 bytes per cell twice otherwise)
+            CacheManager.remove(query(pairParams));
+            if (!body || !body[BINARY_RESULT] || !Array.isArray(body.shape) || body.shape.length !== 2
+                || body.shape[1] !== wanted.length) return false;
+            const [rows, width] = body.shape;
+            wanted.forEach((c, k) => {
+                const values = new body.values.constructor(rows);
+                for (let r = 0; r < rows; r++) values[r] = body.values[r * width + k];
+                CacheManager.set(single(c), { [BINARY_RESULT]: true, values, shape: [rows],
+                    dtype: body.dtype, encoding: 'dense' }, ttl);
+            });
+            return true;
+        } catch (error) {
+            if (error && error.name === 'AbortError') throw error;
+            console.warn('Columns of obsm could not be read together; reading them one by one:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Read the next part ahead, at low priority: its cells (/data/subset,
+     * which the server may drop for any real request) and the coordinates of
+     * the embeddings the plots draw, filed where the load of that part looks,
+     * so stepping to it needs no wait for the server. Names are not read (they
+     * stay on the server for a huge dataset). Best effort and quiet: nothing
+     * here is an error, and nothing waits for it.
+     * @param {Object} spec - the subset spec of that part
+     * @param {Array<{key: string, columns: Array}>} embeddings - obsm keys and the columns drawn
+     * @param {AbortSignal} signal
+     * @returns {Promise<string|null>} the part's subset key, null when not read
+     */
+    async function prefetchSubset(spec, embeddings, signal) {
+        const datasetPath = _currentDataset;
+        if (!datasetPath || !spec) return null;
+        try {
+            const info = await _fetchWithCache(Config.API.SUBSET,
+                { dataset_path: datasetPath, subset: subsetParam(spec), client: _clientId, priority: 'low' }, signal);
+            if (!info || !info.key) return null;
+            for (const e of embeddings || []) {
+                if (signal && signal.aborted) return null;
+                await prefetchObsmColumns({ datasetPath, obsmKey: e.key, columns: e.columns,
+                    subsetKey: info.key, ttl: PREFETCH_TTL_MS, signal });
+            }
+            return info.key;
+        } catch (error) {
+            if (!error || error.name !== 'AbortError') console.debug('Read-ahead of the next part skipped:', error && error.message);
+            return null;
+        }
+    }
+
     /**
      * Load varm data (multi-dimensional gene annotations)
      * @param {Object} options - Options for loading varm data
@@ -2268,6 +2462,8 @@ const DataManager = (function() {
         loadObs,
         loadVar,
         loadObsm,
+        prefetchObsmColumns,
+        prefetchSubset,
         loadVarm,
         loadObsp,
         loadVarp,
@@ -2310,6 +2506,13 @@ const DataManager = (function() {
         setCellRowHints,
         prewarmCellNames,
         cellNameAt,
+        cellNamesOnDemand,
+        getCellsForPanel,
+        cellLabels,
+        nameOfCell,
+        ensureCellNames,
+        allCellNames,
+        namesStayOnServer,
         getGeneIndex,
         isDatasetLoaded,
         // Cell subset

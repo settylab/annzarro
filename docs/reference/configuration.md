@@ -107,6 +107,8 @@ Defaults sent to the browser through `/api/v1/config`.
 | `defaults.taxonomy_id` | `9606` | NCBI taxonomy id for gene annotations (9606 human, 10090 mouse). |
 | `defaults.subset_threshold` | `200000` | A dataset with more cells than this opens on a reproducible cell subset; `0` means always. |
 | `defaults.large_plot_points` | `1000000` | A Cell Plot with more points than this is drawn in large-plot mode: table filters and 3D are off (see {doc}`../user-guide/subsets`). |
+| `defaults.names_on_demand_above` | `5000000` | A dataset with more cells than this does not download the names of the cells it shows, whatever the subset: hover, click, the focused cell and a table's page ask the server for the names they show, and sorting or searching a table on the names loads them all once. See {ref}`names-on-demand`. |
+| `defaults.prefetch_next_part` | `auto` | After a part is shown, read the next part's cells and embedding coordinates in the background, at low priority, so stepping forward waits for little. `auto`: on a single-user server (the laptop, the desktop app) only; `true` or `false` force it. |
 | `defaults.subset_size`, `defaults.subset_seed` | `100000`, `0` | Cells in that default subset, and its seed. See {doc}`../design/subsetting`. |
 | `memory.enforce` | `block` | Browser memory guard: what happens when an action would not fit in the browser tab's memory. `block` disables it and says why, `warn` says so and lets it run, `off` never interferes. See [Browser memory](#browser-memory-uimemory). |
 | `memory.heap_gb` | `null` | JavaScript memory the tab may use, in GB. `null`: what the browser reports (Chrome: 4.4 GB on a 64-bit computer), 4.4 where it reports nothing. |

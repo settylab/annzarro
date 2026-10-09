@@ -322,6 +322,15 @@ the dataset row (the same without a subset). Under a subset it searches the show
 The dataset-wide search uses the same name index as a request without a subset, which the
 server builds on first use (6.2 s at 50 million cells) and then keeps.
 
+`/data/subset` also takes `client=` (an id the page makes for itself) and `priority=low`. A request
+for another subset of the same dataset from the same `client` stops the computation of an older one
+at its next block of a million rows (`409 {"reason": "subset_superseded"}` for the older); a
+`priority=low` request, a read ahead of the next part, is stopped by any request of the page for a
+subset and stops none. Requests without a `client` are never stopped. The cells of a part are read
+for their names only when something asks: `/data/obs?columns=_index&rows=` reads the chunks of
+those rows, and a dataset above `ui.defaults.names_on_demand_above` cells does not read all of
+them for a part ({ref}`names-on-demand`).
+
 `GET /data/subset/locate?dataset_path=&subset=` translates cells between the two index spaces
 without names, up to 1,000 per call: `rows=` (positions) answers `{"dataset_rows": [...]}`,
 `dataset_rows=` answers `{"rows": [...]}` with `-1` for a row the subset does not show. The

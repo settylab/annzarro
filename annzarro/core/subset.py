@@ -42,6 +42,8 @@ the inner reader's cached full-axis result, sliced.
 
 from __future__ import annotations
 
+import contextvars
+import itertools
 import json
 import math
 import threading
@@ -98,6 +100,27 @@ class SubsetError(ValueError):
     def __init__(self, message: str, reason: str = "bad_subset", status: int = 400):
         super().__init__(message)
         self.message, self.reason, self.status = message, reason, status
+
+
+class SubsetSuperseded(SubsetError):
+    """The client asked for another subset of this dataset while this one was
+    computed (a part stepped through quickly): the work stops. Answered 409."""
+
+    def __init__(self):
+        super().__init__("A newer subset was asked for, so this one is not needed any more.",
+                         "subset_superseded", 409)
+
+
+# What the subset being computed in this thread checks between blocks of
+# rows (see claim): raises SubsetSuperseded when the work is not needed.
+_cancel_check: "contextvars.ContextVar[Optional[Callable[[], None]]]" = contextvars.ContextVar(
+    "subset_cancel_check", default=None)
+
+
+def _check_cancelled() -> None:
+    check = _cancel_check.get()
+    if check is not None:
+        check()
 
 
 @dataclass(frozen=True)
@@ -380,6 +403,7 @@ def _rank_window(n_obs: int, eligible: Optional[np.ndarray], group_of, n_groups:
         below = np.zeros(n_groups, dtype=np.int64)
         hits = []
         for part, sl in _block_rows(n_obs, eligible, block):
+            _check_cancelled()      # one block is ~1M rows: a newer request stops the pass here
             groups = group_of(part, sl)
             keys = _keys(part, salt)
             w = wanted[groups]
@@ -828,6 +852,7 @@ def select_indices(n_obs: int, spec: SubsetSpec,
         names, group_of = column(spec.balance).groups(eligible)
         sizes = np.zeros(len(names), dtype=np.int64)
         for part, sl in _block_rows(n_obs, eligible):
+            _check_cancelled()
             sizes += np.bincount(group_of(part, sl), minlength=len(names))
         first, quota = partition_quotas(sizes, n, spec.part)
         chosen = _rank_window(n_obs, eligible, group_of, len(names), spec.seed, sizes, first, quota)
@@ -954,14 +979,93 @@ def locate_parts(reader, dataset_path: str, spec: SubsetSpec, rows) -> List[Opti
     return parts_of_rows(_n_obs(reader, dataset_path), spec, rows, read_column, read_codes)
 
 
-def get_subset(reader, dataset_path: str, spec: SubsetSpec) -> Subset:
-    """The resolved subset for a spec, computed once per store version."""
-    key = (dataset_path, _store_signature(dataset_path), spec.key())
+#: (client, dataset) -> (serial, spec key) of the newest subset that client
+#: asked for; see claim().
+_claims: "OrderedDict[Tuple[str, str], Tuple[int, str]]" = OrderedDict()
+_claim_serial = itertools.count(1)
+_CLAIMS_MAX = 512
+
+
+def claim(client: Optional[str], dataset_path: str, spec_key: str, low: bool = False) -> Optional[Callable[[], None]]:
+    """Note that ``client`` now wants subset ``spec_key`` of the dataset, and
+    return the check the computation of that subset runs between blocks.
+
+    A browser stepping through parts asks for part 3, then (before it is
+    computed) part 4: the pass over every row for part 3 (5-8 s at 1B cells,
+    more on a network disk) serves no one. A request for another subset from
+    the same ``client`` (a random id per page, so one browser tab never stops
+    another's work) makes the check of the older raise SubsetSuperseded.
+    ``low`` (a prefetch of the part after the one shown) claims nothing and
+    stops at the next request of any real subset. Requests without a client
+    claim nothing and are never stopped.
+    """
+    if not client:
+        return None
+    scope = (str(client), dataset_path)
     with _lock:
-        hit = _cache.get(key)
-        if hit is not None:
-            _cache.move_to_end(key)
-            return hit
+        newest = _claims.get(scope)
+        if low:
+            seen = newest[0] if newest else 0
+            mine = None
+        else:
+            mine = (next(_claim_serial), spec_key)
+            _claims[scope] = mine
+            _claims.move_to_end(scope)
+            while len(_claims) > _CLAIMS_MAX:
+                _claims.popitem(last=False)
+
+    def check() -> None:
+        with _lock:
+            now = _claims.get(scope)
+        if now is None:
+            return
+        if low:
+            # any real request for ANOTHER subset (the same one is the step to
+            # this very part, which then waits for this computation)
+            if now[0] != seen and now[1] != spec_key:
+                raise SubsetSuperseded()
+        elif now != mine and now[1] != spec_key:
+            raise SubsetSuperseded()
+
+    return check
+
+
+def get_subset(reader, dataset_path: str, spec: SubsetSpec, client: Optional[str] = None,
+               low: bool = False) -> Subset:
+    """The resolved subset for a spec, computed once per store version.
+
+    ``client`` (an id of the page asking, see claim) lets a newer request of
+    that page for another subset stop this computation.
+    """
+    key = (dataset_path, _store_signature(dataset_path), spec.key())
+    check = claim(client, dataset_path, spec.key(), low)
+    while True:
+        with _lock:
+            hit = _cache.get(key)
+            if hit is not None:
+                _cache.move_to_end(key)
+                return hit
+            running = _computing.get(key)
+            if running is None:
+                _computing[key] = mine = threading.Event()
+        if running is None:
+            break
+        # the same subset is being computed (a read ahead of this very part):
+        # wait for it instead of making it twice, then look again
+        running.wait()
+    try:
+        return _compute_subset(reader, dataset_path, spec, key, check)
+    finally:
+        with _lock:
+            _computing.pop(key, None)
+        mine.set()
+
+
+#: subset key -> Event set when its computation ends, while it runs
+_computing: "Dict[Tuple, threading.Event]" = {}
+
+
+def _compute_subset(reader, dataset_path: str, spec: SubsetSpec, key, check) -> Subset:
 
     n_obs = _n_obs(reader, dataset_path)
     known = _obs_columns(reader, dataset_path)
@@ -971,7 +1075,11 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec) -> Subset:
                           "key_not_found", 404)
 
     read_column, read_codes = _readers(reader, dataset_path)
-    indices, info = select_indices(n_obs, spec, read_column, read_codes)
+    token = _cancel_check.set(check)
+    try:
+        indices, info = select_indices(n_obs, spec, read_column, read_codes)
+    finally:
+        _cancel_check.reset(token)
     subset = Subset(dataset_path, spec, indices, info)
     with _lock:
         _cache[key] = subset
@@ -982,7 +1090,8 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec) -> Subset:
     return subset
 
 
-def resolve(reader, dataset_path: str, raw, config=None) -> Optional[Subset]:
+def resolve(reader, dataset_path: str, raw, config=None, client: Optional[str] = None,
+            low: bool = False) -> Optional[Subset]:
     """The subset a ``subset`` parameter names; None for all cells.
 
     ``auto`` applies the server's default for this dataset's size. A spec
@@ -1011,7 +1120,7 @@ def resolve(reader, dataset_path: str, raw, config=None) -> Optional[Subset]:
             raise SubsetError(f"subset part {spec.part} does not exist: these cells form one part (part 0)",
                               "part_out_of_range")
         return None
-    return get_subset(reader, dataset_path, spec)
+    return get_subset(reader, dataset_path, spec, client=client, low=low)
 
 
 def clear(dataset_path: Optional[str] = None) -> None:

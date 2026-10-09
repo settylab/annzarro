@@ -144,6 +144,15 @@ The 8,063 cells passing the filter above, in parts of 3,000: **Part 1 of 3**.
   its rows are still read, over the new part's cells, and the header marks it **not in part 2
   of 3** ({ref}`focus-outside-subset`).
 - Type a part number into the box (2) and press Enter to jump to it.
+- **The box and the arrows answer at once.** The box shows the part you asked for as soon as you
+  click, every panel is dimmed with **Loading part 3…** (and **Cancel**, after a moment) over the plot
+  that stays until the new points are drawn, and the arrows stay clickable: another click goes on
+  from the part asked for, and stops the part still loading, so clicking through parts 2, 3, 4 loads
+  only part 4. A part step made while a dataset is still loading waits for it; it never closes the
+  panels.
+- On your own computer the next part is read in the background after a part is shown (its
+  coordinates; `ui.defaults.prefetch_next_part`), so stepping forward is quick. A shared server does
+  not do this unless it is set.
 - The parts never share a cell: stepping from part 1 to part 3 shows each cell exactly once.
 - Share links and panel sets record the part, so they reopen on the same part. A link without
   a part, such as one made before parts existed, opens on part 1.
@@ -282,6 +291,31 @@ In large-plot mode:
 
 Turning a subset on (or one small enough) brings the regular plot back with every control.
 Removing it again returns to large-plot mode.
+
+(names-on-demand)=
+## Cell names of a huge dataset
+
+The names of the cells of a part are not downloaded when the dataset has more than 5 million cells
+(`ui.defaults.names_on_demand_above`), whatever the size of the part. The cells of a part are spread
+over the whole dataset, so reading their names touches nearly every chunk of the name column: for
+100,000 cells of a store of a billion cells that is 477 chunks, 20 to 35 seconds at every step to
+another part, before the plot could change. A part step now waits for the cell coordinates only, and
+what needs a name asks for that name:
+
+- **Hover** asks for the name of the point under the pointer (a moment after the label appears,
+  the label shows it); neighbouring points are not asked for.
+- **Click** on a point focuses that cell, and the **focused cell** box lists the first names of
+  the cells shown. Typing in it searches the cells shown.
+- **A cell table** names the rows of the page it shows, one request for them. Its rows start in
+  dataset order instead of sorted by Cell ID. Sorting on the Cell ID column, searching the table's
+  text or a filter on Cell ID loads every name of the part once ("Loading all cell names to search
+  and sort on them…"), and **CSV export** does the same, since the file names every row.
+- **Table filters** of a plot, and a table closed over a filter kept by name, use the rows'
+  positions, not names; only a table closed over a filter kept by name loads the names.
+
+A part past the large-plot limit (more than 1 million cells) never loads its names; a table of it
+is not possible. The setting `ui.defaults.names_on_demand_above` can be lowered to try this on a
+small store.
 
 (browser-memory)=
 ## Browser memory

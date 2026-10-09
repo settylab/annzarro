@@ -430,7 +430,12 @@ def _reader_for(dataset_path, dataset_rows=False):
     if raw is None:
         return reader
     try:
-        resolved = cell_subset.resolve(reader, dataset_path, raw, app.config)
+        # `client` (a page's id, sent with /data/subset) lets a newer request of
+        # that page stop this subset's computation; `priority=low` is a
+        # prefetch that any real request stops (core/subset.py claim)
+        resolved = cell_subset.resolve(reader, dataset_path, raw, app.config,
+                                       client=request.args.get("client"),
+                                       low=request.args.get("priority") == "low")
     except cell_subset.SubsetError as exc:
         raise DataRequestError(exc.status, exc.reason, exc.message)
     if resolved is None:
