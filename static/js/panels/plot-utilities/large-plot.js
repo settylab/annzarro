@@ -373,6 +373,16 @@ const _inflight = new WeakMap();
 const JOIN_GRACE_MS = 300;
 
 /**
+ * Stop an unfinished point-index build of the panel and drop its index (the
+ * panel closes). Hover and click in large-plot mode are off from then on.
+ * @param {HTMLElement} plotContainer
+ */
+export function cancelIndexBuild(plotContainer) {
+  if (plotContainer.__indexBuild) plotContainer.__indexBuild.cancelled = true;
+  if (plotContainer.__largeState) plotContainer.__largeState.index = null;
+}
+
+/**
  * Load the series and draw the panel. Fills `data` with what the panel's
  * other code reads (`large`, `entities`, `generation`, `coverage`). A call
  * with the same settings while a draw is in flight joins that draw. The
@@ -654,6 +664,10 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   const kept = n - filtered;
   const job = { cancelled: false };
   plotContainer.__indexBuild = job;
+  // the index build belongs to this draw's load scope: when the load is aborted
+  // (a newer load, the Cancel button, the panel closing) an unfinished build stops
+  if (signal.aborted) job.cancelled = true;
+  else signal.addEventListener('abort', () => { job.cancelled = true; }, { once: true });
   const st = attachLargeInteraction(plotContainer, settings, null);
   const large = { n, traces: traces.length, filtered,
     load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2, index_ms: null };

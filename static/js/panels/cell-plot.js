@@ -1,3 +1,4 @@
+import { cancelIndexBuild } from './plot-utilities/large-plot.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
@@ -441,6 +442,7 @@ const CellPlotPanel = (function() {
             // drop the loaded series, or closing frees nothing (a reopen
             // loads them again). A load still running is stopped.
             cancelLoads(_plotContainer);
+            cancelIndexBuild(_plotContainer);
             Object.keys(_data).forEach(key => delete _data[key]);
             Object.assign(_data, { x: null, y: null, z: null, color: null });
             forget(_id);

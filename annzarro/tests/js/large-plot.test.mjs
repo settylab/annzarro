@@ -11,7 +11,7 @@ import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const js = p => pathToFileURL(path.resolve(__dirname, "../../../static/js", p)).href;
-const { largePlotReason, largePlotPoints, largePlotTag } = await import(js("panels/plot-utilities/large-plot.js"));
+const { largePlotReason, largePlotPoints, largePlotTag, cancelIndexBuild } = await import(js("panels/plot-utilities/large-plot.js"));
 const { Config, readUiSettings } = await import(js("config.js"));
 
 const settings = (over = {}) => ({
@@ -166,4 +166,13 @@ test("unsupported settings above the threshold are refused with the ways out, no
   assert.equal(largePlotRefusal(settings({ x: { type: "obsp", key: "d", column: "c" } }), 6e6),
     "An x axis from obsp is not available for 6M points: turn on a subset, or choose an embedding (obsm), an obs column or a gene");
   assert.equal(largePlotRefusal(settings(), 6e6), null);
+});
+
+test("a closing panel stops an unfinished point-index build and drops the index", () => {
+  const job = { cancelled: false };
+  const gd = { __indexBuild: job, __largeState: { index: { bytes: 1 } } };
+  cancelIndexBuild(gd);
+  assert.equal(job.cancelled, true);
+  assert.equal(gd.__largeState.index, null);
+  cancelIndexBuild({});   // a panel that never drew a large plot
 });
