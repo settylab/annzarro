@@ -320,7 +320,14 @@ have their own `ETag`s.
 the dataset row (the same without a subset). Under a subset it searches the shown cells only;
 `scope=dataset` searches every cell of the dataset, and a cell not shown has `"index": null`.
 The dataset-wide search uses the same name index as a request without a subset, which the
-server builds on first use (6.2 s at 50 million cells) and then keeps.
+server builds on first use (6.2 s at 50 million cells) and then keeps, within
+`server.name_index_max_mb`. A dataset whose index would not fit (about 30 bytes per name:
+30 GB at a billion cells) gets none: its names are scanned a chunk at a time, and the reply
+also has `"scanned"` (names read) and `"partial"`: true when the scan stopped before the end
+(`server.name_search_scan_names`, 100 million by default; or a full page of names starting
+with the query, or the exact match, was found), so the matches may differ from a full
+search, with a `"note"` in words. `GET /data/names/status` answers `streaming` for such a
+dataset and builds nothing.
 
 `/data/subset` also takes `client=` (an id the page makes for itself) and `priority=low`. A request
 for another subset of the same dataset from the same `client` stops the computation of an older one

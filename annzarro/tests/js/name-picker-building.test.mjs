@@ -89,3 +89,22 @@ test('fetchNameIndexState asks /data/names/status with the scope; null from an o
     assert.deepEqual([q.get('dataset_path'), q.get('entity'), q.get('subset'), q.get('scope')], ['/d.zarr', 'cells', 'k', 'dataset']);
     assert.equal(await M.fetchNameIndexState('/old/names', { datasetPath: '/d.zarr', entity: 'cells' }), null);
 });
+
+test('datasetNamesScanned: true only for a "streaming" dataset, asked once per dataset, unknown not remembered', async (t) => {
+    const urls = [];
+    let state = 'streaming';
+    t.mock.method(globalThis, 'fetch', async (url) => {
+        urls.push(url);
+        return url.includes('old') ? new Response('', { status: 404 }) : new Response(JSON.stringify({ state }));
+    });
+    const ask = (p) => M.datasetNamesScanned('/api/v1/data/names', { datasetPath: p, subset: 'k' });
+    assert.equal(await ask('/big.zarr'), true);
+    assert.equal(await ask('/big.zarr'), true);
+    assert.equal(urls.length, 1, 'asked again for the same dataset');
+    assert.equal(new URL(urls[0], 'http://x').searchParams.get('scope'), 'dataset');
+    state = 'absent';
+    assert.equal(await ask('/small.zarr'), false);
+    assert.equal(await M.datasetNamesScanned('/old/names', { datasetPath: '/older.zarr' }), false);
+    assert.equal(await M.datasetNamesScanned('/old/names', { datasetPath: '/older.zarr' }), false);
+    assert.equal(urls.length, 4, 'an unknown answer (older server) was remembered');
+});

@@ -11,7 +11,7 @@ import {
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan, partialRefreshNotice } from './utils/session-permissions.js';
-import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches } from './utils/name-picker.js';
+import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
@@ -2109,9 +2109,9 @@ const App = (function() {
 
     /** The search function a picker calls: server-side, at most 100 names. */
     function _nameSearch(entity) {
-        return (query, { regex, signal }) => {
+        return async (query, { regex, signal }) => {
             const datasetPath = DataManager.getCurrentDataset();
-            if (!datasetPath) return Promise.resolve({ matches: [], truncated: false });
+            if (!datasetPath) return { matches: [], truncated: false };
             const opts = {
                 datasetPath, entity, query, signal, limit: 100,
                 mode: regex ? 'regex' : 'substring',
@@ -2119,6 +2119,9 @@ const App = (function() {
             };
             const shown = fetchNameMatches(Config.API.NAMES, opts);
             if (entity !== 'cells' || !opts.subset || !DataManager.hasSubsetFeature('names_scope')) return shown;
+            // A dataset too large for a name index is searched by scanning
+            // it: not on every keystroke (the cells shown are searched)
+            if (await datasetNamesScanned(Config.API.NAMES, { datasetPath, subset: opts.subset, signal })) return shown;
             // Under a subset every cell of the dataset can be focused: the
             // shown cells' matches come first, and the others, tagged "not
             // shown", follow from a dataset-wide search (slower the first

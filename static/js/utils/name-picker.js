@@ -87,6 +87,28 @@ export async function fetchNameIndexState(url, { datasetPath, entity, subset = n
     }
 }
 
+const _scanOnly = new Map();
+
+/**
+ * Whether the server searches this dataset's cell names by scanning them
+ * (index state 'streaming': too many names to keep an index in memory, so a
+ * dataset-wide search reads up to 100M names per request). The pickers do
+ * not send a dataset-wide search for cells the subset hides then, on every
+ * keystroke; the cells shown are still searched. One status request per
+ * dataset, remembered (the budget does not change while the server runs).
+ * @param {string} url - the /data/names endpoint
+ * @param {{datasetPath:string, subset?:string|null, signal?:AbortSignal|null}} opts
+ * @returns {Promise<boolean>}
+ */
+export async function datasetNamesScanned(url, { datasetPath, subset = null, signal = null }) {
+    if (_scanOnly.has(datasetPath)) return _scanOnly.get(datasetPath);
+    const state = await fetchNameIndexState(url, { datasetPath, entity: 'cells', subset, scope: 'dataset', signal });
+    if (state === null) return false;           // unknown: ask again next time
+    const scanned = state === 'streaming';
+    _scanOnly.set(datasetPath, scanned);
+    return scanned;
+}
+
 /**
  * What the picker's status line says while a search is answered. A search
  * that has not answered is never "no match": the first search of a large
