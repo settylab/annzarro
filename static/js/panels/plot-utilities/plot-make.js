@@ -514,6 +514,12 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         if (data.categories && data.categories[key]) {
           dataType = 'categorical';
           categories = data.categories[key];
+          // A boolean column's categories are [false, true] (the order its
+          // uns colours are stored in); label them as the values are labelled.
+          if (categories.length && categories.every(c => typeof c === 'boolean')) {
+            categories = convertBooleans(categories);
+            values = convertBooleans(values);
+          }
         } else {
           dataType = determineDataType(values);
           if (dataType === 'categorical') {
