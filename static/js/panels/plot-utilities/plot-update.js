@@ -22,7 +22,8 @@ import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
-import { renderCoverageNotice, setStatusTag, withCoverageAnnotation } from '../../utils/panel-surface.js';
+import { renderCoverageNotice, setStatusTag, withCoverageAnnotation, showCancelled } from '../../utils/panel-surface.js';
+import { beginLoad, endLoad, wasCancelled } from '../../utils/load-scope.js';
 import { withPlotlyBatch } from '../../utils/plotly-batch.js';
 import { setGlMarkers } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
@@ -886,6 +887,13 @@ export async function loadColorDataAndUpdatePlot(
         refreshPlot();
         return;
     }
+    // A load is rebuilding the series from the settings before this change
+    // (or was cancelled): a new full load reads the current ones, and stops
+    // the old, which would draw the previous colour over this one
+    if (data && data.generation === null) {
+        refreshPlot();
+        return;
+    }
     // the new colour series and the restyle need memory next to the old ones
     const memory = recolourCheck(plotContainer);
     if (memory.verdict === 'block') {
@@ -911,10 +919,13 @@ export async function loadColorDataAndUpdatePlot(
         for (const ev of DRAWN_EVENTS) if (plotContainer.removeListener) plotContainer.removeListener(ev, notBusy);
     };
     let drawing = null;
+    // one colour load at a time: a newer change of the colour aborts this one
+    const signal = beginLoad(plotContainer, 'colour');
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
-        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour', panel: settings });
+        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour', panel: settings, signal });
+        if (signal.aborted) throw new DOMException('Recolour aborted', 'AbortError');
 
         if (colorData && colorData.values) {
             // Update the data cache with new color information.
@@ -959,10 +970,16 @@ export async function loadColorDataAndUpdatePlot(
             refreshPlot();
         }
     } catch (error) {
+        if (error && error.name === 'AbortError') {
+            // a newer load took over, or Cancel: the plot stays as drawn
+            if (wasCancelled(signal)) showCancelled(plotContainer, data.entities, true);
+            return;
+        }
         console.error('Error updating color data:', error);
         // Fall back to recreating the plot.
         refreshPlot();
     } finally {
+        endLoad(plotContainer, signal);
         if (drawing) drawing.finally(notBusy);
         else notBusy();
     }
@@ -1414,13 +1431,26 @@ export async function refocusAxisOnEntity(
     } else if (settings[axis].column !== focusedEntity) {
       settings[axis].column = focusedEntity;
       updateMenueLabelsForFocus(focusedEntity, entityType, axis);
+      if (data && data.generation === null) {
+        refreshPlot();
+        return;
+      }
       // Pass the plotContainer to loadAxisData to enable loading indicators
-      const axisData = await loadAxisData(settings[axis], plotType, plotContainer);
-      if (!axisData || !axisData.values) {
-        throw new Error(`Loading data for ${axis} generated no values.`);
-      } else {
-        data[axis] = axisData;
-        updatePlotElements(plotContainer, data, settings, refreshPlot, { [`${axis}Axis`]: true, layout: true });
+      const signal = beginLoad(plotContainer, `axis:${axis}`);
+      try {
+        const axisData = await loadAxisData(settings[axis], plotType, plotContainer, { signal });
+        if (signal.aborted) throw new DOMException('Axis load aborted', 'AbortError');
+        if (!axisData || !axisData.values) {
+          throw new Error(`Loading data for ${axis} generated no values.`);
+        } else {
+          data[axis] = axisData;
+          updatePlotElements(plotContainer, data, settings, refreshPlot, { [`${axis}Axis`]: true, layout: true });
+        }
+      } catch (error) {
+        if (!error || error.name !== 'AbortError') throw error;
+        if (wasCancelled(signal)) showCancelled(plotContainer, plotType, true);
+      } finally {
+        endLoad(plotContainer, signal);
       }
     }
   }

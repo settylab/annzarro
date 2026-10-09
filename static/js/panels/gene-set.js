@@ -1427,7 +1427,10 @@ const GeneSetPanel = (function() {
                 D.clear(host);
                 host.dataset.drawn = '';
                 host.appendChild(D.el('div', { class: 'gs-loading' }, D.el('span', { class: 'spinner-border spinner-border-sm', aria: { hidden: 'true' } }),
-                    ` ${run.progress || `Asking ${a.provider.name}…`}`));
+                    ` ${run.progress || `Asking ${a.provider.name}…`} `,
+                    // the section goes back to what it showed before (runner.abort)
+                    D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary load-cancel', text: 'Cancel',
+                        title: 'Stop this request', on: { click: () => _runner && _runner.abort(sid) } })));
                 return;
             }
             if (!showResult) {

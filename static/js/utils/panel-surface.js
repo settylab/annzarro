@@ -715,10 +715,11 @@ function withTraceUids(traces) {
  * @param {Coverage} coverage
  * @param {string} [unit]
  */
-export function drawPlaceholder(host, coverage, unit, { actions } = {}) {
+export function drawPlaceholder(host, coverage, unit, { actions, say } = {}) {
     if (!host) return;
     const cov = coerce(coverage, unit);
-    const { severity, headline, lines } = cov.describe();
+    // `say`: {severity, headline, lines} for a state that is not a coverage (a load that was cancelled)
+    const { severity, headline, lines } = say || cov.describe();
 
     // the plot it replaces holds nothing any more (memory-guard-ui.js)
     if (host._fullLayout) releasePlot(host);
@@ -746,6 +747,25 @@ export function drawPlaceholder(host, coverage, unit, { actions } = {}) {
         s.persistent = false;
         s.open = null;
         paint(host);
+    }
+}
+
+/**
+ * The panel after the user stopped its loading (the overlay's Cancel). What
+ * was shown stays, with a tag that says the load did not finish; with nothing
+ * shown there is a placeholder. Either way Load reads the data again.
+ * @param {HTMLElement} host - the plot or table container
+ * @param {string} unit
+ * @param {boolean} kept - whether the panel still shows its previous content
+ */
+export function showCancelled(host, unit, kept) {
+    const actions = [['redraw', 'Load']];
+    if (kept) {
+        const text = 'The load was cancelled, so what is shown may not match the settings. Load reads the data again.';
+        setStatusTag(host, 'cancelled', { text: 'Loading cancelled', severity: 'warning', title: text, pop: { text, actions } });
+    } else {
+        drawPlaceholder(host, null, unit, { actions, say: { severity: 'notice', headline: 'Loading cancelled',
+            lines: ['Load reads the data again.'] } });
     }
 }
 

@@ -107,6 +107,8 @@ const DataManager = (function() {
     // joins that request instead of starting another; the short-lived
     // CacheManager entry then serves later callers.
     const _inflight = new Map();
+    // how long a request that all its callers left waits for a new caller
+    const JOIN_GRACE_MS = 300;
 
     async function _readResponse(response) {
         if (!response.ok) {
@@ -169,10 +171,15 @@ const DataManager = (function() {
                 if (done) return;
                 leave();
                 if (entry.waiters === 0 && !entry.settled) {
-                    // Nobody wants it any more: cancel it, and let the next
-                    // caller start afresh rather than join a dying request.
-                    if (_inflight.get(fullUrl) === entry) _inflight.delete(fullUrl);
-                    entry.controller.abort();
+                    // Nobody wants it any more. A newer load of the same panel
+                    // asks for the same slices right after it aborts this one
+                    // (a recolour to the same column, a double refresh): it has
+                    // a moment to join before the request is cancelled.
+                    setTimeout(() => {
+                        if (entry.waiters !== 0 || entry.settled) return;
+                        if (_inflight.get(fullUrl) === entry) _inflight.delete(fullUrl);
+                        entry.controller.abort();
+                    }, JOIN_GRACE_MS);
                 }
                 reject(new DOMException("Fetch request was aborted", "AbortError"));
             };
@@ -227,10 +234,10 @@ const DataManager = (function() {
      *                           column, which is what every loader made of it
      * @param {string|null} column  obs/var: `data` is `{[column]: values}`
      */
-    async function _fetchVector(url, params, meta, flatten, column = null) {
+    async function _fetchVector(url, params, meta, flatten, column = null, signal = null) {
         const query = { ...params, format: BINARY_FORMAT };
         if (column !== null) query.categorical = 'codes';
-        const body = await _fetchWithCache(url, query);
+        const body = await _fetchWithCache(url, query, signal);
         if (!body || !body[BINARY_RESULT]) return body;
         if (body.encoding === 'categorical') {
             return { ...meta, data: { [column]: categoricalValues(body) },
@@ -1171,7 +1178,7 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - Observation data
      */
     async function loadObs(options) {
-        const { datasetPath, columns, rows, maxCells, categories } = options;
+        const { datasetPath, columns, rows, maxCells, categories, signal } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
@@ -1196,12 +1203,12 @@ const DataManager = (function() {
             if (columns && columns.length === 1) {
                 const column = columns[0];
                 return await _fetchVector(Config.API.OBS, params,
-                    { dataset_path: params.dataset_path }, true, column);
+                    { dataset_path: params.dataset_path }, true, column, signal);
             }
-            const data = await _fetchWithCache(Config.API.OBS, params);
+            const data = await _fetchWithCache(Config.API.OBS, params, signal);
             return data;
         } catch (error) {
-            console.error('Error loading obs data:', error);
+            if (!error || error.name !== 'AbortError') console.error('Error loading obs data:', error);
             throw error;
         }
     }
@@ -1216,7 +1223,7 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - Variable data
      */
     async function loadVar(options) {
-        const { datasetPath, columns, cols, maxGenes, categories } = options;
+        const { datasetPath, columns, cols, maxGenes, categories, signal } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
@@ -1239,12 +1246,12 @@ const DataManager = (function() {
             if (columns && columns.length === 1) {
                 const column = columns[0];
                 return await _fetchVector(Config.API.VAR, params,
-                    { dataset_path: params.dataset_path }, true, column);
+                    { dataset_path: params.dataset_path }, true, column, signal);
             }
-            const data = await _fetchWithCache(Config.API.VAR, params);
+            const data = await _fetchWithCache(Config.API.VAR, params, signal);
             return data;
         } catch (error) {
-            console.error('Error loading var data:', error);
+            if (!error || error.name !== 'AbortError') console.error('Error loading var data:', error);
             throw error;
         }
     }
@@ -1261,7 +1268,7 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - obsm data
      */
     async function loadObsm(options) {
-        const { datasetPath, obsmKey, columnName, rows, cols, maxCells } = options;
+        const { datasetPath, obsmKey, columnName, rows, cols, maxCells, signal } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
@@ -1299,7 +1306,7 @@ const DataManager = (function() {
             console.log(`Requesting obsm data from: ${url} with params:`, params);
             const data = await _fetchVector(url, params,
                 { obsm_key: obsmKey, dataset_path: params.dataset_path },
-                params.column_name !== undefined);
+                params.column_name !== undefined, null, signal);
             
             // Never log the reply itself: the browser keeps every logged
             // object (for DevTools, open or not), so each embedding column
@@ -1397,7 +1404,7 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - varm data
      */
     async function loadVarm(options) {
-        const { datasetPath, varmKey, columnName, rows, cols, maxGenes } = options;
+        const { datasetPath, varmKey, columnName, rows, cols, maxGenes, signal } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
@@ -1426,7 +1433,7 @@ const DataManager = (function() {
             const url = `${Config.API.VARM}/${varmKey}`;
             const data = await _fetchVector(url, params,
                 { varm_key: varmKey, dataset_path: params.dataset_path },
-                params.column_name !== undefined);
+                params.column_name !== undefined, null, signal);
             return data;
         } catch (error) {
             console.error(`Error loading varm.${varmKey} data:`, error);
@@ -1444,7 +1451,7 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - obsp data
      */
     async function loadObsp(options) {
-        const { datasetPath, obspKey, cell, maxCells } = options;
+        const { datasetPath, obspKey, cell, maxCells, signal } = options;
         let { rows } = options;
         
         const params = {
@@ -1474,7 +1481,7 @@ const DataManager = (function() {
             
             const url = `${Config.API.OBSP}/${obspKey}`;
             const data = await _fetchVector(url, params,
-                { obsp_key: obspKey, dataset_path: params.dataset_path }, false);
+                { obsp_key: obspKey, dataset_path: params.dataset_path }, false, null, signal);
             _checkOneRow(params, data, d => d.length);
             
             // Log and debug the data structure
@@ -1522,7 +1529,7 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - varp data
      */
     async function loadVarp(options) {
-        const { datasetPath, varpKey, rows, maxGenes } = options;
+        const { datasetPath, varpKey, rows, maxGenes, signal } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
@@ -1539,7 +1546,7 @@ const DataManager = (function() {
         try {
             const url = `${Config.API.VARP}/${varpKey}`;
             const data = await _fetchVector(url, params,
-                { varp_key: varpKey, dataset_path: params.dataset_path }, false);
+                { varp_key: varpKey, dataset_path: params.dataset_path }, false, null, signal);
             return data;
         } catch (error) {
             console.error(`Error loading varp.${varpKey} data:`, error);
@@ -1558,7 +1565,7 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - Layer data
      */
     async function loadLayer(options) {
-        const { datasetPath, layerName, cell, cols, maxCells } = options;
+        const { datasetPath, layerName, cell, cols, maxCells, signal } = options;
         let { rows } = options;
         
         const params = {
@@ -1597,7 +1604,7 @@ const DataManager = (function() {
                 
                 const url = `${Config.API.LAYER}/${layerName}`;
                 const data = await _fetchVector(url, params,
-                    { layer_name: layerName, dataset_path: params.dataset_path }, true);
+                    { layer_name: layerName, dataset_path: params.dataset_path }, true, null, signal);
                 
                 // Log and debug the data structure
                 console.log(`Layer data format for ${layerName} (gene: ${focusedGene}, index: ${focusedGeneIndex}):`, 
@@ -1652,7 +1659,7 @@ const DataManager = (function() {
                 
                 const url = `${Config.API.LAYER}/${layerName}`;
                 const data = await _fetchVector(url, params,
-                    { layer_name: layerName, dataset_path: params.dataset_path }, true);
+                    { layer_name: layerName, dataset_path: params.dataset_path }, true, null, signal);
                 // a flat vector is one row; a list of rows must hold one
                 _checkOneRow(params, data, d => (Array.isArray(d[0]) ? d.length : 1));
                 
@@ -1713,7 +1720,7 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - X matrix data
      */
     async function loadX(options) {
-        const { datasetPath, rows, cols, maxCells } = options;
+        const { datasetPath, rows, cols, maxCells, signal } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
@@ -1733,10 +1740,10 @@ const DataManager = (function() {
         
         try {
             const data = await _fetchVector(Config.API.X, params,
-                { dataset_path: params.dataset_path }, false);
+                { dataset_path: params.dataset_path }, false, null, signal);
             return data;
         } catch (error) {
-            console.error('Error loading X matrix data:', error);
+            if (!error || error.name !== 'AbortError') console.error('Error loading X matrix data:', error);
             throw error;
         }
     }
@@ -1749,7 +1756,7 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - uns data
      */
     async function loadUns(options) {
-        const { datasetPath, unsKey } = options;
+        const { datasetPath, unsKey, signal } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset
@@ -1772,7 +1779,7 @@ const DataManager = (function() {
 
         try {
             const url = `${Config.API.UNS}/${unsKey}`;
-            const data = await _fetchWithCache(url, params);
+            const data = await _fetchWithCache(url, params, signal);
             if (!data || !data.data) {
                 console.warn('API response does not contain the expected data format');
                 return {
@@ -1788,7 +1795,7 @@ const DataManager = (function() {
                 }
             }
         } catch (error) {
-            console.error('Error loading uns data:', error);
+            if (!error || error.name !== 'AbortError') console.error('Error loading uns data:', error);
             throw error;
         }
     }
@@ -1803,7 +1810,7 @@ const DataManager = (function() {
      * @returns {Promise<Object>} - Data at specified path
      */
     async function loadByPath(options) {
-        const { datasetPath, path, rows, cols } = options;
+        const { datasetPath, path, rows, cols, signal } = options;
         
         const params = {
             dataset_path: datasetPath || _currentDataset,
@@ -1819,7 +1826,7 @@ const DataManager = (function() {
         }
         
         try {
-            const data = await _fetchWithCache(Config.API.BY_PATH, params);
+            const data = await _fetchWithCache(Config.API.BY_PATH, params, signal);
             return data;
         } catch (error) {
             console.error(`Error loading data at path ${path}:`, error);
@@ -2065,8 +2072,8 @@ const DataManager = (function() {
      * @param {string} url  e.g. `${Config.API.OBSM}/X_umap`
      * @param {Object} params  route parameters (dataset_path, column_name, cols, ...)
      */
-    async function loadVector(url, params) {
-        const body = await _fetchWithCache(url, { ...params, format: BINARY_FORMAT });
+    async function loadVector(url, params, signal = null) {
+        const body = await _fetchWithCache(url, { ...params, format: BINARY_FORMAT }, signal);
         return body && body[BINARY_RESULT] ? body.values : null;
     }
 
@@ -2094,7 +2101,7 @@ const DataManager = (function() {
      * plus its categories, read as a stream (utils/packed-names.js): the JSON
      * body of a large dataset does not fit in one string.
      */
-    async function loadCategoryCodes(datasetPath, column, { ranked = false, slot = 'obs' } = {}) {
+    async function loadCategoryCodes(datasetPath, column, { ranked = false, slot = 'obs', signal = null } = {}) {
         // ranked: each cell's category's rank over the whole column
         // (utils/categories.js), no labels; otherwise every category
         const url = slot === 'var' ? Config.API.VAR : Config.API.OBS;
@@ -2105,21 +2112,34 @@ const DataManager = (function() {
         const key = `${fullUrl}#codes`;
         const cached = CacheManager.get(key);
         if (cached !== undefined) return cached;
-        if (_inflight.has(key)) return _inflight.get(key);
-        const pending = (async () => {
-            // A server with the codes route (format=f32&categorical=codes)
-            // answers binary integer codes; an older one ignores the request
-            // and sends the JSON labels, which are read as a stream.
-            const response = await fetch(`${fullUrl}&format=${BINARY_FORMAT}&categorical=codes`);
-            if (!response.ok) await _readResponse(response);   // throws with the server's reason
-            const result = isBinaryResponse(response)
-                ? _categoryCodesFromBinary(decodeVector(await response.arrayBuffer(), response.headers), response.headers)
-                : await categoryCodesFromJSON(response, column, (_cells || []).length);
-            CacheManager.set(key, result);
-            return result;
-        })().finally(() => _inflight.delete(key));
-        _inflight.set(key, pending);
-        return pending;
+        if (signal && signal.aborted) throw new DOMException("Fetch request was aborted", "AbortError");
+        // shared like _startShared's requests: it stops when its last caller leaves
+        let entry = _inflight.get(key);
+        if (!entry) {
+            const controller = new AbortController();
+            entry = { controller, waiters: 0, settled: false, promise: null };
+            entry.promise = (async () => {
+                try {
+                    // A server with the codes route (format=f32&categorical=codes)
+                    // answers binary integer codes; an older one ignores the request
+                    // and sends the JSON labels, which are read as a stream.
+                    const response = await fetch(`${fullUrl}&format=${BINARY_FORMAT}&categorical=codes`,
+                        { signal: controller.signal });
+                    if (!response.ok) await _readResponse(response);   // throws with the server's reason
+                    const result = isBinaryResponse(response)
+                        ? _categoryCodesFromBinary(decodeVector(await response.arrayBuffer(), response.headers), response.headers)
+                        : await categoryCodesFromJSON(response, column, (_cells || []).length);
+                    CacheManager.set(key, result);
+                    return result;
+                } finally {
+                    entry.settled = true;
+                    if (_inflight.get(key) === entry) _inflight.delete(key);
+                }
+            })();
+            entry.promise.catch(() => {});
+            _inflight.set(key, entry);
+        }
+        return _join(key, entry, signal);
     }
 
     /**
@@ -2131,13 +2151,13 @@ const DataManager = (function() {
      * @param {'obs'|'var'} [slot]
      * @returns {Promise<Map<number, string>>} rank -> label
      */
-    async function loadCategoryLabels(datasetPath, column, ranks, slot = 'obs') {
+    async function loadCategoryLabels(datasetPath, column, ranks, slot = 'obs', signal = null) {
         const out = new Map();
         const wanted = [...new Set(ranks)].sort((a, b) => a - b);
         for (let i = 0; i < wanted.length; i += 1000) {
             const part = wanted.slice(i, i + 1000);
             const body = await _fetchWithCache(slot === 'var' ? Config.API.VAR : Config.API.OBS,
-                { dataset_path: datasetPath, columns: column, category_ranks: part.join(',') });
+                { dataset_path: datasetPath, columns: column, category_ranks: part.join(',') }, signal);
             (body.ranks || part).forEach((r, k) => out.set(Number(r), body.labels[k]));
         }
         return out;

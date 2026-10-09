@@ -1091,7 +1091,7 @@ const App = (function() {
      * @private
      */
     function _statusActionAvailable(action, host) {
-        const id = (host && host.id || '').replace(/^plot-container-/, '');
+        const id = (host && host.id || '').replace(/^(?:plot|table)-container-/, '');
         const subset = DataManager.getSubset();
         switch (action) {
             case 'next-part': return !!(subset && subset.parts > 1 && subset.part < subset.parts - 1);
@@ -1102,7 +1102,7 @@ const App = (function() {
             case 'show-outliers': return !!document.getElementById(`hide-outliers-${id}`);
             case 'draw-anyway': case 'redraw': {
                 const panel = PanelManager.getPanel(id);
-                return !!(panel && typeof panel.refreshPlot === 'function');
+                return !!(panel && (panel.refreshPlot || panel.refreshTable));
             }
             case 'export-shown': return canSnapshot(host);
             case 'reopen-table': return !!document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
@@ -1130,7 +1130,7 @@ const App = (function() {
      * @private
      */
     async function _runStatusAction(action, host) {
-        const id = (host && host.id || '').replace(/^plot-container-/, '');
+        const id = (host && host.id || '').replace(/^(?:plot|table)-container-/, '');
         const click = (elId) => { const el = document.getElementById(elId); if (el) el.click(); };
         switch (action) {
             case 'next-part': SubsetControl.step(1); break;
@@ -1151,7 +1151,8 @@ const App = (function() {
                 // draw-anyway: past the memory guard (or the crash marker), once
                 if (action === 'draw-anyway') overrideOnce(id);
                 const panel = PanelManager.getPanel(id);
-                if (panel && typeof panel.refreshPlot === 'function') panel.refreshPlot().catch(() => {});
+                const reload = panel && (panel.refreshPlot || panel.refreshTable);
+                if (typeof reload === 'function') reload().catch(() => {});
                 break;
             }
             case 'reopen-table': {

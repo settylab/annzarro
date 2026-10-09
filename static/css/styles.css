@@ -3438,6 +3438,21 @@ button.dtsb-button.dtsb-clear:hover {
     margin-right: 6px;
 }
 
+/* Cancel on a loading overlay: shown once the load has taken a moment, so a
+   quick one does not flash it (the delay is the animation's) */
+.loading-overlay .load-cancel,
+.table-loading .load-cancel,
+.gs-loading .load-cancel {
+    visibility: hidden;
+    padding: 0 8px;
+    font-size: 0.8rem;
+    animation: loadCancelShow 0s linear 1.5s forwards;
+}
+
+@keyframes loadCancelShow {
+    to { visibility: visible; }
+}
+
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
