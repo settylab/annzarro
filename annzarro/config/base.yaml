@@ -65,6 +65,14 @@ server:
   # POST /data/refresh (Refresh dataset; any user) walks a dataset's files at
   # most this often; a refresh sooner answers with the last walk's finding.
   refresh_min_interval_s: 10
+  # Memory the name-search indices (Focused Cell / Focused Gene typeahead)
+  # may hold together, per worker process, in MB. null = 15% of the machine's
+  # RAM, between 512 MB and 16 GB. A dataset whose index would not fit is
+  # searched by scanning its names instead (no index in memory); the reply
+  # says partial when the scan stopped before the end.
+  name_index_max_mb: null
+  # Names a scanning search reads at most before it answers with what it has.
+  name_search_scan_names: 100000000
 
   # Remote datasets (s3://, gs://, http(s):// zarr stores; needs annzarro[remote])
   # A remote dataset path makes the server fetch a URL chosen by the client.

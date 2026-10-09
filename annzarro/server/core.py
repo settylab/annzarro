@@ -50,6 +50,8 @@ DEFAULT_CONFIG = {
     "cache_enabled": True,             # Whether to enable backend caching
     "cache_dataset_limit": 10,         # Maximum number of datasets to keep in memory
     "refresh_min_interval_s": 10,      # POST /data/refresh walks a dataset at most this often
+    "name_index_max_mb": None,      # MB all cell/gene-name search indices may hold; None = 15% of RAM (512 MB..16 GB)
+    "name_search_scan_names": 100000000,  # names a search without an index (store over the budget) reads
     "remote_stores": "auto",           # auto | allow | deny -- s3://, gs://, http(s):// datasets
     "remote_allowlist": [],            # URL prefixes remote datasets must start with
     "remote_credentials": "anonymous", # anonymous | environment (AWS/GCP credential chain)
