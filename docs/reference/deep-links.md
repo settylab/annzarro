@@ -279,6 +279,13 @@ Because only the fragment differs between two share links for the same dataset, 
 a tab already showing the other would be in-page navigation; the app listens for `hashchange`
 and reloads so the new view is applied.
 
+The app also writes the current view back into the address (`syncedLocation` in the same
+module, applied with `history.replaceState` about 600 ms after the view stops changing, never
+during a dataset load): `#view=` is replaced, `dataset_path` follows the store, other query
+parameters are kept, and the legacy `?view=` is dropped. With no panel open the `view` is
+removed, which is the clean link: `?dataset_path=` alone opens the blank dashboard of that
+dataset and ignores the browser's autosave. Writing the address fires no `hashchange`.
+
 Encode, decode, normalize and the URL parse/build helpers live in
 **`static/js/utils/deeplink.js`** (`encodeViewPayload`, `decodeViewPayload`,
 `parseDeepLinkLocation`, `buildDeepLinkUrl`): a pure, isomorphic module imported by both the

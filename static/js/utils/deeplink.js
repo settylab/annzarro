@@ -215,6 +215,36 @@ export function buildDeepLinkUrl(base, datasetPath, payload) {
 }
 
 /**
+ * The address-bar URL for the current view, keeping every other query
+ * parameter (and any other fragment parameter) as the page was opened with.
+ * With a payload: `dataset_path` is set to the store, the legacy `?view=` is
+ * dropped and `#view=` carries the payload. Without one (no panel open): the
+ * `view` is removed, so the address is the clean link that opens the blank
+ * dashboard of that dataset. Pure, so the browser and the tests agree.
+ * @param {string} href - the current location.href
+ * @param {string|null} datasetPath - the store of the view (kept as is when empty)
+ * @param {string|null} payload - from encodeViewPayload; null for a clean link
+ * @returns {string|null} path + query + fragment to replace the URL with, or
+ *          null when it already is that
+ */
+export function syncedLocation(href, datasetPath, payload) {
+    const url = new URL(href);
+    const before = url.pathname + url.search + url.hash;
+    url.searchParams.delete('view');
+    const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
+    if (payload) {
+        if (datasetPath) url.searchParams.set('dataset_path', datasetPath);
+        fragment.set('view', payload);
+    } else {
+        fragment.delete('view');
+    }
+    // base64url (A-Z a-z 0-9 - _ and the prefix's dot) is left alone by URLSearchParams
+    url.hash = fragment.toString();
+    const after = url.pathname + url.search + url.hash;
+    return after === before ? null : after;
+}
+
+/**
  * Derive a panel TYPE from a tile id. The id is `<type>-<timestamp>`, so the
  * type is everything before the final dash. Single source of truth shared with
  * PanelManager.restoreLayout, so the encode side and the restore side can never

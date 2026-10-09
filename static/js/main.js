@@ -7,7 +7,7 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
+    parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan, partialRefreshNotice } from './utils/session-permissions.js';
@@ -144,6 +144,9 @@ const App = (function() {
             }
 
             
+            // From here the address bar follows the view (see _syncUrlSoon)
+            _startUrlSync();
+
             // Start autosave functionality if enabled in config
             if (Config.AUTOSAVE.ENABLED) {
                 SessionManager.startAutosave();
@@ -307,15 +310,51 @@ const App = (function() {
      */
     async function _applyDeepLink(deepLink) {
         await _applyView(deepLink);
+    }
 
-        // Rewrite the URL to a clean form so the opened view is itself
-        // re-shareable and a refresh re-applies it (state currently lives only
-        // in localStorage otherwise).
+    /**
+     * Keep the address bar at the current view, as a map does: a refresh
+     * restores what is on screen now, and the address copied from the bar is
+     * the current state. history.replaceState (no new history entries), after
+     * the view has been quiet for URL_SYNC_DELAY_MS, never during a load, and
+     * only when the encoded view changed. With no panel at all the fragment is
+     * removed: the clean link opens the blank dashboard of the dataset.
+     * @private
+     */
+    const URL_SYNC_DELAY_MS = 600;
+    let _urlSyncTimer = null;
+    let _urlSyncOn = false;
+    let _urlSyncView = null;    // JSON of the view the bar holds
+    function _startUrlSync() {
+        if (_urlSyncOn) return;
+        _urlSyncOn = true;
+        SessionManager.onViewMayHaveChanged(_syncUrlSoon);
+        _syncUrlSoon();
+    }
+    function _syncUrlSoon() {
+        if (!_urlSyncOn) return;
+        clearTimeout(_urlSyncTimer);
+        _urlSyncTimer = setTimeout(_syncUrlNow, URL_SYNC_DELAY_MS);
+    }
+    async function _syncUrlNow() {
+        // A load in flight, or a layout shown without data, is not a view to keep
+        if (_noDataView) return;
+        if (_isLoadingDataset) return _syncUrlSoon();
         try {
-            history.replaceState(null, '', window.location.href);
+            const view = SessionManager.captureView();
+            const hasPanels = Object.keys((view.layout && view.layout.panelConfigs) || {}).length > 0;
+            const json = hasPanels ? JSON.stringify(view) : '';
+            if (json === _urlSyncView) return;
+            const payload = hasPanels ? await encodeViewPayload(view) : null;
+            const path = (view.store && view.store.path) || _lastLoadedDatasetPath || DataManager.getCurrentDataset() || '';
+            const next = syncedLocation(window.location.href, path, payload);
+            // Changed while encoding: the next tick takes it
+            if (_isLoadingDataset) return _syncUrlSoon();
+            if (next) history.replaceState(history.state, '', next);
+            _urlSyncView = json;
         } catch (e) {
-            // replaceState can throw in sandboxed iframes — non-fatal.
-            console.debug('history.replaceState skipped:', e);
+            // replaceState can throw in sandboxed iframes; never fatal
+            console.debug('URL sync skipped:', e);
         }
     }
 
