@@ -2092,8 +2092,7 @@ const App = (function() {
                 subset: DataManager.getSubsetParam()
             };
             const shown = fetchNameMatches(Config.API.NAMES, opts);
-            if (entity !== 'cells' || !opts.subset || !DataManager.hasSubsetFeature('names_scope')
-                || !DataManager.canSearchDatasetNames()) return shown;
+            if (entity !== 'cells' || !opts.subset || !DataManager.hasSubsetFeature('names_scope')) return shown;
             // Under a subset every cell of the dataset can be focused: the
             // shown cells' matches come first, and the others, tagged "not
             // shown", follow from a dataset-wide search (slower the first

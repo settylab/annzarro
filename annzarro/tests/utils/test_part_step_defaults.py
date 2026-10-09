@@ -3,14 +3,12 @@ schema.yaml and the browser's fallbacks (static/js/config.js) must say the same.
 
   ui.defaults.names_on_demand_above   5,000,000 cells: above it a part's cell names stay on the server
   ui.defaults.prefetch_next_part      auto: the next part is read ahead on a single-user server only
-  server.name_index_max_mb            6144 MB for the name indices of the focus pickers' search
 """
 import os
 import re
 
 import pytest
 
-from annzarro.core import name_index
 from annzarro.utils.config_manager import ConfigManager
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -30,8 +28,6 @@ def test_the_defaults_agree_between_base_and_schema(merged):
     ui = schema["ui"]["properties"]["defaults"]["properties"]
     assert config["ui"]["defaults"]["names_on_demand_above"] == ui["names_on_demand_above"]["default"] == 5_000_000
     assert config["ui"]["defaults"]["prefetch_next_part"] == ui["prefetch_next_part"]["default"] == "auto"
-    server = schema["server"]["properties"]["name_index_max_mb"]["default"]
-    assert config["server"]["name_index_max_mb"] == server == name_index.DEFAULT_MAX_MB == 6144
 
 
 def test_the_browser_fallbacks_agree():

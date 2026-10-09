@@ -602,17 +602,6 @@ const DataManager = (function() {
         return undefined;
     }
 
-    /**
-     * Whether the cells of the whole dataset can be searched by name (the
-     * focus pickers' "not shown" matches, finding a focused cell outside the
-     * subset by name). False when the server says its index would not fit
-     * (a store of a billion cells): the search of the cells shown still works.
-     */
-    function canSearchDatasetNames() {
-        const reply = _subsetReply && _subsetReply.datasetPath === _currentDataset ? _subsetReply : null;
-        return !(reply && reply.name_search && reply.name_search.dataset === false);
-    }
-
     /** The /data/subset reply for the open dataset (n_total, defaults), also without a subset. */
     function getSubsetReply() {
         return _subsetReply && _subsetReply.datasetPath === _currentDataset ? { ..._subsetReply } : null;
@@ -935,7 +924,6 @@ const DataManager = (function() {
 
     /** The cell's dataset row by an exact, dataset-wide name search; null if absent. */
     async function _searchRow(name) {
-        if (!canSearchDatasetNames()) return null;
         const params = { dataset_path: _currentDataset, entity: 'cells', q: name, mode: 'exact',
                          limit: 1, scope: 'dataset' };
         if (_openSubset()) params.subset = _openSubset().key;
@@ -2533,7 +2521,6 @@ const DataManager = (function() {
         getSubsetParam,
         getSubsetForView,
         getSubsetReply,
-        canSearchDatasetNames,
         getCellsNotInSubset,
         // Caching
         clearCache: (pattern) => CacheManager.clear(pattern),

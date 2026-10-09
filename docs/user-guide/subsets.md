@@ -296,18 +296,13 @@ what needs a name asks for that name:
 - **Hover** asks for the name of the point under the pointer (a moment after the label appears,
   the label shows it); neighbouring points are not asked for.
 - **Click** on a point focuses that cell, and the **focused cell** box lists the first names of
-  the cells shown at once. Typing in it searches the cells shown, which reads their names once
-  (as long as the first search of a dataset needs; the picker says so).
+  the cells shown. Typing in it searches the cells shown.
 - **A cell table** names the rows of the page it shows, one request for them. Its rows start in
   dataset order instead of sorted by Cell ID. Sorting on the Cell ID column, searching the table's
   text or a filter on Cell ID loads every name of the part once ("Loading all cell names to search
   and sort on them…"), and **CSV export** does the same, since the file names every row.
 - **Table filters** of a plot, and a table closed over a filter kept by name, use the rows'
   positions, not names; only a table closed over a filter kept by name loads the names.
-- **Searching every cell of the dataset** (the picker's matches marked "not shown") needs an index
-  of every name in the server's memory (about 32 bytes a name). A server refuses it for a store
-  whose index would not fit `server.name_index_max_mb` (6 GB by default: 95.6M cells fit, 1B do
-  not), and the picker then lists the cells shown only.
 
 A part past the large-plot limit (more than 1 million cells) never loads its names; a table of it
 is not possible. The setting `ui.defaults.names_on_demand_above` can be lowered to try this on a

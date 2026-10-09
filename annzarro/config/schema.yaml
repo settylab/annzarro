@@ -129,10 +129,6 @@ server:
       type: integer
       description: Maximum number of datasets to keep in memory
       default: 10
-    name_index_max_mb:
-      type: integer
-      description: Memory in MB for the cell and gene name indices behind the focus pickers' search (about 32 bytes per name); a store whose index would not fit is not searched dataset-wide
-      default: 6144
     refresh_min_interval_s:
       type: number
       description: Seconds between two walks of one dataset by POST /data/refresh (open to every user)
