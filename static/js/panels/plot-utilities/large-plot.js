@@ -19,13 +19,17 @@
  *     100,000 points and more scattergl builds a spatial index for hover
  *     (point-cluster, about 50 B of heap per point); below it, it does not.
  *
- * What it gives up: hover and click on points (hovermode false; there are no
- * per-point names on the traces), the focused-cell highlight, table filters,
- * 3D, and incremental updates (any change redraws). It is used above
- * largePlotPoints() (default 1M, so several regular plots fit side by side). The panel says so (a status-strip tag), the
- * controls it cannot honour are disabled (large-plot-controls.js), and
- * settings it cannot draw are refused with a message (largePlotRefusal):
- * far above the threshold the regular path would close the tab.
+ * Plotly's own hover is off (hovermode false; there are no per-point names on
+ * the traces). Hover, click and the focused-cell highlight come from a point
+ * index over the drawn positions (utils/point-index.js, 8 B per point in typed
+ * arrays; large-interact.js). What it gives up: 3D, table filters (a cell
+ * table cannot list this many cells, so there is nothing to filter by), the
+ * Hover picker's extra columns, and incremental updates (any change redraws). It is
+ * used above largePlotPoints() (default 1M, so several regular plots fit side
+ * by side). The panel says so (a status-strip tag), the controls it cannot
+ * honour are disabled (large-plot-controls.js), and settings it cannot draw
+ * are refused with a message (largePlotRefusal): far above the threshold the
+ * regular path would close the tab.
  */
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
@@ -35,10 +39,14 @@ import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, COLOUR_BAR, attachViewportTracking } from './plot-make-helper.js';
-import { drawPlot, clearForDraw, fitToContainer, setStatusTag, nudgeStatusTag, resolveColorscale } from '../../utils/panel-surface.js';
+import { drawPlot, drawPlaceholder, clearForDraw, fitToContainer, setStatusTag, resolveColorscale, Coverage, GAP } from '../../utils/panel-surface.js';
+import { colourKind, DEFAULT_MODEL } from '../../utils/memory-guard.js';
+import { probeForDraw, niceFloor, probeMessage } from '../../utils/alloc-probe.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
+import { buildPointIndexSliced } from '../../utils/point-index.js';
+import { attachLargeInteraction, highlightLargeFocus } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount } from '../../utils/categories.js';
@@ -86,11 +94,11 @@ export function largePlotReason(settings, n) {
   return largePlotRefusal(settings, n);
 }
 
-async function loadSeries(s, datasetPath, structure) {
+async function loadSeries(s, datasetPath, structure, signal) {
   if (s.type === 'none') return null;
   if (s.type === 'obsm') {
     const v = await DataManager.loadVector(`${Config.API.OBSM}/${s.key}`,
-      { dataset_path: datasetPath, column_name: String(s.column) });
+      { dataset_path: datasetPath, column_name: String(s.column) }, signal);
     if (!v) throw new Error(`obsm.${s.key}.${s.column} is not numeric`);
     return { values: v };
   }
@@ -98,7 +106,7 @@ async function loadSeries(s, datasetPath, structure) {
     const gi = DataManager.getGeneIndex(s.column);
     if (gi < 0) throw new Error(`gene ${s.column} is not in this dataset`);
     const v = await DataManager.loadVector(`${Config.API.LAYER}/${s.key}`,
-      { dataset_path: datasetPath, cols: String(gi) });
+      { dataset_path: datasetPath, cols: String(gi) }, signal);
     if (!v) throw new Error(`layer ${s.key} is not numeric`);
     return { values: v };
   }
@@ -109,9 +117,9 @@ async function loadSeries(s, datasetPath, structure) {
     // past GROUP_COLOURS categories: codes ranked by the server and the
     // legend's few labels, never the column's label list
     return DataManager.loadCategoryCodes(datasetPath, s.key,
-      { ranked: grouped(categoryCount(structure, 'obs', s.key) ?? 0) });
+      { ranked: grouped(categoryCount(structure, 'obs', s.key) ?? 0), signal });
   }
-  const v = await DataManager.loadVector(Config.API.OBS, { dataset_path: datasetPath, columns: s.key });
+  const v = await DataManager.loadVector(Config.API.OBS, { dataset_path: datasetPath, columns: s.key }, signal);
   if (!v) throw new Error(`obs.${s.key} is neither categorical nor numeric`);
   return { values: v };
 }
@@ -154,24 +162,29 @@ async function sampleColorscale(scale, reverse, n) {
 
 /**
  * Group points by key with one counting sort: x/y permuted into contiguous
- * runs per key, as typed arrays. key[i] === drop leaves point i out.
+ * runs per key, as typed arrays, and the row of each (R). key[i] === drop leaves point i out. `pre` ({X, Y}) are buffers allocated
+ * earlier (probeDraw) to be filled; they may be longer than `kept`.
  */
-function groupByKey(x, y, key, nkeys, drop) {
+function groupByKey(x, y, key, nkeys, drop, pre = null) {
   const n = x.length;
   const start = new Float64Array(nkeys + 1);
   for (let i = 0; i < n; i++) { const k = key[i]; if (k !== drop) start[k + 1]++; }
   for (let k = 0; k < nkeys; k++) start[k + 1] += start[k];
   const kept = start[nkeys];
   const fill = start.slice(0, nkeys);
-  const X = new Float32Array(kept), Y = new Float32Array(kept);
+  // the probe's buffers (probeDraw), when big enough: filled, not copied
+  const X = pre && pre.X && pre.X.length >= kept ? pre.X : new Float32Array(kept);
+  const Y = pre && pre.Y && pre.Y.length >= kept ? pre.Y : new Float32Array(kept);
+  const R = new Uint32Array(kept);           // the row of each point, for hover and click
   for (let i = 0; i < n; i++) {
     const k = key[i];
     if (k === drop) continue;
     const p = fill[k]++;
     X[p] = x[i];
     Y[p] = y[i];
+    R[p] = i;
   }
-  return { X, Y, start, kept };
+  return { X, Y, R, start, kept };
 }
 
 /** Single-colour scattergl traces for points [a, b), cut below TRACE_POINTS. */
@@ -243,66 +256,177 @@ function colourBar(settings, title) {
 export function largePlotTag(n) {
   const limit = largePlotPoints();
   return {
-    text: 'Large plot: no hover/click',
-    title: `Large-plot mode (${formatPoints(n)} points): hover, click and table filters are off; use a subset for them`,
+    text: 'Large plot',
+    title: `Large-plot mode (${formatPoints(n)} points): hover, click and the focus highlight work; `
+      + 'table filters, 3D and the Hover picker are off; use a subset for them',
     pop: {
-      text: `Over ${exactCount(limit)} points (${compactCount(n)} here): drawn without hover, click or `
-        + 'table filters to stay within browser memory.',
-      actions: [['subset-regular', `Subset to \u2264${compactCount(limit)} to enable click`]]
+      text: `Over ${exactCount(limit)} points (${compactCount(n)} here): drawn in a lighter mode to stay within `
+        + 'browser memory. Hover and click work; table filters, 3D and extra hover columns do not.',
+      actions: [['subset-regular', `Subset to \u2264${compactCount(limit)} for table filters`]]
     }
   };
 }
 
+/** The probe's group-key buffer when it is the right size, else a new one. */
+function keyBuffer(pre, n) {
+  return pre && pre.key && pre.key.length === n ? pre.key : new Uint16Array(n);
+}
+
 /**
- * A click on the plot area of a large plot, which has no click: pulse the
- * strip's tag, and the first time per panel open its popover. A drag (zoom,
- * pan) is not a click, and neither is one on the modebar or legend.
- * @param {HTMLElement} plotContainer
+ * The allocation probe of a draw (utils/alloc-probe.js): allocate what the
+ * plot will need, now, before positions and colours are requested. Returns
+ * the buffers the draw fills ({key, X, Y, logged?}). When the browser
+ * refuses, throws an AllocationProbeError whose message offers a subset;
+ * plot-make.js shows it (showProbeFailure) and no data request has gone out.
+ * @param {Object} settings
+ * @param {Object} structure
  */
-function watchLargeClicks(plotContainer) {
-  if (plotContainer.__largeClicks) return;
-  plotContainer.__largeClicks = true;
-  // pointer events, not click: Plotly's drag layer takes the mouse between
-  // press and release, so no click reaches the graph
-  let down = null;
-  plotContainer.addEventListener('pointerdown', (e) => {
-    down = plotContainer.__isLarge && e.target.closest && e.target.closest('.draglayer, .nsewdrag')
-      ? { x: e.clientX, y: e.clientY } : null;
-  }, true);
-  document.addEventListener('pointerup', (e) => {
-    if (!down || !plotContainer.isConnected) { down = null; return; }
-    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-    down = null;
-    if (moved <= 4) nudgeStatusTag(plotContainer, 'large');
+function probeDraw(settings, structure, suggest = true, bytesPerPoint = DEFAULT_MODEL.large.arrayBuffers, held = false) {
+  const n = (DataManager.getCells() || []).length;
+  const credit = held ? DEFAULT_MODEL.large.heldPerPoint * n : 0;
+  return probeForDraw({ n, log: !!(settings.color && settings.color.log) && colourKind(settings, structure) === 'numeric',
+    bytesPerPoint, credit,
+    eligible: n + (Number(DataManager.getCellsNotInSubset()) || 0), suggest });
+}
+
+/**
+ * The probe of a redraw. The plot being replaced stays until the new points
+ * are built, so the browser still holds its buffers (about 61 B a point at
+ * 210M) when the new draw's first allocations come: on v0.4.1 a recolour of
+ * a drawn gene plot to a category failed in groupByKey at 225M points
+ * though a first plot of 225M draws, and drew at 190M and 210M. So beside a
+ * drawn plot the probe asks for what that first step adds, the build buffers
+ * and the new colour's body (model large.redrawBeside, 14 B a point), and
+ * the browser's answer includes what the old plot holds. The plot stays when
+ * the probe fails. The step after the old plot is released (the 73 B a point
+ * of the draw itself) is not tested: it can still fail for sizes within 5%
+ * above the edge, in the graceful placeholder.
+ */
+function probeOrRelease(plotContainer, settings, structure) {
+  const live = !!plotContainer._fullLayout;
+  return probeDraw(settings, structure, true, live ? DEFAULT_MODEL.large.redrawBeside : DEFAULT_MODEL.large.arrayBuffers, live);
+}
+
+
+/**
+ * Show that a plot could not be held: on a plot already drawn, a warning
+ * tag in its strip (the plot stays); otherwise a placeholder with the
+ * message and the way out (a subset).
+ * @param {HTMLElement} plotContainer
+ * @param {{message: string, n?: number}} error
+ * @param {string} [source] - what ran out: 'browser memory' or 'WebGL'
+ */
+export function showProbeFailure(plotContainer, error, source = 'browser memory') {
+  const live = Array.isArray(plotContainer.data) && plotContainer.data.length && plotContainer._fullLayout;
+  const actions = [['subset', 'Subset…']];
+  if (live) {
+    setStatusTag(plotContainer, 'memory', { text: 'Not drawn: browser memory', severity: 'warning',
+      title: error.message, pop: { text: error.message, actions } });
+    return;
+  }
+  setStatusTag(plotContainer, 'memory', null);
+  drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, error.message,
+    { source, unit: 'cells', total: error.n ?? null }), 'cells', { actions });
+}
+
+/**
+ * A lost WebGL context (the GPU ran out of memory, or the driver reset) ends
+ * the plot: release it, say so in the words of a failed probe, offer a
+ * subset and Redraw. The context is told it may come back (preventDefault);
+ * when it does, the message says Redraw will work.
+ */
+function watchGpu(plotContainer, n) {
+  if (plotContainer.__gpuWatch) { plotContainer.__gpuWatch.n = n; return; }
+  const state = { n };
+  plotContainer.__gpuWatch = state;
+  // capture: the event does not bubble from the canvas
+  plotContainer.addEventListener('webglcontextlost', (e) => {
+    // a plot of ours that is up; releasePlot loses its contexts on purpose, after the plot is gone
+    if (!plotContainer.__isLarge || !plotContainer._fullLayout || !e.target || !plotContainer.contains(e.target)) return;
+    e.preventDefault();
+    const canvas = e.target;
+    const eligible = state.n + (Number(DataManager.getCellsNotInSubset()) || 0);
+    const message = probeMessage(state.n, niceFloor(state.n / 2), eligible);
+    plotContainer.__isLarge = false;
+    drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, message,
+      { source: 'WebGL', unit: 'cells', total: state.n }), 'cells',
+      { actions: [['subset', 'Subset…'], ['redraw', 'Redraw']] });
+    canvas.addEventListener('webglcontextrestored', () => {
+      const box = plotContainer.querySelector('.coverage-placeholder');
+      if (!box || box.querySelector('.coverage-placeholder__restored')) return;
+      const note = document.createElement('div');
+      note.className = 'coverage-placeholder__restored';
+      note.textContent = 'The graphics context is back; Redraw can draw the plot again.';
+      box.appendChild(note);
+    }, { once: true });
   }, true);
 }
 
 // The draw in flight per panel. A panel's first load is usually asked for
 // twice (the table-filter update finds no plot yet and refreshes); at these
 // sizes a second concurrent load doubles the memory and the server's work.
+// Each caller brings its own abort signal; the draw stops when all of its
+// callers have gone. A caller that supersedes another (same settings) gets
+// the draw already running, so the download is not thrown away and restarted.
 const _inflight = new WeakMap();
+// how long a draw whose callers all left waits for a new one to join it
+const JOIN_GRACE_MS = 300;
+
+/**
+ * Stop an unfinished point-index build of the panel and drop its index (the
+ * panel closes). Hover and click in large-plot mode are off from then on.
+ * @param {HTMLElement} plotContainer
+ */
+export function cancelIndexBuild(plotContainer) {
+  if (plotContainer.__indexBuild) plotContainer.__indexBuild.cancelled = true;
+  if (plotContainer.__largeState) plotContainer.__largeState.index = null;
+}
 
 /**
  * Load the series and draw the panel. Fills `data` with what the panel's
  * other code reads (`large`, `entities`, `generation`, `coverage`). A call
- * with the same settings while a draw is in flight joins that draw.
+ * with the same settings while a draw is in flight joins that draw. The
+ * requests and the decoding stop when `signal` aborts (the Plotly draw
+ * itself, once it has begun, runs to its end: it is one synchronous call).
  */
-export function createLargePlot(plotContainer, settings, data, container = null, id = null) {
+export function createLargePlot(plotContainer, settings, data, container = null, id = null, signal = null) {
   const sig = JSON.stringify([DataManager.getDatasetGeneration(), settings.x, settings.y, settings.color,
     settings.pointSize, settings.pointOpacity, settings.hideNaN, settings.hideOutliers, settings.colorMin,
     settings.colorMax, settings.colorScale, settings.colorReversed, settings.categoryPalette]);
-  const current = _inflight.get(plotContainer);
-  if (current && current.sig === sig) return current.promise;
-  const promise = _drawLargePlot(plotContainer, settings, data, container, id).finally(() => {
-    if (_inflight.get(plotContainer) && _inflight.get(plotContainer).promise === promise) {
-      _inflight.delete(plotContainer);
-    }
+  let entry = _inflight.get(plotContainer);
+  if (!entry || entry.sig !== sig) {
+    const controller = new AbortController();
+    entry = { sig, controller, waiters: 0, promise: null };
+    const mine = entry;
+    entry.promise = _drawLargePlot(plotContainer, settings, data, container, id, controller.signal).finally(() => {
+      if (_inflight.get(plotContainer) === mine) _inflight.delete(plotContainer);
+    });
+    entry.promise.catch(() => {});
+    _inflight.set(plotContainer, entry);
+  }
+  const joined = entry;
+  if (!signal) return joined.promise;
+  if (signal.aborted) return Promise.reject(new DOMException('Plot creation aborted', 'AbortError'));
+  joined.waiters += 1;
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      joined.waiters -= 1;
+      if (!joined.waiters) {
+        setTimeout(() => { if (!joined.waiters) joined.controller.abort(new DOMException('Plot creation aborted', 'AbortError')); }, JOIN_GRACE_MS);
+      }
+      reject(new DOMException('Plot creation aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    joined.promise.then(
+      v => { signal.removeEventListener('abort', onAbort); resolve(v); },
+      e => { signal.removeEventListener('abort', onAbort); reject(e); });
   });
-  _inflight.set(plotContainer, { sig, promise });
-  return promise;
 }
 
-async function _drawLargePlot(plotContainer, settings, data, container, id) {
+async function _drawLargePlot(plotContainer, settings, data, container, id, signal) {
+  const stopped = () => {
+    if (signal.aborted) throw new DOMException('Plot creation aborted', 'AbortError');
+  };
   const t0 = performance.now();
   const datasetPath = DataManager.getCurrentDataset();
   const structure = await DataManager.getDatasetStructure();
@@ -310,17 +434,26 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
   Object.keys(data).forEach(k => delete data[k]);
   data.generation = null;
   data.entities = 'cells';
+  // Before any request: the buffers this plot will need, allocated now. If the
+  // browser cannot give them, nothing is requested (utils/alloc-probe.js).
+  const pre = probeOrRelease(plotContainer, settings, structure);
   const [xs, ys, cs] = await Promise.all([
-    loadSeries(settings.x, datasetPath, structure),
-    loadSeries(settings.y, datasetPath, structure),
-    loadSeries(settings.color, datasetPath, structure)
+    loadSeries(settings.x, datasetPath, structure, signal),
+    loadSeries(settings.y, datasetPath, structure, signal),
+    loadSeries(settings.color, datasetPath, structure, signal)
   ]);
+  stopped();
   if (DataManager.getDatasetGeneration() !== generation) {
     throw new DOMException('Plot data is from a previous dataset', 'AbortError');
   }
+  // the previous draw's index goes before the new one is built: never both; a build
+  // still running for it is stopped
+  if (plotContainer.__indexBuild) plotContainer.__indexBuild.cancelled = true;
+  if (plotContainer.__largeState) plotContainer.__largeState.index = null;
   const t1 = performance.now();
   const x = xs.values, y = ys.values, n = x.length;
   const traces = [];
+  let pts;                       // the drawn points {X, Y, R}: what the point index is built over
   // the regular path's layout, so both modes look the same
   const layout = buildPlotLayout(settings, null);
   layout.hovermode = false;
@@ -336,7 +469,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     const many = !!cs.ranked;
     const ncAll = many ? cs.used : cs.categories.length;
     const nc = many ? Math.min(ncAll, GROUP_COLOURS) : ncAll;
-    const key = new Uint16Array(n);
+    const key = keyBuffer(pre, n);
     const NA = nc, DROP = nc + 1;
     for (let i = 0; i < n; i++) {
       const c = cs.codes[i];
@@ -346,7 +479,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
         if (settings.hideNaN) only.nan++;
       } else key[i] = many ? groupOf(c) : c;
     }
-    const { X, Y, start, kept } = groupByKey(x, y, key, nc + 1, DROP);
+    const { X, Y, R, start, kept } = groupByKey(x, y, key, nc + 1, DROP, pre);
+    pts = { X, Y, R };
     filtered = n - kept;
     // Colour groups: per group, the distinct ranks drawn (a bit set over the
     // ranks) and the three lowest, whose labels the legend names
@@ -372,8 +506,9 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       let labels = new Map();
       try {
         labels = await DataManager.loadCategoryLabels(datasetPath, settings.color.key, lowest.flat(),
-          settings.color.type === 'var' ? 'var' : 'obs');
+          settings.color.type === 'var' ? 'var' : 'obs', signal);
       } catch (err) {
+        stopped();
         console.warn('Legend labels not loaded:', err && err.message);
       }
       groupNames = lowest.map((low, g) => {
@@ -387,9 +522,10 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     let palette = null;
     if (!many && settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
       try {
-        const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors` });
+        const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors`, signal });
         if (r && r.data) palette = Array.isArray(r.data) ? r.data : [r.data];
       } catch {
+        stopped();
         palette = null;
       }
     }
@@ -424,7 +560,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     if (settings.color.log) {
       let floor = settings.color.logFloor;
       if (!(floor > 0)) { floor = Infinity; for (let i = 0; i < n; i++) if (v[i] > 0 && v[i] < floor) floor = v[i]; }
-      const lv = new Float32Array(n), lf = Math.log10(floor);
+      const lv = pre && pre.logged && pre.logged.length === n ? pre.logged : new Float32Array(n), lf = Math.log10(floor);
       for (let i = 0; i < n; i++) lv[i] = v[i] !== v[i] ? NaN : (v[i] > floor ? Math.log10(v[i]) : lf);
       v = lv;
     }
@@ -451,7 +587,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     const rank = new Uint16Array(COLOR_BINS);
     order.forEach((bin, r) => { rank[bin] = r + 1; });       // 0 = no value
     const DROP = COLOR_BINS + 1;
-    const key = new Uint16Array(n);
+    const key = keyBuffer(pre, n);
     for (let i = 0; i < n; i++) {
       const c = v[i];
       if (x[i] !== x[i] || y[i] !== y[i]) { key[i] = DROP; only.coords++; continue; }
@@ -460,7 +596,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
       const bin = Math.min(COLOR_BINS - 1, Math.max(0, Math.floor((c - cmin) / width)));
       key[i] = rank[bin];
     }
-    const { X, Y, start, kept } = groupByKey(x, y, key, COLOR_BINS + 1, DROP);
+    const { X, Y, R, start, kept } = groupByKey(x, y, key, COLOR_BINS + 1, DROP, pre);
+    pts = { X, Y, R };
     filtered = n - kept;
     const colors = await sampleColorscale(settings.colorScale, settings.colorReversed, COLOR_BINS);
     pushTraces(traces, X, Y, start[0], start[1], 'no value', NA_COLOR, settings);
@@ -481,15 +618,17 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     });
     layout.showlegend = false;
   } else {
-    const key = new Uint8Array(n);
+    const key = keyBuffer(pre, n);
     for (let i = 0; i < n; i++) key[i] = (x[i] !== x[i] || y[i] !== y[i]) ? 1 : 0;
-    const { X, Y, start, kept } = groupByKey(x, y, key, 1, 1);
+    const { X, Y, R, start, kept } = groupByKey(x, y, key, 1, 1, pre);
+    pts = { X, Y, R };
     filtered = n - kept;
     only.coords = filtered;
     pushTraces(traces, X, Y, start[0], start[1], 'cells', settings.pointColor || '#1f77b4', settings);
     layout.showlegend = false;
   }
   const t2 = performance.now();
+  stopped();
 
   // every series here is whole or threw, so the gaps are the points dropped
   const coverage = withSubsetCoverage(classifyFilterStats({
@@ -508,9 +647,9 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     coverage, 'cells');
   setStatusTag(plotContainer, 'large', largePlotTag(n));
   plotContainer.__isLarge = true;
-  watchLargeClicks(plotContainer);
+  watchGpu(plotContainer, n);
   fitToContainer(plotContainer);
-  // no click handler here, but a zoom is kept like in the regular plot
+  // Plotly has no click handler here, but a zoom is kept like in the regular plot
   attachViewportTracking(plotContainer, settings);
   // the server's cell-name index, for a later focus by name (remote-names.js)
   DataManager.prewarmCellNames();
@@ -518,8 +657,29 @@ async function _drawLargePlot(plotContainer, settings, data, container, id) {
     updateColorControlsVisibility(container, cs && cs.codes ? 'categorical' : cs ? 'numerical' : 'constant', id);
   }
   const t3 = performance.now();
-  data.large = { n, traces: traces.length, filtered,
-    load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2 };
+  // hover, click and the focus highlight: the index over the drawn points, built after the
+  // plot is visible and in slices of the main thread, so input stays responsive; until it is
+  // ready hover shows nothing and a click does nothing
+  // (the probe's buffers may be longer than the points kept)
+  const kept = n - filtered;
+  const job = { cancelled: false };
+  plotContainer.__indexBuild = job;
+  // the index build belongs to this draw's load scope: when the load is aborted
+  // (a newer load, the Cancel button, the panel closing) an unfinished build stops
+  if (signal.aborted) job.cancelled = true;
+  else signal.addEventListener('abort', () => { job.cancelled = true; }, { once: true });
+  const st = attachLargeInteraction(plotContainer, settings, null);
+  const large = { n, traces: traces.length, filtered,
+    load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2, index_ms: null };
+  data.large = large;
+  buildPointIndexSliced(pts.X.subarray(0, kept), pts.Y.subarray(0, kept), pts.R, job).then((index) => {
+    if (!index || job.cancelled || plotContainer.__largeState !== st) return;
+    st.index = index;
+    large.index_ms = performance.now() - t3;
+    large.index_bytes = index.bytes;
+    console.info(`Point index ready ${large.index_ms.toFixed(0)} ms after the draw (hover and click)`);
+    highlightLargeFocus(plotContainer, settings);
+  }).catch((err) => console.warn('Point index not built:', err && err.message));
   data.coverage = coverage;
   data.generation = generation;
   console.info(`Large cell plot: ${n} points in ${traces.length} traces; `

@@ -1,5 +1,6 @@
 import { plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
+import { RemoteNames } from '../../utils/remote-names.js';
 import { 
   loadAxisData, 
   createFilterMask, 
@@ -13,19 +14,23 @@ import {
   unsortTraces,
   applyLogColor,
   applyLogColorbar,
-  loadingIndicator
+  loadingIndicator,
+  followDrawnPoints
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
-import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle } from './plot-make-helper.js';
+import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, NOT_IN_TABLE } from './plot-make-helper.js';
+import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
-import { renderCoverageNotice, setStatusTag, withCoverageAnnotation } from '../../utils/panel-surface.js';
+import { renderCoverageNotice, setStatusTag, withCoverageAnnotation, showCancelled } from '../../utils/panel-surface.js';
+import { beginLoad, endLoad, wasCancelled } from '../../utils/load-scope.js';
 import { withPlotlyBatch } from '../../utils/plotly-batch.js';
 import { setGlMarkers } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { highlightLargeFocus, clearLargeFocus } from './large-interact.js';
 
 
 
@@ -138,6 +143,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         
         // First create the mask and get statistics - always run this to count NaNs
         const { indexMask, filterStats } = createFilterMask(data, settings);
+
+        // Hiding or showing points changes the number drawn: automatic size
+        // and opacity follow it (the styling step below restyles the markers)
+        if (followDrawnPoints(plotContainer, settings, filterStats.shown)) {
+            updateOptions.styling = true;
+        }
         
         // Restate the panel's coverage. An incremental update changes what is
         // on screen, so a notice left over from the previous render would be
@@ -193,7 +204,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                             x: [filteredData.x.values],
                             y: [filteredData.y.values],
                             'marker.color': [filteredData.color],
-                            text: [filteredData[entityType]],
+                            text: [DataManager.cellLabels(filteredData[entityType])],
                             customdata: [filteredData.customdata]
                         };
                         
@@ -216,7 +227,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 x: [filteredData.x.values],
                                 y: [filteredData.y.values],
                                 'marker.color': [filteredData.color],
-                                text: [filteredData[entityType]],
+                                text: [DataManager.cellLabels(filteredData[entityType])],
                                 customdata: [filteredData.customdata]
                             };
                             
@@ -234,7 +245,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 x: [filteredData.x.values],
                                 y: [filteredData.y.values],
                                 'marker.color': [filteredData.color],
-                                text: [filteredData[entityType]],
+                                text: [DataManager.cellLabels(filteredData[entityType])],
                                 customdata: [filteredData.customdata]
                             };
                             
@@ -253,7 +264,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         x: [filteredData.x.values],
                         y: [filteredData.y.values],
                         'marker.color': [filteredData.color],
-                        text: [filteredData[entityType]],
+                        text: [DataManager.cellLabels(filteredData[entityType])],
                         customdata: [filteredData.customdata]
                     };
                     
@@ -300,7 +311,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         if (updateOptions.xAxis && data.x?.values) update.x = [indices.map(idx => data.x.values[idx])];
                         if (updateOptions.yAxis && data.y?.values) update.y = [indices.map(idx => data.y.values[idx])];
                         if (updateOptions.zAxis && data.z?.values && shouldBe3D) update.z = [indices.map(idx => data.z.values[idx])];
-                        update.text = [entityNames];
+                        update.text = [DataManager.cellLabels(entityNames)];
                         update.customdata = [entityNames];
 
                         if (Object.keys(update).length > 0) {
@@ -344,7 +355,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     mode: 'markers',
                     x: data.x.values,
                     y: data.y.values,
-                    text: data[entityType],
+                    text: DataManager.cellLabels(data[entityType]),
                     customdata: data[entityType],
                     hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` +
                         (settings.z ? `<br>z: %{z}` : '') +
@@ -513,7 +524,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                       type: settings.z ? 'scatter3d' : 'scattergl',
                       mode: 'markers',
                       name: 'Not in table',
-                      text: nonTableIndices.map(i => entities[i]),
+                      text: DataManager.cellLabels(nonTableIndices.map(i => entities[i])),
                       customdata: nonTableIndices.map(i => entities[i]),
                       hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                     (settings.z ? `<br>z: %{z}` : '') + 
@@ -521,8 +532,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                       x: nonTableIndices.map(i => data.x.values[i]),
                       y: nonTableIndices.map(i => data.y.values[i]),
                       marker: {
-                        size: settings.pointSize,
-                        opacity: settings.pointOpacity,
+                        ...greyMarker(settings, data.x.values.length),
                         color: 'rgba(180, 180, 180, 1.)',
                         showscale: false
                       },
@@ -544,7 +554,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                       type: settings.z ? 'scatter3d' : 'scattergl',
                       mode: 'markers',
                       name: 'In table',
-                      text: tableFilteredIndices.map(i => entities[i]),
+                      text: DataManager.cellLabels(tableFilteredIndices.map(i => entities[i])),
                       customdata: tableFilteredIndices.map(i => entities[i]),
                       hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                     (settings.z ? `<br>z: %{z}` : '') + 
@@ -654,7 +664,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 type: settings.z ? 'scatter3d' : 'scattergl',
                                 mode: 'markers',
                                 name: 'Not in table',
-                                text: nonTableIndices.map(i => entities[i]),
+                                text: DataManager.cellLabels(nonTableIndices.map(i => entities[i])),
                                 customdata: nonTableIndices.map(i => entities[i]),
                                 hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                             (settings.z ? `<br>z: %{z}` : '') + 
@@ -662,8 +672,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 x: nonTableIndices.map(i => data.x.values[i]),
                                 y: nonTableIndices.map(i => data.y.values[i]),
                                 marker: {
-                                    size: settings.pointSize,
-                                    opacity: settings.pointOpacity,
+                                    ...greyMarker(settings, data.x.values.length),
                                     color: 'rgba(180, 180, 180, 1.)', // Lighter gray for non-table entities
                                     showscale: false
                                 },
@@ -685,7 +694,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 type: settings.z ? 'scatter3d' : 'scattergl',
                                 mode: 'markers',
                                 name: 'In table',
-                                text: tableIndices.map(i => entities[i]),
+                                text: DataManager.cellLabels(tableIndices.map(i => entities[i])),
                                 customdata: tableIndices.map(i => entities[i]),
                                 hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                                             (settings.z ? `<br>z: %{z}` : '') + 
@@ -770,7 +779,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             };
             
             const dataTraceIndices = plotContainer.data
-                .map((trace, i) => (trace && !isLegendProxy(trace)
+                .map((trace, i) => (trace && !isLegendProxy(trace) && trace.name !== NOT_IN_TABLE
                     && trace.name !== `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}` ? i : -1))
                 .filter(i => i !== -1);
             
@@ -879,6 +888,13 @@ export async function loadColorDataAndUpdatePlot(
         refreshPlot();
         return;
     }
+    // A load is rebuilding the series from the settings before this change
+    // (or was cancelled): a new full load reads the current ones, and stops
+    // the old, which would draw the previous colour over this one
+    if (data && data.generation === null) {
+        refreshPlot();
+        return;
+    }
     // the new colour series and the restyle need memory next to the old ones
     const memory = recolourCheck(plotContainer);
     if (memory.verdict === 'block') {
@@ -904,10 +920,13 @@ export async function loadColorDataAndUpdatePlot(
         for (const ev of DRAWN_EVENTS) if (plotContainer.removeListener) plotContainer.removeListener(ev, notBusy);
     };
     let drawing = null;
+    // one colour load at a time: a newer change of the colour aborts this one
+    const signal = beginLoad(plotContainer, 'colour');
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
-        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour', panel: settings });
+        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour', panel: settings, signal });
+        if (signal.aborted) throw new DOMException('Recolour aborted', 'AbortError');
 
         if (colorData && colorData.values) {
             // Update the data cache with new color information.
@@ -952,10 +971,16 @@ export async function loadColorDataAndUpdatePlot(
             refreshPlot();
         }
     } catch (error) {
+        if (error && error.name === 'AbortError') {
+            // a newer load took over, or Cancel: the plot stays as drawn
+            if (wasCancelled(signal)) showCancelled(plotContainer, data.entities, true);
+            return;
+        }
         console.error('Error updating color data:', error);
         // Fall back to recreating the plot.
         refreshPlot();
     } finally {
+        endLoad(plotContainer, signal);
         if (drawing) drawing.finally(notBusy);
         else notBusy();
     }
@@ -983,7 +1008,7 @@ export function noteFocusOutside(plotContainer, data, settings, entityType = nul
     if (!(cell && !cell.shown && cell.row !== null)) return clear();
     setStatusTag(plotContainer, 'focus', {
       text: `${name} not shown`,
-      title: `The focused cell ${name} is not in this part; large-plot mode draws no marker for it`,
+      title: `The focused cell ${name} is not in this part, so this plot has no marker for it`,
       pop: { text: `The focused cell ${name} is not among the cells shown.`,
              actions: [['focus-part', 'Go to its part']] }
     });
@@ -1007,8 +1032,8 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   noteFocusOutside(plotContainer, data, settings, entityType);
   // any ring still being read is for an older state
   if (plotContainer) plotContainer.__ringSeq = (plotContainer.__ringSeq || 0) + 1;
-  // A large plot (large-plot.js) draws no focused-cell marker
-  if (data && data.large) return;
+  // A large plot (large-plot.js) marks the focus with a layout shape, not a trace
+  if (data && data.large) return highlightLargeFocus(plotContainer, settings);
   // Capture current view state before making changes
   let currentLayout = null;
   let newXTitle = axisTitle(settings, 'x');
@@ -1042,6 +1067,24 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   let traceIndex = 0;
   const entityArray = data[entityType];
 
+  // A plot of cells whose names are fetched when needed holds a token per
+  // cell: the focused cell is found by the token of its position, which is
+  // known once the cell was named, picked or located
+  let focusedKey = focusedEntity;
+  if (entityType === 'cells' && RemoteNames.isToken(entityArray[0])) {
+    const cells = DataManager.getCells();
+    focusedKey = cells instanceof RemoteNames ? cells.tokenOf(focusedEntity) : null;
+    if (focusedKey === null) {
+      // not known to be among the shown cells: find out, and draw again if it is
+      DataManager.locateCell(focusedEntity).then(cell => {
+        if (cell && cell.shown && cells.tokenOf(focusedEntity) !== null
+            && DataManager.getFocusedCell() === focusedEntity && plotContainer.isConnected) {
+          highlightFocusedEntity(plotContainer, data, settings, entityType);
+        }
+      }).catch(() => {});
+    }
+  }
+
   if (!plotContainer.data || !Array.isArray(plotContainer.data)) {
     console.warn("Plot data is not available for highlighting");
     return;
@@ -1056,8 +1099,9 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
   if (isCategorical && hasMultipleTraces) {
     for (let i = 0; i < dataTraces.length; i++) {
       const trace = dataTraces[i];
-      if (trace && Array.isArray(trace.text)) {
-        const idx = trace.text.indexOf(focusedEntity);
+      const ids = trace && (Array.isArray(trace.customdata) ? trace.customdata : trace.text);
+      if (Array.isArray(ids)) {
+        const idx = focusedKey === null ? -1 : ids.indexOf(focusedKey);
         if (idx !== -1) {
           focusedIndex = idx;
           traceIndex = i;
@@ -1066,7 +1110,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
       }
     }
   } else {
-    focusedIndex = entityArray.indexOf(focusedEntity);
+    focusedIndex = focusedKey === null ? -1 : entityArray.indexOf(focusedKey);
   }
 
   if (focusedIndex === -1) {
@@ -1323,6 +1367,7 @@ export async function restyleMarkers(plotContainer, settings) {
  */
 export function removeHighlight(plotContainer) {
     if (!plotContainer) return;
+    if (plotContainer.__isLarge) { clearLargeFocus(plotContainer); return; }
     try {
       if (!plotContainer.data || !Array.isArray(plotContainer.data)) return;
   
@@ -1406,13 +1451,26 @@ export async function refocusAxisOnEntity(
     } else if (settings[axis].column !== focusedEntity) {
       settings[axis].column = focusedEntity;
       updateMenueLabelsForFocus(focusedEntity, entityType, axis);
+      if (data && data.generation === null) {
+        refreshPlot();
+        return;
+      }
       // Pass the plotContainer to loadAxisData to enable loading indicators
-      const axisData = await loadAxisData(settings[axis], plotType, plotContainer);
-      if (!axisData || !axisData.values) {
-        throw new Error(`Loading data for ${axis} generated no values.`);
-      } else {
-        data[axis] = axisData;
-        updatePlotElements(plotContainer, data, settings, refreshPlot, { [`${axis}Axis`]: true, layout: true });
+      const signal = beginLoad(plotContainer, `axis:${axis}`);
+      try {
+        const axisData = await loadAxisData(settings[axis], plotType, plotContainer, { signal });
+        if (signal.aborted) throw new DOMException('Axis load aborted', 'AbortError');
+        if (!axisData || !axisData.values) {
+          throw new Error(`Loading data for ${axis} generated no values.`);
+        } else {
+          data[axis] = axisData;
+          updatePlotElements(plotContainer, data, settings, refreshPlot, { [`${axis}Axis`]: true, layout: true });
+        }
+      } catch (error) {
+        if (!error || error.name !== 'AbortError') throw error;
+        if (wasCancelled(signal)) showCancelled(plotContainer, plotType, true);
+      } finally {
+        endLoad(plotContainer, signal);
       }
     }
   }

@@ -54,7 +54,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | Each gene click takes seconds (Step 22) | The layer is CSR (whole-matrix load per gene), or dense and chunked wide in genes | Store it CSC, or rechunk by the aspect rule ({doc}`../data/chunking`) |
 | First click on a new cell in a cell-row plot takes over 20 s (Step 25) | Layer chunked as whole gene columns (all cells × a few genes), so one cell row decompresses the entire layer | Rechunk; repeat clicks are faster but still decompress the layer |
 | First search for a cell by name takes several seconds on tens of millions of cells (Step 35) | The server builds its index of cell names on the first search (6.3-6.8 s at 50 million cells in the paper's runs; 0.8 s once a local server has built it in the background) | Expected once per dataset and server; later searches are fast |
-| Hover and clicks do nothing in a Cell Plot; a notice above it reads Large-plot mode (Step 36) | More than 1 million points are drawn, for example with the subset switched off | Switch the subset back on (Step 32) and step through parts (Step 34) ({doc}`../user-guide/subsets`) |
+| The table filter, 3D or the Hover list are greyed out in a Cell Plot; a notice above it reads Large-plot mode (Step 36) | More than 1 million points are drawn, for example with the subset switched off | Switch the subset back on (Step 32) and step through parts (Step 34) ({doc}`../user-guide/subsets`) |
 | Cell rows of X are slow (215 ms here, more at scale) | X stored CSC: a cell row scans every chunk of the matrix (in bounded blocks, so memory stays small) | Expected trade-off; use a dense layer for cell-row views |
 
 ## Sharing and hosting

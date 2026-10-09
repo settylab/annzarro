@@ -61,7 +61,7 @@ its users file directly; otherwise pass the file: `annzarro user --config site.y
 
 | Command | Meaning |
 |---|---|
-| `user add [--username NAME] [--password PW] [--admin]` | Add a user. Prompts for missing values; the password twice. `--admin` lets the user delete, rename or overwrite any shared panel set and grants nothing else. Exit 1 if the user exists. |
+| `user add [--username NAME] [--password PW] [--admin]` | Add a user. Prompts for missing values; the password twice. `--admin` lets the user change any shared panel set, reassign its owner, clear the server's dataset cache and, with the default `server.arbitrary_paths: admins`, open any dataset path the server account can read. No dataset writes, no user management in the app. To confine admins, set `server.arbitrary_paths: local-only`. Exit 1 if the user exists. |
 | `user list` | Print each username and whether it is an admin. |
 | `user passwd [--username NAME] [--password PW]` | Change a password (prompted for if omitted). Ends the user's existing logins. |
 | `user set-admin [--username NAME] [--no-admin]` | Grant admin, or revoke it with `--no-admin`. |

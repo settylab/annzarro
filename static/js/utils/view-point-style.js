@@ -58,11 +58,12 @@ export function pointsInView(gd, skip = () => false) {
 
 /**
  * The count automatic values follow: in a zoomed or panned 2D view the
- * points in it, else every point drawn (`gd._pointCount`).
+ * points in it, else every point drawn (`gd._drawnCount`: the subset's points less
+ * those the plot's filters hide; `gd._pointCount` before that is known).
  */
 export function autoPointCount(gd, settings, skip) {
   const inView = settings && settings.viewport2D && !settings.z ? pointsInView(gd, skip) : null;
-  return inView === null ? gd._pointCount : inView;
+  return inView === null ? (gd._drawnCount ?? gd._pointCount) : inView;
 }
 
 /**

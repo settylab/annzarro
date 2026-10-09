@@ -49,7 +49,7 @@ const N = 50;
 const CELLS = Array.from({ length: N }, (_, i) => `c${i}`);
 let generation = 7;
 Object.assign(DataManager, {
-    getCells: () => CELLS, getGenes: () => [],
+    getCells: () => CELLS, getCellsForPanel: () => CELLS, cellLabels: (x) => x, getGenes: () => [],
     getCurrentDataset: () => '/a.zarr',
     getDatasetGeneration: () => generation,
     getCellIndex: () => -1, resolveCellIndex: async () => -1, getGeneIndex: () => -1,

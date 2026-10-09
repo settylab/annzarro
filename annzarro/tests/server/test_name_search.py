@@ -100,11 +100,15 @@ def test_endpoint_reads_names_once_per_dataset(client_and_store):
     real_chunks = zarr_reader.iter_cell_gene_name_chunks
     with patch.object(zarr_reader, "get_cell_gene_names", side_effect=real) as read, \
             patch.object(zarr_reader, "iter_cell_gene_name_chunks", side_effect=real_chunks) as chunks:
+        reads = []
         for q in ("c", "ce", "cel", "cell_0"):
             client.get("/api/v1/data/names", query_string={
                 "dataset_path": store, "entity": "cells", "q": q})
-        # a zarr store's names are read a chunk at a time, never as one list
-        assert chunks.call_count == 1, "the names were re-read per keystroke"
+            reads.append(chunks.call_count)
+        # a zarr store's names are read a chunk at a time, never as one list;
+        # the first search opens them (to size, then build the index), the
+        # later ones answer from the index
+        assert reads[0] >= 1 and len(set(reads)) == 1, f"the names were re-read per keystroke: {reads}"
         assert read.call_count == 0, "the whole name list was read"
 
 

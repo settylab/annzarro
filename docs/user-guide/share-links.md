@@ -75,6 +75,19 @@ asks). Links work the same when the server runs under a path prefix behind a pro
 precedence over the panels autosaved in that browser. Opening a second link in the same tab
 reloads the page and applies the new view.
 
+Once the view is open, the address bar follows it, as in a map: about half a second after you
+change something (open or close a panel, change a setting, change the focus) the `#view=` part
+of the address is replaced with the current view. A refresh brings back what you see now, not
+the view you were sent, and the address you copy from the bar is a link to it. The address is
+replaced, not added to, so the Back button is not affected, and it is not touched while a
+dataset is loading.
+
+A link without `#view=` (`http://<server>/?dataset_path=<path>`) opens the blank dashboard of
+that dataset: no panels, every panel type offered on the welcome screen. It ignores the panels
+autosaved in the browser. Closing every panel also removes `#view=` from the address, so the
+address is that clean link again. Only an address with no `dataset_path` at all restores the
+panels autosaved in this browser.
+
 If the view cannot be decoded (for example because a mail client cut the link), AnnZarro says
 "Invalid deep-link" and opens just the dataset.
 

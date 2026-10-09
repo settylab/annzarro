@@ -1,7 +1,7 @@
 """Admin and ordinary user, end to end, through the real login page.
 
 A hosted server as deployed: gunicorn with the bundled configuration
-(gthread, 2 workers), login on, two accounts made with `annzarro user add`
+(gthread), login on, two accounts made with `annzarro user add`
 (one --admin). Each signs in through the login form, then:
 
 * user: the header Refresh and Ctrl+R re-check the dataset (POST
@@ -17,6 +17,12 @@ A hosted server as deployed: gunicorn with the bundled configuration
 * `annzarro user set-admin --no-admin` takes effect on the admin's next
   request, without signing in again;
 * /api/v1/auth/me reports is_admin and may_open_any_path for each.
+
+Two gunicorn masters (one worker each) share one ANNZARRO_HOME and data
+directory, standing in for two workers: the shared generation file must carry
+a reset from one process to the other, and the kernel does not promise to
+spread new connections over the workers of ONE master, so the test addresses
+each process by its own port instead of hoping accept() balances.
 
 Needs Playwright with Chromium and a gunicorn executable (next to this
 Python, or ANNZARRO_TEST_GUNICORN); skipped otherwise, unless
@@ -64,19 +70,22 @@ def _free_port():
 
 
 class Server:
-    def __init__(self, root, env, url, access_log, app_log, store, outside):
-        self.root, self.env, self.url = root, env, url
-        self.access_log, self.app_log = access_log, app_log
+    def __init__(self, root, env, urls, access_logs, app_log, store, outside):
+        self.root, self.env, self.urls = root, env, urls
+        self.url = urls[0]                        # the browser talks to the first
+        self.access_logs, self.app_log = access_logs, app_log
         self.store, self.outside = store, outside
 
     def cli(self, *args):
         subprocess.run([sys.executable, "-m", "annzarro.cli", "user", *args], env=self.env, cwd=REPO,
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    def read(self, path, cookie, **query):
-        """GET on a fresh connection; returns (worker pid, status, JSON body)."""
-        mark = os.path.getsize(self.access_log)
-        req = urllib.request.Request(f"{self.url}{path}?{urllib.parse.urlencode(query)}",
+    def read(self, path, cookie, instance=0, **query):
+        """GET on a fresh connection to one gunicorn instance; returns
+        (worker pid, status, JSON body)."""
+        access_log = self.access_logs[instance]
+        mark = os.path.getsize(access_log)
+        req = urllib.request.Request(f"{self.urls[instance]}{path}?{urllib.parse.urlencode(query)}",
                                      headers={"Cookie": cookie, "Connection": "close"})
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
@@ -84,7 +93,7 @@ class Server:
         except urllib.error.HTTPError as err:
             status, body = err.code, json.loads(err.read() or b"{}")
         for _ in range(50):                       # the access line follows the reply
-            with open(self.access_log, encoding="utf-8", errors="replace") as f:
+            with open(access_log, encoding="utf-8", errors="replace") as f:
                 f.seek(mark)
                 lines = [ln for ln in f.read().splitlines() if f" {path} " in ln]
             if lines:
@@ -102,14 +111,14 @@ def server(tmp_path):
     store = data / "store.zarr"
     shutil.copytree(FIXTURE, store)
     shutil.copytree(FIXTURE, outside / "secret.zarr")
-    port = _free_port()
+    port, port2 = _free_port(), _free_port()
     site = tmp_path / "site.yaml"
     site.write_text(f"""server:
   host: 127.0.0.1
   port: {port}
   data_dir: "{data}"
   log_file: "{tmp_path / 'app.log'}"
-  workers: 2
+  workers: 1
   threads: 2
   refresh_min_interval_s: 0
 auth:
@@ -117,30 +126,41 @@ auth:
 """)
     env = dict(os.environ, ANNZARRO_CONFIG=str(site), ANNZARRO_HOME=str(tmp_path / "home"),
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""), PYTHONUNBUFFERED="1")
-    srv = Server(tmp_path, env, f"http://127.0.0.1:{port}", tmp_path / "access.log", tmp_path / "app.log",
+    ports = [port, port2]
+    srv = Server(tmp_path, env, [f"http://127.0.0.1:{p}" for p in ports],
+                 [tmp_path / "access.log", tmp_path / "access2.log"], tmp_path / "app.log",
                  str(store), str(outside / "secret.zarr"))
     srv.cli("add", "--username", "alice", "--password", "alice-pw")
     srv.cli("add", "--username", "root", "--password", "root-pw", "--admin")
-    with open(srv.access_log, "w") as access:
-        proc = subprocess.Popen([gunicorn, "-c", "python:annzarro.server.gunicorn_config",
-                                 "--access-logformat", "%(p)s %(m)s %(U)s %(s)s",
-                                 "annzarro.server.wsgi:create_wsgi_app()"],
-                                env=env, cwd=str(tmp_path), stdout=access, stderr=subprocess.STDOUT)
+    procs, logs = [], []
     try:
-        for _ in range(160):
-            try:
-                urllib.request.urlopen(srv.url + "/login", timeout=1)
-                break
-            except OSError:
-                if proc.poll() is not None:
-                    pytest.fail("gunicorn exited: " + srv.access_log.read_text()[-2000:])
-                time.sleep(0.25)
-        else:
-            pytest.fail("gunicorn did not start")
+        for p, log in zip(ports, srv.access_logs):
+            access = open(log, "w")
+            logs.append(access)
+            procs.append(subprocess.Popen([gunicorn, "-c", "python:annzarro.server.gunicorn_config",
+                                           "--bind", f"127.0.0.1:{p}", "--workers", "1",
+                                           "--access-logformat", "%(p)s %(m)s %(U)s %(s)s",
+                                           "annzarro.server.wsgi:create_wsgi_app()"],
+                                          env=env, cwd=str(tmp_path), stdout=access, stderr=subprocess.STDOUT))
+        for url, proc, log in zip(srv.urls, procs, srv.access_logs):
+            for _ in range(160):
+                try:
+                    urllib.request.urlopen(url + "/login", timeout=1)
+                    break
+                except OSError:
+                    if proc.poll() is not None:
+                        pytest.fail("gunicorn exited: " + log.read_text()[-2000:])
+                    time.sleep(0.25)
+            else:
+                pytest.fail("gunicorn did not start")
         yield srv
     finally:
-        proc.terminate()                          # this test's own master, by its PID
-        proc.wait(15)
+        for proc in procs:                        # this test's own masters, by PID
+            proc.terminate()
+        for proc in procs:
+            proc.wait(15)
+        for access in logs:
+            access.close()
 
 
 def _link(srv):
@@ -209,18 +229,17 @@ def _refresh(page, how):
     _settle(page)
 
 
-def _per_worker(srv, cookie, workers=2, tries=80):
-    """total_counts[0] as each worker serves it, {pid: {values}}: fresh
-    connections until replies from `workers` processes have been seen."""
+def _per_worker(srv, cookie):
+    """total_counts[0] as each gunicorn process serves it, {pid: {values}}:
+    one fresh connection to each instance's own port, so every process is
+    reached deterministically."""
     seen = {}
-    for _ in range(tries):
-        pid, status, body = srv.read("/api/v1/data/obs", cookie, dataset_path=srv.store,
+    for instance in range(len(srv.urls)):
+        pid, status, body = srv.read("/api/v1/data/obs", cookie, instance, dataset_path=srv.store,
                                      rows="0", columns="total_counts")
         assert status == 200, body
         seen.setdefault(pid, set()).add(body["data"]["total_counts"][0])
-        if len(seen) >= workers:
-            break
-    assert len(seen) >= workers, f"replies came from {sorted(seen)} only"
+    assert len(seen) == len(srv.urls), f"replies came from {sorted(seen)} only"
     return seen
 
 

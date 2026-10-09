@@ -129,6 +129,14 @@ server:
       type: integer
       description: Maximum number of datasets to keep in memory
       default: 10
+    name_index_max_mb:
+      type: [number, "null"]
+      description: MB the name-search indices may hold together per worker; null = 15% of RAM (512 MB to 16 GB). A larger dataset is searched by scanning its names
+      default: null
+    name_search_scan_names:
+      type: integer
+      description: Names a name search without an index reads at most before answering with a partial result
+      default: 100000000
     refresh_min_interval_s:
       type: number
       description: Seconds between two walks of one dataset by POST /data/refresh (open to every user)
@@ -290,6 +298,14 @@ ui:
           type: integer
           description: A Cell Plot with more points than this is drawn in large-plot mode (no hover, click or table filter)
           default: 1000000
+        names_on_demand_above:
+          type: integer
+          description: A dataset with more cells than this does not download the names of the cells it shows; hover, focus and a table's page ask for the names they need
+          default: 5000000
+        prefetch_next_part:
+          type: [string, boolean]
+          description: Read the next part's cells and embedding coordinates in the background after a part is shown (auto - single-user servers only, true, false)
+          default: auto
         subset_threshold:
           type: integer
           description: A dataset with more cells than this opens on a reproducible cell subset (0 = always)

@@ -5,7 +5,8 @@ import { createLayout, processCategories, attachClickHandler, isMissingCategory,
 import { autoPointCount, debounced } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
-import { applyAutoPointStyle } from '../../utils/point-style.js';
+import { applyAutoPointStyle, pointStyleBase, greyMarker } from '../../utils/point-style.js';
+export { pointStyleBase };
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
@@ -13,19 +14,24 @@ import {
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
 import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag } from '../../utils/panel-surface.js';
-import { largePlotPoints, largePlotRefusal, createLargePlot } from './large-plot.js';
+import { largePlotPoints, largePlotRefusal, createLargePlot, showProbeFailure } from './large-plot.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
+import { RemoteNames } from '../../utils/remote-names.js';
 import { colourKind } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { NO_HOVER } from './hover-columns.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
+import { cancelLoads } from '../../utils/load-scope.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck
 } from '../../utils/memory-guard-ui.js';
+
+// the loads of a panel that the Cancel button can stop (utils/load-scope.js)
+const CANCELLABLE = new Set(['full-plot', 'axis-data', 'recolour', 'table-data']);
 
 /**
  * Manages loading indicators for plot operations with built-in counter to handle
@@ -101,7 +107,15 @@ class LoadingIndicator {
       overlay.className = 'loading-overlay';
       overlay.dataset.operation = operation; // Store operation for fallback cleanup
       overlay.dataset.containerId = containerId; // Store containerId for fallback cleanup
-      overlay.innerHTML = '<div class="spinner"></div> Loading axis data...';
+      // Cancel appears after a moment (css), so a quick load does not flash it
+      const cancellable = CANCELLABLE.has(operation);
+      overlay.innerHTML = '<div class="spinner"></div> Loading axis data...' + (cancellable
+        ? '<button type="button" class="btn btn-sm btn-outline-secondary load-cancel" title="Stop loading and keep what is shown">Cancel</button>' : '');
+      if (cancellable) {
+        overlay.onclick = (e) => {
+          if (e.target.closest('.load-cancel')) cancelLoads(plotContainer, true);
+        };
+      }
       
       // Make sure container has position relative/absolute for proper overlay
       const containerPosition = window.getComputedStyle(plotContainer).position;
@@ -205,7 +219,7 @@ if (typeof window !== 'undefined') {
  * many more it has. Reads LEGEND_NAMES labels per colour, at most 192.
  * @returns {Promise<string[]>} GROUP_COLOURS names ('' for an empty colour)
  */
-async function rankedGroupNames(datasetPath, key, slot, codes, missing) {
+async function rankedGroupNames(datasetPath, key, slot, codes, missing, signal = null) {
   let top = 0;
   for (let i = 0; i < codes.length; i++) if (codes[i] !== missing && codes[i] > top) top = codes[i];
   const present = new Uint8Array(top + 1);
@@ -218,7 +232,7 @@ async function rankedGroupNames(datasetPath, key, slot, codes, missing) {
     total[g]++;
     if (lowest[g].length < LEGEND_NAMES) lowest[g].push(r);
   }
-  const labels = await DataManager.loadCategoryLabels(datasetPath, key, lowest.flat(), slot);
+  const labels = await DataManager.loadCategoryLabels(datasetPath, key, lowest.flat(), slot, signal);
   return lowest.map((ranks, g) => (total[g] ? groupLegendLabel(ranks.map(r => labels.get(r) ?? String(r)), total[g]) : ''));
 }
 
@@ -235,14 +249,15 @@ export function _setHoverGuardMin(n) { HOVER_GUARD_MIN = n; }
  * column's label length from three of its labels. A refusal is said on the
  * plot's status line with the guard's numbers; the plot stays coloured.
  */
-async function hoverLabelsFit(datasetPath, slot, key, count, points, plotContainer) {
+async function hoverLabelsFit(datasetPath, slot, key, count, points, plotContainer, signal = null) {
   const labels = Math.min(count, points);
   if (!(labels > HOVER_GUARD_MIN)) return true;
   let chars = 16;   // when no label could be read: about a cell barcode
   try {
-    const sample = [...(await DataManager.loadCategoryLabels(datasetPath, key, [0, 1, 2], slot)).values()].map(String);
+    const sample = [...(await DataManager.loadCategoryLabels(datasetPath, key, [0, 1, 2], slot, signal)).values()].map(String);
     if (sample.length) chars = sample.reduce((a, l) => a + l.length, 0) / sample.length;
-  } catch {
+  } catch (error) {
+    if (error && error.name === 'AbortError') throw error;
     // the guard's estimate with the default length
   }
   const result = hoverLabelsCheck({ points, labels, chars });
@@ -254,6 +269,22 @@ async function hoverLabelsFit(datasetPath, slot, key, count, points, plotContain
     });
   }
   return !refused;
+}
+
+/**
+ * Read the axes that are columns of ONE obsm matrix (a cell plot's UMAP x and
+ * y) in a single request. Resolves when they are cached (or when that was not
+ * possible: the per-axis loads then read them one by one); rejects only with
+ * an abort.
+ * @returns {Promise<boolean>}
+ */
+export function readAxesTogether(settings, plotType, signal = null) {
+  if (plotType === 'genes' || !settings) return Promise.resolve(false);
+  const axes = [settings.x, settings.y, settings.z].filter(a => a && a.type === 'obsm' && a.key && a.column !== '');
+  if (axes.length < 2 || axes.some(a => a.key !== axes[0].key)) return Promise.resolve(false);
+  return DataManager.prefetchObsmColumns({
+    obsmKey: axes[0].key, columns: axes.map(a => a.column), signal
+  });
 }
 
 /**
@@ -303,7 +334,7 @@ export function showHoverChoice(plotContainer, panel) {
  *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
  *    - categories: (optional) Category definitions.
  */
-export async function loadAxisData(settings, plotType = null, plotContainer = null, { role = null, panel = null } = {}) {
+export async function loadAxisData(settings, plotType = null, plotContainer = null, { role = null, panel = null, signal = null } = {}) {
   if (!settings) {
     throw new Error(`loadAxisData: settings is undefined`);
   }
@@ -379,7 +410,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
       loadingIndicator.show(plotContainer, 'axis-data');
     }
     const entities = plotType === 'genes' ? DataManager.getGenes() : DataManager.getCells();
-    expected = Array.isArray(entities) ? entities.length : null;
+    // (names kept on the server are not an array, but they count the cells)
+    expected = entities && typeof entities.length === 'number' ? entities.length : null;
 
     const { type, key, column } = settings;
     const datasetPath = DataManager.getCurrentDataset();
@@ -469,14 +501,14 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
             if (off === undefined) delete panel.hoverOff; else panel.hoverOff = off;
             // hover on: its labels must fit the browser (the memory guard)
             if (categoriesWanted === 'used' && !hoverIsOff(panel.hoverOff)
-                && !(await hoverLabelsFit(datasetPath, type, key, count, points, plotContainer))) panel.hoverOff = true;
+                && !(await hoverLabelsFit(datasetPath, type, key, count, points, plotContainer, signal))) panel.hoverOff = true;
             showHoverChoice(plotContainer, panel);
           }
           if (categoriesWanted === 'used' && panel && hoverIsOff(panel.hoverOff) && !rowsArr) {
-            const r = await DataManager.loadCategoryCodes(datasetPath, key, { ranked: true, slot: type });
+            const r = await DataManager.loadCategoryCodes(datasetPath, key, { ranked: true, slot: type, signal });
             if (r && r.ranked && (typeof expected !== 'number' || r.codes.length === expected)) {
               values = Array.from(r.codes, c => (c === r.MISSING ? null : c));
-              groupNames = await rankedGroupNames(datasetPath, key, type, r.codes, r.MISSING);
+              groupNames = await rankedGroupNames(datasetPath, key, type, r.codes, r.MISSING, signal);
               return { values, type: 'categorical', categories: null, coverage: classifyValues({ values, expected, unit, source }),
                 rankOf: null, ranked: true, groupNames };
             }
@@ -486,8 +518,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         // over the WHOLE column, so a category's colour does not depend on
         // the cells shown (subset, part, filter) or on the panel
         const ranked = categoriesWanted === 'used'
-          ? DataManager.loadCategoryCodes(datasetPath, key, { ranked: true, slot: type }) : null;
-        data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr, categories: categoriesWanted });
+          ? DataManager.loadCategoryCodes(datasetPath, key, { ranked: true, slot: type, signal }) : null;
+        data = await loadMethod({ datasetPath, columns: [key], rows: rowsArr, categories: categoriesWanted, signal });
         // classifyColumn encodes the server's measured semantics: key ABSENT
         // means the column is not in this dataset; key present but empty on a
         // non-empty dataset means the read FAILED. Those two look identical in
@@ -514,6 +546,12 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         if (data.categories && data.categories[key]) {
           dataType = 'categorical';
           categories = data.categories[key];
+          // A boolean column's categories are [false, true] (the order its
+          // uns colours are stored in); label them as the values are labelled.
+          if (categories.length && categories.every(c => typeof c === 'boolean')) {
+            categories = convertBooleans(categories);
+            values = convertBooleans(values);
+          }
         } else {
           dataType = determineDataType(values);
           if (dataType === 'categorical') {
@@ -529,7 +567,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           datasetPath,
           [type === 'obsm' ? 'obsmKey' : 'varmKey']: key,
           columnName: column,
-          rows: rowsArr
+          rows: rowsArr,
+          signal
         });
         if (!data.data || data.data.length === 0) {
           // Measured live: a missing obsm/varm key returns 200 with "data": [].
@@ -573,14 +612,14 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
             ({ values, coverage, dataType } = blankCellSeries(cell, column));
             break;
           }
-          data = await DataManager.loadObsp({ datasetPath, obspKey: key, cell });
+          data = await DataManager.loadObsp({ datasetPath, obspKey: key, cell, signal });
         } else {
           const focusIndex = DataManager.getGeneIndex(column);
           if (focusIndex === -1) {
             ({ values, coverage, dataType } = blankFocusSeries('gene', column));
             break;
           }
-          data = await DataManager.loadVarp({ datasetPath, varpKey: key, rows: [focusIndex] });
+          data = await DataManager.loadVarp({ datasetPath, varpKey: key, rows: [focusIndex], signal });
         }
         if (data.data && Array.isArray(data.data) && data.data.length > 0) {
           const firstRow = data.data[0];
@@ -623,7 +662,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
             datasetPath,
             layerName: key,
             cell,
-            cols: null
+            cols: null,
+            signal
           });
           if (data.data && Array.isArray(data.data) && data.data.length > 0) {
             values = Array.isArray(data.data[0]) ? data.data[0] : data.data;
@@ -645,7 +685,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
             datasetPath,
             layerName: key,
             rows: rowsArr,
-            cols: [geneIndex]
+            cols: [geneIndex],
+            signal
           });
           if (data.data && Array.isArray(data.data)) {
             if (data.data.length > 0) {
@@ -730,6 +771,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     }
     return { values, type: dataType, categories, coverage, rankOf, ranked: false, groupNames };
   } catch (error) {
+    // a load that was stopped is not a failed read
+    if (error && error.name === 'AbortError') throw error;
     console.error('Error loading data for settings', settings, 'error:', error);
     const wrapped = new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
     // Carry the classification with the error so the panel can state a REASON
@@ -749,10 +792,22 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
 
 
 
-/** The default size and opacity for few points: the app's (server) defaults. */
-export function pointStyleBase() {
-  const d = (Config && Config.DEFAULTS) || {};
-  return { size: d.POINT_SIZE || 5, opacity: d.POINT_OPACITY || 0.7 };
+/**
+ * Make the automatic size and opacity follow the points actually drawn:
+ * those the subset holds, less the ones the plot's own filters hide (a
+ * table filter that removes the other rows, Hide NaN, Hide outliers) and
+ * the ones a table link greys out (filterStats.shown).
+ * @param {HTMLElement} plotContainer
+ * @param {Object} settings
+ * @param {number} drawn - points left after the filters
+ * @param {string|number} [id] - the panel, to refresh its size and opacity boxes
+ * @returns {boolean} whether size or opacity changed (markers need a restyle)
+ */
+export function followDrawnPoints(plotContainer, settings, drawn, id = plotContainer.__azPanelId) {
+  plotContainer._drawnCount = drawn;
+  const changed = applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
+  if (changed && id !== undefined) showPointStyle(id, settings);
+  return changed;
 }
 
 /**
@@ -773,12 +828,14 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
   const started = performance.now();
   // the browser memory guard's ledger: reserved before the draw, committed
   // once it is drawn, cancelled otherwise (memoryGate)
-  let reserved = 0, drawn = false;
+  let reserved = 0, drawn = false, overlay = false;
   try {
     // Check if operation is already aborted before doing anything
     if (signal && signal.aborted) {
       throw new DOMException('Plot creation aborted', 'AbortError');
     }
+    // a load that was cancelled before has its tag until a new one starts
+    setStatusTag(plotContainer, 'cancelled', null);
     
     // Determine if this is a gene or cell plot based on settings
     const isGenePlot = data.entities == 'genes'
@@ -822,6 +879,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     // drawn: the subset, or every cell (utils/point-style.js)
     const nPoints = (isGenePlot ? DataManager.getGenes() : DataManager.getCells()).length;
     plotContainer._pointCount = nPoints;
+    plotContainer._drawnCount = nPoints;   // narrowed by the filters once the data is read (followDrawnPoints)
+    plotContainer.__azPanelId = id;
     // in a zoomed view kept from the graph drawn now, the points in that view
     // (utils/view-point-style.js; checked again once the new graph is drawn)
     applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
@@ -852,6 +911,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
 
     // Show loading indicator
     loadingIndicator.show(plotContainer, 'full-plot');
+    overlay = true;
 
     // Validate each axis (x, y, z, color) in settings.
     for (const axis of ['x', 'y', 'z', 'color']) {
@@ -925,7 +985,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           return;
         }
         setStatusTag(plotContainer, 'refused', null);
-        await createLargePlot(plotContainer, settings, data, container, id);
+        await createLargePlot(plotContainer, settings, data, container, id, signal);
         drawn = true;
         recordLoad({ n: nCells, seconds: (performance.now() - started) / 1000, large: true });
         // no marker in large-plot mode, but the line that the focus is not shown
@@ -963,7 +1023,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         coverage: null
       });
     } else {
-      const cells = DataManager.getCells();
+      // the names, or a token per cell when the names are fetched when needed
+      // (hover and click ask for the name; DataManager.getCellsForPanel)
+      const cells = DataManager.getCellsForPanel();
       Object.assign(data, {
         x: null,
         y: null,
@@ -983,6 +1045,10 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       throw new DOMException('Plot creation aborted before data loading', 'AbortError');
     }
     
+    // Axes of one obsm matrix (an embedding's x and y) are read together in
+    // one request; each axis load below then finds its column cached.
+    const axesTogether = readAxesTogether(settings, plotType, signal);
+
     // Build an array of promises to load axis and color data concurrently.
     const loadPromises = [
       (async () => {
@@ -990,13 +1056,15 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         if (signal && signal.aborted) {
           throw new DOMException('X axis data loading aborted', 'AbortError');
         }
-        data.x = await loadAxisData(settings.x, plotType, plotContainer);
+        await axesTogether;
+        data.x = await loadAxisData(settings.x, plotType, plotContainer, { signal });
       })(),
       (async () => {
         if (signal && signal.aborted) {
           throw new DOMException('Y axis data loading aborted', 'AbortError');
         }
-        data.y = await loadAxisData(settings.y, plotType, plotContainer);
+        await axesTogether;
+        data.y = await loadAxisData(settings.y, plotType, plotContainer, { signal });
       })()
     ];
 
@@ -1006,7 +1074,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           if (signal && signal.aborted) {
             throw new DOMException('Z axis data loading aborted', 'AbortError');
           }
-          data.z = await loadAxisData(settings.z, plotType, plotContainer);
+          await axesTogether;
+          data.z = await loadAxisData(settings.z, plotType, plotContainer, { signal });
         })()
       );
     }
@@ -1024,7 +1093,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           // back to a constant colour, and STATE that the colour is missing.
           let colorData;
           try {
-            colorData = await loadAxisData(settings.color, plotType, plotContainer, { role: 'colour', panel: settings });
+            colorData = await loadAxisData(settings.color, plotType, plotContainer, { role: 'colour', panel: settings, signal });
           } catch (colorError) {
             if (colorError && colorError.name === 'AbortError') throw colorError;
             console.warn('Colour data unavailable; plotting uncoloured:', colorError);
@@ -1090,21 +1159,15 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       
       // Single check for abortion after all promises complete or fail
       if (signal && signal.aborted) {
-        // Always clean up loading indicator before throwing
-        loadingIndicator.hide(plotContainer, 'full-plot');
         throw new DOMException('Plot creation aborted', 'AbortError');
       }
       // The dataset changed while this load was in flight: its series belong
       // to the previous dataset. Drop them; the load started for the new
       // dataset draws the plot.
       if (DataManager.getDatasetGeneration() !== generation) {
-        loadingIndicator.hide(plotContainer, 'full-plot');
         throw new DOMException('Plot data is from a previous dataset', 'AbortError');
       }
     } catch (error) {
-      // Always clean up loading indicator for any error
-      loadingIndicator.hide(plotContainer, 'full-plot');
-      
       // For abort errors, make sure we only throw a standardized error
       if (error.name === 'AbortError') {
         throw new DOMException('Plot creation aborted', 'AbortError');
@@ -1126,7 +1189,10 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (data.x && data.x.values && data.x.values.length > 0 &&
         data.y && data.y.values && data.y.values.length > 0) {
       console.log(`Creating plot with ${data.x.values.length} data points`);
-      data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells', plotContainer);
+      data.hoverExtra = await loadHoverColumns(settings, isGenePlot ? 'genes' : 'cells', plotContainer, signal);
+      if (signal && signal.aborted) {
+        throw new DOMException('Plot creation aborted', 'AbortError');
+      }
       await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
       drawn = true;
       await applyHoverInfo(plotContainer, data, settings);
@@ -1145,8 +1211,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       drawPlaceholder(plotContainer, cov, unit);
     }
   } catch (error) {
-    // Skip error display for abort errors - they're expected during cancellation
-    if (error && error.name === 'AbortError') {
+    if (error && error.name === 'AllocationProbeError') {
+      // the browser could not hold the plot's buffers (utils/alloc-probe.js):
+      // nothing was requested; the panel says so and offers a subset
+      console.warn(error.message);
+      showProbeFailure(plotContainer, error);
+    } else if (error && error.name === 'AbortError') {
+      // Skip error display for abort errors - they're expected during cancellation
       if (window.Config && window.Config.DEBUG_MODE) {
         console.debug('Plot loading was aborted:', error.message);
       }
@@ -1226,8 +1297,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     }
   } finally {
     // Always hide the loading indicator in the finally block to ensure it happens
-    // regardless of success, error or abortion
-    loadingIndicator.hide(plotContainer, 'full-plot');
+    // regardless of success, error or abortion; once, and only if this load
+    // showed it: a newer load of the panel may have its own up by now
+    if (overlay) loadingIndicator.hide(plotContainer, 'full-plot');
     if (reserved) {
       unmark();
       if (drawn && plotContainer.isConnected) {
@@ -1436,7 +1508,7 @@ export function stableAxisRanges(data, settings) {
  * plus a per-point `hovertext` with the hoverInfo columns. Points are matched
  * to rows by their name (trace.text), so any trace split works.
  */
-export async function loadHoverColumns(settings, plotType, plotContainer = null) {
+export async function loadHoverColumns(settings, plotType, plotContainer = null, signal = null) {
   const wanted = (Array.isArray(settings.hoverInfo) ? settings.hoverInfo : [])
     .filter(h => h && h.type && h.key && h.key !== '_index');
   const out = [];
@@ -1447,13 +1519,14 @@ export async function loadHoverColumns(settings, plotType, plotContainer = null)
   for (const h of wanted) {
     // a categorical column's labels: only if they fit the browser
     const count = (h.type === 'obs' || h.type === 'var') && !h.column ? categoryCount(structure, h.type, h.key) : null;
-    if (count !== null && !(await hoverLabelsFit(datasetPath, h.type, h.key, count, points, plotContainer))) continue;
+    if (count !== null && !(await hoverLabelsFit(datasetPath, h.type, h.key, count, points, plotContainer, signal))) continue;
     try {
-      const loaded = await loadAxisData({ type: h.type, key: h.key, column: h.column || '' }, plotType);
+      const loaded = await loadAxisData({ type: h.type, key: h.key, column: h.column || '' }, plotType, null, { signal });
       if (loaded && Array.isArray(loaded.values)) {
         out.push({ label: h.column ? `${h.key}.${h.column}` : h.key, values: loaded.values });
       }
     } catch (err) {
+      if (err && err.name === 'AbortError') throw err;
       console.warn(`Hover column ${h.type}.${h.key} not loaded:`, err && err.message);
     }
   }
@@ -1505,7 +1578,10 @@ export async function applyHoverInfo(plotContainer, data, settings) {
     const template = off ? '' : hoverTemplateFor(trace, settings, data);
     const hoverinfo = off ? 'none' : 'all';
     const labels = Array.isArray(trace._azLabels) ? trace._azLabels : null;
-    const hovertext = rowOf || labels ? trace.text.map((name, j) => {
+    // a point is found by the id the data holds (a name, or a token when the
+    // names are fetched when needed), which customdata keeps in step with it
+    const ids = Array.isArray(trace.customdata) ? trace.customdata : trace.text;
+    const hovertext = rowOf || labels ? ids.map((name, j) => {
       const r = rowOf ? rowOf.get(name) : undefined;
       const own = labels ? `<br>${labels[j]}` : '';
       return own + (r === undefined ? '' : extra.map(e => `<br>${e.label}: ${formatHoverValue(e.values[r])}`).join(''));
@@ -1883,12 +1959,17 @@ export function createFilterMask(data, settings) {
   // (a point passes when every mask has it)
   const indexMask = new Array(totalPts);
   let kept = 0;
+  let shown = 0;   // kept, and not greyed out by a table link: what the automatic point style counts
   for (let i = 0; i < totalPts; i++) {
     let keep = true;
     for (let m = 0; m < masks.length && keep; m++) keep = !!masks[m][i];
     indexMask[i] = keep;
-    if (keep) kept++;
+    if (keep) {
+      kept++;
+      if (!tableFilterMask || tableFilterMask[i]) shown++;
+    }
   }
+  filterStats.shown = shown;
 
   // 7. Compute filtered count
   filterStats.filtered = totalPts - kept;
@@ -1973,17 +2054,34 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     && !window.PanelManager.getActivePanels().includes(tablePanel));
 
   if (closed) {
-    // by name, on the cells shown now
-    const { passing, unknown } = selectionOnCells(tableConfig.closedSelection || null, data[entityType] || []);
+    // by name, on the cells shown now. A plot holding tokens (names fetched
+    // when needed) loads the names once for this: the closed filter is kept
+    // as names
+    const tokens = entityType === 'cells' && entities instanceof RemoteNames
+      && RemoteNames.isToken((data[entityType] || [])[0]);
+    let passing, unknown;
+    if (tokens) {
+      const selection = tableConfig.closedSelection || null;
+      const names = selection ? await entities.all() : [];
+      const found = selectionOnCells(selection, names);
+      unknown = selection ? found.unknown : (data[entityType] || []).length;
+      passing = new Set();
+      names.forEach((name, i) => { if (found.passing.has(name)) passing.add(entities.tokenAt(i)); });
+    } else {
+      ({ passing, unknown } = selectionOnCells(tableConfig.closedSelection || null, data[entityType] || []));
+    }
     newTableEntities = passing;
     const name = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
     stale(unknown > 0 ? { table: settings.tableFilter, unknown, text: staleText(name, unknown, entityType) } : null);
   } else {
     stale(null);
-    // Get entity names based on indices in the table
+    // Get entity names based on indices in the table; a plot holding tokens
+    // (names fetched when needed) is filtered by the rows' tokens
+    const byToken = entityType === 'cells' && RemoteNames.isToken((data[entityType] || [])[0]) &&
+      entities instanceof RemoteNames;
     tableConfig.currentEntries.forEach(index => {
       if (entities && index < entities.length) {
-        const entityName = entities[index];
+        const entityName = byToken ? entities.tokenAt(index) : entities[index];
         if (entityName) {
           newTableEntities.add(entityName);
         }
@@ -2483,6 +2581,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
 
   // Create filter mask to gather statistics and handle filtering
   const { indexMask, filterStats } = createFilterMask(data, settings);
+  // automatic size and opacity follow the points that are left to draw
+  followDrawnPoints(plotContainer, settings, filterStats.shown, id);
 
   // What the loaders could not supply, plus what the filters removed. This is
   // the single value every draw call below is required to carry.
@@ -2508,7 +2608,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     mode: 'markers',
     x: filteredData.x.values,
     y: filteredData.y.values,
-    text: filteredData[entityKey],
+    text: DataManager.cellLabels(filteredData[entityKey]),
     customdata: filteredData[entityKey],
     showlegend: false,
     hovertemplate:
@@ -2707,7 +2807,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: 'Not in table',
-          text: nonTableIndices.map(idx => filteredData[entityKey][idx]),
+          text: DataManager.cellLabels(nonTableIndices.map(idx => filteredData[entityKey][idx])),
           customdata: nonTableIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
@@ -2715,8 +2815,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           x: nonTableIndices.map(idx => filteredData.x.values[idx]),
           y: nonTableIndices.map(idx => filteredData.y.values[idx]),
           marker: {
-            size: settings.pointSize,
-            opacity: settings.pointOpacity,
+            ...greyMarker(settings, filteredData.x.values.length),
             color: 'rgba(180, 180, 180, 1.)',
           },
           showlegend: false
@@ -2761,7 +2860,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: settings.color.key || 'Value',
-          text: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
+          text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
@@ -2904,7 +3003,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: 'Not in table',
-          text: nonTableIndices.map(idx => filteredData[entityKey][idx]),
+          text: DataManager.cellLabels(nonTableIndices.map(idx => filteredData[entityKey][idx])),
           customdata: nonTableIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 
@@ -2912,8 +3011,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           x: nonTableIndices.map(idx => filteredData.x.values[idx]),
           y: nonTableIndices.map(idx => filteredData.y.values[idx]),
           marker: {
-            size: settings.pointSize,
-            opacity: settings.pointOpacity,
+            ...greyMarker(settings, filteredData.x.values.length),
             color: 'rgba(180, 180, 180, 1.)'
           },
           showlegend: true
@@ -2949,7 +3047,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: 'Data points',
-          text: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
+          text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
                         (settings.z ? `<br>z: %{z}` : '') + 

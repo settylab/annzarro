@@ -5,6 +5,7 @@ import { notify } from '../../utils/notify.js';
 import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, TEXT_ONLY_NUM_TYPE, manyValuesType, textOnlyConditions, textOnlyNumConditions, fastSelectConditions } from '../../utils/search-builder.js';
 import { VALUE_LIST_MAX } from '../../utils/categories.js';
 import { DataManager } from '../../data-manager.js';
+import { RemoteNames } from '../../utils/remote-names.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
 import { freezeSelection } from '../../utils/closed-table.js';
 import {
@@ -26,9 +27,13 @@ export async function loadTableData(settings, entityType, signal = null) {
             throw new DOMException('Table data loading aborted', 'AbortError');
         }
         
-        // Load entity index based on entity type
-        const entityIndex = entityType === 'cells' 
-            ? DataManager.getCells() 
+        // Load entity index based on entity type. Cells whose names are
+        // fetched when needed (huge datasets) are rows with a token in place
+        // of the name; the Cell ID column shows the names of the rows on the
+        // page (showCellNames), and a sort, search or export on the names
+        // loads them all once (loadAllCellNames).
+        const entityIndex = entityType === 'cells'
+            ? DataManager.getCellsForPanel()
             : DataManager.getGenes();
         
         if (!entityIndex || entityIndex.length === 0) {
@@ -60,6 +65,18 @@ export async function loadTableData(settings, entityType, signal = null) {
             data: '_index',
             className: 'dt-center entity-index',
             render: function(data, type, row) {
+                // a token: the name if it is in the browser, else filled in
+                // when the row is shown. Live, not captured: the rows are
+                // replaced in place on a part step with the same column.
+                if (RemoteNames.isToken(data)) {
+                    const cells = DataManager.getCells();
+                    const name = cells instanceof RemoteNames ? cells.peek(RemoteNames.tokenIndex(data)) : undefined;
+                    if (type === 'display') {
+                        const text = name === undefined ? '' : escapeAttr(name);
+                        return `<span class="entity-index-value" data-token="${data}" data-entity="${text}">${text || '&hellip;'}</span>`;
+                    }
+                    return name === undefined ? '' : name;
+                }
                 // For display/filter/sort, use as-is
                 if (type === 'display') {
                     return `<span class="entity-index-value" data-entity="${data}">${data}</span>`;
@@ -360,12 +377,14 @@ async function _loadColumnValues(column, entityType, signal = null) {
             // Cell table data
             if (type === 'obs') {
                 const obsData = await DataManager.loadObs({
+                    signal,
                     columns: [key]
                 });
                 return { values: obsData.data ? obsData.data[key] : undefined,
                          response: obsData, column: key };
             } else if (type === 'obsm') {
                 const obsmData = await DataManager.loadObsm({
+                    signal,
                     obsmKey: key,
                     columnName: columnName
                 });
@@ -377,7 +396,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 const name = columnName;
                 const cell = await DataManager.locateCell(name);
                 if (DataManager.cellRowParams(cell)) {
-                    const obspData = await DataManager.loadObsp({ obspKey: key, cell });
+                    const obspData = await DataManager.loadObsp({ obspKey: key, cell, signal });
                     return { values: firstRow(obspData.data), matrixKey: key,
                              slice: { kind: 'cell', name, focused: false } };
                 }
@@ -394,6 +413,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                     
                     if (geneIndex >= 0) {
                         const layerData = await DataManager.loadLayer({
+                            signal,
                             layerName: key,
                             cols: [geneIndex]
                         });
@@ -410,12 +430,14 @@ async function _loadColumnValues(column, entityType, signal = null) {
             // Gene table data
             if (type === 'var') {
                 const varData = await DataManager.loadVar({
+                    signal,
                     columns: [key]
                 });
                 return { values: varData.data ? varData.data[key] : undefined,
                          response: varData, column: key };
             } else if (type === 'varm') {
                 const varmData = await DataManager.loadVarm({
+                    signal,
                     varmKey: key,
                     columnName: columnName
                 });
@@ -429,6 +451,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                     
                     if (geneIndex >= 0) {
                         const varpData = await DataManager.loadVarp({
+                            signal,
                             varpKey: key,
                             rows: [geneIndex]
                         });
@@ -447,7 +470,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
                 const name = columnName;
                 const cell = await DataManager.locateCell(name);
                 if (DataManager.cellRowParams(cell)) {
-                    const layerData = await DataManager.loadLayer({ layerName: key, cell });
+                    const layerData = await DataManager.loadLayer({ layerName: key, cell, signal });
                     return { values: layerData.data, matrixKey: key,
                              slice: { kind: 'cell', name, focused: false } };
                 }
@@ -704,6 +727,11 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         deferRender: true,
         paging: true,
         ordering: true,
+        // DataTables sorts on the first column unless told not to; for cells
+        // whose names are fetched when needed that would load every name to
+        // show the first page. The rows then start in dataset order, and
+        // sorting on the Cell ID column loads the names (loadAllCellNames).
+        order: tableData.data && tableData.data.length && RemoteNames.isToken(tableData.data[0]._index) ? [] : [[0, 'asc']],
         info: true,
         searching: true,
         lengthChange: false, // Hide default length selector as we have our own
@@ -810,9 +838,15 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
 
             // Add event handlers for entity selection
             api.on('click', '.entity-index-value', function() {
-                const entity = $(this).data('entity');
+                // attr, not .data(): the name is filled in after the row is drawn
+                const entity = this.getAttribute('data-entity');
+                const token = this.getAttribute('data-token');
                 if (entityType === 'cells') {
-                    DataManager.setFocusedCell(entity);
+                    if (token && !entity) {
+                        DataManager.nameOfCell(token).then(name => { if (name) DataManager.setFocusedCell(name); }).catch(() => {});
+                    } else {
+                        DataManager.setFocusedCell(entity);
+                    }
                 } else {
                     DataManager.setFocusedGene(entity);
                 }
@@ -1038,6 +1072,16 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         }
       });
     
+    // Cell names fetched when needed: the Cell ID of the rows on the page
+    // after every draw, and every name once something sorts or searches them
+    if (entityType === 'cells') {
+        dataTable.on('draw.dt', () => {
+            showCellNames(dataTable);
+            if (needsAllNames(dataTable)) loadAllCellNames(dataTable);
+        });
+        showCellNames(dataTable);
+    }
+
     // Add event listeners for data redraw (after search/filter changes)
     dataTable.on('draw.dt', function() {
         // Get the current entries (deep copy since toArray() is already made in the getter)
@@ -1086,6 +1130,101 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
 
     // Return the DataTables instance
     return dataTable;
+}
+
+/** An attribute value: the characters that would end it escaped. */
+function escapeAttr(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Write the names of the cells on the page into their Cell ID spans: those
+ * in the browser at once, the others after one request for exactly these.
+ * @param {Object} dataTable - DataTables API instance
+ */
+export function showCellNames(dataTable) {
+    const cells = DataManager.getCells();
+    if (!(cells instanceof RemoteNames)) return Promise.resolve();
+    let body;
+    try {
+        body = dataTable.table().body();
+    } catch {
+        return Promise.resolve();
+    }
+    const fill = () => {
+        for (const span of body.querySelectorAll('.entity-index-value[data-token]')) {
+            const name = cells.peek(RemoteNames.tokenIndex(span.getAttribute('data-token')));
+            if (name !== undefined && span.getAttribute('data-entity') !== name) {
+                span.setAttribute('data-entity', name);
+                span.textContent = name;
+            }
+        }
+    };
+    fill();
+    const missing = [];
+    for (const span of body.querySelectorAll('.entity-index-value[data-token]')) {
+        const i = RemoteNames.tokenIndex(span.getAttribute('data-token'));
+        if (cells.peek(i) === undefined) missing.push(i);
+    }
+    if (!missing.length) return Promise.resolve();
+    return cells.ensure(missing).then(fill, (error) => {
+        console.warn('Cell names for the rows on the page not read:', error && error.message);
+    });
+}
+
+/**
+ * Whether the table's search, sort or filter involves the Cell ID column
+ * while the names are not all in the browser: a search of the text, a sort
+ * on the column, a column or SearchBuilder condition on it.
+ * @param {Object} dataTable - DataTables API instance
+ */
+export function needsAllNames(dataTable) {
+    const cells = DataManager.getCells();
+    if (!(cells instanceof RemoteNames) || cells.allLoaded || !cells.canLoadAll) return false;
+    try {
+        if (dataTable.search()) return true;
+        if ((dataTable.order() || []).some(o => o[0] === 0)) return true;
+        if (dataTable.column(0).search()) return true;
+        if (dataTable.searchBuilder && JSON.stringify(dataTable.searchBuilder.getDetails() || {}).includes('"Cell ID"')) return true;
+    } catch {
+        return false;
+    }
+    return false;
+}
+
+/**
+ * Load every cell name (once) and apply the sort, search or filter that
+ * needs them: rows are read again, so the table orders and matches the names.
+ * @param {Object} dataTable - DataTables API instance
+ * @returns {Promise<boolean>} whether the names are all here now
+ */
+export async function loadAllCellNames(dataTable) {
+    const cells = DataManager.getCells();
+    if (!(cells instanceof RemoteNames) || cells.allLoaded) return true;
+    const container = dataTable.table().container();
+    container.classList.add('az-names-loading');
+    let note = container.querySelector('.az-names-note');
+    if (!note) {
+        note = document.createElement('div');
+        note.className = 'az-names-note small text-muted';
+        container.insertBefore(note, container.firstChild);
+    }
+    note.textContent = 'Loading all cell names to search and sort on them...';
+    try {
+        await cells.all();
+    } catch (error) {
+        note.textContent = `Cell names could not be loaded: ${error && error.message ? error.message : error}`;
+        container.classList.remove('az-names-loading');
+        return false;
+    }
+    try {
+        dataTable.rows().invalidate('data');
+        dataTable.draw(false);
+    } finally {
+        note.remove();
+        container.classList.remove('az-names-loading');
+    }
+    return true;
 }
 
 /**
@@ -1219,8 +1358,14 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType, ta
  * @param {Object} dataTable - The DataTables instance
  * @param {string} tableTitle - The table title for the file name
  */
-export function exportTableToCsv(dataTable, tableTitle) {
+export async function exportTableToCsv(dataTable, tableTitle) {
     try {
+        // the file names every row: the names of cells fetched when needed
+        // are loaded for it
+        let table = dataTable;
+        if (typeof table.api === 'function') table = table.api();
+        const cellTable = table.column && table.column(0).header() && table.column(0).header().textContent === 'Cell ID';
+        if (cellTable && DataManager.cellNamesOnDemand() && table.table) await loadAllCellNames(table);
         // Get DataTables API object
         let api;
         if (typeof dataTable.api === 'function') {

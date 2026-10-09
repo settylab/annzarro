@@ -93,8 +93,9 @@ test('panel cost: large-plot mode keeps almost nothing on the heap, its points o
     assert.ok(big.resident.heap < 0.02 * GB, formatGB(big.resident.heap));
     const huge = panelCost({ kind: 'cell-plot', n: 2e8, large: true });
     assert.ok(huge.peak.heap < 0.1 * GB, formatGB(huge.peak.heap));
-    // what the heap no longer holds is charged outside it: 13 GB at 200M (renderer RSS 13.56 GB measured)
-    assert.ok(Math.abs(huge.resident.off - 13 * GB) < 0.1 * GB, formatGB(huge.resident.off));
+    // what the heap no longer holds is charged outside it: 13 GB at 200M (renderer RSS 13.56 GB
+    // measured) plus the point index of hover and click, 8 B per point (1.6 GB)
+    assert.ok(Math.abs(huge.resident.off - 14.6 * GB) < 0.1 * GB, formatGB(huge.resident.off));
     assert.equal(big.resident.contexts, CONTEXTS_PER_PLOT);
     const reg = panelCost({ kind: 'cell-plot', n: 5e6, colour: 'numeric' });
     // 3.36 GB measured at 5M by gene (run maximum, with the app's 0.17 GB)
@@ -204,14 +205,13 @@ test('check: block, warn and off; the binding ceiling; risky actions; WebGL cont
     assert.match(measured.why, /measured\)$/);
 });
 
-test('one every-cell plot: the total budget binds large-plot mode, from the RAM where known; 200M is the cap', () => {
+test('one every-cell plot: the total budget binds large-plot mode, from the RAM where known; the size alone is not a cap', () => {
     // v0.4.1 keeps large-plot positions outside the V8 heap: 200M drew with 35 MB of heap
     // and 13.6 GB of renderer memory on a 128 GB computer
     const L = new Ledger();
     const verdict = (memory, n) => {
         const st = memorySettings(memory);
-        return check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(), readLimits(CHROME, st), st,
-            { largePoints: n });
+        return check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(), readLimits(CHROME, st), st);
     };
     // browser on the server's computer, 128 GB: 200M draws
     assert.equal(verdict({ host_memory_bytes: 128 * GB }, 200e6).verdict, 'ok');
@@ -219,19 +219,23 @@ test('one every-cell plot: the total budget binds large-plot mode, from the RAM 
     const small = verdict({ host_memory_bytes: 16 * GB }, 200e6);
     assert.equal(small.verdict, 'block');
     assert.equal(small.binding, 'total');
-    assert.match(small.why, /^needs ~16 GB of browser memory; 12 GB free \(of 12 GB, estimated\)$/);
+    assert.match(small.why, /^needs ~18 GB of browser memory; 12 GB free \(of 12 GB, estimated\)$/);
     // a browser on another computer: 16 GB by default, which binds just above 200M
     // (13 GB at 200M, times the margin)
     const st = memorySettings({});
     const remote = (n) => check(panelCost({ kind: 'cell-plot', n, large: true }).peak, L.totals(), readLimits(CHROME, st), st);
     assert.equal(remote(150e6).verdict, 'ok');
     assert.equal(remote(205e6).binding, 'total');
-    // above the largest plot tested, refused whatever the budget
+    // above the size tested nothing is refused for the size alone: the budget decides
+    // (here 1 TB, so it fits) and the draw's allocation probe asks the browser
     const big = verdict({ host_memory_bytes: 1024 * GB }, 250e6);
-    assert.equal(big.verdict, 'block');
-    assert.equal(big.binding, 'tested');
-    assert.equal(big.why, `250,000,000 points is above ${LARGEST_TESTED_POINTS.toLocaleString('en-US')}, the largest plot tested to draw`);
-    assert.equal(verdict({ host_memory_bytes: 1024 * GB }, LARGEST_TESTED_POINTS).verdict, 'ok');
+    assert.equal(big.verdict, 'ok');
+    assert.equal(big.binding, null);
+    assert.equal(LARGEST_TESTED_POINTS, 200000000);   // information only
+    // ... and the RAM budget still refuses what the machine cannot hold
+    const bigSmall = verdict({ host_memory_bytes: 128 * GB }, 2e9);
+    assert.equal(bigSmall.verdict, 'block');
+    assert.equal(bigSmall.binding, 'total');
     // the guard off lets everything through
     assert.equal(verdict({ host_memory_bytes: 1024 * GB, enforce: 'off' }, 250e6).verdict, 'ok');
 });

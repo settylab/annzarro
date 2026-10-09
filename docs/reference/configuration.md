@@ -62,6 +62,8 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `cache_enabled` | `true` | Server-side cache of dataset metadata and read results. |
 | `cache_memory_mb` | `4000` | Memory bound of that cache, per process (per gunicorn worker). `base.yaml` alone: 1000. |
 | `cache_dataset_limit` | `20` | Datasets kept open in the cache. |
+| `name_index_max_mb` | auto | Memory the name-search indices (the header's Focused Cell and Focused Gene typeahead) may hold together, per worker process, in MB. Unset: 15% of the machine's RAM, between 512 MB and 16 GB. The index of a dataset costs about 30 bytes per cell name (30 GB for a billion cells); one that would not fit is not built. Its names are scanned instead, a zarr chunk at a time with no index in memory, and `GET /api/v1/data/names` says so: `partial: true` and a `note` when the scan stopped before the end (an exact match is found, or `name_search_scan_names` names were read), `GET /data/names/status` answers `streaming`, and the Focused Cell box searches only the cells shown. Least recently used indices are dropped to stay within the budget. |
+| `name_search_scan_names` | `100000000` | Names a scanning name search reads at most before it answers with what it has (about 7 s at this size). |
 | `refresh_min_interval_s` | `10` | `POST /api/v1/data/refresh` (Refresh dataset, open to every user) walks a dataset's files at most this often, in all workers together. A refresh sooner does not wait in the server: it schedules one walk for the end of the interval, shared by everyone, and answers at once `status: "scheduled"`; the browser asks again after `retry_after_s` with `after=`, and gets that walk's result. A refresh is never answered by a walk older than itself. Each walk stops after 3 s: a store with more files than that (the 95.6M-cell Tahoe store) answers `status: "partial"`, and an in-place chunk write to it needs an admin's `POST /api/v1/cache/reset`. |
 | `remote_stores` | `auto` | `auto`, `allow` or `deny` for `s3://`, `gs://`, `gcs://`, `http(s)://` stores (no other scheme is remote); see {doc}`../deployment/authentication`. |
 | `remote_allowlist` | `[]` | URL prefixes remote stores must start with, e.g. `["s3://lab-bucket/atlases/"]`. |
@@ -106,7 +108,9 @@ Defaults sent to the browser through `/api/v1/config`.
 | `defaults.max_cells`, `defaults.max_genes` | `1000000` | Client-side limits on the number of cells and genes. |
 | `defaults.taxonomy_id` | `9606` | NCBI taxonomy id for gene annotations (9606 human, 10090 mouse). |
 | `defaults.subset_threshold` | `200000` | A dataset with more cells than this opens on a reproducible cell subset; `0` means always. |
-| `defaults.large_plot_points` | `1000000` | A Cell Plot with more points than this is drawn in large-plot mode: hover, click and table filters are off (see {doc}`../user-guide/subsets`). |
+| `defaults.large_plot_points` | `1000000` | A Cell Plot with more points than this is drawn in large-plot mode: table filters and 3D are off (see {doc}`../user-guide/subsets`). |
+| `defaults.names_on_demand_above` | `5000000` | A dataset with more cells than this does not download the names of the cells it shows, whatever the subset: hover, click, the focused cell and a table's page ask the server for the names they show, and sorting or searching a table on the names loads them all once. See {ref}`names-on-demand`. |
+| `defaults.prefetch_next_part` | `auto` | After a part is shown, read the next part's cells and embedding coordinates in the background, at low priority, so stepping forward waits for little. `auto`: on a single-user server (the laptop, the desktop app) only; `true` or `false` force it. |
 | `defaults.subset_size`, `defaults.subset_seed` | `100000`, `0` | Cells in that default subset, and its seed. See {doc}`../design/subsetting`. |
 | `memory.enforce` | `block` | Browser memory guard: what happens when an action would not fit in the browser tab's memory. `block` disables it and says why, `warn` says so and lets it run, `off` never interferes. See [Browser memory](#browser-memory-uimemory). |
 | `memory.heap_gb` | `null` | JavaScript memory the tab may use, in GB. `null`: what the browser reports (Chrome: 4.4 GB on a 64-bit computer), 4.4 where it reports nothing. |
@@ -147,14 +151,21 @@ marked action. Firefox and Safari report no memory figures; they are held to Chr
 
 **Defaults.** `enforce: block`, `heap_gb: null` (the browser's own limit), `total_gb: null`,
 `margin: 0.2`. With these the heap limits regular plots (a few million points) and the total
-limits large-plot mode, whose points are outside the heap (about 65 bytes per point). A browser
+limits large-plot mode, whose points are outside the heap (about 73 bytes per point, 8 of them the hover and click index). A browser
 cannot see the computer's memory, so the server tells a browser on its own computer how much
 there is (a loopback request no proxy forwarded); the budget is that memory less a quarter,
 at least 4 GB, for the system and the browser. On a 16 GB computer that is 12 GB, and a large
 plot of 200 million points (13.6 GB measured) is refused; on 128 GB it is drawn. A browser on
 another computer gets 16 GB unless `total_gb` says otherwise (server-wide; there is no
-per-browser setting). Whatever the budget, a large plot of more than 200 million points, the
-largest tested to draw, is refused, and the refusal says so.
+per-browser setting). There is no cap on the number of points: 200 million is only the largest
+size tested (128 GB, Chrome). The budget is a guard for the computer, not for the browser, which
+can run out of array buffers at a size no table predicts (on that 128 GB computer, at 15 to 17 GB
+of tab memory, with 250 million points and up). So a large plot first asks the browser for the
+buffers it will need, before it requests any data; if the browser refuses, the panel says
+"This browser cannot hold N points; use a subset (k parts of m)" and offers the subset. The
+same question is asked before applying a larger subset, a full-resolution export, a hover-label
+read, a recolour and a new large panel, and a plot whose WebGL context is lost (the graphics
+memory ran out) is released with the same message and a Redraw.
 
 **When to change them.**
 

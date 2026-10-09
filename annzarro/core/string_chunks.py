@@ -202,14 +202,21 @@ def joined_items(chunk_bytes, valid: Optional[int] = None) -> Optional[Tuple[byt
         starts, lengths = starts[:valid], lengths[:valid]
     if starts.size == 0:
         return b"", lengths
-    edge = np.zeros(buf.size + 1, dtype=np.int32)
-    edge[starts] += 1
-    edge[starts + lengths] -= 1
-    keep = np.cumsum(edge[:-1]) > 0
-    seps = starts[1:] - 1            # the last byte of each item's length header
-    keep[seps] = True
+    # The items lie back to back, each behind its 4-byte length header (the
+    # chunk was parsed and its boundaries chained). Keep every item, and the
+    # last byte of each later header as the separator: drop what precedes the
+    # first item, the other three header bytes of each later item, and what
+    # follows the last. A byte mask and a few index arrays, not a counter per
+    # byte (that held ~500 bytes per item at its peak: 1 GB for 2M names).
+    first, end = int(starts[0]), int(starts[-1] + lengths[-1])
+    keep = np.ones(buf.size, dtype=bool)
+    keep[:first] = False
+    keep[end:] = False
+    later = starts[1:]
+    for back in (2, 3, 4):
+        keep[later - back] = False
     out = buf.copy()
-    out[seps] = 10
+    out[later - 1] = 10
     return out[keep].tobytes(), lengths
 
 

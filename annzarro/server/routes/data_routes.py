@@ -430,7 +430,12 @@ def _reader_for(dataset_path, dataset_rows=False):
     if raw is None:
         return reader
     try:
-        resolved = cell_subset.resolve(reader, dataset_path, raw, app.config)
+        # `client` (a page's id, sent with /data/subset) lets a newer request of
+        # that page stop this subset's computation; `priority=low` is a
+        # prefetch that any real request stops (core/subset.py claim)
+        resolved = cell_subset.resolve(reader, dataset_path, raw, app.config,
+                                       client=request.args.get("client"),
+                                       low=request.args.get("priority") == "low")
     except cell_subset.SubsetError as exc:
         raise DataRequestError(exc.status, exc.reason, exc.message)
     if resolved is None:
@@ -484,6 +489,7 @@ def register_data_routes(app, api_version):
         app: Flask application instance
         api_version: API version string
     """
+    name_index.configure(app.config.get("name_index_max_mb"), app.config.get("name_search_scan_names"))
 
     http_cache.install_gzip(app)
 
@@ -1301,6 +1307,41 @@ def register_data_routes(app, api_version):
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
+    def _name_loader(reader, dataset_path_str, entity, searched):
+        """A callable giving the names of one axis to name_index: a zarr
+        store's a chunk at a time (with their number and a way to read them
+        again, so the index can size itself first and a search can scan),
+        else a list. ``searched``: the subset whose names are wanted, if any."""
+        def load_names():
+            # every name of the axis: read a zarr chunk at a time when the
+            # reader can (no list of every name); a subset's names are few
+            chunks_of = getattr(reader, "iter_cell_gene_name_chunks", None)
+            if searched is None and chunks_of is not None:
+                chunks = chunks_of(dataset_path_str, entity)
+                if chunks is not None:
+                    n_axis = None
+                    if entity == "cells":
+                        shape = (reader.get_metadata(dataset_path_str) or {}).get("shape") or ()
+                        n_axis = int(shape[0]) if shape else None
+                    return name_index.NameChunks(
+                        chunks, n=n_axis, factory=lambda: chunks_of(dataset_path_str, entity))
+            return reader.get_cell_gene_names(dataset_path_str, entity, use_cache=True)
+        return load_names
+
+    def _first_names(reader, dataset_path_str, entity, count):
+        """(the first ``count`` names of an axis, how many names it has),
+        read for those rows only; None when the reader cannot."""
+        if isinstance(reader, cell_subset.SubsetView):
+            reader = reader.base
+        take = getattr(reader, "get_cell_gene_names_at", None)
+        shape = (reader.get_metadata(dataset_path_str) or {}).get("shape") or ()
+        at = 0 if entity == "cells" else 1
+        if take is None or len(shape) <= at:
+            return None
+        n = int(shape[at])
+        names = take(dataset_path_str, entity, list(range(min(count, n))))
+        return [str(x) for x in names], n
+
     @app.route(f"/api/{api_version}/data/names/status", methods=["GET"])
     def names_index_status():
         """
@@ -1313,8 +1354,11 @@ def register_data_routes(app, api_version):
         /data/names.
 
         Returns:
-            {"state": "ready" | "building" | "absent"}; absent means the
-            next search builds it.
+            {"state": "ready" | "building" | "absent" | "streaming"}; absent
+            means the next search builds it, streaming that the dataset's
+            names are too many for the memory budget
+            (server.name_index_max_mb): searches scan them instead and
+            may answer partially.
         """
         dataset_path_str = request.args.get("dataset_path")
         if not dataset_path_str:
@@ -1332,7 +1376,9 @@ def register_data_routes(app, api_version):
         subset = reader.subset if isinstance(reader, cell_subset.SubsetView) and entity == "cells" else None
         searched = subset if scope == "subset" else None
         index_key = entity if searched is None else f"cells@{searched.spec.key()}"
-        return jsonify({"state": name_index.index_state(dataset_path_str, index_key)})
+        load_names = _name_loader(reader.base if searched is None and isinstance(reader, cell_subset.SubsetView)
+                                  else reader, dataset_path_str, entity, searched)
+        return jsonify({"state": name_index.index_state(dataset_path_str, index_key, load_names)})
 
     @app.route(f"/api/{api_version}/data/names", methods=["GET"])
     def search_names():
@@ -1356,7 +1402,12 @@ def register_data_routes(app, api_version):
             {"matches": [{"name", "index", "row"}], "truncated": bool,
             "total": n} where index is the position among the cells shown,
             row the dataset row (the same as index without a subset), and
-            total the number of names searched.
+            total the number of names searched. A dataset whose names are
+            too many for the memory budget (server.name_index_max_mb) is
+            searched by scanning them, and the reply then also has
+            "scanned" (names read), "partial" (true when the scan stopped
+            before the end, so the answer may differ from a full search)
+            and, if partial, "note" in words.
         """
         dataset_path_str = request.args.get("dataset_path")
         if not dataset_path_str:
@@ -1389,25 +1440,42 @@ def register_data_routes(app, api_version):
             if subset is not None and searched is None:
                 reader = reader.base
             index_key = entity if searched is None else f"cells@{searched.spec.key()}"
-            def load_names():
-                # every name of the axis: read a zarr chunk at a time when the
-                # reader can (no list of every name); a subset's names are few
-                chunks_of = getattr(reader, "iter_cell_gene_name_chunks", None)
-                if searched is None and chunks_of is not None:
-                    chunks = chunks_of(dataset_path_str, entity)
-                    if chunks is not None:
-                        return name_index.NameChunks(chunks)
-                return reader.get_cell_gene_names(dataset_path_str, entity, use_cache=True)
+            load_names = _name_loader(reader, dataset_path_str, entity, searched)
 
-            index = name_index.get_index(dataset_path_str, index_key, load_names)
+            # The first names ask for no index: a picker lists them as soon as
+            # its box is focused, and an index of every cell for that (30 s at
+            # 95.6M cells, 30 GB at 1B) is what a click should not build
+            first = None
+            if query == "" and mode != "exact" and searched is None:
+                first = _first_names(reader, dataset_path_str, entity, max(1, min(limit, name_index.MAX_LIMIT)))
+
+            stream_source = None
+            try:
+                if first is None:
+                    index = name_index.get_index(dataset_path_str, index_key, load_names)
+            except name_index.IndexOverBudget as exc:
+                # too large to keep resident: answer by scanning the names
+                stream_source = load_names()
+                if not isinstance(stream_source, name_index.NameChunks) or stream_source.factory is None:
+                    raise
+                app.logger.info("Name index of %s (%s) over budget (%s); searching by scan",
+                                dataset_path_str, index_key, exc)
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
 
         try:
-            result = index.search(query, limit=limit, mode=mode)
+            if first is not None:
+                names, n_axis = first
+                result = {"matches": [{"name": nm, "index": i} for i, nm in enumerate(names)],
+                          "truncated": n_axis > len(names), "total": n_axis}
+            elif stream_source is not None:
+                result = name_index.stream_search(stream_source, query, limit=limit, mode=mode)
+                result["total"] = stream_source.n if stream_source.n is not None else result["scanned"]
+            else:
+                result = index.search(query, limit=limit, mode=mode)
+                result["total"] = len(index)
         except re.error as exc:
             return jsonify({"error": f"Invalid regular expression: {exc}"}), 400
-        result["total"] = len(index)
         matches = result["matches"]
         found = [m["index"] for m in matches]
         if subset is None:
@@ -1469,6 +1537,13 @@ def register_data_routes(app, api_version):
             body["features"] = list(SUBSET_FEATURES)
             return jsonify(body)
         except Exception as exc:
+            if isinstance(exc, DataRequestError) and exc.reason == "subset_superseded":
+                # Expected, not an error: the page asked for another part while
+                # this one was computed. A 2xx keeps the browser from logging a
+                # failed request; the client reads `superseded` and drops it.
+                response = jsonify({"superseded": True, "reason": exc.reason, "error": exc.message})
+                response.headers["Cache-Control"] = "no-store"
+                return response
             return _reader_error_response(exc, dataset_path_str)
 
     @app.route(f"/api/{api_version}/data/subset/locate", methods=["GET"])

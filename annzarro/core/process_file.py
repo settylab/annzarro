@@ -204,6 +204,33 @@ def extract_obs_var_codes(dataset_path: str, reader: Reader, indices, column: st
     return categorical_response(codes, categories, total=n_categories if compact else None)
 
 
+BOOLEAN_CATEGORIES = [False, True]
+
+
+def _add_boolean_categories(response: dict, include_categories: bool) -> None:
+    """Serve a boolean column's categories as ``[false, true]``.
+
+    A boolean obs column is stored as plain values, so it came without
+    categories and a client ordered them by first appearance; the
+    ``uns/<col>_colors`` pair that scanpy/pandas write is aligned to
+    pandas' ``Categorical(bool).categories`` = [False, True], and was applied
+    in whatever order the values first appeared (nexus #407). scanpy's own
+    plots fix the same order (``categories=("False", "True")`` in
+    scanpy/plotting/_tools/scatterplots.py ``_get_palette``). Both are always given, so a
+    column of only True still maps True to the second colour. A column that
+    already has categories keeps them.
+    """
+    data = response.get("data")
+    if not include_categories or not isinstance(data, dict):
+        return
+    for name, values in data.items():
+        if name == "_index" or not isinstance(values, list) or name in (response.get("categories") or {}):
+            continue
+        first = next((v for v in values if v is not None), None)
+        if isinstance(first, bool):
+            response.setdefault("categories", {})[name] = list(BOOLEAN_CATEGORIES)
+
+
 def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], column_names: list[str], include_categories: bool, type: Literal["cells", "genes"], binary: bool = False):
     if binary and column_names and len(column_names) == 1:
         # One numeric column, binary: the array as read, without the Python
@@ -244,6 +271,8 @@ def extract_obs_var(dataset_path: str, reader: Reader, indices: list[int], colum
         else:
             # Single column result
             response["data"] = result
+
+        _add_boolean_categories(response, include_categories)
 
         if binary:
             # One plain numeric column goes binary; anything with categories,

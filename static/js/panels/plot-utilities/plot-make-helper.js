@@ -1,6 +1,8 @@
 import { DataManager } from '../../data-manager.js';
+import { RemoteNames } from '../../utils/remote-names.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
+import { greyMarker } from '../../utils/point-style.js';
 import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName } from '../../utils/categories.js';
 
 /**
@@ -167,19 +169,120 @@ export function nextOverlappingEntity(gd, point, clicked, current, mouse = null,
   return at >= 0 ? ordered[(at + 1) % ordered.length] : ordered[0];
 }
 
+// A click focuses only when it is quick and still. Plotly fires plotly_click
+// when the button goes down (3D), so a rotation or pan used to refocus.
+export const CLICK_MAX_MS = 300;
+export const CLICK_MAX_MOVE_PX = 5;
+
+/**
+ * Track the primary pointer on a graph div. `gd.__azGesture.settle(commit)`
+ * runs `commit` once the press ends if it was a click, at once if the press
+ * has already ended as a click (2D reports plotly_click after the release),
+ * and never for a long or moving press. Listeners live on the div, added once;
+ * the release is caught on window so a drag ending outside the plot still ends.
+ */
+function trackGesture(gd) {
+  if (gd.__azGesture || !gd.addEventListener) return gd.__azGesture;
+  const g = gd.__azGesture = { down: null, pending: null, lastClickAt: -Infinity, settle: null };
+  const finish = (ev) => {
+    const d = g.down;
+    if (!d || ev.pointerId !== d.id) return;
+    g.down = null;
+    window.removeEventListener('pointerup', finish, true);
+    window.removeEventListener('pointercancel', finish, true);
+    const isClick = ev.type === 'pointerup' && ev.timeStamp - d.t <= CLICK_MAX_MS
+      && Math.hypot(ev.clientX - d.x, ev.clientY - d.y) <= CLICK_MAX_MOVE_PX;
+    const commit = g.pending;
+    g.pending = null;
+    if (!isClick) return;
+    g.lastClickAt = ev.timeStamp;
+    if (commit) commit();
+  };
+  gd.addEventListener('pointerdown', (ev) => {
+    gd.__lastPointer = { clientX: ev.clientX, clientY: ev.clientY };
+    if (!ev.isPrimary || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+    g.down = { id: ev.pointerId, t: ev.timeStamp, x: ev.clientX, y: ev.clientY };
+    g.pending = null;
+    window.addEventListener('pointerup', finish, true);
+    window.addEventListener('pointercancel', finish, true);
+  }, true);
+  g.settle = (commit) => {
+    if (g.down) g.pending = commit;                       // pressed: decide on release
+    else if (performance.now() - g.lastClickAt < 50) commit(); // just released as a click
+  };
+  return g;
+}
+
+/**
+ * Names for the cells a plot holds as tokens (names fetched when needed,
+ * DataManager.getCellsForPanel). The hover label reads `trace.text`, which
+ * holds a cell's name once it is in the browser and '' before: when the
+ * pointer lands on a point without one, its name is asked for, written into
+ * the trace's text, and the label is drawn again from the pointer's position.
+ * Names of points nearby are asked for with it, so moving on finds them.
+ * One handler per graph.
+ * @param {HTMLElement} plotContainer
+ */
+export function attachLazyNames(plotContainer) {
+    if (!plotContainer || typeof plotContainer.on !== 'function') return;
+    if (plotContainer.__azHoverNames && typeof plotContainer.removeListener === 'function') {
+      plotContainer.removeListener('plotly_hover', plotContainer.__azHoverNames);
+    }
+    const onHover = (e) => {
+      const cells = DataManager.getCells();
+      if (!e || !Array.isArray(e.points) || !(cells instanceof RemoteNames)) return;
+      for (const p of e.points) {
+        const id = p.customdata;
+        if (!RemoteNames.isToken(id)) continue;
+        const i = RemoteNames.tokenIndex(id);
+        const known = cells.peek(i);
+        const trace = p.fullData || (plotContainer._fullData && plotContainer._fullData[p.curveNumber]);
+        if (known !== undefined) {
+          // the label was drawn before the name was here (an earlier hover)
+          if (trace && Array.isArray(trace.text) && trace.text[p.pointNumber] !== known) {
+            trace.text[p.pointNumber] = known;
+            redrawHover(plotContainer);
+          }
+          continue;
+        }
+        cells.nameAt(i).then((name) => {
+          if (typeof name !== 'string') return;
+          for (const t of [trace, plotContainer.data && plotContainer.data[p.curveNumber]]) {
+            if (t && Array.isArray(t.text)) t.text[p.pointNumber] = name;
+          }
+          // still on that point: show the name
+          const now = plotContainer._hoverdata && plotContainer._hoverdata[0];
+          if (now && now.curveNumber === p.curveNumber && now.pointNumber === p.pointNumber) redrawHover(plotContainer);
+        }).catch(() => {});
+      }
+    };
+    plotContainer.__azHoverNames = onHover;
+    plotContainer.on('plotly_hover', onHover);
+}
+
+/** Draw the hover label again where the pointer is (Plotly reads the trace's text when it draws). */
+function redrawHover(plotContainer) {
+    const at = plotContainer.__pointerAt;
+    const area = plotContainer.querySelector && plotContainer.querySelector('.nsewdrag');
+    if (!at || !area || typeof MouseEvent === 'undefined') return;
+    area.dispatchEvent(new MouseEvent('mousemove', { clientX: at.clientX, clientY: at.clientY, bubbles: true }));
+}
+
 export function attachClickHandler(plotContainer, traces, data, settings) {
-    if (!plotContainer.__pointerTracked && plotContainer.addEventListener) {
-      plotContainer.__pointerTracked = true;
-      plotContainer.addEventListener('pointerdown', (ev) => {
-        plotContainer.__lastPointer = { clientX: ev.clientX, clientY: ev.clientY };
+    const gesture = trackGesture(plotContainer);
+    if (!plotContainer.__pointerMoveTracked && plotContainer.addEventListener) {
+      plotContainer.__pointerMoveTracked = true;
+      plotContainer.addEventListener('pointermove', (ev) => {
+        plotContainer.__pointerAt = { clientX: ev.clientX, clientY: ev.clientY };
       }, true);
     }
+    attachLazyNames(plotContainer);
     // One click handler per graph: every redraw used to add another, so a
     // click ran setFocusedCell once per redraw so far.
     if (plotContainer.__azClickHandler && typeof plotContainer.removeListener === 'function') {
       plotContainer.removeListener('plotly_click', plotContainer.__azClickHandler);
     }
-    const onClick = (e) => {
+    const onClick = async (e) => {
       if (!e || !e.points || e.points.length === 0) return;
   
       const point = e.points[0];
@@ -207,7 +310,11 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
       // Points drawn under a neighbour could not be clicked: Plotly reports
       // the one on top. Clicking the same spot again now steps through every
       // point within a few pixels of it.
-      const current = isGenePlot ? DataManager.getFocusedGene() : DataManager.getFocusedCell();
+      let current = isGenePlot ? DataManager.getFocusedGene() : DataManager.getFocusedCell();
+      // names fetched when needed: the plot holds tokens, the focus a name
+      const cells = isGenePlot ? null : DataManager.getCells();
+      const byToken = cells instanceof RemoteNames && RemoteNames.isToken(entityName);
+      if (byToken) current = cells.tokenOf(current);
       const area = plotContainer.querySelector && plotContainer.querySelector('.nsewdrag');
       const box = area && area.getBoundingClientRect ? area.getBoundingClientRect() : null;
       // scattergl click events carry no mouse event; use the last pointer
@@ -215,12 +322,20 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
       const ev = plotContainer.__lastPointer || ((e.event && Number.isFinite(e.event.clientX)) ? e.event : null);
       const mouse = box && ev ? { x: ev.clientX - box.left, y: ev.clientY - box.top } : null;
       entityName = nextOverlappingEntity(plotContainer, point, entityName, current, mouse);
-
-      if (isGenePlot) {
-        DataManager.setFocusedGene(entityName, false);
-      } else {
-        DataManager.setFocusedCell(entityName, false);
-      }
+      // The name (a token's, asked of the server) is read inside the commit: the
+      // gesture decides on the release, and a wait here would outlast its window.
+      const commit = async () => {
+        if (byToken) {
+          entityName = await DataManager.nameOfCell(entityName);
+          if (!entityName) return;
+        }
+        if (isGenePlot) {
+          DataManager.setFocusedGene(entityName, false);
+        } else {
+          DataManager.setFocusedCell(entityName, false);
+        }
+      };
+      if (gesture) gesture.settle(commit); else commit();
     };
     plotContainer.__azClickHandler = onClick;
     plotContainer.on('plotly_click', onClick);
@@ -429,15 +544,15 @@ export function keptViewRanges(settings) {
         type: settings.z ? 'scatter3d' : 'scattergl',
         mode: 'markers',
         name,
-        text: indices.map(idx => data[entityKey][idx]),
+        text: DataManager.cellLabels(indices.map(idx => data[entityKey][idx])),
         customdata: indices.map(idx => data[entityKey][idx]), // Store entity names for click handling
         hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + (settings.z ? `<br>z: %{z}` : '')
           + (hoverLabel !== null ? `<br>${hoverLabel}` : '') + `<extra></extra>`,
         x: indices.map(idx => data.x.values[idx]),
         y: indices.map(idx => data.y.values[idx]),
         marker: {
-          size: settings.pointSize,
-          opacity: settings.pointOpacity,
+          ...(name === NOT_IN_TABLE ? greyMarker(settings, data.x.values.length)
+            : { size: settings.pointSize, opacity: settings.pointOpacity }),
           color: markerColor
         },
         showlegend: true
@@ -453,7 +568,7 @@ export function keptViewRanges(settings) {
 
     // One trace for all non-table entities, drawn first so it sits at the bottom.
     if (nonTableIndices.length > 0) {
-      traces.push(makeTrace(nonTableIndices, 'Not in table', 'rgba(180, 180, 180, 1.)', null));
+      traces.push(makeTrace(nonTableIndices, NOT_IN_TABLE, 'rgba(180, 180, 180, 1.)', null));
     }
 
     // Points with no value, under the categories and last in the legend.
@@ -531,9 +646,12 @@ export function keptViewRanges(settings) {
     return !!trace && trace.meta === LEGEND_PROXY;
   }
 
-  /** True for a trace the point size and opacity leave alone: a legend proxy or a colour bar's point. */
+  /** The trace of the points a table link greys out: behind the rest, in a style of its own (greyMarker). */
+  export const NOT_IN_TABLE = 'Not in table';
+
+  /** True for a trace the point size and opacity leave alone: a legend proxy, a colour bar's point or the greyed-out points. */
   export function keepsOwnMarker(trace) {
-    return isLegendProxy(trace) || (!!trace && trace.meta === COLOUR_BAR);
+    return isLegendProxy(trace) || (!!trace && (trace.meta === COLOUR_BAR || trace.name === NOT_IN_TABLE));
   }
 
   /**

@@ -572,6 +572,13 @@ const PanelManager = (function() {
     
     // Track active data update signal for cancellation
     let _currentUpdateAbortController = null;
+
+    // Updates that change which cells or fields every panel shows. A smaller
+    // notice (a table's rows changed) never cancels one that is still running:
+    // it would leave the panels it does not concern on the previous cells, and
+    // a cell table announces its rows from inside every subset change.
+    const _WHOLE_VIEW_UPDATES = new Set(['datasetChanged', 'subsetChanged']);
+    let _wholeViewUpdate = null;   // the running whole-view batch, as a promise
     
     /**
      * Notify panels of a data update
@@ -580,6 +587,12 @@ const PanelManager = (function() {
      * @returns {Promise<void>} - Promise that resolves when all panels are updated
      */
     async function notifyPanels(updateType, data) {
+        // A table notice waits for the whole-view update that is running; it
+        // is told the table's rows as they are by then
+        while (_wholeViewUpdate && !_WHOLE_VIEW_UPDATES.has(updateType)) {
+            await _wholeViewUpdate;
+        }
+
         // If there's an ongoing update, abort it
         if (_currentUpdateAbortController) {
             console.debug(`Aborting current panel updates for ${updateType}`);
@@ -599,8 +612,13 @@ const PanelManager = (function() {
         
         // Wait for all panel updates to complete or be aborted. Every panel
         // updates on its own: one failing cannot hold up the rest.
+        const batch = notifyEach(_activePanels, updateType, updateData);
+        if (_WHOLE_VIEW_UPDATES.has(updateType)) {
+            const running = batch.catch(() => {}).then(() => { if (_wholeViewUpdate === running) _wholeViewUpdate = null; });
+            _wholeViewUpdate = running;
+        }
         try {
-            await notifyEach(_activePanels, updateType, updateData);
+            await batch;
             
             // Clear the controller reference after successful completion
             if (_currentUpdateAbortController && _currentUpdateAbortController.signal === signal) {
@@ -621,6 +639,18 @@ const PanelManager = (function() {
         }
     }
     
+    /**
+     * Stop the panel updates that are running (a newer subset change, or
+     * Cancel, makes them pointless). Each panel's loads end with an abort and
+     * its previous plot stays.
+     */
+    function abortUpdates() {
+        if (_currentUpdateAbortController) {
+            _currentUpdateAbortController.abort();
+            _currentUpdateAbortController = null;
+        }
+    }
+
     /**
      * Reset all panels
      */
@@ -1110,6 +1140,7 @@ const PanelManager = (function() {
         getAllPanels,
         getAllActivePanels,
         notifyPanels,
+        abortUpdates,
         resetPanels,
         saveLayout,
         restoreLayout,

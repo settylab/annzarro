@@ -72,8 +72,10 @@ def server(request, tmp_path_factory):
     proc.wait(10)
 
 
-def _link(root, colour):
-    plot = {"id": PID, "x": {"type": "obsm", "key": "X_umap", "column": "0"},
+def _link(root, colour, highlight=True):
+    # highlight off: large-plot mode's focus marker is a pixel-sized shape, after which Plotly
+    # records a selection box in pixels (there is no selection tool in the plots; this test draws one)
+    plot = {"id": PID, "highlightFocusedCell": highlight, "x": {"type": "obsm", "key": "X_umap", "column": "0"},
             "y": {"type": "obsm", "key": "X_umap", "column": "1"}, "z": None, "color": colour,
             "pointSize": 6, "pointOpacity": 1}
     view = {"v": 1, "subset": None,
@@ -177,7 +179,7 @@ INSIDE = """([x0, x1, y0, y1]) => { const g = %s; const out = [];
 
 def test_box_selection_selects_the_points_inside(server, page):
     root, large = server
-    page.goto(_link(root, COLOURS[0]))
+    page.goto(_link(root, COLOURS[0], highlight=False))
     _drawn(page)
     page.evaluate(SELECT)
     box = page.locator(f'.tile[data-tile-id="{PID}"] .nsewdrag').bounding_box()

@@ -23,6 +23,10 @@ The header. Numbers match the list below.
    included), serves the change from then on, to every user; the panels then read the dataset
    again, past this browser's copies. On your own machine, and for admins of a hosted server, it
    also clears the server's cache for that dataset. Use it after the store on disk changed.
+   A store with too many files to check within the server's 3 s budget cannot be fully checked: the
+   app then says so ("Refresh may not show every change"), because a write that only overwrote
+   data chunks may not show for a user other than an admin. An admin's Refresh dataset (or a server
+   restart) picks it up, and says so when it did. A panel's **Refresh** gives the same notice.
 3. **Previous gene / Next gene** step through the genes you focused in this session.
 4. **Focused Gene** is the gene every gene-dependent panel follows ({doc}`focus-and-lock`).
 5. **Previous cell / Next cell** step through the cells you focused.
@@ -32,6 +36,12 @@ The header. Numbers match the list below.
 9. **Share Link** copies a URL that reopens this dataset, layout and focus ({doc}`share-links`).
 
 A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).
+
+**Which version is this?** Hold the pointer over the app name at the top left: the tooltip reads
+"AnnZarro 0.4.2" (the version the server runs; a custom app name comes first, as "Lab Atlas ·
+AnnZarro 0.4.2"). On a server with login, the tooltip of your user name under the app name ends with the
+same line. Say this version in a bug report. The desktop app shows its own, bundled version the
+same way.
 
 Below the header, the statistics bar shows the number of cells (8,090) with a badge, **All
 cells**, the number of genes (16285) and the dataset's display name. Datasets with more than
@@ -148,6 +158,35 @@ A tile header.
 Plots fill their tile and resize with it (a plot is at least 260 px tall; a smaller tile
 scrolls). The pane sizes are stored as percentages in panel layouts and share
 links, so a shared layout opens with the same proportions on any screen.
+
+## Loading, and stopping a load
+
+While a panel reads its data or builds its plot, a small box at the top left of the plot says
+"Loading axis data…". A table shows a spinner, or the same box when it keeps its rows while it
+loads other cells. A load that takes longer than about a second and a half adds a **Cancel**
+button to the box (a quick load never flashes it).
+
+**Cancel** stops that panel's requests and the work on them, and leaves only that panel changed:
+other panels go on loading.
+
+- A panel that already showed a plot keeps it, with a tag **Loading cancelled** at the right of
+  its status line. The plot may not match the controls (you had changed the colour, say). Click
+  the tag and press **Load**, or press **Refresh**, to read the data again.
+- A panel with nothing shown yet, and a table whose rows were replaced by the spinner, shows
+  "Loading cancelled" with a **Load** button.
+- A gene set analysis section has its own **Cancel**; it returns to what it showed before.
+
+Changing what a panel shows stops the load it is running without a click: another x, y, z or
+colour, a new subset or part, another dataset, the cell or gene it follows, or closing the panel.
+The old requests are cancelled, and a late reply never replaces the newer view. A request that
+another panel also needs keeps running for that panel.
+
+Two limits. The server finishes a read it has started (a request already being served is not
+interrupted; it stops sending when the browser has gone), so Cancel frees the browser and the
+connection at once and the server shortly after. And once a plot is handed to the drawing
+library (the last step, after the data is downloaded and arranged), the draw runs to its end:
+**Cancel** acts on the downloads and decoding before it, which are the long part of a very large
+plot.
 
 ## Close, reopen and duplicate panels
 

@@ -54,7 +54,7 @@ const { updatePlotElements } = await import('../../../static/js/panels/plot-util
 const N = 200;
 const CELLS = Array.from({ length: N }, (_, i) => `c${i}`);
 Object.assign(DataManager, {
-    getCells: () => CELLS, getGenes: () => [],
+    getCells: () => CELLS, getCellsForPanel: () => CELLS, cellLabels: (x) => x, getGenes: () => [],
     getCurrentDataset: () => '/fixture.zarr',
     getCellIndex: () => -1,          // nothing focused -> blankFocusSeries
     resolveCellIndex: async () => -1,

@@ -1,3 +1,4 @@
+import { cancelIndexBuild } from './plot-utilities/large-plot.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
 import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
@@ -8,7 +9,8 @@ import { DataManager } from '../data-manager.js';
 import { setupPlotEventListeners } from './plot-utilities/listeners.js';
 import { setupAxisSelector, focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { Coverage, GAP } from '../utils/coverage.js';
-import { drawPlaceholder } from '../utils/panel-surface.js';
+import { drawPlaceholder, showCancelled } from '../utils/panel-surface.js';
+import { beginLoad, endLoad, cancelLoads, wasCancelled } from '../utils/load-scope.js';
 import { releasePlot } from '../utils/release-plot.js';
 import { forget } from '../utils/memory-guard-ui.js';
 import { restoreColorRange, storedColorRange } from '../utils/array-stats.js';
@@ -345,56 +347,38 @@ const CellPlotPanel = (function() {
         }
 
         
-        // Track the current loading operation for cancellation
-        let _currentLoadOperation = null;
-        
         /**
          * Reload the data and redraw the plot
-         * @param {AbortSignal} [signal] - Optional abort signal to allow cancellation
+         * @param {AbortSignal} [signal] - Optional abort signal of the update that asks for it
          * @returns {Promise<void>} - Promise that resolves when the plot is refreshed
          */
         async function refreshPlot(signal) {
-            // If there's an existing loading operation, abort it
-            if (_currentLoadOperation) {
-                _currentLoadOperation.abort();
-                _currentLoadOperation = null;
-            }
-            
-            // Create a new abort controller if not provided through signal
-            if (!signal) {
-                _currentLoadOperation = new AbortController();
-                signal = _currentLoadOperation.signal;
-            }
-            
+            // One signal per load (utils/load-scope.js): a newer load of this
+            // panel, closing it and the overlay's Cancel abort it
+            signal = beginLoad(_plotContainer, 'plot', signal);
             try {
-                // Pass the abort signal to the data loading function
                 await loadDataAndCreatePlot(_container, _plotContainer, _settings, _data, _id, _isFirstLoad, signal);
-                
-                // Clear the abort controller reference on successful completion
-                if (_currentLoadOperation && _currentLoadOperation.signal === signal) {
-                    _currentLoadOperation = null;
-                }
             } catch (error) {
                 // Only log non-abort errors
                 if (!error || error.name !== 'AbortError') {
                     console.error(`Error refreshing cell plot ${_id}:`, error);
-                } else if (window.Config && window.Config.DEBUG_MODE) {
-                    console.debug(`Plot refresh aborted for ${_id}`);
-                }
-                
-                // Clear the abort controller reference
-                if (_currentLoadOperation && _currentLoadOperation.signal === signal) {
-                    _currentLoadOperation = null;
-                }
-                
-                // Rethrow non-abort errors
-                if (!error || error.name !== 'AbortError') {
                     throw error;
                 }
+                if (window.Config && window.Config.DEBUG_MODE) {
+                    console.debug(`Plot refresh aborted for ${_id}`);
+                }
+            } finally {
+                endLoad(_plotContainer, signal);
+            }
+            // loadDataAndCreatePlot returns quietly when it was aborted; the
+            // Cancel button leaves what was drawn, or says there is nothing
+            if (wasCancelled(signal)) {
+                showCancelled(_plotContainer, 'cells',
+                    !!(_plotContainer._fullLayout && Array.isArray(_plotContainer.data) && _plotContainer.data.length));
             }
         }
-        
-        
+
+
         /**
          * Update plot with current settings without recreating it
          * @param {boolean} fullDataUpdate - Whether to update all data or just visual properties 
@@ -457,10 +441,8 @@ const CellPlotPanel = (function() {
             // A closed panel is kept for "Reopen", and this closure with it:
             // drop the loaded series, or closing frees nothing (a reopen
             // loads them again). A load still running is stopped.
-            if (_currentLoadOperation) {
-                _currentLoadOperation.abort();
-                _currentLoadOperation = null;
-            }
+            cancelLoads(_plotContainer);
+            cancelIndexBuild(_plotContainer);
             Object.keys(_data).forEach(key => delete _data[key]);
             Object.assign(_data, { x: null, y: null, z: null, color: null });
             forget(_id);

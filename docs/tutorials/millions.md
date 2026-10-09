@@ -161,20 +161,19 @@ does, wait a few seconds and type the name again. This happens once per server p
    Click **Apply**.
 
 Above 1 million points a cell plot switches to large-plot mode. The badge reads **All cells**,
-and the status line under the plot reads "95.6M cells" and, at the right, **Large plot: no
-hover/click**.
+and the status line under the plot reads "95.6M cells" and, at the right, **Large plot**.
 
 ```{figure} ../_static/screens/tutorials/millions-large.png
 :class: screenshot
-:alt: All 95,624,334 cells of Tahoe-100M on the UMAP coloured by cell line, dense solid islands; the statistics bar reads "Cells: 95,624,334" with an "All cells" badge, and the status line reads "95.6M cells" and "Large plot: no hover/click".
+:alt: All 95,624,334 cells of Tahoe-100M on the UMAP coloured by cell line, dense solid islands; the statistics bar reads "Cells: 95,624,334" with an "All cells" badge, and the status line reads "95.6M cells" and "Large plot".
 :width: 100%
 
 Every cell, in large-plot mode, at the automatic point size and opacity.
 ```
 
-In large-plot mode hover, click to focus, the focused-cell marker, table filters, obsp axes and
-colours and 3D are off; pan, zoom, point size, opacity and colour by an obs column or a gene
-remain. Point size and opacity follow the number of points until you set them by hand: point
+In large-plot mode table filters, obsp axes and colours, 3D and extra hover columns are off;
+pan, zoom, hover, click to focus, the focused-cell marker, point size, opacity and colour by an
+obs column or a gene remain. Point size and opacity follow the number of points until you set them by hand: point
 size 1 and opacity 0.2 show density instead of a solid shape, as in panel a of
 {doc}`../paper/scale`. The paper measured 5 to 6 s to draw every cell of Tahoe-100M on a laptop;
 the tab then used 9.2 GiB of memory, against 0.5 GiB with the default subset
@@ -214,7 +213,7 @@ reopens the same cells.
 - The parts are disjoint and together cover every cell; step through them by arrow or number.
 - A balanced subset gives each group an equal share; a filter restricts the cells first.
 - The focused cell can lie outside the part, and stays focused across parts.
-- Every cell can be drawn, at the cost of hover and focus, in large-plot mode.
+- Every cell can be drawn in large-plot mode, with hover and click to focus, but without table filters or 3D.
 
 The screenshots are made by `docs/_tools/shoot_millions.py`, which does each step through the
 app's controls.

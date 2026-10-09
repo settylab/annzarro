@@ -50,6 +50,7 @@ function withObs(body, { cells = CELLS, cellIndex = null } = {}) {
     const saved = {
         loadObs: DataManager.loadObs,
         getCells: DataManager.getCells,
+        getCellsForPanel: DataManager.getCellsForPanel,
         getGenes: DataManager.getGenes,
         getCellIndex: DataManager.getCellIndex,
         resolveCellIndex: DataManager.resolveCellIndex,
@@ -58,6 +59,7 @@ function withObs(body, { cells = CELLS, cellIndex = null } = {}) {
     };
     DataManager.loadObs = async () => body;
     DataManager.getCells = () => cells;
+    DataManager.getCellsForPanel = () => cells;
     DataManager.getGenes = () => [];
     if (cellIndex !== null) {
         DataManager.getCellIndex = () => cellIndex;

@@ -201,3 +201,17 @@ def test_bad_subset_is_an_error_not_all_cells(get, raw, status, reason):
         resp = get(url, subset=raw)
         assert resp.status_code == status, (url, resp.get_data(as_text=True))
         assert resp.get_json()["reason"] == reason
+
+
+def test_a_superseded_subset_is_answered_200_with_a_flag_not_an_error(get, monkeypatch):
+    """A part stepped past while computed is expected: a 2xx keeps the browser console clean."""
+    def superseded(*args, **kwargs):
+        raise cell_subset.SubsetSuperseded()
+
+    monkeypatch.setattr(cell_subset, "resolve", superseded)
+    resp = get("/api/v1/data/subset", subset=SPEC, client="page-1")
+    body = _ok(resp)
+    assert body["superseded"] is True and body["reason"] == "subset_superseded"
+    assert resp.headers["Cache-Control"] == "no-store"
+    # the other routes still refuse it as before
+    assert get("/api/v1/data/cells", subset=SPEC).status_code == 409

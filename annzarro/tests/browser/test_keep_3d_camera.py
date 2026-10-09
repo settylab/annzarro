@@ -160,8 +160,16 @@ def _click_point(page, i):
         const g = document.querySelector('%s');
         const n = g.data.findIndex(t => t.name !== 'Focused Cell' && (t.customdata || t.text) && t.x.length > i);
         const t = g.data[n], name = (t.customdata || t.text)[i];
+        // a click is a quick, still press: the pointer events a real one makes
+        // (plot-make-helper.js trackGesture), with Plotly's 3D plotly_click
+        // between the press and the release
+        const r = g.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+        const ev = (type) => new PointerEvent(type, {pointerId: 1, isPrimary: true, button: 0, pointerType: 'mouse',
+                                                      clientX: x, clientY: y, bubbles: true, cancelable: true});
+        g.dispatchEvent(ev('pointerdown'));
         g.emit('plotly_click', {points: [{curveNumber: n, pointNumber: i, x: t.x[i], y: t.y[i], z: t.z[i],
                                           customdata: name}]});
+        window.dispatchEvent(ev('pointerup'));
         return {name, at: [t.x[i], t.y[i], t.z[i]]};
     }""" % PLOT, i)
 

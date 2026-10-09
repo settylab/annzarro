@@ -159,8 +159,9 @@ The walk from the HSC over the cells of part 3, which does not contain the HSC.
   is drawn when **Highlight Focused Cell** is on and every axis is the cell's own value (an obs
   column, an embedding or a gene); it is not drawn when an axis is an obsp row, nor in
   large-plot mode. It is not one of the plotted cells: it has no colour value and is not counted.
-- **In large-plot mode**, which draws no ring, the plot's status line carries a tag "… not
-  shown"; its **Go to its part** shows the part that holds the cell.
+- **In large-plot mode**, which draws no ring (a cell the plot shows is marked by a red dot, as
+  in a regular plot), the plot's status line carries a tag "… not shown"; its **Go to its part**
+  shows the part that holds the cell.
 - **The header marks it** next to the Focused Cell picker (1): "not in part 3 of 3", or "not
   shown" without parts. Axis menus and table column titles that name the cell add "(not shown)".
 

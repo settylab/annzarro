@@ -211,7 +211,7 @@ test('#40: switching from a failed colour column to a healthy one drops the old 
     const N = 20;
     const CELLS = Array.from({ length: N }, (_, i) => `c${i}`);
     Object.assign(DataManager, {
-        getCells: () => CELLS, getGenes: () => [],
+        getCells: () => CELLS, getCellsForPanel: () => CELLS, cellLabels: (x) => x, getGenes: () => [],
         getCurrentDataset: () => '/fixture.zarr',
         loadObs: async ({ columns }) => ({
             data: { [columns[0]]: CELLS.map((_, i) => i / N) }
@@ -259,7 +259,7 @@ test('#38/#46: switching to a categorical colour with Hide NaN on draws only wha
     const CELLS = Array.from({ length: N }, (_, i) => `c${i}`);
     const labels = ['A', null, 'B', 'nan', 'A', 'B', '', 'A'];
     Object.assign(DataManager, {
-        getCells: () => CELLS, getGenes: () => [],
+        getCells: () => CELLS, getCellsForPanel: () => CELLS, cellLabels: (x) => x, getGenes: () => [],
         getCurrentDataset: () => '/fixture.zarr',
         loadObs: async ({ columns }) => ({
             data: { [columns[0]]: labels.slice() }, categories: { [columns[0]]: ['A', 'B'] }

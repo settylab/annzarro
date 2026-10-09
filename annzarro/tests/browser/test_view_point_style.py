@@ -158,7 +158,7 @@ def test_automatic_style_follows_the_view(server, page, colour, controls):
     root, large = server
     page.goto(_link(root, colour, controls))
     _wait(page, lambda s: True)
-    page.evaluate(f"() => {{ {GRAPH}._pointCount = 5000000; }}")
+    page.evaluate(f"() => {{ {GRAPH}._pointCount = {GRAPH}._drawnCount = 5000000; }}")
     page.evaluate(f"async () => Plotly.relayout({GRAPH}, {{'xaxis.autorange': true, 'yaxis.autorange': true}})")
     full = _auto(page, 5_000_000)
     s = _wait(page, lambda s: float(s["size"]) == full["size"] and float(s["opacity"]) == full["opacity"])

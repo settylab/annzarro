@@ -8,7 +8,9 @@ import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
 import { loadTableData, initializeDataTable, freezeTableState, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
 import { Coverage, GAP, classifyError } from '../utils/coverage.js';
-import { renderCoverageNotice, drawPlaceholder } from '../utils/panel-surface.js';
+import { renderCoverageNotice, drawPlaceholder, showCancelled } from '../utils/panel-surface.js';
+import { beginLoad, endLoad, cancelLoads, wasCancelled } from '../utils/load-scope.js';
+import { loadingIndicator } from './plot-utilities/plot-make.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
 import { syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { assignKnownSettings } from '../utils/panel-settings.js';
@@ -141,53 +143,48 @@ const CellTablePanel = (function() {
             });
         }
         
-        // Track the current loading operation for cancellation
-        let _currentLoadOperation = null;
-        
         /**
          * Refresh the table with current settings
          * @param {AbortSignal} [signal] - Optional abort signal to allow cancellation
          * @returns {Promise<void>} - Promise that resolves when the table is refreshed
          */
         async function refreshTable(signal, { inPlace = false } = {}) {
+            // One signal per load (utils/load-scope.js): a newer load of this
+            // table, closing it and the Cancel button abort it. `signal` is
+            // the one of the update that asks for it.
+            signal = beginLoad(_tableContainer, 'table', signal);
             try {
-                // If there's an existing loading operation, abort it
-                if (_currentLoadOperation) {
-                    _currentLoadOperation.abort();
-                    _currentLoadOperation = null;
-                }
-                
-                // Create a new abort controller if not provided through signal
-                if (!signal) {
-                    _currentLoadOperation = new AbortController();
-                    signal = _currentLoadOperation.signal;
-                }
-                
                 // Other cells of the same table: the rows are swapped into
                 // the table shown, so it does not blank and keeps its state
                 let preloaded = null;
                 if (inPlace && _dataTable) {
-                    const tableData = preloaded = await loadTableData(_settings, _plotType, signal);
+                    // the rows stay until the new ones are there: say it is working
+                    loadingIndicator.show(_tableContainer, 'table-data');
+                    let tableData;
+                    try {
+                        tableData = preloaded = await loadTableData(_settings, _plotType, signal);
+                    } finally {
+                        loadingIndicator.hide(_tableContainer, 'table-data');
+                    }
                     if (signal.aborted) {
                         throw new DOMException('Table refresh aborted after loading data', 'AbortError');
                     }
                     if (replaceRowsInPlace(_dataTable, tableData)) {
                         renderCoverageNotice(_tableContainer, tableData.coverage, 'cells');
-                        if (_currentLoadOperation && _currentLoadOperation.signal === signal) {
-                            _currentLoadOperation = null;
-                        }
                         return;
                     }
                 }
 
                 // Show loading indicator
                 _tableContainer.innerHTML = `
-                    <div class="d-flex justify-content-center align-items-center" style="height: 200px;">
+                    <div class="d-flex flex-column justify-content-center align-items-center table-loading" style="height: 200px;">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Loading...</span>
                         </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary load-cancel mt-2" title="Stop loading">Cancel</button>
                     </div>
                 `;
+                _tableContainer.querySelector('.load-cancel').addEventListener('click', () => cancelLoads(_tableContainer, true));
                 
                 // Check if operation is aborted before loading data
                 if (signal.aborted) {
@@ -236,23 +233,15 @@ const CellTablePanel = (function() {
                         'cells');
                 }
                 
-                // Clear the abort controller reference on successful completion
-                if (_currentLoadOperation && _currentLoadOperation.signal === signal) {
-                    _currentLoadOperation = null;
-                }
-                
             } catch (error) {
-                // Clear the abort controller reference
-                if (_currentLoadOperation && _currentLoadOperation.signal === signal) {
-                    _currentLoadOperation = null;
-                }
-                
                 // Handle errors differently based on type
                 if (error && error.name === 'AbortError') {
                     // If operation was aborted, log only in debug mode
                     if (window.Config && window.Config.DEBUG_MODE) {
                         console.debug(`Cell table refresh aborted for ${_id}`);
                     }
+                    // the rows shown before stay (only a load into the table shown keeps them)
+                    if (wasCancelled(signal)) showCancelled(_tableContainer, 'cells', !!(inPlace && _dataTable));
                 } else {
                     // For actual errors, show error message
                     console.error('Error refreshing cell table:', error);
@@ -263,10 +252,13 @@ const CellTablePanel = (function() {
                         'cells');
                 }
                 
-                // Rethrow abort errors to signal upstream that operation was cancelled
-                if (error && error.name === 'AbortError') {
+                // Rethrow abort errors to signal upstream that operation was
+                // cancelled (not the Cancel button's: the panel says it itself)
+                if (error && error.name === 'AbortError' && !wasCancelled(signal)) {
                     throw error;
                 }
+            } finally {
+                endLoad(_tableContainer, signal);
             }
         }
         
@@ -274,6 +266,7 @@ const CellTablePanel = (function() {
          * Clean up resources
          */
         function cleanup() {
+            cancelLoads(_tableContainer);
             if (_dataTable) {
                 // what other panels still read (a plot's table filter, the
                 // panel set) stays, as values; the DataTable's rows go

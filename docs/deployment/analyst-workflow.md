@@ -106,7 +106,9 @@ the store keeps the column.
   new generation when files changed, which is enough for a store of normal size. It is not
   enough for a store too large to check within 3 s (the 95.6-million-cell Tahoe-100M store): there
   the check answers `status: "partial"` and changes nothing, and an in-place chunk write needs an
-  admin's refresh.
+  admin's refresh (or a server restart). The app tells a user whose refresh got this answer
+  ("Refresh may not show every change"), once per press, and an admin's **Refresh dataset**
+  says the server's cache was cleared instead.
 - **With login off, anyone who can reach the server can refresh.** A server without login
   treats every visitor alike, so any of them can ask for the re-check (and, on your own machine,
   the cache clear). That is harmless: a refresh only reads the store, and it is rate-limited as

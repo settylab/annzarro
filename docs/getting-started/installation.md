@@ -42,6 +42,12 @@ extra. See {doc}`../user-guide/remote-datasets`.
 this, install from a source checkout as described below.
 ```
 
+```{note}
+h5py 3.16 ships Linux wheels only for glibc 2.28 and newer. On an older system (Ubuntu 18.04 has
+glibc 2.27, for example) pip would try to build h5py from source; install an older h5py first:
+`pip install "h5py<3.16" annzarro`.
+```
+
 ## With uv
 
 [uv](https://docs.astral.sh/uv/) installs the same package faster. Either into a virtual

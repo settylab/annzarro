@@ -95,6 +95,17 @@ renderer process used 0.5 GiB at every dataset size and the server process at mo
 first search for a cell by name builds the server's name index: 6.3 s at 50 million cells, or
 0.8 s once a local server has built it in the background.
 
+## Stepping to another part of a huge dataset
+
+A part of 100,000 cells is a random sample of the whole dataset, so one step reads every chunk of
+what the plot draws. Measured on a store of one billion cells, 477 chunks of 2 MB (compressed) per
+column: choosing the cells (a pass over every row's rank key) 5 to 8 s of CPU; reading the 100,000
+cell names 19 to 27 s and 23.6 GB decompressed; each UMAP axis read as its own request 7 GB
+decompressed. Above `ui.defaults.names_on_demand_above` (5 million cells) the names are no longer
+read at a step, a plot reads its x and y in one request, a newer step stops the pass of the older
+one, and on a single-user server the next part's coordinates are read ahead; see
+{ref}`names-on-demand`.
+
 ## Very large Cell Plots (large-plot mode)
 
 A browser tab's JavaScript heap is capped at 4.1 GiB in Chromium, whatever the browser flags. The
@@ -104,7 +115,7 @@ plots share the heap, so the default limit is 1 million points per regular plot.
 
 Above `ui.defaults.large_plot_points` (1 million by default) a Cell Plot keeps its data in typed
 arrays, outside that heap, and draws one single-colour layer per category or per colour step,
-without hover, click to focus, table filters, obsp colours or 3D. The panel says it is in this
+with hover and click to focus from a grid over the points (8 bytes per point, also outside the heap), without table filters, obsp colours or 3D. The panel says it is in this
 mode (see {doc}`../user-guide/subsets`). It holds about 20 bytes of heap per point (1.80 GiB at
 95.6 million cells). In the paper's runs:
 

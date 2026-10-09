@@ -65,6 +65,14 @@ server:
   # POST /data/refresh (Refresh dataset; any user) walks a dataset's files at
   # most this often; a refresh sooner answers with the last walk's finding.
   refresh_min_interval_s: 10
+  # Memory the name-search indices (Focused Cell / Focused Gene typeahead)
+  # may hold together, per worker process, in MB. null = 15% of the machine's
+  # RAM, between 512 MB and 16 GB. A dataset whose index would not fit is
+  # searched by scanning its names instead (no index in memory); the reply
+  # says partial when the scan stopped before the end.
+  name_index_max_mb: null
+  # Names a scanning search reads at most before it answers with what it has.
+  name_search_scan_names: 100000000
 
   # Remote datasets (s3://, gs://, http(s):// zarr stores; needs annzarro[remote])
   # A remote dataset path makes the server fetch a URL chosen by the client.
@@ -147,6 +155,18 @@ ui:
     # the subset off or larger than this. 1M keeps several regular plots
     # (400-900 B of browser heap per point) open side by side.
     large_plot_points: 1000000
+    # A dataset with more cells than this does not download the names of the
+    # cells it shows (a part of a 1B-cell store spread over every chunk of its
+    # name column took 20-35 s to name at every step). Hover, focus and a
+    # table's page ask for the names they show; sorting or searching a table
+    # on the names, or exporting them, loads them once. Smaller datasets name
+    # their cells with the part, as before.
+    names_on_demand_above: 5000000
+    # After a part is shown, read the next part's cells and embedding
+    # coordinates in the background (low priority, dropped for any real
+    # request), so stepping forward waits for little. auto: only on a
+    # single-user server (a laptop, the desktop app); true / false force it.
+    prefetch_next_part: auto
     subset_size: 100000
     subset_seed: 0
 
