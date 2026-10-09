@@ -365,6 +365,21 @@ def test_a_store_too_large_to_walk_is_partial_not_bumped(tmp_path):
     assert freshness.generation(path) == gen
 
 
+def test_the_route_answers_partial_with_its_message_for_a_store_over_the_budget(server, tmp_path, monkeypatch):
+    """Issue #91: the answer the browser shows the user. A walk that hits its
+    budget (simulated) answers status partial, with the message, no bump."""
+    from annzarro.core import freshness
+    path = make_rich_store(tmp_path / "r.zarr")
+    gen = freshness.generation(path)
+    monkeypatch.setattr(freshness, "deep_fingerprint", lambda p, budget_s=3.0: (None, False))
+    r = server.post("/api/v1/data/refresh", query_string={"dataset_path": path})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["status"] == "partial" and body["checked"] is False and body["changed"] is False
+    assert "too large to fingerprint fully in 3 s" in body["message"]
+    assert freshness.generation(path) == gen
+
+
 def test_a_restart_revalidates_every_dataset(server, tmp_path):
     """The generations live in files that outlive the server: a chunk write
     followed by a restart and a reload got 304 and the old values (v0.3.1

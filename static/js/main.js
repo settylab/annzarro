@@ -10,7 +10,7 @@ import {
     parseDeepLinkLocation, buildDeepLinkUrl, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
-import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan } from './utils/session-permissions.js';
+import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan, partialRefreshNotice } from './utils/session-permissions.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
@@ -1514,17 +1514,23 @@ const App = (function() {
 
                 // Every user: the server checks the store against the disk
                 // and, if it changed, serves the change from every worker.
-                await DataManager.revalidateDataset(datasetPath);
+                const refreshed = await DataManager.revalidateDataset(datasetPath);
+                let cleared = false;
                 // Clearing the server's whole cache for the dataset as well is
                 // for an admin of a hosted server (and the desktop); a refusal
                 // (403 admin_only) is expected, not an error.
                 if (_refreshPlan.resetServerCache) {
                     try {
-                        await DataManager.resetBackendCache(datasetPath);
+                        const reset = await DataManager.resetBackendCache(datasetPath);
+                        cleared = !!reset && reset.status !== 'forbidden' && reset.status !== 'error';
                     } catch (e) {
                         console.warn('Server cache not cleared:', e && e.message);
                     }
                 }
+                // A store too large to check within the budget: say what a
+                // chunk-only write needs (once per press, not per poll)
+                const partial = partialRefreshNotice(refreshed, { cleared });
+                if (partial) _showNotification(partial.title, partial.message, 'info', 12000);
                 
                 // Reload available datasets
                 await _loadDatasets();

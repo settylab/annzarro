@@ -19,6 +19,7 @@ import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate, keepsOwnMarker } from './plot-make-helper.js';
 import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
 import { notify } from '../../utils/notify.js';
+import { partialRefreshNotice } from '../../utils/session-permissions.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig, snapPointSize } from '../../utils/slider-scales.js';
 import { coalesce } from '../../utils/render-queue.js';
 
@@ -336,7 +337,9 @@ export function setupPlotControlListeners(
     $refreshPlotButton.on('click', async () => {
       loadingIndicator.show(plotContainer, 'refresh');
       try {
-        await DataManager.reloadDatasetData();
+        const checked = await DataManager.reloadDatasetData();
+        const partial = partialRefreshNotice(checked);
+        if (partial) notify(partial.title, partial.message, 'info');
       } finally {
         loadingIndicator.hide(plotContainer, 'refresh');
       }
