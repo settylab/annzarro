@@ -1537,6 +1537,13 @@ def register_data_routes(app, api_version):
             body["features"] = list(SUBSET_FEATURES)
             return jsonify(body)
         except Exception as exc:
+            if isinstance(exc, DataRequestError) and exc.reason == "subset_superseded":
+                # Expected, not an error: the page asked for another part while
+                # this one was computed. A 2xx keeps the browser from logging a
+                # failed request; the client reads `superseded` and drops it.
+                response = jsonify({"superseded": True, "reason": exc.reason, "error": exc.message})
+                response.headers["Cache-Control"] = "no-store"
+                return response
             return _reader_error_response(exc, dataset_path_str)
 
     @app.route(f"/api/{api_version}/data/subset/locate", methods=["GET"])

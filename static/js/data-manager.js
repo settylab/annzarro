@@ -149,6 +149,9 @@ const DataManager = (function() {
         entry.promise = (async () => {
             try {
                 const data = await _readResponse(await fetch(fullUrl, { signal: controller.signal }));
+                // /data/subset answers 200 {superseded: true} when the page has
+                // asked for another subset meanwhile: nothing to cache or show
+                if (data && data.superseded === true) throw new DOMException('Subset superseded', 'AbortError');
                 CacheManager.set(fullUrl, data);
                 return data;
             } finally {
