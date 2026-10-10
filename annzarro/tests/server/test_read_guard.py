@@ -161,3 +161,21 @@ def test_limit_applies_to_everyone_and_defaults_to_a_share_of_ram(make_client):
     assert 256 * 2 ** 20 <= read_guard.default_limit_bytes() <= 4096 * 2 ** 20
     client, store, _ = make_client(max_read_mb=0.00001)
     assert _obsp(client, store, "small", rows="0,1", cols="0,1,2,3,4,5,6,7,8,9").status_code == 413
+
+
+def test_row_of_a_wide_chunked_matrix_is_sized_by_its_chunks(make_client, tmp_path):
+    """A row of a (1000, n) chunked array decompresses 1000 rows: sized by the chunk."""
+    client, store, _ = make_client(max_read_mb=64, max_response_elements=10 ** 12)
+    root = zarr.open_group(store, mode="r+")
+    root["obsp"].create_array("wide", shape=(N, 100_000), chunks=(200, 100_000), dtype="float32",
+                              fill_value=float("nan"))     # chunk 80 MB, never written
+    root["obsp"].create_array("tall", shape=(N, 100_000), chunks=(200, 1000), dtype="float32",
+                              fill_value=float("nan"))     # chunk 0.8 MB: ten at a time
+    zarr.consolidate_metadata(store)
+    wide = client.get("/api/v1/data/obsp/wide", query_string={"dataset_path": store, "rows": "3"})
+    assert wide.status_code == 413
+    el = wide.get_json()["elements"][0]
+    assert el["chunks"] == [200, 100_000] and el["chunk_working_set_mb"] > 64
+    assert "rewrite it with smaller chunks" in wide.get_json()["error"]
+    ok = client.get("/api/v1/data/obsp/tall", query_string={"dataset_path": store, "rows": "3"})
+    assert ok.status_code == 200
