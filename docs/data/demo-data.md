@@ -26,11 +26,19 @@ numbers have to be in the store, so this one store holds them next to the data t
 ## Get the store
 
 **Download.** The store is deposited on Zenodo as one zip, `bm_aging_annzarro.zarr.zip`
-(5.7 GB), at [doi:ZENODO_DOI_TBD](https://doi.org/ZENODO_DOI_TBD). The record cites the source
-data below and carries the same CC BY 4.0 licence. Unzip it into your data directory
-({doc}`../getting-started/quickstart`); the result is the directory `bm_aging_annzarro.zarr`.
-The record's `SHA256SUMS` checks the download, and `FIELDS.md` is the field list of this page,
-generated from the store.
+(5.7 GB), in the record [doi:10.5281/zenodo.23277103](https://doi.org/10.5281/zenodo.23277103).
+The record cites the source data below and carries the same CC BY 4.0 licence. Its
+`SHA256SUMS` lists the zip's checksum, and its `FIELDS.md` is the field list of this page,
+generated from the store. Fetch the zip, check it against `SHA256SUMS`, and unzip it into your
+data directory ({doc}`../getting-started/quickstart`):
+
+```bash
+cd ~/annzarro-data
+curl -LO https://zenodo.org/records/23277103/files/bm_aging_annzarro.zarr.zip
+curl -LO https://zenodo.org/records/23277103/files/SHA256SUMS
+grep bm_aging_annzarro.zarr.zip SHA256SUMS | shasum -a 256 -c -     # sha256sum -c - on Linux
+unzip -q bm_aging_annzarro.zarr.zip                                # makes bm_aging_annzarro.zarr/
+```
 
 **Build it.** Two scripts in this repository's `docs/_tools/` rebuild it from the public raw data,
 described below: `datasets/bm_aging.py` makes the Kompot-processed base store
@@ -91,7 +99,7 @@ def store_md5(root):
 ```
 
 The base store `bm_aging.zarr` behind this documentation gives `b0d150cf4161887febefafe460b0a4b4`, and the
-showcase store `bm_aging_annzarro.zarr` gives `36a9b6c06a419205af348503ff380ef6`.
+showcase store `bm_aging_annzarro.zarr` gives `a372502012ded8cd238e5eb83e408b89`.
 
 ```{note}
 The checksum identifies one build, not the recipe. A rebuild of the base store with `bm_aging.py` differs from

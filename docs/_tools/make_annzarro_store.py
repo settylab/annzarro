@@ -549,7 +549,7 @@ def fields_markdown(dst, version, src_md5):
          "that `bm_aging.zarr` holds, unchanged, plus the fields below. Built by "
          "`docs/_tools/make_annzarro_store.py` in the annzarro repository "
          f"({version}). Source store: `bm_aging.zarr`, store MD5 `{src_md5}` (MD5 over every file of the directory store, "
-         "sorted relative path then bytes). Zarr v2, consolidated metadata, Blosc lz4. This list is generated from the store.", "",
+         "sorted relative path then bytes). Zenodo record: https://doi.org/10.5281/zenodo.23277103. Zarr v2, consolidated metadata, Blosc lz4. This list is generated from the store.", "",
          "Unchanged from `bm_aging.zarr`:", ""]
     L += [f"- `{k}`: {v}" for k, v in KEPT.items()]
     L += ["- `X` (CSC), `obs`, `var`, `obsm` (X_umap, X_pca, X_pca_harmony, DM_EigenVectors, ...), `varm/PCs`, `uns`", ""]
