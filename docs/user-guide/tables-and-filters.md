@@ -6,7 +6,7 @@ as deep as you need. A plot linked to a table greys out (or removes) every point
 excludes, so a table works as a selection tool for plots.
 
 This page builds a gene table next to the volcano plot of {doc}`cell-and-gene-plots` on
-`bm_aging.zarr` and filters it to the genes with Mahalanobis distance above 5 and an absolute mean
+`bm_aging_annzarro.zarr` and filters it to the genes with Mahalanobis distance above 5 and an absolute mean
 log fold change above 0.05.
 
 ## Choose the columns
@@ -104,7 +104,7 @@ The 159 can be checked in Python:
 
 ```python
 import zarr
-g = zarr.open_group("bm_aging.zarr", mode="r")
+g = zarr.open_group("bm_aging_annzarro.zarr", mode="r")
 m = g["var/kompot_de_Young_to_Old_mahalanobis"][:]
 l = g["var/kompot_de_Young_to_Old_mean_lfc"][:]
 print(((m > 5) & ((l > 0.05) | (l < -0.05))).sum())   # 159

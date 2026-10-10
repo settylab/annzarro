@@ -19,7 +19,7 @@ Writes
 Run (it starts its own server on --port):
   python docs/_tools/shoot_gene_set_tutorial.py [--port 8824]
 
-Data: bm_aging.zarr in ANNZARRO_DOCS_DATA (default ~/annzarro-data), served from a temporary
+Data: bm_aging_annzarro.zarr in ANNZARRO_DOCS_DATA (default ~/annzarro-data), served from a temporary
 data directory of symlinks.
 """
 from __future__ import annotations
@@ -40,7 +40,7 @@ DOCS = HERE.parent
 OUT = DOCS / "_static" / "screens" / "tutorials"
 VIEWS = HERE / "views"
 PANELSETS = DOCS / "_static" / "panelsets" / "tutorials"
-STORE = "bm_aging.zarr"
+STORE = "bm_aging_annzarro.zarr"
 NAME = "gene-set-analysis"
 
 HSC = "HSPC_Old_1#GAAGCCCGTGGCTCTG-1"

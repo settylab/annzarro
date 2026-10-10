@@ -58,7 +58,7 @@
     "z": null,
     "color": {
      "type": "var",
-     "key": "fig5d_direction",
+     "key": "hsc_vs_monocyte_direction",
      "column": ""
     },
     "pointSize": 6,
@@ -78,7 +78,7 @@
     "columns": [
      {
       "type": "var",
-      "key": "fig5d_direction",
+      "key": "hsc_vs_monocyte_direction",
       "column": ""
      },
      {

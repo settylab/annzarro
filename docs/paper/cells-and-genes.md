@@ -22,7 +22,7 @@ beyond Kompot's noise level only Apoe changes in opposite directions. The tutori
 | b, c | live, with a locked shared colour range | {ref}`tut-cg-shared-scale` |
 | d | live axes (locked cell row, focused cell row); precomputed colour | {ref}`tut-cg-rows` |
 | d, counts | nested AND/OR table filter on the live rows | {ref}`tut-cg-andor` |
-| d, noise | z-score layer (showcase) and a table filter | {ref}`tut-cg-noise` |
+| d, noise | z-score layer and a table filter | {ref}`tut-cg-noise` |
 | numbers | hover labels and table filters | {ref}`tut-cg-check` |
 
 ## Checking the numbers
@@ -46,10 +46,10 @@ Hover labels and table filters check most statements; offline ones are marked. S
 - **Per-cell-type medians and Spearman ρ** (HSC −1.35, next lowest non-classical monocyte −0.21;
   ρ = 0.53 between the two rows over DE genes) are offline statistics. AnnZarro shows single values
   and counts, not medians or correlations.
-- **Direction classes** come from the showcase column `fig5d_direction`, computed for these two
+- **Direction classes** come from the stored column `hsc_vs_monocyte_direction`, computed for these two
   cells. For another pair the AND/OR table recounts them live; the colour does not change.
 - **Noise level.** The paper used per-cell standard deviations from
-  `obs/kompot_de_{Young,Old}_std`. The showcase z-score layer is the same quantity (it equals
+  `obs/kompot_de_{Young,Old}_std`. The stored z-score layer is the same quantity (it equals
   Kompot's own `fold_change_zscores` to float32 precision) and gives the same genes: Apoe and 10
   same-direction genes.
 - **Labels and identity line.** The paper labels the five strongest opposite-direction genes and

@@ -20,7 +20,7 @@
   "panelConfigs": {
    "gene-plot-M": {
     "id": "gene-plot-M",
-    "title": "Volcano coloured by var fig4_module_k3 (NaN for non-DE genes)",
+    "title": "Volcano coloured by var gene_module_k3 (NaN for non-DE genes)",
     "x": {
      "type": "var",
      "key": "kompot_de_Young_to_Old_mean_lfc",
@@ -34,7 +34,7 @@
     "z": null,
     "color": {
      "type": "var",
-     "key": "fig4_module_k3",
+     "key": "gene_module_k3",
      "column": ""
     },
     "pointSize": 5,

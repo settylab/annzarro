@@ -58,7 +58,7 @@
     "z": null,
     "color": {
      "type": "obs",
-     "key": "fig3_plasma_groups",
+     "key": "plasma_groups",
      "column": ""
     },
     "pointSize": 3,
@@ -77,7 +77,7 @@
    },
    "cell-plot-SC2": {
     "id": "cell-plot-SC2",
-    "title": "X_umap, fig3_plasma_groups",
+    "title": "X_umap, plasma_groups",
     "x": {
      "type": "obsm",
      "key": "X_umap",
@@ -91,7 +91,7 @@
     "z": null,
     "color": {
      "type": "obs",
-     "key": "fig3_plasma_groups",
+     "key": "plasma_groups",
      "column": ""
     },
     "pointSize": 3,

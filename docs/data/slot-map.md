@@ -81,27 +81,32 @@ The exact byte layout is in {doc}`../reference/wire-format`.
 
 ## What the demonstration store contains
 
-`bm_aging.zarr` (8,090 cells × 16,285 genes; {doc}`demo-data`) fills every slot that matters:
+`bm_aging_annzarro.zarr` (8,090 cells × 16,285 genes; {doc}`demo-data`) fills every slot that matters:
 
-- `obsm`: `X_umap`, `X_draw_graph_fa`, `DM_EigenVectors`, three PCA variants, and the
-  dataframe-valued `AbCapture` and `HTO`.
-- `obs`: cell types (`highres_celltype`, `midres_celltype`), `Age`, and Kompot differential
-  abundance columns ({doc}`kompot`).
-- `obsp`: the sparse `connectivities`, `distances`, `DM_Kernel`, `DM_Similarity` and the dense
-  `diffusion_walk_t5` added in {doc}`pairwise-matrices`.
-- `layers`: dense float32 `kompot_de_Young_to_Old_fold_change`, `kompot_de_Young_smoothed`,
+- `obsm`: `X_umap` and `X_umap_3d`, `X_diffusion`, `X_draw_graph_fa`, `DM_EigenVectors`, three PCA
+  variants, and the dataframe-valued `AbCapture` and `HTO`.
+- `obs`: cell types (`highres_celltype`, `midres_celltype`), `Age`, Kompot differential
+  abundance columns ({doc}`kompot`), and the precomputed cell columns of {doc}`demo-data`.
+- `obsp`: the sparse `connectivities`, `distances`, `DM_Kernel`, `DM_Similarity`, and the dense
+  `diffusion_walk_t5` added in {doc}`pairwise-matrices`, plus the dense `diffusion_distance` and
+  `umap_distance`.
+- `layers`: dense float32 `kompot_de_Young_to_Old_fold_change`, its z-score version
+  `kompot_de_Young_to_Old_fold_change_zscores`, `kompot_de_Young_smoothed`,
   `kompot_de_Old_smoothed`, `MAGIC_imputed_data`; sparse `logged_counts`, `normalized_counts`,
   `raw_counts`, `cc_counts`.
-- `var`: Kompot differential expression statistics.
+- `var`: Kompot differential expression statistics, `detection_rate`, `variance_logged` and the
+  precomputed gene columns of {doc}`demo-data`.
+- `varm`: DataFrames of per-cell-type and per-age statistics: `mean_by_celltype`,
+  `fraction_expressing_by_celltype`, `mean_by_age`, `fraction_expressing_by_age`; and `PCs`.
 - `varp`: `spearman_fold_change` and `spearman_smoothed` (16,285 × 16,285, dense float32).
 - `X`: scaled expression (z-scores) stored as CSC, offered as **X** under the layer source (see above).
 
 You can list the same thing for any store with the structure endpoint:
 
 ```console
-$ curl -s "http://127.0.0.1:8812/api/v1/data/dataset_structure?dataset_path=$PWD/bm_aging.zarr" \
+$ curl -s "http://127.0.0.1:8812/api/v1/data/dataset_structure?dataset_path=$PWD/bm_aging_annzarro.zarr" \
     | python -c "import json,sys; d=json.load(sys.stdin); print({k: d[k].get('keys') for k in ('layers','obsp','varp')})"
-{'layers': ['cc_counts', 'kompot_de_Old_smoothed', 'kompot_de_Young_smoothed', 'kompot_de_Young_to_Old_fold_change', 'logged_counts', 'MAGIC_imputed_data', 'normalized_counts', 'raw_counts'], 'obsp': ['connectivities', 'diffusion_walk_t5', 'distances', 'DM_Kernel', 'DM_Similarity'], 'varp': ['spearman_fold_change', 'spearman_smoothed']}
+{'layers': ['cc_counts', 'kompot_de_Old_smoothed', 'kompot_de_Young_smoothed', 'kompot_de_Young_to_Old_fold_change', 'kompot_de_Young_to_Old_fold_change_zscores', 'logged_counts', 'MAGIC_imputed_data', 'normalized_counts', 'raw_counts'], 'obsp': ['connectivities', 'diffusion_distance', 'diffusion_walk_t5', 'distances', 'DM_Kernel', 'DM_Similarity', 'umap_distance'], 'varp': ['spearman_fold_change', 'spearman_smoothed']}
 ```
 
 ## In the app
@@ -109,7 +114,7 @@ $ curl -s "http://127.0.0.1:8812/api/v1/data/dataset_structure?dataset_path=$PWD
 Each source menu in a plot's controls has the same three parts: the **slot** (obs, obsm,
 obsp, layer, var, varm, varp), the **key** in it, and the **column** or row. For obsp, varp
 and layer the third menu follows the focus ("Focused gene …", "Focused cell …") unless the
-lock next to it pins one cell or gene. Shown on `bm_aging.zarr`:
+lock next to it pins one cell or gene. Shown on `bm_aging_annzarro.zarr`:
 
 ::::{grid} 1 1 2 2
 :gutter: 2

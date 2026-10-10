@@ -9,7 +9,7 @@ preparation): the stages of the protocol with their step numbers. Dashed box, op
 ```
 
 The paper's Procedure takes a processed AnnData object to linked, shareable views in five
-stages. Worked examples 1 to 5 use the bone marrow store `bm_aging.zarr` and can be run in any
+stages. Worked examples 1 to 5 use the bone marrow store `bm_aging_annzarro.zarr` and can be run in any
 order, except that Worked example 3 reuses the volcano of Worked example 2. Worked example 6 uses
 Tahoe-100M. Below, each stage links to the documentation that covers it, and each worked example
 to the view it ends on, as a share link and a panel set file.
@@ -27,7 +27,7 @@ to the view it ends on, as a share link and a panel set file.
 (paper-procedure-examples)=
 ## Worked examples
 
-The links are ready for a local server with `bm_aging.zarr` in its data directory (Worked examples
+The links are ready for a local server with `bm_aging_annzarro.zarr` in its data directory (Worked examples
 1 to 5) or the Tahoe-100M store (Worked example 6); to use another server address or a store
 elsewhere, see {ref}`tut-start-links`. Each panel set file loads the same view with **Load Panel
 Set** > **Upload file**. The panel set files below are the views the paper's Worked examples end

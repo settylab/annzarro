@@ -100,9 +100,9 @@ def hosted_server(tmp: Path, port: int, extra_yaml: str):
     """Start `annzarro start --config` with a throwaway config; return (proc, log)."""
     data = tmp / "data"
     data.mkdir(exist_ok=True)
-    link = data / "bm_aging.zarr"
+    link = data / "bm_aging_annzarro.zarr"
     if not link.exists():
-        link.symlink_to(DATA_DIR / "bm_aging.zarr")
+        link.symlink_to(DATA_DIR / "bm_aging_annzarro.zarr")
     cfg = tmp / "site.yaml"
     cfg.write_text(f"""server:
   data_dir: {data}

@@ -30,7 +30,7 @@ sudo /opt/annzarro/venv/bin/pip install annzarro gunicorn     # 'annzarro[remote
 
 ```bash
 sudo mkdir -p /srv/annzarro/data/sessions
-sudo ln -s /lab/atlases/bm_aging.zarr /srv/annzarro/data/     # one link per dataset
+sudo ln -s /lab/atlases/bm_aging_annzarro.zarr /srv/annzarro/data/     # one link per dataset
 sudo chown annzarro: /srv/annzarro/data/sessions              # the only place the server writes
 ```
 
@@ -280,7 +280,7 @@ the same. `url_prefix: /a/../b` stops the server with "server.url_prefix must be
 ## Deep links and URL length
 
 **Share Link** puts the view in the URL *fragment*
-(`https://annzarro.example.org/?dataset_path=/srv/annzarro/data/bm_aging.zarr#view=z1.…`).
+(`https://annzarro.example.org/?dataset_path=/srv/annzarro/data/bm_aging_annzarro.zarr#view=z1.…`).
 Browsers never send the fragment to the server, so the request is short whatever the layout,
 and only `dataset_path` appears in access logs.
 

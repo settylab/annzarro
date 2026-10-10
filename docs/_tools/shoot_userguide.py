@@ -11,7 +11,7 @@ Writes
 Run:
   .venv-docs/bin/python docs/_tools/shoot_userguide.py [--port 8817] [--only interface focus ...]
 
-Data: bm_aging.zarr, bm_aging_showcase.zarr and spatial_demo.zarr in ANNZARRO_DOCS_DATA
+Data: bm_aging_annzarro.zarr and spatial_demo.zarr in ANNZARRO_DOCS_DATA
 (default ~/annzarro-data). The script serves them from a temporary data directory
 of symlinks, so panel sets it saves for the screenshots never reach the shared sessions folder.
 
@@ -53,7 +53,7 @@ UMAP_Y = {"type": "obsm", "key": "X_umap", "column": "1"}
 VOLCANO_X = {"type": "var", "key": "kompot_de_Young_to_Old_mean_lfc", "column": ""}
 VOLCANO_Y = {"type": "var", "key": "kompot_de_Young_to_Old_mahalanobis", "column": ""}
 CONST = {"focusedCell": HSC, "focusedGene": "H2-Q7", "taxonomyId": "10090"}
-DATASETS = ("bm_aging.zarr", "bm_aging_showcase.zarr", "spatial_demo.zarr")
+DATASETS = ("bm_aging_annzarro.zarr", "spatial_demo.zarr")
 
 
 # --------------------------------------------------------------------------- views
@@ -266,7 +266,7 @@ def ds(name, data_dir):
 
 # --------------------------------------------------------------------------- pages
 def shoot_interface(sh, data_dir):
-    page = open_plain(sh, ds("bm_aging.zarr", data_dir))
+    page = open_plain(sh, ds("bm_aging_annzarro.zarr", data_dir))
     capture(sh, page, "ui-welcome")
     capture(sh, page, "ui-header", "#app-header", marks=[
         (1, "#select2-dataset-selector-container"), (2, "#refresh-dataset"),
@@ -340,7 +340,7 @@ def shoot_interface(sh, data_dir):
 
 
 def shoot_focus(sh, data_dir):
-    D = ds("bm_aging.zarr", data_dir)
+    D = ds("bm_aging_annzarro.zarr", data_dir)
     v = save_view("focus", view(
         split("horizontal", tile("cell-plot-W"), tile("cell-plot-F")),
         {"cell-plot-W": cell_plot("cell-plot-W", "5-step diffusion walk from the focused cell",
@@ -404,7 +404,7 @@ def shoot_focus(sh, data_dir):
 
 
 def shoot_plots(sh, data_dir):
-    D = ds("bm_aging.zarr", data_dir)
+    D = ds("bm_aging_annzarro.zarr", data_dir)
     v = save_view("cell-plot-controls", view(
         tile("cell-plot-C"),
         {"cell-plot-C": cell_plot("cell-plot-C", "Cell plot", {"type": "obs", "key": "highres_celltype", "column": ""})}))
@@ -424,11 +424,11 @@ def shoot_plots(sh, data_dir):
     page.context.close()
 
     # Categorical colour with missing values: a grey "NA" legend entry (showcase store)
-    SC = ds("bm_aging_showcase.zarr", data_dir)
+    SC = ds("bm_aging_annzarro.zarr", data_dir)
     v = save_view("categorical-na", view(
         tile("gene-plot-M"),
-        {"gene-plot-M": gene_plot("gene-plot-M", "Volcano coloured by var fig4_module_k3 (NaN for non-DE genes)",
-                                  {"type": "var", "key": "fig4_module_k3", "column": ""})}))
+        {"gene-plot-M": gene_plot("gene-plot-M", "Volcano coloured by var gene_module_k3 (NaN for non-DE genes)",
+                                  {"type": "var", "key": "gene_module_k3", "column": ""})}))
     page = sh.open(v, dataset=SC)
     capture(sh, page, "plots-categorical-na", T("gene-plot-M") + " .tile-content")
     sh.log.append("plots: categorical-na traces = " + json.dumps(page.evaluate(
@@ -478,7 +478,7 @@ def shoot_plots(sh, data_dir):
 
 
 def shoot_colour(sh, data_dir):
-    D = ds("bm_aging.zarr", data_dir)
+    D = ds("bm_aging_annzarro.zarr", data_dir)
     v = save_view("colour-seq-div", view(
         split("horizontal", tile("cell-plot-S"), tile("cell-plot-D")),
         {"cell-plot-S": cell_plot("cell-plot-S", "Sequential: Blues, reversed (diffusion walk)",
@@ -549,7 +549,7 @@ def shoot_colour(sh, data_dir):
 
 
 def shoot_tables(sh, data_dir):
-    D = ds("bm_aging.zarr", data_dir)
+    D = ds("bm_aging_annzarro.zarr", data_dir)
     v = save_view("gene-table-start", view(
         split("horizontal", tile("gene-plot-G"), tile("gene-table-T")),
         {"gene-plot-G": gene_plot("gene-plot-G", "Volcano, colour = Spearman (fold change) to the focused gene",
@@ -652,7 +652,7 @@ def shoot_tables(sh, data_dir):
 
 
 def shoot_panelsets(sh, data_dir):
-    D = ds("bm_aging.zarr", data_dir)
+    D = ds("bm_aging_annzarro.zarr", data_dir)
     v = json.loads((VIEWS / "userguide-focus.json").read_text())
     page = sh.open(v, dataset=D)
     page.click("#btn-save-session"); time.sleep(1.2)
@@ -707,7 +707,7 @@ def shoot_panelsets(sh, data_dir):
 
 
 def shoot_share(sh, data_dir):
-    D = ds("bm_aging.zarr", data_dir)
+    D = ds("bm_aging_annzarro.zarr", data_dir)
     v = json.loads((VIEWS / "userguide-focus.json").read_text())
     page = sh.open(v, dataset=D, clipboard_denied=True)
     page.click("#btn-share-link"); time.sleep(1.2)
@@ -720,7 +720,7 @@ def shoot_share(sh, data_dir):
 
 
 def shoot_export(sh, data_dir):
-    D = ds("bm_aging.zarr", data_dir)
+    D = ds("bm_aging_annzarro.zarr", data_dir)
     v = json.loads((VIEWS / "userguide-focus.json").read_text())
     page = sh.open(v, dataset=D)
     w = T("cell-plot-W")
@@ -805,8 +805,8 @@ def shoot_remote(sh_unused, data_dir, port, remote_python, log):
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
             sh = Shooter(browser, f"http://127.0.0.1:{port}", log, OUT)
-            page = open_plain(sh, ds("bm_aging.zarr", data_dir))
-            url = f"http://127.0.0.1:{http_port}/bm_aging.zarr"
+            page = open_plain(sh, ds("bm_aging_annzarro.zarr", data_dir))
+            url = f"http://127.0.0.1:{http_port}/bm_aging_annzarro.zarr"
             page.click("#select2-dataset-selector-container"); time.sleep(0.8)
             page.locator(".select2-container--open .select2-search__field").fill(url)
             time.sleep(0.8)
@@ -841,9 +841,9 @@ def shoot_remote(sh_unused, data_dir, port, remote_python, log):
 
 
 def shoot_subsets(sh, data_dir):
-    """A subset of bm_aging.zarr (8,090 cells, under the 200,000-cell default threshold,
+    """A subset of bm_aging_annzarro.zarr (8,090 cells, under the 200,000-cell default threshold,
     so the subset is chosen by hand here)."""
-    D = ds("bm_aging.zarr", data_dir)
+    D = ds("bm_aging_annzarro.zarr", data_dir)
     v = save_view("subset-start", view(
         split("horizontal", tile("cell-plot-SA"), tile("cell-table-ST")),
         {"cell-plot-SA": cell_plot("cell-plot-SA", "Cell type", {"type": "obs", "key": "highres_celltype", "column": ""}),
@@ -928,10 +928,10 @@ def shoot_subsets(sh, data_dir):
 
 def shoot_focus_outside(sh, data_dir):
     """A focused cell outside the subset: the HSC is in part 2 of {"n": 3000, "seed": 0} on
-    bm_aging.zarr; one click on › shows part 3, which does not hold it. The walk from the HSC
+    bm_aging_annzarro.zarr; one click on › shows part 3, which does not hold it. The walk from the HSC
     is coloured over part 3's cells, the ring marks where the HSC lies, the header says it is
     not shown. Then the picker lists a cell of another part, tagged."""
-    D = ds("bm_aging.zarr", data_dir)
+    D = ds("bm_aging_annzarro.zarr", data_dir)
     v = view(split("horizontal", tile("cell-plot-W"), tile("cell-plot-T")),
              {"cell-plot-W": cell_plot("cell-plot-W", "5-step diffusion walk from the focused cell",
                                        obsp(WALK, HSC), colorScale="Blues", colorReversed=True),
@@ -1003,7 +1003,7 @@ def draw_tooltip(path, anchor, text, scale):
 
 def shoot_subset_balanced_parts(sh, data_dir):
     """A late part of a balanced partition: the small cell types are used up."""
-    D = ds("bm_aging.zarr", data_dir)
+    D = ds("bm_aging_annzarro.zarr", data_dir)
     v = view(split("horizontal", tile("cell-plot-SB"), tile("cell-table-SC")),
              {"cell-plot-SB": cell_plot("cell-plot-SB", "Cell type", {"type": "obs", "key": "highres_celltype", "column": ""}),
               "cell-table-SC": {"id": "cell-table-SC", "title": "Cell table",

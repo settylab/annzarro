@@ -1,8 +1,8 @@
 {
   "name": "gene-by-gene-d",
   "timestamp": "2026-10-02T21:26:49+00:00",
-  "dataset": "bm_aging_showcase.zarr",
-  "datasetName": "bm_aging_showcase",
+  "dataset": "bm_aging_annzarro.zarr",
+  "datasetName": "bm_aging_annzarro",
   "constants": {
     "focusedGene": "H2-Q7",
     "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
@@ -31,7 +31,7 @@
         "z": null,
         "color": {
           "type": "var",
-          "key": "fig4d_class",
+          "key": "h2q7_correlation_class",
           "column": ""
         },
         "pointSize": 5,
@@ -86,7 +86,7 @@
           "z": null,
           "color": {
             "type": "var",
-            "key": "fig4d_class",
+            "key": "h2q7_correlation_class",
             "column": ""
           },
           "pointSize": 5,

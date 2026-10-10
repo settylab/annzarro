@@ -13,7 +13,7 @@ Run:
   .venv-docs/bin/python docs/_tools/start_links.py write      # every .url.txt from its .json
   .venv-docs/bin/python docs/_tools/start_links.py check      # open each link headless
 
-`check` serves bm_aging.zarr, bm_aging_showcase.zarr and neuro_demo/celegans_connectome_cengen.zarr
+`check` serves bm_aging_annzarro.zarr and neuro_demo/celegans_connectome_cengen.zarr
 (when built, by docs/_tools/datasets/celegans_connectome.py) from ANNZARRO_DOCS_DATA (default
 ~/annzarro-data) through a temporary data directory of symlinks, opens every link with
 its host:port swapped for the test server, and fails on a page error or a panel that does not
@@ -59,7 +59,7 @@ PROTOCOL = {  # paper view file -> docs name
     "D_locked_vs_focused_cell": "protocol-D-locked-vs-focused-cell",
     "E_table_filter": "protocol-E-table-filter",
 }
-PROTOCOL_DATASET = "bm_aging.zarr"
+PROTOCOL_DATASET = "bm_aging_annzarro.zarr"
 
 
 # The scale figure: docs name -> (paper view file in figures/scale, subset, title, changes)
@@ -172,7 +172,7 @@ def check() -> int:
     from playwright.sync_api import sync_playwright
 
     data_dir = Path(tempfile.mkdtemp(prefix="start-links-"))
-    for store in ("bm_aging.zarr", "bm_aging_showcase.zarr"):
+    for store in ("bm_aging_annzarro.zarr",):
         os.symlink(DATA_DIR / store, data_dir / store)
     neuro = DATA_DIR / "neuro_demo" / "celegans_connectome_cengen.zarr"   # docs/_tools/datasets/celegans_connectome.py
     if neuro.exists():

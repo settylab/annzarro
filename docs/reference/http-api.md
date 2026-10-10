@@ -12,7 +12,7 @@ annzarro start --host 127.0.0.1 --port 8812 --no-browser --auth-disabled \
     --data-dir ~/annzarro-data
 ```
 
-on the demonstration store `bm_aging.zarr` (8,090 cells × 16,285 genes). Outputs are copied
+on the demonstration store `bm_aging_annzarro.zarr` (8,090 cells × 16,285 genes). Outputs are copied
 from those calls; long paths are shortened to `$DS`.
 
 ## Conventions
@@ -137,7 +137,7 @@ import numpy as np
 import requests
 
 BASE = "http://127.0.0.1:8812/api/v1"
-STORE = "/path/to/bm_aging.zarr"
+STORE = "/path/to/bm_aging_annzarro.zarr"
 
 
 def get_slice(route, **params):
@@ -293,7 +293,7 @@ cell of the dataset, and its rows mean something over the cells shown: its kNN o
 coloured over them, its own expression row. `rows=` cannot name it, so the cell-axis routes take
 its dataset row as `dataset_rows=`. An obsp row comes back over the subset's cells, exactly as
 a shown cell's row does; a layer or `X` row is the cell's own; `cols` of obsp stay positions
-among the cells shown. Here part 2 of `{"n":3000,"seed":0}` on `bm_aging.zarr`, and dataset
+among the cells shown. Here part 2 of `{"n":3000,"seed":0}` on `bm_aging_annzarro.zarr`, and dataset
 row 1, a cell of part 1:
 
 ```console
@@ -370,9 +370,9 @@ $ curl -s "http://127.0.0.1:8812/api/v1/datasets" | python -m json.tool | head -
         "cells": 8090,
         "genes": 16285,
         "is_link": false,
-        "name": "bm_aging.zarr",
-        "path": "/Users/me/annzarro-data/bm_aging.zarr",
-        "rel_path": "bm_aging.zarr"
+        "name": "bm_aging_annzarro.zarr",
+        "path": "/Users/me/annzarro-data/bm_aging_annzarro.zarr",
+        "rel_path": "bm_aging_annzarro.zarr"
     },
 ```
 
@@ -414,8 +414,8 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 Also registered but not used by the web client: `/data/paginated`, `/data/statistics`,
 `/data/by_path`, `/core/datasets`, `/zarr/to_anndata` (a metadata summary: shape, the first ten obs and var names, key lists, column types; it opens no matrix, so a store with a dense 175,000 x 175,000 `obsp` answers it at once), and the path-segment forms
 `/datasets/<path>`, `/datasets/<path>/info`, `/datasets/<path>/uns/...`. In the path-segment
-forms `<path>` is relative to the data directory (`/datasets/bm_aging.zarr`,
-`/datasets/bm_aging.zarr/uns/neighbors/params`); a path that does not exist is `404 not_found`,
+forms `<path>` is relative to the data directory (`/datasets/bm_aging_annzarro.zarr`,
+`/datasets/bm_aging_annzarro.zarr/uns/neighbors/params`); a path that does not exist is `404 not_found`,
 one that is not a dataset `400 unsupported_type`.
 
 ## Status codes

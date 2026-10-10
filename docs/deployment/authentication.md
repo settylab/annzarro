@@ -158,7 +158,7 @@ before any path is looked at.
 - `allowed_dirs` grants a whole directory tree, not single datasets. Listing `/lab/atlases`
   lets every user open any store under `/lab/atlases` by typing its path, whether or not it is
   linked into the data directory. To share single datasets, list the stores themselves
-  (`/lab/atlases/bm_aging.zarr`).
+  (`/lab/atlases/bm_aging_annzarro.zarr`).
 - A symlink in the data directory whose target is outside every allowed root is left out of the
   Dataset picker and refused if opened by path. The startup log names every such link.
 - Who may open a path outside those directories is `server.arbitrary_paths`:

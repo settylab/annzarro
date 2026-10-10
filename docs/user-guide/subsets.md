@@ -41,7 +41,7 @@ Click to change the subset."
 
 ## Choose a subset
 
-`bm_aging.zarr` has 8,090 cells, so it opens on all of them; the subset below is chosen by hand to
+`bm_aging_annzarro.zarr` has 8,090 cells, so it opens on all of them; the subset below is chosen by hand to
 show the dialog. On a large dataset the steps are the same.
 
 1. Click the badge (**All cells** or **Subset · seed …**). The **Cell subset** dialog opens.
@@ -182,7 +182,7 @@ With **Balanced across** a column, every part is as balanced as the cells not ye
 A column with more than 10,000 categories is listed but cannot be chosen: one group per cell is
 no balance.
 Small groups are used up in the first parts, so later parts hold the larger groups only. Here
-`bm_aging.zarr` is split into nine parts of 1,000 cells balanced across `highres_celltype` (31
+`bm_aging_annzarro.zarr` is split into nine parts of 1,000 cells balanced across `highres_celltype` (31
 cell types). By part 7, 28 of them have been shown in full, and the part holds the three largest
 types that still have cells left: LMPP, Neutrophil and Ery P. The badge's tooltip says so:
 
