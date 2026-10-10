@@ -18,14 +18,14 @@ This page walks through one round. It needs:
 
 Open the store with anndata and zarr, compute, and write only the new element with
 `ad.io.write_elem`. The example adds a per-cell MHC class I score, the mean log expression of
-six genes, to `bm_aging.zarr` ({doc}`../data/demo-data`):
+six genes, to `bm_aging_annzarro.zarr` ({doc}`../data/demo-data`):
 
 ```python
 import anndata as ad
 import numpy as np
 import zarr
 
-path = "/lab/atlases/bm_aging.zarr"            # the store the data directory links to
+path = "/lab/atlases/bm_aging_annzarro.zarr"            # the store the data directory links to
 g = zarr.open_group(path, mode="r+", use_consolidated=False)
 obs = ad.io.read_elem(g["obs"])
 var = ad.io.read_elem(g["var"])

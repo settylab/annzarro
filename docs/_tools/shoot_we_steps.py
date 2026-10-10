@@ -12,7 +12,7 @@ Each one starts from a tutorial's view and then does the step as a user would:
 - Worked example 5, Steps 29 and 31 (tour.md): a regular expression in the table's search box;
   Export CSV of the filtered rows; click a cell ID to focus it.
 
-Run (bm_aging.zarr and bm_aging_showcase.zarr in ANNZARRO_DOCS_DATA):
+Run (bm_aging_annzarro.zarr in ANNZARRO_DOCS_DATA):
 
     .venv-docs/bin/python docs/_tools/shoot_we_steps.py
 

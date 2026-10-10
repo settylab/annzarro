@@ -8,7 +8,7 @@ and every panel that depends on it redraws from one vector. **Locking** a panel 
 so you can move the focus on and compare. The tutorial {doc}`../tutorials/tour` uses the same
 model in a first analysis.
 
-This page uses two cell plots on `bm_aging.zarr`: on the left, colour = the focused cell's row of
+This page uses two cell plots on `bm_aging_annzarro.zarr`: on the left, colour = the focused cell's row of
 `obsp/diffusion_walk_t5` (where a 5-step diffusion walk from that cell lands); on the right,
 colour = the focused gene's column of `layers/kompot_de_Young_to_Old_fold_change`.
 The view is {download}`userguide-focus.json <../_tools/views/userguide-focus.json>`.
@@ -141,7 +141,7 @@ show: a cell of another part after a step with **›**, one a filter leaves out,
 name. It stays focused (or locked), and every panel that depends on it still draws its slice
 over the cells shown. A focus is replaced only when the dataset does not have the cell at all.
 
-Here `bm_aging.zarr` is shown in parts of 3,000 cells ({download}`userguide-focus-outside.json
+Here `bm_aging_annzarro.zarr` is shown in parts of 3,000 cells ({download}`userguide-focus-outside.json
 <../_tools/views/userguide-focus-outside.json>`). The HSC is in part 2; one click on **›** shows
 part 3, which does not hold it:
 

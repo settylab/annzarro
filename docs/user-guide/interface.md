@@ -3,7 +3,7 @@
 AnnZarro has one window: a header with the dataset and the two focus pickers, a statistics bar,
 and below it a canvas of tiles. Each tile holds one panel (a cell plot, gene plot, cell table or
 gene table). You add tiles, split them side by side or stacked, resize them by dragging, and
-close them. This page walks through every control on that screen with `bm_aging.zarr`
+close them. This page walks through every control on that screen with `bm_aging_annzarro.zarr`
 ({doc}`../data/demo-data`).
 
 ## The header

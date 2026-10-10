@@ -53,7 +53,7 @@ view = {
     },
 }
 payload = base64.urlsafe_b64encode(json.dumps(view, separators=(",", ":")).encode()).decode().rstrip("=")
-store = "/data/datasets/bm_aging.zarr"
+store = "/data/datasets/bm_aging_annzarro.zarr"
 print(f"http://localhost:8000/?dataset_path={urllib.parse.quote(store)}#view={payload}")
 ```
 
@@ -63,10 +63,10 @@ config leaves out take their defaults. The docs' screenshot views are in `docs/_
 (deep-links-protocol-views)=
 ### The paper's five protocol views
 
-The paper's protocol views of `bm_aging.zarr` are complete examples with two or three panels,
+The paper's protocol views of `bm_aging_annzarro.zarr` are complete examples with two or three panels,
 colour scales, a lock and a table filter (`data_prep/demo_panelsets/*.view.json` in the companion
 repository `settylab/annzarro-paper`, private until the paper is published; the panel set files
-below are all you need). Each link is ready for a local server with `bm_aging.zarr` in
+below are all you need). Each link is ready for a local server with `bm_aging_annzarro.zarr` in
 its data directory ({ref}`tut-start-links` says what to change otherwise); the panel set file loads
 the same view with **Load Panel Set** > **Upload file**.
 
@@ -122,7 +122,7 @@ docs from its panel set file, and opens each one in a headless browser.
   },
 
   // the store it was saved on, optional (v0.4.1 on; see "Store and version" below)
-  "store": { "path": "bm_aging.zarr", "abs": "/data/bm_aging.zarr", "name": "bm_aging.zarr",
+  "store": { "path": "bm_aging_annzarro.zarr", "abs": "/data/bm_aging_annzarro.zarr", "name": "bm_aging_annzarro.zarr",
              "fp": { "v": 1, "n_obs": 8090, "n_var": 16285, "cells": "…", "genes": "…", "data": "…",
                      "meta": "…", "groups": { "obs": "…", … }, "fields": { "obs": [ … ], … } } },
   "annzarro": "0.4.1",             // the version that saved it

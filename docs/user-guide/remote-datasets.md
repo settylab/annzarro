@@ -26,9 +26,9 @@ stores are switched on and limited in the server's configuration.
 
    ```{figure} ../_static/screens/user-guide/remote-plot.png
    :class: screenshot
-   :alt: A fold-change UMAP of H2-Q7, read from bm_aging.zarr served over HTTP.
+   :alt: A fold-change UMAP of H2-Q7, read from bm_aging_annzarro.zarr served over HTTP.
 
-   `bm_aging.zarr` read over HTTP: the fold-change UMAP of H2-Q7.
+   `bm_aging_annzarro.zarr` read over HTTP: the fold-change UMAP of H2-Q7.
    ```
 
 Remote paths work everywhere a local path does: in panel sets (the dataset is stored as the URL)
@@ -110,10 +110,10 @@ URL; everything else is fetched on demand. Measured on public Vitessce AnnData s
 ## What was tested for this page
 
 There was no public HTTPS AnnData Zarr store at hand, so this page was checked with a local web
-server: `python -m http.server 8837` serving the folder that holds `bm_aging.zarr` (Zarr v2,
+server: `python -m http.server 8837` serving the folder that holds `bm_aging_annzarro.zarr` (Zarr v2,
 consolidated metadata), and AnnZarro started with
 `ANNZARRO_REMOTE_ALLOWLIST=http://127.0.0.1:8837/`. Typing
-`http://127.0.0.1:8837/bm_aging.zarr` into the Dataset picker opened the store (8,090 cells,
+`http://127.0.0.1:8837/bm_aging_annzarro.zarr` into the Dataset picker opened the store (8,090 cells,
 16,285 genes) and the plots on this page were drawn from it. A URL outside the allowlist
 (`https://example.org/x.zarr`) was refused with the message above. S3 and GCS stores go through
 the same code path with a different fsspec backend but were not tested here.
@@ -127,5 +127,5 @@ gene's column. The plot appeared 1.3 s after the page started loading, with the 
 already in the server's cache. The server's result cache answers a repeated request for the same
 vector without going back to the store. For Zarr v3 stores, the chunk cache
 (`remote_chunk_cache_mb`) also keeps the raw chunks, so another gene from chunks already fetched
-is read locally; `bm_aging.zarr` is Zarr v2, so this was not exercised here.
+is read locally; `bm_aging_annzarro.zarr` is Zarr v2, so this was not exercised here.
 ```

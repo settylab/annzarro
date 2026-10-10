@@ -17,8 +17,8 @@ The results are panels of the AnnZarro paper's gene-by-gene figure ({doc}`../pap
 ## What you need
 
 - AnnZarro running locally ({doc}`../getting-started/quickstart`), with
-  `bm_aging_showcase.zarr` in its data directory ({doc}`../data/showcase-store`). Everything
-  except the module comparison also works on `bm_aging.zarr`.
+  `bm_aging_annzarro.zarr` in its data directory ({doc}`../data/demo-data`). Everything
+  except the module comparison also works on `bm_aging_annzarro.zarr`.
 - These fields:
 
 | Slot | Key | Used for | Live or precomputed |
@@ -28,8 +28,8 @@ The results are panels of the AnnZarro paper's gene-by-gene figure ({doc}`../pap
 | `var` | `kompot_de_Young_to_Old_is_de` | the 190 DE genes (5% FDR) | stored Kompot result |
 | `varp` | `spearman_fold_change` | colour of the volcano, y axis of the last plot | **live**: the focused gene's row is read on every focus change |
 | `varp` | `spearman_smoothed` | x axis of the last plot | **live** |
-| `var` (showcase) | `fig4_module_k3`, `fig4c_rank_H2-Q7`, `fig4c_rank_S100a9`, `rho_fc_H2-Q7`, `rho_fc_S100a9` | module comparison | precomputed for H2-Q7 and S100a9 only |
-| `var` (showcase) | `fig4d_class` | colour of the last plot | precomputed for H2-Q7 only |
+| `var` | `gene_module_k3`, `rho_rank_H2-Q7`, `rho_rank_S100a9`, `rho_fc_H2-Q7`, `rho_fc_S100a9` | module comparison | precomputed for H2-Q7 and S100a9 only |
+| `var` | `h2q7_correlation_class` | colour of the last plot | precomputed for H2-Q7 only |
 
 `spearman_fold_change` is the Spearman correlation, across cells, of two genes' Kompot fold
 changes {cite:p}`otto2025kompot`: high when two genes gain or lose expression with age in the
@@ -49,7 +49,7 @@ Panel set file: {download}`gene-by-gene-ab.json <../_static/panelsets/paper/gene
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
-1. Open `bm_aging_showcase.zarr` from **Dataset**.
+1. Open `bm_aging_annzarro.zarr` from **Dataset**.
 2. In the bottom selector, add a gene plot. Open its controls (the chevron in the tile header).
 3. Set **X** to `var`, `kompot_de_Young_to_Old_mean_lfc` and **Y** to `var`,
    `kompot_de_Young_to_Old_mahalanobis`. You now have the Kompot volcano.
@@ -191,22 +191,22 @@ ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
 The conventional route clusters the 190 DE genes by average linkage on 1 − ρ and cuts the tree
-at the silhouette maximum, k = 3. AnnZarro does not cluster. The showcase store holds the
-paper's result as `var/fig4_module_k3` (87, 68 and 35 genes) together with each DE gene's rank by
+at the silhouette maximum, k = 3. AnnZarro does not cluster. The store holds the
+paper's result as `var/gene_module_k3` (87, 68 and 35 genes) together with each DE gene's rank by
 ρ with H2-Q7 and with S100a9. This step uses those precomputed columns; it works for these two
 genes only.
 
-1. Add a gene plot. Set **X** to `var`, `fig4c_rank_H2-Q7`, **Y** to `var`,
-   `rho_fc_H2-Q7` and **Color** to `var`, `fig4_module_k3`. **Palette** stays at "As
+1. Add a gene plot. Set **X** to `var`, `rho_rank_H2-Q7`, **Y** to `var`,
+   `rho_fc_H2-Q7` and **Color** to `var`, `gene_module_k3`. **Palette** stays at "As
    stored in adata.uns", which gives the paper's purple, green and amber.
 2. Only DE genes have a rank, and H2-Q7 has none either: it is the gene the others are ranked
    against. So the 16,095 non-DE genes and H2-Q7 itself, 16,096 genes, have no x value and are
    not drawn, and the tile shows the other 189 of the 190 DE genes in a blue notice ("189 of
    16,285 genes shown"). The S100a9 plot of step 3 likewise leaves out S100a9.
-3. Add a second gene plot with `fig4c_rank_S100a9`, `rho_fc_S100a9` and the same colour.
-4. Add a gene table with the columns `fig4_module_k3`, `rho_fc_H2-Q7`, `rho_fc_S100a9` and
+3. Add a second gene plot with `rho_rank_S100a9`, `rho_fc_S100a9` and the same colour.
+4. Add a gene table with the columns `gene_module_k3`, `rho_fc_H2-Q7`, `rho_fc_S100a9` and
    `kompot_de_Young_to_Old_mahalanobis` (tab `var`). In **Advanced Search**, **Add Condition**
-   `fig4_module_k3` **Equals** `module 1`, then **Add Condition** `rho_fc_H2-Q7` **Less Than**
+   `gene_module_k3` **Equals** `module 1`, then **Add Condition** `rho_fc_H2-Q7` **Less Than**
    `0.2` ({doc}`../user-guide/tables-and-filters`).
 
 ```{figure} ../_static/screens/paper/fig4c-page.png
@@ -257,13 +257,13 @@ are live `varp` rows: one click redraws the whole scatter.
 
 1. Add a gene plot. Set **X** to `varp`, `spearman_smoothed`, "Focused gene …", and
    **Y** to `varp`, `spearman_fold_change`, "Focused gene …". Leave both locks open.
-2. Set **Color** to `var`, `fig4d_class` (showcase store, precomputed for H2-Q7), or to `var`,
-   `kompot_de_Young_to_Old_is_de` on `bm_aging.zarr`.
+2. Set **Color** to `var`, `h2q7_correlation_class` (precomputed for H2-Q7), or to `var`,
+   `kompot_de_Young_to_Old_is_de` on `bm_aging_annzarro.zarr`.
 3. Focus `H2-Q7`. It sits at (1, 1), marked red.
 
 ```{figure} ../_static/screens/paper/fig4d-controls.png
 :class: screenshot
-:alt: Gene plot controls with both axes set to varp rows of the focused gene and colour set to fig4d_class.
+:alt: Gene plot controls with both axes set to varp rows of the focused gene and colour set to h2q7_correlation_class.
 
 The controls: two `varp` rows of the focused gene as axes.
 ```
@@ -287,7 +287,7 @@ H2-K1: ρ = 0.90 on smoothed expression, 0.21 on fold change.
 ```
 
 204 genes share H2-Q7's cell-state pattern (smoothed ρ > 0.7); only H2-Q6, at (0.94, 0.82), also
-shares its age response. Focus another gene and the axes redraw for it; the `fig4d_class` colour
+shares its age response. Focus another gene and the axes redraw for it; the `h2q7_correlation_class` colour
 does not, because it was computed for H2-Q7.
 
 :::{note}
@@ -306,7 +306,7 @@ another.
 | H2-Q6 ρ = 0.82, Tapbpl 0.73, H2-D1 0.66, B2m 0.60 | gene table with `rho_fc_H2-Q7`; click its header twice to sort descending | top rows H2-Q7 (1), H2-Q6, Tapbpl, H2-D1, Fxyd5, Sec62, B2m |
 | only H2-Q6 of these is DE | add `kompot_de_Young_to_Old_is_de` as a column | Yes for H2-Q6 only |
 | 190 DE genes | `kompot_de_Young_to_Old_mahalanobis` **Greater Than** `5.82` | 190 entries |
-| 52 of 86 module-mates with ρ < 0.2 | `fig4_module_k3` = `module 1` AND `rho_fc_H2-Q7` < `0.2` | 52 entries |
+| 52 of 86 module-mates with ρ < 0.2 | `gene_module_k3` = `module 1` AND `rho_fc_H2-Q7` < `0.2` | 52 entries |
 | 204 genes share the cell-state pattern | `rho_smoothed_H2-Q7` **Greater Than** `0.7` | 205 entries: 204 plus H2-Q7 itself |
 | 35 genes share the age response | `rho_fc_H2-Q7` **Greater Than** `0.5` | 36 entries: 35 plus H2-Q7 |
 
@@ -314,7 +314,7 @@ The 52 entries were read off the app (screenshot above). The other results were 
 Python from the same stored columns and match the paper's `figures/numbers/fig3.json`.
 
 ```{note}
-The `rho_fc_*` and `rho_smoothed_*` columns of the showcase store hold H2-Q7's (and S100a9's,
+The `rho_fc_*` and `rho_smoothed_*` columns of the store hold H2-Q7's (and S100a9's,
 H2-Aa's) rows of `varp/…` as fixed columns. A gene table can also show a `varp` row directly: on
 its `varp` tab, `spearman_fold_change: H2-Q7 (focused)` adds H2-Q7's row, which stays H2-Q7's
 when you focus another gene ({doc}`gene-groups`). The boolean
@@ -325,7 +325,7 @@ when you focus another gene ({doc}`gene-groups`). The boolean
 ## Open the views
 
 The views of this tutorial, each also in the **Start here** box of its section. They are ready
-for a local server with `bm_aging_showcase.zarr` in its data directory; {ref}`tut-start-links`
+for a local server with `bm_aging_annzarro.zarr` in its data directory; {ref}`tut-start-links`
 says which part to change for another server address or store location.
 
 ::::{dropdown} Steps 1 and 2: volcano coloured by the focused gene's row (H2-Q7)

@@ -97,7 +97,7 @@ an exported figure:
   import numpy as np
   import zarr
 
-  g = zarr.open_group("bm_aging.zarr", mode="r")
+  g = zarr.open_group("bm_aging_annzarro.zarr", mode="r")
   umap = g["obsm/X_umap"][:]                                   # x = column 0, y = column 1
   genes = g["var/_index"][:]
   j = int(np.flatnonzero(genes == "H2-Q7")[0])

@@ -144,12 +144,12 @@ carries the same statement above the plot.
   first obsm matrix) columns 0 and 1. If that matrix has a third column the plot opens in 3D. The
   colour is `obs/leiden`, `obs/louvain` or the first obs column with "cluster" in its name, if one
   exists.
-- A new **gene plot** uses the first varm matrix in the same way (on `bm_aging.zarr`, `varm/PCs`
+- A new **gene plot** uses the first varm matrix in the same way (on `bm_aging_annzarro.zarr`, `varm/PCs`
   columns 0, 1 and 2, so it opens in 3D) and colours by `var/highly_variable` if present.
 - Without obsm or varm, both fall back to two numeric annotation columns (for example
   `total_counts` and `n_genes_by_counts`).
 
-## Examples on `bm_aging.zarr`
+## Examples on `bm_aging_annzarro.zarr`
 
 The four cell plots below come from the view
 {download}`userguide-cell-sources.json <../_tools/views/userguide-cell-sources.json>`.
@@ -216,9 +216,9 @@ The legend scrolls when it has more entries than fit.
 
 ```{figure} ../_static/screens/user-guide/plots-categorical-na.png
 :class: screenshot
-:alt: A volcano plot coloured by var fig4_module_k3: the 190 DE genes in purple, green and yellow for modules 1 to 3, the 16,095 other genes in grey under an NA legend entry.
+:alt: A volcano plot coloured by var gene_module_k3: the 190 DE genes in purple, green and yellow for modules 1 to 3, the 16,095 other genes in grey under an NA legend entry.
 
-`var/fig4_module_k3` of `bm_aging_showcase.zarr`: three modules (87, 68 and 35 genes) and 16,095
+`var/gene_module_k3` of `bm_aging_annzarro.zarr`: three modules (87, 68 and 35 genes) and 16,095
 genes without a module, drawn in grey as **NA**. View:
 {download}`userguide-categorical-na.json <../_tools/views/userguide-categorical-na.json>`.
 ```

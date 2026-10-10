@@ -16,7 +16,7 @@ model; **b**, the AnnData slots behind it; **c**, AnnZarro compared with other v
 The focused cell selects rows of the cells × cells and cells × genes matrices; the focused gene
 selects a column of cells × genes and a row of genes × genes. Each scatter is coloured by the
 selected vector, and clicking a point moves the focus. The figure is a diagram; the tutorial
-{doc}`../tutorials/tour` builds it as a live 2 × 2 layout on `bm_aging.zarr`, one panel per
+{doc}`../tutorials/tour` builds it as a live 2 × 2 layout on `bm_aging_annzarro.zarr`, one panel per
 arrow that ends in a scatter, and moves the focus through it.
 
 | Part of the diagram | In AnnZarro | Tutorial section |
@@ -65,7 +65,7 @@ a slot for a plot's axes or colour (the type, key and column dropdowns) is in
 {doc}`../user-guide/cell-and-gene-plots`. The `layer` type lists `X` first, then the arrays
 under `layers/`, so the main matrix is a source like any layer.
 
-The panels below put each slot on screen once on `bm_aging.zarr`, with the focused cell
+The panels below put each slot on screen once on `bm_aging_annzarro.zarr`, with the focused cell
 `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` and the focused gene `H2-Q7`. The settings of each are in
 `docs/_tools/views/slot-*.json`, written by `docs/_tools/shoot_figs79.py`.
 

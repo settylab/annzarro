@@ -16,14 +16,14 @@ against multiscale diffusion distance to every other cell (Spearman ρ = 0.62), 
 on the UMAP but far in diffusion space (orange) and 392 the reverse (blue). **c**, The same groups
 on the UMAP. **d**, A connectome as a cells × cells matrix: *C. elegans* neuron classes on a UMAP of
 their transcriptomes, coloured by the focused class AVA's row of chemical synapses. The tutorial
-{doc}`../tutorials/cell-similarity` builds panels a to c in AnnZarro on `bm_aging_showcase.zarr`;
+{doc}`../tutorials/cell-similarity` builds panels a to c in AnnZarro on `bm_aging_annzarro.zarr`;
 panel d uses its own store ({ref}`cell-by-cell-connectome`).
 
 | Panel | In AnnZarro | Tutorial section |
 |---|---|---|
-| a | live: `obsp/diffusion_walk_t5` row as colour, four clicks in a table of the path cells (precomputed `fig3a_*` columns) | {ref}`tut-cell-walk` |
-| b | live axes: rows of `obsp/umap_distance` and `obsp/diffusion_distance`; precomputed colour `fig3_plasma_groups` | {ref}`tut-cell-distance-axes` |
-| c | UMAP coloured by `fig3_plasma_groups` | {ref}`tut-cell-groups-umap` |
+| a | live: `obsp/diffusion_walk_t5` row as colour, four clicks in a table of the path cells (precomputed `trajectory_*` columns) | {ref}`tut-cell-walk` |
+| b | live axes: rows of `obsp/umap_distance` and `obsp/diffusion_distance`; precomputed colour `plasma_groups` | {ref}`tut-cell-distance-axes` |
+| c | UMAP coloured by `plasma_groups` | {ref}`tut-cell-groups-umap` |
 | counts (265, 392, cell types) | table filters | {ref}`tut-cell-check` |
 | d | live: `obsp/chemical_synapses` row of the focused class as a log colour | {ref}`cell-by-cell-connectome` |
 
@@ -36,17 +36,17 @@ This section covers panels a to c; panel d has its own list below.
 |---|---|---|
 | **Log colour scale** for the walk (10⁻⁵ to 0.0126), cells below 10⁻⁵ in grey | Linear by default. Of the 956 cells the HSC's walk reaches above 10⁻⁵, 64% are below 5 × 10⁻⁴ (median 1.0 × 10⁻⁴), so on a linear scale they show as pale blue and the walks look narrower. | Click **Log** in the colour controls and type `1e-5` in the floor box beside it: the colour becomes log10 of the value, and values at or below the floor share the lowest colour. |
 | **Shared colour range** across the four panels of a | Each row scales itself. | **Lock Range** with the HSC focused keeps 0 to 0.0126, the largest value in the four rows. |
-| **Path line** through the 13 path cells | No line overlays. | The path table in the tutorial, or colour by `obs/fig3a_focus_cells` (raise **Size**). |
+| **Path line** through the 13 path cells | No line overlays. | The path table in the tutorial, or colour by `obs/trajectory_focus_cells` (raise **Size**). |
 | **n_eff = 1/Σp²** per panel (251, 517, 559, 289 cells) | Not computed. | Values in `figures/numbers/fig2.json` of the paper repository. |
-| **Spearman ρ = 0.62** and the 5% / 20% **threshold lines** in b | No statistics or reference lines on plots. | The thresholds' result is stored as `fig3_plasma_groups`; per-cell distances to the plasma cell also exist as obs columns (`fig3_umap_dist_to_plasma`, `fig3_diffusion_dist_to_plasma`). |
+| **Spearman ρ = 0.62** and the 5% / 20% **threshold lines** in b | No statistics or reference lines on plots. | The thresholds' result is stored as `plasma_groups`; per-cell distances to the plasma cell also exist as obs columns (`umap_dist_to_plasma`, `diffusion_dist_to_plasma`). |
 | **Group labels and walk mass** in c (0.09% on orange, 59.2% on blue) | Not computed. | Table filters give the cell types of each group ({ref}`tut-cell-check`). |
 | **Dataset-wide numbers** in the caption (median per-cell ρ 0.85; 14 of 30 neighbours shared) | Not computed; they summarise all 8,090 rows. | `figures/fig2_cell_by_cell.py`. |
-| **Groups fixed to one plasma cell** | The axes of b follow any focused cell; the colours do not, since `fig3_plasma_groups` describes the paper's plasma cell only. | Lock both axes to keep the plasma cell's distances. |
+| **Groups fixed to one plasma cell** | The axes of b follow any focused cell; the colours do not, since `plasma_groups` describes the paper's plasma cell only. | Lock both axes to keep the plasma cell's distances. |
 | Focused cell drawn as a ring | Drawn as a larger dark point ("Highlight Focused Cell"). | |
 
-The path cells, groups and distances in the showcase store were computed by the paper's figure
+The path cells, groups and distances in the store were computed by the paper's figure
 code and checked against its numbers (265 and 392 cells; ρ of the two rows 0.6169), see
-{doc}`../data/showcase-store`.
+{doc}`../data/demo-data`.
 
 ## Views
 

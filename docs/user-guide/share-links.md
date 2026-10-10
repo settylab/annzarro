@@ -32,7 +32,7 @@ http://<server>/?dataset_path=<path on the server>#view=z1.<compressed view>
 ```
 
 - `dataset_path` (query) is the dataset: its name in the server's data directory, such as
-  `bm_aging.zarr`, when it is inside it (links made before v0.4.1 hold the absolute path), an
+  `bm_aging_annzarro.zarr`, when it is inside it (links made before v0.4.1 hold the absolute path), an
   absolute path for a store outside it, or a remote URL ({doc}`remote-datasets`). A name relative
   to the data directory works on any server that has that store there (the tutorials' links are
   written this way, {ref}`tut-start-links`).
@@ -54,7 +54,7 @@ store ({doc}`reproducing`).
 
 ## How long is a link?
 
-Measured on this build with `bm_aging.zarr`. Each count includes the server address and the
+Measured on this build with `bm_aging_annzarro.zarr`. Each count includes the server address and the
 URL-encoded dataset path, 169 characters here; a shorter data directory path gives shorter links.
 
 | View | Link length |

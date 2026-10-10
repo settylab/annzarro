@@ -20,8 +20,8 @@ figure ({doc}`../paper/cells-and-genes`).
 ## What you need
 
 - AnnZarro running locally ({doc}`../getting-started/quickstart`) with
-  `bm_aging_showcase.zarr` in its data directory ({doc}`../data/showcase-store`). Steps 1 and 2 and
-  the axes of step 3 also work on `bm_aging.zarr`.
+  `bm_aging_annzarro.zarr` in its data directory ({doc}`../data/demo-data`). Steps 1 and 2 and
+  the axes of step 3 also work on `bm_aging_annzarro.zarr`.
 - These fields:
 
 | Slot | Key | Used for |
@@ -30,14 +30,14 @@ figure ({doc}`../paper/cells-and-genes`).
 | `layers` | `kompot_de_Young_smoothed`, `kompot_de_Old_smoothed` | colour in step 2 |
 | `obsm` | `X_umap` | UMAP axes |
 | `var` | `kompot_de_Young_to_Old_mahalanobis` | DE genes have a value above 5.82 |
-| `var` (showcase) | `fig5d_direction` | colour in step 3 (precomputed for the two example cells) |
-| `layers` (showcase) | `kompot_de_Young_to_Old_fold_change_zscores` | the noise level in step 3 |
+| `var` | `hsc_vs_monocyte_direction` | colour in step 3 (precomputed for the two example cells) |
+| `layers` | `kompot_de_Young_to_Old_fold_change_zscores` | the noise level in step 3 |
 
 The fold change is Old minus Young smoothed log2 expression, per cell and gene. The layers are
 dense 8,090 x 16,285 float32 arrays. A gene's column and a cell's row are each one request.
 
 The colours and axes below are **live**: they read a column or row of a layer when the focus
-changes. Only `fig5d_direction` is precomputed, for the two example cells.
+changes. Only `hsc_vs_monocyte_direction` is precomputed, for the two example cells.
 
 (tut-cg-column)=
 ## 1. Where does a gene change? Read its column
@@ -50,7 +50,7 @@ Panel set file: {download}`cells-and-genes-a-cells.json <../_static/panelsets/pa
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
-1. Open `bm_aging_showcase.zarr` from **Dataset** and set **Focused Gene** to `S100a9`.
+1. Open `bm_aging_annzarro.zarr` from **Dataset** and set **Focused Gene** to `S100a9`.
 2. Set **Focused Cell** to `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` (type `GAAGCCCGTGGCTCTG` and pick it).
    This is the HSC you will lock in step 3.
 3. Add a cell plot. Open its controls. Set **X** and **Y** to `obsm`, `X_umap`, columns
@@ -150,7 +150,7 @@ follows the focus.
    lock button to the right of the axis (title "Lock (keep current selection)"). It turns blue: the
    x axis now stays on this HSC.
 3. Set **Y** to the same layer, "Focused cell …", and leave its lock open.
-4. Set **Color** to `var`, `fig5d_direction` (showcase store). Its palette is stored with the data:
+4. Set **Color** to `var`, `hsc_vs_monocyte_direction`. Its palette is stored with the data:
    purple for the same direction, amber for opposite directions, grey for non-DE genes.
 5. Set **Focused Cell** to the monocyte `Mature_Young_2#TCAATTCAGTGAGGCT-1`, or click it in a UMAP.
    The y axis reloads with the monocyte's row; the x axis stays on the HSC.
@@ -192,7 +192,7 @@ Apoe, the strongest opposite-direction change.
 
 6. The paper's Worked example 4 (Step 26) colours the same scatter by the focused gene's row of
    the gene-gene correlation instead. Set **Color** to `varp` · `spearman_fold_change`, and the
-   row selector to "Focused gene S100a9". This works on `bm_aging.zarr` as well.
+   row selector to "Focused gene S100a9". This works on `bm_aging_annzarro.zarr` as well.
 
 ```{figure} ../_static/screens/tutorials/we4-spearman-controls.png
 :class: screenshot
@@ -218,7 +218,7 @@ the axes do not.
 (tut-cg-andor)=
 ### Count the directions with AND/OR
 
-`fig5d_direction` is precomputed for these two cells. A gene table recounts it from the two rows
+`hsc_vs_monocyte_direction` is precomputed for these two cells. A gene table recounts it from the two rows
 themselves, so the count also works for any other pair of cells:
 
 1. Add a gene table with the columns `kompot_de_Young_to_Old_mahalanobis` (tab `var`) and, from
@@ -248,7 +248,7 @@ Panel set file: {download}`cells-and-genes-d-noise.json <../_static/panelsets/pa
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
-The showcase store adds Kompot's fold-change z-score layer, the fold change divided by its
+The store holds Kompot's fold-change z-score layer, the fold change divided by its
 posterior standard deviation. Kompot's variance here is shared by all genes of a cell
 (0.153 for the HSC, 0.121 for the monocyte), so |z| > 1.96 is a band of ±0.30 on the x axis and
 ±0.24 on the y axis.
@@ -258,7 +258,7 @@ posterior standard deviation. Kompot's variance here is shared by all genes of a
    is per cell, this colour repeats the y position scaled by 1/0.121; it marks which genes clear
    the noise in the monocyte.
 2. In the gene table, use the z-score layer's columns for the two cells and the filter
-   `fig5d_direction` **Not** `not DE` AND HSC z **Not Between** `-1.96` and `1.96` AND focused-cell
+   `hsc_vs_monocyte_direction` **Not** `not DE` AND HSC z **Not Between** `-1.96` and `1.96` AND focused-cell
    z **Not Between** `-1.96` and `1.96`.
 3. The table keeps 11 genes: Apoe (opposite) and 10 genes changing in the same direction
    (AW112010, Chil3, Fam111a, Fosb, H2-Q7, Jund, Pbx1, Pim1, Prtn3, Psmb9).
@@ -286,7 +286,7 @@ Only Apoe changes in opposite directions beyond the noise level in both cells.
 ## Open the views
 
 The views of this tutorial, each also in the **Start here** box of its section. They are ready
-for a local server with `bm_aging_showcase.zarr` in its data directory; {ref}`tut-start-links`
+for a local server with `bm_aging_annzarro.zarr` in its data directory; {ref}`tut-start-links`
 says which part to change for another server address or store location.
 
 ::::{dropdown} Steps 1 and 2: S100a9 fold change, Young and Old on a shared scale (HSC focused)

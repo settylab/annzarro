@@ -1,8 +1,8 @@
 {
   "name": "gene-by-gene-ab",
   "timestamp": "2026-10-02T21:26:49+00:00",
-  "dataset": "bm_aging_showcase.zarr",
-  "datasetName": "bm_aging_showcase",
+  "dataset": "bm_aging_annzarro.zarr",
+  "datasetName": "bm_aging_annzarro",
   "constants": {
     "focusedGene": "H2-Q7",
     "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
