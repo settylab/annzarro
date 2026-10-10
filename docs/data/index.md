@@ -9,5 +9,4 @@ chunking
 kompot
 pairwise-matrices
 demo-data
-showcase-store
 ```
