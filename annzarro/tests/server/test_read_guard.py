@@ -28,26 +28,33 @@ N = 200                    # cells of the fixture
 BIG = 200_000              # a stored n x n that is never written: 160 GB as float32
 
 
+def _array(group, name, **kw):
+    """create_array under zarr 3, create_dataset under zarr 2 (the CI's Python 3.9)."""
+    if hasattr(group, "create_array"):
+        return group.create_array(name, **kw)
+    return group.create_dataset(name, **kw)
+
+
 def _build(path):
     root = zarr.open_group(path, mode="r+")
     obsp = root["obsp"]
     small = np.arange(N * N, dtype="float32").reshape(N, N)
-    obsp.create_array("small", shape=small.shape, chunks=(50, 50), dtype="float32")[:] = small
-    obsp.create_array("big", shape=(BIG, BIG), chunks=(1000, 1000), dtype="float32",
+    _array(obsp, "small", shape=small.shape, chunks=(50, 50), dtype="float32")[:] = small
+    _array(obsp, "big", shape=(BIG, BIG), chunks=(1000, 1000), dtype="float32",
                       fill_value=float("nan"))
     # sparse: a real small CSR, and one whose stored arrays are big (metadata only)
     for name, nnz, real in (("sp_small", 3, True), ("sp_big", 50_000_000, False)):
         g = obsp.create_group(name)
         g.attrs.update({"encoding-type": "csr_matrix", "encoding-version": "0.1.0", "shape": [N, N]})
         if real:
-            g.create_array("data", shape=(3,), dtype="float32")[:] = [1, 2, 3]
-            g.create_array("indices", shape=(3,), dtype="int32")[:] = [0, 1, 2]
+            _array(g, "data", shape=(3,), dtype="float32")[:] = [1, 2, 3]
+            _array(g, "indices", shape=(3,), dtype="int32")[:] = [0, 1, 2]
             ptr = np.zeros(N + 1, dtype="int32"); ptr[1:] = 3
-            g.create_array("indptr", shape=(N + 1,), dtype="int32")[:] = ptr
+            _array(g, "indptr", shape=(N + 1,), dtype="int32")[:] = ptr
         else:
-            g.create_array("data", shape=(nnz,), chunks=(1_000_000,), dtype="float32")
-            g.create_array("indices", shape=(nnz,), chunks=(1_000_000,), dtype="int32")
-            g.create_array("indptr", shape=(N + 1,), dtype="int32")
+            _array(g, "data", shape=(nnz,), chunks=(1_000_000,), dtype="float32")
+            _array(g, "indices", shape=(nnz,), chunks=(1_000_000,), dtype="int32")
+            _array(g, "indptr", shape=(N + 1,), dtype="int32")
     zarr.consolidate_metadata(path)
     return small
 
@@ -167,9 +174,9 @@ def test_row_of_a_wide_chunked_matrix_is_sized_by_its_chunks(make_client, tmp_pa
     """A row of a (1000, n) chunked array decompresses 1000 rows: sized by the chunk."""
     client, store, _ = make_client(max_read_mb=64, max_response_elements=10 ** 12)
     root = zarr.open_group(store, mode="r+")
-    root["obsp"].create_array("wide", shape=(N, 100_000), chunks=(200, 100_000), dtype="float32",
+    _array(root["obsp"], "wide", shape=(N, 100_000), chunks=(200, 100_000), dtype="float32",
                               fill_value=float("nan"))     # chunk 80 MB, never written
-    root["obsp"].create_array("tall", shape=(N, 100_000), chunks=(200, 1000), dtype="float32",
+    _array(root["obsp"], "tall", shape=(N, 100_000), chunks=(200, 1000), dtype="float32",
                               fill_value=float("nan"))     # chunk 0.8 MB: ten at a time
     zarr.consolidate_metadata(store)
     wide = client.get("/api/v1/data/obsp/wide", query_string={"dataset_path": store, "rows": "3"})
@@ -229,7 +236,7 @@ def test_budget_never_exceeded_and_waiters_are_served_or_503(make_client, monkey
 def test_a_wide_chunked_row_is_announced_when_the_dataset_opens(make_client):
     client, store, _ = make_client(max_read_mb=64)
     root = zarr.open_group(store, mode="r+")
-    root["obsp"].create_array("wide", shape=(N, 100_000), chunks=(200, 100_000), dtype="float32",
+    _array(root["obsp"], "wide", shape=(N, 100_000), chunks=(200, 100_000), dtype="float32",
                               fill_value=float("nan"))
     zarr.consolidate_metadata(store)
     body = client.get("/api/v1/data/dataset_structure", query_string={"dataset_path": store}).get_json()
@@ -252,7 +259,7 @@ def test_the_lab_layout_row_is_served_and_a_column_refused(make_client, n):
     column decompresses every chunk of its band."""
     client, store, _ = make_client(max_read_mb=256, max_response_elements=10 ** 12)
     root = zarr.open_group(store, mode="r+")
-    root["obsp"].create_array("v3", shape=(n, n), chunks=(16, 75_000), dtype="float32",
+    _array(root["obsp"], "v3", shape=(n, n), chunks=(16, 75_000), dtype="float32",
                               fill_value=float("nan"))
     zarr.consolidate_metadata(store)
     obj = zarr.open_group(store, mode="r")["obsp"]["v3"]
@@ -271,7 +278,7 @@ def test_the_lab_layout_row_is_served_and_a_column_refused(make_client, n):
     assert read_guard.chunking_notice(zarr.open_group(store, mode="r")) is None
     # while (1000, n) chunks are
     root = zarr.open_group(store, mode="r+")
-    root["obsp"].create_array("tall", shape=(n, n), chunks=(1000, n), dtype="float32",
+    _array(root["obsp"], "tall", shape=(n, n), chunks=(1000, n), dtype="float32",
                               fill_value=float("nan"))
     zarr.consolidate_metadata(store)
     note = read_guard.chunking_notice(zarr.open_group(store, mode="r"), "x" + str(n))
