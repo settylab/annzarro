@@ -137,6 +137,10 @@ server:
       type: integer
       description: Names a name search without an index reads at most before answering with a partial result
       default: 100000000
+    max_read_mb:
+      type: [number, "null"]
+      description: MB one read of an obsp/varp matrix may hold in memory, estimated from metadata before reading; over it the request is a 413 read_too_large. null = 5% of RAM (256 MB to 4 GB); applies to admins too
+      default: null
     refresh_min_interval_s:
       type: number
       description: Seconds between two walks of one dataset by POST /data/refresh (open to every user)

@@ -33,6 +33,10 @@ the matrix, not AnnZarro.
 | Wire | dense, or sparse when fewer than half the values are non-zero | sparse when that is smaller (a kNN row: 15 of 8,090 values, 120 bytes) |
 | Good for | diffusion walks, correlations, distances to all cells | kNN graphs, kernels, thresholded walks |
 
+A request that would hold more than `server.max_read_mb` of a pairwise matrix in the server's
+memory (5% of RAM by default) is refused with `413 read_too_large`, from the store's metadata and
+before reading; one row, or a few columns, is always small.
+
 Store **cells × cells matrices as CSR** (rows are what a click reads) or dense with whole-row
 chunks. Above roughly 30,000 cells, keep obsp sparse unless you have the disk for 4n².
 

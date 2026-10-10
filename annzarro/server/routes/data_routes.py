@@ -18,6 +18,8 @@ from ...core.zarr_reader import ZarrFormatError, UnsupportedEncodingError
 from ...core import process_file
 from ...core import get_reader
 from ...core import name_index
+from ...core import read_guard
+from ...core.read_guard import ReadTooLargeError
 from ...core import subset as cell_subset
 from .. import confinement, permissions
 from .. import http_cache
@@ -167,6 +169,8 @@ def _reader_error_response(exc, dataset_path):
     """
     if isinstance(exc, DataRequestError):
         return _data_request_error_response(exc)
+    if isinstance(exc, ReadTooLargeError):
+        return _read_too_large_response(exc)
     if isinstance(exc, KeyError):
         return jsonify({"error": exc.args[0] if exc.args else "Key not found",
                         "reason": "key_not_found"}), 404
@@ -331,6 +335,23 @@ def _response_too_large(reader, dataset_path, kind, key, rows, cols, single_colu
     }), 413
 
 
+def _path_too_large(dataset_path, data_path, row_indices, col_indices):
+    """A 413 (or the reader's error) when a ``path`` like ``obsp/key`` or
+    ``X`` would be a response over max_response_elements, else None."""
+    parts = (data_path or "X").strip("/").split("/")
+    kind = {"X": "X", "layers": "layer", "obsm": "obsm", "varm": "varm",
+            "obsp": "obsp", "varp": "varp"}.get(parts[0])
+    if kind is None:
+        return None
+    try:
+        return _response_too_large(
+            get_reader(dataset_path), dataset_path, kind,
+            parts[1] if len(parts) > 1 else None, row_indices, col_indices,
+            single_column=len(parts) == 3)
+    except Exception as exc:
+        return _reader_error_response(exc, dataset_path)
+
+
 class DataRequestError(Exception):
     """A request the dataset cannot answer: a key it does not have, an index
     outside an axis. Answered as ``status`` with a ``reason`` code instead of
@@ -339,6 +360,17 @@ class DataRequestError(Exception):
     def __init__(self, status, reason, message):
         super().__init__(message)
         self.status, self.reason, self.message = status, reason, message
+
+
+def _read_too_large_response(exc):
+    """413 for a read over server.max_read_mb; ``elements`` names what to drop."""
+    return jsonify({
+        "error": str(exc),
+        "reason": "read_too_large",
+        "limit_mb": round(exc.limit_bytes / 2 ** 20, 1),
+        "requested_mb": round(exc.requested_bytes / 2 ** 20, 1),
+        "elements": exc.elements,
+    }), 413
 
 
 def _data_request_error_response(exc):
@@ -490,6 +522,8 @@ def register_data_routes(app, api_version):
         api_version: API version string
     """
     name_index.configure(app.config.get("name_index_max_mb"), app.config.get("name_search_scan_names"))
+    read_guard.configure(app.config.get("max_read_mb"))
+    app.register_error_handler(ReadTooLargeError, _read_too_large_response)
 
     http_cache.install_gzip(app)
 
@@ -1188,9 +1222,11 @@ def register_data_routes(app, api_version):
         try:
             kind = {"X": "X", "layer": "layer", "obsm": "obsm", "varm": "varm",
                     "obsp": "obsp", "varp": "varp"}[matrix_type]
-            page_rows = row_indices[page * page_size:(page + 1) * page_size]
+            # The reader reads every row asked for and cuts the page after, so
+            # the whole list is what is sized (the page alone let a page past
+            # the end, which is empty, read the entire matrix).
             refusal = _response_too_large(get_reader(dataset_path), dataset_path, kind, key,
-                                          page_rows, col_indices)
+                                          row_indices, col_indices)
             if refusal is not None:
                 return refusal
         except Exception as exc:
@@ -1257,6 +1293,8 @@ def register_data_routes(app, api_version):
             response.headers["X-Pagination-TotalPages"] = pagination["total_pages"]
             
             return response
+        except ReadTooLargeError as e:
+            return _read_too_large_response(e)
         except Exception as e:
             logger.error(f"Error getting paginated data for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get paginated data: {str(e)}"}), 500
@@ -1624,6 +1662,11 @@ def register_data_routes(app, api_version):
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
         
+        # statistics hold the whole selection in memory: no whole X or pairwise matrix
+        refusal = _path_too_large(dataset_path, data_path, row_indices, col_indices)
+        if refusal is not None:
+            return refusal
+
         try:
             # Use direct zarr access for stateless operation
             stats = zarr_reader.get_statistics(dataset_path, row_indices, col_indices, data_path)
@@ -1633,6 +1676,8 @@ def register_data_routes(app, api_version):
                 "dataset_path": dataset_path,
                 "data_path": data_path
             })
+        except ReadTooLargeError as e:
+            return _read_too_large_response(e)
         except Exception as e:
             logger.error(f"Error getting statistics for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get statistics: {str(e)}"}), 500
@@ -1748,19 +1793,9 @@ def register_data_routes(app, api_version):
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
         
-        parts = data_path.strip("/").split("/")
-        kind = {"X": "X", "layers": "layer", "obsm": "obsm", "varm": "varm",
-                "obsp": "obsp", "varp": "varp"}.get(parts[0])
-        if kind is not None:
-            try:
-                refusal = _response_too_large(
-                    get_reader(dataset_path), dataset_path, kind,
-                    parts[1] if len(parts) > 1 else None, row_indices, col_indices,
-                    single_column=len(parts) == 3)
-            except Exception as exc:
-                return _reader_error_response(exc, dataset_path)
-            if refusal is not None:
-                return refusal
+        refusal = _path_too_large(dataset_path, data_path, row_indices, col_indices)
+        if refusal is not None:
+            return refusal
 
         try:
             # Use direct zarr access for stateless operation
@@ -1785,6 +1820,8 @@ def register_data_routes(app, api_version):
                 "path": data_path,
                 "dataset_path": dataset_path
             })
+        except ReadTooLargeError as e:
+            return _read_too_large_response(e)
         except Exception as e:
             logger.error(f"Error getting data at path {data_path} in {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get data at path {data_path}: {str(e)}"}), 500

@@ -73,6 +73,13 @@ server:
   name_index_max_mb: null
   # Names a scanning search reads at most before it answers with what it has.
   name_search_scan_names: 100000000
+  # Memory one read of an obsp/varp matrix may hold, in MB, estimated from the
+  # store's metadata BEFORE any chunk is read (dense: rows x columns x itemsize;
+  # sparse: its stored arrays plus the dense block returned). A request over it
+  # is refused with 413 read_too_large, naming the element and its size. A dense
+  # n x n obsp is 120 GB at 175,000 cells. null = 5% of the machine's RAM,
+  # between 256 MB and 4 GB. Applies to every user, admins included.
+  max_read_mb: null
 
   # Remote datasets (s3://, gs://, http(s):// zarr stores; needs annzarro[remote])
   # A remote dataset path makes the server fetch a URL chosen by the client.

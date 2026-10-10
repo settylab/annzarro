@@ -16,7 +16,8 @@ def _raise_if_store_error(exc):
     (stale_metadata, read_failed, unsupported_type, key_not_found) instead of
     a generic 500 here."""
     from .zarr_reader import StoreReadError, UnsupportedEncodingError, MissingKeyError
-    if isinstance(exc, (StoreReadError, UnsupportedEncodingError, MissingKeyError)):
+    from .read_guard import ReadTooLargeError
+    if isinstance(exc, (StoreReadError, UnsupportedEncodingError, MissingKeyError, ReadTooLargeError)):
         raise exc
 
 

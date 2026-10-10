@@ -73,6 +73,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | Symptom | Cause | Fix |
 |---|---|---|
 | `413` `response_too_large`. Reproduced | The slice exceeds `max_response_elements` (10,000,000 by default) | Request one row or column, or fewer at a time ({doc}`http-api`) |
+| `413` `read_too_large` | An `obsp`/`varp` request would hold more than `server.max_read_mb` in memory, e.g. many columns of a dense *n* x *n* matrix | Ask for one row or a few columns ({doc}`http-api`); store large pairwise matrices as CSR ({doc}`../data/pairwise-matrices`); raise `max_read_mb` only if the host has the memory |
 | `400` `cap_exceeded`. Reproduced | More indices than the request's own `max_cells=` / `max_genes=` parameter | Raise or drop that parameter; the server sets no such cap itself |
 | `400` `bad_indices`. Reproduced | `rows=` empty, not integers (e.g. a trailing comma from macOS `seq -s,`) or negative | Send `rows=1,2,3` or `rows=[1,2,3]` |
 | `403` `admin_only` on `POST /api/v1/cache/reset` | On a shared server only admins may clear the cache | To see a changed store, use `POST /api/v1/data/refresh` (Refresh dataset), open to every user; to clear the cache, sign in as an admin |
