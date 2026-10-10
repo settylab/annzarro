@@ -30,6 +30,7 @@ _ZARR3 = int(zarr.__version__.split('.')[0]) >= 3
 from .metadata_extraction import extract_metadata
 from .caching import CacheSettings, DatasetCache, cached_method
 from . import freshness
+from . import read_guard
 from . import string_chunks
 from . import categories as category_rules
 from .remote import is_remote_path, check_remote_access, open_remote_group, raise_if_timeout
@@ -2140,6 +2141,14 @@ class ZarrReader(CacheSettings):
     
         obj = root[layer_to_get][key]
         is_sparse, _ = self._is_sparse_matrix(obj)
+
+        # Sized from the metadata, before a chunk is read (server.max_read_mb)
+        need = read_guard.check(f"{layer_to_get}/{key}", obj, is_sparse, row_indices, col_indices)
+        # and held against the budget of all the pairwise reads in flight
+        with read_guard.admit(need):
+            return self._read_pairwise(root, layer_to_get, key, obj, is_sparse, row_indices, col_indices)
+
+    def _read_pairwise(self, root, layer_to_get, key, obj, is_sparse, row_indices, col_indices):
     
         if is_sparse:
             # For sparse matrices, pass distinct row and column indices.
@@ -2152,7 +2161,8 @@ class ZarrReader(CacheSettings):
             # Use provided indices, or default to full slice if None.
             row_sel = row_indices if row_indices is not None else slice(None)
             col_sel = col_indices if col_indices is not None else slice(None)
-            data = root[layer_to_get][key][row_sel, :][:, col_sel]
+            # both axes at once: rows are not read whole to cut the columns after
+            data = obj.oindex[row_sel, col_sel]
             return np.asarray(data)
         except Exception as e:
             raise_if_timeout(e)
@@ -2609,7 +2619,7 @@ class ZarrReader(CacheSettings):
             Tuple of (paginated data, pagination metadata)
         """
         # Get the data
-        data = self.get_obsp_varp(key = obsp_key, entity = "cells", dataset_path=dataset_path, indices=row_indices)
+        data = self.get_obsp_varp(key = obsp_key, entity = "cells", dataset_path=dataset_path, row_indices=row_indices)
         
         # Apply pagination
         return self._get_paginated_data(data, page, page_size)
@@ -2631,7 +2641,7 @@ class ZarrReader(CacheSettings):
             Tuple of (paginated data, pagination metadata)
         """
         # Get the data
-        data = self.get_obsp_varp(key = varp_key, entity = "genes", dataset_path=dataset_path, indices=row_indices)
+        data = self.get_obsp_varp(key = varp_key, entity = "genes", dataset_path=dataset_path, row_indices=row_indices)
         
         # Apply pagination
         return self._get_paginated_data(data, page, page_size)
@@ -2967,9 +2977,11 @@ class ZarrReader(CacheSettings):
             return self.get_layer(key, dataset_path=dataset_path, row_indices=indices, 
                                col_indices=col_indices)
         elif component == 'obsp':
-            return self.get_obsp_varp(key = key, entity = "cells", dataset_path=dataset_path, indices=indices)
+            return self.get_obsp_varp(key = key, entity = "cells", dataset_path=dataset_path,
+                                      row_indices=indices, col_indices=col_indices)
         elif component == 'varp':
-            return self.get_obsp_varp(key= key, entity = "genes", dataset_path=dataset_path, indices=indices)
+            return self.get_obsp_varp(key= key, entity = "genes", dataset_path=dataset_path,
+                                      row_indices=indices, col_indices=col_indices)
         else:
             logger.error(f"Unsupported component: {component} in path: {path}")
             return np.array([])
@@ -3024,6 +3036,8 @@ class ZarrReader(CacheSettings):
             }
             
             return stats
+        except (read_guard.ReadTooLargeError, read_guard.ReadBusyError):
+            raise
         except Exception as e:
             raise_if_timeout(e)
             logger.error(f"Error calculating statistics: {e}")

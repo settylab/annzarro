@@ -61,7 +61,7 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 | A signed-in user can | A signed-in user cannot |
 |---|---|
 | list and open every dataset under `data_dir` and `allowed_dirs` | open files or list directories outside those trees (admins can, unless `server.arbitrary_paths` is `none` or `local-only`) |
-| read every slot of those datasets (X, layers, obs/var, obsm/varm, obsp/varp, uns), one vector or a bounded slice at a time | download a whole matrix: a reply larger than `max_response_elements` is refused with 413 |
+| read every slot of those datasets (X, layers, obs/var, obsm/varm, obsp/varp, uns), one vector or a bounded slice at a time | download a whole matrix: a reply larger than `max_response_elements` is refused with 413, and a pairwise (`obsp`/`varp`) read that would hold more than `max_read_mb` (5% of RAM by default) in server memory is refused with 413 `read_too_large`, admins included |
 | save, load, export, duplicate and import panel sets | change or delete another user's panel set (admins can) |
 | open remote stores under `remote_allowlist` | make the server fetch any other URL |
 | | clear the server's dataset cache (admins can) |

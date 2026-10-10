@@ -143,12 +143,28 @@ const DataManager = (function() {
         return _safeJSONParse(await response.text());
     }
 
+    /**
+     * fetch, once more after the server's Retry-After on a 503. The server
+     * answers 503 `read_busy` when the large pairwise reads in flight hold its
+     * memory budget; a focused-cell row read then succeeds a moment later
+     * instead of showing an error. One retry, at most 10 s of waiting.
+     */
+    async function _fetchRetrying(fullUrl, signal) {
+        let response = await fetch(fullUrl, { signal });
+        if (response.status === 503) {
+            const after = Number(response.headers && response.headers.get('Retry-After'));
+            await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(after || 1, 1), 10) * 1000));
+            response = await fetch(fullUrl, { signal });
+        }
+        return response;
+    }
+
     function _startShared(fullUrl) {
         const controller = new AbortController();
         const entry = { controller, waiters: 0, settled: false, promise: null };
         entry.promise = (async () => {
             try {
-                const data = await _readResponse(await fetch(fullUrl, { signal: controller.signal }));
+                const data = await _readResponse(await _fetchRetrying(fullUrl, controller.signal));
                 // /data/subset answers 200 {superseded: true} when the page has
                 // asked for another subset meanwhile: nothing to cache or show
                 if (data && data.superseded === true) throw new DOMException('Subset superseded', 'AbortError');
