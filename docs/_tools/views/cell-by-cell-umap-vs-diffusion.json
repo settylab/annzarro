@@ -58,7 +58,7 @@
     "z": null,
     "color": {
      "type": "obs",
-     "key": "fig3_plasma_groups",
+     "key": "plasma_groups",
      "column": ""
     },
     "pointSize": 3,
@@ -91,7 +91,7 @@
     "z": null,
     "color": {
      "type": "obs",
-     "key": "fig3_plasma_groups",
+     "key": "plasma_groups",
      "column": ""
     },
     "pointSize": 3,

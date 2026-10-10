@@ -13,7 +13,7 @@ Writes
 
 Gene by gene = figures/fig3_gene_by_gene.py and cells and genes = figures/fig4_cells_by_genes.py in
 settylab/annzarro-paper. Cells and genes are the paper's (data_prep/demo_panelsets/examples.json).
-All views use bm_aging_showcase.zarr (docs/data/showcase-store.md), which adds the paper's
+All views use bm_aging_annzarro.zarr (docs/data/demo-data.md), which adds the paper's
 offline results (modules, ranks, classes, the fold-change z-score layer) as fields.
 """
 import argparse
@@ -30,7 +30,7 @@ DOCS = HERE.parent
 OUT = DOCS / "_static" / "screens" / "paper"
 VIEWS = HERE / "views"
 PANELSETS = DOCS / "_static" / "panelsets" / "paper"
-DATASET = "bm_aging_showcase.zarr"
+DATASET = "bm_aging_annzarro.zarr"
 
 HSC = "HSPC_Old_1#GAAGCCCGTGGCTCTG-1"
 MONO = "Mature_Young_2#TCAATTCAGTGAGGCT-1"
@@ -88,8 +88,8 @@ def fig4_ab() -> dict:
 
 def rank_strip(tid: str, focus: str) -> dict:
     return {"id": tid, "title": f"DE genes ranked by rho with {focus}, colour = module (k = 3)",
-            "x": var(f"fig4c_rank_{focus}"), "y": var(f"rho_fc_{focus}"), "z": None,
-            "color": var("fig4_module_k3"), "pointSize": 7, "pointOpacity": 0.95,
+            "x": var(f"rho_rank_{focus}"), "y": var(f"rho_fc_{focus}"), "z": None,
+            "color": var("gene_module_k3"), "pointSize": 7, "pointOpacity": 0.95,
             "hideNaN": True, "showZeroLines": True, "hoverInfo": GENE_HOVER,
             # Headroom above rho = 1 keeps the in-plot coverage note off the top-ranked genes.
             "viewport2D": {"xrange": [-4, 194], "yrange": [-0.8, 1.35]}}
@@ -101,9 +101,9 @@ def fig4_c() -> dict:
         "gene-plot-4c2": rank_strip("gene-plot-4c2", "S100a9"),
         "gene-table-4c": {
             "id": "gene-table-4c", "title": "H2-Q7's module-mates with rho < 0.2",
-            "columns": [var("fig4_module_k3"), var("rho_fc_H2-Q7"), var("rho_fc_S100a9"), MAH],
+            "columns": [var("gene_module_k3"), var("rho_fc_H2-Q7"), var("rho_fc_S100a9"), MAH],
             "searchBuilderConfig": {"logic": "AND", "criteria": [
-                var_crit("fig4_module_k3", "=", "module 1", "string"),
+                var_crit("gene_module_k3", "=", "module 1", "string"),
                 var_crit("rho_fc_H2-Q7", "<", "0.2")]}},
     }
     hier = split("horizontal", split("vertical", tile("gene-plot-4c1"), tile("gene-plot-4c2")),
@@ -116,7 +116,7 @@ def fig4_d() -> dict:
         "id": "gene-plot-4d", "title": "Focused gene's rows: smoothed (x) vs fold change (y)",
         "x": {"type": "varp", "key": "spearman_smoothed", "column": "H2-Q7", "locked": False},
         "y": {"type": "varp", "key": "spearman_fold_change", "column": "H2-Q7", "locked": False},
-        "z": None, "color": var("fig4d_class"), "pointSize": 5, "pointOpacity": 0.85,
+        "z": None, "color": var("h2q7_correlation_class"), "pointSize": 5, "pointOpacity": 0.85,
         "highlightFocusedGene": True, "showZeroLines": True, "hoverInfo": GENE_HOVER}}
     return view(cfg, tile("gene-plot-4d"), "H2-Q7", HSC)
 
@@ -173,7 +173,7 @@ def scatter_5d(color: dict, **kw) -> dict:
 
 def gene_table_5d(title: str, layer: str, criteria: dict) -> dict:
     return {"id": "gene-table-5d", "title": title,
-            "columns": [var("fig5d_direction"), {"type": "layer", "key": layer, "column": HSC},
+            "columns": [var("hsc_vs_monocyte_direction"), {"type": "layer", "key": layer, "column": HSC},
                         {"type": "layer", "key": layer, "column": "focused_cell"}],
             "searchBuilderConfig": criteria}
 
@@ -188,7 +188,7 @@ def fig5_d() -> dict:
         {"logic": "AND", "criteria": [layer_crit(FC, HSC, ">", 0), layer_crit(FC, MONO, "<", 0)]},
         {"logic": "AND", "criteria": [layer_crit(FC, HSC, "<", 0), layer_crit(FC, MONO, ">", 0)]}]}]}
     cfg = {
-        "gene-plot-5d": scatter_5d(var("fig5d_direction")),
+        "gene-plot-5d": scatter_5d(var("hsc_vs_monocyte_direction")),
         "gene-table-5d": gene_table_5d("DE genes changing in opposite directions", FC, sb),
     }
     cfg["gene-table-5d"]["columns"].insert(1, MAH)
@@ -200,7 +200,7 @@ def fig5_d_noise() -> dict:
     """The same scatter coloured by the focused cell's z-score row; the table keeps DE genes
     beyond 1.96 Kompot s.d. in both cells (expected: Apoe opposite, 10 same direction)."""
     sb = {"logic": "AND", "criteria": [
-        var_crit("fig5d_direction", "!=", "not DE", "string"),
+        var_crit("hsc_vs_monocyte_direction", "!=", "not DE", "string"),
         layer_crit(FC_Z, HSC, "!between", ["-1.96", "1.96"]),
         layer_crit(FC_Z, MONO, "!between", ["-1.96", "1.96"])]}
     cfg = {

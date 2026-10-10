@@ -15,8 +15,8 @@ the screenshots of its interface figure ({doc}`../paper/overview`, {doc}`../pape
 
 ## What you need
 
-- AnnZarro with `bm_aging.zarr` in its data directory ({doc}`../getting-started/quickstart`,
-  {doc}`../data/demo-data`). `bm_aging_showcase.zarr` works too; it contains the same fields.
+- AnnZarro with `bm_aging_annzarro.zarr` in its data directory ({doc}`../getting-started/quickstart`,
+  {doc}`../data/demo-data`). `bm_aging_annzarro.zarr` works too; it contains the same fields.
 - These fields:
 
 | Slot | Key | What it is | Selected by |
@@ -34,7 +34,7 @@ the screenshots of its interface figure ({doc}`../paper/overview`, {doc}`../pape
 (tut-tour-focus)=
 ## 1. Open the data and set the focus
 
-1. In the header choose `bm_aging.zarr` in **Dataset**.
+1. In the header choose `bm_aging_annzarro.zarr` in **Dataset**.
 2. Click the **Focused Gene** box, type `H2-Q7`, press Enter. Click the **Focused Cell** box,
    type or paste `HSPC_Old_1#GAAGCCCGTGGCTCTG-1`, press Enter. Both lists stay open after
    Enter; press Esc to close them.
@@ -428,7 +428,7 @@ The tutorials and paper-figure pages offer their views as panel set files. To lo
    :width: 60%
    ```
 
-2. The panel set names its dataset by file name (`bm_aging.zarr`), and the server finds it in
+2. The panel set names its dataset by file name (`bm_aging_annzarro.zarr`), and the server finds it in
    its data directory ("available here"). That is the dataset already open. Click **Load**. A
    notice reads "Panel set was imported and loaded successfully", the panel set replaces the open
    panels, and the panels that were open before are in the closed list under "Duplicate or
@@ -478,14 +478,14 @@ view, so you can start at any section. The links are written for the server of
 {doc}`../getting-started/quickstart`:
 
 ```text
-http://127.0.0.1:8000/?dataset_path=bm_aging.zarr#view=z1...
+http://127.0.0.1:8000/?dataset_path=bm_aging_annzarro.zarr#view=z1...
 └─────────┬─────────┘               └─────┬─────┘      └─┬─┘
 1. your server                      2. the store       3. the view
 ```
 
 - **1. Your server address.** Replace `http://127.0.0.1:8000` with the address you open AnnZarro
   at (another port, a remote host, an SSH tunnel's local port).
-- **2. The store.** `dataset_path=bm_aging.zarr` (or `bm_aging_showcase.zarr`) is a file name: the
+- **2. The store.** `dataset_path=bm_aging_annzarro.zarr` (or `bm_aging_annzarro.zarr`) is a file name: the
   server looks for it in its data directory (`--data-dir`, default `~/annzarro-data`). If the
   store is there, leave it. If it is elsewhere, replace the name with the store's absolute path;
   only a local single-user server opens paths outside the data directory

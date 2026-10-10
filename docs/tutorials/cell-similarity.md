@@ -17,8 +17,8 @@ If you have not used AnnZarro before, {doc}`tour` introduces the focus and the c
 
 ## What you need
 
-- AnnZarro with `bm_aging_showcase.zarr` in its data directory ({doc}`../data/showcase-store`).
-  Section 1 also works on `bm_aging.zarr` without the path table.
+- AnnZarro with `bm_aging_annzarro.zarr` in its data directory ({doc}`../data/demo-data`).
+  Section 1 also works on `bm_aging_annzarro.zarr` without the path table.
 - These fields:
 
 | Slot | Key | What it is | Live or precomputed |
@@ -27,8 +27,8 @@ If you have not used AnnZarro before, {doc}`tour` introduces the focus and the c
 | `obsp` | `diffusion_walk_t5` | dense 8,090 × 8,090 five-step walk, T⁵ with T the row-normalised `DM_Kernel` | **live**: the focused cell's row |
 | `obsp` | `umap_distance` | dense Euclidean distance on `X_umap` | **live** |
 | `obsp` | `diffusion_distance` | dense Euclidean distance in Palantir's multiscale diffusion space (`obsm/X_diffusion`, 39 components) {cite:p}`setty2019` | **live** |
-| `obs` | `fig3a_path_cell`, `fig3a_path_step`, `fig3a_focus_cells` | the 13 cells on the shortest diffusion path from the HSC to the monocyte, their order 0 to 12, and four labelled stops | precomputed by the paper's figure code |
-| `obs` | `fig3_plasma_groups` | the plasma cell's two discordant groups (below), with colours in `uns/fig3_plasma_groups_colors` | precomputed for one plasma cell |
+| `obs` | `trajectory_path_cell`, `trajectory_path_step`, `trajectory_focus_cells` | the 13 cells on the shortest diffusion path from the HSC to the monocyte, their order 0 to 12, and four labelled stops | precomputed by the paper's figure code |
+| `obs` | `plasma_groups` | the plasma cell's two discordant groups (below), with colours in `uns/plasma_groups_colors` | precomputed for one plasma cell |
 | `obs` | `highres_celltype` | 31 cell types | |
 
 - Cells: HSC `HSPC_Old_1#GAAGCCCGTGGCTCTG-1`, LMPP `HSPC_Old_2#ACTCTCGCAAACCGGA-1`, GMP
@@ -53,22 +53,22 @@ A row of the walk matrix says where a five-step random walk on the diffusion ker
 the focused cell, ends up. It is a similarity that respects the data's manifold. Walking the focus
 along a trajectory shows how far each cell state reaches.
 
-1. Choose `bm_aging_showcase.zarr` in **Dataset**. Set **Focused Cell** to
+1. Choose `bm_aging_annzarro.zarr` in **Dataset**. Set **Focused Cell** to
    `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` (click the box, type, Enter, Esc).
 2. In the Welcome tile click **Cell Plot**. **X** `obsm` · `X_umap` · `0`, **Y**
    `obsm` · `X_umap` · `1`, **Color** `obsp` · `diffusion_walk_t5`. The third dropdown reads
    "Focused cell HSPC_Old_1#…". **Map** `Blues`, **Reverse** on.
 3. Click "Split Horizontally" in the tile header and choose **Cell Table**. In its controls,
-   under "Available Columns" on the `obs` tab, tick `fig3a_path_step`, `fig3a_focus_cells` and
+   under "Available Columns" on the `obs` tab, tick `trajectory_path_step`, `trajectory_focus_cells` and
    `highres_celltype`, and click **Apply Changes**.
-4. In "Advanced Search" click **Add Condition** and set `fig3a_focus_cells` · `Not` ·
+4. In "Advanced Search" click **Add Condition** and set `trajectory_focus_cells` · `Not` ·
    `not on path`. The footer reads "Showing 1 to 13 of 13 entries (filtered from 8,090 total
-   entries)". Click the `fig3a_path_step` header to sort the path from 0 (the HSC) to 12 (the
+   entries)". Click the `trajectory_path_step` header to sort the path from 0 (the HSC) to 12 (the
    monocyte). Close both panels' controls.
 
 ```{figure} ../_static/screens/paper/fig3-a-page.png
 :class: screenshot
-:alt: Left, the walk UMAP from the HSC, a small blue patch at the lower right. Right, a table of the 13 path cells sorted by fig3a_path_step, with HSC (start), LMPP (1/3 of path) and GMP (2/3 of path) labelled.
+:alt: Left, the walk UMAP from the HSC, a small blue patch at the lower right. Right, a table of the 13 path cells sorted by trajectory_path_step, with HSC (start), LMPP (1/3 of path) and GMP (2/3 of path) labelled.
 :width: 100%
 
 The walk from the HSC beside the 13 path cells (2 HSC, 4 LMPP, 5 GMP, 2 monocytes). The cell
@@ -181,12 +181,12 @@ Where the two agree the points fall on a rising band; where they disagree they l
 9. Set **Focused Cell** to the plasma cell `Mature_Mid_1#GCCATGGAGTATGATG-1`.
 10. Add a **Cell Plot** (split a tile). Set **X** `obsp` · `umap_distance` and **Y**
    `obsp` · `diffusion_distance`. The third dropdown of each reads "Focused cell
-   Mature_Mid_1#…". Set **Color** `obs` · `fig3_plasma_groups` and leave **Palette** at
+   Mature_Mid_1#…". Set **Color** `obs` · `plasma_groups` and leave **Palette** at
    "As stored in adata.uns".
 
 ```{figure} ../_static/screens/paper/fig3-controls-axes.png
 :class: screenshot
-:alt: Cell plot controls with X obsp umap_distance "Focused cell Mature_Mi..." and Y obsp diffusion_distance "Focused cell Mature_Mi...", each with an open padlock; Color obs fig3_plasma_groups with Palette "As stored in adata.uns".
+:alt: Cell plot controls with X obsp umap_distance "Focused cell Mature_Mi..." and Y obsp diffusion_distance "Focused cell Mature_Mi...", each with an open padlock; Color obs plasma_groups with Palette "As stored in adata.uns".
 :width: 70%
 
 Both axes are rows of obsp that follow the focused cell. Each has its own padlock.
@@ -208,7 +208,7 @@ Panel set file: {download}`cell-by-cell-umap-vs-diffusion.json <../_static/panel
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
-11. Add a second **Cell Plot** with UMAP axes and **Color** `obs` · `fig3_plasma_groups`.
+11. Add a second **Cell Plot** with UMAP axes and **Color** `obs` · `plasma_groups`.
 
 ```{figure} ../_static/screens/paper/fig3-bc.png
 :class: screenshot
@@ -235,32 +235,32 @@ cells the UMAP keeps the global rank order of diffusion distances well (median p
 
 12. Click any other cell in the right-hand panel. The left panel redraws as that cell's
     distances, because both axes follow the focus; the colours stay the plasma cell's groups,
-    since `fig3_plasma_groups` is a fixed obs column. Lock both axes (their padlocks) first to
+    since `plasma_groups` is a fixed obs column. Lock both axes (their padlocks) first to
     keep the plasma cell's distances while you explore.
 
 (tut-cell-check)=
 ## Check the numbers
 
 Table filters count the groups. Add a **Cell Table** with the columns `highres_celltype` and
-`fig3_plasma_groups` and set "Advanced Search" as below. Each count was read from the app.
+`plasma_groups` and set "Advanced Search" as below. Each count was read from the app.
 
 | Statement | Advanced Search (AND) | Table footer |
 |---|---|---|
-| 265 cells near in UMAP, far in diffusion | `fig3_plasma_groups` Equals `near in UMAP, far in diffusion` | 265 entries |
-| 392 cells far in UMAP, near in diffusion | `fig3_plasma_groups` Equals `far in UMAP, near in diffusion` | 392 entries |
+| 265 cells near in UMAP, far in diffusion | `plasma_groups` Equals `near in UMAP, far in diffusion` | 265 entries |
+| 392 cells far in UMAP, near in diffusion | `plasma_groups` Equals `far in UMAP, near in diffusion` | 392 entries |
 | 92 of the orange cells are pDCs, 66 NK cells | add `highres_celltype` Equals `pDC` (or `NK`) | 92 (66) entries |
 | 274 of the blue cells are naive B cells, 111 memory B cells | add `highres_celltype` Equals `Mature Naive B cell` (or `Memory B cell`) | 274 (111) entries |
-| The path has 13 cells | `fig3a_focus_cells` Not `not on path` | 13 entries |
+| The path has 13 cells | `trajectory_focus_cells` Not `not on path` | 13 entries |
 
 The Spearman ρ between the plasma cell's two rows (0.62), the walk masses and the dataset-wide
 medians are not computed by AnnZarro; they come from `figures/fig2_cell_by_cell.py` in the
-paper repository and were checked when the showcase store was built ({doc}`../data/showcase-store`).
+paper repository and were checked when the store was built ({doc}`../data/demo-data`).
 
 (tut-cell-views)=
 ## Open the views
 
 The views of this tutorial, each also in the **Start here** box of its section. They are ready
-for a local server with `bm_aging_showcase.zarr` in its data directory; {ref}`tut-start-links`
+for a local server with `bm_aging_annzarro.zarr` in its data directory; {ref}`tut-start-links`
 says which part to change for another server address or store location.
 
 ::::{dropdown} Section 1: walk and path table

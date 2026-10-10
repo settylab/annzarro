@@ -198,7 +198,8 @@ def test_whole_matrix_is_refused_before_reading(ds, monkeypatch):
     assert body["requested"] == N_OBS * N_VAR and body["limit"] == 50
     assert reads == []
     assert get(client, "X", ds, rows="0,1,2,3,4,5,6,7,8,9").status_code == 413
-    assert get(client, "obsp/connectivities", ds).status_code == 413
+    assert get(client, "obsp/connectivities", ds, rows="0,1,2").status_code == 413
+    assert get(client, "obsp/connectivities", ds).status_code == 400      # rows_required
     assert get(client, "obsm/X_umap", ds).status_code == 413
 
 

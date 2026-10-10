@@ -9,7 +9,7 @@ Usage:
 
     from shots import Session, tile, split
     with Session(port=8811, out="docs/_static/screens/user-guide") as s:
-        page = s.open(view, dataset="bm_aging.zarr")   # view = deep-link `view` object
+        page = s.open(view, dataset="bm_aging_annzarro.zarr")   # view = deep-link `view` object
         s.shot(page, "focus-a", tiles={"cell-plot-1": "focus-a-umap"})
 
 Adapted from figures/screenshots.py in settylab/annzarro-paper. The server is started from
@@ -33,7 +33,7 @@ from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
-# The stores the docs use (bm_aging.zarr, bm_aging_showcase.zarr, ...): ANNZARRO_DOCS_DATA, or the
+# The stores the docs use (bm_aging_annzarro.zarr, ...): ANNZARRO_DOCS_DATA, or the
 # default data directory of `annzarro start`.
 DATA_DIR = Path(os.environ.get("ANNZARRO_DOCS_DATA", Path.home() / "annzarro-data"))
 VIEWPORT = {"width": 1600, "height": 1000}
@@ -146,7 +146,7 @@ class Shooter:
         self.browser, self.base, self.log, self.out = browser, base, log, Path(out)
         self.out.mkdir(parents=True, exist_ok=True)
 
-    def open(self, view: dict | None, dataset="bm_aging.zarr", viewport=VIEWPORT,
+    def open(self, view: dict | None, dataset="bm_aging_annzarro.zarr", viewport=VIEWPORT,
              clipboard_denied=False) -> Page:
         ctx = self.browser.new_context(viewport=viewport, device_scale_factor=DSF,
                                        color_scheme="light")

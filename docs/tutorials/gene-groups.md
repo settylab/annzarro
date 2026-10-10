@@ -14,7 +14,7 @@ focused cell keeps that cell, and its header names it.
 
 ## What you need
 
-- AnnZarro running locally ({doc}`../getting-started/quickstart`) with `bm_aging.zarr` in its
+- AnnZarro running locally ({doc}`../getting-started/quickstart`) with `bm_aging_annzarro.zarr` in its
   data directory.
 - Network access for step 4: the Gene Set Analysis panel fetches its results from STRING,
   g:Profiler and MyGene.info.
@@ -40,7 +40,7 @@ The link is ready for a local server; {ref}`what to change for yours <tut-start-
 (tut-gg-setup)=
 ## 1. Focus a gene and a cell, and lay out the panels
 
-1. Open `bm_aging.zarr` from **Dataset**.
+1. Open `bm_aging_annzarro.zarr` from **Dataset**.
 2. Set **Focused Gene** to `H2-Q7`. Set **Focused Cell** to `HSPC_Old_1#GAAGCCCGTGGCTCTG-1`
    (type `GAAGCCCGTGGCTCTG` and pick it).
 3. Add a **Gene Table**. Open its controls (the chevron in the tile header) and, on the `var`

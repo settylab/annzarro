@@ -83,7 +83,7 @@
     "columns": [
      {
       "type": "var",
-      "key": "fig5d_direction",
+      "key": "hsc_vs_monocyte_direction",
       "column": ""
      },
      {
@@ -102,8 +102,8 @@
      "criteria": [
       {
        "condition": "!=",
-       "data": "fig5d_direction",
-       "origData": "var_fig5d_direction_main",
+       "data": "hsc_vs_monocyte_direction",
+       "origData": "var_hsc_vs_monocyte_direction_main",
        "type": "string",
        "value": [
         "not DE"

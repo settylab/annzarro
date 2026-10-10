@@ -77,8 +77,7 @@ The share links on these pages open a store on a local AnnZarro server: they are
 
 | Page | Store | How to get it |
 |---|---|---|
-| {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance` | `bm_aging.zarr` (4.5 GiB) | Build it from the public raw data with a script in this repository: {doc}`../data/demo-data` |
-| {doc}`cell-by-cell` (a to c), {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_showcase.zarr` (5.7 GB) | Build it from `bm_aging.zarr` with a script in this repository, in about 15 s: {doc}`../data/showcase-store` |
+| {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance`, {doc}`cell-by-cell` (a to c), {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_annzarro.zarr` (5.3 GiB) | Download it from Zenodo (doi:10.5281/zenodo.23277103), or build it from the public raw data with two scripts in this repository: {doc}`../data/demo-data` |
 | {doc}`cell-by-cell` (d) | `celegans_connectome_cengen.zarr` (7.7 MB) | Build it with a script in this repository from public downloads: {ref}`cell-by-cell-connectome` |
 | {doc}`scale` | the Tahoe-100M store (95,624,334 cells) | Download the public Tahoe-100M release; the build script will be published with the paper: {ref}`paper-scale-store` |
 | {doc}`deployment` | none | The figure is a diagram |

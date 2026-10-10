@@ -13,11 +13,12 @@ Run:
   .venv-docs/bin/python docs/_tools/start_links.py write      # every .url.txt from its .json
   .venv-docs/bin/python docs/_tools/start_links.py check      # open each link headless
 
-`check` serves bm_aging.zarr, bm_aging_showcase.zarr and neuro_demo/celegans_connectome_cengen.zarr
+`check` serves bm_aging_annzarro.zarr and neuro_demo/celegans_connectome_cengen.zarr
 (when built, by docs/_tools/datasets/celegans_connectome.py) from ANNZARRO_DOCS_DATA (default
 ~/annzarro-data) through a temporary data directory of symlinks, opens every link with
 its host:port swapped for the test server, and fails on a page error or a panel that does not
-draw. It also reports panel settings the app dropped while loading (renamed or retired keys).
+draw. A Gene Set Analysis panel with Auto-update off draws when it says how many gene ids Run would
+send (opening a link sends nothing); with Auto-update on it has to show results. It also reports panel settings the app dropped while loading (renamed or retired keys).
 Links to a store that is not available are skipped; set ANNZARRO_SCALE_STORE to a Tahoe-100M
 store (or any prefix of it, e.g. its first 2 million cells) to check the scale links against it.
 
@@ -59,7 +60,7 @@ PROTOCOL = {  # paper view file -> docs name
     "D_locked_vs_focused_cell": "protocol-D-locked-vs-focused-cell",
     "E_table_filter": "protocol-E-table-filter",
 }
-PROTOCOL_DATASET = "bm_aging.zarr"
+PROTOCOL_DATASET = "bm_aging_annzarro.zarr"
 
 
 # The scale figure: docs name -> (paper view file in figures/scale, subset, title, changes)
@@ -121,9 +122,20 @@ def write_links() -> None:
 
 
 # --------------------------------------------------------------------------- check
-PANEL_STATE = """(ids) => ids.map(id => {
+PANEL_STATE = """([ids, configs]) => ids.map(id => {
   const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
   if (!tile) return {id, state: 'missing'};
+  // A Gene Set Analysis panel sends nothing when a link opens: it shows results only with
+  // Auto-update on, otherwise its bar says how many gene ids Run would send. That count, from
+  // the table it follows, is what a link to the panel before Run has to draw.
+  const bar = tile.querySelector('.gs-bar__text');
+  const waiting = bar && /^Not run yet\\. Run sends ([0-9,]+) gene ids/.exec(bar.textContent);
+  if (waiting && !(configs[id] || {}).autoUpdate && !tile.querySelector('.gs-sections table')) {
+    const genes = Number(waiting[1].replace(/,/g, ''));
+    const btn = [...tile.querySelectorAll('.gs-run-row button')].find(b => /Run/.test(b.textContent));
+    return {id, state: genes > 0 && btn && btn.textContent.includes(waiting[1]) ? 'drawn' : 'empty',
+            genes, note: 'not run'};
+  }
   const gd = tile.querySelector('.js-plotly-plot');
   if (gd) {
     const points = (gd.data || []).reduce((n, t) => n + ((t.x && t.x.length) || 0), 0);
@@ -172,7 +184,7 @@ def check() -> int:
     from playwright.sync_api import sync_playwright
 
     data_dir = Path(tempfile.mkdtemp(prefix="start-links-"))
-    for store in ("bm_aging.zarr", "bm_aging_showcase.zarr"):
+    for store in ("bm_aging_annzarro.zarr",):
         os.symlink(DATA_DIR / store, data_dir / store)
     neuro = DATA_DIR / "neuro_demo" / "celegans_connectome_cengen.zarr"   # docs/_tools/datasets/celegans_connectome.py
     if neuro.exists():
@@ -200,7 +212,7 @@ def check() -> int:
                 page.goto(root + link[len(START_BASE):])
                 states = []
                 for _ in range(120):
-                    states = page.evaluate(PANEL_STATE, list(configs))
+                    states = page.evaluate(PANEL_STATE, [list(configs), configs])
                     if all(s["state"] == "drawn" for s in states):
                         break
                     page.wait_for_timeout(500)
@@ -211,7 +223,8 @@ def check() -> int:
                 status = "ok" if not errors else "FAIL"
                 failures += bool(errors)
                 print(f"{status:4} {path.parent.name}/{path.stem}: {len(link)} chars, {cells}, "
-                      + ", ".join(f"{s['id']} {s.get('points', s.get('rows'))}" for s in states)
+                      + ", ".join(f"{s['id']} {s.get('points', s.get('rows', s.get('genes')))}"
+                                      + (" genes, not run" if "genes" in s else "") for s in states)
                       + (f"; dropped settings {dropped}" if dropped else "")
                       + (f"; errors {errors}" if errors else ""))
                 page.close()

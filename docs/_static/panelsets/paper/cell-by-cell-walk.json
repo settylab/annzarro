@@ -1,8 +1,8 @@
 {
   "name": "cell-by-cell-walk",
   "timestamp": "2026-10-02T21:33:48+00:00",
-  "dataset": "bm_aging_showcase.zarr",
-  "datasetName": "bm_aging_showcase",
+  "dataset": "bm_aging_annzarro.zarr",
+  "datasetName": "bm_aging_annzarro",
   "constants": {
     "focusedCell": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
     "focusedGene": "S100a9",
@@ -61,12 +61,12 @@
         "columns": [
           {
             "type": "obs",
-            "key": "fig3a_path_step",
+            "key": "trajectory_path_step",
             "column": ""
           },
           {
             "type": "obs",
-            "key": "fig3a_focus_cells",
+            "key": "trajectory_focus_cells",
             "column": ""
           },
           {
@@ -79,8 +79,8 @@
           "criteria": [
             {
               "condition": "!=",
-              "data": "fig3a_focus_cells",
-              "origData": "obs_fig3a_focus_cells_main",
+              "data": "trajectory_focus_cells",
+              "origData": "obs_trajectory_focus_cells_main",
               "type": "string",
               "value": [
                 "not on path"
@@ -177,12 +177,12 @@
           "columns": [
             {
               "type": "obs",
-              "key": "fig3a_path_step",
+              "key": "trajectory_path_step",
               "column": ""
             },
             {
               "type": "obs",
-              "key": "fig3a_focus_cells",
+              "key": "trajectory_focus_cells",
               "column": ""
             },
             {
@@ -195,8 +195,8 @@
             "criteria": [
               {
                 "condition": "!=",
-                "data": "fig3a_focus_cells",
-                "origData": "obs_fig3a_focus_cells_main",
+                "data": "trajectory_focus_cells",
+                "origData": "obs_trajectory_focus_cells_main",
                 "type": "string",
                 "value": [
                   "not on path"

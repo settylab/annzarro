@@ -2,8 +2,8 @@
 
 This page starts a local server, opens the demonstration store and draws a first plot. It
 takes about two minutes once AnnZarro is installed ({doc}`installation`) and you have a store.
-The demonstration store `bm_aging.zarr` (murine bone marrow, Young vs Old, 8,090 cells x
-16,285 genes, 4.8 GB) and how to get it are described in {doc}`../data/demo-data`. Any AnnData
+The demonstration store `bm_aging_annzarro.zarr` (murine bone marrow, Young vs Old, 8,090 cells x
+16,285 genes, 5.7 GB) and how to get it are described in {doc}`../data/demo-data`. Any AnnData
 written with `adata.write_zarr(...)` works the same way.
 
 ## 1. Put the store in a data directory
@@ -13,7 +13,7 @@ there:
 
 ```bash
 mkdir -p ~/annzarro-data
-ln -s /path/to/bm_aging.zarr ~/annzarro-data/      # or cp -r
+ln -s /path/to/bm_aging_annzarro.zarr ~/annzarro-data/      # or cp -r
 ```
 
 The picker lists `.zarr` directories and `.h5ad` files at the top level of the data directory
@@ -44,13 +44,13 @@ shows the Welcome tile.
 :class: screenshot
 :alt: The AnnZarro Welcome tile with the Dataset picker open
 
-The Welcome tile after the server has opened `bm_aging.zarr`. The **Dataset** picker (open
+The Welcome tile after the server has opened `bm_aging_annzarro.zarr`. The **Dataset** picker (open
 here) lists every store in the data directory. "Create New Panel" starts an empty panel;
 "Load Saved Panel Set" lists the panel sets saved on this server (here the five protocol views
 of the demonstration data).
 ```
 
-1. Click the **Dataset** picker at the top left and choose `bm_aging.zarr`. To open a store
+1. Click the **Dataset** picker at the top left and choose `bm_aging_annzarro.zarr`. To open a store
    outside the data directory on your own machine, type its full path into the picker's search
    field and press Enter; it appears as "(Custom)". A remote URL such as
    `s3://bucket/atlas.zarr` is entered the same way ({doc}`../user-guide/remote-datasets`).
@@ -70,7 +70,7 @@ of the demonstration data).
 :class: screenshot
 :alt: A cell plot of the demonstration data coloured by leiden cluster
 
-The first Cell Plot on `bm_aging.zarr`, with its controls open.
+The first Cell Plot on `bm_aging_annzarro.zarr`, with its controls open.
 ```
 
 3. Change the colour: in the **Color** row, set the first box to `layer` and the second to

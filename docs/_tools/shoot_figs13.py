@@ -17,8 +17,8 @@ Writes
 
 Run: .venv-docs/bin/python docs/_tools/shoot_figs13.py [--port 8814] [--only fig1 fig2 fig3 check]
 (--only fig2-sets: only fig2's share link, Load Panel Set and panel-set-file shots)
-Fig 3 needs data/bm_aging_showcase.zarr (obsp umap_distance, diffusion_distance;
-obs fig3_plasma_groups).
+Fig 3 needs data/bm_aging_annzarro.zarr (obsp umap_distance, diffusion_distance;
+obs plasma_groups).
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ VOLCANO_Y = {"type": "var", "key": "kompot_de_Young_to_Old_mahalanobis", "column
 CELL_HOVER = [{"type": "obs", "key": "_index"}, {"type": "obs", "key": "highres_celltype"}]
 GENE_HOVER = [{"type": "var", "key": "_index"}]
 CELLTYPE = {"type": "obs", "key": "highres_celltype", "column": ""}
-SHOWCASE = "bm_aging_showcase.zarr"
+SHOWCASE = "bm_aging_annzarro.zarr"
 
 
 # --------------------------------------------------------------------------- views
@@ -182,11 +182,11 @@ def fig3a_view() -> dict:
                                   walk_color(), **WALK_STYLE),
         "cell-table-W2": {
             "id": "cell-table-W2", "title": "Cells on the HSC to monocyte diffusion path",
-            "columns": [{"type": "obs", "key": "fig3a_path_step", "column": ""},
-                        {"type": "obs", "key": "fig3a_focus_cells", "column": ""}, CELLTYPE],
+            "columns": [{"type": "obs", "key": "trajectory_path_step", "column": ""},
+                        {"type": "obs", "key": "trajectory_focus_cells", "column": ""}, CELLTYPE],
             "searchBuilderConfig": {
-                "criteria": [{"condition": "!=", "data": "fig3a_focus_cells",
-                              "origData": "obs_fig3a_focus_cells_main", "type": "string",
+                "criteria": [{"condition": "!=", "data": "trajectory_focus_cells",
+                              "origData": "obs_trajectory_focus_cells_main", "type": "string",
                               "value": ["not on path"]}],
                 "logic": "AND"},
         },
@@ -197,7 +197,7 @@ def fig3a_view() -> dict:
 def fig3bc_view() -> dict:
     """Showcase store: rows of obsp/umap_distance and obsp/diffusion_distance as the axes
     (Fig 3b), and the plasma cell's discordant groups on the UMAP (Fig 3c)."""
-    groups = {"type": "obs", "key": "fig3_plasma_groups", "column": ""}
+    groups = {"type": "obs", "key": "plasma_groups", "column": ""}
     cfgs = {
         "cell-plot-D1": cell_plot(
             "cell-plot-D1", "UMAP distance (x) vs diffusion distance (y) to the focused cell",
@@ -216,10 +216,10 @@ def panelset(name: str, v: dict, dataset: str) -> dict:
 
 
 ALL_VIEWS = {
-    "overview-focus-model": (fig1_view, "bm_aging.zarr"),
-    "interface-overview": (fig2_overview_view, "bm_aging.zarr"),
-    "interface-focus-sequence": (fig2_focus_view, "bm_aging.zarr"),
-    "interface-table-filter": (fig2_filter_view, "bm_aging.zarr"),
+    "overview-focus-model": (fig1_view, "bm_aging_annzarro.zarr"),
+    "interface-overview": (fig2_overview_view, "bm_aging_annzarro.zarr"),
+    "interface-focus-sequence": (fig2_focus_view, "bm_aging_annzarro.zarr"),
+    "interface-table-filter": (fig2_filter_view, "bm_aging_annzarro.zarr"),
     "cell-by-cell-walk": (fig3a_view, SHOWCASE),
     "cell-by-cell-umap-vs-diffusion": (fig3bc_view, SHOWCASE),
 }
@@ -438,7 +438,7 @@ def shoot_fig2_sets(s) -> None:
     time.sleep(1.0)
     crop(page, "#session-modal .modal-content", OUT / "fig2-load-panel-set.png")
     # Upload the Fig 1 panel set file and load it. The file names its dataset by the bare
-    # name bm_aging.zarr (resolved in the server's data directory). That is the open store
+    # name bm_aging_annzarro.zarr (resolved in the server's data directory). That is the open store
     # under another path, so it loads without asking (PR #58); older builds asked first, which
     # the fallback below still accepts. A loaded set lists its panels closed and offers
     # "Open saved layout": shoot that, then the layout it opens. The uploaded set is deleted
@@ -475,7 +475,7 @@ def click_entity(page, tid: str, name: str) -> None:
 def check_view(criteria: list, logic="AND") -> dict:
     """A lone cell table whose Advanced Search holds `criteria`, for counting rows."""
     cfg = {"id": "cell-table-K1", "title": "check",
-           "columns": [CELLTYPE, {"type": "obs", "key": "fig3_plasma_groups", "column": ""}],
+           "columns": [CELLTYPE, {"type": "obs", "key": "plasma_groups", "column": ""}],
            "searchBuilderConfig": {"criteria": [
                {"condition": "=", "data": k, "origData": f"obs_{k}_main", "type": "string",
                 "value": [v]} for k, v in criteria], "logic": logic}}
@@ -483,12 +483,12 @@ def check_view(criteria: list, logic="AND") -> dict:
 
 
 FIG3_CHECKS = [
-    [("fig3_plasma_groups", "near in UMAP, far in diffusion")],
-    [("fig3_plasma_groups", "far in UMAP, near in diffusion")],
-    [("fig3_plasma_groups", "near in UMAP, far in diffusion"), ("highres_celltype", "pDC")],
-    [("fig3_plasma_groups", "near in UMAP, far in diffusion"), ("highres_celltype", "NK")],
-    [("fig3_plasma_groups", "far in UMAP, near in diffusion"), ("highres_celltype", "Mature Naive B cell")],
-    [("fig3_plasma_groups", "far in UMAP, near in diffusion"), ("highres_celltype", "Memory B cell")],
+    [("plasma_groups", "near in UMAP, far in diffusion")],
+    [("plasma_groups", "far in UMAP, near in diffusion")],
+    [("plasma_groups", "near in UMAP, far in diffusion"), ("highres_celltype", "pDC")],
+    [("plasma_groups", "near in UMAP, far in diffusion"), ("highres_celltype", "NK")],
+    [("plasma_groups", "far in UMAP, near in diffusion"), ("highres_celltype", "Mature Naive B cell")],
+    [("plasma_groups", "far in UMAP, near in diffusion"), ("highres_celltype", "Memory B cell")],
 ]
 
 
@@ -507,7 +507,7 @@ def shoot_fig3(s, showcase: bool) -> None:
         s.log.append("fig3 skipped: showcase store not ready")
         return
     page = s.open(fig3a_view(), dataset=SHOWCASE)
-    page.locator('.tile[data-tile-id="cell-table-W2"] th', has_text="fig3a_path_step").first.click()
+    page.locator('.tile[data-tile-id="cell-table-W2"] th', has_text="trajectory_path_step").first.click()
     s.ready(page)
     s.log.append("fig3a table: " + page.evaluate("""() => [...document.querySelectorAll(
         '.dataTables_info, .dt-info')].map(e => e.textContent.trim()).join(' / ')"""))
@@ -544,7 +544,7 @@ if __name__ == "__main__":
     ap.add_argument("--only", nargs="*", default=["fig1", "fig2", "fig3"])
     a = ap.parse_args()
     write_artefacts()
-    showcase = (DATA_DIR / "bm_aging_showcase.zarr").exists()
+    showcase = (DATA_DIR / "bm_aging_annzarro.zarr").exists()
     with Session(a.port, OUT) as s:
         if "fig1" in a.only:
             shoot_fig1(s)

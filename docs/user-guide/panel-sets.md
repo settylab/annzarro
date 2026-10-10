@@ -90,11 +90,11 @@ item, in a compact form.
 After **Load**: layout, panels and focus as saved.
 ```
 
-A panel set names its dataset relative to the server's data directory (`bm_aging.zarr`), with the
+A panel set names its dataset relative to the server's data directory (`bm_aging_annzarro.zarr`), with the
 store's fingerprint, so its file opens on any other server or desktop app that has the store, even
 under another name: {doc}`reproducing` says how the store is found, and what happens when it is
-missing or differs. A set that names the open store by another path (`bm_aging.zarr` for
-`/data/bm_aging.zarr`) counts as the same dataset. Fields the chosen dataset lacks are marked on
+missing or differs. A set that names the open store by another path (`bm_aging_annzarro.zarr` for
+`/data/bm_aging_annzarro.zarr`) counts as the same dataset. Fields the chosen dataset lacks are marked on
 each panel, and a notice names them.
 
 (panelsets-missing)=

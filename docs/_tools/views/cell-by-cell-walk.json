@@ -82,12 +82,12 @@
     "columns": [
      {
       "type": "obs",
-      "key": "fig3a_path_step",
+      "key": "trajectory_path_step",
       "column": ""
      },
      {
       "type": "obs",
-      "key": "fig3a_focus_cells",
+      "key": "trajectory_focus_cells",
       "column": ""
      },
      {
@@ -100,8 +100,8 @@
      "criteria": [
       {
        "condition": "!=",
-       "data": "fig3a_focus_cells",
-       "origData": "obs_fig3a_focus_cells_main",
+       "data": "trajectory_focus_cells",
+       "origData": "obs_trajectory_focus_cells_main",
        "type": "string",
        "value": [
         "not on path"

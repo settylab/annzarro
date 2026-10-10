@@ -20,7 +20,7 @@ matrices separate a shared age response from a shared expression pattern. The tu
 |---|---|---|
 | a | live: `varp` row of the focused gene as colour | {ref}`tut-gene-volcano-row` |
 | b | live: click H2-Aa | {ref}`tut-gene-refocus` |
-| c | precomputed modules and ranks (showcase columns) | {ref}`tut-gene-modules` |
+| c | precomputed modules and ranks (stored columns) | {ref}`tut-gene-modules` |
 | d | live axes (two `varp` rows); precomputed colour | {ref}`tut-gene-two-rows` |
 | numbers | hover labels and table filters | {ref}`tut-gene-check` |
 
@@ -33,7 +33,7 @@ Hover labels and table filters check most statements; offline ones are marked. S
 | H2-Q6 ρ = 0.82, Tapbpl 0.73, H2-D1 0.66, B2m 0.60 | gene table with `rho_fc_H2-Q7`; click its header twice to sort descending | top rows H2-Q7 (1), H2-Q6, Tapbpl, H2-D1, Fxyd5, Sec62, B2m |
 | only H2-Q6 of these is DE | add `kompot_de_Young_to_Old_is_de` as a column | Yes for H2-Q6 only |
 | 190 DE genes | `kompot_de_Young_to_Old_mahalanobis` **Greater Than** `5.82` | 190 entries |
-| 52 of 86 module-mates with ρ < 0.2 | `fig4_module_k3` = `module 1` AND `rho_fc_H2-Q7` < `0.2` | 52 entries |
+| 52 of 86 module-mates with ρ < 0.2 | `gene_module_k3` = `module 1` AND `rho_fc_H2-Q7` < `0.2` | 52 entries |
 | 204 genes share the cell-state pattern | `rho_smoothed_H2-Q7` **Greater Than** `0.7` | 205 entries: 204 plus H2-Q7 itself |
 | 35 genes share the age response | `rho_fc_H2-Q7` **Greater Than** `0.5` | 36 entries: 35 plus H2-Q7 |
 
@@ -41,8 +41,8 @@ Hover labels and table filters check most statements; offline ones are marked. S
 
 - **Statistics computed offline.** The modules, the silhouette scores (flat at 0.23 to 0.25 for
   k = 2 to 6, maximum 0.250 at k = 3), the ranks and the class labels of panel d come from the
-  figure script and are stored as columns of `bm_aging_showcase.zarr`
-  ({doc}`../data/showcase-store`). AnnZarro does not cluster, rank or compute silhouettes.
+  figure script and are stored as columns of `bm_aging_annzarro.zarr`
+  ({doc}`../data/demo-data`). AnnZarro does not cluster, rank or compute silhouettes.
 - **Fixed to H2-Q7 and S100a9.** The rank, module and class columns describe those two genes.
   Panels a, b and the axes of d follow any focused gene; the panel c strips and the panel d colours
   do not.
@@ -54,7 +54,7 @@ Hover labels and table filters check most statements; offline ones are marked. S
   smallest Mahalanobis distance of a DE gene, 5.82.
 - **Colour map.** AnnZarro's `RdBu` from −1 to 1 stands in for the paper's diverging map; both put
   positive ρ in red.
-- **Table columns.** The checks use the showcase columns `rho_fc_*` and `rho_smoothed_H2-Q7`,
+- **Table columns.** The checks use the stored columns `rho_fc_*` and `rho_smoothed_H2-Q7`,
   which hold the same values as H2-Q7's `varp` rows. A gene table can also show a `varp` row
   directly (`spearman_fold_change: H2-Q7 (focused)` on its `varp` tab), but that column follows
   the focused gene.

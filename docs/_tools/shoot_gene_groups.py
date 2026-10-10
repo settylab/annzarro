@@ -16,7 +16,7 @@ Writes
 Run (it starts its own server on --port):
   python docs/_tools/shoot_gene_groups.py [--port 8823]
 
-Data: bm_aging.zarr in ANNZARRO_DOCS_DATA (default ~/annzarro-data), served from a temporary
+Data: bm_aging_annzarro.zarr in ANNZARRO_DOCS_DATA (default ~/annzarro-data), served from a temporary
 data directory of symlinks.
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ DOCS = HERE.parent
 OUT = DOCS / "_static" / "screens" / "tutorials"
 VIEWS = HERE / "views"
 PANELSETS = DOCS / "_static" / "panelsets" / "tutorials"
-STORE = "bm_aging.zarr"
+STORE = "bm_aging_annzarro.zarr"
 
 HSC = "HSPC_Old_1#GAAGCCCGTGGCTCTG-1"      # the example HSC of the other tutorials
 MONO = "Mature_Young_2#TCAATTCAGTGAGGCT-1"  # the example monocyte

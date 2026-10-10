@@ -19,7 +19,7 @@ day.
 
 ## What you need
 
-- AnnZarro running locally ({doc}`../getting-started/quickstart`) with `bm_aging.zarr` in its
+- AnnZarro running locally ({doc}`../getting-started/quickstart`) with `bm_aging_annzarro.zarr` in its
   data directory.
 - Network access from your browser to `mygene.info`, `version-12-5.string-db.org` and
   `biit.cs.ut.ee` (g:Profiler).
@@ -46,7 +46,7 @@ The link is ready for a local server; {ref}`what to change for yours <tut-start-
 The set: genes that go up with age in the volcano's upper right corner, that Kompot calls
 differentially expressed, and that also rise in one chosen haematopoietic stem cell.
 
-1. Open `bm_aging.zarr`. Set **Focused Gene** to `H2-Q7` and **Focused Cell** to
+1. Open `bm_aging_annzarro.zarr`. Set **Focused Gene** to `H2-Q7` and **Focused Cell** to
    `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` (type `GAAGCCCGTGGCTCTG` and pick it).
 2. Add a **Gene Table** with the `var` columns `kompot_de_Young_to_Old_mahalanobis` and
    `kompot_de_Young_to_Old_mean_lfc`, and a **Gene Plot** volcano (**X** the mean log fold

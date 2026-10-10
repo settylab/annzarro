@@ -10,7 +10,7 @@ Nothing is sent until you press **Run**. Opening AnnZarro, a share link, a panel
 session sends nothing, unless the panel's auto-update is on and every service it needs is already
 agreed to (see [Consent](#gene-set-consent)).
 
-This page uses the volcano filter of {doc}`tables-and-filters` on `bm_aging.zarr` (mouse): the
+This page uses the volcano filter of {doc}`tables-and-filters` on `bm_aging_annzarro.zarr` (mouse): the
 109 genes with Mahalanobis distance above 5 and a mean log fold change above 0.05.
 
 ## Run it on a table's genes
@@ -61,7 +61,7 @@ the body of a request, not in its URL.
 **IDs** is the `var` column whose values are sent and linked. **Auto** looks for one, in this
 order and in any capitalisation: `gene_id`; `gene_ensembl_id`, `ensembl_id`, `gene_ids`;
 `gene_name`; `gene_symbol`, `symbol` (and common variants such as `feature_name`), else the var
-index. `bm_aging.zarr` has `gene_ids`, so Auto takes its Ensembl ids rather than the symbols of
+index. `bm_aging_annzarro.zarr` has `gene_ids`, so Auto takes its Ensembl ids rather than the symbols of
 the index.
 
 The second list says how the values are read: **gene names (symbols)**, **Ensembl ids** or

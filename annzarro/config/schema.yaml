@@ -137,6 +137,18 @@ server:
       type: integer
       description: Names a name search without an index reads at most before answering with a partial result
       default: 100000000
+    max_read_mb:
+      type: [number, "null"]
+      description: MB one read of an obsp/varp matrix may hold in memory, estimated from metadata before reading; over it the request is a 413 read_too_large. null = 5% of RAM (256 MB to 4 GB); applies to admins too
+      default: null
+    read_budget_mb:
+      type: [number, "null"]
+      description: MB all obsp/varp reads in flight in one worker may hold together; null = twice max_read_mb. A read that does not fit waits read_wait_s, then 503 read_busy
+      default: null
+    read_wait_s:
+      type: number
+      description: Seconds an obsp/varp read waits for read_budget_mb before answering 503 read_busy with Retry-After
+      default: 5
     refresh_min_interval_s:
       type: number
       description: Seconds between two walks of one dataset by POST /data/refresh (open to every user)

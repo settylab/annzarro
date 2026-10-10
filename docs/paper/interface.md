@@ -10,7 +10,7 @@ and Setty, in preparation), assembled by
 repository.
 ```
 
-AnnZarro on the demonstration data `bm_aging.zarr`. **a**, Four linked panels with the focused
+AnnZarro on the demonstration data `bm_aging_annzarro.zarr`. **a**, Four linked panels with the focused
 gene H2-Q7 and a focused haematopoietic stem cell: a UMAP coloured by the stem cell's row of a
 five-step diffusion walk, the Kompot volcano coloured by each gene's fold-change correlation with
 H2-Q7, the UMAP coloured by H2-Q7's fold change, and a cell table filtered to stem cells.

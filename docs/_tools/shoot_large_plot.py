@@ -41,7 +41,7 @@ def main():
     cfg.write_text("ui:\n  defaults:\n    large_plot_points: 5000\n")
     with Session(a.port, OUT, config=cfg) as sh:
         for name, subset in (("large-plot-all", None), ("large-plot-subset", {"n": 4000, "seed": 0})):
-            page = sh.open(view(subset), dataset="bm_aging.zarr", viewport={"width": 1400, "height": 900})
+            page = sh.open(view(subset), dataset="bm_aging_annzarro.zarr", viewport={"width": 1400, "height": 900})
             time.sleep(0.5)
             notice = page.locator(f'.tile[data-tile-id="{T}"] .plot-status')
             sh.log.append(f"{name}: status = {notice.get_attribute('data-summary') if notice.count() else None}")

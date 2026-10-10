@@ -12,7 +12,7 @@ annzarro start --host 127.0.0.1 --port 8812 --no-browser --auth-disabled \
     --data-dir ~/annzarro-data
 ```
 
-on the demonstration store `bm_aging.zarr` (8,090 cells × 16,285 genes). Outputs are copied
+on the demonstration store `bm_aging_annzarro.zarr` (8,090 cells × 16,285 genes). Outputs are copied
 from those calls; long paths are shortened to `$DS`.
 
 ## Conventions
@@ -95,8 +95,8 @@ These are the routes one click uses. All are `GET`, all accept `If-None-Match` a
 |---|---|---|---|
 | `/data/layer/<key>` | `layers[key]` | `cols=<gene>` (Cell Plot colour) or `rows=<cell>` (Gene Plot colour) | layer name |
 | `/data/X` | `X` | `cols=<gene>` or `rows=<cell>` | none |
-| `/data/obsp/<key>` | `obsp[key]` | `rows=<cell>` | obsp key |
-| `/data/varp/<key>` | `varp[key]` | `rows=<gene>` | varp key |
+| `/data/obsp/<key>` | `obsp[key]` | `rows=<cell>` (required; up to 1,000 rows, and `cols=` only filters them) | obsp key |
+| `/data/varp/<key>` | `varp[key]` | `rows=<gene>` (required, as obsp) | varp key |
 | `/data/obsm/<key>` | `obsm[key]` | `column_name=0` (one axis; the web client names the column, which also works for dataframe-valued keys) or `cols=0`. Sparse obsm matrices are read with positional columns `0..n-1` | obsm key |
 | `/data/varm/<key>` | `varm[key]` | `cols=<i>`; `column_name=` | varm key |
 | `/data/obs` | `obs` columns | `columns=<name>[,<name>...]`, optional `rows=`, `include_categories=false`; one column: `format=f32`, `categorical=codes` | none |
@@ -137,7 +137,7 @@ import numpy as np
 import requests
 
 BASE = "http://127.0.0.1:8812/api/v1"
-STORE = "/path/to/bm_aging.zarr"
+STORE = "/path/to/bm_aging_annzarro.zarr"
 
 
 def get_slice(route, **params):
@@ -293,7 +293,7 @@ cell of the dataset, and its rows mean something over the cells shown: its kNN o
 coloured over them, its own expression row. `rows=` cannot name it, so the cell-axis routes take
 its dataset row as `dataset_rows=`. An obsp row comes back over the subset's cells, exactly as
 a shown cell's row does; a layer or `X` row is the cell's own; `cols` of obsp stay positions
-among the cells shown. Here part 2 of `{"n":3000,"seed":0}` on `bm_aging.zarr`, and dataset
+among the cells shown. Here part 2 of `{"n":3000,"seed":0}` on `bm_aging_annzarro.zarr`, and dataset
 row 1, a cell of part 1:
 
 ```console
@@ -356,7 +356,7 @@ $ curl -s "http://127.0.0.1:8812/api/v1/data/subset/locate?dataset_path=$DS&subs
 |---|---|
 | `GET /datasets` | list of `{name, path, rel_path, cells, genes, is_link}` for the stores at the top of the data directory and in its `datasets/` subdirectory (`rel_path` says which); a store the server's zarr cannot read is listed with `cells: null` and an `error` sentence |
 | `GET /data/dataset_structure?dataset_path=` | everything the menus need: `shape`, `n_obs`, `n_vars`, and per slot `available`, `keys` / `columns`, `info` (shape and type per key), `columns_info` (dtype per obs/var column), dataframe columns of `obsm`/`varm`. A store without `X` has `"X": {"available": false, "shape": null}` |
-| `GET /data/fingerprint?dataset_path=&wait=` | the store's fingerprint for saved views: `{status, fingerprint, path, rel_path, annzarro_version}`. `status` is `ready`, or `pending` while a large store's cell and gene names are hashed in the background (then `fingerprint` holds `n_obs`, `n_var`, `meta`, `groups` and `fields` only); `wait` (seconds, at most 10) waits for it, and is what starts the hashing: a call with `wait=0` (opening a dataset) answers from what is known and never starts it. `rel_path` is the path relative to the data directory, `null` outside it. Missing store: 404 `not_found` ({doc}`../user-guide/reproducing`) |
+| `GET /data/fingerprint?dataset_path=&wait=` | the store's fingerprint for saved views: `{status, fingerprint, path, rel_path, annzarro_version}`. `status` is `ready`, or `pending` while a large store's cell and gene names are hashed in the background (then `fingerprint` holds `n_obs`, `n_var`, `meta`, `groups` and `fields` only); `wait` (seconds, at most 10) waits for it, and is what starts the hashing: a call with `wait=0` (opening a dataset) answers from what is known and never starts it. The metadata tier (`meta`, `groups`, `fields`) is read from the store's consolidated metadata, one file plus a directory listing each of the root and the field groups, whatever the number of nodes; a store without consolidated metadata, or whose consolidated metadata is out of date (a refresh found it stale, or its members are not those on disk), is walked instead, which on a network file system takes seconds when cached and minutes when cold. `rel_path` is the path relative to the data directory, `null` outside it. Missing store: 404 `not_found` ({doc}`../user-guide/reproducing`) |
 | `GET /data/info?dataset_path=` | a shorter summary: `shape`, `has_*` flags, `obs_columns`, `var_columns`, `layers`, `embeddings` |
 | `GET /data/genes?dataset_path=` | `{"genes": [...], "dataset_path": ...}`, all `var_names` (146 kB here) |
 | `GET /data/cells?dataset_path=` | `{"cells": [...], ...}`, all `obs_names` (275 kB here). With `subset=`, the subset's names only, in dataset order; the server reads just those (below) |
@@ -370,9 +370,9 @@ $ curl -s "http://127.0.0.1:8812/api/v1/datasets" | python -m json.tool | head -
         "cells": 8090,
         "genes": 16285,
         "is_link": false,
-        "name": "bm_aging.zarr",
-        "path": "/Users/me/annzarro-data/bm_aging.zarr",
-        "rel_path": "bm_aging.zarr"
+        "name": "bm_aging_annzarro.zarr",
+        "path": "/Users/me/annzarro-data/bm_aging_annzarro.zarr",
+        "rel_path": "bm_aging_annzarro.zarr"
     },
 ```
 
@@ -412,10 +412,10 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 | `GET /zarr/url?url=` | whether a URL is an acceptable remote store |
 
 Also registered but not used by the web client: `/data/paginated`, `/data/statistics`,
-`/data/by_path`, `/core/datasets`, `/zarr/to_anndata`, and the path-segment forms
+`/data/by_path`, `/core/datasets`, `/zarr/to_anndata` (a metadata summary: shape, the first ten obs and var names, key lists, column types; it opens no matrix, so a store with a dense 175,000 x 175,000 `obsp` answers it at once), and the path-segment forms
 `/datasets/<path>`, `/datasets/<path>/info`, `/datasets/<path>/uns/...`. In the path-segment
-forms `<path>` is relative to the data directory (`/datasets/bm_aging.zarr`,
-`/datasets/bm_aging.zarr/uns/neighbors/params`); a path that does not exist is `404 not_found`,
+forms `<path>` is relative to the data directory (`/datasets/bm_aging_annzarro.zarr`,
+`/datasets/bm_aging_annzarro.zarr/uns/neighbors/params`); a path that does not exist is `404 not_found`,
 one that is not a dataset `400 unsupported_type`.
 
 ## Status codes
@@ -438,6 +438,9 @@ one that is not a dataset `400 unsupported_type`.
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
+| 503 | `read_busy` | the `obsp`/`varp` reads in flight hold `server.read_budget_mb`; `Retry-After` seconds and `retry_after_s` say when to ask again (the web client does once) |
+| 400 | `rows_required`, `too_many_rows` | an `obsp`/`varp` request (`/data/obsp/<key>`, `/data/varp/<key>`, and those paths in `/data/by_path`, `/data/paginated`, `/data/statistics`) that names no rows, or more than 1,000. Pairwise matrices are read by rows only: send `rows=` (or `dataset_rows=`); `cols=` only filters the rows asked for. Nothing is read |
+| 413 | `read_too_large` | an `obsp`/`varp` read would hold more than `server.max_read_mb` in memory (estimated from metadata, before reading); the body has `limit_mb`, `requested_mb` and `elements` (the element, its stored shape, rows, columns and estimated MB) |
 | 400 | `too_many_categories` | `/data/subset` balancing across a column of more than 10,000 categories. No reply is refused for its number of labels: a categorical codes reply (`format=f32&categorical=codes`, one column) is streamed in bounded memory. A JSON reply, and any request for several columns, is not: it builds every label of the rows asked at once, so for a column with millions of categories (a barcode on every cell) ask for that column alone through the codes route |
 | 500 | `stale_metadata` | the store's consolidated metadata (`.zmetadata`) no longer matches an array on disk, usually after an in-place rewrite. `POST /data/refresh` (Refresh dataset) reads the store without the stale metadata from then on; re-consolidate (`zarr.consolidate_metadata(path)`) and refresh again |
 | 500 | `read_failed` | any other failure to read an array the store lists, with the exception text |
@@ -471,6 +474,8 @@ HTTP 400
 | Setting or parameter | Default | Checked against | Error |
 |---|---|---|---|
 | `server.max_response_elements` | 10,000,000 | rows × cols of the slice, from metadata, before reading | `413 response_too_large` |
+| `server.max_read_mb` | 5% of RAM (256 MB to 4 GB) | memory an `obsp`/`varp` read would hold, from shape, dtype and stored sizes, before reading (`/data/obsp`, `/data/varp`, `/data/by_path`, `/data/paginated`, `/data/statistics`) | `413 read_too_large` |
+| `server.read_budget_mb` | 2 × `max_read_mb` | pairwise reads in flight in one worker, each by its estimate; waits `server.read_wait_s` (5 s) | `503 read_busy` |
 | `max_cells=` / `max_genes=` query parameters | none | number of requested cell / gene indices | `400 cap_exceeded` |
 | groups for subset balancing | 10,000 | a column's categories (metadata) | `400 too_many_categories` |
 

@@ -2051,6 +2051,10 @@ const App = (function() {
             if (datasetStructure.consolidated_metadata && datasetStructure.consolidated_metadata.stale) {
                 _showNotification('Consolidated metadata out of date', datasetStructure.consolidated_metadata.message, 'warning');
             }
+            // dense obsp/varp chunked so that one row read is more than the server allows
+            if (datasetStructure.pairwise_chunking) {
+                _showNotification('Pairwise matrix chunking', datasetStructure.pairwise_chunking.message, 'warning');
+            }
             
             if (signal.aborted) {
                 console.log(`Dataset load aborted before populating selectors: ${datasetPath}`);

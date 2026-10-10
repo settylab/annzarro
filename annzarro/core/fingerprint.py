@@ -28,8 +28,18 @@ content digest takes about 10 s, so it is computed in a background thread
 (``get(..., wait=)`` never blocks longer than asked) and persisted in the
 state directory (``~/.annzarro/fingerprints``), keyed by the store's stat
 signature and freshness generation (core/freshness.py), so restarts do not
-recompute it. The metadata tier is cheap (milliseconds) and is always
-returned at once.
+recompute it. The metadata tier is cheap and is always returned at once:
+from the store's consolidated metadata (``.zmetadata``, or the consolidated
+copy in a zarr 3 root ``zarr.json``) it is one file read and one directory
+listing each of the root and ``FIELD_GROUPS``, however many nodes the store
+has; a walk of every group (a stat per metadata file and a read per
+document) only when there is none, or when it is out of date: a refresh
+recorded it stale, or its member names are not those on disk. That is the
+difference between milliseconds and minutes for a store of thousands of
+nodes on a network file system. The digest is of the same documents either
+way (an empty ``consolidated_metadata`` entry of a ``.zgroup`` is not part
+of them). Rewriting chunks without touching any metadata document was never
+part of this tier (only the documents are read); a refresh walk sees it.
 
 AnnZarro never writes into a store, and only metadata documents are read,
 so files beside a store (or anything else in its directory) do not count.
@@ -109,8 +119,10 @@ def _zarr_local_metadata(root: str) -> Dict[str, Any]:
                     doc = json.loads(fh.read().decode("utf-8"))
             except (OSError, ValueError):
                 continue
+            if name == ".zgroup":
+                doc = _strip_consolidated(doc)
             if name == "zarr.json" and isinstance(doc, dict):
-                doc = {k: v for k, v in doc.items() if k != "consolidated_metadata"}
+                doc = _strip_consolidated(doc)
                 is_array = is_array or doc.get("node_type") == "array"
             is_array = is_array or name == ".zarray"
             out[f"{rel}/{name}" if rel else name] = doc
@@ -128,6 +140,36 @@ def _zarr_local_metadata(root: str) -> Dict[str, Any]:
     return out
 
 
+def _strip_consolidated(doc):
+    if isinstance(doc, dict):
+        return {k: v for k, v in doc.items() if k != "consolidated_metadata"}
+    return doc
+
+
+def _docs_of_zmetadata(raw: bytes) -> Dict[str, Any]:
+    """The documents of a zarr 2 ``.zmetadata``, by store key. zarr 3 adds an
+    empty ``consolidated_metadata`` to the ``.zgroup`` entries it consolidates
+    (and, in some stores, writes it into the ``.zgroup`` files too), so it is
+    dropped from every ``.zgroup``, here and in the walk: the same store gives
+    the same documents either way."""
+    docs = json.loads(raw.decode("utf-8")).get("metadata") or {}
+    return {key: _strip_consolidated(doc) if key.rpartition("/")[2] == ".zgroup" else doc
+            for key, doc in docs.items()}
+
+
+def _docs_of_consolidated_zarr_json(raw: bytes) -> Optional[Dict[str, Any]]:
+    """The documents of a zarr 3 root ``zarr.json`` and its consolidated
+    copy of the others; None when it has none."""
+    root = json.loads(raw.decode("utf-8"))
+    consolidated = (root.get("consolidated_metadata") or {}).get("metadata")
+    if consolidated is None:
+        return None
+    out = {"zarr.json": _strip_consolidated(root)}
+    for key, doc in consolidated.items():
+        out[f"{key}/zarr.json"] = _strip_consolidated(doc)
+    return out
+
+
 def _zarr_remote_metadata(url: str) -> Optional[Dict[str, Any]]:
     """The metadata documents of a remote store from its consolidated
     metadata, under the keys a local walk gives; None without one."""
@@ -140,26 +182,70 @@ def _zarr_remote_metadata(url: str) -> Optional[Dict[str, Any]]:
     policy.check(url)
     fs, path = fsspec.core.url_to_fs(target, **policy.storage_options(target))
     try:
-        doc = json.loads(fs.cat_file(f"{path}/.zmetadata"))
-        return dict(doc.get("metadata") or {})
+        return _docs_of_zmetadata(fs.cat_file(f"{path}/.zmetadata"))
     except FileNotFoundError:
         pass
     except Exception as exc:  # noqa: BLE001 (a v3 store has no .zmetadata)
         logger.debug("No .zmetadata at %s: %s", url, exc)
     try:
-        root = json.loads(fs.cat_file(f"{path}/zarr.json"))
+        return _docs_of_consolidated_zarr_json(fs.cat_file(f"{path}/zarr.json"))
     except Exception as exc:  # noqa: BLE001
-        logger.debug("No zarr.json at %s: %s", url, exc)
+        logger.debug("No consolidated zarr.json at %s: %s", url, exc)
         return None
-    consolidated = (root.get("consolidated_metadata") or {}).get("metadata")
-    if consolidated is None:
+
+
+def _listing_matches(root: str, docs: Dict[str, Any]) -> bool:
+    """Whether the consolidated listing names the same members as the disk
+    at the levels a rewrite changes: the root and each of FIELD_GROUPS (one
+    directory listing each, whatever the size of the store). An element
+    added or removed without re-consolidating shows here, and the store
+    then goes through the walk."""
+    listed: Dict[str, set] = {"": set()}
+    for key in docs:
+        parts = key.split("/")[:-1]          # the last part is the document's name
+        if not parts:
+            continue
+        listed[""].add(parts[0])
+        if parts[0] in FIELD_GROUPS:
+            listed.setdefault(parts[0], set())
+            if len(parts) > 1:
+                listed[parts[0]].add(parts[1])
+    for group in ("", *(g for g in FIELD_GROUPS if g in listed)):
+        folder = os.path.join(root, group) if group else root
+        try:
+            with os.scandir(folder) as entries:
+                on_disk = {e.name for e in entries if not e.name.startswith(".") and e.is_dir()}
+        except OSError:
+            return False
+        if on_disk != listed[group]:
+            return False
+    return True
+
+
+def _zarr_local_consolidated(root: str) -> Optional[Dict[str, Any]]:
+    """The documents of a local zarr store from its consolidated metadata:
+    one file read (``.zmetadata``, or the root ``zarr.json`` of zarr 3),
+    plus one directory listing for each of the root and FIELD_GROUPS. None
+    when there is none, or when it is out of date: a refresh recorded it
+    stale (``freshness.recorded``, from ``consolidated_staleness``, which
+    reads every document and so runs on a refresh), or its member names are
+    not those on disk (``_listing_matches``). The caller then walks."""
+    if freshness.recorded(root).get("consolidated_stale"):
         return None
-    out = {"zarr.json": {k: v for k, v in root.items() if k != "consolidated_metadata"}}
-    for key, doc in consolidated.items():
-        if isinstance(doc, dict):
-            doc = {k: v for k, v in doc.items() if k != "consolidated_metadata"}
-        out[f"{key}/zarr.json"] = doc
-    return out
+    try:
+        with open(os.path.join(root, ".zmetadata"), "rb") as fh:
+            docs = _docs_of_zmetadata(fh.read())
+    except FileNotFoundError:
+        try:
+            with open(os.path.join(root, "zarr.json"), "rb") as fh:
+                docs = _docs_of_consolidated_zarr_json(fh.read())
+        except (OSError, ValueError):
+            return None
+    except (OSError, ValueError):
+        return None
+    if not docs or not _listing_matches(root, docs):
+        return None
+    return docs
 
 
 def _attrs(obj) -> Dict[str, Any]:
@@ -232,7 +318,9 @@ def metadata_part(dataset_path: str) -> Dict[str, Any]:
     elif h5ad:
         metadata = _h5ad_metadata(dataset_path)
     else:
-        metadata = _zarr_local_metadata(dataset_path)
+        metadata = _zarr_local_consolidated(dataset_path)
+        if metadata is None:
+            metadata = _zarr_local_metadata(dataset_path)
     if metadata is None:
         return {"meta": None, "groups": {}, "fields": {}}
     by_group: Dict[str, Dict[str, Any]] = {}

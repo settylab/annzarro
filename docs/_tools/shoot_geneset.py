@@ -3,7 +3,7 @@
 The panel asks external services, so this script does too: STRING, g:Profiler and
 MyGene.info answer for real (it clicks Send in the panel's consent bar, as a user would),
 and the pictures show what they answered on the day. Nothing else is sent: the genes of
-bm_aging.zarr's volcano filter (mouse), the species, and the dataset's genes as the
+bm_aging_annzarro.zarr's volcano filter (mouse), the species, and the dataset's genes as the
 enrichment background.
 
 Writes
@@ -13,7 +13,7 @@ Writes
 Run (it starts its own server on --port):
   python docs/_tools/shoot_geneset.py [--port 8818]
 
-Data: bm_aging.zarr in ANNZARRO_DOCS_DATA (default ~/gits/annzarro-paper/data), served from a
+Data: bm_aging_annzarro.zarr in ANNZARRO_DOCS_DATA (default ~/gits/annzarro-paper/data), served from a
 temporary data directory of symlinks.
 """
 from __future__ import annotations
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     data_dir = Path(tempfile.mkdtemp(prefix="annzarro-geneset-"))
-    (data_dir / "bm_aging.zarr").symlink_to(DATA_DIR / "bm_aging.zarr")
+    (data_dir / "bm_aging_annzarro.zarr").symlink_to(DATA_DIR / "bm_aging_annzarro.zarr")
     with Session(a.port, OUT, data_dir=data_dir) as sh:
         # the store as served (from the temporary data directory), so the header shows its name
-        shoot(sh, OUT, str(data_dir / "bm_aging.zarr"))
+        shoot(sh, OUT, str(data_dir / "bm_aging_annzarro.zarr"))

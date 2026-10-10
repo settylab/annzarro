@@ -1,8 +1,8 @@
 {
   "name": "cell-by-cell-umap-vs-diffusion",
   "timestamp": "2026-10-02T21:33:48+00:00",
-  "dataset": "bm_aging_showcase.zarr",
-  "datasetName": "bm_aging_showcase",
+  "dataset": "bm_aging_annzarro.zarr",
+  "datasetName": "bm_aging_annzarro",
   "constants": {
     "focusedCell": "Mature_Mid_1#GCCATGGAGTATGATG-1",
     "focusedGene": "S100a9",
@@ -31,7 +31,7 @@
         "z": null,
         "color": {
           "type": "obs",
-          "key": "fig3_plasma_groups",
+          "key": "plasma_groups",
           "column": ""
         },
         "pointSize": 3,
@@ -70,7 +70,7 @@
         "z": null,
         "color": {
           "type": "obs",
-          "key": "fig3_plasma_groups",
+          "key": "plasma_groups",
           "column": ""
         },
         "pointSize": 3,
@@ -150,7 +150,7 @@
           "z": null,
           "color": {
             "type": "obs",
-            "key": "fig3_plasma_groups",
+            "key": "plasma_groups",
             "column": ""
           },
           "pointSize": 3,
@@ -183,7 +183,7 @@
           "z": null,
           "color": {
             "type": "obs",
-            "key": "fig3_plasma_groups",
+            "key": "plasma_groups",
             "column": ""
           },
           "pointSize": 3,

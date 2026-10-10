@@ -14,8 +14,8 @@ again from the command line.
 
 Since v0.4.1 a link and a panel set record, next to the layout and every panel's settings:
 
-- **The store by its name in the data directory**, for example `bm_aging.zarr` or
-  `datasets/bm_aging.zarr`, whenever the store is inside the server's data directory. Any server
+- **The store by its name in the data directory**, for example `bm_aging_annzarro.zarr` or
+  `datasets/bm_aging_annzarro.zarr`, whenever the store is inside the server's data directory. Any server
   whose data directory holds the store under that name opens the view, wherever that directory
   is. The absolute path the store had where the view was saved is kept as a last hint. A store
   outside the data directory (the desktop app, an administrator's arbitrary path) is recorded by
@@ -110,9 +110,9 @@ every point is shown, and the recipe in the file.
 $ pip install 'annzarro[export]'
 $ python -m playwright install chromium
 
-$ annzarro export my-view.json --store data/bm_aging.zarr --out fig.svg
-$ annzarro export 'http://host/?dataset_path=bm_aging.zarr#view=z1.…' --store bm_aging.zarr --out fig.png
-$ annzarro export --from fig.png --store bm_aging.zarr --out again.png
+$ annzarro export my-view.json --store data/bm_aging_annzarro.zarr --out fig.svg
+$ annzarro export 'http://host/?dataset_path=bm_aging_annzarro.zarr#view=z1.…' --store bm_aging_annzarro.zarr --out fig.png
+$ annzarro export --from fig.png --store bm_aging_annzarro.zarr --out again.png
 ```
 
 - The first argument is a panel set file (from **Export** in the Load Panel Set dialog) or a share

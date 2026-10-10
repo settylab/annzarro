@@ -67,7 +67,7 @@
     "title": "DE genes ranked by rho with H2-Q7, colour = module (k = 3)",
     "x": {
      "type": "var",
-     "key": "fig4c_rank_H2-Q7",
+     "key": "rho_rank_H2-Q7",
      "column": ""
     },
     "y": {
@@ -78,7 +78,7 @@
     "z": null,
     "color": {
      "type": "var",
-     "key": "fig4_module_k3",
+     "key": "gene_module_k3",
      "column": ""
     },
     "pointSize": 7,
@@ -107,7 +107,7 @@
     "title": "DE genes ranked by rho with S100a9, colour = module (k = 3)",
     "x": {
      "type": "var",
-     "key": "fig4c_rank_S100a9",
+     "key": "rho_rank_S100a9",
      "column": ""
     },
     "y": {
@@ -118,7 +118,7 @@
     "z": null,
     "color": {
      "type": "var",
-     "key": "fig4_module_k3",
+     "key": "gene_module_k3",
      "column": ""
     },
     "pointSize": 7,
@@ -148,7 +148,7 @@
     "columns": [
      {
       "type": "var",
-      "key": "fig4_module_k3",
+      "key": "gene_module_k3",
       "column": ""
      },
      {
@@ -172,8 +172,8 @@
      "criteria": [
       {
        "condition": "=",
-       "data": "fig4_module_k3",
-       "origData": "var_fig4_module_k3_main",
+       "data": "gene_module_k3",
+       "origData": "var_gene_module_k3_main",
        "type": "string",
        "value": [
         "module 1"

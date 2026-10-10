@@ -2358,15 +2358,36 @@ button.dtsb-button.dtsb-clear:hover {
     font-weight: normal;
 }
 
-/* Dataset selector should have a moderate width */
+/* The dataset row: box, then the Refresh / Change dataset buttons on one line.
+   The box has a fixed basis and shrinks when the column is short; its text is
+   cut with an ellipsis (the option title carries the full name). Select2 would
+   otherwise size it to the selected name and push the buttons to a second line.
+   The box and Refresh never separate. */
+.dataset-row {
+    display: flex;
+    flex-wrap: wrap; /* only Change dataset (when shown) drops to a second line */
+    row-gap: 4px;
+}
+.dataset-pick {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+    max-width: 100%;
+}
+.dataset-pick > button {
+    flex: 0 0 auto;
+}
 #dataset-selector {
     min-width: 180px !important;
     max-width: 200px !important;
 }
-
-/* The box itself: wide enough for a name's start (Select2 sizes it to its text) */
 #dataset-selector + .select2-container {
-    min-width: 180px;
+    flex: 0 1 260px;
+    width: 260px !important;
+    min-width: 120px;
+    max-width: 100%;
+    overflow: hidden;
 }
 
 /* The open dataset list may be wider than its box, up to the viewport;

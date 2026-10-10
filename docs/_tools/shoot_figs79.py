@@ -169,7 +169,7 @@ def fig9(s):
     (VIEWS / "click-cost.json").write_text(json.dumps(view, indent=1))
     page = s.open(view)
     page.evaluate("performance.clearResourceTimings()")
-    record = {"dataset": "bm_aging.zarr (8,090 cells x 16,285 genes)",
+    record = {"dataset": "bm_aging_annzarro.zarr (8,090 cells x 16,285 genes)",
               "urls": "dataset_path shown as the store's name; the app sends its absolute path", "clicks": []}
     # Focus a new gene by clicking it in the volcano, then a new cell in the embedding.
     for label, tid in (("gene click", b["id"]), ("cell click", a["id"])):
