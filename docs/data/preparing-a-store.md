@@ -12,14 +12,17 @@ general recipe, then the exact steps the paper's Procedure uses for the demonstr
    pairwise matrices in `obsp` / `varp`.
 2. Cast float arrays to float32.
 3. Store sparse layers you colour cells by as CSC.
-4. `ad.settings.zarr_write_format = 2; adata.write_zarr("datasets/name.zarr")`.
-5. Optional: rechunk large dense arrays ({doc}`chunking`) and re-consolidate.
+4. `ad.settings.zarr_write_format = 3; adata.write_zarr("datasets/name.zarr")` when your server
+   runs zarr 3 (Python 3.11 or newer), format 2 otherwise ({ref}`zarr-format`).
+5. Optional: rechunk large dense arrays ({doc}`chunking`), shard them in format 3, and
+   re-consolidate.
 :::
 
 ## General recipe
 
-The script below converts any h5ad. It was run as written on a 3,000-cell test file and the
-resulting store served by AnnZarro (checked with the requests at the end of this section).
+The script below converts any h5ad. It was run as written, with `ZARR_FORMAT = 2` and
+`ZARR_FORMAT = 3`, on a 3,000-cell test file and the resulting stores served by AnnZarro (checked
+with the requests at the end of this section).
 
 ```python
 import math
@@ -39,11 +42,12 @@ for slot in ("layers", "obsp", "varp", "obsm"):
 # 2. CSC for sparse layers you colour cells by (gene columns)
 adata.layers["logged_counts"] = sp.csc_matrix(adata.layers["logged_counts"], dtype=np.float32)
 
-# 3. write zarr format 2 (consolidated metadata is written by default)
-ad.settings.zarr_write_format = 2
+# 3. write (consolidated metadata is written by default)
+ZARR_FORMAT = 3   # 3 if the server runs zarr >= 3 (Python 3.11+), else 2: see "Zarr format 2 or 3"
+ad.settings.zarr_write_format = ZARR_FORMAT
 adata.write_zarr("datasets/my_data.zarr")
 
-# 4. optional: rechunk dense arrays, then re-consolidate
+# 4. optional: rechunk dense arrays (and in format 3 shard them), then re-consolidate
 def layer_chunks(n_obs, n_vars, target=5e5):
     rows = 2 ** round(math.log2(math.sqrt(target * n_obs / n_vars)))
     cols = 2 ** round(math.log2(target / rows))
@@ -52,13 +56,20 @@ def layer_chunks(n_obs, n_vars, target=5e5):
 def row_chunks(n, target=1e6):
     return max(1, min(n, int(target // n))), n
 
+def shard_shape(chunks, shape, per_axis):
+    """Shards of ``per_axis`` inner chunks along each axis, cut at the array's edge."""
+    return tuple(min(c * k, -(-s // c) * c) for c, k, s in zip(chunks, per_axis, shape))
+
 g = zarr.open_group("datasets/my_data.zarr", mode="r+", use_consolidated=False)
 for slot in ("layers", "obsp", "varp"):
     for key, arr in getattr(adata, slot).items():
         if sp.issparse(arr) or np.ndim(arr) != 2:
             continue
         chunks = layer_chunks(*arr.shape) if slot == "layers" else row_chunks(arr.shape[1])
-        ad.io.write_elem(g[slot], key, arr, dataset_kwargs={"chunks": chunks})
+        kwargs = {"chunks": chunks}
+        if ZARR_FORMAT == 3:    # layers: 4 x 4 chunks per shard; obsp/varp: 16 row blocks, full width
+            kwargs["shards"] = shard_shape(chunks, arr.shape, (4, 4) if slot == "layers" else (16, 1))
+        ad.io.write_elem(g[slot], key, arr, dataset_kwargs=kwargs)
 zarr.consolidate_metadata("datasets/my_data.zarr")
 ```
 
@@ -79,7 +90,7 @@ What each step buys:
   coloured by a layer reads gene columns; a Gene Plot coloured by a layer reads cell rows. Pick
   the direction you use most, or store the layer dense if it fits.
 
-**Format 2.**
+**Format 2 or 3.**
 : See {ref}`zarr-format` below.
 
 **Rechunking.**
@@ -168,19 +179,99 @@ on a shared server).
 (zarr-format)=
 ## Zarr format 2 or 3
 
-Write **format 2** (`ad.settings.zarr_write_format = 2`). It is what the paper validated and
-what every AnnZarro installation reads. anndata 0.12 warns that format 2 will stop being the
-default in its next minor release; set it explicitly.
+AnnZarro reads both on-disk formats. Which one a server can read depends on the zarr library it
+runs, not on AnnZarro:
 
-Format 3 status, measured on this branch: the reader opens a format 3 store when the server's
-zarr library is version 3 or later. A 300 × 50 store written with
-`ad.settings.zarr_write_format = 3` served layers, `obsm` and the structure endpoint correctly
-under zarr 3.1.6. A server running zarr 2 cannot read format 3. According to the code
-(`zarr_reader.zarr_format_problem`, `data_routes._reader_error_response`), the dataset list then
-shows the store with the reason and the fix, and data routes answer `400` with
-`"reason": "unsupported_type"` and the same sentence; this path was not run here, because the
-docs environment has zarr 3. AnnZarro's own dependency is `zarr>=2.13`, so which case
-you are in depends on the environment.
+| Server's zarr | Python | Reads format 2 | Reads format 3 |
+|---|---|---|---|
+| 3.x | 3.11 or newer (zarr 3.4 needs 3.12) | yes | yes, plain and sharded |
+| 2.x | 3.9 and newer | yes | no |
+
+On a zarr 2 server a format 3 store is listed with its error in place of cell and gene counts,
+and every data route answers `400` with `"reason": "unsupported_type"` and a sentence that says
+what the store is and how to fix it (rewrite it as format 2, or run the server with zarr 3).
+Both rows were run for this page, with the demonstration store written both ways: zarr 3.4.1 on
+Python 3.12 served format 2, plain format 3 and sharded format 3 alike; zarr 2.18.2 on Python 3.9
+served format 2 and refused the format 3 stores as described.
+
+**Write format 3 when your server runs zarr 3 (Python 3.11 or newer).**
+It is where anndata is heading: 0.12 warns that format 2 will stop being the default, and
+0.13.4 already writes format 3, sharded, with no setting. Use format 2 when any server that
+will open the store runs zarr 2 (Python 3.9 or 3.10), or when another tool you use reads only
+format 2. The demonstration store of the paper is format 2 for that reason.
+
+```python
+import anndata as ad
+
+ad.settings.zarr_write_format = 3        # anndata 0.12; 0.13 writes format 3 without it
+adata.write_zarr("datasets/my_data.zarr")
+```
+
+This is enough to be served. anndata writes the consolidated metadata AnnZarro reads (0.12.19
+prints "Consolidated metadata is currently not part in the Zarr format 3 specification", a
+warning that does not matter here). Stores written by anndata 0.12.19 (zarr 3.1.6) and 0.13.4
+(zarr 3.4.1) were served and answered every route that was tried.
+
+### Sharding
+
+A format 3 array can be sharded: many chunks are stored in one file, the shard, and the file
+carries an index of them. The chunk stays the unit of compression and of reading. The shard is only
+the unit of storage. Measured on the demonstration store (8,090 cells, 16,285 genes):
+
+| Store | Files | Size (`du`) |
+|---|---|---|
+| Format 2, as published | 4,243 | 5.4 GiB |
+| Format 3, the same chunks | 3,878 | 5.1 GiB |
+| Format 3, sharded as below | 1,024 | 5.1 GiB |
+
+A store with a few hundred files moves faster than one with four thousand: in `rsync`, in an
+object store, on a network file system with a slow `ls`. Nothing here measures that; the count is
+what sharding changes.
+
+AnnZarro reads a sharded array through zarr's partial reads: the shard's index, then only the
+chunks a request needs. Read from a local disk, one row of a (16,000, 16,000) float32 array
+with (62, 16,000) chunks in 63 MB shards raised the server's peak memory by 7.3 MB, against
+7.2 MB for the same chunks without shards. Over HTTP the same read is a range request for the
+index and one for the chunk (about 70 B and 3 kB for one row of a 200 × 200 test matrix, not the
+shard file). So size chunks by the rule on {doc}`chunking`, and let the shard be a multiple of the chunk:
+
+- **Chunks inside the shard.** Use the aspect rule for cells × genes layers and whole rows for
+  `obsp` / `varp`, exactly as for an unsharded array. The server bounds a pairwise read by the
+  chunk, not by the shard (`server.max_read_mb`).
+- **Shards.** The demonstration store uses 4 × 4 chunks (2,048 × 4,096 values, 32 MB) for layers
+  and 16 row blocks for `obsp` / `varp` (1,968 rows of the 8,090-row matrices, 976 of the 16,285-row
+  ones, 61 MB). No other size was compared here. A shard has
+  to fit in memory when it is written.
+
+The script under "General recipe" writes exactly this: with `ZARR_FORMAT = 3` it passes `chunks`
+and `shards` to `write_elem`. It was run with anndata 0.12.19 and 0.13.4, and the arrays read back
+equal. Check what a store has with `array.chunks` (the inner chunk) and `array.shards`
+(`None` when unsharded) in zarr 3.
+
+```{note}
+anndata 0.13.4 shards by default, with shards of up to 1 GB uncompressed and inner chunks it
+picks (506 × 506 for an 8,090 × 8,090 matrix, 509 × 509 for 16,285 × 16,285). Such a store is
+served as it is. The server sizes a row of the 16,285 × 16,285 matrix at about 10 MB (ten chunks);
+measured over 20 rows of the written store, the process grew by under 7 MB. Before the guard was
+changed to size by the chunk, it counted the 1 GB shard (950 MB) and could refuse the row on a small
+server. With anndata 0.12.19 the default is format 2, and format 3 is written unsharded unless you
+pass `shards`.
+```
+
+**Remote stores.** A sharded store served over HTTP needs a server that honours the `Range`
+header (nginx, Apache, S3, GCS do; `python -m http.server` does not). Without it the first
+read fails with a `500` that says so. The remote chunk cache ({doc}`../user-guide/remote-datasets`)
+keeps the index and the chunks of a sharded store, so a second row of a chunk already read is not
+fetched again (two requests for two rows of one chunk, against four without the cache).
+
+**Converting a format 2 store.** Reading a format 2 store and writing it as format 3 with
+anndata (`ad.read_zarr(src).write_zarr(dst)` with `ad.settings.zarr_write_format = 3`) loads the
+store into memory. For a store larger than memory, copy array by array with zarr, as in
+{doc}`chunking`; the test helper `annzarro/tests/utils/make_fixture_zarr_v3.py` does so in blocks
+of whole shard rows and wrote the 5.4 GiB demonstration store in 6 s on an Apple M3 Max. Every
+array of both format 3 stores was compared with its source (values, dtypes and attributes, which
+hold the sparse, categorical and nullable encodings), anndata decoded every element of both
+to the same objects, and every panel set of the tutorials opened and drew from them.
 
 ## Where to put the store
 
