@@ -34,7 +34,7 @@ def get(tmp_path):
     ("/api/v1/data/obsm/nope", {}),
     ("/api/v1/data/varm/nope", {}),
     ("/api/v1/data/obsp/nope", {"rows": "1"}),
-    ("/api/v1/data/varp/nope", {}),
+    ("/api/v1/data/varp/nope", {"rows": "1"}),
     ("/api/v1/data/uns/nope", {}),
     ("/api/v1/data/obs", {"columns": "nope"}),
     ("/api/v1/data/var", {"columns": "gene_name,nope"}),

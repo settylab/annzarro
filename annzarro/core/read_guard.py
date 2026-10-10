@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 _limit_mb: Optional[float] = None
 _budget_mb: Optional[float] = None
-_decompress_mb: Optional[float] = None
 _wait_s: float = 5.0
 _cond = threading.Condition()
 _in_flight = 0
@@ -45,6 +44,22 @@ class ReadTooLargeError(Exception):
         self.limit_bytes = limit_bytes
         self.requested_bytes = requested_bytes
         self.elements = elements
+
+
+#: Rows one pairwise (obsp/varp) request may name. The web client reads one row
+#: per cell or gene; 1000 is the most /data/paginated shows and /data/subset/locate
+#: translates. max_response_elements (10M values) cuts it further on large matrices.
+MAX_PAIRWISE_ROWS = 1000
+
+
+class RowsRequiredError(ReadTooLargeError):
+    """A pairwise read that names no rows, or too many: answered 400
+    (``rows_required`` / ``too_many_rows``). A ReadTooLargeError so every
+    route that answers the guard's refusals answers this one."""
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message, 0, 0, [])
+        self.reason = reason
 
 
 class ReadBusyError(Exception):
@@ -68,22 +83,14 @@ def default_limit_bytes() -> int:
 
 
 def configure(max_mb: Optional[float] = None, budget_mb: Optional[float] = None,
-              wait_s: Optional[float] = None, decompress_mb: Optional[float] = None) -> None:
+              wait_s: Optional[float] = None) -> None:
     """Set the per-request limit in MB (None or 0: the default,
     default_limit_bytes()), the budget of all pairwise reads in flight in this
     process (None or 0: twice the limit) and the seconds a read waits for it."""
-    global _limit_mb, _budget_mb, _wait_s, _decompress_mb
-    _decompress_mb = float(decompress_mb) if decompress_mb else None
+    global _limit_mb, _budget_mb, _wait_s
     _limit_mb = float(max_mb) if max_mb else None
     _budget_mb = float(budget_mb) if budget_mb else None
     _wait_s = 5.0 if wait_s is None else float(wait_s)
-
-
-def decompress_limit_bytes() -> int:
-    """Bytes of chunks one request may decompress: ``max_decompress_mb``, else
-    ten times the read limit (a column of a row-chunked matrix touches every
-    chunk row; that work, not memory, is what this bounds)."""
-    return int(_decompress_mb * 2 ** 20) if _decompress_mb else 10 * limit_bytes()
 
 
 def budget_bytes() -> int:
@@ -166,19 +173,6 @@ def chunk_working_set(obj, row_indices=None, col_indices=None) -> int:
     return min(touched, READ_CONCURRENCY) * int(unit[0]) * int(unit[1]) * int(obj.dtype.itemsize)
 
 
-def chunks_touched_bytes(obj, row_indices=None, col_indices=None) -> int:
-    """Bytes the chunks a read touches hold decompressed, counting a chunk
-    position the store has no file for as a chunk (metadata cannot tell
-    which are written without listing the store)."""
-    shape = tuple(int(d) for d in obj.shape)
-    unit = getattr(obj, "shards", None) or getattr(obj, "chunks", None)
-    if len(shape) != 2 or not unit or len(unit) != 2:
-        return 0
-    touched = (_chunks_touched(row_indices, shape[0], int(unit[0]))
-               * _chunks_touched(col_indices, shape[1], int(unit[1])))
-    return touched * int(unit[0]) * int(unit[1]) * int(obj.dtype.itemsize)
-
-
 def estimate_bytes(obj, is_sparse: bool, row_indices=None, col_indices=None):
     """(bytes, shape) the read of ``obj`` would hold in memory.
 
@@ -210,29 +204,26 @@ def estimate_bytes(obj, is_sparse: bool, row_indices=None, col_indices=None):
     return held + rows * cols * int(obj["data"].dtype.itemsize), shape
 
 
+def require_rows(row_indices, name: str) -> None:
+    """RowsRequiredError unless ``row_indices`` names 1..MAX_PAIRWISE_ROWS rows."""
+    if row_indices is None:
+        raise RowsRequiredError(
+            "rows_required", f"{name} is read by rows: pairwise matrices are never read whole or by "
+            "column. Ask for the rows you need (rows=, or the located cell); cols= only filters those rows.")
+    if len(row_indices) > MAX_PAIRWISE_ROWS:
+        raise RowsRequiredError(
+            "too_many_rows", f"{len(row_indices)} rows of {name} asked for; at most {MAX_PAIRWISE_ROWS} per request.")
+
+
 def check(name: str, obj, is_sparse: bool, row_indices=None, col_indices=None) -> int:
     """The estimated bytes of reading ``name`` (e.g. "obsp/distances") as
     asked, or ReadTooLargeError when that is more than the limit. Reads no data."""
+    require_rows(row_indices, name)
     try:
         need, shape = estimate_bytes(obj, is_sparse, row_indices, col_indices)
     except Exception:
         return 0                    # not sizeable from metadata: the read decides
     limit = limit_bytes()
-    if need <= limit and not is_sparse:
-        work = chunks_touched_bytes(obj, row_indices, col_indices)
-        if work > decompress_limit_bytes():
-            n_rows = len(row_indices) if row_indices is not None else shape[0]
-            n_cols = len(col_indices) if col_indices is not None else shape[1]
-            unit = [int(c) for c in (getattr(obj, "shards", None) or obj.chunks)]
-            element = {"element": name, "shape": list(shape), "rows": n_rows, "columns": n_cols,
-                       "sparse": False, "chunks": unit, "estimated_mb": round(need / 2 ** 20, 1),
-                       "decompressed_mb": round(work / 2 ** 20, 1)}
-            raise ReadTooLargeError(
-                f"Reading {n_rows} x {n_cols} of {name} (stored {shape[0]} x {shape[1]}, chunks "
-                f"{tuple(unit)}) touches chunks holding about {work / 2 ** 20:,.0f} MB decompressed; "
-                f"the limit is {decompress_limit_bytes() / 2 ** 20:,.0f} MB (server.max_decompress_mb). "
-                "Ask for rows rather than columns: a column decompresses every chunk of its band.",
-                decompress_limit_bytes(), work, [element], limit_name="max_decompress_mb")
     if need <= limit:
         return need
     n_rows = len(row_indices) if row_indices is not None else shape[0]

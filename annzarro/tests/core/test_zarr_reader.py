@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 import numpy as np
+from annzarro.core.read_guard import RowsRequiredError
 import zarr
 
 from annzarro.tests import zarr_compat
@@ -595,7 +596,11 @@ class TestZarrReader(unittest.TestCase):
         """Test getting observation-observation matrices (obsp)."""
         
         # Test getting a valid obsp key
-        connectivities = self.reader.get_obsp_varp('connectivities', entity = "cells", dataset_path=self.zarr_path)
+        # pairwise matrices are read by rows (all of them here); no rows is refused
+        all_rows = list(range(100))
+        with self.assertRaises(RowsRequiredError):
+            self.reader.get_obsp_varp('connectivities', entity = "cells", dataset_path=self.zarr_path)
+        connectivities = self.reader.get_obsp_varp('connectivities', entity = "cells", dataset_path=self.zarr_path, row_indices=all_rows)
         self.assertEqual(connectivities.shape, (100, 100))
         
         # Test getting a subset using row_indices and col_indices
@@ -607,7 +612,7 @@ class TestZarrReader(unittest.TestCase):
         np.testing.assert_almost_equal(np.diag(connectivities), np.ones(100))
         
         # Test getting distances matrix
-        distances = self.reader.get_obsp_varp('distances',  entity = "cells", dataset_path=self.zarr_path)
+        distances = self.reader.get_obsp_varp('distances',  entity = "cells", dataset_path=self.zarr_path, row_indices=all_rows)
         self.assertEqual(distances.shape, (100, 100))
         
         # Verify diagonal values of distances (should be 0.0)
@@ -622,7 +627,8 @@ class TestZarrReader(unittest.TestCase):
         """Test getting variable-variable matrices (varp)."""
         
         # Test getting a valid varp key
-        correlation = self.reader.get_obsp_varp('correlation', entity = "genes", dataset_path=self.zarr_path)
+        correlation = self.reader.get_obsp_varp('correlation', entity = "genes", dataset_path=self.zarr_path,
+                                                row_indices=list(range(50)))
         self.assertEqual(correlation.shape, (50, 50))
         
         # Test getting a subset using row_indices and col_indices 

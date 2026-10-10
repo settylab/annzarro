@@ -141,10 +141,6 @@ server:
       type: [number, "null"]
       description: MB one read of an obsp/varp matrix may hold in memory, estimated from metadata before reading; over it the request is a 413 read_too_large. null = 5% of RAM (256 MB to 4 GB); applies to admins too
       default: null
-    max_decompress_mb:
-      type: [number, "null"]
-      description: MB of chunks (decompressed) one obsp/varp read may touch; null = ten times max_read_mb. Refuses column reads of row-chunked matrices with 413 read_too_large
-      default: null
     read_budget_mb:
       type: [number, "null"]
       description: MB all obsp/varp reads in flight in one worker may hold together; null = twice max_read_mb. A read that does not fit waits read_wait_s, then 503 read_busy

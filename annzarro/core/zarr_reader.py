@@ -2158,11 +2158,10 @@ class ZarrReader(CacheSettings):
     
         # For dense obsp matrices, allow separate row and column selection.
         try:
-            # Use provided indices, or default to full slice if None.
-            row_sel = row_indices if row_indices is not None else slice(None)
+            # rows are always named (read_guard.check); cols only filter them.
+            # Both axes at once: rows are not read whole to cut the columns after
             col_sel = col_indices if col_indices is not None else slice(None)
-            # both axes at once: rows are not read whole to cut the columns after
-            data = obj.oindex[row_sel, col_sel]
+            data = obj.oindex[row_indices, col_sel]
             return np.asarray(data)
         except Exception as e:
             raise_if_timeout(e)

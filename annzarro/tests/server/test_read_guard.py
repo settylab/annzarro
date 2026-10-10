@@ -40,6 +40,7 @@ def _build(path):
     obsp = root["obsp"]
     small = np.arange(N * N, dtype="float32").reshape(N, N)
     _array(obsp, "small", shape=small.shape, chunks=(50, 50), dtype="float32")[:] = small
+    _array(root["varp"], "small", shape=(20, 20), chunks=(20, 20), dtype="float32")[:] = np.ones((20, 20), "float32")
     _array(obsp, "big", shape=(BIG, BIG), chunks=(1000, 1000), dtype="float32",
                       fill_value=float("nan"))
     # sparse: a real small CSR, and one whose stored arrays are big (metadata only)
@@ -101,9 +102,9 @@ def test_to_anndata_reads_no_chunk_of_a_huge_dense_obsp(make_client, no_chunk_re
 
 def test_dense_over_the_limit_is_413_and_names_the_element(make_client, no_chunk_reads):
     # the response cap is raised past the matrix: only the read guard stands.
-    # 100 columns of a 200,000-row float32 matrix: 80 MB, over the 64 MB limit
+    # 100 rows of a 200,000-wide float32 matrix: 80 MB, over the 64 MB limit
     client, store, _ = make_client(max_read_mb=64, max_response_elements=10 ** 12)
-    reply = _obsp(client, store, "big", cols=",".join(str(i) for i in range(100)))
+    reply = _obsp(client, store, "big", rows=",".join(str(i) for i in range(100)))
     assert reply.status_code == 413
     err = reply.get_json()
     assert err["reason"] == "read_too_large"
@@ -115,12 +116,12 @@ def test_dense_over_the_limit_is_413_and_names_the_element(make_client, no_chunk
 
 def test_every_pairwise_route_is_guarded(make_client, no_chunk_reads):
     client, store, _ = make_client(max_read_mb=1, max_response_elements=10 ** 12)
-    cols = ",".join(str(i) for i in range(10))     # 200,000 x 10 x 4 B = 8 MB
-    q = {"dataset_path": store, "cols": cols}
+    rows = "0,1,2"                                  # 3 x 200,000 x 4 B = 2.4 MB
+    q = {"dataset_path": store, "rows": rows}
     for url, extra in (("/api/v1/data/obsp/big", {}),
                        ("/api/v1/data/by_path", {"path": "obsp/big"}),
                        ("/api/v1/data/statistics", {"data_path": "obsp/big"}),
-                       ("/api/v1/data/paginated", {"matrix_type": "obsp", "key": "big", "rows": "0,1"})):
+                       ("/api/v1/data/paginated", {"matrix_type": "obsp", "key": "big"})):
         reply = client.get(url, query_string={**q, **extra})
         assert reply.status_code == 413, (url, reply.status_code, reply.get_data(as_text=True)[:200])
         assert reply.get_json()["reason"] == "read_too_large", url
@@ -140,9 +141,6 @@ def test_under_the_limit_is_as_before(make_client):
     reply = _obsp(client, store, "small", rows="3,7", cols="1,5,9")
     assert reply.status_code == 200
     assert np.array(reply.get_json()["data"]).tolist() == small[[3, 7]][:, [1, 5, 9]].tolist()
-    column = _obsp(client, store, "small", cols="4")
-    assert column.status_code == 200
-    assert np.array(column.get_json()["data"]).ravel().tolist() == small[:, 4].tolist()
     paged = client.get("/api/v1/data/paginated", query_string={
         "dataset_path": store, "matrix_type": "obsp", "key": "small", "rows": "0,1,2", "page_size": 2})
     assert paged.status_code == 200
@@ -150,7 +148,7 @@ def test_under_the_limit_is_as_before(make_client):
 
 def test_sparse_is_sized_by_nnz(make_client, no_chunk_reads):
     client, store, _ = make_client(max_read_mb=100, max_response_elements=10 ** 12)
-    reply = _obsp(client, store, "sp_big", cols="0")      # a CSR column scans all 50M stored entries
+    reply = _obsp(client, store, "sp_big", rows=",".join(str(i) for i in range(N)))  # every row: all 50M entries
     assert reply.status_code == 413
     el = reply.get_json()["elements"][0]
     assert el["element"] == "obsp/sp_big" and el["sparse"] is True
@@ -253,10 +251,9 @@ def test_no_notice_when_row_reads_are_cheap(make_client):
 
 
 @pytest.mark.parametrize("n", [174_862, 1_118_020])
-def test_the_lab_layout_row_is_served_and_a_column_refused(make_client, n):
+def test_the_lab_layout_row_is_served(make_client, n):
     """BR_2453 / PR_2249: dense float32 (n, n), chunks (16, 75000), NaN fill, almost
-    every chunk unwritten (here: none written). A row is a few 4.8 MB chunks; a
-    column decompresses every chunk of its band."""
+    every chunk unwritten (here: none written). A row is a few 4.8 MB chunks."""
     client, store, _ = make_client(max_read_mb=256, max_response_elements=10 ** 12)
     root = zarr.open_group(store, mode="r+")
     _array(root["obsp"], "v3", shape=(n, n), chunks=(16, 75_000), dtype="float32",
@@ -268,12 +265,8 @@ def test_the_lab_layout_row_is_served_and_a_column_refused(make_client, n):
     assert read_guard.chunk_working_set(obj, [5]) <= 10 * 16 * 75_000 * 4
     read_guard.configure(256)
     read_guard.check("obsp/v3", obj, False, [5], None)            # a row: allowed
-    with pytest.raises(read_guard.ReadTooLargeError) as e:
-        read_guard.check("obsp/v3", obj, False, None, [5])        # a column: refused
-    assert e.value.limit_name == "max_decompress_mb"
-    el = e.value.elements[0]
-    assert el["chunks"] == [16, 75_000] and el["decompressed_mb"] > 2560
-    assert "Ask for rows rather than columns" in str(e.value)
+    with pytest.raises(read_guard.RowsRequiredError):
+        read_guard.check("obsp/v3", obj, False, None, [5])        # a column: not read
     # nothing is warned about at open: the layout is row-friendly
     assert read_guard.chunking_notice(zarr.open_group(store, mode="r")) is None
     # while (1000, n) chunks are
@@ -283,3 +276,36 @@ def test_the_lab_layout_row_is_served_and_a_column_refused(make_client, n):
     zarr.consolidate_metadata(store)
     note = read_guard.chunking_notice(zarr.open_group(store, mode="r"), "x" + str(n))
     assert [i["element"] for i in note["elements"]] == ["obsp/tall"]
+
+
+PAIRWISE_URLS = (("/api/v1/data/obsp/small", {}),
+                 ("/api/v1/data/varp/small", {}),
+                 ("/api/v1/data/by_path", {"path": "obsp/small"}),
+                 ("/api/v1/data/statistics", {"data_path": "obsp/small"}),
+                 ("/api/v1/data/paginated", {"matrix_type": "obsp", "key": "small"}))
+
+
+def test_pairwise_matrices_are_read_by_rows_only(make_client, no_chunk_reads):
+    client, store, _ = make_client()
+    for url, extra in PAIRWISE_URLS:
+        for more in ({}, {"cols": "1,2"}):
+            reply = client.get(url, query_string={"dataset_path": store, **extra, **more})
+            assert reply.status_code == 400, (url, more, reply.get_data(as_text=True)[:200])
+            assert reply.get_json()["reason"] == "rows_required", url
+    # an explicit but huge list of rows is refused as well
+    many = ",".join(str(i) for i in range(1001))
+    reply = _obsp(client, store, "small", rows=many)
+    assert reply.status_code == 400 and reply.get_json()["reason"] == "too_many_rows"
+
+
+def test_a_row_with_a_cols_filter_and_a_subset_row_are_served(make_client):
+    client, store, small = make_client()
+    reply = _obsp(client, store, "small", rows="3", cols="1,5,9")
+    assert reply.status_code == 200
+    assert np.array(reply.get_json()["data"]).ravel().tolist() == small[3, [1, 5, 9]].tolist()
+    subset = client.get("/api/v1/data/subset", query_string={
+        "dataset_path": store, "subset": '{"n":60,"seed":0}'})
+    assert subset.status_code == 200
+    row = _obsp(client, store, "small", rows="2", subset='{"n":60,"seed":0}')
+    assert row.status_code == 200
+    assert len(np.array(row.get_json()["data"]).ravel()) == 60
