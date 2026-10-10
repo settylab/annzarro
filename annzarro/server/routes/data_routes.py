@@ -345,6 +345,11 @@ def _path_too_large(dataset_path, data_path, row_indices, col_indices):
             "obsp": "obsp", "varp": "varp"}.get(parts[0])
     if kind is None:
         return None
+    if kind in ("obsp", "varp"):
+        try:
+            read_guard.require_rows(row_indices, data_path)
+        except ReadTooLargeError as exc:      # RowsRequiredError
+            return _read_too_large_response(exc)
     try:
         return _response_too_large(
             get_reader(dataset_path), dataset_path, kind,
@@ -366,6 +371,8 @@ class DataRequestError(Exception):
 
 def _read_too_large_response(exc):
     """413 for a read over server.max_read_mb; ``elements`` names what to drop."""
+    if isinstance(exc, read_guard.RowsRequiredError):
+        return jsonify({"error": str(exc), "reason": exc.reason}), 400
     return jsonify({
         "error": str(exc),
         "reason": "read_too_large",
@@ -535,7 +542,7 @@ def register_data_routes(app, api_version):
     """
     name_index.configure(app.config.get("name_index_max_mb"), app.config.get("name_search_scan_names"))
     read_guard.configure(app.config.get("max_read_mb"), app.config.get("read_budget_mb"),
-                         app.config.get("read_wait_s", 5), app.config.get("max_decompress_mb"))
+                         app.config.get("read_wait_s", 5))
     app.register_error_handler(ReadTooLargeError, _read_too_large_response)
     app.register_error_handler(ReadBusyError, _read_busy_response)
 
@@ -1089,6 +1096,7 @@ def register_data_routes(app, api_version):
 
         try:
             reader = _reader_for(dataset_path_str, dataset_rows=by_dataset_row)
+            read_guard.require_rows(row_indices, "obsp")
             _check_request(dataset_path_str, reader, "obsp", key=obsp_key, rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "obsp", obsp_key, row_indices, col_indices)
             if refusal is not None:
@@ -1142,6 +1150,7 @@ def register_data_routes(app, api_version):
 
         try:
             reader = get_reader(dataset_path_str)
+            read_guard.require_rows(row_indices, "varp")
             _check_request(dataset_path_str, reader, "varp", key=varp_key, rows=row_indices, cols=col_indices)
             refusal = _response_too_large(reader, dataset_path_str, "varp", varp_key, row_indices, col_indices)
             if refusal is not None:
@@ -1230,6 +1239,12 @@ def register_data_routes(app, api_version):
         row_indices = _parse_indices(rows)
         col_indices = _parse_indices(cols)
         
+        if matrix_type in ("obsp", "varp"):
+            try:
+                read_guard.require_rows(row_indices, f"{matrix_type}/{key}")
+            except ReadTooLargeError as exc:      # RowsRequiredError
+                return _read_too_large_response(exc)
+
         if not row_indices:
             return jsonify({"error": "rows parameter is required"}), 400
 

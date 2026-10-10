@@ -85,11 +85,6 @@ server:
   # that does not fit waits up to read_wait_s seconds for others to finish, then
   # answers 503 read_busy with Retry-After; the web client retries once.
   read_budget_mb: null
-  # Decompressed size of the chunks one obsp/varp read touches (every chunk is
-  # decompressed whole, a chunk position with no file counts too). A column of a
-  # matrix chunked by rows touches every chunk of its band: 22 GB of work at
-  # 175,000 cells. null = ten times max_read_mb. Over it: 413 read_too_large.
-  max_decompress_mb: null
   read_wait_s: 5
 
   # Remote datasets (s3://, gs://, http(s):// zarr stores; needs annzarro[remote])

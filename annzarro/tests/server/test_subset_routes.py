@@ -178,8 +178,9 @@ def test_name_search_is_within_the_subset(get):
 
 
 def test_gene_axis_routes_ignore_the_subset(get):
-    for url in ("/api/v1/data/var", "/api/v1/data/genes", "/api/v1/data/varp/corr"):
-        assert _ok(get(url, subset=SPEC)) == _ok(get(url)), url
+    for url, extra in (("/api/v1/data/var", {}), ("/api/v1/data/genes", {}),
+                       ("/api/v1/data/varp/corr", {"rows": "0"})):    # pairwise: rows only
+        assert _ok(get(url, subset=SPEC, **extra)) == _ok(get(url, **extra)), url
 
 
 @pytest.mark.parametrize("url", ["/api/v1/data/paginated", "/api/v1/data/statistics",

@@ -35,7 +35,7 @@ the matrix, not AnnZarro.
 
 A request that would hold more than `server.max_read_mb` of a pairwise matrix in the server's
 memory (5% of RAM by default) is refused with `413 read_too_large`, from the store's metadata and
-before reading; one row, or a few columns, is always small.
+before reading; one row is always small. AnnZarro reads pairwise matrices by rows only: a request that names no rows is refused with `400 rows_required`.
 
 Chunk dense matrices by rows: zarr decompresses every chunk a read touches whole, so one row of
 an array chunked `(1000, n)` holds 1000 × n values (4.8 GB at 1.2 million cells), while `(1, 8192)`

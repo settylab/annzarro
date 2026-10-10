@@ -95,8 +95,8 @@ These are the routes one click uses. All are `GET`, all accept `If-None-Match` a
 |---|---|---|---|
 | `/data/layer/<key>` | `layers[key]` | `cols=<gene>` (Cell Plot colour) or `rows=<cell>` (Gene Plot colour) | layer name |
 | `/data/X` | `X` | `cols=<gene>` or `rows=<cell>` | none |
-| `/data/obsp/<key>` | `obsp[key]` | `rows=<cell>` | obsp key |
-| `/data/varp/<key>` | `varp[key]` | `rows=<gene>` | varp key |
+| `/data/obsp/<key>` | `obsp[key]` | `rows=<cell>` (required; up to 1,000 rows, and `cols=` only filters them) | obsp key |
+| `/data/varp/<key>` | `varp[key]` | `rows=<gene>` (required, as obsp) | varp key |
 | `/data/obsm/<key>` | `obsm[key]` | `column_name=0` (one axis; the web client names the column, which also works for dataframe-valued keys) or `cols=0`. Sparse obsm matrices are read with positional columns `0..n-1` | obsm key |
 | `/data/varm/<key>` | `varm[key]` | `cols=<i>`; `column_name=` | varm key |
 | `/data/obs` | `obs` columns | `columns=<name>[,<name>...]`, optional `rows=`, `include_categories=false`; one column: `format=f32`, `categorical=codes` | none |
@@ -439,6 +439,7 @@ one that is not a dataset `400 unsupported_type`.
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
 | 503 | `read_busy` | the `obsp`/`varp` reads in flight hold `server.read_budget_mb`; `Retry-After` seconds and `retry_after_s` say when to ask again (the web client does once) |
+| 400 | `rows_required`, `too_many_rows` | an `obsp`/`varp` request (`/data/obsp/<key>`, `/data/varp/<key>`, and those paths in `/data/by_path`, `/data/paginated`, `/data/statistics`) that names no rows, or more than 1,000. Pairwise matrices are read by rows only: send `rows=` (or `dataset_rows=`); `cols=` only filters the rows asked for. Nothing is read |
 | 413 | `read_too_large` | an `obsp`/`varp` read would hold more than `server.max_read_mb` in memory (estimated from metadata, before reading); the body has `limit_mb`, `requested_mb` and `elements` (the element, its stored shape, rows, columns and estimated MB) |
 | 400 | `too_many_categories` | `/data/subset` balancing across a column of more than 10,000 categories. No reply is refused for its number of labels: a categorical codes reply (`format=f32&categorical=codes`, one column) is streamed in bounded memory. A JSON reply, and any request for several columns, is not: it builds every label of the rows asked at once, so for a column with millions of categories (a barcode on every cell) ask for that column alone through the codes route |
 | 500 | `stale_metadata` | the store's consolidated metadata (`.zmetadata`) no longer matches an array on disk, usually after an in-place rewrite. `POST /data/refresh` (Refresh dataset) reads the store without the stale metadata from then on; re-consolidate (`zarr.consolidate_metadata(path)`) and refresh again |
@@ -474,7 +475,6 @@ HTTP 400
 |---|---|---|---|
 | `server.max_response_elements` | 10,000,000 | rows × cols of the slice, from metadata, before reading | `413 response_too_large` |
 | `server.max_read_mb` | 5% of RAM (256 MB to 4 GB) | memory an `obsp`/`varp` read would hold, from shape, dtype and stored sizes, before reading (`/data/obsp`, `/data/varp`, `/data/by_path`, `/data/paginated`, `/data/statistics`) | `413 read_too_large` |
-| `server.max_decompress_mb` | 10 × `max_read_mb` | decompressed bytes of the chunks a dense `obsp`/`varp` read touches, from metadata | `413 read_too_large` (`limit_name`) |
 | `server.read_budget_mb` | 2 × `max_read_mb` | pairwise reads in flight in one worker, each by its estimate; waits `server.read_wait_s` (5 s) | `503 read_busy` |
 | `max_cells=` / `max_genes=` query parameters | none | number of requested cell / gene indices | `400 cap_exceeded` |
 | groups for subset balancing | 10,000 | a column's categories (metadata) | `400 too_many_categories` |
