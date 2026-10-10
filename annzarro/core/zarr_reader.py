@@ -2143,7 +2143,12 @@ class ZarrReader(CacheSettings):
         is_sparse, _ = self._is_sparse_matrix(obj)
 
         # Sized from the metadata, before a chunk is read (server.max_read_mb)
-        read_guard.check(f"{layer_to_get}/{key}", obj, is_sparse, row_indices, col_indices)
+        need = read_guard.check(f"{layer_to_get}/{key}", obj, is_sparse, row_indices, col_indices)
+        # and held against the budget of all the pairwise reads in flight
+        with read_guard.admit(need):
+            return self._read_pairwise(root, layer_to_get, key, obj, is_sparse, row_indices, col_indices)
+
+    def _read_pairwise(self, root, layer_to_get, key, obj, is_sparse, row_indices, col_indices):
     
         if is_sparse:
             # For sparse matrices, pass distinct row and column indices.
@@ -3031,7 +3036,7 @@ class ZarrReader(CacheSettings):
             }
             
             return stats
-        except read_guard.ReadTooLargeError:
+        except (read_guard.ReadTooLargeError, read_guard.ReadBusyError):
             raise
         except Exception as e:
             raise_if_timeout(e)

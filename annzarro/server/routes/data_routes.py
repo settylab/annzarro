@@ -19,7 +19,7 @@ from ...core import process_file
 from ...core import get_reader
 from ...core import name_index
 from ...core import read_guard
-from ...core.read_guard import ReadTooLargeError
+from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core import subset as cell_subset
 from .. import confinement, permissions
 from .. import http_cache
@@ -171,6 +171,8 @@ def _reader_error_response(exc, dataset_path):
         return _data_request_error_response(exc)
     if isinstance(exc, ReadTooLargeError):
         return _read_too_large_response(exc)
+    if isinstance(exc, ReadBusyError):
+        return _read_busy_response(exc)
     if isinstance(exc, KeyError):
         return jsonify({"error": exc.args[0] if exc.args else "Key not found",
                         "reason": "key_not_found"}), 404
@@ -367,10 +369,20 @@ def _read_too_large_response(exc):
     return jsonify({
         "error": str(exc),
         "reason": "read_too_large",
+        "limit_name": exc.limit_name,
         "limit_mb": round(exc.limit_bytes / 2 ** 20, 1),
         "requested_mb": round(exc.requested_bytes / 2 ** 20, 1),
         "elements": exc.elements,
     }), 413
+
+
+def _read_busy_response(exc):
+    """503 + Retry-After when the pairwise reads in flight hold the budget."""
+    reply = jsonify({"error": str(exc), "reason": "read_busy",
+                     "retry_after_s": exc.retry_after_s})
+    reply.status_code = 503
+    reply.headers["Retry-After"] = str(exc.retry_after_s)
+    return reply
 
 
 def _data_request_error_response(exc):
@@ -522,8 +534,10 @@ def register_data_routes(app, api_version):
         api_version: API version string
     """
     name_index.configure(app.config.get("name_index_max_mb"), app.config.get("name_search_scan_names"))
-    read_guard.configure(app.config.get("max_read_mb"))
+    read_guard.configure(app.config.get("max_read_mb"), app.config.get("read_budget_mb"),
+                         app.config.get("read_wait_s", 5), app.config.get("max_decompress_mb"))
     app.register_error_handler(ReadTooLargeError, _read_too_large_response)
+    app.register_error_handler(ReadBusyError, _read_busy_response)
 
     http_cache.install_gzip(app)
 
@@ -1295,6 +1309,8 @@ def register_data_routes(app, api_version):
             return response
         except ReadTooLargeError as e:
             return _read_too_large_response(e)
+        except ReadBusyError as e:
+            return _read_busy_response(e)
         except Exception as e:
             logger.error(f"Error getting paginated data for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get paginated data: {str(e)}"}), 500
@@ -1678,6 +1694,8 @@ def register_data_routes(app, api_version):
             })
         except ReadTooLargeError as e:
             return _read_too_large_response(e)
+        except ReadBusyError as e:
+            return _read_busy_response(e)
         except Exception as e:
             logger.error(f"Error getting statistics for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get statistics: {str(e)}"}), 500
@@ -1822,6 +1840,8 @@ def register_data_routes(app, api_version):
             })
         except ReadTooLargeError as e:
             return _read_too_large_response(e)
+        except ReadBusyError as e:
+            return _read_busy_response(e)
         except Exception as e:
             logger.error(f"Error getting data at path {data_path} in {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get data at path {data_path}: {str(e)}"}), 500

@@ -179,3 +179,100 @@ def test_row_of_a_wide_chunked_matrix_is_sized_by_its_chunks(make_client, tmp_pa
     assert "rewrite it with smaller chunks" in wide.get_json()["error"]
     ok = client.get("/api/v1/data/obsp/tall", query_string={"dataset_path": store, "rows": "3"})
     assert ok.status_code == 200
+
+
+def test_budget_never_exceeded_and_waiters_are_served_or_503(make_client, monkeypatch):
+    """Eight threads each need 40 MB of a 100 MB budget: at most two read at once;
+    each is served, or told 503 read_busy when it waited out read_wait_s."""
+    import threading
+    import time
+    client, store, small = make_client(max_read_mb=64, read_budget_mb=100, read_wait_s=0.3)
+    monkeypatch.setattr(read_guard, "estimate_bytes",
+                        lambda *a, **k: (40 * 2 ** 20, (N, N)))
+    seen = {"max": 0}
+    lock = threading.Lock()
+    results = []
+
+    def slow_read():
+        with lock:
+            seen["max"] = max(seen["max"], read_guard.in_flight_bytes())
+        time.sleep(0.15)
+
+    orig_admit = read_guard.admit
+
+    import contextlib
+
+    @contextlib.contextmanager
+    def watched(need):
+        with orig_admit(need):
+            slow_read()
+            yield
+    monkeypatch.setattr(read_guard, "admit", watched)
+
+    def go(i):
+        c = client.application.test_client()
+        r = _obsp(c, store, "small", rows=str(i))
+        results.append((r.status_code, r.headers.get("Retry-After"), r.get_json()))
+
+    ts = [threading.Thread(target=go, args=(i,)) for i in range(8)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert seen["max"] <= 100 * 2 ** 20
+    assert len(results) == 8
+    ok = [r for r in results if r[0] == 200]
+    busy = [r for r in results if r[0] == 503]
+    assert len(ok) + len(busy) == 8 and len(ok) >= 2 and busy
+    assert all(r[1] == "1" and r[2]["reason"] == "read_busy" for r in busy)
+    assert read_guard.in_flight_bytes() == 0
+
+
+def test_a_wide_chunked_row_is_announced_when_the_dataset_opens(make_client):
+    client, store, _ = make_client(max_read_mb=64)
+    root = zarr.open_group(store, mode="r+")
+    root["obsp"].create_array("wide", shape=(N, 100_000), chunks=(200, 100_000), dtype="float32",
+                              fill_value=float("nan"))
+    zarr.consolidate_metadata(store)
+    body = client.get("/api/v1/data/dataset_structure", query_string={"dataset_path": store}).get_json()
+    note = body["pairwise_chunking"]
+    assert note["elements"][0]["element"] == "obsp/wide"
+    assert note["elements"][0]["chunks"] == [200, 100_000]
+    assert "(1, 8192)" in note["message"]
+
+
+def test_no_notice_when_row_reads_are_cheap(make_client):
+    client, store, _ = make_client()
+    body = client.get("/api/v1/data/dataset_structure", query_string={"dataset_path": store}).get_json()
+    assert body["pairwise_chunking"] is None
+
+
+@pytest.mark.parametrize("n", [174_862, 1_118_020])
+def test_the_lab_layout_row_is_served_and_a_column_refused(make_client, n):
+    """BR_2453 / PR_2249: dense float32 (n, n), chunks (16, 75000), NaN fill, almost
+    every chunk unwritten (here: none written). A row is a few 4.8 MB chunks; a
+    column decompresses every chunk of its band."""
+    client, store, _ = make_client(max_read_mb=256, max_response_elements=10 ** 12)
+    root = zarr.open_group(store, mode="r+")
+    root["obsp"].create_array("v3", shape=(n, n), chunks=(16, 75_000), dtype="float32",
+                              fill_value=float("nan"))
+    zarr.consolidate_metadata(store)
+    obj = zarr.open_group(store, mode="r")["obsp"]["v3"]
+    need, _ = read_guard.estimate_bytes(obj, False, [5], None)
+    assert need < 64 * 2 ** 20                   # 4n B out + at most 10 chunks of 4.8 MB
+    assert read_guard.chunk_working_set(obj, [5]) <= 10 * 16 * 75_000 * 4
+    read_guard.configure(256)
+    read_guard.check("obsp/v3", obj, False, [5], None)            # a row: allowed
+    with pytest.raises(read_guard.ReadTooLargeError) as e:
+        read_guard.check("obsp/v3", obj, False, None, [5])        # a column: refused
+    assert e.value.limit_name == "max_decompress_mb"
+    el = e.value.elements[0]
+    assert el["chunks"] == [16, 75_000] and el["decompressed_mb"] > 2560
+    assert "Ask for rows rather than columns" in str(e.value)
+    # nothing is warned about at open: the layout is row-friendly
+    assert read_guard.chunking_notice(zarr.open_group(store, mode="r")) is None
+    # while (1000, n) chunks are
+    root = zarr.open_group(store, mode="r+")
+    root["obsp"].create_array("tall", shape=(n, n), chunks=(1000, n), dtype="float32",
+                              fill_value=float("nan"))
+    zarr.consolidate_metadata(store)
+    note = read_guard.chunking_notice(zarr.open_group(store, mode="r"), "x" + str(n))
+    assert [i["element"] for i in note["elements"]] == ["obsp/tall"]

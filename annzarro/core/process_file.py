@@ -16,13 +16,25 @@ def _raise_if_store_error(exc):
     (stale_metadata, read_failed, unsupported_type, key_not_found) instead of
     a generic 500 here."""
     from .zarr_reader import StoreReadError, UnsupportedEncodingError, MissingKeyError
-    from .read_guard import ReadTooLargeError
-    if isinstance(exc, (StoreReadError, UnsupportedEncodingError, MissingKeyError, ReadTooLargeError)):
+    from .read_guard import ReadTooLargeError, ReadBusyError
+    if isinstance(exc, (StoreReadError, UnsupportedEncodingError, MissingKeyError,
+                        ReadTooLargeError, ReadBusyError)):
         raise exc
 
 
 def get_keys(metadata, field):
     return list(metadata.get(field, {"keys": []}).get("keys", []))
+
+def _pairwise_chunking(reader, dataset_path, metadata):
+    if not (metadata.get("has_obsp") or metadata.get("has_varp")):
+        return None
+    try:
+        from . import read_guard
+        root = reader._get_root(dataset_path=dataset_path)
+        return read_guard.chunking_notice(root, dataset_path) if root is not None else None
+    except Exception:
+        return None
+
 
 def extract_metadata(dataset_path: str, reader: Reader):
     try:
@@ -118,6 +130,9 @@ def extract_metadata(dataset_path: str, reader: Reader):
             # (the store is then read without it): the client says so
             "consolidated_metadata": consolidated_notice(
                 freshness.recorded(dataset_path).get("consolidated_stale")),
+            # dense obsp/varp whose chunks make a row read too expensive for
+            # this server (read_guard.chunking_notice): the fix is the owner's
+            "pairwise_chunking": _pairwise_chunking(reader, dataset_path, metadata),
         }
         # Use pathlib for consistency when adding dataset_id.
         # Frontend uses path directly, so no need for dataset_id
