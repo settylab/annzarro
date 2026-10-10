@@ -14,7 +14,7 @@ from ...core import zarr_reader, h5ad_reader_obj
 from ...core import name_index
 from ...core import categories as category_rules
 from ...core import freshness
-from ...core.zarr_reader import consolidated_staleness, consolidated_notice
+from ...core.zarr_reader import consolidated_staleness, consolidated_notice, ZarrFormatError
 
 logger = logging.getLogger(__name__)
 
@@ -332,6 +332,8 @@ def register_zarr_routes(app, api_version):
             
             return jsonify(result)
         except Exception as e:
+            if isinstance(e, ZarrFormatError):
+                return jsonify({"error": str(e), "reason": "unsupported_type"}), 400
             logger.error(f"Error getting AnnData structure for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get AnnData structure: {str(e)}"}), 500
     
@@ -445,6 +447,8 @@ def register_zarr_routes(app, api_version):
         except KeyError as e:
             return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
         except Exception as e:
+            if isinstance(e, ZarrFormatError):
+                return jsonify({"error": str(e), "reason": "unsupported_type"}), 400
             logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
         
@@ -484,5 +488,7 @@ def register_zarr_routes(app, api_version):
         except KeyError as e:
             return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
         except Exception as e:
+            if isinstance(e, ZarrFormatError):
+                return jsonify({"error": str(e), "reason": "unsupported_type"}), 400
             logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500

@@ -557,10 +557,12 @@ _LRUFsspecStore = None
 
 def _define_lru_store(base):
     class LRUFsspecStore(base):
-        """FsspecStore with an in-memory LRU of whole-key reads.
+        """FsspecStore with an in-memory LRU of raw reads.
 
-        Only successful, whole-key reads are kept: a missing key, a byte-range
-        read or any error (a timeout above all) is never cached, so a failed
+        A read is kept under its key and byte range: a whole chunk file, or, in
+        a sharded store, the shard's index and each inner chunk, which zarr
+        fetches as range requests. Only successful reads are kept: a missing
+        key or any error (a timeout above all) is never cached, so a failed
         read is retried next time rather than remembered. Every operation
         runs on zarr's single event loop with no await between lookup and
         update, so the OrderedDict needs no lock.
@@ -577,14 +579,19 @@ def _define_lru_store(base):
 
         async def get(self, key, prototype, byte_range=None):
             cache = self._lru()
-            if byte_range is None and key in cache:
-                cache.move_to_end(key)
-                return cache[key]
+            slot = (key, byte_range)
+            try:
+                hash(slot)
+            except TypeError:
+                return await super().get(key, prototype, byte_range)
+            if slot in cache:
+                cache.move_to_end(slot)
+                return cache[slot]
             value = await super().get(key, prototype, byte_range)
-            if byte_range is None and value is not None:
+            if value is not None:
                 size = len(value)
                 if 0 < size <= self._lru_max:
-                    cache[key] = value
+                    cache[slot] = value
                     self._lru_bytes += size
                     while self._lru_bytes > self._lru_max:
                         _, old = cache.popitem(last=False)
