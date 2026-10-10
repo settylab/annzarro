@@ -75,7 +75,8 @@
                         <div class="row align-items-center">
                             <div class="col">
                                 <label for="dataset-selector">Dataset:</label>
-                                <div class="d-flex flex-wrap" style="row-gap: 4px;">
+                                <div class="dataset-row">
+                                    <div class="dataset-pick">
                                     <select id="dataset-selector" class="form-select" data-allow-custom="true">
                                         <option value="">Loading..</option>
                                     </select>
@@ -85,6 +86,7 @@
                                     <button id="select-directory" class="btn btn-outline-secondary ms-1" title="Select directory" style="display: none;">
                                         <i class="fas fa-folder-open"></i>
                                     </button>
+                                    </div>
                                     <button id="btn-change-dataset" class="btn btn-outline-warning ms-1" title="Choose the dataset this view opens on" hidden>
                                         <i class="fas fa-exchange-alt"></i> <span class="btn-label">Change dataset</span>
                                     </button>
