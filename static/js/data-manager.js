@@ -1503,7 +1503,7 @@ const DataManager = (function() {
             
             return data;
         } catch (error) {
-            console.error(`Error loading obsm.${obsmKey} data:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading obsm.${obsmKey} data:`, error);
             throw error;
         }
     }
@@ -1633,7 +1633,7 @@ const DataManager = (function() {
                 params.column_name !== undefined, null, signal);
             return data;
         } catch (error) {
-            console.error(`Error loading varm.${varmKey} data:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading varm.${varmKey} data:`, error);
             throw error;
         }
     }
@@ -1711,7 +1711,7 @@ const DataManager = (function() {
             
             return data;
         } catch (error) {
-            console.error(`Error loading obsp.${obspKey} data:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading obsp.${obspKey} data:`, error);
             throw error;
         }
     }
@@ -1746,7 +1746,7 @@ const DataManager = (function() {
                 { varp_key: varpKey, dataset_path: params.dataset_path }, false, null, signal);
             return data;
         } catch (error) {
-            console.error(`Error loading varp.${varpKey} data:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading varp.${varpKey} data:`, error);
             throw error;
         }
     }
@@ -1902,7 +1902,7 @@ const DataManager = (function() {
                 return data;
             }
         } catch (error) {
-            console.error(`Error loading layer.${layerName} data:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading layer.${layerName} data:`, error);
             throw error;
         }
     }
@@ -2026,7 +2026,7 @@ const DataManager = (function() {
             const data = await _fetchWithCache(Config.API.BY_PATH, params, signal);
             return data;
         } catch (error) {
-            console.error(`Error loading data at path ${path}:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading data at path ${path}:`, error);
             throw error;
         }
     }

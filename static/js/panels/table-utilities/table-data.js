@@ -487,7 +487,7 @@ async function _loadColumnValues(column, entityType, signal = null) {
         // it now live together in loadColumnData's catch. Swallowing here is
         // what turned a read failure into a column of "N/A" that looked exactly
         // like data which is legitimately absent.
-        console.error(`Error loading column data for ${type}.${key}.${columnName}:`, error);
+        if (!error || error.name !== 'AbortError') console.error(`Error loading column data for ${type}.${key}.${columnName}:`, error);
         throw error;
     }
 }
