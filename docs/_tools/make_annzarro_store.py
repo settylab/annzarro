@@ -8,7 +8,7 @@
 Needs only bm_aging.zarr (built by docs/_tools/datasets/bm_aging.py) and anndata, zarr, scipy,
 scikit-learn, pandas and scanpy (with umap-learn, for the 3-D UMAP). Every figure field is
 computed with the same code as the paper's figure scripts (copied here: the store loader, the
-HSC-to-monocyte trajectory, the rank percentiles and the colours) and checked against the numbers
+HSC-to-monocyte trajectory, the rank percentiles and the colors) and checked against the numbers
 the paper reports, which are in EXPECTED below. The script stops with an AssertionError if a
 number does not reproduce.
 
@@ -34,6 +34,7 @@ chunk aspect rule: cells x genes chunks with rows/cols ~ n_obs/n_vars at ~5e5 va
 obsp/varp chunks hold whole rows.
 """
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -53,7 +54,7 @@ from scipy.stats import spearmanr
 from sklearn.metrics import silhouette_score
 
 # --------------------------------------------------------------------------- from the paper
-# Keys, example cells, thresholds and colours of the paper's figure code, and the numbers it
+# Keys, example cells, thresholds and colors of the paper's figure code, and the numbers it
 # reports (its figures/numbers/fig2-4.json), copied so that this script runs on its own.
 KEYS = {"FC_KEY": "kompot_de_Young_to_Old_fold_change",
         "SMOOTH_KEYS": ["kompot_de_Young_smoothed", "kompot_de_Old_smoothed"],
@@ -151,7 +152,7 @@ NUMBERS = EXPECTED
 ZKEY = "kompot_de_Young_to_Old_fold_change_zscores"   # Kompot 0.8's own key for this layer
 KOMPOT_EPS = 1e-8       # kompot.differential.DifferentialExpression default eps
 TIMINGS = {}
-ANNZARRO_VERSION = "0.4.2"   # the AnnZarro release whose docs open this store
+ANNZARRO_VERSION = "added after v0.4.2"   # where this script is in the annzarro repository
 
 
 def log(msg):
@@ -423,7 +424,7 @@ def umap_3d(s):
     A = ad.AnnData(np.zeros((s.obs.shape[0], 1), np.float32), obs=pd.DataFrame(index=s.obs.index))
     A.obsp["connectivities"] = ad.io.read_elem(s.g["obsp/connectivities"])
     A.uns["neighbors"] = ad.io.read_elem(s.g["uns/neighbors"])
-    rep = A.uns["neighbors"]["params"]["use_rep"]     # scanpy looks the neighbours' representation up
+    rep = A.uns["neighbors"]["params"]["use_rep"]     # scanpy looks the neighbors' representation up
     A.obsm[rep] = np.asarray(s.g[f"obsm/{rep}"][:])
     sc.tl.umap(A, min_dist=UMAP_MIN_DIST, spread=UMAP_SPREAD, n_components=3, random_state=UMAP_SEED)
     p2 = ad.io.read_elem(s.g["uns/umap"])["params"]
@@ -472,41 +473,50 @@ def write_stats(g, X3, p3, tables, cats):
 
 # --------------------------------------------------------------------------- field list
 FIELDS = {
-    "obsp/diffusion_distance": ("Euclidean distance in Palantir's multiscale diffusion space (`obsm/X_diffusion`)", "Focused cell's row as colour or axis"),
+    "obsp/diffusion_distance": ("Euclidean distance in Palantir's multiscale diffusion space (`obsm/X_diffusion`)", "Focused cell's row as color or axis"),
     "obsp/umap_distance": ("Euclidean distance on `obsm/X_umap`", "x axis against `diffusion_distance`"),
     "obsm/X_diffusion": ("Palantir multiscale diffusion space: `DM_EigenVectors[:, 1:40] * lambda / (1 - lambda)` from `uns/DM_EigenValues`", "Alternative coordinates; any two columns are axes"),
     "obsm/X_umap_3d": ("3-D UMAP of the stored kNN graph (`obsp/connectivities`): `scanpy.tl.umap(n_components=3, min_dist=0.5, spread=1.0, random_state=42)`, the same a and b as `X_umap`. Parameters in `uns/umap_3d`.", "Plot with 3-D axes"),
-    "obs/plasma_groups": ("Discordant groups for the plasma cell `Mature_Mid_1#GCCATGGAGTATGATG-1`: near in UMAP and far in diffusion (265), the reverse (392), other. Thresholds: 5% / 20% rank percentile. Colours in `uns/plasma_groups_colors`.", "Colour"),
+    "obs/plasma_groups": ("Discordant groups for the plasma cell `Mature_Mid_1#GCCATGGAGTATGATG-1`: near in UMAP and far in diffusion (265), the reverse (392), other. Thresholds: 5% / 20% rank percentile. Colors in `uns/plasma_groups_colors`.", "Color"),
     "obs/plasma_focus": ("True for that plasma cell", "Filter, find the cell"),
     "obs/umap_dist_to_plasma": ("That cell's row of `obsp/umap_distance`, as a column", "Axis where a row cannot be chosen"),
     "obs/diffusion_dist_to_plasma": ("That cell's row of `obsp/diffusion_distance`, as a column", "Axis where a row cannot be chosen"),
     "obs/trajectory_path_cell": ("True for the 13 cells on the shortest diffusion path from a HSC to a monocyte (`HSPC_Old_1#GAAGCCCGTGGCTCTG-1` to `Mature_Young_2#TCAATTCAGTGAGGCT-1`)", "Filter"),
-    "obs/trajectory_path_step": ("Position on that path, 0 to 12; NaN off the path", "Sort a table, colour"),
-    "obs/trajectory_focus_cells": ("The four cells at 0, 1/3, 2/3 and 1 of the path (HSC, LMPP, GMP, monocyte), other path cells, not on path. Colours in `uns/trajectory_focus_cells_colors`.", "Colour, find the cells"),
+    "obs/trajectory_path_step": ("Position on that path, 0 to 12; NaN off the path", "Sort a table, color"),
+    "obs/trajectory_focus_cells": ("The four cells at 0, 1/3, 2/3 and 1 of the path (HSC, LMPP, GMP, monocyte), other path cells, not on path. Colors in `uns/trajectory_focus_cells_colors`.", "Color, find the cells"),
     "var/rho_fc_H2-Q7": ("H2-Q7's row of `varp/spearman_fold_change`, as a column", "Gene-plot axis"),
     "var/rho_fc_H2-Aa": ("H2-Aa's row of `varp/spearman_fold_change`", "Gene-plot axis"),
     "var/rho_fc_S100a9": ("S100a9's row of `varp/spearman_fold_change`", "Gene-plot axis"),
     "var/rho_smoothed_H2-Q7": ("H2-Q7's row of `varp/spearman_smoothed`", "Gene-plot axis"),
-    "var/gene_module_k3": ("Average-linkage modules on 1 - rho (`spearman_fold_change`) of the 190 DE genes, k = 3 (silhouette maximum over 2..12); module 1 is H2-Q7's. NaN for non-DE genes. Colours in `uns/gene_module_k3_colors`.", "Colour"),
+    "var/gene_module_k3": ("Average-linkage modules on 1 - rho (`spearman_fold_change`) of the 190 DE genes, k = 3 (silhouette maximum over 2..12); module 1 is H2-Q7's. NaN for non-DE genes. Colors in `uns/gene_module_k3_colors`.", "Color"),
     "var/rho_rank_H2-Q7": ("Rank of each DE gene by rho with H2-Q7, descending; NaN for non-DE genes and H2-Q7", "Axis of ranked strips"),
     "var/rho_rank_S100a9": ("The same for S100a9", "Axis of ranked strips"),
-    "var/h2q7_correlation_class": ("Relative to H2-Q7: shares the age response (fold-change rho > 0.5), shares the cell-state pattern only (smoothed rho > 0.7, fold-change rho < 0.5), other", "Colour"),
+    "var/h2q7_correlation_class": ("Relative to H2-Q7: shares the age response (fold-change rho > 0.5), shares the cell-state pattern only (smoothed rho > 0.7, fold-change rho < 0.5), other", "Color"),
     "var/hsc_fold_change": ("The HSC `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` row of `layers/kompot_de_Young_to_Old_fold_change`", "Axis"),
     "var/monocyte_fold_change": ("The monocyte `Mature_Young_2#TCAATTCAGTGAGGCT-1` row of the same layer", "Axis"),
     "var/hsc_fold_change_z": ("That HSC's row of the z-score layer", "Filter by noise level"),
     "var/monocyte_fold_change_z": ("That monocyte's row of the z-score layer", "Filter by noise level"),
-    "var/hsc_vs_monocyte_direction": ("DE genes with the same or the opposite fold-change sign in the HSC and the monocyte, or not DE", "Colour"),
+    "var/hsc_vs_monocyte_direction": ("DE genes with the same or the opposite fold-change sign in the HSC and the monocyte, or not DE", "Color"),
     "var/detection_rate": ("Fraction of all cells with a raw count > 0", "Filter, axis"),
     "var/variance_logged": ("Variance of `layers/logged_counts` over all cells (ddof = 1)", "Filter, axis"),
-    "layers/kompot_de_Young_to_Old_fold_change_zscores": ("Kompot's fold-change z-score: `fold_change / sqrt(sd_Young^2 + sd_Old^2 - eps)`, eps = 1e-8, `sd_*` from `obs/kompot_de_{Young,Old}_std`. Key name is Kompot 0.8's own `fold_change_zscores_key`.", "Colour a gene's signal-to-noise; filter by |z| > 1.96"),
+    "layers/kompot_de_Young_to_Old_fold_change_zscores": ("Kompot's fold-change z-score: `fold_change / sqrt(sd_Young^2 + sd_Old^2 - eps)`, eps = 1e-8, `sd_*` from `obs/kompot_de_{Young,Old}_std`. Key name is Kompot 0.8's own `fold_change_zscores_key`.", "Color a gene's signal-to-noise; filter by |z| > 1.96"),
     "varm/mean_by_celltype": ("Mean of `layers/logged_counts` per `obs/highres_celltype`; columns in category order (`uns/mean_by_celltype_categories`)", "Gene-plot axes (e.g. HSC mean against Neutrophil mean)"),
-    "varm/fraction_expressing_by_celltype": ("Fraction of cells with a raw count > 0, per `obs/highres_celltype`; columns as above (`uns/fraction_expressing_by_celltype_categories`)", "Gene-plot axes or colour"),
+    "varm/fraction_expressing_by_celltype": ("Fraction of cells with a raw count > 0, per `obs/highres_celltype`; columns as above (`uns/fraction_expressing_by_celltype_categories`)", "Gene-plot axes or color"),
     "varm/mean_by_age": ("Mean of `layers/logged_counts` per `obs/Age`: Young, Mid, Old (`uns/mean_by_age_categories`)", "Gene-plot axes (Young against Old)"),
-    "varm/fraction_expressing_by_age": ("Fraction of cells with a raw count > 0 per `obs/Age` (`uns/fraction_expressing_by_age_categories`)", "Gene-plot axes or colour"),
+    "varm/fraction_expressing_by_age": ("Fraction of cells with a raw count > 0 per `obs/Age` (`uns/fraction_expressing_by_age_categories`)", "Gene-plot axes or color"),
 }
 KEPT = {"obsp": "connectivities, distances (scanpy kNN, CSR), DM_Kernel, DM_Similarity (Palantir, CSR), diffusion_walk_t5 (dense five-step diffusion walk)",
         "varp": "spearman_fold_change, spearman_smoothed (dense gene x gene Spearman correlations)",
         "layers": "logged_counts, raw_counts, normalized_counts, cc_counts (CSR); kompot_de_Young_smoothed, kompot_de_Old_smoothed, kompot_de_Young_to_Old_fold_change, MAGIC_imputed_data (dense)"}
+
+
+def store_md5(root):
+    """MD5 over every file of a directory store: sorted relative path, then its bytes (docs/data/demo-data.md)."""
+    root, h = Path(root), hashlib.md5()
+    for p in sorted(f for f in root.rglob("*") if f.is_file()):
+        h.update(p.relative_to(root).as_posix().encode())
+        h.update(p.read_bytes())
+    return h.hexdigest()
 
 
 def array_info(g, path):
@@ -520,7 +530,7 @@ def array_info(g, path):
     return f"{' x '.join(map(str, n.shape))} {n.dtype}, chunks {tuple(n.chunks)}"
 
 
-def fields_markdown(dst, version):
+def fields_markdown(dst, version, src_md5):
     g = zarr.open_group(str(dst), mode="r", use_consolidated=False)
     obs, var = ad.io.read_elem(g["obs"]), ad.io.read_elem(g["var"])
     n_obs, n_vars = len(obs), len(var)
@@ -534,11 +544,12 @@ def fields_markdown(dst, version):
         return str(c.dtype)
 
     L = [f"# bm_aging_annzarro.zarr: field list", "",
-         f"The AnnZarro showcase store of the murine bone marrow ageing data ({n_obs:,} cells x {n_vars:,} genes; "
+         f"The AnnZarro showcase store of the murine bone marrow aging data ({n_obs:,} cells x {n_vars:,} genes; "
          "Kompot 0.8, Young vs Old; source: Zenodo 10.5281/zenodo.15587768, CC BY 4.0). It holds everything "
          "that `bm_aging.zarr` holds, unchanged, plus the fields below. Built by "
          "`docs/_tools/make_annzarro_store.py` in the annzarro repository "
-         f"(AnnZarro {version}). Zarr v2, consolidated metadata, Blosc lz4. This list is generated from the store.", "",
+         f"({version}). Source store: `bm_aging.zarr`, store MD5 `{src_md5}` (MD5 over every file of the directory store, "
+         "sorted relative path then bytes). Zarr v2, consolidated metadata, Blosc lz4. This list is generated from the store.", "",
          "Unchanged from `bm_aging.zarr`:", ""]
     L += [f"- `{k}`: {v}" for k, v in KEPT.items()]
     L += ["- `X` (CSC), `obs`, `var`, `obsm` (X_umap, X_pca, X_pca_harmony, DM_EigenVectors, ...), `varm/PCs`, `uns`", ""]
@@ -556,7 +567,7 @@ def fields_markdown(dst, version):
         L.append("")
     L += ["## uns", "",
           "- `<field>_colors` for `plasma_groups`, `trajectory_focus_cells`, `gene_module_k3`, `h2q7_correlation_class`, "
-          "`hsc_vs_monocyte_direction`: one colour per category, in category order",
+          "`hsc_vs_monocyte_direction`: one color per category, in category order",
           "- `mean_by_celltype_categories`, `fraction_expressing_by_celltype_categories`, `mean_by_age_categories`, "
           "`fraction_expressing_by_age_categories`: the column order of the varm tables",
           "- `umap_3d`: parameters of `obsm/X_umap_3d`",
@@ -564,10 +575,10 @@ def fields_markdown(dst, version):
     return "\n".join(L)
 
 
-def finalize(dst, fields_md_path, version):
+def finalize(dst, fields_md_path, version, src_md5):
     """Write uns/README (original note + field list), drop the old provenance note, consolidate."""
     g = zarr.open_group(str(dst), mode="r+", use_consolidated=False)
-    md = fields_markdown(dst, version)
+    md = fields_markdown(dst, version, src_md5)
     old = str(ad.io.read_elem(g["uns/README"])) if "README" in g["uns"] else ""
     old = old.split(README_MARK)[0]
     ad.io.write_elem(g["uns"], "README", old + README_MARK + "\n" + md)
@@ -623,7 +634,7 @@ def main():
     for k, v in {**col3, **col4, **col5}.items():
         ad.io.write_elem(uns, f"{k}_colors", np.array(v, dtype=object))
     fields_md = args.fields_md or str(dst.parent / "FIELDS.md")
-    finalize(dst, fields_md, ANNZARRO_VERSION)
+    finalize(dst, fields_md, ANNZARRO_VERSION, store_md5(args.src))
     tick("write_fields", t0)
 
     # round trip: every added field reads back through anndata

@@ -16,7 +16,7 @@ a worked example of the main idea behind AnnZarro: compute once in Python, then 
 | Comparison | Kompot 0.8 differential expression and abundance, Young to Old: 190 differentially expressed genes (FDR 5%, Mahalanobis threshold 5.82) |
 | Embeddings | `X_umap` (2-D) and `X_umap_3d` (3-D, same graph, same a and b), `X_diffusion`, PCA, Harmony PCA, force-directed layout |
 | Format | Zarr v2, consolidated metadata, Blosc lz4, dense arrays float32 |
-| Size | 5,741,994,774 bytes in 4,243 files (5.3 GiB); 5.7 GB as one zip |
+| Size | 5,741,994,795 bytes in 4,243 files (5.3 GiB); 5.7 GB as one zip |
 
 AnnZarro never computes anything. It shows what is stored. Some panels of the paper figures
 depend on numbers that the figure scripts compute in Python: the distance from one cell to all
@@ -91,7 +91,7 @@ def store_md5(root):
 ```
 
 The base store `bm_aging.zarr` behind this documentation gives `b0d150cf4161887febefafe460b0a4b4`, and the
-showcase store `bm_aging_annzarro.zarr` gives `9c2923bb8f879b2bb239f96147f69a51`.
+showcase store `bm_aging_annzarro.zarr` gives `36a9b6c06a419205af348503ff380ef6`.
 
 ```{note}
 The checksum identifies one build, not the recipe. A rebuild of the base store with `bm_aging.py` differs from
@@ -274,7 +274,7 @@ python docs/_tools/make_annzarro_store.py --src bm_aging.zarr --dst bm_aging_ann
   after the original dataset note.
 
 It runs in about 25 seconds on an Apple-silicon laptop. The two 8,090² distance matrices and the
-3-D UMAP take most of that. The store comes to 5,741,994,774 bytes: 0.96 GB more than
+3-D UMAP take most of that. The store comes to 5,741,994,795 bytes: 0.96 GB more than
 `bm_aging.zarr`. Most of that is the z-score layer (493 MB) and the two distance matrices
 (about 210 MB each).
 
