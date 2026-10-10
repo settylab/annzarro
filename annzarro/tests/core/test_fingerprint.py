@@ -92,7 +92,12 @@ FIXTURE_FINGERPRINT = {
     "cells": "af717cf4052702e921b5895d70ec7a15",
     "genes": "0282218ce5c7e2e273b119224799aabd",
     "data": "0cfa34b3b4a952c627fe2b45a6d45912",
-    "meta": "795506709bdc98c432166daae3eccc2a",
+    # v0.4.3: an (empty) ``consolidated_metadata`` entry in a ``.zgroup`` is no
+    # longer part of the document (zarr 3 writes it into some .zgroup files and
+    # every .zmetadata entry; the metadata tier now comes from .zmetadata, so
+    # both must read the same). Only the fixture's var group had one: the
+    # meta digest moved, v and the data tier did not.
+    "meta": "a789db82f8fc2b36ff0f6b99ab213398",
 }
 
 
@@ -326,11 +331,12 @@ class TestRoute:
 # --- when the names are hashed ---------------------------------------------
 
 # Digests computed by github/main (v0.4.1) on the fixture: the identity must
-# not change with when it is computed.
+# not change with when it is computed. Except GOLDEN_META, which moved once in
+# v0.4.3 (see FIXTURE_FINGERPRINT).
 GOLDEN_CELLS = "af717cf4052702e921b5895d70ec7a15"
 GOLDEN_GENES = "0282218ce5c7e2e273b119224799aabd"
 GOLDEN_DATA = "0cfa34b3b4a952c627fe2b45a6d45912"
-GOLDEN_META = "795506709bdc98c432166daae3eccc2a"
+GOLDEN_META = "a789db82f8fc2b36ff0f6b99ab213398"
 
 
 def test_opening_does_not_start_the_hash(tmp_path, monkeypatch):
@@ -380,3 +386,152 @@ def test_a_hash_already_running_is_reported_pending_not_restarted(tmp_path, monk
         gate.set()
     assert fingerprint.get(reader, str(store), wait=10)["status"] == "ready"
     assert len(calls) == 1
+
+
+# --- the metadata tier from consolidated metadata (one read, not a walk) ----
+
+def _add_obs_column(store, consolidate):
+    shutil.copytree(store / "obs" / "total_counts", store / "obs" / "total_counts_2")
+    attrs = json.loads((store / "obs" / ".zattrs").read_text())
+    attrs["column-order"] = list(attrs.get("column-order", [])) + ["total_counts_2"]
+    (store / "obs" / ".zattrs").write_text(json.dumps(attrs))
+    if consolidate:
+        _consolidate(store)
+
+
+def _set_uns_attr(store, value, consolidate):
+    """Rewrite a nested attribute (uns/note), no new member."""
+    os.makedirs(store / "uns" / "note", exist_ok=True)
+    (store / "uns" / ".zgroup").write_text('{"zarr_format": 2}')
+    (store / "uns" / "note" / ".zgroup").write_text('{"zarr_format": 2}')
+    (store / "uns" / "note" / ".zattrs").write_text(json.dumps({"v": value}))
+    if consolidate:
+        _consolidate(store)
+
+
+class _Calls:
+    """Count the file-system calls a function makes (what an NFS mount pays for)."""
+    NAMES = (("os", "stat"), ("os", "listdir"), ("os", "scandir"), ("os.path", "isfile"),
+             ("os.path", "isdir"), ("os.path", "exists"), ("builtins", "open"))
+
+    def __init__(self, monkeypatch):
+        import builtins
+        self.n = 0
+        mods = {"os": os, "os.path": os.path, "builtins": builtins}
+        for mod, name in self.NAMES:
+            real = getattr(mods[mod], name)
+
+            def counted(*a, _real=real, **k):
+                self.n += 1
+                return _real(*a, **k)
+            monkeypatch.setattr(mods[mod], name, counted)
+
+
+def _many_uns(store, n):
+    for i in range(n):
+        d = store / "uns" / f"k{i}"
+        os.makedirs(d, exist_ok=True)
+        (d / ".zgroup").write_text('{"zarr_format": 2}')
+        (d / ".zattrs").write_text(json.dumps({"i": i}))
+    (store / "uns" / ".zgroup").write_text('{"zarr_format": 2}')
+    _consolidate(store)
+
+
+def test_consolidated_and_walk_agree(tmp_path):
+    store = _copy(tmp_path)
+    _many_uns(store, 5)
+    via_file = fingerprint._zarr_local_consolidated(str(store))
+    assert via_file is not None
+    assert via_file == fingerprint._zarr_local_metadata(str(store))
+
+
+def test_consolidated_metadata_change_changes_the_meta_tier(tmp_path):
+    store = _copy(tmp_path)
+    before = fingerprint.metadata_part(str(store))
+    _add_obs_column(store, consolidate=True)
+    assert fingerprint._zarr_local_consolidated(str(store)) is not None   # not the walk
+    after = fingerprint.metadata_part(str(store))
+    assert after["meta"] != before["meta"]
+    assert after["fields"]["obs"] == before["fields"]["obs"] + ["total_counts_2"]
+    # a rewritten nested attribute, re-consolidated
+    _set_uns_attr(store, 1, consolidate=True)
+    one = fingerprint.metadata_part(str(store))["meta"]
+    _set_uns_attr(store, 2, consolidate=True)
+    assert fingerprint.metadata_part(str(store))["meta"] != one
+
+
+def test_walk_fallback_without_consolidated_metadata(tmp_path):
+    store = _copy(tmp_path)
+    os.remove(store / ".zmetadata")
+    assert fingerprint._zarr_local_consolidated(str(store)) is None
+    before = fingerprint.metadata_part(str(store))
+    _add_obs_column(store, consolidate=False)
+    after = fingerprint.metadata_part(str(store))
+    assert after["meta"] != before["meta"]
+    assert after["fields"]["obs"] == before["fields"]["obs"] + ["total_counts_2"]
+    _set_uns_attr(store, 1, consolidate=False)
+    one = fingerprint.metadata_part(str(store))["meta"]
+    _set_uns_attr(store, 2, consolidate=False)
+    assert fingerprint.metadata_part(str(store))["meta"] != one
+
+
+def test_stale_consolidated_metadata_falls_back_to_the_walk(tmp_path):
+    """A column added after consolidating: .zmetadata does not list it, the
+    disk has it; the fingerprint must see it (the walk), not the old file."""
+    store = _copy(tmp_path)
+    before = fingerprint.metadata_part(str(store))
+    _add_obs_column(store, consolidate=False)
+    assert fingerprint._zarr_local_consolidated(str(store)) is None
+    after = fingerprint.metadata_part(str(store))
+    assert after["meta"] != before["meta"]
+    assert "total_counts_2" in after["fields"]["obs"]
+    # and a removed column, likewise
+    shutil.rmtree(store / "obs" / "leiden")
+    assert fingerprint._zarr_local_consolidated(str(store)) is None
+    assert "leiden" not in fingerprint.metadata_part(str(store))["fields"]["obs"]
+
+
+def test_consolidated_metadata_a_refresh_found_stale_is_not_used(tmp_path):
+    """A refresh records ``consolidated_stale`` (a rewrite in place that
+    changes no member name): the walk then answers."""
+    from annzarro.core import freshness
+    store = _copy(tmp_path)
+    _many_uns(store, 3)
+    (store / "uns" / "k1" / ".zattrs").write_text(json.dumps({"i": "rewritten"}))   # .zmetadata not updated
+    stale = fingerprint.metadata_part(str(store))["meta"]
+    assert fingerprint._zarr_local_consolidated(str(store)) is not None
+    freshness.bump(str(store), consolidated_stale="uns/k1 differs")
+    try:
+        assert fingerprint._zarr_local_consolidated(str(store)) is None
+        assert fingerprint.metadata_part(str(store))["meta"] != stale
+    finally:
+        freshness.bump(str(store), consolidated_stale=None)
+
+
+def test_a_consolidated_store_costs_a_fixed_number_of_calls(tmp_path, monkeypatch):
+    small, big = _copy(tmp_path, "small.zarr"), _copy(tmp_path, "big.zarr")
+    _many_uns(small, 2)
+    _many_uns(big, 150)
+    counts = {}
+    for name, store in (("small", small), ("big", big)):
+        calls = _Calls(monkeypatch)
+        fingerprint.metadata_part(str(store))
+        counts[name] = calls.n
+        monkeypatch.undo()
+    assert counts["big"] == counts["small"]          # O(1) in the number of nodes
+    assert counts["big"] <= 40
+    # the walk it replaces is linear
+    os.remove(big / ".zmetadata")
+    calls = _Calls(monkeypatch)
+    fingerprint.metadata_part(str(big))
+    assert calls.n > 500
+
+
+def test_zarr_3_consolidated_zarr_json(tmp_path):
+    """The root zarr.json of a zarr 3 store carries the consolidated copy."""
+    store = tmp_path / "v3.zarr"
+    shutil.copytree(FIXTURE_V3, store)
+    docs = fingerprint._zarr_local_consolidated(str(store))
+    if docs is None:
+        pytest.skip("the committed zarr 3 fixture is not consolidated")
+    assert docs == fingerprint._zarr_local_metadata(str(store))
