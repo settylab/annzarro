@@ -44,7 +44,8 @@ export function createPolicy({ fetchImpl = null, url = appUrl('/api/v1/policy/ef
         try {
             resp = await doFetch(target, { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
         } catch {
-            return { status: 'error' };
+            // no answer at all (offline, server unreachable), as opposed to an answer that is wrong
+            return { status: 'error', network: true };
         }
         if (resp.status === 404) return { status: 'absent' };
         if (!resp.ok) return { status: 'error' };
@@ -84,9 +85,10 @@ export function createPolicy({ fetchImpl = null, url = appUrl('/api/v1/policy/ef
     /**
      * The policy right now, before something that must obey it.
      * @param {string[]} [keys] limit the read to these keys
-     * @returns {Promise<{status: 'ok', values: Object}|{status: 'absent'}|{status: 'error'}>}
+     * @returns {Promise<{status: 'ok', values: Object}|{status: 'absent'}|{status: 'error', network: boolean}>}
      *   `absent`: this server has no policy (nothing to obey); `error`: it has
-     *   one and it could not be read, so the caller must not assume it allows.
+     *   one and it could not be read, so the caller must not assume it allows
+     *   (`network`: there was no answer at all, not a wrong one).
      */
     async function fresh(keys) {
         const r = await read(keys);
@@ -99,7 +101,7 @@ export function createPolicy({ fetchImpl = null, url = appUrl('/api/v1/policy/ef
             set({ available: false, version: null, values: {} });
             return { status: 'absent' };
         }
-        return { status: state.available ? 'error' : 'absent' };
+        return state.available ? { status: 'error', network: !!r.network } : { status: 'absent' };
     }
 
     /** Reload when a reply from this server names another policy version. */

@@ -31,10 +31,11 @@ function reply(status, body, headers = {}) {
 
 /** A fetch that serves `server.policy` (null: no endpoint) and records its calls. */
 function mockServer(policy) {
-    const server = { policy, calls: [], fail: false };
+    const server = { policy, calls: [], fail: false, status: null, body: null };
     server.fetch = async (url) => {
         server.calls.push(String(url));
         if (server.fail) throw new TypeError('network down');
+        if (server.status && String(url).startsWith(URL_EFFECTIVE)) return reply(server.status, server.body || {});
         if (!String(url).startsWith(URL_EFFECTIVE)) return reply(200, {}, server.policy ? { [POLICY_HEADER]: server.policy.version } : {});
         if (!server.policy) return reply(404, { error: 'not found' });
         return reply(200, server.policy, { [POLICY_HEADER]: server.policy.version });
@@ -206,17 +207,29 @@ test('a Run after one service was turned off drops that service only', async () 
     assert.match(turnedOffNotice(before, run.gs, gone), /^The administrator turned off /);
 });
 
-test('a policy that exists but cannot be read at Run sends nothing', async () => {
+test('offline at Run: the last known policy stands, nothing is flagged as a policy failure', async () => {
     const integ = { externalRequests: 'on', services: null };
-    const server = mockServer({ version: 'v1', values: {} });
+    const server = mockServer({ version: 'v1', values: { 'panel.gene-set.links': true } });
     const policy = createPolicy({ fetchImpl: server.fetch, url: URL_EFFECTIVE });
     await policy.load();
-    server.fail = true;
+    server.fail = true; // fetch throws a TypeError: no answer at all
     const run = await readRunPolicy(policy, integ);
-    assert.equal(run.unreadable, true);
-    assert.equal(run.gs.externalRequests, 'off');
-    assert.match(run.notice, /could not be read: nothing was sent/);
-    // on a server that never had a policy, the same failure is not a policy failure
+    assert.equal(run.unreadable, false);
+    assert.equal(run.notice, null);
+    assert.equal(run.gs.externalRequests, 'on', 'the panel then says the browser is offline, not that the server turned services off');
+    assert.deepEqual(run.gs, geneSetPolicy(policy.values(), integ));
+    // navigator.onLine === false counts as offline too, whatever the failure was
+    server.fail = false;
+    server.status = 503;
+    const saved = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+    try {
+        assert.equal((await readRunPolicy(policy, integ)).unreadable, false);
+    } finally {
+        if (saved) Object.defineProperty(globalThis, 'navigator', saved);
+        else delete globalThis.navigator;
+    }
+    // on a server that never had a policy, the same failure is nothing either
     const none = mockServer(null);
     const plain = createPolicy({ fetchImpl: none.fetch, url: URL_EFFECTIVE });
     await plain.load();
@@ -224,4 +237,32 @@ test('a policy that exists but cannot be read at Run sends nothing', async () =>
     const ok = await readRunPolicy(plain, integ);
     assert.equal(ok.unreadable, false);
     assert.equal(ok.gs.externalRequests, 'on');
+});
+
+test('a server error or a malformed reply at Run fails closed, with its own message', async () => {
+    const integ = { externalRequests: 'on', services: null };
+    for (const [label, status, body] of [['HTTP 500', 500, {}], ['malformed', 200, { values: [1] }]]) {
+        const server = mockServer({ version: 'v1', values: {} });
+        const policy = createPolicy({ fetchImpl: server.fetch, url: URL_EFFECTIVE });
+        await policy.load();
+        server.status = status;
+        server.body = body;
+        const run = await readRunPolicy(policy, integ);
+        assert.equal(run.unreadable, true, label);
+        assert.equal(run.gs.externalRequests, 'off', label);
+        assert.match(run.notice, /could not be read: nothing was sent/, label);
+    }
+});
+
+test('a policy that turns services off (server off) gives the server message, not an unreadable one', async () => {
+    const integ = { externalRequests: 'on', services: null };
+    const server = mockServer({ version: 'v1', values: {} });
+    const policy = createPolicy({ fetchImpl: server.fetch, url: URL_EFFECTIVE });
+    await policy.load();
+    const before = geneSetPolicy(policy.values(), integ);
+    server.policy = { version: 'v2', values: { 'panel.gene-set.external_requests': 'off' } };
+    const run = await readRunPolicy(policy, integ);
+    assert.equal(run.unreadable, false);
+    assert.equal(run.gs.externalRequests, 'off');
+    assert.match(turnedOffNotice(before, run.gs, []), /turned off by the administrator: nothing was sent/);
 });
