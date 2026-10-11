@@ -159,6 +159,31 @@ server:
       minimum: 0
       description: Seconds a regex name search scans before it answers with the matches found so far (partial); 0 = no limit
       default: 10
+    max_requests:
+      type: integer
+      minimum: 0
+      description: gunicorn replaces a worker after this many requests (frees creeping memory, empties its caches); 0 = never
+      default: 20000
+    max_requests_jitter:
+      type: integer
+      minimum: 0
+      description: gunicorn adds up to this many random extra requests per worker so workers do not restart together
+      default: 2000
+    limit_request_line:
+      type: integer
+      minimum: 0
+      description: gunicorn's longest request line in bytes (0 = unlimited, up to 8190 by gunicorn's own maximum)
+      default: 8190
+    limit_request_fields:
+      type: integer
+      minimum: 0
+      description: gunicorn's most header fields per request
+      default: 100
+    limit_request_field_size:
+      type: integer
+      minimum: 0
+      description: gunicorn's longest header field in bytes
+      default: 8190
     max_request_mb:
       type: number
       minimum: 0

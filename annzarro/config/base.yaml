@@ -88,6 +88,16 @@ server:
   # interrupted. 0 = no time limit.
   name_search_max_regex_chars: 200
   name_search_timeout_s: 10
+  # gunicorn (annzarro/server/gunicorn_config.py; `annzarro start` is not
+  # gunicorn and ignores these): a worker is replaced after max_requests
+  # requests (+ up to max_requests_jitter, so they do not restart together),
+  # which frees memory that crept; its caches start empty. 0 = never. The
+  # limit_request_* values bound one request's line and headers (bytes).
+  max_requests: 20000
+  max_requests_jitter: 2000
+  limit_request_line: 8190
+  limit_request_fields: 100
+  limit_request_field_size: 8190
   # Largest request body the server reads, in MB. Panel sets (saved or
   # imported) are the only uploads; a larger one is refused with 413
   # request_too_large before it is read. 0 = no limit.
