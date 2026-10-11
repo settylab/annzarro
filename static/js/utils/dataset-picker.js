@@ -8,6 +8,8 @@
  * format?, modified?, is_link?, error?, match?}.
  */
 
+import { datasetLabel } from './dataset-label.js';
+
 export const RECENT_LIMIT = 8;
 export const RECENT_KEY_PREFIX = 'annzarro.recentDatasets:';
 
@@ -26,14 +28,11 @@ export function folderOf(entry) {
 
 /**
  * How a path is shown everywhere: relative to the data directory. `listing`
- * is the entries of the picker; a path it lacks (outside the data directory,
- * a remote URL) is shown as it is.
+ * is the entries of the picker; a path outside the data directory, or a
+ * remote URL, is shown as it is (utils/dataset-label.js, which the dropdown also uses).
  */
 export function displayPath(path, listing = [], known = null) {
-    const hit = (listing || []).find(e => e.path === path);
-    if (hit && hit.rel_path) return hit.rel_path;
-    if (known && known.relPath) return known.relPath;
-    return path || '';
+    return datasetLabel(path, listing, known);
 }
 
 export function basename(path) {

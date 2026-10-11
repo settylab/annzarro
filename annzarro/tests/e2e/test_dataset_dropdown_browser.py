@@ -328,6 +328,11 @@ def test_a_store_outside_the_listing_is_labelled_relative_to_the_data_directory(
         box = page.locator("#dataset-selector + .select2-container").bounding_box()
         assert box["height"] <= ONE_LINE, f"the closed box is one line: {box}"
         assert absolute not in page.inner_text(rendered)
+        if SHOTS_DIR:
+            os.makedirs(SHOTS_DIR, exist_ok=True)
+            page.evaluate("v => { document.getElementById('focused-cell').value = v; }", "HSPC_Young_1#AAAGATGGTCCGAAGA-1")
+            page.wait_for_timeout(600)
+            page.screenshot(path=os.path.join(SHOTS_DIR, "subfolder-store-cell-name-1440.png"))
         # the open list uses the same label
         page.click("#dataset-selector + .select2-container")
         page.wait_for_selector(".dataset-select-dropdown .select2-results__option")

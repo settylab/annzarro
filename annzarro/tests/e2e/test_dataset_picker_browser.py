@@ -352,6 +352,29 @@ def test_subfolder_store_opens_from_the_lazy_tree(session):
     page.wait_for_function("document.getElementById('dataset-selector').value.endsWith('deep_store.zarr')", timeout=20_000)
 
 
+def test_a_subfolder_store_opened_in_the_picker_is_labelled_relative_in_the_dropdown(server):
+    base, data = server
+    s = Session(base, width=1440)
+    try:
+        page = s.page
+        s.browse()
+        page.click(f"{MODAL} .change-dataset-folder[data-folder='']")
+        page.click(f"{MODAL} .change-dataset-folder[data-folder$='projects']")
+        page.click(f"{MODAL} .change-dataset-folder[data-folder$='liver']")
+        page.click(f"{MODAL} #change-dataset-tree .change-dataset-item[data-path$='deep_store.zarr']")
+        page.wait_for_selector(MODAL, state="hidden", timeout=10_000)
+        rendered = BOX + " .select2-selection__rendered"
+        relative = "projects/liver/deep_store.zarr"
+        page.wait_for_function(f"document.querySelector({rendered!r}).textContent.trim() === {relative!r}", timeout=30_000)
+        assert page.get_attribute(rendered, "title") == os.path.join(data, relative)
+        assert page.locator(BOX).bounding_box()["height"] <= 66, "at most two lines"
+        s.open_dropdown()
+        entries = page.eval_on_selector_all(".dataset-select-dropdown .select2-results__option", "els => els.map(e => e.textContent.trim())")
+        assert relative in entries and os.path.join(data, relative) not in entries
+    finally:
+        s.close()
+
+
 def test_the_typed_path_field_shows_the_servers_reason(session):
     session.browse()
     page = session.page
