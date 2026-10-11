@@ -26,6 +26,9 @@ def _restore_fixture():
         os.remove(_MARK)
 
 
+_swapped_here = False
+
+
 def _swapped_by_another_run():
     """The pid of a live run that has the fixture swapped, else None."""
     try:
@@ -59,11 +62,13 @@ def pytest_configure(config):
         shutil.move(converted, _FIXTURE)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    global _swapped_here
+    _swapped_here = True
     atexit.register(_restore_fixture)
 
 
 def pytest_unconfigure(config):
-    if not hasattr(config, "workerinput"):
+    if _swapped_here:
         _restore_fixture()
 
 
