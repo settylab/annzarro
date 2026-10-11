@@ -2422,12 +2422,9 @@ button.dtsb-button.dtsb-clear:hover {
 @media (min-width: 768.02px) {
     /* The least the dataset box may shrink to, by step: its name's natural width up to
        420px while the header is relaxed (utils/header-fit.js measures --dataset-natural),
-       then up to 220px once the focus inputs have given way, then down to 140px. */
+       then down to 140px, before the focus inputs give way. */
     .app-header {
         --dataset-box-min: min(var(--dataset-natural, 220px), 420px);
-    }
-    .app-header.focus-tight {
-        --dataset-box-min: min(var(--dataset-natural, 220px), 220px);
     }
     .app-header.dataset-tight {
         --dataset-box-min: min(var(--dataset-natural, 140px), 140px);
@@ -2444,15 +2441,15 @@ button.dtsb-button.dtsb-clear:hover {
         flex: 0 0 auto;
         width: auto;
     }
-    /* Tight: the columns give up just the width the row is short of, down to their minimum */
+    /* Tight: the columns give up just the width the row is short of, down to their minimum;
+       the inputs keep the width of their value and are only narrowed by their column */
     .app-header.focus-tight .global-controls > .row > .focus-col {
         flex: 0 1 auto;
         min-width: 0;
     }
     .app-header.focus-tight .global-controls #focused-gene,
     .app-header.focus-tight .global-controls #focused-cell {
-        width: 100%;
-        max-width: 100%;
+        max-width: min(100%, 420px);
     }
     .app-header.focus-tight .global-controls > .row > .focus-col:has(#focused-gene) {
         min-width: calc(var(--focus-gene-min, 172px) + 72px); /* the input, the history buttons, the gutter */
@@ -2477,10 +2474,6 @@ button.dtsb-button.dtsb-clear:hover {
             field-sizing: content;
             width: auto;
             max-width: 420px;
-        }
-        .app-header.focus-tight .global-controls #focused-gene,
-        .app-header.focus-tight .global-controls #focused-cell {
-            field-sizing: fixed;
         }
     }
     .global-controls .name-picker > input {
