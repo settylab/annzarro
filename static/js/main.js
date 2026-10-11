@@ -30,10 +30,11 @@ import {
     compareStores, describeComparison, versionNotice, orderCandidates, automaticCandidate,
     savedStoreOf, storeName, hasDataTier
 } from './utils/view-store.js';
-import { probeStore, prewarmStore, appVersion } from './utils/store-identity.js';
+import { probeStore, prewarmStore, appVersion, knownStore } from './utils/store-identity.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
+import { datasetLabel } from './utils/dataset-label.js';
 import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
 
 const App = (function() {
@@ -113,6 +114,7 @@ const App = (function() {
             });
 
             // Load available datasets
+            _installDatasetOptionLabels();
             await _loadDatasets();
 
             // Load available sessions
@@ -1863,6 +1865,46 @@ const App = (function() {
       return $(span);
     }
 
+    // The dataset listing the dropdown was last filled from (labels of unlisted paths derive from it)
+    let _listedDatasets = [];
+
+    /**
+     * The dropdown adds an option for a path the listing lacks (a store in a
+     * subfolder, a typed path, a link's, a panel set's). Its label is the path
+     * relative to the data directory, never the 4-line absolute one, and the
+     * absolute path is its tooltip; a path outside the data directory has no
+     * relative form and stays absolute. Runs whenever options are added.
+     * @private
+     */
+    function _labelUnlistedOptions(sel) {
+        let changed = false;
+        for (const opt of [...sel.options]) {
+            if (!opt.value || _listedDatasets.some(d => d.path === opt.value)) continue;
+            // a typed term Select2 offers while searching is its own to remove; a chosen one is labelled like any
+            if (opt.hasAttribute('data-select2-tag') && !opt.selected) continue;
+            const label = datasetLabel(opt.value, _listedDatasets, knownStore(opt.value));
+            if (opt.text !== label || opt.title !== opt.value) {
+                // a fresh option: Select2 keeps the data it read from the old one (its text)
+                const fresh = new Option(label, opt.value, opt.defaultSelected, opt.selected);
+                fresh.title = opt.value;
+                opt.replaceWith(fresh);
+                changed = true;
+            }
+            if (label === opt.value && !/^[a-z][a-z0-9+.-]*:\/\//i.test(opt.value) && !_listedDatasets.length) {
+                // no listing to derive the data directory from: ask the server once
+                probeStore(opt.value).then(p => { if (p.ok && p.relPath) _labelUnlistedOptions(sel); }).catch(() => {});
+            }
+        }
+        if (changed && window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) $(sel).trigger('change.select2');
+    }
+
+    /** Label every option the dropdown gets for an unlisted path (see _labelUnlistedOptions). @private */
+    function _installDatasetOptionLabels() {
+        const sel = document.getElementById('dataset-selector');
+        if (!sel || typeof MutationObserver === 'undefined') return;
+        new MutationObserver(() => _labelUnlistedOptions(sel)).observe(sel, { childList: true });
+    }
+
     async function _fillDatasetPicker() {
         const sel = document.getElementById('dataset-selector');
         if (!sel) return;
@@ -1898,6 +1940,7 @@ const App = (function() {
         // 5) clear & populate real options
         sel.disabled  = false;
         sel.innerHTML = '';
+        _listedDatasets = datasets || [];
         if (datasets && datasets.length) {
           datasets.forEach(ds => {
             const opt = new Option(ds.name || ds.path, ds.path);

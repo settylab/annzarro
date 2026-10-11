@@ -31,12 +31,16 @@ try:
 except ImportError:  # pragma: no cover - depends on the environment
     sync_api = None
 
+SHOTS_DIR = os.environ.get('DATASET_SHOTS')
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURE = os.path.join(os.path.dirname(HERE), "data", "fixture_small.zarr")
 NAMES = ["short.zarr", "a_rather_long_dataset_name_" + "x" * 60 + "_final_v12.zarr",
          "BR_2453_v3layout_PILOT_not_for_annotation.zarr",
          "tahoe_panel_95.6M_plot_" + "liver-met_v3_sharded_csc_float32_" * 3 + "final.zarr",
          "x" * 130 + ".zarr"]  # over 120 characters; the last has no break point at all
+
+
+SUBSTORE = "projects/liver/2026-10_batch3/HSPC_Young_1_sharded_csc_float32.zarr"
 
 
 def _free_port():
@@ -56,6 +60,10 @@ def server(tmp_path_factory):
     data.mkdir()
     for name in NAMES:
         shutil.copytree(FIXTURE, data / name)
+    # a store in a subfolder (not in the top-level listing) and one outside the data directory
+    (data / SUBSTORE).parent.mkdir(parents=True)
+    shutil.copytree(FIXTURE, data / SUBSTORE)
+    shutil.copytree(FIXTURE, tmp / "outside_store.zarr")
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(tmp / "home"), ANNZARRO_HEADLESS="1")
     proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
@@ -283,5 +291,92 @@ def test_focus_inputs_show_a_whole_gene_and_cell_name(server, width, badge, whic
             btn = page.locator("#refresh-dataset").bounding_box()
             box = page.locator("#dataset-selector + .select2-container").bounding_box()
             assert btn["x"] >= box["x"] + box["width"] - 1 and abs(btn["y"] - box["y"]) < 6
+        finally:
+            browser.close()
+
+
+def _open_by_link(base, path, width):
+    """A page opened on a share link for ``path``; returns (browser context pieces, page)."""
+    pw = sync_api.sync_playwright().start()
+    try:
+        browser = pw.chromium.launch()
+    except Exception as exc:  # no browser binary
+        pw.stop()
+        _skip_or_fail(f"Chromium cannot start: {exc}")
+    page = browser.new_page(viewport={"width": width, "height": 1000})
+    page.goto(f"{base}/?dataset_path={path}")
+    page.wait_for_selector("#dataset-selector + .select2-container", timeout=60_000)
+    page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 5")
+    return pw, browser, page
+
+
+def test_a_store_outside_the_listing_is_labelled_relative_to_the_data_directory(server):
+    base, data = server
+    absolute = os.path.join(data, SUBSTORE)
+    pw, browser, page = _open_by_link(base, absolute, 1440)
+    try:
+        rendered = "#dataset-selector + .select2-container .select2-selection__rendered"
+        page.wait_for_function(f"document.querySelector('{rendered}').textContent.trim() === {SUBSTORE!r}", timeout=30_000)
+        assert page.get_attribute(rendered, "title") == absolute, "the absolute path is the tooltip"
+        box = page.locator("#dataset-selector + .select2-container").bounding_box()
+        assert box["height"] <= TWO_LINES, f"the label takes more than two lines: {box}"
+        assert absolute not in page.inner_text(rendered)
+        # the open list uses the same label
+        page.click("#dataset-selector + .select2-container")
+        page.wait_for_selector(".dataset-select-dropdown .select2-results__option")
+        entries = page.eval_on_selector_all(".dataset-select-dropdown .select2-results__option", "els => els.map(e => e.textContent.trim())")
+        assert SUBSTORE in entries and absolute not in entries
+    finally:
+        browser.close()
+        pw.stop()
+
+
+def test_a_store_outside_the_data_directory_stays_absolute(server):
+    base, data = server
+    outside = os.path.join(os.path.dirname(data), "outside_store.zarr")
+    pw, browser, page = _open_by_link(base, outside, 1440)
+    try:
+        rendered = "#dataset-selector + .select2-container .select2-selection__rendered"
+        page.wait_for_function(f"document.querySelector('{rendered}').textContent.trim() === {outside!r}", timeout=30_000)
+        assert page.get_attribute(rendered, "title") == outside
+    finally:
+        browser.close()
+        pw.stop()
+
+
+@pytest.mark.parametrize("width", [1024, 1440, 1920])
+def test_a_real_cell_name_is_shown_whole_and_a_too_long_one_ends_visibly(server, width):
+    """HSPC_Young_1#AAAGATGGTCCGAAGA-1 fits whole (the input grows, the header stacks if it must); a
+    60-character name, over the 420px maximum, is whole in the tooltip and shows its end."""
+    base, _ = server
+    real = "HSPC_Young_1#AAAGATGGTCCGAAGA-1"
+    long = "HSPC_Young_replicate_3_lane_2_sorted#AAAGATGGTCCGAAGA-1_doublet_checked"
+    with sync_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch()
+        except Exception as exc:  # no browser binary
+            _skip_or_fail(f"Chromium cannot start: {exc}")
+        try:
+            page = browser.new_page(viewport={"width": width, "height": 1000})
+            page.goto(base + "/")
+            page.wait_for_selector("#dataset-selector + .select2-container", timeout=60_000)
+            page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 5")
+            page.evaluate("v => { document.getElementById('focused-cell').value = v; }", real)
+            page.wait_for_timeout(600)
+            size = page.eval_on_selector("#focused-cell", "e => ({w: e.getBoundingClientRect().width, sw: e.scrollWidth, cw: e.clientWidth})")
+            assert size["sw"] <= size["cw"], f"the cell name is cut: {size}"
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "page scrolls sideways"
+            page.evaluate("v => { document.getElementById('focused-cell').value = v; }", long)
+            page.wait_for_timeout(600)
+            info = page.eval_on_selector("#focused-cell", "e => ({w: e.getBoundingClientRect().width, title: e.title, left: e.scrollLeft, sw: e.scrollWidth, cw: e.clientWidth})")
+            assert info["w"] <= 421, info
+            assert info["title"] == long, "the whole value is in the tooltip"
+            assert info["left"] > 0 and info["left"] + info["cw"] >= info["sw"] - 1, f"the end is visible: {info}"
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "page scrolls sideways"
+            if SHOTS_DIR:
+                os.makedirs(SHOTS_DIR, exist_ok=True)
+                page.evaluate("v => { document.getElementById('focused-cell').value = v; }", real)
+                page.wait_for_timeout(500)
+                page.screenshot(path=os.path.join(SHOTS_DIR, f"cell-name-{width}.png"))
         finally:
             browser.close()

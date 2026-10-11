@@ -2435,6 +2435,20 @@ button.dtsb-button.dtsb-clear:hover {
     .global-controls #focused-cell {
         min-width: 196px;
     }
+    /* The inputs grow to the value they hold, up to 420px (utils/header-fit.js
+       does the same where field-sizing is not supported). Past that the value is
+       whole in the tooltip and the input shows its end, the distinctive barcode. */
+    @supports (field-sizing: content) {
+        .global-controls #focused-gene,
+        .global-controls #focused-cell {
+            field-sizing: content;
+            width: auto;
+            max-width: 420px;
+        }
+    }
+    .global-controls .name-picker > input {
+        text-overflow: clip;
+    }
     .app-header.dataset-stacked .global-controls > .row {
         flex-wrap: wrap;
         row-gap: 0.25rem;
