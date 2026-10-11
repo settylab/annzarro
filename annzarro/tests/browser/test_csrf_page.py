@@ -80,3 +80,53 @@ def test_the_page_saves_imports_refreshes_and_signs_out(server):
             assert not errors, errors
         finally:
             browser.close()
+
+
+@pytest.fixture
+def open_server(tmp_path):
+    """A server with login off, as the desktop app runs it."""
+    import socket
+    import subprocess
+    import sys
+    import time
+    import urllib.request
+    from annzarro.tests.browser.test_session_expiry import DATA_DIR, REPO
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    env = dict(os.environ, ANNZARRO_HOME=str(tmp_path), ANNZARRO_HEADLESS="1",
+               PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
+                             "--port", str(port), "--data-dir", str(tmp_path), "--no-browser", "--auth-disabled"],
+                            env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    root = f"http://127.0.0.1:{port}"
+    for _ in range(120):
+        try:
+            urllib.request.urlopen(root + "/api/v1/config", timeout=1)
+            break
+        except OSError:
+            time.sleep(0.25)
+    else:
+        proc.kill()
+        pytest.fail("server did not start")
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
+def test_without_login_the_page_changes_state_with_no_token(open_server):
+    """The desktop app: no token, the same-origin headers the browser adds are enough."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_context(viewport={"width": 1400, "height": 900}).new_page()
+            page.goto(_link(open_server))
+            _settle(page, lambda s: s["colour"] == "cell_type")
+            assert page.evaluate("document.querySelector('meta[name=annzarro-csrf]').content") == ""
+            done = page.evaluate(CALLS)
+            assert done["save"]["status"] == "success", done
+            assert done["refresh"] is not None
+            assert done["reset"].get("status") != "error", done["reset"]
+            assert "csrf_set" not in done["afterDelete"] and done["delete"]["status"] == "success", done
+        finally:
+            browser.close()
