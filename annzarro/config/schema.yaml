@@ -161,6 +161,10 @@ server:
       type: integer
       description: Streams of every cell or gene name one worker sends at once; each holds a server thread until its client has read the reply, so a slow reader cannot take them all. One more is answered 503 read_busy with Retry-After before any byte is sent. 0 = no limit
       default: 2
+    names_stream_slot_above:
+      type: integer
+      description: Names an axis must have for its stream to count against names_stream_max_concurrent; shorter lists (every dataset open reads one) are streamed without a slot
+      default: 1000000
     read_budget_mb:
       type: [number, "null"]
       description: MB all obsp/varp reads in flight in one worker may hold together; null = twice max_read_mb. A read that does not fit waits read_wait_s, then 503 read_busy

@@ -149,12 +149,12 @@ const DataManager = (function() {
      * memory budget; a focused-cell row read then succeeds a moment later
      * instead of showing an error. One retry, at most 10 s of waiting.
      */
-    async function _fetchRetrying(fullUrl, signal) {
-        let response = await fetch(fullUrl, { signal });
+    async function _fetchRetrying(fullUrl, signal, init = {}) {
+        let response = await fetch(fullUrl, { signal, ...init });
         if (response.status === 503) {
             const after = Number(response.headers && response.headers.get('Retry-After'));
             await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(after || 1, 1), 10) * 1000));
-            response = await fetch(fullUrl, { signal });
+            response = await fetch(fullUrl, { signal, ...init });
         }
         return response;
     }
@@ -1243,7 +1243,20 @@ const DataManager = (function() {
     async function _readCellNames(datasetPath, signal, reload) {
         const params = _withSubset(Config.API.CELLS, { dataset_path: datasetPath });
         const fullUrl = `${Config.API.CELLS}?${new URLSearchParams(params).toString()}`;
-        const response = await fetch(fullUrl, reload ? { signal, cache: 'reload' } : { signal });
+        // 503 read_busy (the server is sending as many full name lists as it
+        // may) is waited out once, like the other reads
+        const response = await _fetchRetrying(fullUrl, signal, reload ? { cache: 'reload' } : {});
+        try {
+            return await _namesOf(response);
+        } catch (error) {
+            // a body that does not parse, or a read that fails half way, is a
+            // reply cut short; a server's own error (it has a status) is not
+            if (error && error.name !== 'AbortError' && !error.status) error.truncated = true;
+            throw error;
+        }
+    }
+
+    async function _namesOf(response) {
         // The size is the Content-Length, or for a reply the server writes
         // as it reads it (no Content-Length) the estimate it sends
         const plan = namesReplyPlan(response.headers, PACKED_NAMES_ABOVE_BYTES);
@@ -1258,7 +1271,9 @@ const DataManager = (function() {
 
         // Check if response contains error information
         if (data && data.status === 'error') {
-            throw new Error(data.message || data.error || 'Failed to load cells');
+            const err = new Error(data.message || data.error || 'Failed to load cells');
+            err.status = response.status;
+            throw err;
         }
 
         const cells = data.cells || [];

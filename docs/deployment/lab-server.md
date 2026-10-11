@@ -224,7 +224,7 @@ they are read, with no `Content-Length`, and carry `X-Accel-Buffering: no`, so n
 instead of spooling them to disk (up to `proxy_max_temp_file_size`, 1 GB). That trades nginx's
 protection against slow readers for memory: a client that stops reading holds one server thread
 until it hangs up, neither gunicorn's `gthread` workers nor the development server time out a
-send. `server.names_stream_max_concurrent` (default 2 per worker) bounds this; a third concurrent
+send. `server.names_stream_max_concurrent` (default 2 per worker, for lists of more than `names_stream_slot_above`, a million names, so that opening any dataset never waits) bounds this; a third concurrent
 request is answered `503` with `Retry-After` before any byte, and the web client retries once.
 `proxy_http_version 1.1` (above) lets a failure after the first byte end the reply without its
 final chunk, which the browser reports as a failed read. Over HTTP/1.0 the close would look like

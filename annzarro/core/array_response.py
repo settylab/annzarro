@@ -78,6 +78,7 @@ browser client turned ``NaN`` literals into anyway, after a failed parse.
 import json
 import logging
 import threading
+import weakref
 import zlib
 
 import numpy as np
@@ -526,8 +527,12 @@ def stream_names(key: str, dataset_path: str, first, chunks, total=None, compres
                 close()
             release()
 
-    reply = current_app.response_class(body(), mimetype="application/json")
-    # the generator's finally does not run if it never started
+    stream = body()
+    # the generator's finally does not run if it never started, and
+    # call_on_close not if the reply is dropped without being closed: the
+    # slot is also given back when the generator is collected
+    weakref.finalize(stream, release)
+    reply = current_app.response_class(stream, mimetype="application/json")
     reply.call_on_close(release)
     if total is not None:
         reply.headers[HEADER_NAMES] = str(int(total))

@@ -99,6 +99,9 @@ server:
   # for as long as it keeps the connection open); one more is answered 503
   # read_busy with Retry-After before any byte is sent. 0 = no limit.
   names_stream_max_concurrent: 2
+  # Only lists of more names than this count against that cap (opening a
+  # dataset reads one list of each axis, and must not wait for slow readers).
+  names_stream_slot_above: 1000000
   # What all the pairwise reads in flight in one worker process may hold
   # together, in MB (each charged its estimate). null = twice max_read_mb. A read
   # that does not fit waits up to read_wait_s seconds for others to finish, then

@@ -148,3 +148,42 @@ test('a small reply with fewer names than counted is an error too', async () => 
         await assert.rejects(() => DataManager.loadCells('/d/x.zarr'), (err) => err.truncated === true);
     } finally { restore(); }
 });
+
+// -- a busy server, and a small reply that is cut --------------------------------
+
+test('a 503 read_busy on /data/cells is waited out once, like the other reads', async () => {
+    const calls = [];
+    const busy = () => new Response('{"reason":"read_busy"}', { status: 503, headers: { 'Retry-After': '1' } });
+    const ok = () => new Response(BODY, { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const restore = sequence([busy, ok], calls);
+    try {
+        const cells = await DataManager.loadCells('/d/x.zarr');
+        assert.deepEqual(cells, NAMES);
+    } finally { restore(); }
+    assert.equal(calls.length, 2);
+});
+
+test('a small reply that does not parse is read again with cache reload, then fails as cut short', async () => {
+    const calls = [];
+    const cut = () => new Response(BODY.slice(0, 80), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const restore = sequence([cut], calls);
+    try {
+        await assert.rejects(() => DataManager.loadCells('/d/x.zarr'), (err) => err.truncated === true);
+    } finally { restore(); }
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].cache, 'reload');
+    const calls2 = [];
+    const restore2 = sequence([cut, () => new Response(BODY, { status: 200 })], calls2);
+    try {
+        assert.deepEqual(await DataManager.loadCells('/d/x.zarr'), NAMES);
+    } finally { restore2(); }
+});
+
+test('a server error is not read again', async () => {
+    const calls = [];
+    const restore = sequence([() => new Response('{"error":"nope"}', { status: 500 })], calls);
+    try {
+        await assert.rejects(() => DataManager.loadCells('/d/x.zarr'), (err) => err.status === 500 && !err.truncated);
+    } finally { restore(); }
+    assert.equal(calls.length, 1);
+});

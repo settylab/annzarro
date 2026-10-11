@@ -169,6 +169,9 @@ def _axis_length(reader, dataset_path: str, type: str) -> Optional[int]:
 #: a smaller one (the usual panel, 100,000 cells) is read whole by index
 SUBSET_SLAB = 250_000
 
+#: Axes of more names than this take a stream slot (names_stream_slot_above)
+NAMES_SLOT_ABOVE = 1_000_000
+
 
 def _subset_slabs(reader, dataset_path: str, rows):
     """The names of the sorted dataset rows ``rows``, one slab at a time, read by
@@ -190,8 +193,8 @@ def _stream_names(dataset_path: str, type: str, reader: Reader, compress: bool):
     (read by index, a slab at a time); a smaller one is read whole. Its genes
     are the dataset's.
 
-    At most ``names_stream_max_concurrent`` streams run at once in a worker;
-    one more is a 503 read_busy before any byte is sent. Everything that can
+    At most ``names_stream_max_concurrent`` streams of more than
+    ``names_stream_slot_above`` names run at once in a worker; one more is a 503 read_busy before any byte is sent. Everything that can
     fail for want of a readable chunk happens before the status line."""
     from .subset import SubsetView
     rows = None
@@ -205,23 +208,30 @@ def _stream_names(dataset_path: str, type: str, reader: Reader, compress: bool):
     chunks_of = getattr(reader, "iter_cell_gene_name_chunks", None)
     if rows is None and chunks_of is None:
         return None
-    limit = current_app.config.get("names_stream_max_concurrent", 2)
-    if not name_streams.acquire(limit):
-        raise ReadBusyError(
-            f"The server is already sending {name_streams.active} full lists of names, the most it does at once "
-            "(server.names_stream_max_concurrent); try again in a moment.", 5)
-    release = once(name_streams.release)
+    if rows is not None:
+        total = len(rows)
+    else:
+        count = getattr(reader, "count_cell_gene_names", None)
+        total = count(dataset_path, type) if count else _axis_length(reader, dataset_path, type)
+    # Only a long list takes a slot: a stalled reader of one must not make
+    # every dataset open (the small axes of any store) a 503
+    slot = total is None or total > current_app.config.get("names_stream_slot_above", NAMES_SLOT_ABOVE)
+    if slot:
+        limit = current_app.config.get("names_stream_max_concurrent", 2)
+        if not name_streams.acquire(limit):
+            raise ReadBusyError(
+                f"The server is already sending {name_streams.active} full lists of names, the most it does at once "
+                "(server.names_stream_max_concurrent); try again in a moment.", 5)
+    release = once(name_streams.release) if slot else (lambda: None)
     chunks = None
     try:
         if rows is not None:
-            chunks, total = _subset_slabs(reader, dataset_path, rows), len(rows)
+            chunks = _subset_slabs(reader, dataset_path, rows)
         else:
             chunks = chunks_of(dataset_path, type)
             if chunks is None:
                 release()
                 return None
-            count = getattr(reader, "count_cell_gene_names", None)
-            total = count(dataset_path, type) if count else _axis_length(reader, dataset_path, type)
         try:
             first = next(chunks, None)
             if first is None:

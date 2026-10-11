@@ -26,7 +26,7 @@ import pytest
 import zarr
 
 from annzarro.core import process_file, read_guard
-from annzarro.core.array_response import ABORT_MARK, name_streams
+from annzarro.core.array_response import ABORT_MARK, name_streams, once, stream_names
 from annzarro.server.core import create_app
 
 FIXTURE = os.path.join(
@@ -58,8 +58,17 @@ def awkward_names(n=200):
 
 
 def make_app(data_dir, **config):
+    # slot_above 0: the 200-name fixtures take a stream slot like a long list
     return create_app({"TESTING": True, "DEBUG": False, "auth_enabled": False,
-                       "data_dir": str(data_dir), "compress_responses": False, **config})
+                       "data_dir": str(data_dir), "compress_responses": False,
+                       "names_stream_slot_above": 0, **config})
+
+
+@pytest.fixture(autouse=True)
+def no_slot_left_over():
+    yield
+    left, name_streams._active = name_streams.active, 0
+    del left
 
 
 @pytest.fixture
@@ -460,6 +469,41 @@ def test_streams_over_the_cap_are_refused_before_a_byte_with_retry_after(store):
     assert name_streams.active == 4
     for reply in open_:
         reply.close()
+    assert name_streams.active == 0
+
+
+def test_small_axes_stream_without_a_slot_while_big_ones_hold_the_cap(store):
+    data_dir, path = store
+    client = make_app(data_dir, names_stream_max_concurrent=1, names_stream_slot_above=100).test_client()
+    other = make_app(data_dir, names_stream_max_concurrent=1, names_stream_slot_above=100)
+    held = client.get("/api/v1/data/cells", query_string={"dataset_path": path}, buffered=False)   # 200 names: big
+    assert name_streams.active == 1
+    assert get(client, path).status_code == 503                                  # another big one: refused
+    genes = get(client, path, "genes")                                           # 20 names: opening a dataset
+    assert genes.status_code == 200 and len(genes.get_json()["genes"]) == 20
+    assert name_streams.active == 1
+    held.close()
+    assert name_streams.active == 0
+
+
+def test_a_head_request_frees_its_slot(store):
+    data_dir, path = store
+    reply = make_app(data_dir).test_client().head("/api/v1/data/cells", query_string={"dataset_path": path})
+    assert reply.status_code == 200
+    reply.close()                       # the server closes a reply whose body it does not send
+    assert name_streams.active == 0
+
+
+def test_a_reply_dropped_without_a_close_frees_its_slot_when_collected(store):
+    import gc
+    data_dir, path = store
+    app = make_app(data_dir)
+    with app.test_request_context("/api/v1/data/cells"):
+        assert name_streams.acquire(1)
+        reply = stream_names("cells", path, ["a", "b"], iter(()), total=2, release=once(name_streams.release))
+        assert name_streams.active == 1
+        del reply
+        gc.collect()
     assert name_streams.active == 0
 
 
