@@ -884,6 +884,7 @@ const App = (function() {
         modal.show();
 
         const choose = async (path) => {
+            _markUserChoice(path);
             modal.hide();
             // a caller that asked for a store (the Load dialog) takes it from here
             if (onChoose) { await onChoose(path); return; }
@@ -1914,6 +1915,22 @@ const App = (function() {
       return $(span);
     }
 
+    // "Recently opened" lists what the USER opened (dropdown, picker, typed path). A default opened
+    // on load, a restored view or a link records nothing, so a first visit leaves storage empty.
+    let _userChoice = null;
+    const _USER_CHOICE_MS = 60000;
+
+    function _markUserChoice(path) {
+        _userChoice = { path, at: Date.now() };
+    }
+
+    function _recordRecentIfChosen(datasetPath) {
+        if (!_userChoice || Date.now() - _userChoice.at > _USER_CHOICE_MS) return;
+        if (_userChoice.path !== datasetPath) return;
+        _userChoice = null;
+        try { pushRecent(window.localStorage, window.location.origin, datasetPath); } catch (e) { /* storage blocked */ }
+    }
+
     // The dataset listing the dropdown was last filled from (labels of unlisted paths derive from it)
     let _listedDatasets = [];
 
@@ -1963,6 +1980,7 @@ const App = (function() {
      */
     function _selectDataset(datasetPath) {
         if (!datasetPath) return Promise.resolve();
+        _markUserChoice(datasetPath);
         // a view open without data opens on the chosen dataset
         if (_noDataView) {
             return _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
@@ -2202,7 +2220,7 @@ const App = (function() {
             
             // Update dataset info: cells shown of the dataset's cells, and the subset
             SubsetControl.update();
-            try { pushRecent(window.localStorage, window.location.origin, datasetPath); } catch (e) { /* storage blocked */ }
+            _recordRecentIfChosen(datasetPath);
             document.getElementById('gene-count').textContent = datasetStructure.n_vars || 0;
             document.getElementById('dataset-path').textContent = datasetStructure.name || datasetPath;
             // A refresh found the store's consolidated metadata out of date:

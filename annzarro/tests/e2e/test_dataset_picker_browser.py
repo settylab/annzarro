@@ -433,12 +433,12 @@ def test_the_typed_path_field_shows_the_servers_reason(session):
 def test_recently_opened_comes_first(session):
     page = session.page
     session.open_dropdown()
-    page.click(".dataset-select-dropdown .select2-results__option:has-text('other_small.zarr')")
-    page.wait_for_function("document.getElementById('dataset-selector').value.endsWith('other_small.zarr') && document.getElementById('cell-count').textContent !== 'Loading...' && document.getElementById('cell-count').textContent !== '-'", timeout=30_000)
+    page.click(".dataset-select-dropdown .select2-results__option:has-text('short.zarr')")
+    page.wait_for_function("document.getElementById('dataset-selector').value.endsWith('short.zarr') && document.getElementById('cell-count').textContent !== 'Loading...' && document.getElementById('cell-count').textContent !== '-'", timeout=30_000)
     session.browse()
     groups = page.eval_on_selector_all(f"{MODAL} #change-dataset-list .change-dataset-group h6", "els => els.map(e => e.textContent)")
     assert groups[0] == "Recently opened"
-    assert page.locator(f"{MODAL} .change-dataset-item[data-path$='other_small.zarr']").count() == 1, "listed once"
+    assert page.locator(f"{MODAL} .change-dataset-item[data-path$='short.zarr']").count() == 1, "listed once"
     assert page.locator(f"{MODAL} .change-dataset-current").count() == 1
 
 
@@ -612,5 +612,46 @@ def test_the_dropdown_takes_a_relative_path_from_a_confined_user_and_refuses_the
         _type_custom_path(s, "projects/liver/deep_store.zarr")
         page.wait_for_function("document.getElementById('dataset-selector').value.endsWith('deep_store.zarr')", timeout=30_000)
         page.wait_for_function(f"document.querySelector({rendered!r}).textContent.trim() === 'projects/liver/deep_store.zarr'", timeout=10_000)
+    finally:
+        s.close()
+
+
+RECENTS = "() => Object.keys(localStorage).filter(k => k.startsWith('annzarro.recentDatasets:'))"
+
+
+def test_a_first_visit_and_an_auto_opened_dataset_record_no_recent(server):
+    """Recents list what the user opened: the dataset the app opens on its own, and one a link
+    opens, leave storage without a recents key."""
+    base, data = server
+    s = Session(base)
+    try:
+        page = s.page
+        page.wait_for_function("document.getElementById('cell-count').textContent !== 'Loading...' && document.getElementById('cell-count').textContent !== '-'", timeout=30_000)
+        page.wait_for_timeout(1000)
+        assert page.evaluate(RECENTS) == [], "the default opened on load is not a choice"
+    finally:
+        s.close()
+    s = Session(base)
+    try:
+        s.page.goto(f"{base}/?dataset_path={os.path.join(data, 'short.zarr')}")
+        s.page.wait_for_function("document.getElementById('dataset-selector').value.endsWith('short.zarr')", timeout=30_000)
+        s.page.wait_for_timeout(1500)
+        assert s.page.evaluate(RECENTS) == [], "a link's dataset is not a choice"
+    finally:
+        s.close()
+
+
+def test_a_dataset_the_user_picks_is_recorded_in_the_dropdown_and_the_picker(server):
+    s = Session(server[0])
+    try:
+        page = s.page
+        s.open_dropdown()
+        page.click(".dataset-select-dropdown .select2-results__option:has-text('short.zarr')")
+        page.wait_for_function("localStorage.getItem('annzarro.recentDatasets:' + location.origin) !== null", timeout=30_000)
+        assert page.evaluate("JSON.parse(localStorage.getItem('annzarro.recentDatasets:' + location.origin))")[0].endswith("short.zarr")
+        s.browse("other_small")
+        page.click(f"{MODAL} .change-dataset-item[data-path$='other_small.zarr'] button")
+        page.wait_for_selector(MODAL, state="hidden", timeout=10_000)
+        page.wait_for_function("JSON.parse(localStorage.getItem('annzarro.recentDatasets:' + location.origin))[0].endsWith('other_small.zarr')", timeout=30_000)
     finally:
         s.close()
