@@ -397,3 +397,16 @@ def test_case_variants_are_different_directories_where_the_filesystem_is_case_se
     if (layout / "caseprobe").exists():
         pytest.skip("case-insensitive filesystem: variants name the same directory")
     assert not (layout / "caseprobe").exists()
+
+
+# --- a missing store is the standard 404 on every route (it was a 500 or an odd 404 on five) ---
+
+@pytest.mark.parametrize("endpoint", ["refresh_dataset", "get_obsm_dataframe_columns",
+                                      "get_varm_dataframe_columns", "get_uns_data", "get_anndata_structure"])
+def test_a_missing_store_is_the_standard_404(app, layout, endpoint):
+    harness = Harness(app, layout)
+    rule, method = _rule(app, endpoint)
+    reply = harness.request(_client(app, "alice"), rule, method, "nope")
+    assert reply.status_code == 404
+    assert reply.get_json() == {"error": f"Dataset not found: {harness.stores['nope']}",
+                                "exception": "FileNotFoundError", "reason": "not_found"}

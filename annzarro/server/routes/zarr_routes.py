@@ -142,8 +142,8 @@ def register_zarr_routes(app, api_version):
         from ...core import get_reader
         try:
             get_reader(dataset_path)
-        except FileNotFoundError as exc:
-            return jsonify({"error": str(exc), "reason": "not_found"}), 404
+        except FileNotFoundError:
+            return access.not_found(dataset_path)
         except (ValueError, PermissionError, ImportError) as exc:
             return jsonify({"error": str(exc)}), 400
         after = request.args.get("after")
@@ -341,6 +341,8 @@ def register_zarr_routes(app, api_version):
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return jsonify({"error": str(e), "reason": "unsupported_type"}), 400
+            if access.missing_store(dataset_path):
+                return access.not_found(dataset_path)
             logger.error(f"Error getting AnnData structure for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get AnnData structure: {str(e)}"}), 500
     
@@ -461,6 +463,8 @@ def register_zarr_routes(app, api_version):
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return jsonify({"error": str(e), "reason": "unsupported_type"}), 400
+            if access.missing_store(dataset_path):
+                return access.not_found(dataset_path)
             logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
         

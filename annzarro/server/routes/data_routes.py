@@ -1819,6 +1819,8 @@ def register_data_routes(app, api_version):
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return _reader_error_response(e, dataset_path)
+            if access.missing_store(dataset_path):
+                return access.not_found(dataset_path)
             logger.error(f"Error getting obsm dataframe columns for {obsm_key} in {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get obsm dataframe columns: {str(e)}"}), 500
             
@@ -1859,6 +1861,8 @@ def register_data_routes(app, api_version):
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return _reader_error_response(e, dataset_path)
+            if access.missing_store(dataset_path):
+                return access.not_found(dataset_path)
             logger.error(f"Error getting varm dataframe columns for {varm_key} in {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get varm dataframe columns: {str(e)}"}), 500
             

@@ -114,16 +114,9 @@ def filter_entries(entries, key=entry_path):
     return [entry for entry in entries if key(entry) and _readable(user, key(entry))]
 
 
-#: Routes whose reader does not turn a missing store into the standard 404 today:
-#: a denied path is answered in the route's own words, so it still reads as "not there".
-#: (Each of them would be simpler to fix in the route; until then this keeps the two replies equal.)
-OWN_WORDS = {
-    "refresh_dataset": (404, "Dataset path does not exist: {path}", "not_found"),
-    "get_obsm_dataframe_columns": (500, "Failed to get obsm dataframe columns: Path does not exist: {path}", None),
-    "get_varm_dataframe_columns": (500, "Failed to get varm dataframe columns: Path does not exist: {path}", None),
-    "get_uns_data": (500, "Failed to get uns data: Path does not exist: {path}", None),
-    "get_anndata_structure": (500, "Failed to get AnnData structure: Path does not exist: {path}", None),
-}
+def missing_store(path):
+    """Whether ``path`` names a local store that is not there (a remote URL never does)."""
+    return bool(path) and not is_remote_path(path) and not os.path.exists(path)
 
 
 def not_found(path=None, segment=False, endpoint=None):
@@ -131,7 +124,7 @@ def not_found(path=None, segment=False, endpoint=None):
 
     ``segment`` is the ``/datasets/<path>`` form, which names the path in the
     URL instead of an argument. A listing answers as it does for a folder
-    that does not exist, and ``data/refresh`` in its own words.
+    that does not exist.
     """
     if endpoint == "list_legacy_datasets":
         return jsonify({"datasets": []})
@@ -139,12 +132,6 @@ def not_found(path=None, segment=False, endpoint=None):
         return jsonify({"error": f"Directory not found: {path}"}), 404
     if endpoint == "list_dataset_folder":
         return jsonify({"error": "Folder not found", "reason": "not_found"}), 404
-    if endpoint in OWN_WORDS:
-        status, text, reason = OWN_WORDS[endpoint]
-        body = {"error": text.format(path=path)}
-        if reason:
-            body["reason"] = reason
-        return jsonify(body), status
     if segment:
         return jsonify({"error": "Dataset not found. /datasets/<path> is relative "
                                  "to the server's data directory.",
