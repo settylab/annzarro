@@ -19,7 +19,10 @@ directly under its ``@app.route``:
 ``panelset``
     Panel sets; filtered or checked inside the view.
 ``admin``
-    Admin only. The views enforce it today.
+    Admin only. The admin interface's views guard themselves; for the older
+    ``status`` and ``cache/info`` a restricted user is refused here (403
+    ``admin_only``), because they name the data directory and every cached
+    dataset.
 
 :func:`enforce` is a ``before_request`` hook registered right after
 ``confinement.enforce``, so it sees the final absolute path. A route that
@@ -154,10 +157,20 @@ def principals_of(user):
 
 # -- reading access.json ------------------------------------------------------------
 
+_watchers = {}   # id(config): (config, watcher): finding the watcher resolves the file's real path, which a request must not repeat
+
+
 def _watcher(config):
     # the file, its path and its watcher are slice S's (admin/settings.py): one store, one stamp
+    hit = _watchers.get(id(config))
+    if hit is not None and hit[0] is config:
+        return hit[1]
     from .admin import settings
-    return settings._access_watcher(config)
+    watcher = settings._access_watcher(config)
+    if len(_watchers) > 64:       # many short-lived configs (tests, the CLI): never grow without bound
+        _watchers.clear()
+    _watchers[id(config)] = (config, watcher)
+    return watcher
 
 
 def _read(config=None):
@@ -824,6 +837,13 @@ def enforce():
         unavailable = unavailable_reply()
         if unavailable is not None:
             return unavailable
+    if kind == "admin" and not getattr(current_app.view_functions.get(endpoint), "_annzarro_admin", False):
+        # `status` and `cache/info` do not check the role themselves (the admin interface's slice 4
+        # will); they name the data directory and every dataset in the cache, which a restricted
+        # user is never told. The routes that guard themselves answer for themselves.
+        if is_restricted_requester():
+            return jsonify({"error": "Only an admin can do that.", "reason": "admin_only"}), 403
+        return None
     if kind not in ("dataset", "remote", "listing"):
         return None
     if not is_restricted_requester():

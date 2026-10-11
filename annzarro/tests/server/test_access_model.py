@@ -443,3 +443,59 @@ def test_a_restricted_user_without_a_remote_grant_gets_the_standard_404_on_zarr_
     grant(app, "remote", "s3://lab-public/pbmc/")
     reply = c.get("/api/v1/zarr/url", query_string={"url": "s3://lab-public/pbmc/a.zarr"})
     assert reply.status_code != 404 or "not_found" not in reply.get_data(as_text=True)
+
+
+# --- routes that are not about one dataset, and still say where the data is ----------------
+
+def test_a_restricted_user_cannot_read_the_status_or_the_cache_listing(world):
+    """/status names the data directory and counts its stores; /cache/info names every cached dataset."""
+    data = world.world.data
+    access.set_restricted(world.config, "bob", True)
+    bob, carol = client(world, "bob"), client(world, "carol")
+    # warm the cache with another dataset, as another user's browsing would
+    assert carol.get("/api/v1/data/obs", query_string={"dataset_path": f"{data}/solo.zarr"}).status_code == 200
+    for url in ("/api/v1/status", "/api/v1/cache/info"):
+        reply = bob.get(url)
+        assert reply.status_code == 403 and reply.get_json()["reason"] == "admin_only", url
+        assert data not in reply.get_data(as_text=True) and "solo.zarr" not in reply.get_data(as_text=True)
+    # unchanged for everyone else until slice 4 closes them for all non-admins
+    assert carol.get("/api/v1/status").status_code == 200
+    assert client(world, "alice").get("/api/v1/cache/info").status_code == 200
+
+
+# --- may_read against an independent model, over spellings it was not written for ---------
+
+def test_may_read_agrees_with_pathlib_on_random_spellings(world):
+    """A seeded sweep of ``..``, ``.``, empty segments, links, near-miss names and case variants.
+
+    The model is the resolved path being a granted path or below one, by pathlib's parents, which
+    shares no code with the ancestor lookup in ``Grants.allows_local``; the two must agree on every
+    spelling. A case variant (``A``, ``SOLO.zarr``) resolves to a different string, so the model also
+    says no on a case-insensitive volume.
+    """
+    import pathlib
+    import random
+    data = world.world.data
+    os.symlink(f"{data}/a", f"{data}/to_a")
+    os.symlink(f"{data}/ab", f"{data}/a/to_ab")
+    os.symlink(world.world.outside, f"{data}/ab/out")
+    os.symlink(f"{data}/solo.zarr", f"{data}/a/solo_link")
+    grants = [f"{data}/a", f"{data}/solo.zarr"]
+    for path in grants:
+        grant(world, "dir" if path.endswith("/a") else "store", path)
+    allowed = [pathlib.Path(os.path.realpath(g)) for g in grants]
+    pieces = ["a", "ab", "a", "..", ".", "", "x.zarr", "y.zarr", "solo.zarr", "to_a", "to_ab", "out", "solo_link",
+              "z.zarr", "A", "SOLO.zarr", "other.zarr", "a ", "a​", "%2e%2e", "a/b/../..", "..."]
+    rng = random.Random(20261011)
+    covered = {True: 0, False: 0}
+    with world.test_request_context("/"):
+        for _ in range(3000):
+            spelled = data + "".join("/" + rng.choice(pieces) for _ in range(rng.randint(1, 6)))
+            if rng.random() < 0.15:
+                spelled += "/"
+            real = pathlib.Path(os.path.realpath(spelled))
+            expected = any(real == g or g in real.parents for g in allowed)
+            got = access.may_read("bob", spelled)
+            covered[got] += 1
+            assert got == expected, spelled
+    assert covered[True] > 100 and covered[False] > 100

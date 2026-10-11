@@ -175,12 +175,13 @@ const DataManager = (function() {
 
     function _noteGone(fullUrl, error) {
         if (!error || error.status !== 404 || !error.data || error.data.reason !== 'not_found') return;
-        let named = null;
+        let url;
         try {
-            named = new URL(fullUrl, window.location.href).searchParams.get('dataset_path');
+            url = new URL(fullUrl, window.location.href);
         } catch (e) {
             return;
         }
+        const named = url.searchParams.get('dataset_path');
         if (!named || named !== _currentDataset || _goneReported === named) return;
         _goneReported = named;
         if (_goneHandler) {
