@@ -2768,7 +2768,9 @@ class ZarrReader(CacheSettings):
             if node is None or not hasattr(node, 'keys') or part not in node:
                 raise KeyError(f"No uns key '{key}' in this dataset.")
             node = node[part]
-        return self._uns_value(node)
+        need = read_guard.check_uns(key, node)
+        with read_guard.admit(need):
+            return self._uns_value(node)
 
     @cached_method
     def get_cell_gene_names(self, dataset_path: str, entity: Literal["cells", "genes"], use_cache: bool = False) -> List[str]:

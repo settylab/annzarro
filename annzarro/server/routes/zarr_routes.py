@@ -14,6 +14,7 @@ from ...core import zarr_reader, h5ad_reader_obj
 from ...core import name_index
 from ...core import categories as category_rules
 from ...core import freshness
+from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core.zarr_reader import consolidated_staleness, consolidated_notice
 
 logger = logging.getLogger(__name__)
@@ -444,6 +445,8 @@ def register_zarr_routes(app, api_version):
             })
         except KeyError as e:
             return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
+        except (ReadTooLargeError, ReadBusyError):
+            raise        # the app's handlers answer 413 read_too_large / 503 read_busy
         except Exception as e:
             logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
@@ -483,6 +486,8 @@ def register_zarr_routes(app, api_version):
             })
         except KeyError as e:
             return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
+        except (ReadTooLargeError, ReadBusyError):
+            raise        # the app's handlers answer 413 read_too_large / 503 read_busy
         except Exception as e:
             logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500

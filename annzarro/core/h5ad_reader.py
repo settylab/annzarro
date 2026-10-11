@@ -21,6 +21,7 @@ import numpy as np
 import scipy.sparse as sp
 from .caching import CacheSettings, DatasetCache, cached_method
 from . import categories as category_rules
+from . import read_guard
 from .zarr_reader import MissingKeyError, StoreReadError, UnsupportedEncodingError, densify
 
 logger = logging.getLogger(__name__)
@@ -904,7 +905,9 @@ class h5adReader(CacheSettings):
                 if not isinstance(node, h5py.Group) or part not in node:
                     raise KeyError(f"No uns key '{key}' in this dataset.")
                 node = node[part]
-            return _uns_value(node)
+            need = read_guard.check_uns(key, node)
+            with read_guard.admit(need):
+                return _uns_value(node)
 
     @cached_method
     def get_layer(self, layer_name: str, dataset_path: Optional[str] = None,

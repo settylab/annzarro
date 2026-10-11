@@ -245,6 +245,63 @@ def check(name: str, obj, is_sparse: bool, row_indices=None, col_indices=None) -
         limit, need, [element])
 
 
+#: Bytes a uns array costs per element once it is a Python list inside a JSON
+#: reply: measured at 90 for float64 (10 million values, +907 MB of memory
+#: while the reply is built); strings hold their text on top
+UNS_BYTES_PER_ELEMENT = 100
+UNS_BYTES_PER_STRING = 160
+
+
+def estimate_uns_bytes(node, stop_above: Optional[int] = None) -> tuple:
+    """(estimated bytes, elements) of reading ``node`` of uns whole, as the
+    JSON reply the uns routes make of it; from shapes and dtypes only.
+    ``node`` is a zarr or h5py group or array. Stops counting once the
+    estimate passes ``stop_above``."""
+    total, elements = 0, 0
+    stack = [node]
+    while stack:
+        item = stack.pop()
+        if hasattr(item, "keys"):
+            try:
+                stack.extend(item[k] for k in item.keys())
+            except Exception:
+                continue
+            continue
+        shape = getattr(item, "shape", None)
+        if shape is None:
+            continue
+        n = 1
+        for d in shape:
+            n *= int(d)
+        kind = getattr(getattr(item, "dtype", None), "kind", "f")
+        total += n * (UNS_BYTES_PER_STRING if kind in ("S", "O", "U", "T") else UNS_BYTES_PER_ELEMENT)
+        elements += n
+        if stop_above is not None and total > stop_above:
+            break
+    return total, elements
+
+
+def check_uns(key: str, node) -> int:
+    """The estimated bytes of reading ``uns/<key>`` whole, or
+    ReadTooLargeError when that is more than the limit. Reads no data.
+
+    The uns routes read an array whole (``[()]``), turn it into nested Python
+    lists and serialise those: 10 million floats held about 900 MB at once. A
+    uns member is a plot's colours or a few parameters; one that is a
+    matrix is asked for by a member of it instead (``uns/key/member``).
+    """
+    limit = limit_bytes()
+    need, elements = estimate_uns_bytes(node, stop_above=limit)
+    if need <= limit:
+        return need
+    raise ReadTooLargeError(
+        f"Reading uns/{key} whole would hold about {need / 2 ** 20:,.0f} MB in memory"
+        f" (at least {elements:,} values); the limit is {limit / 2 ** 20:,.0f} MB "
+        "(server.max_read_mb). It is too large to send as JSON: read a smaller member of it, "
+        "or ask the dataset's owner for it as an array in obsm, varm or a layer.",
+        limit, need, [{"element": f"uns/{key}", "values": elements, "estimated_mb": round(need / 2 ** 20, 1)}])
+
+
 def chunking_notice(root, dataset_path: str = "") -> Optional[Dict[str, Any]]:
     """Dense obsp/varp members of ``root`` whose chunks make ONE ROW read hold
     more than the limit, as a notice for the dataset's structure; None when
