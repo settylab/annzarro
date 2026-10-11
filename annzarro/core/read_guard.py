@@ -151,6 +151,24 @@ def in_flight_bytes() -> int:
     return _in_flight
 
 
+def snapshot(top: int = 10) -> Dict[str, Any]:
+    """What this process holds of the read budget now, for the admin health page.
+
+    ``by_requester`` is the ``top`` largest holders (a user name or a client
+    address), in MB.
+    """
+    with _cond:
+        in_flight = _in_flight
+        holders = sorted(_by_owner.items(), key=lambda item: -item[1])[:top]
+    mb = 2 ** 20
+    return {
+        "in_flight_mb": in_flight / mb,
+        "budget_mb": budget_bytes() / mb,
+        "share_mb": share_bytes() / mb,
+        "by_requester": [{"who": who, "mb": held / mb} for who, held in holders],
+    }
+
+
 @contextmanager
 def admit(need: int):
     """Hold ``need`` bytes of the budget for the length of a read.

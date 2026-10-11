@@ -9,7 +9,7 @@ import { AdminError, createAdminApi } from "../../../static/js/admin/admin-api.j
 import { createReauthModal } from "../../../static/js/admin/reauth-modal.js";
 import { SECTIONS, createRouter, sectionFromHash, showToast } from "../../../static/js/admin/admin-main.js";
 import { chainText, detailText } from "../../../static/js/admin/audit.js";
-import { refusalText, sumRefusals } from "../../../static/js/admin/health.js";
+import { cacheText, readersText, refusalText, sumRefusals } from "../../../static/js/admin/health.js";
 
 const F = JSON.parse(readFileSync(new URL("./admin-fixtures.json", import.meta.url), "utf8"));
 
@@ -188,11 +188,26 @@ test("health: workers, a stale badge, refusals summed over workers", async () =>
   assert.match(rows[1].textContent, /4122.*stale.*9,870.*idle/);
   assert.match(view.textContent, /Refusals by reason: read_busy 3, outside_data_dir 2, session_quota_user 1/);
   assert.match(view.textContent, /alice \d\d:\d\d \| bob/);
+  assert.match(view.textContent, /Top readers now: bob 410 MB \(share 512 MB\)/);
+  assert.ok(find(view, (n) => n.id === "admin-cache-clear"), "the Clear cache button is offered");
   assert.deepEqual(sumRefusals(F.health.workers), { read_busy: 3, session_quota_user: 1, outside_data_dir: 2 });
   assert.equal(refusalText({}), "-");
   assert.equal(refusalText({ a: 0 }), "-");
   const bar = find(view, (n) => n.classes().includes("progress-bar"));
   assert.match(bar.getAttribute("style"), /width: 40%/);
+});
+
+test("health: cache text names the name indices when they hold memory, readers are ranked over workers", () => {
+  assert.equal(cacheText(null), "-");
+  assert.equal(cacheText({ memory_mb: 480, name_index_mb: 0.2 }), cacheText({ memory_mb: 480 }));
+  assert.match(cacheText({ memory_mb: 480, name_index_mb: 300 }), /480.*\+ .*300.* names/);
+  const workers = [
+    { read_guard: { share_mb: 512, by_requester: [{ who: "bob", mb: 100 }, { who: "eve", mb: 300 }] } },
+    { read_guard: { share_mb: 512, by_requester: [{ who: "amy", mb: 200 }] } },
+    { read_guard: null },
+  ];
+  assert.match(readersText(workers), /^eve .*\| amy .*\| bob /);
+  assert.equal(readersText([{ read_guard: { by_requester: [] } }]), "none");
 });
 
 test("panel sets: totals, quota bars coloured by use, rows with size and modifier", async () => {
