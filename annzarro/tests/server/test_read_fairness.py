@@ -4,7 +4,8 @@ admit() gave the pairwise-read budget to whoever asked first, so one user's
 parallel row reads of a big matrix made every other user's focused-cell read
 answer 503 read_busy. Each requester (user, else client address) now holds at
 most read_user_share_percent of it. /data/subset computations are limited per
-worker too (subset_max_concurrent).
+worker too (subset_max_concurrent), with the same share of the places
+(test_subset_fairness.py).
 """
 import threading
 
@@ -101,7 +102,7 @@ def test_a_waiting_read_gets_in_when_its_own_earlier_read_ends():
     assert got == [True]
 
 
-def _seen_owner(tmp_path, **config):
+def _seen_owner(tmp_path, address="203.0.113.9", **config):
     from annzarro.server import access
     from annzarro.server.core import create_app
     app = create_app({"TESTING": True, "DEBUG": False, "auth_enabled": False, "cache_enabled": False,
@@ -114,13 +115,25 @@ def _seen_owner(tmp_path, **config):
         seen.append(read_guard._owner.get())
         return "ok"
 
-    app.test_client().get("/whoami", environ_overrides={"REMOTE_ADDR": "203.0.113.9"})
-    return seen[0], cell_subset._slots._value
+    app.test_client().get("/whoami", environ_overrides={"REMOTE_ADDR": address})
+    return seen[0], cell_subset._places.total
 
 
 def test_a_shared_server_names_the_requester(tmp_path):
     owner, places = _seen_owner(tmp_path, hosted=True)
     assert owner == "203.0.113.9" and places == 2
+
+
+@pytest.mark.parametrize("address,owner", [
+    ("2001:db8:1:2:aaaa::1", "2001:db8:1:2::/64"),
+    ("2001:db8:1:2:ffff:ffff:ffff:fffe", "2001:db8:1:2::/64"),
+    ("2001:db8:1:3::1", "2001:db8:1:3::/64"),
+    ("::ffff:203.0.113.9", "203.0.113.9"),
+])
+def test_an_ipv6_host_is_one_requester_per_64(tmp_path, address, owner):
+    """One host holds a whole /64: per address, it could name itself anew
+    for every request and never meet its share."""
+    assert _seen_owner(tmp_path, address=address, hosted=True)[0] == owner
 
 
 def test_a_single_user_server_has_no_share_and_no_subset_limit(tmp_path):
