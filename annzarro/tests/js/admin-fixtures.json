@@ -1,0 +1,60 @@
+{
+  "me": {"auth_enabled": true, "username": "alice", "is_admin": true},
+  "users": [
+    {"username": "alice", "is_admin": true, "last_login": "2026-10-11T09:12:00+00:00", "password_changed_at": "2026-09-01T10:00:00+00:00", "locked": [], "panel_sets": 14, "last_seen": "2026-10-11T09:12:00+00:00"},
+    {"username": "bob", "is_admin": false, "last_login": "2026-10-10T17:40:00+00:00", "password_changed_at": null, "locked": [{"address": "10.0.0.9", "until": "2026-10-11T09:30:00+00:00", "failures": 5}], "panel_sets": 3, "last_seen": "2026-10-11T09:10:00+00:00"},
+    {"username": "<img src=x onerror=alert(1)>", "is_admin": false, "last_login": null, "password_changed_at": null, "locked": [], "panel_sets": 0, "last_seen": null}
+  ],
+  "dataRoots": {
+    "parents": [{"path": "/srv/atlases", "ok": true}, {"path": "/lab/shared", "ok": false}],
+    "roots": [
+      {"path": "/srv/annzarro-data", "real": "/srv/annzarro-data", "source": "data_dir", "active": true, "stores": 41},
+      {"path": "/srv/atlases/hca", "real": "/srv/atlases/hca", "source": "config", "active": true, "stores": 12},
+      {"path": "/srv/atlases/lab2", "real": "/srv/atlases/lab2", "source": "admin", "active": true, "stores": 3, "added_by": "alice", "added_at": "2026-10-11T08:00:00+00:00"},
+      {"path": "/lab/shared/old", "real": "/lab/shared/old", "source": "admin", "active": false, "inactive_reason": "outside every allowed parent", "added_by": "alice", "added_at": "2026-09-30T08:00:00+00:00"}
+    ]
+  },
+  "health": {
+    "workers": [
+      {"pid": 4121, "host": "node1", "started": "2026-10-11T08:00:00+00:00", "age_s": 2, "stale": false, "requests": 12031, "refusals": {"read_busy": 3, "session_quota_user": 1}, "read_guard": {"in_flight_mb": 410, "budget_mb": 1024, "share_mb": 512, "by_requester": [{"who": "bob", "mb": 410}]}, "cache": {"memory_mb": 480, "max_mb": 1024, "datasets": 6}},
+      {"pid": 4122, "host": "node1", "started": "2026-10-11T08:00:00+00:00", "age_s": 700, "stale": true, "requests": 9870, "refusals": {"outside_data_dir": 2}, "read_guard": {"in_flight_mb": null, "budget_mb": 1024}, "cache": {"memory_mb": 512, "max_mb": 1024, "datasets": 4}}
+    ],
+    "totals": {"refusals": 6, "cache_mb": 992, "read_in_flight_mb": 410},
+    "active": [{"username": "alice", "last_seen": "2026-10-11T09:12:00+00:00"}, {"username": "bob", "last_seen": "2026-10-11T09:10:00+00:00"}]
+  },
+  "panelSets": {
+    "items": [
+      {"name": "tcell_markers", "owner": "bob", "dataset": "pbmc.zarr", "bytes": 12288, "modified_at": "2026-10-10T16:00:00+00:00", "modified_by": "bob"},
+      {"name": "overview", "owner": "alice", "dataset": "bm_aging.zarr", "bytes": 4096, "modified_at": "2026-10-09T12:00:00+00:00", "modified_by": "alice"}
+    ],
+    "total": 1204,
+    "usage": [{"owner": "alice", "count": 300, "bytes": 1200000, "limit": 500}, {"owner": "bob", "count": 41, "bytes": 90000, "limit": 500}, {"owner": "carol", "count": 480, "bytes": 90000, "limit": 500}, {"owner": null, "count": 12, "bytes": 1000, "limit": null}],
+    "server": {"count": 1204, "max": 5000, "mb": 88, "max_mb": 256}
+  },
+  "policy": {
+    "version": "abc123",
+    "keys": [
+      {"name": "outbound.allow_external", "type": {"kind": "bool"}, "default": true, "scope": "user", "area": "outbound", "description": "Lets the browser contact outside services.", "combine": "restrict", "outbound_hosts_now": [], "restart": false, "locked": false, "value": true, "source": "default"},
+      {"name": "panel.cell-plot.enabled", "type": {"kind": "bool"}, "default": true, "scope": "user", "area": "panels", "description": "Cell plot panel", "combine": "restrict", "restart": false, "locked": false, "value": true, "source": "default"},
+      {"name": "panel.gene-set.enabled", "type": {"kind": "bool"}, "default": true, "scope": "user", "area": "panels", "description": "Gene set analysis panel", "combine": "restrict", "restart": false, "locked": false, "value": false, "source": "admin", "config_value": true},
+      {"name": "panel.gene-set.external_requests", "type": {"kind": "enum", "choices": ["on", "ask", "off", "none"]}, "default": "ask", "scope": "user", "area": "outbound", "description": "Sends gene ids to the hosts below", "combine": "restrict", "restart": false, "locked": false, "value": "ask", "source": "config"},
+      {"name": "panel.gene-set.services", "type": {"kind": "subset", "choices": [{"id": "string", "label": "STRING", "host": "version-12-5.string-db.org"}, {"id": "gprofiler", "label": "g:Profiler", "host": "biit.cs.ut.ee"}, {"id": "mygene", "label": "MyGene.info", "host": "mygene.info"}, {"id": "enrichr", "label": "Enrichr (publishes lists)", "host": "maayanlab.cloud"}, {"id": "reactome", "label": "Reactome", "host": "reactome.org"}]}, "default": ["string", "gprofiler", "mygene"], "scope": "user", "area": "outbound", "description": "Services the panel may call", "combine": "restrict", "outbound_hosts_now": ["version-12-5.string-db.org", "biit.cs.ut.ee", "mygene.info"], "restart": false, "locked": false, "value": ["string", "gprofiler", "mygene"], "source": "default"},
+      {"name": "panel.gene-set.species_search", "type": {"kind": "bool"}, "default": true, "scope": "user", "area": "outbound", "description": "Species name search", "combine": "restrict", "outbound_hosts_now": ["api.ncbi.nlm.nih.gov", "www.ebi.ac.uk"], "restart": false, "locked": true, "value": true, "source": "config"},
+      {"name": "feature.remote_stores", "type": {"kind": "enum", "choices": ["auto", "allow", "deny"]}, "default": "auto", "scope": "config", "area": "features", "description": "Opening remote store URLs", "combine": "override", "restart": false, "locked": false, "value": "auto", "source": "config"},
+      {"name": "data.extra_hosts", "type": {"kind": "hosts"}, "default": [], "scope": "server", "area": "data", "description": "Additional hosts", "combine": "override", "restart": false, "locked": false, "value": ["data.example.org"], "source": "admin"},
+      {"name": "data.extra_paths", "type": {"kind": "paths"}, "default": [], "scope": "server", "area": "data", "description": "Additional paths", "combine": "override", "restart": false, "locked": false, "value": ["/srv/extra"], "source": "admin"},
+      {"name": "limits.max_sessions_per_user", "type": {"kind": "int", "min": 0, "max": 100000}, "default": 500, "scope": "config", "area": "limits", "description": "Panel sets one user may keep", "combine": "override", "restart": false, "locked": false, "value": 200, "source": "config"},
+      {"name": "limits.max_requests", "type": {"kind": "int", "min": 0, "max": null}, "default": 0, "scope": "config", "area": "limits", "description": "Requests before a worker is recycled", "combine": "override", "restart": true, "locked": false, "value": 20000, "source": "config"},
+      {"name": "limits.read_wait_s", "type": {"kind": "float", "min": 0, "max": 600}, "default": 30, "scope": "server", "area": "limits", "description": "How long a read waits for budget", "combine": "override", "restart": false, "locked": false, "value": 30, "source": "default"}
+    ],
+    "unknown": [{"name": "panel.legacy.enabled", "value": false}]
+  },
+  "audit": {
+    "records": [
+      {"seq": 3, "ts": "2026-10-11T09:14:00+00:00", "actor": "alice", "addr": "10.0.0.5", "via": "web", "action": "user.set_admin", "target": "bob", "detail": {"is_admin": false}, "outcome": "ok"},
+      {"seq": 2, "ts": "2026-10-11T09:13:00+00:00", "actor": "bob", "addr": "10.0.0.9", "via": "web", "action": "root.add", "target": "/etc", "detail": {}, "outcome": "refused:admin_only"},
+      {"seq": 1, "ts": "2026-10-11T09:00:00+00:00", "actor": "root", "addr": "", "via": "cli:root", "action": "user.add", "target": "alice", "detail": {"is_admin": true}, "outcome": "ok"}
+    ],
+    "chain": {"ok": true, "first_bad_seq": null}
+  }
+}
