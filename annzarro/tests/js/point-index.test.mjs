@@ -125,3 +125,47 @@ test("the sliced build gives the same index, in slices, and stops when cancelled
   job.cancelled = true;
   assert.equal(await p, null);
 });
+
+// Ring search: the same answer as a brute-force scan, tie-break included (the smaller point number).
+function bruteFirst(X, Y, cx, cy, rx, ry) {
+  let best = -1, bestD = 1;
+  for (let p = 0; p < X.length; p++) {
+    const dx = (X[p] - cx) / rx, dy = (Y[p] - cy) / ry, d = dx * dx + dy * dy;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+
+test("ring search equals brute force exactly: random, clustered, lattice (cell edges, ties), thin and wide ellipses", () => {
+  const layouts = {
+    random: cloud(6000, 11), clustered: cloud(6000, 12, { clusters: 5 }), duplicates: cloud(6000, 13, { duplicates: 800 }),
+    lattice: (() => {   // integer lattice: many points exactly on cell edges and many equal distances
+      const X = new Float32Array(2500), Y = new Float32Array(2500);
+      for (let i = 0; i < 2500; i++) { X[i] = i % 50; Y[i] = Math.floor(i / 50); }
+      return { X, Y, rows: Uint32Array.from(X, (_, i) => i) };
+    })(),
+    band: (() => {      // an empty band across the middle
+      const r = lcg(5), X = new Float32Array(4000), Y = new Float32Array(4000);
+      for (let i = 0; i < 4000; i++) { X[i] = r() * 100; Y[i] = (r() < 0.5 ? r() * 10 : 90 + r() * 10); }
+      return { X, Y, rows: Uint32Array.from(X, (_, i) => i) };
+    })(),
+    single: { X: Float32Array.of(3), Y: Float32Array.of(4), rows: Uint32Array.of(0) },
+  };
+  for (const [name, { X, Y, rows }] of Object.entries(layouts)) {
+    const idx = buildPointIndex(X, Y, rows), r = lcg(77);
+    let found = 0;
+    for (let q = 0; q < 3000; q++) {
+      let cx, cy;
+      if (name === "lattice" && q % 2) { cx = Math.round(r() * 50) + (r() < 0.5 ? 0 : 0.5); cy = Math.round(r() * 50) + (r() < 0.5 ? 0 : 0.5); }
+      else if (q % 3 === 0) { const p = Math.floor(r() * X.length); cx = X[p]; cy = Y[p]; }       // on a point
+      else { cx = (r() * 1.4 - 0.2) * (name === "lattice" ? 50 : 100); cy = (r() * 1.4 - 0.2) * (name === "lattice" ? 50 : name === "band" ? 100 : 40); }
+      const shape = q % 4;
+      const rx = shape === 0 ? 0.3 + r() * 6 : shape === 1 ? 0.05 + r() * 0.2 : shape === 2 ? 20 : 0.5 + r() * 3;
+      const ry = shape === 0 ? 0.3 + r() * 6 : shape === 1 ? 5 + r() * 10 : shape === 2 ? 0.1 : 0.5 + r() * 3;
+      const want = bruteFirst(X, Y, cx, cy, rx, ry), got = nearestPoint(idx, cx, cy, rx, ry);
+      if (want >= 0) found++;
+      assert.equal(got, want, `${name} query ${q} (${cx}, ${cy}, ${rx}, ${ry})`);
+    }
+    assert.ok(name === "single" || found > 300, `${name}: only ${found} queries found a point`);
+  }
+});
