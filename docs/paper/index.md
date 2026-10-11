@@ -90,12 +90,16 @@ including the Tahoe-100M build script, is in the public repository
 (paper-companion)=
 ## The paper's companion repository
 
-Some pages name files such as `figures/…`, `data_prep/…` or `benchmark/…`. They are in the
-paper's companion repository, `settylab/annzarro-paper`, which stays private until the paper is
-published. The names say where a figure, a number or a view comes from; you do not need them to
-open the views or to build the stores, whose scripts are in this repository. The exception is
-the Tahoe-100M store, whose build script is in the public repository
-[settylab/annzarro-reproducibility](https://github.com/settylab/annzarro-reproducibility) ({ref}`paper-scale-store`).
+The paper's figure scripts, figure numbers, panel set sources and benchmark harness and results
+are in the public repository
+[settylab/annzarro-reproducibility](https://github.com/settylab/annzarro-reproducibility). Pages
+name files such as `figures/…`, `data_prep/…` or `benchmark/…`; each name links to that file at
+one fixed commit
+([`9c416c6`](https://github.com/settylab/annzarro-reproducibility/commit/9c416c624c2ba9effb7ea77488a029972fbf31f4)), so the link shows
+what the page describes. The names say where a figure, a number or a view comes from; you do not
+need them to open the views or to build the stores, whose scripts are in this repository. The
+exception is the Tahoe-100M store, whose build script is in the companion repository
+({ref}`paper-scale-store`).
 
 ```{toctree}
 :hidden:

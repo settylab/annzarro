@@ -253,8 +253,8 @@ Table filters count the groups. Add a **Cell Table** with the columns `highres_c
 | The path has 13 cells | `trajectory_focus_cells` Not `not on path` | 13 entries |
 
 The Spearman ρ between the plasma cell's two rows (0.62), the walk masses and the dataset-wide
-medians are not computed by AnnZarro; they come from `figures/fig2_cell_by_cell.py` in the
-paper repository and were checked when the store was built ({doc}`../data/demo-data`).
+medians are not computed by AnnZarro; they come from {repro}`figures/fig2_cell_by_cell.py` in the
+{ref}`companion repository <paper-companion>` and were checked when the store was built ({doc}`../data/demo-data`).
 
 (tut-cell-views)=
 ## Open the views

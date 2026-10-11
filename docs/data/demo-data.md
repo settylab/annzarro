@@ -154,7 +154,8 @@ First what `bm_aging.py` writes, then what `make_annzarro_store.py` adds.
 
 #### Example cells and genes
 
-The paper repository's `data_prep/demo_panelsets/examples.json` records the cells and genes
+The file {repro}`data_prep/demo_panelsets/examples.json` in the paper's
+{ref}`companion repository <paper-companion>` records the cells and genes
 that the guides and figures focus on. Each was chosen by a rule, not by eye:
 
 - **Focus gene S100a9.** Rank 8 by Mahalanobis distance. Its mean log fold change is -0.051,

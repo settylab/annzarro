@@ -110,8 +110,8 @@ Loading one restores the dataset, the subset, the focus and the layout, like the
 ({doc}`../user-guide/panel-sets`).
 
 The views are written by `docs/_tools/start_links.py scale` from the view files of the paper's
-v0.4.1 screenshots (`figures/scale/*.view.json` in the paper's companion repository,
-{ref}`paper-companion`). The script adds what
+v0.4.1 screenshots (`*.view.json` in {repro-tree}`figures/scale` of the paper's
+{ref}`companion repository <paper-companion>`). The script adds what
 the screenshot script set through the app: the subset, the part, and the zoom and point size of
 panel c.
 

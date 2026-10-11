@@ -26,10 +26,19 @@ if _left:
 
 extensions = [
     "myst_parser",
+    "sphinx.ext.extlinks",
     "sphinx_copybutton",
     "sphinx_design",
     "sphinxcontrib.bibtex",
 ]
+
+# The paper's companion repository, pinned to one commit. {repro}`path` links a file, {repro-tree}`path` a directory.
+REPRO_SHA = "9c416c624c2ba9effb7ea77488a029972fbf31f4"
+extlinks = {
+    "repro": (f"https://github.com/settylab/annzarro-reproducibility/blob/{REPRO_SHA}/%s", "%s"),
+    "repro-tree": (f"https://github.com/settylab/annzarro-reproducibility/tree/{REPRO_SHA}/%s", "%s"),
+}
+extlinks_detect_hardcoded_links = False
 
 myst_enable_extensions = ["colon_fence", "deflist", "dollarmath", "attrs_inline", "attrs_block",
                           "fieldlist", "substitution"]
