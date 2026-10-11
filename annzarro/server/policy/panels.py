@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 from ...utils import paths
 from .registry import Key, REGISTRY, declare
 from .resolver import config_lookup
-from .types import BAD_CHOICE, BAD_TYPE, Bool, Enum, PolicyValueError, Subset
+from .types import _HOST, BAD_CHOICE, BAD_TYPE, Bool, Enum, PolicyValueError, Subset
 
 GENE_SET = "gene-set"
 
@@ -53,13 +53,16 @@ def panel_types() -> List[Dict[str, Any]]:
 
 
 def string_host(config) -> str:
-    """The host of ``integrations.string_db.base_url``; the client falls back to
-    STRING's versioned host when the URL is not https (config.js readIntegrations)."""
+    """The host of ``integrations.string_db.base_url``. The client uses STRING's
+    versioned host unless the URL is https (config.js readIntegrations), and so
+    does this; any valid host name is taken, a mirror without a dot included."""
     for url in (config_lookup(config or {}, "integrations.string_db.base_url")[1], STRING_DEFAULT_BASE_URL):
         if isinstance(url, str) and url.startswith("https://"):
-            parts = urlsplit(url)
-            host = parts.netloc.lower()
-            if "." in host and "@" not in host and parts.hostname:
+            try:
+                host = urlsplit(url).netloc.lower()
+            except ValueError:
+                continue
+            if "@" not in host and _HOST.match(host):
                 return host
     return urlsplit(STRING_DEFAULT_BASE_URL).netloc
 

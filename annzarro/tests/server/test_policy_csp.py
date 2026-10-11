@@ -144,8 +144,13 @@ def test_string_hosts_follow_the_configured_base_url():
         assert "version-12-5.string-db.org" not in csp_hosts(engine_with(config=cfg))
 
 
-@pytest.mark.parametrize("url", ["http://string.example.org/api", "ftp://x.example.org", "https://nodots/api",
-                                 "https://user@evil.example.org/api", 7])
+def test_a_string_mirror_without_a_dot_is_allowed_as_the_client_calls_it():
+    cfg = set_path({}, "integrations.string_db.base_url", "https://stringmirror:8443/api")
+    assert service_hosts(["string-network"], cfg) == ["stringmirror:8443"]
+
+
+@pytest.mark.parametrize("url", ["http://string.example.org/api", "ftp://x.example.org",
+                                 "https://user@evil.example.org/api", "https://bad_host.example.org/api", 7])
 def test_a_base_url_the_client_would_not_use_is_not_allowed(url):
     """The client falls back to STRING's versioned host unless the URL is https; the CSP follows."""
     cfg = set_path({}, "integrations.string_db.base_url", url)
@@ -180,6 +185,39 @@ def test_the_environment_variable_decides_external_requests_as_the_client_reads_
     monkeypatch.setenv("ANNZARRO_EXTERNAL_REQUESTS", "off")
     eng = engine_with(CONFIG, {"panel.gene-set.external_requests": "on"})
     assert eng.effective("alice")["panel.gene-set.external_requests"] == "off" and csp_hosts(eng) == []
+    assert eng.resolve("panel.gene-set.external_requests").source == "env", "the Settings page names the variable"
+
+
+@pytest.mark.parametrize("yaml", ["on", "ask", "off", "none"])
+@pytest.mark.parametrize("env", ["disabled", "no", "true", "of f", "0"])
+def test_an_invalid_environment_value_leaves_the_yaml_in_charge(monkeypatch, yaml, env, caplog):
+    """A typo in the unit file must not turn the operator's "off" into "ask"."""
+    monkeypatch.setenv("ANNZARRO_EXTERNAL_REQUESTS", env)
+    eng = engine_with(CONFIG, {"panel.gene-set.external_requests": yaml})
+    resolved = eng.resolve("panel.gene-set.external_requests")
+    assert resolved.value == yaml and resolved.source == "config"
+    assert (csp_hosts(eng) == []) == (yaml in ("off", "none"))
+    assert "ANNZARRO_EXTERNAL_REQUESTS" in caplog.text
+
+
+def test_an_invalid_environment_value_with_no_yaml_means_the_default(monkeypatch):
+    monkeypatch.setenv("ANNZARRO_EXTERNAL_REQUESTS", "disabled")
+    assert engine_with().effective("alice")["panel.gene-set.external_requests"] == "ask"
+
+
+@pytest.mark.parametrize("yaml", ["off", "none"])
+def test_the_page_policy_and_config_agree_on_an_invalid_environment_value(tmp_path, monkeypatch, yaml):
+    from annzarro.server.wsgi import create_wsgi_app
+    (tmp_path / "data").mkdir()
+    site = tmp_path / "site.yaml"
+    site.write_text(f"server:\n  data_dir: \"{tmp_path / 'data'}\"\n  log_file: \"{tmp_path / 'l.log'}\"\n"
+                    f"auth:\n  enabled: false\n  user_file: \"{tmp_path / 'u.json'}\"\n"
+                    f"integrations:\n  external_requests: \"{yaml}\"\n")
+    monkeypatch.setenv("ANNZARRO_EXTERNAL_REQUESTS", "disabled")
+    c = create_wsgi_app(config_path=str(site)).test_client()
+    assert c.get("/api/v1/config").get_json()["integrations"]["external_requests"] == yaml
+    assert c.get("/api/v1/policy/effective").get_json()["values"]["panel.gene-set.external_requests"] == yaml
+    assert header_hosts(c.get("/")) == set()
 
 
 # -- one table, two languages ------------------------------------------------

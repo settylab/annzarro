@@ -64,7 +64,7 @@ class Issue:
 class Resolution:
     name: str
     value: Any
-    source: str                  # "user" | "admin" | "config" | "default" | "forced"
+    source: str                  # "user" | "admin" | "env" | "config" | "default" | "forced"
     locked: bool = False
     config_value: Any = None     # what the YAML set, when it set the key
     has_config: bool = False
@@ -96,7 +96,9 @@ def _from_package_defaults(origins: Optional[Mapping[str, str]], path: str) -> b
 
 
 #: Settings an environment variable decides over the configuration, as the
-#: client has always read them (routes/core.py): ``{path: variable}``
+#: client has always read them (routes/core.py): ``{path: variable}``. The
+#: engine reads it (``_read_config``): a value the key's type does not accept is
+#: warned about and ignored, and the YAML decides, as ``/api/v1/config`` does.
 ENV_OVERRIDES = {"integrations.external_requests": "ANNZARRO_EXTERNAL_REQUESTS"}
 
 
@@ -110,11 +112,7 @@ def config_lookup(config: Mapping, path: str) -> Tuple[bool, Any]:
     of an ordinary admin. A config handed to ``create_app`` without a tree
     (tests, embedding) is read as it is, nested or flat: ``server.x`` is the
     flat key ``x``, as ``ConfigManager.to_flask_config`` flattens that section.
-    ``None`` counts as not set. A path in ``ENV_OVERRIDES`` is decided by its
-    environment variable when that is set."""
-    variable = ENV_OVERRIDES.get(path)
-    if variable and os.environ.get(variable, "").strip():
-        return True, os.environ[variable].strip().lower()
+    ``None`` counts as not set."""
     tree = config.get("config_tree")
     if tree is not None:
         found, value = _walk(tree, path)
@@ -187,9 +185,20 @@ class PolicyEngine:
 
     def _read_config(self) -> Tuple[Dict[str, Any], List[Issue]]:
         values, issues = {}, []
+        self._env_keys = set()
         for key in self.registry:
             if not key.config_path:
                 continue
+            variable = ENV_OVERRIDES.get(key.config_path)
+            if variable and os.environ.get(variable, "").strip():
+                raw = os.environ[variable]
+                try:
+                    values[key.name] = key.type.validate(raw)
+                    self._env_keys.add(key.name)
+                    continue
+                except PolicyValueError:
+                    logger.warning("%s=%r is not a valid value of %s; ignored, the configuration decides",
+                                   variable, raw, key.config_path)
             found, raw = config_lookup(self.config, key.config_path)
             if not found:
                 continue
@@ -284,7 +293,8 @@ class PolicyEngine:
         layers[SOURCE_NAMES[DEFAULT]] = self.default(key)
         inherited = {SOURCE_NAMES[l]: self._combine(key, [c for c in candidates if c[0] != l])[0]
                      for l, _ in candidates if l in STORED_LAYERS}
-        return Resolution(key.name, value, SOURCE_NAMES[layer], key.name in self.locked,
+        source = "env" if layer == CONFIG and key.name in self._env_keys else SOURCE_NAMES[layer]
+        return Resolution(key.name, value, source, key.name in self.locked,
                           self._config_layer.get(key.name), key.name in self._config_layer, layers, inherited)
 
     def _constrain(self, resolved: Dict[str, Resolution]) -> Dict[str, Resolution]:

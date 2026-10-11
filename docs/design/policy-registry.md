@@ -32,6 +32,14 @@ declare the default equal to the shipped value (a generated test holds the two
 together). The config manager records where each key came from (`config_origins`),
 and the registry ignores keys that came from `defaults:`.
 
+A few settings an environment variable has always decided (`ENV_OVERRIDES` in
+`resolver.py`; today `ANNZARRO_EXTERNAL_REQUESTS` for `integrations.external_requests`)
+take the config layer's place and beat the YAML **in both directions**, so a deployment
+can force a value either way. The resolution names them: its source is `env`, and the
+Settings page shows that badge. A value the key's type does not accept is logged and
+ignored, and the YAML decides, as `/api/v1/config` does; the environment never
+turns an invalid value into the default.
+
 The operator can take a key out of the administrator's hands with `policy.locked` in
 the YAML (see {doc}`../reference/configuration`).
 
@@ -127,3 +135,13 @@ A restrict key's overlay write wider than the operator's config is refused with
 `status_for(errors)` is 409 for a conflict (`locked_by_config`, `config_scope`,
 `server_scope`, `config_ceiling`) and 400 for the rest (`unknown_key`, `bad_type`, `out_of_range`,
 `bad_choice`).
+
+
+## Content-Security-Policy and open pages
+
+The CSP of a page is fixed when it loads, so a policy change applies at the next load. A
+page restored from the browser's back/forward cache can keep the policy it was loaded
+with, although `no-store` is set. The Gene Set Analysis panel reads the policy afresh
+before every Run (and when `X-AnnZarro-Policy` changes), which stops what the administrator
+turned off; only a modified client in such a stale page could still reach a host, until
+its next load.
