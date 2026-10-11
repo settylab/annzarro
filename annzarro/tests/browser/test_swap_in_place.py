@@ -322,3 +322,41 @@ def test_a_part_step_does_not_say_the_plot_went_blank(server):
             assert "Plot went blank" not in tags, tags
         finally:
             browser.close()
+
+
+def test_a_genuine_context_loss_still_says_the_plot_went_blank(server):
+    """The tag is silenced only for contexts released on a redraw; the browser dropping a live canvas is reported
+    (the regular plot's strip says it; large-plot mode's placeholder does)."""
+    root, large = server
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            errors = []
+            page = _open(browser, _link(root, subset=dict(SPEC, part=0)), errors)
+            _settle(page, lambda s: s["part"] == "1")
+            lost = page.evaluate("""() => {
+                const g = document.querySelector('.tile[data-tile-id="cell-plot-S"] .js-plotly-plot');
+                let n = 0;
+                for (const c of g.querySelectorAll('canvas')) {
+                    const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+                    const ext = gl && gl.getExtension('WEBGL_lose_context');
+                    if (ext && !gl.isContextLost()) { ext.loseContext(); n++; }
+                }
+                return n;
+            }""")
+            assert lost, "no live WebGL canvas in the plot"
+            page.wait_for_function("""() => document.querySelector(
+                '.tile[data-tile-id="cell-plot-S"] .ps-tag[data-tag="webgl"]')
+                || document.querySelector('.tile[data-tile-id="cell-plot-S"] .coverage-placeholder')""",
+                                   timeout=10000)
+            tags = page.evaluate("""() => [...document.querySelectorAll(
+                '.tile[data-tile-id="cell-plot-S"] .ps-tag')].map(t => t.textContent)""")
+            placeholder = page.evaluate("""() => !!document.querySelector(
+                '.tile[data-tile-id="cell-plot-S"] .coverage-placeholder')""")
+            if large:
+                # large-plot mode replaces the plot with a placeholder that offers Redraw (large-plot.js, watchGpu)
+                assert placeholder, tags
+            else:
+                assert "Plot went blank" in tags, tags
+        finally:
+            browser.close()
