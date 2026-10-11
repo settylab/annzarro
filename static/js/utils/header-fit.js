@@ -4,23 +4,26 @@
  *
  *   1. everything at its natural width, the buttons with their labels;
  *   2. `actions-compact`: the buttons keep their icons (the label is the tooltip);
- *   3. `focus-tight`: the focused gene and cell columns give up as much width as
- *      the row is short of, down to the minimum that shows an Ensembl ID or a
- *      barcode (a longer value is whole in the tooltip, its end shown);
- *   4. `dataset-tight`: the dataset box may shrink from about 220px to 140px,
- *      its name cut in the middle (the full path is the tooltip);
+ *   3. `dataset-tight`: the dataset box may shrink from its name's width to 140px,
+ *      its name cut in the middle (the open list and the tooltip show it whole);
+ *   4. `focus-tight`: the focused gene and cell columns give up as much width as
+ *      the row is still short of, down to the minimum that shows an Ensembl ID or
+ *      a barcode (a longer value is whole in the tooltip, its end shown);
  *   5. `dataset-stacked`: the dataset group takes a row of its own above the
  *      rest, which then gives way again (labels, then the inputs) on its row.
+ *
+ * The dataset box gives way before the focus inputs: its name is shown whole in
+ * the open list, while the focused gene and cell are read in the box itself.
  *
  * Each step is tried with the earlier ones kept and the first that leaves the
  * row without overflow is the layout, so the outcome depends on nothing but
  * the window and the content and cannot flip back and forth. The dataset box
  * itself is always one line: a long name is cut in the middle by CSS.
  */
-export const STEPS = ['actions-compact', 'focus-tight', 'dataset-tight'];
+export const STEPS = ['actions-compact', 'dataset-tight', 'focus-tight'];
 export const STACKED_CLASS = 'dataset-stacked';
 const ALL_CLASSES = [...STEPS, STACKED_CLASS];
-const ONE_ROW = [[], ['actions-compact'], ['actions-compact', 'focus-tight'], ['actions-compact', 'focus-tight', 'dataset-tight']];
+const ONE_ROW = STEPS.map((_, i) => STEPS.slice(0, i)).concat([STEPS]);
 const STACKED = [[STACKED_CLASS], [STACKED_CLASS, 'actions-compact'], [STACKED_CLASS, 'actions-compact', 'focus-tight']];
 
 /** Whether the header's one row of controls is wider than the room it has. */
@@ -33,9 +36,13 @@ export function rowOverflows(header) {
 export function restWraps(header) {
     const row = header.querySelector('.global-controls > .row');
     if (!row) return false;
-    const tops = [...row.children].filter(c => !c.classList.contains('dataset-col'))
-        .map(c => Math.round(c.getBoundingClientRect().top));
-    return new Set(tops).size > 1;
+    // the buttons are shorter than the pickers and centred beside them: compare with
+    // the line's bottom, not the tops
+    const boxes = [...row.children].filter(c => !c.classList.contains('dataset-col'))
+        .map(c => c.getBoundingClientRect()).filter(b => b.height > 0);
+    if (!boxes.length) return false;
+    const firstBottom = Math.min(...boxes.map(b => b.bottom));
+    return boxes.some(b => b.top >= firstBottom - 1);
 }
 
 /**
@@ -164,8 +171,8 @@ export function fitFocusInput(input) {
             + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth) + 4;
         const want = Math.ceil(ctx.measureText(input.value || input.placeholder || '').width + extra);
         const min = parseFloat(style.minWidth) || 0;
-        // tight: the column decides (CSS gives the input its whole width)
-        input.style.width = input.closest('.focus-tight') ? '' : `${Math.min(FOCUS_INPUT_MAX, Math.max(min, want))}px`;
+        // tight: the column may narrow it further (CSS caps it at the column's width)
+        input.style.width = `${Math.min(FOCUS_INPUT_MAX, Math.max(min, want))}px`;
     }
     const cut = input.scrollWidth > input.clientWidth + 1;
     if (cut) input.title = input.value; else input.removeAttribute('title');

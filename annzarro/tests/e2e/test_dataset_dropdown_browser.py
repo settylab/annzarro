@@ -376,8 +376,11 @@ def test_a_real_cell_name_is_shown_whole_and_a_too_long_one_ends_visibly(server,
             page.goto(base + "/")
             page.wait_for_selector("#dataset-selector + .select2-container", timeout=60_000)
             page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 5")
+            # the dataset focuses its first cell once loaded: set ours after it, or that one replaces it
+            page.wait_for_function("document.getElementById('focused-cell').value !== ''", timeout=60_000)
             page.evaluate("v => { document.getElementById('focused-cell').value = v; }", real)
             page.wait_for_timeout(600)
+            assert page.eval_on_selector("#focused-cell", "e => e.value") == real
             size = page.eval_on_selector("#focused-cell", "e => ({w: e.getBoundingClientRect().width, sw: e.scrollWidth, cw: e.clientWidth, title: e.title})")
             if width >= 1440:
                 assert size["sw"] <= size["cw"], f"the cell name is cut: {size}"
@@ -396,6 +399,54 @@ def test_a_real_cell_name_is_shown_whole_and_a_too_long_one_ends_visibly(server,
                 page.evaluate("v => { document.getElementById('focused-cell').value = v; }", real)
                 page.wait_for_timeout(500)
                 page.screenshot(path=os.path.join(SHOTS_DIR, f"cell-name-{width}.png"))
+        finally:
+            browser.close()
+
+
+def test_the_dataset_box_gives_way_before_the_focused_cell_is_cut(server):
+    """Swept over widths, so it holds for any font: the focused gene and cell inputs give up
+    width (focus-tight) only once the dataset box is at its least (dataset-tight), and then
+    only the width the row is short of; a cut cell name means the box could give no more."""
+    base, _ = server
+    real = "HSPC_Young_1#AAAGATGGTCCGAAGA-1"
+    with sync_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch()
+        except Exception as exc:  # no browser binary
+            _skip_or_fail(f"Chromium cannot start: {exc}")
+        try:
+            page = browser.new_page(viewport={"width": 1920, "height": 1000})
+            page.goto(base + "/")
+            page.wait_for_selector("#dataset-selector + .select2-container", timeout=60_000)
+            page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 5")
+            page.select_option("#dataset-selector", label=NAMES[2])
+            page.wait_for_function("document.getElementById('focused-cell').value !== ''", timeout=60_000)
+            page.wait_for_timeout(500)
+            page.evaluate("""([g, c]) => { document.getElementById('focused-gene').value = g;
+                document.getElementById('focused-cell').value = c; }""", [ENSG, real])
+            seen = set()
+            for width in range(1920, 1023, -24):
+                page.set_viewport_size({"width": width, "height": 1000})
+                page.wait_for_timeout(150)
+                st = page.evaluate("""() => { const h = document.getElementById('app-header');
+                    const box = document.querySelector('#dataset-selector + .select2-container');
+                    const cell = document.getElementById('focused-cell'), gene = document.getElementById('focused-gene');
+                    return {cls: h.className.split(' '), box: box.getBoundingClientRect().width, value: cell.value,
+                            cellCut: cell.scrollWidth > cell.clientWidth + 1, geneCut: gene.scrollWidth > gene.clientWidth + 1,
+                            gene: gene.getBoundingClientRect().width, geneMin: parseFloat(getComputedStyle(gene).minWidth)}; }""")
+                st["width"] = width
+                assert st["value"] == real, st
+                assert not st["geneCut"], f"an Ensembl ID always fits: {st}"
+                one_row = "dataset-stacked" not in st["cls"]
+                seen.add(" ".join(c for c in st["cls"] if c != "app-header"))
+                if one_row and "focus-tight" in st["cls"]:
+                    assert "dataset-tight" in st["cls"] and st["box"] <= 141, f"the box gives way first: {st}"
+                    assert st["gene"] <= st["geneMin"] + 1, f"a tight gene input does not take the cell's width: {st}"
+                if one_row and st["cellCut"]:
+                    assert "dataset-tight" in st["cls"] and st["box"] <= 141, f"the cell is cut while the box has room: {st}"
+                assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), st
+            # the sweep reached the step under test, whatever the font
+            assert any("dataset-tight" in s and "dataset-stacked" not in s for s in seen), seen
         finally:
             browser.close()
 
