@@ -375,8 +375,16 @@ def estimate_uns_bytes(node, stop_above: Optional[int] = None) -> tuple:
         n = 1
         for d in shape:
             n *= int(d)
-        kind = getattr(getattr(item, "dtype", None), "kind", "f")
-        total += n * (UNS_BYTES_PER_STRING if kind in ("S", "O", "U", "T") else UNS_BYTES_PER_ELEMENT)
+        dtype = getattr(item, "dtype", None)
+        kind = getattr(dtype, "kind", "f")
+        if kind in ("S", "U"):
+            # fixed width: the width is in the dtype (4 bytes a character for U)
+            total += n * (UNS_BYTES_PER_STRING + int(getattr(dtype, "itemsize", 0) or 0))
+        elif kind in ("O", "T"):
+            # variable length: only a floor is known; read_uns_array counts the real lengths
+            total += n * UNS_BYTES_PER_STRING
+        else:
+            total += n * UNS_BYTES_PER_ELEMENT
         elements += n
         if stop_above is not None and total > stop_above:
             break
@@ -402,6 +410,89 @@ def check_uns(key: str, node) -> int:
         "(server.max_read_mb). It is too large to send as JSON: read a smaller member of it, "
         "or ask the dataset's owner for it as an array in obsm, varm or a layer.",
         limit, need, [{"element": f"uns/{key}", "values": elements, "estimated_mb": round(need / 2 ** 20, 1)}])
+
+
+STRING_KINDS = ("S", "U", "O", "T")
+#: Rows of a variable-length string array read at once (fewer when its chunks are smaller)
+STRING_BLOCK_ROWS = 4096
+
+
+class UnsBudget:
+    """The bytes one uns read may still hold, charged as strings are read.
+
+    Fixed-width numbers are sized from shape and dtype before the read
+    (``estimate_uns_bytes``). The length of a variable-length string is in
+    the data, not the metadata, so it is counted as it is read: block by
+    block, and ReadTooLargeError the moment the total passes the limit, with
+    the lists built so far dropped. What one block holds is the most that is
+    ever read past the limit (a chunk is decompressed whole; the stored size
+    is checked first, as it cannot be less than the data compresses to).
+    """
+
+    def __init__(self, key: str, limit: Optional[int] = None):
+        self.key = key
+        self.limit = limit_bytes() if limit is None else int(limit)
+        self.used = 0
+
+    def charge(self, nbytes: int, what: str = "") -> None:
+        self.used += int(nbytes)
+        if self.used > self.limit:
+            raise ReadTooLargeError(
+                f"Reading uns/{self.key} whole{(' (' + what + ')') if what else ''} holds more than "
+                f"{self.limit / 2 ** 20:,.0f} MB of text in memory (server.max_read_mb). It is too large to "
+                "send as JSON: read a smaller member of it, or ask the dataset's owner for it as an array "
+                "in obsm, varm or a layer.",
+                self.limit, self.used,
+                [{"element": f"uns/{self.key}", "estimated_mb": round(self.used / 2 ** 20, 1)}])
+
+
+def _stored_bytes(node) -> Optional[int]:
+    """Bytes the array takes in its store (compressed), when the store says."""
+    for name in ("nbytes_stored", "size_in_bytes"):
+        try:
+            value = getattr(node, name, None)
+            value = value() if callable(value) else value
+            if isinstance(value, (int, np.integer)):
+                return int(value)
+        except Exception:
+            continue
+    return None
+
+
+def _text_bytes(values) -> int:
+    total = 0
+    for v in values.ravel().tolist():
+        if isinstance(v, (str, bytes)):
+            total += len(v) + UNS_BYTES_PER_STRING
+        else:
+            total += UNS_BYTES_PER_STRING
+    return total
+
+
+def read_uns_array(node, budget: Optional[UnsBudget]):
+    """``node[()]``, but a string array is read a block at a time and counted
+    against ``budget`` (ReadTooLargeError over it). Numeric arrays are
+    returned whole: they were sized before the read."""
+    kind = getattr(getattr(node, "dtype", None), "kind", "f")
+    if budget is None or kind not in STRING_KINDS:
+        return node[()]
+    stored = _stored_bytes(node)
+    if stored is not None:
+        if stored > budget.limit:
+            budget.charge(stored, f"{stored / 2 ** 20:,.0f} MB stored")
+    shape = tuple(int(d) for d in node.shape)
+    if len(shape) == 0 or not shape[0]:
+        value = node[()]
+        budget.charge(_text_bytes(np.asarray(value, dtype=object).reshape(-1)))
+        return value
+    chunks = getattr(node, "chunks", None)
+    rows = max(1, min(int(chunks[0]) if chunks else STRING_BLOCK_ROWS, STRING_BLOCK_ROWS))
+    blocks = []
+    for start in range(0, shape[0], rows):
+        block = np.asarray(node[start:start + rows], dtype=object)
+        budget.charge(_text_bytes(block))
+        blocks.append(block)
+    return np.concatenate(blocks, axis=0).reshape(shape)
 
 
 def pairwise_chunking_items(root, limit: Optional[int] = None) -> List[Dict[str, Any]]:

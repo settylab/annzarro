@@ -337,7 +337,7 @@ def _column_position(column_name, width, obj, key) -> int:
     return position
 
 
-def _uns_value(node) -> Any:
+def _uns_value(node, budget=None) -> Any:
     """A uns member as plain JSON-able Python, as ZarrReader._uns_value.
 
     Groups become dicts of their members (to any depth; the encoding
@@ -345,8 +345,8 @@ def _uns_value(node) -> Any:
     Python scalars and strings str.
     """
     if isinstance(node, h5py.Group):
-        return {name: _uns_value(node[name]) for name in node.keys()}
-    value = node[()]
+        return {name: _uns_value(node[name], budget) for name in node.keys()}
+    value = read_guard.read_uns_array(node, budget)
     if isinstance(value, np.ndarray):
         if value.dtype.kind in ("S", "O", "U"):
             flat = [v.decode("utf-8") if isinstance(v, bytes) else
@@ -907,7 +907,7 @@ class h5adReader(CacheSettings):
                 node = node[part]
             need = read_guard.check_uns(key, node)
             with read_guard.admit(need):
-                return _uns_value(node)
+                return _uns_value(node, read_guard.UnsBudget(key))
 
     @cached_method
     def get_layer(self, layer_name: str, dataset_path: Optional[str] = None,
