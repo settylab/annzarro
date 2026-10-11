@@ -134,6 +134,16 @@ def test_csc_x_is_fine_for_genes_and_only_noted_for_cells(store, fmt):
     assert report["worst"] == "info"
 
 
+def test_cell_direction_of_csc_is_a_warning_from_a_gigabyte(store):
+    root = new_store(store, nnz=101_000_000)                         # 808 MB: info
+    _sparse(root["layers"], "big", (N_OBS, N_VARS), 200_000_000, "csc")     # 1.6 GB
+    report = store_check.check_store(str(store))
+    assert finding(report, "sparse_cell_direction", "X")["severity"] == "info"
+    big = finding(report, "sparse_cell_direction", "layers/big")
+    assert big["severity"] == "warning"
+    assert "Gene Plot" in big["cost"] and "table column" in big["cost"]
+
+
 def test_csr_layer_severity_follows_its_size(store):
     root = new_store(store)
     _sparse(root["layers"], "small", (N_OBS, N_VARS), 6_000_000, "csr")      # ~6 ms
@@ -495,3 +505,19 @@ def test_unreachable_remote_store_is_an_error(http_base):
     base, _ = http_base
     with pytest.raises(store_check.StoreCheckError):
         store_check.check_store(f"{base}/nothing.zarr")
+
+
+def test_max_read_mb_from_config_and_flag(store, tmp_path, capsys):
+    root = new_store(store, n_obs=100_000, n_vars=2_000, nnz=1_000_000)
+    _array(root["obsp"], "mid", (100_000, 100_000), "float32", (100, 100_000))      # 40 MB per row
+    cfg = tmp_path / "site.yaml"
+    cfg.write_text("server:\n  max_read_mb: 16\n")
+
+    def slow_elements(*extra):
+        cli.main(["store", "check", str(store), "--json", "--fail-on", "never", *extra])
+        report = json.loads(capsys.readouterr().out)
+        return report["max_read_mb"], {f["element"] for f in report["findings"] if f["code"] == "pairwise_row_read"}
+
+    assert slow_elements("--max-read-mb", "64") == (64, set())
+    assert slow_elements("--config", str(cfg)) == (16, {"obsp/mid"})
+    assert slow_elements("--config", str(cfg), "--max-read-mb", "64") == (64, set())

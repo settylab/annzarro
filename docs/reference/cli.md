@@ -136,7 +136,7 @@ second even on a store of 95.6 million cells. It works on local directories and 
 and 3, sharded or not.
 
 ```text
-annzarro store check STORE [--json] [--fail-on {info,warning,slow,never}] [--max-read-mb MB]
+annzarro store check STORE [--json] [--fail-on {info,warning,slow,never}] [--config FILE] [--max-read-mb MB]
 ```
 
 | Option | Meaning |
@@ -144,7 +144,8 @@ annzarro store check STORE [--json] [--fail-on {info,warning,slow,never}] [--max
 | `STORE` | A zarr store: a directory or a URL. An `.h5ad` file is refused. |
 | `--json` | Print the report as JSON (schema `annzarro-store-check/1`, below) instead of text. |
 | `--fail-on SEVERITY` | Exit 1 when a finding is at or above this severity: `info`, `warning`, `slow` (default) or `never`. |
-| `--max-read-mb MB` | The read limit to judge `obsp`/`varp` rows against; give your `server.max_read_mb`. Default: the server's own default for this machine (5% of memory, 256 MB to 4 GB). |
+| `--config FILE` | Configuration file (or `ANNZARRO_CONFIG`): its `server.max_read_mb` is the read limit to judge `obsp`/`varp` rows against. |
+| `--max-read-mb MB` | The same limit, given directly; overrides the configuration. Default: the server's own default for this machine (5% of memory, 256 MB to 4 GB). |
 
 The text report lists every 2-D array (encoding, shape, dtype, chunks and shards, the bytes one
 gene column and one cell row read), then each finding with its severity, **what it costs in
@@ -168,7 +169,7 @@ so the command and the server's open-time notice do not disagree. Findings (`cod
 | Code | What it finds |
 |---|---|
 | `sparse_wrong_direction` | A gene column read from CSR (`X`, layers) or a row read from CSC (`obsp`, `varp`): every stored index is scanned, about 1 ns per non-zero. |
-| `sparse_cell_direction` | `X` or a layer in CSC: gene columns are cheap, cell rows scan everything (`info`). |
+| `sparse_cell_direction` | `X` or a layer in CSC: gene columns are cheap, but a Gene Plot coloured by it and a table column of a named cell's expression read a cell row, which scans every non-zero (`info`; `warning` from 1 GB). |
 | `dense_chunk_shape` | A dense `X` or layer whose chunks make a gene column or cell row decompress 8 times (`warning`) or 16 times (`slow`) what chunks following the matrix's aspect ratio would ({doc}`../data/chunking`). |
 | `pairwise_row_read` | A dense `obsp`/`varp` whose row read holds more than the read limit: focusing a cell is refused. The same test as the server's `pairwise_chunking` notice. |
 | `float64` | A float64 array of 16 MB or more (`warning` from 256 MB). |

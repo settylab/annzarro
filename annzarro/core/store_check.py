@@ -287,12 +287,15 @@ class _Checker:
                      read_bytes_in_right_direction=int(along), nnz=nnz, format=fmt)
             info["severity"] = sev
         elif not wrong_primary and primary == "column":
-            # X or a layer in CSC: the cell read (Gene Plot colour, focus) scans everything
+            # X or a layer in CSC: the cell read scans everything. Two features make it:
+            # a Gene Plot coloured by the matrix, and a table column of a named cell's expression
             if row_s is not None and row_s >= T.SPARSE_INFO_S:
-                self.add("sparse_cell_direction", "info", label,
+                sev = "warning" if across >= T.CELL_ROW_WARNING_BYTES else "info"
+                self.add("sparse_cell_direction", sev, label,
                          f"{label} is CSC: gene columns are cheap, cell rows are not.",
-                         f"Each cell click (Gene Plot colour, focus) reads every non-zero value of {label}: "
-                         f"~{mb(across)} (about {_seconds(row_s)} warm and local), against ~{mb(along)} "
+                         f"Colouring a Gene Plot by {label}, and a table column of a named cell's expression, "
+                         f"read a cell row: every non-zero value of {label}, ~{mb(across)} "
+                         f"(about {_seconds(row_s)} warm and local), against ~{mb(along)} "
                          "from CSR. Inherent to one stored direction; keep a CSR copy as a layer if cell "
                          "reads matter more.",
                          "# store the matrix a second time in the other direction\n"

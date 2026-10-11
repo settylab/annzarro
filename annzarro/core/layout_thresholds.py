@@ -1,10 +1,14 @@
 """The numbers that decide when a store's layout is called slow, in one place.
 
-``annzarro store check`` (store_check.py) and the server's open-time notices
-(read_guard.chunking_notice) both read their limits from here, so the command
-line and the running server never disagree about a store. The values come from
+``annzarro store check`` (store_check.py) reads its limits from here; the
+obsp/varp row test it shares with the server is read_guard.pairwise_chunking_items.
+The values come from
 the measurements on the documentation's chunking and performance pages
 (docs/data/chunking.md, docs/reference/performance.md).
+
+TODO: the server's open-time notices (read_guard.chunking_notice, shown as
+``pairwise_chunking``) are the next consumer: they should grow into these
+findings by calling store_check, not by copying the numbers.
 """
 import math
 
@@ -20,6 +24,9 @@ SCAN_NS_PER_NONZERO = 1.0
 #: Estimated seconds of one such read from which it is reported / a ``warning`` / ``slow``.
 SPARSE_INFO_S = 0.005
 SPARSE_WARNING_S = 0.02
+#: A cell row of a CSC matrix (Gene Plot colour, a cell's expression in a table) that
+#: scans at least this many bytes is a ``warning`` rather than an ``info``.
+CELL_ROW_WARNING_BYTES = 2 ** 30
 SPARSE_SLOW_S = 0.1
 
 #: Chunk shape: the documented rule aims at this many values per chunk (2 MB

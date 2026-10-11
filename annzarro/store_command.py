@@ -28,16 +28,28 @@ def add_parser(subparsers) -> None:
     check.add_argument("--json", action="store_true", help="Print the report as JSON")
     check.add_argument("--fail-on", choices=(*thresholds.SEVERITIES, "never"), default="slow",
                        help="Exit 1 when a finding is at or above this severity (default slow)")
+    check.add_argument("--config", default=argparse.SUPPRESS,
+                       help="Configuration file: its server.max_read_mb is the read limit to judge against")
     check.add_argument("--max-read-mb", type=float, default=None,
-                       help="The server's read limit for obsp/varp rows (server.max_read_mb); "
-                            "default: the server's own default for this machine")
+                       help="The server's read limit for obsp/varp rows; overrides server.max_read_mb "
+                            "of --config; default: the server's own default for this machine")
     check.set_defaults(func=store_check_command)
     parser.set_defaults(func=lambda args: (parser.print_help(), 1)[1])
 
 
+def _config_max_read_mb(path):
+    """server.max_read_mb of the configuration (``--config`` or ANNZARRO_CONFIG), or None."""
+    if not path:
+        return None
+    from annzarro.cli import load_config
+    config = load_config(config_path=path, env="production", exit_on_invalid=False)
+    return (config.get("server") or {}).get("max_read_mb") or None
+
+
 def store_check_command(args) -> int:
+    max_read_mb = args.max_read_mb or _config_max_read_mb(getattr(args, "config", None))
     try:
-        report = store_check.check_store(args.store, max_read_mb=args.max_read_mb)
+        report = store_check.check_store(args.store, max_read_mb=max_read_mb)
     except store_check.StoreCheckError as exc:
         print(f"annzarro store check: {exc}", file=sys.stderr)
         return 2
