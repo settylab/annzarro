@@ -11,7 +11,7 @@
  *     and never throws.
  *   - The source table is stored under `tableFilter`, so the panel set's id
  *     remapping (deeplink.js remapPanelReferences) already follows it.
- *   - integrations.external_requests: ask (default) | on | off; YAML's
+ *   - integrations.external_requests: ask (default) | on | off | none; YAML's
  *     booleans for a bare on/off; anything else is ask. The consent store.
  *
  * Run:  node --test annzarro/tests/js/gene-set-config.test.mjs
@@ -118,6 +118,8 @@ test('integrations: ask by default; on, off and YAML booleans; anything else is 
     assert.equal(readIntegrations({ integrations: { external_requests: ' ON ' } }).externalRequests, 'on');
     assert.equal(readIntegrations({ integrations: { external_requests: false } }).externalRequests, 'off');
     assert.equal(readIntegrations({ integrations: { external_requests: true } }).externalRequests, 'on');
+    assert.equal(readIntegrations({ integrations: { external_requests: 'none' } }).externalRequests, 'none');
+    assert.equal(readIntegrations({ integrations: { external_requests: ' None ' } }).externalRequests, 'none');
     assert.equal(readIntegrations({ integrations: { external_requests: 'sometimes' } }).externalRequests, 'ask');
     assert.equal(readIntegrations({ integrations: 'nonsense' }).externalRequests, 'ask');
     const full = readIntegrations({ integrations: { gene_set: { services: ['string', 7], timeout_ms: 5000 },

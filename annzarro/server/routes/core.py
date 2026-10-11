@@ -116,7 +116,7 @@ def register_core_routes(app, api_version):
         # forced by the environment where a deployment (the desktop app, an
         # offline install) must not depend on a config file
         forced = os.environ.get("ANNZARRO_EXTERNAL_REQUESTS", "").strip().lower()
-        if forced in ("ask", "on", "off"):
+        if forced in ("ask", "on", "off", "none"):
             integrations = dict(client.get("integrations") or {})
             integrations["external_requests"] = forced
             client["integrations"] = integrations

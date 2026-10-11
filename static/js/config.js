@@ -45,16 +45,16 @@ export function readUiSettings(server) {
 /**
  * The integrations.* settings in /api/v1/config, for the Gene Set Analysis
  * panel's external services:
- *   external_requests  ask | on | off: whether the panel may send gene ids to
+ *   external_requests  ask | on | off | none: whether the panel may send gene ids to
  *                      services, asking first (ask, the default), without
- *                      asking, or never. YAML reads a bare off/on as a
+ *                      asking, or never (none: and no Links either). YAML reads a bare off/on as a
  *                      boolean, so false and true mean off and on; anything
  *                      else unknown means ask.
  *   gene_set.services  adapter ids or service names allowed (null: all)
  *   gene_set.timeout_ms  per request attempt
  *   string_db          base_url and version of the STRING API
  * @param {Object} server - the parsed /api/v1/config response
- * @returns {{externalRequests: 'ask'|'on'|'off', services: string[]|null, timeoutMs: number,
+ * @returns {{externalRequests: 'ask'|'on'|'off'|'none', services: string[]|null, timeoutMs: number,
  *   stringDb: {baseUrl: string|null, version: string|null}}}
  */
 export function readIntegrations(server) {
@@ -63,7 +63,7 @@ export function readIntegrations(server) {
     if (ext === false) ext = 'off';
     else if (ext === true) ext = 'on';
     ext = typeof ext === 'string' ? ext.trim().toLowerCase() : 'ask';
-    if (!['ask', 'on', 'off'].includes(ext)) ext = 'ask';
+    if (!['ask', 'on', 'off', 'none'].includes(ext)) ext = 'ask';
     const gs = cfg.gene_set && typeof cfg.gene_set === 'object' ? cfg.gene_set : {};
     const services = Array.isArray(gs.services) ? gs.services.filter(x => typeof x === 'string') : null;
     const t = Number(gs.timeout_ms);
