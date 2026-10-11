@@ -106,6 +106,12 @@ URL; everything else is fetched on demand. Measured on public Vitessce AnnData s
 - A store whose X is CSR-encoded must read the whole matrix to return one gene: 4 s per gene
   uncached, 1 to 1.5 s once its chunks are in the chunk cache (4k spots, HTTPS). Dense chunked
   layers avoid this ({doc}`../data/chunking`).
+- A **sharded** Zarr v3 store ({ref}`zarr-format`) is read by HTTP range requests: the shard's
+  index, then the chunks a request needs, not the shard file. The web server must honour the
+  `Range` header (nginx, Apache, S3 and GCS do; `python -m http.server` does not, and a read then
+  fails with an error that says so). The chunk cache keeps those index and chunk ranges too: in a
+  local test, two rows of one chunk cost two requests with the cache and four without. Measured with
+  a small test store and a range-capable local server, not on a public store.
 
 ## What was tested for this page
 

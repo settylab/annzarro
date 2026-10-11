@@ -31,6 +31,10 @@ Pairwise matrices (`obsp`, `varp`) are only ever read by row, so their chunks sp
 `(max(1, 10**6 // n), n)`. Sparse matrices have no 2-D chunks; their direction is set by CSR
 against CSC ({doc}`preparing-a-store`).
 
+In a sharded format 3 store the rule applies to the chunks inside the shards. AnnZarro reads a
+shard's index and then only the chunks a request touches, so the shard shape only decides how
+many files there are ({ref}`zarr-format`).
+
 ```{tip}
 **You usually do not need to do anything.** anndata 0.12 with zarr 3 already chooses chunks
 of this shape: (15625, 79) for 1M × 5,000 and (6250, 125) for 200,000 × 2,000. Rechunk only

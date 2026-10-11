@@ -13,6 +13,7 @@ import zarr
 
 from annzarro.core.zarr_reader import zarr_reader
 from annzarro.server.core import create_app
+from annzarro.tests.zarr_compat import consolidate
 
 FIXTURE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "fixture_small.zarr"
@@ -29,8 +30,7 @@ def test_info_lists_obsm_keys_without_x_prefix(tmp_path):
     arr[:] = np.zeros((n, 2), dtype="f4")
     arr.attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
     # the fixture's consolidated metadata must learn about the new array
-    v3 = int(zarr.__version__.split(".")[0]) >= 3
-    zarr.consolidate_metadata(str(store), **({"zarr_format": 2} if v3 else {}))
+    consolidate(store)
     zarr_reader.clear_cache()
 
     app = create_app({"TESTING": True, "DEBUG": False, "auth_enabled": False, "data_dir": str(tmp_path)})

@@ -6,15 +6,33 @@ fixtures never built and every test that used them errored. Under zarr 3 the
 store is pinned to zarr FORMAT 2, the on-disk layout anndata writes and the
 served datasets use; see also test_nullable_encodings.py.
 """
+import os
+
 import numpy as np
 import zarr
 
 ZARR_V3 = int(zarr.__version__.split(".")[0]) >= 3
 
 
-def open_group(path, mode="w"):
+def store_format(path):
+    """The zarr format of the store at ``path``: 3 if it has a root ``zarr.json``, else 2."""
+    return 3 if os.path.exists(os.path.join(str(path), "zarr.json")) else 2
+
+
+def consolidate(path):
+    """``zarr.consolidate_metadata`` in the store's own format (zarr 3 would otherwise write a
+    format 3 consolidation of a format 2 store, or refuse)."""
     if ZARR_V3:
-        return zarr.open_group(str(path), mode=mode, zarr_format=2)
+        return zarr.consolidate_metadata(str(path), zarr_format=store_format(path))
+    return zarr.consolidate_metadata(str(path))
+
+
+def open_group(path, mode="w"):
+    """A new store is written in format 2; an existing one is opened in its own format, so a
+    test that adds to a copy of a format 3 fixture adds format 3 members."""
+    if ZARR_V3:
+        existing_v3 = mode != "w" and os.path.exists(os.path.join(str(path), "zarr.json"))
+        return zarr.open_group(str(path), mode=mode, zarr_format=3 if existing_v3 else 2)
     return zarr.open_group(str(path), mode=mode)
 
 

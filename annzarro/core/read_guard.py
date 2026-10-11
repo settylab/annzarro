@@ -161,11 +161,16 @@ def chunk_working_set(obj, row_indices=None, col_indices=None) -> int:
     one chunked (1000, n) decompresses 1000 x n x itemsize bytes (4.8 GB at 1.2M
     cells) to keep n values. zarr works on up to READ_CONCURRENCY chunks at a
     time, so the working set is that many chunks, or all the chunks the request
-    touches if fewer. Measured: 22 MB for one row of (256, 20000) float32 (a
-    20.5 MB chunk), 42 MB at (256, 40000), about 10 chunks for a column.
+    touches if fewer. In a sharded array (zarr format 3) ``chunks`` is the INNER chunk
+    and ``shards`` the file: zarr reads the shard's index and then only the inner chunks
+    a request touches (byte ranges), so the unit is the inner chunk, never the shard.
+    Measured: five single-row reads of a (16000, 16000) float32 array raised the process's
+    peak memory by 7.2 MB with (62, 16000) chunks, and by 7.3 MB with the same chunks in
+    (992, 16000) shards of 63 MB. Also measured: 22 MB for one row of (256, 20000) float32
+    (a 20.5 MB chunk), 42 MB at (256, 40000), about 10 chunks for a column.
     """
     shape = tuple(int(d) for d in obj.shape)
-    unit = getattr(obj, "shards", None) or getattr(obj, "chunks", None)
+    unit = getattr(obj, "chunks", None)
     if len(shape) != 2 or not unit or len(unit) != 2:
         return 0
     touched = (_chunks_touched(row_indices, shape[0], int(unit[0]))
@@ -230,7 +235,7 @@ def check(name: str, obj, is_sparse: bool, row_indices=None, col_indices=None) -
     n_cols = len(col_indices) if col_indices is not None else shape[1]
     element = {"element": name, "shape": list(shape), "rows": n_rows, "columns": n_cols,
                "sparse": bool(is_sparse), "estimated_mb": round(need / 2 ** 20, 1)}
-    unit = getattr(obj, "shards", None) or getattr(obj, "chunks", None)
+    unit = getattr(obj, "chunks", None)
     if not is_sparse and unit:
         element["chunks"] = [int(c) for c in unit]
         element["chunk_working_set_mb"] = round(
@@ -263,7 +268,7 @@ def chunking_notice(root, dataset_path: str = "") -> Optional[Dict[str, Any]]:
                     continue
                 need = chunk_working_set(obj, [0])
                 if need > limit:
-                    unit = getattr(obj, "shards", None) or obj.chunks
+                    unit = obj.chunks
                     items.append({"element": f"{group}/{key}", "shape": [int(d) for d in obj.shape],
                                   "chunks": [int(c) for c in unit],
                                   "row_read_mb": round(need / 2 ** 20, 1)})
