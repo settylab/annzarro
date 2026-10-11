@@ -29,6 +29,7 @@ from . import dataset_folders
 from ...core.array_response import wants_binary, wants_codes
 from ...core import categories as category_rules
 from ...core.remote import is_remote_path, is_timeout, timeout_message
+from ...data.scan import DEFAULT_MAX_ENTRIES as DEFAULT_SCAN_ENTRIES
 
 logger = logging.getLogger(__name__)
 
@@ -1957,8 +1958,18 @@ def register_data_routes(app, api_version):
             directories = []
             zarr_stores = []
             
-            # List all entries in the directory
-            for entry in os.listdir(directory_path):
+            # List the entries of the directory, up to dataset_scan_max_entries
+            # (a directory of a million entries is one request's work)
+            scan_limit = int(app.config.get("dataset_scan_max_entries") or DEFAULT_SCAN_ENTRIES)
+            truncated = False
+            with os.scandir(directory_path) as scan:
+                names = []
+                for found in scan:
+                    if len(names) >= scan_limit:
+                        truncated = True
+                        break
+                    names.append(found.name)
+            for entry in sorted(names):
                 entry_path = os.path.join(directory_path, entry)
                 
                 # Skip if not a directory
@@ -1988,14 +1999,18 @@ def register_data_routes(app, api_version):
                 
                 if is_zarr:
                     # Try to get some basic info about the zarr store
-                    try:
-                        # Use the fast method to get only cell and gene counts
-                        counts = zarr_reader.get_basic_counts(entry_path)
-                        cells = counts['cell_count']
-                        genes = counts['gene_count']
-                    except Exception:
+                    # Opened again only when its stat signature changed (the
+                    # /datasets listing's cache): a directory of many stores
+                    # was opened store by store on every call
+                    def _counts(path):
+                        found = zarr_reader.get_basic_counts(path)
+                        return found['cell_count'], found['gene_count']
+
+                    probed = _probe_dataset_counts(entry_path, _counts)
+                    if probed is None or isinstance(probed, Exception):
                         # Not a valid AnnData zarr store - skip and move to regular directories
                         continue
+                    cells, genes = probed
                     
                     zarr_stores.append({
                         "name": entry,
@@ -2016,11 +2031,16 @@ def register_data_routes(app, api_version):
             zarr_stores.sort(key=lambda x: x["name"])
             directories.sort(key=lambda x: x["name"])
             
-            return jsonify({
+            reply = {
                 "directories": directories,
                 "zarr_stores": zarr_stores,
                 "path": directory_path
-            })
+            }
+            if truncated:
+                reply.update({"truncated": True, "reason": "scan_limit",
+                              "note": f"The directory has more than {scan_limit:,} entries "
+                                      "(server.dataset_scan_max_entries); only the first are listed."})
+            return jsonify(reply)
         except Exception as e:
             logger.error(f"Error listing directory {directory_path}: {e}")
             return jsonify({"error": f"Failed to list directory: {str(e)}"}), 500

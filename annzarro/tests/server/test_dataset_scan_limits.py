@@ -19,7 +19,7 @@ FIXTURE = os.path.join(
 
 def _layout(tmp_path, chunks=2000, stores=2, plain_dirs=0):
     root = tmp_path / "data"
-    root.mkdir()
+    root.mkdir(parents=True)
     for i in range(stores):
         store = root / f"s{i}.zarr"
         shutil.copytree(FIXTURE, store)
@@ -93,3 +93,21 @@ def test_status_reuses_its_count(tmp_path):
     assert client.get("/api/v1/status").get_json()["data"]["zarr_file_count"] == 1
     shutil.copytree(FIXTURE, root / "late.zarr")
     assert client.get("/api/v1/status").get_json()["data"]["zarr_file_count"] == 1
+
+
+def test_a_directory_listing_stops_at_the_limit_and_opens_each_store_once(tmp_path):
+    from annzarro.core import zarr_reader
+    root = _layout(tmp_path, chunks=0, stores=2, plain_dirs=40)
+    client = _app(root, dataset_scan_max_entries=10).test_client()
+    reply = client.get("/api/v1/directories/list", query_string={"path": str(root)}).get_json()
+    assert reply["truncated"] is True and reply["reason"] == "scan_limit"
+    assert len(reply["directories"]) + len(reply["zarr_stores"]) <= 10
+
+    root = _layout(tmp_path / "second", chunks=0, stores=2)
+    client = _app(root).test_client()
+    real = zarr_reader.get_basic_counts
+    with patch.object(zarr_reader, "get_basic_counts", side_effect=real) as opened:
+        first = client.get("/api/v1/directories/list", query_string={"path": str(root)}).get_json()
+        again = client.get("/api/v1/directories/list", query_string={"path": str(root)}).get_json()
+    assert "truncated" not in first and first == again and len(first["zarr_stores"]) == 2
+    assert opened.call_count == 2, "each store is opened once, not once per listing"
