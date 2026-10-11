@@ -131,6 +131,7 @@ def test_refresh_button_stays_beside_the_box_with_long_names(server, width, badg
             if badge:
                 page.evaluate("""() => { const a = document.getElementById('auth-indicator');
                     a.textContent = 'Signed in: a.long.username@example.org'; a.hidden = false; }""")
+                page.wait_for_timeout(500)   # the header refits on the next frame
             box = page.locator(box_sel).bounding_box()
             btn = page.locator("#refresh-dataset").bounding_box()
             assert abs(btn["y"] - box["y"]) < 6, f"Refresh wrapped: box {box}, button {btn}"
@@ -187,8 +188,13 @@ def test_long_names_are_shown_whole_in_the_box_and_the_list(server, width, badge
                     a.textContent = 'Signed in: a.long.username@example.org'; a.hidden = false; }""")
             page.select_option("#dataset-selector", label="short.zarr")
             page.wait_for_timeout(800)
-            assert page.locator("#app-header").bounding_box()["height"] < 100, "a short name keeps the header's height"
-            assert "dataset-stacked" not in page.get_attribute("#app-header", "class")
+            stacked = "dataset-stacked" in page.get_attribute("#app-header", "class")
+            if badge and width == 1024:
+                # the badge leaves no room for the focus pickers to show a whole gene and cell name
+                assert stacked and page.locator("#app-header").bounding_box()["height"] < 200
+            else:
+                assert page.locator("#app-header").bounding_box()["height"] < 100, "a short name keeps the header's height"
+                assert not stacked
             for name in long_names:
                 page.select_option("#dataset-selector", label=name)
                 page.wait_for_timeout(800)
@@ -237,5 +243,45 @@ def test_long_names_are_shown_whole_in_the_box_and_the_list(server, width, badge
                 page.select_option("#dataset-selector", label="short.zarr")
                 page.wait_for_timeout(800)
                 page.screenshot(path=os.path.join(shots, f"closed-short-{width}-{'badge' if badge else 'plain'}.png"))
+        finally:
+            browser.close()
+
+
+ENSG = "ENSG00000141510"           # 15 characters: the Ensembl ID of TP53
+BARCODE = "AAACCTGAGAAACCAT-1"     # a 10x cell barcode
+
+
+@pytest.mark.parametrize("width", [1024, 1280, 1920])
+@pytest.mark.parametrize("badge", [False, True])
+@pytest.mark.parametrize("which", ["short.zarr", "long"])
+def test_focus_inputs_show_a_whole_gene_and_cell_name(server, width, badge, which):
+    """The header gives the focused gene and cell inputs room for an Ensembl ID and a
+    barcode (stacking rather than squeezing them), whatever the dataset name."""
+    base, _ = server
+    with sync_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch()
+        except Exception as exc:  # no browser binary
+            _skip_or_fail(f"Chromium cannot start: {exc}")
+        try:
+            page = browser.new_page(viewport={"width": width, "height": 1000})
+            page.goto(base + "/")
+            page.wait_for_selector("#dataset-selector + .select2-container", timeout=60_000)
+            page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 5")
+            page.select_option("#dataset-selector", label=NAMES[1] if which == "long" else which)
+            if badge:
+                page.evaluate("""() => { const a = document.getElementById('auth-indicator');
+                    a.textContent = 'Signed in: a.long.username@example.org'; a.hidden = false; }""")
+            page.evaluate("""([g, c]) => { document.getElementById('focused-gene').value = g;
+                document.getElementById('focused-cell').value = c; }""", [ENSG, BARCODE])
+            page.wait_for_timeout(800)
+            for sel, value, least in (("#focused-gene", ENSG, 168), ("#focused-cell", BARCODE, 190)):
+                size = page.eval_on_selector(sel, "e => ({w: e.getBoundingClientRect().width, sw: e.scrollWidth, cw: e.clientWidth})")
+                assert size["w"] >= least, f"{sel} is {size['w']:.0f}px wide"
+                assert size["sw"] <= size["cw"], f"{sel} cuts {value}: {size}"
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "page scrolls sideways"
+            btn = page.locator("#refresh-dataset").bounding_box()
+            box = page.locator("#dataset-selector + .select2-container").bounding_box()
+            assert btn["x"] >= box["x"] + box["width"] - 1 and abs(btn["y"] - box["y"]) < 6
         finally:
             browser.close()

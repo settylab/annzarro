@@ -2407,19 +2407,37 @@ button.dtsb-button.dtsb-clear:hover {
     height: 36px;
 }
 @media (min-width: 768.02px) {
+    .global-controls > .row {
+        --bs-gutter-x: 0.5rem; /* room for the focus pickers' whole values */
+    }
     .global-controls > .row > .dataset-col {
         flex: 1 10 auto; /* gives up width first: the focus pickers keep theirs while it can */
         width: auto;
-        min-width: 190px; /* a 120px box and Refresh, even when the row is tight */
+        min-width: 170px; /* a 120px box and Refresh, even when the row is tight */
     }
     .global-controls > .row > .focus-col {
-        flex: 0 1 auto; /* their inputs scroll their text when the row is tight */
+        flex: 0 1 auto;
         width: auto;
+    }
+    /* A focused gene or cell is never cut to fit: the column keeps room for the
+       history buttons and an input that shows a 15-character Ensembl ID
+       (ENSG00000141510) or a cell barcode whole. A row too tight for that takes
+       the stacked layout (utils/header-fit.js). */
+    .global-controls > .row > .focus-col:has(#focused-gene) {
+        min-width: 244px;
+    }
+    .global-controls > .row > .focus-col:has(#focused-cell) {
+        min-width: 268px;
+    }
+    .global-controls #focused-gene {
+        min-width: 172px;
+    }
+    .global-controls #focused-cell {
+        min-width: 196px;
     }
     .app-header.dataset-stacked .global-controls > .row {
         flex-wrap: wrap;
         row-gap: 0.25rem;
-        --bs-gutter-x: 0.75rem; /* the focus pickers and buttons then fit on the second row */
     }
     .app-header.dataset-stacked .global-controls > .row > .dataset-col {
         flex: 0 0 100%;

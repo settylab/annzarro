@@ -9,8 +9,10 @@
  *
  * The decision is made from the rendered name each time: the class is taken
  * off, the lines the name occupies are counted, and it is put back only when
- * they are over MAX_LINES. The outcome depends on nothing but the window and
- * the name, so it cannot flip back and forth.
+ * they are over MAX_LINES, or when the one row is wider than the window (the
+ * focus pickers keep a minimum width that shows a gene or cell name whole, so a
+ * cramped row overflows rather than cutting them). The outcome depends on
+ * nothing but the window and the name, so it cannot flip back and forth.
  */
 export const MAX_LINES = 2;
 export const STACKED_CLASS = 'dataset-stacked';
@@ -24,10 +26,16 @@ export function nameLines(header) {
     return new Set(rects.map(r => Math.round(r.top))).size;
 }
 
+/** Whether the header's one row of controls is wider than the room it has. */
+export function rowOverflows(header) {
+    const row = header.querySelector('.global-controls > .row');
+    return !!row && row.scrollWidth > row.clientWidth + 1;
+}
+
 export function fitDatasetHeader(header) {
     if (!header) return;
     header.classList.remove(STACKED_CLASS);
-    if (nameLines(header) > MAX_LINES) header.classList.add(STACKED_CLASS);
+    if (nameLines(header) > MAX_LINES || rowOverflows(header)) header.classList.add(STACKED_CLASS);
 }
 
 /** Refit on resize, and when the box or the header's size or text changes. */
