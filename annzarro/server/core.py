@@ -69,6 +69,10 @@ DEFAULT_CONFIG = {
     "max_sessions_per_user": 500,         # panel sets one user may keep (login off: all sets are one user's); 0 = no limit
     "max_sessions": 5000,                 # panel sets on the whole server; 0 = no limit
     "max_sessions_mb": 256,               # MB all panel sets may take together; 0 = no limit
+    "admin_data_roots": [],               # directories under which admins may add data directories in the browser (empty = adding is off)
+    "admin_reauth_minutes": 30,           # minutes an admin's password entry lets them change things; 0 = never asked
+    "admin_rate_per_minute": 30,          # admin changes per minute per admin and worker (reads get 8x)
+    "admin_audit_max_mb": 50,             # MB at which the admin audit log rotates (5 files kept); 0 = never
     "dataset_scan_max_entries": 200000,   # directory entries a dataset listing or /status count reads before it stops
     "max_read_mb": None,            # MB one read of an obsp/varp matrix may hold in memory, sized from metadata; None = 5% of RAM (256 MB..4 GB)
     "read_budget_mb": None,         # MB all pairwise reads in flight in one worker may hold; None = 2 x max_read_mb
@@ -616,6 +620,11 @@ def register_routes(app: Flask) -> None:
     register_data_routes(app, api_version)
     register_zarr_routes(app, api_version)
     register_static_routes(app, api_version)
+
+    # /admin and /api/v1/admin/*: before the auth wrapper loop below, so they
+    # get it too; every one of them also guards itself (admin/guard.py)
+    from annzarro.server.admin import register_admin_routes
+    register_admin_routes(app)
     
     # Register authentication routes if auth is enabled
     if app.config.get("auth_enabled", False):
@@ -670,6 +679,8 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
             session["user_id"] = username
             session["is_admin"] = app.auth_manager.get_user(username).is_admin
             session["last_activity"] = session["login_at"] = time.time()
+            from annzarro.server.admin.guard import start_admin_session
+            start_admin_session()
             
             # Back to the page that asked for login, view included
             return redirect(next_url + fragment)
