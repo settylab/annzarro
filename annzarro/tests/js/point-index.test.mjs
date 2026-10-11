@@ -10,7 +10,7 @@ import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const js = p => pathToFileURL(path.resolve(__dirname, "../../../static/js", p)).href;
-const { buildPointIndex, buildPointIndexSliced, nearestPoint, pointOfRow, POINTS_PER_CELL } = await import(js("utils/point-index.js"));
+const { buildPointIndex, buildPointIndexSliced, nearestPoint, pointOfRow, isSkipped, POINTS_PER_CELL } = await import(js("utils/point-index.js"));
 
 function lcg(seed) { let s = seed >>> 0; return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296); }
 
@@ -124,4 +124,71 @@ test("the sliced build gives the same index, in slices, and stops when cancelled
   const p = buildPointIndexSliced(X, Y, rows, job, 1);
   job.cancelled = true;
   assert.equal(await p, null);
+});
+
+// Ring search: the same answer as a brute-force scan, tie-break included (the smaller point number).
+function bruteFirst(X, Y, cx, cy, rx, ry) {
+  let best = -1, bestD = 1;
+  for (let p = 0; p < X.length; p++) {
+    const dx = (X[p] - cx) / rx, dy = (Y[p] - cy) / ry, d = dx * dx + dy * dy;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+
+test("ring search equals brute force exactly: random, clustered, lattice (cell edges, ties), thin and wide ellipses", () => {
+  const layouts = {
+    random: cloud(6000, 11), clustered: cloud(6000, 12, { clusters: 5 }), duplicates: cloud(6000, 13, { duplicates: 800 }),
+    lattice: (() => {   // integer lattice: many points exactly on cell edges and many equal distances
+      const X = new Float32Array(2500), Y = new Float32Array(2500);
+      for (let i = 0; i < 2500; i++) { X[i] = i % 50; Y[i] = Math.floor(i / 50); }
+      return { X, Y, rows: Uint32Array.from(X, (_, i) => i) };
+    })(),
+    band: (() => {      // an empty band across the middle
+      const r = lcg(5), X = new Float32Array(4000), Y = new Float32Array(4000);
+      for (let i = 0; i < 4000; i++) { X[i] = r() * 100; Y[i] = (r() < 0.5 ? r() * 10 : 90 + r() * 10); }
+      return { X, Y, rows: Uint32Array.from(X, (_, i) => i) };
+    })(),
+    single: { X: Float32Array.of(3), Y: Float32Array.of(4), rows: Uint32Array.of(0) },
+  };
+  for (const [name, { X, Y, rows }] of Object.entries(layouts)) {
+    const idx = buildPointIndex(X, Y, rows), r = lcg(77);
+    let found = 0;
+    for (let q = 0; q < 3000; q++) {
+      let cx, cy;
+      if (name === "lattice" && q % 2) { cx = Math.round(r() * 50) + (r() < 0.5 ? 0 : 0.5); cy = Math.round(r() * 50) + (r() < 0.5 ? 0 : 0.5); }
+      else if (q % 3 === 0) { const p = Math.floor(r() * X.length); cx = X[p]; cy = Y[p]; }       // on a point
+      else { cx = (r() * 1.4 - 0.2) * (name === "lattice" ? 50 : 100); cy = (r() * 1.4 - 0.2) * (name === "lattice" ? 50 : name === "band" ? 100 : 40); }
+      const shape = q % 4;
+      const rx = shape === 0 ? 0.3 + r() * 6 : shape === 1 ? 0.05 + r() * 0.2 : shape === 2 ? 20 : 0.5 + r() * 3;
+      const ry = shape === 0 ? 0.3 + r() * 6 : shape === 1 ? 5 + r() * 10 : shape === 2 ? 0.1 : 0.5 + r() * 3;
+      const want = bruteFirst(X, Y, cx, cy, rx, ry), got = nearestPoint(idx, cx, cy, rx, ry);
+      if (want >= 0) found++;
+      assert.equal(got, want, `${name} query ${q} (${cx}, ${cy}, ${rx}, ${ry})`);
+    }
+    assert.ok(name === "single" || found > 300, `${name}: only ${found} queries found a point`);
+  }
+});
+
+test("skipped point ranges (categories hidden with the legend) never answer a lookup; the nearest visible point does", () => {
+  const { X, Y, rows } = cloud(6000, 21, { clusters: 4 }), idx = buildPointIndex(X, Y, rows), r = lcg(5);
+  // a few disjoint ranges, including one at the very start and one at the very end
+  const skip = Uint32Array.of(0, 300, 1000, 1001, 2500, 3900, 5990, 6000);
+  const hidden = (p) => skip.some((v, i) => i % 2 === 0 && p >= v && p < skip[i + 1]);
+  for (const p of [0, 299, 300, 999, 1000, 1001, 2499, 2500, 3899, 3900, 5989, 5990, 5999]) assert.equal(isSkipped(skip, p), hidden(p), `p ${p}`);
+  let moved = 0;
+  for (let q = 0; q < 2000; q++) {
+    const p = Math.floor(r() * 6000), cx = X[p], cy = Y[p], rx = 0.2 + r() * 3, ry = 0.2 + r() * 3;
+    let want = -1, bestD = 1;
+    for (let k = 0; k < 6000; k++) {
+      if (hidden(k)) continue;
+      const dx = (X[k] - cx) / rx, dy = (Y[k] - cy) / ry, d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; want = k; }
+    }
+    const got = nearestPoint(idx, cx, cy, rx, ry, skip);
+    assert.equal(got, want, `query ${q}`);
+    if (hidden(p) && got !== -1) moved++;
+  }
+  assert.ok(moved > 20, `only ${moved} queries moved off a hidden point to a visible one`);
+  assert.equal(nearestPoint(idx, X[10], Y[10], 1e-3, 1e-3, Uint32Array.of(0, 6000)), -1);   // everything hidden
 });

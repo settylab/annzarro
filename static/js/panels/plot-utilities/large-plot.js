@@ -46,7 +46,7 @@ import { releasePlot } from '../../utils/release-plot.js';
 import { classifyError, classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { buildPointIndexSliced } from '../../utils/point-index.js';
-import { attachLargeInteraction, highlightLargeFocus } from './large-interact.js';
+import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount } from '../../utils/categories.js';
@@ -350,6 +350,7 @@ function watchGpu(plotContainer, n) {
     const eligible = state.n + (Number(DataManager.getCellsNotInSubset()) || 0);
     const message = probeMessage(state.n, niceFloor(state.n / 2), eligible);
     plotContainer.__isLarge = false;
+    cancelIndexBuild(plotContainer);
     drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, message,
       { source: 'WebGL', unit: 'cells', total: state.n }), 'cells',
       { actions: [['subset', 'Subset…'], ['redraw', 'Redraw']] });
@@ -381,7 +382,7 @@ const JOIN_GRACE_MS = 300;
  */
 export function cancelIndexBuild(plotContainer) {
   if (plotContainer.__indexBuild) plotContainer.__indexBuild.cancelled = true;
-  if (plotContainer.__largeState) plotContainer.__largeState.index = null;
+  detachLargeInteraction(plotContainer);
 }
 
 /**
@@ -695,6 +696,11 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   if (signal.aborted) job.cancelled = true;
   else signal.addEventListener('abort', () => { job.cancelled = true; }, { once: true });
   const st = attachLargeInteraction(plotContainer, settings, null);
+  // which points each point trace draws, so hover and click can leave out a category hidden with the legend
+  const base = pts.X.byteOffset / 4;
+  st.chunks = traces.flatMap((t, trace) => (t.meta === LEGEND_POINTS
+    ? [{ trace, from: t.x.byteOffset / 4 - base, to: t.x.byteOffset / 4 - base + t.x.length }] : []))
+    .sort((a, b) => a.from - b.from);
   const large = { n, traces: traces.length, filtered,
     load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2, index_ms: null };
   data.large = large;

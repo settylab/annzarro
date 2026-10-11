@@ -169,9 +169,9 @@ test("unsupported settings above the threshold are refused with the ways out, no
 
 test("a closing panel stops an unfinished point-index build and drops the index", () => {
   const job = { cancelled: false };
-  const gd = { __indexBuild: job, __largeState: { index: { bytes: 1 } } };
+  const gd = { __indexBuild: job, __largeState: { index: { bytes: 1 }, seq: 0 } };
   cancelIndexBuild(gd);
   assert.equal(job.cancelled, true);
-  assert.equal(gd.__largeState.index, null);
+  assert.equal(gd.__largeState, null);   // the interaction goes with it: nothing holds the index
   cancelIndexBuild({});   // a panel that never drew a large plot
 });
