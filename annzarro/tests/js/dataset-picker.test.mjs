@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 const {
     compileQuery, searchEntries, sortEntries, loadRecents, pushRecent, buildGroups, pageGroups,
-    splitByRanges, countsLabel, modifiedLabel, RECENT_LIMIT, folderOf, displayPath, searchParts
+    splitByRanges, countsLabel, modifiedLabel, RECENT_LIMIT, folderOf, displayPath, searchParts, pathFieldWording
 } = await import('../../../static/js/utils/dataset-picker.js');
 
 const E = (name, extra = {}) => ({ path: `/data/${name}`, name, rel_path: name, cells: 10, genes: 5, match: 'other', ...extra });
@@ -133,4 +133,19 @@ test('a regex is anchored to the name or to the path, not to both joined', () =>
     assert.equal(searchEntries(list, '^deep\\.zarr$', { regex: true }).entries.length, 1);
     assert.equal(searchEntries(list, '^projects/', { regex: true }).entries.length, 1);
     assert.deepEqual(searchParts(list[0]), { name: 'deep.zarr', rel: 'projects/deep.zarr' });
+});
+
+test('the typed-path field says what this user can open', () => {
+    const confined = { may_open_any_path: false, auth_enabled: true, is_admin: false };
+    assert.deepEqual(pathFieldWording({ ...confined, remote_stores: true }), {
+        label: 'Open a path in the data directory, or a remote store URL',
+        placeholder: 'projects/liver/sample.zarr or https://\u2026' });
+    assert.equal(pathFieldWording({ ...confined, remote_stores: false }).label, 'Open a path in the data directory');
+    const admin = { may_open_any_path: true, auth_enabled: true, is_admin: true };
+    assert.equal(pathFieldWording({ ...admin, remote_stores: true }).label, 'Open any path on this server, or a remote store URL (admin)');
+    assert.equal(pathFieldWording({ ...admin, remote_stores: false }).label, 'Open any path on this server (admin)');
+    const local = { may_open_any_path: true, auth_enabled: false, is_admin: false };
+    assert.equal(pathFieldWording({ ...local, remote_stores: true }).label, 'Open any path, or a remote store URL');
+    assert.equal(pathFieldWording({ ...local, remote_stores: false }).label, 'Open any path');
+    assert.equal(pathFieldWording(null).label, 'Open a path in the data directory', 'unknown: the safe wording');
 });

@@ -98,18 +98,64 @@ def big_server(tmp_path_factory):
     proc.wait(20)
 
 
+@pytest.fixture(scope="module")
+def hosted_server(tmp_path_factory):
+    """A server with login on (remote stores allowed): alice, an ordinary user, and root, an admin."""
+    if sync_api is None:
+        _skip_or_fail("Playwright is not installed")
+    tmp = tmp_path_factory.mktemp("picker_hosted")
+    data = tmp / "data"
+    for rel in ("short.zarr", "other_small.zarr", "projects/liver/deep_store.zarr"):
+        (data / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(FIXTURE, data / rel)
+    shutil.copytree(FIXTURE, tmp / "outside_store.zarr")
+    port = _free_port()
+    (tmp / "site.yaml").write_text(f'server:\n  host: 127.0.0.1\n  port: {port}\n  data_dir: "{data}"\n'
+                                   f'auth:\n  enabled: true\n  user_file: "{tmp / "users.json"}"\n')
+    env = dict(os.environ, ANNZARRO_CONFIG=str(tmp / "site.yaml"), ANNZARRO_HOME=str(tmp / "home"),
+               ANNZARRO_REMOTE_STORES="allow")
+    for args in (["add", "--username", "alice", "--password", "alice-pw"],
+                 ["add", "--username", "root", "--password", "root-pw", "--admin"]):
+        subprocess.run([sys.executable, "-m", "annzarro.cli", "user", *args], env=env, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1", "--port", str(port),
+                             "--data-dir", str(data), "--no-browser"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, cwd=tmp)
+    base = f"http://127.0.0.1:{port}"
+    for _ in range(300):
+        try:
+            urllib.request.urlopen(base + "/login", timeout=1)
+            break
+        except OSError:
+            time.sleep(0.1)
+    else:
+        proc.kill()
+        pytest.fail("server did not start")
+    yield base, str(data), str(tmp / "outside_store.zarr")
+    proc.terminate()
+    proc.wait(20)
+
+
 class Session:
-    def __init__(self, base, width=1280, height=900):
+    def __init__(self, base, width=1280, height=900, login=None):
         self.pw = sync_api.sync_playwright().start()
         try:
             self.browser = self.pw.chromium.launch()
         except Exception as exc:  # no browser binary
             self.pw.stop()
             _skip_or_fail(f"Chromium cannot start: {exc}")
-        self.page = self.browser.new_page(viewport={"width": width, "height": height})
-        self.page.goto(base + "/")
-        self.page.wait_for_selector(BOX, timeout=60_000)
-        self.page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 2")
+        try:
+            self.page = self.browser.new_page(viewport={"width": width, "height": height})
+            self.page.goto(base + "/")
+            if login:
+                self.page.fill("#username", login[0])
+                self.page.fill("#password", login[1])
+                self.page.click("button[type=submit]")
+            self.page.wait_for_selector(BOX, timeout=60_000)
+            self.page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 2")
+        except BaseException:
+            self.close()
+            raise
 
     def close(self):
         self.browser.close()
@@ -366,7 +412,7 @@ def test_a_subfolder_store_opened_in_the_picker_is_labelled_relative_in_the_drop
         rendered = BOX + " .select2-selection__rendered"
         relative = "projects/liver/deep_store.zarr"
         page.wait_for_function(f"document.querySelector({rendered!r}).textContent.trim() === {relative!r}", timeout=30_000)
-        assert page.get_attribute(rendered, "title") == os.path.join(data, relative)
+        assert page.get_attribute(rendered, "title") == relative, "the relative path is the tooltip"
         assert page.locator(BOX).bounding_box()["height"] <= 66, "at most two lines"
         s.open_dropdown()
         entries = page.eval_on_selector_all(".dataset-select-dropdown .select2-results__option", "els => els.map(e => e.textContent.trim())")
@@ -484,5 +530,87 @@ def test_picker_screenshots(server, width):
         page.wait_for_selector(f"{MODAL} .change-dataset-group[aria-label='In subfolders'] .change-dataset-item")
         page.wait_for_timeout(300)
         page.screenshot(path=os.path.join(SHOTS, f"picker-search-{width}.png"))
+    finally:
+        s.close()
+
+
+# --- the typed-path field says what this user can open --------------------------------------
+
+LABEL = "#change-dataset-path-label"
+
+
+def _label_after_load(page):
+    page.wait_for_function("document.getElementById('change-dataset-path-label').textContent !== 'Or open a path on this server'", timeout=10_000)
+    return page.inner_text(LABEL).strip(), page.get_attribute("#change-dataset-path", "placeholder")
+
+
+def test_local_server_says_any_path(server):
+    s = Session(server[0])
+    try:
+        s.browse()
+        label, placeholder = _label_after_load(s.page)
+        assert label == "Open any path, or a remote store URL" and "full path" in placeholder
+    finally:
+        s.close()
+
+
+def test_a_confined_user_is_told_the_data_directory_and_may_use_a_relative_path(hosted_server):
+    base, data, outside = hosted_server
+    s = Session(base, login=("alice", "alice-pw"))
+    try:
+        s.browse()
+        label, placeholder = _label_after_load(s.page)
+        assert label == "Open a path in the data directory, or a remote store URL"
+        assert placeholder == "projects/liver/sample.zarr or https://\u2026"
+        # a path outside is refused with the server's own message
+        s.page.fill("#change-dataset-path", outside)
+        s.page.press("#change-dataset-path", "Enter")
+        s.page.wait_for_selector("#change-dataset-error:not([hidden])", timeout=20_000)
+        assert "outside the data directory" in s.page.inner_text("#change-dataset-error")
+        # a relative path into a subfolder opens
+        s.page.fill("#change-dataset-path", "projects/liver/deep_store.zarr")
+        s.page.press("#change-dataset-path", "Enter")
+        s.page.wait_for_selector(MODAL, state="hidden", timeout=10_000)
+        s.page.wait_for_function("document.getElementById('dataset-selector').value.endsWith('deep_store.zarr')", timeout=30_000)
+    finally:
+        s.close()
+
+
+def test_an_admin_of_a_shared_server_is_told_any_path(hosted_server):
+    s = Session(hosted_server[0], login=("root", "root-pw"))
+    try:
+        s.browse()
+        label, _ = _label_after_load(s.page)
+        assert label == "Open any path on this server, or a remote store URL (admin)"
+    finally:
+        s.close()
+
+
+def _type_custom_path(session, path):
+    """Type a path into the open dropdown and take the custom entry Select2 offers for it."""
+    page = session.page
+    session.open_dropdown()
+    page.click(".select2-search__field")
+    page.keyboard.type(path, delay=2)    # as typed: Select2 queries on key events
+    page.wait_for_function("""p => [...document.querySelectorAll('.select2-results__option')].some(e => e.textContent.includes(p))""", arg=path, timeout=10_000)
+    page.keyboard.press("Enter")
+
+
+def test_the_dropdown_takes_a_relative_path_from_a_confined_user_and_refuses_the_rest_clearly(hosted_server):
+    base, data, outside = hosted_server
+    s = Session(base, login=("alice", "alice-pw"))
+    try:
+        page = s.page
+        rendered = BOX + " .select2-selection__rendered"
+        page.wait_for_function(f"document.querySelector({rendered!r}).textContent.trim().endsWith('.zarr')", timeout=30_000)
+        before = page.eval_on_selector(rendered, "e => e.textContent.trim()")
+        _type_custom_path(s, outside)
+        page.wait_for_function("document.body.innerText.includes('outside the data directory')", timeout=20_000)
+        # the refused path does not stay in the box as if it were open
+        page.wait_for_function(f"document.querySelector({rendered!r}).textContent.trim() === {before!r}", timeout=10_000)
+        assert page.eval_on_selector_all("#dataset-selector option", "els => els.every(e => !e.value.endsWith('outside_store.zarr'))")
+        _type_custom_path(s, "projects/liver/deep_store.zarr")
+        page.wait_for_function("document.getElementById('dataset-selector').value.endsWith('deep_store.zarr')", timeout=30_000)
+        page.wait_for_function(f"document.querySelector({rendered!r}).textContent.trim() === 'projects/liver/deep_store.zarr'", timeout=10_000)
     finally:
         s.close()

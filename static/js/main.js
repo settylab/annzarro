@@ -31,7 +31,7 @@ import {
     savedStoreOf, storeName, hasDataTier
 } from './utils/view-store.js';
 import { probeStore, prewarmStore, appVersion, knownStore } from './utils/store-identity.js';
-import { loadRecents, pushRecent, displayPath } from './utils/dataset-picker.js';
+import { loadRecents, pushRecent, displayPath, pathFieldWording } from './utils/dataset-picker.js';
 import { mountDatasetPicker } from './utils/dataset-picker-ui.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
@@ -895,6 +895,12 @@ const App = (function() {
         };
         const openPath = document.getElementById('change-dataset-open-path');
         const input = document.getElementById('change-dataset-path');
+        // the field says what this user can open (the server's refusal stays the safety net)
+        fetch(Config.API.AUTH_ME).then(r => (r.ok ? r.json() : null)).catch(() => null).then(me => {
+            const words = pathFieldWording(me);
+            document.getElementById('change-dataset-path-label').textContent = words.label;
+            input.placeholder = words.placeholder;
+        });
         openPath.onclick = async () => {
             const path = input.value.trim();
             if (!path) return;
@@ -1950,6 +1956,8 @@ const App = (function() {
         const sel = document.getElementById('dataset-selector');
         if (!sel || typeof MutationObserver === 'undefined') return;
         new MutationObserver(() => _labelUnlistedOptions(sel)).observe(sel, { childList: true });
+        // a typed path becomes a chosen option without any option being added
+        if (window.$) $(sel).on('change.dsLabel', () => _labelUnlistedOptions(sel));
     }
 
     /**
@@ -2120,6 +2128,22 @@ const App = (function() {
         if (window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) $(sel).trigger('change.select2');
     }
 
+    /**
+     * A dataset that failed to open (a typed path the server refused) must not stay
+     * in the box as if it were open: show the dataset that is, and drop the option
+     * made for the refused path.
+     * @private
+     */
+    function _revertDatasetPicker(failedPath) {
+        const sel = document.getElementById('dataset-selector');
+        const current = DataManager.getCurrentDataset();
+        if (!sel || !current || failedPath === current) return;
+        const listed = _listedDatasets.some(d => d.path === failedPath);
+        if (!listed) [...sel.options].filter(o => o.value === failedPath).forEach(o => o.remove());
+        _showDatasetInPicker(current);
+        if (window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) $(sel).trigger('change.select2');
+    }
+
     async function _loadDataset(datasetPath, silent = false) {
         // This call's controller and its end. A load that a newer one aborted
         // must not reset the flag and the controller of the newer one (the
@@ -2239,6 +2263,7 @@ const App = (function() {
 
                 // Revert _lastLoadedDatasetPath so the same dataset can be retried
                 _lastLoadedDatasetPath = DataManager.getCurrentDataset() || null;
+                _revertDatasetPicker(datasetPath);
 
                 // Strip a leading exception class name ("ValueError: ...") so the
                 // notification reads as a message rather than a traceback fragment.

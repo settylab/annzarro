@@ -213,3 +213,19 @@ def test_search_hosted_needs_login(layout):
     alice = app.test_client()
     alice.post("/login", data={"username": "alice", "password": "pw"})
     assert [e["name"] for e in _search(alice, "deep").get_json()["results"]] == ["deep.zarr"]
+
+
+# --- what the picker's typed-path field may promise ---------------------------------------
+
+def test_auth_me_reports_whether_remote_stores_work_here(layout, monkeypatch):
+    for name in ("ANNZARRO_REMOTE_STORES", "ANNZARRO_REMOTE_ALLOWLIST"):
+        monkeypatch.delenv(name, raising=False)
+
+    def me(**config):
+        return _app(layout, **config).test_client().get("/api/v1/auth/me").get_json()
+
+    assert me()["remote_stores"] is True, "a local single-user server opens remote stores"
+    shared = me(host="0.0.0.0")
+    assert shared["remote_stores"] is False and shared["may_open_any_path"] is False
+    assert me(host="0.0.0.0", remote_allowlist=["https://example.org/stores/"])["remote_stores"] is True
+    assert me(remote_stores="deny")["remote_stores"] is False

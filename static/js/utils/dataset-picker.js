@@ -195,3 +195,26 @@ export function splitByRanges(text, ranges) {
     if (at < text.length) parts.push({ text: text.slice(at), hit: false });
     return parts;
 }
+
+/**
+ * What the typed-path field of the picker says, by what this user can open:
+ * a user confined to the data directory, an admin of a shared server, or
+ * anyone on a local server; a remote store URL only where remote stores work
+ * (`me.remote_stores`, from auth/me). The server's refusal stays the safety net.
+ * @param {{auth_enabled?: boolean, is_admin?: boolean, may_open_any_path?: boolean, remote_stores?: boolean}|null} me
+ */
+export function pathFieldWording(me) {
+    const m = me || {};
+    const url = !!m.remote_stores;
+    if (!m.may_open_any_path) {
+        return {
+            label: url ? 'Open a path in the data directory, or a remote store URL' : 'Open a path in the data directory',
+            placeholder: url ? 'projects/liver/sample.zarr or https://\u2026' : 'projects/liver/sample.zarr'
+        };
+    }
+    const admin = !!(m.auth_enabled && m.is_admin);
+    return {
+        label: (admin ? 'Open any path on this server' : 'Open any path') + (url ? ', or a remote store URL' : '') + (admin ? ' (admin)' : ''),
+        placeholder: url ? 'name in the data directory, a full path, or https://\u2026' : 'name in the data directory, or a full path'
+    };
+}
