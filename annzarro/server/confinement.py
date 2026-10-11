@@ -179,6 +179,8 @@ def resolve_relative_dataset_paths():
             if args is None:
                 args = request.args.copy()
             args[name] = candidate
+            from . import access
+            access.remember_spelling(candidate, value)
     if args is not None:
         from werkzeug.datastructures import ImmutableMultiDict
         request.args = ImmutableMultiDict(args)
@@ -202,6 +204,13 @@ def enforce():
             return login_required_response()
     roots = allowed_roots(config)
     outside = [path for path in paths if not is_inside(path, roots)]
+    if outside:
+        # A restricted user is told nothing about where the roots are: the
+        # same 404 as a store they may not read (access.py)
+        from . import access
+        if access.is_restricted_requester():
+            logger.warning(f"Refused path outside the data directory: {outside[0]!r} ({request.path})")
+            return access.refusal(outside[0])
     if outside and may_open_any_path(config):
         if is_hosted(config):
             from . import permissions

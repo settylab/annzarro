@@ -35,14 +35,24 @@ Invariant: a cache whose value spans datasets (any listing) is filtered per
 requester AFTER the lookup, never answered unfiltered. Per-dataset caches,
 ETags and 304s are reached only after this hook.
 
+A denied folder answers as a missing one does on each listing route:
+``directories/list`` and ``datasets/folder`` 404, while the legacy
+``core/datasets?dir=`` answers 200 with an empty list, exactly as it does for
+a directory that is not there.
+
+The reply echoes the path the way the client spelled it (``spelled``), never
+the resolved absolute path, so the server's layout is not disclosed.
+
 Until the grants exist, :func:`is_restricted` is false for everyone and
 :func:`may_read` allows everything, so the gate changes no reply.
 """
 
 import logging
 import os
+import threading
+import time
 
-from flask import current_app, jsonify, request
+from flask import current_app, g, jsonify, request
 
 from ..core.remote import is_remote_path
 from . import confinement, permissions
@@ -119,6 +129,31 @@ def missing_store(path):
     return bool(path) and not is_remote_path(path) and not os.path.exists(path)
 
 
+def remember_spelling(resolved, original):
+    """Note how the client spelled a path the server resolved against ``data_dir``."""
+    if resolved != original:
+        if "requested_paths" not in g:
+            g.requested_paths = {}
+        g.requested_paths[resolved] = original
+
+
+def spelled(path):
+    """``path`` as the client wrote it (itself when it was not resolved)."""
+    return g.get("requested_paths", {}).get(path, path)
+
+
+def is_restricted_requester():
+    """Whether the current requester is a logged-in non-admin who is restricted."""
+    user, is_admin = permissions.current_user()
+    return bool(user) and not is_admin and is_restricted(user)
+
+
+def refusal(value):
+    """The reply for a path of the current request that the requester may not open."""
+    segment = (request.view_args or {}).get("dataset_path")
+    return not_found(value, segment=bool(segment) and value == segment, endpoint=request.endpoint)
+
+
 def not_found(path=None, segment=False, endpoint=None):
     """The reply a nonexistent store gets (404 ``not_found``).
 
@@ -128,8 +163,9 @@ def not_found(path=None, segment=False, endpoint=None):
     """
     if endpoint == "list_legacy_datasets":
         return jsonify({"datasets": []})
+    path = spelled(path) if path is not None else None
     if endpoint == "list_directory":
-        return jsonify({"error": f"Directory not found: {path}"}), 404
+        return jsonify({"error": f"Directory not found: {request.args.get('path')}"}), 404
     if endpoint == "list_dataset_folder":
         return jsonify({"error": "Folder not found", "reason": "not_found"}), 404
     if segment:
@@ -176,14 +212,40 @@ def enforce():
         return not_found()
     if kind not in ("dataset", "remote", "listing"):
         return None
-    user, is_admin = permissions.current_user()
-    if user is None or is_admin or not is_restricted(user):
+    if not is_restricted_requester():
         return None
+    user = permissions.current_user()[0]
     for value, segment in _named(endpoint):
         if not _readable(user, value):
-            logger.info(f"Refused {user!r} {request.path}: {value!r} is not in their grants")
+            _log_refusal(user, value)
             return not_found(value, segment=segment, endpoint=endpoint)
     return None
+
+
+#: At most this many refusals per requester per window reach the log; the rest are counted.
+LOG_BURST = 10
+LOG_WINDOW_S = 60
+_refusals = {}   # user: [window start, logged, suppressed]
+_refusals_lock = threading.Lock()
+
+
+def _log_refusal(user, value):
+    """Log a refusal at INFO, but not more than ``LOG_BURST`` a minute per user, then one summary."""
+    now = time.monotonic()
+    with _refusals_lock:
+        state = _refusals.get(user)
+        if state is None or now - state[0] >= LOG_WINDOW_S:
+            if state and state[2]:
+                logger.info(f"{state[2]} further refusals for {user!r} were not logged in the last minute")
+            state = _refusals[user] = [now, 0, 0]
+        if state[1] < LOG_BURST:
+            state[1] += 1
+            logger.info(f"Refused {user!r} {request.path}: {value!r} is not in their grants")
+            return
+        state[2] += 1
+        if state[2] == 1:
+            logger.info(f"More than {LOG_BURST} refusals a minute for {user!r}: the rest are counted, "
+                        f"and summarised when the minute ends")
 
 
 def mark_vary(response):

@@ -202,7 +202,7 @@ def _reader_error_response(exc, dataset_path):
     if isinstance(exc, FileNotFoundError):
         return jsonify({
             # A remote miss may also mean "needs credentials"; its text says so.
-            "error": str(exc) if is_remote_path(dataset_path) else f"Dataset not found: {dataset_path}",
+            "error": str(exc) if is_remote_path(dataset_path) else f"Dataset not found: {access.spelled(dataset_path)}",
             "reason": "not_found",
             "exception": type(exc).__name__,
         }), 404
@@ -1991,7 +1991,7 @@ def register_data_routes(app, api_version):
             
             # Check if the directory exists
             if not os.path.exists(directory_path) or not os.path.isdir(directory_path):
-                return jsonify({"error": f"Directory not found: {directory_path}"}), 404
+                return jsonify({"error": f"Directory not found: {request.args.get('path')}"}), 404
             
             # List directories and zarr stores separately
             directories = []
