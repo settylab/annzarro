@@ -74,8 +74,7 @@ def audit_log():
     directory = state_dir(current_app.config)
     out = {"records": audit.read(directory, before_seq=before, limit=limit)}
     if before is None:
-        ok, first_bad = audit.verify_cached(directory)
-        out["chain"] = {"ok": ok, "first_bad_seq": first_bad}
+        out["chain"] = audit.verify_cached(directory)
     return jsonify(out)
 
 

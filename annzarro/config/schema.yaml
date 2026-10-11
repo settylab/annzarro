@@ -215,6 +215,12 @@ server:
       minimum: 0
       description: MB all panel sets may take together; a save past it is a 409 session_quota_total; 0 = no limit
       default: 256
+    lock_timeout_s:
+      type: number
+      minimum: 0.1
+      description: Seconds a request waits for the lock on the users file or the admin state before it answers 503 busy
+      default: 10
+      security: internal
     admin_data_roots:
       type: array
       items:

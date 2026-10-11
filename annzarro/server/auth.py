@@ -170,13 +170,24 @@ class AuthManager:
         restart. One stat() per call.
         """
         if self._stamp() != self._file_stamp:
-            with self.file_lock:
+            with self._thread_lock():
                 self._load_users()
+
+    @contextmanager
+    def _thread_lock(self):
+        """``file_lock``, with the store's timeout: a thread stuck behind a
+        lock holder must not hold up every other request."""
+        if not self.file_lock.acquire(timeout=atomic_store.DEFAULT_LOCK_TIMEOUT):
+            raise atomic_store.LockTimeout("the users table is busy")
+        try:
+            yield
+        finally:
+            self.file_lock.release()
 
     @contextmanager
     def _locked_file(self):
         """Hold the thread lock and the cross-process lock of the users file."""
-        with self.file_lock:
+        with self._thread_lock():
             with atomic_store.locked(self.user_file):
                 yield
 
@@ -212,6 +223,8 @@ class AuthManager:
                     merged.pop(username, None)
                 self._write_users(merged)
             logging.debug(f"Saved {len(self.users)} users to {self.user_file}")
+        except atomic_store.LockTimeout:
+            raise           # the request is a 503 (core.py); pretending it was saved would lose the change
         except Exception as e:
             logging.error(f"Error saving users: {e}")
 

@@ -2,7 +2,10 @@
 import json
 import multiprocessing
 import os
+import subprocess
+import sys
 import threading
+import time
 
 import pytest
 
@@ -55,9 +58,9 @@ def test_write_is_atomic_and_private(tmp_path):
     atomic_store.write_json(path, {"a": 1})
     assert json.load(open(path)) == {"a": 1}
     assert os.stat(path).st_mode & 0o777 == 0o600
-    os.chmod(path, 0o640)
+    os.chmod(path, 0o666)
     atomic_store.write_json(path, {"a": 2})
-    assert os.stat(path).st_mode & 0o777 == 0o640, "an existing file keeps its mode"
+    assert os.stat(path).st_mode & 0o777 == 0o600, "a looser mode is tightened"
     assert [f for f in os.listdir(tmp_path) if f.endswith(".tmp")] == []
 
 
@@ -225,3 +228,107 @@ def test_two_admins_demoting_each_other_leave_one(tmp_path):
         _join(procs)
         assert results == ["last_admin", "ok"]
         assert len(AuthManager(user_file=path).admins()) == 1
+
+
+HOLDER = """
+import fcntl, sys, time
+fd = open(sys.argv[1] + '.lock', 'a')
+fcntl.flock(fd, fcntl.LOCK_EX)
+print('held', flush=True)
+time.sleep(float(sys.argv[2]))
+"""
+
+
+def _hold(path, seconds):
+    proc = subprocess.Popen([sys.executable, "-c", HOLDER, path, str(seconds)], stdout=subprocess.PIPE, text=True)
+    assert proc.stdout.readline().strip() == "held"
+    return proc
+
+
+def test_a_lock_held_by_another_process_times_out(tmp_path):
+    path = str(tmp_path / "x.json")
+    holder = _hold(path, 30)
+    try:
+        started = time.monotonic()
+        with pytest.raises(atomic_store.LockTimeout):
+            with atomic_store.locked(path, timeout=0.5):
+                pass
+        assert 0.4 < time.monotonic() - started < 3
+        with pytest.raises(atomic_store.LockTimeout):
+            atomic_store.update_json(path, lambda d: d.update(a=1), {})
+        assert not os.path.exists(path)
+    finally:
+        holder.kill()
+        holder.wait()
+    with atomic_store.locked(path, timeout=0.5):         # and it is free once the holder is gone
+        pass
+
+
+def test_a_lock_held_by_another_thread_times_out(tmp_path):
+    path = str(tmp_path / "x.json")
+    taken, release = threading.Event(), threading.Event()
+
+    def hold():
+        with atomic_store.locked(path):
+            taken.set()
+            release.wait(10)
+
+    t = threading.Thread(target=hold)
+    t.start()
+    taken.wait(5)
+    try:
+        with pytest.raises(atomic_store.LockTimeout):
+            with atomic_store.locked(path, timeout=0.3):
+                pass
+    finally:
+        release.set()
+        t.join()
+
+
+def test_a_login_gets_503_busy_while_the_users_lock_is_stuck(tmp_path):
+    from annzarro.tests.server.admin_helpers import PASSWORD, make_app
+    app = make_app(tmp_path, lock_timeout_s=1)
+    client = app.test_client()
+    holder = _hold(app.config["user_file"], 30)
+    try:
+        started = time.monotonic()
+        response = client.post("/login", data={"username": "alice", "password": PASSWORD})
+        assert response.status_code == 503 and response.get_json()["reason"] == "busy"
+        assert response.headers["Retry-After"]
+        assert time.monotonic() - started < 5
+        failed = client.post("/login", data={"username": "alice", "password": "wrong"})
+        assert failed.status_code == 503, "a failed login also writes the file, and also gives up"
+        with client.session_transaction() as sess:
+            assert "user_id" not in sess, "no login without the write"
+    finally:
+        holder.kill()
+        holder.wait()
+    assert client.post("/login", data={"username": "alice", "password": PASSWORD}).status_code == 302
+
+
+def test_a_symlinked_users_file_stays_a_symlink(tmp_path):
+    real_dir = tmp_path / "etc"
+    real_dir.mkdir()
+    target = real_dir / "users.json"
+    work = tmp_path / "work"
+    work.mkdir()
+    link = work / "users.json"
+    AuthManager(user_file=str(target)).create_user("a", "pw", is_admin=True)
+    os.chmod(target, 0o666)
+    link.symlink_to(target)
+    manager = AuthManager(user_file=str(link))
+    manager.set_password("a", "new")
+    manager.create_user("b", "pw")
+    assert link.is_symlink() and os.readlink(link) == str(target)
+    assert set(json.load(open(target))) == {"a", "b"}
+    assert os.stat(target).st_mode & 0o777 == 0o600
+    assert os.path.exists(str(target) + ".lock") and not os.path.exists(str(link) + ".lock")
+
+
+def test_a_planted_lock_symlink_is_refused(tmp_path):
+    path = str(tmp_path / "x.json")
+    (tmp_path / "elsewhere").write_text("")
+    os.symlink(tmp_path / "elsewhere", path + ".lock")
+    with pytest.raises(OSError):
+        with atomic_store.locked(path):
+            pass

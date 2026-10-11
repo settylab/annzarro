@@ -116,6 +116,9 @@ server:
   max_sessions_per_user: 500
   max_sessions: 5000
   max_sessions_mb: 256
+  # Seconds a request waits for the lock on the users file (every login writes
+  # it) or the admin state before it gives up with 503 busy and Retry-After.
+  lock_timeout_s: 10
   # The admin web interface (/admin, needs login). Directories an admin may
   # add as data directories in the browser must lie inside one of these;
   # empty = adding is off, listing still works. Admin changes need the

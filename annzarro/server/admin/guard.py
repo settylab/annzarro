@@ -139,6 +139,16 @@ def _own_origin():
     return request.host_url.rstrip("/")
 
 
+def _proxy_hint():
+    """Said when an honest-looking change fails the Origin check on a server
+    that is not told about its proxy."""
+    origin = request.headers.get("Origin")
+    if origin and origin != _own_origin() and not current_app.config.get("proxy_count", 0):
+        return (" - if a reverse proxy terminates TLS or rewrites Host, set server.proxy_count "
+                "(and have it send X-Forwarded-Proto and X-Forwarded-Host), else every admin change fails")
+    return ""
+
+
 def _csrf_ok():
     token = session.get("csrf")
     sent = request.headers.get(CSRF_HEADER, "")
@@ -186,7 +196,7 @@ def _check(reauth, action):
                            username, request.remote_addr,
                            "sent" if request.headers.get(CSRF_HEADER) else "missing",
                            request.headers.get("Origin"), request.headers.get("Sec-Fetch-Site"),
-                           _own_origin())
+                           _own_origin() + _proxy_hint())
             return refuse(403, "csrf_failed", "The page is out of date. Reload it and try again.")
         if request.mimetype != "application/json":
             return refuse(415, "json_required", "Send the request as application/json.")
