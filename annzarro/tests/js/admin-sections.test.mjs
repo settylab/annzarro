@@ -10,6 +10,7 @@ import { createReauthModal } from "../../../static/js/admin/reauth-modal.js";
 import { SECTIONS, createRouter, sectionFromHash, showToast } from "../../../static/js/admin/admin-main.js";
 import { chainText, detailText } from "../../../static/js/admin/audit.js";
 import { refusalText, sumRefusals } from "../../../static/js/admin/health.js";
+import { deleteMessage, reassignMessage } from "../../../static/js/admin/panel-sets.js";
 
 const F = JSON.parse(readFileSync(new URL("./admin-fixtures.json", import.meta.url), "utf8"));
 
@@ -206,6 +207,66 @@ test("panel sets: totals, quota bars coloured by use, rows with size and modifie
   assert.match(view.textContent, /\(none\)/);
   const rows = findAll(view, (n) => n.tagName === "TR").slice(1);
   assert.match(rows[0].textContent, /tcell_markers.*bob.*pbmc\.zarr.*12 KB/);
+});
+
+test("panel sets: messages say what happened and warn about the quota", () => {
+  assert.deepEqual(reassignMessage({ moved: 2, unchanged: 0, over_quota: false }, "bob"),
+    { text: "2 panel sets now belong to bob.", level: "success" });
+  assert.deepEqual(reassignMessage({ moved: 1, unchanged: 3, over_quota: true }, "bob"),
+    { text: "1 panel set now belongs to bob (3 already did). bob is now over the per-user limit.", level: "warning" });
+  assert.equal(deleteMessage({ deleted: 1, missing: [] }), "1 panel set deleted.");
+  assert.equal(deleteMessage({ deleted: 2, missing: ["x"] }), "2 panel sets deleted, 1 were already gone.");
+});
+
+test("panel sets: selecting rows reassigns them; delete asks twice", async () => {
+  const { nav, view } = page();
+  const sent = [];
+  const toasts = [];
+  const { api } = mockApi();
+  api.panelSets.reassign = async (body) => { sent.push(["reassign", body]); return { moved: 1, unchanged: 0, over_quota: false }; };
+  api.panelSets.remove = async (names) => { sent.push(["delete", names]); return { deleted: names.length, missing: [] }; };
+  const router = makeRouter({ nav, view, api, ctx: { toast: (m, l) => toasts.push([m, l]) } });
+  await router.show("panel-sets");
+  const byId = (id) => find(view, (n) => n.getAttribute("id") === id);
+  assert.equal(byId("ps-reassign").disabled, true);
+  assert.equal(byId("ps-delete").disabled, true);
+  const boxes = findAll(view, (n) => n.classes().includes("ps-row"));
+  boxes[0].checked = true;
+  await boxes[0].dispatch("change");
+  const target = byId("ps-target");
+  target.value = "alice";
+  await target.dispatch("input");
+  assert.equal(byId("ps-reassign").disabled, false);
+  await byId("ps-reassign").dispatch("click");
+  assert.deepEqual(sent, [["reassign", { names: ["tcell_markers"], to_owner: "alice" }]]);
+  assert.deepEqual(toasts, [["1 panel set now belongs to alice.", "success"]]);
+  // the selection is cleared after the action; delete needs the second click
+  assert.equal(byId("ps-delete").disabled, true);
+  const again = findAll(view, (n) => n.classes().includes("ps-row"));
+  again[1].checked = true;
+  await again[1].dispatch("change");
+  await byId("ps-delete").dispatch("click");
+  assert.equal(sent.length, 1);
+  assert.match(byId("ps-actions").textContent, /Delete 1 for good/);
+  await byId("ps-delete-confirm").dispatch("click");
+  assert.deepEqual(sent[1], ["delete", ["overview"]]);
+});
+
+test("panel sets: a refusal is shown and nothing is cleared", async () => {
+  const { nav, view } = page();
+  const toasts = [];
+  const { api } = mockApi();
+  api.panelSets.reassign = async () => { throw new AdminError("No such user: x", { status: 404, reason: "unknown_user" }); };
+  const router = makeRouter({ nav, view, api, ctx: { toast: (m, l) => toasts.push([m, l]) } });
+  await router.show("panel-sets");
+  const box = find(view, (n) => n.classes().includes("ps-row"));
+  box.checked = true;
+  await box.dispatch("change");
+  const target = find(view, (n) => n.getAttribute("id") === "ps-target");
+  target.value = "alice";
+  await target.dispatch("input");
+  await find(view, (n) => n.getAttribute("id") === "ps-reassign").dispatch("click");
+  assert.deepEqual(toasts, [["No such user: x", "danger"]]);
 });
 
 test("settings: the tab renders the registry", async () => {

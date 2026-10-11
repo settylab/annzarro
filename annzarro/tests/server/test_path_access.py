@@ -78,6 +78,7 @@ NO_PATH = {
     "admin.users", "admin.users_add", "admin.users_remove", "admin.users_password",
     "admin.users_admin", "admin.users_unlock",     # test_admin_users.py
     "account_password_page", "account_password_change",   # own account (test_account_password.py)
+    "admin.panel_sets", "admin.panel_sets_reassign", "admin.panel_sets_delete",   # test_admin_panel_sets.py
 }
 
 
