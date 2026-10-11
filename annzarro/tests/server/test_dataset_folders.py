@@ -138,7 +138,28 @@ def test_search_finds_stores_in_unexpanded_subfolders_by_name_and_path(layout):
     assert _search(client, "").get_json()["results"] == []
 
 
-def test_search_regex_and_refusals(layout):
+@pytest.fixture
+def regex_guard(monkeypatch):
+    """A build with the name search's regex guard (here one that lets every pattern through)."""
+    from annzarro.core import name_index
+    monkeypatch.setattr(name_index, "check_regex", lambda pattern: None, raising=False)
+
+
+def test_regex_search_is_refused_without_the_regex_guard(layout, monkeypatch):
+    from annzarro.core import name_index
+    monkeypatch.delattr(name_index, "check_regex", raising=False)
+    client = _app(layout).test_client()
+    resp = _search(client, "deep", mode="regex")
+    assert resp.status_code == 400 and resp.get_json()["reason"] == "regex_unavailable"
+    assert _search(client, "deep").status_code == 200, "a plain-text search is not affected"
+
+
+def test_regex_search_is_accepted_with_the_regex_guard(layout, regex_guard):
+    hit = _search(_app(layout).test_client(), "^deep", mode="regex")
+    assert hit.status_code == 200 and [e["name"] for e in hit.get_json()["results"]] == ["deep.zarr"]
+
+
+def test_search_regex_and_refusals(layout, regex_guard):
     client = _app(layout).test_client()
     hit = _search(client, r"^deep\.zarr$|top", mode="regex").get_json()["results"]
     assert {e["name"] for e in hit} == {"deep.zarr", "top.zarr"}
