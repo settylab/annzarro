@@ -45,15 +45,16 @@ def consolidate(path):
     return zarr.consolidate_metadata(str(path))
 
 
-def open_group(path, mode="w"):
+def open_group(path, mode="w", zarr_format=None):
     """A new store is written in format 2 (3 under ``ANNZARRO_TEST_ZARR_FORMAT=3``); an existing
     one is opened in its own format, so a test that adds to a copy of a format 3 fixture adds
-    format 3 members."""
+    format 3 members. ``zarr_format=2`` pins a new store to format 2, for a test of something
+    that exists for format 2 only (the raw string-chunk reader)."""
     if ZARR_V3:
         if mode != "w" and os.path.exists(str(path)) and os.listdir(str(path)):
             fmt = store_format(path)
         else:
-            fmt = NEW_FORMAT
+            fmt = zarr_format or NEW_FORMAT
         return zarr.open_group(str(path), mode=mode, zarr_format=fmt)
     return zarr.open_group(str(path), mode=mode)
 
@@ -70,10 +71,14 @@ def _sharding(shape, chunks):
     return {"chunks": inner, "shards": shards}
 
 
+def _shards_here(group):
+    return SHARDED and ZARR_V3 and group.metadata.zarr_format == 3
+
+
 def write_array(group, name, data, dtype=None, chunks=None):
     arr = np.asarray(data) if dtype is None else np.asarray(data, dtype=dtype)
     kw = {} if chunks is None else {"chunks": chunks}
-    if SHARDED and ZARR_V3:
+    if _shards_here(group):
         kw = _sharding(arr.shape, chunks)
     if not ZARR_V3:
         return group.create_dataset(name, data=arr, **kw)
@@ -97,7 +102,7 @@ def write_strings(group, name, values, chunks=None, compressor=_DEFAULT):
     arr = np.asarray(values, dtype=object)
     kw = {} if chunks is None else {"chunks": chunks}
     if ZARR_V3:
-        if SHARDED:
+        if _shards_here(group):
             kw = _sharding(arr.shape, chunks)
         if compressor is not _DEFAULT:
             kw["compressors"] = None if compressor is None else compressor

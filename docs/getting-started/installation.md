@@ -110,6 +110,24 @@ Without `node` or `npm ci`, the JS and lint tests fail rather than being skipped
 `annzarro start --development` runs the server in development mode
 ({doc}`../reference/configuration`).
 
+#### Running the tests on zarr format 3
+
+The test stores are zarr format 2 by default. Under zarr 3 the same suites can run on format 3, plain or
+sharded, to check that nothing depends on the format:
+
+```bash
+ANNZARRO_TEST_ZARR_FORMAT=3 python -m pytest annzarro/tests/server
+ANNZARRO_TEST_ZARR_FORMAT=3-sharded python -m pytest annzarro/tests/server   # every array sharded
+```
+
+For the length of the run, `annzarro/tests/data/fixture_small.zarr` is replaced by a format 3 copy
+and the stores the helpers in `annzarro/tests/zarr_compat.py` build are format 3. The original is put
+back when the run ends, and also by the next run if this one was killed. Only one such run at a time can use a
+checkout; a second one stops with a message naming the first. A few tests pin the format 2
+fixture on purpose (its fingerprint, the format 2 raw string reader) and skip or build their own
+store. Tests that change a store's metadata do it with `set_attrs`, `require_group`,
+`drop_consolidated` and `consolidate` from `zarr_compat`, so they work in either format.
+
 ## Check the installation
 
 ```bash

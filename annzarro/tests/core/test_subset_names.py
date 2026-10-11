@@ -20,7 +20,7 @@ from annzarro.core import subset as cell_subset
 from annzarro.core import zarr_reader
 from annzarro.core.zarr_reader import ZarrReader
 from annzarro.server.core import create_app
-from annzarro.tests.zarr_compat import open_group, store_format, write_array, write_strings
+from annzarro.tests.zarr_compat import open_group, write_array, write_strings
 
 CASES = {
     "fixed width": [f"AAAC{i:06d}-1" for i in range(50)],
@@ -68,7 +68,7 @@ def _names(n):
 @pytest.fixture
 def index_array(tmp_path):
     path = tmp_path / "s.zarr"
-    root = open_group(path)
+    root = open_group(path, zarr_format=2)       # the raw chunk reader is for format 2 only
     names = _names(1000)
     names[500:600] = [""] * 100           # an all-empty chunk zarr may not write
     arr = write_strings(root, "idx", names, chunks=(100,))
@@ -213,12 +213,10 @@ COMPRESSORS = {
 def test_raw_path_equals_zarr_decode(tmp_path, compressor, make, monkeypatch):
     n, chunk = 2_050, 256                      # the last chunk is partial (2 of 256)
     names = make(n)
-    root = open_group(tmp_path / "s.zarr")
+    root = open_group(tmp_path / "s.zarr", zarr_format=2)
     arr = write_strings(root, "idx", names, chunks=(chunk,), compressor=COMPRESSORS[compressor]())
     directory = str(tmp_path / "s.zarr" / "idx")
-    raw = store_format(tmp_path / "s.zarr") == 2      # the raw chunk path reads format 2 only
-    if raw:
-        assert [f.codec_id for f in arr.filters] == ["vlen-utf8"]
+    assert [f.codec_id for f in arr.filters] == ["vlen-utf8"]
 
     used = []
     real = string_chunks._LocalVlenArray.items
@@ -232,13 +230,13 @@ def test_raw_path_equals_zarr_decode(tmp_path, compressor, make, monkeypatch):
     picks += [np.sort(rng.choice(n, size=k, replace=False)) for k in (1, 3, 100, 1_000)]
     for rows in picks:
         assert string_chunks.take(arr, rows, directory) == [truth[i] for i in rows]
-    if raw and make is not _tricky_names:
+    if make is not _tricky_names:
         # every chunk, the padded last one included, is read by the raw path
         assert used and all(u is not None for u in used), "a chunk fell back to zarr"
 
 
 def test_untested_layouts_take_the_zarr_path(tmp_path):
-    root = open_group(tmp_path / "s.zarr")
+    root = open_group(tmp_path / "s.zarr", zarr_format=2)
     write_strings(root, "a", ["x", "y"], chunks=(1,), compressor=numcodecs.GZip())
     assert string_chunks._LocalVlenArray.open(str(tmp_path / "s.zarr" / "a")) is None
     assert string_chunks._LocalVlenArray.open(str(tmp_path / "missing")) is None
