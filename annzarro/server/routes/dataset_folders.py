@@ -228,33 +228,25 @@ def register_dataset_folder_routes(app_, api_version):
 def _compile_query(query, regex):
     """A case-insensitive matcher for ``query``; SearchRefusedError when it may not run.
 
-    A regex goes through ``name_index.check_regex`` (the name search's guard
-    against patterns that take exponential time) and is refused outright
-    (``regex_unavailable``) when this build has no such guard. ``re`` cannot be
-    interrupted, so a pattern the guard lets through is still bounded by the
-    walk's own caps.
+    A regex goes through ``name_index.compile_regex``, the name search's guard
+    (``/data/names``): a pattern that is too long or can take exponential time
+    is refused (400, ``regex_too_long`` / ``regex_too_complex``) before the walk
+    starts, and every match runs under the walk's deadline (the ``regex``
+    package stops inside a match; the stdlib ``re`` cannot be interrupted).
     """
     if len(query) > MAX_QUERY_CHARS:
         raise SearchRefusedError("query_too_long", f"The search has {len(query)} characters; at most {MAX_QUERY_CHARS}.")
     if not regex:
         needle = query.lower()
-        return lambda text: needle in text.lower()
+        return lambda text, deadline: needle in text.lower()
     from ...core import name_index
-    check = getattr(name_index, "check_regex", None)
-    if check is None:
-        # `re` cannot be interrupted and holds the GIL: an unguarded user pattern over
-        # thousands of names could stop the worker for everyone. A build with the
-        # guard (name_index.check_regex) allows regex searches again by itself.
-        raise SearchRefusedError("regex_unavailable", "Regular-expression search of the subfolders is not available on this server.")
     try:
-        check(query)
-    except ValueError as exc:
-        raise SearchRefusedError(getattr(exc, "reason", "regex_refused"), str(exc))
-    try:
-        rx = re.compile(query, re.IGNORECASE)
+        rx = name_index.compile_regex(query)
+    except name_index.RegexRefusedError as exc:
+        raise SearchRefusedError(exc.reason, str(exc))
     except re.error as exc:
         raise SearchRefusedError("invalid_regex", f"Invalid regular expression: {exc}")
-    return lambda text: rx.search(text) is not None
+    return rx.search      # (text, deadline): TimeoutError inside a match once the walk's clock is up
 
 
 def search_tree(config, query, regex=False, limit=None):
@@ -306,7 +298,12 @@ def search_tree(config, query, regex=False, limit=None):
                 elif depth + 1 >= max_depth:
                     truncated = True
                 continue
-            if matches_text(name) or matches_text(entry["rel_path"]):
+            try:
+                hit = matches_text(name, deadline) or matches_text(entry["rel_path"], deadline)
+            except TimeoutError:         # the clock ran out inside a match
+                truncated = True
+                break
+            if hit:
                 found.append(entry)
                 if len(found) >= limit:
                     truncated = True

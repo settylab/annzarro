@@ -143,3 +143,71 @@ def test_a_slow_pattern_that_passes_the_check_stops_at_the_limit_on_a_big_index(
     elapsed = time.monotonic() - started
     assert out["timed_out"] and out["scanned"] < len(names)
     assert elapsed < 1.5, elapsed
+
+
+# --- the guarantee: a single match is bounded, whatever the pattern -------------------------------
+#
+# check_regex is a cheap first filter and a list of refused shapes is never complete (an independent
+# review found `.?` x33 + `!`, which it accepted and which hung the stdlib `re` for more than 200 s on
+# ONE 18-character name). Every match now runs under the scan's deadline with the `regex` package,
+# which stops inside the match.
+
+REVIEW_PATTERNS = [".?" * 28 + "!", ".?" * 33 + "!", ".{0,99}" * 14 + "!", "(?:|.)" * 28 + "!"]
+BARCODE = "AAACCTGAGAAACCAT-1"
+
+
+@pytest.mark.parametrize("pattern", REVIEW_PATTERNS)
+def test_the_reviewed_patterns_return_within_the_limit(pattern):
+    import time
+    ix = NameIndex([BARCODE] * 200)
+    name_index.configure(timeout_s=2)
+    started = time.monotonic()
+    out = ix.search(pattern, mode="regex")
+    assert time.monotonic() - started < 4, "a pattern held the search past its limit"
+    assert out["matches"] == []
+
+
+def test_a_match_is_interrupted_inside_even_when_the_filter_lets_the_pattern_through(monkeypatch):
+    """Take the filter away: (a|a)*b is exponential on 'a' x35 + 'cb'. The per-match
+    timeout still ends the scan at its limit, and other threads keep running meanwhile."""
+    import threading
+    import time
+    monkeypatch.setattr(name_index, "check_regex", lambda pattern: None)
+    ix = NameIndex(["a" * 35 + "cb"] * 3)
+    name_index.configure(timeout_s=0.5)
+    latencies, stop = [], threading.Event()
+
+    def probe():
+        while not stop.is_set():
+            t = time.perf_counter()
+            time.sleep(0.01)
+            latencies.append(time.perf_counter() - t)
+
+    thread = threading.Thread(target=probe)
+    thread.start()
+    started = time.monotonic()
+    try:
+        out = ix.search(r"(a|a)*b", mode="regex")
+    finally:
+        stop.set()
+        thread.join()
+    elapsed = time.monotonic() - started
+    assert out["timed_out"] and out["partial"] and out["matches"] == []
+    assert 0.4 < elapsed < 1.5, elapsed
+    assert max(latencies) < 0.25, f"the match held the GIL for {max(latencies):.2f} s"
+
+
+def test_the_streamed_scan_is_interrupted_inside_a_match_too(monkeypatch):
+    monkeypatch.setattr(name_index, "check_regex", lambda pattern: None)
+    chunks = [["a" * 35 + "cb"] * 2]
+    src = name_index.NameChunks(chunks, n=2, factory=lambda: iter(chunks))
+    name_index.configure(timeout_s=0.5)
+    out = name_index.stream_search(src, r"(a|a)*b", limit=5, mode="regex")
+    assert out["timed_out"] and out["partial"]
+
+
+def test_without_the_regex_package_regex_search_is_refused_not_unguarded(monkeypatch):
+    monkeypatch.setattr(name_index, "_regex", None)
+    with pytest.raises(RegexRefusedError) as exc:
+        NameIndex(["a"]).search("a", mode="regex")
+    assert exc.value.reason == "regex_unavailable"
