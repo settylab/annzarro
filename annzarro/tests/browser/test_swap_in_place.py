@@ -302,3 +302,23 @@ def test_dataset_change_resets_the_zoom_without_a_blank_plot(server):
             assert not errors, errors
         finally:
             browser.close()
+
+
+def test_a_part_step_does_not_say_the_plot_went_blank(server):
+    """A large plot is drawn again from nothing at a part step and loses the old plot's WebGL
+    contexts on purpose; the strip must not report that as a plot gone blank."""
+    root, large = server
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            errors = []
+            page = _open(browser, _link(root, subset=dict(SPEC, part=0)), errors)
+            _settle(page, lambda s: s["part"] == "1")
+            page.click("#subset-part-next")
+            _settle(page, lambda s: s["part"] == "2")
+            page.wait_for_timeout(2500)
+            tags = page.evaluate("""() => [...document.querySelectorAll(
+                '.tile[data-tile-id="cell-plot-S"] .ps-tag')].map(t => t.textContent)""")
+            assert "Plot went blank" not in tags, tags
+        finally:
+            browser.close()

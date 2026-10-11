@@ -595,12 +595,19 @@ function watchContextLoss(gd) {
     if (!gd || typeof gd.on !== 'function') return;
     let handler = _lossHandlers.get(gd);
     if (handler && typeof gd.removeListener === 'function') gd.removeListener('plotly_webglcontextlost', handler);
-    handler = () => setStatusTag(gd, 'webgl', {
-        text: 'Plot went blank', severity: 'warning',
-        title: 'The browser dropped this plot\'s WebGL canvas',
-        pop: { text: 'The browser dropped this plot\'s WebGL canvas: too many plots are open, or the graphics '
-            + 'memory ran out. Close a plot, then redraw this one.', actions: [['redraw', 'Redraw']] }
-    });
+    handler = (ev) => {
+        // releasePlot loses the old plot's contexts on purpose, and the event
+        // arrives after the new plot is drawn: a canvas no longer in the graph
+        // is not the plot going blank
+        const canvas = ev && ev.event && ev.event.target;
+        if (canvas && typeof gd.contains === 'function' && !gd.contains(canvas)) return;
+        setStatusTag(gd, 'webgl', {
+            text: 'Plot went blank', severity: 'warning',
+            title: 'The browser dropped this plot\'s WebGL canvas',
+            pop: { text: 'The browser dropped this plot\'s WebGL canvas: too many plots are open, or the graphics '
+                + 'memory ran out. Close a plot, then redraw this one.', actions: [['redraw', 'Redraw']] }
+        });
+    };
     _lossHandlers.set(gd, handler);
     gd.on('plotly_webglcontextlost', handler);
 }
