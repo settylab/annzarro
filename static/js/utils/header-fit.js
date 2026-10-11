@@ -41,7 +41,7 @@ export function restWraps(header) {
     const boxes = [...row.children].filter(c => !c.classList.contains('dataset-col'))
         .map(c => c.getBoundingClientRect()).filter(b => b.height > 0);
     if (!boxes.length) return false;
-    const firstBottom = Math.min(...boxes.map(b => b.bottom));
+    const firstBottom = boxes.reduce((m, b) => Math.min(m, b.bottom), Infinity);
     return boxes.some(b => b.top >= firstBottom - 1);
 }
 
