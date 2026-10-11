@@ -3,6 +3,7 @@
  */
 import { PanelManager } from './panel-manager.js';
 import { Config } from './config.js';
+import { Policy } from './policy.js';
 import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
@@ -93,6 +94,13 @@ const App = (function() {
             // would otherwise pin it forever. With the spinner suppressed, a
             // deep-link boots into the normal Welcome tile, which is the correct
             // fallback whenever nothing opens.
+            // The administrator's policy (which panels exist, what may leave
+            // the browser) is read before any panel is offered or restored;
+            // a server without one answers 404 and nothing changes. Every
+            // later API reply is watched for a new policy version.
+            Policy.installFetchObserver();
+            await Policy.load();
+
             const autosave = SessionManager.getAutosaveSession();
             const deepLink = await _parseDeepLink();
             const hasAutosave = autosave && Config.AUTOSAVE.AUTO_RESTORE && !deepLink;
