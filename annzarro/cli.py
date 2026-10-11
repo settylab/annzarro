@@ -945,6 +945,10 @@ def main(argv: List[str] = None) -> int:
     # Export command: a saved view's plots as files (annzarro/export.py)
     from annzarro.export import add_parser as add_export_parser
     add_export_parser(subparsers)
+
+    # Store command: what in a store's layout makes AnnZarro slow (annzarro/store_command.py)
+    from annzarro.store_command import add_parser as add_store_parser
+    add_store_parser(subparsers)
     
     # Parse arguments
     args = parser.parse_args(argv)
