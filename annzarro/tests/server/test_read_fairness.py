@@ -102,12 +102,14 @@ def test_a_waiting_read_gets_in_when_its_own_earlier_read_ends():
 
 
 def _seen_owner(tmp_path, **config):
+    from annzarro.server import access
     from annzarro.server.core import create_app
     app = create_app({"TESTING": True, "DEBUG": False, "auth_enabled": False, "cache_enabled": False,
                       "data_dir": str(tmp_path), **config})
     seen = []
 
     @app.route("/whoami")
+    @access.gate("public")   # a route with no declared gate is refused (access.py)
     def whoami():
         seen.append(read_guard._owner.get())
         return "ok"

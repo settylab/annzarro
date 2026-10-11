@@ -7,6 +7,7 @@ This module contains routes for serving static files for the web UI.
 import os
 import logging
 from pathlib import Path
+from .. import access
 from flask import send_file, send_from_directory, current_app as app, render_template
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ def register_static_routes(app, api_version):
     
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
+    @access.gate("public")
     def serve_static(path: str):
         """
         Serve static files for the web UI.
