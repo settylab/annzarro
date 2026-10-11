@@ -454,6 +454,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     from .isolation import install_isolation
     install_isolation(app)
 
+    # last, so its hook sees a reply before the others rewrite it
+    from annzarro.server import health
+    health.install(app)
+
     # The desktop app names its server with a per-launch token and only
     # trusts the answer that carries it: two launches that pick the same free
     # port at once must not take each other's server for their own.
@@ -671,13 +675,16 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
     from annzarro.server import access
 
     def render_login(**extra):
-        return render_template(
+        from annzarro.server.policy import csp
+        page = render_template(
             "login.html",
             app_name=app.config.get("app_name", "AnnZarro"),
             project_description=app.config.get("project_description", ""),
             contact_info=app.config.get("contact_info", {}),
             **extra
         )
+        # nobody is signed in: no external host at all
+        return csp.apply(app.make_response(page), None, external=False)
 
     @app.route("/login", methods=["GET"])
     @access.gate("public")

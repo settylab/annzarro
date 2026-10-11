@@ -95,7 +95,7 @@ ui:
 ### External Integrations
 ```yaml
 integrations:
-  external_requests: "ask"   # Gene Set Analysis panel: ask | "on" | "off"
+  external_requests: "ask"   # Gene Set Analysis panel: ask | "on" | "off" | "none" (none: no links either)
   gene_set:
     services: null           # all; or e.g. [string, gprofiler, mygene]
     timeout_ms: 20000
