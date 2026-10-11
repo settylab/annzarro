@@ -14,7 +14,7 @@ import {
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
 import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag } from '../../utils/panel-surface.js';
-import { largePlotPoints, largePlotRefusal, createLargePlot, showProbeFailure } from './large-plot.js';
+import { largePlotPoints, largePlotRefusal, createLargePlot, cancelIndexBuild, showProbeFailure } from './large-plot.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
@@ -1004,7 +1004,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         return;
       }
     }
+    // a plot that was large and is regular now (a subset) keeps no large-plot hover, cursor or index
     plotContainer.__isLarge = false;
+    cancelIndexBuild(plotContainer);
     setStatusTag(plotContainer, 'refused', null);
     setStatusTag(plotContainer, 'large', null);
     setStatusTag(plotContainer, 'focus', null);

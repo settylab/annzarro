@@ -46,7 +46,7 @@ import { releasePlot } from '../../utils/release-plot.js';
 import { classifyError, classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { buildPointIndexSliced } from '../../utils/point-index.js';
-import { attachLargeInteraction, highlightLargeFocus } from './large-interact.js';
+import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount } from '../../utils/categories.js';
@@ -350,6 +350,7 @@ function watchGpu(plotContainer, n) {
     const eligible = state.n + (Number(DataManager.getCellsNotInSubset()) || 0);
     const message = probeMessage(state.n, niceFloor(state.n / 2), eligible);
     plotContainer.__isLarge = false;
+    cancelIndexBuild(plotContainer);
     drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, message,
       { source: 'WebGL', unit: 'cells', total: state.n }), 'cells',
       { actions: [['subset', 'Subset…'], ['redraw', 'Redraw']] });
@@ -381,7 +382,7 @@ const JOIN_GRACE_MS = 300;
  */
 export function cancelIndexBuild(plotContainer) {
   if (plotContainer.__indexBuild) plotContainer.__indexBuild.cancelled = true;
-  if (plotContainer.__largeState) plotContainer.__largeState.index = null;
+  detachLargeInteraction(plotContainer);
 }
 
 /**
