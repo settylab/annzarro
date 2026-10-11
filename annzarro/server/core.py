@@ -55,6 +55,11 @@ DEFAULT_CONFIG = {
     "name_search_scan_names": 100000000,  # names a search without an index (store over the budget) reads
     "name_search_max_regex_chars": 200,   # longest regex a name search runs (a longer one is a 400 regex_too_long)
     "name_search_timeout_s": 10,          # seconds a regex name search scans before it answers partially; 0 = no limit
+    "max_requests": 20000,                # gunicorn: requests a worker serves before it is replaced (frees creeping memory); 0 = never
+    "max_requests_jitter": 2000,          # gunicorn: up to this many extra requests, random per worker, so workers do not restart together
+    "limit_request_line": 8190,           # gunicorn: longest request line in bytes (a longer one is a 400)
+    "limit_request_fields": 100,          # gunicorn: most header fields in a request
+    "limit_request_field_size": 8190,     # gunicorn: longest header field in bytes
     "max_request_mb": 16,                 # MB one request body may have (panel-set saves and imports); over it 413 request_too_large; 0 = no limit
     "max_sessions_per_user": 500,         # panel sets one user may keep (login off: all sets are one user's); 0 = no limit
     "max_sessions": 5000,                 # panel sets on the whole server; 0 = no limit

@@ -16,6 +16,8 @@ itself against clients that send a request slowly. Put a reverse proxy in front
 |---|---|---|---|---|
 | `name_search_max_regex_chars` | 200 | CPU: a regular-expression name search is a pattern run against every name | `400 regex_too_long` | users paste long patterns |
 | `name_search_timeout_s` | 10 | CPU: a regex name search over millions of names answers with the matches found so far when it runs out of time (`partial: true`, `timed_out: true`) | partial `200` | the host is slow and the dataset has more than about 10 million names; 0 turns it off |
+| `max_requests`, `max_requests_jitter` | 20,000, 2,000 | Memory: a worker that leaks or fragments is replaced; its caches start empty | (worker restart) | every request is cheap and the dataset index takes long to rebuild: raise it, or 0 |
+| `limit_request_line`, `limit_request_fields`, `limit_request_field_size` | 8,190, 100, 8,190 | Memory and CPU: one request made of a huge line or many headers (gunicorn only) | `400` from gunicorn | never needed |
 | `max_request_mb` | 16 | Memory and disk: a request body is read whole, and panel sets are written to the sessions directory | `413 request_too_large` | a panel set or an import legitimately exceeds 16 MB (typical ones are under 1 MB) |
 | `max_sessions_per_user` | 500 | Disk: panel sets are files, written by any user (anyone, with login off) | `409 session_quota_user` | one person legitimately keeps more than 500 sets |
 | `max_sessions` | 5,000 | Disk and CPU: the panel-set list reads the files | `409 session_quota_total` | many users each keep many sets |

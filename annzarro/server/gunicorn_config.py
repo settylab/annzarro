@@ -37,6 +37,19 @@ threads = int(_annzarro.get('threads') or 4)
 timeout = 60
 keepalive = 5
 
+# Memory creep and slow leaks are bounded by recycling each worker after this
+# many requests (server.max_requests; 0 = never), staggered by up to
+# max_requests_jitter so they do not all restart together. A recycled worker
+# starts with empty caches, so the default is high.
+max_requests = int(_annzarro.get('max_requests', 20000) or 0)
+max_requests_jitter = int(_annzarro.get('max_requests_jitter', 2000) or 0)
+# A request line and each header have size limits, so one request cannot be
+# made of megabytes of header. The line allows the long deep links of old
+# query-string bookmarks (gunicorn's own default is 4094).
+limit_request_line = int(_annzarro.get('limit_request_line', 8190))
+limit_request_fields = int(_annzarro.get('limit_request_fields', 100))
+limit_request_field_size = int(_annzarro.get('limit_request_field_size', 8190))
+
 # Process naming
 proc_name = 'annzarro'
 
