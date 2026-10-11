@@ -23,7 +23,7 @@ from ...core import name_index
 from ...core import read_guard
 from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core import subset as cell_subset
-from .. import confinement, permissions
+from .. import confinement, permissions, session_quota
 from .. import http_cache
 from ...core.array_response import wants_binary, wants_codes
 from ...core import categories as category_rules
@@ -394,6 +394,11 @@ def _read_busy_response(exc):
     return reply
 
 
+def _quota_refused_response(exc):
+    """409 when a panel set would pass the quotas (server.max_sessions*)."""
+    return jsonify({"error": str(exc), "reason": exc.reason, "limit": exc.limit, "used": exc.used}), 409
+
+
 def _data_request_error_response(exc):
     return jsonify({"error": exc.message, "reason": exc.reason}), exc.status
 
@@ -552,6 +557,7 @@ def register_data_routes(app, api_version):
     http_cache.install_gzip(app)
 
     app.register_error_handler(DataRequestError, _data_request_error_response)
+    app.register_error_handler(session_quota.QuotaRefused, _quota_refused_response)
 
     @app.route(f"/api/{api_version}/data/info", methods=["GET"])
     def get_data_info():
@@ -2189,6 +2195,17 @@ def register_data_routes(app, api_version):
             logger.warning(f"Unreadable session file {file_path}: {e}")
             return {}
 
+    def _write_session(file_path, session_data, sessions_dir):
+        """Write a panel set, after the quotas (session_quota.py) allow it.
+
+        Raises session_quota.QuotaRefused, which the error handler answers 409.
+        """
+        body = json.dumps(session_data, indent=2)
+        owner, _ = permissions.current_user()
+        session_quota.check(app.config, sessions_dir, file_path, owner, len(body.encode("utf-8")))
+        with open(file_path, 'w') as f:
+            f.write(body)
+
     @app.route(f"/api/{api_version}/sessions/save", methods=["POST"])
     def save_session():
         """
@@ -2240,8 +2257,7 @@ def register_data_routes(app, api_version):
             permissions.stamp_session(session_data, existing)
             
             # Save session file
-            with open(session_file, 'w') as f:
-                json.dump(session_data, f, indent=2)
+            _write_session(session_file, session_data, sessions_dir)
             
             # Notice if sanitization changed the name
             message = f"Session saved as {session_data['name']}"
@@ -2254,7 +2270,7 @@ def register_data_routes(app, api_version):
                 "file": session_file,
                 "sanitized_name": session_data["name"]
             })
-        except RequestEntityTooLarge:
+        except (RequestEntityTooLarge, session_quota.QuotaRefused):
             raise
         except Exception as e:
             logger.error(f"Error saving session: {e}")
@@ -2272,9 +2288,9 @@ def register_data_routes(app, api_version):
             # Get sessions directory
             sessions_dir = _get_sessions_dir()
             
-            # List session files
+            # List session files (parsed again only when one changed)
             sessions = []
-            for entry in os.listdir(sessions_dir):
+            for entry in sorted(os.listdir(sessions_dir)):
                 if entry.endswith(".json"):
                     session_path = os.path.join(sessions_dir, entry)
                     
@@ -2283,24 +2299,22 @@ def register_data_routes(app, api_version):
                         logger.warning(f"Skipping file outside sessions directory: {session_path}")
                         continue
                     
-                    try:
-                        with open(session_path, 'r') as f:
-                            session_data = json.load(f)
-                            
-                            # Include basic information
-                            sessions.append({
-                                "name": session_data.get("name", entry.replace(".json", "")),
-                                "dataset": session_data.get("dataset", ""),
-                                "timestamp": session_data.get("timestamp", ""),
-                                "datasetName": session_data.get("datasetName", ""),
-                                "file": session_path,
-                                "owner": session_data.get("owner"),
-                                "created_at": session_data.get("created_at"),
-                                "modified_at": session_data.get("modified_at"),
-                                "can_modify": permissions.can_modify(session_data)
-                            })
-                    except Exception as e:
-                        logger.warning(f"Error reading session file {entry}: {e}")
+                    stored = session_quota.summary(session_path)
+                    if stored is None:
+                        continue
+                    session_data = stored.data
+                    # Include basic information
+                    sessions.append({
+                        "name": session_data.get("name", entry.replace(".json", "")),
+                        "dataset": session_data.get("dataset", ""),
+                        "timestamp": session_data.get("timestamp", ""),
+                        "datasetName": session_data.get("datasetName", ""),
+                        "file": session_path,
+                        "owner": session_data.get("owner"),
+                        "created_at": session_data.get("created_at"),
+                        "modified_at": session_data.get("modified_at"),
+                        "can_modify": permissions.can_modify(session_data)
+                    })
             
             # Sort sessions by timestamp (newest first)
             sessions.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
@@ -2756,8 +2770,7 @@ def register_data_routes(app, api_version):
             permissions.stamp_session(session_data, existing=None)
             
             # Write session data to new file
-            with open(new_file_path, 'w') as f:
-                json.dump(session_data, f, indent=2)
+            _write_session(new_file_path, session_data, sessions_dir)
             
             return jsonify({
                 "status": "success",
@@ -2768,7 +2781,7 @@ def register_data_routes(app, api_version):
                 "sanitized_source_name": sanitized_source_name,
                 "sanitized_new_name": sanitized_new_name
             })
-        except RequestEntityTooLarge:
+        except (RequestEntityTooLarge, session_quota.QuotaRefused):
             raise
         except Exception as e:
             logger.error(f"Error duplicating session: {e}")
@@ -2859,8 +2872,7 @@ def register_data_routes(app, api_version):
                 session_data["timestamp"] = datetime.now().isoformat()
             
             # Write session data to file
-            with open(file_path, 'w') as f:
-                json.dump(session_data, f, indent=2)
+            _write_session(file_path, session_data, sessions_dir)
             
             # Notice if sanitization changed the name
             message = f"Session imported as {session_data['name']}"
@@ -2874,7 +2886,7 @@ def register_data_routes(app, api_version):
                 "session": session_data,
                 "sanitized_name": session_data["name"]
             })
-        except RequestEntityTooLarge:
+        except (RequestEntityTooLarge, session_quota.QuotaRefused):
             raise
         except Exception as e:
             logger.error(f"Error importing session: {e}")

@@ -31,6 +31,9 @@ class Limit:
 LIMITS: Dict[str, Limit] = {limit.key: limit for limit in (
     Limit("name_search_max_regex_chars", 200),
     Limit("name_search_timeout_s", 10, integer=False, zero_off=True),
+    Limit("max_sessions_per_user", 500, zero_off=True),
+    Limit("max_sessions", 5000, zero_off=True),
+    Limit("max_sessions_mb", 256, integer=False, zero_off=True),
     Limit("dataset_scan_max_entries", 200_000),
     Limit("max_request_mb", 16, integer=False, zero_off=True),
 )}
