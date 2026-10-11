@@ -89,6 +89,8 @@ That is all the registry needs. Then:
 8. **A key that lets the browser contact hosts** declares
    `outbound_hosts=lambda value, config: [...]`; the Content-Security-Policy is built
    from it, so the server and the browser agree.
+   `gated_by=("panel.foo.enabled",)` names keys whose "off" value shuts those hosts
+   (the CSP omits them) without changing this key's own value, so the client still sees it.
 9. **A rule between keys** ("this switch off forces those keys off") is a constraint:
    `REGISTRY.constrain(fn)`, where `fn(values)` returns the values to force.
 

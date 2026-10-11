@@ -290,3 +290,19 @@ def test_the_csp_coverage_guard_goes_red_without_a_csp_test(tmp_path):
 
 SAMPLE_OUTBOUND = [Key(name="outbound.sample.host", type=Bool(), default=True, scope="user", description="d",
                        area="outbound", combine="restrict", outbound_hosts=lambda value, config: ["x.example.org"])]
+
+
+@pytest.mark.parametrize("key", [k for k in REGISTRY if k.gated_by], ids=lambda k: k.name)
+def test_a_gated_key_names_declared_keys_that_can_be_off_and_loses_its_hosts_when_one_is(key):
+    """``gated_by`` names declared keys with an "off" value; with any of them off the CSP
+    carries none of this key's hosts, whatever the key itself says."""
+    from annzarro.server.policy.csp import csp_hosts
+    assert key.outbound_hosts is not None
+    for name in key.gated_by:
+        gate = REGISTRY.get(name)
+        assert gate is not None and gate.type.off, f"{key.name}: {name} is not a declared key with an off value"
+        eng = make_engine(REGISTRY, overlay={name: gate.type.off[0]} if gate.scope != "config" else {})
+        if gate.scope == "config":
+            pytest.skip(f"{name} is config-only")
+        hosts = set(key.outbound_hosts(key.default_value({}), {}))
+        assert hosts and not hosts & set(csp_hosts(eng, "u"))
