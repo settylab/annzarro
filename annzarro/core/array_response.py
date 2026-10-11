@@ -77,9 +77,10 @@ browser client turned ``NaN`` literals into anyway, after a failed parse.
 
 import json
 import logging
+import zlib
 
 import numpy as np
-from flask import Response, jsonify
+from flask import Response, current_app, jsonify
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +94,12 @@ HEADER_CATEGORIES_BYTES = "X-Annzarro-Categories-Bytes"
 HEADER_CATEGORIES_TOTAL = "X-Annzarro-Categories-Total"
 HEADER_CATEGORIES_USED = "X-Annzarro-Categories-Used"
 HEADER_CATEGORIES_ORDER = "X-Annzarro-Categories-Order"
+HEADER_NAMES = "X-Annzarro-Names"
+HEADER_NAMES_BYTES = "X-Annzarro-Names-Bytes-Estimate"
 EXPOSED_HEADERS = ", ".join((HEADER_SHAPE, HEADER_DTYPE, HEADER_ENCODING, HEADER_NNZ,
                              HEADER_CATEGORIES_BYTES, HEADER_CATEGORIES_TOTAL,
-                             HEADER_CATEGORIES_USED, HEADER_CATEGORIES_ORDER, "ETag"))
+                             HEADER_CATEGORIES_USED, HEADER_CATEGORIES_ORDER,
+                             HEADER_NAMES, HEADER_NAMES_BYTES, "ETag"))
 
 _F32_EXACT_INT = 2 ** 24
 
@@ -307,3 +311,165 @@ def array_response(data, meta: dict, binary: bool = False):
     rest = json.dumps(meta)
     body = '{"data":' + numeric_json_text(arr) + ("," + rest[1:] if len(rest) > 2 else "}")
     return Response(body, mimetype="application/json")
+
+
+# -- names, streamed ----------------------------------------------------------
+#
+# /data/cells and /data/genes used to build a list of every name, then its JSON
+# text, then its gzip: at 95.6 million cells about 7 GB of Python strings and
+# 2 GB of text, held until the last byte went out. A zarr store gives its names
+# a chunk at a time (reader.iter_cell_gene_name_chunks), so the reply is
+# written the same way: one chunk in memory, the first byte after the first
+# chunk. The bytes are the ones jsonify made.
+
+#: JSON bytes a name costs beyond its characters: two quotes and a comma
+NAME_JSON_OVERHEAD = 3
+
+#: Bytes one name held as a Python string and a list slot costs a reply built
+#: whole (measured in the uns audit: ~100 B a value); sizes the 413 for readers
+#: that cannot stream
+NAME_HELD_BYTES = 100
+
+#: Bytes a JSON string can hold as they are: printable ASCII except the quote
+#: and the backslash
+_PLAIN_ASCII = bytes(b for b in range(0x20, 0x7f) if b not in (0x22, 0x5c))
+_PLAIN_JOINED = _PLAIN_ASCII + b"\n"
+_PLAIN_JOINED_UTF8 = _PLAIN_JOINED + bytes(range(0x7f, 0x100))
+
+
+def debug_json(app) -> bool:
+    """jsonify writes indented JSON (not the compact text streamed) in debug."""
+    compact = getattr(app.json, "compact", None)
+    return compact is False or (compact is None and app.debug)
+
+
+def _chunk_names(chunk):
+    """The names of a chunk (a list, or a (joined, lengths) pair) as a list."""
+    if not isinstance(chunk, tuple):
+        return chunk
+    joined, lengths = chunk
+    names, at = [], 0
+    for size in lengths.tolist():
+        names.append(joined[at:at + size].decode("utf-8", "replace"))
+        at += size + 1
+    return names
+
+
+def _chunk_json(chunk, ensure_ascii: bool) -> bytes:
+    """The elements of a JSON array holding the chunk's names, without the
+    brackets (empty for an empty chunk)."""
+    if isinstance(chunk, tuple):
+        joined, lengths = chunk
+        k = int(lengths.size)
+        if k == 0:
+            return b""
+        # names with nothing to escape, which is nearly every name: the
+        # separators become the quotes and commas between them, with no
+        # Python string made. A name with a newline, a quote, a backslash,
+        # a control character or (with ensure_ascii) a non-ASCII byte takes
+        # the slow path.
+        plain = _PLAIN_JOINED if ensure_ascii else _PLAIN_JOINED_UTF8
+        if joined.count(b"\n") == k - 1 and not joined.translate(None, plain):
+            return b'"' + joined.replace(b"\n", b'","') + b'"'
+    return json.dumps(_chunk_names(chunk), ensure_ascii=ensure_ascii,
+                      separators=(",", ":"))[1:-1].encode("utf-8")
+
+
+def _chunk_name_count(chunk) -> int:
+    return int(chunk[1].size) if isinstance(chunk, tuple) else len(chunk)
+
+
+def _chunk_size(chunk) -> int:
+    """About the bytes a chunk's names hold as read."""
+    if isinstance(chunk, tuple):
+        return len(chunk[0])
+    return sum(len(n) for n in chunk)
+
+
+def json_bytes_per_name(chunk) -> float:
+    """What a name costs in the JSON reply, estimated from one chunk."""
+    count = _chunk_name_count(chunk)
+    if not count:
+        return 0.0
+    chars = len(chunk[0]) - (count - 1) if isinstance(chunk, tuple) else _chunk_size(chunk)
+    return chars / count + NAME_JSON_OVERHEAD
+
+
+def check_names_json(n: int, limit_mb) -> None:
+    """Refuse (ReadTooLargeError, a 413) to build a names reply whole when it
+    would hold more than ``limit_mb``. Only for readers that cannot stream; a
+    zarr store streams and has no such limit. ``limit_mb`` 0 or None: none."""
+    if not limit_mb:
+        return
+    limit = int(float(limit_mb) * 2 ** 20)
+    need = int(n) * NAME_HELD_BYTES
+    if need > limit:
+        from .read_guard import ReadTooLargeError
+        raise ReadTooLargeError(
+            f"Sending all {int(n):,} names of this dataset at once would hold about {need / 2 ** 20:,.0f} MB in "
+            f"memory, over the {limit / 2 ** 20:,.0f} MB limit (server.max_names_json_mb). Its names can be "
+            "searched by name instead; a zarr store sends them in a stream with no such limit.",
+            limit, need, [{"element": "names", "count": int(n), "estimated_mb": round(need / 2 ** 20, 1)}],
+            limit_name="max_names_json_mb")
+
+
+def stream_names(key: str, dataset_path: str, first, chunks, total=None, compress: bool = False):
+    """The reply ``{key: [names...], "dataset_path": ...}`` written a chunk at
+    a time, byte for byte what ``jsonify`` makes of the whole list.
+
+    ``first``: the first chunk, already read (so that a store that cannot be
+    read has answered with an error before the status line); ``chunks``: the
+    rest of the iterator. ``total``: how many names there are, if known, sent as
+    ``X-Annzarro-Names`` with a byte estimate (the reply has no
+    Content-Length). ``compress``: write gzip (level 1, as install_gzip does).
+    Each chunk is charged to the read budget while it is read and encoded, not
+    while it waits for a slow client. Closing the reply (a client that went
+    away) closes the iterator.
+    """
+    from . import read_guard
+    ensure_ascii = bool(getattr(current_app.json, "ensure_ascii", True))
+    # head and tail around the array, as the provider writes them (key order,
+    # trailing newline): dump once with a placeholder no path can contain
+    mark = "S" * (len(dataset_path) + 1)
+    shell = current_app.json.response({key: [mark], "dataset_path": dataset_path}).get_data(as_text=True)
+    head, tail = shell.split(f'"{mark}"', 1)
+    need = 2 * _chunk_size(first)
+    packer = zlib.compressobj(1, zlib.DEFLATED, 31) if compress else None
+
+    def pack(piece: bytes) -> bytes:
+        return packer.compress(piece) if packer else piece
+
+    def body():
+        pending, lead = first, head.encode("utf-8")
+        try:
+            while pending is not None:
+                with read_guard.admit(need):
+                    text = _chunk_json(pending, ensure_ascii)
+                    pending = next(chunks, None)
+                if text:
+                    piece = pack(lead + text)
+                    lead = b","
+                    if piece:
+                        yield piece
+            last = pack((b"" if lead == b"," else lead) + tail.encode("utf-8"))
+            if packer:
+                last += packer.flush()
+            yield last
+        except Exception:
+            logger.exception("Streaming the names of %s failed after the reply began", dataset_path)
+            raise
+        finally:
+            close = getattr(chunks, "close", None)
+            if close:
+                close()
+
+    reply = current_app.response_class(body(), mimetype="application/json")
+    if total is not None:
+        reply.headers[HEADER_NAMES] = str(int(total))
+        reply.headers[HEADER_NAMES_BYTES] = str(int(total * json_bytes_per_name(first)))
+    if compress:
+        reply.headers["Content-Encoding"] = "gzip"
+        reply.vary.add("Accept-Encoding")
+    # a reverse proxy that buffers a 2 GB reply defeats streaming it
+    reply.headers["X-Accel-Buffering"] = "no"
+    return reply

@@ -1,8 +1,9 @@
-from flask import jsonify
+from flask import current_app, jsonify
 from pathlib import Path
 from .reader import Reader
 from .remote import raise_if_timeout
-from .array_response import array_response, binary_response, categorical_response, numeric_array
+from .array_response import (array_response, binary_response, categorical_response, numeric_array,
+                             check_names_json, stream_names, debug_json)
 from . import categories as category_rules
 from typing import Literal, Optional
 import logging
@@ -154,8 +155,61 @@ def extract_metadata(dataset_path: str, reader: Reader):
         logger.exception(f"Error building dataset structure for path {dataset_path}")
         return jsonify({"error": f"Failed to get dataset structure: {str(e)}"}), 500
 
-def extract_cells_genes(dataset_path: str, type: Literal["cells", "genes"], reader: Reader):
+def _axis_length(reader, dataset_path: str, type: str) -> Optional[int]:
+    """How many names the axis has, from the metadata; None when it cannot say."""
     try:
+        shape = (reader.get_metadata(dataset_path) or {}).get("shape") or ()
+        return int(shape[0 if type == "cells" else 1])
+    except Exception:
+        return None
+
+
+def _stream_names(dataset_path: str, type: str, reader: Reader, compress: bool):
+    """The names of an axis as a streamed reply (array_response.stream_names)
+    when the reader gives them a chunk at a time; None when it cannot (h5ad,
+    an index stored as a categorical) or there is nothing to stream.
+
+    A cell subset's names are the few it shows, read by index, so they take
+    the ordinary path; its genes are the dataset's."""
+    from .subset import SubsetView
+    if isinstance(reader, SubsetView):
+        if type == "cells":
+            return None
+        reader = reader.base
+    chunks_of = getattr(reader, "iter_cell_gene_name_chunks", None)
+    if chunks_of is None or debug_json(current_app):
+        return None
+    chunks = chunks_of(dataset_path, type)
+    if chunks is None:
+        return None
+    try:
+        first = next(chunks, None)
+    except BaseException:
+        close = getattr(chunks, "close", None)
+        if close:
+            close()
+        raise
+    if first is None:
+        return None
+    return stream_names(type, dataset_path, first, chunks, total=_axis_length(reader, dataset_path, type),
+                        compress=compress)
+
+
+def extract_cells_genes(dataset_path: str, type: Literal["cells", "genes"], reader: Reader, compress: bool = False):
+    """The names of one axis as ``{type: [...], "dataset_path": ...}``.
+
+    A zarr store streams them (nothing but one chunk in memory); a reader that
+    cannot builds the list, refused with a 413 above ``max_names_json_mb``.
+    ``compress``: the client takes gzip and the server is set to give it (a
+    streamed reply is compressed as it is written)."""
+    try:
+        streamed = _stream_names(dataset_path, type, reader, compress)
+        if streamed is not None:
+            logger.info(f"API {type.upper()}: Streaming the {'gene' if type == 'genes' else 'cell'} names of {dataset_path}")
+            return streamed
+        n = _axis_length(reader, dataset_path, type)
+        if n is not None:
+            check_names_json(n, current_app.config.get("max_names_json_mb"))
         # Use direct zarr access for stateless operation
         logger.info(f"API {type.upper()}: Loading {'gene' if type == 'genes' else 'cell'} names for {dataset_path} with use_cache=True")
         entities = reader.get_cell_gene_names(dataset_path, type, use_cache=True)

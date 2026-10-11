@@ -168,6 +168,16 @@ they land.
 Memory follows the chunks a request touches; the binary path sends the array without building a
 Python list or a JSON string.
 
+Every cell name of a zarr store is written as it is read, one chunk of the name column at a time,
+so `GET /data/cells` holds one chunk, not the names. For the 95.6 million cells of the Tahoe store
+(a 2.1 GB reply, uncompressed) the server's peak resident memory went from 15.2 GiB to 0.42 GiB,
+the first byte from 14.4 s to 0.14 s and the last from 14.7 s to 7.7 s (gzip on: 20.9 s to 13.3 s);
+the bytes are the same. The reply has no `Content-Length`, so it sends `X-Annzarro-Names` and
+`X-Annzarro-Names-Bytes-Estimate` instead (the web client packs a reply estimated above 256 MB),
+and `X-Accel-Buffering: no` for nginx. h5ad files and an index stored as a categorical cannot be
+read by chunk: their names reply is built whole, and refused with `413 read_too_large` above
+`max_names_json_mb` ([configuration](configuration.md)).
+
 ## Measure your own
 
 ```bash

@@ -87,6 +87,12 @@ server:
   # n x n obsp is 120 GB at 175,000 cells. null = 5% of the machine's RAM,
   # between 256 MB and 4 GB. Applies to every user, admins included.
   max_read_mb: null
+  # MB a reply of every cell or gene name may hold when it is built whole,
+  # estimated at 100 bytes a name (2048 = about 20 million names) before any
+  # name is read; over it the request is a 413 read_too_large. A zarr store
+  # streams its names a chunk at a time and has no limit; this applies to
+  # h5ad files and to an index stored as a categorical. 0 = no limit.
+  max_names_json_mb: 2048
   # What all the pairwise reads in flight in one worker process may hold
   # together, in MB (each charged its estimate). null = twice max_read_mb. A read
   # that does not fit waits up to read_wait_s seconds for others to finish, then

@@ -1363,7 +1363,8 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            return process_file.extract_cells_genes(dataset_path_str, "genes", get_reader(dataset_path_str))
+            return process_file.extract_cells_genes(dataset_path_str, "genes", get_reader(dataset_path_str),
+                                                    compress=http_cache.wants_gzip(app.config))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -1386,7 +1387,8 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            return process_file.extract_cells_genes(dataset_path_str, "cells", _reader_for(dataset_path_str))
+            return process_file.extract_cells_genes(dataset_path_str, "cells", _reader_for(dataset_path_str),
+                                                    compress=http_cache.wants_gzip(app.config))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     

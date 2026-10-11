@@ -7,7 +7,7 @@ import { subsetParam } from './utils/subset.js';
 import { notify } from './utils/notify.js';
 import { CacheManager } from './cache-manager.js';
 import { BINARY_FORMAT, categoricalValues, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
-import { PackedNames, categoryCodesFromJSON } from './utils/packed-names.js';
+import { PackedNames, categoryCodesFromJSON, namesReplyPlan } from './utils/packed-names.js';
 import { RemoteNames } from './utils/remote-names.js';
 
 // A /cells body above this size is read as a stream into PackedNames
@@ -1219,10 +1219,12 @@ const DataManager = (function() {
         const params = _withSubset(Config.API.CELLS, { dataset_path: datasetPath });
         const fullUrl = `${Config.API.CELLS}?${new URLSearchParams(params).toString()}`;
         const response = await fetch(fullUrl, { signal });
-        const size = Number(response.headers.get('Content-Length') || 0);
-        if (response.ok && size > PACKED_NAMES_ABOVE_BYTES) {
+        // The size is the Content-Length, or for a reply the server writes
+        // as it reads it (no Content-Length) the estimate it sends
+        const plan = namesReplyPlan(response.headers, PACKED_NAMES_ABOVE_BYTES);
+        if (response.ok && plan.packed) {
             const t0 = performance.now();
-            const names = await PackedNames.fromJSON(response, 'cells', size);
+            const names = await PackedNames.fromJSON(response, 'cells', plan.size, plan.count);
             console.info(`Cell names: ${names.length} read into packed form in ${(performance.now() - t0).toFixed(0)} ms`);
             return names;
         }

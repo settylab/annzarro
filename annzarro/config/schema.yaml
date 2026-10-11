@@ -153,6 +153,10 @@ server:
       type: [number, "null"]
       description: MB one read of an obsp/varp matrix may hold in memory, estimated from metadata before reading; over it the request is a 413 read_too_large. null = 5% of RAM (256 MB to 4 GB); applies to admins too
       default: null
+    max_names_json_mb:
+      type: number
+      description: MB a reply of every cell or gene name may hold when built whole, estimated at 100 bytes a name before reading; over it the request is a 413 read_too_large. Only readers that cannot stream (h5ad, an index stored as a categorical) are limited; a zarr store streams its names a chunk at a time and has no limit. 0 = no limit
+      default: 2048
     read_budget_mb:
       type: [number, "null"]
       description: MB all obsp/varp reads in flight in one worker may hold together; null = twice max_read_mb. A read that does not fit waits read_wait_s, then 503 read_busy
