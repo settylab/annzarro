@@ -151,6 +151,31 @@ class Monitor:
         }
 
 
+def last_seen(app):
+    """``{username: ISO time}`` of each user's latest request on any worker.
+
+    Merged from this worker's counters and the others' snapshot files (read
+    only: nothing is written or pruned), so it is as fresh as their last
+    snapshot, at most ``INTERVAL_S`` behind. A user not seen within the
+    session timeout is absent. ``{}`` when the admin interface is off.
+    """
+    mon = monitor(app)
+    if mon is None:
+        return {}
+    seen = dict(mon.snapshot()["last_seen"])
+    try:
+        names = sorted(n for n in os.listdir(mon.directory) if n.endswith(".json"))[:MAX_FILES]
+    except OSError:
+        names = []
+    for name in names:
+        path = os.path.join(mon.directory, name)
+        snap = None if path == mon.path else _read(path)
+        for username, stamp in (snap["last_seen"].items() if snap else ()):
+            if isinstance(stamp, (int, float)) and time.time() - stamp <= mon.window_s:
+                seen[username] = max(seen.get(username, 0), stamp)
+    return {u: _iso(t) for u, t in seen.items()}
+
+
 def _reason(response):
     """The ``reason`` of a refusal, else ``http_<status>``."""
     reason = None

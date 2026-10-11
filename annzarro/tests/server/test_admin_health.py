@@ -110,6 +110,18 @@ def test_active_users_take_the_latest_sighting_across_workers(app):
     assert set(active) == {"alice", ADMIN, USER}                     # "old" is outside the window
 
 
+def test_last_seen_by_user_merges_workers_without_writing(app):
+    other = _other_worker(app, pid=os.getpid() + 1)
+    other._last_seen["alice"] = time.time() - 50
+    other.write()
+    login(app, USER)
+    before = sorted(os.listdir(other.directory))
+    seen = health.last_seen(app)
+    assert set(seen) == {"alice", USER} and seen["alice"].endswith("+00:00")
+    assert sorted(os.listdir(other.directory)) == before
+    assert "nobody" not in seen
+
+
 def test_a_dead_process_on_this_host_is_dropped_and_its_file_removed(app):
     gone = subprocess.Popen([sys.executable, "-c", "pass"])
     gone.wait()
