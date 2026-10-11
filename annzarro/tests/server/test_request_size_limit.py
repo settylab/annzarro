@@ -60,17 +60,30 @@ def test_the_login_form_is_limited_too(tmp_path):
 
 
 
+def _chunked(client, route, body_bytes):
+    """A real chunked POST: no Content-Length, the body read from the input stream."""
+    return client.post(f"/api/v1/sessions/{route}", input_stream=io.BytesIO(body_bytes),
+                       content_type="application/json",
+                       environ_overrides={"CONTENT_LENGTH": "", "HTTP_TRANSFER_ENCODING": "chunked",
+                                          "wsgi.input_terminated": True})
+
+
 @pytest.mark.parametrize("route, body", [
     ("save", {"name": "n"}), ("rename", {"old_name": "a", "new_name": "b"}),
     ("duplicate", {"source_name": "a", "new_name": "b"}),
 ])
-def test_a_body_cut_off_while_it_is_read_is_a_413_not_a_500(tmp_path, route, body):
-    """A body with no Content-Length (chunked), or one that outgrows its own,
-    is stopped by werkzeug while the route reads it; the routes' blanket
-    ``except Exception`` used to turn that into a 500."""
-    from unittest.mock import patch
-    from werkzeug.exceptions import RequestEntityTooLarge
-    client, _ = _client(tmp_path, max_request_mb=0.01)
-    with patch("flask.wrappers.Request.get_json", side_effect=RequestEntityTooLarge()):
-        reply = client.post(f"/api/v1/sessions/{route}", json=body)
-    assert reply.status_code == 413 and reply.get_json()["reason"] == "request_too_large"
+def test_an_oversized_chunked_body_is_a_413_not_a_400_or_500(tmp_path, route, body):
+    """No Content-Length: werkzeug cut the body at the limit and the route's JSON parse
+    then failed (400, caught as Exception, answered 500). The body is now measured first."""
+    client, data = _client(tmp_path, max_request_mb=0.01)
+    reply = _chunked(client, route, json.dumps({**body, "padding": "x" * 50_000}).encode())
+    assert reply.status_code == 413, reply.get_data()[:200]
+    assert reply.get_json()["reason"] == "request_too_large"
+    assert not list((data / "sessions").glob("*.json"))
+
+
+def test_a_small_chunked_body_still_reaches_the_route(tmp_path):
+    client, data = _client(tmp_path, max_request_mb=0.01)
+    reply = _chunked(client, "save", json.dumps({"name": "chunked_ok"}).encode())
+    assert reply.status_code == 200, reply.get_data()[:200]
+    assert (data / "sessions" / "chunked_ok.json").exists()

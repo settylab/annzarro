@@ -5,6 +5,7 @@ This module contains core functionality for the Annzarro server,
 including configuration, initialization, and routing.
 """
 
+import io
 import os
 import re
 import json
@@ -531,14 +532,28 @@ def configure_app(app: Flask, config: Dict[str, Any]) -> None:
             "limit_mb": float(limit_mb),
         }), 413
 
-    # by the length the client declares, before any route runs; a body that
-    # outgrows what it declared (or is chunked) is cut off by werkzeug and
-    # reaches the handler below
+    # By the length the client declares, before any route runs. A body with no
+    # length (chunked) cannot be judged up front, and werkzeug's own cut-off at
+    # the limit hands the route a truncated body, which fails there as a 400 or
+    # a 500 and never says why. So it is read here, up to the limit and one byte
+    # more: past the limit it is a 413, else it is given back to the route
+    # whole, with the length it turned out to have.
     @app.before_request
-    def _refuse_declared_size():
+    def _refuse_oversized_body():
         cap = app.config.get("MAX_CONTENT_LENGTH")
-        if cap and request.content_length is not None and request.content_length > cap:
-            return _too_large()
+        if not cap:
+            return None
+        if request.content_length is not None:
+            return _too_large() if request.content_length > cap else None
+        if request.method in ("POST", "PUT", "PATCH") and \
+                "chunked" in (request.headers.get("Transfer-Encoding") or "").lower():
+            stream = request.environ.get("wsgi.input")
+            data = stream.read(cap + 1) if stream is not None else b""
+            if len(data) > cap:
+                return _too_large()
+            request.environ["wsgi.input"] = io.BytesIO(data)
+            request.environ["CONTENT_LENGTH"] = str(len(data))
+            request.environ["wsgi.input_terminated"] = True
         return None
 
     app.register_error_handler(RequestEntityTooLarge, lambda exc: _too_large())
