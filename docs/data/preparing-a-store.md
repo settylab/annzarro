@@ -184,13 +184,14 @@ runs, not on AnnZarro:
 
 | Server's zarr | Python | Reads format 2 | Reads format 3 |
 |---|---|---|---|
-| 3.x | 3.11 or newer (zarr 3.4 needs 3.12) | yes | yes, plain and sharded |
+| 3.0.9 or newer | 3.11 or newer (zarr 3.4 needs 3.12) | yes | yes, plain and sharded |
+| 3.0.0 to 3.0.8 | 3.11 | not reliably | no: 3.0.0 to 3.0.2 read sharded arrays wrongly, 3.0.3 to 3.0.8 fail to find some members of consolidated format 2 stores; the package excludes them |
 | 2.x | 3.9 and newer | yes | no |
 
 On a zarr 2 server a format 3 store is listed with its error in place of cell and gene counts,
 and every data route answers `400` with `"reason": "unsupported_type"` and a sentence that says
 what the store is and how to fix it (rewrite it as format 2, or run the server with zarr 3).
-Both rows were run for this page, with the demonstration store written both ways: zarr 3.4.1 on
+The suites also ran on Python 3.11 with zarr 3.0.9, 3.0.10 and 3.1.6 (3.0.0 to 3.0.8 fail as the table says). Both rows were run for this page, with the demonstration store written both ways: zarr 3.4.1 on
 Python 3.12 served format 2, plain format 3 and sharded format 3 alike; zarr 2.18.2 on Python 3.9
 served format 2 and refused the format 3 stores as described.
 

@@ -579,11 +579,8 @@ def _define_lru_store(base):
 
         async def get(self, key, prototype, byte_range=None):
             cache = self._lru()
-            slot = (key, byte_range)
-            try:
-                hash(slot)
-            except TypeError:
-                return await super().get(key, prototype, byte_range)
+            # zarr 3.0's ByteRequest classes are not hashable; their repr names the range
+            slot = (key, None if byte_range is None else repr(byte_range))
             if slot in cache:
                 cache.move_to_end(slot)
                 return cache[slot]

@@ -110,6 +110,20 @@ def test_a_categorical_obs_column_has_its_colors(client, stores, variant):
     assert body["data"], body
 
 
+def _order_free(value):
+    """The same document with every list of plain names sorted and a string dtype named alike:
+    zarr 3.0 lists the members of a format 3 group in directory order, and reads strings as
+    ``object`` where later versions say ``StringDType()``."""
+    if isinstance(value, dict):
+        return {k: _order_free(v) for k, v in value.items()}
+    if isinstance(value, list):
+        items = [_order_free(v) for v in value]
+        return sorted(items) if all(isinstance(v, str) for v in items) else items
+    if isinstance(value, str) and value in ("StringDType()", "object"):
+        return "string"
+    return value
+
+
 @pytest.mark.parametrize("variant", ["plain", "sharded"])
 def test_structure_is_the_format_2_twins(client, stores, variant):
     want, _ = _ask(client, stores, "v2", "/api/v1/data/dataset_structure")
@@ -117,6 +131,7 @@ def test_structure_is_the_format_2_twins(client, stores, variant):
     for body in (want, got):
         for key in ("name", "path", "consolidated_metadata"):
             body.pop(key, None)
+    want, got = _order_free(want), _order_free(got)
     assert got == want
     assert set(got["layers"]["details"]["keys"]) == {"csr", "dense"}
     assert got["obsp"]["keys"] == ["conn", "knn"] and got["varp"]["keys"] == ["corr"]
@@ -127,7 +142,7 @@ def test_structure_is_the_format_2_twins(client, stores, variant):
 def test_to_anndata_metadata_matches(client, stores, variant):
     want, _ = _ask(client, stores, "v2", "/api/v1/zarr/to_anndata")
     got, _ = _ask(client, stores, variant, "/api/v1/zarr/to_anndata")
-    assert got == want
+    assert _order_free(got) == _order_free(want)
 
 
 @pytest.mark.parametrize("variant", ["plain", "sharded"])
