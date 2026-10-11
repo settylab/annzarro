@@ -46,6 +46,9 @@ class Key:
     combine: str = "override"       # one of COMBINES
     #: hosts this key lets the browser contact at a given value: callable(value, config) -> [host]
     outbound_hosts: Optional[Callable[[Any, dict], List[str]]] = None
+    #: keys whose "off" value (``type.off``) shuts this key's outbound hosts: the hosts a layer of
+    #: ``services`` lets through are of no use when ``external_requests`` is off
+    gated_by: Tuple[str, ...] = ()
     #: endpoints (Flask endpoint names) this key gates; ``requires(name)`` on each is checked by check_routes
     routes: Tuple[str, ...] = ()
     #: where the YAML keeps it, "integrations.external_requests"
@@ -122,7 +125,7 @@ REGISTRY = Registry()
 
 #: Modules that declare keys when imported; ``load_declarations`` imports them,
 #: so a registry is complete wherever it is built. Add yours here.
-DECLARING_MODULES = ("annzarro.server.limits", "annzarro.core.remote")
+DECLARING_MODULES = ("annzarro.server.limits", "annzarro.core.remote", "annzarro.server.policy.panels")
 
 
 def load_declarations() -> None:

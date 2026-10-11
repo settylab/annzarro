@@ -21,6 +21,7 @@ this module ignores what it cannot use and reports it, and never drops it.
 import hashlib
 import json
 import logging
+import os
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Tuple
 
@@ -94,6 +95,11 @@ def _from_package_defaults(origins: Optional[Mapping[str, str]], path: str) -> b
     return False
 
 
+#: Settings an environment variable decides over the configuration, as the
+#: client has always read them (routes/core.py): ``{path: variable}``
+ENV_OVERRIDES = {"integrations.external_requests": "ANNZARRO_EXTERNAL_REQUESTS"}
+
+
 def config_lookup(config: Mapping, path: str) -> Tuple[bool, Any]:
     """``(found, value)`` for a dotted path in what the operator configured.
 
@@ -104,7 +110,11 @@ def config_lookup(config: Mapping, path: str) -> Tuple[bool, Any]:
     of an ordinary admin. A config handed to ``create_app`` without a tree
     (tests, embedding) is read as it is, nested or flat: ``server.x`` is the
     flat key ``x``, as ``ConfigManager.to_flask_config`` flattens that section.
-    ``None`` counts as not set."""
+    ``None`` counts as not set. A path in ``ENV_OVERRIDES`` is decided by its
+    environment variable when that is set."""
+    variable = ENV_OVERRIDES.get(path)
+    if variable and os.environ.get(variable, "").strip():
+        return True, os.environ[variable].strip().lower()
     tree = config.get("config_tree")
     if tree is not None:
         found, value = _walk(tree, path)

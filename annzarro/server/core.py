@@ -669,13 +669,16 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
     from annzarro.server import access
 
     def render_login(**extra):
-        return render_template(
+        from annzarro.server.policy import csp
+        page = render_template(
             "login.html",
             app_name=app.config.get("app_name", "AnnZarro"),
             project_description=app.config.get("project_description", ""),
             contact_info=app.config.get("contact_info", {}),
             **extra
         )
+        # nobody is signed in: no external host at all
+        return csp.apply(app.make_response(page), None, external=False)
 
     @app.route("/login", methods=["GET"])
     @access.gate("public")
