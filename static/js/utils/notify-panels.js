@@ -19,6 +19,10 @@ export function notifyEach(panels, updateType, updateData, report = defaultRepor
     const outcomes = [];
     for (const panel of panels) {
         if (!panel || typeof panel.onDataUpdate !== 'function') continue;
+        // a panel whose data does not depend on which cells are shown is not
+        // told that other cells are (utils/subset-reads.js)
+        if (updateType === 'subsetChanged' && typeof panel.readsCellSubset === 'function'
+            && !panel.readsCellSubset()) continue;
         const id = typeof panel.getId === 'function' ? panel.getId() : undefined;
         let result;
         try {

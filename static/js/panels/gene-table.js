@@ -2,6 +2,7 @@
  * Gene Table Panel
  * Displays genes in a DataTable with columns from var, varm, varp, and layers
  */
+import { readsCellSubset } from '../utils/subset-reads.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -425,6 +426,8 @@ const GeneTablePanel = (function() {
             cleanup,
             destroy,
             onDataUpdate,
+            // whether other cells change its rows (utils/subset-reads.js)
+            readsCellSubset: () => readsCellSubset('genes', _settings.columns, _settings.tableFilter),
             getId,
             getTitle,
             setTitle,

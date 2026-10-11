@@ -1094,7 +1094,12 @@ const App = (function() {
         // the cells are read (that takes long on a very large dataset)
         const request = ++_subsetRequestSeq;
         const label = step && spec && Number.isInteger(spec.part) ? `Loading part ${spec.part + 1}...` : 'Loading cells...';
-        showSubsetLoading(label, () => _cancelSubsetChange());
+        // only those the other cells change: a gene plot is not dimmed, it is not reloaded
+        showSubsetLoading(label, () => _cancelSubsetChange(), null, (content) => {
+            const tile = content.closest('.tile');
+            const panel = tile && PanelManager.getPanel(tile.dataset.tileId);
+            return !(panel && typeof panel.readsCellSubset === 'function' && !panel.readsCellSubset());
+        });
         try {
             // The focused and locked cells are found in the new subset by their
             // dataset rows, learned now while this subset still shows them

@@ -16,8 +16,9 @@
 const PILL_CLASS = 'subset-loading-pill';
 const TILE_CLASS = 'subset-loading';
 
-function tiles(root) {
-    return Array.from((root || document).querySelectorAll('.tile-content'));
+function tiles(root, concerned = null) {
+    const all = Array.from((root || document).querySelectorAll('.tile-content'));
+    return concerned ? all.filter(concerned) : all;
 }
 
 /**
@@ -25,11 +26,12 @@ function tiles(root) {
  * @param {string} text - e.g. "Loading part 3..."
  * @param {() => void} [onCancel] - the pill's Cancel button (shown after a moment)
  * @param {Document|HTMLElement} [root]
+ * @param {(tile: HTMLElement) => boolean} [concerned] - the tiles other cells change; all when omitted
  * @returns {number} tiles marked
  */
-export function showSubsetLoading(text, onCancel = null, root = null) {
+export function showSubsetLoading(text, onCancel = null, root = null, concerned = null) {
     let n = 0;
-    for (const tile of tiles(root)) {
+    for (const tile of tiles(root, concerned)) {
         tile.classList.add(TILE_CLASS);
         let pill = Array.from(tile.children).find(c => c.classList && c.classList.contains(PILL_CLASS));
         if (!pill) {

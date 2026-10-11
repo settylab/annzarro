@@ -12,6 +12,7 @@ import { drawPlaceholder, showCancelled } from '../utils/panel-surface.js';
 import { beginLoad, endLoad, cancelLoads, wasCancelled } from '../utils/load-scope.js';
 import { releasePlot } from '../utils/release-plot.js';
 import { forget } from '../utils/memory-guard-ui.js';
+import { readsCellSubset } from '../utils/subset-reads.js';
 import { restoreColorRange, storedColorRange } from '../utils/array-stats.js';
 
 /**
@@ -627,7 +628,9 @@ const GenePlotPanel = (function() {
             getConfig,
             setConfig,
             updateConfig,
-            onDataUpdate
+            onDataUpdate,
+            // whether other cells change what it draws (utils/subset-reads.js)
+            readsCellSubset: () => readsCellSubset('genes', [_settings.x, _settings.y, _settings.z, _settings.color, ...(_settings.hoverInfo || [])], _settings.tableFilter)
         };
     }
     
