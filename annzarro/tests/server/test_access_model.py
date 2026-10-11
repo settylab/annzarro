@@ -351,6 +351,7 @@ def test_an_unreadable_access_file_refuses_every_non_admin_and_no_admin(world, c
         assert reply.status_code == expected, (name, content)
         if expected == 503:
             assert reply.get_json()["reason"] == "access_unavailable"
+            assert reply.get_json()["code"] == "store_unreadable"
             assert c.get("/api/v1/datasets").status_code == 503
             assert c.get("/api/v1/sessions/list").status_code == 503
             assert c.get("/api/v1/data/obs", query_string={"dataset_path": f"{world.world.outside}/z.zarr"}).status_code == 503

@@ -186,7 +186,10 @@ def _read(config=None):
 
 
 def store_error(config=None):
-    """Why ``access.json`` cannot be trusted (a sentence), or None when it can."""
+    """Why ``access.json`` cannot be trusted (a sentence), or None when it can.
+
+    The one place that asks; slice S's shared "state file unreadable" helper replaces its body.
+    """
     return _read(config)[1]
 
 
@@ -713,7 +716,8 @@ def unavailable_reply():
         return None
     _log_unavailable(error)
     return jsonify({"error": "Dataset access is unavailable right now. Ask an administrator.",
-                    "reason": "access_unavailable"}), 503
+                    "reason": "access_unavailable",
+                    "code": "store_unreadable"}), 503
 
 
 _unavailable_logged = [0.0]
