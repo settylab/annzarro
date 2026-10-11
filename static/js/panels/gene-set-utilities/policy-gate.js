@@ -7,6 +7,8 @@
  */
 import { geneSetPolicy } from '../../policy.js';
 
+const offline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+
 const UNREADABLE = 'The administrator\'s settings could not be read: nothing was sent.';
 
 /**
@@ -14,13 +16,16 @@ const UNREADABLE = 'The administrator\'s settings could not be read: nothing was
  * @param {{fresh: Function, values: Function}} policy - the page's Policy (policy.js)
  * @param {Object} integrations - Config.INTEGRATIONS
  * @returns {Promise<{gs: Object, unreadable: boolean, notice: string|null}>}
- *   A server with a policy that cannot be read sends nothing (externalRequests
- *   'off'), rather than assuming the last answer still holds.
+ *   A server with a policy that cannot be read (an HTTP error, a malformed
+ *   reply) sends nothing (externalRequests 'off'), rather than assuming the
+ *   last answer still holds. With no answer at all (the browser is offline)
+ *   the last known policy stands: nothing can be sent, the panel says the
+ *   browser is offline, and the next online Run reads the policy again.
  */
 export async function readRunPolicy(policy, integrations) {
     const read = await policy.fresh();
     const gs = geneSetPolicy(policy.values(), integrations);
-    if (read.status === 'error') return { gs: { ...gs, externalRequests: 'off' }, unreadable: true, notice: UNREADABLE };
+    if (read.status === 'error' && !(read.network || offline())) return { gs: { ...gs, externalRequests: 'off' }, unreadable: true, notice: UNREADABLE };
     return { gs, unreadable: false, notice: null };
 }
 
