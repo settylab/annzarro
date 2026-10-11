@@ -191,6 +191,13 @@ def register_core_routes(app, api_version):
             "remote_stores": bool(get_remote_policy().enabled),
         })
 
+    def _version():
+        try:
+            from annzarro import __version__
+            return __version__
+        except ImportError:
+            return "0.1.0"  # Fallback version
+
     _count_cache = {}
 
     def _store_count(data_dir):
@@ -213,7 +220,14 @@ def register_core_routes(app, api_version):
         
         Returns:
             JSON response with server status information
+
+        On a shared server only an admin gets the host, the process and the
+        data directory (and the other users' datasets they imply); everybody
+        else gets whether the server is up, for a load balancer's probe.
         """
+        from .. import permissions
+        if not permissions.may_see_server_details(app.config):
+            return jsonify({"server": {"status": "running", "version": _version()}})
         try:
             # Get process information
             process = psutil.Process(os.getpid())
@@ -257,13 +271,8 @@ def register_core_routes(app, api_version):
             if data_dir_exists and data_dir_is_readable:
                 zarr_count, count_truncated = _store_count(data_dir)
             
-            # Get version from the package
-            try:
-                from annzarro import __version__
-                version = __version__
-            except ImportError:
-                version = "0.1.0"  # Fallback version
-                
+            version = _version()
+
             # Build status information
             status = {
                 "server": {

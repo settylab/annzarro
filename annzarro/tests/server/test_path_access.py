@@ -75,6 +75,7 @@ NO_PATH = {
     "import_session", "list_sessions", "load_session", "set_session_owner",
     "rename_session", "save_session", "login_page", "login", "logout",
     "admin.page", "admin.reauth", "admin.audit",   # admin interface (test_admin_access.py); no dataset paths
+    "admin.health", "admin.cache_clear",   # the cache clear names a cache key in its body, never opened
 }
 
 

@@ -62,6 +62,14 @@ def current_user():
     return username, bool(user.is_admin)
 
 
+def may_see_server_details(config):
+    """Whether the requester may see this server's paths, host and cache: an
+    admin, or anybody on a server only its owner can reach. A hosted server
+    with login off has no admins, so nobody."""
+    from .confinement import is_hosted
+    return not is_hosted(config) or current_user()[1]
+
+
 def can_modify(session_data):
     """Whether the requester may delete, rename or overwrite ``session_data``.
 
