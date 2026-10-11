@@ -30,9 +30,13 @@ import {
     compareStores, describeComparison, versionNotice, orderCandidates, automaticCandidate,
     savedStoreOf, storeName, hasDataTier
 } from './utils/view-store.js';
-import { probeStore, prewarmStore, appVersion } from './utils/store-identity.js';
+import { probeStore, prewarmStore, appVersion, knownStore } from './utils/store-identity.js';
+import { loadRecents, pushRecent, displayPath, pathFieldWording } from './utils/dataset-picker.js';
+import { mountDatasetPicker } from './utils/dataset-picker-ui.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
+import { installDatasetHeaderFit } from './utils/header-fit.js';
+import { datasetLabel } from './utils/dataset-label.js';
 import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
 
 const App = (function() {
@@ -112,6 +116,7 @@ const App = (function() {
             });
 
             // Load available datasets
+            _installDatasetOptionLabels();
             await _loadDatasets();
 
             // Load available sessions
@@ -597,10 +602,11 @@ const App = (function() {
      * @returns {Promise<Array>} orderCandidates output
      * @private
      */
-    async function _storeCandidates(saved) {
+    async function _storeCandidates(saved, { withErrors = false } = {}) {
         DataManager.clearCache(Config.API.DATASETS);
         const listing = (await DataManager.loadDatasets().catch(() => [])) || [];
-        const entries = listing.filter(d => d && d.path && !d.error).map(d => ({ ...d }));
+        // the picker also lists the stores this server cannot read, with the reason
+        const entries = listing.filter(d => d && d.path && (withErrors || !d.error)).map(d => ({ ...d }));
         const fp = saved && saved.fp;
         if (fp && Number.isFinite(fp.n_obs)) {
             const same = entries.filter(e => e.cells === fp.n_obs && e.genes === fp.n_var).slice(0, 12);
@@ -818,9 +824,12 @@ const App = (function() {
      * warning if it differs.
      * @private
      */
-    async function _showChangeDataset({ pending: given = null, onChoose = null } = {}) {
+    async function _showChangeDataset({ pending: given = null, onChoose = null, browse = false, query = '' } = {}) {
         const modalEl = document.getElementById('change-dataset-modal');
         if (!modalEl) return;
+        // "Browse": a dataset is open (or none is) and the user is choosing another, as in the
+        // dropdown. A view open without data, and a caller that asked for a store, keep their flow.
+        const normal = browse && !given && !onChoose && !_noDataView;
         const pending = given || _noDataView || {
             view: SessionManager.captureView(),
             saved: SessionManager.storeOfView(),
@@ -835,27 +844,63 @@ const App = (function() {
         });
         const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
         const list = document.getElementById('change-dataset-list');
+        const tree = document.getElementById('change-dataset-tree');
         const savedLine = document.getElementById('change-dataset-saved');
         const error = document.getElementById('change-dataset-error');
+        const title = document.getElementById('change-dataset-title');
         const saved = pending.saved;
         const fp = saved && saved.fp;
-        savedLine.textContent = `This view was saved on ${saved ? saved.path : 'an unknown store'}` +
-            (fp && Number.isFinite(fp.n_obs) ? ` (${fp.n_obs.toLocaleString('en-US')} cells x ${fp.n_var.toLocaleString('en-US')} genes)` : '') +
-            (fp ? '.' : '; it records no fingerprint, so stores are matched by name only.');
+        const counts = fp && Number.isFinite(fp.n_obs)
+            ? ` (${fp.n_obs.toLocaleString('en-US')} cells x ${fp.n_var.toLocaleString('en-US')} genes)` : '';
+        const current = DataManager.getCurrentDataset();
+        // paths are shown relative to the data directory (the listing says how), the absolute one in the tooltip
+        const describe = (listing) => {
+            // counts: the view's fingerprint, else what the listing says of the open store
+            const hit = (listing || []).find(e => e.path === current);
+            const shownCounts = counts || (hit && Number.isFinite(hit.cells)
+                ? ` (${hit.cells.toLocaleString('en-US')} cells x ${hit.genes.toLocaleString('en-US')} genes)` : '');
+            if (normal) {
+                title.textContent = 'Open a dataset';
+                savedLine.textContent = current
+                    ? `Showing datasets like ${displayPath(current, listing, knownStore(current))}${shownCounts} first`
+                    : 'Choose a dataset to open';
+                savedLine.title = current || '';
+            } else {
+                title.textContent = 'Change dataset';
+                const was = saved ? displayPath(saved.path, listing) : 'an unknown store';
+                savedLine.textContent = `This view was saved on ${was}` + counts +
+                    (fp ? '.' : '; it records no fingerprint, so stores are matched by name only.');
+                savedLine.title = saved ? saved.path : '';
+            }
+        };
+        describe([]);
         error.hidden = true;
         list.textContent = 'Looking for matching stores...';
+        tree.textContent = '';
+        modalEl.addEventListener('shown.bs.modal', () => {
+            const field = document.getElementById('change-dataset-search');
+            if (field) field.focus();
+        }, { once: true });
         modal.show();
 
         const choose = async (path) => {
             modal.hide();
             // a caller that asked for a store (the Load dialog) takes it from here
             if (onChoose) { await onChoose(path); return; }
+            // the dropdown's own handler: the same dataset, panels and view as picking it there
+            if (normal) { await _selectDataset(path); return; }
             const view = pending.view || { v: VIEW_SCHEMA_VERSION };
             await _applyView({ datasetPath: path, view }, { exact: true });
             PanelManager.ensureWelcomeFallback();
         };
         const openPath = document.getElementById('change-dataset-open-path');
         const input = document.getElementById('change-dataset-path');
+        // the field says what this user can open (the server's refusal stays the safety net)
+        fetch(Config.API.AUTH_ME).then(r => (r.ok ? r.json() : null)).catch(() => null).then(me => {
+            const words = pathFieldWording(me);
+            document.getElementById('change-dataset-path-label').textContent = words.label;
+            input.placeholder = words.placeholder;
+        });
         openPath.onclick = async () => {
             const path = input.value.trim();
             if (!path) return;
@@ -867,51 +912,43 @@ const App = (function() {
             }
             await choose(probe.path || path);
         };
+        input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); openPath.click(); } };
 
-        const ordered = await _storeCandidates(saved);
+        const ordered = await _storeCandidates(saved, { withErrors: true });
+        describe(ordered);
         list.textContent = '';
-        const groups = [
-            ['Same cells and genes', e => e.match === 'same' || e.match === 'fields'],
-            ['Same size (cell and gene names not compared yet)', e => e.match === 'counts'],
-            ['Same name, other cells or genes', e => e.match === 'name-different'],
-            ['Same name', e => e.match === 'name'],
-            ['Other datasets in the data directory', e => e.match === 'other' || e.match === 'different']
-        ];
-        for (const [title, test] of groups) {
-            const members = ordered.filter(test);
-            if (!members.length) continue;
-            const group = document.createElement('div');
-            group.className = 'change-dataset-group';
-            const h = document.createElement('h6');
-            h.textContent = title;
-            group.appendChild(h);
-            for (const entry of members) {
-                const row = document.createElement('div');
-                row.className = 'change-dataset-item';
-                row.dataset.path = entry.path;
-                row.dataset.match = entry.match;
-                const label = document.createElement('div');
-                const name = document.createElement('div');
-                name.textContent = entry.rel_path || entry.name || entry.path;
-                const meta = document.createElement('div');
-                meta.className = 'change-dataset-meta';
-                const counts = Number.isFinite(entry.cells)
-                    ? `${entry.cells.toLocaleString('en-US')} cells x ${entry.genes.toLocaleString('en-US')} genes` : '';
-                const fields = entry.cmp && entry.cmp.level === 'fields' && entry.cmp.changes.length
-                    ? `; fields differ: ${entry.cmp.changes.slice(0, 3).join('; ')}` : '';
-                meta.textContent = counts + fields;
-                label.append(name, meta);
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'btn btn-sm btn-outline-primary';
-                button.textContent = 'Open';
-                button.addEventListener('click', () => choose(entry.path));
-                row.append(label, button);
-                group.appendChild(row);
-            }
-            list.appendChild(group);
-        }
-        if (!list.children.length) list.textContent = 'No dataset in the data directory.';
+        const fetchFolder = async (folder, offset) => {
+            const response = await fetch(`${Config.API.DATASET_FOLDER}?folder=${encodeURIComponent(folder)}&offset=${offset}`);
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.error || response.statusText);
+            return body;
+        };
+        const fetchSearch = async (text, regex, signal) => {
+            const response = await fetch(`${Config.API.DATASET_SEARCH}?q=${encodeURIComponent(text)}&mode=${regex ? 'regex' : 'substring'}`, { signal });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.error || response.statusText);
+            return body;
+        };
+        let recents = [];
+        try { recents = loadRecents(window.localStorage, window.location.origin); } catch (e) { /* storage blocked */ }
+        const picker = mountDatasetPicker({
+            dom: {
+                list, tree,
+                search: document.getElementById('change-dataset-search'),
+                regexBtn: document.getElementById('change-dataset-regex'),
+                sortSel: document.getElementById('change-dataset-sort'),
+                searchError: document.getElementById('change-dataset-search-error')
+            },
+            entries: ordered,
+            recents,
+            currentPath: current,
+            onChoose: choose,
+            fetchFolder,
+            fetchSearch,
+            query: normal ? query : '',
+            otherTitle: normal ? 'Other datasets in the data directory' : undefined
+        });
+        picker.focus();
     }
 
     /**
@@ -1851,6 +1888,119 @@ const App = (function() {
         return _datasetsLoading;
     }
 
+    // The name as text with <wbr> after each / _ . - so a long name wraps at those first
+    function _datasetNameNode(item) {
+      const span = document.createElement('span');
+      span.className = 'dataset-name';
+      (item.text || '').split(/(?<=[/_.-])/).forEach(part => {
+        span.appendChild(document.createTextNode(part));
+        span.appendChild(document.createElement('wbr'));
+      });
+      return $(span);
+    }
+
+    // The closed box: one line, the name cut in the middle (CSS) so its start and its end stay
+    function _datasetSelectionNode(item) {
+      const text = item.text || '';
+      const tailLength = text.length > 28 ? 16 : 0;
+      const span = document.createElement('span');
+      span.className = 'dataset-name-mid';
+      const head = document.createElement('span');
+      head.className = 'dataset-name-head';
+      head.textContent = text.slice(0, text.length - tailLength);
+      span.appendChild(head);
+      if (tailLength) {
+        const tail = document.createElement('span');
+        tail.className = 'dataset-name-tail';
+        tail.textContent = text.slice(-tailLength);
+        span.appendChild(tail);
+      }
+      return $(span);
+    }
+
+    // The dataset listing the dropdown was last filled from (labels of unlisted paths derive from it)
+    let _listedDatasets = [];
+
+    /**
+     * The dropdown adds an option for a path the listing lacks (a store in a
+     * subfolder, a typed path, a link's, a panel set's). Its label is the path
+     * relative to the data directory, never the 4-line absolute one, and the
+     * absolute path is its tooltip; a path outside the data directory has no
+     * relative form and stays absolute. Runs whenever options are added.
+     * @private
+     */
+    function _labelUnlistedOptions(sel) {
+        let changed = false;
+        for (const opt of [...sel.options]) {
+            if (!opt.value || _listedDatasets.some(d => d.path === opt.value)) continue;
+            // a typed term Select2 offers while searching is its own to remove; a chosen one is labelled like any
+            if (opt.hasAttribute('data-select2-tag') && !opt.selected) continue;
+            const label = datasetLabel(opt.value, _listedDatasets, knownStore(opt.value));
+            if (opt.text !== label || opt.title !== label) {
+                // a fresh option: Select2 keeps the data it read from the old one (its text)
+                const fresh = new Option(label, opt.value, opt.defaultSelected, opt.selected);
+                fresh.title = label;   // the absolute path only where there is no relative one
+                opt.replaceWith(fresh);
+                changed = true;
+            }
+            if (label === opt.value && !/^[a-z][a-z0-9+.-]*:\/\//i.test(opt.value) && !_listedDatasets.length) {
+                // no listing to derive the data directory from: ask the server once
+                probeStore(opt.value).then(p => { if (p.ok && p.relPath) _labelUnlistedOptions(sel); }).catch(() => {});
+            }
+        }
+        if (changed && window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) $(sel).trigger('change.select2');
+    }
+
+    /** Label every option the dropdown gets for an unlisted path (see _labelUnlistedOptions). @private */
+    function _installDatasetOptionLabels() {
+        const sel = document.getElementById('dataset-selector');
+        if (!sel || typeof MutationObserver === 'undefined') return;
+        new MutationObserver(() => _labelUnlistedOptions(sel)).observe(sel, { childList: true });
+        // a typed path becomes a chosen option without any option being added
+        if (window.$) $(sel).on('change.dsLabel', () => _labelUnlistedOptions(sel));
+    }
+
+    /**
+     * What choosing a dataset does: the dropdown's handler, and the Browse
+     * picker's in the normal case (one code path, one end state).
+     * @private
+     */
+    function _selectDataset(datasetPath) {
+        if (!datasetPath) return Promise.resolve();
+        // a view open without data opens on the chosen dataset
+        if (_noDataView) {
+            return _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
+                .then(() => PanelManager.ensureWelcomeFallback());
+        }
+        return _loadDataset(datasetPath);
+    }
+
+    /**
+     * A "Browse..." button in the open dataset dropdown, right of its search
+     * field. Select2 keeps one dropdown element per widget, but a re-opened
+     * list or a re-created widget must not duplicate or lose it, so every
+     * open checks for it.
+     * @private
+     */
+    function _addBrowseButton(sel) {
+        const search = document.querySelector('.select2-dropdown.dataset-select-dropdown .select2-search--dropdown');
+        if (!search || search.querySelector('.dataset-browse')) return;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-sm btn-outline-secondary dataset-browse';
+        button.title = 'Browse datasets, with the search text';
+        button.innerHTML = '<i class="fas fa-list"></i> Browse...';
+        // keep the dropdown's own focus handling from closing it before the click
+        button.addEventListener('mousedown', e => e.stopPropagation());
+        button.addEventListener('click', () => {
+            const field = search.querySelector('.select2-search__field');
+            const query = field ? field.value : '';
+            if (window.$ && $.fn.select2) $(sel).select2('close');
+            _showChangeDataset({ browse: true, query });
+        });
+        search.appendChild(button);
+    }
+
     async function _fillDatasetPicker() {
         const sel = document.getElementById('dataset-selector');
         if (!sel) return;
@@ -1886,11 +2036,12 @@ const App = (function() {
         // 5) clear & populate real options
         sel.disabled  = false;
         sel.innerHTML = '';
+        _listedDatasets = datasets || [];
         if (datasets && datasets.length) {
           datasets.forEach(ds => {
             const opt = new Option(ds.name || ds.path, ds.path);
-            // Select2 shows an option's title on its list entry and on the closed box
-            opt.title = ds.name && ds.name !== ds.path ? `${ds.name}\n${ds.path}` : ds.path;
+            // Select2 shows an option's title on its list entry and on the closed box: the path relative to the data directory
+            opt.title = ds.rel_path || ds.name || ds.path;
             sel.appendChild(opt);
           });
         } else {
@@ -1918,6 +2069,9 @@ const App = (function() {
             // the open list may be wider than the box; CSS caps it
             dropdownAutoWidth: true,
             dropdownCssClass:  'dataset-select-dropdown',
+            // whole names in the list, wrapped at / _ . - (see .dataset-name in styles.css); the closed box cuts the middle
+            templateResult:    _datasetNameNode,
+            templateSelection: _datasetSelectionNode,
             createTag: params => {
               const term = params.term.trim();
               return term
@@ -1931,8 +2085,10 @@ const App = (function() {
             const box = $(sel).next('.select2-container');
             const room = window.innerWidth - box.offset().left - 8;
             // never narrower than the box itself (a narrow window gives the box the whole row)
-            $('.dataset-select-dropdown').css('max-width', Math.max(box.outerWidth(), Math.min(room, 700, window.innerWidth * 0.9)));
+            $('.dataset-select-dropdown').css('max-width', Math.max(box.outerWidth(), Math.min(room, 900, window.innerWidth * 0.9)));
           });
+
+          $(sel).off('select2:open.dsBrowse').on('select2:open.dsBrowse', () => _addBrowseButton(sel));
 
           // 8) restore selection in the Select2 widget
           if (currentValue) {
@@ -1942,17 +2098,7 @@ const App = (function() {
           // 9) bind the select2:select → _loadDataset handler
           $(sel)
             .off('select2:select')
-            .on('select2:select', e => {
-              const datasetPath = e.params.data.id;
-              if (!datasetPath) return;
-              // a view open without data opens on the chosen dataset
-              if (_noDataView) {
-                  _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
-                      .then(() => PanelManager.ensureWelcomeFallback());
-              } else {
-                  _loadDataset(datasetPath);
-              }
-            });
+            .on('select2:select', e => _selectDataset(e.params.data.id));
         }
       }
     
@@ -1979,6 +2125,22 @@ const App = (function() {
         if (!sel || !datasetPath || sel.value === datasetPath) return;
         if (![...sel.options].some(o => o.value === datasetPath)) sel.appendChild(new Option(datasetPath, datasetPath));
         sel.value = datasetPath;
+        if (window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) $(sel).trigger('change.select2');
+    }
+
+    /**
+     * A dataset that failed to open (a typed path the server refused) must not stay
+     * in the box as if it were open: show the dataset that is, and drop the option
+     * made for the refused path.
+     * @private
+     */
+    function _revertDatasetPicker(failedPath) {
+        const sel = document.getElementById('dataset-selector');
+        const current = DataManager.getCurrentDataset();
+        if (!sel || !current || failedPath === current) return;
+        const listed = _listedDatasets.some(d => d.path === failedPath);
+        if (!listed) [...sel.options].filter(o => o.value === failedPath).forEach(o => o.remove());
+        _showDatasetInPicker(current);
         if (window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) $(sel).trigger('change.select2');
     }
 
@@ -2044,6 +2206,7 @@ const App = (function() {
             
             // Update dataset info: cells shown of the dataset's cells, and the subset
             SubsetControl.update();
+            try { pushRecent(window.localStorage, window.location.origin, datasetPath); } catch (e) { /* storage blocked */ }
             document.getElementById('gene-count').textContent = datasetStructure.n_vars || 0;
             document.getElementById('dataset-path').textContent = datasetStructure.name || datasetPath;
             // A refresh found the store's consolidated metadata out of date:
@@ -2100,6 +2263,7 @@ const App = (function() {
 
                 // Revert _lastLoadedDatasetPath so the same dataset can be retried
                 _lastLoadedDatasetPath = DataManager.getCurrentDataset() || null;
+                _revertDatasetPicker(datasetPath);
 
                 // Strip a leading exception class name ("ValueError: ...") so the
                 // notification reads as a message rather than a traceback fragment.
@@ -3843,6 +4007,7 @@ document.addEventListener('DOMContentLoaded', () => {
     App.init();
     // A panel's scroller hands the wheel to the page at its end (utils/wheel-handover.js)
     installWheelHandover(document.getElementById('tile-container'));
+    installDatasetHeaderFit();
     
     // Register for app close events if in Electron environment
     if (window.api && typeof window.api.onWillQuit === 'function') {

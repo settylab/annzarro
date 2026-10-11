@@ -1,0 +1,141 @@
+/**
+ * The header is one row that gives way step by step, measured (not by
+ * breakpoint), only as far as it has to for everything to fit:
+ *
+ *   1. everything at its natural width, the buttons with their labels;
+ *   2. `actions-compact`: the buttons keep their icons (the label is the tooltip);
+ *   3. `focus-tight`: the focused gene and cell columns give up as much width as
+ *      the row is short of, down to the minimum that shows an Ensembl ID or a
+ *      barcode (a longer value is whole in the tooltip, its end shown);
+ *   4. `dataset-tight`: the dataset box may shrink from about 220px to 140px,
+ *      its name cut in the middle (the full path is the tooltip);
+ *   5. `dataset-stacked`: the dataset group takes a row of its own above the
+ *      rest, which then gives way again (labels, then the inputs) on its row.
+ *
+ * Each step is tried with the earlier ones kept and the first that leaves the
+ * row without overflow is the layout, so the outcome depends on nothing but
+ * the window and the content and cannot flip back and forth. The dataset box
+ * itself is always one line: a long name is cut in the middle by CSS.
+ */
+export const STEPS = ['actions-compact', 'focus-tight', 'dataset-tight'];
+export const STACKED_CLASS = 'dataset-stacked';
+const ALL_CLASSES = [...STEPS, STACKED_CLASS];
+const ONE_ROW = [[], ['actions-compact'], ['actions-compact', 'focus-tight'], ['actions-compact', 'focus-tight', 'dataset-tight']];
+const STACKED = [[STACKED_CLASS], [STACKED_CLASS, 'actions-compact'], [STACKED_CLASS, 'actions-compact', 'focus-tight']];
+
+/** Whether the header's one row of controls is wider than the room it has. */
+export function rowOverflows(header) {
+    const row = header.querySelector('.global-controls > .row');
+    return !!row && row.scrollWidth > row.clientWidth + 1;
+}
+
+/** Whether, stacked, the focus pickers and buttons no longer share one line. */
+export function restWraps(header) {
+    const row = header.querySelector('.global-controls > .row');
+    if (!row) return false;
+    const tops = [...row.children].filter(c => !c.classList.contains('dataset-col'))
+        .map(c => Math.round(c.getBoundingClientRect().top));
+    return new Set(tops).size > 1;
+}
+
+function apply(header, classes) {
+    for (const c of ALL_CLASSES) header.classList.toggle(c, classes.includes(c));
+    for (const id of FOCUS_INPUT_IDS) fitFocusInput(document.getElementById(id));
+}
+
+/** The natural width of the closed box for its current label: the text and the box's padding. */
+export function datasetNaturalWidth(header) {
+    const rendered = header.querySelector('#dataset-selector + .select2-container .select2-selection__rendered');
+    if (!rendered) return null;
+    const style = getComputedStyle(rendered);
+    const canvas = datasetNaturalWidth._canvas || (datasetNaturalWidth._canvas = document.createElement('canvas'));
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const text = rendered.textContent.trim();
+    return Math.ceil(ctx.measureText(text).width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 4);
+}
+
+export function fitDatasetHeader(header) {
+    if (!header) return;
+    const natural = datasetNaturalWidth(header);
+    if (natural) header.style.setProperty('--dataset-natural', `${natural}px`);
+    for (const classes of ONE_ROW) {
+        apply(header, classes);
+        if (!rowOverflows(header)) return;
+    }
+    for (const classes of STACKED) {
+        apply(header, classes);
+        if (!restWraps(header)) return;
+    }
+}
+
+export const FOCUS_INPUT_IDS = ['focused-gene', 'focused-cell'];
+export const FOCUS_INPUT_MAX = 420;
+
+/**
+ * The focused gene and cell inputs show their value whole: they grow with it
+ * (CSS field-sizing, or here by measuring where that is unsupported) up to
+ * FOCUS_INPUT_MAX px. A value still longer is whole in the tooltip, and an
+ * input that is not being edited shows its end, where a barcode differs.
+ */
+export function fitFocusInput(input) {
+    if (!input) return;
+    if (!(window.CSS && CSS.supports && CSS.supports('field-sizing', 'content'))) {
+        const style = getComputedStyle(input);
+        const canvas = fitFocusInput._canvas || (fitFocusInput._canvas = document.createElement('canvas'));
+        const ctx = canvas.getContext('2d');
+        ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        const extra = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+            + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth) + 4;
+        const want = Math.ceil(ctx.measureText(input.value || input.placeholder || '').width + extra);
+        const min = parseFloat(style.minWidth) || 0;
+        // tight: the column decides (CSS gives the input its whole width)
+        input.style.width = input.closest('.focus-tight') ? '' : `${Math.min(FOCUS_INPUT_MAX, Math.max(min, want))}px`;
+    }
+    const cut = input.scrollWidth > input.clientWidth + 1;
+    if (cut) input.title = input.value; else input.removeAttribute('title');
+    if (cut && document.activeElement !== input) input.scrollLeft = input.scrollWidth;
+    else if (!cut) input.scrollLeft = 0;
+}
+
+/** Keep the focus inputs fitted as their value changes (typed, or set by the picker). */
+function installFocusInputFit(refit) {
+    for (const id of FOCUS_INPUT_IDS) {
+        const input = document.getElementById(id);
+        if (!input) continue;
+        const run = () => { fitFocusInput(input); refit(); };
+        // a value set from code fires no event: watch the property
+        const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+        Object.defineProperty(input, 'value', {
+            configurable: true,
+            get() { return desc.get.call(this); },
+            set(v) { desc.set.call(this, v); requestAnimationFrame(run); }
+        });
+        for (const type of ['input', 'change', 'blur', 'focus']) input.addEventListener(type, () => requestAnimationFrame(run));
+        run();
+    }
+}
+
+/** Refit on resize, and when the box or the header's size or text changes. */
+export function installDatasetHeaderFit(header = document.getElementById('app-header')) {
+    if (!header) return;
+    let queued = false;
+    const refit = () => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => { queued = false; fitDatasetHeader(header); });
+    };
+    window.addEventListener('resize', refit);
+    installFocusInputFit(refit);
+    if (typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(refit);
+        // the header's own size does not change when the badge or title widens its first column
+        for (const el of [header, header.querySelector('.col-auto'), header.querySelector('.global-controls')]) if (el) observer.observe(el);
+    }
+    const pick = header.querySelector('.dataset-pick');
+    if (pick && typeof MutationObserver !== 'undefined') {
+        new MutationObserver(refit).observe(pick, { childList: true, subtree: true, characterData: true });
+    }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
+    refit();
+}

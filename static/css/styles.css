@@ -136,15 +136,20 @@ body {
     z-index: 100;
 }
 
-/* Header actions keep one row: the column takes the buttons' natural width,
-   labels never wrap inside a button, and below 1400 px the buttons show
-   their icons only (the label stays as the tooltip). They used to wrap into
-   'Save / Panel / Set' at 1200-1400 px and onto a second row below 1200. */
+/* Header actions keep one row: the column takes the buttons' natural width and
+   labels never wrap inside a button. The buttons show their labels while the
+   header has room and keep their icons only (the label stays as the tooltip)
+   when it has not: utils/header-fit.js sets .actions-compact from what fits,
+   not from the window's width. Below 768 px they are always icons. */
 .header-actions .btn {
     white-space: nowrap;
 }
 
-@media (max-width: 1399.98px) {
+.app-header.actions-compact .header-actions .btn:not(.show-label) .btn-label {
+    display: none;
+}
+
+@media (max-width: 767.98px) {
     .header-actions .btn:not(.show-label) .btn-label {
         display: none;
     }
@@ -2359,10 +2364,12 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 /* The dataset row: box, then the Refresh / Change dataset buttons on one line.
-   The box has a fixed basis and shrinks when the column is short; its text is
-   cut with an ellipsis (the option title carries the full name). Select2 would
-   otherwise size it to the selected name and push the buttons to a second line.
-   The box and Refresh never separate. */
+   The dataset column takes the header's free width. The closed box is always one
+   line: it shrinks as the header gets tight (to 220px, then to 140px) and cuts
+   the name in the middle, keeping its start and its end (the version, the
+   suffix); the full path is its tooltip. The open list and the picker show names
+   whole. Select2 would otherwise size the box to the name and push the buttons to
+   a second line. The box and Refresh never separate. */
 .dataset-row {
     display: flex;
     flex-wrap: wrap; /* only Change dataset (when shown) drops to a second line */
@@ -2370,6 +2377,7 @@ button.dtsb-button.dtsb-clear:hover {
 }
 .dataset-pick {
     display: flex;
+    align-items: flex-start;
     flex: 0 1 auto;
     flex-wrap: nowrap;
     min-width: 0;
@@ -2383,17 +2391,129 @@ button.dtsb-button.dtsb-clear:hover {
     max-width: 200px !important;
 }
 #dataset-selector + .select2-container {
-    flex: 0 1 260px;
-    width: 260px !important;
-    min-width: 120px;
-    max-width: 100%;
+    flex: 0 1 auto;
+    width: max-content !important;
+    min-width: 0;
+    max-width: min(100%, 760px); /* the open list (900px at most) stays wider than the box */
+}
+#dataset-selector + .select2-container .select2-selection__rendered {
+    display: block;
     overflow: hidden;
+    white-space: nowrap;
+}
+/* the name cut in the middle: its head takes the ellipsis, its tail stays */
+.dataset-name-mid {
+    display: flex;
+    min-width: 0;
+}
+.dataset-name-mid > .dataset-name-head {
+    flex: 0 100 auto;
+    min-width: 3ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.dataset-name-mid > .dataset-name-tail {
+    flex: 0 1 auto; /* only a box too narrow for the whole tail cuts it */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+@media (min-width: 768.02px) {
+    /* The least the dataset box may shrink to, by step: its name's natural width up to
+       420px while the header is relaxed (utils/header-fit.js measures --dataset-natural),
+       then up to 220px once the focus inputs have given way, then down to 140px. */
+    .app-header {
+        --dataset-box-min: min(var(--dataset-natural, 220px), 420px);
+    }
+    .app-header.focus-tight {
+        --dataset-box-min: min(var(--dataset-natural, 220px), 220px);
+    }
+    .app-header.dataset-tight {
+        --dataset-box-min: min(var(--dataset-natural, 140px), 140px);
+    }
+    .global-controls > .row {
+        --bs-gutter-x: 0.375rem;
+    }
+    .global-controls > .row > .dataset-col {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: calc(var(--dataset-box-min) + 54px); /* the box and Refresh */
+    }
+    .global-controls > .row > .focus-col {
+        flex: 0 0 auto;
+        width: auto;
+    }
+    /* Tight: the columns give up just the width the row is short of, down to their minimum */
+    .app-header.focus-tight .global-controls > .row > .focus-col {
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+    .app-header.focus-tight .global-controls #focused-gene,
+    .app-header.focus-tight .global-controls #focused-cell {
+        width: 100%;
+        max-width: 100%;
+    }
+    .app-header.focus-tight .global-controls > .row > .focus-col:has(#focused-gene) {
+        min-width: 244px;
+    }
+    .app-header.focus-tight .global-controls > .row > .focus-col:has(#focused-cell) {
+        min-width: 280px;
+    }
+    /* The inputs grow to the value they hold, up to 420px (utils/header-fit.js does
+       the same where field-sizing is not supported), until the header is tight:
+       then they shrink to a minimum that shows a 15-character Ensembl ID
+       (ENSG00000141510) or a barcode. A longer value is whole in the tooltip and the
+       input shows its end, the distinctive part. */
+    .global-controls #focused-gene {
+        min-width: 172px;
+    }
+    .global-controls #focused-cell {
+        min-width: 208px;
+    }
+    @supports (field-sizing: content) {
+        .global-controls #focused-gene,
+        .global-controls #focused-cell {
+            field-sizing: content;
+            width: auto;
+            max-width: 420px;
+        }
+        .app-header.focus-tight .global-controls #focused-gene,
+        .app-header.focus-tight .global-controls #focused-cell {
+            field-sizing: fixed;
+        }
+    }
+    .global-controls .name-picker > input {
+        text-overflow: clip;
+    }
+    .app-header.dataset-stacked .global-controls > .row {
+        flex-wrap: wrap;
+        row-gap: 0.25rem;
+    }
+    .app-header.dataset-stacked .global-controls > .row > .dataset-col {
+        flex: 0 0 100%;
+    }
+    .app-header.dataset-stacked .global-controls > .row > .header-actions {
+        margin-left: auto; /* the buttons stay at the right edge on the second row */
+    }
 }
 
-/* The open dataset list may be wider than its box, up to the viewport;
-   entries still too long get an ellipsis (their title has the full text) */
+/* Dataset names are shown whole in the open list and the picker: they wrap at
+   / _ . - (a <wbr> follows each, see main.js) and, failing that, anywhere. */
+.dataset-name {
+    overflow-wrap: anywhere;
+}
+
+/* The open dataset list may be wider than its box, up to the viewport
+   (main.js narrows it to the room right of the box); entries that still do not
+   fit wrap onto more lines, and the highlight covers all of them */
 .dataset-select-dropdown {
-    max-width: min(90vw, 700px); /* main.js narrows it to the room right of the box */
+    max-width: min(90vw, 900px);
+}
+.dataset-select-dropdown .select2-results__option {
+    height: auto !important;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
 }
 
 /* Fix Select2 container width to match parent */
@@ -3829,3 +3949,44 @@ button.dtsb-button.dtsb-clear:hover {
     padding: 0.25rem 0.5rem; border: 1px solid #e9ecef; border-radius: 4px; margin-bottom: 0.25rem;
 }
 .change-dataset-list .change-dataset-item .change-dataset-meta { font-size: 0.8rem; color: #6c757d; overflow-wrap: anywhere; }
+
+/* The picker takes its colours from these, so a dark theme only has to set them */
+#change-dataset-modal {
+    --dp-border: #e9ecef;
+    --dp-muted: #6c757d;
+    --dp-active-bg: #e7f1ff;
+    --dp-active-border: #86b7fe;
+    --dp-mark-bg: #fff3b0;
+}
+#change-dataset-modal .modal-body { max-height: 75vh; overflow-y: auto; }
+.change-dataset-toolbar { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.5rem; position: sticky; top: -1rem; background: var(--bs-modal-bg, #fff); padding: 0.25rem 0; z-index: 2; }
+.change-dataset-toolbar #change-dataset-search { flex: 1 1 auto; min-width: 0; }
+.change-dataset-toolbar #change-dataset-sort { flex: 0 0 auto; width: auto; }
+.change-dataset-list .change-dataset-item { border-color: var(--dp-border); align-items: flex-start; }
+.change-dataset-list .change-dataset-item.active, .change-dataset-folder.active { background: var(--dp-active-bg); border-color: var(--dp-active-border); }
+.change-dataset-list .change-dataset-label { min-width: 0; flex: 1 1 auto; }
+.change-dataset-list .change-dataset-item > button { flex: 0 0 auto; }
+.change-dataset-list .change-dataset-name { font-weight: 500; }
+.change-dataset-list .change-dataset-rel { font-size: 0.8rem; color: var(--dp-muted); }
+.change-dataset-list .change-dataset-reason { font-size: 0.8rem; color: var(--bs-danger, #dc3545); overflow-wrap: anywhere; }
+.change-dataset-list .change-dataset-unreadable { opacity: 0.85; }
+.change-dataset-list mark { background: var(--dp-mark-bg); color: inherit; padding: 0; }
+.change-dataset-list .change-dataset-nested { margin-left: calc(var(--depth, 0) * 1rem); }
+.change-dataset-list .change-dataset-folder {
+    display: flex; align-items: baseline; gap: 0.4rem; cursor: pointer; border-radius: 4px;
+    padding: 0.2rem 0.5rem; margin-left: calc(var(--depth, 0) * 1rem); margin-bottom: 0.2rem;
+}
+.change-dataset-list .change-dataset-folder:hover { background: var(--dp-active-bg); }
+.change-dataset-list .change-dataset-folder-name { overflow-wrap: anywhere; font-weight: 500; }
+.change-dataset-list .change-dataset-caret { width: 1em; flex: 0 0 auto; color: var(--dp-muted); }
+.change-dataset-list .change-dataset-status { font-size: 0.85rem; color: var(--dp-muted); padding: 0.25rem 0.5rem; margin-left: calc(var(--depth, 0) * 1rem); }
+.change-dataset-list .change-dataset-more { padding-left: 0.5rem; }
+
+/* The Browse button in the open dataset dropdown, beside its search field */
+.select2-container--open .dataset-select-dropdown .select2-search--dropdown {
+    display: flex !important; gap: 6px; align-items: flex-start;
+}
+.dataset-select-dropdown .select2-search--dropdown .select2-search__field {
+    flex: 1 1 auto; min-width: 0; width: auto !important; margin-bottom: 0;
+}
+.dataset-select-dropdown .dataset-browse { flex: 0 0 auto; white-space: nowrap; }
