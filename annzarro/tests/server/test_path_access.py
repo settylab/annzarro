@@ -74,7 +74,8 @@ NO_PATH = {
     "delete_session", "duplicate_session", "check_session_exists", "export_session",
     "import_session", "list_sessions", "load_session", "set_session_owner",
     "rename_session", "save_session", "login_page", "login", "logout",
-    "admin.page", "admin.reauth", "admin.audit",   # admin interface (test_admin_access.py); no dataset paths
+    "admin.page", "admin.reauth", "admin.audit",
+    "admin.panel_sets", "admin.panel_sets_reassign", "admin.panel_sets_delete",   # admin interface (test_admin_access.py); no dataset paths
 }
 
 
