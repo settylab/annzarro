@@ -43,6 +43,50 @@ function apply(header, classes) {
     for (const id of FOCUS_INPUT_IDS) fitFocusInput(document.getElementById(id));
 }
 
+import { truncateDatasetLabel } from './dataset-label.js';
+
+/** The whole label of the closed box (its text is cut to fit by truncateBoxLabel). */
+function boxLabel(rendered) {
+    const span = rendered.querySelector('.dataset-name-mid');
+    return span ? (span.dataset.full ?? span.textContent) : rendered.textContent;
+}
+
+function boxParts(header) {
+    const rendered = header.querySelector('#dataset-selector + .select2-container .select2-selection__rendered');
+    const span = rendered && rendered.querySelector('.dataset-name-mid');
+    return span ? { rendered, span } : null;
+}
+
+/** Put the whole label back, so that the layout is measured with what the box would like to say. */
+function restoreBoxLabel(header) {
+    const parts = boxParts(header);
+    if (parts && parts.span.textContent !== parts.span.dataset.full) parts.span.textContent = parts.span.dataset.full;
+}
+
+/**
+ * Cut the label to the room the box has (keeping its start and its end, see
+ * truncateDatasetLabel), so that it fits and no CSS ellipsis has to cut the end again.
+ */
+function truncateBoxLabel(header) {
+    const parts = boxParts(header);
+    if (!parts) return;
+    const { rendered, span } = parts;
+    const overflow = () => rendered.scrollWidth - rendered.clientWidth;
+    if (overflow() <= 0) return;                       // the whole label fits
+    const style = getComputedStyle(rendered);
+    const canvas = datasetNaturalWidth._canvas || (datasetNaturalWidth._canvas = document.createElement('canvas'));
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const measure = str => ctx.measureText(str).width;
+    let room = rendered.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 2;
+    for (let i = 0; i < 8; i++) {                      // the canvas is a model of the DOM: check it, and tighten if it was off
+        span.textContent = truncateDatasetLabel(span.dataset.full, room, measure);
+        const over = overflow();
+        if (over <= 0) return;
+        room -= Math.max(4, over);
+    }
+}
+
 /** The natural width of the closed box for its current label: the text and the box's padding. */
 export function datasetNaturalWidth(header) {
     const rendered = header.querySelector('#dataset-selector + .select2-container .select2-selection__rendered');
@@ -51,12 +95,21 @@ export function datasetNaturalWidth(header) {
     const canvas = datasetNaturalWidth._canvas || (datasetNaturalWidth._canvas = document.createElement('canvas'));
     const ctx = canvas.getContext('2d');
     ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    const text = rendered.textContent.trim();
+    const text = boxLabel(rendered).trim();
     return Math.ceil(ctx.measureText(text).width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 4);
 }
 
+let _pickObserver = null;
+
 export function fitDatasetHeader(header) {
     if (!header) return;
+    restoreBoxLabel(header);
+    settleHeader(header);
+    truncateBoxLabel(header);
+    if (_pickObserver) _pickObserver.takeRecords();   // our own text changes are not news
+}
+
+function settleHeader(header) {
     const natural = datasetNaturalWidth(header);
     if (natural) header.style.setProperty('--dataset-natural', `${natural}px`);
     for (const classes of ONE_ROW) {
@@ -134,7 +187,15 @@ export function installDatasetHeaderFit(header = document.getElementById('app-he
     }
     const pick = header.querySelector('.dataset-pick');
     if (pick && typeof MutationObserver !== 'undefined') {
-        new MutationObserver(refit).observe(pick, { childList: true, subtree: true, characterData: true });
+        _pickObserver = new MutationObserver(refit);
+        _pickObserver.observe(pick, { childList: true, subtree: true, characterData: true });
+    }
+    // the strip's dataset title is cut at its end by CSS: its whole text is the tooltip
+    const stripLabel = document.getElementById('dataset-path');
+    if (stripLabel && typeof MutationObserver !== 'undefined') {
+        const sync = () => { if (stripLabel.parentElement) stripLabel.parentElement.title = `Dataset: ${stripLabel.textContent}`; };
+        new MutationObserver(sync).observe(stripLabel, { childList: true, characterData: true, subtree: true });
+        sync();
     }
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
     refit();

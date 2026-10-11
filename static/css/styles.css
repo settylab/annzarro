@@ -219,6 +219,18 @@ body {
     width: 100%;
 }
 
+/* The strip's dataset title is one line, cut at its end (the full title is the tooltip), so a
+   long title never makes the strip taller */
+.dataset-stats .col-md-6 {
+    min-width: 0;
+}
+.dataset-stats .col-md-6 > span {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Dataset Stats Bar */
 .dataset-stats {
     background-color: #e9ecef;
@@ -2401,23 +2413,12 @@ button.dtsb-button.dtsb-clear:hover {
     overflow: hidden;
     white-space: nowrap;
 }
-/* the name cut in the middle: its head takes the ellipsis, its tail stays */
+/* the closed box's label is cut by script to the box's width (utils/header-fit.js); this only
+   keeps it on one line meanwhile */
 .dataset-name-mid {
-    display: flex;
-    min-width: 0;
+    white-space: nowrap;
 }
-.dataset-name-mid > .dataset-name-head {
-    flex: 0 100 auto;
-    min-width: 3ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.dataset-name-mid > .dataset-name-tail {
-    flex: 0 1 auto; /* only a box too narrow for the whole tail cuts it */
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
+
 @media (min-width: 768.02px) {
     /* The least the dataset box may shrink to, by step: its name's natural width up to
        420px while the header is relaxed (utils/header-fit.js measures --dataset-natural),
