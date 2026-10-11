@@ -49,15 +49,16 @@ def _big_store(path):
     return store
 
 
-@pytest.fixture(scope="module")
-def big_server(tmp_path_factory):
+@pytest.fixture(scope="module", params=["plain", "gzip"])
+def big_server(tmp_path_factory, request):
     original = _focus._make_store
     _focus._make_store = _big_store
     try:
-        proc, root, store = _serve(tmp_path_factory)
+        proc, root, store = _serve(
+            tmp_path_factory, "server:\n  compress_responses: true\n" if request.param == "gzip" else None)
     finally:
         _focus._make_store = original
-    yield root, store
+    yield root, store, request.param
     proc.terminate()
     proc.wait(10)
 
@@ -74,7 +75,7 @@ LOAD = """async (store) => {
 
 @pytest.mark.slow
 def test_every_name_of_a_store_above_the_threshold_arrives_packed(big_server):
-    root, store = big_server
+    root, store, mode = big_server
     with playwright.sync_playwright() as pw:
         browser = pw.chromium.launch()
         try:
@@ -86,6 +87,7 @@ def test_every_name_of_a_store_above_the_threshold_arrives_packed(big_server):
         finally:
             browser.close()
     assert "content-length" not in headers, "the reply is a stream"
+    assert headers.get("content-encoding") == ("gzip" if mode == "gzip" else None)
     assert headers["x-annzarro-names"] == str(N_CELLS)
     assert int(headers["x-annzarro-names-bytes-estimate"]) > 256 * 1024 * 1024
     assert got["packed"] and not got["isArray"]

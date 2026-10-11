@@ -10,12 +10,15 @@ stream holds one chunk, not the budget, and stops reading when the client
 goes away.
 """
 import gzip
+import http.client
 import json
 import os
 import shutil
 import subprocess
 import sys
 import textwrap
+import threading
+import urllib.parse
 from unittest.mock import patch
 
 import numpy as np
@@ -23,6 +26,7 @@ import pytest
 import zarr
 
 from annzarro.core import process_file, read_guard
+from annzarro.core.array_response import ABORT_MARK, name_streams
 from annzarro.server.core import create_app
 
 FIXTURE = os.path.join(
@@ -146,6 +150,109 @@ def test_genes_are_counted_by_the_var_axis(store):
     assert reply.headers["X-Annzarro-Names"] == str(len(reply.get_json()["genes"]))
 
 
+# -- one escape class at a time -------------------------------------------------
+#
+# A chunk with any awkward name takes the slow path whole, so a store of only
+# awkward names would never reach the fast path's own checks. Here one name in
+# an otherwise plain store, in a chunk of its own among plain ones.
+
+CLASSES = {
+    "newline": "a\nb", "non-ascii": "ünï", "line-separator": "x\u2028y", "del": "x\x7fy", "quote": 'q"uote',
+    "backslash": "a\\b", "comma-quote": 'a","b', "control": "\x01", "emoji": "\U0001f9ec", "empty": "",
+}
+
+
+@pytest.mark.parametrize("ensure_ascii", [True, False])
+@pytest.mark.parametrize("kind", sorted(CLASSES))
+def test_each_escape_class_alone_is_the_whole_list_bytes(tmp_path, kind, ensure_ascii):
+    names = [f"cell_{i:05d}" for i in range(120)]
+    names[75] = CLASSES[kind]
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    path = make_store(data_dir / "a.zarr", names)
+    app = make_app(data_dir)
+    app.json.ensure_ascii = ensure_ascii
+    client = app.test_client()
+    streamed = get(client, path)
+    assert streamed.headers["X-Annzarro-Names"] == "120"
+    assert streamed.data == whole_list_reply(client, path).data
+    assert streamed.get_json()["cells"] == names
+
+
+def test_a_numeric_index_streams_as_text(tmp_path):
+    # string_chunks reads every entry as a string; the whole-list path sent numbers
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    path = make_store(data_dir / "a.zarr", ["x"] * 3)
+    group = zarr.open_group(path, mode="a")
+    shutil.rmtree(os.path.join(path, "obs", "_index"))
+    group["obs"].create_array("_index", data=np.array([0, 7, 9], dtype="int64"))
+    zarr.consolidate_metadata(path)
+    reply = get(make_app(data_dir).test_client(), path)
+    assert reply.status_code == 200 and reply.headers["X-Annzarro-Names"] == "3"
+    assert reply.get_json()["cells"] == ["0", "7", "9"]
+
+
+def test_the_count_is_the_index_length_not_the_shape_of_x(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    path = make_store(data_dir / "a.zarr", awkward_names())
+    group = zarr.open_group(path, mode="a")
+    group["X"].attrs["shape"] = [7, 20]            # X says something else
+    zarr.consolidate_metadata(path)
+    reply = get(make_app(data_dir).test_client(), path)
+    assert reply.headers["X-Annzarro-Names"] == "200"
+
+
+def fake_chunks(*chunks, then=None):
+    def make(self, *a, **kw):
+        def gen():
+            yield from chunks
+            if then:
+                raise then
+        return gen()
+    return patch("annzarro.core.zarr_reader.ZarrReader.iter_cell_gene_name_chunks", make)
+
+
+@pytest.mark.parametrize("ensure_ascii", [True, False])
+def test_a_first_chunk_that_cannot_be_written_is_a_500_not_a_cut_200(store, ensure_ascii):
+    data_dir, path = store
+    app = make_app(data_dir)
+    app.json.ensure_ascii = ensure_ascii
+    with fake_chunks((b"a\xff\nb", np.array([2, 1]))):          # invalid UTF-8
+        reply = get(app.test_client(), path)
+    assert reply.status_code == 500 and name_streams.active == 0
+    assert "error" in reply.get_json()
+
+
+def test_a_first_chunk_that_cannot_be_read_is_a_500(store):
+    data_dir, path = store
+
+    class Bad:
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            raise OSError("chunk unreadable")
+
+    with patch("annzarro.core.zarr_reader.ZarrReader.iter_cell_gene_name_chunks", lambda *a, **k: Bad()):
+        reply = get(make_app(data_dir).test_client(), path)
+    assert reply.status_code == 500 and name_streams.active == 0
+
+
+def test_an_invalid_chunk_after_the_first_aborts_the_reply(store):
+    data_dir, path = store
+    client = make_app(data_dir).test_client()
+    with fake_chunks((b"a\nb", np.array([1, 1])), (b"\xff", np.array([1]))):
+        reply = client.get("/api/v1/data/cells", query_string={"dataset_path": path}, buffered=False)
+        pieces = []
+        with pytest.raises(UnicodeDecodeError):
+            for piece in reply.response:
+                pieces.append(piece)
+        reply.close()
+    assert b"".join(pieces).endswith(ABORT_MARK)
+
+
 # -- gzip ---------------------------------------------------------------------
 
 def test_gzip_is_written_as_the_stream_goes_and_equals_the_plain_bytes(store):
@@ -203,7 +310,7 @@ def test_etag_and_304_without_reading(store):
 
 # -- what stays as it was ---------------------------------------------------------
 
-def test_a_subset_of_cells_keeps_the_list_path(store):
+def test_a_small_subset_of_cells_keeps_the_list_path(store):
     data_dir, path = store
     client = make_app(data_dir).test_client()
     reply = get(client, path, query={"subset": '{"n":60,"seed":0}'})
@@ -212,6 +319,32 @@ def test_a_subset_of_cells_keeps_the_list_path(store):
     assert len(reply.get_json()["cells"]) == 60
     genes = get(client, path, "genes", query={"subset": '{"n":60,"seed":0}'})
     assert genes.headers.get("X-Annzarro-Names") == str(len(genes.get_json()["genes"]))
+
+
+def test_a_large_subset_streams_in_slabs_with_the_list_path_bytes(store):
+    data_dir, path = store
+    app = make_app(data_dir, max_names_json_mb=0.001)    # no limit applies to a stream
+    client = app.test_client()
+    spec = '{"n":150,"seed":0}'
+    with patch.object(process_file, "SUBSET_SLAB", 40):
+        streamed = get(client, path, query={"subset": spec})
+        streamed.data                               # the stream is read while the patch is on
+    app.config["max_names_json_mb"] = 0
+    with patch.object(process_file, "SUBSET_SLAB", 10 ** 9):
+        listed = get(client, path, query={"subset": spec})
+        listed.data
+    assert streamed.status_code == 200 and streamed.headers["X-Annzarro-Names"] == "150"
+    assert "X-Annzarro-Names" not in listed.headers
+    assert streamed.data == listed.data and len(streamed.get_json()["cells"]) == 150
+
+
+def test_debug_mode_streams_too(store):
+    data_dir, path = store
+    app = make_app(data_dir)
+    app.debug = True
+    reply = get(app.test_client(), path)
+    assert reply.headers["X-Annzarro-Names"] == "200"
+    assert reply.get_json()["cells"] == awkward_names()
 
 
 @pytest.mark.parametrize("entity", ["cells", "genes"])
@@ -247,52 +380,144 @@ def test_a_store_that_streams_has_no_limit(store):
 
 # -- cost of a stream ------------------------------------------------------------
 
-def test_each_chunk_is_charged_to_the_budget_for_its_own_length_only(store):
+def test_a_stream_does_not_use_the_pairwise_read_budget(store):
+    # a busy budget (big obsp reads) neither refuses nor cuts a names reply
     data_dir, path = store
     client = make_app(data_dir).test_client()
-    held, calls = [], []
-    real = read_guard.admit
-
-    from contextlib import contextmanager
-
-    @contextmanager
-    def spy(need):
-        calls.append(need)
-        with real(need):
-            yield
-
-    with patch.object(read_guard, "admit", spy):
-        reply = client.get("/api/v1/data/cells", query_string={"dataset_path": path}, buffered=False)
-        for piece in reply.response:
-            held.append(read_guard.in_flight_bytes())
-    assert len(calls) == 7                      # 200 names in chunks of 30
-    assert held and set(held) == {0}, "the budget was held while a piece waited for the client"
+    with patch.object(read_guard, "admit", side_effect=AssertionError("names took the read budget")):
+        reply = get(client, path)
+    assert reply.status_code == 200 and len(reply.get_json()["cells"]) == 200
 
 
-def test_closing_the_reply_closes_the_chunk_iterator(store):
-    data_dir, path = store
-    client = make_app(data_dir).test_client()
-    closed = []
+class Watched:
+    """A chunk iterator the test keeps a reference to, so that closing it is
+    seen to be called by the stream and not by the garbage collector."""
+
+    def __init__(self, inner, fail_at=None):
+        self.inner, self.closed, self.n, self.fail_at = inner, 0, 0, fail_at
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.fail_at is not None and self.n == self.fail_at:
+            raise OSError("disk went away")
+        self.n += 1
+        return next(self.inner)
+
+    def close(self):
+        self.closed += 1
+        close = getattr(self.inner, "close", None)
+        if close:
+            close()
+
+
+def watching(fail_at=None):
     from annzarro.core.zarr_reader import ZarrReader
     real = ZarrReader.iter_cell_gene_name_chunks
+    made = []
 
-    def watch(self, *a, **kw):
-        inner = real(self, *a, **kw)
+    def make(self, *a, **kw):
+        made.append(Watched(real(self, *a, **kw), fail_at))
+        return made[-1]
+    return patch.object(ZarrReader, "iter_cell_gene_name_chunks", make), made
 
-        def gen():
-            try:
-                yield from inner
-            finally:
-                closed.append(True)
-        return gen()
 
-    with patch.object(ZarrReader, "iter_cell_gene_name_chunks", watch):
+def test_closing_the_reply_closes_the_chunk_iterator_and_frees_its_slot(store):
+    data_dir, path = store
+    client = make_app(data_dir).test_client()
+    patcher, made = watching()
+    with patcher:
         reply = client.get("/api/v1/data/cells", query_string={"dataset_path": path}, buffered=False)
-        it = iter(reply.response)
-        next(it)
-        assert closed == []
+        next(iter(reply.response))
+        assert made[0].closed == 0 and name_streams.active == 1
         reply.close()
-    assert closed == [True]
+    assert made[0].closed == 1 and name_streams.active == 0
+
+
+def test_a_reply_never_read_frees_its_slot(store):
+    data_dir, path = store
+    client = make_app(data_dir).test_client()
+    reply = client.get("/api/v1/data/cells", query_string={"dataset_path": path}, buffered=False)
+    assert name_streams.active == 1
+    reply.close()
+    assert name_streams.active == 0
+
+
+def test_streams_over_the_cap_are_refused_before_a_byte_with_retry_after(store):
+    data_dir, path = store
+    client = make_app(data_dir, names_stream_max_concurrent=1).test_client()
+    first = client.get("/api/v1/data/cells", query_string={"dataset_path": path}, buffered=False)
+    busy = get(client, path)
+    assert busy.status_code == 503
+    assert busy.get_json()["reason"] == "read_busy" and busy.headers["Retry-After"]
+    assert name_streams.active == 1, "the refused request took a slot"
+    first.close()
+    assert get(client, path).status_code == 200
+    # 0 is no limit
+    open_ = [make_app(data_dir, names_stream_max_concurrent=0).test_client().get(
+        "/api/v1/data/cells", query_string={"dataset_path": path}, buffered=False) for _ in range(4)]
+    assert name_streams.active == 4
+    for reply in open_:
+        reply.close()
+    assert name_streams.active == 0
+
+
+def test_a_failure_after_the_first_byte_ends_the_body_with_the_abort_mark(store):
+    data_dir, path = store
+    client = make_app(data_dir).test_client()
+    patcher, made = watching(fail_at=3)
+    with patcher:
+        reply = client.get("/api/v1/data/cells", query_string={"dataset_path": path}, buffered=False)
+        pieces = []
+        with pytest.raises(OSError):
+            for piece in reply.response:
+                pieces.append(piece)
+        reply.close()
+    body = b"".join(pieces)
+    assert body.endswith(ABORT_MARK) and body.startswith(b'{"cells":["')
+    with pytest.raises(ValueError):
+        json.loads(body)
+    assert made[0].closed >= 1 and name_streams.active == 0
+
+
+def serve_thread(app, protocol):
+    from werkzeug.serving import WSGIRequestHandler, make_server
+    handler = type("H", (WSGIRequestHandler,), {"protocol_version": protocol})
+    server = make_server("127.0.0.1", 0, app, threaded=True, request_handler=handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+@pytest.mark.parametrize("protocol", ["HTTP/1.0", "HTTP/1.1"])
+def test_a_cut_reply_is_never_a_whole_one_on_the_wire(store, protocol):
+    """HTTP/1.1: no final chunk, the read fails. HTTP/1.0 (what nginx speaks
+    to an upstream by default): the close is a clean end, and the body ends
+    with the abort mark, which no JSON parser accepts."""
+    data_dir, path = store
+    server, thread = serve_thread(make_app(data_dir), protocol)
+    patcher, made = watching(fail_at=3)
+    try:
+        with patcher:
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=20)
+            conn.request("GET", "/api/v1/data/cells?" + urllib.parse.urlencode({"dataset_path": path}))
+            resp = conn.getresponse()
+            assert resp.status == 200
+            if protocol == "HTTP/1.1":
+                assert resp.getheader("Transfer-Encoding") == "chunked"
+                with pytest.raises(http.client.IncompleteRead):
+                    resp.read()
+            else:
+                body = resp.read()
+                assert body.endswith(ABORT_MARK)
+                with pytest.raises(ValueError):
+                    json.loads(body)
+            conn.close()
+    finally:
+        server.shutdown()
+        thread.join(5)
+        server.server_close()
 
 
 # -- memory -------------------------------------------------------------------------

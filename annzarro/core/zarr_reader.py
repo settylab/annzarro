@@ -2869,6 +2869,20 @@ class ZarrReader(CacheSettings):
             local_dir = os.path.join(dataset_path, obj, index_column)
         return string_chunks.iter_chunks(member, local_dir)
 
+    def count_cell_gene_names(self, dataset_path: str, entity: Literal["cells", "genes"]) -> Optional[int]:
+        """How many names the axis has, from the length of its index array
+        (what iter_cell_gene_name_chunks reads); None when the index is not a
+        plain array. X's shape is not used: a store need not have an X."""
+        root = self._get_root(dataset_path=dataset_path)
+        obj = 'var' if entity == 'genes' else 'obs'
+        if root is None or obj not in root:
+            return None
+        index_column = root[obj].attrs.get('_index', '_index') if hasattr(root[obj], 'attrs') else '_index'
+        if index_column not in root[obj]:
+            return None
+        member = root[obj][index_column]
+        return None if self._is_group(member) else int(member.shape[0])
+
     @cached_method
     def get_cell_gene_names_at(self, dataset_path: str, entity: Literal["cells", "genes"],
                                rows) -> List[str]:

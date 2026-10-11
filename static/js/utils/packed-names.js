@@ -23,10 +23,15 @@ const _encoder = new TextEncoder();
  * server that writes the reply as it reads it sends no Content-Length;
  * it says `X-Annzarro-Names` (how many) and `X-Annzarro-Names-Bytes-Estimate`.
  */
+/** JSON bytes of a name when only their number is known (a 19-character name and its quotes and comma). */
+const NAME_BYTES_GUESS = 24;
+
 export function namesReplyPlan(headers, threshold) {
     const num = (name) => Number(headers.get(name) || 0) || 0;
-    const size = num('Content-Length') || num('X-Annzarro-Names-Bytes-Estimate');
-    return { packed: size > threshold, size, count: num('X-Annzarro-Names') };
+    const count = num('X-Annzarro-Names');
+    // no size at all (a proxy dropped the headers): about what a name costs
+    const size = num('Content-Length') || num('X-Annzarro-Names-Bytes-Estimate') || count * NAME_BYTES_GUESS;
+    return { packed: size > threshold, size, count };
 }
 
 export class PackedNames {

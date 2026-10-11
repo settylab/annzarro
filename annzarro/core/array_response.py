@@ -77,6 +77,7 @@ browser client turned ``NaN`` literals into anyway, after a failed parse.
 
 import json
 import logging
+import threading
 import zlib
 
 import numpy as np
@@ -325,10 +326,10 @@ def array_response(data, meta: dict, binary: bool = False):
 #: JSON bytes a name costs beyond its characters: two quotes and a comma
 NAME_JSON_OVERHEAD = 3
 
-#: Bytes one name held as a Python string and a list slot costs a reply built
-#: whole (measured in the uns audit: ~100 B a value); sizes the 413 for readers
-#: that cannot stream
-NAME_HELD_BYTES = 100
+#: Bytes one name costs a reply built whole (Python string, list slot, JSON
+#: text, gzip input): 15.2 GiB for 95.6M names measured, 170 B each; sizes the
+#: 413 for readers that cannot stream
+NAME_HELD_BYTES = 170
 
 #: Bytes a JSON string can hold as they are: printable ASCII except the quote
 #: and the backslash
@@ -337,10 +338,12 @@ _PLAIN_JOINED = _PLAIN_ASCII + b"\n"
 _PLAIN_JOINED_UTF8 = _PLAIN_JOINED + bytes(range(0x7f, 0x100))
 
 
-def debug_json(app) -> bool:
-    """jsonify writes indented JSON (not the compact text streamed) in debug."""
-    compact = getattr(app.json, "compact", None)
-    return compact is False or (compact is None and app.debug)
+def _is_utf8(data: bytes) -> bool:
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
 
 
 def _chunk_names(chunk):
@@ -350,7 +353,7 @@ def _chunk_names(chunk):
     joined, lengths = chunk
     names, at = [], 0
     for size in lengths.tolist():
-        names.append(joined[at:at + size].decode("utf-8", "replace"))
+        names.append(joined[at:at + size].decode("utf-8"))
         at += size + 1
     return names
 
@@ -369,7 +372,8 @@ def _chunk_json(chunk, ensure_ascii: bool) -> bytes:
         # a control character or (with ensure_ascii) a non-ASCII byte takes
         # the slow path.
         plain = _PLAIN_JOINED if ensure_ascii else _PLAIN_JOINED_UTF8
-        if joined.count(b"\n") == k - 1 and not joined.translate(None, plain):
+        if joined.count(b"\n") == k - 1 and not joined.translate(None, plain) and (
+                ensure_ascii or _is_utf8(joined)):
             return b'"' + joined.replace(b"\n", b'","') + b'"'
     return json.dumps(_chunk_names(chunk), ensure_ascii=ensure_ascii,
                       separators=(",", ":"))[1:-1].encode("utf-8")
@@ -413,57 +417,118 @@ def check_names_json(n: int, limit_mb) -> None:
             limit_name="max_names_json_mb")
 
 
-def stream_names(key: str, dataset_path: str, first, chunks, total=None, compress: bool = False):
-    """The reply ``{key: [names...], "dataset_path": ...}`` written a chunk at
-    a time, byte for byte what ``jsonify`` makes of the whole list.
+class NameStreams:
+    """How many name streams run at once in this process. A stream holds a
+    server thread for as long as its client takes to read it (neither
+    werkzeug nor gunicorn's gthread puts a timeout on the send), so the
+    number is capped: ``server.names_stream_max_concurrent`` per worker."""
 
-    ``first``: the first chunk, already read (so that a store that cannot be
-    read has answered with an error before the status line); ``chunks``: the
-    rest of the iterator. ``total``: how many names there are, if known, sent as
-    ``X-Annzarro-Names`` with a byte estimate (the reply has no
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._active = 0
+
+    @property
+    def active(self) -> int:
+        return self._active
+
+    def acquire(self, limit) -> bool:
+        with self._lock:
+            if limit and self._active >= int(limit):
+                return False
+            self._active += 1
+            return True
+
+    def release(self) -> None:
+        with self._lock:
+            self._active -= 1
+
+
+name_streams = NameStreams()
+
+#: Written after the last name that was sent when a stream fails: no JSON
+#: parser accepts it, so a proxy that ends the reply cleanly (HTTP/1.0 to the
+#: upstream: the close is the end of the body) does not make it look whole
+ABORT_MARK = b"\n<names stream aborted>"
+
+
+def once(release):
+    """``release`` made safe to call from several places, only the first counts."""
+    done = []
+
+    def call():
+        if not done:
+            done.append(True)
+            release()
+    return call
+
+
+def stream_names(key: str, dataset_path: str, first, chunks, total=None, compress: bool = False,
+                 release=None):
+    """The reply ``{key: [names...], "dataset_path": ...}`` written a chunk at
+    a time, byte for byte what ``jsonify`` makes of the whole list (in debug
+    mode jsonify indents; the names are written compact between its head and
+    tail).
+
+    ``first``: the first chunk, already read and encoded here, before the
+    status line, so a chunk that cannot be written is an error reply;
+    ``chunks``: the rest of the iterator. ``total``: how many names there are,
+    sent as ``X-Annzarro-Names`` with a byte estimate (the reply has no
     Content-Length). ``compress``: write gzip (level 1, as install_gzip does).
-    Each chunk is charged to the read budget while it is read and encoded, not
-    while it waits for a slow client. Closing the reply (a client that went
-    away) closes the iterator.
+    ``release``: called when the reply ends or is closed, whether or not it was
+    ever read (a stream slot, name_streams).
+
+    A failure after the first byte cannot change the status. It ends the reply
+    without the final chunk (HTTP/1.1, so the client's read fails) and writes
+    ABORT_MARK before that (so an HTTP/1.0 upstream's clean close is not taken
+    for the end of the array either). The client also checks the array closed
+    and that it holds ``total`` names.
     """
-    from . import read_guard
     ensure_ascii = bool(getattr(current_app.json, "ensure_ascii", True))
     # head and tail around the array, as the provider writes them (key order,
     # trailing newline): dump once with a placeholder no path can contain
     mark = "S" * (len(dataset_path) + 1)
     shell = current_app.json.response({key: [mark], "dataset_path": dataset_path}).get_data(as_text=True)
     head, tail = shell.split(f'"{mark}"', 1)
-    need = 2 * _chunk_size(first)
+    held = [_chunk_json(first, ensure_ascii)]
     packer = zlib.compressobj(1, zlib.DEFLATED, 31) if compress else None
+    release = release or (lambda: None)
 
     def pack(piece: bytes) -> bytes:
         return packer.compress(piece) if packer else piece
 
     def body():
-        pending, lead = first, head.encode("utf-8")
+        text, lead = held.pop(), head.encode("utf-8")
         try:
-            while pending is not None:
-                with read_guard.admit(need):
-                    text = _chunk_json(pending, ensure_ascii)
-                    pending = next(chunks, None)
+            while True:
                 if text:
                     piece = pack(lead + text)
                     lead = b","
                     if piece:
                         yield piece
+                chunk = next(chunks, None)
+                if chunk is None:
+                    break
+                text = _chunk_json(chunk, ensure_ascii)
             last = pack((b"" if lead == b"," else lead) + tail.encode("utf-8"))
             if packer:
                 last += packer.flush()
             yield last
         except Exception:
             logger.exception("Streaming the names of %s failed after the reply began", dataset_path)
+            aborted = pack(ABORT_MARK)
+            if packer:
+                aborted += packer.flush()
+            yield aborted
             raise
         finally:
             close = getattr(chunks, "close", None)
             if close:
                 close()
+            release()
 
     reply = current_app.response_class(body(), mimetype="application/json")
+    # the generator's finally does not run if it never started
+    reply.call_on_close(release)
     if total is not None:
         reply.headers[HEADER_NAMES] = str(int(total))
         reply.headers[HEADER_NAMES_BYTES] = str(int(total * json_bytes_per_name(first)))
