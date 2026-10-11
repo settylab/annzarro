@@ -377,12 +377,12 @@ def check_uns(key: str, node) -> int:
         limit, need, [{"element": f"uns/{key}", "values": elements, "estimated_mb": round(need / 2 ** 20, 1)}])
 
 
-def chunking_notice(root, dataset_path: str = "") -> Optional[Dict[str, Any]]:
+def pairwise_chunking_items(root, limit: Optional[int] = None) -> List[Dict[str, Any]]:
     """Dense obsp/varp members of ``root`` whose chunks make ONE ROW read hold
-    more than the limit, as a notice for the dataset's structure; None when
-    there are none. From metadata only. Logged once per dataset (a warning)."""
+    more than ``limit`` bytes (default: the server's limit). From metadata
+    only. Shared by chunking_notice (the server) and ``annzarro store check``."""
     items = []
-    limit = limit_bytes()
+    limit = limit_bytes() if limit is None else limit
     for group in ("obsp", "varp"):
         try:
             members = list(root[group].keys()) if group in root else []
@@ -401,6 +401,15 @@ def chunking_notice(root, dataset_path: str = "") -> Optional[Dict[str, Any]]:
                                   "row_read_mb": round(need / 2 ** 20, 1)})
             except Exception:
                 continue
+    return items
+
+
+def chunking_notice(root, dataset_path: str = "") -> Optional[Dict[str, Any]]:
+    """Dense obsp/varp members of ``root`` whose chunks make ONE ROW read hold
+    more than the limit, as a notice for the dataset's structure; None when
+    there are none. From metadata only. Logged once per dataset (a warning)."""
+    items = pairwise_chunking_items(root)
+    limit = limit_bytes()
     if not items:
         return None
     names = ", ".join(f"{i['element']} chunks {tuple(i['chunks'])} (one row reads {i['row_read_mb']:,.0f} MB)"

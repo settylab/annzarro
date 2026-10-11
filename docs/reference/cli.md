@@ -3,7 +3,7 @@
 The package installs one command, `annzarro`. All output below is from `annzarro <command> --help`.
 
 ```text
-annzarro [-h] [--config CONFIG] [--debug] {start,stop,user,install,config,desktop} ...
+annzarro [-h] [--config CONFIG] [--debug] {start,stop,user,install,config,desktop,export,store} ...
 ```
 
 | Global option | Meaning |
@@ -126,6 +126,74 @@ headless browser ({doc}`../user-guide/reproducing`). Needs `pip install 'annzarr
 | `--verbose` | Show the local server's log and page errors. |
 
 Exit status 0 on success, 2 when the view, store or output cannot be used (the message says why).
+
+## `annzarro store check`
+
+Report what in a store's layout makes AnnZarro slow, before you serve it. It reads metadata only
+(shapes, dtypes, chunks, attributes, the consolidated metadata) and no chunk, so it takes about a
+second even on a store of 95.6 million cells. It works on local directories and on `s3://`,
+`gs://` and `http(s)://` URLs (read-only; `pip install 'annzarro[remote]'`), and on zarr format 2
+and 3, sharded or not.
+
+```text
+annzarro store check STORE [--json] [--fail-on {info,warning,slow,never}] [--config FILE] [--max-read-mb MB]
+```
+
+| Option | Meaning |
+|---|---|
+| `STORE` | A zarr store: a directory or a URL. An `.h5ad` file is refused. |
+| `--json` | Print the report as JSON (schema `annzarro-store-check/1`, below) instead of text. |
+| `--fail-on SEVERITY` | Exit 1 when a finding is at or above this severity: `info`, `warning`, `slow` (default) or `never`. |
+| `--config FILE` | Configuration file (or `ANNZARRO_CONFIG`): its `server.max_read_mb` is the read limit to judge `obsp`/`varp` rows against. |
+| `--max-read-mb MB` | The same limit, given directly; overrides the configuration. Default: the server's own default for this machine (5% of memory, 256 MB to 4 GB). |
+
+The text report lists every 2-D array (encoding, shape, dtype, chunks and shards, the bytes one
+gene column and one cell row read), then each finding with its severity, **what it costs in
+AnnZarro terms** and **how to fix it** with anndata or zarr. For example:
+
+```text
+[SLOW] sparse_wrong_direction: X
+  X is CSR (1,000,000 x 5,000, 101,000,000 non-zeros) and is read by gene column.
+  Cost: Each gene click reads every non-zero value of X: ~771 MB (about 101 ms warm and local,
+        longer over a network), against ~16 MB from CSC.
+  Fix: sp.csc_matrix(adata.X) ... adata.write_zarr(path + ".new")
+```
+
+Severities: `slow` is a layout that makes a click take seconds, or that the server refuses (a
+CSR `X` at atlas size, whole-gene chunks of a dense layer, `obsp` rows over `max_read_mb`,
+metadata that is out of date or missing on a remote store); `warning` costs noticeably;
+`info` is worth knowing. The numbers that decide them are in one module
+(`annzarro/core/layout_thresholds.py`), and the `obsp`/`varp` test is the server's own function,
+so the command and the server's open-time notice do not disagree. Findings (`code`):
+
+| Code | What it finds |
+|---|---|
+| `sparse_wrong_direction` | A gene column read from CSR (`X`, layers) or a row read from CSC (`obsp`, `varp`): every stored index is scanned, about 1 ns per non-zero. |
+| `sparse_cell_direction` | `X` or a layer in CSC: gene columns are cheap, but a Gene Plot coloured by it and a table column of a named cell's expression read a cell row, which scans every non-zero (`info`; `warning` from 1 GB). |
+| `dense_chunk_shape` | A dense `X` or layer whose chunks make a gene column or cell row decompress 8 times (`warning`) or 16 times (`slow`) what chunks following the matrix's aspect ratio would ({doc}`../data/chunking`). |
+| `pairwise_row_read` | A dense `obsp`/`varp` whose row read holds more than the read limit: focusing a cell is refused. The same test as the server's `pairwise_chunking` notice. |
+| `float64` | A float64 array of 16 MB or more (`warning` from 256 MB). |
+| `chunk_too_large`, `chunk_too_small` | Chunks over 32 MB uncompressed, or under 64 KB in an array of 1,000 chunks or more (guidance: about 2 MB). |
+| `obs_string_column`, `categorical_wide_codes`, `categorical_unique` | `obs`/`var` columns that are plain strings (100,000 rows or more), categoricals with 32- or 64-bit codes where 8 or 16 bits do, or with nearly as many categories as rows: each use reads and decodes all of it. |
+| `index_full_read` | A name index of 10 million names or more, or one chunk of over 5 million: the first name search decodes all of it. |
+| `unconsolidated`, `stale_consolidated` | No `.zmetadata` (every node is a separate read: slow on NFS, `slow` on a remote store), or one that no longer matches the store. |
+| `unsharded_many_chunks`, `many_files` | A zarr format 3 store without shards and with 50,000 chunks or more, or any store with 100,000 chunk files or more. |
+| `not_anndata` | No `X`, `obs` or `var` (an interrupted write). |
+
+`--json` prints one object:
+
+| Key | Content |
+|---|---|
+| `schema`, `annzarro_version` | `"annzarro-store-check/1"` and the version that ran. |
+| `store`, `remote`, `zarr_format`, `consolidated`, `nodes`, `files`, `max_read_mb` | The store as opened, its format, whether it has consolidated metadata, how many groups and arrays and chunk files (shards when sharded) it has, and the limit used. |
+| `arrays` | One object per 2-D array: `element`, `encoding` (`dense`, `csr`, `csc`), `shape`, `dtype`, `chunks`, `shards`, `gene_column_bytes`, `cell_row_bytes`, `gene_column_seconds`, `cell_row_seconds` (sparse only), `severity` (`ok` or the worst finding). |
+| `findings` | Most severe first; each has `code`, `severity`, `element`, `summary`, `cost`, `fix` and a `details` object with the numbers. |
+| `counts`, `worst` | Findings per severity, and the worst severity (`ok` when none). |
+| `fail_on`, `failed` | The `--fail-on` given and whether it was met. |
+
+Exit status 0 when no finding is at or above `--fail-on`, 1 when one is (so
+`annzarro store check atlas.zarr && deploy` is a gate), 2 when the store cannot be opened.
+`store rewrite` does not exist yet: the fixes are snippets to run yourself.
 
 ## Environment variables
 

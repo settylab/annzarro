@@ -131,6 +131,16 @@ recolouring included, 6.8 GiB (resident memory). With the memory guard at its de
 was drawn for stores up to 150 million cells and the first plot was declined at 160 million
 ({ref}`browser-memory`).
 
+## Check a store before you serve it
+
+Sparse direction and chunk shape decide click latency far more than data size does. On the
+Tahoe 1M prefix (1,000,000 × 5,000, 101 million non-zeros, page cache warm) one gene column took
+3 to 6 ms from a CSC `X` and 99 to 108 ms from a CSR one; extrapolated linearly to the 95.6M-cell
+store (10.5 billion non-zeros), a CSR `X` would take about 10 s per gene click. `annzarro store
+check STORE` finds this and the other layout problems from metadata alone, without reading a
+chunk, and prints what each costs in clicks and how to fix it ({doc}`cli`). It exits 1 on a
+`slow` finding, which makes it a gate before deploying a store.
+
 ## Chunk shape
 
 The slowest interaction is set by chunk layout, not by data size. Full discussion:
