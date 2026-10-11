@@ -117,8 +117,12 @@ def is_inside(path, roots):
     return False
 
 
-def _requested_paths():
-    """Every local filesystem path named by the current request."""
+def request_paths(remote=False):
+    """Every path the current request names: the ``PATH_ARGS`` arguments, the
+    ``/datasets/<path>`` segment and ``directories/list``'s ``path``.
+
+    Shared with ``access.enforce``, which asks for the remote URLs too.
+    """
     paths = [request.args.get(name) for name in PATH_ARGS]
     if request.view_args:
         paths.append(request.view_args.get("dataset_path"))
@@ -130,7 +134,12 @@ def _requested_paths():
             if not os.path.isabs(directory) and not directory.startswith(data_dir):
                 directory = os.path.join(data_dir, directory)
             paths.append(directory)
-    return [p for p in paths if p and not is_remote_path(p)]
+    return [p for p in paths if p and (remote or not is_remote_path(p))]
+
+
+def _requested_paths():
+    """Every local filesystem path named by the current request."""
+    return request_paths()
 
 
 def resolve_relative_dataset_paths():

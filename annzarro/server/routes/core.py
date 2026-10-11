@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from flask import request, jsonify, current_app as app
 
+from .. import access
 from ...data.manager import data_manager
 from ...data.scan import DEFAULT_MAX_ENTRIES as DEFAULT_SCAN_ENTRIES, count_stores
 
@@ -34,6 +35,7 @@ def register_core_routes(app, api_version):
         return int(app.config.get("dataset_scan_max_entries") or DEFAULT_SCAN_ENTRIES)
 
     @app.route(f"/api/{api_version}/core/datasets", methods=["GET"])
+    @access.gate("listing")
     def list_legacy_datasets():
         """
         List available datasets (legacy endpoint).
@@ -66,6 +68,7 @@ def register_core_routes(app, api_version):
         from ..confinement import listable
         datasets = [d for d in datasets
                     if not isinstance(d, dict) or not d.get("path") or listable(app.config, d["path"])]
+        datasets = access.filter_entries(datasets)
         
         reply = {"datasets": datasets}
         if truncated:
@@ -75,6 +78,7 @@ def register_core_routes(app, api_version):
         return jsonify(reply)
 
     @app.route(f"/api/{api_version}/config", methods=["GET"])
+    @access.gate("public")
     def get_config():
         """
         The configuration the browser may see.
@@ -156,6 +160,7 @@ def register_core_routes(app, api_version):
             return None
         
     @app.route(f"/api/{api_version}/auth/me", methods=["GET"])
+    @access.gate("public")
     def get_current_user():
         """
         Who the requester is and what they may change.
@@ -201,6 +206,7 @@ def register_core_routes(app, api_version):
         return result
 
     @app.route(f"/api/{api_version}/status", methods=["GET"])
+    @access.gate("admin")
     def get_status():
         """
         Get server status information.
@@ -304,6 +310,7 @@ def register_core_routes(app, api_version):
             }), 500
 
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>", methods=["GET"])
+    @access.gate("dataset")
     def get_dataset_info(dataset_path: str):
         """
         Get information about a dataset.

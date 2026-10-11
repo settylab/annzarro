@@ -23,7 +23,7 @@ from ...core import name_index
 from ...core import read_guard
 from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core import subset as cell_subset
-from .. import confinement, permissions, session_quota
+from .. import access, confinement, permissions, session_quota
 from .. import http_cache
 from . import dataset_folders
 from ...core.array_response import wants_binary, wants_codes
@@ -586,6 +586,7 @@ def register_data_routes(app, api_version):
     app.register_error_handler(session_quota.QuotaRefused, _quota_refused_response)
 
     @app.route(f"/api/{api_version}/data/info", methods=["GET"])
+    @access.gate("dataset")
     def get_data_info():
         """
         Get information about a dataset.
@@ -645,6 +646,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/data/fingerprint", methods=["GET"])
+    @access.gate("dataset")
     def get_fingerprint():
         """
         The store's fingerprint (core/fingerprint.py), for a saved view.
@@ -704,6 +706,7 @@ def register_data_routes(app, api_version):
         return os.path.relpath(path, base).replace(os.sep, "/")
 
     @app.route(f"/api/{api_version}/data/dataset_structure", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_dataset_structure():
         """
@@ -726,6 +729,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/X", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_data_X():
         """
@@ -777,6 +781,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/layer/<path:layer_name>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_layer(layer_name: str):
         """
@@ -831,6 +836,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obs", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_obs():
         """
@@ -903,6 +909,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/var", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_var():
         """
@@ -969,6 +976,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obsm/<path:obsm_key>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_obsm(obsm_key: str):
         """
@@ -1030,6 +1038,7 @@ def register_data_routes(app, api_version):
         
     
     @app.route(f"/api/{api_version}/data/varm/<path:varm_key>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_varm(varm_key: str):
         """
@@ -1089,6 +1098,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obsp/<path:obsp_key>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_obsp(obsp_key: str):
         """
@@ -1144,6 +1154,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/varp/<path:varp_key>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_varp(varp_key: str):
         """
@@ -1198,6 +1209,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
              
     @app.route(f"/api/{api_version}/data/uns/<path:uns_key>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_uns(uns_key: str):
         """
@@ -1226,6 +1238,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
         
     @app.route(f"/api/{api_version}/data/paginated", methods=["GET"])
+    @access.gate("dataset")
     def get_paginated_data():
         """
         Get paginated data from any matrix type.
@@ -1370,6 +1383,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get paginated data: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/data/genes", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_genes():
         """
@@ -1393,6 +1407,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/cells", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_cells():
         """
@@ -1451,6 +1466,7 @@ def register_data_routes(app, api_version):
         return [str(x) for x in names], n
 
     @app.route(f"/api/{api_version}/data/names/status", methods=["GET"])
+    @access.gate("dataset")
     def names_index_status():
         """
         Whether a name search answers at once or waits for its index to be
@@ -1489,6 +1505,7 @@ def register_data_routes(app, api_version):
         return jsonify({"state": name_index.index_state(dataset_path_str, index_key, load_names)})
 
     @app.route(f"/api/{api_version}/data/names", methods=["GET"])
+    @access.gate("dataset")
     def search_names():
         """
         Search cell (obs) or gene (var) names; the typeahead behind the header
@@ -1616,6 +1633,7 @@ def register_data_routes(app, api_version):
         return None
 
     @app.route(f"/api/{api_version}/data/subset", methods=["GET"])
+    @access.gate("dataset")
     def get_subset_info():
         """
         Resolve a cell subset and describe it.
@@ -1661,6 +1679,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
 
     @app.route(f"/api/{api_version}/data/subset/locate", methods=["GET"])
+    @access.gate("dataset")
     def locate_subset_rows():
         """
         Translate cells between positions in a subset and dataset rows,
@@ -1707,6 +1726,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
 
     @app.route(f"/api/{api_version}/data/statistics", methods=["GET"])
+    @access.gate("dataset")
     def get_statistics():
         """
         Get statistical analysis of expression data.
@@ -1763,6 +1783,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get statistics: {str(e)}"}), 500
             
     @app.route(f"/api/{api_version}/data/obsm_dataframe_columns", methods=["GET"])
+    @access.gate("dataset")
     def get_obsm_dataframe_columns():
         """
         Get column names for a dataframe-encoded obsm matrix.
@@ -1802,6 +1823,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get obsm dataframe columns: {str(e)}"}), 500
             
     @app.route(f"/api/{api_version}/data/varm_dataframe_columns", methods=["GET"])
+    @access.gate("dataset")
     def get_varm_dataframe_columns():
         """
         Get column names for a dataframe-encoded varm matrix.
@@ -1841,6 +1863,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get varm dataframe columns: {str(e)}"}), 500
             
     @app.route(f"/api/{api_version}/data/by_path", methods=["GET"])
+    @access.gate("dataset")
     def get_data_by_path():
         """
         Get data using a path notation (e.g., "varm/matrix_name/column_name").
@@ -1915,6 +1938,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get data at path {data_path}: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/directories/home", methods=["GET"])
+    @access.gate("listing")
     def get_home_directory():
         """
         Get the home directory for data browsing.
@@ -1934,6 +1958,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get home directory: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/directories/list", methods=["GET"])
+    @access.gate("listing")
     def list_directory():
         """
         List contents of a directory.
@@ -2036,6 +2061,8 @@ def register_data_routes(app, api_version):
                     })
             
             # Sort zarr stores and directories by name
+            zarr_stores = access.filter_entries(zarr_stores)
+            directories = access.filter_entries(directories)
             zarr_stores.sort(key=lambda x: x["name"])
             directories.sort(key=lambda x: x["name"])
             
@@ -2054,6 +2081,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to list directory: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/datasets", methods=["GET"])
+    @access.gate("listing")
     def list_all_datasets():
         """
         List available datasets.
@@ -2179,6 +2207,7 @@ def register_data_routes(app, api_version):
                 logger.warning(f"Error listing directory {datasets_dir}: {e}")
             
             # Sort datasets by name
+            zarr_stores = access.filter_entries(zarr_stores)
             zarr_stores.sort(key=lambda x: x["name"])
             
             return jsonify(zarr_stores)
@@ -2267,6 +2296,7 @@ def register_data_routes(app, api_version):
             f.write(body)
 
     @app.route(f"/api/{api_version}/sessions/save", methods=["POST"])
+    @access.gate("panelset")
     def save_session():
         """
         Save a session.
@@ -2337,6 +2367,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to save session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/list", methods=["GET"])
+    @access.gate("panelset")
     def list_sessions():
         """
         List available sessions.
@@ -2385,6 +2416,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to list sessions: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/load", methods=["GET"])
+    @access.gate("panelset")
     def load_session():
         """
         Load a session.
@@ -2432,6 +2464,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to load session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/delete", methods=["DELETE"])
+    @access.gate("panelset")
     def delete_session():
         """
         Delete a session.
@@ -2490,6 +2523,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to delete session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/export", methods=["GET"])
+    @access.gate("panelset")
     def export_session():
         """
         Export a session for download.
@@ -2549,6 +2583,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to export session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/exists", methods=["GET"])
+    @access.gate("panelset")
     def check_session_exists():
         """
         Check if a session with the given name exists.
@@ -2589,6 +2624,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to check session existence: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/rename", methods=["POST"])
+    @access.gate("panelset")
     def rename_session():
         """
         Rename a session.
@@ -2687,6 +2723,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to rename session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/owner", methods=["POST"])
+    @access.gate("admin")
     def set_session_owner():
         """
         Assign a panel set to a user. Admins only.
@@ -2757,6 +2794,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to assign owner: {str(e)}"}), 500
 
     @app.route(f"/api/{api_version}/sessions/duplicate", methods=["POST"])
+    @access.gate("panelset")
     def duplicate_session():
         """
         Create a duplicate copy of a session.
@@ -2848,6 +2886,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to duplicate session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/import", methods=["POST"])
+    @access.gate("panelset")
     def import_session():
         """
         Import a session from uploaded file.

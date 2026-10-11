@@ -386,6 +386,9 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     app.url_value_preprocessor(resolve_dataset_segment)
     app.before_request(confinement.resolve_relative_dataset_paths)
     app.before_request(confinement.enforce)
+    # who may read which dataset: right after confinement, so it sees the final path (access.py)
+    from annzarro.server import access
+    access.install(app)
     app.before_request(require_dataset_segment)
 
     # Initialize zarr reader with cache settings from config
@@ -631,6 +634,8 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         app: Flask application instance
         api_version: API version string
     """
+    from annzarro.server import access
+
     def render_login(**extra):
         return render_template(
             "login.html",
@@ -641,12 +646,14 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         )
 
     @app.route("/login", methods=["GET"])
+    @access.gate("public")
     def login_page():
         """Login page"""
         return render_login(next_url=safe_next(request.args.get("next"), request.script_root),
                             fragment="")
     
     @app.route("/login", methods=["POST"])
+    @access.gate("public")
     def login():
         """Handle login POST request"""
         username = request.form.get("username")
@@ -682,6 +689,7 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
             )
     
     @app.route("/logout", methods=["GET"])
+    @access.gate("public")
     def logout():
         """Handle logout request"""
         # Clear session

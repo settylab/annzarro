@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from flask import jsonify, request, current_app as app
 
+from .. import access
 from ...core import zarr_reader, h5ad_reader_obj
 from ...core import name_index
 from ...core import categories as category_rules
@@ -29,6 +30,7 @@ def register_zarr_routes(app, api_version):
     """
     
     @app.route(f"/api/{api_version}/cache/info", methods=["GET"])
+    @access.gate("admin")
     def get_cache_info():
         """
         Get information about the current cache state.
@@ -48,6 +50,7 @@ def register_zarr_routes(app, api_version):
             }), 500
             
     @app.route(f"/api/{api_version}/cache/reset", methods=["POST"])
+    @access.gate("admin")
     def reset_cache():
         """
         Reset the zarr reader cache.
@@ -111,6 +114,7 @@ def register_zarr_routes(app, api_version):
             }), 500
     
     @app.route(f"/api/{api_version}/data/refresh", methods=["POST"])
+    @access.gate("dataset")
     def refresh_dataset():
         """Check a dataset against the disk and serve its changes from now on.
 
@@ -155,6 +159,7 @@ def register_zarr_routes(app, api_version):
                         "consolidated_metadata": consolidated_notice(stale)})
 
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/info", methods=["GET"])
+    @access.gate("dataset")
     def get_dataset_metadata(dataset_path: str):
         """
         Get metadata for a dataset by path without loading it into memory.
@@ -306,6 +311,7 @@ def register_zarr_routes(app, api_version):
             }), 500
     
     @app.route(f"/api/{api_version}/zarr/to_anndata", methods=["GET"])
+    @access.gate("dataset")
     def get_anndata_structure():
         """
         Convert a zarr dataset to an AnnData-like structure.
@@ -339,6 +345,7 @@ def register_zarr_routes(app, api_version):
             return jsonify({"error": f"Failed to get AnnData structure: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/zarr/url", methods=["GET"])
+    @access.gate("remote")
     def validate_zarr_url():
         """
         Validate a remote zarr URL.
@@ -372,6 +379,7 @@ def register_zarr_routes(app, api_version):
             }), 500
             
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/uns/structure", methods=["GET"])
+    @access.gate("dataset")
     def get_uns_structure(dataset_path: str):
         """
         Get the structure of the uns section including keys and encoding types.
@@ -406,6 +414,7 @@ def register_zarr_routes(app, api_version):
             return jsonify({"error": f"Failed to get uns structure: {str(e)}"}), 500
             
     @app.route(f"/api/{api_version}/datasets/uns/<path:uns_key>", methods=["GET"])
+    @access.gate("dataset")
     def get_uns_data(uns_key: str):
         """
         Get data from the uns section.
@@ -456,6 +465,7 @@ def register_zarr_routes(app, api_version):
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
         
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/uns/<path:uns_key>", methods=["GET"])
+    @access.gate("dataset")
     def get_uns_data_alt(dataset_path: str, uns_key: str):
         """
         Alternative route for getting data from the uns section.

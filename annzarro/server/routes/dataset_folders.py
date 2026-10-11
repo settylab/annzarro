@@ -15,7 +15,7 @@ import time
 
 from flask import current_app as app, jsonify, request
 
-from .. import confinement
+from .. import access, confinement
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +140,7 @@ def list_folder(config, folder, offset=0, limit=None):
         raise FileNotFoundError(path)
     skip = ("sessions",) if os.path.realpath(path) == os.path.realpath(data_dir) else ()
     entries = [e for e in (_entry(data_dir, path, n) for n in data_routes._listdir(path) if n not in skip) if e]
+    entries = access.filter_entries(entries)
     entries.sort(key=lambda e: (e["kind"] != "folder", e["name"]))
     page = entries[offset:offset + limit]
     for entry in page:
@@ -160,6 +161,7 @@ def list_folder(config, folder, offset=0, limit=None):
 
 def register_dataset_folder_routes(app_, api_version):
     @app_.route(f"/api/{api_version}/datasets/search", methods=["GET"])
+    @access.gate("listing")
     def list_dataset_search():
         query = request.args.get("q", "")
         if not query:
@@ -171,6 +173,7 @@ def register_dataset_folder_routes(app_, api_version):
             return jsonify({"error": str(exc), "reason": exc.reason}), 400
 
     @app_.route(f"/api/{api_version}/datasets/folder", methods=["GET"])
+    @access.gate("listing")
     def list_dataset_folder():
         config = app_.config
         folder = request.args.get("folder") or ""
@@ -275,6 +278,7 @@ def search_tree(config, query, regex=False, limit=None):
                 if len(found) >= limit:
                     truncated = True
                     break
+    found = access.filter_entries(found)
     found.sort(key=lambda e: (e["rel_path"].count(os.sep), e["rel_path"]))
     for entry in found:
         _fill_store(entry)
