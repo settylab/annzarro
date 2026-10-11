@@ -410,3 +410,74 @@ def test_a_missing_store_is_the_standard_404(app, layout, endpoint):
     assert reply.status_code == 404
     assert reply.get_json() == {"error": f"Dataset not found: {harness.stores['nope']}",
                                 "exception": "FileNotFoundError", "reason": "not_found"}
+
+
+# --- outside the data roots, and the client's own spelling ----------------------------
+
+@pytest.fixture
+def outside(layout):
+    """A store beside data/, outside every allowed root."""
+    return make_rich_store(layout / "outside" / "far.zarr")
+
+
+def test_a_restricted_user_cannot_tell_outside_the_roots_from_a_store_they_may_not_read(app, restricted, outside):
+    bob = _client(app, RESTRICTED)
+    missing_outside = os.path.join(os.path.dirname(outside), "gone.zarr")
+    nothing = bob.get("/api/v1/data/obs", query_string={"dataset_path": restricted.stores["nope"]})
+    expected = blank(nothing, restricted.stores["nope"])
+    assert expected[0] == 404
+    for path in (outside, missing_outside, restricted.stores["out"]):
+        reply = bob.get("/api/v1/data/obs", query_string={"dataset_path": path})
+        assert blank(reply, path) == expected, path
+        assert b"outside_data_dir" not in reply.data and b"allowed_dirs" not in reply.data
+    outside_dir = bob.get("/api/v1/directories/list", query_string={"path": os.path.dirname(outside)})
+    missing_dir = bob.get("/api/v1/directories/list", query_string={"path": restricted.folders["nope"]})
+    assert blank(outside_dir, os.path.dirname(outside)) == blank(missing_dir, restricted.folders["nope"])
+    assert outside_dir.status_code == 404
+
+
+def test_outside_the_roots_is_unchanged_for_everyone_else(app, restricted, outside):
+    query = {"dataset_path": outside}
+    carol = _client(app, "carol").get("/api/v1/data/obs", query_string=query)
+    assert carol.status_code == 403 and carol.get_json()["reason"] == "outside_data_dir"
+    assert _client(app, "alice").get("/api/v1/data/obs", query_string=query).status_code == 200
+
+
+def test_the_reply_echoes_the_clients_spelling_not_the_server_layout(app, restricted):
+    bob = _client(app, RESTRICTED)
+    for name, spelled in (("get_obs", "out.zarr"), ("get_obs", "nope.zarr"), ("get_obs", "pub/../out.zarr")):
+        reply = bob.get("/api/v1/data/obs", query_string={"dataset_path": spelled})
+        assert reply.status_code == 404
+        assert restricted.data not in reply.get_data(as_text=True), spelled
+        assert spelled in reply.get_json()["error"]
+    denied = bob.get("/api/v1/data/obs", query_string={"dataset_path": "out.zarr"})
+    missing = bob.get("/api/v1/data/obs", query_string={"dataset_path": "nope.zarr"})
+    assert blank(denied, "out.zarr") == blank(missing, "nope.zarr")
+    listing = bob.get("/api/v1/directories/list", query_string={"path": "hidden"})
+    assert restricted.data not in listing.get_data(as_text=True)
+    assert "hidden" in listing.get_json()["error"]
+
+
+def test_a_denied_directory_on_the_legacy_listing_is_an_empty_list_like_a_missing_one(app, restricted):
+    bob = _client(app, RESTRICTED)
+    for folder in (restricted.folders["out"], restricted.folders["nope"]):
+        reply = bob.get("/api/v1/core/datasets", query_string={"dir": folder})
+        assert reply.status_code == 200 and reply.get_json() == {"datasets": []}
+
+
+def test_refusals_are_logged_at_most_a_burst_a_minute_then_summarised(app, restricted, caplog):
+    import logging
+    access._refusals.clear()
+    bob = _client(app, RESTRICTED)
+    with caplog.at_level(logging.INFO, logger=access.logger.name):
+        for _ in range(access.LOG_BURST + 15):
+            assert bob.get("/api/v1/data/obs", query_string={"dataset_path": restricted.stores["out"]}).status_code == 404
+    lines = [r.getMessage() for r in caplog.records if r.name == access.logger.name]
+    assert sum(m.startswith("Refused") for m in lines) == access.LOG_BURST
+    assert sum("refusals a minute" in m for m in lines) == 1
+    # the window rolls over: the suppressed ones are summarised
+    access._refusals[RESTRICTED][0] -= access.LOG_WINDOW_S + 1
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger=access.logger.name):
+        bob.get("/api/v1/data/obs", query_string={"dataset_path": restricted.stores["out"]})
+    assert any("15 further refusals" in r.getMessage() for r in caplog.records)

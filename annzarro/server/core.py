@@ -297,6 +297,8 @@ def resolve_dataset_segment(endpoint, values):
         return
     data_dir = current_app.config.get("data_dir") or default_data_dir()
     values["dataset_path"] = os.path.join(data_dir, segment)
+    from annzarro.server import access
+    access.remember_spelling(values["dataset_path"], segment)
 
 
 def require_dataset_segment():
