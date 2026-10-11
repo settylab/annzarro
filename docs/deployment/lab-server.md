@@ -193,6 +193,10 @@ server {
         proxy_set_header X-Forwarded-Host  $host;
         proxy_set_header X-Forwarded-Prefix "";   # see "Serving under a path"
         proxy_read_timeout 90s;
+        # the full cell and gene name lists are streamed (chunked, no length);
+        # nginx speaks HTTP/1.0 to an upstream unless told otherwise, and then
+        # cannot tell a reply that failed half way from one that ended
+        proxy_http_version 1.1;
     }
 }
 
@@ -213,6 +217,21 @@ With two proxies in a row (say a load balancer and nginx) set it to 2; never set
 the number of proxies you run, or clients can forge their address. AnnZarro already compresses
 JSON replies on a shared server; if nginx compresses `application/json` too, set
 `server.compress_responses: false`.
+
+Three things about the replies that list every cell or gene name of a store (`/data/cells`,
+`/data/genes`; a 95.6 million cell store is a 2.1 GB reply, 0.4 GB gzipped). They are written as
+they are read, with no `Content-Length`, and carry `X-Accel-Buffering: no`, so nginx passes them on
+instead of spooling them to disk (up to `proxy_max_temp_file_size`, 1 GB). That trades nginx's
+protection against slow readers for memory: a client that stops reading holds one server thread
+until it hangs up, neither gunicorn's `gthread` workers nor the development server time out a
+send. `server.names_stream_max_concurrent` (default 2 per worker, for lists of more than `names_stream_slot_above`, a million names, so that opening any dataset never waits) bounds this; a third concurrent
+request is answered `503` with `Retry-After` before any byte, and the web client retries once.
+`proxy_http_version 1.1` (above) lets a failure after the first byte end the reply without its
+final chunk, which the browser reports as a failed read. Over HTTP/1.0 the close would look like
+a normal end, so a failed stream also writes `<names stream aborted>` before closing, which is not
+JSON, and the web client checks that the array closed and holds the number of names the reply
+announced. `proxy_read_timeout` counts the time between two reads, not the whole reply, so 90 s is
+fine.
 
 Any other proxy (Apache, Caddy, Traefik, an institutional gateway) works the same way: forward
 to `127.0.0.1:8000`, pass the `X-Forwarded-For`, `-Proto` and `-Host` headers, and allow long

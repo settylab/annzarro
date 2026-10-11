@@ -16,6 +16,24 @@ import { scanJSONArrays, decodeElement } from './json-stream.js';
 const _decoder = new TextDecoder();
 const _encoder = new TextEncoder();
 
+/**
+ * How a /cells reply is to be read, from its headers: `packed` when its body
+ * is above `threshold` bytes (read as a stream into PackedNames, never as one
+ * string), `size` the bytes to expect, `count` the names, 0 if not said. A
+ * server that writes the reply as it reads it sends no Content-Length;
+ * it says `X-Annzarro-Names` (how many) and `X-Annzarro-Names-Bytes-Estimate`.
+ */
+/** JSON bytes of a name when only their number is known (a 19-character name and its quotes and comma). */
+const NAME_BYTES_GUESS = 24;
+
+export function namesReplyPlan(headers, threshold) {
+    const num = (name) => Number(headers.get(name) || 0) || 0;
+    const count = num('X-Annzarro-Names');
+    // no size at all (a proxy dropped the headers): about what a name costs
+    const size = num('Content-Length') || num('X-Annzarro-Names-Bytes-Estimate') || count * NAME_BYTES_GUESS;
+    return { packed: size > threshold, size, count };
+}
+
 export class PackedNames {
     constructor(bytes, offsets, length) {
         this.bytes = bytes;
@@ -76,11 +94,12 @@ export class PackedNames {
     /**
      * The names of the array under `key` in a JSON response (`{"cells": [...]}`),
      * read as a stream (see json-stream.js). `sizeHint` is the body size in
-     * bytes, if known, to size the buffer once.
+     * bytes, if known, to size the buffer once; `count` the number of names,
+     * if known, to size the offsets once.
      */
-    static async fromJSON(response, key, sizeHint = 0) {
+    static async fromJSON(response, key, sizeHint = 0, count = 0) {
         let bytes = new Uint8Array(Math.max(1 << 20, sizeHint));
-        let offsets = new Uint32Array(Math.max(1 << 16, Math.ceil(sizeHint / 8)));
+        let offsets = new Uint32Array(Math.max(1 << 16, count ? count + 2 : Math.ceil(sizeHint / 8)));
         let n = 0, used = 0;
         await scanJSONArrays(response, (owner, parent, buf, start, end, escaped) => {
             if (owner !== key || parent !== null) return;

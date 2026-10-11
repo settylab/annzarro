@@ -7,7 +7,7 @@ import { subsetParam } from './utils/subset.js';
 import { notify } from './utils/notify.js';
 import { CacheManager } from './cache-manager.js';
 import { BINARY_FORMAT, categoricalValues, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
-import { PackedNames, categoryCodesFromJSON } from './utils/packed-names.js';
+import { PackedNames, categoryCodesFromJSON, namesReplyPlan } from './utils/packed-names.js';
 import { RemoteNames } from './utils/remote-names.js';
 
 // A /cells body above this size is read as a stream into PackedNames
@@ -149,12 +149,12 @@ const DataManager = (function() {
      * memory budget; a focused-cell row read then succeeds a moment later
      * instead of showing an error. One retry, at most 10 s of waiting.
      */
-    async function _fetchRetrying(fullUrl, signal) {
-        let response = await fetch(fullUrl, { signal });
+    async function _fetchRetrying(fullUrl, signal, init = {}) {
+        let response = await fetch(fullUrl, { signal, ...init });
         if (response.status === 503) {
             const after = Number(response.headers && response.headers.get('Retry-After'));
             await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(after || 1, 1), 10) * 1000));
-            response = await fetch(fullUrl, { signal });
+            response = await fetch(fullUrl, { signal, ...init });
         }
         return response;
     }
@@ -1214,15 +1214,56 @@ const DataManager = (function() {
         return 'none';
     }
 
-    /** Every name of the cells shown, from /data/cells (the subset in effect). */
-    async function _downloadCellNames(datasetPath, signal) {
+    /**
+     * Every name of the cells shown, from /data/cells (the subset in effect).
+     * A reply that was cut short (the server failed after its first byte, and
+     * a proxy ended the reply as if it were whole) never passes for a shorter
+     * list: it is read again once with `cache: 'reload'`, which also replaces
+     * the cut copy the browser kept (it would be revalidated with a 304),
+     * then it is an error.
+     */
+    async function _downloadCellNames(datasetPath, signal, reload = false) {
+        try {
+            return await _readCellNames(datasetPath, signal, reload);
+        } catch (error) {
+            if (!reload && error && error.truncated) {
+                console.warn('Cell names: the reply was cut short; reading it again');
+                return _downloadCellNames(datasetPath, signal, true);
+            }
+            throw error;
+        }
+    }
+
+    function _truncated(got, expected) {
+        const err = new Error(`The cell names reply holds ${got} names, not the ${expected} the server said (it was cut short)`);
+        err.truncated = true;
+        return err;
+    }
+
+    async function _readCellNames(datasetPath, signal, reload) {
         const params = _withSubset(Config.API.CELLS, { dataset_path: datasetPath });
         const fullUrl = `${Config.API.CELLS}?${new URLSearchParams(params).toString()}`;
-        const response = await fetch(fullUrl, { signal });
-        const size = Number(response.headers.get('Content-Length') || 0);
-        if (response.ok && size > PACKED_NAMES_ABOVE_BYTES) {
+        // 503 read_busy (the server is sending as many full name lists as it
+        // may) is waited out once, like the other reads
+        const response = await _fetchRetrying(fullUrl, signal, reload ? { cache: 'reload' } : {});
+        try {
+            return await _namesOf(response);
+        } catch (error) {
+            // a body that does not parse, or a read that fails half way, is a
+            // reply cut short; a server's own error (it has a status) is not
+            if (error && error.name !== 'AbortError' && !error.status) error.truncated = true;
+            throw error;
+        }
+    }
+
+    async function _namesOf(response) {
+        // The size is the Content-Length, or for a reply the server writes
+        // as it reads it (no Content-Length) the estimate it sends
+        const plan = namesReplyPlan(response.headers, PACKED_NAMES_ABOVE_BYTES);
+        if (response.ok && plan.packed) {
             const t0 = performance.now();
-            const names = await PackedNames.fromJSON(response, 'cells', size);
+            const names = await PackedNames.fromJSON(response, 'cells', plan.size, plan.count);
+            if (plan.count && names.length !== plan.count) throw _truncated(names.length, plan.count);
             console.info(`Cell names: ${names.length} read into packed form in ${(performance.now() - t0).toFixed(0)} ms`);
             return names;
         }
@@ -1230,10 +1271,14 @@ const DataManager = (function() {
 
         // Check if response contains error information
         if (data && data.status === 'error') {
-            throw new Error(data.message || data.error || 'Failed to load cells');
+            const err = new Error(data.message || data.error || 'Failed to load cells');
+            err.status = response.status;
+            throw err;
         }
 
-        return data.cells || [];
+        const cells = data.cells || [];
+        if (plan.count && cells.length !== plan.count) throw _truncated(cells.length, plan.count);
+        return cells;
     }
 
     async function loadCells(datasetPath, signal = null, expected = null, total = null) {

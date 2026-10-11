@@ -98,6 +98,11 @@ def test_entry_point_repeat_is_a_cache_hit(stores, fmt, make, label, call, opens
         second = call(path, reader)
     status = first[1] if isinstance(first, tuple) else first.status_code
     assert status == 200, first[0].get_json() if isinstance(first, tuple) else first.get_json()
+    if fmt == "zarr" and label.startswith("extract_cells_genes"):
+        # a zarr store's names are streamed a chunk at a time and not kept: a
+        # cached list of 95M names was 7 GB that evicted everything else
+        assert added == [] and first.get_data() == second.get_data()
+        return
     assert stored_first, f"{label}: the first call cached nothing"
     assert added == stored_first, f"{label}: the repeat missed and cached {added[len(stored_first):]}"
     assert first.get_data() == second.get_data()

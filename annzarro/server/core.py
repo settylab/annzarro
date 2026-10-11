@@ -76,6 +76,9 @@ DEFAULT_CONFIG = {
     "admin_audit_max_mb": 50,             # MB at which the admin audit log rotates (5 files kept); 0 = never
     "dataset_scan_max_entries": 200000,   # directory entries a dataset listing or /status count reads before it stops
     "max_read_mb": None,            # MB one read of an obsp/varp matrix may hold in memory, sized from metadata; None = 5% of RAM (256 MB..4 GB)
+    "max_names_json_mb": 2048,      # MB a names reply built whole may hold (readers that cannot stream: h5ad); zarr streams; 0 = no limit
+    "names_stream_max_concurrent": 2,   # full cell/gene name lists one worker sends at once (each holds a thread until read); 0 = no limit
+    "names_stream_slot_above": 1000000,  # only name lists of more names than this count against names_stream_max_concurrent
     "read_budget_mb": None,         # MB all pairwise reads in flight in one worker may hold; None = 2 x max_read_mb
     "read_wait_s": 5,               # seconds a pairwise read waits for that budget before a 503
     "remote_stores": "auto",           # auto | allow | deny -- s3://, gs://, http(s):// datasets
