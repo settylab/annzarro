@@ -164,6 +164,21 @@ server:
       minimum: 0
       description: Largest request body in MB (panel-set saves and imports); a larger one is a 413 request_too_large; 0 = no limit
       default: 16
+    max_sessions_per_user:
+      type: integer
+      minimum: 0
+      description: Panel sets one user may keep (with login off all sets are one user's); a save past it is a 409 session_quota_user; 0 = no limit
+      default: 500
+    max_sessions:
+      type: integer
+      minimum: 0
+      description: Panel sets the whole server keeps; a save past it is a 409 session_quota_total; 0 = no limit
+      default: 5000
+    max_sessions_mb:
+      type: number
+      minimum: 0
+      description: MB all panel sets may take together; a save past it is a 409 session_quota_total; 0 = no limit
+      default: 256
     dataset_scan_max_entries:
       type: integer
       minimum: 1

@@ -92,6 +92,13 @@ server:
   # imported) are the only uploads; a larger one is refused with 413
   # request_too_large before it is read. 0 = no limit.
   max_request_mb: 16
+  # Panel sets (the JSON files in <data_dir>/sessions): how many one user may
+  # keep (with login off all sets are one user's), how many the server keeps,
+  # and the MB they may take together. A save, duplicate or import past a limit
+  # is refused with 409 session_quota_user / session_quota_total. 0 = no limit.
+  max_sessions_per_user: 500
+  max_sessions: 5000
+  max_sessions_mb: 256
   # Directory entries the legacy dataset listing (/core/datasets) and the store
   # count in /status read before they stop; a store's own chunk files are never
   # walked. The listing then says truncated: true.
