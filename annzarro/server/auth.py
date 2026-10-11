@@ -279,18 +279,19 @@ class AuthManager:
         Returns:
             bool: Success status
         """
-        self._reload_if_changed()
-        if username in self.users:
+        def add(table):
+            if username in table:
+                return False
+            table[username] = User(username, self._new_hash(password), is_admin)
+            return True
+
+        if not self.update_users(add):
             logging.warning(f"Cannot create user: Username {username} already exists")
             return False
-            
-        # Create user
-        self.users[username] = User(username, self._new_hash(password), is_admin)
-        self._save_users(created=[username])
         logging.info(f"Created user: {username} (admin: {is_admin})")
         return True
-    
-    def authenticate(self, username, password, client_ip=None):
+
+    def authenticate(self, username, password, client_ip=None, touch_last_login=True):
         """
         Authenticate a user with username and password
 
@@ -305,6 +306,9 @@ class AuthManager:
             password (str): Password
             client_ip (str, optional): The client's address (``None`` for
                 callers without one, e.g. the CLI)
+            touch_last_login (bool, optional): Record the time as the user's
+                last login. False when only checking a password the user is
+                already logged in with (changing it, confirming it).
             
         Returns:
             bool: Authentication success
@@ -342,7 +346,8 @@ class AuthManager:
         if is_valid:
             # Reset this address's failures on success
             user.failed_logins.pop(source, None)
-            user.last_login = datetime.now().isoformat()
+            if touch_last_login:
+                user.last_login = datetime.now().isoformat()
             self._save_users(changed=[username])
             logging.info(f"User {username} authenticated successfully")
             return True
@@ -458,17 +463,49 @@ class AuthManager:
         logging.info(f"Changed password of user: {username}")
         return True
 
-    def set_admin(self, username, is_admin):
-        """Grant or revoke admin in place. Returns False if the user does not exist."""
-        self._reload_if_changed()
-        user = self.users.get(username)
-        if user is None:
+    def set_admin(self, username, is_admin, force=False):
+        """Grant or revoke admin. Returns False if the user does not exist.
+
+        Revoking the last admin raises :class:`LastAdminError`, checked on the
+        stored table inside the lock; ``force`` skips that check only (the
+        command line's ``--force``), never the lock."""
+        def change(table):
+            user = table.get(username)
+            if user is None:
+                return False
+            had_admin = any(u.is_admin for u in table.values())
+            user.is_admin = bool(is_admin)
+            if had_admin and not force:
+                ensure_admin_remains(table)
+            return True
+
+        if not self.update_users(change):
             logging.warning(f"Cannot change admin flag: User {username} not found")
             return False
-        user.is_admin = bool(is_admin)
-        self._save_users(changed=[username])
-        logging.info(f"User {username} admin: {user.is_admin}")
+        logging.info(f"User {username} admin: {bool(is_admin)}")
         return True
+
+    def unlock(self, username, address=None):
+        """Clear failed-login lockouts of ``username``: those of one client
+        ``address``, or all of them. Returns how many addresses were cleared,
+        or None if the user does not exist."""
+        def clear(table):
+            user = table.get(username)
+            if user is None:
+                return None
+            if address is None:
+                cleared = len(user.failed_logins)
+                user.failed_logins = {}
+            else:
+                cleared = 1 if user.failed_logins.pop(address, None) is not None else 0
+            user.login_attempts = 0
+            user.locked_until = None
+            return cleared
+
+        cleared = self.update_users(clear)
+        if cleared is not None:
+            logging.info(f"Cleared {cleared} failed-login record(s) of user {username}")
+        return cleared
 
     def session_is_current(self, username, logged_in_at):
         """Whether a login of ``username`` made at ``logged_in_at`` still counts:
@@ -484,24 +521,32 @@ class AuthManager:
         except (TypeError, ValueError):
             return False
 
-    def remove_user(self, username):
+    def remove_user(self, username, force=False):
         """
         Remove a user
+
+        Removing the last admin raises :class:`LastAdminError`, checked on the
+        stored table inside the lock; ``force`` skips that check only.
         
         Args:
             username (str): Username
+            force (bool, optional): Allow removing the last admin.
             
         Returns:
             bool: Success status
         """
-        self._reload_if_changed()
-        if username not in self.users:
+        def remove(table):
+            if username not in table:
+                return False
+            had_admin = any(u.is_admin for u in table.values())
+            del table[username]
+            if had_admin and not force:
+                ensure_admin_remains(table)
+            return True
+
+        if not self.update_users(remove):
             logging.warning(f"Cannot remove user: User {username} not found")
             return False
-            
-        # Remove user
-        del self.users[username]
-        self._save_users(removed=[username])
         logging.info(f"Removed user: {username}")
         return True
     

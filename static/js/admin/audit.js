@@ -27,11 +27,24 @@ export function recordRow(r) {
         h('td', { class: 'text-nowrap', text: r.outcome || '' }));
 }
 
-/** The chain line: verified through `seq`, or the first bad record. */
+const PROBLEMS = {
+    tampered: 'a record no longer fits its neighbours',
+    truncated: 'the log ends before its recorded end, so records are missing',
+    head_unreadable: 'the log\'s end marker cannot be read',
+};
+
+/** The chain line: verified through `seq`, or the first bad record and why. */
 export function chainText(chain, newestSeq) {
     if (!chain) return 'Chain not checked.';
-    if (chain.ok) return `Chain verified OK${newestSeq ? ` through seq ${newestSeq}` : ''}.`;
-    return `Chain BROKEN at seq ${chain.first_bad_seq}.`;
+    const extras = [];
+    if (chain.first_seq > 1) extras.push(`History starts at seq ${chain.first_seq}; older records were rotated away.`);
+    if (Array.isArray(chain.torn) && chain.torn.length) {
+        extras.push(`${chain.torn.length} line${chain.torn.length === 1 ? '' : 's'} cut off by a crash (seq ${chain.torn.join(', ')}); the chain is intact around ${chain.torn.length === 1 ? 'it' : 'them'}.`);
+    }
+    const tail = extras.length ? ` ${extras.join(' ')}` : '';
+    if (chain.ok) return `Chain verified OK${newestSeq ? ` through seq ${newestSeq}` : ''}.${tail}`;
+    const why = PROBLEMS[chain.problem];
+    return `Chain BROKEN at seq ${chain.first_bad_seq}${why ? ` (${why})` : ''}.${tail}`;
 }
 
 let el = null;
