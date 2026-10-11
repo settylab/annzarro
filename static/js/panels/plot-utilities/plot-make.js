@@ -365,8 +365,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
   let coverage = null;
   let expected = null;
   const unit = plotType === 'genes' ? 'genes' : 'cells';
-  const source = `${settings.type}.${settings.key}`
-    + (settings.column ? `.${settings.column}` : '');
+  const source = seriesSource(settings);
 
   /**
    * A column measured RELATIVE to a focused cell or gene, where that entity is
@@ -1396,6 +1395,14 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
  * @param {Object} settings - Plot settings
  * @returns {Object} - Object containing indexMask and filter statistics
  */
+/**
+ * How a series is named in a coverage line: `obs.leiden`, `obsm.X_umap.0`.
+ * @param {{type: string, key: string, column?: string}} series
+ */
+export function seriesSource(series) {
+  return `${series.type}.${series.key}` + (series.column ? `.${series.column}` : '');
+}
+
 /**
  * A cell panel's coverage with the cells the subset (or its part) does not
  * show counted in: the total becomes the dataset's, as in the header's
