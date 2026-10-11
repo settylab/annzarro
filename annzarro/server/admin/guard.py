@@ -224,5 +224,6 @@ def require_admin(view=None, *, reauth=True, action=None):
                 return denied
             return _harden(make_response(fn(*args, **kwargs)))
         guarded._annzarro_admin = True
+        guarded._annzarro_gate = "admin"   # the data gate's kind for a route that guards itself (access.py)
         return guarded
     return decorate(view) if view is not None else decorate

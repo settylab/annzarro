@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from flask import current_app, jsonify, request
 
+from .. import access
 from .registry import REGISTRY, Registry, load_declarations
 from .resolver import PolicyEngine
 
@@ -83,6 +84,7 @@ def install(app, api_version: str = "v1", registry: Optional[Registry] = None) -
     app.extensions[EXTENSION] = eng
 
     @app.route(f"/api/{api_version}/policy/effective", methods=["GET"])
+    @access.gate("public")   # client keys only, resolved for the requester; no dataset is named
     def policy_effective():
         """The policy as the requester gets it: ``{version, values}`` for the keys
         that are ``client`` keys. ``?keys=a,b`` limits it to those (names that are
