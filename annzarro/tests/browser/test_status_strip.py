@@ -365,7 +365,7 @@ def test_large_plot_tag_explains_and_offers_the_subset(large_server):
             # the tag's own popover: why, and the subset that lifts the limit
             page.click(f'{TILE} .plot-status .ps-tag[data-tag="large"]')
             text = page.text_content(f'{TILE} .plot-status .ps-pop[data-pop="large"]')
-            assert "Over 100 points (200 here)" in text, text
+            assert "This plot shows 200 cells, more than the 100 that table filters" in text, text
             page.click(f'{TILE} .plot-status .ps-pop[data-pop="large"] [data-ps-action="subset-regular"]')
             page.wait_for_selector("#subset-modal", state="visible")
             chosen = page.get_attribute('button.subset-preset[aria-pressed="true"]', "data-n")

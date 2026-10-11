@@ -257,11 +257,11 @@ export function largePlotTag(n) {
   const limit = largePlotPoints();
   return {
     text: 'Large plot',
-    title: `Large-plot mode (${formatPoints(n)} points): hover, click and the focus highlight work; `
-      + 'table filters, 3D and the Hover picker are off; use a subset for them',
+    title: `This plot shows ${compactCount(n)} cells, more than the ${compactCount(limit)} that table filters, 3D and `
+      + `extra hover columns can handle. Make a subset of up to ${compactCount(limit)} cells to use them.`,
     pop: {
-      text: `Over ${exactCount(limit)} points (${compactCount(n)} here): drawn in a lighter mode to stay within `
-        + 'browser memory. Hover and click work; table filters, 3D and extra hover columns do not.',
+      text: `This plot shows ${compactCount(n)} cells, more than the ${compactCount(limit)} that table filters, 3D and `
+        + `extra hover columns can handle. Make a subset of up to ${compactCount(limit)} cells to use them.`,
       actions: [['subset-regular', `Subset to \u2264${compactCount(limit)} for table filters`]]
     }
   };
