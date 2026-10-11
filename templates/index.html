@@ -73,7 +73,7 @@
                 <div class="col">
                     <div class="global-controls">
                         <div class="row align-items-center">
-                            <div class="col">
+                            <div class="col dataset-col">
                                 <label for="dataset-selector">Dataset:</label>
                                 <div class="dataset-row">
                                     <div class="dataset-pick">
@@ -92,7 +92,7 @@
                                     </button>
                                 </div>
                             </div>
-                            <div class="col">
+                            <div class="col focus-col">
                                 <label for="focused-gene">Focused Gene:</label>
                                 <div class="d-flex">
                                     <div class="btn-group btn-group-sm me-1">
@@ -106,7 +106,7 @@
                                     <div class="flex-grow-1"><input id="focused-gene" class="form-control" type="text" placeholder="Search genes" aria-label="Focused gene"></div>
                                 </div>
                             </div>
-                            <div class="col">
+                            <div class="col focus-col">
                                 <label for="focused-cell">Focused Cell:</label>
                                 <div class="d-flex">
                                     <div class="btn-group btn-group-sm me-1">
@@ -189,15 +189,27 @@
 
     <!-- Change dataset: the store a view opens on (main.js _showChangeDataset) -->
     <div class="modal fade" id="change-dataset-modal" tabindex="-1" aria-hidden="true" aria-labelledby="change-dataset-title">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="change-dataset-title">Change dataset</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p id="change-dataset-saved" class="small text-muted"></p>
+                    <p id="change-dataset-saved" class="small text-muted dataset-name"></p>
+                    <div class="change-dataset-toolbar">
+                        <input id="change-dataset-search" type="search" class="form-control form-control-sm" placeholder="Search name or path" aria-label="Search datasets by name or path" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="true">
+                        <button id="change-dataset-regex" type="button" class="btn btn-sm btn-outline-secondary name-picker-regex" title="Regular expression search" aria-label="Regular expression search" aria-pressed="false">.*</button>
+                        <select id="change-dataset-sort" class="form-select form-select-sm" aria-label="Sort datasets by">
+                            <option value="best">Best match</option>
+                            <option value="name">Name</option>
+                            <option value="cells">Cells (most first)</option>
+                            <option value="modified">Modified (newest first)</option>
+                        </select>
+                    </div>
+                    <div id="change-dataset-search-error" class="small text-danger" hidden></div>
                     <div id="change-dataset-list" class="change-dataset-list"></div>
+                    <div id="change-dataset-tree" class="change-dataset-list"></div>
                     <label for="change-dataset-path" class="form-label mt-3 small">Or open a path on this server</label>
                     <div class="input-group input-group-sm">
                         <input id="change-dataset-path" type="text" class="form-control" placeholder="name in the data directory, or a full path">
