@@ -499,3 +499,24 @@ def test_may_read_agrees_with_pathlib_on_random_spellings(world):
             covered[got] += 1
             assert got == expected, spelled
     assert covered[True] > 100 and covered[False] > 100
+
+
+def test_a_remote_url_on_a_dataset_route_is_the_standard_404_without_a_grant(remote_world):
+    """Nothing is fetched for a restricted user whose grants do not cover the URL."""
+    app = remote_world
+    grant(app, "remote", "s3://lab-public/pbmc/")
+    bob = client(app, "bob")
+    seen = []
+    from annzarro.core import remote
+    original = remote.open_remote_group
+    remote.open_remote_group = lambda *a, **k: seen.append(a) or original(*a, **k)
+    try:
+        for url in ("s3://lab-public/other/x.zarr", "https://data.example.org/shared/x.zarr", "s3://lab-public/pbmc2/x.zarr",
+                    "s3://lab-public/pbmc/../other/x.zarr"):
+            reply = bob.get("/api/v1/data/obs", query_string={"dataset_path": url})
+            assert reply.status_code == 404, url
+            assert reply.get_json() == {"error": f"Dataset not found: {url}", "exception": "FileNotFoundError",
+                                        "reason": "not_found"}, url
+    finally:
+        remote.open_remote_group = original
+    assert seen == []
