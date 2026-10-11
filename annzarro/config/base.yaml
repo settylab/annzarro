@@ -88,6 +88,10 @@ server:
   # interrupted. 0 = no time limit.
   name_search_max_regex_chars: 200
   name_search_timeout_s: 10
+  # Directory entries the legacy dataset listing (/core/datasets) and the store
+  # count in /status read before they stop; a store's own chunk files are never
+  # walked. The listing then says truncated: true.
+  dataset_scan_max_entries: 200000
   # Memory one read of an obsp/varp matrix may hold, in MB, estimated from the
   # store's metadata BEFORE any chunk is read (dense: rows x columns x itemsize;
   # sparse: its stored arrays plus the dense block returned). A request over it

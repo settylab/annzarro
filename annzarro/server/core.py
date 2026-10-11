@@ -57,6 +57,7 @@ DEFAULT_CONFIG = {
     "dataset_search_max_entries": 20000, # entries that search looks at before it stops (and says so)
     "name_search_max_regex_chars": 200,   # longest regex a name search runs (a longer one is a 400 regex_too_long)
     "name_search_timeout_s": 10,          # seconds a regex name search scans before it answers partially; 0 = no limit
+    "dataset_scan_max_entries": 200000,   # directory entries a dataset listing or /status count reads before it stops
     "max_read_mb": None,            # MB one read of an obsp/varp matrix may hold in memory, sized from metadata; None = 5% of RAM (256 MB..4 GB)
     "read_budget_mb": None,         # MB all pairwise reads in flight in one worker may hold; None = 2 x max_read_mb
     "read_wait_s": 5,               # seconds a pairwise read waits for that budget before a 503
