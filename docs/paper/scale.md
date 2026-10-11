@@ -180,13 +180,14 @@ umap = pd.read_parquet("tahoe100m_umap.parquet", columns=["cell_index", "umap_1"
 umap = umap.sort_values("cell_index")
 root = zarr.open_group(store, mode="r+", zarr_format=2)
 n = root["obsm/X_pca_2d"].shape[0]           # the store holds the first n cells
-xy = umap[["umap_1", "umap_2"]].to_numpy()[:n]
+xy = umap[["umap_1", "umap_2"]].iloc[:n].to_numpy()
 arr = root["obsm"].create_array("X_umap", data=xy, chunks=(100_000, 2))
 arr.attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
 zarr.consolidate_metadata(store, zarr_format=2)
 ```
 
-This loads the whole parquet (95.6M rows, a few GB of memory). To check the order, compare
+This reads three columns of the whole parquet and sorts them: about 80 bytes per row at the peak,
+so roughly 8 GB of memory for all 95.6M rows (measured: 0.9 GiB for 10M rows). To check the order, compare
 `BARCODE_SUB_LIB_ID` of the first n sorted rows with the store's `obs` index, which is the same
 identifier. The repository's own `umap_tahoe.py write`
 does the same from a `.npy` of the whole UMAP, and `umap_tahoe.py sample | fit | place`
