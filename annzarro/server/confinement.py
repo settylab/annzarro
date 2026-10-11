@@ -208,6 +208,9 @@ def enforce():
         # A restricted user is told nothing about where the roots are: the
         # same 404 as a store they may not read (access.py)
         from . import access
+        unavailable = access.unavailable_reply()
+        if unavailable is not None:
+            return unavailable
         if access.is_restricted_requester():
             logger.warning(f"Refused path outside the data directory: {outside[0]!r} ({request.path})")
             return access.refusal(outside[0])
