@@ -170,7 +170,7 @@ test('a refused pattern shows the server\'s sentence', async () => {
     const original = globalThis.fetch;
     globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: 'This pattern is refused: a repeat inside a repeat.', reason: 'regex_too_complex' }) });
     try {
-        const model = new NameSearchModel((q, o) => fetchNameMatches('/x', { datasetPath: 'd', entity: 'cells', query: q, mode: 'regex' }));
+        const model = new NameSearchModel(q => fetchNameMatches('/x', { datasetPath: 'd', entity: 'cells', query: q, mode: 'regex' }));
         await model.setQuery('(a+)+', { regex: true });
         assert.match(model.error, /a repeat inside a repeat/);
     } finally {
