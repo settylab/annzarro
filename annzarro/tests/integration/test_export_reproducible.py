@@ -142,7 +142,7 @@ def test_from_the_figure_makes_the_same_figure(runs, work):
 
 
 def test_a_store_with_other_cells_is_refused(runs, work, tmp_path):
-    from annzarro.tests.zarr_compat import open_group, write_strings
+    from annzarro.tests.zarr_compat import consolidate, open_group, write_strings
     base, _ = work
     other = tmp_path / "fixture_small.zarr"
     shutil.copytree(FIXTURE, other)
@@ -150,6 +150,7 @@ def test_a_store_with_other_cells_is_refused(runs, work, tmp_path):
     attrs = dict(group["_index"].attrs)
     del group["_index"]
     write_strings(group, "_index", [f"x{i}" for i in range(200)]).attrs.update(attrs)
+    consolidate(other)          # the rewritten array may be chunked or sharded unlike the one it replaced
     original = _files(runs[(1, "svg")])[0]
     proc = _export(["--from", str(original), "--store", str(other), "--out", str(tmp_path / "o.svg")], base)
     assert proc.returncode == 2
