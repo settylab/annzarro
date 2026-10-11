@@ -401,5 +401,5 @@ def test_request_timeout_environment_override_and_validation():
 
 
 def test_describe_names_the_request_limit():
-    assert "request=120s" in _policy(**HOSTED).describe()
+    assert "request=120s" in _policy(**HOSTED, remote_stores="allow").describe()
     assert "request=off" in _policy(**LOCAL, remote_request_timeout_s=0).describe()
