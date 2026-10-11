@@ -5,7 +5,7 @@
  */
 
 import { h, setChildren } from './dom.js';
-import { renderPolicy } from './policy-widgets.js';
+import { renderPolicy, renderUserPolicy } from './policy-widgets.js';
 
 let el = null;
 let apiRef = null;
@@ -28,6 +28,36 @@ async function load() {
         },
     });
     if (!(policy.keys || []).length) setChildren(el, h('p', { class: 'text-muted', text: 'The server declares no settings.' }));
+}
+
+/**
+ * A user's overrides, as a component for the Users and Access dialogs.
+ * @param {HTMLElement} target - emptied and filled
+ * @param {Object} api - the admin API client
+ * @param {string} username
+ * @param {Object} [ctx] - {toast}
+ * @returns {Promise<{refresh: function}>}
+ */
+export async function mountUserPolicy(target, api, username, ctx = {}) {
+    const refresh = async () => {
+        const policy = await api.policy.getUser(username);
+        renderUserPolicy(target, policy, {
+            onChange: async (name, value) => {
+                await api.policy.setUser(username, { [name]: value });
+                await refresh();
+            },
+            onRemoveUnknown: async (name) => {
+                try {
+                    await api.policy.setUser(username, { [name]: null });
+                    await refresh();
+                } catch (e) {
+                    if (ctx.toast) ctx.toast(e.message, 'danger');
+                }
+            },
+        });
+    };
+    await refresh();
+    return { refresh };
 }
 
 export default {

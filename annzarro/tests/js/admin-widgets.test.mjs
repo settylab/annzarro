@@ -197,22 +197,22 @@ test("a locked key keeps its widget but disabled, with a lock and a locked badge
   assert.equal(find(row, (n) => n.textContent === "reset"), null);
 });
 
-test("an admin value shows the inherited config value and a reset that sends null", async () => {
+test("an admin value shows the inherited value (from the layer below) and a reset that sends null", async () => {
   const seen = [];
   const row = renderPolicyRow(key("panel.gene-set.enabled"), { onChange: async (n, v) => { seen.push([n, v]); } });
   assert.equal(badgeText(row), "admin");
-  assert.match(row.textContent, /config: on/);
+  assert.match(row.textContent, /inherited: on/);
   const reset = find(row, (n) => n.tagName === "BUTTON" && n.textContent === "reset");
   await reset.dispatch("click");
   assert.deepEqual(seen, [["panel.gene-set.enabled", null]]);
 });
 
 test("a server refusal is shown on the row: per-field error first, else the message", async () => {
-  const refuse = async () => { const e = new Error("locked_by_config"); e.fieldErrors = { "panel.cell-plot.enabled": "out_of_range" }; throw e; };
+  const refuse = async () => { const e = new Error("locked_by_config"); e.fieldErrors = { "panel.cell-plot.enabled": "odd_reason" }; throw e; };
   const row = renderPolicyRow(key("panel.cell-plot.enabled"), { onChange: refuse });
   const input = find(row, (n) => n.tagName === "INPUT");
   await input.dispatch("change");
-  assert.equal(find(row, (n) => n.getAttribute("role") === "alert").textContent, "out_of_range");
+  assert.equal(find(row, (n) => n.getAttribute("role") === "alert").textContent, "odd_reason");
   const plain = renderPolicyRow(key("panel.cell-plot.enabled"), { onChange: async () => { throw new Error("The configuration file locks this setting."); } });
   await find(plain, (n) => n.tagName === "INPUT").dispatch("change");
   assert.match(find(plain, (n) => n.getAttribute("role") === "alert").textContent, /locks this setting/);

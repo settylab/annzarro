@@ -101,9 +101,11 @@ export function formatValue(type, value) {
 /**
  * How a key may be edited.
  * @param {Object} key
+ * @param {{frozen: string}} [opts] - a reason that rules out editing whatever the key is
  * @returns {{editable: boolean, note: string}} `note` says why it is not
  */
-export function keyState(key) {
+export function keyState(key, { frozen = '' } = {}) {
+    if (frozen) return { editable: false, note: frozen };
     if (key.restart) return { editable: false, note: 'change in the config file and restart' };
     if (key.scope === 'config') return { editable: false, note: 'read-only, from the config file' };
     if (key.locked) return { editable: false, note: 'locked by the config file' };
@@ -142,6 +144,59 @@ export function keyLabel(key) {
     const parts = key.name.split('.');
     return parts.length > 1 ? parts.slice(1).join('.') : key.name;
 }
+
+/** Whether two policy values are the same (they are JSON: scalars and lists). */
+export function sameValue(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * What "reset to inherited" returns to, for a row of the layer being edited.
+ * @param {Object} key
+ * @param {string} layer - "admin" (the Settings tab) or "user" (a user's overrides)
+ * @returns {{set: boolean, inherited: *, capped: boolean}} `set`: the layer holds a value
+ *          that counts; `capped`: a lower layer keeps the effective value from being that value
+ */
+export function layerState(key, layer) {
+    let inherited = key.inherited;
+    if (!inherited && layer === 'admin' && key.source === 'admin') {
+        // an older server sends no per-layer breakdown: the layer below the admin is the config, then the default
+        inherited = { admin: key.config_value !== undefined ? key.config_value : key.default };
+    }
+    inherited = inherited || {};
+    const set = Object.prototype.hasOwnProperty.call(inherited, layer);
+    const own = layer === 'user' ? key.override : (key.layers || {})[layer];
+    return {
+        set,
+        inherited: set ? inherited[layer] : key.value,
+        capped: set && own !== undefined && own !== null && !sameValue(own, key.value),
+    };
+}
+
+/** Sentences for the reasons the server gives for a stored value it ignores. */
+export const ISSUE_TEXT = {
+    unknown_key: 'not a setting this version knows',
+    bad_type: 'has the wrong type',
+    out_of_range: 'is out of range',
+    bad_choice: 'is not an allowed value',
+    config_scope: 'can only be set in the config file',
+    server_scope: 'is server-wide, not per user',
+    locked_by_config: 'is locked by the config file',
+    admin_user: 'is an override on an administrator, which has no effect',
+};
+
+/** What a refused change says on its row, by the server's reason for that setting. */
+export const REFUSAL_TEXT = {
+    unknown_key: 'This server does not know this setting.',
+    bad_type: 'The value has the wrong type.',
+    out_of_range: 'The value is out of range.',
+    bad_choice: 'That is not one of the allowed values.',
+    locked_by_config: 'The config file locks this setting.',
+    config_scope: 'This can only be changed in the config file.',
+    server_scope: 'This setting is server-wide and cannot be set per user.',
+    config_ceiling: 'The config file does not allow a wider value than it sets.',
+    admin_user: 'Administrators have no per-user overrides.',
+};
 
 /**
  * Editor for a list of strings (hosts, paths).
@@ -246,15 +301,19 @@ export function renderControl(key, disabled, commit, fail) {
 
 /**
  * One settings row.
- * @param {Object} key - a key of GET /admin/policy
+ * @param {Object} key - a key of GET /admin/policy (or of GET /admin/users/<u>/policy)
  * @param {Object} handlers
  * @param {function(string, *): Promise<*>} handlers.onChange - called with
  *        (name, value), or (name, null) to reset to the inherited value; a
  *        rejection with `fieldErrors` or a message is shown on the row
+ * @param {string} [handlers.layer] - "admin" (default) or "user": which stored
+ *        layer the row edits
+ * @param {string} [handlers.frozen] - a reason this whole block cannot be edited
  * @returns {HTMLElement}
  */
-export function renderPolicyRow(key, { onChange } = {}) {
-    const state = keyState(key);
+export function renderPolicyRow(key, { onChange, layer = 'admin', frozen = '' } = {}) {
+    const state = keyState(key, { frozen });
+    const own = layerState(key, layer);
     const message = h('div', { class: 'invalid-feedback d-block', role: 'alert', hidden: true });
     const fail = (text) => {
         message.textContent = text;
@@ -266,7 +325,7 @@ export function renderPolicyRow(key, { onChange } = {}) {
             await onChange(key.name, value);
         } catch (e) {
             const field = e && e.fieldErrors && e.fieldErrors[key.name];
-            fail(field || (e && e.message) || 'The change failed.');
+            fail((field && (REFUSAL_TEXT[field] || field)) || (e && e.message) || 'The change failed.');
             if (revert) revert();
         }
     };
@@ -278,22 +337,47 @@ export function renderPolicyRow(key, { onChange } = {}) {
     const source = key.locked ? 'locked' : (key.source || 'default');
     const hosts = Array.isArray(key.outbound_hosts_now) && key.outbound_hosts_now.length
         ? h('div', { class: 'small text-muted', text: `Browsers may contact: ${key.outbound_hosts_now.join(', ')}` }) : null;
-    const inherited = key.source === 'admin' && key.config_value !== undefined
-        ? h('div', { class: 'small text-muted', text: `config: ${formatValue(key.type, key.config_value)}` }) : null;
+    const inherited = own.set
+        ? h('div', { class: 'small text-muted policy-inherited', text: `inherited: ${formatValue(key.type, own.inherited)}` }) : null;
+    const capped = own.capped
+        ? h('div', { class: 'small text-warning-emphasis policy-capped', text: `capped by a wider setting: ${formatValue(key.type, key.value)} applies` }) : null;
     return h('div', { class: 'policy-row', data: { key: key.name } },
         h('div', { class: 'policy-name' },
             h('div', { class: 'fw-semibold', text: keyLabel(key) }),
             h('div', { class: 'small text-muted', text: key.description || '' })),
-        h('div', { class: 'policy-control' }, control, hosts, inherited, message,
+        h('div', { class: 'policy-control' }, control, hosts, inherited, capped, message,
             state.note ? h('div', { class: 'small text-muted fst-italic', text: state.note }) : null),
         h('div', { class: 'policy-meta' },
             key.locked ? h('i', { class: 'fas fa-lock text-muted me-1', title: 'Locked by the config file', 'aria-label': 'locked' }) : null,
             badge(source, key.locked ? 'dark' : (SOURCE_TONE[key.source] || 'secondary'), `Value comes from: ${source}`),
-            state.editable && key.source === 'admin'
+            state.editable && own.set
                 ? h('button', {
-                    type: 'button', class: 'btn btn-sm btn-link', text: 'reset', title: 'Remove the admin value and inherit again',
+                    type: 'button', class: 'btn btn-sm btn-link', text: 'reset', title: 'Remove this value and inherit again',
                     onclick: () => run(null),
                 }) : null));
+}
+
+/**
+ * The stored values the server ignores, flagged, each with a remove button.
+ * `policy.issues` lists them all (unknown names, bad values, locked or
+ * out-of-scope keys); a server that only sends `unknown` is read as unknown names.
+ */
+function renderIssues(policy, onRemove, titles) {
+    const issues = Array.isArray(policy.issues)
+        ? policy.issues
+        : (policy.unknown || []).map((u) => ({ name: u.name, value: u.value, reason: 'unknown_key' }));
+    if (!issues.length) return null;
+    return h('section', { class: 'policy-group policy-unknown', data: { area: 'unknown' } },
+        h('h2', { class: 'h5', text: issues.every((i) => i.reason === 'unknown_key') ? titles[0] : titles[1] }),
+        h('p', { class: 'text-muted small', text: 'Kept in the file and ignored. A newer or older version may have written them.' }),
+        issues.map((i) => h('div', { class: 'policy-row', data: { key: i.name } },
+            h('div', { class: 'policy-name' }, h('code', { text: i.name }),
+                h('div', { class: 'small text-warning-emphasis', text: ISSUE_TEXT[i.reason] || i.reason })),
+            h('div', { class: 'policy-control' }, h('code', { text: JSON.stringify(i.value) })),
+            h('div', { class: 'policy-meta' }, h('button', {
+                type: 'button', class: 'btn btn-sm btn-outline-danger', text: 'remove',
+                onclick: () => onRemove && onRemove(i.name),
+            })))));
 }
 
 /**
@@ -317,19 +401,33 @@ export function renderPolicy(el, policy, { onChange, onRemoveUnknown } = {}) {
                 readOnlyArea && group.area === 'limits' ? h('small', { class: 'text-muted ms-2', text: 'read-only, from the config file' }) : null),
             group.keys.map((k) => renderPolicyRow(k, { onChange }))));
     }
-    const unknown = policy.unknown || [];
-    if (unknown.length) {
-        blocks.push(h('section', { class: 'policy-group policy-unknown', data: { area: 'unknown' } },
-            h('h2', { class: 'h5', text: 'Unknown keys in stored files' }),
-            h('p', { class: 'text-muted small', text: 'Kept and ignored. A newer or older version may have written them.' }),
-            unknown.map((u) => h('div', { class: 'policy-row', data: { key: u.name } },
-                h('div', { class: 'policy-name' }, h('code', { text: u.name })),
-                h('div', { class: 'policy-control' }, h('code', { text: JSON.stringify(u.value) })),
-                h('div', { class: 'policy-meta' }, h('button', {
-                    type: 'button', class: 'btn btn-sm btn-outline-danger', text: 'remove',
-                    onclick: () => onRemoveUnknown && onRemoveUnknown(u.name),
-                }))))));
+    const issues = renderIssues(policy, onRemoveUnknown, ['Unknown keys in stored files', 'Stored values that are ignored']);
+    if (issues) blocks.push(issues);
+    setChildren(el, blocks);
+}
+
+/**
+ * A user's overrides, for the Users and Access dialogs: the keys of scope
+ * "user" with the inherited value next to the override.
+ * @param {HTMLElement} el
+ * @param {Object} policy - GET /admin/users/<u>/policy
+ * @param {{onChange: function, onRemoveUnknown: function}} handlers
+ */
+export function renderUserPolicy(el, policy, { onChange, onRemoveUnknown } = {}) {
+    const frozen = policy.is_admin ? 'Administrators get no per-user overrides.' : '';
+    const groups = groupByArea(policy.keys || []);
+    const blocks = [];
+    if (frozen) {
+        blocks.push(h('p', { class: 'alert alert-secondary small mb-2', role: 'status', text: frozen }));
     }
+    for (const group of groups) {
+        blocks.push(h('section', { class: 'policy-group', data: { area: group.area } },
+            h('h3', { class: 'h6', text: group.title }),
+            group.keys.map((k) => renderPolicyRow(k, { onChange, layer: 'user', frozen }))));
+    }
+    if (!groups.length) blocks.push(h('p', { class: 'text-muted', text: 'No setting can be overridden per user.' }));
+    const issues = renderIssues(policy, onRemoveUnknown, ['Unknown keys in stored overrides', 'Stored overrides that are ignored']);
+    if (issues) blocks.push(issues);
     setChildren(el, blocks);
 }
 
