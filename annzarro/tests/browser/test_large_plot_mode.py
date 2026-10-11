@@ -39,7 +39,7 @@ else:
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(os.path.dirname(HERE), "data")
 STORE = os.path.join(DATA_DIR, "fixture_small.zarr")
-TOOLTIP = "Not available above 100 points (large-plot mode); turn on a subset to use it"
+TOOLTIP = "Not available for more than 100 cells. Make a subset of up to 100 cells to use it."
 
 
 def _free_port():
@@ -199,8 +199,8 @@ def _assert_regular(page, s):
 
 def _assert_large(s):
     assert s["points"] == 200
-    assert s["notice"] == ("Large-plot mode (200 points): hover, click and the focus highlight work; "
-                           "table filters, 3D and the Hover picker are off; use a subset for them")
+    assert s["notice"] == ("This plot shows 200 cells, more than the 100 that table filters, 3D and extra hover columns "
+                           "can handle. Make a subset of up to 100 cells to use them.")
     assert s["hovermode"] is False
     for c in ("colorObsp", "xObsp", "hover", "table", "z"):
         assert s[c] == {"disabled": True, "title": TOOLTIP}, c
