@@ -42,6 +42,14 @@ pattern. Plain text search, the default, is not affected.
 timeouts, `arbitrary_paths` and `remote_allowlist` ({doc}`../reference/configuration`), and the
 login lockout ({doc}`authentication`).
 
+## Gunicorn versions and the request line
+
+gunicorn is not pinned (`pip install annzarro gunicorn`). `limit_request_line` behaves the same in
+the two versions whose source we read (23.0 and 26.2): any value from 8,190 up is lowered to 8,190,
+and `0` is "unlimited". In 26.2 the C parser, when it is used, still stops at 1 MB for `0`. That
+is why AnnZarro's default is `0` and the proxy has to bound the line (`large_client_header_buffers`
+in nginx). The desktop app does not use gunicorn.
+
 ## What the proxy must do
 
 gunicorn answers a request only after it has read it, and with `gthread` a client that sends
