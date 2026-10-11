@@ -23,6 +23,7 @@ from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core import subset as cell_subset
 from .. import confinement, permissions
 from .. import http_cache
+from . import dataset_folders
 from ...core.array_response import wants_binary, wants_codes
 from ...core import categories as category_rules
 from ...core.remote import is_remote_path, is_timeout, timeout_message
@@ -202,6 +203,14 @@ def _reader_error_response(exc, dataset_path):
             "reason": "not_found",
             "exception": type(exc).__name__,
         }), 404
+    if isinstance(exc, ZarrFormatError):
+        # The store's zarr format is one this server's zarr cannot read: the text
+        # says what the store is and the two fixes. 400, as for every unreadable type.
+        return jsonify({
+            "error": str(exc),
+            "reason": "unsupported_type",
+            "exception": type(exc).__name__,
+        }), 400
     if isinstance(exc, UnsupportedEncodingError):
         # One member of a readable dataset, not the dataset's type: the text
         # names the member and the encoding.
@@ -545,6 +554,7 @@ def register_data_routes(app, api_version):
                          app.config.get("read_wait_s", 5))
     app.register_error_handler(ReadTooLargeError, _read_too_large_response)
     app.register_error_handler(ReadBusyError, _read_busy_response)
+    dataset_folders.register_dataset_folder_routes(app, api_version)
 
     http_cache.install_gzip(app)
 
@@ -604,6 +614,8 @@ def register_data_routes(app, api_version):
         except (PermissionError, ImportError, FileNotFoundError, TimeoutError) as e:
             return _reader_error_response(e, dataset_path)
         except Exception as e:
+            if isinstance(e, ZarrFormatError):
+                return _reader_error_response(e, dataset_path)
             logger.error(f"Error getting dataset info for path {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500
     
@@ -1327,6 +1339,8 @@ def register_data_routes(app, api_version):
         except ReadBusyError as e:
             return _read_busy_response(e)
         except Exception as e:
+            if isinstance(e, ZarrFormatError):
+                return _reader_error_response(e, dataset_path)
             logger.error(f"Error getting paginated data for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get paginated data: {str(e)}"}), 500
     
@@ -1712,6 +1726,8 @@ def register_data_routes(app, api_version):
         except ReadBusyError as e:
             return _read_busy_response(e)
         except Exception as e:
+            if isinstance(e, ZarrFormatError):
+                return _reader_error_response(e, dataset_path)
             logger.error(f"Error getting statistics for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get statistics: {str(e)}"}), 500
             
@@ -1749,6 +1765,8 @@ def register_data_routes(app, api_version):
                 "dataset_path": dataset_path
             })
         except Exception as e:
+            if isinstance(e, ZarrFormatError):
+                return _reader_error_response(e, dataset_path)
             logger.error(f"Error getting obsm dataframe columns for {obsm_key} in {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get obsm dataframe columns: {str(e)}"}), 500
             
@@ -1786,6 +1804,8 @@ def register_data_routes(app, api_version):
                 "dataset_path": dataset_path
             })
         except Exception as e:
+            if isinstance(e, ZarrFormatError):
+                return _reader_error_response(e, dataset_path)
             logger.error(f"Error getting varm dataframe columns for {varm_key} in {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get varm dataframe columns: {str(e)}"}), 500
             
@@ -1858,6 +1878,8 @@ def register_data_routes(app, api_version):
         except ReadBusyError as e:
             return _read_busy_response(e)
         except Exception as e:
+            if isinstance(e, ZarrFormatError):
+                return _reader_error_response(e, dataset_path)
             logger.error(f"Error getting data at path {data_path} in {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get data at path {data_path}: {str(e)}"}), 500
     
@@ -2043,7 +2065,8 @@ def register_data_routes(app, api_version):
                             "is_link": os.path.islink(entry_path),
                             "cells": cells,
                             "genes": genes,
-                            "rel_path": os.path.relpath(entry_path, data_dir)
+                            "rel_path": os.path.relpath(entry_path, data_dir),
+                            **dataset_folders.store_meta(entry_path)
                         })
                         continue
 
@@ -2087,7 +2110,8 @@ def register_data_routes(app, api_version):
                                 "cells": None,
                                 "genes": None,
                                 "error": str(counts),
-                                "rel_path": os.path.relpath(entry_path, data_dir)
+                                "rel_path": os.path.relpath(entry_path, data_dir),
+                                **dataset_folders.store_meta(entry_path)
                             })
                             continue
                         cells, genes = counts
@@ -2098,7 +2122,8 @@ def register_data_routes(app, api_version):
                             "is_link": os.path.islink(entry_path),
                             "cells": cells,
                             "genes": genes,
-                            "rel_path": os.path.relpath(entry_path, data_dir)
+                            "rel_path": os.path.relpath(entry_path, data_dir),
+                            **dataset_folders.store_meta(entry_path)
                         })
             except Exception as e:
                 logger.warning(f"Error listing directory {datasets_dir}: {e}")

@@ -46,7 +46,7 @@ else:
     playwright = pytest.importorskip("playwright.sync_api")
 
 from annzarro.core import fingerprint
-from annzarro.tests.zarr_compat import open_group, write_strings
+from annzarro.tests.zarr_compat import consolidate, open_group, store_format, write_strings
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -94,9 +94,8 @@ def _start(data_dir, home):
 
 def _drop_leiden(store):
     shutil.rmtree(store / "obs" / "leiden")
-    attrs = json.loads((store / "obs" / ".zattrs").read_text())
-    attrs["column-order"] = [c for c in attrs.get("column-order", []) if c != "leiden"]
-    (store / "obs" / ".zattrs").write_text(json.dumps(attrs))
+    obs = open_group(store / "obs", mode="a")
+    obs.attrs["column-order"] = [c for c in obs.attrs.get("column-order", []) if c != "leiden"]
 
 
 def _rename_cells(store):
@@ -107,6 +106,9 @@ def _rename_cells(store):
 
 
 def _consolidate(store):
+    if store_format(store) == 3:
+        consolidate(store)
+        return
     docs = fingerprint._zarr_local_metadata(str(store))
     (store / ".zmetadata").write_text(json.dumps({"zarr_consolidated_format": 1, "metadata": docs}))
 

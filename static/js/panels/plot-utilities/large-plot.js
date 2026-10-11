@@ -34,7 +34,7 @@
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
-import { buildPlotLayout, withSubsetCoverage } from './plot-make.js';
+import { buildPlotLayout, knownMissingSource, seriesSource, withSubsetCoverage } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
@@ -43,7 +43,7 @@ import { drawPlot, drawPlaceholder, clearForDraw, fitToContainer, setStatusTag, 
 import { colourKind, DEFAULT_MODEL } from '../../utils/memory-guard.js';
 import { probeForDraw, niceFloor, probeMessage } from '../../utils/alloc-probe.js';
 import { releasePlot } from '../../utils/release-plot.js';
-import { classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
+import { classifyError, classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { buildPointIndexSliced } from '../../utils/point-index.js';
 import { attachLargeInteraction, highlightLargeFocus } from './large-interact.js';
@@ -59,6 +59,8 @@ export function largePlotPoints() {
 const TRACE_POINTS = 99999;      // < Plotly's TOO_MANY_POINTS (1e5)
 const COLOR_BINS = 64;
 const NA_COLOR = 'rgba(200, 200, 200, 1)';
+/** The grey of a colour that could not be read (plot-make.js draws the same). */
+const FALLBACK_COLOR = 'rgba(150, 150, 150, 1.)';
 
 const _an = (w) => (/^[aeiou]/i.test(w) ? 'an' : 'a');
 
@@ -257,11 +259,11 @@ export function largePlotTag(n) {
   const limit = largePlotPoints();
   return {
     text: 'Large plot',
-    title: `Large-plot mode (${formatPoints(n)} points): hover, click and the focus highlight work; `
-      + 'table filters, 3D and the Hover picker are off; use a subset for them',
+    title: `This plot shows ${compactCount(n)} cells, more than the ${compactCount(limit)} that table filters, 3D and `
+      + `extra hover columns can handle. Make a subset of up to ${compactCount(limit)} cells to use them.`,
     pop: {
-      text: `Over ${exactCount(limit)} points (${compactCount(n)} here): drawn in a lighter mode to stay within `
-        + 'browser memory. Hover and click work; table filters, 3D and extra hover columns do not.',
+      text: `This plot shows ${compactCount(n)} cells, more than the ${compactCount(limit)} that table filters, 3D and `
+        + `extra hover columns can handle. Make a subset of up to ${compactCount(limit)} cells to use them.`,
       actions: [['subset-regular', `Subset to \u2264${compactCount(limit)} for table filters`]]
     }
   };
@@ -437,10 +439,32 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   // Before any request: the buffers this plot will need, allocated now. If the
   // browser cannot give them, nothing is requested (utils/alloc-probe.js).
   const pre = probeOrRelease(plotContainer, settings, structure);
+  // A colour that cannot be read does not destroy the plot, as in the regular
+  // path (plot-make.js, loadPlotData): the points are drawn grey and the
+  // panel says why. A missing axis is still an error: there is nothing to draw.
+  let colourGap = null;
+  const colour = async () => {
+    const known = settings.color.type !== 'none' && knownMissingSource(structure, settings.color,
+      { unit: 'cells', total: (DataManager.getCells() || []).length });
+    if (known) {
+      colourGap = known.asDescribing();
+      return null;
+    }
+    try {
+      return await loadSeries(settings.color, datasetPath, structure, signal);
+    } catch (err) {
+      if (err && (err.name === 'AbortError' || err.name === 'AllocationProbeError')) throw err;
+      console.warn('Colour data unavailable; plotting uncoloured:', err);
+      colourGap = (err.coverage || classifyError(err, {
+        unit: 'cells', total: (DataManager.getCells() || []).length, source: seriesSource(settings.color)
+      })).asDescribing();
+      return null;
+    }
+  };
   const [xs, ys, cs] = await Promise.all([
     loadSeries(settings.x, datasetPath, structure, signal),
     loadSeries(settings.y, datasetPath, structure, signal),
-    loadSeries(settings.color, datasetPath, structure, signal)
+    colour()
   ]);
   stopped();
   if (DataManager.getDatasetGeneration() !== generation) {
@@ -624,17 +648,19 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     pts = { X, Y, R };
     filtered = n - kept;
     only.coords = filtered;
-    pushTraces(traces, X, Y, start[0], start[1], 'cells', settings.pointColor || '#1f77b4', settings);
+    pushTraces(traces, X, Y, start[0], start[1], 'cells',
+      colourGap ? FALLBACK_COLOR : settings.pointColor || '#1f77b4', settings);
     layout.showlegend = false;
   }
   const t2 = performance.now();
   stopped();
 
   // every series here is whole or threw, so the gaps are the points dropped
-  const coverage = withSubsetCoverage(classifyFilterStats({
+  const drawn = classifyFilterStats({
     total: n, filtered, exclusive: only, xNaN: only.coords, yNaN: only.coords, zNaN: 0,
     hideNaNActive: !!settings.hideNaN, hideOutliersActive: !!settings.hideOutliers, tableFilterActive: false
-  }, 'cells'));
+  }, 'cells');
+  const coverage = withSubsetCoverage(colourGap ? Coverage.merge([drawn, colourGap], 'cells') : drawn);
   // Drawn from nothing, not into the graph shown: a Plotly.react into the
   // drawn large plot kept the old plot's calc and scene beside the new one
   // for good (1.93 -> 3.46 GB of JS heap at 95.6M points after a recolour,

@@ -421,7 +421,8 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
         settings.color = {
           type: 'var',
           key: 'highly_variable',
-          column: ''
+          column: '',
+          auto: true
         };
         return;
       }
@@ -439,7 +440,8 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
         settings.color = {
           type: 'obs',
           key: clusteringColumn,
-          column: ''
+          column: '',
+          auto: true
         };
         console.log(`Setting default color to obs.${clusteringColumn}`);
         return;
@@ -447,6 +449,16 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
     }
   }
   
+  // A colour the panel picked itself (`auto`, cleared by the colour menus) on
+  // another dataset is not the user's: where this dataset lacks the column it
+  // is dropped and the default chosen again, instead of reporting a column
+  // nobody asked for as "not in this dataset". A colour the user picked stays.
+  const autoColor = settings.color;
+  if (autoColor && autoColor.auto) {
+    const columns = datasetStructure?.[autoColor.type]?.columns;
+    if (Array.isArray(columns) && !columns.includes(autoColor.key)) delete settings.color;
+  }
+
   // Try to set defaults but don't force them
   trySetDefaultAxes();
   trySetDefaultColor();

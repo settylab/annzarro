@@ -153,11 +153,15 @@ def register_core_routes(app, api_version):
 
         ``may_open_any_path`` says whether this requester may open dataset
         paths outside the data directories (``server.arbitrary_paths``).
+        ``remote_stores`` says whether this server opens remote store URLs at
+        all (``server.remote_stores``, ``remote_allowlist``): the dataset
+        picker mentions a URL only when it can work.
 
         Returns:
-            JSON ``{auth_enabled, username, is_admin, exposed, may_open_any_path}``
+            JSON ``{auth_enabled, username, is_admin, exposed, may_open_any_path, remote_stores}``
         """
         from .. import confinement, permissions
+        from ...core.remote import get_remote_policy
         username, is_admin = permissions.current_user()
         return jsonify({
             "auth_enabled": permissions.auth_enabled(),
@@ -165,6 +169,7 @@ def register_core_routes(app, api_version):
             "is_admin": is_admin,
             "exposed": permissions.is_exposed(app.config),
             "may_open_any_path": confinement.may_open_any_path(app.config),
+            "remote_stores": bool(get_remote_policy().enabled),
         })
 
     @app.route(f"/api/{api_version}/status", methods=["GET"])

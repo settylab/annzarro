@@ -32,7 +32,7 @@ export function formatPoints(n) {
 
 /** The tooltip on a control that large-plot mode turns off. */
 export function largePlotTooltip(threshold) {
-  return `Not available above ${formatPoints(threshold)} points (large-plot mode); turn on a subset to use it`;
+  return `Not available for more than ${formatPoints(threshold)} cells. Make a subset of up to ${formatPoints(threshold)} cells to use it.`;
 }
 
 function _off(el, tip) {

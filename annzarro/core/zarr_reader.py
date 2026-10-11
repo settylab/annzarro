@@ -152,7 +152,14 @@ def store_read_error(node, exc, dataset_path=None) -> StoreReadError:
             "Refresh dataset (the server then reads the store without it), or run "
             "`zarr.consolidate_metadata(path)` on the store and then refresh.",
             reason="stale_metadata")
-    return StoreReadError(f"Failed to read {where}: {exc}")
+    hint = ""
+    if getattr(node, "shards", None) and "checksum" in str(exc).lower():
+        # zarr reads a shard's index and inner chunks as byte ranges; a web server
+        # that ignores the Range header sends the whole file, which fails the index checksum.
+        hint = (" The array is sharded and is read by HTTP range requests: if the store is served "
+                "over HTTP, the server must honour the Range header (nginx, S3 and GCS do; "
+                "`python -m http.server` does not).")
+    return StoreReadError(f"Failed to read {where}: {exc}{hint}")
 
 
 def _json(path):
@@ -257,7 +264,7 @@ def zarr_format_problem(dataset_path) -> Optional[str]:
             f".zgroup), and this server's zarr {zarr.__version__} reads only "
             "format 2. Rewrite it as format 2 -- in an environment with "
             "zarr>=3: `import anndata as ad; ad.settings.zarr_write_format = 2; "
-            "ad.read_zarr(src).write_zarr(dst)` -- or run the server with zarr>=3."
+            "ad.read_zarr(src).write_zarr(dst)` -- or run the server with zarr>=3 (Python 3.11 or newer)."
         )
     return None
 
@@ -977,6 +984,12 @@ class ZarrReader(CacheSettings):
       Returns:
           Dict of metadata
       """
+      # Outside the try below: its broad except answers {} (an empty dataset) for
+      # anything else, and a format the installed zarr cannot read is not empty.
+      if root is None and not is_remote_path(dataset_path):
+          problem = zarr_format_problem(dataset_path)
+          if problem:
+              raise ZarrFormatError(problem)
       # Use path-based extraction
       try:
           if root is None and (is_remote_path(dataset_path)
@@ -1020,6 +1033,8 @@ class ZarrReader(CacheSettings):
             
             return metadata
             
+        except ZarrFormatError:
+            raise                       # not an empty dataset: the route says why
         except Exception as e:
             raise_if_timeout(e)
             logger.error(f"GET_METADATA: Error extracting metadata: {e}")
@@ -3035,7 +3050,7 @@ class ZarrReader(CacheSettings):
             }
             
             return stats
-        except (read_guard.ReadTooLargeError, read_guard.ReadBusyError):
+        except (read_guard.ReadTooLargeError, read_guard.ReadBusyError, ZarrFormatError):
             raise
         except Exception as e:
             raise_if_timeout(e)

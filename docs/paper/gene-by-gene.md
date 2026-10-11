@@ -5,7 +5,7 @@
 
 *A gene-by-gene matrix over a differential expression volcano*, a figure of the AnnZarro paper
 (Otto, Baasri and Setty, in preparation), made in Python by
-`figures/fig3_gene_by_gene.py` in the paper repository.
+{repro}`figures/fig3_gene_by_gene.py` in the paper's {ref}`companion repository <paper-companion>`.
 ```
 
 A gene x gene matrix read one row at a time over a differential expression volcano: the focused
@@ -61,7 +61,7 @@ Hover labels and table filters check most statements; offline ones are marked. S
 
 ## Views
 
-Share links. The links are ready for a local server with the store in its data directory; to use another
+Share links. The links are ready for a local server with the store ({doc}`../data/demo-data`) in its data directory; to use another
 server address or a store elsewhere, see {ref}`tut-start-links`.
 
 ::::{dropdown} Panels a and b
@@ -88,4 +88,4 @@ Panel sets: {download}`gene-by-gene-ab.json <../_static/panelsets/paper/gene-by-
 focus and the split layout, like the links ({doc}`../user-guide/panel-sets`).
 
 Screenshots and views are made by `docs/_tools/shoot_figs45.py`; the paper's numbers are in
-`figures/numbers/fig3.json` of the paper repository.
+{repro}`figures/numbers/fig3.json` in the {ref}`companion repository <paper-companion>`.

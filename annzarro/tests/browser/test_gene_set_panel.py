@@ -48,6 +48,7 @@ else:
     playwright = pytest.importorskip("playwright.sync_api")
 
 from annzarro.tests.browser.test_memory_guard import STORE, _serve  # noqa: E402
+from annzarro.tests.zarr_compat import consolidate, store_format  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIX = os.path.join(os.path.dirname(HERE), "js", "gene-set-fixtures")
@@ -837,7 +838,7 @@ def _widen(path, n):
     import numpy as np
     import zarr
     shutil.copytree(STORE, path)
-    g = zarr.open_group(str(path), mode="r+", zarr_format=2)
+    g = zarr.open_group(str(path), mode="r+", zarr_format=store_format(path))
     names = np.array([f"GENE{i:03d}" for i in range(n)], dtype=object)
     for col in ("_index", "gene_name"):
         old = g["var"][col]
@@ -852,7 +853,7 @@ def _widen(path, n):
         arr = x.create_array(key, shape=values.shape, dtype=values.dtype, overwrite=True)
         if values.size:
             arr[:] = values
-    zarr.consolidate_metadata(str(path), zarr_format=2)
+    consolidate(path)
 
 
 def _species_stores(tmp_path_factory):
@@ -863,18 +864,18 @@ def _species_stores(tmp_path_factory):
     root = tmp_path_factory.mktemp("species-data")
     mouse = root / "mouse_ens.zarr"
     shutil.copytree(STORE, mouse)
-    g = zarr.open_group(str(mouse), mode="r+", zarr_format=2)
+    g = zarr.open_group(str(mouse), mode="r+", zarr_format=store_format(mouse))
     g["var"]["gene_name"][:] = np.array([f"ENSMUSG000000{33845 + i}" for i in range(20)], dtype=object)
     wide = root / "wide.zarr"
     _widen(wide, 170)
     org = root / "organism.zarr"
     shutil.copytree(STORE, org)
-    g = zarr.open_group(str(org), mode="r+", zarr_format=2)
+    g = zarr.open_group(str(org), mode="r+", zarr_format=store_format(org))
     # as tests/server/test_uns_scalars.py writes a string scalar (zarr 3 API, format 2)
     a = g["uns"].create_array("organism", shape=(), dtype=str)
     a[()] = "Danio rerio"
     # the fixture's metadata is consolidated: list the new entry there too
-    zarr.consolidate_metadata(str(org), zarr_format=2)
+    consolidate(org)
     return root
 
 

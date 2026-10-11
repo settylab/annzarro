@@ -7,7 +7,7 @@ from . import categories as category_rules
 from typing import Literal, Optional
 import logging
 from . import freshness
-from .zarr_reader import consolidated_notice
+from .zarr_reader import consolidated_notice, ZarrFormatError
 
 logger = logging.getLogger("data_routes")
 
@@ -15,9 +15,9 @@ def _raise_if_store_error(exc):
     """Let a failed read reach the route's error handler with its reason
     (stale_metadata, read_failed, unsupported_type, key_not_found) instead of
     a generic 500 here."""
-    from .zarr_reader import StoreReadError, UnsupportedEncodingError, MissingKeyError
+    from .zarr_reader import StoreReadError, UnsupportedEncodingError, MissingKeyError, ZarrFormatError
     from .read_guard import ReadTooLargeError, ReadBusyError
-    if isinstance(exc, (StoreReadError, UnsupportedEncodingError, MissingKeyError,
+    if isinstance(exc, (StoreReadError, UnsupportedEncodingError, MissingKeyError, ZarrFormatError,
                         ReadTooLargeError, ReadBusyError)):
         raise exc
 
@@ -47,6 +47,16 @@ def extract_metadata(dataset_path: str, reader: Reader):
             "error": "Dataset not found", 
             "message": f"The dataset path '{dataset_path}' does not exist."
         }), 404
+    except ZarrFormatError as e:
+        # A store the installed zarr cannot read: say so, as every data route does.
+        logger.warning(f"Unreadable zarr format: {dataset_path}: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "message": str(e),
+            "reason": "unsupported_type",
+            "path": dataset_path
+        }), 400
     except ValueError as e:
         # Handle validation errors with a 400 Bad Request
         error_message = str(e)

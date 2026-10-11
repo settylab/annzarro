@@ -54,11 +54,10 @@ test("settings the mode cannot draw keep the regular path", () => {
 test("the strip tag names the mode; its popover the point count, the limit and the way out", () => {
   const tag = largePlotTag(95624334);
   assert.equal(tag.text, "Large plot");
-  assert.equal(tag.title, "Large-plot mode (95.6M points): hover, click and the focus highlight work; "
-    + "table filters, 3D and the Hover picker are off; use a subset for them");
-  assert.equal(tag.pop.text, `Over ${largePlotPoints().toLocaleString("en-US")} points (95.6M here): `
-    + "drawn in a lighter mode to stay within browser memory. Hover and click work; "
-    + "table filters, 3D and extra hover columns do not.");
+  const text = "This plot shows 95.6M cells, more than the 1M that table filters, 3D and extra hover columns "
+    + "can handle. Make a subset of up to 1M cells to use them.";
+  assert.equal(tag.title, text);
+  assert.equal(tag.pop.text, text);
   assert.deepEqual(tag.pop.actions, [["subset-regular", "Subset to \u22641M for table filters"]]);
 });
 
@@ -98,7 +97,7 @@ test("above the threshold: unsupported types, 3D, Hover and table filter off wit
   const p = panel();
   updateLargePlotControls(p, true, 1000000);
   const tip = largePlotTooltip(1000000);
-  assert.equal(tip, "Not available above 1M points (large-plot mode); turn on a subset to use it");
+  assert.equal(tip, "Not available for more than 1M cells. Make a subset of up to 1M cells to use it.");
   for (const axis of ["x", "y", "color"]) {
     assert.equal(opt(p, axis, "obsp").disabled, true, axis);
     assert.equal(opt(p, axis, "obsp").getAttribute("title"), tip);

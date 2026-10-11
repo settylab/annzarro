@@ -69,14 +69,35 @@ def test_format_3_reads_like_its_format_2_twin(client, route):
     assert body3["data"], "an empty body is the defect this test exists for"
 
 
+#: Every route that opens a store. Under zarr 2 each answers 400 ``unsupported_type`` with the
+#: sentence that says what the store is. Before: obs, X, obsm, layer, obsp, info and to_anndata
+#: answered 500 with the same text, the structure answered 200 with n_obs 0 and nothing in it.
+EVERY_ROUTE = ROUTES + [
+    "/api/v1/data/info?dataset_path={p}",
+    "/api/v1/data/dataset_structure?dataset_path={p}",
+    "/api/v1/data/fingerprint?dataset_path={p}",
+    "/api/v1/zarr/to_anndata?dataset_path={p}",
+    "/api/v1/data/layer/counts?dataset_path={p}&cols=1",
+    "/api/v1/data/obsp/conn?dataset_path={p}&rows=1",
+    "/api/v1/data/varp/corr?dataset_path={p}&rows=1",
+    "/api/v1/data/uns/title?dataset_path={p}",
+    "/api/v1/data/names?dataset_path={p}&query=a&kind=genes",
+    "/api/v1/data/statistics?dataset_path={p}&data_path=obsm/X_umap",
+    "/api/v1/data/paginated?dataset_path={p}&matrix_type=obsm&key=X_umap&rows=0,1",
+    "/api/v1/data/by_path?dataset_path={p}&path=obsm/X_umap&rows=1",
+]
+
+
 @pytest.mark.skipif(ZARR_LIBRARY_MAJOR >= 3, reason="zarr>=3 reads format 3")
-@pytest.mark.parametrize("route", ROUTES)
-def test_format_3_under_zarr_2_is_an_error_that_says_why(client, route):
+@pytest.mark.parametrize("route", EVERY_ROUTE)
+def test_format_3_under_zarr_2_is_a_400_that_says_why(client, route):
     resp = client.get(route.format(p=V3))
-    assert resp.status_code != 200, "served as data: " + resp.get_data(as_text=True)
-    error = resp.get_json()["error"]
-    assert "zarr format 3" in error
-    assert "ad.settings.zarr_write_format = 2" in error
+    assert resp.status_code == 400, (resp.status_code, resp.get_data(as_text=True)[:300])
+    body = resp.get_json()
+    assert body["reason"] == "unsupported_type"
+    assert "zarr format 3" in body["error"]
+    assert "ad.settings.zarr_write_format = 2" in body["error"]
+    assert "zarr>=3" in body["error"]
 
 
 @pytest.mark.skipif(ZARR_LIBRARY_MAJOR >= 3, reason="zarr>=3 reads format 3")

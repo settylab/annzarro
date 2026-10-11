@@ -7,7 +7,7 @@
 *The focus model, the AnnData slots behind it, and AnnZarro compared with other viewers*, the
 overview figure of the AnnZarro paper (Otto, Baasri and Setty, in preparation): **a**, the focus
 model; **b**, the AnnData slots behind it; **c**, AnnZarro compared with other viewers
-(`manuscript/figures/fig1_overview.pdf` in the paper repository).
+({repro}`manuscript/figures/fig1_overview.pdf` in the {ref}`companion repository <paper-companion>`).
 ```
 
 (overview-focus-model)=
@@ -42,7 +42,7 @@ arrow that ends in a scatter, and moves the focus through it.
 
 ### Views
 
-The links are ready for a local server with the store in its data directory; to use another
+The links are ready for a local server with the store ({doc}`../data/demo-data`) in its data directory; to use another
 server address or a store elsewhere, see {ref}`tut-start-links`.
 
 ::::{dropdown} The four panels of the focus model
@@ -162,5 +162,5 @@ locally on 2026-10-06 (on Debian 13 NodeSource has no Node.js 14; with the base 
 Debian 11, the Debian security archive answered 404). Its strip shows the 567,950 cells observed
 in the Fly Cell Atlas session at scope.aertslab.org. AnnZarro's own
 measurements on Tahoe-100M are on {doc}`scale`. The panel is not an AnnZarro view and has no walkthrough here. The
-source behind every cell of the table is listed in the paper's companion repository
-(`figures/COMPARISON_NOTES.md`, checked October 2026; {ref}`paper-companion`).
+source behind every cell of the table is listed in the paper's {ref}`companion repository <paper-companion>`
+({repro}`figures/COMPARISON_NOTES.md`, checked October 2026).

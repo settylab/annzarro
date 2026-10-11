@@ -241,6 +241,26 @@ def test_clear_checkbox_empties_storage_and_starts_as_a_first_visit(server):
             browser.close()
 
 
+def test_clear_removes_the_recent_datasets_too(server):
+    """The picker's "Recently opened" is stored under annzarro.recentDatasets:<origin>; clearing
+    everything removes it with the rest, and a first visit does not write it again."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_context(viewport={"width": 1400, "height": 900}).new_page()
+            _open(page, server)
+            page.evaluate("() => localStorage.setItem('annzarro.recentDatasets:' + location.origin, JSON.stringify(['/x/a.zarr']))")
+            ask = _ask(page)
+            ask.locator("input[type=checkbox]").check()
+            page.wait_for_timeout(700)
+            with page.expect_navigation(timeout=30000):
+                ask.get_by_role("button", name="Close all", exact=True).click()
+            _landed_first_visit(page)
+            assert page.evaluate("() => Object.keys(localStorage).filter(k => k.startsWith('annzarro.recentDatasets:'))") == []
+        finally:
+            browser.close()
+
+
 def test_clear_option_reassures_and_keeps_server_panel_sets(server):
     """The tick box says plainly what it leaves alone, and that is true."""
     with playwright.sync_playwright() as p:
