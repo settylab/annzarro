@@ -31,7 +31,7 @@ import {
     savedStoreOf, storeName, hasDataTier
 } from './utils/view-store.js';
 import { probeStore, prewarmStore, appVersion, knownStore } from './utils/store-identity.js';
-import { loadRecents, pushRecent } from './utils/dataset-picker.js';
+import { loadRecents, pushRecent, displayPath } from './utils/dataset-picker.js';
 import { mountDatasetPicker } from './utils/dataset-picker-ui.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
@@ -853,16 +853,27 @@ const App = (function() {
         const counts = fp && Number.isFinite(fp.n_obs)
             ? ` (${fp.n_obs.toLocaleString('en-US')} cells x ${fp.n_var.toLocaleString('en-US')} genes)` : '';
         const current = DataManager.getCurrentDataset();
-        if (normal) {
-            title.textContent = 'Open a dataset';
-            savedLine.textContent = current
-                ? `Showing datasets like ${current}${counts} first`
-                : 'Choose a dataset to open';
-        } else {
-            title.textContent = 'Change dataset';
-            savedLine.textContent = `This view was saved on ${saved ? saved.path : 'an unknown store'}` + counts +
-                (fp ? '.' : '; it records no fingerprint, so stores are matched by name only.');
-        }
+        // paths are shown relative to the data directory (the listing says how), the absolute one in the tooltip
+        const describe = (listing) => {
+            // counts: the view's fingerprint, else what the listing says of the open store
+            const hit = (listing || []).find(e => e.path === current);
+            const shownCounts = counts || (hit && Number.isFinite(hit.cells)
+                ? ` (${hit.cells.toLocaleString('en-US')} cells x ${hit.genes.toLocaleString('en-US')} genes)` : '');
+            if (normal) {
+                title.textContent = 'Open a dataset';
+                savedLine.textContent = current
+                    ? `Showing datasets like ${displayPath(current, listing, knownStore(current))}${shownCounts} first`
+                    : 'Choose a dataset to open';
+                savedLine.title = current || '';
+            } else {
+                title.textContent = 'Change dataset';
+                const was = saved ? displayPath(saved.path, listing) : 'an unknown store';
+                savedLine.textContent = `This view was saved on ${was}` + counts +
+                    (fp ? '.' : '; it records no fingerprint, so stores are matched by name only.');
+                savedLine.title = saved ? saved.path : '';
+            }
+        };
+        describe([]);
         error.hidden = true;
         list.textContent = 'Looking for matching stores...';
         tree.textContent = '';
@@ -898,9 +909,16 @@ const App = (function() {
         input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); openPath.click(); } };
 
         const ordered = await _storeCandidates(saved, { withErrors: true });
+        describe(ordered);
         list.textContent = '';
         const fetchFolder = async (folder, offset) => {
             const response = await fetch(`${Config.API.DATASET_FOLDER}?folder=${encodeURIComponent(folder)}&offset=${offset}`);
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.error || response.statusText);
+            return body;
+        };
+        const fetchSearch = async (text, regex, signal) => {
+            const response = await fetch(`${Config.API.DATASET_SEARCH}?q=${encodeURIComponent(text)}&mode=${regex ? 'regex' : 'substring'}`, { signal });
             const body = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(body.error || response.statusText);
             return body;
@@ -920,6 +938,7 @@ const App = (function() {
             currentPath: current,
             onChoose: choose,
             fetchFolder,
+            fetchSearch,
             query: normal ? query : '',
             otherTitle: normal ? 'Other datasets in the data directory' : undefined
         });

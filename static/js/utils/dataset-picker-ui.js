@@ -9,7 +9,7 @@
  */
 import {
     searchEntries, sortEntries, buildGroups, pageGroups, splitByRanges,
-    countsLabel, modifiedLabel, searchText, basename
+    countsLabel, modifiedLabel, searchParts, folderOf, entryMatches, basename
 } from './dataset-picker.js';
 
 const PAGE = 200;
@@ -43,14 +43,18 @@ function el(tag, className, text) {
  * @param {string|null} o.currentPath - the open dataset (marked)
  * @param {(path:string) => void} o.onChoose
  * @param {(folder:string, offset:number) => Promise<Object>} o.fetchFolder - the folder endpoint's body
+ * @param {(query:string, regex:boolean, signal:AbortSignal) => Promise<Object>} [o.fetchSearch] - the search endpoint's body, for stores in folders not expanded
+ * @param {number} [o.debounceMs] - quiet time before that search is sent
  * @param {string} [o.otherTitle]
  * @param {string} [o.emptyText]
  * @param {string} [o.query] - search text to start with
  * @returns {{focus: Function, render: Function}}
  */
-export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoose, fetchFolder, otherTitle, emptyText = 'No datasets in the data directory.', query = '' }) {
+export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoose, fetchFolder, fetchSearch = null, debounceMs = 300, otherTitle, emptyText = 'No datasets in the data directory.', query = '' }) {
     const { list, tree, search, regexBtn, sortSel, searchError } = dom;
-    const state = { regex: false, sort: 'best', limit: PAGE, active: -1, tree: new Map() };
+    const state = { regex: false, sort: 'best', limit: PAGE, active: -1, tree: new Map(), remote: null };
+    let remoteTimer = null;
+    let remoteAbort = null;
     let rows = [];            // the navigable rows, in DOM order
 
     search.value = query;
@@ -69,18 +73,20 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
         row.dataset.path = entry.path;
         row.dataset.match = entry.match || '';
         const label = el('div', 'change-dataset-label');
-        const name = entry.name || basename(entry.path);
-        const rel = entry.rel_path && entry.rel_path !== name ? entry.rel_path : '';
-        const text = searchText(entry);
-        const ranges = compiled.empty || compiled.error ? [] : compiled.ranges(text);
+        const { name, rel } = searchParts(entry);
+        const folder = folderOf(entry);
+        const nameRanges = compiled.empty || compiled.error ? [] : compiled.ranges(name);
         const nameLine = el('div', 'change-dataset-name dataset-name');
-        appendWrapped(nameLine, name, ranges.filter(([a, b]) => b <= name.length));
+        appendWrapped(nameLine, name, nameRanges);
         if (sameStore(entry.path, currentPath)) nameLine.appendChild(el('span', 'badge text-bg-primary ms-2 change-dataset-current', 'current'));
         label.appendChild(nameLine);
-        if (rel) {
+        if (folder) {
+            // a quiet second line: the folder, to tell two stores of one name apart
+            const relRanges = compiled.empty || compiled.error ? [] : compiled.ranges(rel).filter(([a]) => a < folder.length)
+                .map(([a, b]) => [a, Math.min(b, folder.length)]);
             const relLine = el('div', 'change-dataset-rel dataset-name');
-            const shift = name.length + 1;
-            appendWrapped(relLine, rel, ranges.filter(([a]) => a >= shift).map(([a, b]) => [a - shift, b - shift]));
+            relLine.title = rel;
+            appendWrapped(relLine, folder, relRanges);
             label.appendChild(relLine);
         }
         const bits = [countsLabel(entry), entry.format, modifiedLabel(entry), entry.is_link ? 'link' : '']
@@ -100,7 +106,7 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
         button.type = 'button';
         button.tabIndex = -1;
         button.addEventListener('click', (e) => { e.stopPropagation(); onChoose(entry.path); });
-        row.addEventListener('dblclick', () => onChoose(entry.path));
+        row.addEventListener('click', () => onChoose(entry.path));   // anywhere on the row, as the button
         row.append(label, button);
         return row;
     }
@@ -194,10 +200,28 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
             more.addEventListener('click', () => { state.limit += PAGE; render(); });
             list.appendChild(more);
         }
-        if (!page.groups.length) {
+        if (!page.groups.length && (found.empty || !fetchSearch)) {
             const none = found.entries.length === 0 && entries.length > 0
                 ? 'No dataset matches the search.' : emptyText;
             list.appendChild(el('div', 'change-dataset-status', none));
+        }
+        // stores of folders not expanded, found by the server (a search with text)
+        const remote = state.remote && state.remote.key === remoteKey() ? state.remote : null;
+        if (!found.empty && !found.error && fetchSearch) {
+            const local = new Set(entries.map(e => e.path));
+            const rows = remote && remote.entries ? remote.entries.filter(e => !local.has(e.path)) : [];
+            const group = el('div', 'change-dataset-group');
+            group.setAttribute('role', 'group');
+            group.setAttribute('aria-label', 'In subfolders');
+            group.appendChild(el('h6', null, 'In subfolders'));
+            if (!remote) group.appendChild(el('div', 'change-dataset-status', 'Searching subfolders...'));
+            else if (remote.error) group.appendChild(el('div', 'change-dataset-status text-danger', remote.error));
+            else {
+                for (const entry of rows) group.appendChild(storeRow(entry, found));
+                if (!rows.length) group.appendChild(el('div', 'change-dataset-status', 'No match in subfolders.'));
+                if (remote.truncated) group.appendChild(el('div', 'change-dataset-status', 'The search stopped at its limit; narrow it to see more.'));
+            }
+            list.appendChild(group);
         }
         // the data directory's folders, expanded lazily one at a time
         tree.textContent = '';
@@ -217,6 +241,30 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
         setActive(keep >= 0 ? keep : (search.value && rows.length ? 0 : -1), false);
     }
 
+    const remoteKey = () => `${state.regex ? 'regex' : 'substring'}:${search.value}`;
+
+    /** Ask the server for stores in folders not expanded, once the typing pauses. */
+    function scheduleRemote() {
+        clearTimeout(remoteTimer);
+        if (remoteAbort) remoteAbort.abort();
+        state.remote = null;
+        if (!fetchSearch || !search.value || searchEntries([], search.value, { regex: state.regex }).error) return;
+        const key = remoteKey();
+        remoteTimer = setTimeout(async () => {
+            remoteAbort = new AbortController();
+            try {
+                const body = await fetchSearch(search.value, state.regex, remoteAbort.signal);
+                if (key !== remoteKey()) return;
+                state.remote = { key, entries: body.results || [], truncated: !!body.truncated };
+            } catch (e) {
+                if (e && e.name === 'AbortError') return;
+                if (key !== remoteKey()) return;
+                state.remote = { key, error: (e && e.message) || 'The search failed' };
+            }
+            render();
+        }, debounceMs);
+    }
+
     function setActive(index, scroll = true) {
         state.active = index;
         rows.forEach((r, i) => {
@@ -232,7 +280,7 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
         }
     }
 
-    search.oninput = () => { state.limit = PAGE; state.active = -1; render(); };
+    search.oninput = () => { state.limit = PAGE; state.active = -1; scheduleRemote(); render(); };
     search.onkeydown = (e) => {
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
@@ -249,6 +297,7 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
     };
     regexBtn.onclick = () => {
         state.regex = !state.regex;
+        scheduleRemote();
         regexBtn.classList.toggle('active', state.regex);
         regexBtn.setAttribute('aria-pressed', String(state.regex));
         render();
@@ -256,6 +305,7 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
     };
     sortSel.onchange = () => { state.sort = sortSel.value; render(); };
 
+    scheduleRemote();
     render();
     return { focus: () => search.focus(), render };
 }

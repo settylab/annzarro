@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 const {
     compileQuery, searchEntries, sortEntries, loadRecents, pushRecent, buildGroups, pageGroups,
-    splitByRanges, countsLabel, modifiedLabel, RECENT_LIMIT
+    splitByRanges, countsLabel, modifiedLabel, RECENT_LIMIT, folderOf, displayPath, searchParts
 } = await import('../../../static/js/utils/dataset-picker.js');
 
 const E = (name, extra = {}) => ({ path: `/data/${name}`, name, rel_path: name, cells: 10, genes: 5, match: 'other', ...extra });
@@ -113,4 +113,24 @@ test('labels', () => {
     assert.equal(countsLabel(E('a', { cells: null })), '');
     assert.match(modifiedLabel({ modified: 1760000000 }), /^modified 20\d\d-\d\d-\d\d$/);
     assert.equal(modifiedLabel({}), '');
+});
+
+test('the folder line is the relative folder, empty at the top', () => {
+    assert.equal(folderOf(E('a.zarr')), '');
+    assert.equal(folderOf(E('a.zarr', { rel_path: 'projects/liver/a.zarr' })), 'projects/liver/');
+    assert.equal(folderOf({ path: '/x/a.zarr' }), '');
+});
+
+test('paths are shown relative to the data directory, as the listing says', () => {
+    const listing = [E('a.zarr', { rel_path: 'projects/a.zarr' })];
+    assert.equal(displayPath('/data/a.zarr', listing), 'projects/a.zarr');
+    assert.equal(displayPath('/elsewhere/b.zarr', listing, { relPath: 'b.zarr' }), 'b.zarr', 'what the server said about it');
+    assert.equal(displayPath('/elsewhere/b.zarr', listing), '/elsewhere/b.zarr', 'outside the data directory: as it is');
+});
+
+test('a regex is anchored to the name or to the path, not to both joined', () => {
+    const list = [E('deep.zarr', { rel_path: 'projects/deep.zarr' })];
+    assert.equal(searchEntries(list, '^deep\\.zarr$', { regex: true }).entries.length, 1);
+    assert.equal(searchEntries(list, '^projects/', { regex: true }).entries.length, 1);
+    assert.deepEqual(searchParts(list[0]), { name: 'deep.zarr', rel: 'projects/deep.zarr' });
 });
