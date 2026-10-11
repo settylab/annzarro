@@ -1831,6 +1831,17 @@ export async function applyLogColorbar(gd, data, settings) {
   }
 }
 
+/**
+ * Whether an axis value is a point Plotly can place: a number, or a category
+ * label (string, boolean). Missing is null, undefined, NaN or ''. A label is
+ * not a number, so `isNaN('ENSG0001')` is true and counted the whole axis of
+ * a text column as "no value" while the plot drew every point.
+ */
+export function hasAxisValue(v) {
+  if (v == null || v === '') return false;
+  return typeof v === 'number' ? !Number.isNaN(v) : true;
+}
+
 export function createFilterMask(data, settings) {
   // Initialize filter statistics
   const filterStats = {
@@ -1859,7 +1870,7 @@ export function createFilterMask(data, settings) {
     let bad = 0;
     for (let i = 0; i < values.length; i++) {
       const v = values[i];
-      const ok = v != null && !isNaN(v);
+      const ok = hasAxisValue(v);
       mask[i] = ok;
       if (!ok) bad++;
     }
@@ -3068,8 +3079,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           
           // Apply x/y NaN filtering if enabled
           if (settings.hideNaN) {
-            if (filteredData.x.values[idx] === null || isNaN(filteredData.x.values[idx]) ||
-                filteredData.y.values[idx] === null || isNaN(filteredData.y.values[idx])) {
+            if (!hasAxisValue(filteredData.x.values[idx]) || !hasAxisValue(filteredData.y.values[idx])) {
               keepPoint = false;
             }
           }
