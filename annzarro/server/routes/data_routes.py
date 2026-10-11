@@ -569,13 +569,15 @@ def register_data_routes(app, api_version):
     # login) its one user is everyone: they get the whole budget and every thread.
     shared = confinement.is_hosted(app.config)
     cell_subset.configure(app.config.get("subset_max_concurrent") if shared else UNLIMITED_SUBSETS,
-                          app.config.get("read_wait_s", 5))
+                          app.config.get("read_wait_s", 5), app.config.get("read_user_share_percent"))
 
     @app.before_request
     def _name_the_requester():
-        # whose reads these are, for each one's share of the read budget:
-        # the logged-in user, else the client address (the proxy's, with proxy_count)
-        read_guard.requester((permissions.current_user()[0] or request.remote_addr) if shared else None)
+        # whose reads these are, for each one's share of the read budget, the
+        # subset places and the subset cache: the logged-in user, else the
+        # client address (the proxy's, with proxy_count; an IPv6 /64 is one)
+        read_guard.requester((permissions.current_user()[0]
+                              or read_guard.address_requester(request.remote_addr)) if shared else None)
     app.register_error_handler(ReadTooLargeError, _read_too_large_response)
     app.register_error_handler(ReadBusyError, _read_busy_response)
     dataset_folders.register_dataset_folder_routes(app, api_version)

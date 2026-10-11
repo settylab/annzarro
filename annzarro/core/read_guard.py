@@ -14,6 +14,7 @@ stored sizes of a sparse matrix's arrays, and raises ReadTooLargeError over
 from typing import Any, Dict, List, Optional
 
 import contextvars
+import ipaddress
 import logging
 import threading
 import time
@@ -43,6 +44,28 @@ _owner: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar("annzar
 def requester(owner: Optional[str]) -> None:
     """Name who the reads of this request are for (None: nobody in particular)."""
     _owner.set(owner)
+
+
+def current_requester() -> Optional[str]:
+    """Who the reads of this request are for (see ``requester``)."""
+    return _owner.get()
+
+
+def address_requester(address: Optional[str]) -> Optional[str]:
+    """The requester for a client address: the address, or for IPv6 its /64.
+
+    One host routinely holds a whole IPv6 /64; one share per address would
+    let it name itself anew for every request.
+    """
+    try:
+        ip = ipaddress.ip_address(address or "")
+    except ValueError:
+        return address
+    if ip.version == 6:
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return address
 
 MIN_DEFAULT_MB = 256
 MAX_DEFAULT_MB = 4096
