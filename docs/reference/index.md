@@ -13,4 +13,5 @@ performance
 troubleshooting
 license
 ../design/subsetting
+../design/policy-registry
 ```

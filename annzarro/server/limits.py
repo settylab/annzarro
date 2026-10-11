@@ -66,3 +66,39 @@ def validate_limits(server: Optional[Dict[str, Any]]) -> List[str]:
             errors.append(f"Invalid server.{key}: {value!r} (expected {kind} >= {limit.minimum}"
                           + (", 0 turns it off" if limit.zero_off else "") + ")")
     return errors
+
+
+#: Limits gunicorn (or the request-size setting) reads once, when the server starts
+_RESTART = {"max_requests", "max_requests_jitter", "limit_request_line", "limit_request_fields",
+            "limit_request_field_size", "max_request_mb"}
+
+
+def _declare_policy_keys() -> None:
+    """Show every limit in the policy registry, read-only (the YAML decides)."""
+    from annzarro.server.policy import Float, Int, Key, declare
+    for key, limit in LIMITS.items():
+        number = Int if limit.integer else Float
+        declare(Key(
+            name=f"limits.{key}", type=number(min=limit.minimum), default=limit.default, scope="config",
+            description=f"server.{key}" + (" (0 turns it off)" if limit.zero_off else ""),
+            area="limits", config_path=f"server.{key}", client=False, restart=key in _RESTART))
+
+    def derived_max_mb(config):
+        from annzarro.core import read_guard
+        return read_guard.default_limit_bytes() / 2 ** 20
+
+    def derived_budget_mb(config):
+        configured = config.get("max_read_mb")
+        return 2 * (configured if configured else derived_max_mb(config))
+
+    for name, default, text in (
+            ("max_read_mb", derived_max_mb, "MB one read of an obsp/varp matrix may hold (0: 5% of RAM)"),
+            ("read_budget_mb", derived_budget_mb, "MB all pairwise reads in flight in one worker may hold (0: twice max_read_mb)")):
+        declare(Key(name=f"limits.{name}", type=Float(min=0), default=default, scope="config",
+                    description=f"server.{name}: {text}", area="limits", config_path=f"server.{name}", client=False))
+    declare(Key(name="limits.read_wait_s", type=Float(min=0), default=5, scope="config",
+                description="server.read_wait_s: seconds a pairwise read waits for the budget before a 503",
+                area="limits", config_path="server.read_wait_s", client=False))
+
+
+_declare_policy_keys()

@@ -518,3 +518,17 @@ integrations:
           type: string
           description: StringDB API version
           default: "12.5"
+# The policy registry (annzarro/server/policy)
+policy:
+  type: object
+  description: Settings an administrator may change at run time (the policy registry)
+  security: internal
+  properties:
+    locked:
+      type: array
+      items:
+        type: string
+      description: >-
+        Policy keys (for example panel.gene-set.enabled) only this file decides.
+        The admin settings and per-user overrides are ignored for them.
+      default: []

@@ -607,6 +607,7 @@ def register_routes(app: Flask) -> None:
         register_zarr_routes, 
         register_static_routes
     )
+    from annzarro.server.policy import install as install_policy
     
     # API version
     api_version = "v1"
@@ -616,6 +617,7 @@ def register_routes(app: Flask) -> None:
     register_data_routes(app, api_version)
     register_zarr_routes(app, api_version)
     register_static_routes(app, api_version)
+    install_policy(app, api_version)
     
     # Register authentication routes if auth is enabled
     if app.config.get("auth_enabled", False):
