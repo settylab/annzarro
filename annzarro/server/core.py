@@ -52,6 +52,7 @@ DEFAULT_CONFIG = {
     "refresh_min_interval_s": 10,      # POST /data/refresh walks a dataset at most this often
     "name_index_max_mb": None,      # MB all cell/gene-name search indices may hold; None = 15% of RAM (512 MB..16 GB)
     "name_search_scan_names": 100000000,  # names a search without an index (store over the budget) reads
+    "dataset_folder_max_entries": 500,  # entries one dataset-picker folder request returns (the rest is "show more")
     "max_read_mb": None,            # MB one read of an obsp/varp matrix may hold in memory, sized from metadata; None = 5% of RAM (256 MB..4 GB)
     "read_budget_mb": None,         # MB all pairwise reads in flight in one worker may hold; None = 2 x max_read_mb
     "read_wait_s": 5,               # seconds a pairwise read waits for that budget before a 503

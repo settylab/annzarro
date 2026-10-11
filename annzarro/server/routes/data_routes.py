@@ -23,6 +23,7 @@ from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core import subset as cell_subset
 from .. import confinement, permissions
 from .. import http_cache
+from . import dataset_folders
 from ...core.array_response import wants_binary, wants_codes
 from ...core import categories as category_rules
 from ...core.remote import is_remote_path, is_timeout, timeout_message
@@ -545,6 +546,7 @@ def register_data_routes(app, api_version):
                          app.config.get("read_wait_s", 5))
     app.register_error_handler(ReadTooLargeError, _read_too_large_response)
     app.register_error_handler(ReadBusyError, _read_busy_response)
+    dataset_folders.register_dataset_folder_routes(app, api_version)
 
     http_cache.install_gzip(app)
 
@@ -2043,7 +2045,8 @@ def register_data_routes(app, api_version):
                             "is_link": os.path.islink(entry_path),
                             "cells": cells,
                             "genes": genes,
-                            "rel_path": os.path.relpath(entry_path, data_dir)
+                            "rel_path": os.path.relpath(entry_path, data_dir),
+                            **dataset_folders.store_meta(entry_path)
                         })
                         continue
 
@@ -2087,7 +2090,8 @@ def register_data_routes(app, api_version):
                                 "cells": None,
                                 "genes": None,
                                 "error": str(counts),
-                                "rel_path": os.path.relpath(entry_path, data_dir)
+                                "rel_path": os.path.relpath(entry_path, data_dir),
+                                **dataset_folders.store_meta(entry_path)
                             })
                             continue
                         cells, genes = counts
@@ -2098,7 +2102,8 @@ def register_data_routes(app, api_version):
                             "is_link": os.path.islink(entry_path),
                             "cells": cells,
                             "genes": genes,
-                            "rel_path": os.path.relpath(entry_path, data_dir)
+                            "rel_path": os.path.relpath(entry_path, data_dir),
+                            **dataset_folders.store_meta(entry_path)
                         })
             except Exception as e:
                 logger.warning(f"Error listing directory {datasets_dir}: {e}")
