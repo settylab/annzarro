@@ -122,6 +122,18 @@ def test_last_seen_by_user_merges_workers_without_writing(app):
     assert "nobody" not in seen
 
 
+def test_an_expired_session_is_not_seen(app):
+    client = login(app, USER)
+    health.monitor(app)._last_seen.clear()
+    with client.session_transaction() as sess:
+        sess["last_activity"] = time.time() - app.config.get("session_timeout", 8 * 3600) - 10
+    client.get("/api/v1/config")
+    assert USER not in health.last_seen(app)
+    client = login(app, USER)
+    client.get("/api/v1/config")
+    assert USER in health.last_seen(app)
+
+
 def test_a_dead_process_on_this_host_is_dropped_and_its_file_removed(app):
     gone = subprocess.Popen([sys.executable, "-c", "pass"])
     gone.wait()

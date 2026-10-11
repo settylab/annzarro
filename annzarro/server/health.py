@@ -74,7 +74,7 @@ class Monitor:
     def after_request(self, response):
         """The Flask hook: count, then write the snapshot when it is due."""
         try:
-            self.count(response, session.get("user_id") if request.endpoint != "static" else None)
+            self.count(response, _seen_user())
             if time.monotonic() >= self._next_write:
                 self.write()
         except Exception:
@@ -157,6 +157,14 @@ class Monitor:
                        if now - t <= self.window_s],
             "window_s": self.window_s,
         }
+
+
+def _seen_user():
+    """Who this request is from, when its session is live (an expired one is not seen)."""
+    from .core import is_logged_in
+    if request.endpoint == "static" or "user_id" not in session:
+        return None
+    return session["user_id"] if is_logged_in() else None
 
 
 def last_seen(app):
