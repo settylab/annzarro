@@ -349,6 +349,27 @@ def test_the_picker_shows_an_added_root_as_a_top_level_folder(layout):
     assert alice.get("/api/v1/datasets/folder", query_string={"folder": str(root)}).status_code == 403
 
 
+def test_search_finds_a_store_in_an_admin_root_under_the_same_caps(layout):
+    app = _app(layout)
+    admin, alice = login(app, ADMIN), login(app, USER)
+    search = lambda q="cells": alice.get("/api/v1/datasets/search", query_string={"q": q}).get_json()
+    assert search()["results"] == []
+    assert _add(admin, layout / "atlases" / "lab2").status_code == 201
+    found = search()["results"]
+    assert [e["path"] for e in found] == [str(layout / "atlases" / "lab2" / "cells.zarr")]
+    assert found[0]["cells"] == 200
+    assert search("hidden")["results"] == [], "nothing outside the roots"
+    (layout / "atlases" / "lab2" / "a" / "b").mkdir(parents=True)
+    shutil.copytree(FIXTURE, layout / "atlases" / "lab2" / "a" / "b" / "deepcells.zarr")
+    app.config["dataset_search_max_depth"] = 2          # root = depth 1, a = depth 2: b is cut
+    result = search("deepcells")
+    assert result["results"] == [] and result["truncated"] is True
+    app.config["dataset_search_max_depth"] = 6
+    assert len(search("deepcells")["results"]) == 1
+    assert _remove(admin, layout / "atlases" / "lab2").status_code == 200
+    assert search()["results"] == []
+
+
 def test_an_inactive_root_is_not_offered(layout):
     parent = layout / "atlases"
     app = _app(layout)

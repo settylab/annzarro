@@ -176,6 +176,11 @@ def test_an_added_directory_reaches_the_picker_and_removal_takes_it_away(server)
             opened = user.evaluate("""async (path) => (await fetch('api/v1/data/info?dataset_path=' + path)).status""", store)
             assert opened == 200
 
+            # the picker's search finds the store inside the admin root
+            user.fill("#change-dataset-search", "cells")
+            user.wait_for_selector(f'#change-dataset-list .change-dataset-item[data-path="{lab2}/cells.zarr"]', timeout=30000)
+            user.fill("#change-dataset-search", "")
+
             # removing it takes it away from the picker and from reads
             admin.click(f'button[data-action="remove"][data-path="{lab2}"]')
             admin.click(f'button[data-action="confirm-remove"][data-path="{lab2}"]')

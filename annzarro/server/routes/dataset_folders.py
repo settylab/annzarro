@@ -259,7 +259,7 @@ def _compile_query(query, regex):
 def search_tree(config, query, regex=False, limit=None):
     """Stores of the data directory's whole tree whose name or relative path matches.
 
-    Breadth first from the data directory, never into a store, at most
+    Breadth first from the data directory and the admin-added roots, never into a store, at most
     ``dataset_search_max_depth`` folders deep, ``dataset_search_max_entries``
     entries looked at and SEARCH_SECONDS long; ``truncated`` says a cap stopped it.
     Hidden entries, the sessions folder and links a hosted server would refuse
@@ -277,6 +277,12 @@ def search_tree(config, query, regex=False, limit=None):
     deadline = time.monotonic() + SEARCH_SECONDS
     queue = [(data_dir, 0)]
     seen = {os.path.realpath(data_dir)}
+    # the data directories admins added are top-level folders of the picker, so they are searched too
+    for root in _admin_root_entries(config, data_dir, set()):
+        real = os.path.realpath(root["path"])
+        if real not in seen:
+            seen.add(real)
+            queue.append((root["path"], 1))
     found, visited, truncated = [], 0, False
     while queue and not truncated:
         folder, depth = queue.pop(0)
