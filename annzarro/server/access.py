@@ -582,6 +582,54 @@ def add_grant(config, user, kind, path, actor=None, now=None):
     return update_entry(config, user, add)
 
 
+def add_stores_in(config, user, folder, actor=None, limit=None):
+    """Grant ``user`` every store directly inside ``folder`` (one ``store`` grant each); ``(added, skipped)``.
+
+    For a curated folder of links: the grants name the links, which are
+    followed to their targets, so a link leading outside the data directories
+    is skipped (with its reason) rather than granted. Bounded by ``limit``
+    (default ``dataset_folder_max_entries``) stores; all written in one change.
+    """
+    from datetime import datetime
+    from .routes.dataset_folders import DEFAULT_MAX_ENTRIES, is_store_dir
+    limit = int(limit or config.get("dataset_folder_max_entries") or DEFAULT_MAX_ENTRIES)
+    _, root = normalise_grant(config, "dir", folder)
+    candidates = []
+    for name in sorted(os.listdir(root)):
+        path = os.path.join(root, name)
+        if name.startswith("."):
+            continue
+        if (name.endswith(".h5ad") and os.path.isfile(path)) or (os.path.isdir(path) and is_store_dir(path, name)):
+            candidates.append(path)
+    if len(candidates) > limit:
+        raise GrantError("too_many", f"{folder} holds {len(candidates)} stores; at most {limit} can be granted at once.")
+    wanted, skipped = [], []
+    for path in candidates:
+        try:
+            wanted.append(normalise_grant(config, "store", path)[1])
+        except GrantError as exc:
+            skipped.append({"path": path, "reason": exc.reason})
+    now = datetime.now().isoformat(timespec="seconds")
+
+    def add(entry):
+        grants = entry.setdefault("grants", [])
+        if not isinstance(grants, list):
+            raise ValueError("access.json: grants is not a list")
+        have = {g.get("path") for g in grants if isinstance(g, dict)}
+        added = []
+        for path in wanted:
+            if path in have:
+                skipped.append({"path": path, "reason": "already_granted"})
+                continue
+            grants.append({"kind": "store", "path": path, "added_by": actor, "added_at": now})
+            added.append(path)
+        if not grants:
+            entry.pop("grants")
+        return added
+
+    return update_entry(config, user, add), skipped
+
+
 def remove_grant(config, user, path):
     """Revoke ``path`` (as stored, or any spelling of the same real path); the removed grants."""
     wanted = {path.strip(), os.path.abspath(os.path.expanduser(path.strip())), str(_prefix_or(path))}
