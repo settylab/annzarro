@@ -161,3 +161,33 @@ test('a title change on a placeholder is saved with it', () => {
     assert.equal(panel.getConfig().title, 'Renamed');
     assert.deepEqual({ ...panel.getConfig(), title: SAVED.title }, SAVED);
 });
+
+test('an open panel menu is rebuilt when the policy changes, and stops listening once removed', async () => {
+    policyReply = { status: 404 };
+    await Policy.load();
+    const grid = new El('div');
+    const tile = { isConnected: true, querySelector: () => grid };
+    const self = { tileSelector: tile, selectionId: 'x', _applyMemoryState() {} };
+    Object.defineProperty(self, 'panelTypes', Object.getOwnPropertyDescriptor(SelectionTile.prototype, 'panelTypes'));
+    self._fillPanelTypeGrid = SelectionTile.prototype._fillPanelTypeGrid;
+    const types = () => grid.children.map(c => c.dataset.type);
+
+    SelectionTile.prototype._initPanelTypeGrid.call(self);
+    assert.deepEqual(types(), REGISTRY.map(e => e.type));
+
+    policyReply = { status: 200, body: { version: 'v1', values: { 'panel.gene-set.enabled': false } } };
+    await Policy.load();
+    assert.deepEqual(types(), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table']);
+
+    policyReply = { status: 200, body: { version: 'v2', values: { 'panel.gene-set.enabled': true, 'panel.cell-plot.enabled': false } } };
+    await Policy.load();
+    assert.deepEqual(types(), ['gene-plot', 'cell-table', 'gene-table', 'gene-set']);
+
+    // a removed tile is left alone
+    tile.isConnected = false;
+    policyReply = { status: 200, body: { version: 'v3', values: {} } };
+    await Policy.load();
+    assert.deepEqual(types(), ['gene-plot', 'cell-table', 'gene-table', 'gene-set']);
+    policyReply = { status: 404 };
+    await Policy.load();
+});

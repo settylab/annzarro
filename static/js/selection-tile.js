@@ -222,6 +222,17 @@ export class SelectionTile {
         console.error(`Panel type grid with ID panel-type-grid-${this.selectionId} not found`);
         return;
       }
+      this._fillPanelTypeGrid(grid);
+      // the administrator can change which panels exist while the page is open
+      const stop = Policy.onChange(() => {
+        if (!this.tileSelector.isConnected) { stop(); return; }
+        this._fillPanelTypeGrid(grid);
+        if (typeof this._applyMemoryState === 'function') this._applyMemoryState();
+      });
+    }
+
+    _fillPanelTypeGrid(grid) {
+      grid.innerHTML = '';
       this.panelTypes.forEach(panel => {
         const option = document.createElement('div');
         option.className = 'selection-panel-option panel-type-option';
