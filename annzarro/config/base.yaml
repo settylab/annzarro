@@ -73,6 +73,9 @@ server:
   name_index_max_mb: null
   # Names a scanning search reads at most before it answers with what it has.
   name_search_scan_names: 100000000
+  # Entries one request of the dataset picker's folder listing returns; a
+  # larger folder is read in pages ("show more").
+  dataset_folder_max_entries: 500
   # Memory one read of an obsp/varp matrix may hold, in MB, estimated from the
   # store's metadata BEFORE any chunk is read (dense: rows x columns x itemsize;
   # sparse: its stored arrays plus the dense block returned). A request over it
