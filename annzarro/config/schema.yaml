@@ -159,6 +159,11 @@ server:
       minimum: 0
       description: Seconds a regex name search scans before it answers with the matches found so far (partial); 0 = no limit
       default: 10
+    max_request_mb:
+      type: number
+      minimum: 0
+      description: Largest request body in MB (panel-set saves and imports); a larger one is a 413 request_too_large; 0 = no limit
+      default: 16
     dataset_scan_max_entries:
       type: integer
       minimum: 1

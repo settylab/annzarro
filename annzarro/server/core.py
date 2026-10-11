@@ -20,6 +20,7 @@ from flask import (Flask, request, jsonify, session, redirect, url_for, current_
 from ..utils.json_utils import NumpyJSONEncoder
 from flask_cors import CORS
 from flask.sessions import SecureCookieSessionInterface
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from annzarro.utils.paths import default_data_dir
@@ -57,6 +58,7 @@ DEFAULT_CONFIG = {
     "dataset_search_max_entries": 20000, # entries that search looks at before it stops (and says so)
     "name_search_max_regex_chars": 200,   # longest regex a name search runs (a longer one is a 400 regex_too_long)
     "name_search_timeout_s": 10,          # seconds a regex name search scans before it answers partially; 0 = no limit
+    "max_request_mb": 16,                 # MB one request body may have (panel-set saves and imports); over it 413 request_too_large; 0 = no limit
     "dataset_scan_max_entries": 200000,   # directory entries a dataset listing or /status count reads before it stops
     "max_read_mb": None,            # MB one read of an obsp/varp matrix may hold in memory, sized from metadata; None = 5% of RAM (256 MB..4 GB)
     "read_budget_mb": None,         # MB all pairwise reads in flight in one worker may hold; None = 2 x max_read_mb
@@ -487,6 +489,30 @@ def configure_app(app: Flask, config: Dict[str, Any]) -> None:
         app: Flask application instance
         config: Configuration dictionary
     """
+    # No request body is larger than this (werkzeug answers 413 before reading
+    # it: panel sets are the only uploads, and were accepted at any size)
+    limit_mb = config.get("max_request_mb", 16)
+    app.config["MAX_CONTENT_LENGTH"] = int(float(limit_mb) * 2 ** 20) if limit_mb else None
+
+    def _too_large():
+        return jsonify({
+            "error": f"The request is larger than this server accepts ({limit_mb:g} MB, server.max_request_mb).",
+            "reason": "request_too_large",
+            "limit_mb": float(limit_mb),
+        }), 413
+
+    # by the length the client declares, before any route runs; a body that
+    # outgrows what it declared (or is chunked) is cut off by werkzeug and
+    # reaches the handler below
+    @app.before_request
+    def _refuse_declared_size():
+        cap = app.config.get("MAX_CONTENT_LENGTH")
+        if cap and request.content_length is not None and request.content_length > cap:
+            return _too_large()
+        return None
+
+    app.register_error_handler(RequestEntityTooLarge, lambda exc: _too_large())
+
     # Cross-origin API access only when configured. Never with credentials:
     # the login cookie must not authorize requests from other sites.
     if config.get("cors_enabled", False):

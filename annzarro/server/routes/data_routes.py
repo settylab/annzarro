@@ -13,6 +13,8 @@ from flask import jsonify, request, current_app as app
 import json
 import re
 
+from werkzeug.exceptions import RequestEntityTooLarge
+
 from ...core import zarr_reader
 from ...core.zarr_reader import ZarrFormatError, UnsupportedEncodingError
 from ...core import process_file
@@ -2277,6 +2279,8 @@ def register_data_routes(app, api_version):
                 "file": session_file,
                 "sanitized_name": session_data["name"]
             })
+        except RequestEntityTooLarge:
+            raise
         except Exception as e:
             logger.error(f"Error saving session: {e}")
             return jsonify({"error": f"Failed to save session: {str(e)}"}), 500
@@ -2627,6 +2631,8 @@ def register_data_routes(app, api_version):
                 "sanitized_old_name": sanitized_old_name,
                 "sanitized_new_name": sanitized_new_name
             })
+        except RequestEntityTooLarge:
+            raise
         except Exception as e:
             logger.error(f"Error renaming session: {e}")
             return jsonify({"error": f"Failed to rename session: {str(e)}"}), 500
@@ -2695,6 +2701,8 @@ def register_data_routes(app, api_version):
                 "owner": owner,
                 "previous_owner": previous,
             })
+        except RequestEntityTooLarge:
+            raise
         except Exception as e:
             logger.error(f"Error assigning session owner: {e}")
             return jsonify({"error": f"Failed to assign owner: {str(e)}"}), 500
@@ -2785,6 +2793,8 @@ def register_data_routes(app, api_version):
                 "sanitized_source_name": sanitized_source_name,
                 "sanitized_new_name": sanitized_new_name
             })
+        except RequestEntityTooLarge:
+            raise
         except Exception as e:
             logger.error(f"Error duplicating session: {e}")
             return jsonify({"error": f"Failed to duplicate session: {str(e)}"}), 500
@@ -2889,6 +2899,8 @@ def register_data_routes(app, api_version):
                 "session": session_data,
                 "sanitized_name": session_data["name"]
             })
+        except RequestEntityTooLarge:
+            raise
         except Exception as e:
             logger.error(f"Error importing session: {e}")
             return jsonify({"error": f"Failed to import session: {str(e)}"}), 500
