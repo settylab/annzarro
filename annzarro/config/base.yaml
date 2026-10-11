@@ -88,6 +88,13 @@ server:
   # interrupted. 0 = no time limit.
   name_search_max_regex_chars: 200
   name_search_timeout_s: 10
+  # Fairness. The percentage of read_budget_mb one user (with login off: one
+  # client address) may hold at once; the rest stays for everybody else. Never
+  # less than one read of max_read_mb. 0 = no share. And how many cell subsets
+  # (/data/subset: a pass over a column of every cell) one worker computes at
+  # once; another waits read_wait_s, then 503 read_busy. Raise it with threads.
+  read_user_share_percent: 50
+  subset_max_concurrent: 2
   # gunicorn (annzarro/server/gunicorn_config.py; `annzarro start` is not
   # gunicorn and ignores these): a worker is replaced after max_requests
   # requests (+ up to max_requests_jitter, so they do not restart together),

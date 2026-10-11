@@ -1065,7 +1065,36 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec, client: Optional[str
 _computing: "Dict[Tuple, threading.Event]" = {}
 
 
+#: Subsets computed at once in this process (server.subset_max_concurrent)
+DEFAULT_MAX_CONCURRENT = 2
+_slots = threading.BoundedSemaphore(DEFAULT_MAX_CONCURRENT)
+_slots_wait_s = 5.0
+
+
+def configure(max_concurrent: Optional[int] = None, wait_s: Optional[float] = None) -> None:
+    """How many subsets one process computes at once (None or 0: 2; each is a
+    pass over a column of every cell) and how long another waits for a place."""
+    global _slots, _slots_wait_s
+    _slots = threading.BoundedSemaphore(int(max_concurrent) if max_concurrent else DEFAULT_MAX_CONCURRENT)
+    _slots_wait_s = 5.0 if wait_s is None else float(wait_s)
+
+
 def _compute_subset(reader, dataset_path: str, spec: SubsetSpec, key, check) -> Subset:
+    """compute_subset in one of the process's places: a pass over every row
+    holds a thread for seconds, and a page asking for many seeds or filters
+    would hold them all. Over the limit a request waits, then is answered 503
+    ``read_busy`` (the web client asks again once)."""
+    from .read_guard import ReadBusyError
+    if not _slots.acquire(timeout=_slots_wait_s):
+        raise ReadBusyError("The server is computing other cell subsets; try again in a moment "
+                            "(server.subset_max_concurrent).", max(1, int(round(_slots_wait_s))))
+    try:
+        return _compute_subset_unbounded(reader, dataset_path, spec, key, check)
+    finally:
+        _slots.release()
+
+
+def _compute_subset_unbounded(reader, dataset_path: str, spec: SubsetSpec, key, check) -> Subset:
 
     n_obs = _n_obs(reader, dataset_path)
     known = _obs_columns(reader, dataset_path)

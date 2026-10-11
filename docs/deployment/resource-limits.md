@@ -16,6 +16,8 @@ itself against clients that send a request slowly. Put a reverse proxy in front
 |---|---|---|---|---|
 | `name_search_max_regex_chars` | 200 | CPU: a regular-expression name search is a pattern run against every name | `400 regex_too_long` | users paste long patterns |
 | `name_search_timeout_s` | 10 | CPU: a regex name search over millions of names answers with the matches found so far when it runs out of time (`partial: true`, `timed_out: true`) | partial `200` | the host is slow and the dataset has more than about 10 million names; 0 turns it off |
+| `read_user_share_percent` | 50 | Fairness: the pairwise-read budget (`read_budget_mb`) is shared; one user (one address, with login off) may hold this share | `503 read_busy` | few users and one big matrix; 0 gives a user the whole budget |
+| `subset_max_concurrent` | 2 | Threads and CPU: a subset is a pass over a column of every cell, and any request can name a new seed or filter | `503 read_busy` | many users open the largest datasets at once; raise it with `threads` |
 | `max_requests`, `max_requests_jitter` | 20,000, 2,000 | Memory: a worker that leaks or fragments is replaced; its caches start empty | (worker restart) | every request is cheap and the dataset index takes long to rebuild: raise it, or 0 |
 | `limit_request_line`, `limit_request_fields`, `limit_request_field_size` | 8,190, 100, 8,190 | Memory and CPU: one request made of a huge line or many headers (gunicorn only) | `400` from gunicorn | never needed |
 | `max_request_mb` | 16 | Memory and disk: a request body is read whole, and panel sets are written to the sessions directory | `413 request_too_large` | a panel set or an import legitimately exceeds 16 MB (typical ones are under 1 MB) |
