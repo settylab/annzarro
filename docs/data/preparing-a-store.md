@@ -12,8 +12,8 @@ general recipe, then the exact steps the paper's Procedure uses for the demonstr
    pairwise matrices in `obsp` / `varp`.
 2. Cast float arrays to float32.
 3. Store sparse layers you colour cells by as CSC.
-4. `ad.settings.zarr_write_format = 3; adata.write_zarr("datasets/name.zarr")` when your server
-   runs zarr 3 (Python 3.11 or newer), format 2 otherwise ({ref}`zarr-format`).
+4. `ad.settings.zarr_write_format = 2; adata.write_zarr("datasets/name.zarr")`, or 3 for fewer
+   files when every server runs zarr 3 (Python 3.11 or newer) ({ref}`zarr-format`).
 5. Optional: rechunk large dense arrays ({doc}`chunking`), shard them in format 3, and
    re-consolidate.
 :::
@@ -43,7 +43,7 @@ for slot in ("layers", "obsp", "varp", "obsm"):
 adata.layers["logged_counts"] = sp.csc_matrix(adata.layers["logged_counts"], dtype=np.float32)
 
 # 3. write (consolidated metadata is written by default)
-ZARR_FORMAT = 3   # 3 if the server runs zarr >= 3 (Python 3.11+), else 2: see "Zarr format 2 or 3"
+ZARR_FORMAT = 3   # 2 works everywhere; 3 (sharded below) needs zarr >= 3 (Python 3.11+) on the server
 ad.settings.zarr_write_format = ZARR_FORMAT
 adata.write_zarr("datasets/my_data.zarr")
 
@@ -194,11 +194,18 @@ Both rows were run for this page, with the demonstration store written both ways
 Python 3.12 served format 2, plain format 3 and sharded format 3 alike; zarr 2.18.2 on Python 3.9
 served format 2 and refused the format 3 stores as described.
 
-**Write format 3 when your server runs zarr 3 (Python 3.11 or newer).**
-It is where anndata is heading: 0.12 warns that format 2 will stop being the default, and
-0.13.4 already writes format 3, sharded, with no setting. Use format 2 when any server that
-will open the store runs zarr 2 (Python 3.9 or 3.10), or when another tool you use reads only
-format 2. The demonstration store of the paper is format 2 for that reason.
+**Format 2 is fully supported and is not slower to serve; format 3 is not faster.** On the
+demonstration store, on local disk, through the same server and zarr 3.4.1, a request on format 3
+took 20 to 70 % more time than on format 2, still tens of milliseconds ({ref}`zarr-format-timing`).
+What format 3 gives is far fewer files, with sharding, and that it is where anndata is heading
+(0.12 warns that format 2 will stop being the default; 0.13.4 already writes format 3, sharded).
+
+- **Choose format 3** (Python 3.11 or newer on every server that opens the store) when file count
+  matters: a network file system, an object store, an archive or a transfer of the store, or when
+  you want what anndata writes by default. Size the shards for row reads (below).
+- **Choose format 2** when any server that will open the store runs zarr 2 (Python 3.9 or 3.10), when
+  another tool you use reads only format 2, or when none of the above applies. It is what the
+  paper validated, and the demonstration store is format 2.
 
 ```python
 import anndata as ad
@@ -257,6 +264,41 @@ changed to size by the chunk, it counted the 1 GB shard (950 MB) and could refus
 server. With anndata 0.12.19 the default is format 2, and format 3 is written unsharded unless you
 pass `shards`.
 ```
+
+(zarr-format-timing)=
+### What it costs to serve
+
+Measured on the demonstration store with AnnZarro 0.4.2 plus these changes, an Apple M3 Max,
+local NVMe, a fresh server per repetition (15 repetitions locally, 5 to 7 over HTTP), medians.
+Local disk, zarr 3.4.1 for all three columns (format 2 through zarr 3's format 2 path):
+
+| Request | Format 2 | Format 3 plain | Format 3 sharded |
+|---|---|---|---|
+| Open, dataset structure | 98 ms | 105 ms | 108 ms |
+| Gene column of `X` (CSC) | 16 ms | 20 ms | 23 ms |
+| Gene column of a dense layer | 18 ms | 23 ms | 25 ms |
+| Cell row of a dense `obsp` | 14 ms | 19 ms | 31 ms |
+| Gene row of `varp` | 20 ms | 35 ms | 22 ms |
+
+Format 3 is not faster on a local disk; it is slower by a few milliseconds per request. The
+same format 2 store read by zarr 2.18.2 in another environment took 60, 5, 32, 3.5 and 51 ms for the
+same five requests, so the library matters as much as the format.
+
+Over HTTP, from a local server that honours `Range`, the sharded store sends far fewer bytes and
+files for the pairwise rows (requests the store server saw; bytes it sent):
+
+| Request | Format 2 | Format 3 sharded |
+|---|---|---|
+| Gene row of `varp` | 16 requests, 58 MB | 2 requests, 3.5 MB |
+| Cell row of a dense `obsp` | 1 request, 1.6 MB | 2 requests, 3.4 MB |
+| Gene column of a dense layer | 8 requests, 21 MB | 12 requests, 13 MB |
+| Gene column of `X` | 3 requests, 1.8 MB | 5 requests, 1.9 MB |
+
+The `obsp` row of this small matrix costs more when sharded because its shard index and chunk are
+two requests. With 20 ms added to every request the sharded store was not faster for any request
+(`varp` row 60 ms against 70 ms; `X` column 131 ms against 80 ms): on this store the saving is in
+bytes and files, not in latency. The store has 4,243 files in format 2, 3,878 in format 3 and 1,024
+sharded.
 
 **Remote stores.** A sharded store served over HTTP needs a server that honours the `Range`
 header (nginx, Apache, S3, GCS do; `python -m http.server` does not). Without it the first

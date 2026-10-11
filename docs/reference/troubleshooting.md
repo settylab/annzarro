@@ -15,7 +15,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | `ValueError: cannot reshape array of size … into shape (…)` from `anndata.read_zarr` after rechunking. Reproduced | Metadata not re-consolidated: `.zmetadata` still describes the old array | `zarr.consolidate_metadata(path)` |
 | `write_zarr(chunks=…)` had no effect on layers | `chunks` applies to `X` only | Rechunk with `ad.io.write_elem(..., dataset_kwargs={"chunks": …})` ({doc}`../data/chunking`) |
 | Out of memory computing a dense obsp or varp | 4n² bytes, plus `rankdata`'s float64 copy for Spearman | Sparse walk, or a gene subset written into a NaN-filled full matrix ({doc}`../data/pairwise-matrices`) |
-| anndata warns "Writing zarr v2 data will no longer be the default" | anndata 0.12 writes format 2 unless told otherwise | Set `ad.settings.zarr_write_format` to 3 if your server runs zarr 3 (Python 3.11+), or to 2 if any server that opens the store runs zarr 2; either silences it ({ref}`zarr-format`) |
+| anndata warns "Writing zarr v2 data will no longer be the default" | anndata 0.12 writes format 2 unless told otherwise | Harmless; AnnZarro serves format 2 fully. Set `ad.settings.zarr_write_format` explicitly, to 2 (any zarr 2 server, or no need for fewer files) or to 3 (zarr 3 servers; fewer files with sharding), which silences it ({ref}`zarr-format`) |
 
 ## Opening the dataset
 
