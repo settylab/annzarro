@@ -15,6 +15,7 @@ from ...core import name_index
 from ...core import categories as category_rules
 from ...core import freshness
 from ...core.zarr_reader import consolidated_staleness, consolidated_notice, ZarrFormatError
+from ...core.read_guard import ReadTooLargeError, ReadBusyError
 
 logger = logging.getLogger(__name__)
 
@@ -446,6 +447,8 @@ def register_zarr_routes(app, api_version):
             })
         except KeyError as e:
             return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
+        except (ReadTooLargeError, ReadBusyError):
+            raise        # the app's handlers answer 413 read_too_large / 503 read_busy
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return jsonify({"error": str(e), "reason": "unsupported_type"}), 400
@@ -487,6 +490,8 @@ def register_zarr_routes(app, api_version):
             })
         except KeyError as e:
             return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
+        except (ReadTooLargeError, ReadBusyError):
+            raise        # the app's handlers answer 413 read_too_large / 503 read_busy
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return jsonify({"error": str(e), "reason": "unsupported_type"}), 400
