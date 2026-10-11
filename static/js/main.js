@@ -1851,6 +1851,17 @@ const App = (function() {
         return _datasetsLoading;
     }
 
+    // The name as text with <wbr> after each / _ . - so a long name wraps at those first
+    function _datasetNameNode(item) {
+      const span = document.createElement('span');
+      span.className = 'dataset-name';
+      (item.text || '').split(/(?<=[/_.-])/).forEach(part => {
+        span.appendChild(document.createTextNode(part));
+        span.appendChild(document.createElement('wbr'));
+      });
+      return $(span);
+    }
+
     async function _fillDatasetPicker() {
         const sel = document.getElementById('dataset-selector');
         if (!sel) return;
@@ -1918,6 +1929,9 @@ const App = (function() {
             // the open list may be wider than the box; CSS caps it
             dropdownAutoWidth: true,
             dropdownCssClass:  'dataset-select-dropdown',
+            // whole names, wrapped at / _ . - (see .dataset-name in styles.css)
+            templateResult:    _datasetNameNode,
+            templateSelection: _datasetNameNode,
             createTag: params => {
               const term = params.term.trim();
               return term
