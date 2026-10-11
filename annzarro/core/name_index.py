@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import threading
+import time
 from collections import OrderedDict
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -28,7 +29,30 @@ MAX_LIMIT = 500
 DEFAULT_LIMIT = 50
 _CACHE_SIZE = 8
 
+#: Characters a regex search pattern may have (server.name_search_max_regex_chars)
+DEFAULT_MAX_REGEX_CHARS = 200
+#: Seconds a regex scan may run before it answers with what it has
+#: (server.name_search_timeout_s)
+DEFAULT_SEARCH_TIMEOUT_S = 10.0
+#: Unbounded repeats (``*``, ``+``, ``{n,}``, ``{n,1000+}``) one pattern may have.
+#: Each adds a power of the name's length to the worst case of one match.
+MAX_UNBOUNDED_REPEATS = 4
+_UNBOUNDED_FROM = 1000
+#: names a regex scan reads between two looks at the clock
+_CLOCK_EVERY = 2048
+
 _SEP = "\n"
+
+
+class RegexRefusedError(ValueError):
+    """A regex search pattern the server will not run: too long, or built so
+    that matching one name can take exponential time. ``re`` cannot be
+    interrupted, and it holds the GIL, so one such request stops every
+    thread of its worker. Answered 400 with ``reason``."""
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
 
 
 class IndexOverBudget(Exception):
@@ -94,6 +118,117 @@ def estimate_bytes(n: int, per_name: float, has_upper: bool = False) -> int:
     when names have upper case), 4- or 8-byte starts, and bytearray slack."""
     hay = int(n * per_name * (2 if has_upper else 1) * 1.125) + 2
     return hay + n * (4 if n * per_name < 2 ** 32 else 8)
+
+
+def _regex_parser():
+    try:
+        import re._parser as parser         # Python 3.11+
+    except ImportError:                      # pragma: no cover
+        import sre_parse as parser
+    return parser
+
+
+def _subpatterns(av):
+    """The sub-patterns an opcode's argument holds, at any depth of tuples and lists."""
+    parser = _regex_parser()
+    if isinstance(av, parser.SubPattern):
+        yield av
+    elif isinstance(av, (tuple, list)):
+        for item in av:
+            yield from _subpatterns(item)
+
+
+def _repeat_ops(parser):
+    return tuple(getattr(parser, n) for n in ("MAX_REPEAT", "MIN_REPEAT", "POSSESSIVE_REPEAT")
+                 if hasattr(parser, n))
+
+
+def _contains_repeat(sub, ops) -> bool:
+    for op, av in sub:
+        if op in ops and av[1] > 1:
+            return True
+        if any(_contains_repeat(inner, ops) for inner in _subpatterns(av)):
+            return True
+    return False
+
+
+def check_regex(pattern: str) -> None:
+    """RegexRefusedError unless ``pattern`` is safe to run over every name.
+
+    Refused: a pattern over server.name_search_max_regex_chars; a repeat of
+    something that repeats or branches (``(a+)+``, ``(a|a)*``, ``(\\w+\\w*)+``),
+    whose worst case on one 18-character cell name is a quarter of a second
+    and doubles with every character; and more than MAX_UNBOUNDED_REPEATS
+    unbounded repeats (``.*.*.*.*.*``). A pattern that does not compile is not
+    judged here: re.compile reports it. What passes can still be slow over
+    millions of names, which the search's time limit (server.name_search_timeout_s) bounds.
+    """
+    if len(pattern) > _max_regex_chars:
+        raise RegexRefusedError(
+            "regex_too_long", f"The pattern has {len(pattern)} characters; at most {_max_regex_chars} "
+            "(server.name_search_max_regex_chars).")
+    parser = _regex_parser()
+    try:
+        tree = parser.parse(pattern, re.IGNORECASE)
+    except re.error:
+        return
+    ops = _repeat_ops(parser)
+    unbounded = 0
+
+    def refuse(what):
+        raise RegexRefusedError(
+            "regex_too_complex", f"This pattern is refused: {what}. Matching it against a long name can take "
+            "exponential time. Write the repeats side by side instead (e.g. 'ab+c' rather than '(a+b+)+c').")
+
+    def walk(sub, in_variable_repeat):
+        nonlocal unbounded
+        for op, av in sub:
+            if op in ops:
+                low, high, body = av
+                if in_variable_repeat and high > 1:
+                    refuse("a repeat inside a repeat")
+                variable = high > low and high > 1
+                if variable and _contains_repeat(body, ops):
+                    refuse("a repeat inside a repeat")
+                if high >= _UNBOUNDED_FROM:
+                    unbounded += 1
+                    if unbounded > MAX_UNBOUNDED_REPEATS:
+                        raise RegexRefusedError(
+                            "regex_too_complex", f"More than {MAX_UNBOUNDED_REPEATS} open-ended repeats "
+                            "(*, +, {{n,}}) in one pattern; use fewer.")
+                walk(body, in_variable_repeat or variable)
+            elif op == parser.BRANCH:
+                if in_variable_repeat:
+                    refuse("an alternation (a|b) inside a repeat")
+                for inner in av[1]:
+                    walk(inner, in_variable_repeat)
+            else:
+                for inner in _subpatterns(av):
+                    walk(inner, in_variable_repeat)
+
+    walk(tree, False)
+
+
+def _deadline() -> Optional[float]:
+    return time.monotonic() + _timeout_s if _timeout_s > 0 else None
+
+
+def _expired(deadline: Optional[float]) -> bool:
+    return deadline is not None and time.monotonic() > deadline
+
+
+def _timed_out(scanned: int) -> Dict:
+    """The reply fields of a regex scan that ran out of time."""
+    return {"partial": True, "scanned": int(scanned), "timed_out": True,
+            "note": (f"The search stopped after {_timeout_s:g} s (server.name_search_timeout_s), having read "
+                     f"{int(scanned):,} names; the matches shown are from those. Use a simpler pattern, "
+                     "or a plain text search.")}
+
+
+def compile_regex(pattern: str):
+    """The case-insensitive compiled pattern, after check_regex."""
+    check_regex(pattern)
+    return re.compile(pattern, re.IGNORECASE)
 
 
 class NameIndex:
@@ -341,14 +476,22 @@ class NameIndex:
         truncated = False
 
         if mode == "regex":
-            rx = re.compile(query, re.IGNORECASE)
+            rx = compile_regex(query)
+            deadline = _deadline()
+            timed_out = False
             for i, name in enumerate(self._names_from(0)):
+                if i % _CLOCK_EVERY == 0 and _expired(deadline):
+                    timed_out = True
+                    break
                 if rx.search(name):
                     if len(rows) >= limit:
                         truncated = True
                         break
                     rows.append(i)
-            return self._result(rows, truncated)
+            result = self._result(rows, truncated)
+            if timed_out:
+                result.update(_timed_out(i))
+            return result
 
         if query == "":
             rows = list(range(min(limit, self._n)))
@@ -418,6 +561,8 @@ _budget: Optional[int] = None
 #: names stream_search reads before it gives up with a partial answer
 DEFAULT_SCAN_NAMES = 100_000_000
 _scan_names: int = DEFAULT_SCAN_NAMES
+_max_regex_chars: int = DEFAULT_MAX_REGEX_CHARS
+_timeout_s: float = DEFAULT_SEARCH_TIMEOUT_S
 
 
 def default_budget() -> int:
@@ -431,12 +576,17 @@ def default_budget() -> int:
     return int(min(max(total * 0.15, 512 * 2 ** 20), 16 * 2 ** 30))
 
 
-def configure(budget_mb: Optional[float] = None, scan_names: Optional[int] = None) -> None:
+def configure(budget_mb: Optional[float] = None, scan_names: Optional[int] = None,
+              max_regex_chars: Optional[int] = None, timeout_s: Optional[float] = None) -> None:
     """Set the bytes the cached indices may hold together (None or 0: the
-    default, default_budget()) and how many names a stream_search reads."""
-    global _budget, _scan_names
+    default, default_budget()), how many names a stream_search reads, the
+    longest regex pattern a search runs and the seconds a regex scan may take
+    (None: the defaults; 0 for the timeout: no limit)."""
+    global _budget, _scan_names, _max_regex_chars, _timeout_s
     _budget = int(budget_mb * 2 ** 20) if budget_mb else None
     _scan_names = int(scan_names) if scan_names else DEFAULT_SCAN_NAMES
+    _max_regex_chars = int(max_regex_chars) if max_regex_chars else DEFAULT_MAX_REGEX_CHARS
+    _timeout_s = DEFAULT_SEARCH_TIMEOUT_S if timeout_s is None else float(timeout_s)
 
 
 def budget_bytes() -> int:
@@ -622,7 +772,9 @@ def stream_search(source: NameChunks, query: str, limit: int = DEFAULT_LIMIT, mo
     q = query.lower()
     qb = q.encode()
     stopped_early = False
-    rx = re.compile(query, re.IGNORECASE) if mode == "regex" else None
+    rx = compile_regex(query) if mode == "regex" else None
+    deadline = _deadline()
+    timed_out = False
     if mode != "regex" and query != "" and _SEP in q:
         return {"matches": [], "truncated": False, "partial": False, "scanned": 0}
     it = iter(source)
@@ -631,16 +783,26 @@ def stream_search(source: NameChunks, query: str, limit: int = DEFAULT_LIMIT, mo
             if base >= cap:
                 stopped_early = True
                 break
+            if rx is not None and _expired(deadline):
+                stopped_early = timed_out = True
+                break
             ix = NameIndex(NameChunks([chunk]))
             k = len(ix)
             if k == 0:
                 continue
             if rx is not None or query == "":
                 for i, name in enumerate(ix._names_from(0)):
+                    if rx is not None and i % _CLOCK_EVERY == 0 and _expired(deadline):
+                        timed_out = True
+                        break
                     if rx is None or rx.search(name):
                         plain.append((base + i, name))
                         if len(plain) > limit:
                             break
+                if timed_out:
+                    base += i
+                    stopped_early = True
+                    break
                 if len(plain) > limit:
                     base += k
                     stopped_early = True
@@ -685,7 +847,7 @@ def stream_search(source: NameChunks, query: str, limit: int = DEFAULT_LIMIT, mo
         truncated = len(plain) > limit
         # the first hits in dataset order are complete as far as they go
         partial = False
-        if query == "" and stopped_early and not truncated:
+        if (query == "" or timed_out) and stopped_early and not truncated:
             partial = True
     else:
         got = []
@@ -712,7 +874,10 @@ def stream_search(source: NameChunks, query: str, limit: int = DEFAULT_LIMIT, mo
         partial = not finished and not (mode == "exact" and exact_cs)
     out = {"matches": [{"name": nm, "index": int(r)} for r, nm in got], "truncated": bool(truncated),
            "partial": bool(partial), "scanned": int(base)}
-    if partial:
+    if timed_out:
+        out.update(_timed_out(base))
+        out["partial"] = True
+    elif partial:
         of = f" of {n_total:,}" if n_total is not None else ""
         out["note"] = ("This dataset has too many names to keep an index in memory; "
                        f"{base:,}{of} names were searched.")

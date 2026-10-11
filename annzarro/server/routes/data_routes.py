@@ -540,7 +540,8 @@ def register_data_routes(app, api_version):
         app: Flask application instance
         api_version: API version string
     """
-    name_index.configure(app.config.get("name_index_max_mb"), app.config.get("name_search_scan_names"))
+    name_index.configure(app.config.get("name_index_max_mb"), app.config.get("name_search_scan_names"),
+                         app.config.get("name_search_max_regex_chars"), app.config.get("name_search_timeout_s"))
     read_guard.configure(app.config.get("max_read_mb"), app.config.get("read_budget_mb"),
                          app.config.get("read_wait_s", 5))
     app.register_error_handler(ReadTooLargeError, _read_too_large_response)
@@ -1495,6 +1496,12 @@ def register_data_routes(app, api_version):
         scope = request.args.get("scope", "subset")
         if scope not in ("subset", "dataset"):
             return jsonify({"error": "scope must be 'subset' or 'dataset'"}), 400
+        if mode == "regex":
+            # before an index is built or a store is read for it
+            try:
+                name_index.check_regex(query)
+            except name_index.RegexRefusedError as exc:
+                return jsonify({"error": str(exc), "reason": exc.reason}), 400
 
         try:
             reader = _reader_for(dataset_path_str)
@@ -1544,7 +1551,7 @@ def register_data_routes(app, api_version):
                 result = index.search(query, limit=limit, mode=mode)
                 result["total"] = len(index)
         except re.error as exc:
-            return jsonify({"error": f"Invalid regular expression: {exc}"}), 400
+            return jsonify({"error": f"Invalid regular expression: {exc}", "reason": "bad_regex"}), 400
         matches = result["matches"]
         found = [m["index"] for m in matches]
         if subset is None:

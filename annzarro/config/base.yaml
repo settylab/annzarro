@@ -73,6 +73,14 @@ server:
   name_index_max_mb: null
   # Names a scanning search reads at most before it answers with what it has.
   name_search_scan_names: 100000000
+  # Longest regular expression a name search (mode=regex) runs, in characters,
+  # and the seconds one regex scan may take before it answers with the matches
+  # found so far (partial: true). Patterns that repeat a repeat or branch inside
+  # one, such as (a+)+, are always refused (400 regex_too_complex): matching
+  # one 18-character name takes seconds, and the regex engine cannot be
+  # interrupted. 0 = no time limit.
+  name_search_max_regex_chars: 200
+  name_search_timeout_s: 10
   # Memory one read of an obsp/varp matrix may hold, in MB, estimated from the
   # store's metadata BEFORE any chunk is read (dense: rows x columns x itemsize;
   # sparse: its stored arrays plus the dense block returned). A request over it
