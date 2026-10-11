@@ -155,3 +155,14 @@ def test_requires_an_undeclared_key_is_a_problem():
 
 def test_the_server_app_is_consistent(tmp_path):
     assert check_routes(create_app(config(tmp_path))) == []
+
+
+def test_a_revoked_login_gets_no_version_header(tmp_path):
+    users = tmp_path / "users.json"
+    manager = AuthManager(user_file=str(users))
+    manager.create_user("alice", "pw")
+    c = create_app(config(tmp_path, auth_enabled=True, user_file=str(users))).test_client()
+    c.post("/login", data={"username": "alice", "password": "pw"})
+    assert POLICY_HEADER in c.get("/api/v1/auth/me").headers
+    AuthManager(user_file=str(users)).remove_user("alice")
+    assert POLICY_HEADER not in c.get("/api/v1/auth/me").headers

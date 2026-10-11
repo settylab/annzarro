@@ -10,10 +10,11 @@ Outbound hosts and the CSP: ``test_policy_csp.py`` (slice P1) turns the hook at
 the end into the per-key CSP test.
 """
 import itertools
+import os
 
 import pytest
 
-from annzarro.server.policy import REGISTRY, check_routes, load_declarations
+from annzarro.server.policy import REGISTRY, Bool, Key, check_routes, config_lookup, load_declarations
 from annzarro.server.policy.resolver import CONFIG, OVERLAY, USER, SOURCE_NAMES
 from annzarro.tests.server.policy_helpers import make_engine, sample_registry, set_path
 
@@ -146,7 +147,7 @@ def test_locks_block_the_overlay_and_the_user_layer(registry, key):
         locked = build(registry, key, values, locked=[key.name])
         resolved = locked.resolve(key.name)
         assert resolved.locked and resolved.value == default, layer
-        _, errors = locked.apply_update(layer, {}, {key.name: restrictive})
+        _, errors, _ = locked.apply_update(layer, {}, {key.name: restrictive})
         assert errors == {key.name: "locked_by_config"}
         assert [i.reason for i in locked.audit(layer, {key.name: values[layer]})] == ["locked_by_config"]
 
@@ -158,13 +159,13 @@ def test_unknown_stored_keys_survive_a_write_of_this_key(registry, key):
     engine = make_engine(registry)
     layer = (layers_of(key) or [OVERLAY])[0] if key.scope != "config" else OVERLAY
     if key.scope == "config" or pair is None:
-        new, errors = engine.apply_update(layer, stored, {key.name: None})
+        new, errors, _ = engine.apply_update(layer, stored, {key.name: None})
         assert not errors and new == stored
         return
-    new, errors = engine.apply_update(layer, stored, {key.name: pair[1]})
+    new, errors, _ = engine.apply_update(layer, stored, {key.name: pair[1]})
     assert not errors
     assert {k: new[k] for k in stored} == stored and new[key.name] == pair[1]
-    again, errors = engine.apply_update(layer, new, {key.name: None})
+    again, errors, _ = engine.apply_update(layer, new, {key.name: None})
     assert not errors and again == stored
     assert {i.name for i in engine.audit(layer, again) if i.reason == "unknown_key"} == set(stored)
 
@@ -174,13 +175,13 @@ def test_a_config_scope_key_cannot_be_written(registry, key):
     pair = key.type.samples()
     if pair is None:
         pytest.skip("one value only")
-    _, errors = make_engine(registry).apply_update(OVERLAY, {}, {key.name: pair[0]})
+    _, errors, _ = make_engine(registry).apply_update(OVERLAY, {}, {key.name: pair[0]})
     assert errors == {key.name: "config_scope"}
 
 
 @pytest.mark.parametrize("registry,key", SETTABLE)
 def test_invalid_values_are_refused_on_write(registry, key):
-    _, errors = make_engine(registry).apply_update(layers_of(key)[0], {}, {key.name: BAD})
+    _, errors, _ = make_engine(registry).apply_update(layers_of(key)[0], {}, {key.name: BAD})
     assert errors == {key.name: "bad_type"}
 
 
@@ -208,12 +209,84 @@ def test_every_route_a_key_names_exists(key, tmp_path):
     assert all(endpoint in app.view_functions for endpoint in key.routes)
 
 
-# Hook for slice P1 (test_policy_csp.py): for every key with outbound_hosts, flipping it to its
-# no-outbound value at each layer, and outbound.allow_external: false, removes exactly its hosts
-# from the connect-src of "/" for that requester. Parametrize over this list.
-OUTBOUND_KEYS = [k.name for k in REGISTRY.with_outbound_hosts()]
+@pytest.mark.parametrize("key", [k for k in REGISTRY if k.config_path], ids=lambda k: k.name)
+def test_a_declared_default_equals_the_value_base_yaml_ships(key):
+    """The shipped YAML is not the operator's, so its value is the key's default
+    (config_lookup ignores it). They cannot drift apart."""
+    import os
+    import yaml
+    import annzarro
+    with open(os.path.join(os.path.dirname(annzarro.__file__), "config", "base.yaml")) as fh:
+        found, shipped = config_lookup(yaml.safe_load(fh), key.config_path)
+    if not found:
+        pytest.skip("base.yaml does not set it")
+    assert key.default_value({}) == key.type.validate(shipped)
 
 
-@pytest.mark.parametrize("name", OUTBOUND_KEYS)
-def test_outbound_keys_are_covered_by_the_csp_test(name):
-    pytest.skip("covered by test_policy_csp.py (slice P1)")
+@pytest.mark.parametrize("registry,key", [c for c in RESTRICT if c.values[1].scope != "config" and c.values[1].config_path])
+def test_a_write_wider_than_the_operators_config_is_refused_or_reported_capped(registry, key):
+    permissive, restrictive = key.type.samples()
+    engine = build(registry, key, {CONFIG: restrictive})
+    if OVERLAY in layers_of(key):
+        assert engine.apply_update(OVERLAY, {}, {key.name: permissive}).errors == {key.name: "config_ceiling"}
+        assert engine.apply_update(OVERLAY, {}, {key.name: restrictive}).errors == {}
+    if USER in layers_of(key):
+        update = engine.apply_update(USER, {}, {key.name: permissive})
+        assert not update.errors and update.stored == {key.name: permissive} and update.capped == {key.name: restrictive}
+
+
+@pytest.mark.parametrize("registry,key", [c for c in PAIRED if c.values[1].scope != "config"])
+def test_layers_and_inherited_describe_the_stack(registry, key):
+    permissive, restrictive = key.type.samples()
+    layer = layers_of(key)[0]
+    if layer == CONFIG:
+        pytest.skip("no stored layer")
+    nothing = build(registry, key, {}).resolve(key.name)
+    assert nothing.inherited == {} and set(nothing.layers) == {"default"}
+    default = nothing.value
+    value = restrictive if default == permissive else permissive
+    resolved = build(registry, key, {layer: value}).resolve(key.name)
+    assert resolved.layers[SOURCE_NAMES[layer]] == value and resolved.layers["default"] == default
+    # clearing the layer gives back exactly what an engine without it resolves
+    assert resolved.inherited == {SOURCE_NAMES[layer]: default}
+
+
+def outbound_coverage_gaps(keys, tests_dir):
+    """Why the CSP test does not cover ``keys`` (those with ``outbound_hosts``); empty when it does.
+
+    Slice P1 provides ``annzarro/server/policy/csp.py`` with ``csp_hosts(engine, user)`` and
+    ``test_policy_csp.py``, which must parametrize over ``REGISTRY.with_outbound_hosts()``."""
+    if not keys:
+        return []
+    gaps = []
+    try:
+        import importlib
+        if not hasattr(importlib.import_module("annzarro.server.policy.csp"), "csp_hosts"):
+            gaps.append("annzarro.server.policy.csp has no csp_hosts(engine, user)")
+    except ImportError:
+        gaps.append("annzarro.server.policy.csp does not exist")
+    csp_test = os.path.join(tests_dir, "test_policy_csp.py")
+    if not os.path.exists(csp_test):
+        gaps.append("tests/server/test_policy_csp.py does not exist")
+    else:
+        with open(csp_test) as fh:
+            if "with_outbound_hosts" not in fh.read():
+                gaps.append("test_policy_csp.py does not parametrize over REGISTRY.with_outbound_hosts()")
+    return [f"{', '.join(k.name for k in keys)} have outbound_hosts, but {gap}" for gap in gaps]
+
+
+def test_every_outbound_key_is_covered_by_the_csp_test():
+    assert outbound_coverage_gaps(REGISTRY.with_outbound_hosts(), os.path.dirname(__file__)) == []
+
+
+def test_the_csp_coverage_guard_goes_red_without_a_csp_test(tmp_path):
+    outbound = [k for k in SAMPLE_OUTBOUND]
+    gaps = outbound_coverage_gaps(outbound, str(tmp_path))
+    assert any("test_policy_csp.py does not exist" in g for g in gaps)
+    (tmp_path / "test_policy_csp.py").write_text("def test_x(): pass\n")
+    assert any("does not parametrize" in g for g in outbound_coverage_gaps(outbound, str(tmp_path)))
+    assert outbound_coverage_gaps([], str(tmp_path)) == []
+
+
+SAMPLE_OUTBOUND = [Key(name="outbound.sample.host", type=Bool(), default=True, scope="user", description="d",
+                       area="outbound", combine="restrict", outbound_hosts=lambda value, config: ["x.example.org"])]

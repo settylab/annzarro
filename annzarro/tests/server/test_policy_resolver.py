@@ -74,7 +74,7 @@ def test_locked_keys_ignore_the_stored_layers():
     assert e.resolve("panel.a.size").value == 10 and e.resolve("panel.a.size").locked   # the default
     assert not e.resolve("panel.a.enabled").locked
     assert {i.reason for i in e.audit("overlay", e.overlay_store)} == {"locked_by_config"}
-    new, errors = e.apply_update("overlay", {}, {"outbound.mode": "off"})
+    new, errors, _ = e.apply_update("overlay", {}, {"outbound.mode": "off"})
     assert errors == {"outbound.mode": "locked_by_config"} and status_for(errors) == 409
 
 
@@ -104,7 +104,7 @@ def test_config_lookup_reads_the_tree_and_the_flat_server_keys():
 def test_unknown_keys_survive_updates():
     e = make_engine(registry())
     stored = {"panel.gone.enabled": False, "future.thing": {"a": 1}, "panel.a.size": "bad"}
-    new, errors = e.apply_update("overlay", stored, {"panel.a.enabled": False})
+    new, errors, _ = e.apply_update("overlay", stored, {"panel.a.enabled": False})
     assert not errors
     assert new == {**stored, "panel.a.enabled": False}
     assert stored == {"panel.gone.enabled": False, "future.thing": {"a": 1}, "panel.a.size": "bad"}
@@ -113,7 +113,7 @@ def test_unknown_keys_survive_updates():
 
 def test_null_removes_known_and_unknown_entries():
     e = make_engine(registry())
-    new, errors = e.apply_update("overlay", {"panel.a.size": 5, "old.key": 1, "keep.me": 2},
+    new, errors, _ = e.apply_update("overlay", {"panel.a.size": 5, "old.key": 1, "keep.me": 2},
                                  {"panel.a.size": None, "old.key": None})
     assert not errors and new == {"keep.me": 2}
 
@@ -121,7 +121,7 @@ def test_null_removes_known_and_unknown_entries():
 def test_update_reports_and_changes_nothing_on_error():
     e = make_engine(registry())
     stored = {"panel.a.size": 5}
-    new, errors = e.apply_update("overlay", stored, {"panel.a.enabled": False, "nope.x": 1, "panel.a.size": 0,
+    new, errors, _ = e.apply_update("overlay", stored, {"panel.a.enabled": False, "nope.x": 1, "panel.a.size": 0,
                                                      "limits.n": 3})
     assert new == stored
     assert errors == {"nope.x": "unknown_key", "panel.a.size": "out_of_range", "limits.n": "config_scope"}
@@ -130,7 +130,7 @@ def test_update_reports_and_changes_nothing_on_error():
 
 def test_update_canonicalises():
     e = make_engine(registry())
-    new, _ = e.apply_update("user", {}, {"panel.a.services": ["z", "x"]})
+    new, _, _ = e.apply_update("user", {}, {"panel.a.services": ["z", "x"]})
     assert new == {"panel.a.services": ["x", "z"]}
 
 
@@ -175,3 +175,127 @@ def test_version_changes_with_every_layer():
 def test_a_source_must_be_a_stored_layer():
     with pytest.raises(ValueError):
         make_engine(registry()).set_source("config", lambda: {})
+
+
+# -- what counts as the operator's configuration ------------------------------
+
+def origin_engine(origin, value="ask"):
+    config = {"config_tree": {"integrations": {"external_requests": value}},
+              "config_origins": {"integrations.external_requests": origin}}
+    return make_engine(registry(), config=config)
+
+
+def test_the_packages_own_defaults_are_not_the_operators_ceiling():
+    e = origin_engine("defaults:base")
+    e.overlay_store["outbound.mode"] = "on"
+    r = e.resolve("outbound.mode")
+    assert (r.value, r.source, r.has_config) == ("on", "admin", False)
+    assert origin_engine("defaults:production").resolve("outbound.mode").source == "default"
+
+
+@pytest.mark.parametrize("origin", ["system", "user", "project", "--config", "env:ANNZARRO_X", "cli:--x"])
+def test_anything_the_operator_set_is_the_ceiling(origin):
+    e = origin_engine(origin)
+    e.overlay_store["outbound.mode"] = "on"
+    r = e.resolve("outbound.mode")
+    assert (r.value, r.source, r.has_config) == ("ask", "config", True)
+
+
+def test_the_origin_of_a_parent_key_counts():
+    config = {"config_tree": {"integrations": {"external_requests": "off"}},
+              "config_origins": {"integrations": "defaults:base"}}
+    assert make_engine(registry(), config=config).resolve("outbound.mode").source == "default"
+
+
+def test_the_config_manager_exports_where_each_key_came_from(tmp_path):
+    from annzarro.utils.config_manager import ConfigManager
+    manager = ConfigManager()
+    path = tmp_path / "site.yaml"
+    path.write_text("integrations:\n  external_requests: 'off'\n")
+    manager.load_config(config_path=str(path))
+    flask_config = manager.to_flask_config()
+    origins = flask_config["config_origins"]
+    assert origins["integrations.external_requests"] == "--config"
+    assert origins["server.max_sessions"].startswith("defaults:")
+    from annzarro.server.policy import config_lookup
+    assert config_lookup(flask_config, "integrations.external_requests") == (True, "off")
+    assert config_lookup(flask_config, "server.max_sessions") == (False, None)       # shipped, not chosen
+
+
+# -- writes against the ceiling ------------------------------------------------
+
+def test_an_overlay_write_wider_than_the_config_is_a_conflict():
+    e = make_engine(registry(), config={"integrations": {"external_requests": "off"}})
+    stored, errors, capped = e.apply_update("overlay", {}, {"outbound.mode": "on"})
+    assert errors == {"outbound.mode": "config_ceiling"} and status_for(errors) == 409 and stored == {}
+    assert e.apply_update("overlay", {}, {"outbound.mode": "none"}).stored == {"outbound.mode": "none"}
+    assert e.apply_update("overlay", {}, {"outbound.mode": "off"}).errors == {}
+
+
+def test_a_user_write_wider_than_the_overlay_is_kept_and_reported_capped():
+    e = make_engine(registry())
+    e.overlay_store["outbound.mode"] = "off"
+    stored, errors, capped = e.apply_update("user", {}, {"outbound.mode": "on", "panel.a.size": 3})
+    assert not errors and stored["outbound.mode"] == "on" and capped == {"outbound.mode": "off"}
+    e.user_store.update(stored)
+    assert e.resolve("outbound.mode").value == "off"
+    assert e.apply_update("user", {}, {"outbound.mode": "none"}).capped == {}
+
+
+def test_a_default_may_be_widened_by_the_overlay():
+    assert make_engine(registry()).apply_update("overlay", {}, {"outbound.mode": "on"}).errors == {}
+
+
+# -- layers and inherited -------------------------------------------------------
+
+def test_resolution_reports_each_layer_and_what_clearing_one_would_give():
+    e = make_engine(registry(), config={"integrations": {"external_requests": "ask"}})
+    e.overlay_store["outbound.mode"] = "off"
+    e.user_store["outbound.mode"] = "none"
+    r = e.resolve("outbound.mode")
+    assert r.layers == {"user": "none", "admin": "off", "config": "ask", "default": "ask"}
+    assert r.inherited == {"user": "off", "admin": "none"}
+    e.user_store.clear()
+    r = e.resolve("outbound.mode")
+    assert r.inherited == {"admin": "ask"} and r.value == "off"
+    e.overlay_store.clear()
+    r = e.resolve("outbound.mode")
+    assert r.inherited == {} and r.layers == {"config": "ask", "default": "ask"}
+
+
+def test_inherited_for_an_override_key():
+    e = make_engine(registry(), config={"panels": {"a": {"size": 20}}})
+    e.overlay_store["panel.a.size"] = 30
+    e.user_store["panel.a.size"] = 40
+    r = e.resolve("panel.a.size")
+    assert r.inherited == {"user": 30, "admin": 40} and r.layers["default"] == 10
+
+
+def test_locked_keys_show_no_stored_layers():
+    e = make_engine(registry(), locked=["panel.a.size"])
+    e.overlay_store["panel.a.size"] = 30
+    r = e.resolve("panel.a.size")
+    assert r.layers == {"default": 10} and r.inherited == {}
+
+
+# -- constraints -----------------------------------------------------------------
+
+def test_a_constraint_may_not_widen_or_force_an_override_key(caplog):
+    r = registry()
+    r.constrain(lambda values: {"outbound.mode": "on", "panel.a.size": 99})
+    e = make_engine(r)
+    e.overlay_store["outbound.mode"] = "off"
+    resolved = e.resolve_all()
+    assert resolved["outbound.mode"].value == "off" and resolved["panel.a.size"].value == 10
+    assert "ignored" in caplog.text
+
+
+def test_constraints_run_until_nothing_changes():
+    r = registry()
+    # registered in the wrong order: the second one's output is the first one's input
+    r.constrain(lambda values: {"panel.a.enabled": False} if values["outbound.mode"] == "none" else {})
+    r.constrain(lambda values: {"outbound.mode": "none"} if values["panel.a.services"] == [] else {})
+    e = make_engine(r)
+    e.overlay_store["panel.a.services"] = []
+    resolved = e.resolve_all()
+    assert resolved["outbound.mode"].value == "none" and resolved["panel.a.enabled"].value is False

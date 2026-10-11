@@ -98,7 +98,8 @@ def install(app, api_version: str = "v1", registry: Optional[Registry] = None) -
     def _policy_version(response):
         if request.path.startswith("/api/") and POLICY_HEADER not in response.headers:
             from .. import permissions
-            if not permissions.auth_enabled() or permissions.current_user()[0]:
+            from ..core import is_logged_in
+            if not permissions.auth_enabled() or is_logged_in():
                 response.headers[POLICY_HEADER] = eng.version()
         return response
 

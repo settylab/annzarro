@@ -25,6 +25,13 @@ the one below allows and never widen it. The default only applies when no layer 
 the key, so an administrator can widen a default (enabling a service that is off by
 default) but not a YAML setting.
 
+"Config" means what the operator configured: the system, user and project files,
+`--config`, environment variables and command-line options. The values `base.yaml`
+ships are the key's default, not a decision of the operator, so they are no ceiling:
+declare the default equal to the shipped value (a generated test holds the two
+together). The config manager records where each key came from (`config_origins`),
+and the registry ignores keys that came from `defaults:`.
+
 The operator can take a key out of the administrator's hands with `policy.locked` in
 the YAML (see {doc}`../reference/configuration`).
 
@@ -99,6 +106,9 @@ engine(app).set_source("overlay", load=lambda: overlay.policy(), stamp=overlay.s
 engine(app).set_source("user", load=lambda user: access.policy(user), stamp=access.stamp)
 ```
 
+The user source returns `{}` for an administrator, so a user promoted to admin stops
+being overridden at once, whatever the store still holds.
+
 `load` returns the stored `{name: value}` untouched. `stamp` returns a string that
 changes whenever the store does (a stat stamp), and feeds `engine.version()`, which
 every API reply carries as `X-AnnZarro-Policy`. A tab that sees the version change
@@ -106,8 +116,12 @@ reloads `/api/v1/policy/effective`.
 
 ## Writing a layer
 
-`engine.apply_update(layer, stored, changes)` returns the new stored dict and the
-errors. `None` removes an entry, known or not. With any error nothing changes, and
+`engine.apply_update(layer, stored, changes)` returns `Update(stored, errors, capped)`:
+the new stored dict, the errors, and for a user-layer value wider than the overlay or
+config (kept, because the overlay may change) the value that applies instead.
+A restrict key's overlay write wider than the operator's config is refused with
+`config_ceiling` (409). `Resolution.layers` holds each layer's value and
+`Resolution.inherited` what applies if a stored layer is cleared, for "reset to inherited". `None` removes an entry, known or not. With any error nothing changes, and
 `status_for(errors)` is 409 for a conflict (`locked_by_config`, `config_scope`,
-`server_scope`) and 400 for the rest (`unknown_key`, `bad_type`, `out_of_range`,
+`server_scope`, `config_ceiling`) and 400 for the rest (`unknown_key`, `bad_type`, `out_of_range`,
 `bad_choice`).
