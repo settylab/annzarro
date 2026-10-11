@@ -284,7 +284,7 @@ def test_a_demoted_admin_is_refused_on_the_next_request(app):
     client = login(app, ADMIN)
     assert client.get("/api/v1/admin/audit").status_code == 200
     from annzarro.server.auth import AuthManager
-    AuthManager(user_file=app.config["user_file"]).set_admin(ADMIN, False)
+    AuthManager(user_file=app.config["user_file"]).set_admin(ADMIN, False, force=True)  # the only admin
     assert client.get("/api/v1/admin/audit").status_code == 403
 
 

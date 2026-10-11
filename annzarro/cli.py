@@ -209,6 +209,23 @@ def stop_server(args: argparse.Namespace) -> int:
     logger.info("Server stopped successfully")
     return 0
 
+def _record_cli_audit(auth_manager, config, action, target=None, detail=None, outcome="ok"):
+    """Write the admin audit record of a command-line change (``via: cli:<os user>``).
+
+    The records land in ``annzarro_admin/`` beside the users file, where the
+    server's own admin actions go. A failure to write one is logged, not
+    fatal: the change itself is already made."""
+    from .server.admin import audit, audit_max_mb, state_dir
+    try:
+        who = getpass.getuser()
+        server = (config or {}).get("server") or {}
+        directory = state_dir({"user_file": auth_manager.user_file}, create=True)
+        audit.append(directory, actor=who, addr=None, via=f"cli:{who}", action=action, target=target,
+                     detail=detail, outcome=outcome, max_mb=audit_max_mb(server))
+    except Exception as exc:
+        logger.warning(f"Could not write the audit record of {action} {target}: {exc}")
+
+
 def manage_users(args: argparse.Namespace) -> int:
     """
     Manage users for the Annzarro server
@@ -219,7 +236,7 @@ def manage_users(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    from .server.auth import AuthManager
+    from .server.auth import AuthManager, LastAdminError
     
     # The same environment `annzarro start` runs with (production), so a
     # user_file set for production is the file both of them use
@@ -261,7 +278,10 @@ def manage_users(args: argparse.Namespace) -> int:
                 return 1
                 
         # Add user
-        auth_manager.add_user(username, password, is_admin=args.admin)
+        if not auth_manager.add_user(username, password, is_admin=args.admin):
+            logger.error(f"User '{username}' already exists")
+            return 1
+        _record_cli_audit(auth_manager, config, "user.add", username, {"is_admin": bool(args.admin)})
         logger.info(f"User '{username}' added successfully")
         
     elif args.user_command == "remove":
@@ -276,7 +296,14 @@ def manage_users(args: argparse.Namespace) -> int:
             return 1
             
         # Remove user
-        auth_manager.remove_user(username)
+        try:
+            auth_manager.remove_user(username, force=args.force)
+        except LastAdminError:
+            _record_cli_audit(auth_manager, config, "user.remove", username, None, "refused:last_admin")
+            logger.error(f"'{username}' is the last admin; removing them would leave the server without one. "
+                         "Make another user an admin first, or pass --force.")
+            return 1
+        _record_cli_audit(auth_manager, config, "user.remove", username, {"force": True} if args.force else None)
         logger.info(f"User '{username}' removed successfully")
         
     elif args.user_command == "passwd":
@@ -294,14 +321,34 @@ def manage_users(args: argparse.Namespace) -> int:
             logger.error("Empty password refused")
             return 1
         auth_manager.set_password(username, password)
+        _record_cli_audit(auth_manager, config, "user.password", username)
         logger.info(f"Password of '{username}' changed; their existing logins are signed out")
 
     elif args.user_command == "set-admin":
         username = args.username or input("Username: ").strip()
-        if not auth_manager.set_admin(username, not args.no_admin):
+        try:
+            found = auth_manager.set_admin(username, not args.no_admin, force=args.force)
+        except LastAdminError:
+            _record_cli_audit(auth_manager, config, "user.set_admin", username, {"is_admin": False},
+                              "refused:last_admin")
+            logger.error(f"'{username}' is the last admin; revoking it would leave the server without one. "
+                         "Make another user an admin first, or pass --force.")
+            return 1
+        if not found:
             logger.error(f"User '{username}' does not exist")
             return 1
+        _record_cli_audit(auth_manager, config, "user.set_admin", username, {"is_admin": not args.no_admin})
         logger.info(f"User '{username}' is {'no longer ' if args.no_admin else 'now '}an admin")
+
+    elif args.user_command == "unlock":
+        username = args.username or input("Username: ").strip()
+        cleared = auth_manager.unlock(username, args.address)
+        if cleared is None:
+            logger.error(f"User '{username}' does not exist")
+            return 1
+        _record_cli_audit(auth_manager, config, "user.unlock", username,
+                          {"address": args.address, "cleared": cleared})
+        logger.info(f"Cleared {cleared} failed-login record(s) of '{username}'")
 
     elif args.user_command == "list":
         # List users
@@ -319,6 +366,28 @@ def manage_users(args: argparse.Namespace) -> int:
             print("-" * 40)
             
     return 0
+
+def manage_admin(args: argparse.Namespace) -> int:
+    """`annzarro admin audit verify`: check the admin audit log's hash chain."""
+    from .server.admin import audit, state_dir
+    from .server.auth import resolve_user_file
+
+    config = load_config(config_path=args.config, env="production")
+    user_file = ((config.get("auth") or {}).get("user_file")) or "users.json"
+    directory = state_dir({"user_file": user_file})
+    if not os.path.isdir(directory):
+        logger.info(f"No admin audit log yet ({directory} does not exist)")
+        return 0
+    result = audit.verify(directory)
+    span = f"seq {result['first_seq']} to {result['last_seq']}, {result['records']} records"
+    if result["torn"]:
+        span += f", torn lines at seq {result['torn']}"
+    if result["ok"]:
+        print(f"Audit log OK ({span}) in {directory}")
+        return 0
+    print(f"Audit log BROKEN at seq {result['first_bad_seq']} ({result['problem']}); {span} in {directory}")
+    return 1
+
 
 def install_dependencies(args: argparse.Namespace) -> int:
     """
@@ -857,6 +926,9 @@ def main(argv: List[str] = None) -> int:
     # User remove command
     user_remove_parser = user_subparsers.add_parser('remove', help="Remove a user")
     user_remove_parser.add_argument('--username', help="Username")
+    user_remove_parser.add_argument(
+        '--force', action='store_true',
+        help="Allow removing the last admin (the server is then left without one)")
     
     # User list command
     user_list_parser = user_subparsers.add_parser('list', help="List users")
@@ -874,8 +946,27 @@ def main(argv: List[str] = None) -> int:
                           "the server account can read unless server.arbitrary_paths is local-only or none")
     user_admin_parser.add_argument('--username', help="Username")
     user_admin_parser.add_argument('--no-admin', action='store_true', help="Revoke admin instead")
+    user_admin_parser.add_argument(
+        '--force', action='store_true',
+        help="With --no-admin: allow revoking the last admin (the server is then left without one)")
+
+    # Clear failed-login lockouts
+    user_unlock_parser = user_subparsers.add_parser(
+        'unlock', help="Clear a user's failed-login lockouts (a running server picks it up without a restart)")
+    user_unlock_parser.add_argument('--username', help="Username")
+    user_unlock_parser.add_argument('--address', help="Only this client address (default: all)")
     
     user_parser.set_defaults(func=manage_users)
+
+    # Admin interface tools
+    admin_parser = subparsers.add_parser('admin', help="Admin interface tools")
+    admin_parser.add_argument('--config', default=argparse.SUPPRESS,
+                              help="Path to configuration file (as for start)")
+    admin_subparsers = admin_parser.add_subparsers(dest='admin_command', required=True)
+    audit_parser = admin_subparsers.add_parser('audit', help="The admin audit log")
+    audit_subparsers = audit_parser.add_subparsers(dest='audit_command', required=True)
+    audit_subparsers.add_parser('verify', help="Check the log's hash chain (exit 1 when it is broken)")
+    admin_parser.set_defaults(func=manage_admin)
     
     # Install command
     install_parser = subparsers.add_parser('install', help="Install dependencies")
