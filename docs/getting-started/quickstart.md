@@ -3,18 +3,26 @@
 This page starts a local server, opens the demonstration store and draws a first plot. It
 takes about two minutes once AnnZarro is installed ({doc}`installation`) and you have a store.
 The demonstration store `bm_aging_annzarro.zarr` (murine bone marrow, Young vs Old, 8,090 cells x
-16,285 genes, 5.7 GB) and how to get it are described in {doc}`../data/demo-data`. Any AnnData
-written with `adata.write_zarr(...)` works the same way.
+16,285 genes, 5.7 GB zipped, 5.3 GiB unzipped) is on Zenodo,
+[doi:10.5281/zenodo.23277103](https://doi.org/10.5281/zenodo.23277103); {doc}`../data/demo-data`
+describes it. Any AnnData written with `adata.write_zarr(...)` works the same way.
 
 ## 1. Put the store in a data directory
 
-AnnZarro lists the datasets found in one directory, its *data directory*. Copy or link the store
-there:
+AnnZarro lists the datasets found in one directory, its *data directory*. Download the
+demonstration store into one and unzip it there:
 
 ```bash
-mkdir -p ~/annzarro-data
-ln -s /path/to/bm_aging_annzarro.zarr ~/annzarro-data/      # or cp -r
+mkdir -p ~/annzarro-data && cd ~/annzarro-data
+curl -LO https://zenodo.org/records/23277103/files/bm_aging_annzarro.zarr.zip
+curl -LO https://zenodo.org/records/23277103/files/SHA256SUMS
+grep bm_aging_annzarro.zarr.zip SHA256SUMS | shasum -a 256 -c -     # macOS; on Linux: sha256sum -c -
+unzip -q bm_aging_annzarro.zarr.zip                                # makes bm_aging_annzarro.zarr/
 ```
+
+The check should print `bm_aging_annzarro.zarr.zip: OK`. The zip is no longer needed after
+unzipping. To use a store you already have, link it into the data directory instead:
+`ln -s /path/to/store.zarr ~/annzarro-data/`.
 
 The picker lists `.zarr` directories and `.h5ad` files at the top level of the data directory
 and in its `datasets` subdirectory, if there is one. Panel sets you save are written to

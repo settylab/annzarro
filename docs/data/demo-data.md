@@ -36,7 +36,8 @@ data directory ({doc}`../getting-started/quickstart`):
 cd ~/annzarro-data
 curl -LO https://zenodo.org/records/23277103/files/bm_aging_annzarro.zarr.zip
 curl -LO https://zenodo.org/records/23277103/files/SHA256SUMS
-grep bm_aging_annzarro.zarr.zip SHA256SUMS | shasum -a 256 -c -     # sha256sum -c - on Linux
+grep bm_aging_annzarro.zarr.zip SHA256SUMS | shasum -a 256 -c -     # macOS
+grep bm_aging_annzarro.zarr.zip SHA256SUMS | sha256sum -c -         # Linux
 unzip -q bm_aging_annzarro.zarr.zip                                # makes bm_aging_annzarro.zarr/
 ```
 

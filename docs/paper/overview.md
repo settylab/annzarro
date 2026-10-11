@@ -42,7 +42,7 @@ arrow that ends in a scatter, and moves the focus through it.
 
 ### Views
 
-The links are ready for a local server with the store in its data directory; to use another
+The links are ready for a local server with the store ({doc}`../data/demo-data`) in its data directory; to use another
 server address or a store elsewhere, see {ref}`tut-start-links`.
 
 ::::{dropdown} The four panels of the focus model

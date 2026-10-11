@@ -79,15 +79,13 @@ The share links on these pages open a store on a local AnnZarro server: they are
 |---|---|---|
 | {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance`, {doc}`cell-by-cell` (a to c), {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_annzarro.zarr` (5.3 GiB) | Download it from Zenodo (doi:10.5281/zenodo.23277103), or build it from the public raw data with two scripts in this repository: {doc}`../data/demo-data` |
 | {doc}`cell-by-cell` (d) | `celegans_connectome_cengen.zarr` (7.7 MB) | Build it with a script in this repository from public downloads: {ref}`cell-by-cell-connectome` |
-| {doc}`scale` | the Tahoe-100M store (95,624,334 cells) | Download the public Tahoe-100M release; the build script will be published with the paper: {ref}`paper-scale-store` |
+| {doc}`scale` | the Tahoe-100M store (95,624,334 cells) | Download the public Tahoe-100M release (CC0) and its UMAP from the same Zenodo record, and build the store with `build_tahoe.py` from `annzarro-reproducibility`: {ref}`paper-scale-store` |
 | {doc}`deployment` | none | The figure is a diagram |
 
-```{important}
-**Placeholder: Zenodo deposit.** The processed AnnZarro-ready stores and the panel sets used for
-the figures will be deposited on Zenodo with the paper's release. The record does not exist yet;
-its DOI and download instructions will be added here when it does. Until then, build the stores
-as described in the table.
-```
+The Zenodo record [doi:10.5281/zenodo.23277103](https://doi.org/10.5281/zenodo.23277103) holds
+the bone marrow store and the UMAP of every Tahoe-100M cell. The benchmark code of the paper,
+including the Tahoe-100M build script, is in the public repository
+[settylab/annzarro-reproducibility](https://github.com/settylab/annzarro-reproducibility).
 
 (paper-companion)=
 ## The paper's companion repository
@@ -96,7 +94,8 @@ Some pages name files such as `figures/…`, `data_prep/…` or `benchmark/…`.
 paper's companion repository, `settylab/annzarro-paper`, which stays private until the paper is
 published. The names say where a figure, a number or a view comes from; you do not need them to
 open the views or to build the stores, whose scripts are in this repository. The exception is
-the Tahoe-100M store, whose build script will be published with the paper.
+the Tahoe-100M store, whose build script is in the public repository
+[settylab/annzarro-reproducibility](https://github.com/settylab/annzarro-reproducibility) ({ref}`paper-scale-store`).
 
 ```{toctree}
 :hidden:

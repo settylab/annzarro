@@ -59,7 +59,7 @@ Hover labels and table filters check most statements; offline ones are marked. S
 
 ## Views
 
-Share links. The links are ready for a local server with the store in its data directory; to use another
+Share links. The links are ready for a local server with the store ({doc}`../data/demo-data`) in its data directory; to use another
 server address or a store elsewhere, see {ref}`tut-start-links`.
 
 ::::{dropdown} Panels a to c

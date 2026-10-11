@@ -125,10 +125,11 @@ store `tahoe_panel_95.6M_plot.zarr` holds:
 - `obsm/X_umap`: the UMAP of the figure;
 - `obs`: per-cell metadata of the release, including `cell_line_id` (50 cell lines) and `plate`.
 
-```{important}
-**Placeholder: no public download yet.** The store, or the UMAP coordinates needed to rebuild it,
-will be linked here when they are deposited. Until then, build the store yourself as below.
-```
+The store itself is not deposited (it is about 294 GB with its panel layer). Its UMAP is: the
+coordinates of all 95,624,334 cells are in the Zenodo record
+[doi:10.5281/zenodo.23277103](https://doi.org/10.5281/zenodo.23277103), and the scripts that build
+the store are public. Three steps rebuild it: download Tahoe-100M, download the UMAP, build the
+store and add the UMAP to it.
 
 **Download the data.** Tahoe-100M is public on Hugging Face as the dataset `tahoebio/Tahoe-100M`
 (CC0 1.0) {cite:p}`zhang2025tahoe`: 3,388 parquet shards of about 28,000 cells each, one record per
@@ -140,24 +141,59 @@ pip install -U huggingface_hub
 huggingface-cli download tahoebio/Tahoe-100M --repo-type dataset --local-dir tahoe-100m
 ```
 
-**Build the store.** The script that turns the shards into this store will be published with the
-paper; it is not public yet, and this page will link it then. What it does, so that you can
-reproduce the store with your own code in the meantime:
+**Download the UMAP.** Tahoe-100M ships without one. The Zenodo record holds the coordinates the
+paper draws (CC BY 4.0; method and validation are in the record's README):
 
-1. Per-cell metadata (`obs`) from the shards, in shard order.
-2. A reference set of 999,073 cells, the same number from every plate × cell line stratum (at
-   most 1,430, seed 0).
-3. PCA (50 components) of normalised, log-transformed counts, fitted on the reference cells; every
-   cell projected exactly. The counts are written as a chunked zarr store (CSC `X`) over the 5,000
-   genes of highest variance.
-4. A UMAP (umap-learn, 15 neighbours, `min_dist` 0.3, seed 0) fitted on the reference cells'
-   PCs; every other cell placed at the distance-weighted mean of its 15 nearest reference cells
-   in PC space (faiss; recall 0.997 against exact search), written to `obsm/X_umap`.
-5. For the figure, a slim copy (16 GB) with values for 200 panel genes and no layers.
+```bash
+curl -LO https://zenodo.org/records/23277103/files/tahoe100m_umap.parquet     # 1.2 GB
+curl -LO https://zenodo.org/records/23277103/files/SHA256SUMS
+grep tahoe100m_umap.parquet SHA256SUMS | shasum -a 256 -c -                   # sha256sum -c - on Linux
+```
 
-The full build ran on an HPC cluster. A smaller store of the first N cells shows the same views
-with fewer parts: the subset links work on any store above 200,000 cells, and every-cell links
-switch to large-plot mode above 1 million.
+`tahoe100m_umap.parquet` has one row per cell: `cell_index` (the cell's row in the release, with
+the 3,388 shards read in file order), `BARCODE_SUB_LIB_ID` (the release's cell identifier),
+`umap_1` and `umap_2` (float32) and `is_reference` (the 999,073 cells the UMAP was fitted on, which
+are also listed in `tahoe100m_umap_reference.parquet`). The float32 `[umap_1, umap_2]` in
+`cell_index` order is the `obsm/X_umap` of the store drawn in the paper.
+
+**Build the store.** `benchmark/scale/build_tahoe.py` in the public repository
+[settylab/annzarro-reproducibility](https://github.com/settylab/annzarro-reproducibility/blob/9c416c624c2ba9effb7ea77488a029972fbf31f4/benchmark/scale/build_tahoe.py) builds the nested
+stores from the shards (its docstring lists the steps: `obs`, `refit`, `master`, `panel`,
+`panel-master`, `store`, `check`; the gene panel the paper used is
+[`genes_panel.txt`](https://github.com/settylab/annzarro-reproducibility/blob/9c416c624c2ba9effb7ea77488a029972fbf31f4/benchmark/scale/genes_panel.txt)). It writes the counts as CSC `X`,
+the panel CSR layer, `obs` and a 50-component PCA, and it does not read the UMAP parquet. The
+paper's 95.6M store is about 294 GB with its panel layer, and the full build ran on an HPC
+cluster; the repository's `benchmark/scale/NOTES.md` has the times and memory. A store of the
+first N cells (`store --n N`) is a prefix of the full one and shows the same views with fewer
+parts.
+
+**Add the UMAP.** Write the coordinates of the store's cells to `obsm/X_umap`, in the store's
+cell order. The stores hold the first N cells in shard order, which is `cell_index` order, so
+the first N rows of the sorted parquet are the store's UMAP. In Python, after installing
+`pandas`, `pyarrow` and `zarr`:
+
+```python
+import pandas as pd, zarr
+
+store = "tahoe_1M.zarr"                      # a store from build_tahoe.py
+umap = pd.read_parquet("tahoe100m_umap.parquet", columns=["cell_index", "umap_1", "umap_2"])
+umap = umap.sort_values("cell_index")
+root = zarr.open_group(store, mode="r+", zarr_format=2)
+n = root["obsm/X_pca_2d"].shape[0]           # the store holds the first n cells
+xy = umap[["umap_1", "umap_2"]].to_numpy()[:n]
+arr = root["obsm"].create_array("X_umap", data=xy, chunks=(100_000, 2))
+arr.attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
+zarr.consolidate_metadata(store, zarr_format=2)
+```
+
+This loads the whole parquet (95.6M rows, a few GB of memory). To check the order, compare
+`BARCODE_SUB_LIB_ID` of the first n sorted rows with the store's `obs` index, which is the same
+identifier. The repository's own `umap_tahoe.py write`
+does the same from a `.npy` of the whole UMAP, and `umap_tahoe.py sample | fit | place`
+recompute the UMAP instead of downloading it.
+
+The subset links work on any store above 200,000 cells, and every-cell links switch to
+large-plot mode above 1 million.
 
 If you build the store under another name, change `dataset_path=` in the links
 ({ref}`tut-start-links`).
