@@ -1004,9 +1004,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         return;
       }
     }
-    // a plot that was large and is regular now (a subset) keeps no large-plot hover, cursor or index
+    // a plot that was large and is regular now (a subset) keeps no large-plot hover, cursor or index,
+    // and no scene: a react into the drawn large plot keeps its WebGL groups for good (95.6M points
+    // cut to 100k: 3.8 GB of ArrayBuffers held by a plot of 100k), so the regular plot is drawn from nothing
+    const wasLarge = plotContainer.__isLarge;
     plotContainer.__isLarge = false;
     cancelIndexBuild(plotContainer);
+    if (wasLarge && plotContainer._fullLayout) releasePlot(plotContainer);
     setStatusTag(plotContainer, 'refused', null);
     setStatusTag(plotContainer, 'large', null);
     setStatusTag(plotContainer, 'focus', null);

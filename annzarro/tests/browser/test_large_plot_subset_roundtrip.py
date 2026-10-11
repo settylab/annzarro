@@ -14,9 +14,10 @@ lowered to 100: all 200 cells draw large, a subset of 50 draws a regular plot.
    cells is what it was before. The browser's budget is simulated by the
    probe's allocator hook: it counts the bytes of its buffers that are still
    alive after a garbage collection and refuses beyond one large draw's peak.
-   (At 95.6M points the same leak, the point index and its positions, was
-   2 GB of ArrayBuffers and the guard refused "95,624,334 cells: this browser
-   cannot hold 95,624,334 points. Pick a smaller size.".)
+   (At 95.6M points a plot cut to 100k held 3.8 GB of ArrayBuffers, 3.1 GB of
+   them the large plot's WebGL scene, which a react into the drawn graph
+   keeps; the guard then refused "95,624,334 cells: this browser cannot hold
+   95,624,334 points. Pick a smaller size.")
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI).
@@ -232,12 +233,20 @@ def test_all_cells_again_after_a_subset(page, server):
     page.evaluate("(peak) => { window.__budget = peak; }", peak)
 
     page.evaluate("""() => { const i = document.querySelector('%s').__largeState.index;
-        window.__index = new WeakRef(i); window.__order = new WeakRef(i.order.buffer); }""" % GD)
+        window.__index = new WeakRef(i); window.__order = new WeakRef(i.order.buffer);
+        // and the large plot's WebGL scene: Plotly keeps each trace's positions in the scene's marker options
+        const gd = document.querySelector('%s');
+        const scene = gd._fullLayout._plots.xy._scene;
+        window.__scene = (scene.markerOptions || []).filter(o => o && o.positions).map(o => new WeakRef(o.positions.buffer));
+        window.__sceneCount = window.__scene.length; }""" % (GD, GD))
 
     _choose(page, 50)
     page.wait_for_function(REGULAR_READY, timeout=30000)
     # what the large plot held is gone: the point index and nothing of its buffers is alive
     assert page.evaluate("() => { gc(); gc(); return [!!window.__index.deref(), !!window.__order.deref()]; }") == [False, False]
+    assert page.evaluate("() => window.__sceneCount") > 0, "no scene buffers to follow"
+    assert page.evaluate("() => { gc(); return window.__scene.filter(r => r.deref()).length; }") == 0, \
+        "the regular plot still holds the large plot's WebGL buffers"
     alive = page.evaluate("() => window.__aliveBytes()")
     assert alive == 0, f"{alive} bytes of the released large plot's buffers are still held"
 
