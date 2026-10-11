@@ -3949,3 +3949,44 @@ button.dtsb-button.dtsb-clear:hover {
     padding: 0.25rem 0.5rem; border: 1px solid #e9ecef; border-radius: 4px; margin-bottom: 0.25rem;
 }
 .change-dataset-list .change-dataset-item .change-dataset-meta { font-size: 0.8rem; color: #6c757d; overflow-wrap: anywhere; }
+
+/* The picker takes its colours from these, so a dark theme only has to set them */
+#change-dataset-modal {
+    --dp-border: #e9ecef;
+    --dp-muted: #6c757d;
+    --dp-active-bg: #e7f1ff;
+    --dp-active-border: #86b7fe;
+    --dp-mark-bg: #fff3b0;
+}
+#change-dataset-modal .modal-body { max-height: 75vh; overflow-y: auto; }
+.change-dataset-toolbar { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.5rem; position: sticky; top: -1rem; background: var(--bs-modal-bg, #fff); padding: 0.25rem 0; z-index: 2; }
+.change-dataset-toolbar #change-dataset-search { flex: 1 1 auto; min-width: 0; }
+.change-dataset-toolbar #change-dataset-sort { flex: 0 0 auto; width: auto; }
+.change-dataset-list .change-dataset-item { border-color: var(--dp-border); align-items: flex-start; }
+.change-dataset-list .change-dataset-item.active, .change-dataset-folder.active { background: var(--dp-active-bg); border-color: var(--dp-active-border); }
+.change-dataset-list .change-dataset-label { min-width: 0; flex: 1 1 auto; }
+.change-dataset-list .change-dataset-item > button { flex: 0 0 auto; }
+.change-dataset-list .change-dataset-name { font-weight: 500; }
+.change-dataset-list .change-dataset-rel { font-size: 0.8rem; color: var(--dp-muted); }
+.change-dataset-list .change-dataset-reason { font-size: 0.8rem; color: var(--bs-danger, #dc3545); overflow-wrap: anywhere; }
+.change-dataset-list .change-dataset-unreadable { opacity: 0.85; }
+.change-dataset-list mark { background: var(--dp-mark-bg); color: inherit; padding: 0; }
+.change-dataset-list .change-dataset-nested { margin-left: calc(var(--depth, 0) * 1rem); }
+.change-dataset-list .change-dataset-folder {
+    display: flex; align-items: baseline; gap: 0.4rem; cursor: pointer; border-radius: 4px;
+    padding: 0.2rem 0.5rem; margin-left: calc(var(--depth, 0) * 1rem); margin-bottom: 0.2rem;
+}
+.change-dataset-list .change-dataset-folder:hover { background: var(--dp-active-bg); }
+.change-dataset-list .change-dataset-folder-name { overflow-wrap: anywhere; font-weight: 500; }
+.change-dataset-list .change-dataset-caret { width: 1em; flex: 0 0 auto; color: var(--dp-muted); }
+.change-dataset-list .change-dataset-status { font-size: 0.85rem; color: var(--dp-muted); padding: 0.25rem 0.5rem; margin-left: calc(var(--depth, 0) * 1rem); }
+.change-dataset-list .change-dataset-more { padding-left: 0.5rem; }
+
+/* The Browse button in the open dataset dropdown, beside its search field */
+.select2-container--open .dataset-select-dropdown .select2-search--dropdown {
+    display: flex !important; gap: 6px; align-items: flex-start;
+}
+.dataset-select-dropdown .select2-search--dropdown .select2-search__field {
+    flex: 1 1 auto; min-width: 0; width: auto !important; margin-bottom: 0;
+}
+.dataset-select-dropdown .dataset-browse { flex: 0 0 auto; white-space: nowrap; }

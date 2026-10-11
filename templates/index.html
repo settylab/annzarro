@@ -197,7 +197,19 @@
                 </div>
                 <div class="modal-body">
                     <p id="change-dataset-saved" class="small text-muted"></p>
+                    <div class="change-dataset-toolbar">
+                        <input id="change-dataset-search" type="search" class="form-control form-control-sm" placeholder="Search name or path" aria-label="Search datasets by name or path" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="true">
+                        <button id="change-dataset-regex" type="button" class="btn btn-sm btn-outline-secondary name-picker-regex" title="Regular expression search" aria-label="Regular expression search" aria-pressed="false">.*</button>
+                        <select id="change-dataset-sort" class="form-select form-select-sm" aria-label="Sort datasets by">
+                            <option value="best">Best match</option>
+                            <option value="name">Name</option>
+                            <option value="cells">Cells (most first)</option>
+                            <option value="modified">Modified (newest first)</option>
+                        </select>
+                    </div>
+                    <div id="change-dataset-search-error" class="small text-danger" hidden></div>
                     <div id="change-dataset-list" class="change-dataset-list"></div>
+                    <div id="change-dataset-tree" class="change-dataset-list"></div>
                     <label for="change-dataset-path" class="form-label mt-3 small">Or open a path on this server</label>
                     <div class="input-group input-group-sm">
                         <input id="change-dataset-path" type="text" class="form-control" placeholder="name in the data directory, or a full path">
