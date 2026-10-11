@@ -42,7 +42,9 @@ export function cacheText(cache) {
 export function workerRows(workers) {
     return workers.map((w) => [
         String(w.pid),
-        w.stale ? badge('stale', 'warning') : formatAge(w.age_s),
+        w.stale ? badge('stale', 'warning', 'No report for a long time, and its process cannot be checked from here')
+            : w.idle ? badge(`idle since ${formatTimestamp(w.idle_since).slice(11)}`, 'secondary', 'Alive, with no requests lately')
+                : formatAge(w.age_s),
         formatCount(w.requests),
         w.read_guard ? meter(w.read_guard.in_flight_mb, w.read_guard.budget_mb) : 'idle',
         cacheText(w.cache),

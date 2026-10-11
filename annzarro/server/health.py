@@ -130,10 +130,18 @@ class Monitor:
         workers, seen = [], {}
         for snap in sorted(snaps, key=lambda s: (s["host"], s["pid"])):
             age = max(0.0, now - snap["written"])
+            old = age > STALE_S
+            # An old snapshot of a process we can see alive is a quiet worker: it holds no reads.
+            # One we cannot check (another host) is stale: its numbers may be anything.
+            idle = old and snap["host"] == self.host
+            guard = snap["read_guard"]
+            if idle and isinstance(guard, dict):
+                guard = {**guard, "in_flight_mb": 0, "by_requester": []}
             workers.append({"pid": snap["pid"], "host": snap["host"], "started": _iso(snap["started"]),
-                            "age_s": round(age, 1), "stale": age > STALE_S, "requests": snap["requests"],
-                            "refusals": snap["refusals"], "read_guard": snap["read_guard"],
-                            "cache": snap["cache"]})
+                            "age_s": round(age, 1), "stale": old and not idle, "idle": idle,
+                            "idle_since": _iso(snap["written"]) if idle else None,
+                            "requests": snap["requests"], "refusals": snap["refusals"],
+                            "read_guard": guard, "cache": snap["cache"]})
             for username, stamp in snap["last_seen"].items():
                 seen[username] = max(seen.get(username, 0), stamp)
         fresh = [w for w in workers if not w["stale"]]

@@ -132,16 +132,31 @@ def test_a_dead_process_on_this_host_is_dropped_and_its_file_removed(app):
     assert gone.pid not in pids and not os.path.exists(dead.path)
 
 
-def test_an_old_snapshot_is_stale_and_left_out_of_the_totals(app):
-    other = _other_worker(app, pid=os.getpid() + 1)
+def _old_snapshot(app, pid, host):
+    other = _other_worker(app, pid=pid, host=host)
     other.count(_Reply(503, {"reason": "read_busy"}).response)
     snap = other.snapshot()
     snap["written"] -= health.STALE_S + 60
+    snap["read_guard"]["in_flight_mb"] = 99
     os.makedirs(other.directory, exist_ok=True)
     health.atomic_store.write_json(other.path, snap)
+    return other
+
+
+def test_an_old_snapshot_of_a_live_process_is_idle_and_still_counted(app):
+    _old_snapshot(app, os.getppid(), health.monitor(app).host)       # alive: the parent process
+    body = _get(app).get_json()
+    idle = [w for w in body["workers"] if w["pid"] == os.getppid()][0]
+    assert idle["idle"] is True and idle["stale"] is False and idle["idle_since"]
+    assert idle["read_guard"]["in_flight_mb"] == 0                   # an idle worker holds no reads
+    assert body["totals"]["refusals"] == 1 and body["totals"]["read_in_flight_mb"] == 0
+
+
+def test_an_old_snapshot_from_another_host_is_stale_and_left_out_of_the_totals(app):
+    _old_snapshot(app, os.getpid() + 1, "other-host")
     body = _get(app).get_json()
     stale = [w for w in body["workers"] if w["stale"]]
-    assert [w["pid"] for w in stale] == [os.getpid() + 1]
+    assert [w["pid"] for w in stale] == [os.getpid() + 1] and stale[0]["idle"] is False
     assert body["totals"]["refusals"] == 0
     assert stale[0]["refusals"] == {"read_busy": 1}                  # still shown, never silently summed
 
