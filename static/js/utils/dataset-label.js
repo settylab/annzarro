@@ -40,8 +40,8 @@ export const TAIL_CHARS = 16;
 const ELLIPSIS = '\u2026';
 
 /** `name` cut in the middle to fit `room`, keeping its start and its last TAIL_CHARS; null when not even 5 characters of the start fit. */
-function cutName(name, room, measure) {
-    const tail = name.slice(-Math.min(TAIL_CHARS, name.length));
+function cutName(name, room, measure, tailChars = TAIL_CHARS) {
+    const tail = name.slice(-Math.min(tailChars, name.length));
     const most = name.length - tail.length - 1;
     let low = 0;
     let high = most;
@@ -59,7 +59,8 @@ function cutName(name, room, measure) {
  *   (b) the middle of the name, keeping its start and its last 16 characters
  *       (version, extension), behind the collapsed folders;
  *   (c) the folders altogether:  \u2026/name_start\u2026tail.zarr
- * and, if even that is too wide, the tail itself gives way.
+ * and, if even that is too wide, a shorter tail (12, then 8 characters) behind the start, and
+ * last the end alone.
  * @param {string} text - the label (a path relative to the data directory, or any name)
  * @param {number} maxWidth - the room, in the unit of `measure`
  * @param {(s: string) => number} measure - the width of a string
@@ -74,6 +75,12 @@ export function truncateDatasetLabel(text, maxWidth, measure) {
     for (const prefix of [collapsed, folders.length ? `${ELLIPSIS}/` : '']) {                         // (b), then (c)
         const cut = cutName(name, maxWidth - measure(prefix), measure);
         if (cut) return prefix + cut;
+    }
+    // a box too narrow for the start and 16 characters of the end: a shorter end, the start still shown
+    const bare = folders.length ? `${ELLIPSIS}/` : '';
+    for (const chars of [12, 8]) {
+        const cut = cutName(name, maxWidth - measure(bare), measure, chars);
+        if (cut) return bare + cut;
     }
     // not even the start of the name fits with its tail: keep the end that does
     for (let keep = Math.min(name.length, TAIL_CHARS + 8); keep > 1; keep--) {

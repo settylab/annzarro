@@ -46,6 +46,13 @@ test('whatever the room, the result fits and ends with as much of the end as can
     }
 });
 
+test('a box too narrow for the start and a 16-character end keeps the start with a shorter end', () => {
+    const out = fit(PATH, 21);
+    assert.ok(out.startsWith('\u2026/bm_ag') && out.endsWith('sharing.zarr') && out.length <= 21, out);
+    const tiny = fit(PATH, 12);
+    assert.ok(tiny.length <= 12 && tiny.endsWith('.zarr'), tiny);
+});
+
 test('a name without folders is cut in its middle; a single folder is kept while it can be', () => {
     const name = 'a_rather_long_dataset_name_with_a_version_suffix_v12.zarr';
     const out = fit(name, 30);
