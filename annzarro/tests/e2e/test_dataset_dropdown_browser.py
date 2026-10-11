@@ -41,6 +41,8 @@ NAMES = ["short.zarr", "a_rather_long_dataset_name_" + "x" * 60 + "_final_v12.za
 
 
 SUBSTORE = "projects/liver/2026-10_batch3/HSPC_Young_1_sharded_csc_float32.zarr"
+SUBSTORE_LONG = ("projects/liver/2026-10_batch3/bm_aging_liver_hepatocyte_atlas_batch3_reprocessed_with_harmony_"
+                 "integration_and_doublet_removal_final_v7_approved_for_sharing.zarr")
 
 
 def _free_port():
@@ -63,6 +65,7 @@ def server(tmp_path_factory):
     # a store in a subfolder (not in the top-level listing) and one outside the data directory
     (data / SUBSTORE).parent.mkdir(parents=True)
     shutil.copytree(FIXTURE, data / SUBSTORE)
+    shutil.copytree(FIXTURE, data / SUBSTORE_LONG)
     shutil.copytree(FIXTURE, tmp / "outside_store.zarr")
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(tmp / "home"), ANNZARRO_HEADLESS="1")
@@ -209,13 +212,11 @@ def test_the_box_is_one_line_with_the_middle_cut_and_the_list_shows_names_whole(
                 page.select_option("#dataset-selector", label=name)
                 page.wait_for_timeout(800)
                 rendered = box_sel + " .select2-selection__rendered"
-                assert page.inner_text(rendered).replace("\n", "").strip() != "" and \
-                    page.eval_on_selector(rendered, "e => e.textContent.trim()") == name, "the whole name is in the box's text"
+                shown = page.eval_on_selector(rendered, "e => ({text: e.textContent.trim(), sw: e.scrollWidth, cw: e.clientWidth})")
+                assert shown["sw"] <= shown["cw"], f"the box's text is cut again by the CSS: {shown}"
                 assert page.get_attribute(rendered, "title") == name, "the full relative path is the tooltip"
-                head, tail = (page.eval_on_selector(rendered + " .dataset-name-head", "e => ({text: e.textContent, cut: e.scrollWidth > e.clientWidth})"),
-                              page.eval_on_selector(rendered + " .dataset-name-tail", "e => e.textContent"))
-                assert tail == name[-16:] and name.startswith(head["text"]), "start and end are kept"
-                assert head["cut"], "a long name is cut in the middle at this width"
+                assert shown["text"].endswith(name[-16:]) and shown["text"][:5] == name[:5], f"start and end are kept: {shown}"
+                assert "\u2026" in shown["text"], "a long name is cut in the middle at this width"
                 box_now = page.locator(box_sel).bounding_box()
                 assert box_now["height"] <= ONE_LINE, f"{name[:30]}... is not one line: {box_now}"
                 sel = page.locator(box_sel + " .select2-selection--single").bounding_box()
@@ -425,11 +426,11 @@ def _header_state(page):
     return page.evaluate("""() => { const h = document.getElementById('app-header');
         const box = document.querySelector('#dataset-selector + .select2-container');
         const label = document.querySelector('#btn-save-session .btn-label');
-        const head = document.querySelector('#dataset-selector + .select2-container .dataset-name-head');
+        const mid = document.querySelector('#dataset-selector + .select2-container .dataset-name-mid');
         return {height: h.getBoundingClientRect().height, box: box.getBoundingClientRect().height,
                 boxWidth: box.getBoundingClientRect().width, cls: h.className,
                 labels: getComputedStyle(label).display !== 'none',
-                headCut: !!head && head.scrollWidth > head.clientWidth,
+                headCut: !!mid && mid.textContent !== mid.dataset.full,
                 sideways: document.documentElement.scrollWidth > window.innerWidth}; }""")
 
 
@@ -495,3 +496,39 @@ def test_a_long_focused_cell_name_does_not_force_stacking_while_the_labels_can_c
                 page.screenshot(path=os.path.join(SHOTS_DIR, "matrix-cell-1440.png"), clip={"x": 0, "y": 0, "width": 1440, "height": 200})
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize("width", [1280, 1440, 1920])
+def test_a_long_relative_path_is_cut_to_fit_and_keeps_its_end_and_the_strip_stays_one_line(server, width):
+    """The box's label is cut by script to the box's width (folders first, then the middle of the
+    name), so no CSS ellipsis cuts its end again; the strip's dataset title is one line, so it is
+    exactly as tall for a long name as for a short one."""
+    base, data = server
+    pw, browser, page = _open_by_link(base, os.path.join(data, SUBSTORE_LONG), width)
+    try:
+        rendered = "#dataset-selector + .select2-container .select2-selection__rendered"
+        page.wait_for_function(f"document.querySelector('{rendered}').getAttribute('title') === {SUBSTORE_LONG!r}", timeout=30_000)
+        page.wait_for_timeout(800)
+        shown = page.eval_on_selector(rendered, "e => ({text: e.textContent.trim(), sw: e.scrollWidth, cw: e.clientWidth})")
+        assert shown["sw"] <= shown["cw"], f"cut again by the CSS: {shown}"
+        assert shown["text"].endswith("for_sharing.zarr"), shown
+        assert "\u2026" in shown["text"]
+        strip = page.eval_on_selector(".dataset-stats", "e => e.getBoundingClientRect().height")
+        title = page.eval_on_selector("#dataset-path", "e => e.parentElement.title")
+        assert title.startswith("Dataset: ") and len(title) > 100, "the whole title is the tooltip"
+        long_label = page.eval_on_selector("#dataset-path", "e => ({sw: e.parentElement.scrollWidth, cw: e.parentElement.clientWidth})")
+        if width < 1920:
+            assert long_label["sw"] > long_label["cw"], "the strip's title is cut at its end"
+        if SHOTS_DIR:
+            os.makedirs(SHOTS_DIR, exist_ok=True)
+            page.screenshot(path=os.path.join(SHOTS_DIR, f"long-path-{width}.png"), clip={"x": 0, "y": 0, "width": width, "height": 220})
+    finally:
+        browser.close()
+        pw.stop()
+    pw, browser, page = _open_by_link(base, os.path.join(data, "short.zarr"), width)
+    try:
+        page.wait_for_timeout(1500)
+        assert page.eval_on_selector(".dataset-stats", "e => e.getBoundingClientRect().height") == strip, "the strip's height does not depend on the name"
+    finally:
+        browser.close()
+        pw.stop()

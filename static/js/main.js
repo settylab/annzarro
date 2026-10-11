@@ -1899,22 +1899,13 @@ const App = (function() {
       return $(span);
     }
 
-    // The closed box: one line, the name cut in the middle (CSS) so its start and its end stay
+    // The closed box: one line. Its text is the whole label; utils/header-fit.js cuts it to the
+    // box's width (keeping the start and the end) once the header has settled.
     function _datasetSelectionNode(item) {
-      const text = item.text || '';
-      const tailLength = text.length > 28 ? 16 : 0;
       const span = document.createElement('span');
       span.className = 'dataset-name-mid';
-      const head = document.createElement('span');
-      head.className = 'dataset-name-head';
-      head.textContent = text.slice(0, text.length - tailLength);
-      span.appendChild(head);
-      if (tailLength) {
-        const tail = document.createElement('span');
-        tail.className = 'dataset-name-tail';
-        tail.textContent = text.slice(-tailLength);
-        span.appendChild(tail);
-      }
+      span.dataset.full = item.text || '';
+      span.textContent = item.text || '';
       return $(span);
     }
 
