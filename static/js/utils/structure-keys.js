@@ -44,3 +44,24 @@ export function keyExistsInStructure(structure, key) {
     ];
     return lists.some(list => Array.isArray(list) && list.includes(key));
 }
+
+/**
+ * Whether the dataset's structure says, without doubt, that `key` is not a
+ * `type` source in it: an obs or var column, an obsm or varm key. False when
+ * the structure is unknown or does not list that kind (the server then
+ * decides), and for the other types.
+ * @param {Object} structure
+ * @param {string} type
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function sourceKeyMissing(structure, type, key) {
+    if (!structure || !key) return false;
+    let list = null;
+    if (type === 'obs' || type === 'var') list = structure[type]?.columns;
+    else if (type === 'obsm' || type === 'varm') {
+        const frames = structure[type]?.dataframes;
+        list = frames ? Object.keys(frames) : null;
+    }
+    return Array.isArray(list) && !list.includes(key);
+}

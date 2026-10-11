@@ -34,7 +34,7 @@
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
-import { buildPlotLayout, seriesSource, withSubsetCoverage } from './plot-make.js';
+import { buildPlotLayout, knownMissingSource, seriesSource, withSubsetCoverage } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
@@ -444,6 +444,12 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   // panel says why. A missing axis is still an error: there is nothing to draw.
   let colourGap = null;
   const colour = async () => {
+    const known = settings.color.type !== 'none' && knownMissingSource(structure, settings.color,
+      { unit: 'cells', total: (DataManager.getCells() || []).length });
+    if (known) {
+      colourGap = known.asDescribing();
+      return null;
+    }
     try {
       return await loadSeries(settings.color, datasetPath, structure, signal);
     } catch (err) {
