@@ -111,7 +111,7 @@ def _write_store(path):
 
 
 STALL_S = 3.0
-TRICKLE_S = 0.2
+TRICKLE_S = 0.05
 _CHUNK_KEY = re.compile(r"^\d+(\.\d+)*$")
 
 
