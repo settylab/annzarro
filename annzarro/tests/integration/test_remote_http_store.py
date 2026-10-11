@@ -111,6 +111,7 @@ def _write_store(path):
 
 
 STALL_S = 3.0
+TRICKLE_S = 0.2
 _CHUNK_KEY = re.compile(r"^\d+(\.\d+)*$")
 
 
@@ -121,9 +122,13 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
     /stall-all/<p>     accept the connection, then say nothing for STALL_S
     /stall-chunks/<p>  serve /<p>, but stall on chunk keys only: metadata
                        opens fine and the stall hits mid-read
+    /trickle/<p>       serve /<p>, but send chunk keys one byte every
+                       TRICKLE_S: always inside the read timeout, so only an
+                       overall deadline ends it; records a client hang-up
     """
 
     requests = []
+    hangups = []
 
     def do_GET(self):
         type(self).requests.append(self.path)
@@ -140,7 +145,26 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
             if _CHUNK_KEY.match(self.path.rsplit("/", 1)[-1]):
                 time.sleep(STALL_S)
                 return
+        if self.path.startswith("/trickle/"):
+            self.path = self.path[len("/trickle"):]
+            if _CHUNK_KEY.match(self.path.rsplit("/", 1)[-1]):
+                return self._trickle()
         super().do_GET()
+
+    def _trickle(self):
+        with open(self.translate_path(self.path), "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        try:
+            for i in range(len(body)):
+                self.wfile.write(body[i:i + 1])
+                self.wfile.flush()
+                time.sleep(TRICKLE_S)
+        except (BrokenPipeError, ConnectionResetError):
+            type(self).hangups.append(self.path)
+            self.close_connection = True
 
     def log_message(self, *args):
         pass
@@ -150,7 +174,7 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
 def http_store(tmp_path_factory):
     root = tmp_path_factory.mktemp("served")
     _write_store(root / "toy.zarr")
-    handler = type("Handler", (_Handler,), {"requests": []})
+    handler = type("Handler", (_Handler,), {"requests": [], "hangups": []})
     server = http.server.ThreadingHTTPServer(
         ("127.0.0.1", 0), functools.partial(handler, directory=str(root)))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -339,6 +363,69 @@ def test_store_that_stalls_mid_read_is_a_504(http_store, make_client, route, par
     resp = _get(client, route, url, **params)
     assert resp.status_code == 504, resp.get_json()
     assert resp.get_json()["reason"] == "remote_timeout"
+
+
+# --------------------------------------------------------------------------
+# the per-request deadline: a host that trickles is cut off, not waited for
+# --------------------------------------------------------------------------
+
+DEADLINE_S = 1.5
+TRICKLE_TIMEOUTS = {"remote_connect_timeout_s": 0.5, "remote_read_timeout_s": 1.0}
+
+
+@pytest.mark.parametrize("route,params", [
+    ("X", {"cols": "2"}),
+    ("obs", {"columns": "total_counts"}),
+    ("obsm/X_umap", {"cols": "1"}),
+])
+def test_trickling_store_is_a_504_at_the_deadline(http_store, make_client, route, params):
+    base, handler = http_store
+    url = f"{base}/trickle/toy.zarr"
+    client = make_client(**TRICKLE_TIMEOUTS, remote_request_timeout_s=DEADLINE_S)
+    assert _get(client, "dataset_structure", url).status_code == 200
+    hangups = len(handler.hangups)
+    start = time.perf_counter()
+    resp = _get(client, route, url, **params)
+    elapsed = time.perf_counter() - start
+    body = resp.get_json()
+    assert resp.status_code == 504, body
+    assert body["reason"] == "remote_deadline"
+    assert body["limit_name"] == "remote_request_timeout_s"
+    assert body["limit_s"] == DEADLINE_S
+    assert body["host"] == base.split("//")[1]
+    assert base.split("//")[1] in body["error"] and "1.5s" in body["error"]
+    assert DEADLINE_S - 0.1 <= elapsed < DEADLINE_S + 1.0, elapsed
+    # the socket was closed at the deadline, not left to the server's end
+    deadline = time.monotonic() + 3
+    while len(handler.hangups) == hangups and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert len(handler.hangups) > hangups
+
+
+def test_without_a_deadline_the_trickle_completes(http_store, make_client):
+    base, _ = http_store
+    url = f"{base}/trickle/toy.zarr"
+    client = make_client(**TRICKLE_TIMEOUTS, remote_request_timeout_s=0)
+    start = time.perf_counter()
+    resp = _get(client, "obsm/X_umap", url, cols="1")
+    elapsed = time.perf_counter() - start
+    assert resp.status_code == 200, resp.get_json()
+    # longer than the deadline above: the trickle is real and the read timeout never fires
+    assert elapsed > DEADLINE_S, elapsed
+
+
+def test_fast_store_is_unaffected_by_a_deadline(http_store, make_client):
+    base, _ = http_store
+    client = make_client(remote_request_timeout_s=DEADLINE_S)
+    resp = _get(client, "X", f"{base}/toy.zarr", cols="2")
+    assert resp.status_code == 200, resp.get_json()
+
+
+def test_deadline_does_not_outlive_the_request(http_store, make_client):
+    base, _ = http_store
+    client = make_client(remote_request_timeout_s=DEADLINE_S)
+    assert _get(client, "X", f"{base}/toy.zarr", cols="2").status_code == 200
+    assert remote._deadline.get() is None
 
 
 # --------------------------------------------------------------------------

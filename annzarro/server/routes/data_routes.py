@@ -26,6 +26,7 @@ from .. import http_cache
 from . import dataset_folders
 from ...core.array_response import wants_binary, wants_codes
 from ...core import categories as category_rules
+from ...core import remote
 from ...core.remote import is_remote_path, is_timeout, timeout_message
 
 logger = logging.getLogger(__name__)
@@ -177,6 +178,9 @@ def _reader_error_response(exc, dataset_path):
     if isinstance(exc, KeyError):
         return jsonify({"error": exc.args[0] if exc.args else "Key not found",
                         "reason": "key_not_found"}), 404
+    exceeded = remote.find_deadline_exceeded(exc)
+    if exceeded is not None:
+        return _remote_deadline_response(exceeded)
     if is_timeout(exc):
         return jsonify({
             "error": (timeout_message(dataset_path) if is_remote_path(dataset_path)
@@ -392,6 +396,17 @@ def _read_too_large_response(exc):
     }), 413
 
 
+def _remote_deadline_response(exc):
+    """504 when one request used up server.remote_request_timeout_s on a remote store."""
+    return jsonify({
+        "error": str(exc),
+        "reason": "remote_deadline",
+        "limit_name": "remote_request_timeout_s",
+        "limit_s": exc.seconds,
+        "host": exc.host,
+    }), 504
+
+
 def _read_busy_response(exc):
     """503 + Retry-After when the pairwise reads in flight hold the budget."""
     reply = jsonify({"error": str(exc), "reason": "read_busy",
@@ -554,6 +569,16 @@ def register_data_routes(app, api_version):
                          app.config.get("read_wait_s", 5))
     app.register_error_handler(ReadTooLargeError, _read_too_large_response)
     app.register_error_handler(ReadBusyError, _read_busy_response)
+    app.register_error_handler(remote.RemoteDeadlineExceeded, _remote_deadline_response)
+
+    @app.before_request
+    def _start_remote_deadline():
+        # on every request: gthread workers reuse their threads
+        remote.request_deadline(remote.get_remote_policy().request_timeout)
+
+    @app.teardown_request
+    def _end_remote_deadline(_exc):
+        remote.request_deadline(None)
     dataset_folders.register_dataset_folder_routes(app, api_version)
 
     http_cache.install_gzip(app)

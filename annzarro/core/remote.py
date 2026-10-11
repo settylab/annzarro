@@ -15,9 +15,14 @@ server's own credentials can read. So the default depends on where the server
 runs (see ``RemotePolicy.from_config``).
 """
 
+import asyncio
 import os
 import logging
+import threading
+import time
 from collections import OrderedDict
+from contextlib import contextmanager
+from contextvars import ContextVar
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Tuple
@@ -52,10 +57,18 @@ ENV_CREDENTIALS = "ANNZARRO_REMOTE_CREDENTIALS"
 ENV_CONNECT_TIMEOUT = "ANNZARRO_REMOTE_CONNECT_TIMEOUT"
 ENV_READ_TIMEOUT = "ANNZARRO_REMOTE_READ_TIMEOUT"
 ENV_CHUNK_CACHE = "ANNZARRO_REMOTE_CHUNK_CACHE_MB"
+ENV_REQUEST_TIMEOUT = "ANNZARRO_REMOTE_REQUEST_TIMEOUT"
 
 DEFAULT_CONNECT_TIMEOUT_S = 10.0
 DEFAULT_READ_TIMEOUT_S = 30.0
 DEFAULT_CHUNK_CACHE_MB = 256
+# The overall time one request may spend on remote reads. A hosted server
+# matches the 120 s proxy_read_timeout the deployment guide recommends: past it
+# the client is gone anyway. A single-user server allows more, so a slow link
+# does not start failing, but still ends: nobody else's threads wait on it,
+# only the user's own, and a dead host must not hang the desktop forever.
+DEFAULT_REQUEST_TIMEOUT_S = 120.0
+DEFAULT_SINGLE_USER_REQUEST_TIMEOUT_S = 600.0
 
 
 class RemoteAccessDenied(PermissionError):
@@ -68,6 +81,36 @@ class RemoteDependencyError(ImportError):
 
 class RemoteTimeout(TimeoutError):
     """A remote store did not connect or answer within the configured timeout."""
+
+
+class RemoteDeadlineExceeded(RemoteTimeout):
+    """One request spent its whole ``remote_request_timeout_s`` on a remote store."""
+
+    def __init__(self, seconds: float, host: str = ""):
+        self.seconds, self.host = seconds, host
+        super().__init__(deadline_message(seconds, host))
+
+
+def deadline_message(seconds: float, host: str = "") -> str:
+    where = f"Remote store {host}" if host else "The remote store"
+    return (f"{where} did not deliver the data within the {seconds:g}s limit for one request "
+            f"(server.remote_request_timeout_s); the connection was closed. "
+            f"The host is slow or not answering; try again later")
+
+
+def find_deadline_exceeded(exc: BaseException) -> Optional[RemoteDeadlineExceeded]:
+    """The ``RemoteDeadlineExceeded`` in ``exc``'s cause/context chain, if any.
+
+    zarr and the reader wrap errors (``RuntimeError``, ``ValueError``) around
+    the one the filesystem raised; the route still has to name this cause.
+    """
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, RemoteDeadlineExceeded):
+            return exc
+        exc = exc.__cause__ or exc.__context__
+    return None
 
 
 # Timeouts arrive as different types per backend: aiohttp's ServerTimeoutError
@@ -91,6 +134,9 @@ def raise_if_timeout(exc: BaseException) -> None:
     if is_timeout(exc):
         if isinstance(exc, RemoteTimeout):
             raise exc
+        exceeded = find_deadline_exceeded(exc)
+        if exceeded is not None:
+            raise exceeded
         raise RemoteTimeout(f"Remote store did not respond in time: "
                             f"{type(exc).__name__}: {exc}") from exc
 
@@ -156,6 +202,21 @@ def _seconds(value: Any, key: str) -> float:
     if not seconds > 0:
         raise ValueError(f"{key} must be positive, got {value!r}")
     return seconds
+
+
+def _request_timeout(value: Any, config: Mapping[str, Any]) -> Optional[float]:
+    """``remote_request_timeout_s``: unset picks the default for this kind of
+    server, 0 is off (None), anything else is the number of seconds."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return (DEFAULT_REQUEST_TIMEOUT_S if hosted_reasons(config)
+                else DEFAULT_SINGLE_USER_REQUEST_TIMEOUT_S)
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"remote_request_timeout_s must be a number of seconds, got {value!r}")
+    if seconds < 0:
+        raise ValueError(f"remote_request_timeout_s must be >= 0 (0 turns it off), got {value!r}")
+    return seconds or None
 
 
 def _split_list(value: Any) -> Tuple[str, ...]:
@@ -248,6 +309,7 @@ class RemotePolicy:
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT_S
     read_timeout: float = DEFAULT_READ_TIMEOUT_S
     chunk_cache_mb: int = DEFAULT_CHUNK_CACHE_MB
+    request_timeout: Optional[float] = None  # seconds per request; None = no limit
 
     @property
     def restricted(self) -> bool:
@@ -273,9 +335,15 @@ class RemotePolicy:
         ``remote_chunk_cache_mb``  in-memory LRU of raw store bytes, per open
             remote store (default 256; 0 disables)
 
+        ``remote_request_timeout_s``  seconds one request may spend on remote
+            reads in total, however many chunks (the two timeouts above bound
+            a single wait, so a host trickling a byte every 29 s never trips
+            them). Unset: 120 on a hosted server, 600 on a single-user one;
+            0 turns it off
+
         ``ANNZARRO_REMOTE_STORES``, ``_ALLOWLIST``, ``_CREDENTIALS``,
-        ``_CONNECT_TIMEOUT``, ``_READ_TIMEOUT`` and ``_CHUNK_CACHE_MB``
-        override the config keys.
+        ``_CONNECT_TIMEOUT``, ``_READ_TIMEOUT``, ``_REQUEST_TIMEOUT`` and
+        ``_CHUNK_CACHE_MB`` override the config keys.
         """
         config = config or {}
         environ = os.environ if environ is None else environ
@@ -299,6 +367,9 @@ class RemotePolicy:
         read_timeout = _seconds(environ.get(ENV_READ_TIMEOUT, config.get(
             "remote_read_timeout_s", DEFAULT_READ_TIMEOUT_S)), "remote_read_timeout_s")
 
+        request_timeout = _request_timeout(
+            environ.get(ENV_REQUEST_TIMEOUT, config.get("remote_request_timeout_s")), config)
+
         if mode == "deny":
             enabled, reason = False, "remote_stores: deny"
         elif mode == "allow":
@@ -314,14 +385,15 @@ class RemotePolicy:
                                           f"set remote_allowlist or remote_stores: allow)")
         return cls(enabled=enabled, allowlist=allowlist, credentials=credentials,
                    reason=reason, connect_timeout=connect_timeout, read_timeout=read_timeout,
-                   chunk_cache_mb=chunk_cache_mb)
+                   chunk_cache_mb=chunk_cache_mb, request_timeout=request_timeout)
 
     def describe(self) -> str:
         if not self.enabled:
             return f"remote stores disabled [{self.reason}]"
         scope = ", ".join(str(p) for p in self.allowlist) if self.allowlist else "any URL"
         return (f"remote stores allowed for {scope}; credentials={self.credentials}; "
-                f"timeouts connect={self.connect_timeout:g}s read={self.read_timeout:g}s; "
+                f"timeouts connect={self.connect_timeout:g}s read={self.read_timeout:g}s "
+                f"request={'off' if self.request_timeout is None else f'{self.request_timeout:g}s'}; "
                 f"chunk cache {self.chunk_cache_mb} MB/store "
                 f"[{self.reason}]")
 
@@ -375,6 +447,108 @@ class RemotePolicy:
         # large chunk on a slow but live link still completes.
         return aiohttp.ClientTimeout(total=None, sock_connect=self.connect_timeout,
                                      sock_read=self.read_timeout)
+
+
+# --- the per-request deadline ---------------------------------------------
+#
+# The two timeouts above bound one wait. A host that sends a byte every 29 s
+# never trips a 30 s read timeout, so a chunk of a megabyte holds the request
+# thread (and zarr's task) for about a year. The deadline bounds the REQUEST:
+# it is set when the request starts and every filesystem coroutine that
+# request awaits is cut off when it runs out.
+#
+# It lives in a ContextVar because zarr 3 and fsspec both hand their
+# coroutines to an event loop thread with run_coroutine_threadsafe, which
+# copies the calling thread's context into the task. So the coroutine sees the
+# deadline of the request thread that is waiting for it, and concurrent
+# requests keep separate deadlines even on one shared filesystem instance.
+
+_deadline: ContextVar[Optional[Tuple[float, float]]] = ContextVar(
+    "annzarro_remote_deadline", default=None)  # (monotonic end, seconds) or None
+
+
+def request_deadline(seconds: Optional[float]):
+    """Start (or, with None, clear) this thread's deadline; returns the token
+    for ``_deadline.reset``. The server calls it at the start of every request
+    and clears it at the end, so a reused thread never carries an old one."""
+    return _deadline.set(None if not seconds else (time.monotonic() + seconds, seconds))
+
+
+@contextmanager
+def deadline(seconds: Optional[float]):
+    """A deadline for work outside a request (background jobs, scripts)."""
+    token = request_deadline(seconds)
+    try:
+        yield
+    finally:
+        _deadline.reset(token)
+
+
+#: the filesystem coroutines zarr 2/3 and the fingerprint reach the network through
+_BOUNDED = ("_cat_file", "_cat_ranges", "_cat", "_info", "_ls", "_exists", "_isfile",
+            "_isdir", "_find", "_size", "_get_file")
+_bound_lock = threading.Lock()
+
+
+def _host_of(args: tuple) -> str:
+    """The host or bucket a filesystem call is about, for the message."""
+    target = args[0] if args else None
+    if isinstance(target, (list, tuple)):
+        target = target[0] if target else None
+    if not isinstance(target, str) or not target:
+        return ""
+    if "://" in target:
+        return urllib.parse.urlsplit(target).netloc
+    return target.split("/", 1)[0]
+
+
+def bound_by_deadline(fs):
+    """Cut ``fs``'s network coroutines off at the current deadline (idempotent).
+
+    fsspec caches filesystem instances by their arguments, so one instance
+    serves every request; the deadline is therefore read per call, from the
+    calling task's context, never kept on the instance. ``asyncio.wait_for``
+    cancels the read at the deadline: aiohttp closes the socket and the
+    request thread gets ``RemoteDeadlineExceeded``.
+    """
+    with _bound_lock:
+        if getattr(fs, "_annzarro_deadline", False):
+            return fs
+        for name in _BOUNDED:
+            original = getattr(fs, name, None)
+            if original is None:
+                continue
+            bounded = _bounded(original, name)
+            setattr(fs, name, bounded)
+            # fsspec bound the sync twin (cat_file, ...) to the coroutine at init
+            sync_twin = getattr(fs, name[1:], None)
+            if sync_twin is not None and getattr(fs, "loop", None) is not None:
+                from fsspec.asyn import sync_wrapper
+                setattr(fs, name[1:], sync_wrapper(bounded, obj=fs))
+        fs._annzarro_deadline = True
+    return fs
+
+
+def _bounded(original, name):
+    async def bounded(*args, **kwargs):
+        current = _deadline.get()
+        if current is None:
+            return await original(*args, **kwargs)
+        end, seconds = current
+        left = end - time.monotonic()
+        if left <= 0:
+            raise RemoteDeadlineExceeded(seconds, _host_of(args))
+        try:
+            return await asyncio.wait_for(original(*args, **kwargs), left)
+        except asyncio.TimeoutError as exc:
+            # a socket timeout inside the call is raised the same way; only
+            # a timeout at the deadline is ours
+            if isinstance(exc, RemoteTimeout) or time.monotonic() < end - 0.05:
+                raise
+            raise RemoteDeadlineExceeded(seconds, _host_of(args)) from exc
+
+    bounded.__name__ = name
+    return bounded
 
 
 async def _http_status(response) -> None:
@@ -495,6 +669,7 @@ def open_remote_group(url: str, policy: Optional[RemotePolicy] = None):
             # zarr 2's FSStore defaults to treating every IOError as absent.
             store = zarr.storage.FSStore(target, mode="r", exceptions=(KeyError,) + missing_key,
                                          **options)
+            bound_by_deadline(store.fs)
             # zarr 2 must be asked for consolidated metadata. One .zmetadata
             # request replaces a request per member: ms versus seconds remotely.
             try:
@@ -547,6 +722,7 @@ def _fsspec_store(target: str, options: Dict[str, Any], missing_key: tuple,
         cls = _LRUFsspecStore
     store = cls.from_url(target, storage_options=options, read_only=True,
                          allowed_exceptions=missing_key)
+    bound_by_deadline(store.fs)
     if cls is not FsspecStore:
         store._lru_max = policy.chunk_cache_mb * 1024 * 1024
     return store
@@ -608,6 +784,9 @@ def timeout_message(url: str, policy: Optional[RemotePolicy] = None) -> str:
 def _classify_open_error(exc: Exception, url: str, policy: RemotePolicy,
                          missing: str) -> Exception:
     """The typed error ``open_remote_group`` promises, for whatever was raised."""
+    exceeded = find_deadline_exceeded(exc)
+    if exceeded is not None:
+        return exceeded
     if is_timeout(exc):
         return RemoteTimeout(timeout_message(url, policy))
     if _is_missing_group(exc):

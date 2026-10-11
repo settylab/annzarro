@@ -51,11 +51,12 @@ The `server` section of the configuration decides which URLs may be opened
 | `remote_credentials` | `anonymous` | `anonymous`: unsigned requests (public buckets, plain HTTP). `environment`: the standard credential chain of the backend (`AWS_*` variables, `AWS_PROFILE` or `~/.aws`, instance roles; Google application default credentials). |
 | `remote_connect_timeout_s` | `10` | seconds to establish a connection |
 | `remote_read_timeout_s` | `30` | seconds to wait between bytes; a store that stops answering fails the request with HTTP 504 instead of holding it |
+| `remote_request_timeout_s` | `120` hosted, `600` single-user | seconds one request may spend on remote reads in total; a host that trickles data slowly enough to avoid the read timeout still fails the request with HTTP 504 `remote_deadline` when this runs out (0 switches it off) |
 | `remote_chunk_cache_mb` | `256` | in-memory cache of raw chunk bytes per open remote store (Zarr v3 stores; 0 switches it off) |
 
 The environment variables `ANNZARRO_REMOTE_STORES`, `ANNZARRO_REMOTE_ALLOWLIST`,
-`ANNZARRO_REMOTE_CREDENTIALS`, `ANNZARRO_REMOTE_CONNECT_TIMEOUT`, `ANNZARRO_REMOTE_READ_TIMEOUT`
-and `ANNZARRO_REMOTE_CHUNK_CACHE_MB` override these keys.
+`ANNZARRO_REMOTE_CREDENTIALS`, `ANNZARRO_REMOTE_CONNECT_TIMEOUT`, `ANNZARRO_REMOTE_READ_TIMEOUT`,
+`ANNZARRO_REMOTE_REQUEST_TIMEOUT` and `ANNZARRO_REMOTE_CHUNK_CACHE_MB` override these keys.
 
 The server logs its decision at startup. For the test on this page (a local server with
 `ANNZARRO_REMOTE_ALLOWLIST=http://127.0.0.1:8837/`):
