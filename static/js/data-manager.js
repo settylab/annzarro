@@ -5,6 +5,7 @@
 import { Config } from './config.js';
 import { subsetParam } from './utils/subset.js';
 import { notify } from './utils/notify.js';
+import { csrfHeaders } from './utils/csrf.js';
 import { CacheManager } from './cache-manager.js';
 import { BINARY_FORMAT, categoricalValues, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
 import { PackedNames, categoryCodesFromJSON, namesReplyPlan } from './utils/packed-names.js';
@@ -324,7 +325,7 @@ const DataManager = (function() {
             const params = { dataset_path: datasetPath };
             for (let poll = 0; ; poll++) {
                 const response = await fetch(`${Config.API.DATA_REFRESH}?${new URLSearchParams(params)}`,
-                    { method: 'POST' });
+                    { method: 'POST', headers: csrfHeaders() });
                 if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
                 const result = await response.json();
                 if (result.status !== 'scheduled' || poll >= maxPolls) return result;
@@ -363,7 +364,8 @@ const DataManager = (function() {
             }
             
             const response = await fetch(`${Config.API.CACHE_RESET}?${new URLSearchParams(params).toString()}`, {
-                method: 'POST'
+                method: 'POST',
+                headers: csrfHeaders()
             });
             
             if (response.status === 403) {

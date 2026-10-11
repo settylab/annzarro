@@ -11,7 +11,7 @@ import {
     parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
-import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan, partialRefreshNotice } from './utils/session-permissions.js';
+import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan, partialRefreshNotice, signOut } from './utils/session-permissions.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
@@ -3409,7 +3409,11 @@ const App = (function() {
             el.textContent = badge.text;
             el.title = badge.title;
             el.classList.add(`auth-indicator--${badge.variant}`);
-            if (badge.href) el.href = badge.href;
+            if (badge.href) {
+                el.href = badge.href;
+                // logging out is a POST with the page's token; the href is the fallback
+                el.addEventListener('click', (event) => { event.preventDefault(); signOut(); });
+            }
             el.hidden = false;
             Config.showVersion();
         } catch (error) {

@@ -11,6 +11,7 @@
  * Pure functions, no DOM, so they run under `node --test`.
  */
 import { appUrl } from './app-url.js';
+import { csrfHeaders } from './csrf.js';
 
 /**
  * Escape text for interpolation into an HTML template string. Panel-set names,
@@ -108,6 +109,23 @@ export function authIndicator(me) {
         };
     }
     return null;
+}
+
+/**
+ * Sign out. The server takes a POST with the CSRF token only (a link must not
+ * be able to do it); the badge's href is the page with the button, for a click
+ * the script did not see.
+ * @param {function} [fetchImpl]
+ * @param {function(string): void} [navigate] - goes to a URL
+ * @returns {Promise<void>}
+ */
+export async function signOut(fetchImpl = globalThis.fetch, navigate = (u) => { globalThis.location.href = u; }) {
+    try {
+        await fetchImpl(appUrl('/logout'), { method: 'POST', headers: csrfHeaders(), redirect: 'manual' });
+    } catch (error) {
+        console.warn('Sign-out request failed:', error);
+    }
+    navigate(appUrl('/login'));
 }
 
 /**
