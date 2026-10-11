@@ -1015,6 +1015,7 @@ function setupAxisSelectorListeners(
     const oldColumn = settings[axis].column;
     
     // Now change the type
+    delete settings[axis].auto;   // a colour the user changed is theirs
     settings[axis].type = newType;
     
     // Show loading indicators for key and column selects
@@ -1101,6 +1102,7 @@ function setupAxisSelectorListeners(
     const oldColumn = settings[axis].column;
     
     // Now change the key and clear the column
+    delete settings[axis].auto;
     settings[axis].key = newKey;
     
     // Show loading indicator for column select
@@ -1136,6 +1138,7 @@ function setupAxisSelectorListeners(
   // Column selectors
   $container.find('.axis-column-select').on('change', function() {
     const axis = jQuery(this).data('axis');
+    delete settings[axis].auto;
     settings[axis].column = jQuery(this).val();
     handleAxisUpdate(axis, plotType);
   });
