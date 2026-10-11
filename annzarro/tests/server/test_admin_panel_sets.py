@@ -311,3 +311,14 @@ def test_concurrent_save_and_reassign_across_processes_lose_nothing(tmp_path):
     assert final["n"] == ROUNDS - 1                      # the last save is the one on disk
     assert final["owner"] == f"u{HANDOVERS - 1}"         # and the last handover too
     assert [f for f in os.listdir(os.path.join(app.config["data_dir"], "sessions")) if f.endswith(".tmp")] == []
+
+
+def test_reassign_owner_takes_every_set_of_one_owner_under_the_shared_lock(app):
+    from annzarro.server import session_store
+    _seed(app)
+    sessions = os.path.join(app.config["data_dir"], "sessions")
+    with app.test_request_context():
+        assert session_store.reassign_owner(sessions, USER, ADMIN) == 3
+        assert session_store.reassign_owner(sessions, USER, ADMIN) == 0
+    assert {_read(app, f"a{i}")["owner"] for i in range(3)} == {ADMIN}
+    assert os.path.exists(os.path.join(sessions, ".lock.lock"))      # slice 2 locks <dir>/.lock

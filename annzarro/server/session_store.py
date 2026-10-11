@@ -18,8 +18,8 @@ class Unreadable(Exception):
 
 
 def locked(sessions_dir: str):
-    """The lock of the panel-set directory (the file ``<dir>/.sessions.lock``)."""
-    return atomic_store.locked(os.path.join(sessions_dir, ".sessions"))
+    """The lock of the panel-set directory (the file ``<dir>/.lock.lock``, the path slice 2 uses)."""
+    return atomic_store.locked(os.path.join(sessions_dir, ".lock"))
 
 
 def sanitize_name(name: str) -> str:
@@ -60,3 +60,23 @@ def assign_owner(file_path: str, owner: str) -> Optional[str]:
     data["owner"] = owner
     atomic_store.write_json(file_path, data, mode=0o644)
     return previous
+
+
+def reassign_owner(sessions_dir: str, from_owner: str, to_owner: str) -> int:
+    """Hand every set of ``from_owner`` to ``to_owner``; returns how many moved.
+    Takes :func:`locked` itself, so the caller must not hold it. Replaces
+    ``users.reassign_panel_sets`` (user removal with a hand-over)."""
+    from . import session_quota
+    if not os.path.isdir(sessions_dir):
+        return 0
+    moved = 0
+    with locked(sessions_dir):
+        for item in session_quota.entries(sessions_dir):
+            if item.data.get("owner") != from_owner:
+                continue
+            fresh = atomic_store.read_json(item.path, None)     # not the cached summary
+            if not isinstance(fresh, dict) or fresh.get("owner") != from_owner:
+                continue
+            assign_owner(item.path, to_owner)
+            moved += 1
+    return moved
