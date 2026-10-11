@@ -156,3 +156,30 @@ def test_account_routes_declare_a_gate(app):
     from annzarro.server import access
     for endpoint in ("account_password_page", "account_password_change"):
         assert access.gate_of(app, endpoint) == "public"
+
+
+# Pages that do not send a Content-Security-Policy yet. The policy slice (P1) gives the main page and
+# the login page theirs; when it lands this test fails on the stale entries, and they are deleted.
+NO_CSP_YET = {"/", "/login"}
+
+
+def test_every_html_page_sends_a_content_security_policy(app):
+    """A page is any argument-free GET route, or "/", whose answer is HTML (an HTML error page
+    counts). A future page cannot ship without a policy, and the list above only shrinks."""
+    client = login(app, ADMIN)
+    paths = {"/"} | {r.rule for r in app.url_map.iter_rules()
+                     if "GET" in r.methods and not r.arguments and r.rule != "/logout"}
+    html, stale = set(), set()
+    for path in sorted(paths):
+        response = client.get(path)
+        if "text/html" not in response.headers.get("Content-Type", ""):
+            continue
+        html.add(path)
+        has = bool(response.headers.get("Content-Security-Policy"))
+        if path in NO_CSP_YET:
+            stale |= {path} if has else set()
+        else:
+            assert has, f"{path} renders HTML without a Content-Security-Policy"
+    assert {"/admin", "/account/password"} <= html, "the walk found the pages it is meant to guard"
+    assert not stale, f"{sorted(stale)} now send a policy: remove them from NO_CSP_YET"
+    assert NO_CSP_YET <= html, "NO_CSP_YET names a path that is not an HTML page"
