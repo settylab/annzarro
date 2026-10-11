@@ -198,10 +198,11 @@ def register_dataset_folder_routes(app_, api_version):
 def _compile_query(query, regex):
     """A case-insensitive matcher for ``query``; SearchRefusedError when it may not run.
 
-    A regex goes through ``name_index.check_regex`` when this build has it (the
-    name search's guard against patterns that take exponential time); without it
-    the pattern is only length-capped. ``re`` cannot be interrupted, so a
-    pattern the guard lets through is still bounded by the walk's own caps.
+    A regex goes through ``name_index.check_regex`` (the name search's guard
+    against patterns that take exponential time) and is refused outright
+    (``regex_unavailable``) when this build has no such guard. ``re`` cannot be
+    interrupted, so a pattern the guard lets through is still bounded by the
+    walk's own caps.
     """
     if len(query) > MAX_QUERY_CHARS:
         raise SearchRefusedError("query_too_long", f"The search has {len(query)} characters; at most {MAX_QUERY_CHARS}.")
@@ -210,11 +211,15 @@ def _compile_query(query, regex):
         return lambda text: needle in text.lower()
     from ...core import name_index
     check = getattr(name_index, "check_regex", None)
-    if check is not None:
-        try:
-            check(query)
-        except ValueError as exc:
-            raise SearchRefusedError(getattr(exc, "reason", "regex_refused"), str(exc))
+    if check is None:
+        # `re` cannot be interrupted and holds the GIL: an unguarded user pattern over
+        # thousands of names could stop the worker for everyone. A build with the
+        # guard (name_index.check_regex) allows regex searches again by itself.
+        raise SearchRefusedError("regex_unavailable", "Regular-expression search of the subfolders is not available on this server.")
+    try:
+        check(query)
+    except ValueError as exc:
+        raise SearchRefusedError(getattr(exc, "reason", "regex_refused"), str(exc))
     try:
         rx = re.compile(query, re.IGNORECASE)
     except re.error as exc:

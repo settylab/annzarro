@@ -245,15 +245,25 @@ def test_search_finds_stores_in_unexpanded_subfolders_with_one_debounced_request
     page.wait_for_function("document.getElementById('dataset-selector').value.endsWith('lung_v2.zarr')", timeout=20_000)
 
 
-def test_regex_search_across_folders_and_a_refused_pattern(session):
+def test_regex_filters_the_listed_stores_and_is_not_sent_to_the_subfolder_search(session):
     session.browse()
     page = session.page
+    requests = []
+    page.on("request", lambda r: requests.append(r.url) if "/datasets/search" in r.url else None)
+    group = f"{MODAL} .change-dataset-group[aria-label='In subfolders']"
     page.click("#change-dataset-regex")
-    page.fill("#change-dataset-search", "^lung_v\\d\\.zarr$")
-    page.wait_for_selector(f"{MODAL} .change-dataset-group[aria-label='In subfolders'] .change-dataset-item")
+    page.fill("#change-dataset-search", "^short\\.zarr$")
+    assert "Subfolder search uses plain text; regex applies to the listed datasets" in page.inner_text(group)
+    assert page.locator(f"{MODAL} #change-dataset-list .change-dataset-item").count() == 1, "the regex filters the listed stores"
+    page.wait_for_timeout(900)    # longer than the debounce
+    assert requests == [], "a regex is not sent to the server"
+    page.click("#change-dataset-regex")      # plain text again: the subfolder search runs
+    page.fill("#change-dataset-search", "lung_v2")
+    page.wait_for_selector(group + " .change-dataset-item")
+    assert len(requests) == 1 and "mode=substring" in requests[0]
     page.fill("#change-dataset-search", "a" * 201)
-    page.wait_for_selector(f"{MODAL} .change-dataset-group[aria-label='In subfolders'] .text-danger")
-    assert "at most" in page.inner_text(f"{MODAL} .change-dataset-group[aria-label='In subfolders']")
+    page.wait_for_selector(group + " .text-danger")
+    assert "at most" in page.inner_text(group)
 
 
 def test_a_click_anywhere_on_a_row_opens_it_like_enter(server):

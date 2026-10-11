@@ -214,7 +214,8 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
             group.setAttribute('role', 'group');
             group.setAttribute('aria-label', 'In subfolders');
             group.appendChild(el('h6', null, 'In subfolders'));
-            if (!remote) group.appendChild(el('div', 'change-dataset-status', 'Searching subfolders...'));
+            if (state.regex) group.appendChild(el('div', 'change-dataset-status', 'Subfolder search uses plain text; regex applies to the listed datasets'));
+            else if (!remote) group.appendChild(el('div', 'change-dataset-status', 'Searching subfolders...'));
             else if (remote.error) group.appendChild(el('div', 'change-dataset-status text-danger', remote.error));
             else {
                 for (const entry of rows) group.appendChild(storeRow(entry, found));
@@ -248,7 +249,9 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
         clearTimeout(remoteTimer);
         if (remoteAbort) remoteAbort.abort();
         state.remote = null;
-        if (!fetchSearch || !search.value || searchEntries([], search.value, { regex: state.regex }).error) return;
+        // A regex is not sent: the server's subfolder search takes plain text only (an unguarded
+        // pattern over thousands of names could hang it); the regex still filters the listed stores here.
+        if (!fetchSearch || !search.value || state.regex) return;
         const key = remoteKey();
         remoteTimer = setTimeout(async () => {
             remoteAbort = new AbortController();
