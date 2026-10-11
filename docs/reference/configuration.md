@@ -227,6 +227,15 @@ integrations:
     services: [string, gprofiler, mygene]
 ```
 
+## `policy`
+
+The policy registry holds the settings an administrator can change at run time. This file stays
+the operator's.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `locked` | `[]` | Policy keys only this file decides (for example `[outbound.allow_external]`). A locked key ignores the admin settings and the per-user overrides, and the Settings page shows it as read-only. |
+
 ## Security tiers
 
 Every key in the configuration schema (`annzarro/config/schema.yaml`) has a tier, set on the key

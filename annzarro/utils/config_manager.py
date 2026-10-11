@@ -744,6 +744,9 @@ class ConfigManager:
             "__using_config_manager": True,
             # The hierarchical form, for /api/v1/config to filter by tier
             "config_tree": deepcopy(self.config),
+            # which layer set each key ("defaults:base", "project", "env:..."), so
+            # the policy registry can tell the operator's values from the package's
+            "config_origins": dict(self.origins),
         }
         
         # Server section

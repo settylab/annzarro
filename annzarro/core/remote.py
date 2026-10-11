@@ -166,13 +166,15 @@ def _split_list(value: Any) -> Tuple[str, ...]:
     return tuple(str(v).strip() for v in value if str(v).strip())
 
 
+_MODE_ALIASES = {"true": "allow", "yes": "allow", "on": "allow",
+                 "false": "deny", "no": "deny", "off": "deny"}
+
+
 def _normalise_mode(value: Any) -> str:
     if isinstance(value, bool):
         return "allow" if value else "deny"
     mode = str(value).strip().lower()
-    aliases = {"true": "allow", "yes": "allow", "on": "allow",
-               "false": "deny", "no": "deny", "off": "deny"}
-    mode = aliases.get(mode, mode)
+    mode = _MODE_ALIASES.get(mode, mode)
     if mode not in _MODES:
         raise ValueError(f"remote_stores must be one of {_MODES}, got {value!r}")
     return mode
@@ -623,3 +625,17 @@ def _classify_open_error(exc: Exception, url: str, policy: RemotePolicy,
                 if policy.credentials == "anonymous" else "")
         return RemoteAccessDenied(f"Remote store refused access to {url}.{hint}")
     return RuntimeError(f"Could not open remote store {url}: {type(exc).__name__}: {exc}")
+
+
+def _declare_policy_keys() -> None:
+    """Show ``server.remote_stores`` in the policy registry, read-only: the
+    YAML (or ANNZARRO_REMOTE_STORES) decides, and /auth/me says what it came to."""
+    from annzarro.server.policy import Enum, Key, declare
+    declare(Key(
+        name="feature.remote_stores", type=Enum(_MODES, aliases={True: "allow", False: "deny", **_MODE_ALIASES}),
+        default="auto", scope="config", area="features", config_path="server.remote_stores", client=False,
+        description="Whether s3://, gs:// and http(s):// datasets may be opened: auto allows them on a local "
+                    "single-user server only (server.remote_stores)"))
+
+
+_declare_policy_keys()

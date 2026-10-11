@@ -295,3 +295,9 @@ integrations:
     # a versioned host, so results can be reproduced
     base_url: "https://version-12-5.string-db.org/api"
     version: "12.5"
+
+# Policy registry: settings an administrator may change at run time
+policy:
+  # keys only this file decides (the admin settings and per-user overrides
+  # are ignored for them), for example: [outbound.allow_external]
+  locked: []
