@@ -55,6 +55,8 @@ DEFAULT_CONFIG = {
     "dataset_folder_max_entries": 500,  # entries one dataset-picker folder request returns (the rest is "show more")
     "dataset_search_max_depth": 6,      # folders deep the picker's search of the data directory goes
     "dataset_search_max_entries": 20000, # entries that search looks at before it stops (and says so)
+    "name_search_max_regex_chars": 200,   # longest regex a name search runs (a longer one is a 400 regex_too_long)
+    "name_search_timeout_s": 10,          # seconds a regex name search scans before it answers partially; 0 = no limit
     "max_read_mb": None,            # MB one read of an obsp/varp matrix may hold in memory, sized from metadata; None = 5% of RAM (256 MB..4 GB)
     "read_budget_mb": None,         # MB all pairwise reads in flight in one worker may hold; None = 2 x max_read_mb
     "read_wait_s": 5,               # seconds a pairwise read waits for that budget before a 503
@@ -343,6 +345,12 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     if not app.config.get("data_dir"):
         app.config["data_dir"] = default_data_dir()
     
+    # A limit that is not a number would fail at its first request, not here
+    from annzarro.server.limits import validate_limits
+    problems = validate_limits(app.config)
+    if problems:
+        raise ValueError("; ".join(problems))
+
     # Login cookie: not sent on cross-site subrequests or form posts (Lax),
     # Secure per cookie_secure, never readable from JavaScript.
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"

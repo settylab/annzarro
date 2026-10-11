@@ -9,4 +9,5 @@ lab-server
 analyst-workflow
 authentication
 hosting-checklist
+resource-limits
 ```

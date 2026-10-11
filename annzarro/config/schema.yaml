@@ -149,6 +149,16 @@ server:
       type: integer
       description: Entries the dataset picker's search of the data directory looks at before it stops and says the result is partial
       default: 20000
+    name_search_max_regex_chars:
+      type: integer
+      minimum: 1
+      description: Longest regular expression a name search (mode=regex) runs, in characters; a longer one is a 400 regex_too_long
+      default: 200
+    name_search_timeout_s:
+      type: number
+      minimum: 0
+      description: Seconds a regex name search scans before it answers with the matches found so far (partial); 0 = no limit
+      default: 10
     max_read_mb:
       type: [number, "null"]
       description: MB one read of an obsp/varp matrix may hold in memory, estimated from metadata before reading; over it the request is a 413 read_too_large. null = 5% of RAM (256 MB to 4 GB); applies to admins too
