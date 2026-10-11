@@ -696,6 +696,11 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   if (signal.aborted) job.cancelled = true;
   else signal.addEventListener('abort', () => { job.cancelled = true; }, { once: true });
   const st = attachLargeInteraction(plotContainer, settings, null);
+  // which points each point trace draws, so hover and click can leave out a category hidden with the legend
+  const base = pts.X.byteOffset / 4;
+  st.chunks = traces.flatMap((t, trace) => (t.meta === LEGEND_POINTS
+    ? [{ trace, from: t.x.byteOffset / 4 - base, to: t.x.byteOffset / 4 - base + t.x.length }] : []))
+    .sort((a, b) => a.from - b.from);
   const large = { n, traces: traces.length, filtered,
     load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2, index_ms: null };
   data.large = large;

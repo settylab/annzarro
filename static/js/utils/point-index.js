@@ -141,7 +141,9 @@ export async function buildPointIndexSliced(X, Y, rows, job = { cancelled: false
  * The point nearest to (cx, cy) within the ellipse of half-axes (rx, ry) (data
  * units: the pixel radius mapped through the axes), or -1. Distance is the
  * ellipse's own, i.e. pixel distance; at equal distance the smaller point
- * number wins.
+ * number wins. `skip` (optional) lists point numbers that do not count, as
+ * sorted, disjoint [from, to) pairs in one flat array: the points of categories
+ * hidden with the legend.
  *
  * The cells under the ellipse's bounding box are read in rings outward from
  * the pointer's cell, and the search stops once the next ring cannot hold a
@@ -150,7 +152,7 @@ export async function buildPointIndexSliced(X, Y, rows, job = { cancelled: false
  * points per lookup (43 ms at p99); a ring scan stops after one or two rings
  * in the dense parts (0.8 ms at p99), with the same result.
  */
-export function nearestPoint(index, cx, cy, rx, ry) {
+export function nearestPoint(index, cx, cy, rx, ry, skip = null) {
   const { X, Y, order, offsets, gx, gy, x0, y0, sx, sy } = index;
   if (!(rx > 0) || !(ry > 0) || order.length === 0) return -1;
   const clamp = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
@@ -164,9 +166,11 @@ export function nearestPoint(index, cx, cy, rx, ry) {
   const cell = Math.min(1 / (sx * rx), 1 / (sy * ry));
   const ix = 1 / rx, iy = 1 / ry;
   let best = -1, bestD = 1;                         // 1 = on the ellipse
+  const skipping = !!(skip && skip.length);
   const scan = (a, b) => {
     for (let j = a; j < b; j++) {
       const p = order[j];
+      if (skipping && isSkipped(skip, p)) continue;
       const dx = (X[p] - cx) * ix, dy = (Y[p] - cy) * iy;
       const d = dx * dx + dy * dy;
       if (d < bestD || (d === bestD && best >= 0 && p < best)) { bestD = d; best = p; }
@@ -185,6 +189,18 @@ export function nearestPoint(index, cx, cy, rx, ry) {
     }
   }
   return best;
+}
+
+/** Whether point `p` lies in one of the sorted [from, to) pairs of `ranges` (binary search). */
+export function isSkipped(ranges, p) {
+  let lo = 0, hi = (ranges.length >> 1) - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (p < ranges[2 * mid]) hi = mid - 1;
+    else if (p >= ranges[2 * mid + 1]) lo = mid + 1;
+    else return true;
+  }
+  return false;
 }
 
 /** The drawn point holding dataset row `row` (a native scan; no inverse table is kept), or -1. */

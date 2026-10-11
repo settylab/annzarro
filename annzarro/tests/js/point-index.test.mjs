@@ -10,7 +10,7 @@ import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const js = p => pathToFileURL(path.resolve(__dirname, "../../../static/js", p)).href;
-const { buildPointIndex, buildPointIndexSliced, nearestPoint, pointOfRow, POINTS_PER_CELL } = await import(js("utils/point-index.js"));
+const { buildPointIndex, buildPointIndexSliced, nearestPoint, pointOfRow, isSkipped, POINTS_PER_CELL } = await import(js("utils/point-index.js"));
 
 function lcg(seed) { let s = seed >>> 0; return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296); }
 
@@ -168,4 +168,27 @@ test("ring search equals brute force exactly: random, clustered, lattice (cell e
     }
     assert.ok(name === "single" || found > 300, `${name}: only ${found} queries found a point`);
   }
+});
+
+test("skipped point ranges (categories hidden with the legend) never answer a lookup; the nearest visible point does", () => {
+  const { X, Y, rows } = cloud(6000, 21, { clusters: 4 }), idx = buildPointIndex(X, Y, rows), r = lcg(5);
+  // a few disjoint ranges, including one at the very start and one at the very end
+  const skip = Uint32Array.of(0, 300, 1000, 1001, 2500, 3900, 5990, 6000);
+  const hidden = (p) => skip.some((v, i) => i % 2 === 0 && p >= v && p < skip[i + 1]);
+  for (const p of [0, 299, 300, 999, 1000, 1001, 2499, 2500, 3899, 3900, 5989, 5990, 5999]) assert.equal(isSkipped(skip, p), hidden(p), `p ${p}`);
+  let moved = 0;
+  for (let q = 0; q < 2000; q++) {
+    const p = Math.floor(r() * 6000), cx = X[p], cy = Y[p], rx = 0.2 + r() * 3, ry = 0.2 + r() * 3;
+    let want = -1, bestD = 1;
+    for (let k = 0; k < 6000; k++) {
+      if (hidden(k)) continue;
+      const dx = (X[k] - cx) / rx, dy = (Y[k] - cy) / ry, d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; want = k; }
+    }
+    const got = nearestPoint(idx, cx, cy, rx, ry, skip);
+    assert.equal(got, want, `query ${q}`);
+    if (hidden(p) && got !== -1) moved++;
+  }
+  assert.ok(moved > 20, `only ${moved} queries moved off a hidden point to a visible one`);
+  assert.equal(nearestPoint(idx, X[10], Y[10], 1e-3, 1e-3, Uint32Array.of(0, 6000)), -1);   // everything hidden
 });

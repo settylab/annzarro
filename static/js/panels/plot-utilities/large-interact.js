@@ -49,6 +49,26 @@ function tooltip() {
 const _fmt = (v) => (typeof v === 'number' ? Number(v.toPrecision(5)).toString() : String(v));
 
 /**
+ * The points of traces hidden with the legend, as sorted [from, to) pairs of
+ * point numbers (or null when none is hidden). `st.chunks` says which points
+ * each point trace draws (large-plot.js); hiding is read from the graph at
+ * each lookup, so a legend click needs no rebuild of the index (1 s and
+ * 4 B a point at 95.6M, against a pass over the few hundred traces).
+ */
+function hiddenRanges(gd, st) {
+  const chunks = st.chunks, data = gd.data;
+  if (!chunks || !data) return null;
+  const out = [];
+  for (const c of chunks) {
+    const v = data[c.trace] && data[c.trace].visible;
+    if (v !== false && v !== 'legendonly') continue;
+    if (out.length && out[out.length - 1] === c.from) out[out.length - 1] = c.to;
+    else out.push(c.from, c.to);
+  }
+  return out.length ? Uint32Array.from(out) : null;
+}
+
+/**
  * The point under a pointer event, or null. `{p, row}`: p is the drawn point,
  * row its cell's position among the cells shown.
  */
@@ -64,7 +84,7 @@ function pointAt(gd, st, clientX, clientY, target) {
   const cx = xa.p2d(mx), cy = ya.p2d(my);
   const rx = Math.abs(xa.p2d(mx + HOVER_PX) - xa.p2d(mx - HOVER_PX)) / 2;
   const ry = Math.abs(ya.p2d(my + HOVER_PX) - ya.p2d(my - HOVER_PX)) / 2;
-  const p = nearestPoint(st.index, cx, cy, rx, ry);
+  const p = nearestPoint(st.index, cx, cy, rx, ry, hiddenRanges(gd, st));
   return p < 0 ? null : { p, row: st.index.rows[p] };
 }
 
