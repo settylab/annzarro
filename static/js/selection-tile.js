@@ -1,4 +1,6 @@
 import { Config } from './config.js';
+import { Policy } from './policy.js';
+import { panelTypeFromTileId } from './utils/deeplink.js';
 import { DataManager } from './data-manager.js';
 import { colourKind } from './utils/memory-guard.js';
 import { newPanelCheck, refusalText, MEMORY_EVENT } from './utils/memory-guard-ui.js';
@@ -200,16 +202,18 @@ export class SelectionTile {
   
     // --- Panel Types Section ---
     get panelTypes() {
-      // Filter panel types based on enabled types in the config
+      // Filter panel types based on enabled types in the config, then on the
+      // administrator's policy (panel.<type>.enabled)
       const enabledTypes = Config.DEFAULTS.ENABLED_PANEL_TYPES || [];
+      const allowed = Config.PANEL_TYPES.filter(panel => Policy.panelEnabled(panel.type));
       
       // If no panel types are specified as enabled, show all panel types
       if (!enabledTypes.length) {
-        return Config.PANEL_TYPES;
+        return allowed;
       }
       
       // Filter the panel types to only show enabled ones
-      return Config.PANEL_TYPES.filter(panel => enabledTypes.includes(panel.type));
+      return allowed.filter(panel => enabledTypes.includes(panel.type));
     }
   
     _initPanelTypeGrid() {
@@ -461,6 +465,8 @@ export class SelectionTile {
       let hasClosedPanels = false;
       
       allPanels.forEach((panel, id) => {
+        // a panel the administrator disabled stands as a placeholder and is not duplicated
+        if (!Policy.panelEnabled(panelTypeFromTileId(id))) return;
         hasPanels = true;
         if (!this.activePanels.has(panel)) {
           hasClosedPanels = true;

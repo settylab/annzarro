@@ -2,6 +2,8 @@
  * Configuration module for AnnZarro
  */
 import { appUrl } from './utils/app-url.js';
+// the panel registry: the server declares panel.<type>.enabled for each entry (policy.js)
+import panelTypes from './panels/panel-types.json' with { type: 'json' };
 
 /**
  * The ui.* settings in /api/v1/config, nested (ui: {defaults, cache,
@@ -115,14 +117,8 @@ const Config = (function() {
         AUTH_ME: `${API_BASE}/auth/me`
     };
     
-    // Panel types definition
-    const PANEL_TYPES = [
-        { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-microscope' },
-        { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
-        { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-solid fa-list-ul' },
-        { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
-        { type: 'gene-set', label: 'Gene Set Analysis', icon: 'fas fa-project-diagram' }
-    ];
+    // Panel types definition: panels/panel-types.json
+    const PANEL_TYPES = panelTypes;
     
     // Configure Plotly.js defaults if available
     if (typeof Plotly !== 'undefined') {

@@ -76,6 +76,7 @@ STATIC_FILES = [
     "js/*.js",
     "js/package.json",
     "js/**/*.js",
+    "js/**/*.json",
 ] + VENDOR_FILES
 
 setup(
