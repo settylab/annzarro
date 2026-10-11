@@ -194,7 +194,7 @@ def test_rows_show_details_and_wrap_long_names(session):
     assert len(rows) >= 3
     assert not any(r["clipped"] for r in rows), "names are wrapped, never cut"
     short = next(r for r in rows if r["path"].endswith("/short.zarr"))
-    assert "200 cells x 20 genes" in short["text"] and "zarr v" in short["text"] and "modified 20" in short["text"]
+    assert "200 cells x 20 genes" in short["text"] and "zarr format " in short["text"] and "modified 20" in short["text"]
     long_row = next(r for r in rows if LONG in r["text"].replace("\n", ""))
     assert long_row
     # a folder's listing shows an unreadable store, with its reason, instead of dropping it
@@ -202,6 +202,90 @@ def test_rows_show_details_and_wrap_long_names(session):
     page.wait_for_selector(f"{MODAL} #change-dataset-tree .change-dataset-unreadable")
     broken = page.inner_text(f"{MODAL} #change-dataset-tree .change-dataset-unreadable")
     assert "broken.zarr" in broken and "Not readable" in broken
+
+
+def test_header_line_shows_the_relative_path_with_the_absolute_one_in_the_tooltip(session):
+    session.browse()
+    page = session.page
+    text = page.inner_text("#change-dataset-saved")
+    tip = page.get_attribute("#change-dataset-saved", "title")
+    assert os.path.isabs(tip) and tip.endswith(".zarr")
+    assert tip not in text, "the absolute path is only in the tooltip"
+    assert re.match(r"Showing datasets like [^/]+\.zarr \(200 cells x 20 genes\) first$", text), text
+
+
+def test_rows_tell_same_named_stores_apart_by_their_folder(session):
+    session.browse()
+    page = session.page
+    top = f"{MODAL} #change-dataset-list .change-dataset-item[data-path$='/short.zarr']"
+    assert page.locator(top + " .change-dataset-rel").count() == 0, "no folder line at the top level"
+    page.click(f"{MODAL} .change-dataset-folder[data-folder='']")
+    page.click(f"{MODAL} .change-dataset-folder[data-folder$='projects']")
+    page.click(f"{MODAL} .change-dataset-folder[data-folder$='lung']")
+    row = f"{MODAL} #change-dataset-tree .change-dataset-item[data-path$='lung_v2.zarr']"
+    page.wait_for_selector(row)
+    assert page.inner_text(row + " .change-dataset-rel").strip() == "projects/lung/"
+
+
+def test_search_finds_stores_in_unexpanded_subfolders_with_one_debounced_request(session):
+    page = session.page
+    session.browse()
+    requests = []
+    page.on("request", lambda r: requests.append(r.url) if "/datasets/search" in r.url else None)
+    page.click("#change-dataset-search")
+    page.keyboard.type("lung_v2", delay=40)
+    group = f"{MODAL} .change-dataset-group[aria-label='In subfolders']"
+    page.wait_for_selector(group + " .change-dataset-item")
+    row = page.locator(group + " .change-dataset-item")
+    assert row.count() == 1 and "projects/lung/" in row.inner_text()
+    assert len(requests) == 1, f"typing sent {len(requests)} requests: {requests}"
+    assert page.locator(f"{MODAL} #change-dataset-tree .change-dataset-item").count() == 0, "found without expanding"
+    page.click(group + " .change-dataset-item")
+    page.wait_for_selector(MODAL, state="hidden", timeout=10_000)
+    page.wait_for_function("document.getElementById('dataset-selector').value.endsWith('lung_v2.zarr')", timeout=20_000)
+
+
+def test_regex_search_across_folders_and_a_refused_pattern(session):
+    session.browse()
+    page = session.page
+    page.click("#change-dataset-regex")
+    page.fill("#change-dataset-search", "^lung_v\\d\\.zarr$")
+    page.wait_for_selector(f"{MODAL} .change-dataset-group[aria-label='In subfolders'] .change-dataset-item")
+    page.fill("#change-dataset-search", "a" * 201)
+    page.wait_for_selector(f"{MODAL} .change-dataset-group[aria-label='In subfolders'] .text-danger")
+    assert "at most" in page.inner_text(f"{MODAL} .change-dataset-group[aria-label='In subfolders']")
+
+
+def test_a_click_anywhere_on_a_row_opens_it_like_enter(server):
+    base, _ = server
+    ends = []
+    for how in ("click-name", "click-meta", "enter"):
+        s = Session(base)
+        try:
+            page = s.page
+            s.browse("other_small")
+            if how == "enter":
+                page.keyboard.press("Enter")
+            else:
+                page.click(f"{MODAL} #change-dataset-list .change-dataset-item[data-path$='other_small.zarr'] "
+                           + (".change-dataset-name" if how == "click-name" else ".change-dataset-meta"))
+            page.wait_for_selector(MODAL, state="hidden", timeout=10_000)
+            page.wait_for_function("document.getElementById('dataset-selector').value.endsWith('other_small.zarr')", timeout=20_000)
+            ends.append(_state(page))
+        finally:
+            s.close()
+    assert ends[0] == ends[1] == ends[2], ends
+
+
+@pytest.mark.parametrize("width,limit", [(1024, (700, 820)), (1920, (1080, 1200))])
+def test_the_modal_is_wider_on_a_wide_window(server, width, limit):
+    s = Session(server[0], width=width)
+    try:
+        s.browse()
+        w = s.page.locator(f"{MODAL} .modal-content").bounding_box()["width"]
+        assert limit[0] <= w <= limit[1], w
+    finally:
+        s.close()
 
 
 def test_sort_by_cells_name_and_modified(session):
@@ -323,9 +407,10 @@ def test_choosing_in_the_picker_ends_where_the_dropdown_does(server):
     assert via_picker == via_dropdown
 
 
-def test_two_thousand_stores_render_in_pages_and_search_stays_quick(big_server):
+@pytest.mark.parametrize("width", [1024, 1920])
+def test_two_thousand_stores_render_in_pages_and_search_stays_quick(big_server, width):
     base, _ = big_server
-    s = Session(base, width=1280, height=900)
+    s = Session(base, width=width, height=900)
     try:
         page = s.page
         page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 2000", timeout=120_000)
@@ -362,7 +447,8 @@ def test_picker_screenshots(server, width):
         page.wait_for_timeout(600)
         os.makedirs(SHOTS, exist_ok=True)
         page.screenshot(path=os.path.join(SHOTS, f"picker-{width}.png"))
-        page.fill("#change-dataset-search", "liver")
+        page.fill("#change-dataset-search", "lung_v2")
+        page.wait_for_selector(f"{MODAL} .change-dataset-group[aria-label='In subfolders'] .change-dataset-item")
         page.wait_for_timeout(300)
         page.screenshot(path=os.path.join(SHOTS, f"picker-search-{width}.png"))
     finally:

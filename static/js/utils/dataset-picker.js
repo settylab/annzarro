@@ -11,11 +11,29 @@
 export const RECENT_LIMIT = 8;
 export const RECENT_KEY_PREFIX = 'annzarro.recentDatasets:';
 
-/** What an entry is searched by: its name and its path relative to the data directory. */
-export function searchText(entry) {
+/** What an entry is searched by: its name, and its path relative to the data directory (each on its own, so ^ and $ anchor one of them). */
+export function searchParts(entry) {
     const name = entry.name || basename(entry.path);
-    const rel = entry.rel_path && entry.rel_path !== name ? entry.rel_path : '';
-    return rel ? `${name}\n${rel}` : name;
+    return { name, rel: entry.rel_path || '' };
+}
+
+/** The folder part of an entry's relative path, with its trailing slash ('' for a store at the top). */
+export function folderOf(entry) {
+    const rel = entry.rel_path || '';
+    const at = rel.lastIndexOf('/');
+    return at > 0 ? rel.slice(0, at + 1) : '';
+}
+
+/**
+ * How a path is shown everywhere: relative to the data directory. `listing`
+ * is the entries of the picker; a path it lacks (outside the data directory,
+ * a remote URL) is shown as it is.
+ */
+export function displayPath(path, listing = [], known = null) {
+    const hit = (listing || []).find(e => e.path === path);
+    if (hit && hit.rel_path) return hit.rel_path;
+    if (known && known.relPath) return known.relPath;
+    return path || '';
 }
 
 export function basename(path) {
@@ -49,11 +67,16 @@ export function compileQuery(query, { regex = false } = {}) {
     return { test: (text) => ranges(text).length > 0, ranges, error: null, empty: false };
 }
 
+export function entryMatches(compiled, entry) {
+    const { name, rel } = searchParts(entry);
+    return compiled.test(name) || (!!rel && compiled.test(rel));
+}
+
 /** Entries matching the query (all of them when it is empty or invalid), with the compiled query. */
 export function searchEntries(entries, query, { regex = false } = {}) {
     const compiled = compileQuery(query, { regex });
     if (compiled.empty || compiled.error) return { entries: entries.slice(), ...compiled };
-    return { entries: entries.filter(e => compiled.test(searchText(e))), ...compiled };
+    return { entries: entries.filter(e => entryMatches(compiled, e)), ...compiled };
 }
 
 export const SORTS = ['best', 'name', 'cells', 'modified'];

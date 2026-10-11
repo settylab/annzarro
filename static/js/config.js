@@ -85,6 +85,7 @@ const Config = (function() {
         CONFIG: `${API_BASE}/config`,
         DATASETS: `${API_BASE}/datasets`,
         DATASET_FOLDER: `${API_BASE}/datasets/folder`,
+        DATASET_SEARCH: `${API_BASE}/datasets/search`,
         DATASET_INFO: `${API_BASE}/data/info`,
         DATASET_STRUCTURE: `${API_BASE}/data/dataset_structure`,
         FINGERPRINT: `${API_BASE}/data/fingerprint`,
