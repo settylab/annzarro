@@ -402,6 +402,39 @@ def test_trickling_store_is_a_504_at_the_deadline(http_store, make_client, route
     assert len(handler.hangups) > hangups
 
 
+def test_concurrent_zarr_reads_keep_their_own_deadlines(http_store):
+    """The real zarr path (open_remote_group, then an array read): zarr hands
+    the coroutine to its event loop thread, which must see the deadline of the
+    request thread that is waiting. Two threads, one filesystem instance."""
+    base, _ = http_store
+    policy = remote.RemotePolicy(request_timeout=None, **{
+        "connect_timeout": 0.5, "read_timeout": 1.0, "chunk_cache_mb": 0})
+    url = f"{base}/trickle/toy.zarr"
+    outcome = {}
+
+    def request(name, seconds):
+        start = time.perf_counter()
+        with remote.deadline(seconds):
+            try:
+                group = remote.open_remote_group(url, policy)
+                group["obsm"]["X_umap"][:]
+                outcome[name] = ("ok", time.perf_counter() - start)
+            except remote.RemoteDeadlineExceeded as exc:
+                outcome[name] = ("deadline", time.perf_counter() - start, exc.seconds)
+
+    threads = [threading.Thread(target=request, args=args)
+               for args in (("short", 1.0), ("long", 2.5), ("none", None))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert outcome["short"][0] == "deadline" and outcome["short"][2] == 1.0, outcome
+    assert 0.9 <= outcome["short"][1] < 1.9, outcome
+    assert outcome["long"][0] == "deadline" and outcome["long"][2] == 2.5, outcome
+    assert 2.4 <= outcome["long"][1] < 3.5, outcome
+    assert outcome["none"][0] == "ok", outcome  # no deadline: the trickle completes
+
+
 def test_without_a_deadline_the_trickle_completes(http_store, make_client):
     base, _ = http_store
     url = f"{base}/trickle/toy.zarr"
