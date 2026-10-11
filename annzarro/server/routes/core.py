@@ -14,8 +14,12 @@ from pathlib import Path
 from flask import request, jsonify, current_app as app
 
 from ...data.manager import data_manager
+from ...data.scan import DEFAULT_MAX_ENTRIES as DEFAULT_SCAN_ENTRIES, count_stores
 
 logger = logging.getLogger(__name__)
+
+#: Seconds /status reuses its count of the data directory's stores
+STATUS_COUNT_TTL_S = 30
 
 def register_core_routes(app, api_version):
     """
@@ -26,6 +30,9 @@ def register_core_routes(app, api_version):
         api_version: API version string
     """
     
+    def _scan_limit():
+        return int(app.config.get("dataset_scan_max_entries") or DEFAULT_SCAN_ENTRIES)
+
     @app.route(f"/api/{api_version}/core/datasets", methods=["GET"])
     def list_legacy_datasets():
         """
@@ -52,13 +59,20 @@ def register_core_routes(app, api_version):
         follow_symlinks = request.args.get("follow_symlinks", "true").lower() == "true"
         
         # List datasets with new options
-        datasets = data_manager.list_datasets(data_dir, recursive=recursive, follow_symlinks=follow_symlinks)
+        datasets = data_manager.list_datasets(data_dir, recursive=recursive, follow_symlinks=follow_symlinks,
+                                              max_entries=_scan_limit())
+        truncated = data_manager.truncated
         # Not offered when hosted: anything a link leads to outside the roots
         from ..confinement import listable
         datasets = [d for d in datasets
                     if not isinstance(d, dict) or not d.get("path") or listable(app.config, d["path"])]
         
-        return jsonify({"datasets": datasets})
+        reply = {"datasets": datasets}
+        if truncated:
+            reply.update({"truncated": True, "reason": "scan_limit",
+                          "note": f"The directory has more than {_scan_limit():,} entries "
+                                  "(server.dataset_scan_max_entries); only the stores found before that are listed."})
+        return jsonify(reply)
 
     @app.route(f"/api/{api_version}/config", methods=["GET"])
     def get_config():
@@ -167,6 +181,20 @@ def register_core_routes(app, api_version):
             "may_open_any_path": confinement.may_open_any_path(app.config),
         })
 
+    _count_cache = {}
+
+    def _store_count(data_dir):
+        """(stores under the data directory, whether the count was cut short),
+        counted at most every STATUS_COUNT_TTL_S: /status is open to every
+        client, and the walk visits up to dataset_scan_max_entries entries."""
+        now = time.monotonic()
+        hit = _count_cache.get(data_dir)
+        if hit is not None and now - hit[0] < STATUS_COUNT_TTL_S:
+            return hit[1]
+        result = count_stores(data_dir, _scan_limit())
+        _count_cache[data_dir] = (now, result)
+        return result
+
     @app.route(f"/api/{api_version}/status", methods=["GET"])
     def get_status():
         """
@@ -194,8 +222,10 @@ def register_core_routes(app, api_version):
             memory_usage_mb = memory_info.rss / (1024 * 1024)  # Convert to MB
             
             # Get load information
-            cpu_load = process.cpu_percent(interval=0.1)
-            system_load = psutil.cpu_percent(interval=0.1)
+            # since the previous call: a blocking sample would hold a thread
+            # for 0.2 s per request, and /status is open to every client
+            cpu_load = process.cpu_percent(interval=None)
+            system_load = psutil.cpu_percent(interval=None)
             
             # Get connection count
             try:
@@ -212,11 +242,9 @@ def register_core_routes(app, api_version):
             data_dir_is_writable = os.access(data_dir, os.W_OK)
             
             # Count files in data directory
-            zarr_count = 0
+            zarr_count, count_truncated = (0, False)
             if data_dir_exists and data_dir_is_readable:
-                for root, dirs, files in os.walk(data_dir):
-                    if '.zgroup' in files:
-                        zarr_count += 1
+                zarr_count, count_truncated = _store_count(data_dir)
             
             # Get version from the package
             try:
@@ -255,7 +283,8 @@ def register_core_routes(app, api_version):
                     "data_dir_exists": data_dir_exists,
                     "data_dir_readable": data_dir_is_readable,
                     "data_dir_writable": data_dir_is_writable,
-                    "zarr_file_count": zarr_count
+                    "zarr_file_count": zarr_count,
+                    "zarr_file_count_truncated": count_truncated
                 }
             }
             

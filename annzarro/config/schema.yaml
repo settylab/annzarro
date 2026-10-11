@@ -147,6 +147,11 @@ server:
       minimum: 0
       description: Seconds a regex name search scans before it answers with the matches found so far (partial); 0 = no limit
       default: 10
+    dataset_scan_max_entries:
+      type: integer
+      minimum: 1
+      description: Directory entries the legacy dataset listing and the /status store count read before they stop (a store's chunk files are never walked); the listing then says truncated
+      default: 200000
     max_read_mb:
       type: [number, "null"]
       description: MB one read of an obsp/varp matrix may hold in memory, estimated from metadata before reading; over it the request is a 413 read_too_large. null = 5% of RAM (256 MB to 4 GB); applies to admins too

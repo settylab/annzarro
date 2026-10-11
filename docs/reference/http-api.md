@@ -478,6 +478,7 @@ HTTP 400
 | `server.max_read_mb` | 5% of RAM (256 MB to 4 GB) | memory an `obsp`/`varp` read would hold, from shape, dtype and stored sizes, before reading (`/data/obsp`, `/data/varp`, `/data/by_path`, `/data/paginated`, `/data/statistics`) | `413 read_too_large` |
 | `server.read_budget_mb` | 2 × `max_read_mb` | pairwise reads in flight in one worker, each by its estimate; waits `server.read_wait_s` (5 s) | `503 read_busy` |
 | `server.name_search_max_regex_chars`, `server.name_search_timeout_s` | 200 characters, 10 s | a regex name search (`/data/names?mode=regex`): the pattern, then the scan | `400 regex_too_long`, `400 regex_too_complex`; after the time limit a `200` with `partial: true` and `timed_out: true` |
+| `server.dataset_scan_max_entries` | 200,000 | directory entries read by `GET /core/datasets` and the store count in `GET /status` | `200` with `truncated: true` |
 | `max_cells=` / `max_genes=` query parameters | none | number of requested cell / gene indices | `400 cap_exceeded` |
 | groups for subset balancing | 10,000 | a column's categories (metadata) | `400 too_many_categories` |
 

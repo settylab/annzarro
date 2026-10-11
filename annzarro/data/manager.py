@@ -9,12 +9,12 @@ a5c1aed; nothing in the server or the frontend called it, and every call
 raised AttributeError, so it was removed rather than kept as a trap.
 """
 
-import glob
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.zarr_reader import zarr_reader
+from .scan import DEFAULT_MAX_ENTRIES, scan_stores
 from ..utils.paths import default_data_dir
 
 logger = logging.getLogger(__name__)
@@ -26,8 +26,11 @@ class DataManager:
     def __init__(self):
         # id -> dataset entry from the last discovery
         self.datasets = {}
+        # whether the last discovery stopped before it had seen everything
+        self.truncated = False
 
-    def discover_datasets(self, data_dir: Union[str, Path, None] = None, recursive: bool = True, follow_symlinks: bool = True) -> List[Dict[str, str]]:
+    def discover_datasets(self, data_dir: Union[str, Path, None] = None, recursive: bool = True, follow_symlinks: bool = True,
+                          max_entries: int = DEFAULT_MAX_ENTRIES) -> List[Dict[str, str]]:
         """
         Discover available zarr datasets in the specified directory.
         
@@ -35,6 +38,7 @@ class DataManager:
             data_dir: Directory to search for datasets
             recursive: Whether to scan directories recursively
             follow_symlinks: Whether to follow symbolic links
+            max_entries: Directory entries to read before stopping (``self.truncated`` says it did)
             
         Returns:
             List of dataset information dictionaries
@@ -44,24 +48,12 @@ class DataManager:
         if not data_dir.exists() or not data_dir.is_dir():
             return []
             
-        # Find all .zarr directories
-        zarr_dirs = []
-        
-        # Build the pattern based on recursion level
-        if recursive:
-            # Use rglob for fully recursive search
-            for zarr_path in data_dir.rglob("*.zarr"):
-                # Check if it's a directory (zarr stores are directories)
-                if zarr_path.is_dir() and (follow_symlinks or not zarr_path.is_symlink()):
-                    zarr_dirs.append(str(zarr_path))
-        else:
-            # Limited search - only current directory and immediate subdirectories
-            zarr_dirs.extend(glob.glob(str(data_dir / "*.zarr"), recursive=False))
-            zarr_dirs.extend(glob.glob(str(data_dir / "*" / "*.zarr"), recursive=False))
-            
-            # Filter symlinks if not following them
-            if not follow_symlinks:
-                zarr_dirs = [d for d in zarr_dirs if not Path(d).is_symlink()]
+        # Find the .zarr directories, never walking a store's own chunks (data/scan.py)
+        zarr_dirs, self.truncated = scan_stores(str(data_dir), recursive=recursive,
+                                                follow_symlinks=follow_symlinks, max_entries=max_entries)
+        if self.truncated:
+            logger.warning("Dataset scan of %s stopped after %s directory entries (server.dataset_scan_max_entries)",
+                           data_dir, max_entries)
         
         # Create dataset info
         dataset_info = []
@@ -83,7 +75,8 @@ class DataManager:
         
         return dataset_info
         
-    def list_datasets(self, directory: Optional[str] = None, recursive: bool = True, follow_symlinks: bool = True) -> List[Dict[str, str]]:
+    def list_datasets(self, directory: Optional[str] = None, recursive: bool = True, follow_symlinks: bool = True,
+                      max_entries: int = DEFAULT_MAX_ENTRIES) -> List[Dict[str, str]]:
         """
         List available datasets, optionally from a specific directory.
         
@@ -96,11 +89,12 @@ class DataManager:
             List of dataset information dictionaries
         """
         if directory:
-            return self.discover_datasets(directory, recursive=recursive, follow_symlinks=follow_symlinks)
+            return self.discover_datasets(directory, recursive=recursive, follow_symlinks=follow_symlinks,
+                                          max_entries=max_entries)
         elif self.datasets:
             return list(self.datasets.values())
         else:
-            return self.discover_datasets(recursive=recursive, follow_symlinks=follow_symlinks)
+            return self.discover_datasets(recursive=recursive, follow_symlinks=follow_symlinks, max_entries=max_entries)
             
     def get_dataset_info(self, dataset_path: str) -> Dict[str, Any]:
         """
