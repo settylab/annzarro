@@ -30,7 +30,7 @@ fresh server on a fresh APFS clone of the store, *warm* a new random index with 
 warm. The HPC series (Xeon Gold 6254 nodes, data on an NFS scratch filer) and the rows of dense
 pairwise matrices, which were measured only on HPC nodes, are being re-measured on v0.4.1; the
 paper and this page give no HPC number until those runs land. The results are
-`benchmark/results/scale_v041.csv` and `sweep_v041.csv` in the paper repository.
+{repro}`benchmark/results/scale_v041.csv` and {repro}`benchmark/results/sweep_v041.csv` in the {ref}`companion repository <paper-companion>`.
 
 Medians from `scale_v041.csv`, cold / warm, in milliseconds (5 cold and 10 warm requests per
 cell, each for a new random index):
@@ -44,8 +44,8 @@ cell, each for a new random index):
 
 ## Rerunning the benchmark
 
-The harness lives in `benchmark/` of the paper's companion repository
-(`settylab/annzarro-paper`, private until the paper is published; {ref}`paper-companion`). It writes synthetic, seeded zarr v2 stores,
+The harness lives in {repro-tree}`benchmark` of the paper's {ref}`companion repository <paper-companion>`
+([settylab/annzarro-reproducibility](https://github.com/settylab/annzarro-reproducibility)). It writes synthetic, seeded zarr v2 stores,
 starts AnnZarro servers on localhost, and records latency, response bytes and server memory
 for each request. The measurement conditions and CSV columns are documented in
 `benchmark/README.md`.
@@ -83,13 +83,18 @@ hours and up to about 70 GB of disk. These commands were not rerun for this page
 
 ### Rebuilding the figure
 
-From the root of the paper repository:
+Clone the {ref}`companion repository <paper-companion>` at the commit this page cites and run
+the figure script ({repro}`figures/fig6_performance.py`; it needs matplotlib, numpy and pandas):
 
 ```bash
+git clone https://github.com/settylab/annzarro-reproducibility
+cd annzarro-reproducibility
+git checkout 9c416c624c2ba9effb7ea77488a029972fbf31f4
+python -m venv .venv && .venv/bin/pip install matplotlib numpy pandas
 .venv/bin/python figures/fig6_performance.py
 ```
 
-It reads the laptop CSVs from `benchmark/results/` and writes
+It reads the laptop CSVs from {repro-tree}`benchmark/results` and writes
 `manuscript/figures/fig6_performance.{pdf,png}` and the supplementary `figS_interactions` and
 `figS_chunk_sweep`. The docs' copy is made from that PNG by `docs/_tools/make_paper_figs.py`.
 

@@ -64,9 +64,8 @@ config leaves out take their defaults. The docs' screenshot views are in `docs/_
 ### The paper's five protocol views
 
 The paper's protocol views of `bm_aging_annzarro.zarr` are complete examples with two or three panels,
-colour scales, a lock and a table filter (`data_prep/demo_panelsets/*.view.json` in the companion
-repository `settylab/annzarro-paper`, private until the paper is published; the panel set files
-below are all you need). Each link is ready for a local server with `bm_aging_annzarro.zarr` in
+colour scales, a lock and a table filter (`*.view.json` in {repro-tree}`data_prep/demo_panelsets` of the
+{ref}`companion repository <paper-companion>`; the panel set files below are all you need). Each link is ready for a local server with `bm_aging_annzarro.zarr` in
 its data directory ({ref}`tut-start-links` says what to change otherwise); the panel set file loads
 the same view with **Load Panel Set** > **Upload file**.
 
@@ -105,7 +104,7 @@ the same view with **Load Panel Set** > **Upload file**.
 {download}`protocol-E-table-filter.json <../_static/panelsets/protocol/protocol-E-table-filter.json>`
 ::::
 
-`docs/_tools/start_links.py` imports them from the paper repository, writes every link of the
+`docs/_tools/start_links.py` imports them from the {ref}`companion repository <paper-companion>`, writes every link of the
 docs from its panel set file, and opens each one in a headless browser.
 
 ## The `view` object

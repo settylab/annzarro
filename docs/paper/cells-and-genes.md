@@ -5,7 +5,7 @@
 
 *Linking genes to cells and cells to genes*, a figure of the AnnZarro paper (Otto, Baasri and
 Setty, in preparation), made in Python by
-`figures/fig4_cells_by_genes.py` in the paper repository.
+{repro}`figures/fig4_cells_by_genes.py` in the paper's {ref}`companion repository <paper-companion>`.
 ```
 
 One cells x genes layer read both ways. A gene's column of the Kompot fold-change layer colours
@@ -93,4 +93,4 @@ Panel sets: {download}`cells-and-genes-abc.json <../_static/panelsets/paper/cell
 ({doc}`../user-guide/panel-sets`).
 
 Screenshots and views are made by `docs/_tools/shoot_figs45.py`; the paper's numbers are in
-`figures/numbers/fig4.json` of the paper repository.
+{repro}`figures/numbers/fig4.json` in the {ref}`companion repository <paper-companion>`.

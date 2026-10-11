@@ -6,7 +6,7 @@
 
 *A cell-by-cell matrix, read one focused cell at a time*, a figure of the AnnZarro paper (Otto,
 Baasri and Setty, in preparation), made in Python by
-`figures/fig2_cell_by_cell.py` in the paper repository.
+{repro}`figures/fig2_cell_by_cell.py` in the paper's {ref}`companion repository <paper-companion>`.
 ```
 
 A cells × cells matrix read one focused cell at a time. **a**, The UMAP coloured by the focused
@@ -37,7 +37,7 @@ This section covers panels a to c; panel d has its own list below.
 | **Log colour scale** for the walk (10⁻⁵ to 0.0126), cells below 10⁻⁵ in grey | Linear by default. Of the 956 cells the HSC's walk reaches above 10⁻⁵, 64% are below 5 × 10⁻⁴ (median 1.0 × 10⁻⁴), so on a linear scale they show as pale blue and the walks look narrower. | Click **Log** in the colour controls and type `1e-5` in the floor box beside it: the colour becomes log10 of the value, and values at or below the floor share the lowest colour. |
 | **Shared colour range** across the four panels of a | Each row scales itself. | **Lock Range** with the HSC focused keeps 0 to 0.0126, the largest value in the four rows. |
 | **Path line** through the 13 path cells | No line overlays. | The path table in the tutorial, or colour by `obs/trajectory_focus_cells` (raise **Size**). |
-| **n_eff = 1/Σp²** per panel (251, 517, 559, 289 cells) | Not computed. | Values in `figures/numbers/fig2.json` of the paper repository. |
+| **n_eff = 1/Σp²** per panel (251, 517, 559, 289 cells) | Not computed. | Values in {repro}`figures/numbers/fig2.json`. |
 | **Spearman ρ = 0.62** and the 5% / 20% **threshold lines** in b | No statistics or reference lines on plots. | The thresholds' result is stored as `plasma_groups`; per-cell distances to the plasma cell also exist as obs columns (`umap_dist_to_plasma`, `diffusion_dist_to_plasma`). |
 | **Group labels and walk mass** in c (0.09% on orange, 59.2% on blue) | Not computed. | Table filters give the cell types of each group ({ref}`tut-cell-check`). |
 | **Dataset-wide numbers** in the caption (median per-cell ρ 0.85; 14 of 30 neighbours shared) | Not computed; they summarise all 8,090 rows. | `figures/fig2_cell_by_cell.py`. |
@@ -72,7 +72,7 @@ View JSON: {download}`cell-by-cell-walk.view.json <../_tools/views/cell-by-cell-
 Loading one restores the dataset, the focus and the split layout, like the links ({ref}`tut-tour-load-file`).
 
 Screenshots and views are made by `docs/_tools/shoot_figs13.py`; the paper's numbers are in
-`figures/numbers/fig2.json` of the paper repository.
+{repro}`figures/numbers/fig2.json` in the {ref}`companion repository <paper-companion>`.
 
 (cell-by-cell-connectome)=
 ## A connectome as a cells × cells matrix

@@ -63,7 +63,7 @@ From the paper's laptop benchmark ({doc}`../paper/performance`): AnnZarro v0.4.0
 NVMe, synthetic stores of 10,000 to 1,000,000 cells × 5,000 genes, dense float32 layer in
 (2048, 32) chunks, binary float32 transfer. Cold = fresh APFS clone and fresh server process (a
 lower bound for network storage); warm = page cache warm, new index. Medians of 5 cold and 10
-warm requests (`benchmark/results/scale_v040.csv` in the paper repository):
+warm requests ({repro}`benchmark/results/scale_v040.csv` in the {ref}`companion repository <paper-companion>`):
 
 | Cells | Gene column, cold / warm | Body | Cell row, cold / warm |
 |---|---|---|---|
