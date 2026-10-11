@@ -268,7 +268,7 @@ def test_chunked_build_equals_reference(tmp_path, compressor, kind, monkeypatch)
     n, chunk = 2_050, 256                       # the last chunk is partial
     names = _chunked_names(n, kind)
     comp = numcodecs.Blosc(cname="zstd", clevel=3, shuffle=numcodecs.Blosc.SHUFFLE) if compressor != "none" else None
-    root = open_group(tmp_path / "s.zarr")
+    root = open_group(tmp_path / "s.zarr", zarr_format=2)      # the raw chunk reader is for format 2 only
     arr = write_strings(root, "idx", names, chunks=(chunk,), compressor=comp)
     raw_chunks = []
     real = string_chunks.joined_items

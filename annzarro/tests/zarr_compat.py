@@ -60,14 +60,14 @@ def open_group(path, mode="w", zarr_format=None):
 
 
 def _sharding(shape, chunks):
-    """``{"chunks", "shards"}`` for a sharded array of ``shape`` (the given inner ``chunks``, else
-    halves of the shape): one shard per ceil-multiple of the inner chunk, so a small array still
-    has several inner chunks to a shard."""
+    """``{"chunks", "shards"}`` for a sharded array of ``shape``: the given inner ``chunks`` (else
+    halves of the shape), and shards of up to 4 inner chunks along each axis, as a real sharded
+    store has (a shard as big as the array would make every read a whole-array read)."""
     if not shape or 0 in shape:
         return {} if chunks is None else {"chunks": chunks}
     inner = tuple(chunks) if chunks is not None else tuple(max(1, -(-n // 2)) for n in shape)
     inner = tuple(min(c, n) for c, n in zip(inner, shape))
-    shards = tuple(-(-n // c) * c for c, n in zip(inner, shape))
+    shards = tuple(c * min(4, -(-n // c)) for c, n in zip(inner, shape))
     return {"chunks": inner, "shards": shards}
 
 
@@ -75,10 +75,12 @@ def _shards_here(group):
     return SHARDED and ZARR_V3 and group.metadata.zarr_format == 3
 
 
-def write_array(group, name, data, dtype=None, chunks=None):
+def write_array(group, name, data, dtype=None, chunks=None, sharded=True):
+    """``sharded=False`` keeps the array unsharded under ``ANNZARRO_TEST_ZARR_FORMAT=3-sharded``,
+    for a test that bounds the memory of a read (a shard is decoded whole)."""
     arr = np.asarray(data) if dtype is None else np.asarray(data, dtype=dtype)
     kw = {} if chunks is None else {"chunks": chunks}
-    if _shards_here(group):
+    if sharded and _shards_here(group):
         kw = _sharding(arr.shape, chunks)
     if not ZARR_V3:
         return group.create_dataset(name, data=arr, **kw)
