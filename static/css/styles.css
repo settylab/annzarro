@@ -2455,10 +2455,10 @@ button.dtsb-button.dtsb-clear:hover {
         max-width: 100%;
     }
     .app-header.focus-tight .global-controls > .row > .focus-col:has(#focused-gene) {
-        min-width: 244px;
+        min-width: calc(var(--focus-gene-min, 172px) + 72px); /* the input, the history buttons, the gutter */
     }
     .app-header.focus-tight .global-controls > .row > .focus-col:has(#focused-cell) {
-        min-width: 280px;
+        min-width: calc(var(--focus-cell-min, 208px) + 72px);
     }
     /* The inputs grow to the value they hold, up to 420px (utils/header-fit.js does
        the same where field-sizing is not supported), until the header is tight:
@@ -2466,10 +2466,10 @@ button.dtsb-button.dtsb-clear:hover {
        (ENSG00000141510) or a barcode. A longer value is whole in the tooltip and the
        input shows its end, the distinctive part. */
     .global-controls #focused-gene {
-        min-width: 172px;
+        min-width: var(--focus-gene-min, 172px); /* measured from the font: utils/header-fit.js */
     }
     .global-controls #focused-cell {
-        min-width: 208px;
+        min-width: var(--focus-cell-min, 208px);
     }
     @supports (field-sizing: content) {
         .global-controls #focused-gene,

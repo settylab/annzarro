@@ -38,6 +38,25 @@ export function restWraps(header) {
     return new Set(tops).size > 1;
 }
 
+/**
+ * The inputs' minimum widths come from the font they are drawn in (fonts differ
+ * between systems): the reference string's width plus the input's padding and border.
+ */
+function measureFocusMinimums(header) {
+    const canvas = datasetNaturalWidth._canvas || (datasetNaturalWidth._canvas = document.createElement('canvas'));
+    const ctx = canvas.getContext('2d');
+    for (const id of FOCUS_INPUT_IDS) {
+        const input = document.getElementById(id);
+        if (!input) continue;
+        const style = getComputedStyle(input);
+        ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        if ('letterSpacing' in ctx) ctx.letterSpacing = style.letterSpacing === 'normal' ? '0px' : style.letterSpacing;
+        const width = ctx.measureText(FOCUS_REFERENCE[id]).width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+            + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth) + 3;
+        header.style.setProperty(`--${id === 'focused-gene' ? 'focus-gene' : 'focus-cell'}-min`, `${Math.ceil(width)}px`);
+    }
+}
+
 function apply(header, classes) {
     for (const c of ALL_CLASSES) header.classList.toggle(c, classes.includes(c));
     for (const id of FOCUS_INPUT_IDS) fitFocusInput(document.getElementById(id));
@@ -104,6 +123,7 @@ let _pickObserver = null;
 export function fitDatasetHeader(header) {
     if (!header) return;
     restoreBoxLabel(header);
+    measureFocusMinimums(header);
     settleHeader(header);
     truncateBoxLabel(header);
     if (_pickObserver) _pickObserver.takeRecords();   // our own text changes are not news
@@ -123,6 +143,8 @@ function settleHeader(header) {
 }
 
 export const FOCUS_INPUT_IDS = ['focused-gene', 'focused-cell'];
+/** What each input must at least show whole: an Ensembl ID, and a 10x cell barcode. */
+export const FOCUS_REFERENCE = { 'focused-gene': 'ENSG00000141510', 'focused-cell': 'AAACCTGAGAAACCAT-1' };
 export const FOCUS_INPUT_MAX = 420;
 
 /**

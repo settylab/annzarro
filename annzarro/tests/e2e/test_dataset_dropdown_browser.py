@@ -215,7 +215,9 @@ def test_the_box_is_one_line_with_the_middle_cut_and_the_list_shows_names_whole(
                 shown = page.eval_on_selector(rendered, "e => ({text: e.textContent.trim(), sw: e.scrollWidth, cw: e.clientWidth})")
                 assert shown["sw"] <= shown["cw"], f"the box's text is cut again by the CSS: {shown}"
                 assert page.get_attribute(rendered, "title") == name, "the full relative path is the tooltip"
-                assert shown["text"].endswith(name[-16:]) and shown["text"][:5] == name[:5], f"start and end are kept: {shown}"
+                # the last 16 characters while the box has room for them and the start; a box this narrow keeps 12
+                tail = 16 if shown["cw"] >= 230 else 12
+                assert shown["text"].endswith(name[-tail:]) and shown["text"][:5] == name[:5], f"start and end are kept: {shown}"
                 assert "\u2026" in shown["text"], "a long name is cut in the middle at this width"
                 box_now = page.locator(box_sel).bounding_box()
                 assert box_now["height"] <= ONE_LINE, f"{name[:30]}... is not one line: {box_now}"
@@ -532,3 +534,32 @@ def test_a_long_relative_path_is_cut_to_fit_and_keeps_its_end_and_the_strip_stay
     finally:
         browser.close()
         pw.stop()
+
+
+@pytest.mark.parametrize("letter_spacing", ["0.6px", "1.2px"])
+@pytest.mark.parametrize("width", [1024, 1440])
+def test_the_focus_inputs_follow_the_font_they_are_drawn_in(server, width, letter_spacing):
+    """A system whose font is wider (Linux against macOS) needs wider inputs for the same
+    Ensembl ID and barcode: the minimums are measured from the rendered font, not fixed px."""
+    base, _ = server
+    with sync_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch()
+        except Exception as exc:  # no browser binary
+            _skip_or_fail(f"Chromium cannot start: {exc}")
+        try:
+            page = browser.new_page(viewport={"width": width, "height": 1000})
+            page.goto(base + "/")
+            page.wait_for_selector("#dataset-selector + .select2-container", timeout=60_000)
+            page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 5")
+            # wider glyphs, as a wider system font gives (applied before the header settles on them)
+            page.add_style_tag(content=f"#focused-gene, #focused-cell {{ letter-spacing: {letter_spacing}; }}")
+            page.evaluate("""([g, c]) => { document.getElementById('focused-gene').value = g;
+                document.getElementById('focused-cell').value = c; }""", [ENSG, BARCODE])
+            page.wait_for_timeout(1000)
+            for sel, value in (("#focused-gene", ENSG), ("#focused-cell", BARCODE)):
+                size = page.eval_on_selector(sel, "e => ({sw: e.scrollWidth, cw: e.clientWidth})")
+                assert size["sw"] <= size["cw"], f"{sel} cuts {value}: {size}"
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "page scrolls sideways"
+        finally:
+            browser.close()
