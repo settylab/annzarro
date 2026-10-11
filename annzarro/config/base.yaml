@@ -76,6 +76,10 @@ server:
   # Entries one request of the dataset picker's folder listing returns; a
   # larger folder is read in pages ("show more").
   dataset_folder_max_entries: 500
+  # How deep, and over how many entries, the picker's search of the data
+  # directory goes before it stops and says the result is partial.
+  dataset_search_max_depth: 6
+  dataset_search_max_entries: 20000
   # Memory one read of an obsp/varp matrix may hold, in MB, estimated from the
   # store's metadata BEFORE any chunk is read (dense: rows x columns x itemsize;
   # sparse: its stored arrays plus the dense block returned). A request over it

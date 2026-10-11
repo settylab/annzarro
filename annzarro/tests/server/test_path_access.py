@@ -69,7 +69,7 @@ ROUTES = [
 #: confined by its own rule, like panel-set files in the sessions directory).
 NO_PATH = {
     "serve_static", "static", "get_current_user", "get_cache_info", "get_config", "get_status",
-    "list_all_datasets", "list_dataset_folder",  # the folder listing confines itself (test_dataset_folders.py)
+    "list_all_datasets", "list_dataset_folder", "list_dataset_search",  # the folder listing confines itself (test_dataset_folders.py)
     "get_home_directory", "validate_zarr_url",  # remote policy, below
     "delete_session", "duplicate_session", "check_session_exists", "export_session",
     "import_session", "list_sessions", "load_session", "set_session_owner",

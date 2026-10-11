@@ -53,6 +53,8 @@ DEFAULT_CONFIG = {
     "name_index_max_mb": None,      # MB all cell/gene-name search indices may hold; None = 15% of RAM (512 MB..16 GB)
     "name_search_scan_names": 100000000,  # names a search without an index (store over the budget) reads
     "dataset_folder_max_entries": 500,  # entries one dataset-picker folder request returns (the rest is "show more")
+    "dataset_search_max_depth": 6,      # folders deep the picker's search of the data directory goes
+    "dataset_search_max_entries": 20000, # entries that search looks at before it stops (and says so)
     "max_read_mb": None,            # MB one read of an obsp/varp matrix may hold in memory, sized from metadata; None = 5% of RAM (256 MB..4 GB)
     "read_budget_mb": None,         # MB all pairwise reads in flight in one worker may hold; None = 2 x max_read_mb
     "read_wait_s": 5,               # seconds a pairwise read waits for that budget before a 503

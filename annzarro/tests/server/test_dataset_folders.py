@@ -50,7 +50,7 @@ def test_root_lists_folders_before_stores(layout):
     assert ("store", "top.zarr") in names and not any(n == ".hidden" for _, n in names)
     top = next(e for e in body["entries"] if e["name"] == "top.zarr")
     assert top["cells"] == 200 and top["genes"] == 20
-    assert top["format"].startswith("zarr v") and top["modified"] > 0
+    assert top["format"].startswith("zarr format ") and top["modified"] > 0
     assert body["parent"] is None and not body["more"]
 
 
@@ -120,3 +120,75 @@ def test_hosted_non_admin_with_login_cannot_leave_the_data_dir(layout):
     root = app.test_client()
     root.post("/login", data={"username": "root", "password": "pw"})
     assert _get(root, folder=str(layout / "outside")).status_code == 200, "admins may, as everywhere"
+
+
+# --- search over the tree -----------------------------------------------------------
+
+def _search(client, q, **args):
+    return client.get("/api/v1/datasets/search", query_string={"q": q, **args})
+
+
+def test_search_finds_stores_in_unexpanded_subfolders_by_name_and_path(layout):
+    client = _app(layout).test_client()
+    body = _search(client, "deep").get_json()
+    assert [e["rel_path"] for e in body["results"]] == [os.path.join("projects", "liver", "deep.zarr")]
+    assert body["results"][0]["cells"] == 200 and not body["truncated"]
+    assert [e["name"] for e in _search(client, "projects/liver").get_json()["results"]] == ["broken.zarr", "deep.zarr"]
+    assert _search(client, "DEEP").get_json()["results"], "case-insensitive"
+    assert _search(client, "").get_json()["results"] == []
+
+
+def test_search_regex_and_refusals(layout):
+    client = _app(layout).test_client()
+    hit = _search(client, r"^deep\.zarr$|top", mode="regex").get_json()["results"]
+    assert {e["name"] for e in hit} == {"deep.zarr", "top.zarr"}
+    bad = _search(client, "(", mode="regex")
+    assert bad.status_code == 400 and bad.get_json()["reason"] == "invalid_regex"
+    long = _search(client, "a" * 201, mode="regex")
+    assert long.status_code == 400 and long.get_json()["reason"] == "query_too_long"
+    assert _search(client, "(", mode="substring").status_code == 200, "a substring query is literal"
+
+
+def test_search_uses_the_name_search_regex_guard_when_the_build_has_it(layout, monkeypatch):
+    from annzarro.core import name_index
+
+    class Refused(ValueError):
+        reason = "regex_too_complex"
+    def check(pattern):
+        raise Refused("refused")
+    monkeypatch.setattr(name_index, "check_regex", check, raising=False)
+    resp = _search(_app(layout).test_client(), "(a+)+", mode="regex")
+    assert resp.status_code == 400 and resp.get_json()["reason"] == "regex_too_complex"
+
+
+def test_search_caps_matches_depth_and_entries(layout):
+    many = layout / "data" / "many"
+    many.mkdir()
+    for i in range(6):
+        shutil.copytree(FIXTURE, many / f"s{i}.zarr")
+    capped = _search(_app(layout, dataset_folder_max_entries=3).test_client(), "s").get_json()
+    assert len(capped["results"]) == 3 and capped["truncated"]
+    shallow = _search(_app(layout, dataset_search_max_depth=1).test_client(), "deep").get_json()
+    assert shallow["results"] == [] and shallow["truncated"], "depth cap: says so"
+    few = _search(_app(layout, dataset_search_max_entries=2).test_client(), "deep").get_json()
+    assert few["truncated"] and few["visited"] <= 3
+
+
+def test_search_is_confined_and_never_walks_out_through_links(layout):
+    for host in ("127.0.0.1", "0.0.0.0"):
+        names = [e["name"] for e in _search(_app(layout, host=host).test_client(), "secret").get_json()["results"]]
+        if host == "0.0.0.0":
+            assert names == [], "hosted: a link out of the data directory is not searched or offered"
+    loop = layout / "data" / "projects" / "again"
+    os.symlink(layout / "data" / "projects", loop)
+    assert _search(_app(layout).test_client(), "deep").status_code == 200, "a link loop ends"
+
+
+def test_search_hosted_needs_login(layout):
+    from annzarro.server.auth import AuthManager
+    AuthManager(user_file=str(layout / "users.json")).create_user("alice", "pw")
+    app = _app(layout, host="0.0.0.0", auth_enabled=True)
+    assert _search(app.test_client(), "deep").status_code in (302, 401)
+    alice = app.test_client()
+    alice.post("/login", data={"username": "alice", "password": "pw"})
+    assert [e["name"] for e in _search(alice, "deep").get_json()["results"]] == ["deep.zarr"]
