@@ -19,6 +19,15 @@ also forge FUTURE records; the log is evidence of what the admin interface
 did, not protection against the account that runs it. ``chattr +a`` on the
 file makes it append-only for that account.
 
+``audit.head`` holds the last ``seq`` and hash, written after each append. A
+log that ends before its head (deleted, truncated, restored from a backup) is
+reported by :func:`verify`; it cannot stop the account that owns the files,
+which can rewrite the head too.
+
+A crash in the middle of a write leaves a torn line. That is not tampering
+when the next record still chains to the last good hash: :func:`verify`
+lists it under ``torn`` and stays ``ok``.
+
 At ``server.admin_audit_max_mb`` the file is rotated to ``audit.jsonl.1`` ..
 ``.5``; the first record of the new file carries the last hash of the old
 one, so the chain and ``seq`` continue. Never stored: passwords, hashes,
@@ -36,6 +45,7 @@ from .. import atomic_store
 logger = logging.getLogger("annzarro.audit")
 
 FILE_NAME = "audit.jsonl"
+HEAD_NAME = "audit.head"
 ROTATIONS = 5
 GENESIS = "0" * 64
 #: A record whose detail serialises to more than this keeps only a marker.
@@ -126,12 +136,14 @@ def append(directory, *, actor, addr, via, action, target=None, detail=None,
         record["hash"] = _hash(prev, record)
         line = _canonical(record)
         data = ("" if ends_in_newline else "\n") + line + "\n"
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         try:
             os.write(fd, data.encode("utf-8"))
             os.fsync(fd)
         finally:
             os.close(fd)
+        atomic_store.write_json(os.path.join(directory, HEAD_NAME),
+                                {"seq": record["seq"], "hash": record["hash"]})
         if max_mb and os.path.getsize(path) >= max_mb * 2 ** 20:
             _rotate(directory)
     logger.info(line)
@@ -157,14 +169,15 @@ def _files(directory):
     return [p for p in paths if os.path.exists(p)]
 
 
-def verify(directory):
-    """``(ok, first_bad_seq)`` over the current file and its rotations.
-
-    The first record of the oldest file is the anchor: its ``prev`` is taken
-    as given (older files were rotated away). A line that does not parse, a
-    wrong hash, a ``prev`` that is not the previous hash, or a ``seq`` that
-    does not follow, names the seq it should have had."""
+def _verify_once(directory):
     prev_hash, prev_seq = None, None
+    first_seq = None
+    records, torn, pending = 0, [], []
+
+    def result(ok, first_bad=None, problem=None):
+        return {"ok": ok, "first_bad_seq": first_bad, "problem": problem, "first_seq": first_seq,
+                "last_seq": prev_seq, "records": records, "torn": torn}
+
     for path in _files(directory):
         with open(path, "rb") as f:
             for raw in f:
@@ -174,13 +187,60 @@ def verify(directory):
                 rec = _parse(raw)
                 if (rec is None or not isinstance(rec.get("seq"), int)
                         or not isinstance(rec.get("prev"), str) or not isinstance(rec.get("hash"), str)):
-                    return False, expected
+                    if expected is not None:
+                        pending.append(expected)
+                    continue
                 if _hash(rec["prev"], rec) != rec["hash"]:
-                    return False, rec["seq"]
+                    return result(False, rec["seq"], "tampered")
                 if prev_hash is not None and (rec["prev"] != prev_hash or rec["seq"] != expected):
-                    return False, rec["seq"]
+                    # a torn line is followed by a record that chains to the last good one
+                    return result(False, pending[0] if pending else rec["seq"], "tampered")
+                torn.extend(pending)
+                pending = []
+                if first_seq is None:
+                    first_seq = rec["seq"]
                 prev_hash, prev_seq = rec["hash"], rec["seq"]
-    return True, None
+                records += 1
+    torn.extend(pending)
+    try:
+        head = atomic_store.read_json(os.path.join(directory, HEAD_NAME), None)
+    except ValueError:
+        head = {"seq": None}
+    if isinstance(head, dict) and isinstance(head.get("seq"), int):
+        if prev_seq is None or prev_seq < head["seq"]:
+            return result(False, (prev_seq or 0) + 1, "truncated")
+        if prev_seq == head["seq"] and prev_hash != head.get("hash"):
+            return result(False, prev_seq, "tampered")
+    elif head is not None:
+        return result(False, (prev_seq or 0) + 1, "head_unreadable")
+    return result(True)
+
+
+def verify(directory):
+    """Check the chain over the current file and its rotations.
+
+    Returns ``{ok, first_bad_seq, problem, first_seq, last_seq, records,
+    torn}``. ``problem`` is ``tampered`` (a record that no longer fits its
+    neighbours), ``truncated`` (the log ends before ``audit.head``) or
+    ``head_unreadable``. The first record of the oldest file is the anchor:
+    its ``prev`` is taken as given (older files were rotated away), and
+    ``first_seq`` says where the history starts. A line that does not parse
+    but is followed by a record chaining to the last good one is a torn
+    write: listed in ``torn``, ``ok`` stays true.
+
+    A rotation or append during the read can show a false break, so a failing
+    check is repeated while the files keep changing."""
+    for _ in range(3):
+        before = _stamps(directory)
+        out = _verify_once(directory)
+        if out["ok"] or _stamps(directory) == before:
+            return out
+    return out
+
+
+def _stamps(directory):
+    paths = _files(directory) + [os.path.join(directory, HEAD_NAME)]
+    return tuple((p, atomic_store.stamp(p)) for p in paths)
 
 
 _verified = {}
@@ -188,12 +248,12 @@ _verified = {}
 
 def verify_cached(directory):
     """:func:`verify`, reused until one of the log files changes."""
-    stamps = tuple((p, atomic_store.stamp(p)) for p in _files(directory))
+    stamps = _stamps(directory)
     cached = _verified.get(directory)
     if cached and cached[0] == stamps:
         return cached[1]
     result = verify(directory)
-    _verified[directory] = (stamps, result)
+    _verified[directory] = (_stamps(directory), result)
     return result
 
 

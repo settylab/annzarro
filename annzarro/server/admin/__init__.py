@@ -12,6 +12,7 @@ routes exist whether or not login is on; with login off every one answers
 404 ``admin_requires_login``.
 """
 
+import logging
 import os
 
 from ..auth import resolve_user_file
@@ -65,6 +66,22 @@ def validate_config(config):
     return problems
 
 
+def warn_about_proxy(config):
+    """A hosted server that listens on loopback with login on is almost
+    certainly behind a reverse proxy. Without ``server.proxy_count`` it sees
+    its own http://127.0.0.1 origin, not the https:// one the browser sends,
+    and the admin CSRF check refuses every change."""
+    from .. import confinement
+    if (config.get("auth_enabled") and not config.get("proxy_count", 0)
+            and config.get("host") in ("127.0.0.1", "localhost", "::1")
+            and confinement.is_hosted(config)):
+        logging.getLogger(__name__).warning(
+            "Admin interface: this server listens on %s with login on and server.proxy_count 0. "
+            "Behind a reverse proxy that terminates TLS or rewrites Host, every admin change "
+            "will fail with csrf_failed; set server.proxy_count to the number of proxies.",
+            config.get("host"))
+
+
 def register_admin_routes(app):
     """Register /admin and /api/v1/admin/* on ``app``."""
     from flask import Blueprint
@@ -73,6 +90,7 @@ def register_admin_routes(app):
     problems = validate_config(app.config)
     if problems:
         raise ValueError("; ".join(problems))
+    warn_about_proxy(app.config)
     blueprint = Blueprint("admin", __name__)
     for section in (pages, users, data_roots, health, panel_sets, settings, access):
         section.register(blueprint)

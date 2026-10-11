@@ -4,6 +4,7 @@ The matrix is generated from ``app.url_map``: a route added by a later slice
 is covered the moment it exists, and one that forgets the guard fails here.
 """
 import json
+import logging
 import os
 
 import pytest
@@ -285,3 +286,42 @@ def test_a_demoted_admin_is_refused_on_the_next_request(app):
     from annzarro.server.auth import AuthManager
     AuthManager(user_file=app.config["user_file"]).set_admin(ADMIN, False)
     assert client.get("/api/v1/admin/audit").status_code == 403
+
+
+class _Capture:
+    """Log records of one logger (create_app resets the root handlers, so caplog misses them)."""
+
+    def __init__(self, name):
+        self.records, self.log = [], logging.getLogger(name)
+        self.handler = logging.Handler(level=logging.DEBUG)
+        self.handler.emit = self.records.append
+
+    def __enter__(self):
+        self.log.addHandler(self.handler)
+        return self
+
+    def __exit__(self, *exc):
+        self.log.removeHandler(self.handler)
+
+    @property
+    def text(self):
+        return " ".join(r.getMessage() for r in self.records)
+
+
+def test_the_csrf_log_explains_a_proxy_that_changes_the_origin(tmp_path):
+    client = login(make_app(tmp_path), ADMIN)
+    with _Capture("annzarro.server.admin.guard") as log:
+        response = _call(client, "POST", "/api/v1/admin/reauth",
+                         unsafe_headers(client, Origin="https://lab.example.org"))
+    assert response.status_code == 403
+    assert "proxy_count" in log.text and "https://lab.example.org" in log.text
+
+
+def test_startup_warns_about_a_loopback_login_server_without_proxy_count(tmp_path):
+    with _Capture("annzarro.server.admin") as log:
+        make_app(tmp_path, host="127.0.0.1")
+    assert "proxy_count" in log.text
+    (tmp_path / "b").mkdir()
+    with _Capture("annzarro.server.admin") as log:
+        make_app(tmp_path / "b", host="127.0.0.1", proxy_count=1)
+    assert "proxy_count" not in log.text

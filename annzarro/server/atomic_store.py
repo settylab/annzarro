@@ -13,8 +13,12 @@ the file.
   survives a power cut. Every write gives the file a new inode.
 * :func:`locked` is an exclusive lock on ``<path>.lock``: a thread lock for
   this process and ``flock`` for the others (a no-op on Windows, where the
-  desktop app is a single process). It is not re-entrant: taking it twice in
-  one thread raises instead of deadlocking.
+  desktop app is a single process). It gives up after a timeout
+  (:class:`LockTimeout`, default 10 s, ``server.lock_timeout_s``), so a stuck
+  holder cannot freeze every thread of the server. It is not re-entrant:
+  taking it twice in one thread raises instead of deadlocking.
+* Paths are resolved through symlinks first: a ``users.json`` that is a
+  link into ``/etc`` stays a link and its target gets the writes.
 * :func:`update_json` is read, mutate, write under that lock. The mutator may
   raise to refuse; nothing is written then.
 * :func:`stamp` is ``(inode, mtime_ns, size)``. Because every write replaces
@@ -32,6 +36,7 @@ import logging
 import os
 import tempfile
 import threading
+import time
 from contextlib import contextmanager
 
 try:
@@ -41,13 +46,26 @@ except ImportError:  # Windows: the desktop app is single-process
 
 logger = logging.getLogger(__name__)
 
+#: Seconds ``locked`` waits for a lock before it raises LockTimeout.
+DEFAULT_LOCK_TIMEOUT = 10.0
+
+
+class LockTimeout(RuntimeError):
+    """A lock stayed taken for the whole timeout (another process or thread holds it)."""
+
+
+def set_default_lock_timeout(seconds):
+    global DEFAULT_LOCK_TIMEOUT
+    DEFAULT_LOCK_TIMEOUT = float(seconds)
+
+
 _thread_locks = {}
 _registry_lock = threading.Lock()
 _held = threading.local()
 
 
 def _key(path):
-    return os.path.abspath(path)
+    return os.path.realpath(path)
 
 
 def _thread_lock(path):
@@ -59,31 +77,44 @@ def _thread_lock(path):
 
 
 @contextmanager
-def locked(path):
+def locked(path, timeout=None):
     """Hold the exclusive lock of ``path`` (thread lock plus ``flock`` on
-    ``<path>.lock``). Not re-entrant: a second request in the same thread
-    raises RuntimeError."""
+    ``<path>.lock``). ``timeout`` seconds (default ``DEFAULT_LOCK_TIMEOUT``)
+    to get it, else LockTimeout. Not re-entrant: a second request in the same
+    thread raises RuntimeError."""
     key = _key(path)
     held = getattr(_held, "paths", None)
     if held is None:
         held = _held.paths = set()
     if key in held:
         raise RuntimeError(f"atomic_store.locked({path!r}) taken twice in one thread")
-    with _thread_lock(key):
-        held.add(key)
-        fd = None
-        try:
-            if fcntl is not None:
-                fd = os.open(key + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
-                fcntl.flock(fd, fcntl.LOCK_EX)
-            yield
-        finally:
-            held.discard(key)
-            if fd is not None:
+    timeout = DEFAULT_LOCK_TIMEOUT if timeout is None else timeout
+    deadline = time.monotonic() + timeout
+    thread_lock = _thread_lock(key)
+    if not thread_lock.acquire(timeout=max(0.0, timeout)):
+        raise LockTimeout(f"{path} is locked by another thread (waited {timeout:g} s)")
+    fd = None
+    try:
+        if fcntl is not None:
+            # O_NOFOLLOW: the lock file is ours; a planted link is an error, not a redirect
+            fd = os.open(key + ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            while True:
                 try:
-                    fcntl.flock(fd, fcntl.LOCK_UN)
-                finally:
-                    os.close(fd)
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise LockTimeout(f"{path} is locked by another process (waited {timeout:g} s)")
+                    time.sleep(0.01)
+        held.add(key)
+        yield
+    finally:
+        held.discard(key)
+        try:
+            if fd is not None:
+                os.close(fd)        # closing releases the flock
+        finally:
+            thread_lock.release()
 
 
 def stamp(path):
@@ -120,18 +151,14 @@ def _fsync_dir(directory):
         os.close(fd)
 
 
-def write_json(path, data, mode=None, indent=2):
+def write_json(path, data, mode=0o600, indent=2):
     """Replace ``path`` with ``data`` in one step.
 
-    The caller holds :func:`locked` when the write follows a read. ``mode``
-    is the file's permission bits; by default an existing file keeps its
-    own and a new one is 0600."""
-    directory = os.path.dirname(os.path.abspath(path))
-    if mode is None:
-        try:
-            mode = os.stat(path).st_mode & 0o777
-        except FileNotFoundError:
-            mode = 0o600
+    The caller holds :func:`locked` when the write follows a read. A symlink
+    stays a symlink: the file it points to is replaced. The file ends up with
+    ``mode`` (default 0600) whatever it had before."""
+    path = os.path.realpath(path)
+    directory = os.path.dirname(path)
     fd, tmp = tempfile.mkstemp(prefix=f".{os.path.basename(path)}_", suffix=".tmp", dir=directory)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:

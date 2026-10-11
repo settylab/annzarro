@@ -69,6 +69,7 @@ DEFAULT_CONFIG = {
     "max_sessions_per_user": 500,         # panel sets one user may keep (login off: all sets are one user's); 0 = no limit
     "max_sessions": 5000,                 # panel sets on the whole server; 0 = no limit
     "max_sessions_mb": 256,               # MB all panel sets may take together; 0 = no limit
+    "lock_timeout_s": 10,                 # seconds a request waits for the users file / admin state lock before a 503 busy
     "admin_data_roots": [],               # directories under which admins may add data directories in the browser (empty = adding is off)
     "admin_reauth_minutes": 30,           # minutes an admin's password entry lets them change things; 0 = never asked
     "admin_rate_per_minute": 30,          # admin changes per minute per admin and worker (reads get 8x)
@@ -529,6 +530,21 @@ def configure_app(app: Flask, config: Dict[str, Any]) -> None:
         return None
 
     app.register_error_handler(RequestEntityTooLarge, lambda exc: _too_large())
+
+    # A lock on the users file or the admin state that stays taken (a hung
+    # process, a slow disk) must not hold every thread: wait lock_timeout_s,
+    # then answer 503 and let the client retry
+    from annzarro.server import atomic_store
+    atomic_store.set_default_lock_timeout(config.get("lock_timeout_s", 10))
+
+    def _busy(exc):
+        logger.error("Request refused, a lock stayed taken: %s", exc)
+        response = jsonify({"error": "The server is busy. Try again in a moment.", "reason": "busy"})
+        response.status_code = 503
+        response.headers["Retry-After"] = "2"
+        return response
+
+    app.register_error_handler(atomic_store.LockTimeout, _busy)
 
     # Cross-origin API access only when configured. Never with credentials:
     # the login cookie must not authorize requests from other sites.
