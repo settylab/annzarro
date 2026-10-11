@@ -13,6 +13,7 @@ stored sizes of a sparse matrix's arrays, and raises ReadTooLargeError over
 """
 from typing import Any, Dict, List, Optional
 
+import contextvars
 import logging
 import threading
 import time
@@ -25,8 +26,23 @@ logger = logging.getLogger(__name__)
 _limit_mb: Optional[float] = None
 _budget_mb: Optional[float] = None
 _wait_s: float = 5.0
+_share_pct: float = 50.0
 _cond = threading.Condition()
 _in_flight = 0
+#: bytes in flight per requester (see ``requester``)
+_by_owner: Dict[str, int] = {}
+
+DEFAULT_SHARE_PCT = 50
+
+#: Who the current request is for: the user name, else the client address. Set
+#: by the server for each request (``requester``); reads made outside a
+#: request (scripts, tests) have none and share the budget freely.
+_owner: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar("annzarro_read_owner", default=None)
+
+
+def requester(owner: Optional[str]) -> None:
+    """Name who the reads of this request are for (None: nobody in particular)."""
+    _owner.set(owner)
 
 MIN_DEFAULT_MB = 256
 MAX_DEFAULT_MB = 4096
@@ -83,14 +99,25 @@ def default_limit_bytes() -> int:
 
 
 def configure(max_mb: Optional[float] = None, budget_mb: Optional[float] = None,
-              wait_s: Optional[float] = None) -> None:
+              wait_s: Optional[float] = None, share_pct: Optional[float] = None) -> None:
     """Set the per-request limit in MB (None or 0: the default,
     default_limit_bytes()), the budget of all pairwise reads in flight in this
-    process (None or 0: twice the limit) and the seconds a read waits for it."""
-    global _limit_mb, _budget_mb, _wait_s
+    process (None or 0: twice the limit), the seconds a read waits for it, and
+    the percentage of that budget one requester may hold at once (None: 50;
+    0 or 100: no share)."""
+    global _limit_mb, _budget_mb, _wait_s, _share_pct
     _limit_mb = float(max_mb) if max_mb else None
     _budget_mb = float(budget_mb) if budget_mb else None
     _wait_s = 5.0 if wait_s is None else float(wait_s)
+    _share_pct = float(DEFAULT_SHARE_PCT if share_pct is None else share_pct)
+
+
+def share_bytes() -> int:
+    """What one requester may hold of the budget at once: its share, but at
+    least ``max_read_mb`` so that one read the guard admits always fits."""
+    if _share_pct <= 0 or _share_pct >= 100:
+        return budget_bytes()
+    return min(budget_bytes(), max(int(budget_bytes() * _share_pct / 100), limit_bytes()))
 
 
 def budget_bytes() -> int:
@@ -109,26 +136,46 @@ def admit(need: int):
     least that limit, so a read that passed it fits an idle server: waiting
     cannot deadlock. Over the budget with others in flight, wait up to
     ``wait_s`` for them, then ReadBusyError (the route's 503, Retry-After).
+
+    One requester (``requester``) may hold only ``share_bytes()`` of the
+    budget: its next read waits, or is refused, while the rest of the budget
+    stays free for everybody else, instead of one user's reads using it all.
     """
     global _in_flight
     need = min(int(need), budget_bytes())
+    owner = _owner.get()
     deadline = time.monotonic() + _wait_s
     with _cond:
-        while _in_flight + need > budget_bytes():
+        while (_in_flight + need > budget_bytes()
+               or (owner is not None and _by_owner.get(owner, 0) > 0
+                   and _by_owner[owner] + need > share_bytes())):
             left = deadline - time.monotonic()
             if left <= 0:
+                mine = owner is not None and _by_owner.get(owner, 0) + need > share_bytes()
                 raise ReadBusyError(
-                    f"The server is reading other large pairwise matrices "
-                    f"({_in_flight / 2 ** 20:,.0f} MB in flight of a "
-                    f"{budget_bytes() / 2 ** 20:,.0f} MB budget); try again in a moment.",
+                    (f"You are already reading {_by_owner.get(owner, 0) / 2 ** 20:,.0f} MB of large pairwise "
+                     f"matrices, the most one user may hold of the server's {budget_bytes() / 2 ** 20:,.0f} MB "
+                     "read budget at once (server.read_user_share_percent); try again in a moment."
+                     if mine else
+                     f"The server is reading other large pairwise matrices "
+                     f"({_in_flight / 2 ** 20:,.0f} MB in flight of a "
+                     f"{budget_bytes() / 2 ** 20:,.0f} MB budget); try again in a moment."),
                     max(1, int(round(_wait_s))))
             _cond.wait(left)
         _in_flight += need
+        if owner is not None:
+            _by_owner[owner] = _by_owner.get(owner, 0) + need
     try:
         yield
     finally:
         with _cond:
             _in_flight -= need
+            if owner is not None:
+                left_over = _by_owner.get(owner, 0) - need
+                if left_over > 0:
+                    _by_owner[owner] = left_over
+                else:
+                    _by_owner.pop(owner, None)
             _cond.notify_all()
 
 

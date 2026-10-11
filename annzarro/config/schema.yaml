@@ -147,6 +147,17 @@ server:
       minimum: 0
       description: Seconds a regex name search scans before it answers with the matches found so far (partial); 0 = no limit
       default: 10
+    read_user_share_percent:
+      type: number
+      minimum: 0
+      maximum: 100
+      description: Percent of read_budget_mb one user (login off - one client address) may hold of pairwise reads at once; never less than one max_read_mb read; 0 = no share
+      default: 50
+    subset_max_concurrent:
+      type: integer
+      minimum: 1
+      description: Cell subsets one worker computes at once (each is a pass over a column of every cell); another waits read_wait_s, then 503 read_busy
+      default: 2
     max_requests:
       type: integer
       minimum: 0

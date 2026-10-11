@@ -55,6 +55,8 @@ DEFAULT_CONFIG = {
     "name_search_scan_names": 100000000,  # names a search without an index (store over the budget) reads
     "name_search_max_regex_chars": 200,   # longest regex a name search runs (a longer one is a 400 regex_too_long)
     "name_search_timeout_s": 10,          # seconds a regex name search scans before it answers partially; 0 = no limit
+    "read_user_share_percent": 50,        # % of read_budget_mb one user (else one address) may hold at once; 0 = no share
+    "subset_max_concurrent": 2,           # cell subsets one worker computes at once (each is a pass over a column of every cell)
     "max_requests": 20000,                # gunicorn: requests a worker serves before it is replaced (frees creeping memory); 0 = never
     "max_requests_jitter": 2000,          # gunicorn: up to this many extra requests, random per worker, so workers do not restart together
     "limit_request_line": 8190,           # gunicorn: longest request line in bytes (a longer one is a 400)

@@ -550,7 +550,14 @@ def register_data_routes(app, api_version):
     name_index.configure(app.config.get("name_index_max_mb"), app.config.get("name_search_scan_names"),
                          app.config.get("name_search_max_regex_chars"), app.config.get("name_search_timeout_s"))
     read_guard.configure(app.config.get("max_read_mb"), app.config.get("read_budget_mb"),
-                         app.config.get("read_wait_s", 5))
+                         app.config.get("read_wait_s", 5), app.config.get("read_user_share_percent"))
+    cell_subset.configure(app.config.get("subset_max_concurrent"), app.config.get("read_wait_s", 5))
+
+    @app.before_request
+    def _name_the_requester():
+        # whose reads these are, for each one's share of the read budget:
+        # the logged-in user, else the client address (the proxy's, with proxy_count)
+        read_guard.requester(permissions.current_user()[0] or request.remote_addr)
     app.register_error_handler(ReadTooLargeError, _read_too_large_response)
     app.register_error_handler(ReadBusyError, _read_busy_response)
 
