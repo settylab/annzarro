@@ -22,6 +22,7 @@ import { RemoteNames } from '../../utils/remote-names.js';
 import { colourKind } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { sourceKeyMissing } from '../../utils/structure-keys.js';
 import { NO_HOVER } from './hover-columns.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
@@ -415,6 +416,15 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     const { type, key, column } = settings;
     const datasetPath = DataManager.getCurrentDataset();
     const rowsArr = null; // Filtering no longer applies
+
+    if (role === 'colour' && type !== 'none') {
+      const known = knownMissingSource(await DataManager.getDatasetStructure(datasetPath, signal).catch(() => null),
+        settings, { unit, total: expected });
+      if (known) {
+        return { values: Array(typeof expected === 'number' ? expected : 0).fill(1), type: 'constant',
+          categories: null, coverage: known, rankOf: null, ranked: false, groupNames: null };
+      }
+    }
 
     let data, values, dataType;
     let categories = null;
@@ -1395,6 +1405,23 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
  * @param {Object} settings - Plot settings
  * @returns {Object} - Object containing indexMask and filter statistics
  */
+/**
+ * The coverage of a colour the dataset's structure says is not there, or null.
+ * A known gap, stated without a request (it would 404) and without an error
+ * in the console: the points are drawn grey and the panel says why, whatever
+ * reloaded the plot.
+ * @param {Object} structure  the dataset structure, or null
+ * @param {{type: string, key: string, column?: string}} series
+ * @param {{unit: string, total: number|null}} spec
+ * @returns {Coverage|null}
+ */
+export function knownMissingSource(structure, series, { unit, total }) {
+  if (!sourceKeyMissing(structure, series.type, series.key)) return null;
+  const what = series.type === 'obs' || series.type === 'var' ? 'column' : 'key';
+  return Coverage.missing(GAP.UNAVAILABLE, `No ${series.type} ${what} '${series.key}' in this dataset.`,
+    { source: seriesSource(series), unit, total });
+}
+
 /**
  * How a series is named in a coverage line: `obs.leiden`, `obsm.X_umap.0`.
  * @param {{type: string, key: string, column?: string}} series

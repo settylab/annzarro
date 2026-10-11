@@ -274,3 +274,56 @@ def test_opening_a_saved_view(server, which):
             _grey_with_notice(s, label, large)
         finally:
             browser.close()
+
+
+TOASTS = """() => {
+  window.__toasts = [];
+  new MutationObserver((records) => {
+    for (const r of records) for (const n of r.addedNodes) {
+      if (n.classList && n.classList.contains('notification')) {
+        window.__toasts.push((n.querySelector('.notification-title') || {}).textContent);
+      }
+    }
+  }).observe(document, {subtree: true, childList: true});
+}"""
+
+
+@pytest.mark.parametrize("which", COLOURS)
+def test_a_known_gap_asks_for_nothing_and_warns_once(server, which):
+    """The structure says the column is missing: no request for it, no console error, one toast per switch.
+
+    The toast is about the colour menu, which a switch rebuilds; a subset
+    change or a part step does not rebuild it, so does not say it again.
+    """
+    root, has, lacks, large = server
+    colour, label = COLOURS[which]
+    needle = colour["key"]
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.add_init_script(f"({TOASTS})()")
+            asked, errors = [], []
+            page.on("request", lambda r: asked.append(r.url) if needle in urllib.parse.unquote(r.url) else None)
+            page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            page.goto(_link(root, has, colour, SUBSET))
+            page.wait_for_selector(f'.tile[data-tile-id="{PID}"]', timeout=30000)
+            s = _settle(page)
+            asked.clear()
+            target = page.evaluate("""(name) => [...document.querySelectorAll('#dataset-selector option')]
+                .map(o => o.value).find(v => v && v.includes(name))""", os.path.basename(lacks))
+            page.evaluate("""(v) => jQuery('#dataset-selector').val(v)
+                .trigger({type: 'select2:select', params: {data: {id: v}}})""", target)
+            s = _settle(page, s)
+            _grey_with_notice(s, label, large)
+            _set_subset(page, 70)
+            s = _settle(page, s)
+            page.click("#subset-part-next")
+            s = _settle(page, s)
+            _grey_with_notice(s, label, large)
+            assert asked == [], f"asked for a column the dataset does not have: {asked}"
+            assert errors == [], errors
+            toasts = [t for t in page.evaluate("window.__toasts") if t == "Plot source not found"]
+            assert len(toasts) == 1, toasts
+        finally:
+            browser.close()

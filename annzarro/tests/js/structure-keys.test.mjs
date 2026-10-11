@@ -15,7 +15,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { layerKeys, keyExistsInStructure } = await import('../../../static/js/utils/structure-keys.js');
+const { layerKeys, keyExistsInStructure, sourceKeyMissing } = await import('../../../static/js/utils/structure-keys.js');
 const { notify, NOTIFY_EVENT } = await import('../../../static/js/utils/notify.js');
 
 // shape of bm_aging.zarr's /data/dataset_structure (trimmed)
@@ -57,4 +57,20 @@ test('notify dispatches the event main.js shows', () => {
     document.addEventListener(NOTIFY_EVENT, e => seen.push(e.detail));
     notify('Plot source not found', 'layer "raw" is not in this dataset');
     assert.deepEqual(seen, [{ title: 'Plot source not found', message: 'layer "raw" is not in this dataset', type: 'warning' }]);
+});
+
+test('sourceKeyMissing is true only when the structure lists that kind without the key', () => {
+  const structure = { obs: { columns: ['cell_type'] }, var: { columns: ['gene_name'] },
+    obsm: { dataframes: { X_umap: {} } }, layers: { keys: ['counts'] } };
+  assert.equal(sourceKeyMissing(structure, 'obs', 'leiden'), true);
+  assert.equal(sourceKeyMissing(structure, 'obs', 'cell_type'), false);
+  assert.equal(sourceKeyMissing(structure, 'var', 'gene_name'), false);
+  assert.equal(sourceKeyMissing(structure, 'obsm', 'X_alt'), true);
+  assert.equal(sourceKeyMissing(structure, 'obsm', 'X_umap'), false);
+  // unknown structure, a kind it does not list, other types, no key: the server decides
+  assert.equal(sourceKeyMissing(null, 'obs', 'leiden'), false);
+  assert.equal(sourceKeyMissing({ obs: {} }, 'obs', 'leiden'), false);
+  assert.equal(sourceKeyMissing(structure, 'varm', 'X'), false);
+  assert.equal(sourceKeyMissing(structure, 'layer', 'nope'), false);
+  assert.equal(sourceKeyMissing(structure, 'obs', ''), false);
 });
