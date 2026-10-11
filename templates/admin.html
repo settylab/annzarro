@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Mount point behind a reverse proxy; see static/js/utils/app-url.js -->
+    <meta name="annzarro-root" content="{{ request.script_root }}">
+    <!-- Per-login CSRF token for the admin API (static/js/admin/admin-api.js). Autoescaped; empty when absent. -->
+    <meta name="annzarro-csrf" content="{{ session.get('csrf', '') }}">
+    <title>{{ app_name|default('AnnZarro') }} admin</title>
+
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/all.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body class="admin-page">
+    {# No inline script: the page's Content-Security-Policy allows script-src 'self' only. #}
+    <header class="admin-header">
+        <div class="container-fluid d-flex flex-wrap align-items-center gap-3 py-2">
+            <h1 class="admin-title h4 mb-0">{{ app_name|default('AnnZarro') }} admin</h1>
+            <span id="admin-user" class="text-muted small"></span>
+            <div class="ms-auto d-flex gap-2">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ request.script_root }}/">
+                    <i class="fas fa-arrow-left" aria-hidden="true"></i> Back to {{ app_name|default('AnnZarro') }}
+                </a>
+                <a class="btn btn-sm btn-outline-secondary" href="{{ request.script_root }}/logout">
+                    <i class="fas fa-sign-out-alt" aria-hidden="true"></i> Sign out
+                </a>
+            </div>
+        </div>
+        <nav aria-label="Admin sections" class="container-fluid">
+            <ul id="admin-nav" class="nav nav-tabs admin-nav"></ul>
+        </nav>
+    </header>
+
+    <main id="admin-main" class="container-fluid py-3" aria-live="polite"></main>
+    <div id="admin-toasts" class="admin-toasts" aria-live="assertive"></div>
+
+    <noscript><p class="container-fluid">The admin interface needs JavaScript.</p></noscript>
+
+    <script src="{{ url_for('static', filename='vendor/js/bootstrap.bundle.min.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/admin/admin-main.js') }}"></script>
+</body>
+</html>

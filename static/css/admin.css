@@ -1,0 +1,121 @@
+/* Admin interface (templates/admin.html). Colours come from Bootstrap's
+   variables, so the page follows whatever theme the vendor stylesheet sets. */
+
+.admin-page {
+    background-color: var(--bs-body-bg, #fff);
+    min-height: 100vh;
+}
+
+.admin-header {
+    background-color: var(--bs-tertiary-bg, #f8f9fa);
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+.admin-nav {
+    border-bottom: 0;
+    flex-wrap: wrap;
+}
+
+.admin-nav .nav-link.active {
+    font-weight: 600;
+}
+
+.admin-table th {
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.admin-table td code,
+.admin-detail {
+    word-break: break-all;
+    white-space: pre-wrap;
+}
+
+.admin-toasts {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    width: min(28rem, calc(100vw - 2rem));
+    z-index: 1090;
+}
+
+/* Meters (health read budget) and the per-owner quota strip (panel sets) */
+.admin-meter {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 11rem;
+}
+
+.admin-meter .progress,
+.admin-usage .progress {
+    flex: 1 1 6rem;
+    height: 0.6rem;
+}
+
+.admin-usage-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: 0.4rem 1.5rem;
+}
+
+.admin-usage {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.admin-usage-name {
+    flex: 0 0 6rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Settings: one grid row per policy key */
+.policy-group {
+    margin-bottom: 1.5rem;
+}
+
+.policy-group h2 {
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    padding-bottom: 0.25rem;
+}
+
+.policy-row {
+    display: grid;
+    grid-template-columns: minmax(12rem, 2fr) minmax(12rem, 3fr) minmax(8rem, 1fr);
+    gap: 0.5rem 1rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--bs-border-color-translucent, rgba(0, 0, 0, 0.1));
+    align-items: start;
+}
+
+.policy-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem;
+}
+
+.policy-master {
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 0.375rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    gap: 1rem;
+}
+
+.policy-list code {
+    word-break: break-all;
+}
+
+@media (max-width: 767.98px) {
+    .policy-row {
+        grid-template-columns: 1fr;
+    }
+
+    .policy-meta {
+        justify-content: flex-start;
+    }
+}
