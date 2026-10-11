@@ -92,7 +92,7 @@ def test_workers_are_recycled_and_requests_are_bounded(site_yaml):
     for name, value in _settings(module).items():
         cfg.set(name, value)
     assert (cfg.max_requests, cfg.max_requests_jitter) == (20000, 2000)
-    assert (cfg.limit_request_line, cfg.limit_request_fields, cfg.limit_request_field_size) == (8190, 100, 8190)
+    assert (cfg.limit_request_line, cfg.limit_request_fields, cfg.limit_request_field_size) == (0, 100, 8190)
 
 
 def test_the_recycling_and_header_limits_come_from_the_configuration(site_yaml):

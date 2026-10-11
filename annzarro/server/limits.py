@@ -39,10 +39,10 @@ LIMITS: Dict[str, Limit] = {limit.key: limit for limit in (
     Limit("subset_max_concurrent", 2),
     Limit("max_requests", 20000, zero_off=True),
     Limit("max_requests_jitter", 2000, zero_off=True),
-    Limit("limit_request_line", 8190, zero_off=True),
+    Limit("limit_request_line", 0, zero_off=True),
     Limit("limit_request_fields", 100, zero_off=True),
     Limit("limit_request_field_size", 8190, zero_off=True),
-    Limit("max_request_mb", 16, integer=False, zero_off=True),
+    Limit("max_request_mb", 64, integer=False, zero_off=True),
 )}
 
 

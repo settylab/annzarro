@@ -95,13 +95,13 @@ server:
   # limit_request_* values bound one request's line and headers (bytes).
   max_requests: 20000
   max_requests_jitter: 2000
-  limit_request_line: 8190
+  limit_request_line: 0
   limit_request_fields: 100
   limit_request_field_size: 8190
   # Largest request body the server reads, in MB. Panel sets (saved or
   # imported) are the only uploads; a larger one is refused with 413
   # request_too_large before it is read. 0 = no limit.
-  max_request_mb: 16
+  max_request_mb: 64
   # Panel sets (the JSON files in <data_dir>/sessions): how many one user may
   # keep (with login off all sets are one user's), how many the server keeps,
   # and the MB they may take together. A save, duplicate or import past a limit
