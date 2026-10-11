@@ -138,28 +138,7 @@ def test_search_finds_stores_in_unexpanded_subfolders_by_name_and_path(layout):
     assert _search(client, "").get_json()["results"] == []
 
 
-@pytest.fixture
-def regex_guard(monkeypatch):
-    """A build with the name search's regex guard (here one that lets every pattern through)."""
-    from annzarro.core import name_index
-    monkeypatch.setattr(name_index, "check_regex", lambda pattern: None, raising=False)
-
-
-def test_regex_search_is_refused_without_the_regex_guard(layout, monkeypatch):
-    from annzarro.core import name_index
-    monkeypatch.delattr(name_index, "check_regex", raising=False)
-    client = _app(layout).test_client()
-    resp = _search(client, "deep", mode="regex")
-    assert resp.status_code == 400 and resp.get_json()["reason"] == "regex_unavailable"
-    assert _search(client, "deep").status_code == 200, "a plain-text search is not affected"
-
-
-def test_regex_search_is_accepted_with_the_regex_guard(layout, regex_guard):
-    hit = _search(_app(layout).test_client(), "^deep", mode="regex")
-    assert hit.status_code == 200 and [e["name"] for e in hit.get_json()["results"]] == ["deep.zarr"]
-
-
-def test_search_regex_and_refusals(layout, regex_guard):
+def test_search_regex_and_refusals(layout):
     client = _app(layout).test_client()
     hit = _search(client, r"^deep\.zarr$|top", mode="regex").get_json()["results"]
     assert {e["name"] for e in hit} == {"deep.zarr", "top.zarr"}
@@ -170,16 +149,59 @@ def test_search_regex_and_refusals(layout, regex_guard):
     assert _search(client, "(", mode="substring").status_code == 200, "a substring query is literal"
 
 
-def test_search_uses_the_name_search_regex_guard_when_the_build_has_it(layout, monkeypatch):
-    from annzarro.core import name_index
+def test_a_normal_regex_finds_a_store_in_a_subfolder(layout):
+    """Regex mode runs on the server, through the name search's guard (no stub)."""
+    client = _app(layout).test_client()
+    hit = _search(client, r"liver/d.ep\.zarr$", mode="regex")
+    assert hit.status_code == 200
+    assert [e["rel_path"] for e in hit.get_json()["results"]] == [os.path.join("projects", "liver", "deep.zarr")]
 
-    class Refused(ValueError):
-        reason = "regex_too_complex"
-    def check(pattern):
-        raise Refused("refused")
-    monkeypatch.setattr(name_index, "check_regex", check, raising=False)
-    resp = _search(_app(layout).test_client(), "(a+)+", mode="regex")
-    assert resp.status_code == 400 and resp.get_json()["reason"] == "regex_too_complex"
+
+@pytest.mark.parametrize("pattern", [r"(a+)+$", r"(\w+\w*)+-x", r"(a|ab)*c", r".*a.*b.*c.*d.*e"])
+def test_a_catastrophic_regex_is_refused_before_the_walk(layout, monkeypatch, pattern):
+    """The same guard as /data/names: such a pattern takes seconds for ONE name
+    and holds the GIL, so it is refused (400) and nothing is walked."""
+    from annzarro.server.routes import dataset_folders
+    walked = []
+    monkeypatch.setattr(data_routes, "_listdir", lambda path: walked.append(path) or [])
+    resp = _search(_app(layout).test_client(), pattern, mode="regex")
+    assert resp.status_code == 400, resp.get_json()
+    assert resp.get_json()["reason"] == "regex_too_complex" and resp.get_json()["error"]
+    assert walked == [], "refused before any folder was read"
+
+
+def test_the_regex_search_is_cut_off_by_its_clock(layout, monkeypatch):
+    """A pattern the guard lets through that is slow over many names stops at the walk's clock."""
+    import re as regex
+    from annzarro.server.routes import dataset_folders
+    many = layout / "data" / "many"
+    many.mkdir()
+    for i in range(30):
+        (many / f"s{i}.zarr").mkdir()
+    monkeypatch.setattr(dataset_folders, "SEARCH_SECONDS", 0.0)
+    out = _search(_app(layout).test_client(), r".*.*.*zzz", mode="regex").get_json()
+    assert out["truncated"] is True and out["results"] == []
+
+
+def test_a_match_that_never_ends_is_interrupted_inside_on_the_picker_search_too(layout, monkeypatch):
+    """Even if the filter let (a|a)*b through, the walk's clock stops the match itself."""
+    import time
+    from annzarro.core import name_index
+    monkeypatch.setattr(name_index, "check_regex", lambda pattern: None)
+    from annzarro.server.routes import dataset_folders
+    many = layout / "data" / "many"
+    many.mkdir()
+    (many / ("a" * 35 + "cb.zarr")).mkdir()
+    monkeypatch.setattr(dataset_folders, "SEARCH_SECONDS", 0.5)
+    started = time.monotonic()
+    out = _search(_app(layout).test_client(), "^(a|a)*b", mode="regex").get_json()
+    assert time.monotonic() - started < 3
+    assert out["truncated"] is True
+
+
+def test_regex_too_long_for_the_name_search_guard_is_refused(layout):
+    resp = _search(_app(layout, name_search_max_regex_chars=20).test_client(), "a" * 30, mode="regex")
+    assert resp.status_code == 400 and resp.get_json()["reason"] == "regex_too_long"
 
 
 def test_search_caps_matches_depth_and_entries(layout):

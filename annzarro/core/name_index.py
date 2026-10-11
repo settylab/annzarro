@@ -38,8 +38,6 @@ DEFAULT_SEARCH_TIMEOUT_S = 10.0
 #: Each adds a power of the name's length to the worst case of one match.
 MAX_UNBOUNDED_REPEATS = 4
 _UNBOUNDED_FROM = 1000
-#: names a regex scan reads between two looks at the clock
-_CLOCK_EVERY = 256
 
 _SEP = "\n"
 
@@ -225,10 +223,50 @@ def _timed_out(scanned: int) -> Dict:
                      "or a plain text search.")}
 
 
-def compile_regex(pattern: str):
+try:                        # a dependency (pyproject); absent, regex search is refused
+    import regex as _regex
+except ImportError:         # pragma: no cover - depends on the environment
+    _regex = None
+
+#: Seconds a regex match may run when the scan has no clock (name_search_timeout_s 0)
+UNCLOCKED_MATCH_S = 10.0
+
+
+class CompiledRegex:
+    """A user pattern, compiled with the ``regex`` package, whose every match runs under a timeout.
+
+    The stdlib ``re`` cannot be interrupted and holds the GIL: one pattern such as
+    ``.?`` x33 + ``!`` took more than 200 s on ONE 18-character name and stopped every
+    thread of the worker, however the pattern was vetted (a list of shapes to refuse is
+    never complete). ``regex.search(..., timeout=)`` stops inside the match and lets
+    other threads run, so the time limit is a guarantee, not a hope: ``search`` raises
+    TimeoutError when the deadline passes, mid-match included. ``check_regex`` stays in
+    front as a cheap first filter.
+    """
+
+    def __init__(self, pattern: str):
+        try:
+            self._rx = _regex.compile(pattern, _regex.IGNORECASE)
+        except _regex.error as exc:
+            raise re.error(str(exc)) from exc
+
+    def search(self, name: str, deadline: Optional[float]) -> bool:
+        """Whether the pattern matches ``name``; TimeoutError past ``deadline``
+        (a time from time.monotonic, None: UNCLOCKED_MATCH_S for this match)."""
+        left = UNCLOCKED_MATCH_S if deadline is None else deadline - time.monotonic()
+        if left <= 0:
+            raise TimeoutError("regex search deadline passed")
+        return self._rx.search(name, timeout=left) is not None
+
+
+def compile_regex(pattern: str) -> CompiledRegex:
     """The case-insensitive compiled pattern, after check_regex."""
     check_regex(pattern)
-    return re.compile(pattern, re.IGNORECASE)
+    if _regex is None:
+        raise RegexRefusedError(
+            "regex_unavailable", "Regular-expression search needs the `regex` package, which is not installed "
+            "on this server (pip install regex).")
+    return CompiledRegex(pattern)
 
 
 class NameIndex:
@@ -480,10 +518,12 @@ class NameIndex:
             deadline = _deadline()
             timed_out = False
             for i, name in enumerate(self._names_from(0)):
-                if i % _CLOCK_EVERY == 0 and _expired(deadline):
+                try:
+                    hit = rx.search(name, deadline)
+                except TimeoutError:         # also inside a single match
                     timed_out = True
                     break
-                if rx.search(name):
+                if hit:
                     if len(rows) >= limit:
                         truncated = True
                         break
@@ -792,10 +832,12 @@ def stream_search(source: NameChunks, query: str, limit: int = DEFAULT_LIMIT, mo
                 continue
             if rx is not None or query == "":
                 for i, name in enumerate(ix._names_from(0)):
-                    if rx is not None and i % _CLOCK_EVERY == 0 and _expired(deadline):
+                    try:
+                        hit = rx is None or rx.search(name, deadline)
+                    except TimeoutError:     # also inside a single match
                         timed_out = True
                         break
-                    if rx is None or rx.search(name):
+                    if hit:
                         plain.append((base + i, name))
                         if len(plain) > limit:
                             break
