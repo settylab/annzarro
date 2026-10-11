@@ -46,9 +46,22 @@ EXPANDED = [LABELS[c] for c in CODES]
 # fixture builders
 # --------------------------------------------------------------------------
 
+_FORMAT = 2     # the zarr format the fixtures are written in; set per test by _on_each_format
+
+
+@pytest.fixture(autouse=True, params=[2, 3] if _ZARR_V3 else [2], ids=lambda f: f"format{f}")
+def _on_each_format(request):
+    """Every test runs on a format 2 store (what anndata 0.12 writes by default) and, under
+    zarr 3, on a format 3 one: the encodings are the same attributes in both."""
+    global _FORMAT
+    _FORMAT = request.param
+    yield
+    _FORMAT = 2
+
+
 def _open_root(path, mode="w"):
     if _ZARR_V3:
-        return zarr.open_group(str(path), mode=mode, zarr_format=2)
+        return zarr.open_group(str(path), mode=mode, zarr_format=_FORMAT)
     return zarr.open_group(str(path), mode=mode)
 
 

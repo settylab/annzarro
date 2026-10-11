@@ -60,12 +60,16 @@ def _build(path):
     return small
 
 
-@pytest.fixture
-def make_client(tmp_path):
+def _client_factory(tmp_path, zarr_format):
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     store = data_dir / "a.zarr"
-    shutil.copytree(FIXTURE, store)
+    if zarr_format == 3:
+        pytest.importorskip("zarr", minversion="3")
+        from annzarro.tests.utils.make_fixture_zarr_v3 import convert
+        convert(FIXTURE, str(store))
+    else:
+        shutil.copytree(FIXTURE, store)
     small = _build(str(store))
 
     def make(**config):
@@ -73,7 +77,19 @@ def make_client(tmp_path):
                           "data_dir": str(data_dir), **config})
         return app.test_client(), str(store), small
 
-    yield make
+    return make
+
+
+@pytest.fixture
+def make_client(tmp_path):
+    yield _client_factory(tmp_path, 2)
+    read_guard.configure(None)
+
+
+@pytest.fixture
+def make_client_v3(tmp_path):
+    """The same store as zarr format 3, where arrays can be sharded."""
+    yield _client_factory(tmp_path, 3)
     read_guard.configure(None)
 
 
@@ -309,3 +325,85 @@ def test_a_row_with_a_cols_filter_and_a_subset_row_are_served(make_client):
     row = _obsp(client, store, "small", rows="2", subset='{"n":60,"seed":0}')
     assert row.status_code == 200
     assert len(np.array(row.get_json()["data"]).ravel()) == 60
+
+
+# --- sharded arrays (zarr format 3) --------------------------------------------------------
+# zarr reads a shard's index, then only the inner chunks a request touches (byte ranges):
+# the guard sizes a read by the INNER chunk, not by the shard file.
+
+needs_zarr3 = pytest.mark.skipif(int(zarr.__version__.split(".")[0]) < 3, reason="sharding is zarr 3")
+
+
+def _sharded(group, name, shape, chunks, shards, **kw):
+    return group.create_array(name, shape=shape, chunks=chunks, shards=shards, dtype="float32",
+                              fill_value=float("nan"), **kw)
+
+
+@needs_zarr3
+def test_zarr_reads_only_the_inner_chunks_of_a_shard(tmp_path):
+    """The premise of sizing by inner chunks: one row of a sharded array comes from the
+    store as one inner chunk's bytes, not the shard's. Fails if a zarr release changes it."""
+    from zarr.storage import LocalStore
+
+    class Counting(LocalStore):
+        fetched = 0
+
+        async def get(self, key, prototype, byte_range=None):
+            data = await super().get(key, prototype, byte_range)
+            if data is not None and not key.endswith("zarr.json"):
+                Counting.fetched += len(data)
+            return data
+
+    path = str(tmp_path / "s.zarr")
+    arr = _sharded(zarr.open_group(path, mode="w", zarr_format=3), "a", (256, 256), (4, 256), (128, 256),
+                   compressors=None)
+    arr[:] = np.arange(256 * 256, dtype="float32").reshape(256, 256)
+    shard_bytes = 128 * 256 * 4
+    assert os.path.getsize(os.path.join(path, "a", "c", "0", "0")) >= shard_bytes
+    Counting.fetched = 0
+    row = zarr.open_group(store=Counting(path), mode="r")["a"][130, :]
+    assert row[1] == 130 * 256 + 1
+    assert Counting.fetched < shard_bytes // 8, Counting.fetched      # one 4 KB chunk plus the index
+
+
+@needs_zarr3
+def test_a_row_of_a_sharded_matrix_is_sized_by_its_inner_chunks(make_client_v3):
+    """(200, 100000) shards of 80 MB hold 10-row inner chunks of 4 MB: a row is served
+    under a 64 MB limit. Sized by the shard it was a 413 for a read that holds 4 MB."""
+    client, store, _ = make_client_v3(max_read_mb=64, max_response_elements=10 ** 12)
+    root = zarr.open_group(store, mode="r+")
+    _sharded(root["obsp"], "sharded", (N, 100_000), (10, 100_000), (200, 100_000))
+    zarr.consolidate_metadata(store)
+    obj = zarr.open_group(store, mode="r")["obsp"]["sharded"]
+    assert obj.chunks == (10, 100_000) and obj.shards == (200, 100_000)
+    assert read_guard.chunk_working_set(obj, [3]) == 10 * 100_000 * 4
+    reply = client.get("/api/v1/data/obsp/sharded", query_string={"dataset_path": store, "rows": "3"})
+    assert reply.status_code == 200, reply.get_data(as_text=True)[:300]
+    # many rows of one shard still hold only the inner chunks they touch, up to 10 at a time
+    assert read_guard.chunk_working_set(obj, list(range(100))) == 10 * 10 * 100_000 * 4
+
+
+@needs_zarr3
+def test_a_sharded_matrix_with_large_inner_chunks_is_still_413(make_client_v3):
+    """Sharding does not make a big inner chunk cheap: (200, 100000) inner chunks are 80 MB."""
+    client, store, _ = make_client_v3(max_read_mb=64, max_response_elements=10 ** 12)
+    root = zarr.open_group(store, mode="r+")
+    _sharded(root["obsp"], "bigsharded", (400, 100_000), (200, 100_000), (400, 100_000))
+    zarr.consolidate_metadata(store)
+    reply = client.get("/api/v1/data/obsp/bigsharded", query_string={"dataset_path": store, "rows": "3"})
+    assert reply.status_code == 413
+    el = reply.get_json()["elements"][0]
+    assert el["chunks"] == [200, 100_000] and el["chunk_working_set_mb"] > 64
+
+
+@needs_zarr3
+def test_the_opening_notice_names_inner_chunks_of_a_sharded_matrix(make_client_v3):
+    client, store, _ = make_client_v3(max_read_mb=64)
+    root = zarr.open_group(store, mode="r+")
+    _sharded(root["obsp"], "bigsharded", (400, 100_000), (200, 100_000), (400, 100_000))
+    _sharded(root["obsp"], "rowshards", (400, 100_000), (4, 100_000), (400, 100_000))
+    zarr.consolidate_metadata(store)
+    note = client.get("/api/v1/data/dataset_structure",
+                      query_string={"dataset_path": store}).get_json()["pairwise_chunking"]
+    assert [i["element"] for i in note["elements"]] == ["obsp/bigsharded"]
+    assert note["elements"][0]["chunks"] == [200, 100_000]
