@@ -39,7 +39,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
-from annzarro.tests.zarr_compat import drop_consolidated, get_attrs, has_consolidated, set_attrs  # noqa: E402
+from annzarro.tests.zarr_compat import drop_consolidated, has_consolidated  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -70,8 +70,6 @@ def _stores(data):
             drop_consolidated(path)
     shutil.copytree(os.path.join(has, "obsm", "X_umap"), os.path.join(has, "obsm", "X_alt"))
     shutil.rmtree(os.path.join(lacks, "obs", "leiden"))
-    obs = os.path.join(lacks, "obs")
-    set_attrs(obs, {"column-order": [c for c in get_attrs(obs)["column-order"] if c != "leiden"]})
     return has, lacks
 
 

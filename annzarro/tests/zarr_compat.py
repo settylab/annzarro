@@ -75,12 +75,10 @@ def _shards_here(group):
     return SHARDED and ZARR_V3 and group.metadata.zarr_format == 3
 
 
-def write_array(group, name, data, dtype=None, chunks=None, sharded=True):
-    """``sharded=False`` keeps the array unsharded under ``ANNZARRO_TEST_ZARR_FORMAT=3-sharded``,
-    for a test that bounds the memory of a read (a shard is decoded whole)."""
+def write_array(group, name, data, dtype=None, chunks=None):
     arr = np.asarray(data) if dtype is None else np.asarray(data, dtype=dtype)
     kw = {} if chunks is None else {"chunks": chunks}
-    if sharded and _shards_here(group):
+    if _shards_here(group):
         kw = _sharding(arr.shape, chunks)
     if not ZARR_V3:
         return group.create_dataset(name, data=arr, **kw)

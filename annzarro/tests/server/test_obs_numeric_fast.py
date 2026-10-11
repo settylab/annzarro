@@ -28,7 +28,7 @@ from annzarro.core.zarr_reader import ZarrReader
 from annzarro.core.h5ad_reader import h5adReader
 from annzarro.core.caching import DatasetCache
 from annzarro.server.core import create_app
-from annzarro.tests.zarr_compat import open_group, write_array, write_strings
+from annzarro.tests.zarr_compat import SHARDED, open_group, write_array, write_strings
 
 N = 3000
 
@@ -208,6 +208,8 @@ def test_a_long_list_is_costed_from_a_sample():
 
 
 @pytest.mark.parametrize("column", ["0", "1"])
+@pytest.mark.xfail(SHARDED, strict=True,
+                   reason="subset gather on sharded arrays reads whole shards: tracked for 0.5.0")
 def test_a_subset_obsm_read_holds_the_subset_not_the_column(tmp_path, monkeypatch, column):
     """settylab/annzarro#77: a subset read of an obsm column read the whole
     column (1B cells: 3.7 GiB for X_umap's) and then cut it to the subset.
@@ -236,10 +238,7 @@ def test_a_subset_obsm_read_holds_the_subset_not_the_column(tmp_path, monkeypatc
     write_strings(g, "_index", [f"c{i}" for i in range(n)], chunks=(1 << 20,))
     m = root.create_group("obsm")
     umap = np.random.default_rng(2).random((n, 2), dtype=np.float32)
-    # unsharded even under ANNZARRO_TEST_ZARR_FORMAT=3-sharded: a shard is decoded whole, so the peak of
-    # this read grows with the shard (about 18 MiB at 2 inner chunks to a shard, 35 at 4); see the
-    # open question on bounding a sharded subset read
-    a = write_array(m, "X_umap", umap, chunks=(1 << 16, 2), sharded=False)
+    a = write_array(m, "X_umap", umap, chunks=(1 << 16, 2))
     a.attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
     client = create_app({"TESTING": True, "data_dir": str(data), "log_file": str(tmp_path / "t.log"),
                          "auth_enabled": False}).test_client()
