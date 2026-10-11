@@ -126,8 +126,31 @@ def _fill_store(entry):
         entry.update(cells=counts[0], genes=counts[1])
 
 
+def _admin_root_entries(config, data_dir, taken):
+    """The data directories admins added, as folders of the data directory's
+    own listing (the picker's top level). The path is the root as the admin
+    typed it; browsing it is confined like any other (``allowed_roots``)."""
+    from ..admin import overlay
+    found = []
+    for item in overlay.resolve_roots(config):
+        path = item["path"]
+        name = os.path.basename(path.rstrip(os.sep)) or path
+        if not item["active"] or name.startswith(".") or path in taken:
+            continue
+        found.append({"name": name, "path": path, "is_link": os.path.islink(path),
+                      "rel_path": os.path.relpath(path, data_dir), "kind": "folder", "admin_root": True})
+    return found
+
+
+def _is_admin_root(config, path):
+    from ..admin import overlay
+    return os.path.realpath(path) in overlay.active_data_roots(config)
+
+
 def list_folder(config, folder, offset=0, limit=None):
     """One page of ``folder``: subfolders first, then stores, each by name.
+    The data directory's own listing also carries the data directories an
+    admin added, as folders.
 
     Raises FileNotFoundError when it is not a directory.
     """
@@ -138,8 +161,11 @@ def list_folder(config, folder, offset=0, limit=None):
     path = _resolve_folder(config, folder)
     if not os.path.isdir(path):
         raise FileNotFoundError(path)
-    skip = ("sessions",) if os.path.realpath(path) == os.path.realpath(data_dir) else ()
+    at_top = os.path.realpath(path) == os.path.realpath(data_dir)
+    skip = ("sessions",) if at_top else ()
     entries = [e for e in (_entry(data_dir, path, n) for n in data_routes._listdir(path) if n not in skip) if e]
+    if at_top:
+        entries += _admin_root_entries(config, data_dir, {e["path"] for e in entries})
     entries = access.filter_entries(entries)
     entries.sort(key=lambda e: (e["kind"] != "folder", e["name"]))
     page = entries[offset:offset + limit]
@@ -150,7 +176,7 @@ def list_folder(config, folder, offset=0, limit=None):
     return {
         "folder": path,
         "rel_path": os.path.relpath(path, data_dir),
-        "parent": parent if os.path.realpath(path) != os.path.realpath(data_dir) else None,
+        "parent": None if at_top or _is_admin_root(config, path) else parent,
         "entries": page,
         "total": len(entries),
         "offset": offset,

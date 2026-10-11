@@ -75,6 +75,8 @@ NO_PATH = {
     "import_session", "list_sessions", "load_session", "set_session_owner",
     "rename_session", "save_session", "login_page", "login", "logout",
     "admin.page", "admin.reauth", "admin.audit",   # admin interface (test_admin_access.py); no dataset paths
+    "admin.data_roots", "admin.data_roots_browse", "admin.data_roots_datasets",   # data directories: admin only, they name
+    "admin.data_roots_add", "admin.data_roots_remove",   # directories to add, not datasets to read (test_admin_data_roots.py)
 }
 
 
