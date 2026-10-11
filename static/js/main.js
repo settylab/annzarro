@@ -1865,6 +1865,25 @@ const App = (function() {
       return $(span);
     }
 
+    // The closed box: one line, the name cut in the middle (CSS) so its start and its end stay
+    function _datasetSelectionNode(item) {
+      const text = item.text || '';
+      const tailLength = text.length > 28 ? 16 : 0;
+      const span = document.createElement('span');
+      span.className = 'dataset-name-mid';
+      const head = document.createElement('span');
+      head.className = 'dataset-name-head';
+      head.textContent = text.slice(0, text.length - tailLength);
+      span.appendChild(head);
+      if (tailLength) {
+        const tail = document.createElement('span');
+        tail.className = 'dataset-name-tail';
+        tail.textContent = text.slice(-tailLength);
+        span.appendChild(tail);
+      }
+      return $(span);
+    }
+
     // The dataset listing the dropdown was last filled from (labels of unlisted paths derive from it)
     let _listedDatasets = [];
 
@@ -1883,10 +1902,10 @@ const App = (function() {
             // a typed term Select2 offers while searching is its own to remove; a chosen one is labelled like any
             if (opt.hasAttribute('data-select2-tag') && !opt.selected) continue;
             const label = datasetLabel(opt.value, _listedDatasets, knownStore(opt.value));
-            if (opt.text !== label || opt.title !== opt.value) {
+            if (opt.text !== label || opt.title !== label) {
                 // a fresh option: Select2 keeps the data it read from the old one (its text)
                 const fresh = new Option(label, opt.value, opt.defaultSelected, opt.selected);
-                fresh.title = opt.value;
+                fresh.title = label;   // the absolute path only where there is no relative one
                 opt.replaceWith(fresh);
                 changed = true;
             }
@@ -1944,8 +1963,8 @@ const App = (function() {
         if (datasets && datasets.length) {
           datasets.forEach(ds => {
             const opt = new Option(ds.name || ds.path, ds.path);
-            // Select2 shows an option's title on its list entry and on the closed box
-            opt.title = ds.name && ds.name !== ds.path ? `${ds.name}\n${ds.path}` : ds.path;
+            // Select2 shows an option's title on its list entry and on the closed box: the path relative to the data directory
+            opt.title = ds.rel_path || ds.name || ds.path;
             sel.appendChild(opt);
           });
         } else {
@@ -1973,9 +1992,9 @@ const App = (function() {
             // the open list may be wider than the box; CSS caps it
             dropdownAutoWidth: true,
             dropdownCssClass:  'dataset-select-dropdown',
-            // whole names, wrapped at / _ . - (see .dataset-name in styles.css)
+            // whole names in the list, wrapped at / _ . - (see .dataset-name in styles.css); the closed box cuts the middle
             templateResult:    _datasetNameNode,
-            templateSelection: _datasetNameNode,
+            templateSelection: _datasetSelectionNode,
             createTag: params => {
               const term = params.term.trim();
               return term

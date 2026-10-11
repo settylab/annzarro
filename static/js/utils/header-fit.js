@@ -1,30 +1,27 @@
 /**
- * Keep the dataset name in the header whole and short.
+ * The header is one row that gives way step by step, measured (not by
+ * breakpoint), only as far as it has to for everything to fit:
  *
- * The dataset column takes the header's free width (CSS), so the box is as
- * wide as its name needs. When even that leaves the name on more than two
- * lines, the dataset group moves to its own row above the focus pickers and
- * buttons (class `dataset-stacked` on the header) instead of wrapping into a
- * tall narrow column. A name that fits keeps the one-row header.
+ *   1. everything at its natural width, the buttons with their labels;
+ *   2. `actions-compact`: the buttons keep their icons (the label is the tooltip);
+ *   3. `focus-tight`: the focused gene and cell columns give up as much width as
+ *      the row is short of, down to the minimum that shows an Ensembl ID or a
+ *      barcode (a longer value is whole in the tooltip, its end shown);
+ *   4. `dataset-tight`: the dataset box may shrink from about 220px to 140px,
+ *      its name cut in the middle (the full path is the tooltip);
+ *   5. `dataset-stacked`: the dataset group takes a row of its own above the
+ *      rest, which then gives way again (labels, then the inputs) on its row.
  *
- * The decision is made from the rendered name each time: the class is taken
- * off, the lines the name occupies are counted, and it is put back only when
- * they are over MAX_LINES, or when the one row is wider than the window (the
- * focus pickers keep a minimum width that shows a gene or cell name whole, so a
- * cramped row overflows rather than cutting them). The outcome depends on
- * nothing but the window and the name, so it cannot flip back and forth.
+ * Each step is tried with the earlier ones kept and the first that leaves the
+ * row without overflow is the layout, so the outcome depends on nothing but
+ * the window and the content and cannot flip back and forth. The dataset box
+ * itself is always one line: a long name is cut in the middle by CSS.
  */
-export const MAX_LINES = 2;
+export const STEPS = ['actions-compact', 'focus-tight', 'dataset-tight'];
 export const STACKED_CLASS = 'dataset-stacked';
-
-/** Lines the dataset name occupies in the closed box (0 when there is none). */
-export function nameLines(header) {
-    const name = header.querySelector('#dataset-selector + .select2-container .dataset-name');
-    if (!name) return 0;
-    const rects = [...name.getClientRects()].filter(r => r.width > 0);
-    // inline fragments of one line share a top; count distinct tops
-    return new Set(rects.map(r => Math.round(r.top))).size;
-}
+const ALL_CLASSES = [...STEPS, STACKED_CLASS];
+const ONE_ROW = [[], ['actions-compact'], ['actions-compact', 'focus-tight'], ['actions-compact', 'focus-tight', 'dataset-tight']];
+const STACKED = [[STACKED_CLASS], [STACKED_CLASS, 'actions-compact'], [STACKED_CLASS, 'actions-compact', 'focus-tight']];
 
 /** Whether the header's one row of controls is wider than the room it has. */
 export function rowOverflows(header) {
@@ -32,10 +29,44 @@ export function rowOverflows(header) {
     return !!row && row.scrollWidth > row.clientWidth + 1;
 }
 
+/** Whether, stacked, the focus pickers and buttons no longer share one line. */
+export function restWraps(header) {
+    const row = header.querySelector('.global-controls > .row');
+    if (!row) return false;
+    const tops = [...row.children].filter(c => !c.classList.contains('dataset-col'))
+        .map(c => Math.round(c.getBoundingClientRect().top));
+    return new Set(tops).size > 1;
+}
+
+function apply(header, classes) {
+    for (const c of ALL_CLASSES) header.classList.toggle(c, classes.includes(c));
+    for (const id of FOCUS_INPUT_IDS) fitFocusInput(document.getElementById(id));
+}
+
+/** The natural width of the closed box for its current label: the text and the box's padding. */
+export function datasetNaturalWidth(header) {
+    const rendered = header.querySelector('#dataset-selector + .select2-container .select2-selection__rendered');
+    if (!rendered) return null;
+    const style = getComputedStyle(rendered);
+    const canvas = datasetNaturalWidth._canvas || (datasetNaturalWidth._canvas = document.createElement('canvas'));
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const text = rendered.textContent.trim();
+    return Math.ceil(ctx.measureText(text).width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 4);
+}
+
 export function fitDatasetHeader(header) {
     if (!header) return;
-    header.classList.remove(STACKED_CLASS);
-    if (nameLines(header) > MAX_LINES || rowOverflows(header)) header.classList.add(STACKED_CLASS);
+    const natural = datasetNaturalWidth(header);
+    if (natural) header.style.setProperty('--dataset-natural', `${natural}px`);
+    for (const classes of ONE_ROW) {
+        apply(header, classes);
+        if (!rowOverflows(header)) return;
+    }
+    for (const classes of STACKED) {
+        apply(header, classes);
+        if (!restWraps(header)) return;
+    }
 }
 
 export const FOCUS_INPUT_IDS = ['focused-gene', 'focused-cell'];
@@ -58,7 +89,8 @@ export function fitFocusInput(input) {
             + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth) + 4;
         const want = Math.ceil(ctx.measureText(input.value || input.placeholder || '').width + extra);
         const min = parseFloat(style.minWidth) || 0;
-        input.style.width = `${Math.min(FOCUS_INPUT_MAX, Math.max(min, want))}px`;
+        // tight: the column decides (CSS gives the input its whole width)
+        input.style.width = input.closest('.focus-tight') ? '' : `${Math.min(FOCUS_INPUT_MAX, Math.max(min, want))}px`;
     }
     const cut = input.scrollWidth > input.clientWidth + 1;
     if (cut) input.title = input.value; else input.removeAttribute('title');
@@ -95,7 +127,11 @@ export function installDatasetHeaderFit(header = document.getElementById('app-he
     };
     window.addEventListener('resize', refit);
     installFocusInputFit(refit);
-    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(refit).observe(header);
+    if (typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(refit);
+        // the header's own size does not change when the badge or title widens its first column
+        for (const el of [header, header.querySelector('.col-auto'), header.querySelector('.global-controls')]) if (el) observer.observe(el);
+    }
     const pick = header.querySelector('.dataset-pick');
     if (pick && typeof MutationObserver !== 'undefined') {
         new MutationObserver(refit).observe(pick, { childList: true, subtree: true, characterData: true });

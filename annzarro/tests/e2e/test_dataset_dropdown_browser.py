@@ -108,7 +108,7 @@ def test_open_list_is_wider_than_the_box_inside_the_viewport_with_titles(server,
                 assert drop["width"] > box["width"] + 20, "wider than the closed box"
             titles = page.eval_on_selector_all(".dataset-select-dropdown .select2-results__option",
                                                "els => els.map(e => e.title)")
-            assert sorted(titles) == sorted(f"{n}\n{os.path.join(data, n)}" for n in NAMES), titles
+            assert sorted(titles) == sorted(NAMES), titles   # the path relative to the data directory
             page.click(".dataset-select-dropdown .select2-results__option")
             page.wait_for_selector(".select2-dropdown", state="detached", timeout=10_000)
             selected = page.get_attribute(box_sel + " .select2-selection__rendered", "title")
@@ -145,8 +145,9 @@ def test_refresh_button_stays_beside_the_box_with_long_names(server, width, badg
             assert abs(btn["y"] - box["y"]) < 6, f"Refresh wrapped: box {box}, button {btn}"
             assert btn["x"] >= box["x"] + box["width"] - 1, "button beside the box, not over it"
             hdr = page.locator("#app-header").bounding_box()
-            assert box["height"] <= TWO_LINES, f"the name takes more than two lines: {box}"
-            assert hdr["height"] < 200, hdr   # at most two header rows
+            assert box["height"] <= ONE_LINE, f"the closed box is one line: {box}"
+            # one header row; a long name in a 1024px window gives the box a row of its own (last resort)
+            assert hdr["height"] < (200 if width < 1280 else 100), hdr
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "page scrolls sideways"
             page.click(box_sel)
             page.wait_for_selector(".dataset-select-dropdown .select2-results__option")
@@ -156,8 +157,8 @@ def test_refresh_button_stays_beside_the_box_with_long_names(server, width, badg
             browser.close()
 
 
-# the box with a name on two lines: 2 x 1.3 x 16 px of text, 2 x 8 px padding, the border
-TWO_LINES = 66
+# the closed box is one line: 38px high
+ONE_LINE = 42
 
 CLIPPED = """els => els.map(e => ({text: e.textContent.trim(), sw: e.scrollWidth, cw: e.clientWidth,
     sh: e.scrollHeight, ch: e.clientHeight, to: getComputedStyle(e).textOverflow,
@@ -175,9 +176,10 @@ def _assert_whole(rows, names):
 
 @pytest.mark.parametrize("width", [1024, 1280, 1920])
 @pytest.mark.parametrize("badge", [False, True])
-def test_long_names_are_shown_whole_in_the_box_and_the_list(server, width, badge, tmp_path):
-    """Neither the selected name nor any open-list entry is cut: no ellipsis, nothing
-    clipped, the whole name rendered; Refresh stays level with the top of a taller box."""
+def test_the_box_is_one_line_with_the_middle_cut_and_the_list_shows_names_whole(server, width, badge, tmp_path):
+    """The closed box is one line: a long name is cut in the middle (start and end kept), its
+    whole relative path is the title, and Refresh stays beside it. Every open-list entry shows
+    its whole name: no ellipsis, nothing clipped."""
     base, _ = server
     long_names = [n for n in NAMES if len(n) > 120]
     with sync_api.sync_playwright() as pw:
@@ -206,18 +208,23 @@ def test_long_names_are_shown_whole_in_the_box_and_the_list(server, width, badge
             for name in long_names:
                 page.select_option("#dataset-selector", label=name)
                 page.wait_for_timeout(800)
-                rows = page.eval_on_selector_all(box_sel + " .select2-selection__rendered", CLIPPED)
-                _assert_whole(rows, NAMES)
-                assert rows[0]["text"] == name
+                rendered = box_sel + " .select2-selection__rendered"
+                assert page.inner_text(rendered).replace("\n", "").strip() != "" and \
+                    page.eval_on_selector(rendered, "e => e.textContent.trim()") == name, "the whole name is in the box's text"
+                assert page.get_attribute(rendered, "title") == name, "the full relative path is the tooltip"
+                head, tail = (page.eval_on_selector(rendered + " .dataset-name-head", "e => ({text: e.textContent, cut: e.scrollWidth > e.clientWidth})"),
+                              page.eval_on_selector(rendered + " .dataset-name-tail", "e => e.textContent"))
+                assert tail == name[-16:] and name.startswith(head["text"]), "start and end are kept"
+                assert head["cut"], "a long name is cut in the middle at this width"
                 box_now = page.locator(box_sel).bounding_box()
-                assert box_now["height"] <= TWO_LINES, f"{name[:30]}... takes more than two lines: {box_now}"
+                assert box_now["height"] <= ONE_LINE, f"{name[:30]}... is not one line: {box_now}"
                 sel = page.locator(box_sel + " .select2-selection--single").bounding_box()
                 box = page.locator(box_sel).bounding_box()
                 btn = page.locator("#refresh-dataset").bounding_box()
                 assert btn["x"] >= box["x"] + box["width"] - 1, "Refresh beside the box"
                 assert btn["y"] < box["y"] + 6, f"Refresh dropped below the box: {box} {btn}"
                 assert btn["y"] + btn["height"] <= box["y"] + box["height"] + 1
-                assert sel["height"] >= 38
+                assert 36 <= sel["height"] <= ONE_LINE
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "page scrolls sideways"
             page.click(box_sel)
             page.wait_for_selector(".dataset-select-dropdown .select2-results__option")
@@ -317,9 +324,9 @@ def test_a_store_outside_the_listing_is_labelled_relative_to_the_data_directory(
     try:
         rendered = "#dataset-selector + .select2-container .select2-selection__rendered"
         page.wait_for_function(f"document.querySelector('{rendered}').textContent.trim() === {SUBSTORE!r}", timeout=30_000)
-        assert page.get_attribute(rendered, "title") == absolute, "the absolute path is the tooltip"
+        assert page.get_attribute(rendered, "title") == SUBSTORE, "the relative path is the tooltip"
         box = page.locator("#dataset-selector + .select2-container").bounding_box()
-        assert box["height"] <= TWO_LINES, f"the label takes more than two lines: {box}"
+        assert box["height"] <= ONE_LINE, f"the closed box is one line: {box}"
         assert absolute not in page.inner_text(rendered)
         # the open list uses the same label
         page.click("#dataset-selector + .select2-container")
@@ -363,8 +370,11 @@ def test_a_real_cell_name_is_shown_whole_and_a_too_long_one_ends_visibly(server,
             page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 5")
             page.evaluate("v => { document.getElementById('focused-cell').value = v; }", real)
             page.wait_for_timeout(600)
-            size = page.eval_on_selector("#focused-cell", "e => ({w: e.getBoundingClientRect().width, sw: e.scrollWidth, cw: e.clientWidth})")
-            assert size["sw"] <= size["cw"], f"the cell name is cut: {size}"
+            size = page.eval_on_selector("#focused-cell", "e => ({w: e.getBoundingClientRect().width, sw: e.scrollWidth, cw: e.clientWidth, title: e.title})")
+            if width >= 1440:
+                assert size["sw"] <= size["cw"], f"the cell name is cut: {size}"
+            else:   # a window this narrow shrinks the input toward its minimum: the value is then whole in the tooltip
+                assert size["sw"] <= size["cw"] or size["title"] == real, size
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "page scrolls sideways"
             page.evaluate("v => { document.getElementById('focused-cell').value = v; }", long)
             page.wait_for_timeout(600)
@@ -378,5 +388,105 @@ def test_a_real_cell_name_is_shown_whole_and_a_too_long_one_ends_visibly(server,
                 page.evaluate("v => { document.getElementById('focused-cell').value = v; }", real)
                 page.wait_for_timeout(500)
                 page.screenshot(path=os.path.join(SHOTS_DIR, f"cell-name-{width}.png"))
+        finally:
+            browser.close()
+
+
+# --- the header gives way in steps, measured -------------------------------------------
+
+DEMO_TITLE = "AnnZarro 0.4.3 demo (multi-user)"
+
+
+def _demo_page(pw, base, width, name="short.zarr", badge=True, cell=None):
+    try:
+        browser = pw.chromium.launch()
+    except Exception as exc:  # no browser binary
+        _skip_or_fail(f"Chromium cannot start: {exc}")
+    page = browser.new_page(viewport={"width": width, "height": 1000})
+    page.goto(base + "/")
+    page.wait_for_selector("#dataset-selector + .select2-container", timeout=60_000)
+    page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 5")
+    page.evaluate("""([title, badge]) => { document.querySelector('.app-title').textContent = title;
+        if (badge) { const a = document.getElementById('auth-indicator');
+            a.textContent = 'Signed in: alice (user)'; a.hidden = false; } }""", [DEMO_TITLE, badge])
+    page.select_option("#dataset-selector", label=name)
+    if cell:
+        page.evaluate("v => { document.getElementById('focused-cell').value = v; }", cell)
+    page.wait_for_timeout(900)
+    return browser, page
+
+
+def _header_state(page):
+    return page.evaluate("""() => { const h = document.getElementById('app-header');
+        const box = document.querySelector('#dataset-selector + .select2-container');
+        const label = document.querySelector('#btn-save-session .btn-label');
+        const head = document.querySelector('#dataset-selector + .select2-container .dataset-name-head');
+        return {height: h.getBoundingClientRect().height, box: box.getBoundingClientRect().height,
+                boxWidth: box.getBoundingClientRect().width, cls: h.className,
+                labels: getComputedStyle(label).display !== 'none',
+                headCut: !!head && head.scrollWidth > head.clientWidth,
+                sideways: document.documentElement.scrollWidth > window.innerWidth}; }""")
+
+
+@pytest.mark.parametrize("width", [1280, 1440, 1512, 1728, 1920])
+def test_a_short_name_with_a_badge_and_a_long_title_keeps_one_row_and_one_line(server, width):
+    """The header is one row that gives way step by step: a short name never wraps or stacks
+    from 1280px up; the button labels stay while they fit (at 1920px) and go to icons otherwise."""
+    base, _ = server
+    with sync_api.sync_playwright() as pw:
+        browser, page = _demo_page(pw, base, width)
+        try:
+            st = _header_state(page)
+            assert st["height"] < 100, st
+            assert "dataset-stacked" not in st["cls"], st
+            assert st["box"] <= ONE_LINE and not st["headCut"], f"short.zarr is one whole line: {st}"
+            assert not st["sideways"]
+            if width >= 1920:
+                assert st["labels"], f"the labels fit at {width}px: {st}"
+            if SHOTS_DIR:
+                os.makedirs(SHOTS_DIR, exist_ok=True)
+                page.screenshot(path=os.path.join(SHOTS_DIR, f"matrix-short-{width}.png"), clip={"x": 0, "y": 0, "width": width, "height": 200})
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("width", [1024, 1280, 1440, 1728, 1920])
+def test_a_130_character_name_is_one_line_cut_in_the_middle_and_stacks_only_when_it_must(server, width):
+    base, _ = server
+    with sync_api.sync_playwright() as pw:
+        browser, page = _demo_page(pw, base, width, name=NAMES[3])
+        try:
+            st = _header_state(page)
+            assert st["box"] <= ONE_LINE, st
+            assert st["headCut"], "the long name is cut"
+            assert page.get_attribute("#dataset-selector + .select2-container .select2-selection__rendered", "title") == NAMES[3]
+            assert not st["sideways"]
+            if width >= 1440:
+                assert st["height"] < 100 and "dataset-stacked" not in st["cls"], st
+            else:   # a box cut to 140px is not worth a row: below this width it stacks
+                assert st["height"] < 200, st
+            if width >= 1728:
+                assert st["boxWidth"] >= 300, f"the box takes the free width: {st}"
+            if SHOTS_DIR:
+                os.makedirs(SHOTS_DIR, exist_ok=True)
+                page.screenshot(path=os.path.join(SHOTS_DIR, f"matrix-long-{width}.png"), clip={"x": 0, "y": 0, "width": width, "height": 200})
+        finally:
+            browser.close()
+
+
+def test_a_long_focused_cell_name_does_not_force_stacking_while_the_labels_can_collapse(server):
+    base, _ = server
+    real = "HSPC_Young_1#AAAGATGGTCCGAAGA-1"
+    with sync_api.sync_playwright() as pw:
+        browser, page = _demo_page(pw, base, 1440, cell=real)
+        try:
+            st = _header_state(page)
+            assert st["height"] < 100 and "dataset-stacked" not in st["cls"], st
+            assert not st["labels"], "the labels gave way first"
+            size = page.eval_on_selector("#focused-cell", "e => ({sw: e.scrollWidth, cw: e.clientWidth, title: e.title})")
+            # the inputs give up only the width the row is short of; what they cannot show is whole in the tooltip
+            assert size["sw"] <= size["cw"] or size["title"] == real, size
+            if SHOTS_DIR:
+                page.screenshot(path=os.path.join(SHOTS_DIR, "matrix-cell-1440.png"), clip={"x": 0, "y": 0, "width": 1440, "height": 200})
         finally:
             browser.close()
