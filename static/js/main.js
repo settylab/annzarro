@@ -33,6 +33,7 @@ import {
 import { probeStore, prewarmStore, appVersion } from './utils/store-identity.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
+import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
 
 const App = (function() {
@@ -1945,7 +1946,7 @@ const App = (function() {
             const box = $(sel).next('.select2-container');
             const room = window.innerWidth - box.offset().left - 8;
             // never narrower than the box itself (a narrow window gives the box the whole row)
-            $('.dataset-select-dropdown').css('max-width', Math.max(box.outerWidth(), Math.min(room, 700, window.innerWidth * 0.9)));
+            $('.dataset-select-dropdown').css('max-width', Math.max(box.outerWidth(), Math.min(room, 900, window.innerWidth * 0.9)));
           });
 
           // 8) restore selection in the Select2 widget
@@ -3857,6 +3858,7 @@ document.addEventListener('DOMContentLoaded', () => {
     App.init();
     // A panel's scroller hands the wheel to the page at its end (utils/wheel-handover.js)
     installWheelHandover(document.getElementById('tile-container'));
+    installDatasetHeaderFit();
     
     // Register for app close events if in Electron environment
     if (window.api && typeof window.api.onWillQuit === 'function') {

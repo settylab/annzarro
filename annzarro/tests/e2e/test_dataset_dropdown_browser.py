@@ -36,7 +36,7 @@ FIXTURE = os.path.join(os.path.dirname(HERE), "data", "fixture_small.zarr")
 NAMES = ["short.zarr", "a_rather_long_dataset_name_" + "x" * 60 + "_final_v12.zarr",
          "BR_2453_v3layout_PILOT_not_for_annotation.zarr",
          "tahoe_panel_95.6M_plot_" + "liver-met_v3_sharded_csc_float32_" * 3 + "final.zarr",
-         "U" * 130 + ".zarr"]  # over 120 characters; the last has no break point at all
+         "x" * 130 + ".zarr"]  # over 120 characters; the last has no break point at all
 
 
 def _free_port():
@@ -126,7 +126,7 @@ def test_refresh_button_stays_beside_the_box_with_long_names(server, width, badg
             box_sel = "#dataset-selector + .select2-container"
             page.wait_for_selector(box_sel, timeout=60_000)
             page.wait_for_function("document.querySelectorAll('#dataset-selector option').length >= 5")
-            page.select_option("#dataset-selector", index=1)  # a long name
+            page.select_option("#dataset-selector", label=NAMES[1])  # a long name
             page.wait_for_timeout(1000)
             if badge:
                 page.evaluate("""() => { const a = document.getElementById('auth-indicator');
@@ -136,7 +136,9 @@ def test_refresh_button_stays_beside_the_box_with_long_names(server, width, badg
             assert abs(btn["y"] - box["y"]) < 6, f"Refresh wrapped: box {box}, button {btn}"
             assert btn["x"] >= box["x"] + box["width"] - 1, "button beside the box, not over it"
             hdr = page.locator("#app-header").bounding_box()
-            assert hdr["height"] < 100 + (box["height"] - 38), hdr  # a wrapped name makes the box, and so the header, taller
+            assert box["height"] <= TWO_LINES, f"the name takes more than two lines: {box}"
+            assert hdr["height"] < 200, hdr   # at most two header rows
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "page scrolls sideways"
             page.click(box_sel)
             page.wait_for_selector(".dataset-select-dropdown .select2-results__option")
             drop = page.locator(".select2-dropdown.dataset-select-dropdown").bounding_box()
@@ -144,6 +146,9 @@ def test_refresh_button_stays_beside_the_box_with_long_names(server, width, badg
         finally:
             browser.close()
 
+
+# the box with a name on two lines: 2 x 1.3 x 16 px of text, 2 x 8 px padding, the border
+TWO_LINES = 66
 
 CLIPPED = """els => els.map(e => ({text: e.textContent.trim(), sw: e.scrollWidth, cw: e.clientWidth,
     sh: e.scrollHeight, ch: e.clientHeight, to: getComputedStyle(e).textOverflow,
@@ -183,12 +188,15 @@ def test_long_names_are_shown_whole_in_the_box_and_the_list(server, width, badge
             page.select_option("#dataset-selector", label="short.zarr")
             page.wait_for_timeout(800)
             assert page.locator("#app-header").bounding_box()["height"] < 100, "a short name keeps the header's height"
+            assert "dataset-stacked" not in page.get_attribute("#app-header", "class")
             for name in long_names:
                 page.select_option("#dataset-selector", label=name)
                 page.wait_for_timeout(800)
                 rows = page.eval_on_selector_all(box_sel + " .select2-selection__rendered", CLIPPED)
                 _assert_whole(rows, NAMES)
                 assert rows[0]["text"] == name
+                box_now = page.locator(box_sel).bounding_box()
+                assert box_now["height"] <= TWO_LINES, f"{name[:30]}... takes more than two lines: {box_now}"
                 sel = page.locator(box_sel + " .select2-selection--single").bounding_box()
                 box = page.locator(box_sel).bounding_box()
                 btn = page.locator("#refresh-dataset").bounding_box()
@@ -226,5 +234,8 @@ def test_long_names_are_shown_whole_in_the_box_and_the_list(server, width, badge
                 page.screenshot(path=os.path.join(shots, f"open-{width}-{'badge' if badge else 'plain'}.png"))
                 page.keyboard.press("Escape")
                 page.screenshot(path=os.path.join(shots, f"closed-{width}-{'badge' if badge else 'plain'}.png"))
+                page.select_option("#dataset-selector", label="short.zarr")
+                page.wait_for_timeout(800)
+                page.screenshot(path=os.path.join(shots, f"closed-short-{width}-{'badge' if badge else 'plain'}.png"))
         finally:
             browser.close()

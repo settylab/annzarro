@@ -2359,10 +2359,13 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 /* The dataset row: box, then the Refresh / Change dataset buttons on one line.
-   The box has a 260px basis (shrinking to 120px when the column is short) and
-   grows taller, never cut, when the selected name needs more lines; Refresh stays
-   beside it at the top. Select2 would otherwise size the box to the name and push
-   the buttons to a second line. The box and Refresh never separate. */
+   The dataset column takes the header's free width and the focus pickers and
+   buttons keep theirs, so the box is as wide as its name needs, up to what is
+   free. A name too long for two lines even then puts the dataset group on a
+   row of its own (.dataset-stacked, set by utils/header-fit.js). Within the
+   box a long name wraps (never cut) and the box grows taller; Refresh stays
+   beside it at the top. Select2 would otherwise size the box to the name and
+   push the buttons to a second line. The box and Refresh never separate. */
 .dataset-row {
     display: flex;
     flex-wrap: wrap; /* only Change dataset (when shown) drops to a second line */
@@ -2384,10 +2387,10 @@ button.dtsb-button.dtsb-clear:hover {
     max-width: 200px !important;
 }
 #dataset-selector + .select2-container {
-    flex: 0 1 260px;
-    width: 260px !important;
+    flex: 0 1 auto;
+    width: max-content !important;
     min-width: 120px;
-    max-width: 100%;
+    max-width: min(100%, 760px); /* the open list (900px at most) stays wider than the box */
 }
 #dataset-selector + .select2-container .select2-selection--single {
     height: auto;
@@ -2403,6 +2406,28 @@ button.dtsb-button.dtsb-clear:hover {
 #dataset-selector + .select2-container .select2-selection__arrow {
     height: 36px;
 }
+@media (min-width: 768.02px) {
+    .global-controls > .row > .dataset-col {
+        flex: 1 10 auto; /* gives up width first: the focus pickers keep theirs while it can */
+        width: auto;
+        min-width: 190px; /* a 120px box and Refresh, even when the row is tight */
+    }
+    .global-controls > .row > .focus-col {
+        flex: 0 1 auto; /* their inputs scroll their text when the row is tight */
+        width: auto;
+    }
+    .app-header.dataset-stacked .global-controls > .row {
+        flex-wrap: wrap;
+        row-gap: 0.25rem;
+        --bs-gutter-x: 0.75rem; /* the focus pickers and buttons then fit on the second row */
+    }
+    .app-header.dataset-stacked .global-controls > .row > .dataset-col {
+        flex: 0 0 100%;
+    }
+    .app-header.dataset-stacked .global-controls > .row > .header-actions {
+        margin-left: auto; /* the buttons stay at the right edge on the second row */
+    }
+}
 
 /* Dataset names are shown whole, in the box and in the open list: they wrap at
    / _ . - (a <wbr> follows each, see main.js) and, failing that, anywhere. */
@@ -2414,7 +2439,7 @@ button.dtsb-button.dtsb-clear:hover {
    (main.js narrows it to the room right of the box); entries that still do not
    fit wrap onto more lines, and the highlight covers all of them */
 .dataset-select-dropdown {
-    max-width: min(90vw, 700px);
+    max-width: min(90vw, 900px);
 }
 .dataset-select-dropdown .select2-results__option {
     height: auto !important;
