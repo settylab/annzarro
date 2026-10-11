@@ -439,7 +439,7 @@ one that is not a dataset `400 unsupported_type`.
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 409 | `session_quota_user`, `session_quota_total` | saving, duplicating or importing a panel set would pass `server.max_sessions_per_user`, `server.max_sessions` or `server.max_sessions_mb`; the body has `limit` and `used`. Delete sets you no longer need |
-| 413 | `request_too_large` | the request body is over `server.max_request_mb` (16 MB; panel-set saves and imports) |
+| 413 | `request_too_large` | the request body is over `server.max_request_mb` (64 MB; panel-set saves and imports) |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
 | 503 | `read_busy` | the `obsp`/`varp` reads in flight hold `server.read_budget_mb`, or this user already holds `server.read_user_share_percent` of it, or the worker is computing `server.subset_max_concurrent` subsets;| 503 | `read_busy` | the `obsp`/`varp` reads in flight hold `server.read_budget_mb`; `Retry-After` seconds and `retry_after_s` say when to ask again (the web client does once) |
 | 400 | `rows_required`, `too_many_rows` | an `obsp`/`varp` request (`/data/obsp/<key>`, `/data/varp/<key>`, and those paths in `/data/by_path`, `/data/paginated`, `/data/statistics`) that names no rows, or more than 1,000. Pairwise matrices are read by rows only: send `rows=` (or `dataset_rows=`); `cols=` only filters the rows asked for. Nothing is read |
@@ -481,7 +481,7 @@ HTTP 400
 | `server.read_budget_mb` | 2 × `max_read_mb` | pairwise reads in flight in one worker, each by its estimate; waits `server.read_wait_s` (5 s) | `503 read_busy` |
 | `server.name_search_max_regex_chars`, `server.name_search_timeout_s` | 200 characters, 10 s | a regex name search (`/data/names?mode=regex`): the pattern, then the scan | `400 regex_too_long`, `400 regex_too_complex`; after the time limit a `200` with `partial: true` and `timed_out: true` |
 | `server.dataset_scan_max_entries` | 200,000 | directory entries read by `GET /core/datasets` and the store count in `GET /status` | `200` with `truncated: true` |
-| `server.max_request_mb` | 16 | the request body (`POST /sessions/save`, `/sessions/import`, `/login`), from `Content-Length` and while reading | `413 request_too_large` |
+| `server.max_request_mb` | 64 | the request body (`POST /sessions/save`, `/sessions/import`, `/login`), from `Content-Length` and while reading | `413 request_too_large` |
 | `server.max_sessions_per_user`, `server.max_sessions`, `server.max_sessions_mb` | 500, 5,000, 256 MB | panel sets of the user, of the server, and their total size, when one is saved, duplicated or imported | `409 session_quota_user`, `409 session_quota_total` |
 | `max_cells=` / `max_genes=` query parameters | none | number of requested cell / gene indices | `400 cap_exceeded` |
 | groups for subset balancing | 10,000 | a column's categories (metadata) | `400 too_many_categories` |

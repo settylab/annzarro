@@ -545,6 +545,9 @@ _DATASET_ROWS_ENDPOINTS = ("get_data_X", "get_layer", "get_obs", "get_obsm", "ge
 #: sends dataset_rows only to a server that lists it.
 SUBSET_FEATURES = ["dataset_rows", "locate", "names_scope", "locate_parts"]
 
+#: Subset places on a server only one person uses (no limit in effect)
+UNLIMITED_SUBSETS = 1024
+
 #: Rows one /data/subset/locate call translates.
 MAX_LOCATE_ROWS = 1000
 
@@ -561,13 +564,18 @@ def register_data_routes(app, api_version):
                          app.config.get("name_search_max_regex_chars"), app.config.get("name_search_timeout_s"))
     read_guard.configure(app.config.get("max_read_mb"), app.config.get("read_budget_mb"),
                          app.config.get("read_wait_s", 5), app.config.get("read_user_share_percent"))
-    cell_subset.configure(app.config.get("subset_max_concurrent"), app.config.get("read_wait_s", 5))
+    # Sharing and the subset places exist for a server other people use. On a
+    # single-user server (the desktop app, `annzarro start` on loopback without
+    # login) its one user is everyone: they get the whole budget and every thread.
+    shared = confinement.is_hosted(app.config)
+    cell_subset.configure(app.config.get("subset_max_concurrent") if shared else UNLIMITED_SUBSETS,
+                          app.config.get("read_wait_s", 5))
 
     @app.before_request
     def _name_the_requester():
         # whose reads these are, for each one's share of the read budget:
         # the logged-in user, else the client address (the proxy's, with proxy_count)
-        read_guard.requester(permissions.current_user()[0] or request.remote_addr)
+        read_guard.requester((permissions.current_user()[0] or request.remote_addr) if shared else None)
     app.register_error_handler(ReadTooLargeError, _read_too_large_response)
     app.register_error_handler(ReadBusyError, _read_busy_response)
     dataset_folders.register_dataset_folder_routes(app, api_version)

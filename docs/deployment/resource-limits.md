@@ -1,5 +1,7 @@
 # Running a shared server: resource limits
 
+The per-user share of the read budget and the subset places apply only to a server other people can reach (login on, or a network address); the desktop app and `annzarro start` on loopback without login have one user, who gets everything.
+
 A server that other people can reach has to stay up when one of them asks for too much, by
 mistake or on purpose. Every limit below is a `server.*` setting with a default that suits a
 lab server on one machine and the datasets in this documentation (1 to 95 million cells). A
@@ -20,8 +22,8 @@ request slowly. The reverse proxy in front ({doc}`lab-server`) is the defence fo
 | `read_user_share_percent` | 50 | Fairness: the pairwise-read budget (`read_budget_mb`) is shared; one user (one address, with login off) may hold this share | `503 read_busy` | few users and one big matrix; 0 gives a user the whole budget |
 | `subset_max_concurrent` | 2 | Threads and CPU: a subset is a pass over a column of every cell, and any request can name a new seed or filter | `503 read_busy` | many users open the largest datasets at once; raise it with `threads` |
 | `max_requests`, `max_requests_jitter` | 20,000, 2,000 | Memory: a worker that leaks or fragments is replaced; its caches start empty | (worker restart) | every request is cheap and the dataset index takes long to rebuild: raise it, or 0 |
-| `limit_request_line`, `limit_request_fields`, `limit_request_field_size` | 8,190, 100, 8,190 | Memory and CPU: one request made of a huge line or many headers (gunicorn only) | `400` from gunicorn | never needed |
-| `max_request_mb` | 16 | Memory and disk: a request body is read whole, and panel sets are written to the sessions directory | `413 request_too_large` | a panel set or an import legitimately exceeds 16 MB (typical ones are under 1 MB) |
+| `limit_request_line`, `limit_request_fields`, `limit_request_field_size` | 0 (none), 100, 8,190 | Memory and CPU: one request made of many or huge headers (gunicorn only). The request line is not limited because the web client names the cells and genes it asks for in the URL (about 12 KB for 2,000 genes; gunicorn would cap any other value at 8,190), so bound it in the proxy (`large_client_header_buffers`) | `400` from gunicorn | never needed |
+| `max_request_mb` | 64 | Memory and disk: a request body is read whole, and panel sets are written to the sessions directory | `413 request_too_large` | a panel set legitimately exceeds 64 MB. The largest panel set we have is 0.9 MB (13 panels); a table panel that keeps a million filtered rows is about 7 MB |
 | `max_sessions_per_user` | 500 | Disk: panel sets are files, written by any user (anyone, with login off) | `409 session_quota_user` | one person legitimately keeps more than 500 sets |
 | `max_sessions` | 5,000 | Disk and CPU: the panel-set list reads the files | `409 session_quota_total` | many users each keep many sets |
 | `max_sessions_mb` | 256 | Disk | `409 session_quota_total` | sets are large and the disk is |
@@ -50,7 +52,7 @@ the worker, not a limit on a request. So, in nginx:
 client_header_timeout 10s;
 client_body_timeout   20s;
 send_timeout          30s;
-client_max_body_size  16m;           # as server.max_request_mb
+client_max_body_size  64m;           # as server.max_request_mb
 limit_conn_zone $binary_remote_addr zone=annzarro_addr:10m;
 server {
     limit_conn annzarro_addr 40;     # simultaneous connections per client address

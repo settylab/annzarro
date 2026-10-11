@@ -101,10 +101,10 @@ def test_a_waiting_read_gets_in_when_its_own_earlier_read_ends():
     assert got == [True]
 
 
-def test_the_server_names_the_requester(tmp_path):
+def _seen_owner(tmp_path, **config):
     from annzarro.server.core import create_app
     app = create_app({"TESTING": True, "DEBUG": False, "auth_enabled": False, "cache_enabled": False,
-                      "data_dir": str(tmp_path)})
+                      "data_dir": str(tmp_path), **config})
     seen = []
 
     @app.route("/whoami")
@@ -113,7 +113,23 @@ def test_the_server_names_the_requester(tmp_path):
         return "ok"
 
     app.test_client().get("/whoami", environ_overrides={"REMOTE_ADDR": "203.0.113.9"})
-    assert seen == ["203.0.113.9"]
+    return seen[0], cell_subset._slots._value
+
+
+def test_a_shared_server_names_the_requester(tmp_path):
+    owner, places = _seen_owner(tmp_path, hosted=True)
+    assert owner == "203.0.113.9" and places == 2
+
+
+def test_a_single_user_server_has_no_share_and_no_subset_limit(tmp_path):
+    """The desktop app and `annzarro start` on loopback without login: one user
+    is everyone, and must not be held to half the budget or two subsets."""
+    owner, places = _seen_owner(tmp_path, hosted=False, host="127.0.0.1")
+    assert owner is None and places > 100
+    read_guard.configure(max_mb=100, budget_mb=200, wait_s=0.05)
+    with read_guard.admit(100 * MB):
+        with read_guard.admit(100 * MB):          # the whole budget, from one requester
+            pass
 
 
 def test_subset_computations_are_limited_per_worker():

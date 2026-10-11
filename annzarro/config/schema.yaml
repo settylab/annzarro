@@ -183,8 +183,8 @@ server:
     limit_request_line:
       type: integer
       minimum: 0
-      description: gunicorn's longest request line in bytes (0 = unlimited, up to 8190 by gunicorn's own maximum)
-      default: 8190
+      description: gunicorn's longest request line in bytes; 0 = unlimited (the reverse proxy bounds it); gunicorn caps any other value at 8190
+      default: 0
     limit_request_fields:
       type: integer
       minimum: 0
@@ -199,7 +199,7 @@ server:
       type: number
       minimum: 0
       description: Largest request body in MB (panel-set saves and imports); a larger one is a 413 request_too_large; 0 = no limit
-      default: 16
+      default: 64
     max_sessions_per_user:
       type: integer
       minimum: 0

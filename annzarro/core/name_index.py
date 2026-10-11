@@ -39,7 +39,7 @@ DEFAULT_SEARCH_TIMEOUT_S = 10.0
 MAX_UNBOUNDED_REPEATS = 4
 _UNBOUNDED_FROM = 1000
 #: names a regex scan reads between two looks at the clock
-_CLOCK_EVERY = 2048
+_CLOCK_EVERY = 256
 
 _SEP = "\n"
 

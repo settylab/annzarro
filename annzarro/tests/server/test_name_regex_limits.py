@@ -125,3 +125,21 @@ def test_the_route_still_answers_an_ordinary_pattern(client_and_store):
     reply = client.get("/api/v1/data/names", query_string={
         "dataset_path": store, "entity": "cells", "q": r"^cell_\d+$", "mode": "regex"})
     assert reply.status_code == 200 and reply.get_json()["matches"]
+
+
+def test_a_slow_pattern_that_passes_the_check_stops_at_the_limit_on_a_big_index():
+    """Four open-ended repeats pass the complexity check and cost a polynomial
+    of the name's length per name; over a million names that is tens of seconds.
+    The clock is read every 256 names, so the scan ends within the limit plus
+    256 names' work."""
+    import random
+    import time
+    rng = random.Random(1)
+    names = ["".join(rng.choice("ACGT") for _ in range(16)) + "-1" for _ in range(300_000)]
+    ix = NameIndex(names)
+    name_index.configure(timeout_s=0.5)
+    started = time.monotonic()
+    out = ix.search(r".*.*.*.*Z", mode="regex")
+    elapsed = time.monotonic() - started
+    assert out["timed_out"] and out["scanned"] < len(names)
+    assert elapsed < 1.5, elapsed
