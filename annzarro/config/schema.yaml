@@ -141,6 +141,14 @@ server:
       type: integer
       description: Entries (folders and stores) one request of the dataset picker's folder listing returns; a larger folder is read in pages with "show more"
       default: 500
+    dataset_search_max_depth:
+      type: integer
+      description: Folders deep the dataset picker's search of the data directory goes
+      default: 6
+    dataset_search_max_entries:
+      type: integer
+      description: Entries the dataset picker's search of the data directory looks at before it stops and says the result is partial
+      default: 20000
     max_read_mb:
       type: [number, "null"]
       description: MB one read of an obsp/varp matrix may hold in memory, estimated from metadata before reading; over it the request is a 413 read_too_large. null = 5% of RAM (256 MB to 4 GB); applies to admins too
