@@ -20,7 +20,7 @@ from annzarro.core import subset as cell_subset
 from annzarro.core import zarr_reader
 from annzarro.core.zarr_reader import ZarrReader
 from annzarro.server.core import create_app
-from annzarro.tests.zarr_compat import open_group, write_array, write_strings
+from annzarro.tests.zarr_compat import open_group, store_format, write_array, write_strings
 
 CASES = {
     "fixed width": [f"AAAC{i:06d}-1" for i in range(50)],
@@ -216,8 +216,9 @@ def test_raw_path_equals_zarr_decode(tmp_path, compressor, make, monkeypatch):
     root = open_group(tmp_path / "s.zarr")
     arr = write_strings(root, "idx", names, chunks=(chunk,), compressor=COMPRESSORS[compressor]())
     directory = str(tmp_path / "s.zarr" / "idx")
-    meta = json.load(open(directory + "/.zarray"))
-    assert [f["id"] for f in meta["filters"]] == ["vlen-utf8"]
+    raw = store_format(tmp_path / "s.zarr") == 2      # the raw chunk path reads format 2 only
+    if raw:
+        assert [f.codec_id for f in arr.filters] == ["vlen-utf8"]
 
     used = []
     real = string_chunks._LocalVlenArray.items
@@ -231,7 +232,7 @@ def test_raw_path_equals_zarr_decode(tmp_path, compressor, make, monkeypatch):
     picks += [np.sort(rng.choice(n, size=k, replace=False)) for k in (1, 3, 100, 1_000)]
     for rows in picks:
         assert string_chunks.take(arr, rows, directory) == [truth[i] for i in rows]
-    if make is not _tricky_names:
+    if raw and make is not _tricky_names:
         # every chunk, the padded last one included, is read by the raw path
         assert used and all(u is not None for u in used), "a chunk fell back to zarr"
 

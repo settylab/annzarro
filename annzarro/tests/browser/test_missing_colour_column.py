@@ -39,6 +39,8 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.zarr_compat import drop_consolidated, get_attrs, has_consolidated, set_attrs  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 FIXTURE = os.path.join(os.path.dirname(HERE), "data", "fixture_small.zarr")
@@ -64,16 +66,12 @@ def _stores(data):
     for path in (has, lacks):
         shutil.copytree(FIXTURE, path)
         # consolidated metadata would list what the edits below remove
-        if os.path.exists(os.path.join(path, ".zmetadata")):
-            os.remove(os.path.join(path, ".zmetadata"))
+        if has_consolidated(path):
+            drop_consolidated(path)
     shutil.copytree(os.path.join(has, "obsm", "X_umap"), os.path.join(has, "obsm", "X_alt"))
     shutil.rmtree(os.path.join(lacks, "obs", "leiden"))
-    attrs = os.path.join(lacks, "obs", ".zattrs")
-    with open(attrs) as f:
-        meta = json.load(f)
-    meta["column-order"].remove("leiden")
-    with open(attrs, "w") as f:
-        json.dump(meta, f)
+    obs = os.path.join(lacks, "obs")
+    set_attrs(obs, {"column-order": [c for c in get_attrs(obs)["column-order"] if c != "leiden"]})
     return has, lacks
 
 

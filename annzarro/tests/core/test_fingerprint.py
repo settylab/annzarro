@@ -14,7 +14,6 @@ and the field names). What must hold:
   builds the name index) does not change it;
 * it is persisted, so another process does not recompute it.
 """
-import json
 import os
 import shutil
 
@@ -22,7 +21,9 @@ import numpy as np
 import pytest
 
 from annzarro.core import fingerprint, get_reader
-from annzarro.tests.zarr_compat import ZARR_V3, open_group, write_strings
+from annzarro.tests import zarr_compat
+from annzarro.tests.zarr_compat import (ZARR_V3, NEW_FORMAT, consolidate, copy_node, drop_consolidated,
+                                        open_group, require_group, set_attrs, write_strings)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(os.path.dirname(HERE), "data")
@@ -47,11 +48,14 @@ def _copy(tmp_path, name="copy.zarr"):
     return dst
 
 
+# the committed fixture is format 2; the suites run on a format 3 copy of it under
+# ANNZARRO_TEST_ZARR_FORMAT=3, which these two tests, that pin the format 2 one, cannot use
+format2_fixture_only = pytest.mark.skipif(NEW_FORMAT == 3, reason="pins the committed format 2 fixture")
+
+
 def _consolidate(store):
-    """Rewrite .zmetadata from the documents on disk (zarr 2 layout)."""
-    docs = fingerprint._zarr_local_metadata(str(store))
-    with open(store / ".zmetadata", "w") as fh:
-        json.dump({"zarr_consolidated_format": 1, "metadata": docs}, fh)
+    """Rewrite the consolidated metadata from the nodes on disk, in the store's own format."""
+    consolidate(store)
 
 
 def test_shape_of_the_fingerprint():
@@ -71,7 +75,7 @@ def test_a_copy_elsewhere_is_the_same_store(tmp_path):
 
 def test_consolidated_metadata_does_not_count(tmp_path):
     store = _copy(tmp_path)
-    os.remove(store / ".zmetadata")
+    drop_consolidated(store)
     # the metadata tier only: the names are read through zarr, which is not
     # what this is about
     assert fingerprint.metadata_part(str(store)) == fingerprint.metadata_part(FIXTURE)
@@ -101,11 +105,13 @@ FIXTURE_FINGERPRINT = {
 }
 
 
+@format2_fixture_only
 def test_the_same_on_every_server():
     out = fp(FIXTURE)
     assert {k: out[k] for k in FIXTURE_FINGERPRINT} == FIXTURE_FINGERPRINT
 
 
+@format2_fixture_only
 @pytest.mark.skipif(not ZARR_V3, reason="zarr 2 cannot read a zarr format 3 store")
 def test_zarr_format_3_copy_keeps_the_cells_and_genes():
     a, b = fp(FIXTURE), fp(FIXTURE_V3)
@@ -160,11 +166,7 @@ def test_one_cell_renamed_is_other_cells(tmp_path):
 
 def test_one_obs_column_more_changes_only_the_fields(tmp_path):
     store = _copy(tmp_path)
-    shutil.copytree(store / "obs" / "total_counts", store / "obs" / "total_counts_2")
-    attrs = json.loads((store / "obs" / ".zattrs").read_text())
-    attrs["column-order"] = list(attrs.get("column-order", [])) + ["total_counts_2"]
-    (store / "obs" / ".zattrs").write_text(json.dumps(attrs))
-    _consolidate(store)
+    _add_obs_column(store, consolidate=True)
     a, b = fp(FIXTURE), fp(store)
     assert a["data"] == b["data"]
     assert a["meta"] != b["meta"]
@@ -339,6 +341,7 @@ GOLDEN_DATA = "0cfa34b3b4a952c627fe2b45a6d45912"
 GOLDEN_META = "a789db82f8fc2b36ff0f6b99ab213398"
 
 
+@format2_fixture_only
 def test_opening_does_not_start_the_hash(tmp_path, monkeypatch):
     store = _copy(tmp_path)
     reader = get_reader(str(store))
@@ -354,6 +357,7 @@ def test_opening_does_not_start_the_hash(tmp_path, monkeypatch):
     assert fingerprint._pending == {}
 
 
+@format2_fixture_only
 def test_saving_or_sharing_still_gets_the_same_fingerprint(tmp_path):
     store = _copy(tmp_path)
     reader = get_reader(str(store))
@@ -391,20 +395,16 @@ def test_a_hash_already_running_is_reported_pending_not_restarted(tmp_path, monk
 # --- the metadata tier from consolidated metadata (one read, not a walk) ----
 
 def _add_obs_column(store, consolidate):
-    shutil.copytree(store / "obs" / "total_counts", store / "obs" / "total_counts_2")
-    attrs = json.loads((store / "obs" / ".zattrs").read_text())
-    attrs["column-order"] = list(attrs.get("column-order", [])) + ["total_counts_2"]
-    (store / "obs" / ".zattrs").write_text(json.dumps(attrs))
+    copy_node(store / "obs" / "total_counts", store / "obs" / "total_counts_2")
+    order = zarr_compat.get_attrs(store / "obs").get("column-order", [])
+    set_attrs(store / "obs", {"column-order": list(order) + ["total_counts_2"]})
     if consolidate:
         _consolidate(store)
 
 
 def _set_uns_attr(store, value, consolidate):
     """Rewrite a nested attribute (uns/note), no new member."""
-    os.makedirs(store / "uns" / "note", exist_ok=True)
-    (store / "uns" / ".zgroup").write_text('{"zarr_format": 2}')
-    (store / "uns" / "note" / ".zgroup").write_text('{"zarr_format": 2}')
-    (store / "uns" / "note" / ".zattrs").write_text(json.dumps({"v": value}))
+    require_group(store, "uns/note", {"v": value})
     if consolidate:
         _consolidate(store)
 
@@ -429,11 +429,7 @@ class _Calls:
 
 def _many_uns(store, n):
     for i in range(n):
-        d = store / "uns" / f"k{i}"
-        os.makedirs(d, exist_ok=True)
-        (d / ".zgroup").write_text('{"zarr_format": 2}')
-        (d / ".zattrs").write_text(json.dumps({"i": i}))
-    (store / "uns" / ".zgroup").write_text('{"zarr_format": 2}')
+        require_group(store, f"uns/k{i}", {"i": i})
     _consolidate(store)
 
 
@@ -462,7 +458,7 @@ def test_consolidated_metadata_change_changes_the_meta_tier(tmp_path):
 
 def test_walk_fallback_without_consolidated_metadata(tmp_path):
     store = _copy(tmp_path)
-    os.remove(store / ".zmetadata")
+    drop_consolidated(store)
     assert fingerprint._zarr_local_consolidated(str(store)) is None
     before = fingerprint.metadata_part(str(store))
     _add_obs_column(store, consolidate=False)
@@ -497,7 +493,7 @@ def test_consolidated_metadata_a_refresh_found_stale_is_not_used(tmp_path):
     from annzarro.core import freshness
     store = _copy(tmp_path)
     _many_uns(store, 3)
-    (store / "uns" / "k1" / ".zattrs").write_text(json.dumps({"i": "rewritten"}))   # .zmetadata not updated
+    set_attrs(store / "uns" / "k1", {"i": "rewritten"})   # the consolidated metadata is not updated
     stale = fingerprint.metadata_part(str(store))["meta"]
     assert fingerprint._zarr_local_consolidated(str(store)) is not None
     freshness.bump(str(store), consolidated_stale="uns/k1 differs")
@@ -521,7 +517,7 @@ def test_a_consolidated_store_costs_a_fixed_number_of_calls(tmp_path, monkeypatc
     assert counts["big"] == counts["small"]          # O(1) in the number of nodes
     assert counts["big"] <= 40
     # the walk it replaces is linear
-    os.remove(big / ".zmetadata")
+    drop_consolidated(big)
     calls = _Calls(monkeypatch)
     fingerprint.metadata_part(str(big))
     assert calls.n > 500
