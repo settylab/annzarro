@@ -46,11 +46,69 @@ def test_passwd_unknown_user_fails(users):
 
 def test_set_admin_and_revoke(users):
     path, cfg = users
+    AuthManager(user_file=str(path)).create_user("carol", "pw", is_admin=True)   # revoking needs another admin left
     assert _run(cfg, "set-admin", "--username", "alice") == 0
     assert AuthManager(user_file=str(path)).get_user("alice").is_admin is True
     assert _run(cfg, "set-admin", "--username", "alice", "--no-admin") == 0
     assert AuthManager(user_file=str(path)).get_user("alice").is_admin is False
     assert _run(cfg, "set-admin", "--username", "bob") == 1
+
+
+def test_the_last_admin_is_refused_unless_forced(users):
+    path, cfg = users
+    assert _run(cfg, "set-admin", "--username", "alice") == 0
+    assert _run(cfg, "set-admin", "--username", "alice", "--no-admin") == 1
+    assert _run(cfg, "remove", "--username", "alice") == 1
+    manager = AuthManager(user_file=str(path))
+    assert manager.get_user("alice").is_admin is True
+    assert _run(cfg, "set-admin", "--username", "alice", "--no-admin", "--force") == 0
+    assert AuthManager(user_file=str(path)).get_user("alice").is_admin is False
+    assert _run(cfg, "set-admin", "--username", "alice") == 0
+    assert _run(cfg, "remove", "--username", "alice", "--force") == 0
+    assert AuthManager(user_file=str(path)).get_user("alice") is None
+
+
+def test_removing_a_user_when_there_is_no_admin_at_all_is_not_blocked(users):
+    path, cfg = users
+    AuthManager(user_file=str(path)).create_user("bob", "pw")
+    assert _run(cfg, "remove", "--username", "bob") == 0
+
+
+def test_cli_changes_are_audited_with_their_origin(users):
+    from annzarro.server.admin import audit
+    path, cfg = users
+    assert _run(cfg, "add", "--username", "carol", "--password", "secret-carol-pw", "--admin") == 0
+    assert _run(cfg, "passwd", "--username", "carol", "--password", "another-secret-pw") == 0
+    assert _run(cfg, "set-admin", "--username", "alice") == 0
+    assert _run(cfg, "set-admin", "--username", "carol", "--no-admin") == 0
+    assert _run(cfg, "unlock", "--username", "alice") == 0
+    assert _run(cfg, "remove", "--username", "carol") == 0
+    assert _run(cfg, "remove", "--username", "alice") == 1          # the last admin
+    directory = os.path.join(os.path.dirname(str(path)), "annzarro_admin")
+    records = list(reversed(audit.read(directory, limit=50)))
+    assert [(r["action"], r["target"], r["outcome"]) for r in records] == [
+        ("user.add", "carol", "ok"), ("user.password", "carol", "ok"), ("user.set_admin", "alice", "ok"),
+        ("user.set_admin", "carol", "ok"), ("user.unlock", "alice", "ok"), ("user.remove", "carol", "ok"),
+        ("user.remove", "alice", "refused:last_admin")]
+    assert {r["via"] for r in records} == {"cli:" + __import__("getpass").getuser()}
+    assert audit.verify(directory)["ok"]
+    raw = open(os.path.join(directory, "audit.jsonl")).read()
+    assert "secret-carol-pw" not in raw and "another-secret-pw" not in raw and "password_hash" not in raw
+
+
+def test_audit_verify_command(users, capsys):
+    path, cfg = users
+    assert cli.main(["--config", cfg, "admin", "audit", "verify"]) == 0       # no log yet
+    assert _run(cfg, "add", "--username", "carol", "--password", "pw-for-carol-1") == 0
+    assert _run(cfg, "set-admin", "--username", "carol") == 0
+    assert cli.main(["--config", cfg, "admin", "audit", "verify"]) == 0
+    assert "Audit log OK" in capsys.readouterr().out
+    log = os.path.join(os.path.dirname(str(path)), "annzarro_admin", "audit.jsonl")
+    lines = open(log).read().splitlines()
+    lines[0] = lines[0].replace('"carol"', '"mallory"')
+    open(log, "w").write("\n".join(lines) + "\n")
+    assert cli.main(["--config", cfg, "admin", "audit", "verify"]) == 1
+    assert "BROKEN at seq 1" in capsys.readouterr().out
 
 
 def _app(tmp_path, path):
@@ -106,3 +164,18 @@ def test_user_add_help_states_what_admin_grants(capsys):
     assert "nothing else" not in text
     for needle in ("any dataset path", "server.arbitrary_paths", "local-only", "reassign", "cache"):
         assert needle in text, needle
+
+
+def test_the_cli_refuses_to_run_as_another_account(users, monkeypatch):
+    """`sudo annzarro user add` would create root-owned files the server cannot write."""
+    path, cfg = users
+    monkeypatch.setattr(cli, "_dir_owner", lambda directory: (os.geteuid() + 1, "svc-annzarro"))
+    assert _run(cfg, "add", "--username", "carol", "--password", "pw") == 1
+    assert _run(cfg, "set-admin", "--username", "alice") == 1
+    assert AuthManager(user_file=str(path)).get_user("carol") is None
+    assert AuthManager(user_file=str(path)).get_user("alice").is_admin is False
+    assert not os.path.exists(os.path.join(os.path.dirname(str(path)), "annzarro_admin"))
+    assert "sudo -u svc-annzarro" in cli._wrong_account(str(path))
+    assert _run(cfg, "list") == 0, "listing changes nothing, so any account may"
+    monkeypatch.setattr(cli, "_dir_owner", lambda directory: (os.geteuid(), "me"))
+    assert _run(cfg, "add", "--username", "carol", "--password", "pw") == 0

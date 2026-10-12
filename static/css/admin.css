@@ -119,3 +119,7 @@
         justify-content: flex-start;
     }
 }
+
+.account-card {
+    max-width: 32rem;
+}
