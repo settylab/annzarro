@@ -16,6 +16,7 @@ import zarr
 
 from annzarro.core import read_guard
 from annzarro.server.core import create_app
+from annzarro.tests.zarr_compat import drop_consolidated, has_consolidated
 
 FIXTURE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "fixture_small.zarr")
@@ -33,9 +34,10 @@ def served(tmp_path):
     data.mkdir()
     store = str(data / "a.zarr")
     shutil.copytree(FIXTURE, store)
-    consolidated = os.path.join(store, ".zmetadata")
-    if os.path.exists(consolidated):
-        os.remove(consolidated)
+    # the members added below are not in the consolidated listing (.zmetadata in format 2, inside the
+    # root zarr.json in format 3), and a reader trusts that listing
+    if has_consolidated(store):
+        drop_consolidated(store)
     root = zarr.open_group(store, mode="r+")
     uns = root["uns"] if "uns" in root else root.create_group("uns")
     _array(uns, "small", shape=(100,), chunks=(100,), dtype="float64")[:] = np.arange(100.0)
