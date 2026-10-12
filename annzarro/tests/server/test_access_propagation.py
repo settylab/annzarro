@@ -8,6 +8,7 @@ interface use) and asks every worker, with no pause, over real HTTP.
 """
 import http.cookiejar
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -47,7 +48,9 @@ class Browser:
     def __init__(self, base, username):
         self.base = base
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-        body = urllib.parse.urlencode({"username": username, "password": PASSWORD}).encode()
+        form = self.opener.open(base + "/login", timeout=15).read().decode()      # the form's token comes with its cookie
+        token = re.search(r'name="login_csrf" value="([^"]*)"', form).group(1)
+        body = urllib.parse.urlencode({"username": username, "password": PASSWORD, "login_csrf": token}).encode()
         self.opener.open(urllib.request.Request(base + "/login", data=body), timeout=15).read()
 
     def status(self, path, **query):

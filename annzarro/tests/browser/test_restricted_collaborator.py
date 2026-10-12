@@ -226,7 +226,8 @@ def test_panel_sets_listed_to_a_restricted_user(browser, served):
     try:
         for name, dataset in (("carol on in", "in.zarr"), ("carol on out", "out.zarr")):
             reply = carol.evaluate("""async ([name, dataset]) => (await fetch('/api/v1/sessions/save', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
+                method: 'POST', headers: {'Content-Type': 'application/json',
+                    'X-AnnZarro-CSRF': document.querySelector('meta[name=annzarro-csrf]').content},
                 body: JSON.stringify({name, dataset})})).status""", [name, dataset])
             assert reply == 200
         bob.goto(base + "/")
