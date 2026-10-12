@@ -105,8 +105,17 @@ def test_grant_a_collaborator_see_only_the_grants_then_revoke(served):
             assert admin.locator("#access-policy").count() == 1       # the settings block is part of the panel
 
             # restrict him: with no grant he reads nothing
-            admin.check("#access-restricted")
+            sent = []
+            admin.on("request", lambda r: sent.append(r) if r.method == "PUT" else None)
+            admin.click("#access-restricted")
+            admin.wait_for_selector("#access-confirm-box")
+            assert "bob will lose access to everything now" in admin.inner_text("#access-confirm-box")
+            assert sent == [], "one click on the box must not send the change"
+            assert not admin.is_checked("#access-restricted")
+            assert info_status(bob, os.path.join(data, "out.zarr")) == 200, "nothing changed yet"
+            admin.click('button[data-action="confirm-access"]')
             admin.wait_for_function("() => document.getElementById('access-note')?.innerText.includes('reads nothing')")
+            assert len(sent) == 1
             assert info_status(bob, os.path.join(data, "in.zarr")) == 404
             assert "reads nothing" in user_row(admin, "bob").inner_text()
 
@@ -181,7 +190,11 @@ def test_grant_a_collaborator_see_only_the_grants_then_revoke(served):
             assert "reads nothing" in admin.inner_text("#access-note")
 
             # lift the restriction: everything again
-            admin.uncheck("#access-restricted")
+            admin.click("#access-restricted")
+            admin.wait_for_selector("#access-confirm-box")
+            assert "bob will be able to read every dataset" in admin.inner_text("#access-confirm-box")
+            assert info_status(bob, os.path.join(data, "in.zarr")) == 404, "one click must not lift the restriction"
+            admin.click('button[data-action="confirm-access"]')
             admin.wait_for_function("() => document.getElementById('access-note')?.innerText.includes('reads every dataset')")
             assert info_status(bob, os.path.join(data, "out.zarr")) == 200
             assert "all" in user_row(admin, "bob").inner_text()

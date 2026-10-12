@@ -6,7 +6,7 @@ import test, { beforeEach, afterEach } from "node:test";
 import { find, findAll, installFakeDocument, uninstallFakeDocument } from "./fake-dom.mjs";
 import { AdminError } from "../../../static/js/admin/admin-api.js";
 import {
-  summaryText, accessCell, grantedToText, grantRequest, storesText, checkText, grantedText, reasonText, kindText, mountAccessPanel,
+  summaryText, accessCell, grantedToText, grantRequest, storesText, checkText, confirmText, grantedText, reasonText, kindText, mountAccessPanel,
 } from "../../../static/js/admin/access.js";
 import users, { userRows } from "../../../static/js/admin/users.js";
 import { rootRow } from "../../../static/js/admin/data-roots.js";
@@ -98,6 +98,9 @@ test("the helpers read the server's words", () => {
   assert.equal(reasonText("outside_data_directories"), "outside every data directory");
   assert.equal(reasonText("something_new"), "something_new");
   assert.equal(kindText("dir"), "folder");
+  assert.match(confirmText("carol", "unrestrict"), /carol will be able to read every dataset/);
+  assert.match(confirmText("carol", "restrict"), /carol will lose access to everything now/);
+  assert.equal(summaryText({ restricted: null, grants: null, active: null }), "unknown");
 });
 
 test("the Users table gains an Access column only when the summary is known", () => {
@@ -172,25 +175,64 @@ test("an administrator cannot be restricted and has no grants to edit", async ()
   assert.equal(byId(el, "access-grants"), null);
 });
 
-test("ticking Restricted sends it, reloads, and tells the table", async () => {
+test("one click on Restricted sends nothing: restricting a user with no grant asks first, then sends", async () => {
   let changes = 0;
   const { el, state, toasts } = await mount(view({ restricted: false, all: true, grants: [] }), { onChange: async () => { changes += 1; } });
   const box = byId(el, "access-restricted");
   box.checked = true;
   await box.dispatch("change");
+  assert.equal(state.calls.filter((c) => c[0] === "setRestricted").length, 0, "a single click must not send the change");
+  assert.match(byId(el, "access-confirm-box").textContent, /bob will lose access to everything now/);
+  assert.equal(byId(el, "access-restricted").checked, false, "the box still shows what the server holds");
+  await action(el, "confirm-access")[0].dispatch("click");
   assert.deepEqual(state.calls.find((c) => c[0] === "setRestricted"), ["setRestricted", "bob", true]);
   assert.equal(changes, 1);
   assert.match(toasts[0][0], /reads only what is granted/);
+  assert.equal(byId(el, "access-confirm-box"), null);
 });
 
-test("a refused restriction shows the server's sentence and puts the box back", async () => {
+test("restricting a user who has an active grant needs no confirmation", async () => {
+  const { el, state } = await mount(view({ restricted: false, all: true }));
+  const box = byId(el, "access-restricted");
+  box.checked = true;
+  await box.dispatch("change");
+  assert.deepEqual(state.calls.find((c) => c[0] === "setRestricted"), ["setRestricted", "bob", true]);
+});
+
+test("lifting a restriction always asks first, in plain words, and Cancel sends nothing", async () => {
+  const { el, state } = await mount();
+  const box = byId(el, "access-restricted");
+  box.checked = false;
+  await box.dispatch("change");
+  assert.equal(state.calls.filter((c) => c[0] === "setRestricted").length, 0);
+  assert.match(byId(el, "access-confirm-box").textContent, /bob will be able to read every dataset/);
+  assert.equal(byId(el, "access-restricted").checked, true);
+  await action(el, "cancel-access")[0].dispatch("click");
+  assert.equal(byId(el, "access-confirm-box"), null);
+  assert.equal(state.calls.filter((c) => c[0] === "setRestricted").length, 0);
+  const again = byId(el, "access-restricted");
+  again.checked = false;
+  await again.dispatch("change");
+  await action(el, "confirm-access")[0].dispatch("click");
+  assert.deepEqual(state.calls.find((c) => c[0] === "setRestricted"), ["setRestricted", "bob", false]);
+});
+
+test("a refused change shows the server's sentence", async () => {
   const { el, state } = await mount(view({ restricted: false, all: true, grants: [] }));
   state.api.access.setRestricted = async () => { throw new AdminError("An administrator is never restricted.", { status: 409, reason: "admin_unrestricted" }); };
   const box = byId(el, "access-restricted");
   box.checked = true;
   await box.dispatch("change");
+  await action(el, "confirm-access")[0].dispatch("click");
   assert.match(byId(el, "access-error").textContent, /never restricted/);
   assert.equal(byId(el, "access-restricted").checked, false);
+});
+
+test("an administrator with a stored restriction is told it applies again if demoted", async () => {
+  const { el } = await mount(view({ is_admin: true, restricted: false, stored_restricted: true, all: true, grants: [] }));
+  assert.match(byId(el, "access-note").textContent, /applies again if their admin right is revoked/);
+  const plain = await mount(view({ is_admin: true, restricted: false, stored_restricted: false, all: true, grants: [] }));
+  assert.doesNotMatch(byId(plain.el, "access-note").textContent, /applies again/);
 });
 
 test("granting a folder sends the kind and path, clears the field and reloads", async () => {

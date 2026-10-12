@@ -123,7 +123,7 @@ def _stores_below(config, grants):
         while stack and not capped:
             directory = stack.pop()
             try:
-                here = os.path.realpath(directory)
+                here = access.canonical_spelling(directory)
                 if here in seen_dirs or (here != real and not here.startswith(fence)):
                     continue
                 seen_dirs.add(here)
@@ -138,7 +138,7 @@ def _stores_below(config, grants):
                 if entry.name.startswith("."):
                     continue
                 try:
-                    target = os.path.realpath(entry.path)
+                    target = access.canonical_spelling(entry.path)
                     if not target.startswith(fence):
                         continue          # a link leading out of the folder
                     if entry.is_file() and entry.name.endswith(".h5ad"):
@@ -162,9 +162,11 @@ def _policy_overrides(entry):
 def _access_view(config, username, record, offset, limit):
     view = access.describe(username, config)
     entry = access.entry_of(username, config)
-    restricted = bool(view["restricted"]) and not record.is_admin
+    stored = bool(view["restricted"])
+    restricted = stored and not record.is_admin
     everything = record.is_admin or not restricted
     view.update(is_admin=bool(record.is_admin), restricted=restricted, all=everything,
+                stored_restricted=stored,
                 policy_overrides=_policy_overrides(entry))
     view.pop("policy", None)
     if everything:
@@ -199,9 +201,11 @@ def overview():
         grants = access.grants_of(name, config).all if state["ok"] else []
         # an unreadable file says nothing about who is restricted: None, not a guess
         restricted = None if not state["ok"] else (bool(access.is_restricted(name, config)) and not record.is_admin)
+        known = state["ok"]
         users[name] = {"restricted": restricted, "is_admin": bool(record.is_admin),
-                       "grants": len(grants), "active": sum(1 for g in grants if g["active"]),
-                       "policy_overrides": _policy_overrides(entry)}
+                       "grants": len(grants) if known else None,
+                       "active": sum(1 for g in grants if g["active"]) if known else None,
+                       "policy_overrides": _policy_overrides(entry) if known else None}
         if not restricted:
             continue
         for grant in grants:
@@ -318,7 +322,7 @@ def remove_grant(username):
 def _covering(grants, real):
     """The active local grant that covers ``real``, the way ``Grants.allows_local`` walks up."""
     by_real = {g["real"]: g for g in grants.all if g["active"] and g["kind"] != "remote"}
-    current = real
+    current = access.canonical_spelling(real)
     while True:
         if current in by_real:
             return by_real[current]
@@ -352,7 +356,7 @@ def _explain(config, username, path, restricted):
         match = next((g for g in grants.all if g["active"] and g["kind"] == "remote" and g["prefix"].matches(parts)), None)
         via = {"kind": "remote", "path": match["path"]} if match else None
         return True, via, f"Covered by the remote prefix {match['path']}." if match else "Covered by a remote grant."
-    real = os.path.realpath(path)
+    real = access.canonical_spelling(path)
     grant = _covering(grants, real)
     if access.may_read(username, path):
         via = {"kind": grant["kind"], "path": grant["path"]} if grant else None

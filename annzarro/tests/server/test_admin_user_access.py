@@ -479,7 +479,9 @@ def test_a_corrupt_access_file_is_reported_never_replaced_and_fails_closed(app, 
 
     overview = admin.get(f"{BASE}/access")
     assert overview.status_code == 200 and overview.get_json()["store"]["ok"] is False
-    assert overview.get_json()["users"][BOB]["restricted"] is None, "an unreadable file must not be read as 'unrestricted'"
+    assert overview.get_json()["store"]["error"]
+    assert overview.get_json()["users"][BOB] == {"restricted": None, "is_admin": False, "grants": None, "active": None,
+                                                 "policy_overrides": None}, "an unreadable file must not read as zero"
 
     said = check(admin, app.layout / "data" / "in.zarr").get_json()
     assert said["allowed"] is False and "unreadable" in said["reason"]
@@ -514,3 +516,36 @@ def test_the_new_routes_are_registered_as_admin_routes(app):
                         ("DELETE", "/users/<username>/grants")):
         assert (BASE + url, method) in rules, (method, url)
     assert access.GRANT_KINDS == ("dir", "store", "remote")
+
+
+def test_an_admin_with_a_stored_restriction_is_shown_as_unrestricted_with_the_flag_reported(app, admin):
+    put_access(admin, True)
+    manager = AuthManager(user_file=app.config["user_file"])
+    manager.set_admin(BOB, True)
+    body = view(admin).get_json()
+    assert body["is_admin"] is True and body["restricted"] is False and body["all"] is True
+    assert body["stored_restricted"] is True, "the dormant flag comes back on demotion; the panel says so"
+    manager.set_admin(BOB, False)
+    assert view(admin).get_json()["restricted"] is True
+
+
+def _case_insensitive(path):
+    return os.path.exists(str(path).swapcase()) and os.path.samefile(str(path), str(path).swapcase())
+
+
+def test_the_effective_stores_and_the_check_agree_with_the_gate_for_a_link_spelled_in_another_case(app, admin, layout):
+    data = layout / "data"
+    if not _case_insensitive(data / "in.zarr"):
+        pytest.skip("needs a case-insensitive volume (APFS)")
+    folder = data / "curated"
+    folder.mkdir()
+    variant = str(data / "in.zarr")
+    head, tail = os.path.split(variant)
+    os.symlink(os.path.join(head, tail.swapcase()), folder / "a.zarr")      # the target is spelled in another case
+    put_access(admin, True)
+    assert grant(admin, "dir", folder).status_code == 201
+    bob = login(app, BOB)
+    reads = info(bob, folder / "a.zarr") == 200
+    listed = [i["name"] for i in view(admin).get_json()["stores"]["items"]]
+    assert (("in.zarr" in listed) or ("IN.ZARR" in listed)) == reads, (reads, listed)
+    assert check(admin, folder / "a.zarr").get_json()["allowed"] == reads

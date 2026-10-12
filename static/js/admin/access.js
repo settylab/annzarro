@@ -97,6 +97,13 @@ export function storesText(stores) {
     return `${stores.capped ? 'at least ' : ''}${formatCount(n)} ${n === 1 ? 'store' : 'stores'}`;
 }
 
+/** The warning shown before a restriction changes. */
+export function confirmText(username, kind) {
+    return kind === 'restrict'
+        ? `${username} has no active grant, so ${username} will lose access to everything now, until you add a grant.`
+        : `${username} will be able to read every dataset in the data directories.`;
+}
+
 /** A sentence for the answer of the check tool. */
 export function checkText(result) {
     if (!result) return '';
@@ -134,6 +141,7 @@ export async function mountAccessPanel(target, api, username, ctx = {}) {
     let checkPath = '';
     let checked = null;       // {result|error}
     let error = '';
+    let confirming = null;    // 'restrict' | 'unrestrict': the change awaiting its second click
     const policyHost = h('div', { id: 'access-policy' });
     const say = (message, level = 'success') => { if (ctx.toast) ctx.toast(message, level); };
 
@@ -171,6 +179,25 @@ export async function mountAccessPanel(target, api, username, ctx = {}) {
         say(on ? `${username} now reads only what is granted.` : `${username} reads every dataset again.`);
         await changed();
     });
+
+    // One click on the box never changes who can read what: widening always asks, and so does
+    // restricting a user who has no active grant (they lose everything at once).
+    function askBeforeChange(on) {
+        const noGrant = !(info.grants || []).some((g) => g.active);
+        if (!on || noGrant) {
+            confirming = on ? 'restrict' : 'unrestrict';
+            draw();
+            return null;
+        }
+        return setRestricted(true);
+    }
+
+    const confirmChange = async () => {
+        const on = confirming === 'restrict';
+        confirming = null;
+        await setRestricted(on);
+        draw();
+    };
 
     const grant = () => {
         const req = grantRequest(mode, typed);
@@ -342,15 +369,26 @@ export async function mountAccessPanel(target, api, username, ctx = {}) {
         }
         const admin = !!info.is_admin;
         const on = h('input', { class: 'form-check-input', type: 'checkbox', id: 'access-restricted', checked: !!info.restricted, disabled: admin });
-        on.addEventListener('change', () => setRestricted(on.checked).then((ok) => { if (!ok) on.checked = !on.checked; }));
+        on.addEventListener('change', () => {
+            const wanted = on.checked;
+            on.checked = !!info.restricted;       // the server decides; the box follows what it says
+            askBeforeChange(wanted);
+        });
+        const confirmBox = confirming ? h('div', { class: 'alert alert-warning py-2 mb-2', role: 'alert', id: 'access-confirm-box' },
+            h('div', { class: 'mb-1', text: confirmText(username, confirming) }),
+            button(confirming === 'restrict' ? 'Restrict now' : 'Allow everything', confirmChange,
+                { tone: 'warning', name: 'confirm-access' }),
+            button('Cancel', () => { confirming = null; draw(); }, { name: 'cancel-access' })) : null;
         const note = admin
             ? 'Administrators read every dataset the server serves. They cannot be restricted.'
+                + (info.stored_restricted ? ' Stored as restricted: that applies again if their admin right is revoked.' : '')
             : info.restricted
                 ? ((info.grants || []).some((g) => g.active) ? null : 'Restricted with no active grant: this user reads nothing.')
                 : 'Not restricted: this user reads every dataset in the data directories. Grants below apply once you restrict them.';
         setChildren(target, head, failure,
             h('div', { class: 'form-check mb-2' }, on,
                 h('label', { class: 'form-check-label', for: 'access-restricted', text: 'Restricted to these datasets' })),
+            confirmBox,
             note ? h('div', { class: `small mb-2 ${info.restricted && !admin ? 'text-danger' : 'text-muted'}`, id: 'access-note', text: note }) : null,
             admin ? null : [grantsTable(), grantForm(), effective()],
             checker(),
