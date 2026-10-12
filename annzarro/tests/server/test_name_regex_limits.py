@@ -209,5 +209,65 @@ def test_the_streamed_scan_is_interrupted_inside_a_match_too(monkeypatch):
 def test_without_the_regex_package_regex_search_is_refused_not_unguarded(monkeypatch):
     monkeypatch.setattr(name_index, "_regex", None)
     with pytest.raises(RegexRefusedError) as exc:
-        NameIndex(["a"]).search("a", mode="regex")
+        NameIndex(["a"]).search(".?.?.?!", mode="regex")
     assert exc.value.reason == "regex_unavailable"
+    assert NameIndex(["a", "b"]).search("^a$", mode="regex")["matches"][0]["name"] == "a", \
+        "a pattern the quick engine proves cheap needs no regex package"
+
+
+# --- two engines: re for patterns proven cheap, regex (timeout inside the match) for the rest -------
+
+NORMAL = [r"^MT-", r"_\d{2}$", r"ab+c", r"^(MT-|RP[SL])", r"^[ACGT]{6}-\d+$", r"ENSG\d+", r"^A.*B.*C$",
+          r"zzz$", r"gapdh|actb"]
+NOT_SIMPLE = [".?" * 4 + "!", r"(?:a?){40}a{40}", r".*a.*b.*c", r"(\w)\1", r"(?=a)a.*", r"(ab|cd)(ef|gh)(ij|kl)"]
+
+
+@pytest.mark.parametrize("pattern", NORMAL)
+def test_a_normal_pattern_runs_on_the_fast_engine(pattern):
+    assert name_index.is_simple(pattern)
+    assert name_index.compile_regex(pattern)._fast is not None
+
+
+@pytest.mark.parametrize("pattern", NOT_SIMPLE + REVIEW_PATTERNS)
+def test_anything_else_runs_under_the_timeout(pattern):
+    assert not name_index.is_simple(pattern)
+    rx = name_index.compile_regex(pattern)
+    assert rx._fast is None and rx._slow is not None
+
+
+def test_both_engines_give_the_same_matches():
+    import random
+    rng = random.Random(3)
+    names = ["".join(rng.choice("ACGTabc_-0123456789") for _ in range(rng.randint(1, 30))) for _ in range(3000)]
+    names += ["MT-ND1", "RP-S3", "gapdh", "ACTB", "x" * 400 + "zzz", "ENSG00000187634"]
+    for pattern in NORMAL:
+        rx = name_index.compile_regex(pattern)
+        fast = rx.scan(iter(names), None, 10 ** 9)[0]
+        rx._fast, rx._slow = None, rx._compile_slow()
+        slow = rx.scan(iter(names), None, 10 ** 9)[0]
+        assert fast == slow, pattern
+
+
+def test_a_long_name_goes_to_the_timeout_engine():
+    rx = name_index.compile_regex(r"zzz$")
+    long_name = "x" * (name_index.FAST_MAX_NAME + 50) + "ZZZ"
+    assert rx.scan(iter(["short", long_name]), None, 5)[0] == [(1, long_name)]
+    assert rx._slow is not None, "the long name was matched by the timeout engine"
+
+
+def test_the_fast_engine_reads_the_clock_often_enough(monkeypatch):
+    """The clock is read every FAST_CLOCK_EVERY names, so a scan overruns its deadline by at most that many."""
+    ticks = iter(range(10 ** 6))
+
+    class Clock:
+        @staticmethod
+        def monotonic():
+            return float(next(ticks))        # one second per look at the clock
+
+    monkeypatch.setattr(name_index, "time", Clock)
+    rx = name_index.compile_regex(r"^cell_\d+x.*y")
+    assert rx._fast is not None
+    names = ("cell_%07d" % i for i in range(10 ** 6))
+    hits, status, read = rx.scan(names, 3.0, 10)
+    assert status == "timeout"
+    assert read <= 4 * name_index.FAST_CLOCK_EVERY, read

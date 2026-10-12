@@ -59,6 +59,10 @@ in nginx). The desktop app does not use gunicorn.
 
 ## What the proxy must do
 
+Set `proxy_count` to the number of proxies in front. Without it every client of a server with login off
+has the proxy's address, and the fair share of the read budget (`read_user_share_percent`) is then one
+share for everybody.
+
 gunicorn answers a request only after it has read it, and with `gthread` a client that sends
 one byte at a time holds a thread for as long as it likes: `timeout` (60 s) is a heartbeat of
 the worker, not a limit on a request. So, in nginx:
@@ -108,11 +112,10 @@ million cells together). The cache is shared fairly between users, the same user
 
 ## What is not bounded
 
-- **Large JSON replies.** `/data/cells`, `/data/genes` and a string `obs`/`var` column as JSON build
-  the whole reply as Python lists (about 100 bytes a value): 95 million cell names are several GB
-  in one request, for any user. They are the web client's way to name every cell of a dataset of
-  up to 5 million cells, and on a larger one only on request, so a default that refuses them would
-  break that. They are bounded by `max_response_elements` for the matrices, not for names. A
-  streamed reply is planned.
+- **String `obs`/`var` columns as JSON.** A string column (a barcode on every cell) asked for as JSON
+  builds the whole reply as Python lists, about 100 bytes a value, for any user. Numeric columns and
+  categorical columns have binary encodings and are not affected. This is still open. The name lists
+  `/data/cells` and `/data/genes`, which had the same problem, are streamed in 0.5.0 (one chunk at a
+  time), so naming every cell of a 95-million-cell dataset no longer builds the list in memory.
 - **Remote stores** you allow are trusted not to trickle: the timeouts are per read of a socket,
   not for a whole request.
