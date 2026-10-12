@@ -121,8 +121,10 @@ server:
   lock_timeout_s: 10
   # The admin web interface (/admin, needs login). Directories an admin may
   # add as data directories in the browser must lie inside one of these;
-  # empty = adding is off, listing still works. Admin changes need the
-  # admin's password entered within admin_reauth_minutes (0 = never asked).
+  # empty = adding is off, listing still works. Keep these directories writable
+  # by trusted accounts only (a link swapped in after the check is followed).
+  # Admin changes need the admin's password entered within
+  # admin_reauth_minutes (0 = never asked).
   # admin_rate_per_minute bounds changes per admin and worker (reads get 8x).
   # The audit log (annzarro_admin/audit.jsonl beside the users file) rotates
   # at admin_audit_max_mb (0 = never).

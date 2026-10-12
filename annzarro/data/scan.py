@@ -62,27 +62,31 @@ def scan_stores(root: str, recursive: bool = True, follow_symlinks: bool = True,
     return found, False
 
 
-def count_stores(root: str, max_entries: int = DEFAULT_MAX_ENTRIES) -> Tuple[int, bool]:
-    """(how many zarr stores lie under ``root``, whether the scan was cut short).
-    A store is a directory named ``*.zarr`` or holding ``.zgroup`` / ``zarr.json``."""
-    count = 0
+def count_stores_within(root: str, max_entries: int = DEFAULT_MAX_ENTRIES, within: str = None) -> Tuple[int, bool, int]:
+    """(stores under ``root``, whether the scan was cut short, directory entries read).
+
+    With ``within`` (a real path), a directory whose real path lies outside it
+    is not entered: a link inside ``root`` that leads elsewhere is neither
+    walked nor counted. The entries read let a caller share one budget."""
+    count = used = 0
     seen = set()
     budget = int(max_entries) if max_entries else DEFAULT_MAX_ENTRIES
+    fence = within.rstrip(os.sep) + os.sep if within else None
     stack = [root]
     while stack:
         directory = stack.pop()
         try:
             real = os.path.realpath(directory)
-            if real in seen:
+            if real in seen or (fence and real != within and not real.startswith(fence)):
                 continue
             seen.add(real)
             entries = list(os.scandir(directory))
         except OSError:
             continue
         for entry in entries:
-            budget -= 1
-            if budget < 0:
-                return count, True
+            if used >= budget:
+                return count, True, used
+            used += 1
             try:
                 if not entry.is_dir():
                     continue
@@ -92,4 +96,11 @@ def count_stores(root: str, max_entries: int = DEFAULT_MAX_ENTRIES) -> Tuple[int
                 count += 1
             else:
                 stack.append(entry.path)
-    return count, False
+    return count, False, used
+
+
+def count_stores(root: str, max_entries: int = DEFAULT_MAX_ENTRIES) -> Tuple[int, bool]:
+    """(how many zarr stores lie under ``root``, whether the scan was cut short).
+    A store is a directory named ``*.zarr`` or holding ``.zgroup`` / ``zarr.json``."""
+    count, truncated, _ = count_stores_within(root, max_entries)
+    return count, truncated

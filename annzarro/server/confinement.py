@@ -36,7 +36,7 @@ here; they get their own allowlist elsewhere. Any other ``scheme://`` string
 import logging
 import os
 
-from flask import current_app, has_request_context, jsonify, request
+from flask import current_app, g, has_request_context, jsonify, request
 
 from ..core.remote import is_remote_path
 
@@ -94,14 +94,32 @@ def is_hosted(config):
     return bool(config.get("auth_enabled", False)) or is_shared(config)
 
 
-def allowed_roots(config):
-    """Real paths of the directories a hosted server may read from."""
+def configured_roots(config):
+    """Real paths of ``data_dir`` and ``server.allowed_dirs``: the operator's roots."""
     roots = [config.get("data_dir") or default_data_dir()]
     extra = config.get("allowed_dirs") or []
     if isinstance(extra, str):
         extra = [extra]
     roots.extend(extra)
     return [os.path.realpath(os.path.expanduser(r)) for r in roots]
+
+
+def allowed_roots(config):
+    """Real paths of the directories a hosted server may read from: the
+    configured roots plus the data directories an admin added in the browser
+    (the overlay, checked against ``server.admin_data_roots`` on every call)."""
+    roots = configured_roots(config)
+    try:
+        from .admin import overlay
+        return roots + [r for r in overlay.active_data_roots(config) if r not in roots]
+    except Exception:
+        # fail closed: without the overlay the operator's roots still apply.
+        # allowed_roots runs once per directory entry, so say it once per request
+        if not has_request_context() or not g.get("_overlay_failure_logged"):
+            logger.exception("Could not read the admin-added data directories; serving the configured ones only")
+            if has_request_context():
+                g._overlay_failure_logged = True
+        return roots
 
 
 def is_inside(path, roots):
