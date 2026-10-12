@@ -176,11 +176,13 @@ def _watcher(config):
 def _read(config=None):
     """``(principals, error)``: the entries of ``access.json``, or why it cannot be trusted."""
     config = config or current_app.config
-    from .admin import settings
-    state = settings.access_store_state(config)          # slice S's shared check: does the file parse?
-    data = _watcher(config).get()
-    if not state["ok"]:
-        return {}, state["error"]
+    # The same question as slice S's settings.access_store_state(config) (does the file parse?), asked of
+    # the same watcher; that helper looks the watcher up by the file's real path on every call, which a
+    # request must not pay (test_access_model.py keeps the two in step).
+    watcher = _watcher(config)
+    data = watcher.get()
+    if watcher.error:
+        return {}, watcher.error
     principals = data.get("principals") if isinstance(data, dict) else None
     if not isinstance(principals, dict):
         return {}, "access.json has no 'principals' object"

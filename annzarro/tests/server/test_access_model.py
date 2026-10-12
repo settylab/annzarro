@@ -521,3 +521,19 @@ def test_a_remote_url_on_a_dataset_route_is_the_standard_404_without_a_grant(rem
     finally:
         remote.open_remote_group = original
     assert seen == []
+
+
+def test_store_error_agrees_with_the_shared_store_state_helper(world):
+    """access.store_error is slice S's access_store_state, asked without the per-call path lookup."""
+    path = settings.access_path(world.config)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    for content in (None, '{"version": 1, "principals": {}}', "{broken", ""):
+        if content is None:
+            if os.path.exists(path):
+                os.unlink(path)
+        else:
+            open(path, "w").write(content)
+        state = settings.access_store_state(world.config)
+        assert (access.store_error(world.config) is None) == state["ok"], content
+        if not state["ok"]:
+            assert access.store_error(world.config) == state["error"]

@@ -74,7 +74,10 @@ def test_anonymous_is_sent_to_login(app):
     assert not os.path.exists(os.path.join(app.admin_dir, "audit.jsonl")), "anonymous is not audited"
 
 
-def test_user_is_refused_and_nothing_changes(app):
+def test_user_is_refused_and_nothing_changes(app, monkeypatch):
+    # every unsafe admin route is called in turn, and there are now more of them than the audit
+    # cap of one user's refusals per minute (the cap itself is tested below)
+    monkeypatch.setattr(guard, "REFUSAL_AUDIT_PER_MINUTE", 10_000)
     client = login(app, USER)
     before = _stamps(app)
     for rule, method, path in admin_rules(app):
