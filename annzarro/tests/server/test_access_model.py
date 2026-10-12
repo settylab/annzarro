@@ -227,15 +227,32 @@ def test_a_malformed_entry_restricts_its_user_to_nothing_and_no_one_else(world):
 
 # --- case and Unicode ------------------------------------------------------------------
 
-def test_only_the_exact_spelling_of_a_granted_path_is_read(world):
+def test_a_spelling_that_is_another_directory_name_is_refused_and_one_the_volume_folds_is_read(world):
+    """On a case-sensitive volume SOLO.zarr is another (absent) name; on APFS it is the granted store."""
     data = world.world.data
     grant(world, "store", f"{data}/solo.zarr")
     assert reads(world, "bob", f"{data}/solo.zarr")
-    for variant in (f"{data}/SOLO.zarr", f"{data}/Solo.Zarr", f"{data}/solo.zarr".upper()):
-        assert not reads(world, "bob", variant), variant
+    folds = os.path.exists(f"{data}/SOLO.zarr")
+    assert reads(world, "bob", f"{data}/SOLO.zarr") == folds
+    assert not reads(world, "bob", f"{data}/OTHER.zarr")           # a variant of a store that is not granted
+    assert not reads(world, "bob", f"{data}/other.zarr")
 
 
-def test_unicode_forms_are_not_the_same_string(world):
+def test_a_link_and_a_data_directory_written_in_another_case_still_reach_a_granted_store(world, tmp_path):
+    """Where the volume folds case, realpath keeps the link's target text as written; the grant is spelled as on disk."""
+    data = world.world.data
+    upper = data.replace("/data", "/DATA")
+    if not os.path.exists(upper):
+        pytest.skip("case-sensitive filesystem: another case is another directory")
+    link = tmp_path / "datalink"
+    os.symlink(upper, link)                                        # the link's target text is spelled /DATA
+    grant(world, "store", f"{data}/solo.zarr")
+    assert reads(world, "bob", f"{link}/solo.zarr")
+    assert reads(world, "bob", f"{upper}/solo.zarr")
+    assert not reads(world, "bob", f"{link}/other.zarr")
+
+
+def test_unicode_forms_are_read_where_the_volume_treats_them_as_one_name(world):
     name = "café.zarr"          # e acute
     make_rich_store(f"{world.world.data}/{name}")
     grant(world, "store", f"{world.world.data}/{name}")
@@ -244,7 +261,9 @@ def test_unicode_forms_are_not_the_same_string(world):
     spelled_on_disk = [n for n in os.listdir(world.world.data) if unicodedata.normalize("NFC", n) == nfc][0]
     other = nfd if spelled_on_disk == nfc else nfc
     assert reads(world, "bob", f"{world.world.data}/{spelled_on_disk}")
-    assert not reads(world, "bob", f"{world.world.data}/{other}")
+    # APFS opens the other form as the same name (so it is read, as spelled on disk); a volume that keeps
+    # bytes has no such name, and a name that is not there is refused
+    assert reads(world, "bob", f"{world.world.data}/{other}") == os.path.exists(f"{world.world.data}/{other}")
 
 
 def test_a_grant_typed_in_another_case_is_spelled_as_the_directory_spells_it(world):
@@ -537,3 +556,19 @@ def test_store_error_agrees_with_the_shared_store_state_helper(world):
         assert (access.store_error(world.config) is None) == state["ok"], content
         if not state["ok"]:
             assert access.store_error(world.config) == state["error"]
+
+
+def test_a_panel_set_too_large_to_check_is_not_readable_to_a_restricted_user(world, monkeypatch):
+    from annzarro.server import permissions
+    grant(world, "store", f"{world.world.data}/solo.zarr")
+    monkeypatch.setattr(permissions, "_PANELSET_WALK_NODES", 5)
+    nested = {"dataset": f"{world.world.data}/solo.zarr"}
+    node = nested
+    for _ in range(20):
+        node["next"] = {}
+        node = node["next"]
+    node["dataset_path"] = f"{world.world.data}/other.zarr"          # past the bound, and not granted
+    with world.test_request_context("/"):
+        assert permissions.panelset_walk(nested)[2] is True
+        assert access.unreadable_dataset("bob", nested) is not None
+        assert access.unreadable_dataset("bob", {"dataset": f"{world.world.data}/solo.zarr"}) is None

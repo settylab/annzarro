@@ -163,17 +163,18 @@ _PANELSET_PATH_KEYS = ("dataset_path", "datasetPath")
 _PANELSET_WALK_NODES = 20000
 
 
-def panelset_datasets(data):
-    """``(named, hints)``: the dataset paths a stored panel set names.
+def panelset_walk(data):
+    """``(named, hints, truncated)``: the dataset paths a stored panel set names.
 
     ``named`` is what opening the set opens: its ``dataset``, the store of its
     view (``view.store.path``) and any ``dataset_path`` inside it, relative
     names resolved against the data directory as a share link's are. ``hints``
     are the absolute paths it remembers from the server that saved it
-    (``datasetAbs``, ``view.store.abs``). Strings only, in the order found.
+    (``datasetAbs``, ``view.store.abs``). Strings only, in the order found. ``truncated`` is true when the walk stopped at its bound
+    before it had seen the whole set, so a path may be missing from the lists.
     """
     if not isinstance(data, dict):
-        return [], []
+        return [], [], False
     named, hints = [], []
     view = data.get("view")
     store = view.get("store") if isinstance(view, dict) else None
@@ -195,4 +196,10 @@ def panelset_datasets(data):
                     pending.append(value)
         elif isinstance(node, list):
             pending.extend(v for v in node if isinstance(v, (dict, list)))
+    return named, hints, bool(pending)
+
+
+def panelset_datasets(data):
+    """``(named, hints)`` of :func:`panelset_walk`, without the truncation flag."""
+    named, hints, _ = panelset_walk(data)
     return named, hints

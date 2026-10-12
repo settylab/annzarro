@@ -250,3 +250,12 @@ def test_removing_a_user_drops_their_access_entry(access_site):
     assert _run(cfg, "access", "bob", "--restrict", "--grant", str(data / "pub")) == 0
     assert _run(cfg, "remove", "--username", "bob") == 0
     assert _entry(path) is None
+
+
+def test_access_refuses_to_run_as_another_account_than_the_state_owner(access_site, monkeypatch):
+    """sudo would leave a root-owned 0600 access.json that the server account cannot read."""
+    path, cfg, data = access_site
+    monkeypatch.setattr(os, "geteuid", lambda: os.stat(os.path.dirname(str(path))).st_uid + 1)
+    assert _run(cfg, "access", "bob", "--restrict") == 1
+    assert _entry(path) is None
+    assert not os.path.exists(os.path.join(os.path.dirname(str(path)), "annzarro_admin", "access.json"))

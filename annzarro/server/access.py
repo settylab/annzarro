@@ -74,10 +74,13 @@ Grants name paths; they are matched on REAL paths and compared exactly:
   of its parents, is a granted real path. A symlink inside a granted folder
   that leads out is therefore NOT covered, a link to a granted store from
   outside is, and ``/data/a`` does not cover ``/data/ab``;
-* a spelling that differs by case or Unicode form is not the same string, so
-  on a case-insensitive or normalising filesystem (APFS) it is refused: the
-  check is an allow-list on exact strings and cannot be talked into a match.
-  The listings hand out exact spellings, which are the ones that pass;
+* a path is compared as ``realpath`` gives it and, when that does not match, as
+  the directories spell it (:func:`canonical_spelling`, each substitution
+  verified with ``samefile``). On a case-insensitive or normalising volume
+  (APFS) a link or data directory written in another case therefore still
+  reaches its granted store, while a name that is a different directory, or is
+  not granted, is refused. The check is an allow-list: nothing is matched by
+  folding strings;
 * a ``remote`` grant is a URL prefix on a ``/`` boundary, inside
   ``remote_allowlist`` and only while remote stores are enabled.
 
@@ -412,7 +415,26 @@ def may_read(user, path):
         return grants.allows_remote(path)
     if "://" in path:
         return False      # file:// and the like are not paths of ours
-    return grants.allows_local(os.path.realpath(os.path.expanduser(path)))
+    real = os.path.realpath(os.path.expanduser(path))
+    if grants.allows_local(real):
+        return True
+    # ``realpath`` keeps the case and Unicode form a link's target text or the configured data
+    # directory was written in, which a case-insensitive volume (APFS) opens just the same. The
+    # grants are spelled as the directories spell them, so spell the path that way too before
+    # refusing. Every substitution is verified with samefile, so an unrelated name never maps.
+    spelled = _canonical_memo(real)
+    return spelled != real and grants.allows_local(spelled)
+
+
+def _canonical_memo(real):
+    """``canonical_spelling(real)``, once per request."""
+    memo = g.__dict__.setdefault("_access_canonical", {}) if has_request_context() else None
+    if memo is not None and real in memo:
+        return memo[real]
+    spelled = canonical_spelling(real)
+    if memo is not None:
+        memo[real] = spelled
+    return spelled
 
 
 def display_path(user, real):
@@ -447,7 +469,9 @@ def unreadable_dataset(user, data, config=None):
     points inside this server's data directories.
     """
     config = config or current_app.config
-    named, hints = permissions.panelset_datasets(data)
+    named, hints, truncated = permissions.panelset_walk(data)
+    if truncated:
+        return "(a panel set too large to check)"       # a path past the bound is never looked at: not readable
     for value in named:
         if not may_read(user, _resolve_name(config, value)):
             return value

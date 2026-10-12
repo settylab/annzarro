@@ -160,10 +160,8 @@ def test_a_deep_link_outside_the_grants_is_not_available(browser, served):
         # nothing says it exists, and nothing says where the data directory is
         assert "not on this server" not in notice
         assert os.path.dirname(data) not in page.inner_text("body").replace(data, "")
-        # the layout opens without data: its placeholder panels say the same
-        placeholder = page.locator(".panel-no-data-message").first
-        placeholder.wait_for()
-        assert "not available to you, or no longer exists" in placeholder.inner_text()
+        # the page is open without data and says where: the name they asked for, as they wrote it
+        assert page.inner_text("#dataset-path").startswith("No data")
         # the same link to a store they may read opens it
         page.goto(f"{base}/?dataset_path={data}/in.zarr")
         wait_for_dataset(page)
@@ -214,7 +212,8 @@ def test_a_grant_revoked_while_the_dataset_is_open_returns_to_the_picker(browser
         page.wait_for_selector(".notification-title")
         assert "Dataset not available" in page.inner_text("#notification-container")
         page.locator("#change-dataset-modal").wait_for(state="visible")
-        assert "in.zarr" not in page.inner_text("#change-dataset-modal")
+        page.wait_for_timeout(1500)       # the lists load after the modal opens
+        assert page.locator("#change-dataset-modal .change-dataset-item[data-path$='in.zarr']").count() == 0
         assert not errors, errors
     finally:
         context.close()
