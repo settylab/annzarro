@@ -175,10 +175,12 @@ def _watcher(config):
 
 def _read(config=None):
     """``(principals, error)``: the entries of ``access.json``, or why it cannot be trusted."""
-    watcher = _watcher(config or current_app.config)
-    data = watcher.get()
-    if watcher.error:
-        return {}, watcher.error
+    config = config or current_app.config
+    from .admin import settings
+    state = settings.access_store_state(config)          # slice S's shared check: does the file parse?
+    data = _watcher(config).get()
+    if not state["ok"]:
+        return {}, state["error"]
     principals = data.get("principals") if isinstance(data, dict) else None
     if not isinstance(principals, dict):
         return {}, "access.json has no 'principals' object"
@@ -186,10 +188,7 @@ def _read(config=None):
 
 
 def store_error(config=None):
-    """Why ``access.json`` cannot be trusted (a sentence), or None when it can.
-
-    The one place that asks; slice S's shared "state file unreadable" helper replaces its body.
-    """
+    """Why ``access.json`` cannot be trusted (a sentence), or None when it can."""
     return _read(config)[1]
 
 
