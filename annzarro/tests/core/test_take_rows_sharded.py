@@ -233,3 +233,28 @@ def test_concurrent_gathers_share_one_byte_budget(tmp_path, monkeypatch):
         assert np.array_equal(results[i], data[rows[i]])
     # 4 results of 640 KB, 4 MiB of decoded chunks in flight, and their compressed bytes
     assert peak < 24 * 2 ** 20, f"peak {peak / 2 ** 20:.1f} MiB for 4 gathers of a 32 MiB shard"
+
+
+@sharded_only
+def test_a_small_gather_does_not_queue_behind_a_big_one(tmp_path, monkeypatch):
+    """A 10-row read that starts while a big gather has its batches queued on the shared pool is read
+    inline, from the budget's reserve: it took 6.5x as long behind a 100k-row read."""
+    import threading
+    import time
+    monkeypatch.setattr(zr, "WHOLE_READ_MAX_BYTES", 0)
+    monkeypatch.setattr(zr, "GATHER_BLOCK_BYTES", 1 << 20)
+    n = 1 << 18
+    a, data = _sharded(tmp_path / "a.zarr", (n, 4), (1024, 4), (n, 4))
+    slow = _Spy(a, delay=0.1)
+    big = np.sort(np.random.default_rng(1).choice(n, 100_000, replace=False))
+    thread = threading.Thread(target=lambda: zr.take_rows(slow, big))
+    thread.start()
+    time.sleep(0.15)                        # the big gather is running, and has batches queued
+    few = np.sort(np.random.default_rng(2).choice(n, 10, replace=False))
+    start = time.perf_counter()
+    got = zr.take_rows(a, few)
+    waited = time.perf_counter() - start
+    still_running = thread.is_alive()
+    thread.join()
+    assert np.array_equal(got, data[few])
+    assert still_running and waited < 0.05, f"{waited:.3f} s for 10 rows during a big gather"

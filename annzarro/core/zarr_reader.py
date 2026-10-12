@@ -349,14 +349,16 @@ def _gather_executor() -> ThreadPoolExecutor:
 
 class _GatherBudget:
     """``with _GatherBudget(n):`` holds n bytes of the process-wide in-flight budget (waits for room;
-    a batch bigger than the whole budget runs alone)."""
+    a batch bigger than the whole budget runs alone). A small gather (``small``) may also use one
+    GATHER_BLOCK_BYTES reserve above the budget, so a big gather's batches never keep it waiting."""
 
-    def __init__(self, nbytes):
+    def __init__(self, nbytes, small=False):
         self.nbytes = int(nbytes)
+        self.small = small
 
     def __enter__(self):
         global _gather_held
-        cap = GATHER_HELD_FACTOR * GATHER_BLOCK_BYTES
+        cap = GATHER_HELD_FACTOR * GATHER_BLOCK_BYTES + (GATHER_BLOCK_BYTES if self.small else 0)
         with _gather_cond:
             while _gather_held and _gather_held + self.nbytes > cap:
                 _gather_cond.wait()
@@ -466,11 +468,17 @@ def _take_rows_sharded(array, rows, cols, out_shape, two_d) -> np.ndarray:
         except Exception:                   # a zarr without the setting: its own default
             pass
 
+    tasks = [(b, g) for g in groups for b in batches]
+    # A gather of at most half a block is read here, in order, not queued on the shared pool behind the
+    # batches of a big one (a 10-row read waited 6.5x as long behind a 100k-row read); it takes its bytes
+    # from the budget's reserve, so memory stays within 3 x GATHER_BLOCK_BYTES.
+    small = sum(b[2] * g[2] // gwidth for b, g in tasks) <= GATHER_BLOCK_BYTES // 2
+
     def read(task):
         batch, (colsel, outcols, width_g) = task
         lo, hi = int(pos[touched[batch[0]]]), int(pos[touched[batch[1] - 1] + 1])
         sel = (srows[lo:hi], colsel) if colsel is not None else (srows[lo:hi],)
-        with _GatherBudget(batch[2] * width_g // gwidth):
+        with _GatherBudget(batch[2] * width_g // gwidth, small):
             block = np.asarray(array.oindex[sel])
         target = slice(lo, hi) if order is None else order[lo:hi]
         if not two_d:
@@ -482,9 +490,9 @@ def _take_rows_sharded(array, rows, cols, out_shape, two_d) -> np.ndarray:
         else:
             out[np.ix_(target, outcols)] = block
 
-    tasks = [(b, g) for g in groups for b in batches]
-    if len(tasks) == 1:
-        read(tasks[0])
+    if small or len(tasks) == 1:
+        for t in tasks:
+            read(t)
         return out
     futures = [_gather_executor().submit(read, t) for t in tasks]
     try:
