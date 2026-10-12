@@ -16,7 +16,7 @@ import time
 from urllib.parse import quote, urlsplit
 
 from flask import (Flask, request, jsonify, session, redirect, url_for, current_app,
-                   render_template, has_request_context)
+                   render_template, has_request_context, make_response)
 from ..utils.json_utils import NumpyJSONEncoder
 from flask_cors import CORS
 from flask.sessions import SecureCookieSessionInterface
@@ -400,6 +400,9 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     from annzarro.server import access
     access.install(app)
     app.before_request(require_dataset_segment)
+    # forged requests: the token, Origin and Sec-Fetch-Site on every unsafe route (csrf.py)
+    from annzarro.server import csrf
+    csrf.install(app)
 
     # Initialize zarr reader with cache settings from config
     from annzarro.core import configure_zarr_reader, configure_h5ad_reader
@@ -672,19 +675,23 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         app: Flask application instance
         api_version: API version string
     """
-    from annzarro.server import access
+    from annzarro.server import access, csrf
 
     def render_login(**extra):
         from annzarro.server.policy import csp
+        # a fresh double-submit token with every rendering of the form (csrf.py)
+        nonce = csrf.new_login_token()
         page = render_template(
             "login.html",
             app_name=app.config.get("app_name", "AnnZarro"),
             project_description=app.config.get("project_description", ""),
             contact_info=app.config.get("contact_info", {}),
+            login_csrf=csrf.login_field(nonce),
             **extra
         )
-        # nobody is signed in: no external host at all
-        return csp.apply(app.make_response(page), None, external=False)
+        # nobody is signed in: no external host at all (the CSP also makes it no-store and Vary: Cookie)
+        response = csp.apply(app.make_response(page), None, external=False)
+        return csrf.set_login_cookie(response, nonce)
 
     @app.route("/login", methods=["GET"])
     @access.gate("public")
@@ -695,12 +702,19 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
     
     @app.route("/login", methods=["POST"])
     @access.gate("public")
+    @csrf.exempt
     def login():
         """Handle login POST request"""
         username = request.form.get("username")
         password = request.form.get("password")
         next_url = safe_next(request.form.get("next"), request.script_root)
         fragment = safe_fragment(request.form.get("fragment"))
+        if not csrf.login_token_ok():
+            # a form from another site, or one older than the cookie: no password is tried
+            logger.warning("Refused a sign-in from %s: the form's token does not match the cookie "
+                           "(Origin %r)", request.remote_addr, request.headers.get("Origin"))
+            return render_login(next_url=next_url, fragment=fragment,
+                                error="The sign-in page expired. Please try again."), 400
         
         # Validate credentials using auth manager
         from annzarro.server.auth import UnsupportedPasswordHash
@@ -720,7 +734,7 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
             session["last_activity"] = session["login_at"] = time.time()
             from annzarro.server.admin.guard import start_admin_session
             start_admin_session()
-            
+
             # Back to the page that asked for login, view included
             return redirect(next_url + fragment)
         else:
@@ -731,10 +745,20 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
                 error="Invalid username or password. Please try again."
             )
     
-    @app.route("/logout", methods=["GET"])
+    @app.route("/logout", methods=["GET", "POST"])
     @access.gate("public")
     def logout():
-        """Handle logout request"""
+        """Sign out. POST only (csrf.enforce asks the token of a logged-in
+        requester): a link or an image on another page must not do it. GET
+        answers 405 with a one-button form."""
+        if request.method == "GET":
+            token = csrf.csrf_token() if is_logged_in() else ""
+            response = make_response(render_template("logout.html", csrf_token=token), 405)
+            response.headers["Allow"] = "POST"
+            from annzarro.server.admin.guard import CSP
+            response.headers["Content-Security-Policy"] = CSP
+            response.headers["Cache-Control"] = "no-store"
+            return response
         # Clear session
         session.clear()
         # Redirect to login page

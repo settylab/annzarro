@@ -388,7 +388,10 @@ class _Session:
     def __init__(self, base, username):
         self.base = base
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-        data = f"username={username}&password={PASSWORD.replace(' ', '+')}".encode()
+        # the sign-in form carries a one-time token that must come back with the password (csrf.py)
+        form = self.opener.open(base + "/login", timeout=20).read().decode()
+        login_csrf = re.search(r'name="login_csrf" value="([^"]+)"', form).group(1)
+        data = f"username={username}&password={PASSWORD.replace(' ', '+')}&login_csrf={login_csrf}".encode()
         self.opener.open(urllib.request.Request(base + "/login", data=data), timeout=20).read()
         self.csrf = None
 
