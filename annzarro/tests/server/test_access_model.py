@@ -274,7 +274,8 @@ def test_a_grant_typed_in_another_case_is_spelled_as_the_directory_spells_it(wor
         pytest.skip("case-sensitive filesystem: another case is another directory")
     grant(world, "store", f"{typed}/solo.zarr", restrict=True)
     assert reads(world, "bob", f"{data}/solo.zarr")
-    assert not reads(world, "bob", f"{typed}/solo.zarr")
+    assert reads(world, "bob", f"{typed}/solo.zarr")            # the volume opens it as the same store
+    assert not reads(world, "bob", f"{typed}/other.zarr")
 
 
 def test_case_variants_are_different_names_on_a_case_sensitive_filesystem(world):
@@ -485,13 +486,20 @@ def test_a_restricted_user_cannot_read_the_status_or_the_cache_listing(world):
 
 # --- may_read against an independent model, over spellings it was not written for ---------
 
+def _same(path, granted):
+    try:
+        return os.path.samefile(path, granted)
+    except OSError:
+        return False
+
+
 def test_may_read_agrees_with_pathlib_on_random_spellings(world):
     """A seeded sweep of ``..``, ``.``, empty segments, links, near-miss names and case variants.
 
     The model is the resolved path being a granted path or below one, by pathlib's parents, which
     shares no code with the ancestor lookup in ``Grants.allows_local``; the two must agree on every
-    spelling. A case variant (``A``, ``SOLO.zarr``) resolves to a different string, so the model also
-    says no on a case-insensitive volume.
+    spelling. Identity is ``samefile``, so a case variant (``A``, ``SOLO.zarr``) is the granted store
+    exactly where the volume folds it.
     """
     import pathlib
     import random
@@ -514,7 +522,8 @@ def test_may_read_agrees_with_pathlib_on_random_spellings(world):
             if rng.random() < 0.15:
                 spelled += "/"
             real = pathlib.Path(os.path.realpath(spelled))
-            expected = any(real == g or g in real.parents for g in allowed)
+            # by identity on disk, so a spelling the volume folds (APFS) counts exactly when it is the same file
+            expected = any(_same(p, g) for p in (real, *real.parents) for g in allowed)
             got = access.may_read("bob", spelled)
             covered[got] += 1
             assert got == expected, spelled

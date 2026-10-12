@@ -232,7 +232,26 @@ def _fold(text):
     return unicodedata.normalize("NFC", text).casefold()
 
 
+_names = {}          # (parent, name): (when, spelling): a directory that folds is listed once per RESOLVE_TTL_S, not per path
+_names_lock = threading.Lock()
+
+
 def _name_on_disk(parent, name):
+    """``_spell(parent, name)``, remembered for ``RESOLVE_TTL_S`` seconds."""
+    key = (parent, name)
+    now = time.monotonic()
+    hit = _names.get(key)
+    if hit is not None and now - hit[0] < RESOLVE_TTL_S:
+        return hit[1]
+    spelled = _spell(parent, name)
+    with _names_lock:
+        if len(_names) > 8192:
+            _names.clear()
+        _names[key] = (now, spelled)
+    return spelled
+
+
+def _spell(parent, name):
     """``name`` spelled the way directory ``parent`` spells it.
 
     Only a directory that answers to another spelling of a name (APFS, or any
