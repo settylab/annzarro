@@ -28,7 +28,7 @@ from annzarro.core.zarr_reader import ZarrReader
 from annzarro.core.h5ad_reader import h5adReader
 from annzarro.core.caching import DatasetCache
 from annzarro.server.core import create_app
-from annzarro.tests.zarr_compat import SHARDED, open_group, write_array, write_strings
+from annzarro.tests.zarr_compat import open_group, write_array, write_strings
 
 N = 3000
 
@@ -208,8 +208,6 @@ def test_a_long_list_is_costed_from_a_sample():
 
 
 @pytest.mark.parametrize("column", ["0", "1"])
-@pytest.mark.xfail(SHARDED, strict=True,
-                   reason="subset gather on sharded arrays reads whole shards: tracked for 0.5.0")
 def test_a_subset_obsm_read_holds_the_subset_not_the_column(tmp_path, monkeypatch, column):
     """settylab/annzarro#77: a subset read of an obsm column read the whole
     column (1B cells: 3.7 GiB for X_umap's) and then cut it to the subset.
