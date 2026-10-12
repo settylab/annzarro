@@ -27,11 +27,9 @@ credentials), an ``Origin`` that is this server's own, and a
 ``Sec-Fetch-Site`` of ``same-origin`` when the browser sends one.
 """
 
-import hmac
 import html
 import logging
 import math
-import secrets
 import threading
 import time
 from functools import wraps
@@ -39,10 +37,10 @@ from functools import wraps
 from flask import current_app, jsonify, make_response, request, session
 
 from . import audit, rate_per_minute, reauth_minutes
+from ..csrf import CSRF_HEADER, csrf_ok, csrf_token, log_refusal, start_session  # noqa: F401  (re-exported)
 
 logger = logging.getLogger(__name__)
 
-CSRF_HEADER = "X-AnnZarro-CSRF"
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 #: Reads get this many times the mutation rate.
 READ_RATE_FACTOR = 8
@@ -63,15 +61,8 @@ def _now():
 def start_admin_session():
     """Called by ``login()`` after ``session.clear()``: a fresh CSRF token for
     this login, and the password just entered opens the re-auth window."""
-    session["csrf"] = secrets.token_urlsafe(32)
+    start_session()
     session["admin_auth_at"] = time.time()
-
-
-def csrf_token():
-    """The session's CSRF token, minted if the login predates it."""
-    if not session.get("csrf"):
-        session["csrf"] = secrets.token_urlsafe(32)
-    return session["csrf"]
 
 
 class RateLimiter:
@@ -135,34 +126,6 @@ def refuse(status, reason, message, **extra):
     return _harden(response)
 
 
-def _own_origin():
-    return request.host_url.rstrip("/")
-
-
-def _proxy_hint():
-    """Said when an honest-looking change fails the Origin check on a server
-    that is not told about its proxy."""
-    origin = request.headers.get("Origin")
-    if origin and origin != _own_origin() and not current_app.config.get("proxy_count", 0):
-        return (" - if a reverse proxy terminates TLS or rewrites Host, set server.proxy_count "
-                "(and have it send X-Forwarded-Proto and X-Forwarded-Host), else every admin change fails")
-    return ""
-
-
-def _csrf_ok():
-    token = session.get("csrf")
-    sent = request.headers.get(CSRF_HEADER, "")
-    if not token or not sent or not hmac.compare_digest(token.encode("utf-8"), sent.encode("utf-8")):
-        return False
-    origin = request.headers.get("Origin")
-    if origin is not None and origin != _own_origin():
-        return False
-    site = request.headers.get("Sec-Fetch-Site")
-    if site is not None and site != "same-origin":
-        return False
-    return True
-
-
 def _action_name(default):
     return default or f"{request.method} {request.path}"
 
@@ -188,15 +151,8 @@ def _check(reauth, action):
                 logger.exception("Could not write the audit record of a refused admin request")
         return refuse(403, "admin_only", "This needs an administrator.")
     if unsafe:
-        if not _csrf_ok():
-            # Origin and Host are logged because a proxy that rewrites Host without
-            # server.proxy_count makes every honest change look cross-origin
-            logger.warning("Refused %s %s from %r (%s): CSRF check failed (token %s, Origin %r, "
-                           "Sec-Fetch-Site %r, this server is %r)", request.method, request.path,
-                           username, request.remote_addr,
-                           "sent" if request.headers.get(CSRF_HEADER) else "missing",
-                           request.headers.get("Origin"), request.headers.get("Sec-Fetch-Site"),
-                           _own_origin() + _proxy_hint())
+        if not csrf_ok():
+            log_refusal(username, log=logger)
             return refuse(403, "csrf_failed", "The page is out of date. Reload it and try again.")
         if request.mimetype != "application/json":
             return refuse(415, "json_required", "Send the request as application/json.")

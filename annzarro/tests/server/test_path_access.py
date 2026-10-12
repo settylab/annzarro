@@ -260,7 +260,7 @@ def test_the_default_is_admins(layout, monkeypatch, tmp_path):
 
 def test_anonymous_gets_401_not_403(layout):
     client = _client(layout, "user", arbitrary_paths="admins")
-    client.get("/logout")
+    client.post("/logout")
     resp = client.get("/api/v1/data/info?dataset_path=" + escapes(layout)["absolute"])
     assert resp.status_code == 401
 
