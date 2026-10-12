@@ -1,9 +1,9 @@
 /**
  * The links the header offers a signed-in user, from `auth/me`.
  *
- * Only the admin interface for an admin. Whether the link shows is cosmetic:
- * the server checks the user on every request to /admin and answers 403 to
- * anyone else. Pure, so it runs under `node --test`.
+ * Everyone signed in gets "Change password"; an admin also gets the admin
+ * interface. Whether a link shows is cosmetic: the server checks the user on
+ * every request to /admin and answers 403 to anyone else. Pure, so it runs under `node --test`.
  */
 import { appUrl } from './app-url.js';
 
@@ -17,5 +17,6 @@ export function accountLinks(me) {
     if (me.is_admin) {
         links.push({ id: 'admin', text: 'Admin', title: 'Open the admin interface', href: appUrl('/admin') });
     }
+    links.push({ id: 'password', text: 'Change password', title: 'Change your password', href: appUrl('/account/password') });
     return links;
 }

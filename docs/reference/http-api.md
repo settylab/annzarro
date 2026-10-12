@@ -467,6 +467,35 @@ that does not parse (`overlay.json`, `access.json`) is `503` `overlay_unreadable
 A record is `{seq, ts, actor, addr, via, action, target, detail, outcome, prev, hash}`; `via` is
 `web` or `cli:<user>`, `outcome` is `ok` or `refused:<reason>`.
 
+### Users
+
+Changes go through the same code as `annzarro user`, under the lock of the users file. A username
+is letters, digits and `. _ @ -`, up to 64 characters. A password has at least 10 characters and
+differs from the username. Where a password is asked for, `"generate": true` asks the server to
+make one instead: it is in the reply to that request and nowhere else (not in the logs, not in the
+audit log).
+
+| Route | Body | Returns |
+|---|---|---|
+| `GET /admin/users` | | A list of `{username, is_admin, last_login, password_changed_at, locked: [{address, until, failures}], panel_sets, last_seen}`. `last_seen` is the user's latest request on any worker within the session timeout, else `null` |
+| `POST /admin/users` | `{"username", "password"` or `"generate": true, "is_admin"?}` | `201 {"username", "password"?}`. `400` `invalid_username`, `weak_password`, `bad_request`; `409` `user_exists`. Audited as `user.add` |
+| `DELETE /admin/users/<username>` | `{"reassign_to"?}` | `{"removed", "panel_sets_reassigned"}`. With `reassign_to` the removed user's panel sets pass to that user (audited as `panelset.reassign`); without it they keep the removed name as owner, so only an admin can change them. `404` `unknown_user`; `400` `bad_request`; `409` `self`, `last_admin`. Audited as `user.remove`. The user's logins end |
+| `POST /admin/users/<username>/password` | `{"password"` or `"generate": true}` | `{}` or `{"password"}`. The user's other logins end; an admin who resets their own password stays signed in. `400` `weak_password`; `404`. Audited as `user.password` |
+| `POST /admin/users/<username>/admin` | `{"is_admin"}` | `{"is_admin"}`. `409` `self` (you cannot revoke your own right here), `409` `last_admin`. Audited as `user.set_admin` |
+| `POST /admin/users/<username>/unlock` | `{"address"?}` | `{"cleared"}`: how many failed-login records were cleared, for one address or all. Audited as `user.unlock` |
+
+A refused change (`self`, `last_admin`, `user_exists`) is audited with the outcome `refused:<reason>`. If only
+the audit write fails, the change stands and the reply has `audit_failed: true`. A user the
+command line removes, or whose password it changes, is handled the same way.
+
+The signed-in user changes their own password with a page and one route, open to every user (not
+admin routes; they need the CSRF token and a JSON body like the admin routes):
+
+| Route | Returns |
+|---|---|
+| `GET /account/password` | the change-password page |
+| `POST /api/v1/account/password` `{"current", "new"}` | `{"changed": true}`. `403` `bad_password` (counts toward the same lockout as sign-in), `423` `locked`, `400` `weak_password`, `same_password`, `bad_request`; `403` `csrf_failed`; `415` `json_required`. The user's other logins end, this one stays. Audited as `account.password` |
+
 ### Data directories
 
 Adding needs `server.admin_data_roots` ({ref}`admin data directories <admin-data-roots>`).

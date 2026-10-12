@@ -76,6 +76,31 @@ server only. A request from an account that is not an admin is refused with `403
 before anything is read, and the refusal is audited (at most 6 per minute and worker, so one
 account cannot fill the log).
 
+(admin-users)=
+## Users
+
+The Users section lists the accounts with their last request, last sign-in, number of panel sets
+and any lockouts. An admin can add a user (with a typed password or a generated one, shown once and
+then gone), reset a password, grant or revoke admin, clear a lockout for one address or all, and remove
+a user. Resetting a password or removing a user ends that user's logins, and a running server sees
+every change without a restart.
+
+- **The last admin stays.** A change that would leave the server without an admin is refused with
+  `409 last_admin`, on the web and on the command line alike (`annzarro user remove`, `set-admin
+  --no-admin`; `--force` skips this rule only). It is checked on the stored file under its lock, so two
+  admins demoting each other at the same moment cannot both succeed.
+- **Not yourself.** You cannot remove your own account or revoke your own admin right in the
+  browser (`409 self`); ask another admin or use the command line.
+- **Panel sets of a removed user.** The removal dialog can pass the user's panel sets to another
+  user in the same step (audited as `panelset.reassign`). Otherwise they keep the old owner's name and only
+  an admin can change them; the Panel sets section reassigns them later.
+- **Passwords.** At least 10 characters, different from the username. Everyone changes their own at
+  `/account/password` (the header's **Change password**), which asks for the current one and ends their other logins.
+  A wrong current password counts toward the same lockout as sign-in.
+- **Audit.** `user.add`, `user.remove`, `user.password`, `user.set_admin`, `user.unlock` and
+  `account.password`, and the refusals. Command-line changes are recorded too, with `via: cli:<account>`.
+  `annzarro admin audit verify` checks the chain ({doc}`../reference/cli`).
+
 (admin-data-roots)=
 ## Data directories
 
@@ -194,7 +219,8 @@ owner, with each owner's use against the quotas (`server.max_sessions_per_user`,
 one or all of an owner's, and **delete** sets (the button asks a second time). Both are
 all-or-nothing for the sets named, and are audited as `panel_sets.reassign` and
 `panel_sets.delete`, with the count and the first 50 names. A reassignment may take the new owner
-past their quota; the page says so.
+past their quota; the page says so. Removing a user can hand their sets over in the same step
+({ref}`admin-users`).
 
 ## Server health
 

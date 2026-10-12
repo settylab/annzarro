@@ -98,7 +98,7 @@ def server(tmp_path_factory):
     users = home / "users" / "users.json"
     users.parent.mkdir()
     manager = AuthManager(user_file=str(users))
-    for name, admin in (("root", True), ("alice", False), ("bob", False)):
+    for name, admin in (("root", True), ("alice", False), ("bob", False), ("carol", False)):
         manager.create_user(name, PASSWORD, is_admin=admin)
     (home / "config.yaml").write_text(
         f"auth:\n  enabled: true\n  user_file: \"{users}\"\nserver:\n  admin_rate_per_minute: 1000\n")

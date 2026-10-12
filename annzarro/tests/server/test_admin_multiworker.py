@@ -14,6 +14,7 @@ workers answer, and requires zero stale answers:
   chain that verifies.
 """
 import concurrent.futures
+import threading
 import urllib.parse
 
 import pytest
@@ -137,3 +138,47 @@ def test_concurrent_changes_to_different_settings_lose_none_and_the_audit_chain_
     assert seqs == list(range(seqs[0], seqs[0] + len(seqs))), "sequence numbers have a gap or a repeat"
     assert len(seqs) == len(set(seqs)) >= len(keys) + 24
     assert {r["action"] for r in audit["records"]} >= {"policy.update"}
+
+
+def test_two_admins_demoting_each_other_at_once_leave_exactly_one(tmp_path):
+    procs = []
+    try:
+        cluster = start_cluster(tmp_path, workers=2, procs=procs,
+                                users=(("ann", True), ("ben", True), ("alice", False)))
+        for round_ in range(3):
+            ann = cluster.client("ann", admin_page=True)
+            ben = cluster.client("ben", admin_page=True)
+            both_workers_answer(cluster.client("alice"))
+            barrier = threading.Barrier(2)
+
+            def demote(client, target):
+                barrier.wait()
+                return client.post(f"/api/v1/admin/users/{target}/admin", {"is_admin": False})
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                replies = list(pool.map(lambda args: demote(*args), [(ann, "ben"), (ben, "ann")]))
+            statuses = sorted(r.status for r in replies)
+            assert statuses == [200, 409], (round_, statuses, [r.body for r in replies])
+            refused = next(r for r in replies if r.status == 409)
+            assert refused.json()["reason"] == "last_admin"
+            survivor = ann if replies[0].status == 200 else ben   # ann's request demoted ben
+            listed = survivor.get("/api/v1/admin/users")
+            assert listed.status == 200, listed.body
+            users = listed.json()
+            assert sum(u["is_admin"] for u in users) == 1, users
+            # give the demoted one their right back for the next round
+            other = "ben" if survivor is ann else "ann"
+            back = survivor.post(f"/api/v1/admin/users/{other}/admin", {"is_admin": True})
+            assert back.status == 200, back.body
+    finally:
+        stop_all(procs)
+
+
+def test_a_password_reset_ends_the_users_session_on_every_worker(cluster):
+    admin = cluster.client("root", admin_page=True)
+    alice = cluster.client("alice")
+    both_workers_answer(alice)
+    reset = admin.post("/api/v1/admin/users/alice/password", {"generate": True})
+    assert reset.status == 200 and reset.json()["password"], reset.body
+    answers = {r.status for r in hammer(lambda: alice.get("/api/v1/auth/me"))}
+    assert answers <= {401, 302}, f"a worker still honoured the old session: {answers}"
