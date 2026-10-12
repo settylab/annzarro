@@ -25,7 +25,11 @@ export const AREAS = [
     ['limits', 'Limits'],
 ];
 
-const SOURCE_TONE = { default: 'secondary', config: 'info', admin: 'primary', user: 'primary' };
+const SOURCE_TONE = { default: 'secondary', config: 'info', env: 'warning', admin: 'primary', user: 'primary', forced: 'danger' };
+const SOURCE_TITLE = {
+    env: 'An environment variable of the server overrides the config file',
+    forced: 'Forced by another setting, for example No external hosts',
+};
 
 /**
  * @param {Object|string} type - a key's `type`
@@ -349,7 +353,7 @@ export function renderPolicyRow(key, { onChange, layer = 'admin', frozen = '' } 
             state.note ? h('div', { class: 'small text-muted fst-italic', text: state.note }) : null),
         h('div', { class: 'policy-meta' },
             key.locked ? h('i', { class: 'fas fa-lock text-muted me-1', title: 'Locked by the config file', 'aria-label': 'locked' }) : null,
-            badge(source, key.locked ? 'dark' : (SOURCE_TONE[key.source] || 'secondary'), `Value comes from: ${source}`),
+            badge(source, key.locked ? 'dark' : (SOURCE_TONE[key.source] || 'secondary'), SOURCE_TITLE[source] || `Value comes from: ${source}`),
             state.editable && own.set
                 ? h('button', {
                     type: 'button', class: 'btn btn-sm btn-link', text: 'reset', title: 'Remove this value and inherit again',
@@ -391,6 +395,8 @@ export function renderPolicy(el, policy, { onChange, onRemoveUnknown } = {}) {
     const master = keys.find((k) => k.name === 'outbound.allow_external');
     const groups = groupByArea(keys.filter((k) => k !== master));
     const blocks = [];
+    const banner = renderStoreProblems(policy);
+    if (banner) blocks.push(banner);
     if (master) {
         blocks.push(renderMasterSwitch(master, onChange));
     }
@@ -406,6 +412,16 @@ export function renderPolicy(el, policy, { onChange, onRemoveUnknown } = {}) {
     setChildren(el, blocks);
 }
 
+/** A red banner for stored files that do not parse (their settings are ignored, and per-user limits fail closed). */
+function renderStoreProblems(policy) {
+    const problems = policy.store_problems || [];
+    if (!problems.length) return null;
+    return h('div', { class: 'alert alert-danger policy-store-problems', role: 'alert' },
+        h('strong', { text: 'A settings file cannot be read. ' }),
+        'Changes are refused until it is repaired or removed. Per-user limits are applied at their strictest meanwhile. ',
+        problems.map((p) => h('div', { class: 'small' }, h('code', { text: p.store }), ` ${p.error || ''}`)));
+}
+
 /**
  * A user's overrides, for the Users and Access dialogs: the keys of scope
  * "user" with the inherited value next to the override.
@@ -417,6 +433,8 @@ export function renderUserPolicy(el, policy, { onChange, onRemoveUnknown } = {})
     const frozen = policy.is_admin ? 'Administrators get no per-user overrides.' : '';
     const groups = groupByArea(policy.keys || []);
     const blocks = [];
+    const banner = renderStoreProblems(policy);
+    if (banner) blocks.push(banner);
     if (frozen) {
         blocks.push(h('p', { class: 'alert alert-secondary small mb-2', role: 'status', text: frozen }));
     }

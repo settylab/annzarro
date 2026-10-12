@@ -234,7 +234,7 @@ def test_a_corrupt_overlay_is_not_replaced(app, admin):
     with open(path, "w") as fh:
         fh.write("{not json")
     reply = put(admin, POLICY, {"t.limit": 3})
-    assert reply.status_code == 409 and reply.get_json()["reason"] == "store_unreadable"
+    assert reply.status_code == 503 and reply.get_json()["reason"] == "store_unreadable"
     with open(path) as fh:
         assert fh.read() == "{not json"
 
@@ -357,3 +357,52 @@ def test_a_change_reaches_another_worker_on_its_next_request(tmp_path):
     finally:
         mine.send("stop")
         proc.join(30)
+
+
+# -- fail closed ---------------------------------------------------------------------
+
+def test_a_corrupt_access_file_tightens_every_non_admin_and_not_admins(app, admin):
+    put(admin, user_url(USER), {"t.user_num": 2})
+    alice = login(app, USER)
+    assert effective(alice)[0]["t.user_switch"] is True
+    with open(os.path.join(app.admin_dir, "access.json"), "w") as fh:
+        fh.write("{not json")
+    values, _ = effective(alice)
+    assert values["t.user_switch"] is False, "the most restrictive value of a user restrict key"
+    assert values["t.user_num"] == 5, "override keys have no restrictive value; they fall back"
+    assert effective(admin)[0]["t.user_switch"] is True
+    body = admin.get(POLICY).get_json()
+    assert [p["store"] for p in body["store_problems"]] == ["access.json"]
+    assert put(admin, user_url(USER), {"t.user_num": 3}).status_code == 503
+    with open(os.path.join(app.admin_dir, "access.json"), "w") as fh:
+        json.dump({"version": 1, "principals": {}}, fh)
+    assert effective(alice)[0]["t.user_switch"] is True
+    assert admin.get(POLICY).get_json()["store_problems"] == []
+
+
+def test_a_corrupt_access_file_closes_the_outbound_hosts_in_the_csp(tmp_path):
+    """The real registry (panel and outbound keys) and the real CSP builder."""
+    from annzarro.server.admin.settings import wire_sources
+    from annzarro.server.policy.csp import connect_src
+    from annzarro.tests.server.admin_helpers import make_app
+    app = make_app(tmp_path)
+    wire_sources(app)
+    eng = engine(app)
+    assert "https://" in connect_src(eng, USER)
+    os.makedirs(app.admin_dir, exist_ok=True)
+    with open(os.path.join(app.admin_dir, "access.json"), "w") as fh:
+        fh.write("[")
+    assert connect_src(eng, USER) == "connect-src 'self' data: blob:"
+    assert "https://" in connect_src(eng, ADMIN), "administrators keep their view"
+    values = eng.effective(USER, client_only=True)
+    assert values["outbound.allow_external"] is False
+
+
+def test_a_failed_audit_write_still_answers_with_the_saved_change(app, admin, monkeypatch, caplog):
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(audit, "record", broken)
+    reply = put(admin, POLICY, {"t.limit": 3})
+    assert reply.status_code == 200 and reply.get_json()["audit_failed"] is True
+    assert stored(app)["policy"] == {"t.limit": 3}
+    assert "Could not write the audit record" in caplog.text
