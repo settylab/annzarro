@@ -186,6 +186,16 @@ equal. Three notes:
 - A tab opened before an admin switches external hosts off sends nothing at its next Run and
   shows the notice.
 
+## Panel sets
+
+The Panel sets section lists the saved panel sets of the server, newest first, filtered by
+owner, with each owner's use against the quotas (`server.max_sessions_per_user`, `max_sessions`,
+`max_sessions_mb`; {doc}`resource-limits`). An admin can **reassign** sets to another user, one by
+one or all of an owner's, and **delete** sets (the button asks a second time). Both are
+all-or-nothing for the sets named, and are audited as `panel_sets.reassign` and
+`panel_sets.delete`, with the count and the first 50 names. A reassignment may take the new owner
+past their quota; the page says so.
+
 ## Server health
 
 The Server health section merges what each worker reports: the read budget in use, the size of

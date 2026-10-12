@@ -486,6 +486,17 @@ Adding needs `server.admin_data_roots` ({ref}`admin data directories <admin-data
 | `GET /admin/health` | | `{workers, totals, active, window_s}`. A worker is `{pid, host, started, age_s, stale, idle, idle_since, requests, refusals, read_guard, cache}`: `refusals` counts replies by their `reason`, `read_guard` is `{budget_mb, share_mb, in_flight_mb, by_requester}`, `cache` is `{datasets, memory_mb, max_mb, name_index_mb}`. `totals` sums the workers that are not stale. `active` lists the users seen within `window_s` (the session timeout). Each worker's snapshot is at most 2 s old |
 | `POST /admin/cache/clear` | `{"dataset_path"?}` | the result of the clear, as `POST /cache/reset`, in every worker. `400` `bad_request`. Audited as `cache.clear` |
 
+### Panel sets
+
+The files of `<data_dir>/sessions/`, by owner. A reassign or delete holds the same lock as every
+save, so a save running at the same time loses neither.
+
+| Route | Body or query | Returns |
+|---|---|---|
+| `GET /admin/panel-sets` | `owner` (only this owner's), `offset`, `limit` (1 to 1000, default 100) | `{"items": [{name, owner, dataset, bytes, modified_at, modified_by}], "total", "usage": [{owner, count, bytes, limit}], "server": {count, max, mb, max_mb}}`. Newest first. `usage` and `server` cover the whole server, against `server.max_sessions_per_user` and the server limits; `owner` is `null` for sets saved before owners were recorded, `limit` and `max` are `null` when off. `400` `bad_request` for a value that is not an integer |
+| `POST /admin/panel-sets/reassign` | `{"to_owner", "names": [...]}` or `{"to_owner", "from_owner"}` (not both; 1 to 1000 names) | `{"moved", "unchanged", "over_quota"}`. All or nothing: `404` `not_found` with `names` for a set that does not exist, `409` `unreadable` with `names` for a file that cannot be read, `404` `unknown_user` for `to_owner`, `400` `bad_request`. An admin may take a user past their quota; `over_quota` says so. Audited as `panel_sets.reassign` (target: the new owner; the count, up to 50 names and the previous owners) |
+| `DELETE /admin/panel-sets` | `{"names": [...]}` (1 to 1000) | `{"deleted", "missing"}`; names that are not sets are listed in `missing`. Audited as `panel_sets.delete` (the count and up to 50 names with their owners) |
+
 ### Settings
 
 The settings are the keys of the policy registry ({doc}`../design/policy-registry`).
