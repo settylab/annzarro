@@ -376,11 +376,12 @@ def test_a_row_of_a_sharded_matrix_is_sized_by_its_inner_chunks(make_client_v3):
     zarr.consolidate_metadata(store)
     obj = zarr.open_group(store, mode="r")["obsp"]["sharded"]
     assert obj.chunks == (10, 100_000) and obj.shards == (200, 100_000)
-    assert read_guard.chunk_working_set(obj, [3]) == 10 * 100_000 * 4
+    # the band of the touched row chunk, doubled for the compressed bytes it is decoded from
+    assert read_guard.chunk_working_set(obj, [3]) == 2 * 10 * 100_000 * 4
     reply = client.get("/api/v1/data/obsp/sharded", query_string={"dataset_path": store, "rows": "3"})
     assert reply.status_code == 200, reply.get_data(as_text=True)[:300]
-    # many rows of one shard still hold only the inner chunks they touch, up to 10 at a time
-    assert read_guard.chunk_working_set(obj, list(range(100))) == 10 * 10 * 100_000 * 4
+    # many rows of one shard still hold only the inner chunks they touch, up to the gather's byte cap
+    assert read_guard.chunk_working_set(obj, list(range(100))) == 2 * 10 * 10 * 100_000 * 4
 
 
 @needs_zarr3
