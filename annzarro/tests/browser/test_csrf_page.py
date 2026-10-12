@@ -64,6 +64,9 @@ def test_the_page_saves_imports_refreshes_and_signs_out(server):
             forged = page.evaluate(BARE)
             assert forged == {"save": 403, "reset": 403, "refresh": 403, "del": 403, "logout": 403, "me": 200}, forged
 
+            # a tab left open across an upgrade or a new login holds an old token: the first
+            # call is refused, takes the current token and succeeds, and so do the later ones
+            page.evaluate("document.querySelector('meta[name=annzarro-csrf]').content = 'a-token-from-before'")
             done = page.evaluate(CALLS)
             assert done["save"]["status"] == "success", done
             assert "csrf_set" in done["afterSave"]

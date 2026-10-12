@@ -22,16 +22,19 @@ Routes that guard themselves are skipped: admin routes (``_annzarro_admin``,
 see ``admin/guard.py``) and those marked with ``exempt`` (``POST /login``,
 which has no session yet and uses a double-submit token instead, below).
 
-Login CSRF: the sign-in page sets a random value in a short-lived
-``SameSite=Strict`` cookie and in a hidden field of the form, and the POST must
-return both. A page on another site can neither read the cookie nor make the
-browser send it with a cross-site request.
+Login CSRF: the sign-in page sets a random nonce in a short-lived
+``SameSite=Strict`` cookie and puts a keyed hash of it (``login_field``) in a
+hidden field of the form; the POST must return a cookie and a field that belong
+together. A page on another site can neither read the cookie nor make the
+browser send it with a cross-site request. The hash matters against a page on a
+sibling subdomain, which can *set* the cookie for the whole domain: without the
+server's key it cannot compute the field that goes with a nonce of its choosing.
 """
 
 import hmac
 import logging
 import secrets
-from functools import wraps
+from urllib.parse import urlsplit
 
 from flask import current_app, jsonify, make_response, request, session
 
@@ -91,6 +94,13 @@ def origin_ok():
     site = request.headers.get("Sec-Fetch-Site")
     if site is not None and site != "same-origin":
         return False
+    if origin is None and site is None:
+        # an older browser sends neither on some cross-site posts, but still a Referer
+        referer = request.headers.get("Referer")
+        if referer:
+            parts = urlsplit(referer)
+            if f"{parts.scheme}://{parts.netloc}" != own_origin():
+                return False
     return True
 
 
@@ -111,6 +121,10 @@ def log_refusal(username, allow_form=False, log=logger):
 
 def refuse():
     message = "The page is out of date. Reload it and try again."
+    origin = request.headers.get("Origin")
+    if origin and origin != own_origin() and not current_app.config.get("proxy_count", 0):
+        message += (" If this server runs behind a reverse proxy, set server.proxy_count to the number "
+                    "of proxies, or the address the browser uses does not match the one the server sees.")
     if request.path.startswith("/api/"):
         response = jsonify(error=message, reason="csrf_failed")
     else:
@@ -154,12 +168,38 @@ def enforce():
     return refuse()
 
 
+def warn_about_proxy(config):
+    """A shared server with login off that listens on loopback is almost
+    certainly behind a reverse proxy. Without ``server.proxy_count`` it sees its
+    own http://127.0.0.1 origin, not the https:// one the browser sends, and the
+    Origin check refuses every change. (With login on, admin/__init__.py says it.)"""
+    from . import confinement
+    if (not config.get("auth_enabled") and not config.get("proxy_count", 0)
+            and config.get("host") in ("127.0.0.1", "localhost", "::1")
+            and confinement.is_hosted(config)):
+        logger.warning(
+            "This server is shared (server.hosted) and listens on %s with login off and server.proxy_count 0. "
+            "Behind a reverse proxy that terminates TLS or rewrites Host, every save and delete "
+            "will fail with csrf_failed; set server.proxy_count to the number of proxies.",
+            config.get("host"))
+
+
 def install(app):
+    warn_about_proxy(app.config)
     app.before_request(enforce)
 
 
 def new_login_token():
+    """A nonce for the cookie; the form gets ``login_field`` of it."""
     return secrets.token_urlsafe(24)
+
+
+def login_field(nonce):
+    """What the form must carry for the cookie ``nonce``: a keyed hash, so that
+    a cookie set by another page (cookie tossing) comes without its field."""
+    key = current_app.secret_key
+    key = key.encode("utf-8") if isinstance(key, str) else key
+    return hmac.new(key, b"annzarro-login-form:" + nonce.encode("utf-8"), "sha256").hexdigest()
 
 
 def set_login_cookie(response, token):
@@ -173,4 +213,4 @@ def set_login_cookie(response, token):
 def login_token_ok():
     cookie = request.cookies.get(LOGIN_COOKIE, "")
     sent = request.form.get(LOGIN_FIELD, "")
-    return bool(cookie and sent and hmac.compare_digest(cookie.encode("utf-8"), sent.encode("utf-8")))
+    return bool(cookie and sent and hmac.compare_digest(login_field(cookie).encode("utf-8"), sent.encode("utf-8")))

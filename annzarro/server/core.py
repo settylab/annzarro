@@ -673,17 +673,17 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
 
     def render_login(**extra):
         # a fresh double-submit token with every rendering of the form (csrf.py)
-        token = csrf.new_login_token()
+        nonce = csrf.new_login_token()
         response = make_response(render_template(
             "login.html",
             app_name=app.config.get("app_name", "AnnZarro"),
             project_description=app.config.get("project_description", ""),
             contact_info=app.config.get("contact_info", {}),
-            login_csrf=token,
+            login_csrf=csrf.login_field(nonce),
             **extra
         ))
         response.headers["Cache-Control"] = "no-store"
-        return csrf.set_login_cookie(response, token)
+        return csrf.set_login_cookie(response, nonce)
 
     @app.route("/login", methods=["GET"])
     @access.gate("public")
@@ -747,6 +747,8 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
             token = csrf.csrf_token() if is_logged_in() else ""
             response = make_response(render_template("logout.html", csrf_token=token), 405)
             response.headers["Allow"] = "POST"
+            from annzarro.server.admin.guard import CSP
+            response.headers["Content-Security-Policy"] = CSP
             response.headers["Cache-Control"] = "no-store"
             return response
         # Clear session

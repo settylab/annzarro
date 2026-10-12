@@ -11,7 +11,7 @@
  * Pure functions, no DOM, so they run under `node --test`.
  */
 import { appUrl } from './app-url.js';
-import { csrfHeaders } from './csrf.js';
+import { csrfFetch } from './csrf.js';
 
 /**
  * Escape text for interpolation into an HTML template string. Panel-set names,
@@ -121,7 +121,7 @@ export function authIndicator(me) {
  */
 export async function signOut(fetchImpl = globalThis.fetch, navigate = (u) => { globalThis.location.href = u; }) {
     try {
-        await fetchImpl(appUrl('/logout'), { method: 'POST', headers: csrfHeaders(), redirect: 'manual' });
+        await csrfFetch(appUrl('/logout'), { method: 'POST', redirect: 'manual' }, { fetchImpl });
     } catch (error) {
         console.warn('Sign-out request failed:', error);
     }

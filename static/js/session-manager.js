@@ -13,7 +13,7 @@ import { DataManager } from './data-manager.js';
 import { PanelManager } from './panel-manager.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { errorFromResponse } from './utils/session-permissions.js';
-import { csrfHeaders } from './utils/csrf.js';
+import { csrfFetch } from './utils/csrf.js';
 import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
 import { storeRecord, storeName } from './utils/view-store.js';
 import { modeOptions } from './utils/panelset-load.js';
@@ -336,9 +336,9 @@ const SessionManager = (function() {
             
             // Save to server
             console.log('Saving panel set:', sessionData);
-            const response = await fetch(Config.API.SESSIONS_SAVE, {
+            const response = await csrfFetch(Config.API.SESSIONS_SAVE, {
                 method: 'POST',
-                headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(sessionData)
             });
             
@@ -494,9 +494,8 @@ const SessionManager = (function() {
         }
         
         try {
-            const response = await fetch(`${Config.API.SESSIONS_DELETE}?name=${encodeURIComponent(name)}`, {
-                method: 'DELETE',
-                headers: csrfHeaders()
+            const response = await csrfFetch(`${Config.API.SESSIONS_DELETE}?name=${encodeURIComponent(name)}`, {
+                method: 'DELETE'
             });
             
             if (!response.ok) {
@@ -606,9 +605,9 @@ const SessionManager = (function() {
             formData.append('file', file);
             formData.append('name', finalName); // Pass the sanitized name with counter if needed
             
-            const response = await fetch(Config.API.SESSIONS_IMPORT, {
+            const response = await csrfFetch(Config.API.SESSIONS_IMPORT, {
                 method: 'POST',
-                headers: csrfHeaders(),   // no Content-Type: the browser sets the multipart boundary
+                // no Content-Type: the browser sets the multipart boundary
                 body: formData
             });
             

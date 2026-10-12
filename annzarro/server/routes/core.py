@@ -182,7 +182,11 @@ def register_core_routes(app, api_version):
         from .. import confinement, permissions
         from ...core.remote import get_remote_policy
         username, is_admin = permissions.current_user()
-        return jsonify({
+        from .. import csrf
+        from ..core import is_logged_in
+        response = jsonify({
+            # the token of this login, for a page that was open before it changed (utils/csrf.js)
+            "csrf": csrf.csrf_token() if permissions.auth_enabled() and is_logged_in() else "",
             "auth_enabled": permissions.auth_enabled(),
             "username": username,
             "is_admin": is_admin,
@@ -190,6 +194,8 @@ def register_core_routes(app, api_version):
             "may_open_any_path": confinement.may_open_any_path(app.config),
             "remote_stores": bool(get_remote_policy().enabled),
         })
+        response.headers["Cache-Control"] = "no-store"   # it carries the login's token
+        return response
 
     _count_cache = {}
 

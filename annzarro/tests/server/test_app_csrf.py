@@ -195,9 +195,10 @@ def login_form(client):
     return re.search(r'name="login_csrf" value="([^"]+)"', page.get_data(as_text=True)).group(1), cookie
 
 
-def test_the_sign_in_page_sets_a_strict_short_lived_cookie_and_a_matching_field(app):
+def test_the_sign_in_page_sets_a_strict_short_lived_cookie_and_a_keyed_field(app):
     token, cookie = login_form(plain(app))
-    assert f"{csrf.LOGIN_COOKIE}={token}" in cookie
+    nonce = re.search(rf"{csrf.LOGIN_COOKIE}=([^;]+)", cookie).group(1)
+    assert token != nonce and token == _field_for(app, nonce), "the field is the keyed hash of the cookie"
     assert "SameSite=Strict" in cookie and "HttpOnly" in cookie and f"Max-Age={csrf.LOGIN_TTL}" in cookie
 
 
@@ -229,6 +230,31 @@ def test_a_sign_in_page_older_than_its_cookie_is_refused(app):
     token, _ = login_form(client)
     client.delete_cookie(csrf.LOGIN_COOKIE)
     response = client.post("/login", data={"username": USER, "password": PASSWORD, "login_csrf": token})
+    assert response.status_code == 400
+
+
+def _field_for(app, nonce):
+    with app.test_request_context():
+        return csrf.login_field(nonce)
+
+
+def test_a_cookie_set_by_a_sibling_page_cannot_be_paired_with_a_field(app):
+    """Cookie tossing: a page on a sibling subdomain sets the cookie for the whole domain and
+    posts a form carrying the same value. Equal values used to be enough to sign the victim into
+    the attacker's account; the field must be the server's keyed hash of the cookie."""
+    victim = plain(app)
+    victim.set_cookie(csrf.LOGIN_COOKIE, "attacker-chosen")
+    for field in ("attacker-chosen", "", "0" * 64):
+        response = victim.post("/login", data={"username": USER, "password": PASSWORD, "login_csrf": field})
+        assert response.status_code == 400, field
+    assert victim.get("/api/v1/auth/me").status_code == 401
+
+
+def test_a_field_from_one_page_does_not_go_with_the_cookie_of_another(app):
+    first, _ = login_form(plain(app))
+    victim = plain(app)
+    login_form(victim)      # the victim's cookie belongs to the victim's page
+    response = victim.post("/login", data={"username": USER, "password": PASSWORD, "login_csrf": first})
     assert response.status_code == 400
 
 
@@ -272,3 +298,78 @@ def test_without_login_the_page_has_an_empty_token_and_there_is_no_logout(open_a
     client = plain(open_app)
     assert '<meta name="annzarro-csrf" content="">' in client.get("/").get_data(as_text=True)
     assert client.post("/logout").status_code in (404, 405)
+
+
+# --- anonymous requests with login on ----------------------------------------------
+
+def test_an_anonymous_request_changes_nothing_on_any_unsafe_route(app):
+    """The hook lets an anonymous request through to the route's own login check; none acts."""
+    for method, path in unsafe_routes(app):
+        response = send(plain(app), method, path)
+        if path == "/logout":
+            assert response.status_code == 302 and response.headers["Location"].endswith("/login"), path
+        else:
+            assert response.status_code == 401, (method, path)
+
+
+# --- Referer, when the browser sent neither Origin nor Sec-Fetch-Site -------------------
+
+def test_a_foreign_referer_is_refused_when_nothing_else_says_where_the_request_came_from(open_app):
+    client = plain(open_app)
+    path = "/api/v1/cache/reset"
+    assert refused_as_forged(send(client, "POST", path, {"Referer": "https://evil.example/page"}))
+    assert refused_as_forged(send(client, "POST", path, {"Referer": "http://localhost.evil.example/"}))
+    assert not refused_as_forged(send(client, "POST", path, {"Referer": "http://localhost/some/page?x=1"}))
+    assert not refused_as_forged(send(client, "POST", path)), "no Referer at all passes"
+
+
+def test_a_referer_does_not_overrule_the_headers_a_browser_volunteers(open_app):
+    client = plain(open_app)
+    same = {"Origin": "http://localhost", "Referer": "https://evil.example/"}
+    assert not refused_as_forged(send(client, "POST", "/api/v1/cache/reset", same))
+
+
+# --- behind a proxy -------------------------------------------------------------------
+
+PROXIED = {"Origin": "https://lab.example.org", "X-Forwarded-Proto": "https", "X-Forwarded-Host": "lab.example.org"}
+
+
+def test_forwarded_headers_decide_the_origin_only_when_proxies_are_trusted(tmp_path):
+    trusting = plain(make_app(tmp_path, auth=False, proxy_count=1))
+    assert not refused_as_forged(send(trusting, "POST", "/api/v1/cache/reset", PROXIED))
+    (tmp_path / "b").mkdir()
+    ignoring = plain(make_app(tmp_path / "b", auth=False))      # proxy_count 0
+    response = send(ignoring, "POST", "/api/v1/cache/reset", PROXIED)
+    assert refused_as_forged(response)
+    assert "server.proxy_count" in response.get_json()["error"]
+
+
+def test_a_refusal_without_a_foreign_origin_does_not_blame_the_proxy(app):
+    client = sign_in(app, USER)
+    assert "proxy_count" not in client.post("/api/v1/cache/reset").get_json()["error"]
+
+
+def test_a_shared_login_off_server_on_loopback_warns_about_proxy_count(tmp_path):
+    from annzarro.tests.server.test_admin_access import _Capture
+    with _Capture("annzarro.server.csrf") as log:
+        make_app(tmp_path, auth=False, host="127.0.0.1", hosted=True)
+    assert "server.proxy_count" in log.text
+    (tmp_path / "b").mkdir()
+    with _Capture("annzarro.server.csrf") as log:
+        make_app(tmp_path / "b", auth=False, host="127.0.0.1")           # the desktop app: not shared
+        make_app(tmp_path / "b", auth=False, host="127.0.0.1", hosted=True, proxy_count=1)
+    assert "server.proxy_count" not in log.text
+
+
+# --- the page's token and the logout page ---------------------------------------------
+
+def test_auth_me_hands_a_signed_in_page_its_current_token(app):
+    client = sign_in(app, USER)
+    reply = client.get("/api/v1/auth/me")
+    assert reply.get_json()["csrf"] == token_of(client) and reply.headers["Cache-Control"] == "no-store"
+    assert plain(app).get("/api/v1/auth/me").status_code == 401
+
+
+def test_the_logout_page_sends_a_content_security_policy(app):
+    response = sign_in(app, USER).get("/logout")
+    assert "form-action 'self'" in response.headers["Content-Security-Policy"]

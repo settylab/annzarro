@@ -5,7 +5,7 @@
 import { Config } from './config.js';
 import { subsetParam } from './utils/subset.js';
 import { notify } from './utils/notify.js';
-import { csrfHeaders } from './utils/csrf.js';
+import { csrfFetch } from './utils/csrf.js';
 import { CacheManager } from './cache-manager.js';
 import { BINARY_FORMAT, categoricalValues, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
 import { PackedNames, categoryCodesFromJSON, namesReplyPlan } from './utils/packed-names.js';
@@ -324,8 +324,8 @@ const DataManager = (function() {
             // (issue #83). Asking again with `after` returns that walk's result.
             const params = { dataset_path: datasetPath };
             for (let poll = 0; ; poll++) {
-                const response = await fetch(`${Config.API.DATA_REFRESH}?${new URLSearchParams(params)}`,
-                    { method: 'POST', headers: csrfHeaders() });
+                const response = await csrfFetch(`${Config.API.DATA_REFRESH}?${new URLSearchParams(params)}`,
+                    { method: 'POST' });
                 if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
                 const result = await response.json();
                 if (result.status !== 'scheduled' || poll >= maxPolls) return result;
@@ -363,9 +363,8 @@ const DataManager = (function() {
                 params.dataset_path = datasetPath;
             }
             
-            const response = await fetch(`${Config.API.CACHE_RESET}?${new URLSearchParams(params).toString()}`, {
-                method: 'POST',
-                headers: csrfHeaders()
+            const response = await csrfFetch(`${Config.API.CACHE_RESET}?${new URLSearchParams(params).toString()}`, {
+                method: 'POST'
             });
             
             if (response.status === 403) {
