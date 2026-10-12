@@ -20,9 +20,8 @@ import time
 from flask import current_app, jsonify, render_template, request, session
 
 from . import access, permissions
-from .admin import audit
 from .admin.guard import _csrf_ok, _harden, csrf_token, with_csp
-from .admin.users import weak_password_reason
+from .admin.users import record_audit, weak_password_reason
 from .auth import UnsupportedPasswordHash
 
 logger = logging.getLogger(__name__)
@@ -86,5 +85,5 @@ def register_account_routes(app):
         if not manager.set_password(username, new):
             return _error(401, "login_required", "Authentication required")
         session["login_at"] = time.time()    # this login survives; the user's others end
-        audit.record("account.password", username, None)
-        return _harden(jsonify(changed=True))
+        audited = record_audit("account.password", username, None)
+        return _harden(jsonify(changed=True) if audited else jsonify(changed=True, audit_failed=True))

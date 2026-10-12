@@ -188,3 +188,12 @@ test("account: the change posts JSON with the token and reports the server's ans
   const expired = await changePassword({ fetchImpl: async () => reply(401, { reason: "login_required" }), csrf: "t", url: "/x", current: "c", next: "n" });
   assert.match(expired.message, /expired/);
 });
+
+test("users: a change whose audit record failed is reported as made, with a warning", async () => {
+  const { el, state, toasts } = await mountUsers([U("alice", { is_admin: true }), U("bob")]);
+  state.api.users.unlock = async () => ({ cleared: 1, audit_failed: true });
+  state.api.users.setAdmin = async () => ({ is_admin: true, audit_failed: true });
+  await find(row(el, "bob"), (n) => n.getAttribute("data-action") === "make-admin").dispatch("click");
+  assert.match(toasts.map((t) => t[0]).join("|"), /bob is now an administrator\./);
+  assert.ok(toasts.some(([m, l]) => /audit record could not be written/.test(m) && l === "warning"));
+});
