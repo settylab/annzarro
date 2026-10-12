@@ -158,9 +158,9 @@ def test_account_routes_declare_a_gate(app):
         assert access.gate_of(app, endpoint) == "public"
 
 
-# Pages that do not send a Content-Security-Policy yet. The policy slice (P1) gives the main page and
-# the login page theirs; when it lands this test fails on the stale entries, and they are deleted.
-NO_CSP_YET = {"/", "/login"}
+# Pages that do not send a Content-Security-Policy yet. The policy slice (P1) has given the main page and
+# the login page theirs, so none is left; a page added without one fails the walk below.
+NO_CSP_YET = set()
 
 
 def test_every_html_page_sends_a_content_security_policy(app):

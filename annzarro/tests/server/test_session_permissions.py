@@ -273,7 +273,7 @@ def test_auth_me(app, open_app):
     # whether remote stores work is the server's remote-store policy (tested in test_dataset_folders.py)
     assert isinstance(me.pop("remote_stores"), bool)
     assert me == {"auth_enabled": True, "username": "root", "is_admin": True, "exposed": False,
-                  "may_open_any_path": True}
+                  "may_open_any_path": True, "restricted": False}
     assert _client(app, "bob").get("/api/v1/auth/me").get_json()["is_admin"] is False
     assert app.test_client().get("/api/v1/auth/me").status_code == 401
 

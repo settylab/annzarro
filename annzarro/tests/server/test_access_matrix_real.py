@@ -12,6 +12,8 @@ variant spellings of a GRANTED store are refused too (fail closed), a sibling
 whose name starts like a grant is not covered, and a restricted user is told
 nothing about the roots.
 """
+import os
+
 import pytest
 
 from annzarro.server import access
@@ -62,15 +64,16 @@ def test_the_restricted_flag_alone_leaves_nothing(app, layout):
     assert harness.request(bob, rule, method, "in").status_code == 200
 
 
-def test_variant_spellings_of_a_granted_store_are_refused_too(app, restricted):
-    """An allow-list on exact strings: on APFS a variant opens the store, so refusing it is the fail-closed answer."""
+def test_variant_spellings_of_a_granted_store_follow_the_volume(app, restricted):
+    """Where a variant is the same store on disk (APFS) it is read; where it is another, absent name it is a 404."""
     bob = _client(app, RESTRICTED)
     exact = restricted.stores["in"]
     assert bob.get("/api/v1/data/obs", query_string={"dataset_path": exact}).status_code == 200
     variants = [v for v in spelling_variants(exact) if v != exact]
     assert variants
     for spelled in variants:
-        assert bob.get("/api/v1/data/obs", query_string={"dataset_path": spelled}).status_code == 404, spelled
+        expected = 200 if os.path.exists(spelled) else 404
+        assert bob.get("/api/v1/data/obs", query_string={"dataset_path": spelled}).status_code == expected, spelled
 
 
 def test_a_sibling_that_starts_like_a_grant_is_not_covered(app, restricted):

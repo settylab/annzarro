@@ -265,3 +265,12 @@ def test_the_cli_refuses_to_run_as_another_account(users, monkeypatch):
     assert _run(cfg, "list") == 0, "listing changes nothing, so any account may"
     monkeypatch.setattr(cli, "_dir_owner", lambda directory: (os.geteuid(), "me"))
     assert _run(cfg, "add", "--username", "carol", "--password", "pw") == 0
+
+
+def test_access_refuses_to_run_as_another_account_than_the_state_owner(access_site, monkeypatch):
+    """sudo would leave a root-owned 0600 access.json that the server account cannot read."""
+    path, cfg, data = access_site
+    monkeypatch.setattr(os, "geteuid", lambda: os.stat(os.path.dirname(str(path))).st_uid + 1)
+    assert _run(cfg, "access", "bob", "--restrict") == 1
+    assert _entry(path) is None
+    assert not os.path.exists(os.path.join(os.path.dirname(str(path)), "annzarro_admin", "access.json"))
