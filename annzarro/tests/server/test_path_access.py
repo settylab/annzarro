@@ -79,6 +79,9 @@ NO_PATH = {
     "admin.data_roots", "admin.data_roots_browse", "admin.data_roots_datasets",   # data directories: admin only, they name
     "admin.data_roots_add", "admin.data_roots_remove",   # directories to add, not datasets to read (test_admin_data_roots.py)
     "admin.panel_sets", "admin.panel_sets_reassign", "admin.panel_sets_delete",   # panel sets: admin only, no dataset paths
+    "admin.users", "admin.users_add", "admin.users_remove", "admin.users_password",
+    "admin.users_admin", "admin.users_unlock",     # test_admin_users.py
+    "account_password_page", "account_password_change",   # own account (test_account_password.py)
 }
 
 
@@ -217,7 +220,7 @@ def test_revoking_admin_takes_effect_at_once(layout):
     client = _client(layout, "admin", arbitrary_paths="admins")
     url = "/api/v1/data/info?dataset_path=" + escapes(layout)["absolute"]
     assert not _refused(client.get(url))
-    AuthManager(user_file=str(layout / "users.json")).set_admin("root", False)
+    AuthManager(user_file=str(layout / "users.json")).set_admin("root", False, force=True)  # the only admin
     try:
         assert _refused(client.get(url))
     finally:

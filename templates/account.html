@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Mount point behind a reverse proxy; see static/js/utils/app-url.js -->
+    <meta name="annzarro-root" content="{{ request.script_root }}">
+    <!-- Per-login CSRF token for the password change (static/js/account.js). Autoescaped. -->
+    <meta name="annzarro-csrf" content="{{ session.get('csrf', '') }}">
+    <title>{{ app_name|default('AnnZarro') }} account</title>
+
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body class="admin-page">
+    {# No inline script: the page's Content-Security-Policy allows script-src 'self' only. #}
+    <main class="container py-4 account-card">
+        <h1 class="h4">Change password</h1>
+        <p class="text-muted">Signed in as <strong id="account-user">{{ username }}</strong>. Your other
+            logins end when the password changes; this one stays.</p>
+        <form id="account-form" novalidate>
+            <div class="mb-3">
+                <label class="form-label" for="account-current">Current password</label>
+                <input class="form-control" type="password" id="account-current" autocomplete="current-password" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="account-new">New password</label>
+                <input class="form-control" type="password" id="account-new" autocomplete="new-password" required>
+                <div class="form-text">At least 10 characters, and not your username.</div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="account-confirm">New password again</label>
+                <input class="form-control" type="password" id="account-confirm" autocomplete="new-password" required>
+            </div>
+            <div id="account-message" role="alert" class="mb-3" hidden></div>
+            <button class="btn btn-primary" type="submit" id="account-submit">Change password</button>
+            <a class="btn btn-outline-secondary" href="{{ request.script_root }}/">Back to {{ app_name|default('AnnZarro') }}</a>
+        </form>
+    </main>
+    <script type="module" src="{{ url_for('static', filename='js/account.js') }}"></script>
+</body>
+</html>

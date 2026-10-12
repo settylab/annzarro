@@ -676,6 +676,10 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         api_version: API version string
     """
     from annzarro.server import access, csrf
+    from annzarro.server.account import register_account_routes
+
+    # before the wrapper loop at the end, which puts require_auth on them
+    register_account_routes(app)
 
     def render_login(**extra):
         from annzarro.server.policy import csp
