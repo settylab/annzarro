@@ -105,6 +105,7 @@
                  link never reaches the server, so the script below copies it
                  from the address bar; after a failed attempt the server
                  renders it back here. -->
+            <input type="hidden" name="login_csrf" value="{{ login_csrf }}">
             <input type="hidden" name="next" value="{{ next_url|default(request.script_root ~ '/') }}">
             <input type="hidden" name="fragment" id="login-fragment" value="{{ fragment|default('') }}">
             <div class="form-group">

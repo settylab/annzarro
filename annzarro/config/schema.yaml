@@ -225,7 +225,7 @@ server:
       type: array
       items:
         type: string
-      description: Directories inside which an admin may add data directories in the browser; empty = adding is off
+      description: Directories inside which an admin may add data directories in the browser; empty = adding is off. Keep them writable by trusted accounts only, since whoever can write there can swap a directory for a link between the check and the read
       default: []
       security: internal
     admin_reauth_minutes:

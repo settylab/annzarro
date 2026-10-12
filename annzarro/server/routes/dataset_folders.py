@@ -140,8 +140,32 @@ def _fill_store(entry):
         entry.update(cells=counts[0], genes=counts[1])
 
 
+def _admin_root_entries(config, data_dir, taken):
+    """The data directories admins added, as folders of the data directory's
+    own listing (the picker's top level). The path is the root as the admin
+    typed it; browsing it is confined like any other (``allowed_roots``)."""
+    from ..admin import overlay
+    found = []
+    for item in overlay.resolve_roots(config):
+        path = item["path"]
+        name = os.path.basename(path.rstrip(os.sep)) or path
+        if not item["active"] or name.startswith(".") or path in taken:
+            continue
+        # no rel_path: it would spell out where the root lies relative to the data directory
+        found.append({"name": name, "path": path, "is_link": os.path.islink(path),
+                      "kind": "folder", "admin_root": True})
+    return found
+
+
+def _is_admin_root(config, path):
+    from ..admin import overlay
+    return os.path.realpath(path) in overlay.active_data_roots(config)
+
+
 def list_folder(config, folder, offset=0, limit=None):
     """One page of ``folder``: subfolders first, then stores, each by name.
+    The data directory's own listing also carries the data directories an
+    admin added, as folders.
 
     Raises FileNotFoundError when it is not a directory.
     """
@@ -155,8 +179,11 @@ def list_folder(config, folder, offset=0, limit=None):
     path = _resolve_folder(config, folder)
     if not os.path.isdir(path):
         raise FileNotFoundError(path)
-    skip = ("sessions",) if os.path.realpath(path) == os.path.realpath(data_dir) else ()
+    at_top = os.path.realpath(path) == os.path.realpath(data_dir)
+    skip = ("sessions",) if at_top else ()
     entries = [e for e in (_entry(data_dir, path, n) for n in data_routes._listdir(path) if n not in skip) if e]
+    if at_top:
+        entries += _admin_root_entries(config, data_dir, {e["path"] for e in entries})
     entries = access.filter_entries(entries)
     entries.sort(key=lambda e: (e["kind"] != "folder", e["name"]))
     page = entries[offset:offset + limit]
@@ -170,7 +197,7 @@ def list_folder(config, folder, offset=0, limit=None):
     return {
         "folder": path,
         "rel_path": rel_path(path, data_dir),
-        "parent": None if at_top else parent,
+        "parent": None if at_top or _is_admin_root(config, path) else parent,
         "entries": page,
         "total": len(entries),
         "offset": offset,
@@ -304,7 +331,7 @@ def _compile_query(query, regex):
 def search_tree(config, query, regex=False, limit=None):
     """Stores of the data directory's whole tree whose name or relative path matches.
 
-    Breadth first from the data directory, never into a store, at most
+    Breadth first from the data directory and the admin-added roots, never into a store, at most
     ``dataset_search_max_depth`` folders deep, ``dataset_search_max_entries``
     entries looked at and SEARCH_SECONDS long; ``truncated`` says a cap stopped it.
     Hidden entries, the sessions folder and links a hosted server would refuse
@@ -333,6 +360,12 @@ def search_tree(config, query, regex=False, limit=None):
                 found.append(entry)
     else:
         queue, seen = [(data_dir, 0)], {os.path.realpath(data_dir)}
+        # the data directories admins added are top-level folders of the picker, so they are searched too
+        for root in _admin_root_entries(config, data_dir, set()):
+            real = os.path.realpath(root["path"])
+            if real not in seen:
+                seen.add(real)
+                queue.append((root["path"], 1))
     while queue and not truncated:
         folder, depth = queue.pop(0)
         skip = ("sessions",) if os.path.realpath(folder) == os.path.realpath(data_dir) else ()

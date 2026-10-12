@@ -19,6 +19,7 @@ Features:
 import os
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import zarr
 from typing import Dict, List, Tuple, Optional, Union, Any, Callable, Literal
@@ -305,7 +306,7 @@ def densify(m) -> np.ndarray:
     return out
 
 
-#: Up to this many bytes (the rows times the selected columns) take_rows
+#: Up to this many bytes (the rows times the columns decoded) take_rows
 #: reads the whole column and indexes it in memory; above, it gathers. At
 #: normal sizes a whole read is faster (a 1M-cell UMAP column is 4 MB: 15 ms
 #: whole, 20 ms gathered); past it memory, not time, is what matters.
@@ -314,6 +315,200 @@ WHOLE_READ_MAX_BYTES = 64 * 2 ** 20
 #: Bytes of stored rows one step of take_rows reads at once: several chunks,
 #: so zarr still decodes them in parallel, and never the whole column.
 GATHER_BLOCK_BYTES = 32 * 2 ** 20
+
+
+#: Share of a small shard's inner chunks a sharded gather must want for the shard to be read whole.
+WHOLE_SHARD_SHARE = 0.5
+
+#: A batch is GATHER_BLOCK_BYTES / this of decoded chunks.
+GATHER_BATCH_DIV = 4
+
+#: Threads that read the batches of sharded gathers (one pool for the process).
+GATHER_THREADS = 8
+
+#: Bytes of decoded chunks the batches of ALL sharded gathers in the process hold at once, as a multiple
+#: of GATHER_BLOCK_BYTES (a batch bigger than that is read alone).
+GATHER_HELD_FACTOR = 2
+
+#: zarr coalesces the byte ranges of one read when they are at most this far apart (bytes; None: zarr's
+#: default, 1 MiB). Chunks are small next to it, so the gap pulls in the neighbours a batch does not want.
+GATHER_COALESCE_GAP = 64 << 10
+
+_gather_pool = None
+_gather_cond = threading.Condition()
+_gather_held = 0
+
+
+def _gather_executor() -> ThreadPoolExecutor:
+    global _gather_pool
+    with _gather_cond:
+        if _gather_pool is None:
+            _gather_pool = ThreadPoolExecutor(GATHER_THREADS, thread_name_prefix="annzarro-gather")
+        return _gather_pool
+
+
+class _GatherBudget:
+    """``with _GatherBudget(n):`` holds n bytes of the process-wide in-flight budget (waits for room;
+    a batch bigger than the whole budget runs alone). A small gather (``small``) may also use one
+    GATHER_BLOCK_BYTES reserve above the budget, so a big gather's batches never keep it waiting."""
+
+    def __init__(self, nbytes, small=False):
+        self.nbytes = int(nbytes)
+        self.small = small
+
+    def __enter__(self):
+        global _gather_held
+        cap = GATHER_HELD_FACTOR * GATHER_BLOCK_BYTES + (GATHER_BLOCK_BYTES if self.small else 0)
+        with _gather_cond:
+            while _gather_held and _gather_held + self.nbytes > cap:
+                _gather_cond.wait()
+            _gather_held += self.nbytes
+
+    def __exit__(self, *exc):
+        global _gather_held
+        with _gather_cond:
+            _gather_held -= self.nbytes
+            _gather_cond.notify_all()
+
+
+def _stored_width(array, cols) -> int:
+    """Columns one read of the selected ``cols`` of 2-D ``array`` decodes per row: every column of each
+    column chunk they fall in, not just the selected ones (``cols`` None: all of them)."""
+    ncols, c1 = int(array.shape[1]), int(array.chunks[1])
+    if cols is None:
+        return ncols
+    return min(ncols, int(np.unique(np.asarray(cols, dtype=np.int64) // c1).size) * c1)
+
+
+def _take_rows_sharded(array, rows, cols, out_shape, two_d) -> np.ndarray:
+    """take_rows for a sharded zarr 3 array: the touched inner chunks, a bounded batch at a time.
+
+    zarr reads a shard's index and then only the byte ranges of the inner
+    chunks a selection touches, but a selection that touches ALL of a shard's
+    inner chunks is read as the whole shard: scattered rows do that to every
+    shard they fall in, and anndata 0.13 writes shards of 1 GB. So the rows
+    go in batches of consecutive touched row bands of inner chunks (a band
+    is the chunks of one row chunk across every column the read decodes).
+    A batch is at most GATHER_BLOCK_BYTES / 4 of decoded chunks and never
+    all the inner chunks of a shard (but see WHOLE_SHARD_SHARE: a small
+    shard that is mostly wanted is read whole, as zarr does). The batches
+    run on one process-wide pool and hold at most GATHER_HELD_FACTOR x
+    GATHER_BLOCK_BYTES of decoded chunks at once, over all requests: memory
+    does not grow with the shard or with the number of requests, and over a
+    network the requests of different batches overlap.
+    """
+    out = np.empty(out_shape, dtype=array.dtype)
+    n = int(array.shape[0])
+    chunk, shard_rows = int(array.chunks[0]), int(array.shards[0])
+    per_shard = max(1, shard_rows // chunk)
+    if rows.size < 2 or bool(np.all(rows[1:] >= rows[:-1])):
+        order, srows = None, rows           # a subset is sorted: no permutation to hold
+    else:
+        order = np.argsort(rows, kind="stable")
+        srows = rows[order]
+    # the rows of each inner chunk by binary search of the chunk edges: no per-row temporaries
+    pos = np.searchsorted(srows, np.arange(-(-n // chunk) + 1, dtype=np.int64) * chunk)
+    touched = np.flatnonzero(pos[1:] > pos[:-1])
+    itemsize = int(np.dtype(array.dtype).itemsize)
+    cols_ix = np.asarray(cols, dtype=np.int64) if (two_d and cols is not None) else None
+    # Column groups: a read of a wide array is also cut along the columns, into groups of column chunks
+    # of about a batch each, so that a row band (the chunks of one row chunk across the decoded columns,
+    # 32 MiB for 1024 x 8192 float32) is not the smallest unit and a shard that splits the columns is not
+    # weighed as the one column shard it is only a part of.
+    groups = [(cols_ix, slice(None), _stored_width(array, cols) if two_d else 1)]
+    gcols = 0
+    if two_d:
+        ncols, c1 = int(array.shape[1]), int(array.chunks[1])
+        gcols = max(1, (GATHER_BLOCK_BYTES // GATHER_BATCH_DIV) // (chunk * c1 * itemsize))
+        if cols_ix is None:
+            if gcols * c1 < ncols:
+                groups = [(slice(c0, min(ncols, c0 + gcols * c1)), slice(c0, min(ncols, c0 + gcols * c1)),
+                           min(ncols, c0 + gcols * c1) - c0) for c0 in range(0, ncols, gcols * c1)]
+        else:
+            cid = cols_ix // c1
+            gid = cid // gcols
+            if np.unique(gid).size > 1:
+                groups = []
+                for g in np.unique(gid).tolist():
+                    idx = np.flatnonzero(gid == g)
+                    groups.append((cols_ix[idx], idx, min(ncols, int(np.unique(cid[idx]).size) * c1)))
+    gwidth = max(g[2] for g in groups)
+    band_bytes = chunk * gwidth * itemsize             # one row chunk across the widest column group
+    batch_bytes = max(band_bytes, GATHER_BLOCK_BYTES // GATHER_BATCH_DIV)
+    cap = max(1, per_shard - 1)             # a shard of one inner chunk cannot be split any further
+    if len(groups) > 1 and gcols < max(1, int(array.shards[1]) // int(array.chunks[1])):
+        cap = per_shard                     # a column group is never all the chunks of a shard
+    # A shard (its rows across the decoded columns) of at most GATHER_BLOCK_BYTES of which at least
+    # WHOLE_SHARD_SHARE is wanted is read whole (a request per shard, as zarr does, instead of the same
+    # bytes in many ranges); a bigger or sparser one is read in pieces that are never all of its chunks.
+    shard_bytes = shard_rows * gwidth * itemsize
+    share = 1.0 if (not two_d or cols is None) else gwidth / int(array.shape[1])
+    whole_ok = shard_bytes <= GATHER_BLOCK_BYTES and len(groups) == 1
+    shard_ids = (touched // per_shard).tolist()
+    wanted = {}
+    for sid in shard_ids:
+        wanted[sid] = wanted.get(sid, 0) + 1
+    first, held, in_shard, shard = 0, 0, 0, -1
+    batches = []                            # (first touched chunk, end, decoded bytes)
+    for i, sid in enumerate(shard_ids):
+        whole = whole_ok and wanted[sid] * share >= WHOLE_SHARD_SHARE * per_shard
+        new_shard = sid != shard
+        weight = (shard_bytes if whole else band_bytes) if (new_shard or not whole) else 0
+        if held and weight and (held + weight > batch_bytes
+                                or (not whole and not new_shard and in_shard >= cap)):
+            batches.append((first, i, held))
+            first, held, in_shard = i, 0, 0
+        in_shard = 1 if (new_shard or not held) else in_shard + 1
+        shard, held = sid, held + weight
+    batches.append((first, touched.size, held))
+    if (GATHER_COALESCE_GAP is not None and hasattr(array, "with_config")
+            and type(array).__module__.startswith("zarr")):
+        try:
+            array = array.with_config({"sharding_coalesce_max_gap_bytes": int(GATHER_COALESCE_GAP)})
+        except Exception:                   # a zarr without the setting: its own default
+            pass
+
+    tasks = [(b, g) for g in groups for b in batches]
+    # A gather of at most half a block is read here, in order, not queued on the shared pool behind the
+    # batches of a big one (a 10-row read waited 6.5x as long behind a 100k-row read); it takes its bytes
+    # from the budget's reserve, so memory stays within 3 x GATHER_BLOCK_BYTES.
+    small = sum(b[2] * g[2] // gwidth for b, g in tasks) <= GATHER_BLOCK_BYTES // 2
+
+    def read(task):
+        batch, (colsel, outcols, width_g) = task
+        lo, hi = int(pos[touched[batch[0]]]), int(pos[touched[batch[1] - 1] + 1])
+        sel = (srows[lo:hi], colsel) if colsel is not None else (srows[lo:hi],)
+        with _GatherBudget(batch[2] * width_g // gwidth, small):
+            block = np.asarray(array.oindex[sel])
+        target = slice(lo, hi) if order is None else order[lo:hi]
+        if not two_d:
+            out[target] = block
+        elif isinstance(outcols, slice):
+            out[target, outcols] = block
+        elif order is None:
+            out[lo:hi, outcols] = block
+        else:
+            out[np.ix_(target, outcols)] = block
+
+    if small or len(tasks) == 1:
+        for t in tasks:
+            read(t)
+        return out
+    futures = [_gather_executor().submit(read, t) for t in tasks]
+    try:
+        for f in futures:
+            f.result()
+    except BaseException:
+        for f in futures:
+            f.cancel()
+        for f in futures:                   # the batches already running end before the buffers go
+            if not f.cancelled():
+                try:
+                    f.result()
+                except BaseException:
+                    pass
+        raise
+    return out
 
 
 def take_rows(array, rows, cols=None) -> np.ndarray:
@@ -327,8 +522,9 @@ def take_rows(array, rows, cols=None) -> np.ndarray:
     held about the whole selection's chunks at once, so there the rows are
     read a block of chunks at a time: memory one block plus the result.
     A numeric column of at most WHOLE_READ_MAX_BYTES (the rows times the
-    selected columns) is read whole and indexed in memory instead: faster at
-    normal sizes, and bounded by that size.
+    columns decoded: all of those in the column chunks the selection falls
+    in) is read whole and indexed in memory instead: faster at normal sizes,
+    and bounded by that size.
     ``rows`` may be unsorted or repeat; the result follows their order.
     """
     rows = np.asarray(rows, dtype=np.int64).reshape(-1)
@@ -342,11 +538,15 @@ def take_rows(array, rows, cols=None) -> np.ndarray:
     if rows.size == 0:
         return np.empty(out_shape, dtype=array.dtype)
     numeric = np.dtype(array.dtype).kind in "biuf"     # strings: their size is not itemsize
-    if numeric and n * width * int(np.dtype(array.dtype).itemsize) <= WHOLE_READ_MAX_BYTES:
+    # sized by the columns decoded (every column of each column chunk the selection falls in), not by those kept
+    held = _stored_width(array, cols) if two_d else 1
+    if numeric and n * held * int(np.dtype(array.dtype).itemsize) <= WHOLE_READ_MAX_BYTES:
         # small enough to hold: one whole read, then the rows in memory
         whole = np.asarray(array.oindex[:, np.asarray(cols, dtype=np.int64)] if (two_d and cols is not None)
                            else array[:])
         return whole[rows]
+    if _ZARR3 and getattr(array, "shards", None):
+        return _take_rows_sharded(array, rows, cols, out_shape, two_d)
     if _ZARR3 and hasattr(array, "oindex"):
         # zarr 3 gathers an orthogonal integer selection chunk by chunk,
         # decoding a bounded number at once and in parallel: memory is
@@ -358,7 +558,7 @@ def take_rows(array, rows, cols=None) -> np.ndarray:
     srows = rows[order]
     chunk = int(array.chunks[0]) if getattr(array, "chunks", None) else n
     cols_ix = np.asarray(cols, dtype=np.int64) if (two_d and cols is not None) else None
-    row_bytes = max(1, int(np.dtype(array.dtype).itemsize) * width)
+    row_bytes = max(1, int(np.dtype(array.dtype).itemsize) * (_stored_width(array, cols) if two_d else 1))
     step = max(chunk, (GATHER_BLOCK_BYTES // (row_bytes * chunk)) * chunk)
     # only the blocks some selected row falls in are read
     starts = np.unique((srows // step) * step)
@@ -1179,48 +1379,155 @@ class ZarrReader(CacheSettings):
         A gene column of a cell subset is the case: 100,000 rows of a column
         of 50 million cells. Building the column first and cutting it after
         made a 50-million-row slice, 200 MB dense, cached as such, for every
-        gene. Here each major slice's stored entries are read a block at a
-        time and only those whose minor index is selected
-        are kept, so memory is one block (``_SELECT_BLOCK``) plus the result. ``minor`` may be in
-        any order and repeat; the result is what slicing the full matrix
-        returns.
+        gene. Here only the stored entries of the selected major slices are
+        read, and of those only the ones whose minor index is selected are
+        kept, so memory is one block (``_SELECT_BLOCK``) plus the result.
+        ``minor`` and ``major`` may be in any order and repeat; the result is
+        what slicing the full matrix returns.
+
+        Every chunk of ``indices`` and ``data`` is read at most once per call
+        (a slice longer than a block is cut on the block grid, a chunk
+        boundary too): the selected slices are made
+        unique and sorted, their ``indptr`` values come from one read per run
+        of nearby slices, and their entry ranges are merged into spans that
+        are separated by at least one chunk of ``indices`` and cover about a
+        chunk, so each span is a single read. Reading a slice by itself decoded
+        a whole chunk to return a few hundred entries, 21,000 decodes for
+        10,000 cells.
         """
-        indptr = matrix['indptr']
+        indptr_z = matrix['indptr']
         data_z, idx_z = matrix['data'], matrix['indices']
+        n_major = int(indptr_z.shape[0]) - 1
         n_minor = int(shape[0] if axis == 'col' else shape[1])
         want, inverse = np.unique(np.asarray(minor, dtype=np.int64), return_inverse=True)
         if want.size and (want[0] < 0 or want[-1] >= n_minor):
             bad = int(want[0] if want[0] < 0 else want[-1])
             raise IndexError(f"index {bad} is out of range for size {n_minor}")
-        block = self._SELECT_BLOCK
+        major = np.asarray(major, dtype=np.int64).reshape(-1)
+        major = np.where(major < 0, major + n_major, major)
+        uniq, inv_major = np.unique(major, return_inverse=True)
+        if uniq.size and (uniq[0] < 0 or uniq[-1] >= n_major):
+            bad = int(uniq[0] if uniq[0] < 0 else uniq[-1])
+            raise IndexError(f"index {bad} is out of range for size {n_major}")
+        gap = self._chunk_len(idx_z)
+        block = max(gap, (self._SELECT_BLOCK // gap) * gap)
         # Membership by a mask over the minor axis (1 byte per row: 50 MB at
         # 50M cells) is one lookup per stored entry; a binary search of every
         # entry into the selection was 6x slower than reading the column.
         selected = np.zeros(n_minor, dtype=bool)
         selected[want] = True
+
+        starts, ends = self._major_ranges(indptr_z, uniq)
+        keep = ends > starts
+        rows = np.flatnonzero(keep)
+        starts, ends = starts[keep], ends[keep]
+        # a slice longer than a block is read in several, cut on the block grid
+        pieces = (ends - 1) // block - starts // block + 1
+        if pieces.size and pieces.max() > 1:
+            rid = np.repeat(np.arange(rows.size), pieces)
+            cut = starts[rid] // block + np.arange(rid.size) - np.repeat(np.cumsum(pieces) - pieces, pieces)
+            starts, ends, rows = (np.maximum(starts[rid], cut * block),
+                                  np.minimum(ends[rid], (cut + 1) * block), rows[rid])
+
+        # A span is read in one call and ends where the next slice starts in a
+        # chunk the span has not touched, so no chunk is shared by two spans:
+        # it is cut after about ``reach`` entries, and wherever the next slice
+        # is a chunk or more away.
+        reach = gap * self._SPAN_CHUNKS
+        fresh = np.flatnonzero(starts[1:] // gap > (ends[:-1] - 1) // gap) + 1
+        apart = np.flatnonzero(starts[1:] - ends[:-1] >= gap) + 1
         positions, majors, values = [], [], []
-        for n, k in enumerate(major):
-            k = int(k)
-            s, e = (int(v) for v in indptr[k:k + 2])
-            for b in range(s, e, block):
-                stop = min(b + block, e)
-                idx = np.asarray(idx_z[b:stop])
-                hit = selected[idx]
-                if not hit.any():
-                    continue
-                positions.append(np.searchsorted(want, idx[hit]))
-                majors.append(np.full(int(np.count_nonzero(hit)), n, dtype=np.int64))
-                values.append(np.asarray(data_z[b:stop])[hit])
+        i, n = 0, rows.size
+        while i < n:
+            lo = int(starts[i])
+            k = max(int(np.searchsorted(ends, lo + reach, side='left')) + 1, i + 1)
+            k = min(self._first_from(fresh, k, n), self._first_from(apart, i + 1, n))
+            hi = int(ends[k - 1])
+            idx = np.asarray(idx_z[lo:hi])
+            hit = np.flatnonzero(selected[idx])
+            if hit.size:
+                # which slice each hit is in; a hit between two slices is
+                # one of the gap's, and is dropped
+                at = hit + lo
+                r = np.minimum(np.searchsorted(ends[i:k], at, side='right'), k - i - 1)
+                inside = (at >= starts[i:k][r]) & (at < ends[i:k][r])
+                at, r, hit = at[inside], r[inside], hit[inside]
+                if at.size:
+                    positions.append(np.searchsorted(want, idx[hit]))
+                    majors.append(rows[i:k][r])
+                    values.append(self._read_at(data_z, at, gap))
+            i = k
         dtype = data_z.dtype
         pos = np.concatenate(positions) if positions else np.empty(0, np.int64)
         maj = np.concatenate(majors) if majors else np.empty(0, np.int64)
         val = np.concatenate(values) if values else np.empty(0, dtype)
-        # in the space of the unique selected minor indices, then expanded
+        # in the space of the unique selected minor and major indices, then expanded
         if axis == 'col':
-            m = sp.csr_matrix((val, (pos, maj)), shape=(want.size, len(major)))
-            return m[inverse.reshape(-1), :]
-        m = sp.csr_matrix((val, (maj, pos)), shape=(len(major), want.size))
-        return m[:, inverse.reshape(-1)]
+            m = sp.csr_matrix((val, (pos, maj)), shape=(want.size, uniq.size))
+            m = m[inverse.reshape(-1), :]
+            return m if np.array_equal(inv_major, np.arange(uniq.size)) else m[:, inv_major]
+        m = sp.csr_matrix((val, (maj, pos)), shape=(uniq.size, want.size))
+        m = m[:, inverse.reshape(-1)]
+        return m if np.array_equal(inv_major, np.arange(uniq.size)) else m[inv_major, :]
+
+    @staticmethod
+    def _chunk_len(arr) -> int:
+        """Entries per chunk of a 1-D zarr array (the read granule), >= 1."""
+        chunks = getattr(arr, 'chunks', None)
+        return max(1, int(chunks[0])) if chunks else ZarrReader._SCAN_BLOCK
+
+    def _major_ranges(self, indptr_z, major):
+        """
+        ``(indptr[k], indptr[k + 1])`` for each ``k`` of the sorted, unique
+        ``major``, as two int64 arrays. Neighbours less than a chunk of
+        ``indptr`` apart share one contiguous read, cut on a grid of
+        ``_INDPTR_CHUNKS`` chunks so that a read is small and a long
+        ``indptr`` is never read whole.
+        """
+        starts = np.empty(major.size, dtype=np.int64)
+        ends = np.empty(major.size, dtype=np.int64)
+        if major.size == 0:
+            return starts, ends
+        gap = self._chunk_len(indptr_z)
+        cell = gap * self._INDPTR_CHUNKS
+        cuts = np.concatenate(([0], np.flatnonzero((np.diff(major) > gap) | (np.diff(major // cell) > 0)) + 1,
+                               [major.size]))
+        for g in range(len(cuts) - 1):
+            i, j = int(cuts[g]), int(cuts[g + 1])
+            lo = int(major[i])
+            seg = np.asarray(indptr_z[lo:int(major[j - 1]) + 2], dtype=np.int64)
+            starts[i:j] = seg[major[i:j] - lo]
+            ends[i:j] = seg[major[i:j] - lo + 1]
+        return starts, ends
+
+    @staticmethod
+    def _first_from(points, at, default):
+        """The first of the sorted ``points`` that is ``>= at``, else ``default``."""
+        p = int(np.searchsorted(points, at, side='left'))
+        return int(points[p]) if p < points.size else default
+
+    @staticmethod
+    def _read_at(arr, at, gap):
+        """``arr[at]`` for sorted positions ``at``: one read per run of positions less than ``gap`` apart."""
+        cuts = np.concatenate(([0], np.flatnonzero(np.diff(at) >= gap) + 1, [at.size]))
+        parts = []
+        for g in range(len(cuts) - 1):
+            p = at[cuts[g]:cuts[g + 1]]
+            seg = np.asarray(arr[int(p[0]):int(p[-1]) + 1])
+            parts.append(seg[p - p[0]])
+        return parts[0] if len(parts) == 1 else np.concatenate(parts)
+
+    #: Chunks of ``indices`` a span of _rows_of_major_slices covers at least. A span
+    #: is one read, and zarr decodes the chunks of a read in parallel: spans of one
+    #: chunk took 1.4x to 3x as long as of four at 1,000 to 100,000 rows, and four
+    #: cost about 7 MB more working memory (25 MB at 100,000 rows of a 2M-cell store,
+    #: 3 MB for the per-row reads before). A slice longer than that is read in
+    #: ``_SELECT_BLOCK``s.
+    _SPAN_CHUNKS = 4
+
+    #: Chunks of ``indptr`` one read of _major_ranges covers at most: 2, about
+    #: 90k int64 values (0.7 MB) at the usual chunking.
+    _INDPTR_CHUNKS = 2
 
     #: Stored entries read per block by _rows_of_major_slices: 16M, 64 MB of
     #: int32 indices plus as much data. Measured on a 50M-cell CSC column of
@@ -2175,6 +2482,14 @@ class ZarrReader(CacheSettings):
         try:
             # rows are always named (read_guard.check); cols only filter them.
             # Both axes at once: rows are not read whole to cut the columns after
+            if len(obj.shape) == 2 and getattr(obj, "shards", None) and _ZARR3:
+                # a sharded array's rows are gathered by inner chunk (not whole shards)
+                rows = np.asarray(row_indices, dtype=np.int64).reshape(-1)
+                if (rows.size and rows.min() >= 0 and rows.max() < obj.shape[0]
+                        and (col_indices is None or len(col_indices))):
+                    return _take_rows_sharded(
+                        obj, rows, col_indices,
+                        (rows.size, len(col_indices) if col_indices is not None else obj.shape[1]), True)
             col_sel = col_indices if col_indices is not None else slice(None)
             data = obj.oindex[row_indices, col_sel]
             return np.asarray(data)

@@ -261,6 +261,15 @@ def chunk_working_set(obj, row_indices=None, col_indices=None) -> int:
     unit = getattr(obj, "chunks", None)
     if len(shape) != 2 or not unit or len(unit) != 2:
         return 0
+    if getattr(obj, "shards", None):
+        # a sharded array is gathered by batches of row bands (take_rows), the bytes in flight capped:
+        # the band of every touched row chunk across the decoded columns, up to that cap
+        import importlib
+        reader = importlib.import_module(__package__ + ".zarr_reader")
+        band = int(unit[0]) * reader._stored_width(obj, col_indices) * int(obj.dtype.itemsize)
+        held = min(_chunks_touched(row_indices, shape[0], int(unit[0])) * band,
+                   max(band, reader.GATHER_HELD_FACTOR * reader.GATHER_BLOCK_BYTES))   # a bigger band runs alone
+        return 2 * held                      # the decoded chunks and the compressed bytes they came from
     touched = (_chunks_touched(row_indices, shape[0], int(unit[0]))
                * _chunks_touched(col_indices, shape[1], int(unit[1])))
     return min(touched, READ_CONCURRENCY) * int(unit[0]) * int(unit[1]) * int(obj.dtype.itemsize)

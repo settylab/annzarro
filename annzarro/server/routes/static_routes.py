@@ -8,7 +8,7 @@ import os
 import logging
 from pathlib import Path
 from .. import access
-from flask import send_file, send_from_directory, current_app as app, render_template
+from flask import send_file, send_from_directory, current_app as app, make_response, render_template
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +22,18 @@ def register_static_routes(app, api_version):
     """
     
     def render_index():
-        """index.html with the Content-Security-Policy this requester's policy allows (policy/csp.py)"""
+        """index.html with the Content-Security-Policy this requester's policy allows (policy/csp.py),
+        carrying the requester's CSRF token when login is on (csrf.py). The CSP makes the page
+        no-store and Vary: Cookie, as it must be for a page that is the requester's own."""
         from ..policy import csp
-        from .. import permissions
+        from .. import csrf, permissions
+        from ..core import is_logged_in
+        token = csrf.csrf_token() if app.config.get("auth_enabled", False) and is_logged_in() else ""
         page = render_template(
             "index.html",
             app_name=app.config.get("app_name", "AnnZarro"),
-            project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
+            project_description=app.config.get("project_description", "Zarr-based AnnData Visualization"),
+            csrf_token=token,
         )
         user = permissions.current_user()[0]
         return csp.apply(app.make_response(page), app.extensions.get("annzarro_policy"), user)

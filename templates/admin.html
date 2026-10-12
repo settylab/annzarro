@@ -26,9 +26,12 @@
                 <a class="btn btn-sm btn-outline-secondary" href="{{ request.script_root }}/">
                     <i class="fas fa-arrow-left" aria-hidden="true"></i> Back to {{ app_name|default('AnnZarro') }}
                 </a>
-                <a class="btn btn-sm btn-outline-secondary" href="{{ request.script_root }}/logout">
-                    <i class="fas fa-sign-out-alt" aria-hidden="true"></i> Sign out
-                </a>
+                <form method="post" action="{{ request.script_root }}/logout" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf', '') }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-sign-out-alt" aria-hidden="true"></i> Sign out
+                    </button>
+                </form>
             </div>
         </div>
         <nav aria-label="Admin sections" class="container-fluid">
