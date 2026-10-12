@@ -165,8 +165,12 @@ def test_sync_twin_of_an_async_filesystem_is_bounded():
     fs = Slow(asynchronous=False, loop=asyncio_fs.get_loop())
     bound_by_deadline(fs)
     start = time.monotonic()
-    with deadline(0.3), pytest.raises(RemoteDeadlineExceeded):
+    # fsspec's sync() turns any asyncio.TimeoutError into its own FSTimeoutError
+    # (ours is one on Python 3.11+), keeping ours as the cause
+    with deadline(0.3), pytest.raises(Exception) as info:
         fs.cat_file("bucket/key")
+    assert remote.find_deadline_exceeded(info.value) is not None
+    assert remote.is_timeout(info.value)
     assert time.monotonic() - start < 2
 
 
