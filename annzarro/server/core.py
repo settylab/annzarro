@@ -655,6 +655,8 @@ def register_routes(app: Flask) -> None:
     from annzarro.server.admin import register_admin_routes
     register_admin_routes(app)
     install_policy(app, api_version)
+    from annzarro.server.admin.settings import wire_sources
+    wire_sources(app)
     
     # Register authentication routes if auth is enabled
     if app.config.get("auth_enabled", False):

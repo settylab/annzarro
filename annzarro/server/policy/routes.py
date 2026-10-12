@@ -89,6 +89,7 @@ def install(app, api_version: str = "v1", registry: Optional[Registry] = None) -
         """The policy as the requester gets it: ``{version, values}`` for the keys
         that are ``client`` keys. ``?keys=a,b`` limits it to those (names that are
         not client keys are left out)."""
+        eng = engine()
         wanted = [k for k in request.args.get("keys", "").split(",") if k.strip()]
         values = eng.effective(requester(), [k.strip() for k in wanted] or None, client_only=True)
         response = jsonify({"version": eng.version(), "values": values})
@@ -98,6 +99,7 @@ def install(app, api_version: str = "v1", registry: Optional[Registry] = None) -
 
     @app.after_request
     def _policy_version(response):
+        eng = engine()
         if request.path.startswith("/api/") and POLICY_HEADER not in response.headers:
             from .. import permissions
             from ..core import is_logged_in
