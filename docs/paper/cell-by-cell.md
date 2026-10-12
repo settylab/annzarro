@@ -4,8 +4,7 @@
 :alt: The paper's cell-by-cell figure. a, four UMAPs coloured by the five-step diffusion walk from an HSC, an LMPP, a GMP and a monocyte, with the diffusion path drawn as a line. b, UMAP distance against diffusion distance from a focused plasma cell, with two discordant groups in orange and blue. c, the same groups on the UMAP. d, 112 C. elegans neuron classes on a UMAP of their transcriptomes, coloured by the chemical synapses sent by the focused class AVA, strongest in the ventral cord motor neurons.
 :width: 100%
 
-*A cell-by-cell matrix, read one focused cell at a time*, a figure of the AnnZarro paper (Otto,
-Baasri and Setty, in preparation), made in Python by
+*A cell-by-cell matrix, read one focused cell at a time*, a figure of the AnnZarro paper {cite:p}`otto2026annzarro`, made in Python by
 {repro}`figures/fig2_cell_by_cell.py` in the paper's {ref}`companion repository <paper-companion>`.
 ```
 

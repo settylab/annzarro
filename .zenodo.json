@@ -40,6 +40,12 @@
       "identifier": "https://annzarro.readthedocs.io",
       "relation": "isDocumentedBy",
       "resource_type": "publication-softwaredocumentation"
+    },
+    {
+      "identifier": "10.64898/2026.10.10.758158",
+      "relation": "isSupplementTo",
+      "scheme": "doi",
+      "resource_type": "publication-preprint"
     }
   ]
 }

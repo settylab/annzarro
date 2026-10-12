@@ -5,7 +5,7 @@
 :width: 100%
 
 *Tahoe-100M on a laptop: every cell in one plot, and a subset that stays interactive*, a figure
-of the AnnZarro paper (Otto, Baasri and Setty, in preparation). Panels a to d are the plot areas
+of the AnnZarro paper {cite:p}`otto2026annzarro`. Panels a to d are the plot areas
 of app screenshots; e to g are browser measurements.
 ```
 
@@ -127,7 +127,7 @@ store `tahoe_panel_95.6M_plot.zarr` holds:
 
 The store itself is not deposited (it is about 294 GB with its panel layer). Its UMAP is: the
 coordinates of all 95,624,334 cells are in the Zenodo record
-[doi:10.5281/zenodo.23277103](https://doi.org/10.5281/zenodo.23277103), and the scripts that build
+[doi:10.5281/zenodo.23277102](https://doi.org/10.5281/zenodo.23277102), and the scripts that build
 the store are public. Three steps rebuild it: download Tahoe-100M, download the UMAP, build the
 store and add the UMAP to it.
 
