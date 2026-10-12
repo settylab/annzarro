@@ -66,6 +66,7 @@ its users file directly; otherwise pass the file: `annzarro user --config site.y
 | `user passwd [--username NAME] [--password PW]` | Change a password (prompted for if omitted). Ends the user's existing logins. |
 | `user set-admin [--username NAME] [--no-admin]` | Grant admin, or revoke it with `--no-admin`. |
 | `user remove [--username NAME]` | Remove a user. Exit 1 if there is no such user. |
+| `user access NAME [--restrict\|--unrestrict] [--grant PATH] [--grant-stores-in DIR] [--revoke PATH] [--show]` | Restrict a user to the folders, stores and remote prefixes granted to them, or show what they see ({doc}`/deployment/authentication`). A running server applies it at once; each change is audited. Admins are never restricted. Exit 1 for an unknown user, a path outside every data directory, or a grant that is not there to revoke. |
 
 A running server sees every change without a restart.
 

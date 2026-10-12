@@ -201,11 +201,18 @@ export function splitByRanges(text, ranges) {
  * a user confined to the data directory, an admin of a shared server, or
  * anyone on a local server; a remote store URL only where remote stores work
  * (`me.remote_stores`, from auth/me). The server's refusal stays the safety net.
- * @param {{auth_enabled?: boolean, is_admin?: boolean, may_open_any_path?: boolean, remote_stores?: boolean}|null} me
+ * @param {{auth_enabled?: boolean, is_admin?: boolean, may_open_any_path?: boolean, remote_stores?: boolean, restricted?: boolean}|null} me
  */
 export function pathFieldWording(me) {
     const m = me || {};
     const url = !!m.remote_stores;
+    if (m.restricted) {
+        // a restricted user opens what they were given: the server answers anything else as not found
+        return {
+            label: url ? 'Open a dataset shared with you, or a remote store URL' : 'Open a dataset shared with you',
+            placeholder: url ? 'name of a shared dataset or https://\u2026' : 'name of a shared dataset'
+        };
+    }
     if (!m.may_open_any_path) {
         return {
             label: url ? 'Open a path in the data directory, or a remote store URL' : 'Open a path in the data directory',

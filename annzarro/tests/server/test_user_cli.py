@@ -46,11 +46,69 @@ def test_passwd_unknown_user_fails(users):
 
 def test_set_admin_and_revoke(users):
     path, cfg = users
+    AuthManager(user_file=str(path)).create_user("carol", "pw", is_admin=True)   # revoking needs another admin left
     assert _run(cfg, "set-admin", "--username", "alice") == 0
     assert AuthManager(user_file=str(path)).get_user("alice").is_admin is True
     assert _run(cfg, "set-admin", "--username", "alice", "--no-admin") == 0
     assert AuthManager(user_file=str(path)).get_user("alice").is_admin is False
     assert _run(cfg, "set-admin", "--username", "bob") == 1
+
+
+def test_the_last_admin_is_refused_unless_forced(users):
+    path, cfg = users
+    assert _run(cfg, "set-admin", "--username", "alice") == 0
+    assert _run(cfg, "set-admin", "--username", "alice", "--no-admin") == 1
+    assert _run(cfg, "remove", "--username", "alice") == 1
+    manager = AuthManager(user_file=str(path))
+    assert manager.get_user("alice").is_admin is True
+    assert _run(cfg, "set-admin", "--username", "alice", "--no-admin", "--force") == 0
+    assert AuthManager(user_file=str(path)).get_user("alice").is_admin is False
+    assert _run(cfg, "set-admin", "--username", "alice") == 0
+    assert _run(cfg, "remove", "--username", "alice", "--force") == 0
+    assert AuthManager(user_file=str(path)).get_user("alice") is None
+
+
+def test_removing_a_user_when_there_is_no_admin_at_all_is_not_blocked(users):
+    path, cfg = users
+    AuthManager(user_file=str(path)).create_user("bob", "pw")
+    assert _run(cfg, "remove", "--username", "bob") == 0
+
+
+def test_cli_changes_are_audited_with_their_origin(users):
+    from annzarro.server.admin import audit
+    path, cfg = users
+    assert _run(cfg, "add", "--username", "carol", "--password", "secret-carol-pw", "--admin") == 0
+    assert _run(cfg, "passwd", "--username", "carol", "--password", "another-secret-pw") == 0
+    assert _run(cfg, "set-admin", "--username", "alice") == 0
+    assert _run(cfg, "set-admin", "--username", "carol", "--no-admin") == 0
+    assert _run(cfg, "unlock", "--username", "alice") == 0
+    assert _run(cfg, "remove", "--username", "carol") == 0
+    assert _run(cfg, "remove", "--username", "alice") == 1          # the last admin
+    directory = os.path.join(os.path.dirname(str(path)), "annzarro_admin")
+    records = list(reversed(audit.read(directory, limit=50)))
+    assert [(r["action"], r["target"], r["outcome"]) for r in records] == [
+        ("user.add", "carol", "ok"), ("user.password", "carol", "ok"), ("user.set_admin", "alice", "ok"),
+        ("user.set_admin", "carol", "ok"), ("user.unlock", "alice", "ok"), ("user.remove", "carol", "ok"),
+        ("user.remove", "alice", "refused:last_admin")]
+    assert {r["via"] for r in records} == {"cli:" + __import__("getpass").getuser()}
+    assert audit.verify(directory)["ok"]
+    raw = open(os.path.join(directory, "audit.jsonl")).read()
+    assert "secret-carol-pw" not in raw and "another-secret-pw" not in raw and "password_hash" not in raw
+
+
+def test_audit_verify_command(users, capsys):
+    path, cfg = users
+    assert cli.main(["--config", cfg, "admin", "audit", "verify"]) == 0       # no log yet
+    assert _run(cfg, "add", "--username", "carol", "--password", "pw-for-carol-1") == 0
+    assert _run(cfg, "set-admin", "--username", "carol") == 0
+    assert cli.main(["--config", cfg, "admin", "audit", "verify"]) == 0
+    assert "Audit log OK" in capsys.readouterr().out
+    log = os.path.join(os.path.dirname(str(path)), "annzarro_admin", "audit.jsonl")
+    lines = open(log).read().splitlines()
+    lines[0] = lines[0].replace('"carol"', '"mallory"')
+    open(log, "w").write("\n".join(lines) + "\n")
+    assert cli.main(["--config", cfg, "admin", "audit", "verify"]) == 1
+    assert "BROKEN at seq 1" in capsys.readouterr().out
 
 
 def _app(tmp_path, path):
@@ -106,3 +164,89 @@ def test_user_add_help_states_what_admin_grants(capsys):
     assert "nothing else" not in text
     for needle in ("any dataset path", "server.arbitrary_paths", "local-only", "reassign", "cache"):
         assert needle in text, needle
+
+
+# --- annzarro user access ------------------------------------------------------------
+
+@pytest.fixture
+def access_site(users, tmp_path):
+    from annzarro.tests.server.rich_store import make_rich_store
+    path, cfg = users
+    data = tmp_path / "data"
+    make_rich_store(data / "in.zarr")
+    make_rich_store(data / "curated" / "a.zarr")
+    make_rich_store(data / "curated" / "b.zarr")
+    (data / "pub").mkdir()
+    (tmp_path / "outside").mkdir()
+    with open(cfg, "a") as f:
+        f.write("")
+    text = open(cfg).read().replace("server:\n", f"server:\n  data_dir: \"{data}\"\n", 1)
+    open(cfg, "w").write(text)
+    AuthManager(user_file=str(path)).create_user("bob", "pw")
+    AuthManager(user_file=str(path)).create_user("root", "pw", is_admin=True)
+    return path, cfg, data
+
+
+def _entry(path, user="bob"):
+    import json
+    state = os.path.join(os.path.dirname(str(path)), "annzarro_admin", "access.json")
+    if not os.path.exists(state):
+        return None
+    return json.load(open(state))["principals"].get(f"user:{user}")
+
+
+def test_access_restrict_grant_revoke_and_show(access_site, capsys):
+    path, cfg, data = access_site
+    assert _run(cfg, "access", "bob", "--restrict", "--grant", str(data / "in.zarr"), "--grant", str(data / "pub")) == 0
+    entry = _entry(path)
+    assert entry["restricted"] is True
+    assert [(g["kind"], g["path"]) for g in entry["grants"]] == [("store", str(data / "in.zarr")), ("dir", str(data / "pub"))]
+    assert all(g["added_by"] and g["added_at"] for g in entry["grants"])
+    assert _run(cfg, "access", "bob", "--show") == 0
+    out = capsys.readouterr().out
+    assert "restricted to the grants below" in out and "in.zarr" in out and "(active)" in out
+    assert _run(cfg, "access", "bob", "--revoke", str(data / "pub")) == 0
+    assert [g["path"] for g in _entry(path)["grants"]] == [str(data / "in.zarr")]
+    assert _run(cfg, "access", "bob", "--revoke", str(data / "pub")) == 1       # nothing to revoke
+    assert _run(cfg, "access", "bob", "--unrestrict") == 0
+    assert "restricted" not in _entry(path) and len(_entry(path)["grants"]) == 1     # the grants are kept
+
+
+def test_access_grant_stores_in_a_folder(access_site):
+    path, cfg, data = access_site
+    os.symlink(data / "in.zarr", data / "curated" / "linked.zarr")
+    os.symlink(data.parent / "outside", data / "curated" / "escape.zarr")
+    assert _run(cfg, "access", "bob", "--restrict", "--grant-stores-in", str(data / "curated")) == 0
+    paths = sorted(os.path.basename(g["path"]) for g in _entry(path)["grants"])
+    assert paths == ["a.zarr", "b.zarr", "linked.zarr"]          # the link out of the data directory is skipped
+    assert all(g["kind"] == "store" for g in _entry(path)["grants"])
+
+
+def test_access_refuses_what_the_server_would(access_site):
+    path, cfg, data = access_site
+    assert _run(cfg, "access", "nobody", "--restrict") == 1
+    assert _run(cfg, "access", "root", "--restrict") == 1                  # admins are never restricted
+    assert _entry(path, "root") is None
+    assert _run(cfg, "access", "bob", "--grant", str(data.parent / "outside")) == 1      # outside every data directory
+    assert _run(cfg, "access", "bob", "--grant", str(data / "missing")) == 1
+    assert _run(cfg, "access", "bob", "--grant", str(data / "pub")) == 0
+    assert _run(cfg, "access", "bob", "--grant", str(data / "pub")) == 1                 # already granted
+    assert _run(cfg, "access", "bob", "--grant", "s3://bucket/x/") == 1                  # remote stores are not enabled here
+
+
+def test_access_changes_are_audited(access_site):
+    from annzarro.server.admin import audit, state_dir
+    path, cfg, data = access_site
+    assert _run(cfg, "access", "bob", "--restrict", "--grant", str(data / "pub")) == 0
+    assert _run(cfg, "access", "root", "--restrict") == 1
+    records = audit.read(state_dir({"user_file": str(path)}), limit=50)
+    actions = [(r["action"], r["outcome"]) for r in records]
+    assert ("access.restrict", "ok") in actions and ("access.grant", "ok") in actions
+    assert ("access.restrict", "refused:admin") in actions
+
+
+def test_removing_a_user_drops_their_access_entry(access_site):
+    path, cfg, data = access_site
+    assert _run(cfg, "access", "bob", "--restrict", "--grant", str(data / "pub")) == 0
+    assert _run(cfg, "remove", "--username", "bob") == 0
+    assert _entry(path) is None

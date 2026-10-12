@@ -209,6 +209,23 @@ def stop_server(args: argparse.Namespace) -> int:
     logger.info("Server stopped successfully")
     return 0
 
+def _record_cli_audit(auth_manager, config, action, target=None, detail=None, outcome="ok"):
+    """Write the admin audit record of a command-line change (``via: cli:<os user>``).
+
+    The records land in ``annzarro_admin/`` beside the users file, where the
+    server's own admin actions go. A failure to write one is logged, not
+    fatal: the change itself is already made."""
+    from .server.admin import audit, audit_max_mb, state_dir
+    try:
+        who = getpass.getuser()
+        server = (config or {}).get("server") or {}
+        directory = state_dir({"user_file": auth_manager.user_file}, create=True)
+        audit.append(directory, actor=who, addr=None, via=f"cli:{who}", action=action, target=target,
+                     detail=detail, outcome=outcome, max_mb=audit_max_mb(server))
+    except Exception as exc:
+        logger.warning(f"Could not write the audit record of {action} {target}: {exc}")
+
+
 def manage_users(args: argparse.Namespace) -> int:
     """
     Manage users for the Annzarro server
@@ -219,7 +236,7 @@ def manage_users(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    from .server.auth import AuthManager
+    from .server.auth import AuthManager, LastAdminError
     
     # The same environment `annzarro start` runs with (production), so a
     # user_file set for production is the file both of them use
@@ -261,7 +278,10 @@ def manage_users(args: argparse.Namespace) -> int:
                 return 1
                 
         # Add user
-        auth_manager.add_user(username, password, is_admin=args.admin)
+        if not auth_manager.add_user(username, password, is_admin=args.admin):
+            logger.error(f"User '{username}' already exists")
+            return 1
+        _record_cli_audit(auth_manager, config, "user.add", username, {"is_admin": bool(args.admin)})
         logger.info(f"User '{username}' added successfully")
         
     elif args.user_command == "remove":
@@ -276,7 +296,14 @@ def manage_users(args: argparse.Namespace) -> int:
             return 1
             
         # Remove user
-        auth_manager.remove_user(username)
+        try:
+            auth_manager.remove_user(username, force=args.force)
+        except LastAdminError:
+            _record_cli_audit(auth_manager, config, "user.remove", username, None, "refused:last_admin")
+            logger.error(f"'{username}' is the last admin; removing them would leave the server without one. "
+                         "Make another user an admin first, or pass --force.")
+            return 1
+        _record_cli_audit(auth_manager, config, "user.remove", username, {"force": True} if args.force else None)
         logger.info(f"User '{username}' removed successfully")
         
     elif args.user_command == "passwd":
@@ -294,14 +321,37 @@ def manage_users(args: argparse.Namespace) -> int:
             logger.error("Empty password refused")
             return 1
         auth_manager.set_password(username, password)
+        _record_cli_audit(auth_manager, config, "user.password", username)
         logger.info(f"Password of '{username}' changed; their existing logins are signed out")
 
     elif args.user_command == "set-admin":
         username = args.username or input("Username: ").strip()
-        if not auth_manager.set_admin(username, not args.no_admin):
+        try:
+            found = auth_manager.set_admin(username, not args.no_admin, force=args.force)
+        except LastAdminError:
+            _record_cli_audit(auth_manager, config, "user.set_admin", username, {"is_admin": False},
+                              "refused:last_admin")
+            logger.error(f"'{username}' is the last admin; revoking it would leave the server without one. "
+                         "Make another user an admin first, or pass --force.")
+            return 1
+        if not found:
             logger.error(f"User '{username}' does not exist")
             return 1
+        _record_cli_audit(auth_manager, config, "user.set_admin", username, {"is_admin": not args.no_admin})
         logger.info(f"User '{username}' is {'no longer ' if args.no_admin else 'now '}an admin")
+
+    elif args.user_command == "unlock":
+        username = args.username or input("Username: ").strip()
+        cleared = auth_manager.unlock(username, args.address)
+        if cleared is None:
+            logger.error(f"User '{username}' does not exist")
+            return 1
+        _record_cli_audit(auth_manager, config, "user.unlock", username,
+                          {"address": args.address, "cleared": cleared})
+        logger.info(f"Cleared {cleared} failed-login record(s) of '{username}'")
+
+    elif args.user_command == "access":
+        return _user_access(args, auth_manager, config, user_file)
 
     elif args.user_command == "list":
         # List users
@@ -319,6 +369,119 @@ def manage_users(args: argparse.Namespace) -> int:
             print("-" * 40)
             
     return 0
+
+def _user_access(args, auth_manager, config, user_file) -> int:
+    """`annzarro user access <name>`: restrict a user to the datasets they are granted, and say what they see.
+
+    Each change goes through the same locked, atomic store the admin interface
+    writes (``access.json``), takes effect on the running server's next request,
+    and is audited. Admins are never restricted.
+    """
+    from .server import access
+
+    username = args.name
+    record = auth_manager.get_user(username)
+    if record is None:
+        logger.error(f"User '{username}' does not exist")
+        return 1
+    flat = dict(config.get("server") or {})
+    flat["user_file"] = user_file
+    flat.setdefault("auth_enabled", True)        # restricting users only means something where people log in
+    # remote grants are checked against the same allowlist the server applies
+    from .core.remote import configure_remote_policy
+    configure_remote_policy(flat)
+    actor = getpass.getuser()
+    changed = False
+
+    def audit(action, detail, outcome="ok"):
+        _record_cli_audit(auth_manager, config, action, username, detail, outcome)
+
+    if args.restrict and record.is_admin:
+        audit("access.restrict", {"restricted": True}, "refused:admin")
+        logger.error(f"'{username}' is an admin, and admins are never restricted. Remove their admin role first "
+                     "(annzarro user set-admin --no-admin).")
+        return 1
+    try:
+        if args.restrict or args.unrestrict:
+            before = access.set_restricted(flat, username, bool(args.restrict))
+            audit("access.restrict" if args.restrict else "access.unrestrict", {"was_restricted": before})
+            changed = True
+        for path in args.grant or []:
+            grant = access.add_grant(flat, username, "auto", path, actor=actor)
+            audit("access.grant", {"kind": grant["kind"], "path": grant["path"]})
+            logger.info(f"Granted {grant['kind']} {grant['path']} to '{username}'")
+            changed = True
+        for folder in args.grant_stores_in or []:
+            added, skipped = access.add_stores_in(flat, username, folder, actor=actor)
+            audit("access.grant_stores_in", {"folder": folder, "added": len(added), "skipped": len(skipped)})
+            logger.info(f"Granted {len(added)} store(s) of {folder} to '{username}'"
+                        + (f"; skipped {len(skipped)}: " + ", ".join(f"{s['path']} ({s['reason']})" for s in skipped)
+                           if skipped else ""))
+            changed = True
+        for path in args.revoke or []:
+            removed = access.remove_grant(flat, username, path)
+            if not removed:
+                logger.error(f"'{username}' has no grant for {path}")
+                audit("access.revoke", {"path": path}, "refused:not_granted")
+                return 1
+            audit("access.revoke", {"path": path, "removed": len(removed)})
+            logger.info(f"Revoked {len(removed)} grant(s) for {path} from '{username}'")
+            changed = True
+    except access.GrantError as exc:
+        audit("access.grant", {"reason": exc.reason}, f"refused:{exc.reason}")
+        logger.error(str(exc))
+        return 1
+    except ValueError as exc:
+        logger.error(f"access.json is unreadable ({exc}); repair or remove it first")
+        return 1
+
+    if args.show or not changed:
+        entry = access.entry_of(username, flat)
+        restricted = access.is_restricted(username, flat)
+        report = _grants_report(flat, username)
+        print(f"{username}: {'restricted to the grants below' if restricted else 'unrestricted (sees every dataset)'}"
+              + (" [admin: never restricted]" if record.is_admin else ""))
+        for grant in report:
+            state = "active" if grant["active"] else f"inactive: {grant['inactive_reason']}"
+            print(f"  {grant['kind']:6} {grant['path']}  ({state})")
+        if restricted and not any(g["active"] for g in report):
+            print("  (no active grant: this user sees nothing)")
+        if entry.get("policy"):
+            print(f"  per-user settings: {', '.join(sorted(entry['policy']))}")
+    elif args.restrict:
+        if not any(g["active"] for g in _grants_report(flat, username)):
+            logger.warning(f"'{username}' is restricted and has no grant yet, so they see nothing. "
+                           "Add one with --grant PATH.")
+    return 0
+
+
+def _grants_report(flat, username):
+    """The grants of ``username`` with their state, read without a request."""
+    from .server import access
+    return access.describe(username, flat)["grants"]
+
+
+def manage_admin(args: argparse.Namespace) -> int:
+    """`annzarro admin audit verify`: check the admin audit log's hash chain."""
+    from .server.admin import audit, state_dir
+    from .server.auth import resolve_user_file
+
+    config = load_config(config_path=args.config, env="production")
+    user_file = ((config.get("auth") or {}).get("user_file")) or "users.json"
+    directory = state_dir({"user_file": user_file})
+    if not os.path.isdir(directory):
+        logger.info(f"No admin audit log yet ({directory} does not exist)")
+        return 0
+    result = audit.verify(directory)
+    span = f"seq {result['first_seq']} to {result['last_seq']}, {result['records']} records"
+    if result["torn"]:
+        span += f", torn lines at seq {result['torn']}"
+    if result["ok"]:
+        print(f"Audit log OK ({span}) in {directory}")
+        return 0
+    print(f"Audit log BROKEN at seq {result['first_bad_seq']} ({result['problem']}); {span} in {directory}")
+    return 1
+
 
 def install_dependencies(args: argparse.Namespace) -> int:
     """
@@ -857,6 +1020,9 @@ def main(argv: List[str] = None) -> int:
     # User remove command
     user_remove_parser = user_subparsers.add_parser('remove', help="Remove a user")
     user_remove_parser.add_argument('--username', help="Username")
+    user_remove_parser.add_argument(
+        '--force', action='store_true',
+        help="Allow removing the last admin (the server is then left without one)")
     
     # User list command
     user_list_parser = user_subparsers.add_parser('list', help="List users")
@@ -874,8 +1040,51 @@ def main(argv: List[str] = None) -> int:
                           "the server account can read unless server.arbitrary_paths is local-only or none")
     user_admin_parser.add_argument('--username', help="Username")
     user_admin_parser.add_argument('--no-admin', action='store_true', help="Revoke admin instead")
+    user_admin_parser.add_argument(
+        '--force', action='store_true',
+        help="With --no-admin: allow revoking the last admin (the server is then left without one)")
+
+    # Restrict a user to chosen datasets
+    user_access_parser = user_subparsers.add_parser(
+        'access', help="Restrict a user (an external collaborator, say) to chosen folders, stores and remote "
+                       "prefixes, or show what they see. Takes effect on a running server at once. "
+                       "Admins are never restricted")
+    user_access_parser.add_argument('name', help="Username")
+    group = user_access_parser.add_mutually_exclusive_group()
+    group.add_argument('--restrict', action='store_true',
+                       help="The user sees only what is granted (nothing, until a grant is added)")
+    group.add_argument('--unrestrict', action='store_true',
+                       help="The user sees every dataset again (the grants are kept)")
+    user_access_parser.add_argument('--grant', action='append', metavar='PATH',
+                                    help="Grant a folder (its whole subtree), a store, or a remote URL prefix inside "
+                                         "the remote allowlist. Local paths must lie inside a data directory. "
+                                         "Repeat for several")
+    user_access_parser.add_argument('--grant-stores-in', action='append', metavar='DIR',
+                                    help="Grant every store directly inside DIR, one grant each (for a folder of "
+                                         "links to curated datasets); a link leading outside the data directories "
+                                         "is skipped")
+    user_access_parser.add_argument('--revoke', action='append', metavar='PATH',
+                                    help="Remove the grant of PATH (as it was granted, or any spelling of the same real path)")
+    user_access_parser.add_argument('--show', action='store_true',
+                                    help="Print the user's restriction and grants (the default when nothing else is asked)")
+
+    # Clear failed-login lockouts
+    user_unlock_parser = user_subparsers.add_parser(
+        'unlock', help="Clear a user's failed-login lockouts (a running server picks it up without a restart)")
+    user_unlock_parser.add_argument('--username', help="Username")
+    user_unlock_parser.add_argument('--address', help="Only this client address (default: all)")
     
     user_parser.set_defaults(func=manage_users)
+
+    # Admin interface tools
+    admin_parser = subparsers.add_parser('admin', help="Admin interface tools")
+    admin_parser.add_argument('--config', default=argparse.SUPPRESS,
+                              help="Path to configuration file (as for start)")
+    admin_subparsers = admin_parser.add_subparsers(dest='admin_command', required=True)
+    audit_parser = admin_subparsers.add_parser('audit', help="The admin audit log")
+    audit_subparsers = audit_parser.add_subparsers(dest='audit_command', required=True)
+    audit_subparsers.add_parser('verify', help="Check the log's hash chain (exit 1 when it is broken)")
+    admin_parser.set_defaults(func=manage_admin)
     
     # Install command
     install_parser = subparsers.add_parser('install', help="Install dependencies")

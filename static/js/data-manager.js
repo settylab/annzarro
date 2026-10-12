@@ -159,12 +159,48 @@ const DataManager = (function() {
         return response;
     }
 
+    // The open dataset can stop being readable while it is open: an
+    // administrator revokes the user's grant (or removes the store). The server
+    // answers the standard 404 `not_found`, the same for both (the page cannot
+    // tell them apart), on the next read of it. The first such answer for the
+    // open dataset is reported once to the handler, which tells the user and
+    // returns to the picker (main.js). Data already in the browser stays there.
+    let _goneHandler = null;
+    let _goneReported = null;
+
+    /** @param {(path: string) => void} fn - called once per dataset that turns out to be gone */
+    function setDatasetGoneHandler(fn) {
+        _goneHandler = typeof fn === 'function' ? fn : null;
+    }
+
+    function _noteGone(fullUrl, error) {
+        if (!error || error.status !== 404 || !error.data || error.data.reason !== 'not_found') return;
+        let url;
+        try {
+            url = new URL(fullUrl, window.location.href);
+        } catch (e) {
+            return;
+        }
+        const named = url.searchParams.get('dataset_path');
+        if (!named || named !== _currentDataset || _goneReported === named) return;
+        _goneReported = named;
+        if (_goneHandler) {
+            try { _goneHandler(named); } catch (e) { console.error('The dataset-gone handler failed:', e); }
+        }
+    }
+
     function _startShared(fullUrl) {
         const controller = new AbortController();
         const entry = { controller, waiters: 0, settled: false, promise: null };
         entry.promise = (async () => {
             try {
-                const data = await _readResponse(await _fetchRetrying(fullUrl, controller.signal));
+                let data;
+                try {
+                    data = await _readResponse(await _fetchRetrying(fullUrl, controller.signal));
+                } catch (error) {
+                    _noteGone(fullUrl, error);
+                    throw error;
+                }
                 // /data/subset answers 200 {superseded: true} when the page has
                 // asked for another subset meanwhile: nothing to cache or show
                 if (data && data.superseded === true) throw new DOMException('Subset superseded', 'AbortError');
@@ -453,6 +489,7 @@ const DataManager = (function() {
         try {
             // Update the current dataset path (will be reverted on error if keepCurrentOnError is true)
             _currentDataset = datasetPath;
+            _goneReported = null;
             if (datasetPath !== previousDataset) _taxonomySource = 'default';
             
             // Check for abort signal before each async operation
@@ -2542,6 +2579,7 @@ const DataManager = (function() {
         setFocusedGene,
         setTaxonomyId,
         getCurrentDataset,
+        setDatasetGoneHandler,
         getDatasetGeneration: () => _datasetGeneration,
         getDatasetStructure,
         getCells,

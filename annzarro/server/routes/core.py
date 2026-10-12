@@ -14,6 +14,7 @@ from pathlib import Path
 from flask import request, jsonify, current_app as app
 
 from .. import access
+from . import dataset_folders
 from ...data.manager import data_manager
 from ...data.scan import DEFAULT_MAX_ENTRIES as DEFAULT_SCAN_ENTRIES, count_stores
 
@@ -61,9 +62,14 @@ def register_core_routes(app, api_version):
         follow_symlinks = request.args.get("follow_symlinks", "true").lower() == "true"
         
         # List datasets with new options
-        datasets = data_manager.list_datasets(data_dir, recursive=recursive, follow_symlinks=follow_symlinks,
-                                              max_entries=_scan_limit())
-        truncated = data_manager.truncated
+        restricted = access.restricted_user()
+        if restricted and "dir" not in request.args:
+            # no folder named: what the user is granted, never the data directory
+            datasets, truncated = _granted_datasets(restricted, recursive, follow_symlinks)
+        else:
+            datasets = data_manager.list_datasets(data_dir, recursive=recursive, follow_symlinks=follow_symlinks,
+                                                  max_entries=_scan_limit())
+            truncated = data_manager.truncated
         # Not offered when hosted: anything a link leads to outside the roots
         from ..confinement import listable
         datasets = [d for d in datasets
@@ -76,6 +82,27 @@ def register_core_routes(app, api_version):
                           "note": f"The directory has more than {_scan_limit():,} entries "
                                   "(server.dataset_scan_max_entries); only the stores found before that are listed."})
         return jsonify(reply)
+
+    def _granted_datasets(user, recursive, follow_symlinks):
+        """The stores a restricted user is granted: each granted store, and those found under each granted folder."""
+        found, truncated, seen = [], False, set()
+        for grant in access.grants_of(user).active():
+            real = grant["real"]
+            if os.path.isdir(real) and not dataset_folders.is_store_dir(real, grant["name"]):
+                stores = data_manager.discover_datasets(real, recursive=recursive, follow_symlinks=follow_symlinks,
+                                                        max_entries=_scan_limit())
+                truncated = truncated or data_manager.truncated
+            elif os.path.isdir(real) or (real.endswith(".h5ad") and os.path.isfile(real)):
+                stores = [{"id": Path(real).stem, "name": Path(real).stem.replace("_", " ").title(),
+                           "path": real, "type": "zarr" if os.path.isdir(real) else "h5ad", "is_symlink": False}]
+            else:
+                continue
+            for store in stores:
+                if store["path"] not in seen:
+                    seen.add(store["path"])
+                    found.append(store)
+        found.sort(key=lambda d: d["name"])
+        return found, truncated
 
     @app.route(f"/api/{api_version}/config", methods=["GET"])
     @access.gate("public")
@@ -177,7 +204,8 @@ def register_core_routes(app, api_version):
         picker mentions a URL only when it can work.
 
         Returns:
-            JSON ``{auth_enabled, username, is_admin, exposed, may_open_any_path, remote_stores}``
+            JSON ``{auth_enabled, username, is_admin, exposed, may_open_any_path, remote_stores, restricted}``.
+            ``restricted`` is true for a user who sees only the datasets they are granted.
         """
         from .. import confinement, permissions
         from ...core.remote import get_remote_policy
@@ -189,6 +217,7 @@ def register_core_routes(app, api_version):
             "exposed": permissions.is_exposed(app.config),
             "may_open_any_path": confinement.may_open_any_path(app.config),
             "remote_stores": bool(get_remote_policy().enabled),
+            "restricted": access.is_restricted_requester(),
         })
 
     def _version():

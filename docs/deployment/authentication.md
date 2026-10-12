@@ -95,6 +95,56 @@ whenever the request arrived over HTTPS, directly or as reported by `X-Forwarded
 `server.proxy_count` trusted proxies. `true` forces the flag (login over plain `http://` then
 stops working), `false` never sets it.
 
+## Restricting a user to chosen datasets
+
+By default every signed-in user can open every dataset in the data directories. To give an
+external collaborator only some of them, restrict that user and grant what they may see:
+
+```bash
+annzarro user access carol --restrict
+annzarro user access carol --grant /srv/atlases/pbmc            # a folder: its whole subtree
+annzarro user access carol --grant /srv/annzarro-data/bm.zarr   # one store
+annzarro user access carol --grant-stores-in /srv/annzarro-data/curated   # every store directly in a folder of links
+annzarro user access carol --grant s3://lab-public/pbmc/         # a remote prefix inside server.remote_allowlist
+annzarro user access carol --revoke /srv/atlases/pbmc
+annzarro user access carol --show                                # restriction, grants and which are active
+annzarro user access carol --unrestrict                          # back to everything (the grants are kept)
+```
+
+The grants live in `annzarro_admin/access.json` beside the users file and take effect on the
+running server at the next request of every worker. Each change is written to the admin audit
+log. Admins are never restricted. Removing a user drops their grants.
+
+A restricted user with no grant sees nothing. For them:
+
+- Every dataset route, folder listing and search answers a path outside their grants exactly as
+  it answers a dataset that does not exist (404 `not_found`, naming the path as they wrote it),
+  whether the path is in a data directory, outside every one, or missing. The dropdown, the
+  picker (its root is the list of their grants), the search and the legacy listing show the
+  grants and nothing else, and no reply names the data directory or the folders above a grant.
+- Grants are matched on real paths: a symlink inside a granted folder that leads out of it is not
+  covered (grant the link's target store, or use `--grant-stores-in` for a folder of links),
+  `/data/a` does not cover `/data/ab`, and a case or Unicode spelling that differs from the one
+  the listings hand out is refused too, also on a case-insensitive filesystem.
+- A grant is active only while its real path is inside a data directory of the server. A
+  data directory removed, or a link re-pointed outside, deactivates it (`--show` says so).
+- Panel sets: they see their own, and those whose datasets they can all read. Others answer as
+  missing. A set saved over a hidden one's name answers 409 `name_taken` without naming the owner.
+- A link or panel set naming a dataset outside their grants opens the layout with a "Dataset not
+  available" notice. A grant revoked while a dataset is open turns the next read into the same
+  notice. What the browser already holds cannot be recalled.
+- `/status` and `/cache/info` (they name the data directory and every cached dataset) answer
+  403 `admin_only`.
+
+If `access.json` cannot be read or parsed, the server cannot tell who is restricted, so every
+non-admin gets 503 `access_unavailable` on the data routes until an administrator repairs or
+removes the file; admins keep working.
+
+Limits: the check resolves the path with `realpath` before it refuses, so the time a refusal
+takes can tell whether a directory component of a path exists (never what is in it); and a
+store whose link is swapped between the check and the open is read through the new link, which
+only someone who can write to the data directory can arrange.
+
 ## Who may change a panel set
 
 | Action | Without login | With login: any user | With login: owner | With login: admin |
