@@ -120,3 +120,12 @@ test("reason codes read as words, unknown ones as sent; store rows say why they 
   assert.equal(storeText({ cells: 1200, genes: 30 }), "1,200 cells x 30 genes");
   assert.equal(storeText({ cells: null, error: "Not readable as an AnnData store" }), "Not readable as an AnnData store");
 });
+
+test("an unreadable overlay shows a red banner with the reason", async () => {
+  const { el } = await mounted({ list: async () => ({ ...LISTING, overlay: { ok: false, error: "overlay.json: Expecting value" } }) });
+  const banner = find(el, (n) => n.id === "data-root-overlay-error");
+  assert.match(banner.textContent, /cannot be read; only the configured directories are served/);
+  assert.match(banner.textContent, /Expecting value/);
+  const ok = await mounted({ list: async () => ({ ...LISTING, overlay: { ok: true, error: null } }) });
+  assert.equal(find(ok.el, (n) => n.id === "data-root-overlay-error"), null);
+});

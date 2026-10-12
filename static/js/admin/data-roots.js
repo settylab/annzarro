@@ -242,6 +242,11 @@ async function load(fetchRoots = true) {
     const roots = data.roots || [];
     const rows = roots.map((r) => rootRow(r, actionsCell(r)));
     setChildren(el,
+        data.overlay && data.overlay.ok === false
+            ? h('div', { class: 'alert alert-danger', role: 'alert', id: 'data-root-overlay-error' },
+                'The admin data directories file cannot be read; only the configured directories are served. ',
+                data.overlay.error ? h('code', { text: data.overlay.error }) : null)
+            : null,
         notice && !ctxRef.toast ? h('div', { class: `alert alert-${notice.level}`, role: 'status', text: notice.text }) : null,
         h('div', { class: 'mb-3' },
             h('h2', { class: 'h6', text: 'Allowed parents (server.admin_data_roots)' }),

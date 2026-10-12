@@ -41,6 +41,8 @@ const REASON_TEXT = {
     not_absolute: 'Give an absolute path.',
     not_a_directory: 'That is not a directory.',
     already_allowed: 'That directory is already allowed.',
+    is_a_parent: 'That is an allowed parent itself. Add a directory below it.',
+    contains_server_state: 'That directory holds the server\'s own files (users, admin state or saved panel sets).',
     unknown_root: 'No such directory in the list.',
     from_config: 'This directory comes from the configuration file and cannot be removed here.',
     not_a_root: 'That folder is not inside an allowed directory.',

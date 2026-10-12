@@ -21,6 +21,7 @@ outside the overlay.
 import datetime
 import logging
 import os
+import time
 
 from flask import current_app, jsonify, request
 
@@ -61,12 +62,47 @@ def _entry(item):
     return out
 
 
-def _count(config, entry):
-    from ...data.scan import DEFAULT_MAX_ENTRIES, count_stores
-    if not entry["active"] or not entry["real"] or not os.path.isdir(entry["real"]):
-        return
+#: How long a root's store count is reused while its directory has not changed.
+COUNT_CACHE_SECONDS = 60
+_counts = {}
+
+
+def _stamp(real):
+    st = os.stat(real)
+    return (st.st_ino, st.st_mtime_ns)
+
+
+def _count_all(config, entries):
+    """Fill ``stores`` and ``stores_capped`` of the active entries. One entry
+    budget (``dataset_scan_max_entries``) covers the whole call, links leading
+    out of a root are not followed, and a root's count is reused for
+    ``COUNT_CACHE_SECONDS`` while its directory's stamp is unchanged."""
+    from ...data.scan import DEFAULT_MAX_ENTRIES, count_stores_within
     limit = int(config.get("dataset_scan_max_entries") or DEFAULT_MAX_ENTRIES)
-    entry["stores"], entry["stores_capped"] = count_stores(entry["real"], limit)
+    left = limit
+    now = time.monotonic()
+    if len(_counts) > 4 * MAX_ADMIN_ROOTS:
+        _counts.clear()
+    for entry in entries:
+        real = entry["real"]
+        if not entry["active"] or not real or not os.path.isdir(real):
+            continue
+        try:
+            stamp = _stamp(real)
+        except OSError:
+            continue
+        key = (real, limit)
+        hit = _counts.get(key)
+        if hit and hit[0] == stamp and now - hit[1] < COUNT_CACHE_SECONDS:
+            entry["stores"], entry["stores_capped"] = hit[2], hit[3]
+            continue
+        if left <= 0:
+            entry["stores_capped"] = True       # no budget left for this one: no count
+            continue
+        count, capped, used = count_stores_within(real, left, within=real)
+        left -= used
+        entry["stores"], entry["stores_capped"] = count, capped
+        _counts[key] = (stamp, now, count, capped)
 
 
 def _configured(config):
@@ -91,8 +127,13 @@ def _parents(config):
     return [{"path": p, "ok": os.path.isdir(_real(p))} for p in config.get("admin_data_roots") or []]
 
 
-def _inside_parents(config, real):
-    return confinement.is_inside(real, overlay.parents(config))
+def _server_state(config):
+    """Real paths a data directory must not contain: the users file's
+    directory (which holds the secret key and the admin state) and the saved
+    panel sets."""
+    from . import state_dir
+    return [os.path.dirname(state_dir(config)), state_dir(config),
+            os.path.join(_real(config.get("data_dir") or ""), "sessions")]
 
 
 def _active_real_roots(config):
@@ -104,9 +145,8 @@ def list_roots():
     """GET /api/v1/admin/data-roots"""
     config = current_app.config
     roots = effective_roots(config)
-    for entry in roots:
-        _count(config, entry)
-    return jsonify(parents=_parents(config), roots=roots)
+    _count_all(config, roots)
+    return jsonify(parents=_parents(config), roots=roots, overlay=overlay.status(config))
 
 
 @require_admin
@@ -220,6 +260,10 @@ def add_root():
                 if os.path.isdir(held) and confinement.is_inside(held, parents) \
                         and confinement.is_inside(real, [held]):
                     return "already_allowed"
+        if real in parents:
+            return "is_a_parent"
+        if any(confinement.is_inside(_real(state), [real]) for state in _server_state(config)):
+            return "contains_server_state"
         if len(roots) >= MAX_ADMIN_ROOTS:
             return "too_many"
         roots.append({"path": path, "added_by": username, "added_at": added_at})
@@ -233,13 +277,19 @@ def add_root():
     if problem == "already_allowed":
         _refused("data_roots.add", path, "already_allowed")
         return _error(409, "already_allowed", "The server already reads from that directory.")
+    if problem in ("is_a_parent", "contains_server_state"):
+        _refused("data_roots.add", path, problem)
+        return _error(403, problem, "Choose a directory below an allowed parent that holds no server state "
+                                    "(the users file's directory, the admin state, saved panel sets)."
+                      if problem == "contains_server_state" else
+                      "That is an allowed parent itself; add a directory below it.")
     if problem == "too_many":
         _refused("data_roots.add", path, "too_many")
         return _error(409, "too_many", f"At most {MAX_ADMIN_ROOTS} directories can be added.")
     audit.record("data_roots.add", path, {"real": real})
     item = next(r for r in overlay.resolve_roots(config) if r["path"] == path)
     entry = _entry(item)
-    _count(config, entry)
+    _count_all(config, [entry])
     return jsonify(entry), 201
 
 

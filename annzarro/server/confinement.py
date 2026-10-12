@@ -36,7 +36,7 @@ here; they get their own allowlist elsewhere. Any other ``scheme://`` string
 import logging
 import os
 
-from flask import current_app, has_request_context, jsonify, request
+from flask import current_app, g, has_request_context, jsonify, request
 
 from ..core.remote import is_remote_path
 
@@ -113,8 +113,12 @@ def allowed_roots(config):
         from .admin import overlay
         return roots + [r for r in overlay.active_data_roots(config) if r not in roots]
     except Exception:
-        # fail closed: without the overlay the operator's roots still apply
-        logger.exception("Could not read the admin-added data directories; serving the configured ones only")
+        # fail closed: without the overlay the operator's roots still apply.
+        # allowed_roots runs once per directory entry, so say it once per request
+        if not has_request_context() or not g.get("_overlay_failure_logged"):
+            logger.exception("Could not read the admin-added data directories; serving the configured ones only")
+            if has_request_context():
+                g._overlay_failure_logged = True
         return roots
 
 

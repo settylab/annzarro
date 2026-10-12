@@ -137,8 +137,9 @@ def _admin_root_entries(config, data_dir, taken):
         name = os.path.basename(path.rstrip(os.sep)) or path
         if not item["active"] or name.startswith(".") or path in taken:
             continue
+        # no rel_path: it would spell out where the root lies relative to the data directory
         found.append({"name": name, "path": path, "is_link": os.path.islink(path),
-                      "rel_path": os.path.relpath(path, data_dir), "kind": "folder", "admin_root": True})
+                      "kind": "folder", "admin_root": True})
     return found
 
 

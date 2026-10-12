@@ -436,3 +436,107 @@ def test_add_and_remove_reach_every_worker_within_one_request(servers):  # noqa:
         assert admin.send("DELETE", "/api/v1/admin/data-roots", {"path": str(root)}) == 200
         answers = [alice.get(read)[0] for _ in range(60)]
         assert answers == [403] * 60, "a worker still read the removed root"
+
+
+# --- review follow-ups: counting, a corrupt overlay, server state ----------
+
+def _stores(admin):
+    return {r["path"]: r for r in admin.get(URL).get_json()["roots"] if r["source"] == "admin"}
+
+
+def test_counting_does_not_follow_a_link_out_of_the_root(layout):
+    parent = layout / "atlases"
+    shutil.copytree(FIXTURE, parent / "lab2" / "inner.zarr")
+    (parent / "lab2" / "out").symlink_to(layout / "secret")                    # holds hidden.zarr
+    admin = login(_app(layout), ADMIN)
+    assert _add(admin, parent / "lab2").status_code == 201
+    assert _stores(admin)[str(parent / "lab2")]["stores"] == 2, "cells.zarr and inner.zarr, not the linked hidden.zarr"
+
+
+def test_one_entry_budget_covers_all_roots_of_a_listing(layout):
+    parent = layout / "atlases"
+    for name in ("r1", "r2"):
+        for n in range(5):
+            (parent / name / f"d{n}").mkdir(parents=True)
+    app = _app(layout, dataset_scan_max_entries=5)
+    admin = login(app, ADMIN)
+    assert _add(admin, parent / "r1").status_code == 201
+    assert _add(admin, parent / "r2").status_code == 201
+    from annzarro.server.admin import data_roots
+    data_roots._counts.clear()                          # the adds counted each root on its own
+    by = _stores(admin)
+    assert by[str(parent / "r1")]["stores_capped"] is False
+    assert "stores" not in by[str(parent / "r2")] and by[str(parent / "r2")]["stores_capped"] is True
+
+
+def test_a_roots_count_is_reused_until_its_directory_changes(layout, monkeypatch):
+    from annzarro.server.admin import data_roots
+    from annzarro.data import scan
+    data_roots._counts.clear()
+    calls = []
+    real = scan.count_stores_within
+    monkeypatch.setattr(scan, "count_stores_within", lambda *a, **k: calls.append(a[0]) or real(*a, **k))
+    app = _app(layout)
+    admin = login(app, ADMIN)
+    root = layout / "atlases" / "lab2"
+    assert _add(admin, root).status_code == 201
+    walks = lambda: calls.count(os.path.realpath(root))
+    assert walks() == 1
+    for _ in range(3):
+        assert _stores(admin)[str(root)]["stores"] == 1
+    assert walks() == 1, "listing again did not walk the root again"
+    shutil.copytree(FIXTURE, root / "second.zarr")
+    assert _stores(admin)[str(root)]["stores"] == 2
+    assert walks() == 2
+
+
+def test_an_unreadable_overlay_is_reported_and_logged_once_per_request(layout, monkeypatch):
+    import logging
+    app = _app(layout)
+    admin, alice = login(app, ADMIN), login(app, USER)
+    assert _add(admin, layout / "atlases" / "lab2").status_code == 201
+    assert admin.get(URL).get_json()["overlay"] == {"ok": True, "error": None}
+    with open(overlay.path(app.config), "w") as f:
+        f.write("{corrupt")
+    body = admin.get(URL).get_json()
+    assert body["overlay"]["ok"] is False and body["overlay"]["error"]
+    assert [r for r in body["roots"] if r["source"] == "admin"] == []
+    # an unexpected failure inside the merge: configured roots only, one log line per request
+    for n in range(6):
+        (layout / "data" / f"folder{n}").mkdir()
+    monkeypatch.setattr(overlay, "active_data_roots", lambda config: 1 / 0)
+    records = []
+    handler = logging.Handler(level=logging.ERROR)
+    handler.emit = records.append
+    log = logging.getLogger("annzarro.server.confinement")
+    log.addHandler(handler)
+    try:
+        assert alice.get("/api/v1/datasets/folder").status_code == 200
+    finally:
+        log.removeHandler(handler)
+    assert len([r for r in records if "admin-added data directories" in r.getMessage()]) == 1
+
+
+def test_a_parent_or_a_directory_with_server_state_is_not_added(layout):
+    parent = layout / "atlases"
+    # the users file's directory (which holds annzarro_admin/) lies below this parent
+    app = _app(layout, admin_data_roots=[str(parent), str(layout)])
+    admin = login(app, ADMIN)
+    for path, reason in ((parent, "is_a_parent"), (layout, "is_a_parent"),
+                         (layout / "users", "contains_server_state")):
+        response = _add(admin, path)
+        assert (response.status_code, response.get_json()["reason"]) == (403, reason), path
+    (layout / "elsewhere").mkdir()
+    # a directory that contains the data directory's sessions folder
+    sessions = layout / "data" / "sessions"
+    sessions.mkdir()
+    assert _add(admin, layout / "data").get_json()["reason"] == "already_allowed"
+    assert overlay.data_roots(app.config) == []
+
+
+def test_admin_root_entries_carry_no_server_relative_path(layout):
+    app = _app(layout)
+    admin, alice = login(app, ADMIN), login(app, USER)
+    assert _add(admin, layout / "atlases" / "lab2").status_code == 201
+    entry = [e for e in alice.get("/api/v1/datasets/folder").get_json()["entries"] if e["name"] == "lab2"][0]
+    assert "rel_path" not in entry and entry["admin_root"] is True
