@@ -160,14 +160,14 @@ def test_a_deep_link_outside_the_grants_is_not_available(browser, served):
         # nothing says it exists, and nothing says where the data directory is
         assert "not on this server" not in notice
         assert os.path.dirname(data) not in page.inner_text("body").replace(data, "")
-        screen = page.locator("[data-no-dataset-screen]").first
-        assert screen.get_attribute("data-unavailable") == "true"
-        assert "Dataset not available" in screen.inner_text() or "Dataset not available" in \
-            page.evaluate("[...document.querySelectorAll('[data-no-dataset-title]')].map(e => e.textContent).join()")
+        # the layout opens without data: its placeholder panels say the same
+        placeholder = page.locator(".panel-no-data-message").first
+        placeholder.wait_for()
+        assert "not available to you, or no longer exists" in placeholder.inner_text()
         # the same link to a store they may read opens it
         page.goto(f"{base}/?dataset_path={data}/in.zarr")
         wait_for_dataset(page)
-        assert "in.zarr" in page.inner_text("#dataset-path")
+        assert page.input_value("#dataset-selector").endswith("in.zarr")
         if SHOT:
             page.goto(f"{base}/?dataset_path=out.zarr")
             page.wait_for_selector(".notification-title", timeout=30000)
@@ -200,7 +200,7 @@ def test_a_grant_revoked_while_the_dataset_is_open_returns_to_the_picker(browser
     try:
         page.goto(f"{base}/?dataset_path={data}/in.zarr")
         wait_for_dataset(page)
-        assert "in.zarr" in page.inner_text("#dataset-path")
+        assert page.input_value("#dataset-selector").endswith("in.zarr")
         access.remove_grant(app.config, "bob", f"{data}/in.zarr")          # the next read of it is 404
         outcome = page.evaluate("""async () => {
             const { DataManager } = await import('/static/js/data-manager.js');
