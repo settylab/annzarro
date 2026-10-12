@@ -122,7 +122,7 @@ def test_reassign_by_names_is_audited_and_the_new_owner_may_modify(app):
     assert _save(alice, "a0").status_code == 403         # no longer hers
     assert _save(alice, "a2").status_code == 200
     record = audit.read(app.admin_dir, limit=1)[0]
-    assert record["action"] == "admin.panel_sets.reassign" and record["target"] == ADMIN
+    assert record["action"] == "panelset.reassign" and record["target"] == ADMIN
     assert record["detail"]["count"] == 2 and record["detail"]["from"] == [USER]
 
 
@@ -135,7 +135,7 @@ def test_reassign_from_owner_and_over_quota(tmp_path):
     assert {i["owner"] for i in root.get(BASE).get_json()["items"]} == {ADMIN}
     again = _call(root, "POST", BASE + "/reassign", {"from_owner": ADMIN, "to_owner": ADMIN}).get_json()
     assert again["moved"] == 0 and again["unchanged"] == 5
-    assert audit.read(app.admin_dir, limit=1)[0]["action"] == "admin.panel_sets.reassign"
+    assert audit.read(app.admin_dir, limit=1)[0]["action"] == "panelset.reassign"
 
 
 def test_reassign_refusals_move_nothing(app):
@@ -171,6 +171,9 @@ def test_the_old_owner_route_still_assigns(app):
     assert _read(app, "a0")["owner"] == ADMIN
     missing = _call(root, "POST", SESSIONS + "/owner", {"name": "ghost", "owner": ADMIN})
     assert missing.status_code == 404
+    record = audit.read(app.admin_dir, limit=1)[0]
+    assert record["action"] == "panelset.reassign" and record["target"] == ADMIN
+    assert record["detail"] == {"names": ["a0"], "from": [USER]}
 
 
 def test_delete(app):
@@ -180,7 +183,7 @@ def test_delete(app):
     sessions = os.path.join(app.config["data_dir"], "sessions")
     assert sorted(n for n in os.listdir(sessions) if n.endswith(".json")) == ["a1.json", "a2.json"]
     record = audit.read(app.admin_dir, limit=1)[0]
-    assert record["action"] == "admin.panel_sets.delete" and record["detail"]["count"] == 2
+    assert record["action"] == "panelset.delete" and record["detail"]["count"] == 2
     assert "a0 (alice)" in record["detail"]["names"]
     assert root.get(BASE).get_json()["total"] == 2
     assert _call(root, "DELETE", BASE, {"names": "a1"}).status_code == 400
@@ -322,3 +325,41 @@ def test_reassign_owner_takes_every_set_of_one_owner_under_the_shared_lock(app):
         assert session_store.reassign_owner(sessions, USER, ADMIN) == 0
     assert {_read(app, f"a{i}")["owner"] for i in range(3)} == {ADMIN}
     assert os.path.exists(os.path.join(sessions, ".lock.lock"))      # slice 2 locks <dir>/.lock
+
+
+def test_delete_of_a_directory_named_like_a_set_is_missing_not_a_500(app):
+    _, root = _seed(app)
+    os.mkdir(os.path.join(app.config["data_dir"], "sessions", "dir.json"))
+    response = _call(root, "DELETE", BASE, {"names": ["dir"]})
+    assert response.status_code == 200 and response.get_json() == {"deleted": 0, "missing": ["dir"]}
+
+
+def test_rename_is_atomic_and_never_writes_through_a_link(app):
+    alice, _ = _seed(app)
+    sessions = os.path.join(app.config["data_dir"], "sessions")
+    os.symlink(os.path.join(sessions, "a2.json"), os.path.join(sessions, "trap.json"))
+    before = _read(app, "a2")
+    refused = alice.post(f"{SESSIONS}/rename", json={"old_name": "a0", "new_name": "trap"})
+    assert refused.status_code == 409
+    assert _read(app, "a2") == before and os.path.exists(os.path.join(sessions, "a0.json"))
+    ok = alice.post(f"{SESSIONS}/rename", json={"old_name": "a0", "new_name": "moved"})
+    assert ok.status_code == 200 and _read(app, "moved")["owner"] == USER
+    assert [f for f in os.listdir(sessions) if f.endswith(".tmp")] == []
+
+
+def test_sets_keep_the_mode_open_w_gave(app):
+    """New sets get 0666 & ~umask; an existing set keeps its mode through save, reassign and rename."""
+    from annzarro.server import session_store
+    alice, root = _seed(app)
+    sessions = os.path.join(app.config["data_dir"], "sessions")
+    mode = lambda name: os.stat(os.path.join(sessions, f"{name}.json")).st_mode & 0o777   # noqa: E731
+    assert mode("a0") == 0o666 & ~session_store._UMASK
+    os.chmod(os.path.join(sessions, "a1.json"), 0o640)
+    assert _save(alice, "a1", note="again").status_code == 200
+    assert mode("a1") == 0o640
+    assert _call(root, "POST", BASE + "/reassign", {"names": ["a1"], "to_owner": ADMIN}).status_code == 200
+    assert mode("a1") == 0o640
+    assert alice.post(f"{SESSIONS}/rename", json={"old_name": "a2", "new_name": "a2b"}).status_code == 200
+    os.chmod(os.path.join(sessions, "a2b.json"), 0o600)
+    assert root.post(f"{SESSIONS}/rename", json={"old_name": "a2b", "new_name": "a2c"}).status_code == 200
+    assert mode("a2c") == 0o600

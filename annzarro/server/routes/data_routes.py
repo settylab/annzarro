@@ -2299,7 +2299,7 @@ def register_data_routes(app, api_version):
         body = json.dumps(session_data, indent=2)
         owner, _ = permissions.current_user()
         session_quota.check(app.config, sessions_dir, file_path, owner, len(body.encode("utf-8")))
-        atomic_store.write_json(file_path, session_data, mode=0o644)
+        session_store.write(file_path, session_data)
 
     @app.route(f"/api/{api_version}/sessions/save", methods=["POST"])
     @access.gate("panelset")
@@ -2701,7 +2701,7 @@ def register_data_routes(app, api_version):
                     return jsonify({"error": "Invalid new session name"}), 400
             
                 # Check if new file already exists
-                if os.path.exists(new_file_path) and old_file_path != new_file_path:
+                if os.path.lexists(new_file_path) and old_file_path != new_file_path:
                     return jsonify({
                         "status": "conflict",
                         "message": f"Session with name '{new_name}' already exists."
@@ -2711,8 +2711,7 @@ def register_data_routes(app, api_version):
                 permissions.stamp_session(session_data, existing=dict(session_data))
             
                 # Write session data to new file
-                with open(new_file_path, 'w') as f:
-                    json.dump(session_data, f, indent=2)
+                session_store.write(new_file_path, session_data, like=old_file_path)
             
                 # Delete old file if names are different
                 if old_file_path != new_file_path:
@@ -2785,6 +2784,8 @@ def register_data_routes(app, api_version):
                     return jsonify({"error": f"Session not found: {name}"}), 404
                 except session_store.Unreadable:
                     return jsonify({"error": f"Session file for '{sanitized_name}' cannot be parsed"}), 400
+            from ..admin import audit
+            audit.record("panelset.reassign", owner, {"names": [sanitized_name], "from": [previous]})
             logger.info(f"Panel set '{sanitized_name}' owner changed from {previous!r} to {owner!r}")
 
             return jsonify({

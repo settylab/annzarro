@@ -13,6 +13,28 @@ from typing import Optional
 from . import atomic_store, permissions
 
 
+def _read_umask() -> int:
+    old = os.umask(0)
+    os.umask(old)
+    return old
+
+
+#: The process umask, read once: sets are created as ``open('w')`` created them (gunicorn's 027 gives 0640).
+_UMASK = _read_umask()
+
+
+def write(path: str, data, like: Optional[str] = None) -> None:
+    """Write a set atomically with the mode it would have had under ``open(path, 'w')``:
+    an existing file keeps its mode, a new one gets ``0o666 & ~umask``. ``like``
+    names the file whose mode a new ``path`` inherits (a renamed set keeps its mode).
+    The caller holds :func:`locked`. A symlink at ``path`` is replaced, not followed."""
+    if os.path.islink(path):
+        os.unlink(path)
+    source = path if os.path.exists(path) else like
+    mode = (os.stat(source).st_mode & 0o777) if source and os.path.exists(source) else 0o666 & ~_UMASK
+    atomic_store.write_json(path, data, mode=mode)
+
+
 class Unreadable(Exception):
     """The file exists but is not a JSON object; rewriting it would destroy it."""
 
@@ -58,7 +80,7 @@ def assign_owner(file_path: str, owner: str) -> Optional[str]:
     previous = data.get("owner")
     permissions.stamp_session(data, existing=dict(data))
     data["owner"] = owner
-    atomic_store.write_json(file_path, data, mode=0o644)
+    write(file_path, data)
     return previous
 
 
