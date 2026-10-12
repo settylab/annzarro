@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from flask import jsonify, request, current_app as app
 
-from .. import access
+from .. import access, cache_reset, permissions
 from ...core import zarr_reader, h5ad_reader_obj
 from ...core import name_index
 from ...core import categories as category_rules
@@ -19,6 +19,17 @@ from ...core.zarr_reader import consolidated_staleness, consolidated_notice, Zar
 from ...core.read_guard import ReadTooLargeError, ReadBusyError
 
 logger = logging.getLogger(__name__)
+
+def _audit_clear(dataset_path):
+    """Record an admin's cache reset; a server without login has no audit log."""
+    if not app.config.get("auth_enabled"):
+        return
+    try:
+        from ..admin import audit
+        audit.record("cache.clear", dataset_path)
+    except Exception:
+        logger.exception("Could not write the audit record of a cache reset")
+
 
 def register_zarr_routes(app, api_version):
     """
@@ -38,6 +49,12 @@ def register_zarr_routes(app, api_version):
         Returns:
             JSON response with cache information
         """
+        if not permissions.may_see_server_details(app.config):
+            return jsonify({
+                "status": "error",
+                "reason": "admin_only",
+                "message": "Only an admin can see the cache of this server.",
+            }), 403
         try:
             # Get cache info
             result = zarr_reader.get_cache_info()
@@ -82,28 +99,9 @@ def register_zarr_routes(app, api_version):
             # Get optional dataset_path query parameter
             dataset_path = request.args.get('dataset_path', None)
             
-            # Clear the cache: both readers. The h5ad reader keeps its own
-            # result cache (it opens the file per read and holds no handle);
-            # resetting the zarr reader alone served an .h5ad's old reads
-            # until a restart.
-            result = zarr_reader.clear_cache(dataset_path=dataset_path)
-            h5ad_reader_obj.clear_cache(dataset_path=dataset_path)
-            # The name search index is a cache too: a reset must rebuild it.
-            name_index.clear(dataset_path)
-            category_rules.clear_rankings(dataset_path)
-            # A new generation: the ETags change (an in-place chunk write
-            # kept the old ones, so the browser was answered 304 with its old
-            # body), and every other process, each gunicorn worker, drops
-            # its cached reads of the dataset on its next request.
-            freshness.bump(dataset_path, reason="cache_reset")
-            
-            # Add cache configuration to the response
-            result["cache_config"] = {
-                "cache_enabled": zarr_reader.enable_caching,
-                "cache_memory_mb": zarr_reader.max_memory_mb,
-                "cache_dataset_limit": zarr_reader.cache_limit
-            }
-            
+            result = cache_reset.reset_all(dataset_path)
+            _audit_clear(dataset_path)
+
             # Return result as JSON
             return jsonify(result)
         except Exception as e:

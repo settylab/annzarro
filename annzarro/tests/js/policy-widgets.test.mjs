@@ -139,3 +139,15 @@ test("a refusal reason is shown as a sentence on the row", async () => {
   await input.dispatch("change");
   assert.match(find(row, (n) => n.getAttribute("role") === "alert").textContent, /does not allow a wider value/);
 });
+
+test("env and forced sources have their own tone and tooltip, and unreadable files show a red banner", () => {
+  for (const [source, tone] of [["env", "warning"], ["forced", "danger"]]) {
+    const row = renderPolicyRow(intKey({ source }), { onChange: async () => {} });
+    const badge = find(row, (n) => n.classes().includes("badge"));
+    assert.ok(badge.classes().some((c) => c.includes(tone)), source);
+    assert.ok(badge.getAttribute("title"), source);
+  }
+  const el = doc.createElement("div");
+  renderPolicy(el, { keys: [intKey()], store_problems: [{ store: "access.json", error: "ValueError: bad" }] }, {});
+  assert.match(find(el, (n) => n.classes().includes("policy-store-problems")).textContent, /access\.json/);
+});

@@ -60,6 +60,18 @@ def _access_watcher(config):
     return atomic_store.watched(access_path(config), _access_default())
 
 
+def access_store_state(config):
+    """``{"ok": bool, "error": str or None}``: whether ``access.json`` parses.
+
+    A missing file is fine (nobody has an entry). An unreadable one cannot say
+    who is restricted or overridden, so every reader must fail closed: the
+    policy user layer below gives non-admins the most restrictive values, and
+    the access model's ``may_read`` answers 503 ``access_unavailable``."""
+    watcher = _access_watcher(config)
+    watcher.get()
+    return {"ok": watcher.error is None, "error": watcher.error}
+
+
 def principal(user):
     return f"user:{user}"
 
@@ -108,6 +120,16 @@ def update_user_policy(config, user, mutate):
         watcher.invalidate()
 
 
+def _most_restrictive(eng):
+    """The most restrictive value of every restrict key a user layer can set."""
+    out = {}
+    for key in eng.registry:
+        samples = key.type.samples() if key.scope == "user" and key.combine == "restrict" else None
+        if samples:
+            out[key.name] = samples[1]
+    return out
+
+
 def wire_sources(app):
     """Give the app's policy engine the overlay and the per-user layer."""
     config = app.config
@@ -123,6 +145,8 @@ def wire_sources(app):
         record = manager.get_user(user) if manager is not None else None
         if record is not None and record.is_admin:
             return {}        # admins get no per-user overrides, even if the file holds some
+        if not access_store_state(config)["ok"]:
+            return _most_restrictive(eng)     # the file that says who is tightened is unreadable
         return user_policy(config, user)
 
     eng.set_source(OVERLAY, lambda: overlay.policy(config), overlay_stamp)
@@ -167,7 +191,7 @@ def _changes():
 def _unreadable(exc):
     logger.error("Cannot change the stored settings: %s", exc)
     return jsonify(error=f"The stored settings file is unreadable: {exc}. Repair or remove it first.",
-                   reason=STORE_UNREADABLE), 409
+                   reason=STORE_UNREADABLE), 503
 
 
 def _issue_list(eng, layer, stored):
@@ -197,7 +221,7 @@ def _server_view(eng, config):
     stored = eng.stored(OVERLAY)
     resolved = eng.resolve_all(None)
     issues = _issue_list(eng, OVERLAY, stored)
-    return {"version": eng.version(),
+    return {"version": eng.version(), "store_problems": _problems(config),
             "keys": [_key_entry(eng, key, resolved[key.name], config) for key in eng.registry],
             "unknown": [{"name": i["name"], "value": i["value"]} for i in issues if i["reason"] == UNKNOWN_KEY],
             "issues": issues}
@@ -222,7 +246,7 @@ def _user_view(eng, user, config, is_admin):
         issues = issues + [{"layer": "user", "name": n, "value": v, "reason": ADMIN_USER}
                            for n, v in stored.items()
                            if not any(i["name"] == n for i in issues)]
-    return {"version": eng.version(), "user": user, "is_admin": is_admin, "values": stored,
+    return {"version": eng.version(), "store_problems": _problems(config), "user": user, "is_admin": is_admin, "values": stored,
             "effective": {n: r.value for n, r in resolved.items() if eng.registry.keys[n].scope == "user"},
             "keys": keys,
             "unknown": [{"name": i["name"], "value": i["value"]} for i in issues if i["reason"] == UNKNOWN_KEY],
@@ -235,11 +259,23 @@ def _diff(before, after, names):
 
 
 def _record(target, changes, diff, outcome="ok"):
+    """Write the audit record; False (and an ERROR in the log) if it could not
+    be written. The change is already stored, so the caller still answers 200."""
     try:
         audit.record("policy.update", target, {"requested": changes, "changed": diff}, outcome)
+        return True
     except Exception:
         logger.exception("Could not write the audit record of a settings change")
-        raise
+        return False
+
+
+def _problems(config):
+    """Stored files that do not parse, for the red banner of the page."""
+    found = []
+    for name, state in (("overlay.json", overlay.status(config)), (ACCESS_FILE, access_store_state(config))):
+        if not state["ok"]:
+            found.append({"store": name, "error": state["error"]})
+    return found
 
 
 # -- views --------------------------------------------------------------------
@@ -276,8 +312,8 @@ def policy():
         return _refusal(refused.errors)
     except ValueError as exc:
         return _unreadable(exc)
-    _record("overlay", changes, _diff(before, update.stored, changes))
-    return jsonify({**_server_view(eng, config), "capped": update.capped})
+    saved = _record("overlay", changes, _diff(before, update.stored, changes))
+    return jsonify({**_server_view(eng, config), "capped": update.capped, **({} if saved else {"audit_failed": True})})
 
 
 @require_admin
@@ -311,8 +347,9 @@ def user_policy_view(username):
         return _refusal(refused.errors)
     except ValueError as exc:
         return _unreadable(exc)
-    _record(principal(username), changes, _diff(before, update.stored, changes))
-    return jsonify({**_user_view(eng, username, config, record.is_admin), "capped": update.capped})
+    saved = _record(principal(username), changes, _diff(before, update.stored, changes))
+    return jsonify({**_user_view(eng, username, config, record.is_admin), "capped": update.capped,
+                    **({} if saved else {"audit_failed": True})})
 
 
 def register(blueprint):

@@ -21,6 +21,18 @@ def register_static_routes(app, api_version):
         api_version: API version string
     """
     
+    def render_index():
+        """index.html with the Content-Security-Policy this requester's policy allows (policy/csp.py)"""
+        from ..policy import csp
+        from .. import permissions
+        page = render_template(
+            "index.html",
+            app_name=app.config.get("app_name", "AnnZarro"),
+            project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
+        )
+        user = permissions.current_user()[0]
+        return csp.apply(app.make_response(page), app.extensions.get("annzarro_policy"), user)
+
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
     @access.gate("public")
@@ -76,11 +88,7 @@ def register_static_routes(app, api_version):
         full_path = os.path.join(static_dir, path)
         if not path or (os.path.exists(full_path) and os.path.isdir(full_path)):
             logger.debug(f"Rendering index.html template")
-            return render_template(
-                "index.html",
-                app_name=app.config.get("app_name", "AnnZarro"),
-                project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
-            )
+            return render_index()
         
         # Check if the file exists and isn't in a protected location
         if os.path.exists(full_path) and os.path.isfile(full_path):
@@ -109,8 +117,4 @@ def register_static_routes(app, api_version):
                 
             # File not found - for single page apps, render the index template for client-side routing
             logger.debug(f"File not found: {full_path}, rendering index.html template for client-side routing")
-            return render_template(
-                "index.html",
-                app_name=app.config.get("app_name", "AnnZarro"),
-                project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
-            )
+            return render_index()

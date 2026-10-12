@@ -32,7 +32,9 @@ def client_key():
 def test_effective_lists_exactly_the_client_keys(tmp_path, client_key):
     app = create_app(config(tmp_path))
     body = app.test_client().get("/api/v1/policy/effective").get_json()
-    assert body["values"] == {"panel.t1.enabled": True, "panel.t2.mode": "a"}
+    client_keys = {k.name for k in REGISTRY if k.client}
+    assert set(body["values"]) == client_keys and {"panel.t1.enabled", "panel.t2.mode"} <= client_keys
+    assert body["values"]["panel.t1.enabled"] is True and body["values"]["panel.t2.mode"] == "a"
     assert body["version"] == engine(app).version()
     assert "limits.max_sessions" not in body["values"] and "panel.t3.hidden" not in body["values"]
 
@@ -41,7 +43,7 @@ def test_keys_parameter_limits_and_ignores_unknown_and_non_client(tmp_path, clie
     c = create_app(config(tmp_path)).test_client()
     got = c.get("/api/v1/policy/effective?keys=panel.t2.mode,nope.x,panel.t3.hidden,limits.max_sessions").get_json()
     assert got["values"] == {"panel.t2.mode": "a"}
-    assert c.get("/api/v1/policy/effective?keys=").get_json()["values"].keys() == {"panel.t1.enabled", "panel.t2.mode"}
+    assert c.get("/api/v1/policy/effective?keys=").get_json()["values"].keys() == {k.name for k in REGISTRY if k.client}
 
 
 def test_the_reply_is_not_cacheable_and_varies_by_cookie(tmp_path):

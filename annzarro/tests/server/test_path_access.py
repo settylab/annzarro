@@ -80,6 +80,7 @@ NO_PATH = {
     "account_password_page", "account_password_change",   # own account (test_account_password.py)
     "admin.panel_sets", "admin.panel_sets_reassign", "admin.panel_sets_delete",   # test_admin_panel_sets.py
     "admin.policy", "admin.user_policy",           # test_admin_settings.py
+    "admin.health", "admin.cache_clear",   # the cache clear names a cache key in its body, never opened
 }
 
 
