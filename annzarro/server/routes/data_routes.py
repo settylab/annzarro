@@ -23,7 +23,7 @@ from ...core import name_index
 from ...core import read_guard
 from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core import subset as cell_subset
-from .. import access, confinement, permissions, session_quota
+from .. import access, atomic_store, confinement, permissions, session_quota, session_store
 from .. import http_cache
 from . import dataset_folders
 from ...core.array_response import wants_binary, wants_codes
@@ -2268,10 +2268,7 @@ def register_data_routes(app, api_version):
         Returns:
             Sanitized session name.
         """
-        # Remove any path separators or potentially dangerous characters
-        sanitized = name.replace('/', '_').replace('\\', '_').replace('..', '_')
-        # Allow only alphanumeric characters, underscore, hyphen, and space
-        return ''.join(c for c in sanitized if c.isalnum() or c in ' _-')
+        return session_store.sanitize_name(name)
 
     def _read_stored_session(file_path):
         """
@@ -2295,13 +2292,14 @@ def register_data_routes(app, api_version):
     def _write_session(file_path, session_data, sessions_dir):
         """Write a panel set, after the quotas (session_quota.py) allow it.
 
-        Raises session_quota.QuotaRefused, which the error handler answers 409.
+        The caller holds session_store.locked(sessions_dir) from its read of
+        the set to this write. Raises session_quota.QuotaRefused, which the
+        error handler answers 409.
         """
         body = json.dumps(session_data, indent=2)
         owner, _ = permissions.current_user()
         session_quota.check(app.config, sessions_dir, file_path, owner, len(body.encode("utf-8")))
-        with open(file_path, 'w') as f:
-            f.write(body)
+        session_store.write(file_path, session_data)
 
     @app.route(f"/api/{api_version}/sessions/save", methods=["POST"])
     @access.gate("panelset")
@@ -2348,14 +2346,15 @@ def register_data_routes(app, api_version):
             if not _is_safe_session_path(session_file, sessions_dir):
                 return jsonify({"error": "Invalid session name"}), 400
             
-            # Saving over an existing set replaces it: same rule as delete
-            existing = _read_stored_session(session_file)
-            if not permissions.can_modify(existing):
-                return permissions.forbidden("overwrite", session_data["name"], existing)
-            permissions.stamp_session(session_data, existing)
+            with session_store.locked(sessions_dir):
+                # Saving over an existing set replaces it: same rule as delete
+                existing = _read_stored_session(session_file)
+                if not permissions.can_modify(existing):
+                    return permissions.forbidden("overwrite", session_data["name"], existing)
+                permissions.stamp_session(session_data, existing)
             
-            # Save session file
-            _write_session(session_file, session_data, sessions_dir)
+                # Save session file
+                _write_session(session_file, session_data, sessions_dir)
             
             # Notice if sanitization changed the name
             message = f"Session saved as {session_data['name']}"
@@ -2368,7 +2367,7 @@ def register_data_routes(app, api_version):
                 "file": session_file,
                 "sanitized_name": session_data["name"]
             })
-        except (RequestEntityTooLarge, session_quota.QuotaRefused):
+        except (RequestEntityTooLarge, session_quota.QuotaRefused, atomic_store.LockTimeout):
             raise
         except Exception as e:
             logger.error(f"Error saving session: {e}")
@@ -2506,26 +2505,29 @@ def register_data_routes(app, api_version):
                 sanitized_name = _sanitize_session_name(session_name)
                 file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
             
-            # Check if file exists
-            if not os.path.exists(file_path):
-                return jsonify({"error": f"Session file not found: {sanitized_name if 'sanitized_name' in locals() else os.path.basename(file_path)}"}), 404
+            with session_store.locked(sessions_dir):
+                # Check if file exists
+                if not os.path.exists(file_path):
+                    return jsonify({"error": f"Session file not found: {sanitized_name if 'sanitized_name' in locals() else os.path.basename(file_path)}"}), 404
             
-            # Verify again that file is within sessions directory (belt and suspenders)
-            if not _is_safe_session_path(file_path, sessions_dir):
-                return jsonify({"error": "Cannot delete file outside sessions directory"}), 403
+                # Verify again that file is within sessions directory (belt and suspenders)
+                if not _is_safe_session_path(file_path, sessions_dir):
+                    return jsonify({"error": "Cannot delete file outside sessions directory"}), 403
             
-            existing = _read_stored_session(file_path)
-            if not permissions.can_modify(existing):
-                display_name = session_name or os.path.basename(file_path)[:-len(".json")]
-                return permissions.forbidden("delete", display_name, existing)
+                existing = _read_stored_session(file_path)
+                if not permissions.can_modify(existing):
+                    display_name = session_name or os.path.basename(file_path)[:-len(".json")]
+                    return permissions.forbidden("delete", display_name, existing)
                 
-            # Delete the file
-            os.remove(file_path)
+                # Delete the file
+                os.remove(file_path)
             
             return jsonify({
                 "status": "success",
                 "message": f"Session {session_name or os.path.basename(file_path)} deleted successfully"
             })
+        except atomic_store.LockTimeout:
+            raise
         except Exception as e:
             logger.error(f"Error deleting session: {e}")
             return jsonify({"error": f"Failed to delete session: {str(e)}"}), 500
@@ -2673,47 +2675,47 @@ def register_data_routes(app, api_version):
             if not _is_safe_session_path(old_file_path, sessions_dir):
                 return jsonify({"error": "Invalid session file path"}), 400
             
-            # Check if old file exists
-            if not os.path.exists(old_file_path):
-                return jsonify({"error": f"Session not found: {old_name}"}), 404
+            with session_store.locked(sessions_dir):
+                # Check if old file exists
+                if not os.path.exists(old_file_path):
+                    return jsonify({"error": f"Session not found: {old_name}"}), 404
             
-            # Load session data
-            with open(old_file_path, 'r') as f:
-                session_data = json.load(f)
+                # Load session data
+                with open(old_file_path, 'r') as f:
+                    session_data = json.load(f)
             
-            # Renaming removes the set from under its old name: same rule as delete
-            if not permissions.can_modify(session_data):
-                return permissions.forbidden("rename", sanitized_old_name, session_data)
+                # Renaming removes the set from under its old name: same rule as delete
+                if not permissions.can_modify(session_data):
+                    return permissions.forbidden("rename", sanitized_old_name, session_data)
             
-            # Update session name
-            # Store the SANITIZED name: list_sessions hands "name" to a client
-            # that renders it as HTML, and save/import already store it this way.
-            session_data["name"] = sanitized_new_name
+                # Update session name
+                # Store the SANITIZED name: list_sessions hands "name" to a client
+                # that renders it as HTML, and save/import already store it this way.
+                session_data["name"] = sanitized_new_name
             
-            # Create new file path
-            new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
+                # Create new file path
+                new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
             
-            # Verify the new file is within the sessions directory
-            if not _is_safe_session_path(new_file_path, sessions_dir):
-                return jsonify({"error": "Invalid new session name"}), 400
+                # Verify the new file is within the sessions directory
+                if not _is_safe_session_path(new_file_path, sessions_dir):
+                    return jsonify({"error": "Invalid new session name"}), 400
             
-            # Check if new file already exists
-            if os.path.exists(new_file_path) and old_file_path != new_file_path:
-                return jsonify({
-                    "status": "conflict",
-                    "message": f"Session with name '{new_name}' already exists."
-                }), 409
+                # Check if new file already exists
+                if os.path.lexists(new_file_path) and old_file_path != new_file_path:
+                    return jsonify({
+                        "status": "conflict",
+                        "message": f"Session with name '{new_name}' already exists."
+                    }), 409
             
-            # Ownership and creation time travel with the set
-            permissions.stamp_session(session_data, existing=dict(session_data))
+                # Ownership and creation time travel with the set
+                permissions.stamp_session(session_data, existing=dict(session_data))
             
-            # Write session data to new file
-            with open(new_file_path, 'w') as f:
-                json.dump(session_data, f, indent=2)
+                # Write session data to new file
+                session_store.write(new_file_path, session_data, like=old_file_path)
             
-            # Delete old file if names are different
-            if old_file_path != new_file_path:
-                os.remove(old_file_path)
+                # Delete old file if names are different
+                if old_file_path != new_file_path:
+                    os.remove(old_file_path)
             
             return jsonify({
                 "status": "success",
@@ -2724,7 +2726,7 @@ def register_data_routes(app, api_version):
                 "sanitized_old_name": sanitized_old_name,
                 "sanitized_new_name": sanitized_new_name
             })
-        except RequestEntityTooLarge:
+        except (RequestEntityTooLarge, atomic_store.LockTimeout):
             raise
         except Exception as e:
             logger.error(f"Error renaming session: {e}")
@@ -2775,17 +2777,15 @@ def register_data_routes(app, api_version):
             file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
             if not _is_safe_session_path(file_path, sessions_dir):
                 return jsonify({"error": "Invalid session name"}), 400
-            existing = _read_stored_session(file_path)
-            if existing is None:
-                return jsonify({"error": f"Session not found: {name}"}), 404
-            if not existing and os.path.getsize(file_path) > 0:
-                return jsonify({"error": f"Session file for '{sanitized_name}' cannot be parsed"}), 400
-
-            previous = existing.get("owner")
-            permissions.stamp_session(existing, existing=dict(existing))
-            existing["owner"] = owner
-            with open(file_path, 'w') as f:
-                json.dump(existing, f, indent=2)
+            with session_store.locked(sessions_dir):
+                try:
+                    previous = session_store.assign_owner(file_path, owner)
+                except FileNotFoundError:
+                    return jsonify({"error": f"Session not found: {name}"}), 404
+                except session_store.Unreadable:
+                    return jsonify({"error": f"Session file for '{sanitized_name}' cannot be parsed"}), 400
+            from ..admin import audit
+            audit.record("panelset.reassign", owner, {"names": [sanitized_name], "from": [previous]})
             logger.info(f"Panel set '{sanitized_name}' owner changed from {previous!r} to {owner!r}")
 
             return jsonify({
@@ -2795,7 +2795,7 @@ def register_data_routes(app, api_version):
                 "owner": owner,
                 "previous_owner": previous,
             })
-        except RequestEntityTooLarge:
+        except (RequestEntityTooLarge, atomic_store.LockTimeout):
             raise
         except Exception as e:
             logger.error(f"Error assigning session owner: {e}")
@@ -2843,40 +2843,41 @@ def register_data_routes(app, api_version):
             if not _is_safe_session_path(source_file_path, sessions_dir):
                 return jsonify({"error": "Invalid source session file path"}), 400
             
-            # Check if source file exists
-            if not os.path.exists(source_file_path):
-                return jsonify({"error": f"Session not found: {source_name}"}), 404
+            with session_store.locked(sessions_dir):
+                # Check if source file exists
+                if not os.path.exists(source_file_path):
+                    return jsonify({"error": f"Session not found: {source_name}"}), 404
             
-            # Load session data
-            with open(source_file_path, 'r') as f:
-                session_data = json.load(f)
+                # Load session data
+                with open(source_file_path, 'r') as f:
+                    session_data = json.load(f)
             
-            # Update session name and timestamp
-            # Store the SANITIZED name: list_sessions hands "name" to a client
-            # that renders it as HTML, and save/import already store it this way.
-            session_data["name"] = sanitized_new_name
-            from datetime import datetime
-            session_data["timestamp"] = datetime.now().isoformat()
+                # Update session name and timestamp
+                # Store the SANITIZED name: list_sessions hands "name" to a client
+                # that renders it as HTML, and save/import already store it this way.
+                session_data["name"] = sanitized_new_name
+                from datetime import datetime
+                session_data["timestamp"] = datetime.now().isoformat()
             
-            # Create new file path
-            new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
+                # Create new file path
+                new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
             
-            # Verify the new file is within the sessions directory
-            if not _is_safe_session_path(new_file_path, sessions_dir):
-                return jsonify({"error": "Invalid new session name"}), 400
+                # Verify the new file is within the sessions directory
+                if not _is_safe_session_path(new_file_path, sessions_dir):
+                    return jsonify({"error": "Invalid new session name"}), 400
             
-            # Check if new file already exists
-            if os.path.exists(new_file_path):
-                return jsonify({
-                    "status": "conflict",
-                    "message": f"Session with name '{new_name}' already exists."
-                }), 409
+                # Check if new file already exists
+                if os.path.exists(new_file_path):
+                    return jsonify({
+                        "status": "conflict",
+                        "message": f"Session with name '{new_name}' already exists."
+                    }), 409
             
-            # A copy is a new set: it belongs to whoever made it
-            permissions.stamp_session(session_data, existing=None)
+                # A copy is a new set: it belongs to whoever made it
+                permissions.stamp_session(session_data, existing=None)
             
-            # Write session data to new file
-            _write_session(new_file_path, session_data, sessions_dir)
+                # Write session data to new file
+                _write_session(new_file_path, session_data, sessions_dir)
             
             return jsonify({
                 "status": "success",
@@ -2887,7 +2888,7 @@ def register_data_routes(app, api_version):
                 "sanitized_source_name": sanitized_source_name,
                 "sanitized_new_name": sanitized_new_name
             })
-        except (RequestEntityTooLarge, session_quota.QuotaRefused):
+        except (RequestEntityTooLarge, session_quota.QuotaRefused, atomic_store.LockTimeout):
             raise
         except Exception as e:
             logger.error(f"Error duplicating session: {e}")
@@ -2958,28 +2959,29 @@ def register_data_routes(app, api_version):
             if not _is_safe_session_path(file_path, sessions_dir):
                 return jsonify({"error": "Invalid session name in imported file"}), 400
             
-            # Check if session with this name already exists
-            existing = _read_stored_session(file_path)
-            if existing is not None and not overwrite:
-                return jsonify({
-                    "status": "conflict",
-                    "message": f"Session with name '{session_data['name']}' already exists.",
-                    "exists": True
-                }), 409
+            with session_store.locked(sessions_dir):
+                # Check if session with this name already exists
+                existing = _read_stored_session(file_path)
+                if existing is not None and not overwrite:
+                    return jsonify({
+                        "status": "conflict",
+                        "message": f"Session with name '{session_data['name']}' already exists.",
+                        "exists": True
+                    }), 409
             
-            # Importing over an existing set replaces it: same rule as delete.
-            # Any owner recorded INSIDE the uploaded file is discarded.
-            if not permissions.can_modify(existing):
-                return permissions.forbidden("overwrite", session_data["name"], existing)
-            permissions.stamp_session(session_data, existing)
+                # Importing over an existing set replaces it: same rule as delete.
+                # Any owner recorded INSIDE the uploaded file is discarded.
+                if not permissions.can_modify(existing):
+                    return permissions.forbidden("overwrite", session_data["name"], existing)
+                permissions.stamp_session(session_data, existing)
             
-            # Add timestamp if not present
-            if "timestamp" not in session_data:
-                from datetime import datetime
-                session_data["timestamp"] = datetime.now().isoformat()
+                # Add timestamp if not present
+                if "timestamp" not in session_data:
+                    from datetime import datetime
+                    session_data["timestamp"] = datetime.now().isoformat()
             
-            # Write session data to file
-            _write_session(file_path, session_data, sessions_dir)
+                # Write session data to file
+                _write_session(file_path, session_data, sessions_dir)
             
             # Notice if sanitization changed the name
             message = f"Session imported as {session_data['name']}"
@@ -2993,7 +2995,7 @@ def register_data_routes(app, api_version):
                 "session": session_data,
                 "sanitized_name": session_data["name"]
             })
-        except (RequestEntityTooLarge, session_quota.QuotaRefused):
+        except (RequestEntityTooLarge, session_quota.QuotaRefused, atomic_store.LockTimeout):
             raise
         except Exception as e:
             logger.error(f"Error importing session: {e}")
