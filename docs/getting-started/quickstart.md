@@ -4,7 +4,7 @@ This page starts a local server, opens the demonstration store and draws a first
 takes about two minutes once AnnZarro is installed ({doc}`installation`) and you have a store.
 The demonstration store `bm_aging_annzarro.zarr` (murine bone marrow, Young vs Old, 8,090 cells x
 16,285 genes, 5.7 GB zipped, 5.3 GiB unzipped) is on Zenodo,
-[doi:10.5281/zenodo.23277103](https://doi.org/10.5281/zenodo.23277103); {doc}`../data/demo-data`
+[doi:10.5281/zenodo.23277102](https://doi.org/10.5281/zenodo.23277102); {doc}`../data/demo-data`
 describes it. Any AnnData written with `adata.write_zarr(...)` works the same way.
 
 ## 1. Put the store in a data directory

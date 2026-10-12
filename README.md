@@ -9,6 +9,7 @@
 [![Docs](https://readthedocs.org/projects/annzarro/badge/?version=latest)](https://annzarro.readthedocs.io)
 [![Tests](https://github.com/settylab/annzarro/actions/workflows/tests.yml/badge.svg)](https://github.com/settylab/annzarro/actions/workflows/tests.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23222216.svg)](https://doi.org/10.5281/zenodo.23222216)
+[![bioRxiv](https://img.shields.io/badge/bioRxiv-10.64898%2F2026.10.10.758158-b31b1b)](https://doi.org/10.64898/2026.10.10.758158)
 
 A read-only browser viewer for AnnData in zarr (or h5ad) built around the matrices other viewers
 leave out: cell x cell kernels and distances (`obsp`) and gene x gene similarities (`varp`),
@@ -68,12 +69,29 @@ precompute `obsp`/`varp` matrices and how to chunk for speed: [preparing data](h
 [annzarro.readthedocs.io](https://annzarro.readthedocs.io): tutorials on cell and gene
 similarity, the user guide, data preparation, deployment, and the CLI, configuration and HTTP API reference.
 
-## Citation
+## Citing AnnZarro
 
-Citation metadata are in [`CITATION.cff`](https://github.com/settylab/annzarro/blob/main/CITATION.cff)
-(GitHub's "Cite this repository"). From v0.4.1, each release is archived on Zenodo with a DOI.
-The DOI below always resolves to the latest release; cite the version DOI of the release you used,
-listed on the Zenodo record (v0.4.1: [10.5281/zenodo.23222217](https://doi.org/10.5281/zenodo.23222217)):
+If you use AnnZarro, please cite the preprint:
+
+Otto, D. J., Baasri, S. and Setty, M. AnnZarro: scalable, interactive exploration of cell-by-cell and
+gene-by-gene relationships in single-cell data. bioRxiv (2026).
+[doi:10.64898/2026.10.10.758158](https://doi.org/10.64898/2026.10.10.758158)
+
+```bibtex
+@article{otto2026annzarro,
+  author  = {Otto, Dominik J. and Baasri, Siddharth and Setty, Manu},
+  title   = {{AnnZarro}: scalable, interactive exploration of cell-by-cell and gene-by-gene relationships in single-cell data},
+  journal = {bioRxiv},
+  year    = {2026},
+  doi     = {10.64898/2026.10.10.758158},
+  url     = {https://doi.org/10.64898/2026.10.10.758158}
+}
+```
+
+To cite the software itself, for example the exact release you ran, use its Zenodo DOI. Each release
+is archived on Zenodo with its own version DOI (v0.4.3:
+[10.5281/zenodo.23306026](https://doi.org/10.5281/zenodo.23306026)); the concept DOI below always
+resolves to the latest release.
 
 ```bibtex
 @software{otto_annzarro_software,
@@ -84,6 +102,9 @@ listed on the Zenodo record (v0.4.1: [10.5281/zenodo.23222217](https://doi.org/1
   url       = {https://doi.org/10.5281/zenodo.23222216}
 }
 ```
+
+Citation metadata are also in [`CITATION.cff`](https://github.com/settylab/annzarro/blob/main/CITATION.cff)
+(GitHub's "Cite this repository"), which names the preprint as the preferred citation.
 
 ## Development
 

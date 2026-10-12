@@ -4,8 +4,7 @@
 :alt: The paper's interface figure. a, the AnnZarro window with four linked panels. b, four views of the same diffusion-walk UMAP after clicks on an HSC, a GMP, a cMoP and a monocyte. c, a cell table filtered by two conditions next to a UMAP in which cells outside the table are grey.
 :width: 100%
 
-*AnnZarro on the demonstration data*, the interface figure of the AnnZarro paper (Otto, Baasri
-and Setty, in preparation), assembled by
+*AnnZarro on the demonstration data*, the interface figure of the AnnZarro paper {cite:p}`otto2026annzarro`, assembled by
 `figures/fig5_app.py` from headless screenshots made by `figures/screenshots.py` in the paper
 repository.
 ```

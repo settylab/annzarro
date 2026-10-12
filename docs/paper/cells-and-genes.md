@@ -3,8 +3,7 @@
 ```{figure} ../_static/figures/paper/cells-and-genes.png
 :alt: The paper's cells-and-genes figure: S100a9 fold change and smoothed expression on UMAPs, and a scatter of two cells' fold-change rows.
 
-*Linking genes to cells and cells to genes*, a figure of the AnnZarro paper (Otto, Baasri and
-Setty, in preparation), made in Python by
+*Linking genes to cells and cells to genes*, a figure of the AnnZarro paper {cite:p}`otto2026annzarro`, made in Python by
 {repro}`figures/fig4_cells_by_genes.py` in the paper's {ref}`companion repository <paper-companion>`.
 ```
 

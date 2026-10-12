@@ -4,8 +4,7 @@
 :alt: Four panels: bytes per click against the number of cells, latency per click on a laptop, peak server memory against matrix size, and the chunk shape trade-off between cell rows and gene columns. The HPC and pairwise series are marked as awaiting v0.4.1 runs.
 :width: 100%
 
-*Interactions cost one vector, and memory stays flat*, a figure of the AnnZarro paper (Otto,
-Baasri and Setty, in preparation), made by `figures/fig6_performance.py` in the paper
+*Interactions cost one vector, and memory stays flat*, a figure of the AnnZarro paper {cite:p}`otto2026annzarro`, made by `figures/fig6_performance.py` in the paper
 repository. The laptop series are final; the HPC and pairwise series are being re-measured on
 AnnZarro v0.4.1 and are marked "awaiting v0.4.1 runs".
 ```

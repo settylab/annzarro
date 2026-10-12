@@ -1,7 +1,7 @@
 # Paper figures
 
-Reference pages for the figures of the AnnZarro paper (Otto, Baasri and Setty, in
-preparation). Each page shows the figure, says which parts AnnZarro reproduces, and links to
+Reference pages for the figures of the AnnZarro paper, posted as a preprint on bioRxiv
+({cite:p}`otto2026annzarro`, [doi:10.64898/2026.10.10.758158](https://doi.org/10.64898/2026.10.10.758158)). Each page shows the figure, says which parts AnnZarro reproduces, and links to
 the views: share links and panel set files that reopen every view shown in the figure. The
 interface, cell-by-cell, gene-by-gene and cells-and-genes figures are rebuilt step by step in
 the {doc}`../tutorials/index`.
@@ -77,12 +77,12 @@ The share links on these pages open a store on a local AnnZarro server: they are
 
 | Page | Store | How to get it |
 |---|---|---|
-| {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance`, {doc}`cell-by-cell` (a to c), {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_annzarro.zarr` (5.3 GiB) | Download it from Zenodo (doi:10.5281/zenodo.23277103), or build it from the public raw data with two scripts in this repository: {doc}`../data/demo-data` |
+| {doc}`overview`, {doc}`interface`, {doc}`procedure`, {doc}`performance`, {doc}`cell-by-cell` (a to c), {doc}`gene-by-gene`, {doc}`cells-and-genes` | `bm_aging_annzarro.zarr` (5.3 GiB) | Download it from Zenodo (doi:10.5281/zenodo.23277102), or build it from the public raw data with two scripts in this repository: {doc}`../data/demo-data` |
 | {doc}`cell-by-cell` (d) | `celegans_connectome_cengen.zarr` (7.7 MB) | Build it with a script in this repository from public downloads: {ref}`cell-by-cell-connectome` |
 | {doc}`scale` | the Tahoe-100M store (95,624,334 cells) | Download the public Tahoe-100M release (CC0) and its UMAP from the same Zenodo record, and build the store with `build_tahoe.py` from `annzarro-reproducibility`: {ref}`paper-scale-store` |
 | {doc}`deployment` | none | The figure is a diagram |
 
-The Zenodo record [doi:10.5281/zenodo.23277103](https://doi.org/10.5281/zenodo.23277103) holds
+The Zenodo record [doi:10.5281/zenodo.23277102](https://doi.org/10.5281/zenodo.23277102) holds
 the bone marrow store and the UMAP of every Tahoe-100M cell. The benchmark code of the paper,
 including the Tahoe-100M build script, is in the public repository
 [settylab/annzarro-reproducibility](https://github.com/settylab/annzarro-reproducibility).

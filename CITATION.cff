@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use AnnZarro, please cite it as below."
+message: "If you use AnnZarro, please cite the preprint below. To cite the software itself, use the version DOI of the release you used (concept DOI under identifiers)."
 type: software
 title: AnnZarro
 abstract: >-
@@ -39,3 +39,21 @@ keywords:
   - genomics
   - anndata
   - zarr
+preferred-citation:
+  type: article
+  status: preprint
+  title: "AnnZarro: scalable, interactive exploration of cell-by-cell and gene-by-gene relationships in single-cell data"
+  authors:
+    - family-names: Otto
+      given-names: Dominik J.
+      orcid: "https://orcid.org/0009-0009-3295-1234"
+    - family-names: Baasri
+      given-names: Siddharth
+    - family-names: Setty
+      given-names: Manu
+      orcid: "https://orcid.org/0000-0002-0344-2627"
+  journal: bioRxiv
+  year: 2026
+  month: 10
+  doi: "10.64898/2026.10.10.758158"
+  url: "https://www.biorxiv.org/content/10.64898/2026.10.10.758158v1"
