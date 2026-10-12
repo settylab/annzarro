@@ -17,7 +17,7 @@ from annzarro.tests.zarr_compat import ZARR_V3
 
 zr = sys.modules["annzarro.core.zarr_reader"]
 
-pytestmark = pytest.mark.skipif(not ZARR_V3, reason="sharding is zarr format 3")
+sharded_only = pytest.mark.skipif(not ZARR_V3, reason="sharding is zarr format 3")
 
 
 def _sharded(path, shape, chunks, shards, dtype="float32"):
@@ -30,6 +30,7 @@ def _sharded(path, shape, chunks, shards, dtype="float32"):
     return zarr.open_array(str(path), mode="r"), data
 
 
+@sharded_only
 @pytest.mark.parametrize("shape, chunks, shards", [
     ((10_000, 3), (100, 3), (400, 3)),      # 4 inner chunks per shard
     ((10_000, 3), (100, 2), (300, 4)),      # shards cut the columns too, ragged edge
@@ -63,6 +64,7 @@ def _peak(path, rows):
     return peak, out
 
 
+@sharded_only
 @pytest.mark.parametrize("inner_per_shard", [32, 1024])
 def test_memory_follows_the_inner_chunks_not_the_shard(tmp_path, monkeypatch, inner_per_shard):
     """4M x 4 float32 in inner chunks of 4096 rows (64 KiB), shards of 32 or 1024 of them (2 or 64 MiB),
@@ -78,6 +80,7 @@ def test_memory_follows_the_inner_chunks_not_the_shard(tmp_path, monkeypatch, in
     assert peak < 8 * 2 ** 20, f"peak {peak / 2 ** 20:.1f} MiB with {inner_per_shard} inner chunks per shard"
 
 
+@sharded_only
 def test_a_column_subset_is_budgeted_by_the_stored_chunk_width(tmp_path, monkeypatch):
     """The client reads an obsm matrix two columns at a time (``cols=0,1``), but an inner chunk holds
     every stored column: 64 here. Budgeting by the 2 selected columns made a batch 32x too big
@@ -127,6 +130,7 @@ class _Spy:
         return _Indexer()
 
 
+@sharded_only
 def test_batches_overlap_up_to_the_bound(tmp_path, monkeypatch):
     """Over a network the requests of different batches must overlap (sequential batches multiplied the
     round trips), but never more than GATHER_INFLIGHT at once: that, times a batch, is the memory."""
@@ -145,10 +149,15 @@ def test_unsharded_pairwise_reads_keep_the_single_orthogonal_read(tmp_path, monk
     take_rows (a whole read of a small matrix, blocks on zarr 2) made it 5x to 90x slower."""
     import zarr
     from annzarro.core.zarr_reader import ZarrReader
-    from annzarro.tests.zarr_compat import open_group, write_array
+    from annzarro.tests.zarr_compat import open_group
     root = open_group(str(tmp_path / "t.zarr"))
     data = np.random.default_rng(0).random((300, 300)).astype("float32")
-    arr = write_array(root, "d", data, chunks=(30, 30))
+    # made here, not by write_array: that one shards every array when the suites run in 3-sharded mode
+    if ZARR_V3:
+        arr = root.create_array("d", shape=data.shape, dtype=data.dtype, chunks=(30, 30))
+        arr[...] = data
+    else:
+        arr = root.create_dataset("d", data=data, chunks=(30, 30))
     spy = _Spy(arr)
 
     def boom(*args, **kwargs):
@@ -163,6 +172,7 @@ def test_unsharded_pairwise_reads_keep_the_single_orthogonal_read(tmp_path, monk
     assert len(spy.calls) == 2
 
 
+@sharded_only
 @pytest.mark.parametrize("cols", [None, [4, 1]])
 def test_sharded_pairwise_reads_gather_by_inner_chunk(tmp_path, monkeypatch, cols):
     """A dense sharded obsp is gathered by inner chunk, whatever its size (no whole read)."""
