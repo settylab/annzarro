@@ -73,6 +73,13 @@ let secret = null;
 
 const say = (message, level = 'success') => { if (toastRef) toastRef(message, level); };
 
+/** The change was made but the server could not write its audit record (it is in the server log). */
+function warnIfUnaudited(reply) {
+    if (reply && reply.audit_failed) say('The change was made, but the audit record could not be written. Tell the operator (see the server log).', 'warning');
+    if (reply && reply.reassign_failed) say('The user was removed, but their panel sets could not be handed over.', 'warning');
+    return reply;
+}
+
 function button(text, onclick, { tone = 'outline-secondary', title, disabled = false, name } = {}) {
     return h('button', {
         type: 'button', class: `btn btn-sm btn-${tone} me-1`, text, title, disabled, onclick,
@@ -186,7 +193,7 @@ function addPanel() {
         else body.generate = true;
         create.disabled = true;
         const ok = await attempt(err, async () => {
-            const made = await apiRef.users.add(body);
+            const made = warnIfUnaudited(await apiRef.users.add(body));
             secret = made && made.password ? { username, password: made.password } : null;
             open = null;
             say(`Created ${username}.`);
@@ -219,7 +226,7 @@ function resetPanel(user) {
         const body = manual.checked ? { password: pw.value } : { generate: true };
         go.disabled = true;
         const ok = await attempt(err, async () => {
-            const made = await apiRef.users.setPassword(user.username, body);
+            const made = warnIfUnaudited(await apiRef.users.setPassword(user.username, body));
             secret = made && made.password ? { username: user.username, password: made.password } : null;
             open = null;
             say(`Changed the password of ${user.username}.`);
@@ -251,7 +258,7 @@ function removePanel(user) {
         const body = owns && target.value ? { reassign_to: target.value } : {};
         go.disabled = true;
         const ok = await attempt(err, async () => {
-            const done = await apiRef.users.remove(user.username, body);
+            const done = warnIfUnaudited(await apiRef.users.remove(user.username, body));
             open = null;
             const moved = done && done.panel_sets_reassigned ? ` ${done.panel_sets_reassigned} panel sets handed over.` : '';
             say(`Removed ${user.username}.${moved}`);
@@ -279,16 +286,16 @@ function actionCell(user) {
         button('Reset password', () => { open = { kind: 'reset', user }; draw(); }, { name: 'reset' }),
         user.is_admin
             ? button('Revoke admin', () => act('Revoke admin', async () => {
-                await apiRef.users.setAdmin(user.username, false);
+                warnIfUnaudited(await apiRef.users.setAdmin(user.username, false));
                 say(`${user.username} is no longer an administrator.`);
             }), { disabled: !!why, title: why || undefined, name: 'revoke-admin' })
             : button('Make admin', () => act('Make admin', async () => {
-                await apiRef.users.setAdmin(user.username, true);
+                warnIfUnaudited(await apiRef.users.setAdmin(user.username, true));
                 say(`${user.username} is now an administrator.`);
             }), { name: 'make-admin' }),
         (user.locked || []).length
             ? button('Unlock', () => act('Unlock', async () => {
-                await apiRef.users.unlock(user.username);
+                warnIfUnaudited(await apiRef.users.unlock(user.username));
                 say(`Unlocked ${user.username}.`);
             }), { name: 'unlock' })
             : null,

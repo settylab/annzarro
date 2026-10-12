@@ -250,3 +250,21 @@ def test_removing_a_user_drops_their_access_entry(access_site):
     assert _run(cfg, "access", "bob", "--restrict", "--grant", str(data / "pub")) == 0
     assert _run(cfg, "remove", "--username", "bob") == 0
     assert _entry(path) is None
+||||||| 47311c6
+=======
+
+
+def test_the_cli_refuses_to_run_as_another_account(users, monkeypatch):
+    """`sudo annzarro user add` would create root-owned files the server cannot write."""
+    path, cfg = users
+    monkeypatch.setattr(cli, "_dir_owner", lambda directory: (os.geteuid() + 1, "svc-annzarro"))
+    assert _run(cfg, "add", "--username", "carol", "--password", "pw") == 1
+    assert _run(cfg, "set-admin", "--username", "alice") == 1
+    assert AuthManager(user_file=str(path)).get_user("carol") is None
+    assert AuthManager(user_file=str(path)).get_user("alice").is_admin is False
+    assert not os.path.exists(os.path.join(os.path.dirname(str(path)), "annzarro_admin"))
+    assert "sudo -u svc-annzarro" in cli._wrong_account(str(path))
+    assert _run(cfg, "list") == 0, "listing changes nothing, so any account may"
+    monkeypatch.setattr(cli, "_dir_owner", lambda directory: (os.geteuid(), "me"))
+    assert _run(cfg, "add", "--username", "carol", "--password", "pw") == 0
+>>>>>>> github/dominik/v050-users

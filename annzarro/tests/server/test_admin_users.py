@@ -307,7 +307,8 @@ def test_remove_can_hand_the_panel_sets_over(app, admin):
     owners = [json.load(open(os.path.join(sessions, f"s{i}.json"))) for i in range(3)]
     assert [o["owner"] for o in owners] == [ADMIN, ADMIN, ADMIN]
     assert [o["layout"] for o in owners] == [{"k": 0}, {"k": 1}, {"k": 2}], "only the owner changes"
-    assert records(app, action="user.remove")[0]["detail"] == {"panel_sets_reassigned": 2, "reassigned_to": ADMIN}
+    assert records(app, action="user.remove")[0]["detail"] == {"reassign_to": ADMIN}
+    assert records(app, action="panelset.reassign")[0]["detail"] == {"moved": 2, "to": ADMIN}
     assert [f for f in os.listdir(sessions) if f.endswith(".tmp")] == []
 
 
@@ -465,3 +466,66 @@ def test_the_cli_force_flag_skips_the_rule_not_the_lock(tmp_path):
     assert AuthManager(user_file=user_file).get_user(ADMIN).is_admin is True
     assert AuthManager(user_file=user_file).set_admin(ADMIN, False, force=True) is True
     assert AuthManager(user_file=user_file).admins() == set()
+
+
+# ---- an audit failure after a change must not turn it into an error
+
+@pytest.fixture
+def broken_audit(monkeypatch):
+    real = audit.append
+
+    def fail(*args, **kwargs):
+        if kwargs.get("action") in FAILING:
+            raise OSError(28, "No space left on device")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(audit, "append", fail)
+
+
+FAILING = {"user.add", "user.remove", "user.password", "user.set_admin", "user.unlock", "panelset.reassign"}
+
+
+def test_an_audit_failure_still_reports_the_change_that_was_made(app, admin, broken_audit):
+    with Logs() as logs:
+        added = call(admin, "POST", BASE, {"username": "carol", "generate": True})
+        reset = call(admin, "POST", f"{BASE}/{USER}/password", {"generate": True})
+        granted = call(admin, "POST", f"{BASE}/carol/admin", {"is_admin": True})
+        unlocked = call(admin, "POST", f"{BASE}/{USER}/unlock", {})
+        removed = call(admin, "DELETE", f"{BASE}/carol")
+    for response in (added, reset, granted, unlocked, removed):
+        assert response.status_code in (200, 201) and response.get_json()["audit_failed"] is True
+    assert added.get_json()["password"] and reset.get_json()["password"], "the one-time password is still delivered"
+    assert AuthManager(user_file=app.config["user_file"]).get_user("carol") is None
+    errors = [r for r in logs.records if r.levelno >= logging.ERROR]
+    assert len(errors) == 5 and all("the change itself was made" in r.getMessage() for r in errors)
+
+
+def test_a_refused_change_is_still_refused_when_the_audit_fails(app, admin, broken_audit):
+    response = call(admin, "DELETE", f"{BASE}/{ADMIN}")
+    assert response.status_code == 409 and response.get_json()["reason"] == "self"
+
+
+def test_removal_is_audited_before_the_handover_and_the_handover_on_its_own(app, admin):
+    sessions = os.path.join(app.config["data_dir"], "sessions")
+    os.makedirs(sessions)
+    with open(os.path.join(sessions, "s.json"), "w") as f:
+        json.dump({"owner": USER}, f)
+    call(admin, "DELETE", f"{BASE}/{USER}", {"reassign_to": ADMIN})
+    kept = [(r["action"], r["target"], r["detail"]) for r in reversed(audit.read(app.admin_dir, limit=10))]
+    assert kept == [("user.remove", USER, {"reassign_to": ADMIN}),
+                    ("panelset.reassign", USER, {"moved": 1, "to": ADMIN})]
+
+
+def test_a_failed_handover_leaves_the_removal_audited_and_reported(app, admin, monkeypatch):
+    from annzarro.server.admin import users as users_module
+
+    def boom(*args):
+        raise OSError("disk")
+
+    monkeypatch.setattr(users_module, "reassign_panel_sets", boom)
+    response = call(admin, "DELETE", f"{BASE}/{USER}", {"reassign_to": ADMIN})
+    assert response.status_code == 200
+    assert response.get_json() == {"removed": USER, "panel_sets_reassigned": 0, "reassign_failed": True}
+    assert AuthManager(user_file=app.config["user_file"]).get_user(USER) is None
+    actions = [(r["action"], r["outcome"]) for r in reversed(audit.read(app.admin_dir, limit=10))]
+    assert actions == [("user.remove", "ok"), ("panelset.reassign", "failed")]

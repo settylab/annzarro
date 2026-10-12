@@ -94,8 +94,10 @@ def panel_set_counts():
 def reassign_panel_sets(from_owner, to_owner):
     """Hand every panel set of ``from_owner`` to ``to_owner``; returns how many.
 
-    Held under the sessions directory's lock and written atomically, so an
-    owner's concurrent save is never half-overwritten by this."""
+    Each file is re-read and rewritten atomically under the sessions directory's
+    lock, which excludes other reassigns. Saves take that lock only once the
+    panel-set slice moves this onto the shared session store, so until then a
+    save racing this can still lose its write."""
     directory = _sessions_dir()
     if not os.path.isdir(directory):
         return 0
@@ -114,9 +116,32 @@ def reassign_panel_sets(from_owner, to_owner):
     return moved
 
 
+def record_audit(action, target=None, detail=None, outcome="ok"):
+    """Write an audit record for a change that is already made; True if it was written.
+
+    A failure (disk full, a lock timeout, a directory another OS user owns) must
+    not turn an applied change into a 500 the admin would retry: it is logged at
+    ERROR, where the ``annzarro.audit`` logger line of earlier records is the
+    only other evidence, and the reply says ``audit_failed``."""
+    try:
+        audit.record(action, target, detail, outcome)
+        return True
+    except Exception:
+        logger.exception("Could not write the audit record of %s on %r (%s); the change itself was made",
+                         action, target, outcome)
+        return False
+
+
+def _reply(data, audited, status=200):
+    """A JSON success reply, marked when its audit record could not be written."""
+    if not audited:
+        data = dict(data, audit_failed=True)
+    return jsonify(data), status
+
+
 def _refused(action, reason, target, message):
     """A 409 that the audit log keeps: who tried what to whom, and why not."""
-    audit.record(action, target, None, f"refused:{reason}")
+    record_audit(action, target, None, f"refused:{reason}")
     return _error(409, reason, message)
 
 
@@ -172,11 +197,11 @@ def add_user():
             return _error(400, "weak_password", problem)
     if not _manager().create_user(username, password, is_admin=is_admin):
         return _refused("user.add", "user_exists", username, "A user with that name already exists.")
-    audit.record("user.add", username, {"is_admin": is_admin, "generated": bool(generate)})
+    audited = record_audit("user.add", username, {"is_admin": is_admin, "generated": bool(generate)})
     out = {"username": username}
     if generate:
         out["password"] = password
-    return jsonify(out), 201
+    return _reply(out, audited, 201)
 
 
 @require_admin
@@ -199,9 +224,17 @@ def remove_user(username):
         return _refused("user.remove", "last_admin", username, _last_admin_message("remove them"))
     if not removed:
         return _error(404, "unknown_user", "No such user.")
-    moved = reassign_panel_sets(username, reassign_to) if reassign_to else 0
-    audit.record("user.remove", username, {"reassigned_to": reassign_to, "panel_sets_reassigned": moved})
-    return jsonify(removed=username, panel_sets_reassigned=moved)
+    audited = record_audit("user.remove", username, {"reassign_to": reassign_to})   # before anything else can fail
+    moved = 0
+    if reassign_to:
+        try:
+            moved = reassign_panel_sets(username, reassign_to)
+        except Exception:
+            logger.exception("Removed %r but could not hand their panel sets to %r", username, reassign_to)
+            record_audit("panelset.reassign", username, {"to": reassign_to}, "failed")
+            return _reply({"removed": username, "panel_sets_reassigned": 0, "reassign_failed": True}, audited)
+        audited = record_audit("panelset.reassign", username, {"to": reassign_to, "moved": moved}) and audited
+    return _reply({"removed": username, "panel_sets_reassigned": moved}, audited)
 
 
 @require_admin
@@ -232,8 +265,8 @@ def reset_password(username):
         return _error(404, "unknown_user", "No such user.")
     if username == _actor():
         session["login_at"] = time.time()
-    audit.record("user.password", username, {"generated": bool(generate)})
-    return jsonify({"password": password} if generate else {})
+    audited = record_audit("user.password", username, {"generated": bool(generate)})
+    return _reply({"password": password} if generate else {}, audited)
 
 
 @require_admin
@@ -254,8 +287,8 @@ def set_admin(username):
         return _refused("user.set_admin", "last_admin", username, _last_admin_message("revoke this"))
     if not changed:
         return _error(404, "unknown_user", "No such user.")
-    audit.record("user.set_admin", username, {"is_admin": is_admin})
-    return jsonify(is_admin=is_admin)
+    audited = record_audit("user.set_admin", username, {"is_admin": is_admin})
+    return _reply({"is_admin": is_admin}, audited)
 
 
 @require_admin
@@ -267,8 +300,8 @@ def unlock(username):
     cleared = _manager().unlock(username, address)
     if cleared is None:
         return _error(404, "unknown_user", "No such user.")
-    audit.record("user.unlock", username, {"address": address, "cleared": cleared})
-    return jsonify(cleared=cleared)
+    audited = record_audit("user.unlock", username, {"address": address, "cleared": cleared})
+    return _reply({"cleared": cleared}, audited)
 
 
 def register(blueprint):

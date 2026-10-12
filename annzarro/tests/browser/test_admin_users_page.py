@@ -121,7 +121,9 @@ class Tab:
         return self
 
     def status(self, path):
-        return self.page.evaluate("async (p) => (await fetch(p)).status", path.lstrip("/"))
+        # the context's request API shares the cookies but not the page, which navigates away
+        # to the login page when one of its own requests meets a revoked login
+        return self.context.request.get(self.srv.url + "/" + path.lstrip("/")).status
 
 
 def _row(page, name):
