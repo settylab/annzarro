@@ -123,7 +123,7 @@ def test_usage_reassign_filter_and_delete(browser, served):
         assert _owners(sessions)["alice one"] == "bob" and _owners(sessions)["alice two"] == "bob"
         assert _owners(sessions)["alice three"] == USER
         record = audit.read(app.admin_dir, limit=1)[0]
-        assert record["action"] == "panelset.reassign" and record["target"] == "bob"
+        assert record["action"] == "panel_sets.reassign" and record["target"] == "bob"
 
         # filter to bob and hand all of bob's sets (now 4) to alice
         page.select_option("#ps-owner", "bob")
@@ -147,7 +147,7 @@ def test_usage_reassign_filter_and_delete(browser, served):
         page.click("#ps-delete-confirm")
         page.wait_for_selector('tr[data-name="legacy"]', state="detached")
         assert not (sessions / "legacy.json").exists()
-        assert audit.read(app.admin_dir, limit=1)[0]["action"] == "panelset.delete"
+        assert audit.read(app.admin_dir, limit=1)[0]["action"] == "panel_sets.delete"
         assert not errors, errors
     finally:
         context.close()

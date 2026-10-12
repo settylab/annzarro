@@ -2785,7 +2785,7 @@ def register_data_routes(app, api_version):
                 except session_store.Unreadable:
                     return jsonify({"error": f"Session file for '{sanitized_name}' cannot be parsed"}), 400
             from ..admin import audit
-            audit.record("panelset.reassign", owner, {"names": [sanitized_name], "from": [previous]})
+            audit.record("panel_sets.reassign", owner, {"names": [sanitized_name], "from": [previous]})
             logger.info(f"Panel set '{sanitized_name}' owner changed from {previous!r} to {owner!r}")
 
             return jsonify({
