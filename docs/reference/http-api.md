@@ -21,6 +21,19 @@ Paths
 : Every route below is under `/api/v1`. On a server mounted under a path
   (`server.url_prefix`, {doc}`../deployment/lab-server`) they are under `<prefix>/api/v1`.
 
+Changing requests
+: With login on, every `POST`, `PUT` and `DELETE` of a signed-in session (panel-set saves, renames,
+  imports and deletes, `/data/refresh`, `/cache/reset`, `/logout`, and every admin route) must send
+  the session's token in `X-AnnZarro-CSRF`. The web client reads it from `<meta name="annzarro-csrf">`
+  of the page. A browser's `Origin` must equal the server's own address (behind a proxy that
+  terminates TLS or rewrites `Host`, set `server.proxy_count`), and `Sec-Fetch-Site`, when sent, must be
+  `same-origin`; otherwise `403` `csrf_failed`. An anonymous request passes this check and is
+  answered `401`. Scripts that sign in with a session cookie must send the header; `GET`
+  routes and token-less clients of a server with login off (`curl`, `annzarro export`) are not
+  affected, though a browser-sent `Origin` is still checked. `POST /login` instead carries the
+  form's `login_csrf` field with the matching `annzarro_login_csrf` cookie (both come from `GET /login`),
+  and `/logout` is `POST` only: `GET /logout` answers `405` with a one-button form.
+
 `dataset_path`
 : Every data route takes the dataset as a query parameter: an absolute local path to a
   `.zarr` directory or `.h5ad` file, or a remote zarr URL (`s3://`, `gs://`, `https://`; see
@@ -510,6 +523,7 @@ audit write fails the change stands and the reply has `audit_failed: true`.
 | 401 | (none) | login on, no session; checked first |
 | 403 | `outside_data_dir` | local path outside the data directory and `allowed_dirs`, on a shared server (or anywhere with `server.arbitrary_paths: none`), for a requester `server.arbitrary_paths` does not let through (the message names no server directories) |
 | 403 | `access_denied` | remote store refused by the remote-store policy |
+| 403 | `csrf_failed` | a changing request without the session's `X-AnnZarro-CSRF` token, or from another origin |
 | 403 | `not_owner`, `legacy_admin_only`, `admin_only` | panel-set permissions; `admin_only` also for `POST /cache/reset` on a shared server |
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
