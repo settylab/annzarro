@@ -19,6 +19,7 @@ Features:
 import os
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import zarr
 from typing import Dict, List, Tuple, Optional, Union, Any, Callable, Literal
@@ -305,7 +306,7 @@ def densify(m) -> np.ndarray:
     return out
 
 
-#: Up to this many bytes (the rows times the selected columns) take_rows
+#: Up to this many bytes (the rows times the columns decoded) take_rows
 #: reads the whole column and indexes it in memory; above, it gathers. At
 #: normal sizes a whole read is faster (a 1M-cell UMAP column is 4 MB: 15 ms
 #: whole, 20 ms gathered); past it memory, not time, is what matters.
@@ -316,6 +317,22 @@ WHOLE_READ_MAX_BYTES = 64 * 2 ** 20
 GATHER_BLOCK_BYTES = 32 * 2 ** 20
 
 
+#: Share of a small shard's inner chunks a sharded gather must want for the shard to be read whole.
+WHOLE_SHARD_SHARE = 0.5
+
+#: Batches of a sharded gather read at the same time (each of GATHER_BLOCK_BYTES / this).
+GATHER_INFLIGHT = 8
+
+
+def _stored_width(array, cols) -> int:
+    """Columns one read of the selected ``cols`` of 2-D ``array`` decodes per row: every column of each
+    column chunk they fall in, not just the selected ones (``cols`` None: all of them)."""
+    ncols, c1 = int(array.shape[1]), int(array.chunks[1])
+    if cols is None:
+        return ncols
+    return min(ncols, int(np.unique(np.asarray(cols, dtype=np.int64) // c1).size) * c1)
+
+
 def _take_rows_sharded(array, rows, cols, out_shape, two_d) -> np.ndarray:
     """take_rows for a sharded zarr 3 array: the touched inner chunks, a bounded batch at a time.
 
@@ -323,38 +340,73 @@ def _take_rows_sharded(array, rows, cols, out_shape, two_d) -> np.ndarray:
     chunks a selection touches, but a selection that touches ALL of a shard's
     inner chunks is read as the whole shard: scattered rows do that to every
     shard they fall in, and anndata 0.13 writes shards of 1 GB. So the rows
-    go in batches of consecutive touched inner chunks, each batch at most
-    GATHER_BLOCK_BYTES of inner chunks and never all the inner chunks of one
-    shard: peak memory is a batch plus the result, whatever the shard size.
+    go in batches of consecutive touched inner chunks. A batch is at most
+    GATHER_BLOCK_BYTES / 4 of stored chunk bytes and never
+    all the inner chunks of a shard (but see WHOLE_SHARD_SHARE: a small
+    shard that is mostly wanted is read whole, as zarr does). GATHER_INFLIGHT batches are
+    read at once, so memory is 2 x GATHER_BLOCK_BYTES plus the result, whatever
+    the shard size, and over a network the requests of different batches overlap.
     """
     out = np.empty(out_shape, dtype=array.dtype)
-    order = np.argsort(rows, kind="stable")
-    srows = rows[order]
-    chunk = int(array.chunks[0])
-    per_shard = max(1, int(array.shards[0]) // chunk)
-    width = out_shape[1] if two_d else 1
-    chunk_bytes = max(1, int(np.dtype(array.dtype).itemsize) * chunk * (
-        min(int(array.chunks[1]), width) if two_d else 1))
-    budget = max(1, GATHER_BLOCK_BYTES // chunk_bytes)
-    # a shard of one inner chunk along the rows cannot be split any further
-    per_batch_shard = max(1, per_shard - 1)
-    cols_ix = np.asarray(cols, dtype=np.int64) if (two_d and cols is not None) else None
-    ids, first = np.unique(srows // chunk, return_index=True)
-    bounds = np.append(first, srows.size)
-    lo_chunk, count, in_shard, shard = 0, 0, 0, -1
+    n = int(array.shape[0])
+    chunk, shard_rows = int(array.chunks[0]), int(array.shards[0])
+    per_shard = max(1, shard_rows // chunk)
+    if rows.size < 2 or bool(np.all(rows[1:] >= rows[:-1])):
+        order, srows = None, rows           # a subset is sorted: no permutation to hold
+    else:
+        order = np.argsort(rows, kind="stable")
+        srows = rows[order]
+    # the rows of each inner chunk by binary search of the chunk edges: no per-row temporaries
+    pos = np.searchsorted(srows, np.arange(-(-n // chunk) + 1, dtype=np.int64) * chunk)
+    touched = np.flatnonzero(pos[1:] > pos[:-1])
+    width = _stored_width(array, cols) if two_d else 1
+    row_bytes = int(np.dtype(array.dtype).itemsize) * width
+    batch_bytes = max(chunk * row_bytes, GATHER_BLOCK_BYTES // 4)
+    cap = max(1, per_shard - 1)             # a shard of one inner chunk cannot be split any further
+    # A shard of at most GATHER_BLOCK_BYTES of which at least WHOLE_SHARD_SHARE is wanted is read whole
+    # (a request per shard, as zarr does, instead of the same bytes in many ranges); a bigger or sparser
+    # one is read in pieces that are never all of its inner chunks.
+    shard_bytes = int(np.dtype(array.dtype).itemsize) * int(np.prod(array.shards))
+    share = 1.0 if (not two_d or cols is None) else width / int(array.shape[1])
+    whole_ok = shard_bytes <= GATHER_BLOCK_BYTES
+    touched_ids = touched.tolist()
+    shard_ids = [cid // per_shard for cid in touched_ids]
+    wanted = {}
+    for sid in shard_ids:
+        wanted[sid] = wanted.get(sid, 0) + 1
+    first, held, in_shard, shard = 0, 0, 0, -1
     batches = []
-    for i, cid in enumerate(ids.tolist()):
-        sid = cid // per_shard
-        if count and (count >= budget or (sid == shard and in_shard >= per_batch_shard)):
-            batches.append((lo_chunk, i))
-            lo_chunk, count, in_shard = i, 0, 0
-        in_shard = in_shard + 1 if sid == shard and count else 1
-        shard, count = sid, count + 1
-    batches.append((lo_chunk, len(ids)))
-    for a, b in batches:
-        lo, hi = int(bounds[a]), int(bounds[b])
+    for i, sid in enumerate(shard_ids):
+        whole = whole_ok and wanted[sid] * share >= WHOLE_SHARD_SHARE * per_shard
+        new_shard = sid != shard
+        weight = (shard_bytes if whole else chunk * row_bytes) if (new_shard or not whole) else 0
+        if held and weight and (held + weight > batch_bytes
+                                or (not whole and not new_shard and in_shard >= cap)):
+            batches.append((first, i))
+            first, held, in_shard = i, 0, 0
+        in_shard = 1 if (new_shard or not held) else in_shard + 1
+        shard, held = sid, held + weight
+    batches.append((first, touched.size))
+    cols_ix = np.asarray(cols, dtype=np.int64) if (two_d and cols is not None) else None
+
+    def read(batch):
+        lo, hi = int(pos[touched[batch[0]]]), int(pos[touched[batch[1] - 1] + 1])
         sel = (srows[lo:hi], cols_ix) if cols_ix is not None else (srows[lo:hi],)
-        out[order[lo:hi]] = np.asarray(array.oindex[sel])
+        block = np.asarray(array.oindex[sel])
+        if order is None:
+            out[lo:hi] = block
+        else:
+            out[order[lo:hi]] = block
+
+    if len(batches) == 1:
+        read(batches[0])
+        return out
+    with ThreadPoolExecutor(min(GATHER_INFLIGHT, len(batches))) as pool:
+        try:
+            list(pool.map(read, batches))
+        except BaseException:
+            pool.shutdown(wait=True, cancel_futures=True)
+            raise
     return out
 
 
@@ -369,8 +421,9 @@ def take_rows(array, rows, cols=None) -> np.ndarray:
     held about the whole selection's chunks at once, so there the rows are
     read a block of chunks at a time: memory one block plus the result.
     A numeric column of at most WHOLE_READ_MAX_BYTES (the rows times the
-    selected columns) is read whole and indexed in memory instead: faster at
-    normal sizes, and bounded by that size.
+    columns decoded: all of those in the column chunks the selection falls
+    in) is read whole and indexed in memory instead: faster at normal sizes,
+    and bounded by that size.
     ``rows`` may be unsorted or repeat; the result follows their order.
     """
     rows = np.asarray(rows, dtype=np.int64).reshape(-1)
@@ -384,7 +437,9 @@ def take_rows(array, rows, cols=None) -> np.ndarray:
     if rows.size == 0:
         return np.empty(out_shape, dtype=array.dtype)
     numeric = np.dtype(array.dtype).kind in "biuf"     # strings: their size is not itemsize
-    if numeric and n * width * int(np.dtype(array.dtype).itemsize) <= WHOLE_READ_MAX_BYTES:
+    # sized by the columns decoded (every column of each column chunk the selection falls in), not by those kept
+    held = _stored_width(array, cols) if two_d else 1
+    if numeric and n * held * int(np.dtype(array.dtype).itemsize) <= WHOLE_READ_MAX_BYTES:
         # small enough to hold: one whole read, then the rows in memory
         whole = np.asarray(array.oindex[:, np.asarray(cols, dtype=np.int64)] if (two_d and cols is not None)
                            else array[:])
@@ -402,7 +457,7 @@ def take_rows(array, rows, cols=None) -> np.ndarray:
     srows = rows[order]
     chunk = int(array.chunks[0]) if getattr(array, "chunks", None) else n
     cols_ix = np.asarray(cols, dtype=np.int64) if (two_d and cols is not None) else None
-    row_bytes = max(1, int(np.dtype(array.dtype).itemsize) * width)
+    row_bytes = max(1, int(np.dtype(array.dtype).itemsize) * (_stored_width(array, cols) if two_d else 1))
     step = max(chunk, (GATHER_BLOCK_BYTES // (row_bytes * chunk)) * chunk)
     # only the blocks some selected row falls in are read
     starts = np.unique((srows // step) * step)
@@ -2219,9 +2274,14 @@ class ZarrReader(CacheSettings):
         try:
             # rows are always named (read_guard.check); cols only filter them.
             # Both axes at once: rows are not read whole to cut the columns after
-            if len(obj.shape) == 2:
-                # and a sharded array's rows are gathered by inner chunk (take_rows)
-                return take_rows(obj, row_indices, col_indices)
+            if len(obj.shape) == 2 and getattr(obj, "shards", None) and _ZARR3:
+                # a sharded array's rows are gathered by inner chunk (not whole shards)
+                rows = np.asarray(row_indices, dtype=np.int64).reshape(-1)
+                if (rows.size and rows.min() >= 0 and rows.max() < obj.shape[0]
+                        and (col_indices is None or len(col_indices))):
+                    return _take_rows_sharded(
+                        obj, rows, col_indices,
+                        (rows.size, len(col_indices) if col_indices is not None else obj.shape[1]), True)
             col_sel = col_indices if col_indices is not None else slice(None)
             data = obj.oindex[row_indices, col_sel]
             return np.asarray(data)

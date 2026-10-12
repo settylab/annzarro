@@ -76,3 +76,103 @@ def test_memory_follows_the_inner_chunks_not_the_shard(tmp_path, monkeypatch, in
     peak, out = _peak(tmp_path / "a.zarr", rows)
     assert np.array_equal(out, data[rows])
     assert peak < 8 * 2 ** 20, f"peak {peak / 2 ** 20:.1f} MiB with {inner_per_shard} inner chunks per shard"
+
+
+def test_a_column_subset_is_budgeted_by_the_stored_chunk_width(tmp_path, monkeypatch):
+    """The client reads an obsm matrix two columns at a time (``cols=0,1``), but an inner chunk holds
+    every stored column: 64 here. Budgeting by the 2 selected columns made a batch 32x too big
+    (the whole 64 MiB shard); by the stored width it is 4 inner chunks of 256 KiB per batch, 8 batches at once (about 14 MiB)."""
+    monkeypatch.setattr(zr, "WHOLE_READ_MAX_BYTES", 0)
+    monkeypatch.setattr(zr, "GATHER_BLOCK_BYTES", 4 << 20)
+    n = 1 << 18
+    a, data = _sharded(tmp_path / "a.zarr", (n, 64), (1024, 64), (n, 64))
+    rows = np.sort(np.random.default_rng(3).choice(n, 20_000, replace=False))
+    import zarr
+    tracemalloc.start()
+    out = zr.take_rows(zarr.open_array(str(tmp_path / "a.zarr"), mode="r"), rows, [0, 1])
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    assert np.array_equal(out, data[rows][:, [0, 1]])
+    assert peak < 20 * 2 ** 20, f"peak {peak / 2 ** 20:.1f} MiB for 2 columns of a 64 MiB shard"
+
+
+class _Spy:
+    """An array that records its orthogonal selections and how many run at once."""
+
+    def __init__(self, array, delay=0.0):
+        self.array, self.delay, self.calls, self.running, self.most = array, delay, [], 0, 0
+        import threading
+        self._lock = threading.Lock()
+
+    def __getattr__(self, name):
+        return getattr(self.array, name)
+
+    @property
+    def oindex(self):
+        spy = self
+
+        class _Indexer:
+            def __getitem__(self, sel):
+                import time
+                with spy._lock:
+                    spy.calls.append(sel)
+                    spy.running += 1
+                    spy.most = max(spy.most, spy.running)
+                time.sleep(spy.delay)
+                try:
+                    return spy.array.oindex[sel]
+                finally:
+                    with spy._lock:
+                        spy.running -= 1
+        return _Indexer()
+
+
+def test_batches_overlap_up_to_the_bound(tmp_path, monkeypatch):
+    """Over a network the requests of different batches must overlap (sequential batches multiplied the
+    round trips), but never more than GATHER_INFLIGHT at once: that, times a batch, is the memory."""
+    monkeypatch.setattr(zr, "WHOLE_READ_MAX_BYTES", 0)
+    monkeypatch.setattr(zr, "GATHER_BLOCK_BYTES", 1 << 20)
+    a, data = _sharded(tmp_path / "a.zarr", (1 << 18, 4), (1024, 4), (1 << 18, 4))
+    spy = _Spy(a, delay=0.02)
+    rows = np.sort(np.random.default_rng(5).choice(1 << 18, 30_000, replace=False))
+    assert np.array_equal(zr.take_rows(spy, rows), data[rows])
+    assert len(spy.calls) > zr.GATHER_INFLIGHT
+    assert 1 < spy.most <= zr.GATHER_INFLIGHT
+
+
+def test_unsharded_pairwise_reads_keep_the_single_orthogonal_read(tmp_path, monkeypatch):
+    """An obsp row of an unsharded matrix is one ``oindex[rows, cols]``, as before sharding was handled:
+    take_rows (a whole read of a small matrix, blocks on zarr 2) made it 5x to 90x slower."""
+    import zarr
+    from annzarro.core.zarr_reader import ZarrReader
+    from annzarro.tests.zarr_compat import open_group, write_array
+    root = open_group(str(tmp_path / "t.zarr"))
+    data = np.random.default_rng(0).random((300, 300)).astype("float32")
+    arr = write_array(root, "d", data, chunks=(30, 30))
+    spy = _Spy(arr)
+
+    def boom(*args, **kwargs):
+        raise AssertionError("an unsharded pairwise read went through the gather")
+    monkeypatch.setattr(zr, "take_rows", boom)
+    monkeypatch.setattr(zr, "_take_rows_sharded", boom)
+    reader = ZarrReader(enable_caching=False)
+    got = reader._read_pairwise(root, "obsp", "d", spy, False, [3, 200], None)
+    assert np.array_equal(got, data[[3, 200]])
+    got = reader._read_pairwise(root, "obsp", "d", spy, False, [3, 200], [5, 7, 250])
+    assert np.array_equal(got, data[[3, 200]][:, [5, 7, 250]])
+    assert len(spy.calls) == 2
+
+
+@pytest.mark.parametrize("cols", [None, [4, 1]])
+def test_sharded_pairwise_reads_gather_by_inner_chunk(tmp_path, monkeypatch, cols):
+    """A dense sharded obsp is gathered by inner chunk, whatever its size (no whole read)."""
+    from annzarro.core.zarr_reader import ZarrReader
+    a, data = _sharded(tmp_path / "a.zarr", (400, 8), (20, 8), (100, 8))
+    root = __import__("zarr").open_group(str(tmp_path / "g.zarr"), mode="w", zarr_format=3)
+    seen = []
+    real = zr._take_rows_sharded
+    monkeypatch.setattr(zr, "_take_rows_sharded", lambda *args: seen.append(1) or real(*args))
+    rows = [399, 0, 150, 150]
+    got = ZarrReader(enable_caching=False)._read_pairwise(root, "obsp", "d", a, False, rows, cols)
+    assert seen
+    assert np.array_equal(got, data[rows] if cols is None else data[rows][:, cols])
