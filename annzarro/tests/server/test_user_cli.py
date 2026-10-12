@@ -250,8 +250,6 @@ def test_removing_a_user_drops_their_access_entry(access_site):
     assert _run(cfg, "access", "bob", "--restrict", "--grant", str(data / "pub")) == 0
     assert _run(cfg, "remove", "--username", "bob") == 0
     assert _entry(path) is None
-||||||| 47311c6
-=======
 
 
 def test_the_cli_refuses_to_run_as_another_account(users, monkeypatch):
@@ -267,4 +265,3 @@ def test_the_cli_refuses_to_run_as_another_account(users, monkeypatch):
     assert _run(cfg, "list") == 0, "listing changes nothing, so any account may"
     monkeypatch.setattr(cli, "_dir_owner", lambda directory: (os.geteuid(), "me"))
     assert _run(cfg, "add", "--username", "carol", "--password", "pw") == 0
->>>>>>> github/dominik/v050-users
