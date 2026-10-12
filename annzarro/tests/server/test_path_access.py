@@ -78,6 +78,7 @@ NO_PATH = {
     "admin.health", "admin.cache_clear",   # the cache clear names a cache key in its body, never opened
     "admin.data_roots", "admin.data_roots_browse", "admin.data_roots_datasets",   # data directories: admin only, they name
     "admin.data_roots_add", "admin.data_roots_remove",   # directories to add, not datasets to read (test_admin_data_roots.py)
+    "admin.panel_sets", "admin.panel_sets_reassign", "admin.panel_sets_delete",   # panel sets: admin only, no dataset paths
 }
 
 
