@@ -4,8 +4,7 @@
 :alt: Three panels: desktop app on a laptop; personal server on a workstation or HPC node reached through an SSH tunnel; lab server behind a TLS proxy serving several browsers.
 :width: 100%
 
-*Three ways to run AnnZarro*, a figure of the AnnZarro paper (Otto, Baasri and Setty, in
-preparation). Dashed boxes are machines, blue boxes the AnnZarro server. Arrows show what
+*Three ways to run AnnZarro*, a figure of the AnnZarro paper {cite:p}`otto2026annzarro`. Dashed boxes are machines, blue boxes the AnnZarro server. Arrows show what
 moves per click: compressed chunks from storage to the server, and one decoded vector from
 the server to each browser.
 ```

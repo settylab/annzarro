@@ -5,7 +5,7 @@
 :width: 100%
 
 *Tahoe-100M on a laptop: every cell in one plot, and a subset that stays interactive*, a figure
-of the AnnZarro paper (Otto, Baasri and Setty, in preparation). Panels a to d are the plot areas
+of the AnnZarro paper {cite:p}`otto2026annzarro`. Panels a to d are the plot areas
 of app screenshots; e to g are browser measurements.
 ```
 

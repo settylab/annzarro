@@ -5,7 +5,7 @@
 :width: 100%
 
 *The focus model, the AnnData slots behind it, and AnnZarro compared with other viewers*, the
-overview figure of the AnnZarro paper (Otto, Baasri and Setty, in preparation): **a**, the focus
+overview figure of the AnnZarro paper {cite:p}`otto2026annzarro`: **a**, the focus
 model; **b**, the AnnData slots behind it; **c**, AnnZarro compared with other viewers
 ({repro}`manuscript/figures/fig1_overview.pdf` in the {ref}`companion repository <paper-companion>`).
 ```

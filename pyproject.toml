@@ -78,6 +78,7 @@ remote = [
 [project.urls]
 "Homepage" = "https://github.com/settylab/annzarro"
 "Documentation" = "https://annzarro.readthedocs.io"
+"Preprint" = "https://doi.org/10.64898/2026.10.10.758158"
 "Source" = "https://github.com/settylab/annzarro"
 "Issues" = "https://github.com/settylab/annzarro/issues"
 

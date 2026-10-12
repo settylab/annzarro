@@ -1,7 +1,7 @@
 # Paper figures
 
-Reference pages for the figures of the AnnZarro paper (Otto, Baasri and Setty, in
-preparation). Each page shows the figure, says which parts AnnZarro reproduces, and links to
+Reference pages for the figures of the AnnZarro paper, posted as a preprint on bioRxiv
+({cite:p}`otto2026annzarro`, [doi:10.64898/2026.10.10.758158](https://doi.org/10.64898/2026.10.10.758158)). Each page shows the figure, says which parts AnnZarro reproduces, and links to
 the views: share links and panel set files that reopen every view shown in the figure. The
 interface, cell-by-cell, gene-by-gene and cells-and-genes figures are rebuilt step by step in
 the {doc}`../tutorials/index`.
