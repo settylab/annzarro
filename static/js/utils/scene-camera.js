@@ -16,6 +16,14 @@
  *   then stays the default that uirevision restores.
  * - A turn is saved only on a mouseup over the plot's canvas. Released
  *   elsewhere (a drag that leaves the plot), it is lost at the next redraw.
+ *
+ * A third gap kept a zoom, which has no mouseup, from being kept at all: the
+ * scene saves on every `wheel` of its canvas, but the camera it reads lags
+ * the input (gl-plot3d shows the view as of 2 * 16 ms ago), so each save is
+ * the camera before that step and the last step is never saved. The next
+ * Plotly.react (a focus click, a recolour) then restored the camera of an
+ * earlier step, or the default view. A zoom is saved once the camera has
+ * caught up, as are drags and pinches.
  */
 
 /**
@@ -64,6 +72,10 @@ export function withShownCamera(gd, layout) {
 
 let _listening = false;
 
+/** How long after the last input the camera has caught up with it (ms): the
+ * camera's own lag is 2 * 16 ms, and a frame to render it. */
+export const CAMERA_SETTLE_MS = 150;
+
 /**
  * Record a turn wherever the mouse is released, not only over the plot:
  * every drawn 3D graph whose camera moved since Plotly saved it is saved
@@ -79,6 +91,16 @@ export function recordCameraOnRelease() {
             if (typeof gd.emit === 'function') gd.emit('plotly_relayout', { 'scene.camera': gd._fullLayout.scene.camera });
         }
     };
+    // and again once the camera has caught up with the input: a wheel zoom
+    // (every step, until the last) and the end of a drag or pinch
+    let timer = null;
+    const recordSettled = () => {
+        clearTimeout(timer);
+        timer = setTimeout(record, CAMERA_SETTLE_MS);
+    };
     window.addEventListener('mouseup', record, true);
     window.addEventListener('touchend', record, true);
+    window.addEventListener('mouseup', recordSettled, true);
+    window.addEventListener('touchend', recordSettled, true);
+    window.addEventListener('wheel', recordSettled, { capture: true, passive: true });
 }

@@ -232,3 +232,153 @@ def test_turned_camera_survives_focus_clicks_recolour_and_parts(server):
             assert not errors, errors
         finally:
             browser.close()
+
+
+# --- a zoom alone (mouse wheel) is kept like a turn ---------------------------
+#
+# A wheel zoom has no mouseup. plotly.js 2.20 saves it in the canvas's `wheel`
+# listener (scene.saveLayout + plotly_relayout), which is registered after the
+# camera's own wheel listener, so the camera has moved by then; whether the
+# save carries the zoomed camera is what these tests pin, with real wheel input.
+
+SETTINGS = """() => {
+  const c = window.PanelManager.getPanel('cell-plot-C').getConfig().viewport3D;
+  return c ? {eye: c.eye, up: c.up, center: c.center} : null;
+}"""
+
+
+def _zoom(page, dy=-400, steps=3):
+    """Zoom with the mouse wheel over the plot, without turning it."""
+    box = page.evaluate("""() => { const r = document.querySelector('%s').getBoundingClientRect();
+        return {x: r.left + r.width / 2, y: r.top + Math.min(r.height, innerHeight - r.top) / 2}; }""" % PLOT)
+    page.mouse.move(box["x"], box["y"])
+    for _ in range(steps):
+        page.mouse.wheel(0, dy)
+        page.wait_for_timeout(120)
+    page.wait_for_timeout(500)
+    cam = page.evaluate(STATE)["camera"]
+    return {k: cam[k] for k in ("eye", "center", "up")}
+
+
+def _assert_kept(page, want, what, settled=None):
+    s = settled or page.evaluate(STATE)
+    _assert_camera(s, want, what + " (on screen)")
+    saved = page.evaluate(SETTINGS)
+    assert saved, f"{what}: no camera in the panel settings"
+    for part in ("eye", "center", "up"):
+        for k in "xyz":
+            assert saved[part][k] == pytest.approx(want[part][k], abs=1e-4), \
+                f"{what}: settings {part}.{k} is {saved[part][k]}, not {want[part][k]}"
+
+
+def _norm(c):
+    return sum(c["eye"][k] ** 2 for k in "xyz") ** 0.5
+
+
+def _open(p, root, store):
+    browser = p.chromium.launch()
+    page = browser.new_page(viewport={"width": 1400, "height": 900})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(_link(root, store))
+    _settle(page, lambda s: s["part"] == "1" and s["mark"] is not None)
+    return browser, page, errors
+
+
+def _focus_other(page, i):
+    clicked = _click_point(page, i)
+    return _settle(page, lambda s: s["focused"] == clicked["name"] and s["mark"] is not None
+                   and s["mark"] == pytest.approx(clicked["at"]))
+
+
+def test_wheel_zoom_survives_focus_recolour_refresh_and_reload(server):
+    root, store = server
+    with playwright.sync_playwright() as p:
+        browser, page, errors = _open(p, root, store)
+        try:
+            start = page.evaluate(STATE)["camera"]
+            zoomed = _zoom(page)
+            assert _norm(zoomed) < _norm(start) - 0.1, "the wheel did not zoom"
+            for part in ("center", "up"):
+                for k in "xyz":
+                    assert zoomed[part][k] == pytest.approx(start[part][k], abs=1e-6), "the wheel turned or panned"
+            _assert_kept(page, zoomed, "after the zoom")
+
+            # 1. a click focuses another cell: the plot recolours to its row
+            for i in (3, 8):
+                s = _focus_other(page, i)
+                _assert_kept(page, zoomed, f"focus click {i}", s)
+
+            # 2. recolour by a category
+            before = s["colour"]
+            page.select_option('.tile[data-tile-id="cell-plot-C"] select.axis-type-select[data-axis="color"]', "obs")
+            s = _settle(page, lambda s: s["colour"] != before)
+            _assert_kept(page, zoomed, "recolour", s)
+
+            # 3. the refresh buttons: the dataset refresh and the plot's own redraw
+            page.click("#refresh-dataset")
+            page.wait_for_timeout(1500)
+            s = _settle(page)
+            _assert_kept(page, zoomed, "dataset refresh", s)
+            page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').refreshPlot()")
+            page.wait_for_timeout(500)
+            s = _settle(page)
+            _assert_kept(page, zoomed, "plot refresh", s)
+
+            # 4. a page reload restores the panels from the autosave
+            page.evaluate("() => window.dispatchEvent(new Event('beforeunload'))")
+            page.wait_for_timeout(500)
+            page.goto(root + "/")
+            _settle(page, lambda s: s["mark"] is not None)
+            _assert_kept(page, zoomed, "page reload")
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_turn_then_wheel_zoom_survives_focus_and_recolour(server):
+    root, store = server
+    with playwright.sync_playwright() as p:
+        browser, page, errors = _open(p, root, store)
+        try:
+            _drag(page, 40, 15)
+            turned = page.evaluate(STATE)["camera"]
+            zoomed = _zoom(page, dy=300)
+            assert _norm(zoomed) > _norm(turned) + 0.1, "the wheel did not zoom out"
+            assert zoomed["eye"]["x"] / _norm(zoomed) == pytest.approx(turned["eye"]["x"] / _norm(turned), abs=1e-3)
+            _assert_kept(page, zoomed, "after turn and zoom")
+            s = _focus_other(page, 5)
+            _assert_kept(page, zoomed, "focus click after turn and zoom", s)
+            before = s["colour"]
+            page.select_option('.tile[data-tile-id="cell-plot-C"] select.axis-type-select[data-axis="color"]', "obs")
+            s = _settle(page, lambda s: s["colour"] != before)
+            _assert_kept(page, zoomed, "recolour after turn and zoom", s)
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_wheel_zoom_then_drag_released_outside_survives_focus(server):
+    root, store = server
+    with playwright.sync_playwright() as p:
+        browser, page, errors = _open(p, root, store)
+        try:
+            _zoom(page)
+            # a drag that leaves the plot and is released outside it
+            box = page.evaluate("""() => { const r = document.querySelector('%s').getBoundingClientRect();
+                return {x: r.left + r.width / 2, y: r.top + Math.min(r.height, innerHeight - r.top) / 2}; }""" % PLOT)
+            page.mouse.move(box["x"], box["y"])
+            page.mouse.down()
+            for i in range(1, 11):
+                page.mouse.move(box["x"] - 30 * i, box["y"] + 5 * i)
+                page.wait_for_timeout(30)
+            page.mouse.move(2, 2)
+            page.mouse.up()
+            page.wait_for_timeout(400)
+            cam = page.evaluate(STATE)["camera"]
+            cam = {k: cam[k] for k in ("eye", "center", "up")}
+            s = _focus_other(page, 6)
+            _assert_kept(page, cam, "focus click after zoom and a drag released outside", s)
+            assert not errors, errors
+        finally:
+            browser.close()
