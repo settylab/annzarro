@@ -21,6 +21,10 @@ def make_app(tmp_path, auth=True, probe=False, **config):
                 "auth_enabled": auth, "user_file": str(users)}
     settings.update(config)
     app = create_app(settings)
+    # the clients behave like the page (login form token, request token), in a spawned
+    # process too, where the conftest's fixture does not reach (slice C's CSRF)
+    from annzarro.tests.conftest import _BrowsesLikeAPage
+    app.test_client_class = _BrowsesLikeAPage
     if probe:
         # a guarded view with no behaviour of its own, to test the guard's order of checks
         from annzarro.server.admin.guard import require_admin

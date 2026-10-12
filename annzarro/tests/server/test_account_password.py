@@ -134,7 +134,8 @@ def test_missing_fields(app):
 def test_csrf_origin_and_content_type_are_enforced(app):
     client = login(app, USER)
     token = csrf_of(client)
-    for headers in ({"Content-Type": "application/json"},
+    # an empty header: the conftest's browser-like client adds the token to a request that has none
+    for headers in ({"Content-Type": "application/json", "X-AnnZarro-CSRF": ""},
                     {"Content-Type": "application/json", "X-AnnZarro-CSRF": "nope"},
                     {"Content-Type": "application/json", "X-AnnZarro-CSRF": token, "Origin": "https://evil.example"},
                     {"Content-Type": "application/json", "X-AnnZarro-CSRF": token, "Sec-Fetch-Site": "cross-site"}):
@@ -158,16 +159,16 @@ def test_account_routes_declare_a_gate(app):
         assert access.gate_of(app, endpoint) == "public"
 
 
-# Pages that do not send a Content-Security-Policy yet. The policy slice (P1) gives the main page and
-# the login page theirs; when it lands this test fails on the stale entries, and they are deleted.
-NO_CSP_YET = {"/", "/login"}
+# Pages that do not send a Content-Security-Policy yet. Empty since the policy slice (P1) gave the
+# main page and the login page theirs; a page added without one is named here or fails the walk.
+NO_CSP_YET = set()
 
 
 def test_every_html_page_sends_a_content_security_policy(app):
     """A page is any argument-free GET route, or "/", whose answer is HTML (an HTML error page
     counts). A future page cannot ship without a policy, and the list above only shrinks."""
     client = login(app, ADMIN)
-    paths = {"/"} | {r.rule for r in app.url_map.iter_rules()
+    paths = {"/", "/some/deep/link"} | {r.rule for r in app.url_map.iter_rules()
                      if "GET" in r.methods and not r.arguments and r.rule != "/logout"}
     html, stale = set(), set()
     for path in sorted(paths):

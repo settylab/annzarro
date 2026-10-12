@@ -10,7 +10,7 @@ also the rate limit: five wrong guesses and the address is refused for
 ``lockout_time`` seconds (423 ``locked``). The change ends the user's other
 logins (``password_changed_at``); this one stays.
 
-The change is protected like the admin API (``guard._csrf_ok``): the
+The change is protected like the admin API (``csrf.csrf_ok``, which ``csrf.enforce`` also applies before the view): the
 session's token in ``X-AnnZarro-CSRF``, a JSON body, and the Origin checks.
 """
 
@@ -20,7 +20,7 @@ import time
 from flask import current_app, jsonify, render_template, request, session
 
 from . import access, permissions
-from .admin.guard import _csrf_ok, _harden, csrf_token, with_csp
+from .admin.guard import _harden, csrf_ok, csrf_token, with_csp
 from .admin.users import record_audit, weak_password_reason
 from .auth import UnsupportedPasswordHash
 
@@ -51,7 +51,7 @@ def register_account_routes(app):
         username, _ = permissions.current_user()
         if not username:
             return _error(401, "login_required", "Authentication required")
-        if not _csrf_ok():
+        if not csrf_ok():
             logger.warning("Refused password change of %r from %s: CSRF check failed", username,
                            request.remote_addr)
             return _error(403, "csrf_failed", "The page is out of date. Reload it and try again.")
