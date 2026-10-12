@@ -406,10 +406,10 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 | `GET /config` | the `public` tier of the configuration ({doc}`configuration`): `server` (`host`, `port`, `https_enabled`, `unified_server`), `auth.enabled` (when set), `branding`, `ui` and `integrations`, plus the flat keys the web client reads (`host`, `port`, `app_name`, `project_description`, `contact_info`, `enabled_panel_types`, `integrations`, `ui_*`) and the flags `electron_mode` and `local_mode`. Never `data_dir`, log or users-file paths, limits, cache or remote-store settings |
 | `GET /status` | version, uptime, memory, data directory checks. On a shared server only an admin gets this (it names the data directory, the host and the process); everybody else gets `{"server": {"status": "running", "version"}}`, enough for a load balancer's probe |
 | `GET /cache/info` | the server's result cache of the process that answers: datasets, items, `memory_usage_mb` (exactly what the cache holds), `max_memory_mb`. On a shared server admins only (`403 admin_only` otherwise: the datasets named are what other users opened) |
-| `GET /admin/health` | admins only: every worker's read budget in use, cache size, request and refusal counts by `reason`, and the users seen recently, merged from the workers' snapshot files (`annzarro_admin/health/`, written at most every 2 s). The admin page's Server health section shows it |
-| `POST /admin/cache/clear` | admins only: `{dataset_path?}`, like `POST /cache/reset`; recorded in the audit log as `cache.clear` |
 | `POST /cache/reset` | clear it, for all datasets or `?dataset_path=`, and start a new generation of them (new ETags, {ref}`revalidation`). On a shared server admins only (`403 admin_only` otherwise), and the audit log records it. Each gunicorn worker has its own cache: the one that answers clears it now, the others drop the dataset's entries on their next request, when they see the new generation |
 | `POST /data/refresh?dataset_path=` | check the dataset against the disk (every file's modification time and size) and, if it changed, start a new generation, so every worker serves the change and the browser's revalidations get new tags. Open to every user who may read the dataset; an unchanged store keeps its generation and everyone's cached reads. Bounded: concurrent refreshes in a worker share one walk; a dataset is walked at most once per `server.refresh_min_interval_s` (10 s) across workers, and a refresh sooner never waits in the server: it schedules one walk for the interval's end, shared by every refresh meanwhile, and answers at once `{"status": "scheduled", "after", "retry_after_s"}`; `POST /data/refresh?dataset_path=&after=<after>` then returns the result of the first walk that started at or after `after` (or `scheduled` again until there is one), so the answer always comes from a walk that started after the first request (the browser does this); a walk stops after 3 s, and a store too large to fingerprint fully answers `status: "partial"` (with a `message`) and is not bumped: an admin's `POST /cache/reset` serves its in-place chunk writes (the app shows the `partial` answer to the user as a notice, once per Refresh press). Answers `{"status": "full" or "partial" or "remote" or "scheduled", "changed": bool, "checked": bool, "waited_s", "consolidated_metadata": null or {"stale": true, "detail", "message", "fix"}}`; when the store's consolidated metadata no longer describes it (an element added or rewritten without `zarr.consolidate_metadata`), the store is read without it until it is consolidated again, and `dataset_structure` carries the same `consolidated_metadata` notice. The header's Refresh dataset and each panel's Refresh call it |
+| `GET /policy/effective?keys=a,b` | the policy as this requester gets it (the client never resolves anything itself): `{version, values}` for the settings the page reads, or only the named ones. The reply is `no-store`, and every API reply carries `X-AnnZarro-Policy` with the same `version`, so an open page notices a change on its next request ({doc}`../design/policy-registry`). Open to every signed-in user |
+| `GET /admin/...` | the admin interface, {ref}`below <http-admin>` |
 | `GET /directories/home`, `GET /directories/list?path=` | the data directory and its entries (dataset browser) |
 | `GET /zarr/url?url=` | whether a URL is an acceptable remote store |
 
@@ -419,6 +419,79 @@ Also registered but not used by the web client: `/data/paginated`, `/data/statis
 forms `<path>` is relative to the data directory (`/datasets/bm_aging_annzarro.zarr`,
 `/datasets/bm_aging_annzarro.zarr/uns/neighbors/params`); a path that does not exist is `404 not_found`,
 one that is not a dataset `400 unsupported_type`.
+
+(http-admin)=
+## Admin API
+
+The admin page ({doc}`../deployment/admin`) uses these routes, and a script can use them with
+a session cookie. Every route is under `/api/v1/admin/`. With login off each answers `404`
+`admin_requires_login`. `GET /admin` is the page itself. Request and reply bodies are JSON.
+Replies are `Cache-Control: no-store`.
+
+Every admin route checks, in this order, and answers at the first failure:
+
+| Check | Refusal |
+|---|---|
+| Signed in | `401` (a redirect to the login page for `/admin`) |
+| The user is an admin, read from the users file on every request | `403` `admin_only` (audited for an unsafe method) |
+| For `POST`, `PUT`, `DELETE`: the CSRF token of the session in the header `X-AnnZarro-CSRF` (the page carries it in `<meta name="annzarro-csrf">`; `GET /auth/me` does not return it), an `Origin` equal to the server's own address (see `server.proxy_count`), and `Sec-Fetch-Site` `same-origin` if sent | `403` `csrf_failed` |
+| For the same methods: `Content-Type: application/json` | `415` `json_required` |
+| For the same methods except `reauth`: the password was entered within `server.admin_reauth_minutes` (30) | `403` `reauth_required`, with `reauth_url` |
+| At most `server.admin_rate_per_minute` (30) changes a minute per admin and worker, eight times as many reads | `429` `admin_rate_limited`, with `Retry-After` and `retry_after` |
+
+Errors are `{"error": <sentence>, "reason": <code>}`, plus fields named below. A stored file
+that does not parse (`overlay.json`, `access.json`) is `503` `overlay_unreadable` or
+`store_unreadable`: nothing is written until it is repaired. A lock held longer than
+`server.lock_timeout_s` is `503` `busy`.
+
+### Re-authentication and the audit log
+
+| Route | Body or query | Returns |
+|---|---|---|
+| `POST /admin/reauth` | `{"password"}` | `200 {"reauth_until": <ISO time>}`: the password is confirmed and changes are allowed for `server.admin_reauth_minutes`. `401` `bad_password` (counts toward the login lockout), `423` `locked`, `400` `bad_request`, `500` `password_unsupported` |
+| `GET /admin/audit` | `before_seq` (records older than this), `limit` (1 to 500, default 100) | `{"records": [...]}` newest first. Without `before_seq` also `"chain"`: `{ok, first_bad_seq, problem, first_seq, last_seq, records, torn}`. `problem` is `tampered`, `truncated` or `head_unreadable` when `ok` is false. `400` `bad_request` for a value that is not an integer |
+
+A record is `{seq, ts, actor, addr, via, action, target, detail, outcome, prev, hash}`; `via` is
+`web` or `cli:<user>`, `outcome` is `ok` or `refused:<reason>`.
+
+### Data directories
+
+Adding needs `server.admin_data_roots` ({ref}`admin data directories <admin-data-roots>`).
+
+| Route | Body or query | Returns |
+|---|---|---|
+| `GET /admin/data-roots` | | `{"parents": [{path, ok}], "roots": [...], "overlay": {ok, error}}`. A root is `{path, real, source, active, stores, stores_capped}`; `source` is `data_dir`, `config` or `admin`; an admin root also has `added_by`, `added_at`, and an inactive one `inactive_reason` |
+| `GET /admin/data-roots/browse` | `path` (absolute; none lists the parents) | `{"path", "dirs": [{name, path, is_root}], "capped"}`: the sub-directories that lie inside a parent. `403` `admin_roots_disabled`, `400` `not_absolute`, `403` `outside_admin_parents`, `404` `not_found` |
+| `GET /admin/data-roots/datasets` | `root`, `folder`, `offset`, `limit` | one page of the stores in a folder of an active root, as the dataset picker lists them. `403` `not_a_root`, `400` `bad_request`, `404` `not_found` |
+| `POST /admin/data-roots` | `{"path"}` | `201` with the root. `400` `bad_request`, `not_absolute`, `not_a_directory`; `403` `admin_roots_disabled`, `outside_admin_parents`, `is_a_parent`, `contains_server_state`; `409` `already_allowed`, `too_many` (100). Audited as `data_roots.add` |
+| `DELETE /admin/data-roots` | `{"path"}` | `{"removed", "panel_sets_affected"}`. `409` `from_config` (a directory of the YAML), `404` `unknown_root`. Audited as `data_roots.remove` |
+
+### Health and cache
+
+| Route | Body | Returns |
+|---|---|---|
+| `GET /admin/health` | | `{workers, totals, active, window_s}`. A worker is `{pid, host, started, age_s, stale, idle, idle_since, requests, refusals, read_guard, cache}`: `refusals` counts replies by their `reason`, `read_guard` is `{budget_mb, share_mb, in_flight_mb, by_requester}`, `cache` is `{datasets, memory_mb, max_mb, name_index_mb}`. `totals` sums the workers that are not stale. `active` lists the users seen within `window_s` (the session timeout). Each worker's snapshot is at most 2 s old |
+| `POST /admin/cache/clear` | `{"dataset_path"?}` | the result of the clear, as `POST /cache/reset`, in every worker. `400` `bad_request`. Audited as `cache.clear` |
+
+### Settings
+
+The settings are the keys of the policy registry ({doc}`../design/policy-registry`).
+
+| Route | Body | Returns |
+|---|---|---|
+| `GET /admin/policy` | | `{version, store_problems, keys, unknown, issues}`. A key is its declaration (`name`, `type`, `scope`, `area`, `description`, `combine`, `restart`, `routes`, `config_path`) with `default`, `value`, `source` (`user`, `admin`, `env`, `config`, `default` or `forced`), `locked`, `layers` (the value of each layer that set it), `inherited` (what applies if the admin value is removed) and `outbound_hosts_now`. `unknown` lists stored names no version declares; `issues` the stored values that are ignored |
+| `PUT /admin/policy` | `{"<key>": value, ...}`; `null` removes a value | the same document after the change, and `capped` (for values wider than the layer below) |
+| `GET /admin/users/<username>/policy` | | the keys a user may override, with `override` and `has_override`, `values` (what is stored), and `effective`. `404` `unknown_user` |
+| `PUT /admin/users/<username>/policy` | as above | the same document after the change |
+
+A `PUT` is all or nothing. It is refused with `400` `invalid_settings` for an unknown key, a
+value of the wrong type, out of range or not among the choices (`errors` maps each key to its
+code: `unknown_key`, `bad_type`, `out_of_range`, `bad_choice`), and with `409` for a key
+the operator decided (`reason` `locked_by_config`), one the YAML alone sets
+(`config_scope`, the `limits.*` keys), a per-user value on a server-wide key
+(`server_scope`), a restrict key set wider than the YAML allows (`config_ceiling`), and any key
+for an administrator's per-user policy (`admin_user`). Audited as `policy.update`; if only the
+audit write fails the change stands and the reply has `audit_failed: true`.
 
 ## Status codes
 
