@@ -78,6 +78,9 @@ def test_user_is_refused_and_nothing_changes(app):
     client = login(app, USER)
     before = _stamps(app)
     for rule, method, path in admin_rules(app):
+        # each rule gets a fresh refusal budget: there are more admin writes than the
+        # per-minute cap on audited refusals (the cap itself is the next test)
+        app.extensions.get("annzarro_admin", {}).pop("limiter", None)
         count = _audit_len(app)
         # a user who somehow holds a valid token and fresh re-auth is still refused
         headers = unsafe_headers(client) if method in UNSAFE else {}
