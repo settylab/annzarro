@@ -12,6 +12,7 @@ import {
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan, partialRefreshNotice } from './utils/session-permissions.js';
+import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
@@ -3404,6 +3405,18 @@ const App = (function() {
             _refreshPlan = refreshPlan(me);
             const refreshBtn = document.getElementById('refresh-dataset');
             if (refreshBtn) refreshBtn.title = _refreshPlan.title;
+            const holder = document.getElementById('account-links');
+            if (holder) {
+                holder.replaceChildren(...accountLinks(me).map((link) => {
+                    const a = document.createElement('a');
+                    a.className = 'auth-indicator auth-indicator--user';
+                    a.dataset.link = link.id;
+                    a.textContent = link.text;
+                    a.title = link.title;
+                    a.href = link.href;
+                    return a;
+                }));
+            }
             const badge = authIndicator(me);
             if (!badge) return;
             el.textContent = badge.text;
