@@ -192,6 +192,7 @@ def overview():
     config = current_app.config
     state = settings.access_store_state(config)
     users, roots = {}, {}
+    live_roots = [r["real"] for r in data_roots.effective_roots(config) if r["active"] and r["real"]]
     manager = current_app.auth_manager
     for name, record in sorted(manager.get_users().items()):
         entry = access.entry_of(name, config)
@@ -206,11 +207,9 @@ def overview():
         for grant in grants:
             if not grant["active"] or grant["kind"] == "remote":
                 continue
-            for root in data_roots.effective_roots(config):
-                if root["active"] and root["real"] and (
-                        confinement.is_inside(grant["real"], [root["real"]])
-                        or confinement.is_inside(root["real"], [grant["real"]])):
-                    held = roots.setdefault(root["real"], [])
+            for root in live_roots:
+                if confinement.is_inside(grant["real"], [root]) or confinement.is_inside(root, [grant["real"]]):
+                    held = roots.setdefault(root, [])
                     if name not in held:
                         held.append(name)
     return jsonify(store=state, users=users, roots=roots)
