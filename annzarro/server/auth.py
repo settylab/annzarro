@@ -237,15 +237,22 @@ class AuthManager:
         :func:`ensure_admin_remains`) is checked on what is really stored,
         not on this process's possibly stale copy. ``mutate`` edits the table
         in place and returns a value, which is returned here. If it raises,
-        nothing is written and the exception propagates; so do read and
+        nothing is written and the exception propagates; nor is anything when ``mutate`` left the table as it was; so do read and
         write errors (unlike ``_save_users``, whose callers have nobody to
         tell). ``mutate`` must not call methods of this manager (the lock is
         held and not re-entrant).
         """
         with self._locked_file():
             table = self._read_users_file()
+            snapshot = lambda: json.dumps({name: user.to_dict() for name, user in table.items()}, sort_keys=True)  # to_dict shares the nested dicts, so compare text
+            before = snapshot()
             result = mutate(table)
-            self._write_users(table)
+            if snapshot() == before:
+                # nothing changed (an unknown name, a no-op): no new inode for every worker to reload
+                self.users = table
+                self._file_stamp = self._stamp()
+            else:
+                self._write_users(table)
         return result
 
     def admins(self):

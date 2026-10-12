@@ -104,3 +104,19 @@ def test_login_never_logs_the_password_hash(tmp_path, caplog):
     assert "correct horse" not in text and "wrong" not in text.replace("Invalid password", "")
     for part in stored.split("$"):
         assert part[:8] not in text, "part of the password hash reached the log"
+
+
+def test_a_change_that_changes_nothing_writes_nothing(tmp_path):
+    from annzarro.server import atomic_store
+    manager = AuthManager(user_file=str(tmp_path / "users.json"))
+    manager.create_user("a", PASSWORD, is_admin=True)
+    stamp = atomic_store.stamp(manager.user_file)
+    assert manager.remove_user("nobody") is False
+    assert manager.set_admin("nobody", True) is False
+    assert manager.unlock("nobody") is None
+    assert manager.unlock("a") == 0
+    assert manager.set_admin("a", True) is True           # already an admin
+    assert atomic_store.stamp(manager.user_file) == stamp, "the file was not replaced"
+    assert manager.unlock("a") == 0 and manager.set_admin("a", True)
+    manager.create_user("b", PASSWORD)
+    assert atomic_store.stamp(manager.user_file) != stamp

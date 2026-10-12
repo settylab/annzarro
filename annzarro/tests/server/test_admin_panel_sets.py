@@ -251,19 +251,10 @@ def _rank(owner):
     return 0 if owner == ADMIN else int(owner[1:]) + 1
 
 
-def _app_in_a_child(tmp_path):
-    """The app as a spawned process builds it. The conftest's browser-like test client (login form
-    token, request token) is not installed there, so install it, as slice C's CSRF requires."""
-    from annzarro.tests.conftest import _BrowsesLikeAPage
-    app = make_app(tmp_path, admin_rate_per_minute=100000)
-    app.test_client_class = _BrowsesLikeAPage
-    return app
-
-
 def _saver(tmp_path, results, start):
     """The admin saves one set ROUNDS times; after each save the set's owner must
     not have moved back to someone it was already handed on from."""
-    app = _app_in_a_child(tmp_path)
+    app = make_app(tmp_path, admin_rate_per_minute=100000)
     root = login(app, ADMIN)
     path = os.path.join(app.config["data_dir"], "sessions", "shared.json")
     start.wait(30)
@@ -282,7 +273,7 @@ def _saver(tmp_path, results, start):
 def _reassigner(tmp_path, results, start):
     """The admin hands the set on to u0, u1, ...; right after each handover the set
     must belong to that user or a later one."""
-    app = _app_in_a_child(tmp_path)
+    app = make_app(tmp_path, admin_rate_per_minute=100000)
     root = login(app, ADMIN)
     path = os.path.join(app.config["data_dir"], "sessions", "shared.json")
     start.wait(30)

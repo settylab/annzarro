@@ -11,7 +11,9 @@ password on /account/password. No console errors or CSP violations anywhere.
 Needs Playwright with Chromium and a gunicorn executable; skipped otherwise,
 unless ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where either missing is an error.
 """
+import http.cookiejar
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -121,7 +123,22 @@ class Tab:
         return self
 
     def status(self, path):
-        return self.page.evaluate("async (p) => (await fetch(p)).status", path.lstrip("/"))
+        # the context's request API shares the cookies but not the page, which navigates away
+        # to the login page when one of its own requests meets a revoked login
+        return self.context.request.get(self.srv.url + "/" + path.lstrip("/")).status
+
+
+def _wrong_password(url, username):
+    """One wrong sign-in as the form sends it: the form's token and cookie come back with the
+    password (csrf.py), else the server refuses the post before it counts as a guess."""
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    page = opener.open(url + "/login", timeout=20).read().decode()
+    token = re.search(r'name="login_csrf" value="([^"]+)"', page).group(1)
+    data = f"username={username}&password=wrong&login_csrf={token}".encode()
+    try:
+        opener.open(urllib.request.Request(url + "/login", data=data), timeout=20).read()
+    except urllib.error.HTTPError:
+        pass
 
 
 def _row(page, name):
@@ -199,7 +216,7 @@ def test_the_users_section_end_to_end(server):
 
             # lock bob with wrong passwords, then unlock him
             for _ in range(5):
-                admin.context.request.post(srv.url + "/login", form={"username": "bob", "password": "wrong"})
+                _wrong_password(srv.url, "bob")
             page.reload()
             _wait_table(page)
             assert "1 address" in _row(page, "bob").inner_text()

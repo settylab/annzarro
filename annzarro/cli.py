@@ -226,6 +226,36 @@ def _record_cli_audit(auth_manager, config, action, target=None, detail=None, ou
         logger.warning(f"Could not write the audit record of {action} {target}: {exc}")
 
 
+def _dir_owner(path):
+    """(uid, name) of whoever owns the directory ``path``; None if it does not exist."""
+    try:
+        uid = os.stat(path).st_uid
+    except OSError:
+        return None
+    try:
+        import pwd
+        return uid, pwd.getpwuid(uid).pw_name
+    except (ImportError, KeyError):
+        return uid, str(uid)
+
+
+def _wrong_account(user_file):
+    """Why the current OS account must not change this users file, or None.
+
+    The server's account owns the users file's directory, and the audit log and
+    users file the server rewrites live there. A command run as another account
+    (typically ``sudo annzarro user add`` as root) would create files the server
+    can no longer write, so every admin change on the web would fail."""
+    if not hasattr(os, "geteuid"):
+        return None
+    owner = _dir_owner(os.path.dirname(os.path.abspath(user_file)))
+    if owner is None or owner[0] == os.geteuid():
+        return None
+    return (f"The users file's directory belongs to '{owner[1]}', not to the account running this command. "
+            f"Run it as that account (sudo -u {owner[1]} annzarro user ...); files created here would be "
+            "unwritable for the server.")
+
+
 def manage_users(args: argparse.Namespace) -> int:
     """
     Manage users for the Annzarro server
@@ -236,7 +266,7 @@ def manage_users(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
-    from .server.auth import AuthManager, LastAdminError
+    from .server.auth import AuthManager, LastAdminError, resolve_user_file
     
     # The same environment `annzarro start` runs with (production), so a
     # user_file set for production is the file both of them use
@@ -248,6 +278,11 @@ def manage_users(args: argparse.Namespace) -> int:
     else:
         user_file = "users.json"
     
+    problem = _wrong_account(resolve_user_file(user_file))
+    if problem and args.user_command != "list":
+        logger.error(problem)
+        return 1
+
     # Ensure user file directory exists
     user_file_dir = os.path.dirname(user_file)
     if user_file_dir and not os.path.exists(user_file_dir):
@@ -380,12 +415,6 @@ def _user_access(args, auth_manager, config, user_file) -> int:
     from .server import access
 
     username = args.name
-    owner = _state_owner_mismatch(user_file)
-    if owner is not None:
-        logger.error(f"The server's state files belong to uid {owner[0]} and this command runs as uid {owner[1]}: it "
-                     "would leave a file the server cannot read, and every non-admin would be refused until it is "
-                     f"repaired. Run it as the account that runs the server (sudo -u <that account> annzarro user access ...).")
-        return 1
     record = auth_manager.get_user(username)
     if record is None:
         logger.error(f"User '{username}' does not exist")
@@ -459,22 +488,6 @@ def _user_access(args, auth_manager, config, user_file) -> int:
             logger.warning(f"'{username}' is restricted and has no grant yet, so they see nothing. "
                            "Add one with --grant PATH.")
     return 0
-
-
-def _state_owner_mismatch(user_file):
-    """``(owner uid, our uid)`` when the directory of the users file belongs to someone else, else None.
-
-    A command run through sudo would create ``annzarro_admin/access.json`` owned by root with mode 0600,
-    which the server account cannot read.
-    """
-    if not hasattr(os, "geteuid"):
-        return None
-    directory = os.path.dirname(os.path.abspath(user_file))
-    try:
-        owner = os.stat(directory).st_uid
-    except OSError:
-        return None          # not there yet: the command creates it as this account
-    return (owner, os.geteuid()) if owner != os.geteuid() else None
 
 
 def _grants_report(flat, username):
