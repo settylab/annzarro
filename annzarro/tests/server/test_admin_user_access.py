@@ -535,17 +535,17 @@ def _case_insensitive(path):
 
 def test_the_effective_stores_and_the_check_agree_with_the_gate_for_a_link_spelled_in_another_case(app, admin, layout):
     data = layout / "data"
-    if not _case_insensitive(data / "in.zarr"):
+    if not _case_insensitive(data / "pub"):
         pytest.skip("needs a case-insensitive volume (APFS)")
-    folder = data / "curated"
-    folder.mkdir()
-    variant = str(data / "in.zarr")
-    head, tail = os.path.split(variant)
-    os.symlink(os.path.join(head, tail.swapcase()), folder / "a.zarr")      # the target is spelled in another case
+    hidden = data / "pub" / ".hid"          # not walked: the store is reachable only through the link
+    hidden.mkdir()
+    shutil.copytree(FIXTURE, hidden / "z.zarr")
+    os.symlink(str(data / "PUB" / ".hid" / "z.zarr"), data / "pub" / "z.zarr")      # the target is spelled in another case
     put_access(admin, True)
-    assert grant(admin, "dir", folder).status_code == 201
+    assert grant(admin, "dir", data / "pub").status_code == 201
     bob = login(app, BOB)
-    reads = info(bob, folder / "a.zarr") == 200
+    assert info(bob, data / "pub" / "z.zarr") == 200, "the gate covers a link into the granted folder, whatever its spelling"
     listed = [i["name"] for i in view(admin).get_json()["stores"]["items"]]
-    assert (("in.zarr" in listed) or ("IN.ZARR" in listed)) == reads, (reads, listed)
-    assert check(admin, folder / "a.zarr").get_json()["allowed"] == reads
+    assert "z.zarr" in listed, listed
+    said = check(admin, data / "pub" / "z.zarr").get_json()
+    assert said["allowed"] is True and said["via"] == {"kind": "dir", "path": str(data / "pub")}, said
