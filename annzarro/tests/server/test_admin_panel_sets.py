@@ -122,7 +122,7 @@ def test_reassign_by_names_is_audited_and_the_new_owner_may_modify(app):
     assert _save(alice, "a0").status_code == 403         # no longer hers
     assert _save(alice, "a2").status_code == 200
     record = audit.read(app.admin_dir, limit=1)[0]
-    assert record["action"] == "panelset.reassign" and record["target"] == ADMIN
+    assert record["action"] == "panel_sets.reassign" and record["target"] == ADMIN
     assert record["detail"]["count"] == 2 and record["detail"]["from"] == [USER]
 
 
@@ -135,7 +135,7 @@ def test_reassign_from_owner_and_over_quota(tmp_path):
     assert {i["owner"] for i in root.get(BASE).get_json()["items"]} == {ADMIN}
     again = _call(root, "POST", BASE + "/reassign", {"from_owner": ADMIN, "to_owner": ADMIN}).get_json()
     assert again["moved"] == 0 and again["unchanged"] == 5
-    assert audit.read(app.admin_dir, limit=1)[0]["action"] == "panelset.reassign"
+    assert audit.read(app.admin_dir, limit=1)[0]["action"] == "panel_sets.reassign"
 
 
 def test_reassign_refusals_move_nothing(app):
@@ -172,7 +172,7 @@ def test_the_old_owner_route_still_assigns(app):
     missing = _call(root, "POST", SESSIONS + "/owner", {"name": "ghost", "owner": ADMIN})
     assert missing.status_code == 404
     record = audit.read(app.admin_dir, limit=1)[0]
-    assert record["action"] == "panelset.reassign" and record["target"] == ADMIN
+    assert record["action"] == "panel_sets.reassign" and record["target"] == ADMIN
     assert record["detail"] == {"names": ["a0"], "from": [USER]}
 
 
@@ -183,7 +183,7 @@ def test_delete(app):
     sessions = os.path.join(app.config["data_dir"], "sessions")
     assert sorted(n for n in os.listdir(sessions) if n.endswith(".json")) == ["a1.json", "a2.json"]
     record = audit.read(app.admin_dir, limit=1)[0]
-    assert record["action"] == "panelset.delete" and record["detail"]["count"] == 2
+    assert record["action"] == "panel_sets.delete" and record["detail"]["count"] == 2
     assert "a0 (alice)" in record["detail"]["names"]
     assert root.get(BASE).get_json()["total"] == 2
     assert _call(root, "DELETE", BASE, {"names": "a1"}).status_code == 400
@@ -251,10 +251,19 @@ def _rank(owner):
     return 0 if owner == ADMIN else int(owner[1:]) + 1
 
 
+def _app_in_a_child(tmp_path):
+    """The app as a spawned process builds it. The conftest's browser-like test client (login form
+    token, request token) is not installed there, so install it, as slice C's CSRF requires."""
+    from annzarro.tests.conftest import _BrowsesLikeAPage
+    app = make_app(tmp_path, admin_rate_per_minute=100000)
+    app.test_client_class = _BrowsesLikeAPage
+    return app
+
+
 def _saver(tmp_path, results, start):
     """The admin saves one set ROUNDS times; after each save the set's owner must
     not have moved back to someone it was already handed on from."""
-    app = make_app(tmp_path, admin_rate_per_minute=100000)
+    app = _app_in_a_child(tmp_path)
     root = login(app, ADMIN)
     path = os.path.join(app.config["data_dir"], "sessions", "shared.json")
     start.wait(30)
@@ -273,7 +282,7 @@ def _saver(tmp_path, results, start):
 def _reassigner(tmp_path, results, start):
     """The admin hands the set on to u0, u1, ...; right after each handover the set
     must belong to that user or a later one."""
-    app = make_app(tmp_path, admin_rate_per_minute=100000)
+    app = _app_in_a_child(tmp_path)
     root = login(app, ADMIN)
     path = os.path.join(app.config["data_dir"], "sessions", "shared.json")
     start.wait(30)
