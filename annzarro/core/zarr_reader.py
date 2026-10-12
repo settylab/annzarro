@@ -320,8 +320,53 @@ GATHER_BLOCK_BYTES = 32 * 2 ** 20
 #: Share of a small shard's inner chunks a sharded gather must want for the shard to be read whole.
 WHOLE_SHARD_SHARE = 0.5
 
-#: Batches of a sharded gather read at the same time (each of GATHER_BLOCK_BYTES / this).
-GATHER_INFLIGHT = 8
+#: A batch is GATHER_BLOCK_BYTES / this of decoded chunks.
+GATHER_BATCH_DIV = 4
+
+#: Threads that read the batches of sharded gathers (one pool for the process).
+GATHER_THREADS = 8
+
+#: Bytes of decoded chunks the batches of ALL sharded gathers in the process hold at once, as a multiple
+#: of GATHER_BLOCK_BYTES (a batch bigger than that is read alone).
+GATHER_HELD_FACTOR = 2
+
+#: zarr coalesces the byte ranges of one read when they are at most this far apart (bytes; None: zarr's
+#: default, 1 MiB). Chunks are small next to it, so the gap pulls in the neighbours a batch does not want.
+GATHER_COALESCE_GAP = 64 << 10
+
+_gather_pool = None
+_gather_cond = threading.Condition()
+_gather_held = 0
+
+
+def _gather_executor() -> ThreadPoolExecutor:
+    global _gather_pool
+    with _gather_cond:
+        if _gather_pool is None:
+            _gather_pool = ThreadPoolExecutor(GATHER_THREADS, thread_name_prefix="annzarro-gather")
+        return _gather_pool
+
+
+class _GatherBudget:
+    """``with _GatherBudget(n):`` holds n bytes of the process-wide in-flight budget (waits for room;
+    a batch bigger than the whole budget runs alone)."""
+
+    def __init__(self, nbytes):
+        self.nbytes = int(nbytes)
+
+    def __enter__(self):
+        global _gather_held
+        cap = GATHER_HELD_FACTOR * GATHER_BLOCK_BYTES
+        with _gather_cond:
+            while _gather_held and _gather_held + self.nbytes > cap:
+                _gather_cond.wait()
+            _gather_held += self.nbytes
+
+    def __exit__(self, *exc):
+        global _gather_held
+        with _gather_cond:
+            _gather_held -= self.nbytes
+            _gather_cond.notify_all()
 
 
 def _stored_width(array, cols) -> int:
@@ -340,12 +385,15 @@ def _take_rows_sharded(array, rows, cols, out_shape, two_d) -> np.ndarray:
     chunks a selection touches, but a selection that touches ALL of a shard's
     inner chunks is read as the whole shard: scattered rows do that to every
     shard they fall in, and anndata 0.13 writes shards of 1 GB. So the rows
-    go in batches of consecutive touched inner chunks. A batch is at most
-    GATHER_BLOCK_BYTES / 4 of stored chunk bytes and never
+    go in batches of consecutive touched row bands of inner chunks (a band
+    is the chunks of one row chunk across every column the read decodes).
+    A batch is at most GATHER_BLOCK_BYTES / 4 of decoded chunks and never
     all the inner chunks of a shard (but see WHOLE_SHARD_SHARE: a small
-    shard that is mostly wanted is read whole, as zarr does). GATHER_INFLIGHT batches are
-    read at once, so memory is 2 x GATHER_BLOCK_BYTES plus the result, whatever
-    the shard size, and over a network the requests of different batches overlap.
+    shard that is mostly wanted is read whole, as zarr does). The batches
+    run on one process-wide pool and hold at most GATHER_HELD_FACTOR x
+    GATHER_BLOCK_BYTES of decoded chunks at once, over all requests: memory
+    does not grow with the shard or with the number of requests, and over a
+    network the requests of different batches overlap.
     """
     out = np.empty(out_shape, dtype=array.dtype)
     n = int(array.shape[0])
@@ -359,54 +407,99 @@ def _take_rows_sharded(array, rows, cols, out_shape, two_d) -> np.ndarray:
     # the rows of each inner chunk by binary search of the chunk edges: no per-row temporaries
     pos = np.searchsorted(srows, np.arange(-(-n // chunk) + 1, dtype=np.int64) * chunk)
     touched = np.flatnonzero(pos[1:] > pos[:-1])
-    width = _stored_width(array, cols) if two_d else 1
-    row_bytes = int(np.dtype(array.dtype).itemsize) * width
-    batch_bytes = max(chunk * row_bytes, GATHER_BLOCK_BYTES // 4)
+    itemsize = int(np.dtype(array.dtype).itemsize)
+    cols_ix = np.asarray(cols, dtype=np.int64) if (two_d and cols is not None) else None
+    # Column groups: a read of a wide array is also cut along the columns, into groups of column chunks
+    # of about a batch each, so that a row band (the chunks of one row chunk across the decoded columns,
+    # 32 MiB for 1024 x 8192 float32) is not the smallest unit and a shard that splits the columns is not
+    # weighed as the one column shard it is only a part of.
+    groups = [(cols_ix, slice(None), _stored_width(array, cols) if two_d else 1)]
+    gcols = 0
+    if two_d:
+        ncols, c1 = int(array.shape[1]), int(array.chunks[1])
+        gcols = max(1, (GATHER_BLOCK_BYTES // GATHER_BATCH_DIV) // (chunk * c1 * itemsize))
+        if cols_ix is None:
+            if gcols * c1 < ncols:
+                groups = [(slice(c0, min(ncols, c0 + gcols * c1)), slice(c0, min(ncols, c0 + gcols * c1)),
+                           min(ncols, c0 + gcols * c1) - c0) for c0 in range(0, ncols, gcols * c1)]
+        else:
+            cid = cols_ix // c1
+            gid = cid // gcols
+            if np.unique(gid).size > 1:
+                groups = []
+                for g in np.unique(gid).tolist():
+                    idx = np.flatnonzero(gid == g)
+                    groups.append((cols_ix[idx], idx, min(ncols, int(np.unique(cid[idx]).size) * c1)))
+    gwidth = max(g[2] for g in groups)
+    band_bytes = chunk * gwidth * itemsize             # one row chunk across the widest column group
+    batch_bytes = max(band_bytes, GATHER_BLOCK_BYTES // GATHER_BATCH_DIV)
     cap = max(1, per_shard - 1)             # a shard of one inner chunk cannot be split any further
-    # A shard of at most GATHER_BLOCK_BYTES of which at least WHOLE_SHARD_SHARE is wanted is read whole
-    # (a request per shard, as zarr does, instead of the same bytes in many ranges); a bigger or sparser
-    # one is read in pieces that are never all of its inner chunks.
-    shard_bytes = int(np.dtype(array.dtype).itemsize) * int(np.prod(array.shards))
-    share = 1.0 if (not two_d or cols is None) else width / int(array.shape[1])
-    whole_ok = shard_bytes <= GATHER_BLOCK_BYTES
-    touched_ids = touched.tolist()
-    shard_ids = [cid // per_shard for cid in touched_ids]
+    if len(groups) > 1 and gcols < max(1, int(array.shards[1]) // int(array.chunks[1])):
+        cap = per_shard                     # a column group is never all the chunks of a shard
+    # A shard (its rows across the decoded columns) of at most GATHER_BLOCK_BYTES of which at least
+    # WHOLE_SHARD_SHARE is wanted is read whole (a request per shard, as zarr does, instead of the same
+    # bytes in many ranges); a bigger or sparser one is read in pieces that are never all of its chunks.
+    shard_bytes = shard_rows * gwidth * itemsize
+    share = 1.0 if (not two_d or cols is None) else gwidth / int(array.shape[1])
+    whole_ok = shard_bytes <= GATHER_BLOCK_BYTES and len(groups) == 1
+    shard_ids = (touched // per_shard).tolist()
     wanted = {}
     for sid in shard_ids:
         wanted[sid] = wanted.get(sid, 0) + 1
     first, held, in_shard, shard = 0, 0, 0, -1
-    batches = []
+    batches = []                            # (first touched chunk, end, decoded bytes)
     for i, sid in enumerate(shard_ids):
         whole = whole_ok and wanted[sid] * share >= WHOLE_SHARD_SHARE * per_shard
         new_shard = sid != shard
-        weight = (shard_bytes if whole else chunk * row_bytes) if (new_shard or not whole) else 0
+        weight = (shard_bytes if whole else band_bytes) if (new_shard or not whole) else 0
         if held and weight and (held + weight > batch_bytes
                                 or (not whole and not new_shard and in_shard >= cap)):
-            batches.append((first, i))
+            batches.append((first, i, held))
             first, held, in_shard = i, 0, 0
         in_shard = 1 if (new_shard or not held) else in_shard + 1
         shard, held = sid, held + weight
-    batches.append((first, touched.size))
-    cols_ix = np.asarray(cols, dtype=np.int64) if (two_d and cols is not None) else None
-
-    def read(batch):
-        lo, hi = int(pos[touched[batch[0]]]), int(pos[touched[batch[1] - 1] + 1])
-        sel = (srows[lo:hi], cols_ix) if cols_ix is not None else (srows[lo:hi],)
-        block = np.asarray(array.oindex[sel])
-        if order is None:
-            out[lo:hi] = block
-        else:
-            out[order[lo:hi]] = block
-
-    if len(batches) == 1:
-        read(batches[0])
-        return out
-    with ThreadPoolExecutor(min(GATHER_INFLIGHT, len(batches))) as pool:
+    batches.append((first, touched.size, held))
+    if (GATHER_COALESCE_GAP is not None and hasattr(array, "with_config")
+            and type(array).__module__.startswith("zarr")):
         try:
-            list(pool.map(read, batches))
-        except BaseException:
-            pool.shutdown(wait=True, cancel_futures=True)
-            raise
+            array = array.with_config({"sharding_coalesce_max_gap_bytes": int(GATHER_COALESCE_GAP)})
+        except Exception:                   # a zarr without the setting: its own default
+            pass
+
+    def read(task):
+        batch, (colsel, outcols, width_g) = task
+        lo, hi = int(pos[touched[batch[0]]]), int(pos[touched[batch[1] - 1] + 1])
+        sel = (srows[lo:hi], colsel) if colsel is not None else (srows[lo:hi],)
+        with _GatherBudget(batch[2] * width_g // gwidth):
+            block = np.asarray(array.oindex[sel])
+        target = slice(lo, hi) if order is None else order[lo:hi]
+        if not two_d:
+            out[target] = block
+        elif isinstance(outcols, slice):
+            out[target, outcols] = block
+        elif order is None:
+            out[lo:hi, outcols] = block
+        else:
+            out[np.ix_(target, outcols)] = block
+
+    tasks = [(b, g) for g in groups for b in batches]
+    if len(tasks) == 1:
+        read(tasks[0])
+        return out
+    futures = [_gather_executor().submit(read, t) for t in tasks]
+    try:
+        for f in futures:
+            f.result()
+    except BaseException:
+        for f in futures:
+            f.cancel()
+        for f in futures:                   # the batches already running end before the buffers go
+            if not f.cancelled():
+                try:
+                    f.result()
+                except BaseException:
+                    pass
+        raise
     return out
 
 

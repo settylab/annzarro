@@ -36,6 +36,7 @@ def _sharded(path, shape, chunks, shards, dtype="float32"):
     ((10_000, 3), (100, 2), (300, 4)),      # shards cut the columns too, ragged edge
     ((10_000, 3), (100, 3), (100, 3)),      # a shard of one inner chunk
     ((10_001,), (64,), (64 * 8,)),          # an obs column
+    ((3_000, 40), (100, 8), (400, 16)),     # shards that split the columns, read in column groups
 ])
 @pytest.mark.parametrize("block", [1 << 20, 1 << 10])
 def test_sharded_gather_is_array_rows(tmp_path, monkeypatch, shape, chunks, shards, block):
@@ -49,8 +50,9 @@ def test_sharded_gather_is_array_rows(tmp_path, monkeypatch, shape, chunks, shar
     shuffled = rng.permutation(rows)
     assert np.array_equal(zr.take_rows(a, shuffled), data[shuffled])
     if len(shape) == 2:
-        cols = [2, 0]
-        assert np.array_equal(zr.take_rows(a, rows, cols), data[rows][:, cols])
+        for cols in ([2, 0], [2, 0, 2], [1], [shape[1] - 1, 0, shape[1] // 2, shape[1] // 2]):
+            assert np.array_equal(zr.take_rows(a, rows, cols), data[rows][:, cols])
+            assert np.array_equal(zr.take_rows(a, shuffled, cols), data[shuffled][:, cols])
     assert zr.take_rows(a, np.array([], dtype=np.int64)).shape[0] == 0
 
 
@@ -133,15 +135,17 @@ class _Spy:
 @sharded_only
 def test_batches_overlap_up_to_the_bound(tmp_path, monkeypatch):
     """Over a network the requests of different batches must overlap (sequential batches multiplied the
-    round trips), but never more than GATHER_INFLIGHT at once: that, times a batch, is the memory."""
+    round trips), but the decoded bytes they hold at once are capped (GATHER_HELD_FACTOR x
+    GATHER_BLOCK_BYTES, here 1 MiB of 256 KiB batches: 4), not the number of batches."""
     monkeypatch.setattr(zr, "WHOLE_READ_MAX_BYTES", 0)
     monkeypatch.setattr(zr, "GATHER_BLOCK_BYTES", 1 << 20)
+    monkeypatch.setattr(zr, "GATHER_HELD_FACTOR", 1)
     a, data = _sharded(tmp_path / "a.zarr", (1 << 18, 4), (1024, 4), (1 << 18, 4))
     spy = _Spy(a, delay=0.02)
     rows = np.sort(np.random.default_rng(5).choice(1 << 18, 30_000, replace=False))
     assert np.array_equal(zr.take_rows(spy, rows), data[rows])
-    assert len(spy.calls) > zr.GATHER_INFLIGHT
-    assert 1 < spy.most <= zr.GATHER_INFLIGHT
+    assert len(spy.calls) > 4
+    assert 1 < spy.most <= 4
 
 
 def test_unsharded_pairwise_reads_keep_the_single_orthogonal_read(tmp_path, monkeypatch):
@@ -186,3 +190,46 @@ def test_sharded_pairwise_reads_gather_by_inner_chunk(tmp_path, monkeypatch, col
     got = ZarrReader(enable_caching=False)._read_pairwise(root, "obsp", "d", a, False, rows, cols)
     assert seen
     assert np.array_equal(got, data[rows] if cols is None else data[rows][:, cols])
+
+
+@sharded_only
+def test_a_row_band_counts_every_column_shard_it_spans(tmp_path, monkeypatch):
+    """Shards that split the columns (a dense X or layer): a row band of 16384 x 4096 float32 in chunks of
+    512 x 512 and shards of 4096 x 2048 is 2 column shards (64 MiB), not the 32 MiB of one. Weighing a batch
+    by one column shard let 8 batches hold 4x what the budget said; the bytes in flight are capped."""
+    monkeypatch.setattr(zr, "WHOLE_READ_MAX_BYTES", 0)
+    monkeypatch.setattr(zr, "GATHER_BLOCK_BYTES", 8 << 20)
+    a, data = _sharded(tmp_path / "a.zarr", (16384, 4096), (512, 512), (4096, 2048))
+    rows = np.sort(np.random.default_rng(9).choice(16384, 300, replace=False))
+    peak, out = _peak(tmp_path / "a.zarr", rows)
+    assert np.array_equal(out, data[rows])
+    # the cap is 16 MiB of decoded chunks, the result 4.9 MB; the compressed bytes come on top (0f75a0d: 147 MiB)
+    assert peak < 50 * 2 ** 20, f"peak {peak / 2 ** 20:.1f} MiB"
+
+
+@sharded_only
+def test_concurrent_gathers_share_one_byte_budget(tmp_path, monkeypatch):
+    """Requests running at the same time share the pool and the in-flight bytes: the peak of 4 gathers at
+    once is not 4 times that of one."""
+    import threading
+    monkeypatch.setattr(zr, "WHOLE_READ_MAX_BYTES", 0)
+    monkeypatch.setattr(zr, "GATHER_BLOCK_BYTES", 2 << 20)
+    n = 1 << 21
+    a, data = _sharded(tmp_path / "a.zarr", (n, 4), (4096, 4), (n, 4))
+    rows = [np.sort(np.random.default_rng(i).choice(n, 40_000, replace=False)) for i in range(4)]
+    results = [None] * 4
+
+    def run(i):
+        results[i] = zr.take_rows(a, rows[i])
+    tracemalloc.start()
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    for i in range(4):
+        assert np.array_equal(results[i], data[rows[i]])
+    # 4 results of 640 KB, 4 MiB of decoded chunks in flight, and their compressed bytes
+    assert peak < 24 * 2 ** 20, f"peak {peak / 2 ** 20:.1f} MiB for 4 gathers of a 32 MiB shard"
