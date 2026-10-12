@@ -17,7 +17,7 @@ the subset dialog offers fewer sizes, and every cell stays in the regular plot u
 - A store above 200,000 cells in the server's data directory. The screenshots use the paper's
   Tahoe-100M store `tahoe_panel_95.6M_plot.zarr`. It is not deposited;
   {ref}`paper-scale-store` says how to build it from the public Tahoe-100M release (CC0), the
-  UMAP on Zenodo ([doi:10.5281/zenodo.23277103](https://doi.org/10.5281/zenodo.23277103)) and the
+  UMAP on Zenodo ([doi:10.5281/zenodo.23277102](https://doi.org/10.5281/zenodo.23277102)) and the
   build script in [annzarro-reproducibility](https://github.com/settylab/annzarro-reproducibility).
   Elsewhere read `cell_line_id` as your own grouping column in `obs`.
 - These fields:
