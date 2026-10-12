@@ -1379,48 +1379,155 @@ class ZarrReader(CacheSettings):
         A gene column of a cell subset is the case: 100,000 rows of a column
         of 50 million cells. Building the column first and cutting it after
         made a 50-million-row slice, 200 MB dense, cached as such, for every
-        gene. Here each major slice's stored entries are read a block at a
-        time and only those whose minor index is selected
-        are kept, so memory is one block (``_SELECT_BLOCK``) plus the result. ``minor`` may be in
-        any order and repeat; the result is what slicing the full matrix
-        returns.
+        gene. Here only the stored entries of the selected major slices are
+        read, and of those only the ones whose minor index is selected are
+        kept, so memory is one block (``_SELECT_BLOCK``) plus the result.
+        ``minor`` and ``major`` may be in any order and repeat; the result is
+        what slicing the full matrix returns.
+
+        Every chunk of ``indices`` and ``data`` is read at most once per call
+        (a slice longer than a block is cut on the block grid, a chunk
+        boundary too): the selected slices are made
+        unique and sorted, their ``indptr`` values come from one read per run
+        of nearby slices, and their entry ranges are merged into spans that
+        are separated by at least one chunk of ``indices`` and cover about a
+        chunk, so each span is a single read. Reading a slice by itself decoded
+        a whole chunk to return a few hundred entries, 21,000 decodes for
+        10,000 cells.
         """
-        indptr = matrix['indptr']
+        indptr_z = matrix['indptr']
         data_z, idx_z = matrix['data'], matrix['indices']
+        n_major = int(indptr_z.shape[0]) - 1
         n_minor = int(shape[0] if axis == 'col' else shape[1])
         want, inverse = np.unique(np.asarray(minor, dtype=np.int64), return_inverse=True)
         if want.size and (want[0] < 0 or want[-1] >= n_minor):
             bad = int(want[0] if want[0] < 0 else want[-1])
             raise IndexError(f"index {bad} is out of range for size {n_minor}")
-        block = self._SELECT_BLOCK
+        major = np.asarray(major, dtype=np.int64).reshape(-1)
+        major = np.where(major < 0, major + n_major, major)
+        uniq, inv_major = np.unique(major, return_inverse=True)
+        if uniq.size and (uniq[0] < 0 or uniq[-1] >= n_major):
+            bad = int(uniq[0] if uniq[0] < 0 else uniq[-1])
+            raise IndexError(f"index {bad} is out of range for size {n_major}")
+        gap = self._chunk_len(idx_z)
+        block = max(gap, (self._SELECT_BLOCK // gap) * gap)
         # Membership by a mask over the minor axis (1 byte per row: 50 MB at
         # 50M cells) is one lookup per stored entry; a binary search of every
         # entry into the selection was 6x slower than reading the column.
         selected = np.zeros(n_minor, dtype=bool)
         selected[want] = True
+
+        starts, ends = self._major_ranges(indptr_z, uniq)
+        keep = ends > starts
+        rows = np.flatnonzero(keep)
+        starts, ends = starts[keep], ends[keep]
+        # a slice longer than a block is read in several, cut on the block grid
+        pieces = (ends - 1) // block - starts // block + 1
+        if pieces.size and pieces.max() > 1:
+            rid = np.repeat(np.arange(rows.size), pieces)
+            cut = starts[rid] // block + np.arange(rid.size) - np.repeat(np.cumsum(pieces) - pieces, pieces)
+            starts, ends, rows = (np.maximum(starts[rid], cut * block),
+                                  np.minimum(ends[rid], (cut + 1) * block), rows[rid])
+
+        # A span is read in one call and ends where the next slice starts in a
+        # chunk the span has not touched, so no chunk is shared by two spans:
+        # it is cut after about ``reach`` entries, and wherever the next slice
+        # is a chunk or more away.
+        reach = gap * self._SPAN_CHUNKS
+        fresh = np.flatnonzero(starts[1:] // gap > (ends[:-1] - 1) // gap) + 1
+        apart = np.flatnonzero(starts[1:] - ends[:-1] >= gap) + 1
         positions, majors, values = [], [], []
-        for n, k in enumerate(major):
-            k = int(k)
-            s, e = (int(v) for v in indptr[k:k + 2])
-            for b in range(s, e, block):
-                stop = min(b + block, e)
-                idx = np.asarray(idx_z[b:stop])
-                hit = selected[idx]
-                if not hit.any():
-                    continue
-                positions.append(np.searchsorted(want, idx[hit]))
-                majors.append(np.full(int(np.count_nonzero(hit)), n, dtype=np.int64))
-                values.append(np.asarray(data_z[b:stop])[hit])
+        i, n = 0, rows.size
+        while i < n:
+            lo = int(starts[i])
+            k = max(int(np.searchsorted(ends, lo + reach, side='left')) + 1, i + 1)
+            k = min(self._first_from(fresh, k, n), self._first_from(apart, i + 1, n))
+            hi = int(ends[k - 1])
+            idx = np.asarray(idx_z[lo:hi])
+            hit = np.flatnonzero(selected[idx])
+            if hit.size:
+                # which slice each hit is in; a hit between two slices is
+                # one of the gap's, and is dropped
+                at = hit + lo
+                r = np.minimum(np.searchsorted(ends[i:k], at, side='right'), k - i - 1)
+                inside = (at >= starts[i:k][r]) & (at < ends[i:k][r])
+                at, r, hit = at[inside], r[inside], hit[inside]
+                if at.size:
+                    positions.append(np.searchsorted(want, idx[hit]))
+                    majors.append(rows[i:k][r])
+                    values.append(self._read_at(data_z, at, gap))
+            i = k
         dtype = data_z.dtype
         pos = np.concatenate(positions) if positions else np.empty(0, np.int64)
         maj = np.concatenate(majors) if majors else np.empty(0, np.int64)
         val = np.concatenate(values) if values else np.empty(0, dtype)
-        # in the space of the unique selected minor indices, then expanded
+        # in the space of the unique selected minor and major indices, then expanded
         if axis == 'col':
-            m = sp.csr_matrix((val, (pos, maj)), shape=(want.size, len(major)))
-            return m[inverse.reshape(-1), :]
-        m = sp.csr_matrix((val, (maj, pos)), shape=(len(major), want.size))
-        return m[:, inverse.reshape(-1)]
+            m = sp.csr_matrix((val, (pos, maj)), shape=(want.size, uniq.size))
+            m = m[inverse.reshape(-1), :]
+            return m if np.array_equal(inv_major, np.arange(uniq.size)) else m[:, inv_major]
+        m = sp.csr_matrix((val, (maj, pos)), shape=(uniq.size, want.size))
+        m = m[:, inverse.reshape(-1)]
+        return m if np.array_equal(inv_major, np.arange(uniq.size)) else m[inv_major, :]
+
+    @staticmethod
+    def _chunk_len(arr) -> int:
+        """Entries per chunk of a 1-D zarr array (the read granule), >= 1."""
+        chunks = getattr(arr, 'chunks', None)
+        return max(1, int(chunks[0])) if chunks else ZarrReader._SCAN_BLOCK
+
+    def _major_ranges(self, indptr_z, major):
+        """
+        ``(indptr[k], indptr[k + 1])`` for each ``k`` of the sorted, unique
+        ``major``, as two int64 arrays. Neighbours less than a chunk of
+        ``indptr`` apart share one contiguous read, cut on a grid of
+        ``_INDPTR_CHUNKS`` chunks so that a read is small and a long
+        ``indptr`` is never read whole.
+        """
+        starts = np.empty(major.size, dtype=np.int64)
+        ends = np.empty(major.size, dtype=np.int64)
+        if major.size == 0:
+            return starts, ends
+        gap = self._chunk_len(indptr_z)
+        cell = gap * self._INDPTR_CHUNKS
+        cuts = np.concatenate(([0], np.flatnonzero((np.diff(major) > gap) | (np.diff(major // cell) > 0)) + 1,
+                               [major.size]))
+        for g in range(len(cuts) - 1):
+            i, j = int(cuts[g]), int(cuts[g + 1])
+            lo = int(major[i])
+            seg = np.asarray(indptr_z[lo:int(major[j - 1]) + 2], dtype=np.int64)
+            starts[i:j] = seg[major[i:j] - lo]
+            ends[i:j] = seg[major[i:j] - lo + 1]
+        return starts, ends
+
+    @staticmethod
+    def _first_from(points, at, default):
+        """The first of the sorted ``points`` that is ``>= at``, else ``default``."""
+        p = int(np.searchsorted(points, at, side='left'))
+        return int(points[p]) if p < points.size else default
+
+    @staticmethod
+    def _read_at(arr, at, gap):
+        """``arr[at]`` for sorted positions ``at``: one read per run of positions less than ``gap`` apart."""
+        cuts = np.concatenate(([0], np.flatnonzero(np.diff(at) >= gap) + 1, [at.size]))
+        parts = []
+        for g in range(len(cuts) - 1):
+            p = at[cuts[g]:cuts[g + 1]]
+            seg = np.asarray(arr[int(p[0]):int(p[-1]) + 1])
+            parts.append(seg[p - p[0]])
+        return parts[0] if len(parts) == 1 else np.concatenate(parts)
+
+    #: Chunks of ``indices`` a span of _rows_of_major_slices covers at least. A span
+    #: is one read, and zarr decodes the chunks of a read in parallel: spans of one
+    #: chunk took 1.4x to 3x as long as of four at 1,000 to 100,000 rows, and four
+    #: cost about 7 MB more working memory (25 MB at 100,000 rows of a 2M-cell store,
+    #: 3 MB for the per-row reads before). A slice longer than that is read in
+    #: ``_SELECT_BLOCK``s.
+    _SPAN_CHUNKS = 4
+
+    #: Chunks of ``indptr`` one read of _major_ranges covers at most: 2, about
+    #: 90k int64 values (0.7 MB) at the usual chunking.
+    _INDPTR_CHUNKS = 2
 
     #: Stored entries read per block by _rows_of_major_slices: 16M, 64 MB of
     #: int32 indices plus as much data. Measured on a 50M-cell CSC column of
