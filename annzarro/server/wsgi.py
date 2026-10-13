@@ -27,6 +27,12 @@ import os
 
 from .core import create_app
 
+__all__ = [
+    "create_wsgi_app",
+    "load_hosted_config",
+]
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,5 +78,16 @@ def load_hosted_config(config_path=None, env=None):
 
 
 def create_wsgi_app(config_path=None, env=None):
-    """Build the Flask app for a WSGI server: hosted, login on by default."""
+    """Build the Flask app for a WSGI server: hosted, login on by default.
+
+    Use it as ``gunicorn "annzarro.server.wsgi:create_wsgi_app()"``. It loads the same
+    layered configuration as ``annzarro start`` (see :func:`load_hosted_config`).
+
+    Args:
+        config_path: An extra configuration file; default ``$ANNZARRO_CONFIG``.
+        env: ``development`` or ``production``; default ``$ANNZARRO_ENV`` or ``production``.
+
+    Returns:
+        flask.Flask: The configured application.
+    """
     return create_app(load_hosted_config(config_path=config_path, env=env))

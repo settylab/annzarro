@@ -17,6 +17,12 @@ from ..core.zarr_reader import zarr_reader
 from .scan import DEFAULT_MAX_ENTRIES, scan_stores
 from ..utils.paths import default_data_dir
 
+__all__ = [
+    "DataManager",
+    "data_manager",
+]
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,6 +30,7 @@ class DataManager:
     """Finds datasets under a directory and summarises one dataset."""
 
     def __init__(self):
+        """Create a manager; it holds no dataset, only the configuration of its scans."""
         # id -> dataset entry from the last discovery
         self.datasets = {}
         # whether the last discovery stopped before it had seen everything
