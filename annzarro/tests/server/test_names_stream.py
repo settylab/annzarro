@@ -567,7 +567,7 @@ def test_a_cut_reply_is_never_a_whole_one_on_the_wire(store, protocol):
 # -- memory -------------------------------------------------------------------------
 
 PROBE = textwrap.dedent("""
-    import resource, sys
+    import sys, tracemalloc
     from unittest.mock import patch
     from annzarro.core import process_file
     from annzarro.server.core import create_app
@@ -576,16 +576,16 @@ PROBE = textwrap.dedent("""
                       "data_dir": store.rsplit("/", 1)[0], "compress_responses": False,
                       "max_names_json_mb": 0})
     client = app.test_client()
-    def mb():
-        r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        return r / 2**20 if sys.platform == "darwin" else r / 2**10
     client.get("/api/v1/data/genes", query_string={"dataset_path": store})   # imports, readers warm
-    before = mb()
     if mode == "list":
         patch.object(process_file, "_stream_names", return_value=None).start()
+    # the peak of what the request itself allocates (numpy reports to tracemalloc too); the
+    # process's peak RSS is no measure here: on Linux the start-up already peaks above what
+    # the list path adds, so the difference of two ru_maxrss readings is 0 for both paths
+    tracemalloc.start()
     reply = client.get("/api/v1/data/cells", query_string={"dataset_path": store}, buffered=False)
     size = sum(len(piece) for piece in reply.response)
-    print(f"{mb() - before:.1f} {size}")
+    print(f"{tracemalloc.get_traced_memory()[1] / 2**20:.1f} {size}")
 """)
 
 
