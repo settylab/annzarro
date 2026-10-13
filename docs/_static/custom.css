@@ -23,3 +23,4 @@ a.badge-windows { --badge-icon: url(badges/windows.svg); }
 a.badge-linux { --badge-icon: url(badges/linux.svg); }
 a.badge-server { --badge-icon: url(badges/server.svg); }
 .badge-row > p { margin: 0; }
+p.badge-alt { margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--color-foreground-muted); }

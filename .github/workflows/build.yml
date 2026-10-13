@@ -304,11 +304,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: assets
+          pattern: AnnZarro-*
           merge-multiple: true
 
       - name: Checksums
         working-directory: assets
         run: |
+          # versionless copies, so /releases/latest/download/<name> stays valid across releases
+          for f in macos-arm64.dmg macos-x64.dmg windows-x64-setup.exe linux-x86_64.AppImage linux-amd64.deb; do
+            cp AnnZarro-*-"$f" "AnnZarro-$f"
+          done
           sha256sum AnnZarro-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
