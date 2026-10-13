@@ -21,20 +21,45 @@ except (ImportError, importlib.metadata.PackageNotFoundError):
     pass  # Keep using the hardcoded version
 
 # Import and expose core modules
-from .core.zarr_reader import ZarrReader, zarr_reader
+from .core.zarr_reader import (
+    ZarrReader, zarr_reader, UnsupportedEncodingError, ZarrFormatError, StoreReadError, MissingKeyError,
+)
+from .core.store_check import check_store, StoreCheckError
 
 # Import and expose data management
 from .data.manager import DataManager
 from .data import data_manager
 
 # Import and expose server functionality
+from .server.core import create_app
 from .server.server import run_server
+from .server.wsgi import create_wsgi_app
 
-# Define public API
+# Figures made with ``annzarro export`` carry the view that drew them
+from .export import read_recipe, ExportError
+
+# The public Python API: documented in docs/reference/python-api.md, which a test
+# (annzarro/tests/test_public_api.py) holds to this list. Anything else is internal.
 __all__ = [
+    "__version__",
+    # reading a store
     "ZarrReader",
     "zarr_reader",
+    "UnsupportedEncodingError",
+    "ZarrFormatError",
+    "StoreReadError",
+    "MissingKeyError",
+    # listing datasets
     "DataManager",
     "data_manager",
-    "run_server"
+    # checking a store's layout
+    "check_store",
+    "StoreCheckError",
+    # serving
+    "run_server",
+    "create_app",
+    "create_wsgi_app",
+    # figures
+    "read_recipe",
+    "ExportError",
 ]

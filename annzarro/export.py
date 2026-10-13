@@ -38,6 +38,15 @@ import zlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+__all__ = [
+    "read_recipe",
+    "decode_view_payload",
+    "encode_view_payload",
+    "view_from_link",
+    "ExportError",
+]
+
+
 RECIPE_KEY = "annzarro-recipe"
 
 #: Chromium flags for a deterministic render: WebGL in SwiftShader (no GPU),
@@ -67,7 +76,14 @@ def _b64url_decode(text: str) -> bytes:
 
 
 def decode_view_payload(payload: str) -> Dict[str, Any]:
-    """A ``#view=`` payload: ``z1.<base64url(deflate-raw(JSON))>`` or legacy base64url JSON."""
+    """Decode the ``#view=`` part of a share link.
+
+    Args:
+        payload: ``z1.<base64url(deflate-raw(JSON))>``, or the older base64url JSON.
+
+    Returns:
+        dict: The view (layout, panel settings and constants).
+    """
     if payload.startswith("z1."):
         raw = zlib.decompress(_b64url_decode(payload[3:]), -15)
     else:
@@ -76,13 +92,32 @@ def decode_view_payload(payload: str) -> Dict[str, Any]:
 
 
 def encode_view_payload(view: Dict[str, Any]) -> str:
+    """Encode a view as the ``#view=`` part of a share link.
+
+    Args:
+        view: The view, as returned by :func:`decode_view_payload`.
+
+    Returns:
+        str: ``z1.`` followed by the base64url of the deflated JSON.
+    """
     compressor = zlib.compressobj(9, zlib.DEFLATED, -15)
     raw = compressor.compress(json.dumps(view, separators=(",", ":")).encode("utf-8")) + compressor.flush()
     return "z1." + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
 def view_from_link(link: str) -> Tuple[Optional[str], Dict[str, Any]]:
-    """``(dataset_path, view)`` of a share link."""
+    """Split a share link into the dataset and the view it opens.
+
+    Args:
+        link: A link from the app, with ``dataset_path`` in the query and the view in
+            its ``#view=`` fragment.
+
+    Returns:
+        tuple: ``(dataset_path, view)``; ``dataset_path`` is None when the link has none.
+
+    Raises:
+        ExportError: The link has no ``view`` part.
+    """
     parsed = urllib.parse.urlsplit(link)
     query = urllib.parse.parse_qs(parsed.query)
     fragment = urllib.parse.parse_qs(parsed.fragment)
@@ -121,7 +156,19 @@ def svg_recipe_text(svg: str) -> Optional[str]:
 
 
 def read_recipe(path: str) -> Dict[str, Any]:
-    """The recipe an exported PNG or SVG carries."""
+    """Read the recipe that a figure exported by ``annzarro export`` carries.
+
+    Args:
+        path: A PNG or SVG file written by ``annzarro export``.
+
+    Returns:
+        dict: The recipe: the view as a panel set (``panel_set``), the store's
+        fingerprint and the AnnZarro version that drew the figure.
+
+    Raises:
+        ExportError: The file carries no recipe (exported before v0.4.1, or by another
+            tool), or one this version does not read.
+    """
     data = Path(path).read_bytes()
     text = png_text(data) if data[:8] == b"\x89PNG\r\n\x1a\n" else svg_recipe_text(data.decode("utf-8", "replace"))
     if text is None:

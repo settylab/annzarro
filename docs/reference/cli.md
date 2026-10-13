@@ -64,11 +64,25 @@ its users file directly; otherwise pass the file: `annzarro user --config site.y
 | `user add [--username NAME] [--password PW] [--admin]` | Add a user. Prompts for missing values; the password twice. `--admin` lets the user change any shared panel set, reassign its owner, clear the server's dataset cache and, with the default `server.arbitrary_paths: admins`, open any dataset path the server account can read. No dataset writes, no user management in the app. To confine admins, set `server.arbitrary_paths: local-only`. Exit 1 if the user exists. |
 | `user list` | Print each username and whether it is an admin. |
 | `user passwd [--username NAME] [--password PW]` | Change a password (prompted for if omitted). Ends the user's existing logins. |
-| `user set-admin [--username NAME] [--no-admin]` | Grant admin, or revoke it with `--no-admin`. |
-| `user remove [--username NAME]` | Remove a user. Exit 1 if there is no such user. |
+| `user set-admin [--username NAME] [--no-admin] [--force]` | Grant admin, or revoke it with `--no-admin`. Revoking the last admin is refused unless `--force`. |
+| `user remove [--username NAME] [--force]` | Remove a user. Exit 1 if there is no such user, or if it is the last admin (`--force` allows it; the server is then left without an admin). |
+| `user unlock [--username NAME] [--address ADDR]` | Clear a user's failed-login lockouts, for one client address or all of them. |
 | `user access NAME [--restrict\|--unrestrict] [--grant PATH] [--grant-stores-in DIR] [--revoke PATH] [--show]` | Restrict a user to the folders, stores and remote prefixes granted to them, or show what they see ({doc}`/deployment/authentication`). A running server applies it at once; each change is audited. Admins are never restricted. Exit 1 for an unknown user, a path outside every data directory, or a grant that is not there to revoke. |
 
-A running server sees every change without a restart.
+A running server sees every change without a restart. The rule that at least one admin remains is
+checked on the stored users file under its lock, the same one the admin page uses, so it holds
+even when the command line and the web run at the same time; `--force` skips only that rule.
+Every change is also recorded in the admin audit log with `via: cli:<account>`. Run the commands as
+the account that owns the users file's directory (`sudo -u <server account> annzarro user ...`); as
+another account they refuse (except `list`), because the files they would create could not be
+written by the server.
+
+## `annzarro admin audit verify`
+
+Check the hash chain of the admin audit log ({doc}`../deployment/admin`). Prints the range of
+sequence numbers and the number of records and exits 0 when the chain holds; otherwise names the
+first record that no longer fits and the problem (`tampered`, `truncated` or `head_unreadable`) and
+exits 1. It reads the same configuration as `annzarro user`.
 
 ## `annzarro config`
 

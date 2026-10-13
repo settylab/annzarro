@@ -114,12 +114,20 @@ class Client:
 class Cluster:
     """The pieces a test needs of a running server."""
 
-    def __init__(self, url, tmp_path, parent, users_file):
+    def __init__(self, url, tmp_path, parent, users_file, env=None):
+        self.env = env
         self.url = url
         self.tmp_path = tmp_path
         self.parent = parent
         self.users_file = users_file
         self.admin_dir = os.path.join(os.path.dirname(users_file), "annzarro_admin")
+
+    def cli(self, *args):
+        """Run ``annzarro <args>`` as the server's account, on the server's configuration."""
+        done = subprocess.run([sys.executable, "-m", "annzarro.cli", *args], env=self.env, cwd=REPO,
+                              capture_output=True, text=True, timeout=120)
+        assert done.returncode == 0, (args, done.stdout[-500:], done.stderr[-1500:])
+        return done
 
     def client(self, username, admin_page=False):
         return Client(self.url).sign_in(username, admin_page=admin_page)
@@ -173,7 +181,7 @@ def start_cluster(tmp_path, workers=2, extra_server="", users=(("root", True), (
             time.sleep(0.25)
     else:
         pytest.fail("gunicorn did not start")
-    return Cluster(url, tmp_path, parent, users_file)
+    return Cluster(url, tmp_path, parent, users_file, env)
 
 
 def stop_all(procs):

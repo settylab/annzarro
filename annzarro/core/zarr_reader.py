@@ -36,6 +36,16 @@ from . import string_chunks
 from . import categories as category_rules
 from .remote import is_remote_path, check_remote_access, open_remote_group, raise_if_timeout
 
+__all__ = [
+    "ZarrReader",
+    "zarr_reader",
+    "UnsupportedEncodingError",
+    "ZarrFormatError",
+    "StoreReadError",
+    "MissingKeyError",
+]
+
+
 # Try to import optional dependencies
 try:
     import dask.array as da
@@ -680,9 +690,10 @@ class ZarrReader(CacheSettings):
     def get_cache_info(self):
         """
         Get information about the current cache state.
-        
+
         Returns:
-            dict: Information about the current cache
+            dict: Information about the current cache: the datasets and items held,
+            ``memory_usage_mb`` and ``max_memory_mb``.
         """
         # Get cache info from cache manager
         cache_info = self.cache.get_cache_info()

@@ -52,7 +52,7 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `allowed_dirs` * | none | Extra directory trees a shared server may open, e.g. targets of symlinks in `data_dir`. Every store under them can be opened by path. |
 | `arbitrary_paths` | `admins` | Who may open a dataset path outside `data_dir` and `allowed_dirs` (after symlinks and `..` are resolved). `admins`: admins of a shared server with login, so an admin login can read any file the server process can (each such open is logged with the admin's name), and the one user of a local server (loopback, no login: a laptop, the desktop app); other users never. `local-only`: only that local user; on a shared server nobody, admins included. `none`: nobody, local servers included. Any other value stops the server at startup. Env `ANNZARRO_SERVER_ARBITRARY_PATHS`. |
 | `hosted` * | unset | `true` forces shared-server behaviour (path confinement, remote policy, compression, exposure warning) whatever the host; `false` forces local behaviour. Unset: decided by login and host. The gunicorn entry point sets `true` unless you set `false`. |
-| `proxy_count` | `0` | Number of reverse proxies whose `X-Forwarded-For/-Proto/-Host` headers are trusted. Set `1` behind nginx or Apache; never more than the proxies you run, or clients can forge their address. Any value above 0 also counts as "shared" for the remote-store policy `auto`. |
+| `proxy_count` | `0` | Number of reverse proxies whose `X-Forwarded-For/-Proto/-Host` headers are trusted. Set `1` behind nginx or Apache; never more than the proxies you run, or clients can forge their address. Any value above 0 also counts as "shared" for the remote-store policy `auto`. The admin interface needs it behind a proxy that terminates TLS or rewrites `Host`: it accepts a change only from an `Origin` equal to the address the server believes it has ({doc}`../deployment/admin`). |
 | `debug` | `false` | Flask debug mode (reloader and interactive debugger). `true` only in the `development` layer; never on a reachable server. |
 | `log_file` | `~/.annzarro/logs/annzarro_server.log` | Server log. Relative paths are taken from the working directory. |
 | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. |
@@ -85,6 +85,11 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `dataset_folder_max_entries` | `500` | Entries (folders and stores) one request of the dataset picker's folder listing (`GET /api/v1/datasets/folder`) returns, and the most matches its subfolder search returns; a larger folder is read in pages ("show more"), and only the page is opened. |
 | `dataset_search_max_depth` | `6` | Folders deep the picker's search of the data directory (`GET /api/v1/datasets/search`) goes. |
 | `dataset_search_max_entries` | `20000` | Entries that search looks at before it stops and answers `"truncated": true`. It also stops after 3 s (not a setting). With `mode=regex` the pattern goes through the same guard as the name search (`name_search_max_regex_chars`, `regex_too_complex`). |
+| `lock_timeout_s` | `10` | Seconds a request waits for the lock on the users file (every login writes it), the admin state or the panel sets before it answers `503 busy` with `Retry-After`. |
+| `admin_data_roots` | `[]` | Directories inside which an admin may add data directories in the browser ({doc}`../deployment/admin`). Empty: adding is off and the list is read-only. Keep them writable by trusted accounts only. |
+| `admin_reauth_minutes` | `30` | Minutes the admin's password entry lets them change things in the admin interface. `0`: never asked. |
+| `admin_rate_per_minute` | `30` | Admin changes per minute per admin and gunicorn worker; reads get eight times as many. Over it `429 admin_rate_limited`. At least 1. |
+| `admin_audit_max_mb` | `50` | Size at which the audit log (`annzarro_admin/audit.jsonl` beside the users file) rotates; five rotations are kept. `0`: never. |
 | `dataset_scan_max_entries` | `200000` | Directory entries the legacy dataset listing (`GET /api/v1/core/datasets`), a directory listing (`GET /api/v1/directories/list`) and the store count in `GET /api/v1/status` read before they stop. A store's own chunk files are never walked (a 95-million-cell store has hundreds of thousands). A listing then answers `"truncated": true` with a `note`; `/status` says `zarr_file_count_truncated`. `/status` reuses its count for 30 s. |
 | `refresh_min_interval_s` | `10` | `POST /api/v1/data/refresh` (Refresh dataset, open to every user) walks a dataset's files at most this often, in all workers together. A refresh sooner does not wait in the server: it schedules one walk for the end of the interval, shared by everyone, and answers at once `status: "scheduled"`; the browser asks again after `retry_after_s` with `after=`, and gets that walk's result. A refresh is never answered by a walk older than itself. Each walk stops after 3 s: a store with more files than that (the 95.6M-cell Tahoe store) answers `status: "partial"`, and an in-place chunk write to it needs an admin's `POST /api/v1/cache/reset`. |
 | `remote_stores` | `auto` | `auto`, `allow` or `deny` for `s3://`, `gs://`, `gcs://`, `http(s)://` stores (no other scheme is remote); see {doc}`../deployment/authentication`. |
@@ -278,6 +283,7 @@ server:
 
 Lab server behind nginx: see {doc}`../deployment/lab-server`.
 
+(config-environment)=
 ## Environment variables
 
 `ANNZARRO_SERVER_PORT=9000` sets `server.port`; underscores inside key names are matched, so
@@ -287,3 +293,29 @@ Lab server behind nginx: see {doc}`../deployment/lab-server`.
 set this way, including ones with no default such as `auth.enabled`, `auth.secret_key`,
 `server.hosted` and `server.allowed_dirs`. The full list of variables, including `ANNZARRO_HOME` and
 `ANNZARRO_AUTH_DISABLED`, is in {doc}`cli`.
+
+**Environment beats the files.** Layer 6 sits above every file (layers 2 to 5), so a variable
+overrides the same key in `site.yaml`, and only a command-line option beats it. One setting of
+the policy registry also has a variable of its own, which the registry treats as decisive:
+
+| Variable | Setting | Notes |
+|---|---|---|
+| `ANNZARRO_EXTERNAL_REQUESTS` | `integrations.external_requests` | `on`, `ask`, `off` or `none`. It decides the setting for the policy registry too, and beats the YAML in both directions, so a deployment can force a value either way. The admin Settings page shows its source as `env`. A value the setting does not accept is logged and ignored: the YAML decides. |
+
+Seven variables are aliases of `server` keys whose names do not follow `ANNZARRO_<SECTION>_<KEY>`
+(`ENV_ALIASES` in `annzarro/utils/config_manager.py`). They are ordinary environment values, above
+the files, and `config show` reports them as set:
+
+| Variable | Key |
+|---|---|
+| `ANNZARRO_REMOTE_STORES` | `server.remote_stores` |
+| `ANNZARRO_REMOTE_ALLOWLIST` | `server.remote_allowlist` (comma-separated) |
+| `ANNZARRO_REMOTE_CREDENTIALS` | `server.remote_credentials` |
+| `ANNZARRO_REMOTE_CONNECT_TIMEOUT` | `server.remote_connect_timeout_s` |
+| `ANNZARRO_REMOTE_READ_TIMEOUT` | `server.remote_read_timeout_s` |
+| `ANNZARRO_REMOTE_REQUEST_TIMEOUT` | `server.remote_request_timeout_s` (120 s hosted, 600 s single-user; 0 switches it off) |
+| `ANNZARRO_REMOTE_CHUNK_CACHE_MB` | `server.remote_chunk_cache_mb` |
+
+(The registry's list is `ENV_OVERRIDES` in `annzarro/server/policy/resolver.py`.) Any other
+variable, such as `ANNZARRO_SERVER_PROXY_COUNT=1`, acts as a YAML value: for the policy
+registry it is the operator's "config" layer.

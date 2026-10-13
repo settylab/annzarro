@@ -6,6 +6,7 @@
 cli
 configuration
 http-api
+python-api
 deep-links
 wire-format
 architecture
