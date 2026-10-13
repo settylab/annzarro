@@ -39,25 +39,15 @@ app; use the Python package with the `remote` extra for those ({doc}`installatio
 
 ## First launch
 
-- **macOS**: open the `.dmg`, drag **AnnZarro** to **Applications**, and open it. From version
-  0.5.0 the app is signed by "Fred Hutchinson Cancer Research Center" and notarized by Apple, so
-  it opens like any other Mac app: no warning, no extra step, and no need to change a security
-  setting. The `.zip` holds the same app.
+- **macOS**: open the `.dmg`, drag **AnnZarro** to **Applications**, and open it. The `.zip` holds
+  the same app. (Version 0.4.x and earlier: see Older versions below.)
 - **Windows**: the build is not code-signed. SmartScreen says "Windows protected your PC". Click
   **More info**, then **Run anyway**.
 - **Linux**: no extra step beyond `chmod +x` for the AppImage. On Ubuntu 24.04 and later an
   AppImage that fails to start may need `--no-sandbox`.
 
-### Older versions
-
-macOS apps before 0.5.0 (0.4.x and earlier) were only ad-hoc signed and not notarized, so macOS
-blocks the first launch. On macOS 15 and later click **Done** on the "Not Opened" message, then
-open **System Settings > Privacy & Security**, scroll to **Security** and click **Open Anyway**
-next to AnnZarro, and confirm (once; right-click > Open no longer works there). On macOS 14 and
-earlier, right-click (Control-click) the app and choose **Open**.
-
 The very first start can take longer than later ones, up to about a minute, while the system's
-malware scanner (Windows Defender, or Gatekeeper on the older macOS builds) checks the bundled
+malware scanner (Windows Defender, or Gatekeeper on macOS apps of 0.4.x and earlier) checks the bundled
 server; the loading screen counts the seconds and says so. Later starts take a few seconds. The wait is bounded: if the server has not answered after 180 s, or
 the interface has not loaded 60 s after that, the window shows an error page with the reason,
 the path of the log file and a **Retry** button. Starting the app again while it runs brings
@@ -82,6 +72,14 @@ The app then behaves like `annzarro start` on your own computer:
 Everything else (panels, focus, panel sets, share links, export) works as described in the
 {doc}`../user-guide/index`. Share links from the desktop app contain a `127.0.0.1` address and a
 path on your disk, so they only reopen on the same computer.
+
+### Older versions
+
+macOS apps up to 0.4.x are not notarized, so macOS blocks the first launch. On macOS 15 and later,
+click **Done** on the "Not Opened" message, open **System Settings > Privacy & Security**, scroll
+to **Security**, click **Open Anyway** next to AnnZarro and confirm (once; right-click > Open no
+longer works there). On macOS 14 and earlier, right-click (Control-click) the app and choose
+**Open**.
 
 ## Where the app keeps its files
 
