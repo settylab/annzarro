@@ -555,7 +555,21 @@ class AuthManager:
             logging.warning(f"Cannot remove user: User {username} not found")
             return False
         logging.info(f"Removed user: {username}")
+        self._forget_access(username)
         return True
+
+    def _forget_access(self, username):
+        """Drop the removed user's entry in ``access.json`` (grants, restriction, overrides).
+
+        After the removal, never before: a refused removal must not widen
+        anyone's access. A failure leaves the stale entry, which restricts an
+        account of the same name created later (the safe side) and is logged.
+        """
+        try:
+            from . import access
+            access.forget({"user_file": self.user_file}, username)
+        except Exception as exc:
+            logging.error(f"Could not drop the access entry of removed user {username!r}: {exc}")
     
     def _hash_password(self, password, salt):
         """

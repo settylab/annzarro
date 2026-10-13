@@ -19,7 +19,10 @@ directly under its ``@app.route``:
 ``panelset``
     Panel sets; filtered or checked inside the view.
 ``admin``
-    Admin only. The views enforce it today.
+    Admin only. The admin interface's views guard themselves; for the older
+    ``status`` and ``cache/info`` a restricted user is refused here (403
+    ``admin_only``), because they name the data directory and every cached
+    dataset.
 
 :func:`enforce` is a ``before_request`` hook registered right after
 ``confinement.enforce``, so it sees the final absolute path. A route that
@@ -43,19 +46,61 @@ a directory that is not there.
 The reply echoes the path the way the client spelled it (``spelled``), never
 the resolved absolute path, so the server's layout is not disclosed.
 
-Until the grants exist, :func:`is_restricted` is false for everyone and
-:func:`may_read` allows everything, so the gate changes no reply.
+Grants
+------
+
+``annzarro_admin/access.json`` (beside ``users.json``) is keyed by principal::
+
+    {"version": 1,
+     "principals": {"user:carol": {"restricted": true,
+                                   "grants": [{"kind": "dir", "path": "/srv/atlases/pbmc"},
+                                              {"kind": "store", "path": "/srv/data/bm.zarr"},
+                                              {"kind": "remote", "path": "s3://lab-public/pbmc/"}],
+                                   "policy": {...}}}}
+
+No entry, or ``restricted`` absent or false, is the default: the user reads
+everything the server's data directories hold, and the check is one lookup.
+A restricted user reads only what an *active* grant covers; none means
+nothing. :func:`principals_of` is the one place a later group layer would add
+its principals. Admins are never restricted (``is_restricted_requester``).
+
+Grants name paths; they are matched on REAL paths and compared exactly:
+
+* a ``dir`` or ``store`` grant is resolved with ``realpath`` (and spelled the
+  way the directory spells it, :func:`canonical_spelling`) every time
+  ``access.json`` changes and at least every ``RESOLVE_TTL_S`` seconds, and is
+  active only while that real path lies inside an allowed data directory;
+* a request path is ``realpath``'d first, then it is covered when it, or any
+  of its parents, is a granted real path. A symlink inside a granted folder
+  that leads out is therefore NOT covered, a link to a granted store from
+  outside is, and ``/data/a`` does not cover ``/data/ab``;
+* a path is compared as ``realpath`` gives it and, when that does not match, as
+  the directories spell it (:func:`canonical_spelling`, each substitution
+  verified with ``samefile``). On a case-insensitive or normalising volume
+  (APFS) a link or data directory written in another case therefore still
+  reaches its granted store, while a name that is a different directory, or is
+  not granted, is refused. The check is an allow-list: nothing is matched by
+  folding strings;
+* a ``remote`` grant is a URL prefix on a ``/`` boundary, inside
+  ``remote_allowlist`` and only while remote stores are enabled.
+
+A malformed entry restricts its user to nothing. An ``access.json`` that
+cannot be read or parsed says nothing about WHO is restricted, so every
+non-admin is answered 503 ``access_unavailable`` on the data routes until an
+admin repairs it (:func:`unavailable_reply`); admins keep working.
 """
 
 import logging
 import os
 import threading
 import time
+import unicodedata
+import urllib.parse
 
-from flask import current_app, g, jsonify, request
+from flask import current_app, g, has_request_context, jsonify, request
 
-from ..core.remote import is_remote_path
-from . import confinement, permissions
+from ..core.remote import _Prefix, get_remote_policy, is_remote_path, validate_remote_url
+from . import atomic_store, confinement, permissions
 
 logger = logging.getLogger(__name__)
 
@@ -95,14 +140,657 @@ def gate_of(app, endpoint):
     return getattr(app.view_functions.get(endpoint), "_annzarro_gate", None)
 
 
-def is_restricted(user):
-    """Whether ``user`` sees only granted datasets. Nobody does until grants exist."""
-    return False
+#: Grant kinds, as stored.
+GRANT_KINDS = ("dir", "store", "remote")
+
+#: Seconds a user's grants stay resolved (``realpath``) before they are resolved again, so a
+#: link re-pointed while the server runs cannot keep covering the old target for long.
+RESOLVE_TTL_S = 2.0
+
+
+def principals_of(user):
+    """The principals whose entries of ``access.json`` apply to ``user``.
+
+    Just the user. A group layer would add ``group:<name>`` for each group the
+    user is in, here and nowhere else: the grants and the policy layer both
+    ask this function.
+    """
+    return [f"user:{user}"]
+
+
+# -- reading access.json ------------------------------------------------------------
+
+_watchers = {}   # id(config): (config, watcher): finding the watcher resolves the file's real path, which a request must not repeat
+
+
+def _watcher(config):
+    # the file, its path and its watcher are slice S's (admin/settings.py): one store, one stamp
+    hit = _watchers.get(id(config))
+    if hit is not None and hit[0] is config:
+        return hit[1]
+    from .admin import settings
+    watcher = settings._access_watcher(config)
+    if len(_watchers) > 64:       # many short-lived configs (tests, the CLI): never grow without bound
+        _watchers.clear()
+    _watchers[id(config)] = (config, watcher)
+    return watcher
+
+
+def _read(config=None):
+    """``(principals, error)``: the entries of ``access.json``, or why it cannot be trusted."""
+    config = config or current_app.config
+    # The same question as slice S's settings.access_store_state(config) (does the file parse?), asked of
+    # the same watcher; that helper looks the watcher up by the file's real path on every call, which a
+    # request must not pay (test_access_model.py keeps the two in step).
+    watcher = _watcher(config)
+    data = watcher.get()
+    if watcher.error:
+        return {}, watcher.error
+    principals = data.get("principals") if isinstance(data, dict) else None
+    if not isinstance(principals, dict):
+        return {}, "access.json has no 'principals' object"
+    return principals, None
+
+
+def store_error(config=None):
+    """Why ``access.json`` cannot be trusted (a sentence), or None when it can."""
+    return _read(config)[1]
+
+
+def _flag(entry):
+    """Whether one principal's entry restricts. Only an absent, null or false flag does not."""
+    if not isinstance(entry, dict):
+        return True       # a malformed entry: unsure, so nothing
+    flag = entry.get("restricted")
+    return not (flag is None or flag is False)      # not `in (None, False)`: 0 == False
+
+
+def is_restricted(user, config=None):
+    """Whether ``user`` sees only granted datasets.
+
+    False for no entry (the default), for ``restricted: false`` and for a
+    missing user name. True when ``access.json`` is unreadable: whoever asks
+    cannot be shown to be unrestricted. Callers skip admins first.
+    """
+    if not user:
+        return False
+    principals, error = _read(config)
+    if error:
+        return True
+    return any(_flag(principals[name]) for name in principals_of(user) if name in principals)
+
+
+def _is_admin(user):
+    manager = getattr(current_app, "auth_manager", None)
+    record = manager.get_user(user) if manager is not None else None
+    return bool(record and record.is_admin)
+
+
+# -- grants, resolved ------------------------------------------------------------------
+
+def _fold(text):
+    return unicodedata.normalize("NFC", text).casefold()
+
+
+_names = {}          # (parent, name): (when, spelling): a directory that folds is listed once per RESOLVE_TTL_S, not per path
+_names_lock = threading.Lock()
+
+
+def _name_on_disk(parent, name):
+    """``_spell(parent, name)``, remembered for ``RESOLVE_TTL_S`` seconds."""
+    key = (parent, name)
+    now = time.monotonic()
+    hit = _names.get(key)
+    if hit is not None and now - hit[0] < RESOLVE_TTL_S:
+        return hit[1]
+    spelled = _spell(parent, name)
+    with _names_lock:
+        if len(_names) > 8192:
+            _names.clear()
+        _names[key] = (now, spelled)
+    return spelled
+
+
+def _spell(parent, name):
+    """``name`` spelled the way directory ``parent`` spells it.
+
+    Only a directory that answers to another spelling of a name (APFS, or any
+    case-insensitive or normalising mount) can hold it under a different
+    spelling; on a case-sensitive one the name is returned as it is, after
+    two failed lookups.
+    """
+    others = {name.swapcase(), unicodedata.normalize("NFC", name), unicodedata.normalize("NFD", name)} - {name}
+    if not any(os.path.lexists(os.path.join(parent, other)) for other in others):
+        return name
+    try:
+        names = os.listdir(parent)
+    except OSError:
+        return name
+    if name in names:
+        return name
+    folded = _fold(name)
+    for candidate in names:
+        if _fold(candidate) == folded:
+            try:
+                if os.path.samefile(os.path.join(parent, candidate), os.path.join(parent, name)):
+                    return candidate
+            except OSError:
+                continue
+    return name
+
+
+def canonical_spelling(path):
+    """The real path of ``path``, each component spelled as its directory spells it.
+
+    ``realpath`` follows links and removes ``..`` but leaves a case or
+    Unicode variant as typed, so a grant written ``/Srv/Atlas`` would never
+    equal the ``/srv/atlas/x.zarr`` a listing hands out.
+    """
+    real = os.path.realpath(path)
+    out = os.sep
+    for part in real.split(os.sep):
+        if part:
+            out = os.path.join(out, _name_on_disk(out, part))
+    return out
+
+
+def _inside(path, root):
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def _covers(allowed, prefix):
+    """Whether remote prefix ``prefix`` lies inside the allowlist entry ``allowed``."""
+    return (allowed.scheme == prefix.scheme and allowed.netloc == prefix.netloc
+            and (prefix.path or "/").startswith(allowed.path or "/"))
+
+
+def _resolve(grant, roots, policy):
+    """One stored grant with ``real`` (or ``prefix``), ``active`` and, when not, ``reason``."""
+    info = {"kind": None, "path": None, "real": None, "prefix": None, "active": False,
+            "reason": "malformed", "name": None}
+    if not isinstance(grant, dict):
+        return info
+    kind, path = grant.get("kind"), grant.get("path")
+    info.update(kind=kind if isinstance(kind, str) else None, path=path if isinstance(path, str) else None,
+                added_by=grant.get("added_by"), added_at=grant.get("added_at"))
+    if kind not in GRANT_KINDS or not isinstance(path, str) or not path or "\x00" in path:
+        return info
+    if kind == "remote":
+        try:
+            prefix = _Prefix.parse(path)
+        except ValueError:
+            info["reason"] = "invalid_url"
+            return info
+        info.update(prefix=prefix, name=str(prefix))
+        if not policy.enabled:
+            info["reason"] = "remote_stores_disabled"
+        elif policy.allowlist and not any(_covers(allowed, prefix) for allowed in policy.allowlist):
+            info["reason"] = "outside_remote_allowlist"
+        else:
+            info.update(active=True, reason=None)
+        return info
+    if not os.path.isabs(path):
+        info["reason"] = "not_absolute"
+        return info
+    real = canonical_spelling(path)
+    info.update(real=real, name=os.path.basename(real.rstrip(os.sep)) or real)
+    if not any(_inside(real, root) for root in roots):
+        info["reason"] = "outside_data_directories"
+    else:
+        info.update(active=True, reason=None)
+    return info
+
+
+class Grants:
+    """The resolved grants of one user: what the gate and the listings read."""
+
+    def __init__(self, resolved):
+        self.all = resolved
+        self.local = frozenset(g["real"] for g in resolved if g["active"] and g["kind"] != "remote")
+        self.remote = tuple(g["prefix"] for g in resolved if g["active"] and g["kind"] == "remote")
+
+    def allows_local(self, real):
+        """Whether the real path ``real`` is a granted path or below one."""
+        current = real
+        while True:
+            if current in self.local:
+                return True
+            parent = os.path.dirname(current)
+            if parent == current:
+                return False
+            current = parent
+
+    def allows_remote(self, url):
+        try:
+            parts = validate_remote_url(url)
+        except ValueError:
+            return False
+        # a server may decode %2e%2e or read a backslash as a slash after the allowlist matched
+        decoded = urllib.parse.unquote(parts.path)
+        if "\\" in decoded or "." in decoded.split("/") or ".." in decoded.split("/"):
+            return False
+        return any(prefix.matches(parts) for prefix in self.remote)
+
+    def active(self):
+        """The active ``dir`` and ``store`` grants (dicts with ``real`` and ``name``), by name."""
+        return sorted((g for g in self.all if g["active"] and g["kind"] != "remote"),
+                      key=lambda g: (g["name"].lower(), g["real"]))
+
+
+_resolved = {}   # user: (principals, overlay stamp, resolved at, Grants)
+
+
+def _overlay_stamp(config):
+    from .admin import overlay
+    return atomic_store.stamp(overlay.path(config))
+
+
+def grants_of(user, config=None):
+    """The :class:`Grants` of ``user`` (none for a malformed or unreadable file).
+
+    Re-resolved when ``access.json`` or ``overlay.json`` (which can add or drop
+    data directories) changed, and every ``RESOLVE_TTL_S`` seconds otherwise.
+    Memoised for one request.
+    """
+    config = config or current_app.config
+    memo = g.__dict__.setdefault("_access_grants", {}) if has_request_context() else None
+    if memo is not None and user in memo:
+        return memo[user]
+    principals, error = _read(config)
+    stamp = _overlay_stamp(config)
+    now = time.monotonic()
+    hit = _resolved.get(user)
+    if hit and hit[0] is principals and hit[1] == stamp and now - hit[2] < RESOLVE_TTL_S:
+        grants = hit[3]
+    else:
+        stored = []
+        if not error:
+            for name in principals_of(user):
+                entry = principals.get(name)
+                raw = entry.get("grants") if isinstance(entry, dict) else None
+                if isinstance(raw, list):
+                    stored.extend(raw)
+        roots = confinement.allowed_roots(config)
+        policy = get_remote_policy()
+        grants = Grants([_resolve(grant, roots, policy) for grant in stored])
+        _resolved[user] = (principals, stamp, now, grants)
+    if memo is not None:
+        memo[user] = grants
+    return grants
 
 
 def may_read(user, path):
-    """Whether ``user`` may read ``path`` (realpath'd when local, the URL when remote)."""
-    return True
+    """Whether ``user`` may read ``path``: a local path (``realpath`` is applied here, first) or a remote URL.
+
+    An unrestricted user and an admin may; a restricted one only what an
+    active grant covers. Anything this function cannot tell is refused.
+    """
+    if not is_restricted(user) or _is_admin(user):
+        return True
+    if not isinstance(path, str) or not path or "\x00" in path:
+        return False
+    grants = grants_of(user)
+    if is_remote_path(path):
+        return grants.allows_remote(path)
+    if "://" in path:
+        return False      # file:// and the like are not paths of ours
+    real = os.path.realpath(os.path.expanduser(path))
+    if grants.allows_local(real):
+        return True
+    # ``realpath`` keeps the case and Unicode form a link's target text or the configured data
+    # directory was written in, which a case-insensitive volume (APFS) opens just the same. The
+    # grants are spelled as the directories spell them, so spell the path that way too before
+    # refusing. Every substitution is verified with samefile, so an unrelated name never maps.
+    spelled = _canonical_memo(real)
+    if spelled == real or not grants.allows_local(spelled):
+        return False
+    # The remembered spelling is only a hint: it may make a path match a grant, so the two are checked to be the
+    # same file now, and a wrong or stale entry can cause a refusal but never an allow.
+    return _same_where_it_exists(real, spelled)
+
+
+def _same_where_it_exists(a, b):
+    """Whether paths ``a`` and ``b`` (the same names, spelled differently) are the same file, comparing their deepest
+    parents that exist: what lies below a granted store, folder or link may not be there yet, but only with the same names."""
+    while not os.path.exists(a):
+        parent_a, parent_b = os.path.dirname(a), os.path.dirname(b)
+        if parent_a == a or parent_b == b or os.path.basename(a) != os.path.basename(b):
+            return False      # a name that is not there is never re-spelled: only the same text is carried below
+        a, b = parent_a, parent_b
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _canonical_memo(real):
+    """``canonical_spelling(real)``, once per request."""
+    memo = g.__dict__.setdefault("_access_canonical", {}) if has_request_context() else None
+    if memo is not None and real in memo:
+        return memo[real]
+    spelled = canonical_spelling(real)
+    if memo is not None:
+        memo[real] = spelled
+    return spelled
+
+
+def display_path(user, real):
+    """``real`` as a restricted ``user`` is shown it: from the name of the granted folder or store down.
+
+    The directories above a grant are not theirs to learn.
+    """
+    best = None
+    for grant in grants_of(user).active():
+        if _inside(real, grant["real"]) and (best is None or len(grant["real"]) > len(best)):
+            best = grant["real"]
+    if best is None:
+        return os.path.basename(real)
+    return os.path.relpath(real, os.path.dirname(best.rstrip(os.sep)) or os.sep)
+
+
+# -- panel sets --------------------------------------------------------------------------
+
+def _resolve_name(config, value):
+    """A dataset path from a stored panel set as the readers see it: a relative one is in the data directory."""
+    if is_remote_path(value) or "://" in value or os.path.isabs(os.path.expanduser(value)):
+        return value
+    data_dir = config.get("data_dir")
+    return os.path.join(os.path.expanduser(data_dir), os.path.normpath(value)) if data_dir else value
+
+
+def unreadable_dataset(user, data, config=None):
+    """The first dataset of the stored panel set ``data`` that ``user`` may not read (as the set spells it), else None.
+
+    What opening the set would open must be readable. A path the set only
+    remembers from another server (``datasetAbs``) counts only where it
+    points inside this server's data directories.
+    """
+    config = config or current_app.config
+    named, hints, truncated = permissions.panelset_walk(data)
+    if truncated:
+        return "(a panel set too large to check)"       # a path past the bound is never looked at: not readable
+    for value in named:
+        if not may_read(user, _resolve_name(config, value)):
+            return value
+    roots = confinement.allowed_roots(config)
+    for value in hints:
+        if not is_remote_path(value) and "://" not in value:
+            real = os.path.realpath(os.path.expanduser(value))
+            if any(_inside(real, root) for root in roots) and not may_read(user, real):
+                return value
+    return None
+
+
+def panelset_visible(user, data, owner=None):
+    """Whether a restricted ``user`` may see the stored panel set ``data``: their own, or one whose datasets they can all read."""
+    if owner is None and isinstance(data, dict):
+        owner = data.get("owner")
+    return (owner is not None and owner == user) or unreadable_dataset(user, data) is None
+
+
+def panelset_available(user, data):
+    """Whether every dataset of the panel set is readable to ``user`` (shown beside their own sets)."""
+    return unreadable_dataset(user, data) is None
+
+
+# -- writing access.json -----------------------------------------------------------------
+
+class GrantError(ValueError):
+    """A grant change that is refused; ``reason`` is a stable word for the caller."""
+
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
+
+def update_entry(config, user, mutate):
+    """Change ``user``'s entry in ``access.json`` under the file's lock.
+
+    ``mutate(entry)`` edits the entry (a dict) and may return a value. Fields
+    it does not touch, such as the per-user ``policy`` slice S writes, are
+    kept; an entry left empty is removed. Raises ValueError when the file is
+    corrupt rather than replace it.
+    """
+    from .admin import settings, state_dir
+    os.makedirs(state_dir(config, create=True), exist_ok=True)
+    watcher = _watcher(config)
+    name = principals_of(user)[0]
+
+    def apply(data):
+        principals = data.setdefault("principals", {})
+        if not isinstance(principals, dict):
+            raise ValueError("access.json: principals is not an object")
+        entry = principals.get(name)
+        if entry is not None and not isinstance(entry, dict):
+            raise ValueError(f"access.json: the entry of {name} is not an object")
+        entry = dict(entry or {})
+        result = mutate(entry)
+        if entry:
+            principals[name] = entry
+        else:
+            principals.pop(name, None)
+        data["version"] = settings.ACCESS_VERSION
+        return result
+
+    try:
+        return atomic_store.update_json(settings.access_path(config), apply, settings._access_default())
+    finally:
+        watcher.invalidate()
+
+
+def forget(config, user):
+    """Drop everything ``access.json`` holds for a removed user (grants, flag and policy)."""
+    def drop(entry):
+        entry.clear()
+    from .admin import settings
+    if not os.path.exists(settings.access_path(config)):
+        return
+    update_entry(config, user, drop)
+
+
+def entry_of(user, config=None):
+    """The stored entry of ``user`` as a copy (``{}`` if none)."""
+    principals, _ = _read(config)
+    entry = principals.get(principals_of(user)[0])
+    return dict(entry) if isinstance(entry, dict) else {}
+
+
+def normalise_grant(config, kind, path):
+    """``(kind, stored path)`` for a grant an admin asks for, or GrantError.
+
+    ``kind`` is ``dir``, ``store``, ``remote`` or ``auto`` (a URL is remote, a
+    store or ``.h5ad`` is a store, any other directory is a dir). A local path
+    must exist and, once resolved, lie inside an allowed data directory; a
+    remote URL must be inside ``remote_allowlist`` with remote stores enabled.
+    The path is stored as written (made absolute), not resolved, so a link
+    that is re-pointed later stops being covered if its target leaves the
+    data directories.
+    """
+    if not isinstance(path, str) or not path.strip():
+        raise GrantError("bad_path", "A grant needs a path.")
+    path = path.strip()
+    if kind == "auto":
+        kind = "remote" if is_remote_path(path) else None
+    if kind == "remote" or (kind is None and is_remote_path(path)):
+        try:
+            prefix = _Prefix.parse(path)
+        except ValueError as exc:
+            raise GrantError("bad_path", str(exc))
+        policy = get_remote_policy()
+        if not policy.enabled or (policy.allowlist and not any(_covers(a, prefix) for a in policy.allowlist)):
+            raise GrantError("remote_not_allowed", "That URL is not inside the server's remote allowlist.")
+        return "remote", str(prefix)
+    if kind not in (None, "dir", "store"):
+        raise GrantError("bad_kind", f"A grant is a dir, a store or a remote prefix, not {kind!r}.")
+    absolute = os.path.abspath(os.path.expanduser(path))
+    if not os.path.exists(absolute):
+        raise GrantError("not_found", f"{path} does not exist.")
+    real = canonical_spelling(absolute)
+    if not any(_inside(real, root) for root in confinement.allowed_roots(config)):
+        raise GrantError("outside_data_roots", f"{path} is outside every data directory of this server.")
+    if kind is None:
+        from .routes.dataset_folders import is_store_dir
+        is_store = (os.path.isfile(real) and real.endswith(".h5ad")) or \
+                   (os.path.isdir(real) and is_store_dir(real, os.path.basename(real)))
+        kind = "store" if is_store else "dir"
+    if kind == "dir" and not os.path.isdir(real):
+        raise GrantError("not_a_directory", f"{path} is not a directory.")
+    return kind, absolute
+
+
+def add_grant(config, user, kind, path, actor=None, now=None):
+    """Grant ``user`` a folder, a store or a remote prefix; the stored grant.
+
+    Raises GrantError (``already_granted`` when that path is granted already).
+    """
+    from datetime import datetime
+    kind, stored = normalise_grant(config, kind, path)
+
+    def add(entry):
+        grants = entry.setdefault("grants", [])
+        if not isinstance(grants, list):
+            raise ValueError("access.json: grants is not a list")
+        if any(isinstance(g, dict) and g.get("path") == stored for g in grants):
+            raise GrantError("already_granted", f"{stored} is already granted.")
+        grant = {"kind": kind, "path": stored, "added_by": actor,
+                 "added_at": now or datetime.now().isoformat(timespec="seconds")}
+        grants.append(grant)
+        return grant
+
+    return update_entry(config, user, add)
+
+
+def add_stores_in(config, user, folder, actor=None, limit=None):
+    """Grant ``user`` every store directly inside ``folder`` (one ``store`` grant each); ``(added, skipped)``.
+
+    For a curated folder of links: the grants name the links, which are
+    followed to their targets, so a link leading outside the data directories
+    is skipped (with its reason) rather than granted. Bounded by ``limit``
+    (default ``dataset_folder_max_entries``) stores; all written in one change.
+    """
+    from datetime import datetime
+    from .routes.dataset_folders import DEFAULT_MAX_ENTRIES, is_store_dir
+    limit = int(limit or config.get("dataset_folder_max_entries") or DEFAULT_MAX_ENTRIES)
+    _, root = normalise_grant(config, "dir", folder)
+    candidates = []
+    for name in sorted(os.listdir(root)):
+        path = os.path.join(root, name)
+        if name.startswith("."):
+            continue
+        if (name.endswith(".h5ad") and os.path.isfile(path)) or (os.path.isdir(path) and is_store_dir(path, name)):
+            candidates.append(path)
+    if len(candidates) > limit:
+        raise GrantError("too_many", f"{folder} holds {len(candidates)} stores; at most {limit} can be granted at once.")
+    wanted, skipped = [], []
+    for path in candidates:
+        try:
+            wanted.append(normalise_grant(config, "store", path)[1])
+        except GrantError as exc:
+            skipped.append({"path": path, "reason": exc.reason})
+    now = datetime.now().isoformat(timespec="seconds")
+
+    def add(entry):
+        grants = entry.setdefault("grants", [])
+        if not isinstance(grants, list):
+            raise ValueError("access.json: grants is not a list")
+        have = {g.get("path") for g in grants if isinstance(g, dict)}
+        added = []
+        for path in wanted:
+            if path in have:
+                skipped.append({"path": path, "reason": "already_granted"})
+                continue
+            grants.append({"kind": "store", "path": path, "added_by": actor, "added_at": now})
+            added.append(path)
+        if not grants:
+            entry.pop("grants")
+        return added
+
+    return update_entry(config, user, add), skipped
+
+
+def remove_grant(config, user, path):
+    """Revoke ``path`` (as stored, or any spelling of the same real path); the removed grants."""
+    wanted = {path.strip(), os.path.abspath(os.path.expanduser(path.strip())), str(_prefix_or(path))}
+    wanted_real = canonical_spelling(os.path.abspath(os.path.expanduser(path.strip())))
+
+    def remove(entry):
+        grants = entry.get("grants")
+        if not isinstance(grants, list):
+            return []
+        kept, removed = [], []
+        for grant in grants:
+            stored = grant.get("path") if isinstance(grant, dict) else None
+            same = isinstance(stored, str) and (stored in wanted or (
+                grant.get("kind") != "remote" and canonical_spelling(stored) == wanted_real))
+            (removed if same else kept).append(grant)
+        if removed:
+            if kept:
+                entry["grants"] = kept
+            else:
+                entry.pop("grants", None)
+        return removed
+
+    return update_entry(config, user, remove)
+
+
+def _prefix_or(path):
+    try:
+        return _Prefix.parse(path.strip()) if is_remote_path(path.strip()) else ""
+    except ValueError:
+        return ""
+
+
+def set_restricted(config, user, restricted):
+    """Turn the restriction of ``user`` on or off (the grants stay); the previous value."""
+    def change(entry):
+        before = _flag(entry) if entry else False
+        if restricted:
+            entry["restricted"] = True
+        else:
+            entry.pop("restricted", None)
+        return before
+
+    return update_entry(config, user, change)
+
+
+def describe(user, config=None):
+    """What an admin sees of ``user``'s access: ``{restricted, grants: [...]}`` with each grant's state."""
+    entry = entry_of(user, config)
+    grants = grants_of(user, config)
+    return {"restricted": is_restricted(user, config),
+            "grants": [{"kind": g["kind"], "path": g["path"], "real": g["real"] if g["kind"] != "remote" else None,
+                        "active": g["active"], "inactive_reason": g["reason"],
+                        "added_by": g.get("added_by"), "added_at": g.get("added_at")} for g in grants.all],
+            "policy": entry.get("policy") or {}}
+
+
+def unavailable_reply():
+    """The 503 for a logged-in non-admin while ``access.json`` cannot be trusted; None otherwise.
+
+    Admins are not held up, so they can repair the file. With login off there
+    are no users, so no restriction.
+    """
+    user, is_admin = permissions.current_user()
+    if not user or is_admin:
+        return None
+    error = store_error()
+    if error is None:
+        return None
+    _log_unavailable(error)
+    return jsonify({"error": "Dataset access is unavailable right now. Ask an administrator.",
+                    "reason": "access_unavailable",
+                    "code": "store_unreadable"}), 503
+
+
+_unavailable_logged = [0.0]
+
+
+def _log_unavailable(error):
+    now = time.monotonic()
+    if now - _unavailable_logged[0] >= LOG_WINDOW_S:
+        _unavailable_logged[0] = now
+        logger.error(f"access.json cannot be read ({error}): every non-admin is refused with 503 "
+                     f"access_unavailable until an administrator repairs or removes it")
 
 
 def entry_path(entry):
@@ -142,10 +830,15 @@ def spelled(path):
     return g.get("requested_paths", {}).get(path, path)
 
 
+def restricted_user():
+    """The name of the current requester when they are a logged-in non-admin who is restricted, else None."""
+    user, is_admin = permissions.current_user()
+    return user if user and not is_admin and is_restricted(user) else None
+
+
 def is_restricted_requester():
     """Whether the current requester is a logged-in non-admin who is restricted."""
-    user, is_admin = permissions.current_user()
-    return bool(user) and not is_admin and is_restricted(user)
+    return restricted_user() is not None
 
 
 def refusal(value):
@@ -178,12 +871,8 @@ def not_found(path=None, segment=False, endpoint=None):
 
 
 def _readable(user, value):
-    """``may_read`` for a path or URL as the request spells it."""
-    if not value:
-        return True
-    if is_remote_path(value):
-        return may_read(user, value)
-    return may_read(user, os.path.realpath(os.path.expanduser(value)))
+    """``may_read`` for a path or URL as the request spells it (a blank one names nothing)."""
+    return True if not value else may_read(user, value)
 
 
 def _named(endpoint):
@@ -210,6 +899,17 @@ def enforce():
         logger.error(f"Endpoint {endpoint!r} ({request.path}) declares no access gate; refused for everyone. "
                      f"Add @access.gate(...) under its @app.route.")
         return not_found()
+    if kind in DATA_KINDS:
+        unavailable = unavailable_reply()
+        if unavailable is not None:
+            return unavailable
+    if kind == "admin" and not getattr(current_app.view_functions.get(endpoint), "_annzarro_admin", False):
+        # `status` and `cache/info` do not check the role themselves (the admin interface's slice 4
+        # will); they name the data directory and every dataset in the cache, which a restricted
+        # user is never told. The routes that guard themselves answer for themselves.
+        if is_restricted_requester():
+            return jsonify({"error": "Only an admin can do that.", "reason": "admin_only"}), 403
+        return None
     if kind not in ("dataset", "remote", "listing"):
         return None
     if not is_restricted_requester():

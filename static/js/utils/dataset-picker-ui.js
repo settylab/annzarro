@@ -48,9 +48,10 @@ function el(tag, className, text) {
  * @param {string} [o.otherTitle]
  * @param {string} [o.emptyText]
  * @param {string} [o.query] - search text to start with
+ * @param {string} [o.rootLabel] - the name of the picker's root folder ('Your datasets' for a restricted user, whose root is their grants)
  * @returns {{focus: Function, render: Function}}
  */
-export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoose, fetchFolder, fetchSearch = null, debounceMs = 300, otherTitle, emptyText = 'No datasets in the data directory.', query = '' }) {
+export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoose, fetchFolder, fetchSearch = null, debounceMs = 300, otherTitle, emptyText = 'No datasets in the data directory.', query = '', rootLabel = 'Data directory' }) {
     const { list, tree, search, regexBtn, sortSel, searchError } = dom;
     const state = { regex: false, sort: 'best', limit: PAGE, active: -1, tree: new Map(), remote: null };
     let remoteTimer = null;
@@ -168,7 +169,7 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
             container.appendChild(row);
         }
         if (node.loading) container.appendChild(el('div', 'change-dataset-status', 'Loading...'));
-        if (node.loaded && !node.entries.length) container.appendChild(el('div', 'change-dataset-status', `No datasets in ${path || 'the data directory'}`));
+        if (node.loaded && !node.entries.length) container.appendChild(el('div', 'change-dataset-status', `No datasets in ${path || (rootLabel === 'Data directory' ? 'the data directory' : 'your datasets')}`));
         if (node.more) {
             const more = el('button', 'btn btn-sm btn-link change-dataset-more', `Show more (${node.total - node.offset} left in this folder)`);
             more.type = 'button';
@@ -231,7 +232,7 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
         const treeBox = el('div', 'change-dataset-group');
         treeBox.appendChild(el('h6', null, 'Browse folders'));
         const rootNode = state.tree.get('') || { open: false };
-        treeBox.appendChild(folderRow({ path: '', name: 'Data directory' }, rootNode, 0));
+        treeBox.appendChild(folderRow({ path: '', name: rootLabel }, rootNode, 0));
         if (state.tree.get('') && state.tree.get('').error) treeBox.appendChild(el('div', 'change-dataset-status text-danger', state.tree.get('').error));
         treeRows(treeBox, '', found, 1);
         tree.appendChild(treeBox);

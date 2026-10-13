@@ -156,3 +156,50 @@ def is_shared(config):
 def is_exposed(config):
     """True when the server is shared with login disabled."""
     return is_shared(config) and not config.get("auth_enabled", False)
+
+
+#: Keys that name a dataset anywhere inside a stored panel set (besides ``dataset`` and ``view.store``).
+_PANELSET_PATH_KEYS = ("dataset_path", "datasetPath")
+_PANELSET_WALK_NODES = 20000
+
+
+def panelset_walk(data):
+    """``(named, hints, truncated)``: the dataset paths a stored panel set names.
+
+    ``named`` is what opening the set opens: its ``dataset``, the store of its
+    view (``view.store.path``) and any ``dataset_path`` inside it, relative
+    names resolved against the data directory as a share link's are. ``hints``
+    are the absolute paths it remembers from the server that saved it
+    (``datasetAbs``, ``view.store.abs``). Strings only, in the order found. ``truncated`` is true when the walk stopped at its bound
+    before it had seen the whole set, so a path may be missing from the lists.
+    """
+    if not isinstance(data, dict):
+        return [], [], False
+    named, hints = [], []
+    view = data.get("view")
+    store = view.get("store") if isinstance(view, dict) else None
+    for value, bucket in ((data.get("dataset"), named),
+                          (store.get("path") if isinstance(store, dict) else None, named),
+                          (data.get("datasetAbs"), hints),
+                          (store.get("abs") if isinstance(store, dict) else None, hints)):
+        if isinstance(value, str) and value:
+            bucket.append(value)
+    pending, seen = [data], 0
+    while pending and seen < _PANELSET_WALK_NODES:
+        node = pending.pop()
+        seen += 1
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in _PANELSET_PATH_KEYS and isinstance(value, str) and value:
+                    named.append(value)
+                elif isinstance(value, (dict, list)):
+                    pending.append(value)
+        elif isinstance(node, list):
+            pending.extend(v for v in node if isinstance(v, (dict, list)))
+    return named, hints, bool(pending)
+
+
+def panelset_datasets(data):
+    """``(named, hints)`` of :func:`panelset_walk`, without the truncation flag."""
+    named, hints, _ = panelset_walk(data)
+    return named, hints
