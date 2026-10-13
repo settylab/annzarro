@@ -347,8 +347,12 @@ def search_tree(config, query, regex=False, limit=None):
             if entry["kind"] == "folder":
                 queue.append((entry["path"], 0))
                 seen.add(entry["path"])
-            elif matches_text(entry["name"]):
-                found.append(entry)
+            else:
+                try:
+                    if matches_text(entry["name"], deadline):
+                        found.append(entry)
+                except TimeoutError:          # the clock ran out inside a match
+                    truncated = True
     else:
         queue, seen = [(data_dir, 0)], {os.path.realpath(data_dir)}
         # the data directories admins added are top-level folders of the picker, so they are searched too
