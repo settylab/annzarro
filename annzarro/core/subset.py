@@ -633,15 +633,30 @@ def _compare(cond: Condition, x: np.ndarray) -> np.ndarray:
 
 
 class _Values:
-    """A column as one Python value per cell (read_column)."""
+    """A column as one Python value per cell (read_column).
+
+    A numeric column may arrive as the ndarray it is stored as (read_column asks the
+    reader for it first): the numeric conditions compare it as it is, without the
+    Python float per cell (32 bytes each, 3 GB at 95.6M cells) that every other use
+    gets by ``values``, which makes that list once, when something asks for it.
+    """
 
     def __init__(self, values):
-        self.values = values
+        self._array = values if isinstance(values, np.ndarray) and values.dtype.kind in "iuf" else None
+        self._list = None if self._array is not None else values
+
+    @property
+    def values(self):
+        if self._list is None:
+            self._list = self._array.tolist()
+        return self._list
 
     def __len__(self):
-        return len(self.values)
+        return len(self._array) if self._array is not None else len(self._list)
 
     def mask(self, cond: Condition) -> np.ndarray:
+        if self._array is not None and cond.op in NUMERIC_OPS:
+            return _condition_mask(cond, self._array)
         return _condition_mask(cond, self.values)
 
     def groups(self, eligible: np.ndarray):
@@ -650,7 +665,7 @@ class _Values:
         text = [MISSING_GROUP if _is_missing(self.values[i]) else value_text(self.values[i])
                 for i in rows.tolist()]
         names, inverse = np.unique(np.asarray(text, dtype=object), return_inverse=True)
-        gid = np.full(len(self.values), -1, dtype=np.int64)
+        gid = np.full(len(self), -1, dtype=np.int64)
         gid[rows] = inverse.reshape(-1)
         return names, lambda part, sl: gid[part]
 
@@ -1094,7 +1109,17 @@ def _obs_columns(reader, dataset_path) -> Optional[List[str]]:
 
 def _readers(reader, dataset_path: str):
     """(read_column, read_codes) over the dataset's obs, for select_indices."""
+    take_numeric = getattr(reader, "get_obs_var_numeric", None)
+
     def read_column(name):
+        if take_numeric is not None:
+            # a numeric column as the array it is stored as: no Python float per cell
+            try:
+                array = take_numeric(entity="cells", dataset_path=dataset_path, column_name=name)
+            except Exception:
+                array = None
+            if array is not None:
+                return array
         result = reader.get_obs_var(entity="cells", dataset_path=dataset_path,
                                     column_names=[name], include_categories=False)
         data = result.get("data", result) if isinstance(result, dict) else result
