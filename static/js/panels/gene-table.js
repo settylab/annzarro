@@ -316,6 +316,15 @@ const GeneTablePanel = (function() {
                     console.log(`GeneTable ${_id}: Dataset changed, reinitializing table`);
                 }
                 
+                // A panel made before the first dataset load began (its type
+                // picked while the page was still starting) kept its "No
+                // dataset loaded" screen and its hidden controls: nothing
+                // lifted them when the dataset came. Lift them now, and only
+                // then, so a panel that already had a dataset keeps its
+                // controls as they are.
+                const noDataScreen = document.getElementById(`loading-screen-${_id}`);
+                if (noDataScreen && noDataScreen.style.display !== 'none') checkDatasetLoadingStatus(_id);
+
                 // Rebuild the column chooser from the NEW dataset, then the
                 // table. Reloading only the table (and only when it had
                 // columns) left the chooser offering the previous dataset's

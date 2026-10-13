@@ -1,6 +1,6 @@
 import { cancelIndexBuild } from './plot-utilities/large-plot.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
-import { createPanelStructure, initializeUIState } from './plot-utilities/panel-ui-make.js';
+import { createPanelStructure, initializeUIState, checkDatasetLoadingStatus } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
 import { updatePlotElements, updatePlotOnTableChange, highlightFocusedEntity, noteFocusOutside, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
 import { PanelManager } from '../panel-manager.js';
@@ -536,6 +536,15 @@ const CellPlotPanel = (function() {
                     console.log(`CellPlot ${_id}: Dataset changed, reinitializing plot`);
                 }
                 
+                // A panel made before the first dataset load began (its type
+                // picked while the page was still starting) kept its "No
+                // dataset loaded" screen and its hidden, disabled controls:
+                // nothing lifted them when the dataset came. Lift them now,
+                // and only then, so a panel that already had a dataset keeps
+                // its controls as they are.
+                const noDataScreen = document.getElementById(`loading-screen-${_id}`);
+                if (noDataScreen && noDataScreen.style.display !== 'none') checkDatasetLoadingStatus(_id);
+
                 // For dataset changes, fully reinitialize the plot with abort signal
                 try {
                     //setupAxisSelector(_controlsContainer, 'x', );
