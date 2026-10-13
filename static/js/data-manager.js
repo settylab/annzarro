@@ -4,6 +4,7 @@
  */
 import { Config } from './config.js';
 import { subsetParam } from './utils/subset.js';
+import { columnsParam } from './utils/column-param.js';
 import { notify } from './utils/notify.js';
 import { csrfFetch } from './utils/csrf.js';
 import { CacheManager } from './cache-manager.js';
@@ -1122,7 +1123,7 @@ const DataManager = (function() {
         const base = { dataset_path: _currentDataset, ...at };
         let body;
         if (axis.type === 'obs') {
-            body = await _fetchWithCache(Config.API.OBS, { ...base, columns: axis.key });
+            body = await _fetchWithCache(Config.API.OBS, { ...base, columns: columnsParam(axis.key) });
             const column = body && body.data && body.data[axis.key];
             return Array.isArray(column) && column.length === 1 ? column[0] : null;
         }
@@ -1403,7 +1404,7 @@ const DataManager = (function() {
         if (categories) params.categories = categories;
         
         if (columns && columns.length > 0) {
-            params.columns = columns.join(',');
+            params.columns = columnsParam(columns);
         }
         
         if (rows && rows.length > 0) {
@@ -1446,7 +1447,7 @@ const DataManager = (function() {
         if (categories) params.categories = categories;   // as loadObs
         
         if (columns && columns.length > 0) {
-            params.columns = columns.join(',');
+            params.columns = columnsParam(columns);
         }
         
         if (cols && cols.length > 0) {
@@ -2402,8 +2403,8 @@ const DataManager = (function() {
         // (utils/categories.js), no labels; otherwise every category
         const url = slot === 'var' ? Config.API.VAR : Config.API.OBS;
         const params = _withSubset(url, ranked
-            ? { dataset_path: datasetPath, columns: column, categories: 'ranked' }
-            : { dataset_path: datasetPath, columns: column });
+            ? { dataset_path: datasetPath, columns: columnsParam(column), categories: 'ranked' }
+            : { dataset_path: datasetPath, columns: columnsParam(column) });
         const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
         const key = `${fullUrl}#codes`;
         const cached = CacheManager.get(key);
@@ -2453,7 +2454,7 @@ const DataManager = (function() {
         for (let i = 0; i < wanted.length; i += 1000) {
             const part = wanted.slice(i, i + 1000);
             const body = await _fetchWithCache(slot === 'var' ? Config.API.VAR : Config.API.OBS,
-                { dataset_path: datasetPath, columns: column, category_ranks: part.join(',') }, signal);
+                { dataset_path: datasetPath, columns: columnsParam(column), category_ranks: part.join(',') }, signal);
             (body.ranks || part).forEach((r, k) => out.set(Number(r), body.labels[k]));
         }
         return out;
