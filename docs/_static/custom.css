@@ -4,3 +4,22 @@ img.screenshot, figure.screenshot img { border: 1px solid var(--color-background
 
 /* Sidebar logo: the app icon, kept small above the title */
 .sidebar-logo { max-width: 112px; }
+
+/* Desktop app or server: OS and server badges with pros below */
+.mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1.5rem; margin: 1rem 0 1.5rem; }
+.mode-col { border: 1px solid var(--color-background-border); border-radius: 8px; padding: 1rem 1.25rem; background: var(--color-background-secondary); }
+.mode-col p.mode-title { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.mode-col p.mode-sub { margin: 0 0 0.9rem; color: var(--color-foreground-muted); }
+.mode-col ul { margin: 0.9rem 0 0; padding-left: 1.2rem; }
+.badge-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+a.badge { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem;
+  width: 5.4rem; padding: 0.8rem 0.3rem; border-radius: 8px; border: 1px solid var(--color-background-border);
+  background: var(--color-background-primary); color: var(--color-foreground-primary); font-weight: 600; text-decoration: none; }
+a.badge:hover { border-color: var(--color-brand-primary); color: var(--color-brand-primary); }
+a.badge::before { content: ""; width: 2.1rem; height: 2.1rem; background-color: currentColor;
+  -webkit-mask: var(--badge-icon) center / contain no-repeat; mask: var(--badge-icon) center / contain no-repeat; }
+a.badge-apple { --badge-icon: url(badges/apple.svg); }
+a.badge-windows { --badge-icon: url(badges/windows.svg); }
+a.badge-linux { --badge-icon: url(badges/linux.svg); }
+a.badge-server { --badge-icon: url(badges/server.svg); }
+.badge-row > p { margin: 0; }

@@ -69,7 +69,7 @@ intersphinx_mapping = {
 }
 
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
-exclude_patterns = ["_build", "_tools", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "_tools", "_snippets", "design/auth-and-sharing.md", "Thumbs.db", ".DS_Store"]
 
 html_theme = "furo"
 html_title = "AnnZarro"

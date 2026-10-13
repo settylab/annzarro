@@ -70,9 +70,7 @@ warm, localhost. Script: `docs/_tools/bench_chunks.py`; data: `docs/_tools/data/
 The penalty grows with the matrix. At 200,000 cells a whole-gene layer costs 125 ms per cell
 row with the files in the page cache. On the paper's laptop sweep at 1M × 5,000 (AnnZarro
 v0.4.0, cold), whole-gene (n, 64) chunks needed **2.9 s** and 7.2 GiB of server memory for one
-cell row, against 0.055 s with anndata's default chunks ({doc}`../reference/performance`). The
-paper's HPC measurement on a larger Kompot layer, on a network filesystem with a cold
-cache, is being re-measured on v0.4.0.
+cell row, against 0.055 s with anndata's default chunks ({doc}`../reference/performance`).
 
 At the size of the demonstration data the choice matters little. Direct zarr reads of the
 8,090 × 16,285 fold-change layer, from the paper's validation:

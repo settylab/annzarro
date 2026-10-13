@@ -20,6 +20,41 @@ data preparation, deployment and reference). Developed by the [Setty Lab](https:
 
 ![Clicking a cell moves the diffusion-walk colouring; clicking a gene recolours its correlations and per-cell fold change](https://raw.githubusercontent.com/settylab/annzarro/main/docs/_static/readme/focus.gif)
 
+## Install
+
+```bash
+pip install annzarro              # or 'annzarro[remote]' for s3://, gs:// and https:// stores
+```
+
+This installs AnnZarro on your own computer or on a server. Or download the desktop app, or set up a shared server, below.
+
+From source:
+`git clone https://github.com/settylab/annzarro.git && pip install -e ./annzarro`.
+Details: [installation](https://annzarro.readthedocs.io/en/latest/getting-started/installation.html),
+[desktop app](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html).
+
+## Desktop app or server
+
+**Desktop app** (download the latest release):
+
+[![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/settylab/annzarro/releases/latest) [![Windows](https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyBmaWxsPSJ3aGl0ZSIgcm9sZT0iaW1nIiB2aWV3Qm94PSIwIDAgMjQgMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPHRpdGxlPldpbmRvd3M8L3RpdGxlPjxwYXRoIGQ9Ik0wLDBIMTEuMzc3VjExLjM3MkgwWk0xMi42MjMsMEgyNFYxMS4zNzJIMTIuNjIzWk0wLDEyLjYyM0gxMS4zNzdWMjRIMFptMTIuNjIzLDBIMjRWMjRIMTIuNjIzIi8%2BPC9zdmc%2B)](https://github.com/settylab/annzarro/releases/latest) [![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/settylab/annzarro/releases/latest)
+
+- Standalone on your laptop, no Python needed
+- Works offline
+- Your data stay on your computer
+- No login, no set-up
+- Opens local `.zarr` stores
+
+**Server** (one server, many users in the browser; [install](https://annzarro.readthedocs.io/en/latest/deployment/lab-server.html)):
+
+[![Server](https://img.shields.io/badge/Server-1f6feb?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyBmaWxsPSJ3aGl0ZSIgcm9sZT0iaW1nIiB2aWV3Qm94PSIwIDAgMjQgMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPHRpdGxlPlNlcnZlcjwvdGl0bGU%2BPHBhdGggZD0iTTMgM2gxOGExIDEgMCAwIDEgMSAxdjZhMSAxIDAgMCAxLTEgMUgzYTEgMSAwIDAgMS0xLTFWNGExIDEgMCAwIDEgMS0xWm0xIDJ2NGgxNlY1SDRabS0xIDhoMThhMSAxIDAgMCAxIDEgMXY2YTEgMSAwIDAgMS0xIDFIM2ExIDEgMCAwIDEtMS0xdi02YTEgMSAwIDAgMSAxLTFabTEgMnY0aDE2di00SDRaTTYuNSA2LjJhLjguOCAwIDEgMSAwIDEuNi44LjggMCAwIDEgMC0xLjZabTAgMTBhLjguOCAwIDEgMSAwIDEuNi44LjggMCAwIDEgMC0xLjZaIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiLz48L3N2Zz4%3D)](https://annzarro.readthedocs.io/en/latest/deployment/lab-server.html)
+
+- Multi-user access in the browser, with login
+- Panel sets shared and exchanged between users
+- Large datasets stay on the server; only the slices a view needs travel to the browser
+- Per-user dataset access control and an admin page
+- Less memory on each user's computer
+
 ## What it does
 
 - Colours any plot by the focused cell's row of an `obsp` matrix or the focused gene's row of a `varp` matrix.
@@ -30,30 +65,6 @@ data preparation, deployment and reference). Developed by the [Setty Lab](https:
 - Never writes to your data and never runs code: a lab server can show datasets without giving write or compute access.
 
 ![Cell x cell, gene x gene, cells x genes and table filters](https://raw.githubusercontent.com/settylab/annzarro/main/docs/_static/readme/features.png)
-
-## Install
-
-```bash
-pip install annzarro              # or 'annzarro[remote]' for s3://, gs:// and https:// stores
-```
-
-Desktop apps for Windows, macOS and Linux (no Python needed, works offline) are on the
-[releases page](https://github.com/settylab/annzarro/releases). From source:
-`git clone https://github.com/settylab/annzarro.git && pip install -e ./annzarro`.
-Details: [installation](https://annzarro.readthedocs.io/en/latest/getting-started/installation.html),
-[desktop app](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html).
-
-## Desktop app or server
-
-| | Desktop app | Server mode |
-|---|---|---|
-| For | one person, data on their computer | a lab or institute sharing datasets in the browser |
-| Strengths | no Python needed, works offline, private to your computer, opens local `.zarr` stores | multi-user access with login, panel sets shared between users, large datasets read on the server (the browser receives only the slices a view needs), per-user dataset access control and an admin page, less memory on each user's computer |
-| Set up | [Desktop app](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html) | [Lab server](https://annzarro.readthedocs.io/en/latest/deployment/lab-server.html) |
-
-Use the desktop app if you are the only user and the data are on your computer; use a server
-if several people share datasets or some collaborators may see only some of them.
-[Full comparison](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-or-server.html).
 
 ## Quickstart
 

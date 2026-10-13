@@ -2,8 +2,8 @@
 
 A server with login on has an admin page at `/admin`. It changes, while the server runs and
 without editing YAML, what an administrator is responsible for: which directories the server
-reads from, which panels and external services users get, the server's health, and (with the
-users and access sections) who may sign in and which datasets they see. Every change is
+reads from, which panels and external services users get, the server's health, and (in the
+Users section and its Access panel) who may sign in and which datasets they see. Every change is
 written to an audit log. The API behind the page is documented in {ref}`http-admin`.
 
 The page is for people you trust with the server. It never writes the operator's YAML: what it
@@ -305,7 +305,7 @@ past their quota; the page says so. Removing a user can hand their sets over in 
 
 The Server health section merges what each worker reports: the read budget in use, the size of
 the result cache, the requests and the refusals counted by their `reason` (`read_busy`,
-`session_quota_user`, `csrf_failed`, and so on), and the users seen within the session timeout (`server.session_timeout`). It is
+`session_quota_user`, `csrf_failed`, and so on), and the users seen within the session timeout (`auth.session_timeout`). It is
 the place to look when users report `503 read_busy` or `409 session_quota_*`, and to see
 whether the limits of {doc}`resource-limits` are set right.
 

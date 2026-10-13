@@ -166,8 +166,7 @@ and for it `total_gb` is the limit to set.
 **How the estimates were made.** On an Apple M3 Max laptop with Chrome, drawing up to 182 million
 points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in large-plot mode keeps
 its points outside the JavaScript heap (0.1 bytes of heap per point; about 65 bytes per point of
-typed arrays, and 200 million points drew with a 13.6 GB tab and 35 MB of heap). Before v0.4.1 it
-held 20.2 bytes of heap per point and a tab died at 182 to 200 million points; a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
+typed arrays, and 200 million points drew with a 13.6 GB tab and 35 MB of heap); a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
 million); the app itself 0.17 GB; hover labels of a categorical column 34 bytes per point plus 62 bytes
 and 2 per character per distinct label (measured at a million points: 999,998 barcodes 114 MB,
 65,000 labels 38 MB, plus the reply while it loads). There is no cap on the number of labels: a
@@ -222,7 +221,7 @@ the browser calls them itself, the server never does.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `external_requests` | `ask` | Whether the panel may send gene ids to external services. `ask`: the user is asked once per service (Enrichr and Reactome, which keep what they are sent where others can read it, every time). `on`: without asking, for a site whose users agreed beforehand. `off`: never; the panel's Links still work. `ask` leaves it to the browser: the user's answers per service and a share link's consent for its selection (order in the user guide's Consent section). Quote the value in YAML (`"off"`): a bare off is read as false (which also means off). The environment variable `ANNZARRO_EXTERNAL_REQUESTS=off\|ask\|on` overrides it. |
+| `external_requests` | `ask` | Whether the panel may send gene ids to external services. `ask`: the user is asked once per service (Enrichr and Reactome, which keep what they are sent where others can read it, every time). `on`: without asking, for a site whose users agreed beforehand. `off`: never; the panel's Links still work. `none`: never, and the Links are removed too. `ask` leaves it to the browser: the user's answers per service and a share link's consent for its selection (order in the user guide's Consent section). Quote the value in YAML (`"off"`): a bare off is read as false (which also means off). The environment variable `ANNZARRO_EXTERNAL_REQUESTS=off\|ask\|on\|none` overrides it. |
 | `gene_set.services` | `null` | The sections offered, by adapter id (`string-network`) or service (`string`, `gprofiler`, `mygene`, `enrichr`, `reactome`, `hpa`). `null`: all of them. |
 | `gene_set.timeout_ms` | `20000` | Time one request may take, in ms. A timed-out request is tried once more. |
 | `string_db.base_url` | `https://version-12-5.string-db.org/api` | STRING's API. A versioned host, so a result can be reproduced; it says its version in the section. |

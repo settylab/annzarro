@@ -5,6 +5,19 @@ the matrices that other viewers leave out: cell-by-cell kernels and distances (`
 gene-by-gene similarities (`varp`), explored one focused cell or gene at a time and linked to
 the cell-by-gene layers.
 
+```bash
+pip install annzarro
+```
+
+This installs AnnZarro on your own computer or on a server. Or download the desktop app, or set
+up a shared server:
+
+```{include} _snippets/modes.md
+```
+
+The desktop app is for one person with data on their own computer; a server shares datasets,
+panel sets and access.
+
 ```{figure} _static/screens/index/overview.png
 :class: screenshot
 :alt: Four linked AnnZarro panels on the demonstration data
@@ -53,43 +66,6 @@ Desktop, personal server over SSH, and read-only lab servers.
 CLI, configuration, HTTP API, deep links, wire format and architecture.
 :::
 ::::
-
-## Desktop app or server
-
-AnnZarro runs in two main ways. Both show the same interface and read the same stores.
-
-::::{grid} 1 1 2 2
-:gutter: 2
-
-:::{grid-item-card} Desktop app
-For one person with data on their own computer.
-
-- Standalone for macOS, Windows and Linux, no Python needed
-- Works offline; nothing leaves your computer
-- Opens local `.zarr` stores from a folder or the dataset picker
-- No login, no set-up
-
-{doc}`Download and first launch <getting-started/desktop-app>`
-:::
-
-:::{grid-item-card} Server mode
-For a lab or institute that shares datasets in the browser.
-
-- Many users reach one server in the browser, with login
-- Panel sets are shared and exchanged between users
-- Large datasets stay on the server; only the slices a view needs travel to the browser
-- Per-user dataset access control and an admin page
-- Less memory on each user's computer
-
-{doc}`Lab server <deployment/lab-server>`, {doc}`access control <deployment/authentication>`
-:::
-::::
-
-Use the desktop app if you are the only user and the data are on your computer. Use a server if
-several people should open the same datasets, if the data are too large or too far away to copy
-to each computer, or if some collaborators may see only some datasets. A personal server over SSH
-({doc}`deployment/personal-server`) covers one person with data on a cluster. The
-{doc}`full comparison <getting-started/desktop-or-server>` lists the differences.
 
 ```{toctree}
 :hidden:
