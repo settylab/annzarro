@@ -4,6 +4,9 @@ AnnZarro runs as a standalone desktop app on one computer, or as a server that m
 from a browser. The interface, the panels and the dataset format are the same in both
 ({doc}`../deployment/modes` has the full table including the personal server).
 
+```{include} ../_snippets/modes.md
+```
+
 ## Side by side
 
 | | Desktop app | Server mode (lab server) |
