@@ -20,22 +20,13 @@ data preparation, deployment and reference). Developed by the [Setty Lab](https:
 
 ![Clicking a cell moves the diffusion-walk colouring; clicking a gene recolours its correlations and per-cell fold change](https://raw.githubusercontent.com/settylab/annzarro/main/docs/_static/readme/focus.gif)
 
-## What it does
-
-- Colours any plot by the focused cell's row of an `obsp` matrix or the focused gene's row of a `varp` matrix.
-- Plots any `obs`, `var`, `obsm`, `varm` column or `layers` row/column against any other, spatial coordinates included.
-- Links cells and genes: one cell's values across genes, one gene's values across cells, in every layer.
-- Filters cell and gene tables with AND/OR conditions that mask the plots; saves layouts as panel sets and share links.
-- Reads only the chunks behind what is on screen, so cost follows the view, not the dataset size; locally or from S3, GCS and HTTP.
-- Never writes to your data and never runs code: a lab server can show datasets without giving write or compute access.
-
-![Cell x cell, gene x gene, cells x genes and table filters](https://raw.githubusercontent.com/settylab/annzarro/main/docs/_static/readme/features.png)
-
 ## Install
 
 ```bash
 pip install annzarro              # or 'annzarro[remote]' for s3://, gs:// and https:// stores
 ```
+
+The same command works on your own computer and on a server. Or use a standalone desktop app or set up a server, below.
 
 Desktop apps for Windows, macOS and Linux (no Python needed, works offline) are on the
 [releases page](https://github.com/settylab/annzarro/releases). From source:
@@ -65,8 +56,16 @@ Details: [installation](https://annzarro.readthedocs.io/en/latest/getting-starte
 - Per-user dataset access control and an admin page
 - Less memory on each user's computer
 
-Use the desktop app if you are the only user and the data are on your computer; use a server
-to share datasets, panel sets and access. [Full comparison](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-or-server.html).
+## What it does
+
+- Colours any plot by the focused cell's row of an `obsp` matrix or the focused gene's row of a `varp` matrix.
+- Plots any `obs`, `var`, `obsm`, `varm` column or `layers` row/column against any other, spatial coordinates included.
+- Links cells and genes: one cell's values across genes, one gene's values across cells, in every layer.
+- Filters cell and gene tables with AND/OR conditions that mask the plots; saves layouts as panel sets and share links.
+- Reads only the chunks behind what is on screen, so cost follows the view, not the dataset size; locally or from S3, GCS and HTTP.
+- Never writes to your data and never runs code: a lab server can show datasets without giving write or compute access.
+
+![Cell x cell, gene x gene, cells x genes and table filters](https://raw.githubusercontent.com/settylab/annzarro/main/docs/_static/readme/features.png)
 
 ## Quickstart
 

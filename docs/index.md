@@ -5,6 +5,19 @@ the matrices that other viewers leave out: cell-by-cell kernels and distances (`
 gene-by-gene similarities (`varp`), explored one focused cell or gene at a time and linked to
 the cell-by-gene layers.
 
+```bash
+pip install annzarro
+```
+
+The same command works on your own computer and on a server. Or use a standalone desktop app or
+set up a server:
+
+```{include} _snippets/modes.md
+```
+
+The desktop app is for one person with data on their own computer; a server shares datasets,
+panel sets and access.
+
 ```{figure} _static/screens/index/overview.png
 :class: screenshot
 :alt: Four linked AnnZarro panels on the demonstration data
@@ -53,18 +66,6 @@ Desktop, personal server over SSH, and read-only lab servers.
 CLI, configuration, HTTP API, deep links, wire format and architecture.
 :::
 ::::
-
-## Desktop app or server
-
-AnnZarro runs as a standalone desktop app or as a server. Both show the same interface and read
-the same stores.
-
-```{include} _snippets/modes.md
-```
-
-The desktop app is for one person with data on their own computer; a server is for sharing
-datasets, panel sets and access. The {doc}`full comparison <getting-started/desktop-or-server>`
-has the details.
 
 ```{toctree}
 :hidden:
