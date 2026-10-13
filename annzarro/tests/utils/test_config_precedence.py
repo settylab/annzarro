@@ -198,17 +198,20 @@ def test_remote_env_vars_are_reported_as_used_not_ignored(isolated, monkeypatch)
     """core/remote.py reads ANNZARRO_REMOTE_*; `config show` called them ignored."""
     from annzarro.core import remote
     names = [remote.ENV_MODE, remote.ENV_ALLOWLIST, remote.ENV_CREDENTIALS,
-             remote.ENV_CONNECT_TIMEOUT, remote.ENV_READ_TIMEOUT, remote.ENV_CHUNK_CACHE]
+             remote.ENV_CONNECT_TIMEOUT, remote.ENV_READ_TIMEOUT, remote.ENV_REQUEST_TIMEOUT,
+             remote.ENV_CHUNK_CACHE]
     assert set(names) == set(ConfigManager.ENV_ALIASES)
     monkeypatch.setenv(remote.ENV_MODE, "allow")
     monkeypatch.setenv(remote.ENV_ALLOWLIST, "s3://a/,https://b/")
     monkeypatch.setenv(remote.ENV_CONNECT_TIMEOUT, "5")
+    monkeypatch.setenv(remote.ENV_REQUEST_TIMEOUT, "45")
     mgr = ConfigManager()
     config = mgr.load_config(env="production")
     assert not [l for l in mgr.layers if l["status"] == "ignored"]
     assert config["server"]["remote_stores"] == "allow"
     assert config["server"]["remote_allowlist"] == ["s3://a/", "https://b/"]
     assert config["server"]["remote_connect_timeout_s"] == 5
+    assert config["server"]["remote_request_timeout_s"] == 45
     assert mgr.origins["server.remote_stores"] == "env:ANNZARRO_REMOTE_STORES"
     # the merged config alone gives the policy the variables give
     flat = mgr.to_flask_config()

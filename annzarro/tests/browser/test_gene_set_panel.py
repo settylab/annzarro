@@ -695,6 +695,13 @@ def test_gprofiler_is_told_the_entrez_namespace(env):
 
 def test_over_the_limit_is_not_sent_until_try_anyway_and_the_refusal_is_shown(env):
     page, services, root = env
+
+    def with_test_service(route):
+        # the server's policy offers the services it knows (panel.gene-set.services); this test adds its own
+        body = route.fetch().json()
+        body["values"]["panel.gene-set.services"].append("test-limit")
+        route.fulfill(json=body, headers={"X-AnnZarro-Policy": body["version"]})
+    page.route("**/api/v1/policy/effective*", with_test_service)
     page.goto(_link(root, with_panel=False))
     page.wait_for_selector(f"{TABLE} .dataTables_scrollBody tbody tr", timeout=30000)
     # a section that takes at most 5 genes, registered before the panel is made

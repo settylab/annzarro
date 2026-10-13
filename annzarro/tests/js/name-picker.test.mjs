@@ -152,3 +152,28 @@ test('a failed dataset-wide search leaves the shown cells\' matches', async () =
     assert.deepEqual(model.items.map(i => i.name), ['c1']);
     assert.equal(model.error, null);
 });
+
+test('a regex scan that ran out of time says so, with or without matches', async () => {
+    const { statusText } = await import('../../../static/js/utils/name-picker.js');
+    const model = new NameSearchModel(async () => ({ ...page('cell_1'), timed_out: true, partial: true }));
+    await model.setQuery('^cell', { regex: true });
+    assert.match(statusText(model, 'cell'), /1 match.*ran out of time/);
+    const none = new NameSearchModel(async () => ({ matches: [], truncated: false, timed_out: true }));
+    await none.setQuery('x.*y', { regex: true });
+    assert.match(statusText(none, 'cell'), /No cell matches.*ran out of time/);
+    const fine = new NameSearchModel(async () => page('cell_1'));
+    await fine.setQuery('c');
+    assert.doesNotMatch(statusText(fine, 'cell'), /ran out of time/);
+});
+
+test('a refused pattern shows the server\'s sentence', async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: 'This pattern is refused: a repeat inside a repeat.', reason: 'regex_too_complex' }) });
+    try {
+        const model = new NameSearchModel(q => fetchNameMatches('/x', { datasetPath: 'd', entity: 'cells', query: q, mode: 'regex' }));
+        await model.setQuery('(a+)+', { regex: true });
+        assert.match(model.error, /a repeat inside a repeat/);
+    } finally {
+        globalThis.fetch = original;
+    }
+});

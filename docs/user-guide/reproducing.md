@@ -12,7 +12,7 @@ again from the command line.
 
 ## What a saved view records
 
-Since v0.4.1 a link and a panel set record, next to the layout and every panel's settings:
+A link and a panel set record, next to the layout and every panel's settings:
 
 - **The store by its name in the data directory**, for example `bm_aging_annzarro.zarr` or
   `datasets/bm_aging_annzarro.zarr`, whenever the store is inside the server's data directory. Any server

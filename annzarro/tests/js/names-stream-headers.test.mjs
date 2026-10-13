@@ -1,0 +1,189 @@
+/**
+ * The client chooses its packed path for /data/cells from the headers.
+ *
+ * A zarr store's reply is written as it is read, so it has no Content-Length;
+ * the server sends X-Annzarro-Names (how many) and
+ * X-Annzarro-Names-Bytes-Estimate (about how big). Before, a chunked reply
+ * fell through to response.text() and an array of JS strings, which fails at
+ * about 24M cells (V8's string length) and takes 3 GB of heap at 95.6M.
+ *
+ * Run:  node --test annzarro/tests/js/names-stream-headers.test.mjs
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { PackedNames, namesReplyPlan } from '../../../static/js/utils/packed-names.js';
+import { DataManager } from '../../../static/js/data-manager.js';
+
+const THRESHOLD = 256 * 1024 * 1024;
+const NAMES = Array.from({ length: 50 }, (_, i) => `AAAC_${i}-1`);
+const BODY = JSON.stringify({ cells: NAMES, dataset_path: '/d/x.zarr' });
+
+const headers = (h) => new Headers(h);
+
+test('the Content-Length decides when the reply has one', () => {
+    const big = namesReplyPlan(headers({ 'Content-Length': String(THRESHOLD + 1) }), THRESHOLD);
+    assert.deepEqual(big, { packed: true, size: THRESHOLD + 1, count: 0 });
+    assert.equal(namesReplyPlan(headers({ 'Content-Length': String(THRESHOLD) }), THRESHOLD).packed, false);
+});
+
+test('a reply with no Content-Length is sized by the estimate and counted by X-Annzarro-Names', () => {
+    const plan = namesReplyPlan(headers({
+        'X-Annzarro-Names': '95624334', 'X-Annzarro-Names-Bytes-Estimate': '2093130083',
+    }), THRESHOLD);
+    assert.deepEqual(plan, { packed: true, size: 2093130083, count: 95624334 });
+    const small = namesReplyPlan(headers({
+        'X-Annzarro-Names': '200', 'X-Annzarro-Names-Bytes-Estimate': '4000' }), THRESHOLD);
+    assert.equal(small.packed, false);
+    assert.equal(small.count, 200);
+});
+
+test('a reply that says nothing is read as before', () => {
+    assert.deepEqual(namesReplyPlan(headers({}), THRESHOLD), { packed: false, size: 0, count: 0 });
+    assert.equal(namesReplyPlan(headers({ 'X-Annzarro-Names-Bytes-Estimate': 'soon' }), THRESHOLD).packed, false);
+});
+
+test('PackedNames sizes its offsets from the count, and grows if the count was short', async () => {
+    const respond = () => new Response(BODY);
+    const counted = await PackedNames.fromJSON(respond(), 'cells', 0, NAMES.length);
+    assert.equal(counted.length, NAMES.length);
+    assert.equal(counted.at(49), NAMES[49]);
+    // a count too small for the body costs a growth, not a wrong answer
+    const short = await PackedNames.fromJSON(respond(), 'cells', 0, 3);
+    assert.deepEqual([...short], NAMES);
+});
+
+function withFetch(headersOf, body, run) {
+    const real = globalThis.fetch;
+    globalThis.fetch = async () => new Response(body, { status: 200, headers: headersOf });
+    return run().finally(() => { globalThis.fetch = real; });
+}
+
+test('loadCells reads a chunked reply above the threshold into packed names', async () => {
+    const cells = await withFetch({
+        'Content-Type': 'application/json', 'X-Annzarro-Names': String(NAMES.length),
+        'X-Annzarro-Names-Bytes-Estimate': String(THRESHOLD + 1),
+    }, BODY, () => DataManager.loadCells('/d/x.zarr'));
+    assert.ok(cells instanceof PackedNames, 'packed');
+    assert.equal(cells.length, NAMES.length);
+    assert.equal(cells[7], NAMES[7]);
+});
+
+test('loadCells keeps a plain array for a small reply, with or without the headers', async () => {
+    const withHeaders = await withFetch({
+        'Content-Type': 'application/json', 'X-Annzarro-Names': String(NAMES.length),
+        'X-Annzarro-Names-Bytes-Estimate': '700',
+    }, BODY, () => DataManager.loadCells('/d/x.zarr'));
+    assert.ok(Array.isArray(withHeaders));
+    assert.deepEqual(withHeaders, NAMES);
+    const old = await withFetch({ 'Content-Type': 'application/json' }, BODY, () => DataManager.loadCells('/d/x.zarr'));
+    assert.deepEqual(old, NAMES);
+});
+
+test('a count without an estimate is sized at about 24 bytes a name', () => {
+    assert.equal(namesReplyPlan(headers({ 'X-Annzarro-Names': '95624334' }), THRESHOLD).packed, true);
+    assert.equal(namesReplyPlan(headers({ 'X-Annzarro-Names': '200' }), THRESHOLD).packed, false);
+});
+
+// -- a reply cut short never reads as a shorter, complete one -------------------
+
+test('a body cut at any byte is an error, never a shorter list', async () => {
+    for (let cut = 1; cut < BODY.length; cut++) {
+        await assert.rejects(
+            () => PackedNames.fromJSON(new Response(BODY.slice(0, cut)), 'cells'),
+            (err) => err.truncated === true,
+            `cut at ${cut}`);
+    }
+    await assert.rejects(() => PackedNames.fromJSON(new Response(''), 'cells'), (err) => err.truncated === true);
+    const whole = await PackedNames.fromJSON(new Response(BODY + '\n'), 'cells');
+    assert.equal(whole.length, NAMES.length);
+});
+
+test('a body ending in the abort mark is an error', async () => {
+    const cut = BODY.slice(0, 200) + '\n<names stream aborted>';
+    await assert.rejects(() => PackedNames.fromJSON(new Response(cut), 'cells'), (err) => err.truncated === true);
+});
+
+function sequence(replies, calls) {
+    const real = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+        calls.push(init || {});
+        return replies[Math.min(calls.length - 1, replies.length - 1)]();
+    };
+    return () => { globalThis.fetch = real; };
+}
+
+const packedReply = (body, count = NAMES.length) => () => new Response(body, { status: 200, headers: {
+    'Content-Type': 'application/json', 'X-Annzarro-Names': String(count),
+    'X-Annzarro-Names-Bytes-Estimate': String(THRESHOLD + 1) } });
+
+test('a cut reply is read again once, bypassing the browser cache, and then it works', async () => {
+    const calls = [];
+    const restore = sequence([packedReply(BODY.slice(0, 120)), packedReply(BODY)], calls);
+    try {
+        const cells = await DataManager.loadCells('/d/x.zarr');
+        assert.equal(cells.length, NAMES.length);
+    } finally { restore(); }
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].cache, undefined);
+    assert.equal(calls[1].cache, 'reload', 'the retry replaces the cut copy the browser kept');
+});
+
+test('a reply with fewer names than the server counted is an error after the retry', async () => {
+    const calls = [];
+    const short = JSON.stringify({ cells: NAMES.slice(0, 10), dataset_path: '/d/x.zarr' });
+    const restore = sequence([packedReply(short)], calls);
+    try {
+        await assert.rejects(() => DataManager.loadCells('/d/x.zarr'), (err) => err.truncated === true);
+    } finally { restore(); }
+    assert.equal(calls.length, 2);
+});
+
+test('a small reply with fewer names than counted is an error too', async () => {
+    const calls = [];
+    const short = JSON.stringify({ cells: NAMES.slice(0, 10), dataset_path: '/d/x.zarr' });
+    const restore = sequence([() => new Response(short, { status: 200, headers: {
+        'Content-Type': 'application/json', 'X-Annzarro-Names': String(NAMES.length) } })], calls);
+    try {
+        await assert.rejects(() => DataManager.loadCells('/d/x.zarr'), (err) => err.truncated === true);
+    } finally { restore(); }
+});
+
+// -- a busy server, and a small reply that is cut --------------------------------
+
+test('a 503 read_busy on /data/cells is waited out once, like the other reads', async () => {
+    const calls = [];
+    const busy = () => new Response('{"reason":"read_busy"}', { status: 503, headers: { 'Retry-After': '1' } });
+    const ok = () => new Response(BODY, { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const restore = sequence([busy, ok], calls);
+    try {
+        const cells = await DataManager.loadCells('/d/x.zarr');
+        assert.deepEqual(cells, NAMES);
+    } finally { restore(); }
+    assert.equal(calls.length, 2);
+});
+
+test('a small reply that does not parse is read again with cache reload, then fails as cut short', async () => {
+    const calls = [];
+    const cut = () => new Response(BODY.slice(0, 80), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const restore = sequence([cut], calls);
+    try {
+        await assert.rejects(() => DataManager.loadCells('/d/x.zarr'), (err) => err.truncated === true);
+    } finally { restore(); }
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].cache, 'reload');
+    const calls2 = [];
+    const restore2 = sequence([cut, () => new Response(BODY, { status: 200 })], calls2);
+    try {
+        assert.deepEqual(await DataManager.loadCells('/d/x.zarr'), NAMES);
+    } finally { restore2(); }
+});
+
+test('a server error is not read again', async () => {
+    const calls = [];
+    const restore = sequence([() => new Response('{"error":"nope"}', { status: 500 })], calls);
+    try {
+        await assert.rejects(() => DataManager.loadCells('/d/x.zarr'), (err) => err.status === 500 && !err.truncated);
+    } finally { restore(); }
+    assert.equal(calls.length, 1);
+});

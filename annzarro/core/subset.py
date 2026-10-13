@@ -36,8 +36,9 @@ column. obs columns, which are one value per cell, are read by index.
 
 Nothing about the subset is stored per client: the spec travels with every
 request, and the server caches the resolved indices (16 specs, keyed by the
-store's stat signature). Responses are cached as before: a subset response is
-the inner reader's cached full-axis result, sliced.
+store's stat signature, shared fairly between requesters: SubsetCache).
+Responses are cached as before: a subset response is the inner reader's
+cached full-axis result, sliced.
 """
 
 from __future__ import annotations
@@ -46,10 +47,15 @@ import contextvars
 import itertools
 import json
 import math
+import logging
 import threading
+import time
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 
@@ -627,15 +633,30 @@ def _compare(cond: Condition, x: np.ndarray) -> np.ndarray:
 
 
 class _Values:
-    """A column as one Python value per cell (read_column)."""
+    """A column as one Python value per cell (read_column).
+
+    A numeric column may arrive as the ndarray it is stored as (read_column asks the
+    reader for it first): the numeric conditions compare it as it is, without the
+    Python float per cell (32 bytes each, 3 GB at 95.6M cells) that every other use
+    gets by ``values``, which makes that list once, when something asks for it.
+    """
 
     def __init__(self, values):
-        self.values = values
+        self._array = values if isinstance(values, np.ndarray) and values.dtype.kind in "iuf" else None
+        self._list = None if self._array is not None else values
+
+    @property
+    def values(self):
+        if self._list is None:
+            self._list = self._array.tolist()
+        return self._list
 
     def __len__(self):
-        return len(self.values)
+        return len(self._array) if self._array is not None else len(self._list)
 
     def mask(self, cond: Condition) -> np.ndarray:
+        if self._array is not None and cond.op in NUMERIC_OPS:
+            return _condition_mask(cond, self._array)
         return _condition_mask(cond, self.values)
 
     def groups(self, eligible: np.ndarray):
@@ -644,7 +665,7 @@ class _Values:
         text = [MISSING_GROUP if _is_missing(self.values[i]) else value_text(self.values[i])
                 for i in rows.tolist()]
         names, inverse = np.unique(np.asarray(text, dtype=object), return_inverse=True)
-        gid = np.full(len(self.values), -1, dtype=np.int64)
+        gid = np.full(len(self), -1, dtype=np.int64)
         gid[rows] = inverse.reshape(-1)
         return names, lambda part, sl: gid[part]
 
@@ -905,17 +926,151 @@ class Subset:
         return out
 
 
-_cache: "OrderedDict[Tuple[str, Tuple, str], Subset]" = OrderedDict()
 _lock = threading.Lock()
 _CACHE_SIZE = 16
 #: Bound on the cells all cached subsets hold together (indices, and names once
 #: /cells asked for them): a filter-only spec on a 20M-cell store holds up to
-#: 20M rows, and 16 of those would be gigabytes. The newest subset is always kept.
+#: 20M rows, and 16 of those would be gigabytes.
 _CACHE_MAX_CELLS = 20_000_000
+#: Seconds a requester's most recent subset stays pinned after its last use,
+#: and after which a subset nobody used is anybody's to evict.
+PIN_S = 600.0
+#: Requesters remembered per subset, and with a pin.
+MAX_OWNERS = 8
+MAX_REQUESTERS = 512
 
 
 def _held(subset) -> int:
     return len(subset.indices) * (2 if subset._names is not None else 1)
+
+
+class SubsetCache:
+    """The resolved subsets of this process, fair between requesters.
+
+    One budget, as before: ``_CACHE_SIZE`` subsets and ``_CACHE_MAX_CELLS``
+    cells held. What is evicted is chosen per requester (the user, else the
+    client address; see read_guard.requester). Each subset is charged in
+    slots, a slot being 1/16 of the cache (``max(1, cells / 1.25M)``), split
+    between the requesters that used it. Over the budget, the requester
+    charged the most loses its least recently used subset. A requester
+    stepping through seeds or filters, or asking for every cell of a huge
+    store, so evicts its own subsets and not everyone else's.
+
+    - Each requester's most recent subset is pinned for ``PIN_S``: a subset
+      that one requester shares with the heaviest (the default subset of a
+      dataset) is not evicted while the other is looking at it.
+    - When the heaviest requester holds nothing but its pins, subsets nobody
+      used for ``PIN_S`` go first; then its own pins, the new subset last. A
+      new subset that does not fit beside the others' current ones is served
+      and not kept.
+    - With one requester (the desktop and scripts, requester None) this is
+      exactly LRU with the newest subset always kept.
+
+    Callers hold ``_lock``.
+    """
+
+    def __init__(self, size: Callable[[Any], int] = _held, clock: Optional[Callable[[], float]] = None,
+                 max_entries: Optional[int] = None, max_cells: Optional[int] = None):
+        self._size = size
+        self._clock = clock or time.monotonic
+        self._max_entries = max_entries
+        self._max_cells = max_cells
+        self._entries: "OrderedDict[Any, Any]" = OrderedDict()        # LRU first
+        self._owners: Dict[Any, "OrderedDict[Optional[str], float]"] = {}
+        #: requester -> (key, time) of the subset it used last
+        self._latest: "OrderedDict[Optional[str], Tuple[Any, float]]" = OrderedDict()
+
+    # the budget is read when used, so a test can lower the module's bounds
+    def _limits(self) -> Tuple[int, int]:
+        return (self._max_entries or _CACHE_SIZE,
+                self._max_cells if self._max_cells is not None else _CACHE_MAX_CELLS)
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def __contains__(self, key) -> bool:
+        return key in self._entries
+
+    def __iter__(self):
+        return iter(list(self._entries))
+
+    def __delitem__(self, key) -> None:
+        del self._entries[key]
+        self._owners.pop(key, None)
+
+    def keys(self) -> List[Any]:
+        return list(self._entries)
+
+    def values(self) -> List[Any]:
+        return list(self._entries.values())
+
+    def clear(self) -> None:
+        self._entries.clear()
+        self._owners.clear()
+        self._latest.clear()
+
+    def get(self, key, owner: Optional[str] = None):
+        """The subset for ``key`` (None if not held), now used by ``owner``."""
+        value = self._entries.get(key)
+        if value is not None:
+            self._entries.move_to_end(key)
+            self._used(key, owner)
+        return value
+
+    def put(self, key, value, owner: Optional[str] = None) -> None:
+        """Hold ``value``, made for ``owner``, and evict over the budget."""
+        self._entries[key] = value
+        self._entries.move_to_end(key)
+        self._owners.setdefault(key, OrderedDict())
+        self._used(key, owner)
+        self._evict(key)
+
+    def charges(self) -> Dict[Optional[str], float]:
+        """Slots each requester is charged for (shared subsets split evenly)."""
+        n, cells = self._limits()
+        slot = cells / n
+        out: Dict[Optional[str], float] = {}
+        for key, value in self._entries.items():
+            owners = self._owners[key]
+            share = max(1.0, self._size(value) / slot) / len(owners)
+            for owner in owners:
+                out[owner] = out.get(owner, 0.0) + share
+        return out
+
+    def _used(self, key, owner) -> None:
+        now = self._clock()
+        owners = self._owners[key]
+        owners[owner] = now
+        owners.move_to_end(owner)
+        while len(owners) > MAX_OWNERS:
+            owners.popitem(last=False)
+        self._latest[owner] = (key, now)
+        self._latest.move_to_end(owner)
+        while len(self._latest) > MAX_REQUESTERS:
+            self._latest.popitem(last=False)
+
+    def _over(self) -> bool:
+        n, cells = self._limits()
+        return len(self._entries) > n or sum(self._size(v) for v in self._entries.values()) > cells
+
+    def _evict(self, new) -> None:
+        while len(self._entries) > 1 and self._over():
+            now = self._clock()
+            pinned = {key for key, at in self._latest.values() if now - at <= PIN_S}
+            charges = self.charges()
+            heaviest = max(charges, key=charges.get)
+            mine = [k for k in self._entries if heaviest in self._owners[k]]
+            victims = ([k for k in mine if k != new and k not in pinned]
+                       or [k for k in self._entries
+                           if k != new and now - max(self._owners[k].values()) > PIN_S]
+                       or [k for k in mine if k != new]
+                       or [new])
+            del self[victims[0]]
+            if victims[0] == new:
+                return
+
+
+_cache = SubsetCache()
 
 
 def defaults(config) -> Dict[str, int]:
@@ -954,7 +1109,17 @@ def _obs_columns(reader, dataset_path) -> Optional[List[str]]:
 
 def _readers(reader, dataset_path: str):
     """(read_column, read_codes) over the dataset's obs, for select_indices."""
+    take_numeric = getattr(reader, "get_obs_var_numeric", None)
+
     def read_column(name):
+        if take_numeric is not None:
+            # a numeric column as the array it is stored as: no Python float per cell
+            try:
+                array = take_numeric(entity="cells", dataset_path=dataset_path, column_name=name)
+            except Exception:
+                array = None
+            if array is not None:
+                return array
         result = reader.get_obs_var(entity="cells", dataset_path=dataset_path,
                                     column_names=[name], include_categories=False)
         data = result.get("data", result) if isinstance(result, dict) else result
@@ -1037,13 +1202,14 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec, client: Optional[str
     ``client`` (an id of the page asking, see claim) lets a newer request of
     that page for another subset stop this computation.
     """
+    from .read_guard import current_requester
     key = (dataset_path, _store_signature(dataset_path), spec.key())
     check = claim(client, dataset_path, spec.key(), low)
+    owner = current_requester()
     while True:
         with _lock:
-            hit = _cache.get(key)
+            hit = _cache.get(key, owner)
             if hit is not None:
-                _cache.move_to_end(key)
                 return hit
             running = _computing.get(key)
             if running is None:
@@ -1065,7 +1231,145 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec, client: Optional[str
 _computing: "Dict[Tuple, threading.Event]" = {}
 
 
+#: Memory one subset computation holds per cell of the dataset, in bytes: the worst of the
+#: ways a column is read, charged to every subset. Measured on the 95.6M-cell Tahoe store
+#: (run-timed, 2026-10-12, 16 cores). A column read as a Python list (a text condition on
+#: a numeric column, a balance on a plain column, any string column) holds 32 B a cell
+#: for the list and more for what is made of it: six numeric filters read that way at once
+#: peaked at 30.5 GB, 5.1 GB each, 53 B a cell. A numeric filter on the array
+#: (get_obs_var_numeric) peaked at 10.8 GB for six, 19 B a cell; a random sample at 0.46 GB
+#: in all and a balance on a categorical column at 1.1 GB. 55 is the list figure rounded
+#: up, so the charge is conservative for the usual filters and right for the worst.
+SUBSET_BYTES_PER_CELL = 55
+#: Share of the machine's memory the subsets one process computes at once may hold
+#: (server.subset_budget_mb unset)
+DEFAULT_BUDGET_FRACTION = 0.15
+#: Seconds a subset waits for the budget before 503 (server.subset_wait_s)
+DEFAULT_WAIT_S = 30.0
+DEFAULT_SHARE_PCT = 50
+#: A budget no subset reaches (a server only one person uses)
+UNLIMITED_BUDGET = 2 ** 62
+
+
+def default_budget_bytes() -> int:
+    """15% of this machine's memory (8 GB when it cannot be read)."""
+    try:
+        import psutil
+        total = psutil.virtual_memory().total
+    except Exception:
+        total = 8 * 2 ** 30
+    return int(total * DEFAULT_BUDGET_FRACTION)
+
+
+class SubsetPlaces:
+    """The memory in which this process computes subsets, shared fairly.
+
+    ``total`` units are held at once (a subset is charged ``weight`` of them: its
+    cells times SUBSET_BYTES_PER_CELL when ``total`` is bytes, 1 in the counting
+    tests); another subset waits up to ``wait_s``, then is refused (ReadBusyError,
+    503 ``read_busy``). A subset larger than the whole budget is not refused: it runs
+    alone, when nothing else is held (and is logged), so it can never deadlock.
+    A requester (see read_guard.requester) holds at most ``share`` of the units while
+    another requester waits (``share_pct`` of them); it may always run one subset,
+    and alone it may use them all. It may have one request waiting: a second is
+    refused at once, so one requester cannot park every thread of a worker in the
+    wait. Requester None (the desktop, scripts) has no share and no such limit.
+    """
+
+    def __init__(self, total: int, wait_s: float = DEFAULT_WAIT_S, share_pct: float = DEFAULT_SHARE_PCT):
+        self.total = int(total)
+        self.wait_s = float(wait_s)
+        pct = float(share_pct)
+        self.share = (self.total if pct <= 0 or pct >= 100
+                      else max(1, int(self.total * pct / 100)))
+        self._cond = threading.Condition()
+        self._held = 0
+        self._by_owner: Dict[str, int] = {}
+        #: requester -> its requests waiting for a place
+        self._waiting: Dict[Optional[str], int] = {}
+
+    def held(self) -> int:
+        return self._held
+
+    def _may_take(self, owner, weight) -> bool:
+        if self._held and self._held + weight > self.total:
+            return False                          # alone, anything runs; else it must fit
+        mine = self._by_owner.get(owner, 0) if owner is not None else 0
+        if owner is None or not mine or mine + weight <= self.share:
+            return True
+        return not any(n for o, n in self._waiting.items() if o != owner)
+
+    @contextmanager
+    def take(self, owner: Optional[str] = None, weight: int = 1):
+        from .read_guard import ReadBusyError
+        weight = max(1, int(weight))
+        retry = max(1, int(round(self.wait_s)))
+        with self._cond:
+            if not self._may_take(owner, weight):
+                if owner is not None and self._waiting.get(owner):
+                    raise ReadBusyError("You are already waiting for the server to compute a cell "
+                                        "subset; try again in a moment (server.subset_budget_mb).",
+                                        retry)
+                self._waiting[owner] = self._waiting.get(owner, 0) + 1
+                try:
+                    deadline = time.monotonic() + self.wait_s
+                    while not self._may_take(owner, weight):
+                        left = deadline - time.monotonic()
+                        if left <= 0:
+                            raise ReadBusyError("The server is computing other cell subsets; try again "
+                                                "in a moment (server.subset_budget_mb, "
+                                                "server.subset_wait_s).", retry)
+                        self._cond.wait(left)
+                finally:
+                    self._waiting[owner] -= 1
+                    if not self._waiting[owner]:
+                        del self._waiting[owner]
+            if weight > self.total:
+                logger.warning("A subset needing about %.1f GB is larger than server.subset_budget_mb "
+                               "(%.1f GB): it runs alone.", weight / 2 ** 30, self.total / 2 ** 30)
+            self._held += weight
+            if owner is not None:
+                self._by_owner[owner] = self._by_owner.get(owner, 0) + weight
+        try:
+            yield
+        finally:
+            with self._cond:
+                self._held -= weight
+                if owner is not None:
+                    self._by_owner[owner] -= weight
+                    if not self._by_owner[owner]:
+                        del self._by_owner[owner]
+                self._cond.notify_all()
+
+
+_places = SubsetPlaces(default_budget_bytes())
+
+
+def configure(budget_mb: Optional[float] = None, wait_s: Optional[float] = None,
+              share_pct: Optional[float] = None) -> None:
+    """The memory the subsets computed at once in this process may hold, in MB
+    (None or 0: 15% of the machine's), how long another waits for it (None: 30 s),
+    and the percentage of it one requester holds while others wait
+    (server.read_user_share_percent; None: 50, 0 or 100: no share)."""
+    global _places
+    _places = SubsetPlaces(int(budget_mb * 2 ** 20) if budget_mb else default_budget_bytes(),
+                           DEFAULT_WAIT_S if wait_s is None else wait_s,
+                           DEFAULT_SHARE_PCT if share_pct is None else share_pct)
+
+
 def _compute_subset(reader, dataset_path: str, spec: SubsetSpec, key, check) -> Subset:
+    """compute_subset within the process's memory budget: a pass over a column of
+    every cell holds seconds of CPU and (53 B per cell measured) gigabytes at
+    95M cells, and a page asking for many seeds or filters would hold them all.
+    Over the budget a request waits, then is answered 503 ``read_busy`` (the web
+    client asks again once)."""
+    from .read_guard import current_requester
+    weight = _n_obs(reader, dataset_path) * SUBSET_BYTES_PER_CELL if reader is not None else 1
+    with _places.take(current_requester(), weight):
+        return _compute_subset_unbounded(reader, dataset_path, spec, key, check)
+
+
+def _compute_subset_unbounded(reader, dataset_path: str, spec: SubsetSpec, key, check) -> Subset:
 
     n_obs = _n_obs(reader, dataset_path)
     known = _obs_columns(reader, dataset_path)
@@ -1081,12 +1385,9 @@ def _compute_subset(reader, dataset_path: str, spec: SubsetSpec, key, check) -> 
     finally:
         _cancel_check.reset(token)
     subset = Subset(dataset_path, spec, indices, info)
+    from .read_guard import current_requester
     with _lock:
-        _cache[key] = subset
-        _cache.move_to_end(key)
-        while len(_cache) > 1 and (len(_cache) > _CACHE_SIZE or
-                                   sum(_held(v) for v in _cache.values()) > _CACHE_MAX_CELLS):
-            _cache.popitem(last=False)
+        _cache.put(key, subset, current_requester())
     return subset
 
 

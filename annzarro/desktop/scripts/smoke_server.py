@@ -6,7 +6,10 @@ Uses only the standard library, so it runs on a bare CI runner. Checks:
 * ``GET /api/v1/datasets`` answers with JSON;
 * ``GET /`` serves the UI page, and its vendored Plotly bundle is served;
 * with ``--dataset``, the store is opened by path (as the app's dataset
-  browser does) and one gene's expression column is read.
+  browser does), one gene's expression column is read, and a regular-expression
+  name search runs with a pattern the quick engine does not take (three optional
+  characters), so it needs the ``regex`` package, a compiled extension that must
+  be in the bundle.
 
     python annzarro/desktop/scripts/smoke_server.py PATH/TO/annzarro-server \
         [--dataset bm_aging.zarr] [--port 8865]
@@ -109,6 +112,10 @@ def main(argv=None):
             column = json.loads(body).get("data") if status == 200 else None
             check(bool(column), f"expression of {names[0]} (column 0 of X) read: "
                   f"{len(column or [])} cells, {len(body)} bytes, {ctype}")
+            status, _, body = get(f"{base}/api/v1/data/names?dataset_path={q}&entity=genes"
+                                  f"&mode=regex&q={urllib.parse.quote('.?.?.?' + re.escape(names[0][-1]))}", timeout=120)
+            check(status == 200 and json.loads(body).get("matches"),
+                  f"regular-expression name search answered: {body[:120]!r}")
         ok = True
     finally:
         proc.terminate()

@@ -37,12 +37,12 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| macOS: “AnnZarro” Not Opened, “Apple could not verify “AnnZarro” is free of malware…” | The app is ad-hoc signed and not notarized; since macOS 15, right-click > Open no longer gets past this | Click **Done**, then **System Settings > Privacy & Security > Open Anyway** and confirm, once ({doc}`../getting-started/desktop-app`, First launch) |
-| The loading screen stays for more than a few seconds | First start after installing: Gatekeeper or Defender scans the bundled server | Wait; the screen counts the seconds. After 180 s the app shows an error page instead |
+| macOS: “AnnZarro” Not Opened, “Apple could not verify “AnnZarro” is free of malware…” | A macOS app of version 0.4.x or earlier, which is not notarized | Install 0.5.0 or later, or click **Done**, then **System Settings > Privacy & Security > Open Anyway** and confirm, once ({doc}`../getting-started/desktop-app`, Older versions) |
+| The loading screen stays for more than a few seconds | First start after installing: Windows Defender (or Gatekeeper on a macOS app of 0.4.x or earlier) scans the bundled server | Wait; the screen counts the seconds. After 180 s the app shows an error page instead |
 | Error page "AnnZarro could not start: …" | The server did not answer within 180 s, exited, or the interface did not load within 60 s | Read the log named on the page (its `server:` lines are the server's own output), then **Retry** ({doc}`../getting-started/desktop-app`) |
 | A panel says "No dataset loaded" after starting the app. Reproduced | The layout was restored from the last session, but its dataset was moved or deleted; a "Failed to load dataset" notice names it | Choose a dataset in the Dataset picker, or close the panel. Builds before PR #54 showed a spinner here that never stopped |
 | Starting the app again does nothing visible | AnnZarro is already running; the second start brings its window to the front | Look for the existing window (Dock, taskbar) |
-| An AnnZarro desktop app from before the preprint release needs a Python on the computer, and when it cannot stop its own server on quitting it stops every Python process whose command line contains `annzarro` | Old build | Delete it and install the current release |
+| An AnnZarro desktop app of the 0.1.x series needs a Python on the computer, and when it cannot stop its own server on quitting it stops every Python process whose command line contains `annzarro` | Old build | Delete it and install the current release |
 
 ## Building views
 
@@ -77,6 +77,7 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | `413` `read_too_large` | An `obsp`/`varp` request would hold more than `server.max_read_mb` in memory, e.g. several rows of a dense matrix with wide chunks | Ask for fewer rows ({doc}`http-api`); store large pairwise matrices as CSR ({doc}`../data/pairwise-matrices`); raise `max_read_mb` only if the host has the memory |
 | `400` `rows_required` / `too_many_rows` | An `obsp`/`varp` request without `rows=`, or with more than 1,000 | Pairwise matrices are read by rows only: send the row(s) you need; `cols=` only filters them ({doc}`http-api`) |
 | `503` `read_busy` | Large `obsp`/`varp` reads already in flight hold the worker's `server.read_budget_mb` | Retry after `Retry-After` seconds (the web client does once); rechunk the matrix by rows so a row is cheap ({doc}`../data/pairwise-matrices`) |
+| `504` `remote_deadline` | One request spent all of `server.remote_request_timeout_s` (120 s hosted, 600 s single-user) on a remote store: the host answers, but too slowly, so the per-byte `remote_read_timeout_s` never fired. The connection is closed | Try again later or read from a closer copy of the store; raise `remote_request_timeout_s` only for a slow but healthy link (0 turns it off). `remote_timeout` instead means the host went silent for `remote_read_timeout_s` |
 | Notice "Pairwise matrix chunking" when a dataset opens | A dense `obsp`/`varp` is chunked so that one row decompresses more than `max_read_mb` (e.g. chunks `(1000, n)` at a million cells) | Rewrite it with chunks of one to a few rows by a few thousand columns, e.g. `(1, 8192)`; the dataset structure's `pairwise_chunking` and the server log name the element |
 | `400` `cap_exceeded`. Reproduced | More indices than the request's own `max_cells=` / `max_genes=` parameter | Raise or drop that parameter; the server sets no such cap itself |
 | `400` `bad_indices`. Reproduced | `rows=` empty, not integers (e.g. a trailing comma from macOS `seq -s,`) or negative | Send `rows=1,2,3` or `rows=[1,2,3]` |

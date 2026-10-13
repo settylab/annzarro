@@ -36,13 +36,24 @@ function _isScalarByte(c) {
 }
 
 export async function scanJSONArrays(response, onElement) {
+    // Throws when the body ends inside a string, array or object: a reply cut
+    // short (a server that failed after its first byte, behind a proxy that
+    // ends the reply cleanly) must not read as a complete, shorter one.
     const reader = response.body.getReader();
     // frames: {arr, owner, parent, key, expectKey}
     const stack = [];
     let rest = null;
+    let started = false;
     for (;;) {
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done) {
+            if (rest !== null || stack.length > 0 || !started) {
+                const err = new Error('The reply ended before its JSON did (it was cut short)');
+                err.truncated = true;
+                throw err;
+            }
+            break;
+        }
         let buf = value;
         if (rest) {
             buf = new Uint8Array(rest.length + value.length);
@@ -78,6 +89,7 @@ export async function scanJSONArrays(response, onElement) {
                 if (top && top.arr) onElement(top.owner, top.parent, buf, -1, -1, false);
                 const owner = top ? (top.arr ? top.owner : top.key) : null;
                 const parent = top ? (top.arr ? top.parent : top.owner) : null;
+                started = true;
                 stack.push({ arr: c === OPEN_ARR, owner, parent, key: null, expectKey: c === OPEN_OBJ });
                 i++;
             } else if (c === CLOSE_OBJ || c === CLOSE_ARR) {

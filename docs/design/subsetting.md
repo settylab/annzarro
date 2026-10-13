@@ -118,7 +118,7 @@ request is the request it was before.
 | place | what |
 |---|---|
 | request | `subset=<spec JSON>` on every cell-axis read: `/cells`, `/obs`, `/obsm/*`, `/obsp/*`, `/X`, `/layer/*`, `/names`, `/dataset_structure` |
-| server | resolved index arrays in an LRU (16 specs) keyed by (dataset path, store stat signature, canonical spec). No per-client state. |
+| server | resolved index arrays (16 specs, 20M cells) keyed by (dataset path, store stat signature, canonical spec). Over the budget it evicts from the requester (user, else address) holding the most, and keeps each requester's last subset for 10 minutes; with one requester this is plain LRU. See {doc}`../deployment/resource-limits`. |
 | browser | `DataManager` holds the `/data/subset` reply for the open dataset; `_fetchWithCache` adds its `key` to cell-axis requests for that dataset |
 | share links, panel sets, autosave | `view.subset`: the spec, `null` (every cell of a dataset that would otherwise be subset) or absent (the default). See docs/deep-link-schema.md |
 | config | `ui.defaults.subset_threshold`, `subset_size`, `subset_seed` |

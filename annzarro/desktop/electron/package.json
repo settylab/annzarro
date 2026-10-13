@@ -1,7 +1,7 @@
 {
   "name": "annzarro-desktop",
   "productName": "AnnZarro",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "AnnZarro desktop app: the AnnZarro single-cell viewer with its server bundled",
   "main": "main.js",
   "author": {
@@ -16,8 +16,8 @@
   },
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --publish never",
-    "dist:dir": "electron-builder --dir --publish never",
+    "dist": "node ../scripts/electron_build.js",
+    "dist:dir": "node ../scripts/electron_build.js --dir",
     "postinstall": "install-electron"
   },
   "devDependencies": {
@@ -85,10 +85,8 @@
       ],
       "artifactName": "AnnZarro-${version}-macos-${arch}.${ext}",
       "hardenedRuntime": true,
-      "notarize": false,
       "entitlements": "entitlements.mac.plist",
-      "entitlementsInherit": "entitlements.mac.plist",
-      "identity": "-"
+      "entitlementsInherit": "entitlements.mac.plist"
     },
     "dmg": {
       "background": null,

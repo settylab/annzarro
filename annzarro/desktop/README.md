@@ -33,8 +33,8 @@ not need Python.
   so the server listens on the loopback interface only, with login off: the
   same local single-user mode as `annzarro start` on a laptop. Datasets are
   only read. The window loads the UI once `GET /api/v1/datasets` answers
-  (up to 180 s: the first start after installing is slowed by Gatekeeper and
-  Defender scanning the server). Quitting the app stops the server.
+  (up to 180 s: the first start after installing is slowed by Defender, or
+  Gatekeeper on an ad-hoc-signed macOS build (0.4.x and earlier), scanning the server). Quitting the app stops the server.
 - Starting is bounded: the loading screen counts the seconds and explains a
   slow first start; if the server has not answered after 180 s, or the
   interface has not loaded 60 s after that, the window shows an error page
@@ -153,15 +153,62 @@ Chromium's licences ship as `LICENSE.electron.txt` and
 
 ## Code signing
 
-Release builds are unsigned (macOS: ad-hoc signed). To sign, add repository
-secrets; the workflow uses them only when present:
+`electron/package.json` names no signing identity. `scripts/electron_build.js` (what `npm run dist`
+runs) chooses the mode for the machine it runs on:
 
-- macOS: `CSC_LINK` and `CSC_KEY_PASSWORD` (Developer ID Application
-  certificate, `.p12` as base64), `APPLE_SIGNING_IDENTITY`
-  (`Developer ID Application: Name (TEAMID)`), and for notarisation
-  `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`. The hardened
-  runtime entitlements are in `electron/entitlements.mac.plist`.
-- Windows: `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` (Authenticode `.pfx`).
+- **A Developer ID Application identity is available** (`CSC_LINK`, `CSC_NAME`, or one in the login
+  keychain): the app is signed with it, with the hardened runtime and a secure timestamp. That
+  includes every nested Mach-O file of the frozen server in `Resources/server` (the Python
+  binary, `.so` and `.dylib` files), because electron-builder signs each one it finds. The dmg is
+  signed too. electron-builder 26 notarizes and staples the `.app` when it finds credentials in the
+  environment: `APPLE_API_KEY` (path to the `.p8`), `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`,
+  or `APPLE_KEYCHAIN_PROFILE` (the name of a `xcrun notarytool store-credentials` profile), or
+  `APPLE_ID` with `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`. Without them the build is signed
+  and says it is not notarized.
+- **No identity** (a contributor's laptop): ad-hoc signed, never notarized. `--adhoc` forces this.
+- `--require-notarization` fails the build unless both an identity and notarization credentials
+  are present. The release workflow passes it.
+
+Entitlements are in `electron/entitlements.mac.plist` (JIT and unsigned executable memory for
+the frozen Python, library validation off).
+
+The dmg is a separate file that Apple has not seen, so `scripts/mac_notarize_dmg.sh <dmg>`
+notarizes and staples it, and `scripts/mac_verify_signature.sh <app> [<dmg>...]` runs the checks
+a release must pass: `codesign --verify --deep --strict`, `spctl -a -vv -t exec` (must say
+`Notarized Developer ID`) and `xcrun stapler validate` on the app and each dmg.
+
+### The release workflow
+
+On a `v*` tag the macOS jobs of `.github/workflows/build.yml` run in the GitHub Environment
+`release`, sign with the Developer ID, notarize the app and the dmg, and fail unless all the
+checks above pass. Runs without a tag (`workflow_dispatch`) build the macOS app ad-hoc signed and
+do not enter the environment. Linux and Windows are unchanged (Windows: `WIN_CSC_LINK` and
+`WIN_CSC_KEY_PASSWORD`, an Authenticode `.pfx`, read only if present).
+
+One-time setup, on GitHub (Settings > Environments > New environment, named `release`):
+
+1. Deployment branches and tags: *Selected branches and tags*, add the tag rule `v*`.
+2. Required reviewers: the maintainers who may cut a release. A tag push then waits for approval.
+3. Environment secrets (not repository secrets, so no other job can read them):
+   - `MAC_CSC_LINK`: the Developer ID Application certificate with its private key, exported from
+     Keychain Access as a `.p12`, base64-encoded (`base64 -i cert.p12 | pbcopy`);
+   - `MAC_CSC_KEY_PASSWORD`: the password chosen at export;
+   - `APPLE_API_KEY_P8`: the text of the App Store Connect API key (`AuthKey_XXXX.p8`);
+   - `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`: that key's id and the issuer id shown on the
+     App Store Connect keys page (the key needs the Developer role or higher).
+
+The workflow writes the `.p8` to a temporary file with mode 600 for `APPLE_API_KEY` and removes it
+at the end of the job. electron-builder imports the certificate into a temporary keychain.
+
+To build the signed, notarized app on a maintainer's Mac, with the identity in the login keychain
+and a profile stored once with `xcrun notarytool store-credentials settylab-notary`:
+
+```bash
+cd annzarro/desktop/electron
+APPLE_KEYCHAIN_PROFILE=settylab-notary npm run dist -- --mac --arm64
+../scripts/mac_notarize_dmg.sh dist/AnnZarro-*-macos-arm64.dmg   # also needs APPLE_KEYCHAIN_PROFILE
+../scripts/mac_verify_signature.sh dist/mac-arm64/AnnZarro.app dist/AnnZarro-*-macos-arm64.dmg
+```
 
 ## Structure
 

@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- Path the app is mounted at behind a reverse proxy ("" at the root); see static/js/utils/app-url.js -->
     <meta name="annzarro-root" content="{{ request.script_root }}">
+    <!-- The login's CSRF token for fetches that change state ("" with login off); see static/js/utils/csrf.js -->
+    <meta name="annzarro-csrf" content="{{ csrf_token }}">
     <title>{{ app_name|default('AnnZarro') }} - {{ project_description|default('Zarr-based AnnData Visualization') }}</title>
     
     <!-- Favicons -->
@@ -69,6 +71,7 @@
                 <div class="col-auto">
                     <h1 class="app-title">{{ app_name|default('AnnZarro') }}</h1>
                     <a id="auth-indicator" class="auth-indicator" hidden></a>
+                    <span id="account-links" class="account-links"></span>
                 </div>
                 <div class="col">
                     <div class="global-controls">

@@ -7,6 +7,11 @@
  * saved meanwhile carries them unchanged, and choosing a dataset ("Change
  * dataset") replaces every placeholder with the real panel built from them.
  * It reads no data and takes no data updates.
+ *
+ * The same stand-in serves a panel type the administrator disabled
+ * ({disabled: true}): in a panel set or a link, the tile says so and keeps the
+ * saved settings, so saving the set again loses nothing and enabling the type
+ * again brings the panel back.
  */
 
 const LABELS = {
@@ -18,7 +23,7 @@ const LABELS = {
  * @param {HTMLElement} container - the tile's .tile-content
  * @param {string} type - the panel type the tile id names
  * @param {Object} config - the saved config (kept, never changed)
- * @param {{message?: string, onChangeDataset?: Function}} [opts]
+ * @param {{message?: string, onChangeDataset?: Function, disabled?: boolean}} [opts]
  */
 export function createPlaceholderPanel(container, type, config, opts = {}) {
     const saved = JSON.parse(JSON.stringify(config || {}));
@@ -31,10 +36,16 @@ export function createPlaceholderPanel(container, type, config, opts = {}) {
         box.dataset.panelType = type;
         const head = document.createElement('div');
         head.className = 'panel-no-data-title';
-        head.textContent = `${LABELS[type] || type}: no data`;
         const text = document.createElement('div');
         text.className = 'panel-no-data-message';
-        text.textContent = opts.message || 'This view is open without a dataset. Its settings are kept.';
+        if (opts.disabled) {
+            box.dataset.disabledByPolicy = 'true';
+            head.textContent = 'Disabled by the administrator';
+            text.textContent = `${LABELS[type] || type} is turned off on this server. Its settings are kept and come back if it is turned on again.`;
+        } else {
+            head.textContent = `${LABELS[type] || type}: no data`;
+            text.textContent = opts.message || 'This view is open without a dataset. Its settings are kept.';
+        }
         box.append(head, text);
         if (typeof opts.onChangeDataset === 'function') {
             const button = document.createElement('button');

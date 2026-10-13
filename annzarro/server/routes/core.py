@@ -13,9 +13,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from flask import request, jsonify, current_app as app
 
+from .. import access
+from . import dataset_folders
 from ...data.manager import data_manager
+from ...data.scan import DEFAULT_MAX_ENTRIES as DEFAULT_SCAN_ENTRIES, count_stores
 
 logger = logging.getLogger(__name__)
+
+#: Seconds /status reuses its count of the data directory's stores
+STATUS_COUNT_TTL_S = 30
 
 def register_core_routes(app, api_version):
     """
@@ -26,7 +32,11 @@ def register_core_routes(app, api_version):
         api_version: API version string
     """
     
+    def _scan_limit():
+        return int(app.config.get("dataset_scan_max_entries") or DEFAULT_SCAN_ENTRIES)
+
     @app.route(f"/api/{api_version}/core/datasets", methods=["GET"])
+    @access.gate("listing")
     def list_legacy_datasets():
         """
         List available datasets (legacy endpoint).
@@ -52,15 +62,50 @@ def register_core_routes(app, api_version):
         follow_symlinks = request.args.get("follow_symlinks", "true").lower() == "true"
         
         # List datasets with new options
-        datasets = data_manager.list_datasets(data_dir, recursive=recursive, follow_symlinks=follow_symlinks)
+        restricted = access.restricted_user()
+        if restricted and "dir" not in request.args:
+            # no folder named: what the user is granted, never the data directory
+            datasets, truncated = _granted_datasets(restricted, recursive, follow_symlinks)
+        else:
+            datasets = data_manager.list_datasets(data_dir, recursive=recursive, follow_symlinks=follow_symlinks,
+                                                  max_entries=_scan_limit())
+            truncated = data_manager.truncated
         # Not offered when hosted: anything a link leads to outside the roots
         from ..confinement import listable
         datasets = [d for d in datasets
                     if not isinstance(d, dict) or not d.get("path") or listable(app.config, d["path"])]
+        datasets = access.filter_entries(datasets)
         
-        return jsonify({"datasets": datasets})
+        reply = {"datasets": datasets}
+        if truncated:
+            reply.update({"truncated": True, "reason": "scan_limit",
+                          "note": f"The directory has more than {_scan_limit():,} entries "
+                                  "(server.dataset_scan_max_entries); only the stores found before that are listed."})
+        return jsonify(reply)
+
+    def _granted_datasets(user, recursive, follow_symlinks):
+        """The stores a restricted user is granted: each granted store, and those found under each granted folder."""
+        found, truncated, seen = [], False, set()
+        for grant in access.grants_of(user).active():
+            real = grant["real"]
+            if os.path.isdir(real) and not dataset_folders.is_store_dir(real, grant["name"]):
+                stores = data_manager.discover_datasets(real, recursive=recursive, follow_symlinks=follow_symlinks,
+                                                        max_entries=_scan_limit())
+                truncated = truncated or data_manager.truncated
+            elif os.path.isdir(real) or (real.endswith(".h5ad") and os.path.isfile(real)):
+                stores = [{"id": Path(real).stem, "name": Path(real).stem.replace("_", " ").title(),
+                           "path": real, "type": "zarr" if os.path.isdir(real) else "h5ad", "is_symlink": False}]
+            else:
+                continue
+            for store in stores:
+                if store["path"] not in seen:
+                    seen.add(store["path"])
+                    found.append(store)
+        found.sort(key=lambda d: d["name"])
+        return found, truncated
 
     @app.route(f"/api/{api_version}/config", methods=["GET"])
+    @access.gate("public")
     def get_config():
         """
         The configuration the browser may see.
@@ -98,7 +143,7 @@ def register_core_routes(app, api_version):
         # forced by the environment where a deployment (the desktop app, an
         # offline install) must not depend on a config file
         forced = os.environ.get("ANNZARRO_EXTERNAL_REQUESTS", "").strip().lower()
-        if forced in ("ask", "on", "off"):
+        if forced in ("ask", "on", "off", "none"):
             integrations = dict(client.get("integrations") or {})
             integrations["external_requests"] = forced
             client["integrations"] = integrations
@@ -142,6 +187,7 @@ def register_core_routes(app, api_version):
             return None
         
     @app.route(f"/api/{api_version}/auth/me", methods=["GET"])
+    @access.gate("public")
     def get_current_user():
         """
         Who the requester is and what they may change.
@@ -158,28 +204,65 @@ def register_core_routes(app, api_version):
         picker mentions a URL only when it can work.
 
         Returns:
-            JSON ``{auth_enabled, username, is_admin, exposed, may_open_any_path, remote_stores}``
+            JSON ``{auth_enabled, username, is_admin, exposed, may_open_any_path, remote_stores, restricted}``.
+            ``restricted`` is true for a user who sees only the datasets they are granted.
         """
         from .. import confinement, permissions
         from ...core.remote import get_remote_policy
         username, is_admin = permissions.current_user()
-        return jsonify({
+        from .. import csrf
+        from ..core import is_logged_in
+        response = jsonify({
+            # the token of this login, for a page that was open before it changed (utils/csrf.js)
+            "csrf": csrf.csrf_token() if permissions.auth_enabled() and is_logged_in() else "",
             "auth_enabled": permissions.auth_enabled(),
             "username": username,
             "is_admin": is_admin,
             "exposed": permissions.is_exposed(app.config),
             "may_open_any_path": confinement.may_open_any_path(app.config),
             "remote_stores": bool(get_remote_policy().enabled),
+            "restricted": access.is_restricted_requester(),
         })
+        response.headers["Cache-Control"] = "no-store"   # it carries the login's token
+        return response
+
+    def _version():
+        try:
+            from annzarro import __version__
+            return __version__
+        except ImportError:
+            return "0.1.0"  # Fallback version
+
+    _count_cache = {}
+
+    def _store_count(data_dir):
+        """(stores under the data directory, whether the count was cut short),
+        counted at most every STATUS_COUNT_TTL_S: /status is open to every
+        client, and the walk visits up to dataset_scan_max_entries entries."""
+        now = time.monotonic()
+        hit = _count_cache.get(data_dir)
+        if hit is not None and now - hit[0] < STATUS_COUNT_TTL_S:
+            return hit[1]
+        result = count_stores(data_dir, _scan_limit())
+        _count_cache[data_dir] = (now, result)
+        return result
 
     @app.route(f"/api/{api_version}/status", methods=["GET"])
+    @access.gate("admin")
     def get_status():
         """
         Get server status information.
         
         Returns:
             JSON response with server status information
+
+        On a shared server only an admin gets the host, the process and the
+        data directory (and the other users' datasets they imply); everybody
+        else gets whether the server is up, for a load balancer's probe.
         """
+        from .. import permissions
+        if not permissions.may_see_server_details(app.config):
+            return jsonify({"server": {"status": "running", "version": _version()}})
         try:
             # Get process information
             process = psutil.Process(os.getpid())
@@ -199,8 +282,10 @@ def register_core_routes(app, api_version):
             memory_usage_mb = memory_info.rss / (1024 * 1024)  # Convert to MB
             
             # Get load information
-            cpu_load = process.cpu_percent(interval=0.1)
-            system_load = psutil.cpu_percent(interval=0.1)
+            # since the previous call: a blocking sample would hold a thread
+            # for 0.2 s per request, and /status is open to every client
+            cpu_load = process.cpu_percent(interval=None)
+            system_load = psutil.cpu_percent(interval=None)
             
             # Get connection count
             try:
@@ -217,19 +302,12 @@ def register_core_routes(app, api_version):
             data_dir_is_writable = os.access(data_dir, os.W_OK)
             
             # Count files in data directory
-            zarr_count = 0
+            zarr_count, count_truncated = (0, False)
             if data_dir_exists and data_dir_is_readable:
-                for root, dirs, files in os.walk(data_dir):
-                    if '.zgroup' in files:
-                        zarr_count += 1
+                zarr_count, count_truncated = _store_count(data_dir)
             
-            # Get version from the package
-            try:
-                from annzarro import __version__
-                version = __version__
-            except ImportError:
-                version = "0.1.0"  # Fallback version
-                
+            version = _version()
+
             # Build status information
             status = {
                 "server": {
@@ -260,7 +338,8 @@ def register_core_routes(app, api_version):
                     "data_dir_exists": data_dir_exists,
                     "data_dir_readable": data_dir_is_readable,
                     "data_dir_writable": data_dir_is_writable,
-                    "zarr_file_count": zarr_count
+                    "zarr_file_count": zarr_count,
+                    "zarr_file_count_truncated": count_truncated
                 }
             }
             
@@ -275,6 +354,7 @@ def register_core_routes(app, api_version):
             }), 500
 
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>", methods=["GET"])
+    @access.gate("dataset")
     def get_dataset_info(dataset_path: str):
         """
         Get information about a dataset.

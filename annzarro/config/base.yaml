@@ -80,6 +80,67 @@ server:
   # directory goes before it stops and says the result is partial.
   dataset_search_max_depth: 6
   dataset_search_max_entries: 20000
+  # Longest regular expression a name search (mode=regex) runs, in characters,
+  # and the seconds one regex scan may take before it answers with the matches
+  # found so far (partial: true). Patterns that repeat a repeat or branch inside
+  # one, such as (a+)+, are refused first (400 regex_too_complex). Every match
+  # also runs under this time limit with the `regex` package, which stops
+  # inside a match. 0 = no scan limit (a single match is still cut at 10 s).
+  name_search_max_regex_chars: 200
+  name_search_timeout_s: 10
+  # Fairness. The percentage of read_budget_mb one user (with login off: one
+  # client address) may hold at once; the rest stays for everybody else. Never
+  # less than one read of max_read_mb. 0 = no share. And how many cell subsets
+  # (/data/subset: a pass over a column of every cell) one worker computes at
+  # once may hold, in MB: each is charged 55 bytes per cell of its dataset (measured
+  # at 95.6M cells: a numeric filter holds 5 GB; six at once held 30 GB). null =
+  # 15% of the machine's RAM per worker. Another subset waits subset_wait_s seconds
+  # for it, then 503 read_busy with Retry-After. A subset larger than the whole budget
+  # runs alone (logged), never refused outright.
+  read_user_share_percent: 50
+  subset_budget_mb: null
+  subset_wait_s: 30
+  # gunicorn (annzarro/server/gunicorn_config.py; `annzarro start` is not
+  # gunicorn and ignores these): a worker is replaced after max_requests
+  # requests (+ up to max_requests_jitter, so they do not restart together),
+  # which frees memory that crept; its caches start empty. 0 = never. The
+  # limit_request_* values bound one request's line and headers (bytes).
+  max_requests: 20000
+  max_requests_jitter: 2000
+  limit_request_line: 0
+  limit_request_fields: 100
+  limit_request_field_size: 8190
+  # Largest request body the server reads, in MB. Panel sets (saved or
+  # imported) are the only uploads; a larger one is refused with 413
+  # request_too_large before it is read. 0 = no limit.
+  max_request_mb: 64
+  # Panel sets (the JSON files in <data_dir>/sessions): how many one user may
+  # keep (with login off all sets are one user's), how many the server keeps,
+  # and the MB they may take together. A save, duplicate or import past a limit
+  # is refused with 409 session_quota_user / session_quota_total. 0 = no limit.
+  max_sessions_per_user: 500
+  max_sessions: 5000
+  max_sessions_mb: 256
+  # Seconds a request waits for the lock on the users file (every login writes
+  # it) or the admin state before it gives up with 503 busy and Retry-After.
+  lock_timeout_s: 10
+  # The admin web interface (/admin, needs login). Directories an admin may
+  # add as data directories in the browser must lie inside one of these;
+  # empty = adding is off, listing still works. Keep these directories writable
+  # by trusted accounts only (a link swapped in after the check is followed).
+  # Admin changes need the admin's password entered within
+  # admin_reauth_minutes (0 = never asked).
+  # admin_rate_per_minute bounds changes per admin and worker (reads get 8x).
+  # The audit log (annzarro_admin/audit.jsonl beside the users file) rotates
+  # at admin_audit_max_mb (0 = never).
+  admin_data_roots: []
+  admin_reauth_minutes: 30
+  admin_rate_per_minute: 30
+  admin_audit_max_mb: 50
+  # Directory entries the legacy dataset listing (/core/datasets) and the store
+  # count in /status read before they stop; a store's own chunk files are never
+  # walked. The listing then says truncated: true.
+  dataset_scan_max_entries: 200000
   # Memory one read of an obsp/varp matrix may hold, in MB, estimated from the
   # store's metadata BEFORE any chunk is read (dense: rows x columns x itemsize;
   # sparse: its stored arrays plus the dense block returned). A request over it
@@ -87,6 +148,21 @@ server:
   # n x n obsp is 120 GB at 175,000 cells. null = 5% of the machine's RAM,
   # between 256 MB and 4 GB. Applies to every user, admins included.
   max_read_mb: null
+  # MB a reply of every cell or gene name may hold when it is built whole,
+  # estimated at 170 bytes a name (2048 = about 12 million names) before any
+  # name is read; over it the request is a 413 read_too_large. A zarr store
+  # streams its names a chunk at a time, a cell subset too, and has no limit;
+  # this applies to h5ad files and to an index stored as a categorical.
+  # 0 = no limit.
+  max_names_json_mb: 2048
+  # Streams of every cell or gene name one worker sends at once. Each holds a
+  # server thread until its client has read the reply (a slow reader holds it
+  # for as long as it keeps the connection open); one more is answered 503
+  # read_busy with Retry-After before any byte is sent. 0 = no limit.
+  names_stream_max_concurrent: 2
+  # Only lists of more names than this count against that cap (opening a
+  # dataset reads one list of each axis, and must not wait for slow readers).
+  names_stream_slot_above: 1000000
   # What all the pairwise reads in flight in one worker process may hold
   # together, in MB (each charged its estimate). null = twice max_read_mb. A read
   # that does not fit waits up to read_wait_s seconds for others to finish, then
@@ -110,6 +186,12 @@ server:
   # stops answering fails the request with HTTP 504 instead of holding it.
   remote_connect_timeout_s: 10
   remote_read_timeout_s: 30
+  # Seconds one request may spend on remote reads in total. The two timeouts
+  # above bound one wait; a host that sends a byte every 29 s never trips them.
+  # Past this the connection is closed and the request answers 504
+  # remote_deadline. null = 120 on a hosted server, 600 on a single-user one;
+  # 0 = no limit.
+  remote_request_timeout_s: null
   # In-memory LRU of raw bytes per open remote store (zarr 3 only; 0 = off).
   # The reader's result cache only answers identical requests; this one makes
   # a different gene or column from already-fetched chunks local.
@@ -230,7 +312,8 @@ integrations:
   # Whether the Gene Set Analysis panel may send gene ids to external
   # services (STRING, g:Profiler, MyGene.info, ...): "ask" asks the user
   # first, once per service; "on" sends without asking (users agreed out of
-  # band); "off" never sends anything (its Links still work). Quote the
+  # band); "off" never sends anything (its Links still work); "none" sends
+  # nothing and removes the Links too. Quote the
   # value: YAML reads a bare on/off as a boolean. The environment variable
   # ANNZARRO_EXTERNAL_REQUESTS overrides it.
   external_requests: "ask"
@@ -244,3 +327,9 @@ integrations:
     # a versioned host, so results can be reproduced
     base_url: "https://version-12-5.string-db.org/api"
     version: "12.5"
+
+# Policy registry: settings an administrator may change at run time
+policy:
+  # keys only this file decides (the admin settings and per-user overrides
+  # are ignored for them), for example: [outbound.allow_external]
+  locked: []

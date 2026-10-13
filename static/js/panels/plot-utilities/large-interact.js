@@ -49,6 +49,26 @@ function tooltip() {
 const _fmt = (v) => (typeof v === 'number' ? Number(v.toPrecision(5)).toString() : String(v));
 
 /**
+ * The points of traces hidden with the legend, as sorted [from, to) pairs of
+ * point numbers (or null when none is hidden). `st.chunks` says which points
+ * each point trace draws (large-plot.js); hiding is read from the graph at
+ * each lookup, so a legend click needs no rebuild of the index (1 s and
+ * 4 B a point at 95.6M, against a pass over the few hundred traces).
+ */
+function hiddenRanges(gd, st) {
+  const chunks = st.chunks, data = gd.data;
+  if (!chunks || !data) return null;
+  const out = [];
+  for (const c of chunks) {
+    const v = data[c.trace] && data[c.trace].visible;
+    if (v !== false && v !== 'legendonly') continue;
+    if (out.length && out[out.length - 1] === c.from) out[out.length - 1] = c.to;
+    else out.push(c.from, c.to);
+  }
+  return out.length ? Uint32Array.from(out) : null;
+}
+
+/**
  * The point under a pointer event, or null. `{p, row}`: p is the drawn point,
  * row its cell's position among the cells shown.
  */
@@ -64,7 +84,7 @@ function pointAt(gd, st, clientX, clientY, target) {
   const cx = xa.p2d(mx), cy = ya.p2d(my);
   const rx = Math.abs(xa.p2d(mx + HOVER_PX) - xa.p2d(mx - HOVER_PX)) / 2;
   const ry = Math.abs(ya.p2d(my + HOVER_PX) - ya.p2d(my - HOVER_PX)) / 2;
-  const p = nearestPoint(st.index, cx, cy, rx, ry);
+  const p = nearestPoint(st.index, cx, cy, rx, ry, hiddenRanges(gd, st));
   return p < 0 ? null : { p, row: st.index.rows[p] };
 }
 
@@ -130,7 +150,7 @@ function hideTip(gd, st) {
   clearTimeout(st.dwell);
   st.hovered = -1;
   if (_tip) _tip.style.display = 'none';
-  const area = gd.querySelector('.nsewdrag');
+  const area = gd.querySelector && gd.querySelector('.nsewdrag');
   if (area && area.dataset.largeCursor) { area.style.cursor = area.dataset.largeCursor; delete area.dataset.largeCursor; }
 }
 
@@ -157,10 +177,16 @@ export function attachLargeInteraction(gd, settings, index) {
   const old = gd.__largeState;
   const st = gd.__largeState = { index, settings, hovered: -1, dwell: 0, lastFocus: null, seq: old ? old.seq : 0 };
   if (old) clearTimeout(old.dwell);
-  if (old && old.listening) { st.listening = true; return st; }
-  st.listening = true;
+  if (gd.__largeOff) return st;
+  const off = [];
+  gd.__largeOff = off;
+  const listen = (target, type, fn, capture) => {
+    target.addEventListener(type, fn, capture);
+    off.push(() => target.removeEventListener(type, fn, capture));
+  };
   let frame = 0, last = null, down = null;
-  gd.addEventListener('mousemove', (e) => {
+  off.push(() => { clearTimeout(frame); frame = 0; });
+  listen(gd, 'mousemove', (e) => {
     const s = gd.__largeState;
     last = { x: e.clientX, y: e.clientY, target: e.target, buttons: e.buttons };
     if (frame) return;
@@ -177,15 +203,15 @@ export function attachLargeInteraction(gd, settings, index) {
       showTip(gd, s, hit, last.x, last.y);
     }, HOVER_MS);
   });
-  gd.addEventListener('mouseleave', () => { if (gd.__largeState) hideTip(gd, gd.__largeState); });
+  listen(gd, 'mouseleave', () => { if (gd.__largeState) hideTip(gd, gd.__largeState); });
   // pointer events, not click: Plotly's drag layer takes the mouse between
   // press and release, so no click reaches the graph
-  gd.addEventListener('pointerdown', (e) => {
+  listen(gd, 'pointerdown', (e) => {
     down = e.isPrimary && (e.pointerType !== 'mouse' || e.button === 0)
       && e.target.closest && e.target.closest('.draglayer, .nsewdrag')
       ? { id: e.pointerId, t: e.timeStamp, x: e.clientX, y: e.clientY } : null;
   }, true);
-  document.addEventListener('pointerup', (e) => {
+  listen(document, 'pointerup', (e) => {
     const s = gd.__largeState;
     const d = down;
     down = null;
@@ -195,6 +221,24 @@ export function attachLargeInteraction(gd, settings, index) {
     if (hit) focusRow(gd, s, hit).catch((err) => console.warn('Focus by click failed:', err && err.message));
   }, true);
   return st;
+}
+
+/**
+ * Take the large-plot interaction off the graph: the listeners, the tooltip,
+ * the hand cursor and the point index (the state holds it). The graph leaves
+ * large-plot mode (a subset small enough for a regular plot, a lost context,
+ * the panel closing) and Plotly's own hover is the only one left. Safe on a
+ * graph that never had it.
+ * @param {HTMLElement} gd  the plot
+ */
+export function detachLargeInteraction(gd) {
+  if (!gd) return;
+  const st = gd.__largeState;
+  if (st) { clearTimeout(st.dwell); hideTip(gd, st); st.index = null; st.seq++; }
+  if (gd.__largeOff) { for (const f of gd.__largeOff) f(); gd.__largeOff = null; }
+  gd.__largeState = null;
+  const area = gd.querySelector && gd.querySelector('.nsewdrag');
+  if (area && area.dataset.largeCursor !== undefined) { area.style.cursor = area.dataset.largeCursor; delete area.dataset.largeCursor; }
 }
 
 /** The shape that marks the focused cell: a filled circle sized in pixels, as the regular path's marker. */

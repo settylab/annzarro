@@ -6,32 +6,42 @@ Provides user authentication for login sessions.
 
 import os
 import json
+import math
 import time
 import secrets
 import logging
 import hashlib
 import base64
 import uuid
-import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from threading import Lock
 from pathlib import Path
 from flask import session
 
-# Cross-process file locking (POSIX). Without it, two processes (gunicorn
-# workers, or the server and `annzarro user add`) can interleave their
-# read-modify-write of users.json; the thread lock alone cannot see them.
-try:
-    import fcntl
-except ImportError:  # Windows: the desktop app is single-process
-    fcntl = None
+# Cross-process locking and atomic writes of users.json: two processes
+# (gunicorn workers, or the server and `annzarro user add`) must not
+# interleave their read-modify-write, and a reader must never see half a file.
+from . import atomic_store
 
 class UnsupportedPasswordHash(RuntimeError):
     """A stored password hash this Python cannot verify (scrypt without
     hashlib.scrypt). Not a wrong password, so it does not count toward the
     lockout, and the login page says what to do instead of 'invalid
     password'."""
+
+
+class LastAdminError(RuntimeError):
+    """The change would leave the server with no admin."""
+
+
+def ensure_admin_remains(table):
+    """Raise LastAdminError unless ``table`` ({username: User}) still has an admin.
+
+    For the mutators given to :meth:`AuthManager.update_users`, which call it
+    on the merged on-disk table, inside the lock."""
+    if not any(user.is_admin for user in table.values()):
+        raise LastAdminError("this would leave no admin")
 
 
 class User:
@@ -119,7 +129,7 @@ class AuthManager:
         self.lockout_time = lockout_time
         self.users = {}  # {username: User}
         self.file_lock = Lock()  # For thread safety
-        self._file_stamp = None  # (mtime_ns, size) of users.json as last read
+        self._file_stamp = None  # atomic_store.stamp of users.json as last read
         
         # Create directory if needed
         os.makedirs(os.path.dirname(os.path.abspath(self.user_file)), exist_ok=True)
@@ -131,19 +141,12 @@ class AuthManager:
         self._load_users()
     
     def _stamp(self):
-        """(mtime_ns, size) of the users file, or None if it does not exist."""
-        try:
-            st = os.stat(self.user_file)
-            return (st.st_mtime_ns, st.st_size)
-        except FileNotFoundError:
-            return None
+        """(inode, mtime_ns, size) of the users file, or None if it does not exist."""
+        return atomic_store.stamp(self.user_file)
 
     def _read_users_file(self):
         """Parse the users file into {username: User}; {} if it does not exist."""
-        if not os.path.exists(self.user_file):
-            return {}
-        with open(self.user_file, 'r') as f:
-            data = json.load(f)
+        data = atomic_store.read_json(self.user_file, {})
         return {username: User.from_dict(user_data) for username, user_data in data.items()}
 
     def _load_users(self):
@@ -167,22 +170,31 @@ class AuthManager:
         restart. One stat() per call.
         """
         if self._stamp() != self._file_stamp:
-            with self.file_lock:
+            with self._thread_lock():
                 self._load_users()
 
     @contextmanager
+    def _thread_lock(self):
+        """``file_lock``, with the store's timeout: a thread stuck behind a
+        lock holder must not hold up every other request."""
+        if not self.file_lock.acquire(timeout=atomic_store.DEFAULT_LOCK_TIMEOUT):
+            raise atomic_store.LockTimeout("the users table is busy")
+        try:
+            yield
+        finally:
+            self.file_lock.release()
+
+    @contextmanager
     def _locked_file(self):
-        """Hold the thread lock and, where available, an exclusive file lock."""
-        with self.file_lock:
-            if fcntl is None:
+        """Hold the thread lock and the cross-process lock of the users file."""
+        with self._thread_lock():
+            with atomic_store.locked(self.user_file):
                 yield
-                return
-            with open(self.user_file + ".lock", "a") as lock:
-                fcntl.flock(lock, fcntl.LOCK_EX)
-                try:
-                    yield
-                finally:
-                    fcntl.flock(lock, fcntl.LOCK_UN)
+
+    def _write_users(self, table):
+        atomic_store.write_json(self.user_file, {u: user.to_dict() for u, user in table.items()})
+        self.users = table
+        self._file_stamp = self._stamp()
 
     def _save_users(self, changed=(), created=(), removed=()):
         """Write this process's changes to the users file without losing anyone else's.
@@ -195,8 +207,9 @@ class AuthManager:
         in-memory table was dumped, so a user added by the CLI while the
         server ran vanished at the next login.
 
-        The write goes to a temporary file that replaces users.json in one
-        step, so a crash or a concurrent reader never sees half a file.
+        The write goes through ``atomic_store.write_json``: a temporary file
+        that replaces users.json in one step, so a crash or a concurrent
+        reader never sees half a file.
         """
         try:
             with self._locked_file():
@@ -208,28 +221,58 @@ class AuthManager:
                         merged[username] = self.users[username]
                 for username in removed:
                     merged.pop(username, None)
-
-                directory = os.path.dirname(os.path.abspath(self.user_file))
-                fd, tmp = tempfile.mkstemp(prefix=".users_", suffix=".json", dir=directory)
-                try:
-                    with os.fdopen(fd, 'w') as f:
-                        json.dump({u: user.to_dict() for u, user in merged.items()}, f, indent=2)
-                        f.flush()
-                        os.fsync(f.fileno())
-                    # Keep the existing file's permissions; a new one stays 0600
-                    if os.path.exists(self.user_file):
-                        os.chmod(tmp, os.stat(self.user_file).st_mode & 0o777)
-                    os.replace(tmp, self.user_file)
-                except BaseException:
-                    if os.path.exists(tmp):
-                        os.unlink(tmp)
-                    raise
-
-                self.users = merged
-                self._file_stamp = self._stamp()
+                self._write_users(merged)
             logging.debug(f"Saved {len(self.users)} users to {self.user_file}")
+        except atomic_store.LockTimeout:
+            raise           # the request is a 503 (core.py); pretending it was saved would lose the change
         except Exception as e:
             logging.error(f"Error saving users: {e}")
+
+    def update_users(self, mutate):
+        """Read the users file, call ``mutate(table)`` and write it back, all
+        under the lock.
+
+        ``table`` is the merged on-disk ``{username: User}``, so a rule that
+        depends on the whole table (at least one admin: see
+        :func:`ensure_admin_remains`) is checked on what is really stored,
+        not on this process's possibly stale copy. ``mutate`` edits the table
+        in place and returns a value, which is returned here. If it raises,
+        nothing is written and the exception propagates; nor is anything when ``mutate`` left the table as it was; so do read and
+        write errors (unlike ``_save_users``, whose callers have nobody to
+        tell). ``mutate`` must not call methods of this manager (the lock is
+        held and not re-entrant).
+        """
+        with self._locked_file():
+            table = self._read_users_file()
+            snapshot = lambda: json.dumps({name: user.to_dict() for name, user in table.items()}, sort_keys=True)  # to_dict shares the nested dicts, so compare text
+            before = snapshot()
+            result = mutate(table)
+            if snapshot() == before:
+                # nothing changed (an unknown name, a no-op): no new inode for every worker to reload
+                self.users = table
+                self._file_stamp = self._stamp()
+            else:
+                self._write_users(table)
+        return result
+
+    def admins(self):
+        """Names of the users that are admins."""
+        self._reload_if_changed()
+        return {name for name, user in self.users.items() if user.is_admin}
+
+    def lock_remaining(self, username, client_ip=None):
+        """Seconds until ``client_ip`` may try ``username`` again, 0 if it may now."""
+        self._reload_if_changed()
+        user = self.users.get(username)
+        if user is None:
+            return 0
+        rec = user.failed_logins.get(client_ip or "unknown")
+        if not rec:
+            return 0
+        locked_until = (list(rec) + [None, None])[1]
+        if not locked_until:
+            return 0
+        return max(0, math.ceil(float(locked_until) - time.time()))
 
     def create_user(self, username, password, is_admin=False):
         """
@@ -243,18 +286,19 @@ class AuthManager:
         Returns:
             bool: Success status
         """
-        self._reload_if_changed()
-        if username in self.users:
+        def add(table):
+            if username in table:
+                return False
+            table[username] = User(username, self._new_hash(password), is_admin)
+            return True
+
+        if not self.update_users(add):
             logging.warning(f"Cannot create user: Username {username} already exists")
             return False
-            
-        # Create user
-        self.users[username] = User(username, self._new_hash(password), is_admin)
-        self._save_users(created=[username])
         logging.info(f"Created user: {username} (admin: {is_admin})")
         return True
-    
-    def authenticate(self, username, password, client_ip=None):
+
+    def authenticate(self, username, password, client_ip=None, touch_last_login=True):
         """
         Authenticate a user with username and password
 
@@ -269,6 +313,9 @@ class AuthManager:
             password (str): Password
             client_ip (str, optional): The client's address (``None`` for
                 callers without one, e.g. the CLI)
+            touch_last_login (bool, optional): Record the time as the user's
+                last login. False when only checking a password the user is
+                already logged in with (changing it, confirming it).
             
         Returns:
             bool: Authentication success
@@ -306,7 +353,8 @@ class AuthManager:
         if is_valid:
             # Reset this address's failures on success
             user.failed_logins.pop(source, None)
-            user.last_login = datetime.now().isoformat()
+            if touch_last_login:
+                user.last_login = datetime.now().isoformat()
             self._save_users(changed=[username])
             logging.info(f"User {username} authenticated successfully")
             return True
@@ -422,17 +470,49 @@ class AuthManager:
         logging.info(f"Changed password of user: {username}")
         return True
 
-    def set_admin(self, username, is_admin):
-        """Grant or revoke admin in place. Returns False if the user does not exist."""
-        self._reload_if_changed()
-        user = self.users.get(username)
-        if user is None:
+    def set_admin(self, username, is_admin, force=False):
+        """Grant or revoke admin. Returns False if the user does not exist.
+
+        Revoking the last admin raises :class:`LastAdminError`, checked on the
+        stored table inside the lock; ``force`` skips that check only (the
+        command line's ``--force``), never the lock."""
+        def change(table):
+            user = table.get(username)
+            if user is None:
+                return False
+            had_admin = any(u.is_admin for u in table.values())
+            user.is_admin = bool(is_admin)
+            if had_admin and not force:
+                ensure_admin_remains(table)
+            return True
+
+        if not self.update_users(change):
             logging.warning(f"Cannot change admin flag: User {username} not found")
             return False
-        user.is_admin = bool(is_admin)
-        self._save_users(changed=[username])
-        logging.info(f"User {username} admin: {user.is_admin}")
+        logging.info(f"User {username} admin: {bool(is_admin)}")
         return True
+
+    def unlock(self, username, address=None):
+        """Clear failed-login lockouts of ``username``: those of one client
+        ``address``, or all of them. Returns how many addresses were cleared,
+        or None if the user does not exist."""
+        def clear(table):
+            user = table.get(username)
+            if user is None:
+                return None
+            if address is None:
+                cleared = len(user.failed_logins)
+                user.failed_logins = {}
+            else:
+                cleared = 1 if user.failed_logins.pop(address, None) is not None else 0
+            user.login_attempts = 0
+            user.locked_until = None
+            return cleared
+
+        cleared = self.update_users(clear)
+        if cleared is not None:
+            logging.info(f"Cleared {cleared} failed-login record(s) of user {username}")
+        return cleared
 
     def session_is_current(self, username, logged_in_at):
         """Whether a login of ``username`` made at ``logged_in_at`` still counts:
@@ -448,26 +528,48 @@ class AuthManager:
         except (TypeError, ValueError):
             return False
 
-    def remove_user(self, username):
+    def remove_user(self, username, force=False):
         """
         Remove a user
+
+        Removing the last admin raises :class:`LastAdminError`, checked on the
+        stored table inside the lock; ``force`` skips that check only.
         
         Args:
             username (str): Username
+            force (bool, optional): Allow removing the last admin.
             
         Returns:
             bool: Success status
         """
-        self._reload_if_changed()
-        if username not in self.users:
+        def remove(table):
+            if username not in table:
+                return False
+            had_admin = any(u.is_admin for u in table.values())
+            del table[username]
+            if had_admin and not force:
+                ensure_admin_remains(table)
+            return True
+
+        if not self.update_users(remove):
             logging.warning(f"Cannot remove user: User {username} not found")
             return False
-            
-        # Remove user
-        del self.users[username]
-        self._save_users(removed=[username])
         logging.info(f"Removed user: {username}")
+        self._forget_access(username)
         return True
+
+    def _forget_access(self, username):
+        """Drop the removed user's entry in ``access.json`` (grants, restriction, overrides).
+
+        After the removal, never before: a refused removal must not widen
+        anyone's access. A failure leaves the stale entry, which restricts an
+        account of the same name created later (the safe side) and is logged.
+        """
+        try:
+            from . import access
+            access.forget({"user_file": self.user_file}, username)
+        except Exception as exc:
+            logging.error(f"Could not drop the access entry of removed user {username!r}: {exc}")
     
     def _hash_password(self, password, salt):
         """

@@ -15,6 +15,7 @@ import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds, serializableC
 import { setControlsVisible, controlsElementOf } from './utils/controls-visibility.js';
 import { notifyEach } from './utils/notify-panels.js';
 import { createPlaceholderPanel } from './utils/placeholder-panel.js';
+import { Policy } from './policy.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -243,11 +244,15 @@ const PanelManager = (function() {
         
         // Create panel instance
         const Constructor = _panelTypes.get(type);
-        const panel = new Constructor(contentContainer, {
+        const panelConfig = {
             id,
             title: config.title || _generateUniqueName(`${_formatPanelType(type)} 1`),
             ...config
-        });
+        };
+        // a type the administrator disabled stands as a placeholder that keeps its settings
+        const panel = Policy.panelEnabled(type)
+            ? new Constructor(contentContainer, panelConfig)
+            : createPlaceholderPanel(contentContainer, type, panelConfig, { disabled: true });
         
         // Store reference to the panel
         _panels.set(id, panel);
@@ -874,14 +879,16 @@ const PanelManager = (function() {
 
                 // Without data, or replacing a placeholder: a placeholder
                 // is never reused for a real panel, nor the other way round
-                if (panel && !!panel.isPlaceholder !== !!options.placeholder) {
+                // (a type the administrator disabled is always a placeholder)
+                const disabled = !Policy.panelEnabled(type);
+                if (panel && !!panel.isPlaceholder !== !!(options.placeholder || disabled)) {
                     removePanel(id);
                     panel = null;
                 }
 
-                if (!panel && options.placeholder) {
+                if (!panel && (options.placeholder || disabled)) {
                     panel = createPlaceholderPanel(contentContainer, type, { ...panelConfig, id },
-                        options.placeholder);
+                        options.placeholder || { disabled: true });
                     _panels.set(id, panel);
                     _panelsByType.get(type).add(panel);
                 } else if (!panel) {

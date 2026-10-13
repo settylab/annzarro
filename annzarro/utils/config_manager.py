@@ -119,6 +119,7 @@ class ConfigManager:
         "ANNZARRO_REMOTE_CREDENTIALS": ("server", "remote_credentials"),
         "ANNZARRO_REMOTE_CONNECT_TIMEOUT": ("server", "remote_connect_timeout_s"),
         "ANNZARRO_REMOTE_READ_TIMEOUT": ("server", "remote_read_timeout_s"),
+        "ANNZARRO_REMOTE_REQUEST_TIMEOUT": ("server", "remote_request_timeout_s"),
         "ANNZARRO_REMOTE_CHUNK_CACHE_MB": ("server", "remote_chunk_cache_mb"),
     }
 
@@ -646,6 +647,9 @@ class ConfigManager:
         if str(mode).strip().lower() not in ("admins", "local-only", "none"):
             errors.append(f"Invalid server.arbitrary_paths: {mode!r} (expected admins, local-only or none)")
 
+        from ..server.limits import validate_limits
+        errors.extend(validate_limits(server_section))
+
         port = self.config.get("server", {}).get("port") if isinstance(self.config.get("server"), dict) else None
         if port is not None and (isinstance(port, bool) or not isinstance(port, int) or not 0 < port < 65536):
             errors.append(f"Invalid server.port: {port!r} (expected an integer 1-65535)")
@@ -741,6 +745,9 @@ class ConfigManager:
             "__using_config_manager": True,
             # The hierarchical form, for /api/v1/config to filter by tier
             "config_tree": deepcopy(self.config),
+            # which layer set each key ("defaults:base", "project", "env:..."), so
+            # the policy registry can tell the operator's values from the package's
+            "config_origins": dict(self.origins),
         }
         
         # Server section

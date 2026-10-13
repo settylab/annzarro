@@ -26,6 +26,9 @@ if _left:
 
 extensions = [
     "myst_parser",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
     "sphinx.ext.extlinks",
     "sphinx_copybutton",
     "sphinx_design",
@@ -48,8 +51,25 @@ bibtex_bibfiles = ["references.bib"]
 bibtex_default_style = "unsrt"
 bibtex_reference_style = "author_year"
 
+# The Python API reference (reference/python-api.md): the docstrings are Google style
+napoleon_google_docstring = True
+napoleon_numpy_docstring = False
+autodoc_member_order = "bysource"
+autodoc_typehints = "description"
+autoclass_content = "both"
+
+# Types that appear in signatures link to their own documentation; objects.inv of this
+# site is published by the HTML build (Read the Docs serves it at /en/latest/objects.inv).
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "zarr": ("https://zarr.readthedocs.io/en/stable/", None),
+    "anndata": ("https://anndata.readthedocs.io/en/stable/", None),
+    "flask": ("https://flask.palletsprojects.com/en/stable/", None),
+}
+
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
-exclude_patterns = ["_build", "_tools", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "_tools", "_snippets", "design/auth-and-sharing.md", "Thumbs.db", ".DS_Store"]
 
 html_theme = "furo"
 html_title = "AnnZarro"

@@ -1,7 +1,7 @@
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
-import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker } from './plot-make-helper.js';
+import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds } from './plot-make-helper.js';
 import { autoPointCount, debounced } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
@@ -14,7 +14,7 @@ import {
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
 import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag } from '../../utils/panel-surface.js';
-import { largePlotPoints, largePlotRefusal, createLargePlot, showProbeFailure } from './large-plot.js';
+import { largePlotPoints, largePlotRefusal, createLargePlot, cancelIndexBuild, showProbeFailure } from './large-plot.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
@@ -978,7 +978,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (!isGenePlot) {
       const nCells = (DataManager.getCells() || []).length;
       const large = nCells > largePlotPoints();
-      updateLargePlotControls(container, large, largePlotPoints());
+      updateLargePlotControls(container, large, largePlotPoints(), await DataManager.getDatasetStructure());
       if (large) {
         const refusal = largePlotRefusal(settings, nCells);
         if (refusal) {
@@ -1000,11 +1000,18 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         // no marker in large-plot mode, but the line that the focus is not shown
         noteFocusOutside(plotContainer, data, settings, 'cells');
         // again after the draw: panel code that ran meanwhile may have reset a toggle
-        updateLargePlotControls(container, true, largePlotPoints());
+        updateLargePlotControls(container, true, largePlotPoints(), await DataManager.getDatasetStructure());
         return;
       }
     }
+    // a plot that was large and is regular now (a subset) keeps no large-plot hover, cursor or index,
+    // and no scene: a react into the drawn large plot keeps its WebGL groups for good (95.6M points
+    // cut to 100k: 3.8 GB of ArrayBuffers held by a plot of 100k), so the regular plot is drawn from
+    // nothing. The large plot stays on screen until then: drawPlot releases it in the same task that
+    // draws the new one, so no frame is blank
+    if (plotContainer.__isLarge && plotContainer._fullLayout) plotContainer.__releaseBeforeDraw = true;
     plotContainer.__isLarge = false;
+    cancelIndexBuild(plotContainer);
     setStatusTag(plotContainer, 'refused', null);
     setStatusTag(plotContainer, 'large', null);
     setStatusTag(plotContainer, 'focus', null);
@@ -2574,6 +2581,8 @@ export function buildPlotLayout(settings, data) {
   // (zoom, camera, a category hidden from the legend) is kept while this is
   // the same, i.e. on other cells of the same dataset
   layout.uirevision = DataManager.getCurrentDataset() || 'view';
+  // each axis the type of its field; the zoom kept only for the same field
+  applyAxisKinds(layout, settings, data, layout.uirevision);
 
   return layout;
 }

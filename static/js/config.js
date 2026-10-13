@@ -2,6 +2,8 @@
  * Configuration module for AnnZarro
  */
 import { appUrl } from './utils/app-url.js';
+// the panel registry: the server declares panel.<type>.enabled for each entry (policy.js)
+import panelTypes from './panels/panel-types.json' with { type: 'json' };
 
 /**
  * The ui.* settings in /api/v1/config, nested (ui: {defaults, cache,
@@ -43,16 +45,16 @@ export function readUiSettings(server) {
 /**
  * The integrations.* settings in /api/v1/config, for the Gene Set Analysis
  * panel's external services:
- *   external_requests  ask | on | off: whether the panel may send gene ids to
+ *   external_requests  ask | on | off | none: whether the panel may send gene ids to
  *                      services, asking first (ask, the default), without
- *                      asking, or never. YAML reads a bare off/on as a
+ *                      asking, or never (none: and no Links either). YAML reads a bare off/on as a
  *                      boolean, so false and true mean off and on; anything
  *                      else unknown means ask.
  *   gene_set.services  adapter ids or service names allowed (null: all)
  *   gene_set.timeout_ms  per request attempt
  *   string_db          base_url and version of the STRING API
  * @param {Object} server - the parsed /api/v1/config response
- * @returns {{externalRequests: 'ask'|'on'|'off', services: string[]|null, timeoutMs: number,
+ * @returns {{externalRequests: 'ask'|'on'|'off'|'none', services: string[]|null, timeoutMs: number,
  *   stringDb: {baseUrl: string|null, version: string|null}}}
  */
 export function readIntegrations(server) {
@@ -61,7 +63,7 @@ export function readIntegrations(server) {
     if (ext === false) ext = 'off';
     else if (ext === true) ext = 'on';
     ext = typeof ext === 'string' ? ext.trim().toLowerCase() : 'ask';
-    if (!['ask', 'on', 'off'].includes(ext)) ext = 'ask';
+    if (!['ask', 'on', 'off', 'none'].includes(ext)) ext = 'ask';
     const gs = cfg.gene_set && typeof cfg.gene_set === 'object' ? cfg.gene_set : {};
     const services = Array.isArray(gs.services) ? gs.services.filter(x => typeof x === 'string') : null;
     const t = Number(gs.timeout_ms);
@@ -115,14 +117,8 @@ const Config = (function() {
         AUTH_ME: `${API_BASE}/auth/me`
     };
     
-    // Panel types definition
-    const PANEL_TYPES = [
-        { type: 'cell-plot', label: 'Cell Plot', icon: 'fas fa-microscope' },
-        { type: 'gene-plot', label: 'Gene Plot', icon: 'fas fa-dna' },
-        { type: 'cell-table', label: 'Cell Table', icon: 'fas fa-solid fa-list-ul' },
-        { type: 'gene-table', label: 'Gene Table', icon: 'fas fa-th-list' },
-        { type: 'gene-set', label: 'Gene Set Analysis', icon: 'fas fa-project-diagram' }
-    ];
+    // Panel types definition: panels/panel-types.json
+    const PANEL_TYPES = panelTypes;
     
     // Configure Plotly.js defaults if available
     if (typeof Plotly !== 'undefined') {

@@ -18,6 +18,11 @@ from flask import Flask, current_app
 from .core import create_app, DEFAULT_CONFIG, load_config_from_file
 from annzarro.utils.paths import default_data_dir
 
+__all__ = [
+    "run_server",
+]
+
+
 # Set up logging
 logger = logging.getLogger(__name__)
 

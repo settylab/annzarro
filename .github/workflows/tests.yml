@@ -27,7 +27,7 @@ jobs:
       matrix:
         include:
           - python: "3.9"
-            extras: test
+            extras: test,remote   # zarr 2: the remote store tests run here too
           - python: "3.13"
             extras: test,remote
             # Playwright + Chromium: the browser tests (annzarro/tests/browser)

@@ -52,7 +52,7 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `allowed_dirs` * | none | Extra directory trees a shared server may open, e.g. targets of symlinks in `data_dir`. Every store under them can be opened by path. |
 | `arbitrary_paths` | `admins` | Who may open a dataset path outside `data_dir` and `allowed_dirs` (after symlinks and `..` are resolved). `admins`: admins of a shared server with login, so an admin login can read any file the server process can (each such open is logged with the admin's name), and the one user of a local server (loopback, no login: a laptop, the desktop app); other users never. `local-only`: only that local user; on a shared server nobody, admins included. `none`: nobody, local servers included. Any other value stops the server at startup. Env `ANNZARRO_SERVER_ARBITRARY_PATHS`. |
 | `hosted` * | unset | `true` forces shared-server behaviour (path confinement, remote policy, compression, exposure warning) whatever the host; `false` forces local behaviour. Unset: decided by login and host. The gunicorn entry point sets `true` unless you set `false`. |
-| `proxy_count` | `0` | Number of reverse proxies whose `X-Forwarded-For/-Proto/-Host` headers are trusted. Set `1` behind nginx or Apache; never more than the proxies you run, or clients can forge their address. Any value above 0 also counts as "shared" for the remote-store policy `auto`. |
+| `proxy_count` | `0` | Number of reverse proxies whose `X-Forwarded-For/-Proto/-Host` headers are trusted. Set `1` behind nginx or Apache; never more than the proxies you run, or clients can forge their address. Any value above 0 also counts as "shared" for the remote-store policy `auto`. The admin interface needs it behind a proxy that terminates TLS or rewrites `Host`: it accepts a change only from an `Origin` equal to the address the server believes it has ({doc}`../deployment/admin`). |
 | `debug` | `false` | Flask debug mode (reloader and interactive debugger). `true` only in the `development` layer; never on a reachable server. |
 | `log_file` | `~/.annzarro/logs/annzarro_server.log` | Server log. Relative paths are taken from the working directory. |
 | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. |
@@ -62,17 +62,42 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `cache_enabled` | `true` | Server-side cache of dataset metadata and read results. |
 | `cache_memory_mb` | `4000` | Memory bound of that cache, per process (per gunicorn worker). `base.yaml` alone: 1000. |
 | `cache_dataset_limit` | `20` | Datasets kept open in the cache. |
-| `max_read_mb` | auto | Memory one read of an `obsp` or `varp` matrix may hold, in MB, estimated from the store's metadata before any chunk is read: a dense matrix costs rows x columns x itemsize of what the request returns (`cols` only filters the rows asked for) plus the chunks being decompressed (up to 10 at a time, each whole: one row of an array chunked (1000, n) decompresses 1000 x n values, 4.8 GB at 1.2 million cells, so a refusal names the chunk shape and suggests rewriting with smaller chunks); a sparse one costs its stored `data`, `indices` and `indptr` as loaded (a CSR row selection loads that share) plus the dense block returned. A request over it is refused with `413 {"reason": "read_too_large"}` naming the element, its shape and the estimated size. Unset: 5% of the machine's RAM, between 256 MB and 4 GB. It applies to every user, admins included, and no request parameter changes it. A dense *n* x *n* `obsp` is 120 GB at 175,000 cells; one row of it stays small. Pairwise matrices are read by rows only (`rows_required`, at most 1000 rows per request). |
+| `max_read_mb` | auto | Memory one read of an `obsp` or `varp` matrix may hold, in MB, estimated from the store's metadata before any chunk is read: a dense matrix costs rows x columns x itemsize of what the request returns (`cols` only filters the rows asked for) plus the chunks being decompressed (up to 10 at a time, each whole: one row of an array chunked (1000, n) decompresses 1000 x n values, 4.8 GB at 1.2 million cells, so a refusal names the chunk shape and suggests rewriting with smaller chunks); a sparse one costs its stored `data`, `indices` and `indptr` as loaded (a CSR row selection loads that share) plus the dense block returned. A request over it is refused with `413 {"reason": "read_too_large"}` naming the element, its shape and the estimated size. Unset: 5% of the machine's RAM, between 256 MB and 4 GB. It applies to every user, admins included, and no request parameter changes it. A dense *n* x *n* `obsp` is 120 GB at 175,000 cells; one row of it stays small. Pairwise matrices are read by rows only (`rows_required`, at most 1000 rows per request). A `uns` member is sized the same way before it is read whole (`/data/uns/<key>`): about 100 bytes per value, 160 per string, since the reply is built as Python lists; a matrix stored in `uns` is refused over the limit, and read by a smaller member (`uns/key/member`) instead. |
+| `max_names_json_mb` | `2048` | MB a reply of every cell or gene name may hold when it is built whole, estimated at 170 bytes a name from the axis length before any name is read (2048 is about 12 million names); over it the request is a `413 {"reason": "read_too_large", "limit_name": "max_names_json_mb"}`. A zarr store is not limited: it streams its names a chunk at a time, and so does a cell subset of more than 250,000 cells (a smaller one is read whole). The limit applies to h5ad files and to an index stored as a categorical or nullable group. `0` removes it. |
+| `names_stream_max_concurrent` | `2` | Streams of every cell or gene name one worker sends at once. A stream holds a server thread until its client has read the reply, and a client that stops reading holds it until it hangs up, so the number is capped; one more is answered `503 {"reason": "read_busy"}` with `Retry-After` before any byte is sent. `0` removes the cap. A stream does not use the `obsp`/`varp` read budget. |
+| `names_stream_slot_above` | `1000000` | Only lists of more names than this count against `names_stream_max_concurrent`; shorter ones (opening a dataset reads one per axis) stream without a slot, so slow readers of a huge list cannot make every dataset open a 503. |
 | `read_budget_mb` | auto | What all the `obsp`/`varp` reads in flight in one worker process may hold together, in MB, each charged its `max_read_mb` estimate. Unset: twice `max_read_mb`. A read that does not fit waits up to `read_wait_s` seconds (default 5) for others to finish, then is answered `503 {"reason": "read_busy"}` with a `Retry-After` header; the web client retries once after it. A single read over `max_read_mb` is already a 413, so the budget cannot deadlock. Each gunicorn worker has its own budget. |
 | `read_wait_s` | `5` | Seconds a pairwise read waits for `read_budget_mb` before the 503. |
 | `name_index_max_mb` | auto | Memory the name-search indices (the header's Focused Cell and Focused Gene typeahead) may hold together, per worker process, in MB. Unset: 15% of the machine's RAM, between 512 MB and 16 GB. The index of a dataset costs about 30 bytes per cell name (30 GB for a billion cells); one that would not fit is not built. Its names are scanned instead, a zarr chunk at a time with no index in memory, and `GET /api/v1/data/names` says so: `partial: true` and a `note` when the scan stopped before the end (an exact match is found, or `name_search_scan_names` names were read), `GET /data/names/status` answers `streaming`, and the Focused Cell box searches only the cells shown. Least recently used indices are dropped to stay within the budget. |
 | `name_search_scan_names` | `100000000` | Names a scanning name search reads at most before it answers with what it has (about 7 s at this size). |
+| `name_search_max_regex_chars` | `200` | Longest regular expression a name search (`mode=regex`) runs, in characters; a longer one is refused with `400 {"reason": "regex_too_long"}`. A pattern that repeats a repeat or branches inside one (`(a+)+`) or has more than four open-ended repeats is refused with `400 regex_too_complex` as a cheap first filter. Every match also runs under `name_search_timeout_s` with the `regex` package, which stops inside a match, so a pattern the filter misses cannot hold a worker. See {doc}`../deployment/resource-limits`. |
+| `name_search_timeout_s` | `10` | Seconds a regex name search scans before it answers with the matches found so far (`partial: true`, `timed_out: true`, with a `note`). `0` turns the limit off. |
+| `read_user_share_percent` | `50` | On a shared server (login on, or a network address) the percentage of `read_budget_mb` one user may hold of the pairwise reads in flight, so one user's reads cannot make everyone else's `503 read_busy`, and of the `subset_budget_mb` while another user waits for it. With login off the unit is the client address (the proxy's address, unless `proxy_count` is set; an IPv6 /64 is one address). Never below one `max_read_mb` read or one subset. `0` = no share (any user may hold the whole budgets). See {doc}`../deployment/resource-limits`. |
+| `subset_budget_mb` | auto | Memory the cell subsets one worker process computes at once may hold together, in MB. Each subset (`GET /api/v1/data/subset`, a pass over a column of every cell) is charged 55 bytes per cell of its dataset, a figure measured on the 95.6-million-cell store for the worst way a column is read (a Python list: 5 GB for one subset, 30 GB for six at once). A numeric filter on a numeric column holds about 19 bytes per cell (six at once: 10.8 GB), so the charge is conservative for it. Unset: 15% of the machine's RAM per worker, which is two or three filters of that dataset and about a hundred of a 1-million-cell one. A subset waits `subset_wait_s` for the budget, then `503 read_busy` with `Retry-After`. One larger than the whole budget is not refused: it runs alone, when nothing else is held, and the log says so. Sharing between users follows `read_user_share_percent`. Not applied to a server only one person uses. |
+| `subset_wait_s` | `30` | Seconds a subset waits for `subset_budget_mb` before the `503`. Waiting holds one of the worker's threads, so keep it near the time one subset takes (3.6 s for a numeric filter at 95.6 million cells). |
+| `max_requests` | `20000` | gunicorn only: requests a worker serves before it is replaced. Memory that crept is returned and the worker's caches start empty (a 95-million-cell name index is rebuilt on its first search, about 30 s). `0` = never. |
+| `max_requests_jitter` | `2000` | gunicorn only: each worker's limit is `max_requests` plus a random number up to this, so workers do not restart together. |
+| `limit_request_line`, `limit_request_fields`, `limit_request_field_size` | `0`, `100`, `8190` | gunicorn only: longest request line (0 = unlimited) and header field in bytes, and most header fields; a longer field is answered `400` by gunicorn. The line is unlimited because the web client sends the cells or genes it asks for in the URL (2,000 genes are about 12 KB, over the 4,094 gunicorn allows by default and the 8,190 it allows at most); the reverse proxy bounds it. |
+| `max_request_mb` | `64` | Largest request body, in MB. Panel sets (saved, imported) are the only uploads; a larger body is refused with `413 {"reason": "request_too_large"}` before it is read. `0` turns the limit off. |
+| `max_sessions_per_user` | `500` | Panel sets one user may keep (the owner is whoever first saved it; with login off every set is one user's). Saving, duplicating or importing a new set past it is refused with `409 {"reason": "session_quota_user"}`; overwriting a set you have is not. `0` turns it off. |
+| `max_sessions` | `5000` | Panel sets the whole server keeps (files in `<data_dir>/sessions`); past it `409 session_quota_total`. `0` turns it off. |
+| `max_sessions_mb` | `256` | MB all panel sets may take together, counted with the one being written; past it `409 session_quota_total`. `0` turns it off. |
+| `dataset_folder_max_entries` | `500` | Entries (folders and stores) one request of the dataset picker's folder listing (`GET /api/v1/datasets/folder`) returns, and the most matches its subfolder search returns; a larger folder is read in pages ("show more"), and only the page is opened. |
+| `dataset_search_max_depth` | `6` | Folders deep the picker's search of the data directory (`GET /api/v1/datasets/search`) goes. |
+| `dataset_search_max_entries` | `20000` | Entries that search looks at before it stops and answers `"truncated": true`. It also stops after 3 s (not a setting). With `mode=regex` the pattern goes through the same guard as the name search (`name_search_max_regex_chars`, `regex_too_complex`). |
+| `lock_timeout_s` | `10` | Seconds a request waits for the lock on the users file (every login writes it), the admin state or the panel sets before it answers `503 busy` with `Retry-After`. |
+| `admin_data_roots` | `[]` | Directories inside which an admin may add data directories in the browser ({doc}`../deployment/admin`). Empty: adding is off and the list is read-only. Keep them writable by trusted accounts only. |
+| `admin_reauth_minutes` | `30` | Minutes the admin's password entry lets them change things in the admin interface. `0`: never asked. |
+| `admin_rate_per_minute` | `30` | Admin changes per minute per admin and gunicorn worker; reads get eight times as many. Over it `429 admin_rate_limited`. At least 1. |
+| `admin_audit_max_mb` | `50` | Size at which the audit log (`annzarro_admin/audit.jsonl` beside the users file) rotates; five rotations are kept. `0`: never. |
+| `dataset_scan_max_entries` | `200000` | Directory entries the legacy dataset listing (`GET /api/v1/core/datasets`), a directory listing (`GET /api/v1/directories/list`) and the store count in `GET /api/v1/status` read before they stop. A store's own chunk files are never walked (a 95-million-cell store has hundreds of thousands). A listing then answers `"truncated": true` with a `note`; `/status` says `zarr_file_count_truncated`. `/status` reuses its count for 30 s. |
 | `refresh_min_interval_s` | `10` | `POST /api/v1/data/refresh` (Refresh dataset, open to every user) walks a dataset's files at most this often, in all workers together. A refresh sooner does not wait in the server: it schedules one walk for the end of the interval, shared by everyone, and answers at once `status: "scheduled"`; the browser asks again after `retry_after_s` with `after=`, and gets that walk's result. A refresh is never answered by a walk older than itself. Each walk stops after 3 s: a store with more files than that (the 95.6M-cell Tahoe store) answers `status: "partial"`, and an in-place chunk write to it needs an admin's `POST /api/v1/cache/reset`. |
 | `remote_stores` | `auto` | `auto`, `allow` or `deny` for `s3://`, `gs://`, `gcs://`, `http(s)://` stores (no other scheme is remote); see {doc}`../deployment/authentication`. |
 | `remote_allowlist` | `[]` | URL prefixes remote stores must start with, e.g. `["s3://lab-bucket/atlases/"]`. |
 | `remote_credentials` | `anonymous` | `anonymous` (unsigned requests) or `environment` (the AWS and Google standard credential chains of the server account). |
 | `remote_connect_timeout_s` | `10` | Seconds to establish a connection to a remote store. |
 | `remote_read_timeout_s` | `30` | Seconds to wait between bytes before the request fails with 504. |
+| `remote_request_timeout_s` | auto | Seconds one request may spend on remote reads in total, however many chunks. The two timeouts above bound a single wait, so a host that sends a byte every 29 s never trips them; this one does. When it runs out the connection is closed and the request is answered `504 {"reason": "remote_deadline"}`, naming the host and the limit. Unset: `120` on a hosted server (the `proxy_read_timeout` the deployment guide recommends), `600` on a single-user one, so a dead host cannot hang the desktop forever. `0` turns it off. Each request has its own deadline; the background fingerprint of a remote store gets ten times it. Env: `ANNZARRO_REMOTE_REQUEST_TIMEOUT`. |
 | `remote_chunk_cache_mb` | `256` | Raw-bytes LRU per open remote store (zarr 3 only); `0` turns it off. |
 | `https_enabled`, `cert_file`, `key_file` | `false`, `config/ssl/cert.pem`, `config/ssl/key.pem` | TLS in `annzarro start` itself. Use a reverse proxy instead ({doc}`../deployment/lab-server`). |
 | `cors_enabled`, `cors_origins` | `false`, `*` | Cross-origin access to `/api/*` from the listed origins. Off by default: no `Access-Control-Allow-Origin` header is sent. |
@@ -141,8 +166,7 @@ and for it `total_gb` is the limit to set.
 **How the estimates were made.** On an Apple M3 Max laptop with Chrome, drawing up to 182 million
 points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in large-plot mode keeps
 its points outside the JavaScript heap (0.1 bytes of heap per point; about 65 bytes per point of
-typed arrays, and 200 million points drew with a 13.6 GB tab and 35 MB of heap). Before v0.4.1 it
-held 20.2 bytes of heap per point and a tab died at 182 to 200 million points; a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
+typed arrays, and 200 million points drew with a 13.6 GB tab and 35 MB of heap); a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
 million); the app itself 0.17 GB; hover labels of a categorical column 34 bytes per point plus 62 bytes
 and 2 per character per distinct label (measured at a million points: 999,998 barcodes 114 MB,
 65,000 labels 38 MB, plus the reply while it loads). There is no cap on the number of labels: a
@@ -197,7 +221,7 @@ the browser calls them itself, the server never does.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `external_requests` | `ask` | Whether the panel may send gene ids to external services. `ask`: the user is asked once per service (Enrichr and Reactome, which keep what they are sent where others can read it, every time). `on`: without asking, for a site whose users agreed beforehand. `off`: never; the panel's Links still work. `ask` leaves it to the browser: the user's answers per service and a share link's consent for its selection (order in the user guide's Consent section). Quote the value in YAML (`"off"`): a bare off is read as false (which also means off). The environment variable `ANNZARRO_EXTERNAL_REQUESTS=off\|ask\|on` overrides it. |
+| `external_requests` | `ask` | Whether the panel may send gene ids to external services. `ask`: the user is asked once per service (Enrichr and Reactome, which keep what they are sent where others can read it, every time). `on`: without asking, for a site whose users agreed beforehand. `off`: never; the panel's Links still work. `none`: never, and the Links are removed too. `ask` leaves it to the browser: the user's answers per service and a share link's consent for its selection (order in the user guide's Consent section). Quote the value in YAML (`"off"`): a bare off is read as false (which also means off). The environment variable `ANNZARRO_EXTERNAL_REQUESTS=off\|ask\|on\|none` overrides it. |
 | `gene_set.services` | `null` | The sections offered, by adapter id (`string-network`) or service (`string`, `gprofiler`, `mygene`, `enrichr`, `reactome`, `hpa`). `null`: all of them. |
 | `gene_set.timeout_ms` | `20000` | Time one request may take, in ms. A timed-out request is tried once more. |
 | `string_db.base_url` | `https://version-12-5.string-db.org/api` | STRING's API. A versioned host, so a result can be reproduced; it says its version in the section. |
@@ -214,6 +238,15 @@ integrations:
   gene_set:
     services: [string, gprofiler, mygene]
 ```
+
+## `policy`
+
+The policy registry holds the settings an administrator can change at run time. This file stays
+the operator's.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `locked` | `[]` | Policy keys only this file decides (for example `[outbound.allow_external]`). A locked key ignores the admin settings and the per-user overrides, and the Settings page shows it as read-only. |
 
 ## Security tiers
 
@@ -249,6 +282,7 @@ server:
 
 Lab server behind nginx: see {doc}`../deployment/lab-server`.
 
+(config-environment)=
 ## Environment variables
 
 `ANNZARRO_SERVER_PORT=9000` sets `server.port`; underscores inside key names are matched, so
@@ -258,3 +292,29 @@ Lab server behind nginx: see {doc}`../deployment/lab-server`.
 set this way, including ones with no default such as `auth.enabled`, `auth.secret_key`,
 `server.hosted` and `server.allowed_dirs`. The full list of variables, including `ANNZARRO_HOME` and
 `ANNZARRO_AUTH_DISABLED`, is in {doc}`cli`.
+
+**Environment beats the files.** Layer 6 sits above every file (layers 2 to 5), so a variable
+overrides the same key in `site.yaml`, and only a command-line option beats it. One setting of
+the policy registry also has a variable of its own, which the registry treats as decisive:
+
+| Variable | Setting | Notes |
+|---|---|---|
+| `ANNZARRO_EXTERNAL_REQUESTS` | `integrations.external_requests` | `on`, `ask`, `off` or `none`. It decides the setting for the policy registry too, and beats the YAML in both directions, so a deployment can force a value either way. The admin Settings page shows its source as `env`. A value the setting does not accept is logged and ignored: the YAML decides. |
+
+Seven variables are aliases of `server` keys whose names do not follow `ANNZARRO_<SECTION>_<KEY>`
+(`ENV_ALIASES` in `annzarro/utils/config_manager.py`). They are ordinary environment values, above
+the files, and `config show` reports them as set:
+
+| Variable | Key |
+|---|---|
+| `ANNZARRO_REMOTE_STORES` | `server.remote_stores` |
+| `ANNZARRO_REMOTE_ALLOWLIST` | `server.remote_allowlist` (comma-separated) |
+| `ANNZARRO_REMOTE_CREDENTIALS` | `server.remote_credentials` |
+| `ANNZARRO_REMOTE_CONNECT_TIMEOUT` | `server.remote_connect_timeout_s` |
+| `ANNZARRO_REMOTE_READ_TIMEOUT` | `server.remote_read_timeout_s` |
+| `ANNZARRO_REMOTE_REQUEST_TIMEOUT` | `server.remote_request_timeout_s` (120 s hosted, 600 s single-user; 0 switches it off) |
+| `ANNZARRO_REMOTE_CHUNK_CACHE_MB` | `server.remote_chunk_cache_mb` |
+
+(The registry's list is `ENV_OVERRIDES` in `annzarro/server/policy/resolver.py`.) Any other
+variable, such as `ANNZARRO_SERVER_PROXY_COUNT=1`, acts as a YAML value: for the policy
+registry it is the operator's "config" layer.

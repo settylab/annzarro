@@ -68,12 +68,23 @@ ROUTES = [
 #: Endpoints that take no filesystem path from the request (or only one
 #: confined by its own rule, like panel-set files in the sessions directory).
 NO_PATH = {
-    "serve_static", "static", "get_current_user", "get_cache_info", "get_config", "get_status",
+    "serve_static", "static", "get_current_user", "policy_effective", "get_cache_info", "get_config", "get_status",
     "list_all_datasets", "list_dataset_folder", "list_dataset_search",  # the folder listing confines itself (test_dataset_folders.py)
     "get_home_directory", "validate_zarr_url",  # remote policy, below
     "delete_session", "duplicate_session", "check_session_exists", "export_session",
     "import_session", "list_sessions", "load_session", "set_session_owner",
     "rename_session", "save_session", "login_page", "login", "logout",
+    "admin.page", "admin.reauth", "admin.audit",   # admin interface (test_admin_access.py); no dataset paths
+    "admin.users", "admin.users_add", "admin.users_remove", "admin.users_password",
+    "admin.users_admin", "admin.users_unlock",     # test_admin_users.py
+    "account_password_page", "account_password_change",   # own account (test_account_password.py)
+    "admin.access_overview", "admin.access_check", "admin.user_access", "admin.user_access_set",
+    "admin.user_grants_add", "admin.user_grants_remove",   # access admin: paths to grant or check, never opened (test_admin_user_access.py)
+    "admin.policy", "admin.user_policy",           # test_admin_settings.py
+    "admin.health", "admin.cache_clear",   # the cache clear names a cache key in its body, never opened
+    "admin.data_roots", "admin.data_roots_browse", "admin.data_roots_datasets",   # data directories: admin only, they name
+    "admin.data_roots_add", "admin.data_roots_remove",   # directories to add, not datasets to read (test_admin_data_roots.py)
+    "admin.panel_sets", "admin.panel_sets_reassign", "admin.panel_sets_delete",   # panel sets: admin only, no dataset paths
 }
 
 
@@ -212,7 +223,7 @@ def test_revoking_admin_takes_effect_at_once(layout):
     client = _client(layout, "admin", arbitrary_paths="admins")
     url = "/api/v1/data/info?dataset_path=" + escapes(layout)["absolute"]
     assert not _refused(client.get(url))
-    AuthManager(user_file=str(layout / "users.json")).set_admin("root", False)
+    AuthManager(user_file=str(layout / "users.json")).set_admin("root", False, force=True)  # the only admin
     try:
         assert _refused(client.get(url))
     finally:
@@ -256,7 +267,7 @@ def test_the_default_is_admins(layout, monkeypatch, tmp_path):
 
 def test_anonymous_gets_401_not_403(layout):
     client = _client(layout, "user", arbitrary_paths="admins")
-    client.get("/logout")
+    client.post("/logout")
     resp = client.get("/api/v1/data/info?dataset_path=" + escapes(layout)["absolute"])
     assert resp.status_code == 401
 

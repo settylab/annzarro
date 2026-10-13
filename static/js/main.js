@@ -3,6 +3,7 @@
  */
 import { PanelManager } from './panel-manager.js';
 import { Config } from './config.js';
+import { Policy } from './policy.js';
 import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
@@ -10,7 +11,8 @@ import {
     parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
-import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan, partialRefreshNotice } from './utils/session-permissions.js';
+import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan, partialRefreshNotice, signOut } from './utils/session-permissions.js';
+import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
@@ -38,6 +40,7 @@ import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
 import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
+import { markDatasetUnavailable, clearDatasetUnavailable, notAvailableText, UNAVAILABLE_TITLE } from './utils/no-dataset-screen.js';
 
 const App = (function() {
     // Private variables
@@ -93,12 +96,22 @@ const App = (function() {
             // would otherwise pin it forever. With the spinner suppressed, a
             // deep-link boots into the normal Welcome tile, which is the correct
             // fallback whenever nothing opens.
+            // The administrator's policy (which panels exist, what may leave
+            // the browser) is read before any panel is offered or restored;
+            // a server without one answers 404 and nothing changes. Every
+            // later API reply is watched for a new policy version.
+            Policy.installFetchObserver();
+            await Policy.load();
+
             const autosave = SessionManager.getAutosaveSession();
             const deepLink = await _parseDeepLink();
             const hasAutosave = autosave && Config.AUTOSAVE.AUTO_RESTORE && !deepLink;
 
             // Initialize panel manager with autosave information
             PanelManager.init('tile-container', { hasAutosave });
+
+            // The open dataset turning unreadable (a revoked grant, a removed store)
+            DataManager.setDatasetGoneHandler(_datasetGone);
 
             // Loading a panel set restores its whole view through _applyView
             SessionManager.setViewApplier(_applyPanelSet);
@@ -652,9 +665,16 @@ const App = (function() {
             });
             layout = { v: VIEW_SCHEMA_VERSION, hierarchy: defaultHierarchy(ids), controlState: {}, panelConfigs };
         }
+        // For a user who sees only what they are granted, "not on this server"
+        // would be a guess: the server answers a store they may not read exactly
+        // as one that is not there. Say what is true of both.
+        const unavailable = !located.differs && !located.refused && !located.failed && await _isRestricted();
+        if (unavailable) markDatasetUnavailable(missing);
         const message = located.differs
             ? `The store at ${missing} differs from the one this view was saved on. Its settings are kept.`
-            : `This view's dataset, ${missing}, is not on this server. Its settings are kept.`;
+            : unavailable
+                ? `This view's dataset, ${missing}, is not available to you, or no longer exists. Its settings are kept.`
+                : `This view's dataset, ${missing}, is not on this server. Its settings are kept.`;
         if (layout) {
             PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
             await PanelManager.restoreLayout(layout, {
@@ -666,9 +686,11 @@ const App = (function() {
             ? `${located.refused.path} is outside the data directory this server shares, so it cannot be opened here.`
             : located.failed
                 ? `${located.failed.path} could not be read: ${located.failed.error}`
-                : `${missing} is not on this server, and no store in its data directory matches it.`;
+                : unavailable
+                    ? `${missing} is not available to you, or no longer exists.`
+                    : `${missing} is not on this server, and no store in its data directory matches it.`;
         // not awaited: the view is open, the answer can come any time
-        _askNotification('Dataset not found',
+        _askNotification(unavailable ? UNAVAILABLE_TITLE : 'Dataset not found',
             `${why}\n\nThe layout is open without data, every panel keeping its settings. ` +
             'Choose a dataset to open the view on.',
             [{ key: 'change', label: 'Change dataset', primary: true }, { key: 'later', label: 'Later' }])
@@ -741,7 +763,34 @@ const App = (function() {
     }
 
     /** A dataset is open again: the view is no longer without data. @private */
+    /**
+     * The open dataset answered 404 (DataManager.setDatasetGoneHandler): its
+     * grant was revoked, or the store is gone. Say so once and return to the
+     * picker; what is already in the browser cannot be recalled.
+     * @private
+     */
+    function _datasetGone(path) {
+        markDatasetUnavailable(path);
+        _showNotification(UNAVAILABLE_TITLE, notAvailableText(path), 'warning');
+        _showChangeDataset();
+    }
+
+    /** Whether the server shows this user only the datasets they are granted (auth/me `restricted`). @private */
+    let _restrictedUser = null;
+    async function _isRestricted() {
+        if (_restrictedUser === null) {
+            try {
+                const response = await fetch(Config.API.AUTH_ME);
+                _restrictedUser = response.ok ? !!(await response.json()).restricted : false;
+            } catch (e) {
+                _restrictedUser = false;
+            }
+        }
+        return _restrictedUser;
+    }
+
     function _leaveNoDataMode() {
+        clearDatasetUnavailable();
         _noDataView = null;
         SessionManager.setDetachedStore(null);
         const button = document.getElementById('btn-change-dataset');
@@ -932,7 +981,10 @@ const App = (function() {
         };
         let recents = [];
         try { recents = loadRecents(window.localStorage, window.location.origin); } catch (e) { /* storage blocked */ }
+        const restricted = await _isRestricted();
         const picker = mountDatasetPicker({
+            rootLabel: restricted ? 'Your datasets' : undefined,
+            emptyText: restricted ? 'No datasets have been shared with you.' : undefined,
             dom: {
                 list, tree,
                 search: document.getElementById('change-dataset-search'),
@@ -947,7 +999,7 @@ const App = (function() {
             fetchFolder,
             fetchSearch,
             query: normal ? query : '',
-            otherTitle: normal ? 'Other datasets in the data directory' : undefined
+            otherTitle: restricted ? 'Your datasets' : normal ? 'Other datasets in the data directory' : undefined
         });
         picker.focus();
     }
@@ -3396,12 +3448,28 @@ const App = (function() {
             _refreshPlan = refreshPlan(me);
             const refreshBtn = document.getElementById('refresh-dataset');
             if (refreshBtn) refreshBtn.title = _refreshPlan.title;
+            const holder = document.getElementById('account-links');
+            if (holder) {
+                holder.replaceChildren(...accountLinks(me).map((link) => {
+                    const a = document.createElement('a');
+                    a.className = 'auth-indicator auth-indicator--user';
+                    a.dataset.link = link.id;
+                    a.textContent = link.text;
+                    a.title = link.title;
+                    a.href = link.href;
+                    return a;
+                }));
+            }
             const badge = authIndicator(me);
             if (!badge) return;
             el.textContent = badge.text;
             el.title = badge.title;
             el.classList.add(`auth-indicator--${badge.variant}`);
-            if (badge.href) el.href = badge.href;
+            if (badge.href) {
+                el.href = badge.href;
+                // logging out is a POST with the page's token; the href is the fallback
+                el.addEventListener('click', (event) => { event.preventDefault(); signOut(); });
+            }
             el.hidden = false;
             Config.showVersion();
         } catch (error) {

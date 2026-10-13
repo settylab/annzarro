@@ -120,7 +120,7 @@ def test_cookie_path_is_the_prefix(tmp_path):
     cookie = _login(client).headers["Set-Cookie"]
     assert "Path=/explore;" in cookie or cookie.endswith("Path=/explore")
     assert client.get("/explore/api/v1/auth/me").status_code == 200
-    resp = client.get("/explore/logout")
+    resp = client.post("/explore/logout")
     assert resp.headers["Location"] == "/explore/login"
     assert "Path=/explore" in resp.headers["Set-Cookie"]  # the cleared cookie is the same one
 

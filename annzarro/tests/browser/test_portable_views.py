@@ -45,8 +45,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
-from annzarro.core import fingerprint
-from annzarro.tests.zarr_compat import consolidate, open_group, store_format, write_strings
+from annzarro.tests.zarr_compat import consolidate, open_group, write_strings
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -105,12 +104,7 @@ def _rename_cells(store):
     write_strings(group, "_index", [f"other_{i:04d}" for i in range(200)]).attrs.update(attrs)
 
 
-def _consolidate(store):
-    if store_format(store) == 3:
-        consolidate(store)
-        return
-    docs = fingerprint._zarr_local_metadata(str(store))
-    (store / ".zmetadata").write_text(json.dumps({"zarr_consolidated_format": 1, "metadata": docs}))
+_consolidate = consolidate
 
 
 @pytest.fixture(scope="module")

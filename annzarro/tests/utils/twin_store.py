@@ -16,13 +16,20 @@ FIXTURE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 N_OBS, N_VAR = 200, 20
 
 
+def _format2_fixture():
+    """The committed format 2 fixture; under ``ANNZARRO_TEST_ZARR_FORMAT=3`` conftest has put a
+    converted copy in its place and the original beside it."""
+    aside = os.path.join(os.path.dirname(FIXTURE), ".fixture_small.zarr.format2")
+    return aside if os.path.isdir(aside) else FIXTURE
+
+
 def _encode(node, kind, version="0.2.0", **attrs):
     node.attrs.update({"encoding-type": kind, "encoding-version": version, **attrs})
     return node
 
 
 def build_v2_twin(path):
-    shutil.copytree(FIXTURE, path)
+    shutil.copytree(_format2_fixture(), path)
     root = zarr.open_group(path, mode="r+")
     rng = np.random.default_rng(7)
     dense = rng.random((N_OBS, N_VAR), dtype="float32")

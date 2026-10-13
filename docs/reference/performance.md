@@ -10,12 +10,7 @@ Every number on this page is AnnZarro v0.4.0. The paper's performance figure
 ({doc}`../paper/performance`) and scale figure ({doc}`../paper/scale`) summarise the benchmarks;
 their numbers are reproduced below where they matter for setting up a store or a server.
 
-```{important}
-**HPC numbers are being re-measured.** The paper's benchmark on HPC nodes (Xeon Gold 6254, data
-on an NFS scratch filer), which covers dense pairwise matrices up to 160 GB and a
-larger atlas, is being rerun on v0.4.0. Until it lands, neither the paper nor this
-page gives an HPC number. Laptop and demonstration-store numbers are final for v0.4.0.
-```
+This page gives laptop and demonstration-store numbers only; it gives no numbers from HPC nodes.
 
 ## On the demonstration store
 
@@ -131,6 +126,16 @@ recolouring included, 6.8 GiB (resident memory). With the memory guard at its de
 was drawn for stores up to 150 million cells and the first plot was declined at 160 million
 ({ref}`browser-memory`).
 
+## Check a store before you serve it
+
+Sparse direction and chunk shape decide click latency far more than data size does. On the
+Tahoe 1M prefix (1,000,000 × 5,000, 101 million non-zeros, page cache warm) one gene column took
+3 to 6 ms from a CSC `X` and 99 to 108 ms from a CSR one; extrapolated linearly to the 95.6M-cell
+store (10.5 billion non-zeros), a CSR `X` would take about 10 s per gene click. `annzarro store
+check STORE` finds this and the other layout problems from metadata alone, without reading a
+chunk, and prints what each costs in clicks and how to fix it ({doc}`cli`). It exits 1 on a
+`slow` finding, which makes it a gate before deploying a store.
+
 ## Chunk shape
 
 The slowest interaction is set by chunk layout, not by data size. Full discussion:
@@ -146,14 +151,12 @@ The slowest interaction is set by chunk layout, not by data size. Full discussio
 | (256, 4096) | **2.21 s** | 0.015 s | 0.09 GiB |
 
 With whole-gene chunks every chunk holds part of each cell's row, so one cell row decompresses the
-whole layer. The HPC sweep on a larger Kompot layer is being re-measured on v0.4.0.
+whole layer.
 
 ## Pairwise matrices
 
 Dense cells × cells and genes × genes matrices are read one row per click, and a row costs what a
-gene column of the same length costs. The paper's measurements on dense pairwise matrices of 10 to
-160 GB were made on HPC nodes and are being re-measured on v0.4.0; this page will quote them when
-they land.
+gene column of the same length costs.
 
 ## Server memory
 
@@ -167,6 +170,16 @@ they land.
 
 Memory follows the chunks a request touches; the binary path sends the array without building a
 Python list or a JSON string.
+
+Every cell name of a zarr store is written as it is read, one chunk of the name column at a time,
+so `GET /data/cells` holds one chunk, not the names. For the 95.6 million cells of the Tahoe store
+(a 2.1 GB reply, uncompressed) the server's peak resident memory went from 15.2 GiB to 0.42 GiB,
+the first byte from 14.4 s to 0.14 s and the last from 14.7 s to 7.7 s (gzip on: 20.9 s to 13.3 s);
+the bytes are the same. The reply has no `Content-Length`, so it sends `X-Annzarro-Names` and
+`X-Annzarro-Names-Bytes-Estimate` instead (the web client packs a reply estimated above 256 MB),
+and `X-Accel-Buffering: no` for nginx; a failure after the first byte aborts the reply (and the client checks that it holds the announced number of names), see {doc}`../deployment/lab-server`. At most `names_stream_max_concurrent` (2) such streams run per worker. A cell subset of more than 250,000 cells streams too. h5ad files and an index stored as a categorical cannot be
+read by chunk: their names reply is built whole, and refused with `413 read_too_large` above
+`max_names_json_mb` ([configuration](configuration.md)). Names are streamed as text: an index stored as numbers comes as `"7"`, not `7`.
 
 ## Measure your own
 

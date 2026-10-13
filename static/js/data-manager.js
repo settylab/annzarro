@@ -4,10 +4,12 @@
  */
 import { Config } from './config.js';
 import { subsetParam } from './utils/subset.js';
+import { columnsParam } from './utils/column-param.js';
 import { notify } from './utils/notify.js';
+import { csrfFetch } from './utils/csrf.js';
 import { CacheManager } from './cache-manager.js';
 import { BINARY_FORMAT, categoricalValues, decodeVector, isBinaryResponse, toJSONShape } from './utils/wire.js';
-import { PackedNames, categoryCodesFromJSON } from './utils/packed-names.js';
+import { PackedNames, categoryCodesFromJSON, namesReplyPlan } from './utils/packed-names.js';
 import { RemoteNames } from './utils/remote-names.js';
 
 // A /cells body above this size is read as a stream into PackedNames
@@ -149,14 +151,44 @@ const DataManager = (function() {
      * memory budget; a focused-cell row read then succeeds a moment later
      * instead of showing an error. One retry, at most 10 s of waiting.
      */
-    async function _fetchRetrying(fullUrl, signal) {
-        let response = await fetch(fullUrl, { signal });
+    async function _fetchRetrying(fullUrl, signal, init = {}) {
+        let response = await fetch(fullUrl, { signal, ...init });
         if (response.status === 503) {
             const after = Number(response.headers && response.headers.get('Retry-After'));
             await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(after || 1, 1), 10) * 1000));
-            response = await fetch(fullUrl, { signal });
+            response = await fetch(fullUrl, { signal, ...init });
         }
         return response;
+    }
+
+    // The open dataset can stop being readable while it is open: an
+    // administrator revokes the user's grant (or removes the store). The server
+    // answers the standard 404 `not_found`, the same for both (the page cannot
+    // tell them apart), on the next read of it. The first such answer for the
+    // open dataset is reported once to the handler, which tells the user and
+    // returns to the picker (main.js). Data already in the browser stays there.
+    let _goneHandler = null;
+    let _goneReported = null;
+
+    /** @param {(path: string) => void} fn - called once per dataset that turns out to be gone */
+    function setDatasetGoneHandler(fn) {
+        _goneHandler = typeof fn === 'function' ? fn : null;
+    }
+
+    function _noteGone(fullUrl, error) {
+        if (!error || error.status !== 404 || !error.data || error.data.reason !== 'not_found') return;
+        let url;
+        try {
+            url = new URL(fullUrl, window.location.href);
+        } catch (e) {
+            return;
+        }
+        const named = url.searchParams.get('dataset_path');
+        if (!named || named !== _currentDataset || _goneReported === named) return;
+        _goneReported = named;
+        if (_goneHandler) {
+            try { _goneHandler(named); } catch (e) { console.error('The dataset-gone handler failed:', e); }
+        }
     }
 
     function _startShared(fullUrl) {
@@ -164,7 +196,13 @@ const DataManager = (function() {
         const entry = { controller, waiters: 0, settled: false, promise: null };
         entry.promise = (async () => {
             try {
-                const data = await _readResponse(await _fetchRetrying(fullUrl, controller.signal));
+                let data;
+                try {
+                    data = await _readResponse(await _fetchRetrying(fullUrl, controller.signal));
+                } catch (error) {
+                    _noteGone(fullUrl, error);
+                    throw error;
+                }
                 // /data/subset answers 200 {superseded: true} when the page has
                 // asked for another subset meanwhile: nothing to cache or show
                 if (data && data.superseded === true) throw new DOMException('Subset superseded', 'AbortError');
@@ -323,7 +361,7 @@ const DataManager = (function() {
             // (issue #83). Asking again with `after` returns that walk's result.
             const params = { dataset_path: datasetPath };
             for (let poll = 0; ; poll++) {
-                const response = await fetch(`${Config.API.DATA_REFRESH}?${new URLSearchParams(params)}`,
+                const response = await csrfFetch(`${Config.API.DATA_REFRESH}?${new URLSearchParams(params)}`,
                     { method: 'POST' });
                 if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
                 const result = await response.json();
@@ -362,7 +400,7 @@ const DataManager = (function() {
                 params.dataset_path = datasetPath;
             }
             
-            const response = await fetch(`${Config.API.CACHE_RESET}?${new URLSearchParams(params).toString()}`, {
+            const response = await csrfFetch(`${Config.API.CACHE_RESET}?${new URLSearchParams(params).toString()}`, {
                 method: 'POST'
             });
             
@@ -453,6 +491,7 @@ const DataManager = (function() {
         try {
             // Update the current dataset path (will be reverted on error if keepCurrentOnError is true)
             _currentDataset = datasetPath;
+            _goneReported = null;
             if (datasetPath !== previousDataset) _taxonomySource = 'default';
             
             // Check for abort signal before each async operation
@@ -1084,7 +1123,7 @@ const DataManager = (function() {
         const base = { dataset_path: _currentDataset, ...at };
         let body;
         if (axis.type === 'obs') {
-            body = await _fetchWithCache(Config.API.OBS, { ...base, columns: axis.key });
+            body = await _fetchWithCache(Config.API.OBS, { ...base, columns: columnsParam(axis.key) });
             const column = body && body.data && body.data[axis.key];
             return Array.isArray(column) && column.length === 1 ? column[0] : null;
         }
@@ -1214,15 +1253,56 @@ const DataManager = (function() {
         return 'none';
     }
 
-    /** Every name of the cells shown, from /data/cells (the subset in effect). */
-    async function _downloadCellNames(datasetPath, signal) {
+    /**
+     * Every name of the cells shown, from /data/cells (the subset in effect).
+     * A reply that was cut short (the server failed after its first byte, and
+     * a proxy ended the reply as if it were whole) never passes for a shorter
+     * list: it is read again once with `cache: 'reload'`, which also replaces
+     * the cut copy the browser kept (it would be revalidated with a 304),
+     * then it is an error.
+     */
+    async function _downloadCellNames(datasetPath, signal, reload = false) {
+        try {
+            return await _readCellNames(datasetPath, signal, reload);
+        } catch (error) {
+            if (!reload && error && error.truncated) {
+                console.warn('Cell names: the reply was cut short; reading it again');
+                return _downloadCellNames(datasetPath, signal, true);
+            }
+            throw error;
+        }
+    }
+
+    function _truncated(got, expected) {
+        const err = new Error(`The cell names reply holds ${got} names, not the ${expected} the server said (it was cut short)`);
+        err.truncated = true;
+        return err;
+    }
+
+    async function _readCellNames(datasetPath, signal, reload) {
         const params = _withSubset(Config.API.CELLS, { dataset_path: datasetPath });
         const fullUrl = `${Config.API.CELLS}?${new URLSearchParams(params).toString()}`;
-        const response = await fetch(fullUrl, { signal });
-        const size = Number(response.headers.get('Content-Length') || 0);
-        if (response.ok && size > PACKED_NAMES_ABOVE_BYTES) {
+        // 503 read_busy (the server is sending as many full name lists as it
+        // may) is waited out once, like the other reads
+        const response = await _fetchRetrying(fullUrl, signal, reload ? { cache: 'reload' } : {});
+        try {
+            return await _namesOf(response);
+        } catch (error) {
+            // a body that does not parse, or a read that fails half way, is a
+            // reply cut short; a server's own error (it has a status) is not
+            if (error && error.name !== 'AbortError' && !error.status) error.truncated = true;
+            throw error;
+        }
+    }
+
+    async function _namesOf(response) {
+        // The size is the Content-Length, or for a reply the server writes
+        // as it reads it (no Content-Length) the estimate it sends
+        const plan = namesReplyPlan(response.headers, PACKED_NAMES_ABOVE_BYTES);
+        if (response.ok && plan.packed) {
             const t0 = performance.now();
-            const names = await PackedNames.fromJSON(response, 'cells', size);
+            const names = await PackedNames.fromJSON(response, 'cells', plan.size, plan.count);
+            if (plan.count && names.length !== plan.count) throw _truncated(names.length, plan.count);
             console.info(`Cell names: ${names.length} read into packed form in ${(performance.now() - t0).toFixed(0)} ms`);
             return names;
         }
@@ -1230,10 +1310,14 @@ const DataManager = (function() {
 
         // Check if response contains error information
         if (data && data.status === 'error') {
-            throw new Error(data.message || data.error || 'Failed to load cells');
+            const err = new Error(data.message || data.error || 'Failed to load cells');
+            err.status = response.status;
+            throw err;
         }
 
-        return data.cells || [];
+        const cells = data.cells || [];
+        if (plan.count && cells.length !== plan.count) throw _truncated(cells.length, plan.count);
+        return cells;
     }
 
     async function loadCells(datasetPath, signal = null, expected = null, total = null) {
@@ -1320,7 +1404,7 @@ const DataManager = (function() {
         if (categories) params.categories = categories;
         
         if (columns && columns.length > 0) {
-            params.columns = columns.join(',');
+            params.columns = columnsParam(columns);
         }
         
         if (rows && rows.length > 0) {
@@ -1363,7 +1447,7 @@ const DataManager = (function() {
         if (categories) params.categories = categories;   // as loadObs
         
         if (columns && columns.length > 0) {
-            params.columns = columns.join(',');
+            params.columns = columnsParam(columns);
         }
         
         if (cols && cols.length > 0) {
@@ -2319,8 +2403,8 @@ const DataManager = (function() {
         // (utils/categories.js), no labels; otherwise every category
         const url = slot === 'var' ? Config.API.VAR : Config.API.OBS;
         const params = _withSubset(url, ranked
-            ? { dataset_path: datasetPath, columns: column, categories: 'ranked' }
-            : { dataset_path: datasetPath, columns: column });
+            ? { dataset_path: datasetPath, columns: columnsParam(column), categories: 'ranked' }
+            : { dataset_path: datasetPath, columns: columnsParam(column) });
         const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
         const key = `${fullUrl}#codes`;
         const cached = CacheManager.get(key);
@@ -2370,7 +2454,7 @@ const DataManager = (function() {
         for (let i = 0; i < wanted.length; i += 1000) {
             const part = wanted.slice(i, i + 1000);
             const body = await _fetchWithCache(slot === 'var' ? Config.API.VAR : Config.API.OBS,
-                { dataset_path: datasetPath, columns: column, category_ranks: part.join(',') }, signal);
+                { dataset_path: datasetPath, columns: columnsParam(column), category_ranks: part.join(',') }, signal);
             (body.ranks || part).forEach((r, k) => out.set(Number(r), body.labels[k]));
         }
         return out;
@@ -2497,6 +2581,7 @@ const DataManager = (function() {
         setFocusedGene,
         setTaxonomyId,
         getCurrentDataset,
+        setDatasetGoneHandler,
         getDatasetGeneration: () => _datasetGeneration,
         getDatasetStructure,
         getCells,

@@ -36,7 +36,7 @@ here; they get their own allowlist elsewhere. Any other ``scheme://`` string
 import logging
 import os
 
-from flask import current_app, has_request_context, jsonify, request
+from flask import current_app, g, has_request_context, jsonify, request
 
 from ..core.remote import is_remote_path
 
@@ -94,14 +94,32 @@ def is_hosted(config):
     return bool(config.get("auth_enabled", False)) or is_shared(config)
 
 
-def allowed_roots(config):
-    """Real paths of the directories a hosted server may read from."""
+def configured_roots(config):
+    """Real paths of ``data_dir`` and ``server.allowed_dirs``: the operator's roots."""
     roots = [config.get("data_dir") or default_data_dir()]
     extra = config.get("allowed_dirs") or []
     if isinstance(extra, str):
         extra = [extra]
     roots.extend(extra)
     return [os.path.realpath(os.path.expanduser(r)) for r in roots]
+
+
+def allowed_roots(config):
+    """Real paths of the directories a hosted server may read from: the
+    configured roots plus the data directories an admin added in the browser
+    (the overlay, checked against ``server.admin_data_roots`` on every call)."""
+    roots = configured_roots(config)
+    try:
+        from .admin import overlay
+        return roots + [r for r in overlay.active_data_roots(config) if r not in roots]
+    except Exception:
+        # fail closed: without the overlay the operator's roots still apply.
+        # allowed_roots runs once per directory entry, so say it once per request
+        if not has_request_context() or not g.get("_overlay_failure_logged"):
+            logger.exception("Could not read the admin-added data directories; serving the configured ones only")
+            if has_request_context():
+                g._overlay_failure_logged = True
+        return roots
 
 
 def is_inside(path, roots):
@@ -117,8 +135,12 @@ def is_inside(path, roots):
     return False
 
 
-def _requested_paths():
-    """Every local filesystem path named by the current request."""
+def request_paths(remote=False):
+    """Every path the current request names: the ``PATH_ARGS`` arguments, the
+    ``/datasets/<path>`` segment and ``directories/list``'s ``path``.
+
+    Shared with ``access.enforce``, which asks for the remote URLs too.
+    """
     paths = [request.args.get(name) for name in PATH_ARGS]
     if request.view_args:
         paths.append(request.view_args.get("dataset_path"))
@@ -130,7 +152,12 @@ def _requested_paths():
             if not os.path.isabs(directory) and not directory.startswith(data_dir):
                 directory = os.path.join(data_dir, directory)
             paths.append(directory)
-    return [p for p in paths if p and not is_remote_path(p)]
+    return [p for p in paths if p and (remote or not is_remote_path(p))]
+
+
+def _requested_paths():
+    """Every local filesystem path named by the current request."""
+    return request_paths()
 
 
 def resolve_relative_dataset_paths():
@@ -170,6 +197,8 @@ def resolve_relative_dataset_paths():
             if args is None:
                 args = request.args.copy()
             args[name] = candidate
+            from . import access
+            access.remember_spelling(candidate, value)
     if args is not None:
         from werkzeug.datastructures import ImmutableMultiDict
         request.args = ImmutableMultiDict(args)
@@ -193,6 +222,16 @@ def enforce():
             return login_required_response()
     roots = allowed_roots(config)
     outside = [path for path in paths if not is_inside(path, roots)]
+    if outside:
+        # A restricted user is told nothing about where the roots are: the
+        # same 404 as a store they may not read (access.py)
+        from . import access
+        unavailable = access.unavailable_reply()
+        if unavailable is not None:
+            return unavailable
+        if access.is_restricted_requester():
+            logger.warning(f"Refused path outside the data directory: {outside[0]!r} ({request.path})")
+            return access.refusal(outside[0])
     if outside and may_open_any_path(config):
         if is_hosted(config):
             from . import permissions

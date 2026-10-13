@@ -13,6 +13,8 @@ from flask import jsonify, request, current_app as app
 import json
 import re
 
+from werkzeug.exceptions import RequestEntityTooLarge
+
 from ...core import zarr_reader
 from ...core.zarr_reader import ZarrFormatError, UnsupportedEncodingError
 from ...core import process_file
@@ -21,12 +23,14 @@ from ...core import name_index
 from ...core import read_guard
 from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core import subset as cell_subset
-from .. import confinement, permissions
+from .. import access, atomic_store, confinement, permissions, session_quota, session_store
 from .. import http_cache
 from . import dataset_folders
 from ...core.array_response import wants_binary, wants_codes
 from ...core import categories as category_rules
+from ...core import remote
 from ...core.remote import is_remote_path, is_timeout, timeout_message
+from ...data.scan import DEFAULT_MAX_ENTRIES as DEFAULT_SCAN_ENTRIES
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +181,9 @@ def _reader_error_response(exc, dataset_path):
     if isinstance(exc, KeyError):
         return jsonify({"error": exc.args[0] if exc.args else "Key not found",
                         "reason": "key_not_found"}), 404
+    exceeded = remote.find_deadline_exceeded(exc)
+    if exceeded is not None:
+        return _remote_deadline_response(exceeded)
     if is_timeout(exc):
         return jsonify({
             "error": (timeout_message(dataset_path) if is_remote_path(dataset_path)
@@ -199,7 +206,7 @@ def _reader_error_response(exc, dataset_path):
     if isinstance(exc, FileNotFoundError):
         return jsonify({
             # A remote miss may also mean "needs credentials"; its text says so.
-            "error": str(exc) if is_remote_path(dataset_path) else f"Dataset not found: {dataset_path}",
+            "error": str(exc) if is_remote_path(dataset_path) else f"Dataset not found: {access.spelled(dataset_path)}",
             "reason": "not_found",
             "exception": type(exc).__name__,
         }), 404
@@ -392,6 +399,17 @@ def _read_too_large_response(exc):
     }), 413
 
 
+def _remote_deadline_response(exc):
+    """504 when one request used up server.remote_request_timeout_s on a remote store."""
+    return jsonify({
+        "error": str(exc),
+        "reason": "remote_deadline",
+        "limit_name": "remote_request_timeout_s",
+        "limit_s": exc.seconds,
+        "host": exc.host,
+    }), 504
+
+
 def _read_busy_response(exc):
     """503 + Retry-After when the pairwise reads in flight hold the budget."""
     reply = jsonify({"error": str(exc), "reason": "read_busy",
@@ -399,6 +417,11 @@ def _read_busy_response(exc):
     reply.status_code = 503
     reply.headers["Retry-After"] = str(exc.retry_after_s)
     return reply
+
+
+def _quota_refused_response(exc):
+    """409 when a panel set would pass the quotas (server.max_sessions*)."""
+    return jsonify({"error": str(exc), "reason": exc.reason, "limit": exc.limit, "used": exc.used}), 409
 
 
 def _data_request_error_response(exc):
@@ -549,18 +572,45 @@ def register_data_routes(app, api_version):
         app: Flask application instance
         api_version: API version string
     """
-    name_index.configure(app.config.get("name_index_max_mb"), app.config.get("name_search_scan_names"))
+    name_index.configure(app.config.get("name_index_max_mb"), app.config.get("name_search_scan_names"),
+                         app.config.get("name_search_max_regex_chars"), app.config.get("name_search_timeout_s"))
     read_guard.configure(app.config.get("max_read_mb"), app.config.get("read_budget_mb"),
-                         app.config.get("read_wait_s", 5))
+                         app.config.get("read_wait_s", 5), app.config.get("read_user_share_percent"))
+    # Sharing and the subset places exist for a server other people use. On a
+    # single-user server (the desktop app, `annzarro start` on loopback without
+    # login) its one user is everyone: they get the whole budget and every thread.
+    shared = confinement.is_hosted(app.config)
+    cell_subset.configure(app.config.get("subset_budget_mb") if shared else cell_subset.UNLIMITED_BUDGET // 2 ** 20,
+                          app.config.get("subset_wait_s"), app.config.get("read_user_share_percent"))
+
+    @app.before_request
+    def _name_the_requester():
+        # whose reads these are, for each one's share of the read budget, the
+        # subset places and the subset cache: the logged-in user, else the
+        # client address (the proxy's, with proxy_count; an IPv6 /64 is one)
+        read_guard.requester((permissions.current_user()[0]
+                              or read_guard.address_requester(request.remote_addr)) if shared else None)
     app.register_error_handler(ReadTooLargeError, _read_too_large_response)
     app.register_error_handler(ReadBusyError, _read_busy_response)
+    app.register_error_handler(remote.RemoteDeadlineExceeded, _remote_deadline_response)
+
+    @app.before_request
+    def _start_remote_deadline():
+        # on every request: gthread workers reuse their threads
+        remote.request_deadline(remote.get_remote_policy().request_timeout)
+
+    @app.teardown_request
+    def _end_remote_deadline(_exc):
+        remote.request_deadline(None)
     dataset_folders.register_dataset_folder_routes(app, api_version)
 
     http_cache.install_gzip(app)
 
     app.register_error_handler(DataRequestError, _data_request_error_response)
+    app.register_error_handler(session_quota.QuotaRefused, _quota_refused_response)
 
     @app.route(f"/api/{api_version}/data/info", methods=["GET"])
+    @access.gate("dataset")
     def get_data_info():
         """
         Get information about a dataset.
@@ -620,6 +670,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get dataset info: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/data/fingerprint", methods=["GET"])
+    @access.gate("dataset")
     def get_fingerprint():
         """
         The store's fingerprint (core/fingerprint.py), for a saved view.
@@ -658,7 +709,8 @@ def register_data_routes(app, api_version):
         except Exception as exc:
             return _reader_error_response(exc, dataset_path)
         result["path"] = dataset_path
-        result["rel_path"] = _relative_to_data_dir(dataset_path)
+        # a restricted user is not told where the data directory is
+        result["rel_path"] = None if access.is_restricted_requester() else _relative_to_data_dir(dataset_path)
         result["annzarro_version"] = __version__
         return jsonify(result)
 
@@ -679,6 +731,7 @@ def register_data_routes(app, api_version):
         return os.path.relpath(path, base).replace(os.sep, "/")
 
     @app.route(f"/api/{api_version}/data/dataset_structure", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_dataset_structure():
         """
@@ -701,6 +754,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/X", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_data_X():
         """
@@ -752,6 +806,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/layer/<path:layer_name>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_layer(layer_name: str):
         """
@@ -806,6 +861,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obs", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_obs():
         """
@@ -878,6 +934,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/var", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_var():
         """
@@ -944,6 +1001,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obsm/<path:obsm_key>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_obsm(obsm_key: str):
         """
@@ -1005,6 +1063,7 @@ def register_data_routes(app, api_version):
         
     
     @app.route(f"/api/{api_version}/data/varm/<path:varm_key>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_varm(varm_key: str):
         """
@@ -1064,6 +1123,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/obsp/<path:obsp_key>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_obsp(obsp_key: str):
         """
@@ -1119,6 +1179,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/varp/<path:varp_key>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_varp(varp_key: str):
         """
@@ -1173,6 +1234,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
              
     @app.route(f"/api/{api_version}/data/uns/<path:uns_key>", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_uns(uns_key: str):
         """
@@ -1201,6 +1263,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
         
     @app.route(f"/api/{api_version}/data/paginated", methods=["GET"])
+    @access.gate("dataset")
     def get_paginated_data():
         """
         Get paginated data from any matrix type.
@@ -1345,6 +1408,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get paginated data: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/data/genes", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_genes():
         """
@@ -1363,11 +1427,13 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            return process_file.extract_cells_genes(dataset_path_str, "genes", get_reader(dataset_path_str))
+            return process_file.extract_cells_genes(dataset_path_str, "genes", get_reader(dataset_path_str),
+                                                    compress=http_cache.wants_gzip(app.config))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
     @app.route(f"/api/{api_version}/data/cells", methods=["GET"])
+    @access.gate("dataset")
     @http_cache.conditional
     def get_cells():
         """
@@ -1386,7 +1452,8 @@ def register_data_routes(app, api_version):
             return jsonify({"error": "dataset_path parameter is required"}), 400
         
         try:
-            return process_file.extract_cells_genes(dataset_path_str, "cells", _reader_for(dataset_path_str))
+            return process_file.extract_cells_genes(dataset_path_str, "cells", _reader_for(dataset_path_str),
+                                                    compress=http_cache.wants_gzip(app.config))
         except Exception as exc:
             return _reader_error_response(exc, dataset_path_str)
     
@@ -1426,6 +1493,7 @@ def register_data_routes(app, api_version):
         return [str(x) for x in names], n
 
     @app.route(f"/api/{api_version}/data/names/status", methods=["GET"])
+    @access.gate("dataset")
     def names_index_status():
         """
         Whether a name search answers at once or waits for its index to be
@@ -1464,6 +1532,7 @@ def register_data_routes(app, api_version):
         return jsonify({"state": name_index.index_state(dataset_path_str, index_key, load_names)})
 
     @app.route(f"/api/{api_version}/data/names", methods=["GET"])
+    @access.gate("dataset")
     def search_names():
         """
         Search cell (obs) or gene (var) names; the typeahead behind the header
@@ -1509,6 +1578,12 @@ def register_data_routes(app, api_version):
         scope = request.args.get("scope", "subset")
         if scope not in ("subset", "dataset"):
             return jsonify({"error": "scope must be 'subset' or 'dataset'"}), 400
+        if mode == "regex":
+            # before an index is built or a store is read for it
+            try:
+                name_index.check_regex(query)
+            except name_index.RegexRefusedError as exc:
+                return jsonify({"error": str(exc), "reason": exc.reason}), 400
 
         try:
             reader = _reader_for(dataset_path_str)
@@ -1558,7 +1633,7 @@ def register_data_routes(app, api_version):
                 result = index.search(query, limit=limit, mode=mode)
                 result["total"] = len(index)
         except re.error as exc:
-            return jsonify({"error": f"Invalid regular expression: {exc}"}), 400
+            return jsonify({"error": f"Invalid regular expression: {exc}", "reason": "bad_regex"}), 400
         matches = result["matches"]
         found = [m["index"] for m in matches]
         if subset is None:
@@ -1585,6 +1660,7 @@ def register_data_routes(app, api_version):
         return None
 
     @app.route(f"/api/{api_version}/data/subset", methods=["GET"])
+    @access.gate("dataset")
     def get_subset_info():
         """
         Resolve a cell subset and describe it.
@@ -1630,6 +1706,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
 
     @app.route(f"/api/{api_version}/data/subset/locate", methods=["GET"])
+    @access.gate("dataset")
     def locate_subset_rows():
         """
         Translate cells between positions in a subset and dataset rows,
@@ -1676,6 +1753,7 @@ def register_data_routes(app, api_version):
             return _reader_error_response(exc, dataset_path_str)
 
     @app.route(f"/api/{api_version}/data/statistics", methods=["GET"])
+    @access.gate("dataset")
     def get_statistics():
         """
         Get statistical analysis of expression data.
@@ -1732,6 +1810,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get statistics: {str(e)}"}), 500
             
     @app.route(f"/api/{api_version}/data/obsm_dataframe_columns", methods=["GET"])
+    @access.gate("dataset")
     def get_obsm_dataframe_columns():
         """
         Get column names for a dataframe-encoded obsm matrix.
@@ -1767,10 +1846,13 @@ def register_data_routes(app, api_version):
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return _reader_error_response(e, dataset_path)
+            if access.missing_store(dataset_path):
+                return access.not_found(dataset_path)
             logger.error(f"Error getting obsm dataframe columns for {obsm_key} in {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get obsm dataframe columns: {str(e)}"}), 500
             
     @app.route(f"/api/{api_version}/data/varm_dataframe_columns", methods=["GET"])
+    @access.gate("dataset")
     def get_varm_dataframe_columns():
         """
         Get column names for a dataframe-encoded varm matrix.
@@ -1806,10 +1888,13 @@ def register_data_routes(app, api_version):
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return _reader_error_response(e, dataset_path)
+            if access.missing_store(dataset_path):
+                return access.not_found(dataset_path)
             logger.error(f"Error getting varm dataframe columns for {varm_key} in {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get varm dataframe columns: {str(e)}"}), 500
             
     @app.route(f"/api/{api_version}/data/by_path", methods=["GET"])
+    @access.gate("dataset")
     def get_data_by_path():
         """
         Get data using a path notation (e.g., "varm/matrix_name/column_name").
@@ -1884,6 +1969,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get data at path {data_path}: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/directories/home", methods=["GET"])
+    @access.gate("listing")
     def get_home_directory():
         """
         Get the home directory for data browsing.
@@ -1895,6 +1981,9 @@ def register_data_routes(app, api_version):
             # Get data directory from config
             data_dir = app.config.get("data_dir")
             
+            # A restricted user has no home: their root is the list of their grants
+            if access.is_restricted_requester():
+                return jsonify({"directory": None})
             return jsonify({
                 "directory": data_dir
             })
@@ -1903,6 +1992,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to get home directory: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/directories/list", methods=["GET"])
+    @access.gate("listing")
     def list_directory():
         """
         List contents of a directory.
@@ -1929,14 +2019,25 @@ def register_data_routes(app, api_version):
             
             # Check if the directory exists
             if not os.path.exists(directory_path) or not os.path.isdir(directory_path):
-                return jsonify({"error": f"Directory not found: {directory_path}"}), 404
+                return jsonify({"error": f"Directory not found: {request.args.get('path')}"}), 404
             
             # List directories and zarr stores separately
             directories = []
             zarr_stores = []
             
-            # List all entries in the directory
-            for entry in os.listdir(directory_path):
+            # List the entries of the directory, up to dataset_scan_max_entries
+            # (a directory of a million entries is one request's work)
+            scan_limit = int(app.config.get("dataset_scan_max_entries") or DEFAULT_SCAN_ENTRIES)
+            truncated = False
+            restricted = access.restricted_user()
+            with os.scandir(directory_path) as scan:
+                names = []
+                for found in scan:
+                    if len(names) >= scan_limit:
+                        truncated = True
+                        break
+                    names.append(found.name)
+            for entry in sorted(names):
                 entry_path = os.path.join(directory_path, entry)
                 
                 # Skip if not a directory
@@ -1945,6 +2046,10 @@ def register_data_routes(app, api_version):
 
                 # A link a hosted server would refuse to open is not offered
                 if not confinement.listable(app.config, entry_path):
+                    continue
+
+                # A restricted user's listing never opens what they may not read
+                if restricted and not access.may_read(restricted, entry_path):
                     continue
                 
                 # Enhanced zarr store detection
@@ -1966,14 +2071,18 @@ def register_data_routes(app, api_version):
                 
                 if is_zarr:
                     # Try to get some basic info about the zarr store
-                    try:
-                        # Use the fast method to get only cell and gene counts
-                        counts = zarr_reader.get_basic_counts(entry_path)
-                        cells = counts['cell_count']
-                        genes = counts['gene_count']
-                    except Exception:
+                    # Opened again only when its stat signature changed (the
+                    # /datasets listing's cache): a directory of many stores
+                    # was opened store by store on every call
+                    def _counts(path):
+                        found = zarr_reader.get_basic_counts(path)
+                        return found['cell_count'], found['gene_count']
+
+                    probed = _probe_dataset_counts(entry_path, _counts)
+                    if probed is None or isinstance(probed, Exception):
                         # Not a valid AnnData zarr store - skip and move to regular directories
                         continue
+                    cells, genes = probed
                     
                     zarr_stores.append({
                         "name": entry,
@@ -1991,19 +2100,27 @@ def register_data_routes(app, api_version):
                     })
             
             # Sort zarr stores and directories by name
+            zarr_stores = access.filter_entries(zarr_stores)
+            directories = access.filter_entries(directories)
             zarr_stores.sort(key=lambda x: x["name"])
             directories.sort(key=lambda x: x["name"])
             
-            return jsonify({
+            reply = {
                 "directories": directories,
                 "zarr_stores": zarr_stores,
                 "path": directory_path
-            })
+            }
+            if truncated:
+                reply.update({"truncated": True, "reason": "scan_limit",
+                              "note": f"The directory has more than {scan_limit:,} entries "
+                                      "(server.dataset_scan_max_entries); only the first are listed."})
+            return jsonify(reply)
         except Exception as e:
             logger.error(f"Error listing directory {directory_path}: {e}")
             return jsonify({"error": f"Failed to list directory: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/datasets", methods=["GET"])
+    @access.gate("listing")
     def list_all_datasets():
         """
         List available datasets.
@@ -2019,10 +2136,15 @@ def register_data_routes(app, api_version):
             # desktop app creates one). Listing only datasets/ whenever it
             # existed hid every store placed directly in the data directory.
             datasets_dir = os.path.join(data_dir, "datasets")
-            search = [(data_dir, entry) for entry in _listdir(data_dir)
-                      if entry not in ("datasets", "sessions")]
-            if os.path.isdir(datasets_dir):
-                search += [(datasets_dir, entry) for entry in _listdir(datasets_dir)]
+            restricted = access.restricted_user()
+            if restricted:
+                # the first level of each granted folder, and each granted store: never the data directory
+                search = dataset_folders.granted_sources(restricted)
+            else:
+                search = [(data_dir, entry) for entry in _listdir(data_dir)
+                          if entry not in ("datasets", "sessions")]
+                if os.path.isdir(datasets_dir):
+                    search += [(datasets_dir, entry) for entry in _listdir(datasets_dir)]
             
             # List for storing zarr datasets
             zarr_stores = []
@@ -2038,6 +2160,10 @@ def register_data_routes(app, api_version):
 
                     # A link a hosted server would refuse to open is not offered
                     if not confinement.listable(app.config, entry_path):
+                        continue
+
+                    # nor opened for a restricted user who may not read it
+                    if restricted and not access.may_read(restricted, entry_path):
                         continue
 
                     # H5AD files are served directly by the h5ad reader (no zarr
@@ -2065,7 +2191,7 @@ def register_data_routes(app, api_version):
                             "is_link": os.path.islink(entry_path),
                             "cells": cells,
                             "genes": genes,
-                            "rel_path": os.path.relpath(entry_path, data_dir),
+                            "rel_path": dataset_folders.rel_path(entry_path, data_dir),
                             **dataset_folders.store_meta(entry_path)
                         })
                         continue
@@ -2110,7 +2236,7 @@ def register_data_routes(app, api_version):
                                 "cells": None,
                                 "genes": None,
                                 "error": str(counts),
-                                "rel_path": os.path.relpath(entry_path, data_dir),
+                                "rel_path": dataset_folders.rel_path(entry_path, data_dir),
                                 **dataset_folders.store_meta(entry_path)
                             })
                             continue
@@ -2122,13 +2248,14 @@ def register_data_routes(app, api_version):
                             "is_link": os.path.islink(entry_path),
                             "cells": cells,
                             "genes": genes,
-                            "rel_path": os.path.relpath(entry_path, data_dir),
+                            "rel_path": dataset_folders.rel_path(entry_path, data_dir),
                             **dataset_folders.store_meta(entry_path)
                         })
             except Exception as e:
                 logger.warning(f"Error listing directory {datasets_dir}: {e}")
             
             # Sort datasets by name
+            zarr_stores = access.filter_entries(zarr_stores)
             zarr_stores.sort(key=lambda x: x["name"])
             
             return jsonify(zarr_stores)
@@ -2181,10 +2308,7 @@ def register_data_routes(app, api_version):
         Returns:
             Sanitized session name.
         """
-        # Remove any path separators or potentially dangerous characters
-        sanitized = name.replace('/', '_').replace('\\', '_').replace('..', '_')
-        # Allow only alphanumeric characters, underscore, hyphen, and space
-        return ''.join(c for c in sanitized if c.isalnum() or c in ' _-')
+        return session_store.sanitize_name(name)
 
     def _read_stored_session(file_path):
         """
@@ -2205,7 +2329,50 @@ def register_data_routes(app, api_version):
             logger.warning(f"Unreadable session file {file_path}: {e}")
             return {}
 
+    #: Reply fields that spell out where the sessions directory is (inside the data directory).
+    _LAYOUT_FIELDS = ("file", "old_file", "new_file", "source_file")
+
+    def _hidden_from_requester(data):
+        """Whether the stored panel set ``data`` exists but the (restricted) requester may not see it.
+
+        A restricted user sees a set they own, or one whose datasets they can all read
+        (server/access.py). Everyone else's replies are unchanged.
+        """
+        user = access.restricted_user()
+        return bool(user) and data is not None and not access.panelset_visible(user, data)
+
+    def _unreadable_dataset_of(data):
+        """The first dataset of ``data`` the (restricted) requester may not read, else None."""
+        user = access.restricted_user()
+        return access.unreadable_dataset(user, data) if user else None
+
+    def _without_layout(payload):
+        """``payload`` without the sessions directory's path when a restricted user asks."""
+        if access.is_restricted_requester():
+            for field in _LAYOUT_FIELDS:
+                if field in payload:
+                    payload[field] = None
+        return payload
+
+    def _name_taken():
+        """A save over a set the requester cannot see: taken, and by whom is not told."""
+        return jsonify({"error": "A panel set with that name already exists. Choose another name.",
+                        "reason": "name_taken"}), 409
+
+    def _write_session(file_path, session_data, sessions_dir):
+        """Write a panel set, after the quotas (session_quota.py) allow it.
+
+        The caller holds session_store.locked(sessions_dir) from its read of
+        the set to this write. Raises session_quota.QuotaRefused, which the
+        error handler answers 409.
+        """
+        body = json.dumps(session_data, indent=2)
+        owner, _ = permissions.current_user()
+        session_quota.check(app.config, sessions_dir, file_path, owner, len(body.encode("utf-8")))
+        session_store.write(file_path, session_data)
+
     @app.route(f"/api/{api_version}/sessions/save", methods=["POST"])
+    @access.gate("panelset")
     def save_session():
         """
         Save a session.
@@ -2249,32 +2416,41 @@ def register_data_routes(app, api_version):
             if not _is_safe_session_path(session_file, sessions_dir):
                 return jsonify({"error": "Invalid session name"}), 400
             
-            # Saving over an existing set replaces it: same rule as delete
-            existing = _read_stored_session(session_file)
-            if not permissions.can_modify(existing):
-                return permissions.forbidden("overwrite", session_data["name"], existing)
-            permissions.stamp_session(session_data, existing)
+            unreadable = _unreadable_dataset_of(session_data)
+            if unreadable is not None:
+                return access.not_found(unreadable)
+
+            with session_store.locked(sessions_dir):
+                # Saving over an existing set replaces it: same rule as delete
+                existing = _read_stored_session(session_file)
+                if _hidden_from_requester(existing):
+                    return _name_taken()
+                if not permissions.can_modify(existing):
+                    return permissions.forbidden("overwrite", session_data["name"], existing)
+                permissions.stamp_session(session_data, existing)
             
-            # Save session file
-            with open(session_file, 'w') as f:
-                json.dump(session_data, f, indent=2)
+                # Save session file
+                _write_session(session_file, session_data, sessions_dir)
             
             # Notice if sanitization changed the name
             message = f"Session saved as {session_data['name']}"
             if original_name != session_data["name"]:
                 message += f" (original name '{original_name}' was sanitized)"
             
-            return jsonify({
+            return jsonify(_without_layout({
                 "status": "success",
                 "message": message,
                 "file": session_file,
                 "sanitized_name": session_data["name"]
-            })
+            }))
+        except (RequestEntityTooLarge, session_quota.QuotaRefused, atomic_store.LockTimeout):
+            raise
         except Exception as e:
             logger.error(f"Error saving session: {e}")
             return jsonify({"error": f"Failed to save session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/list", methods=["GET"])
+    @access.gate("panelset")
     def list_sessions():
         """
         List available sessions.
@@ -2286,9 +2462,10 @@ def register_data_routes(app, api_version):
             # Get sessions directory
             sessions_dir = _get_sessions_dir()
             
-            # List session files
+            # List session files (parsed again only when one changed)
             sessions = []
-            for entry in os.listdir(sessions_dir):
+            restricted = access.restricted_user()
+            for entry in sorted(os.listdir(sessions_dir)):
                 if entry.endswith(".json"):
                     session_path = os.path.join(sessions_dir, entry)
                     
@@ -2297,24 +2474,30 @@ def register_data_routes(app, api_version):
                         logger.warning(f"Skipping file outside sessions directory: {session_path}")
                         continue
                     
-                    try:
-                        with open(session_path, 'r') as f:
-                            session_data = json.load(f)
-                            
-                            # Include basic information
-                            sessions.append({
-                                "name": session_data.get("name", entry.replace(".json", "")),
-                                "dataset": session_data.get("dataset", ""),
-                                "timestamp": session_data.get("timestamp", ""),
-                                "datasetName": session_data.get("datasetName", ""),
-                                "file": session_path,
-                                "owner": session_data.get("owner"),
-                                "created_at": session_data.get("created_at"),
-                                "modified_at": session_data.get("modified_at"),
-                                "can_modify": permissions.can_modify(session_data)
-                            })
-                    except Exception as e:
-                        logger.warning(f"Error reading session file {entry}: {e}")
+                    stored = session_quota.summary(session_path)
+                    if stored is None:
+                        continue
+                    session_data = stored.data
+                    # A restricted user is listed their own sets and those on datasets they can read
+                    if restricted and not access.panelset_visible(restricted, session_data):
+                        continue
+                    # Include basic information
+                    item = {
+                        "name": session_data.get("name", entry.replace(".json", "")),
+                        "dataset": session_data.get("dataset", ""),
+                        "timestamp": session_data.get("timestamp", ""),
+                        "datasetName": session_data.get("datasetName", ""),
+                        "file": session_path,
+                        "owner": session_data.get("owner"),
+                        "created_at": session_data.get("created_at"),
+                        "modified_at": session_data.get("modified_at"),
+                        "can_modify": permissions.can_modify(session_data)
+                    }
+                    if restricted:
+                        # their own set on a dataset they can no longer read stays listed, flagged
+                        item["dataset_available"] = access.panelset_available(restricted, session_data)
+                        _without_layout(item)
+                    sessions.append(item)
             
             # Sort sessions by timestamp (newest first)
             sessions.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
@@ -2325,6 +2508,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to list sessions: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/load", methods=["GET"])
+    @access.gate("panelset")
     def load_session():
         """
         Load a session.
@@ -2358,8 +2542,8 @@ def register_data_routes(app, api_version):
                 sanitized_name = _sanitize_session_name(session_name)
                 file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
             
-            # Check if file exists
-            if not os.path.exists(file_path):
+            # Check if file exists (a set the requester may not see is the same 404)
+            if not os.path.exists(file_path) or _hidden_from_requester(_read_stored_session(file_path)):
                 return jsonify({"error": f"Session file not found: {sanitized_name if 'sanitized_name' in locals() else os.path.basename(file_path)}"}), 404
             
             # Load session data
@@ -2372,6 +2556,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to load session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/delete", methods=["DELETE"])
+    @access.gate("panelset")
     def delete_session():
         """
         Delete a session.
@@ -2405,31 +2590,35 @@ def register_data_routes(app, api_version):
                 sanitized_name = _sanitize_session_name(session_name)
                 file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
             
-            # Check if file exists
-            if not os.path.exists(file_path):
-                return jsonify({"error": f"Session file not found: {sanitized_name if 'sanitized_name' in locals() else os.path.basename(file_path)}"}), 404
+            with session_store.locked(sessions_dir):
+                # Check if file exists (a set the requester may not see is the same 404)
+                if not os.path.exists(file_path) or _hidden_from_requester(_read_stored_session(file_path)):
+                    return jsonify({"error": f"Session file not found: {sanitized_name if 'sanitized_name' in locals() else os.path.basename(file_path)}"}), 404
             
-            # Verify again that file is within sessions directory (belt and suspenders)
-            if not _is_safe_session_path(file_path, sessions_dir):
-                return jsonify({"error": "Cannot delete file outside sessions directory"}), 403
+                # Verify again that file is within sessions directory (belt and suspenders)
+                if not _is_safe_session_path(file_path, sessions_dir):
+                    return jsonify({"error": "Cannot delete file outside sessions directory"}), 403
             
-            existing = _read_stored_session(file_path)
-            if not permissions.can_modify(existing):
-                display_name = session_name or os.path.basename(file_path)[:-len(".json")]
-                return permissions.forbidden("delete", display_name, existing)
+                existing = _read_stored_session(file_path)
+                if not permissions.can_modify(existing):
+                    display_name = session_name or os.path.basename(file_path)[:-len(".json")]
+                    return permissions.forbidden("delete", display_name, existing)
                 
-            # Delete the file
-            os.remove(file_path)
+                # Delete the file
+                os.remove(file_path)
             
             return jsonify({
                 "status": "success",
                 "message": f"Session {session_name or os.path.basename(file_path)} deleted successfully"
             })
+        except atomic_store.LockTimeout:
+            raise
         except Exception as e:
             logger.error(f"Error deleting session: {e}")
             return jsonify({"error": f"Failed to delete session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/export", methods=["GET"])
+    @access.gate("panelset")
     def export_session():
         """
         Export a session for download.
@@ -2463,8 +2652,8 @@ def register_data_routes(app, api_version):
                 sanitized_name = _sanitize_session_name(session_name)
                 file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
             
-            # Check if file exists
-            if not os.path.exists(file_path):
+            # Check if file exists (a set the requester may not see is the same 404)
+            if not os.path.exists(file_path) or _hidden_from_requester(_read_stored_session(file_path)):
                 return jsonify({"error": f"Session file not found: {sanitized_name if 'sanitized_name' in locals() else os.path.basename(file_path)}"}), 404
             
             # Verify again that file is within sessions directory
@@ -2489,6 +2678,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to export session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/exists", methods=["GET"])
+    @access.gate("panelset")
     def check_session_exists():
         """
         Check if a session with the given name exists.
@@ -2515,11 +2705,13 @@ def register_data_routes(app, api_version):
             # Check if file exists
             file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
             existing = _read_stored_session(file_path)
+            if _hidden_from_requester(existing):
+                existing = None    # not theirs to know: a save over it answers 409 name_taken
             exists = existing is not None
             
             return jsonify({
                 "exists": exists,
-                "file": file_path if exists else None,
+                "file": None if access.is_restricted_requester() else (file_path if exists else None),
                 "sanitized_name": sanitized_name,
                 "owner": existing.get("owner") if exists else None,
                 "can_modify": permissions.can_modify(existing)
@@ -2529,6 +2721,7 @@ def register_data_routes(app, api_version):
             return jsonify({"error": f"Failed to check session existence: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/rename", methods=["POST"])
+    @access.gate("panelset")
     def rename_session():
         """
         Rename a session.
@@ -2569,49 +2762,56 @@ def register_data_routes(app, api_version):
             if not _is_safe_session_path(old_file_path, sessions_dir):
                 return jsonify({"error": "Invalid session file path"}), 400
             
-            # Check if old file exists
-            if not os.path.exists(old_file_path):
-                return jsonify({"error": f"Session not found: {old_name}"}), 404
+            with session_store.locked(sessions_dir):
+                # Check if old file exists
+                if not os.path.exists(old_file_path):
+                    return jsonify({"error": f"Session not found: {old_name}"}), 404
             
-            # Load session data
-            with open(old_file_path, 'r') as f:
-                session_data = json.load(f)
+                # Load session data
+                with open(old_file_path, 'r') as f:
+                    session_data = json.load(f)
+
+                # A set the requester may not see is the same 404; one whose dataset they cannot read is not renamed
+                if _hidden_from_requester(session_data):
+                    return jsonify({"error": f"Session not found: {old_name}"}), 404
+                unreadable = _unreadable_dataset_of(session_data)
+                if unreadable is not None:
+                    return access.not_found(unreadable)
             
-            # Renaming removes the set from under its old name: same rule as delete
-            if not permissions.can_modify(session_data):
-                return permissions.forbidden("rename", sanitized_old_name, session_data)
+                # Renaming removes the set from under its old name: same rule as delete
+                if not permissions.can_modify(session_data):
+                    return permissions.forbidden("rename", sanitized_old_name, session_data)
             
-            # Update session name
-            # Store the SANITIZED name: list_sessions hands "name" to a client
-            # that renders it as HTML, and save/import already store it this way.
-            session_data["name"] = sanitized_new_name
+                # Update session name
+                # Store the SANITIZED name: list_sessions hands "name" to a client
+                # that renders it as HTML, and save/import already store it this way.
+                session_data["name"] = sanitized_new_name
             
-            # Create new file path
-            new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
+                # Create new file path
+                new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
             
-            # Verify the new file is within the sessions directory
-            if not _is_safe_session_path(new_file_path, sessions_dir):
-                return jsonify({"error": "Invalid new session name"}), 400
+                # Verify the new file is within the sessions directory
+                if not _is_safe_session_path(new_file_path, sessions_dir):
+                    return jsonify({"error": "Invalid new session name"}), 400
             
-            # Check if new file already exists
-            if os.path.exists(new_file_path) and old_file_path != new_file_path:
-                return jsonify({
-                    "status": "conflict",
-                    "message": f"Session with name '{new_name}' already exists."
-                }), 409
+                # Check if new file already exists
+                if os.path.lexists(new_file_path) and old_file_path != new_file_path:
+                    return jsonify({
+                        "status": "conflict",
+                        "message": f"Session with name '{new_name}' already exists."
+                    }), 409
             
-            # Ownership and creation time travel with the set
-            permissions.stamp_session(session_data, existing=dict(session_data))
+                # Ownership and creation time travel with the set
+                permissions.stamp_session(session_data, existing=dict(session_data))
             
-            # Write session data to new file
-            with open(new_file_path, 'w') as f:
-                json.dump(session_data, f, indent=2)
+                # Write session data to new file
+                session_store.write(new_file_path, session_data, like=old_file_path)
             
-            # Delete old file if names are different
-            if old_file_path != new_file_path:
-                os.remove(old_file_path)
+                # Delete old file if names are different
+                if old_file_path != new_file_path:
+                    os.remove(old_file_path)
             
-            return jsonify({
+            return jsonify(_without_layout({
                 "status": "success",
                 "message": f"Session renamed from '{old_name}' to '{new_name}'",
                 "old_file": old_file_path,
@@ -2619,12 +2819,15 @@ def register_data_routes(app, api_version):
                 "session": session_data,
                 "sanitized_old_name": sanitized_old_name,
                 "sanitized_new_name": sanitized_new_name
-            })
+            }))
+        except (RequestEntityTooLarge, atomic_store.LockTimeout):
+            raise
         except Exception as e:
             logger.error(f"Error renaming session: {e}")
             return jsonify({"error": f"Failed to rename session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/owner", methods=["POST"])
+    @access.gate("admin")
     def set_session_owner():
         """
         Assign a panel set to a user. Admins only.
@@ -2668,17 +2871,15 @@ def register_data_routes(app, api_version):
             file_path = os.path.join(sessions_dir, f"{sanitized_name}.json")
             if not _is_safe_session_path(file_path, sessions_dir):
                 return jsonify({"error": "Invalid session name"}), 400
-            existing = _read_stored_session(file_path)
-            if existing is None:
-                return jsonify({"error": f"Session not found: {name}"}), 404
-            if not existing and os.path.getsize(file_path) > 0:
-                return jsonify({"error": f"Session file for '{sanitized_name}' cannot be parsed"}), 400
-
-            previous = existing.get("owner")
-            permissions.stamp_session(existing, existing=dict(existing))
-            existing["owner"] = owner
-            with open(file_path, 'w') as f:
-                json.dump(existing, f, indent=2)
+            with session_store.locked(sessions_dir):
+                try:
+                    previous = session_store.assign_owner(file_path, owner)
+                except FileNotFoundError:
+                    return jsonify({"error": f"Session not found: {name}"}), 404
+                except session_store.Unreadable:
+                    return jsonify({"error": f"Session file for '{sanitized_name}' cannot be parsed"}), 400
+            from ..admin import audit
+            audit.record("panel_sets.reassign", owner, {"names": [sanitized_name], "from": [previous]})
             logger.info(f"Panel set '{sanitized_name}' owner changed from {previous!r} to {owner!r}")
 
             return jsonify({
@@ -2688,11 +2889,14 @@ def register_data_routes(app, api_version):
                 "owner": owner,
                 "previous_owner": previous,
             })
+        except (RequestEntityTooLarge, atomic_store.LockTimeout):
+            raise
         except Exception as e:
             logger.error(f"Error assigning session owner: {e}")
             return jsonify({"error": f"Failed to assign owner: {str(e)}"}), 500
 
     @app.route(f"/api/{api_version}/sessions/duplicate", methods=["POST"])
+    @access.gate("panelset")
     def duplicate_session():
         """
         Create a duplicate copy of a session.
@@ -2733,43 +2937,50 @@ def register_data_routes(app, api_version):
             if not _is_safe_session_path(source_file_path, sessions_dir):
                 return jsonify({"error": "Invalid source session file path"}), 400
             
-            # Check if source file exists
-            if not os.path.exists(source_file_path):
-                return jsonify({"error": f"Session not found: {source_name}"}), 404
+            with session_store.locked(sessions_dir):
+                # Check if source file exists
+                if not os.path.exists(source_file_path):
+                    return jsonify({"error": f"Session not found: {source_name}"}), 404
             
-            # Load session data
-            with open(source_file_path, 'r') as f:
-                session_data = json.load(f)
+                # Load session data
+                with open(source_file_path, 'r') as f:
+                    session_data = json.load(f)
+
+                # A set the requester may not see is the same 404; a copy needs its datasets readable
+                if _hidden_from_requester(session_data):
+                    return jsonify({"error": f"Session not found: {source_name}"}), 404
+                unreadable = _unreadable_dataset_of(session_data)
+                if unreadable is not None:
+                    return access.not_found(unreadable)
             
-            # Update session name and timestamp
-            # Store the SANITIZED name: list_sessions hands "name" to a client
-            # that renders it as HTML, and save/import already store it this way.
-            session_data["name"] = sanitized_new_name
-            from datetime import datetime
-            session_data["timestamp"] = datetime.now().isoformat()
+                # Update session name and timestamp
+                # Store the SANITIZED name: list_sessions hands "name" to a client
+                # that renders it as HTML, and save/import already store it this way.
+                session_data["name"] = sanitized_new_name
+                from datetime import datetime
+                session_data["timestamp"] = datetime.now().isoformat()
             
-            # Create new file path
-            new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
+                # Create new file path
+                new_file_path = os.path.join(sessions_dir, f"{sanitized_new_name}.json")
             
-            # Verify the new file is within the sessions directory
-            if not _is_safe_session_path(new_file_path, sessions_dir):
-                return jsonify({"error": "Invalid new session name"}), 400
+                # Verify the new file is within the sessions directory
+                if not _is_safe_session_path(new_file_path, sessions_dir):
+                    return jsonify({"error": "Invalid new session name"}), 400
             
-            # Check if new file already exists
-            if os.path.exists(new_file_path):
-                return jsonify({
-                    "status": "conflict",
-                    "message": f"Session with name '{new_name}' already exists."
-                }), 409
+                # Check if new file already exists
+                if os.path.exists(new_file_path):
+                    return jsonify({
+                        "status": "conflict",
+                        "message": f"Session with name '{new_name}' already exists."
+                    }), 409
             
-            # A copy is a new set: it belongs to whoever made it
-            permissions.stamp_session(session_data, existing=None)
+                # A copy is a new set: it belongs to whoever made it
+                permissions.stamp_session(session_data, existing=None)
             
-            # Write session data to new file
-            with open(new_file_path, 'w') as f:
-                json.dump(session_data, f, indent=2)
+                # Write session data to new file
+                _write_session(new_file_path, session_data, sessions_dir)
             
-            return jsonify({
+            return jsonify(_without_layout({
                 "status": "success",
                 "message": f"Session duplicated from '{source_name}' to '{new_name}'",
                 "source_file": source_file_path,
@@ -2777,12 +2988,15 @@ def register_data_routes(app, api_version):
                 "session": session_data,
                 "sanitized_source_name": sanitized_source_name,
                 "sanitized_new_name": sanitized_new_name
-            })
+            }))
+        except (RequestEntityTooLarge, session_quota.QuotaRefused, atomic_store.LockTimeout):
+            raise
         except Exception as e:
             logger.error(f"Error duplicating session: {e}")
             return jsonify({"error": f"Failed to duplicate session: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/sessions/import", methods=["POST"])
+    @access.gate("panelset")
     def import_session():
         """
         Import a session from uploaded file.
@@ -2846,42 +3060,46 @@ def register_data_routes(app, api_version):
             if not _is_safe_session_path(file_path, sessions_dir):
                 return jsonify({"error": "Invalid session name in imported file"}), 400
             
-            # Check if session with this name already exists
-            existing = _read_stored_session(file_path)
-            if existing is not None and not overwrite:
-                return jsonify({
-                    "status": "conflict",
-                    "message": f"Session with name '{session_data['name']}' already exists.",
-                    "exists": True
-                }), 409
+            with session_store.locked(sessions_dir):
+                # Check if session with this name already exists
+                existing = _read_stored_session(file_path)
+                if _hidden_from_requester(existing):
+                    return _name_taken()
+                if existing is not None and not overwrite:
+                    return jsonify({
+                        "status": "conflict",
+                        "message": f"Session with name '{session_data['name']}' already exists.",
+                        "exists": True
+                    }), 409
             
-            # Importing over an existing set replaces it: same rule as delete.
-            # Any owner recorded INSIDE the uploaded file is discarded.
-            if not permissions.can_modify(existing):
-                return permissions.forbidden("overwrite", session_data["name"], existing)
-            permissions.stamp_session(session_data, existing)
+                # Importing over an existing set replaces it: same rule as delete.
+                # Any owner recorded INSIDE the uploaded file is discarded.
+                if not permissions.can_modify(existing):
+                    return permissions.forbidden("overwrite", session_data["name"], existing)
+                permissions.stamp_session(session_data, existing)
             
-            # Add timestamp if not present
-            if "timestamp" not in session_data:
-                from datetime import datetime
-                session_data["timestamp"] = datetime.now().isoformat()
+                # Add timestamp if not present
+                if "timestamp" not in session_data:
+                    from datetime import datetime
+                    session_data["timestamp"] = datetime.now().isoformat()
             
-            # Write session data to file
-            with open(file_path, 'w') as f:
-                json.dump(session_data, f, indent=2)
+                # Write session data to file
+                _write_session(file_path, session_data, sessions_dir)
             
             # Notice if sanitization changed the name
             message = f"Session imported as {session_data['name']}"
             if original_name != session_data["name"]:
                 message += f" (original name '{original_name}' was sanitized)"
             
-            return jsonify({
+            return jsonify(_without_layout({
                 "status": "success",
                 "message": message,
                 "file": file_path,
                 "session": session_data,
                 "sanitized_name": session_data["name"]
-            })
+            }))
+        except (RequestEntityTooLarge, session_quota.QuotaRefused, atomic_store.LockTimeout):
+            raise
         except Exception as e:
             logger.error(f"Error importing session: {e}")
             return jsonify({"error": f"Failed to import session: {str(e)}"}), 500

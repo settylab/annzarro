@@ -68,7 +68,7 @@ def _names(n):
 @pytest.fixture
 def index_array(tmp_path):
     path = tmp_path / "s.zarr"
-    root = open_group(path)
+    root = open_group(path, zarr_format=2)       # the raw chunk reader is for format 2 only
     names = _names(1000)
     names[500:600] = [""] * 100           # an all-empty chunk zarr may not write
     arr = write_strings(root, "idx", names, chunks=(100,))
@@ -213,11 +213,10 @@ COMPRESSORS = {
 def test_raw_path_equals_zarr_decode(tmp_path, compressor, make, monkeypatch):
     n, chunk = 2_050, 256                      # the last chunk is partial (2 of 256)
     names = make(n)
-    root = open_group(tmp_path / "s.zarr")
+    root = open_group(tmp_path / "s.zarr", zarr_format=2)
     arr = write_strings(root, "idx", names, chunks=(chunk,), compressor=COMPRESSORS[compressor]())
     directory = str(tmp_path / "s.zarr" / "idx")
-    meta = json.load(open(directory + "/.zarray"))
-    assert [f["id"] for f in meta["filters"]] == ["vlen-utf8"]
+    assert [f.codec_id for f in arr.filters] == ["vlen-utf8"]
 
     used = []
     real = string_chunks._LocalVlenArray.items
@@ -237,7 +236,7 @@ def test_raw_path_equals_zarr_decode(tmp_path, compressor, make, monkeypatch):
 
 
 def test_untested_layouts_take_the_zarr_path(tmp_path):
-    root = open_group(tmp_path / "s.zarr")
+    root = open_group(tmp_path / "s.zarr", zarr_format=2)
     write_strings(root, "a", ["x", "y"], chunks=(1,), compressor=numcodecs.GZip())
     assert string_chunks._LocalVlenArray.open(str(tmp_path / "s.zarr" / "a")) is None
     assert string_chunks._LocalVlenArray.open(str(tmp_path / "missing")) is None

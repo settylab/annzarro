@@ -30,6 +30,26 @@ export default [
     },
   },
   {
+    // The admin pages show names, paths and owners that other users control
+    // (design 1.7). Text reaches the DOM through textContent / createTextNode
+    // only, so markup-parsing sinks are forbidden here.
+    files: ["static/js/admin/**/*.js"],
+    rules: {
+      "no-restricted-properties": ["error",
+        { property: "innerHTML", message: "Admin pages build DOM with textContent / createElement (static/js/admin/dom.js)." },
+        { property: "outerHTML", message: "Admin pages build DOM with textContent / createElement (static/js/admin/dom.js)." },
+        { property: "insertAdjacentHTML", message: "Admin pages build DOM with textContent / createElement (static/js/admin/dom.js)." },
+        { object: "document", property: "write", message: "document.write parses markup." },
+        { object: "document", property: "writeln", message: "document.writeln parses markup." },
+      ],
+      "no-restricted-syntax": ["error",
+        { selector: "NewExpression[callee.name='DOMParser']", message: "DOMParser parses markup." },
+        { selector: "CallExpression[callee.property.name='createContextualFragment']", message: "createContextualFragment parses markup." },
+        { selector: "CallExpression[callee.property.name='setHTMLUnsafe']", message: "setHTMLUnsafe parses markup." },
+      ],
+    },
+  },
+  {
     files: ["annzarro/tests/js/**/*.mjs"],
     languageOptions: {
       ecmaVersion: "latest",

@@ -32,6 +32,8 @@ import {
 } from './gene-set-utilities/state.js';
 import { createRunner } from './gene-set-utilities/runner.js';
 import { createConsent } from './gene-set-utilities/consent.js';
+import { Policy, geneSetPolicy } from '../policy.js';
+import { readRunPolicy, turnedOffNotice } from './gene-set-utilities/policy-gate.js';
 import { enabledAdapters, hostsOf } from './gene-set-utilities/registry.js';
 import { registerAll } from './gene-set-utilities/services/index.js';
 import { xrefsOf } from './gene-set-utilities/services/mygene.js';
@@ -94,6 +96,7 @@ const GeneSetPanel = (function() {
         let _dataTaxonomyId = null;   // the species the dataset itself points to (uns, Ensembl ids), chosen or not
         let _pending = null;          // sections waiting for consent
         let _notice = null;           // a one-off line in the bar ("Not sent")
+        let _gs = geneSetPolicy(Policy.values(), Config.INTEGRATIONS); // what the administrator allows (policy.js)
         let _autoTimer = null;
         let _sourceQueued = false;
         let _listPage = 0;
@@ -117,7 +120,8 @@ const GeneSetPanel = (function() {
         function init() {
             D = makeDom(document);
             _initialized = true;
-            _adapters = enabledAdapters(Config.INTEGRATIONS);
+            _gs = geneSetPolicy(Policy.values(), Config.INTEGRATIONS);
+            _adapters = enabledAdapters({ ...Config.INTEGRATIONS, services: _gs.services });
             _runner = createRunner({
                 fetchImpl: (...a) => window.fetch(...a),
                 setTimeout: (...a) => window.setTimeout(...a),
@@ -597,7 +601,33 @@ const GeneSetPanel = (function() {
         // running
 
         function policy() {
-            return Config.INTEGRATIONS.externalRequests;
+            return _gs.externalRequests;
+        }
+
+        /**
+         * Read the administrator's policy again, before anything is sent: a
+         * tab opened before a change must not send what is now turned off.
+         * What it turned off disappears from the panel and the bar says so; a
+         * policy that exists but cannot be read sends nothing.
+         */
+        async function syncPolicy() {
+            const before = _gs;
+            const next = await readRunPolicy(Policy, Config.INTEGRATIONS);
+            if (!_initialized) return;
+            _gs = next.gs;
+            if (JSON.stringify(before) === JSON.stringify(_gs)) {
+                if (next.unreadable) _notice = next.notice;
+                return;
+            }
+            const had = _adapters;
+            _adapters = enabledAdapters({ ...Config.INTEGRATIONS, services: _gs.services });
+            const gone = had.filter(a => !_adapters.includes(a));
+            for (const a of gone) if (_runner) _runner.abort(a.id);
+            const notice = next.unreadable ? next.notice : turnedOffNotice(before, _gs, gone);
+            if (notice) _notice = notice;
+            if (gone.length || before.links !== _gs.links) buildSections();
+            paintSectionsButton();
+            paintAll();
         }
 
         function offline() {
@@ -630,7 +660,9 @@ const GeneSetPanel = (function() {
             // a Run arms auto-update; an auto-update on opening only once it may send
             if (!quiet) _armed = true;
             settleAll();
-            await runSections(visibleAdapters(), { auto, quiet });
+            // the administrator's policy as of now, just before anything is sent
+            await syncPolicy();
+            await runSections(visibleAdapters(), { auto, quiet, synced: true });
         }
 
         /**
@@ -680,8 +712,13 @@ const GeneSetPanel = (function() {
          * `force`: sent although over the service's limit ("Try anyway").
          * `quiet`: never asks; what is not agreed to is not sent.
          */
-        async function runSections(adapters, { auto = false, fresh = false, force = false, quiet = false } = {}) {
+        async function runSections(adapters, { auto = false, fresh = false, force = false, quiet = false, synced = false } = {}) {
             if (!_runner) return;
+            if (!synced) {
+                await syncPolicy();
+                // what the administrator turned off since is not started
+                adapters = adapters.filter(a => _adapters.includes(a));
+            }
             let toFetch = [];
             for (const a of adapters) {
                 if (a.kind === 'set' && !_snapshot) continue;
@@ -915,7 +952,7 @@ const GeneSetPanel = (function() {
         let _remoteQuery = null;
 
         async function searchSpeciesItems(query, { signal }) {
-            const remoteAllowed = policy() !== 'off';
+            const remoteAllowed = policy() !== 'off' && _gs.speciesSearch;
             const local = searchSpecies(query, { remoteAllowed });
             if (remoteAllowed && _remoteQuery && query.trim() === _remoteQuery) {
                 _remoteQuery = null;
@@ -970,7 +1007,7 @@ const GeneSetPanel = (function() {
             D.clear(menu);
             for (const sid of _settings.sectionOrder) {
                 const a = _adapters.find(x => x.id === sid);
-                if (!a && sid !== 'links') continue;
+                if (!a && (sid !== 'links' || !_gs.links)) continue;
                 const visible = !!(_settings.sections[sid] && _settings.sections[sid].visible);
                 menu.appendChild(D.el('button', { type: 'button', role: 'menuitemcheckbox', class: 'gs-menu__item',
                     aria: { checked: String(visible) }, data: { section: sid },
@@ -1016,7 +1053,7 @@ const GeneSetPanel = (function() {
             D.clear(_dom.sections);
             _dom.sectionEls.clear();
             for (const sid of _settings.sectionOrder) {
-                if (sid === 'links') { buildSection('links', null); continue; }
+                if (sid === 'links') { if (_gs.links) buildSection('links', null); continue; }
                 const a = _adapters.find(x => x.id === sid);
                 if (a) buildSection(sid, a);
             }
@@ -1126,7 +1163,7 @@ const GeneSetPanel = (function() {
         /** "Sections n/m": how many sections are shown, after every change of one. */
         function paintSectionsButton() {
             if (!_dom) return;
-            const all = [..._adapters.map(a => a.id), 'links'];
+            const all = [..._adapters.map(a => a.id), ...(_gs.links ? ['links'] : [])];
             const on = all.filter(sid => _settings.sections[sid] && _settings.sections[sid].visible).length;
             _dom.sectionsBtn.textContent = `Sections ${on}/${all.length} ▾`;
         }

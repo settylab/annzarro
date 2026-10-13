@@ -13,6 +13,8 @@ stored sizes of a sparse matrix's arrays, and raises ReadTooLargeError over
 """
 from typing import Any, Dict, List, Optional
 
+import contextvars
+import ipaddress
 import logging
 import threading
 import time
@@ -25,8 +27,45 @@ logger = logging.getLogger(__name__)
 _limit_mb: Optional[float] = None
 _budget_mb: Optional[float] = None
 _wait_s: float = 5.0
+_share_pct: float = 50.0
 _cond = threading.Condition()
 _in_flight = 0
+#: bytes in flight per requester (see ``requester``)
+_by_owner: Dict[str, int] = {}
+
+DEFAULT_SHARE_PCT = 50
+
+#: Who the current request is for: the user name, else the client address. Set
+#: by the server for each request (``requester``); reads made outside a
+#: request (scripts, tests) have none and share the budget freely.
+_owner: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar("annzarro_read_owner", default=None)
+
+
+def requester(owner: Optional[str]) -> None:
+    """Name who the reads of this request are for (None: nobody in particular)."""
+    _owner.set(owner)
+
+
+def current_requester() -> Optional[str]:
+    """Who the reads of this request are for (see ``requester``)."""
+    return _owner.get()
+
+
+def address_requester(address: Optional[str]) -> Optional[str]:
+    """The requester for a client address: the address, or for IPv6 its /64.
+
+    One host routinely holds a whole IPv6 /64; one share per address would
+    let it name itself anew for every request.
+    """
+    try:
+        ip = ipaddress.ip_address(address or "")
+    except ValueError:
+        return address
+    if ip.version == 6:
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return address
 
 MIN_DEFAULT_MB = 256
 MAX_DEFAULT_MB = 4096
@@ -83,14 +122,25 @@ def default_limit_bytes() -> int:
 
 
 def configure(max_mb: Optional[float] = None, budget_mb: Optional[float] = None,
-              wait_s: Optional[float] = None) -> None:
+              wait_s: Optional[float] = None, share_pct: Optional[float] = None) -> None:
     """Set the per-request limit in MB (None or 0: the default,
     default_limit_bytes()), the budget of all pairwise reads in flight in this
-    process (None or 0: twice the limit) and the seconds a read waits for it."""
-    global _limit_mb, _budget_mb, _wait_s
+    process (None or 0: twice the limit), the seconds a read waits for it, and
+    the percentage of that budget one requester may hold at once (None: 50;
+    0 or 100: no share)."""
+    global _limit_mb, _budget_mb, _wait_s, _share_pct
     _limit_mb = float(max_mb) if max_mb else None
     _budget_mb = float(budget_mb) if budget_mb else None
     _wait_s = 5.0 if wait_s is None else float(wait_s)
+    _share_pct = float(DEFAULT_SHARE_PCT if share_pct is None else share_pct)
+
+
+def share_bytes() -> int:
+    """What one requester may hold of the budget at once: its share, but at
+    least ``max_read_mb`` so that one read the guard admits always fits."""
+    if _share_pct <= 0 or _share_pct >= 100:
+        return budget_bytes()
+    return min(budget_bytes(), max(int(budget_bytes() * _share_pct / 100), limit_bytes()))
 
 
 def budget_bytes() -> int:
@@ -101,6 +151,24 @@ def in_flight_bytes() -> int:
     return _in_flight
 
 
+def snapshot(top: int = 10) -> Dict[str, Any]:
+    """What this process holds of the read budget now, for the admin health page.
+
+    ``by_requester`` is the ``top`` largest holders (a user name or a client
+    address), in MB.
+    """
+    with _cond:
+        in_flight = _in_flight
+        holders = sorted(_by_owner.items(), key=lambda item: -item[1])[:top]
+    mb = 2 ** 20
+    return {
+        "in_flight_mb": in_flight / mb,
+        "budget_mb": budget_bytes() / mb,
+        "share_mb": share_bytes() / mb,
+        "by_requester": [{"who": who, "mb": held / mb} for who, held in holders],
+    }
+
+
 @contextmanager
 def admit(need: int):
     """Hold ``need`` bytes of the budget for the length of a read.
@@ -109,26 +177,46 @@ def admit(need: int):
     least that limit, so a read that passed it fits an idle server: waiting
     cannot deadlock. Over the budget with others in flight, wait up to
     ``wait_s`` for them, then ReadBusyError (the route's 503, Retry-After).
+
+    One requester (``requester``) may hold only ``share_bytes()`` of the
+    budget: its next read waits, or is refused, while the rest of the budget
+    stays free for everybody else, instead of one user's reads using it all.
     """
     global _in_flight
     need = min(int(need), budget_bytes())
+    owner = _owner.get()
     deadline = time.monotonic() + _wait_s
     with _cond:
-        while _in_flight + need > budget_bytes():
+        while (_in_flight + need > budget_bytes()
+               or (owner is not None and _by_owner.get(owner, 0) > 0
+                   and _by_owner[owner] + need > share_bytes())):
             left = deadline - time.monotonic()
             if left <= 0:
+                mine = owner is not None and _by_owner.get(owner, 0) + need > share_bytes()
                 raise ReadBusyError(
-                    f"The server is reading other large pairwise matrices "
-                    f"({_in_flight / 2 ** 20:,.0f} MB in flight of a "
-                    f"{budget_bytes() / 2 ** 20:,.0f} MB budget); try again in a moment.",
+                    (f"You are already reading {_by_owner.get(owner, 0) / 2 ** 20:,.0f} MB of large pairwise "
+                     f"matrices, the most one user may hold of the server's {budget_bytes() / 2 ** 20:,.0f} MB "
+                     "read budget at once (server.read_user_share_percent); try again in a moment."
+                     if mine else
+                     f"The server is reading other large pairwise matrices "
+                     f"({_in_flight / 2 ** 20:,.0f} MB in flight of a "
+                     f"{budget_bytes() / 2 ** 20:,.0f} MB budget); try again in a moment."),
                     max(1, int(round(_wait_s))))
             _cond.wait(left)
         _in_flight += need
+        if owner is not None:
+            _by_owner[owner] = _by_owner.get(owner, 0) + need
     try:
         yield
     finally:
         with _cond:
             _in_flight -= need
+            if owner is not None:
+                left_over = _by_owner.get(owner, 0) - need
+                if left_over > 0:
+                    _by_owner[owner] = left_over
+                else:
+                    _by_owner.pop(owner, None)
             _cond.notify_all()
 
 
@@ -173,6 +261,15 @@ def chunk_working_set(obj, row_indices=None, col_indices=None) -> int:
     unit = getattr(obj, "chunks", None)
     if len(shape) != 2 or not unit or len(unit) != 2:
         return 0
+    if getattr(obj, "shards", None):
+        # a sharded array is gathered by batches of row bands (take_rows), the bytes in flight capped:
+        # the band of every touched row chunk across the decoded columns, up to that cap
+        import importlib
+        reader = importlib.import_module(__package__ + ".zarr_reader")
+        band = int(unit[0]) * reader._stored_width(obj, col_indices) * int(obj.dtype.itemsize)
+        held = min(_chunks_touched(row_indices, shape[0], int(unit[0])) * band,
+                   max(band, reader.GATHER_HELD_FACTOR * reader.GATHER_BLOCK_BYTES))   # a bigger band runs alone
+        return 2 * held                      # the decoded chunks and the compressed bytes they came from
     touched = (_chunks_touched(row_indices, shape[0], int(unit[0]))
                * _chunks_touched(col_indices, shape[1], int(unit[1])))
     return min(touched, READ_CONCURRENCY) * int(unit[0]) * int(unit[1]) * int(obj.dtype.itemsize)
@@ -250,12 +347,160 @@ def check(name: str, obj, is_sparse: bool, row_indices=None, col_indices=None) -
         limit, need, [element])
 
 
-def chunking_notice(root, dataset_path: str = "") -> Optional[Dict[str, Any]]:
-    """Dense obsp/varp members of ``root`` whose chunks make ONE ROW read hold
-    more than the limit, as a notice for the dataset's structure; None when
-    there are none. From metadata only. Logged once per dataset (a warning)."""
-    items = []
+#: Bytes a uns array costs per element once it is a Python list inside a JSON
+#: reply: measured at 90 for float64 (10 million values, +907 MB of memory
+#: while the reply is built); strings hold their text on top
+UNS_BYTES_PER_ELEMENT = 100
+UNS_BYTES_PER_STRING = 160
+
+
+def estimate_uns_bytes(node, stop_above: Optional[int] = None) -> tuple:
+    """(estimated bytes, elements) of reading ``node`` of uns whole, as the
+    JSON reply the uns routes make of it; from shapes and dtypes only.
+    ``node`` is a zarr or h5py group or array. Stops counting once the
+    estimate passes ``stop_above``."""
+    total, elements = 0, 0
+    stack = [node]
+    while stack:
+        item = stack.pop()
+        if hasattr(item, "keys"):
+            try:
+                stack.extend(item[k] for k in item.keys())
+            except Exception:
+                continue
+            continue
+        shape = getattr(item, "shape", None)
+        if shape is None:
+            continue
+        n = 1
+        for d in shape:
+            n *= int(d)
+        dtype = getattr(item, "dtype", None)
+        kind = getattr(dtype, "kind", "f")
+        if kind in ("S", "U"):
+            # fixed width: the width is in the dtype (4 bytes a character for U)
+            total += n * (UNS_BYTES_PER_STRING + int(getattr(dtype, "itemsize", 0) or 0))
+        elif kind in ("O", "T"):
+            # variable length: only a floor is known; read_uns_array counts the real lengths
+            total += n * UNS_BYTES_PER_STRING
+        else:
+            total += n * UNS_BYTES_PER_ELEMENT
+        elements += n
+        if stop_above is not None and total > stop_above:
+            break
+    return total, elements
+
+
+def check_uns(key: str, node) -> int:
+    """The estimated bytes of reading ``uns/<key>`` whole, or
+    ReadTooLargeError when that is more than the limit. Reads no data.
+
+    The uns routes read an array whole (``[()]``), turn it into nested Python
+    lists and serialise those: 10 million floats held about 900 MB at once. A
+    uns member is a plot's colours or a few parameters; one that is a
+    matrix is asked for by a member of it instead (``uns/key/member``).
+    """
     limit = limit_bytes()
+    need, elements = estimate_uns_bytes(node, stop_above=limit)
+    if need <= limit:
+        return need
+    raise ReadTooLargeError(
+        f"Reading uns/{key} whole would hold about {need / 2 ** 20:,.0f} MB in memory"
+        f" (at least {elements:,} values); the limit is {limit / 2 ** 20:,.0f} MB "
+        "(server.max_read_mb). It is too large to send as JSON: read a smaller member of it, "
+        "or ask the dataset's owner for it as an array in obsm, varm or a layer.",
+        limit, need, [{"element": f"uns/{key}", "values": elements, "estimated_mb": round(need / 2 ** 20, 1)}])
+
+
+STRING_KINDS = ("S", "U", "O", "T")
+#: Rows of a variable-length string array read at once (fewer when its chunks are smaller)
+STRING_BLOCK_ROWS = 4096
+
+
+class UnsBudget:
+    """The bytes one uns read may still hold, charged as strings are read.
+
+    Fixed-width numbers are sized from shape and dtype before the read
+    (``estimate_uns_bytes``). The length of a variable-length string is in
+    the data, not the metadata, so it is counted as it is read: block by
+    block, and ReadTooLargeError the moment the total passes the limit, with
+    the lists built so far dropped. What one block holds is the most that is
+    ever read past the limit (a chunk is decompressed whole; the stored size
+    is checked first, as it cannot be less than the data compresses to).
+    """
+
+    def __init__(self, key: str, limit: Optional[int] = None):
+        self.key = key
+        self.limit = limit_bytes() if limit is None else int(limit)
+        self.used = 0
+
+    def charge(self, nbytes: int, what: str = "") -> None:
+        self.used += int(nbytes)
+        if self.used > self.limit:
+            raise ReadTooLargeError(
+                f"Reading uns/{self.key} whole{(' (' + what + ')') if what else ''} holds more than "
+                f"{self.limit / 2 ** 20:,.0f} MB of text in memory (server.max_read_mb). It is too large to "
+                "send as JSON: read a smaller member of it, or ask the dataset's owner for it as an array "
+                "in obsm, varm or a layer.",
+                self.limit, self.used,
+                [{"element": f"uns/{self.key}", "estimated_mb": round(self.used / 2 ** 20, 1)}])
+
+
+def _stored_bytes(node) -> Optional[int]:
+    """Bytes the array takes in its store (compressed), when the store says."""
+    for name in ("nbytes_stored", "size_in_bytes"):
+        try:
+            value = getattr(node, name, None)
+            value = value() if callable(value) else value
+            if isinstance(value, (int, np.integer)):
+                return int(value)
+        except Exception:
+            continue
+    return None
+
+
+def _text_bytes(values) -> int:
+    total = 0
+    for v in values.ravel().tolist():
+        if isinstance(v, (str, bytes)):
+            total += len(v) + UNS_BYTES_PER_STRING
+        else:
+            total += UNS_BYTES_PER_STRING
+    return total
+
+
+def read_uns_array(node, budget: Optional[UnsBudget]):
+    """``node[()]``, but a string array is read a block at a time and counted
+    against ``budget`` (ReadTooLargeError over it). Numeric arrays are
+    returned whole: they were sized before the read."""
+    kind = getattr(getattr(node, "dtype", None), "kind", "f")
+    if budget is None or kind not in STRING_KINDS:
+        return node[()]
+    stored = _stored_bytes(node)
+    if stored is not None:
+        if stored > budget.limit:
+            budget.charge(stored, f"{stored / 2 ** 20:,.0f} MB stored")
+    shape = tuple(int(d) for d in node.shape)
+    if len(shape) == 0 or not shape[0]:
+        value = node[()]
+        budget.charge(_text_bytes(np.asarray(value, dtype=object).reshape(-1)))
+        return value
+    chunks = getattr(node, "chunks", None)
+    rows = max(1, min(int(chunks[0]) if chunks else STRING_BLOCK_ROWS, STRING_BLOCK_ROWS))
+    blocks = []
+    for start in range(0, shape[0], rows):
+        block = np.asarray(node[start:start + rows], dtype=object)
+        budget.charge(_text_bytes(block))
+        blocks.append(block)
+    return np.concatenate(blocks, axis=0).reshape(shape)
+
+
+def pairwise_chunking_items(root, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Dense obsp/varp members of ``root`` whose chunks make ONE ROW read hold
+    more than ``limit`` bytes (default: the server's limit). From metadata
+    only. Shared by chunking_notice (the server) and ``annzarro store check``."""
+    items = []
+    limit = limit_bytes() if limit is None else limit
     for group in ("obsp", "varp"):
         try:
             members = list(root[group].keys()) if group in root else []
@@ -274,6 +519,15 @@ def chunking_notice(root, dataset_path: str = "") -> Optional[Dict[str, Any]]:
                                   "row_read_mb": round(need / 2 ** 20, 1)})
             except Exception:
                 continue
+    return items
+
+
+def chunking_notice(root, dataset_path: str = "") -> Optional[Dict[str, Any]]:
+    """Dense obsp/varp members of ``root`` whose chunks make ONE ROW read hold
+    more than the limit, as a notice for the dataset's structure; None when
+    there are none. From metadata only. Logged once per dataset (a warning)."""
+    items = pairwise_chunking_items(root)
+    limit = limit_bytes()
     if not items:
         return None
     names = ", ".join(f"{i['element']} chunks {tuple(i['chunks'])} (one row reads {i['row_read_mb']:,.0f} MB)"

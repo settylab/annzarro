@@ -292,7 +292,7 @@ def test_admin_and_user_through_the_login_page(server):
             assert re.search(r"Admin 'root' opened a path outside the data directory: '.*secret\.zarr'", log)
 
             # --- admin revoked: the next request, no new login ------------
-            srv.cli("set-admin", "--username", "root", "--no-admin")
+            srv.cli("set-admin", "--username", "root", "--no-admin", "--force")   # the only admin
             me = _fetch(page, "api/v1/auth/me")["body"]
             assert (me["username"], me["is_admin"], me["may_open_any_path"]) == ("root", False, False)
             refused = _fetch(page, "api/v1/data/info", dataset_path=srv.outside)

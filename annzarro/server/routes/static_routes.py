@@ -7,7 +7,8 @@ This module contains routes for serving static files for the web UI.
 import os
 import logging
 from pathlib import Path
-from flask import send_file, send_from_directory, current_app as app, render_template
+from .. import access
+from flask import send_file, send_from_directory, current_app as app, make_response, render_template
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,26 @@ def register_static_routes(app, api_version):
         api_version: API version string
     """
     
+    def render_index():
+        """index.html with the Content-Security-Policy this requester's policy allows (policy/csp.py),
+        carrying the requester's CSRF token when login is on (csrf.py). The CSP makes the page
+        no-store and Vary: Cookie, as it must be for a page that is the requester's own."""
+        from ..policy import csp
+        from .. import csrf, permissions
+        from ..core import is_logged_in
+        token = csrf.csrf_token() if app.config.get("auth_enabled", False) and is_logged_in() else ""
+        page = render_template(
+            "index.html",
+            app_name=app.config.get("app_name", "AnnZarro"),
+            project_description=app.config.get("project_description", "Zarr-based AnnData Visualization"),
+            csrf_token=token,
+        )
+        user = permissions.current_user()[0]
+        return csp.apply(app.make_response(page), app.extensions.get("annzarro_policy"), user)
+
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
+    @access.gate("public")
     def serve_static(path: str):
         """
         Serve static files for the web UI.
@@ -74,11 +93,7 @@ def register_static_routes(app, api_version):
         full_path = os.path.join(static_dir, path)
         if not path or (os.path.exists(full_path) and os.path.isdir(full_path)):
             logger.debug(f"Rendering index.html template")
-            return render_template(
-                "index.html",
-                app_name=app.config.get("app_name", "AnnZarro"),
-                project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
-            )
+            return render_index()
         
         # Check if the file exists and isn't in a protected location
         if os.path.exists(full_path) and os.path.isfile(full_path):
@@ -107,8 +122,4 @@ def register_static_routes(app, api_version):
                 
             # File not found - for single page apps, render the index template for client-side routing
             logger.debug(f"File not found: {full_path}, rendering index.html template for client-side routing")
-            return render_template(
-                "index.html",
-                app_name=app.config.get("app_name", "AnnZarro"),
-                project_description=app.config.get("project_description", "Zarr-based AnnData Visualization")
-            )
+            return render_index()

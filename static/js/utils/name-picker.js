@@ -123,10 +123,15 @@ export function statusText(model, noun) {
         : model.pending === 'more' ? `searching every ${noun}…` : 'searching…';
     if (n === 0) {
         if (model.pending) return waiting.charAt(0).toUpperCase() + waiting.slice(1);
-        return model.query ? `No ${noun} matches` : '';
+        return model.query ? `No ${noun} matches${stoppedNote(model)}` : '';
     }
     const found = model.truncated ? `First ${n} matches, keep typing to narrow` : `${n} match${n === 1 ? '' : 'es'}`;
-    return model.pending ? `${found}; ${waiting}` : found;
+    return model.pending ? `${found}; ${waiting}` : found + stoppedNote(model);
+}
+
+/** " (search stopped early: ...)" when the server's scan ran out of time. */
+function stoppedNote(model) {
+    return model.timedOut ? ' (the search ran out of time and covered only part of the names; use a simpler pattern)' : '';
 }
 
 export class NameSearchModel {
@@ -146,6 +151,7 @@ export class NameSearchModel {
         this._abort = null;
         this.items = [];
         this.truncated = false;
+        this.timedOut = false;  // the server's regex scan stopped at its time limit
         this.error = null;
         this.highlighted = -1;
         this.query = '';
@@ -180,6 +186,7 @@ export class NameSearchModel {
         if (seq !== this._seq) return false;   // a newer query is in flight or done
         this.items = (result && result.matches) || [];
         this.truncated = !!(result && result.truncated);
+        this.timedOut = !!(result && result.timed_out);
         this.error = null;
         this.highlighted = this.items.length ? 0 : -1;
         this.pending = result && result.more ? 'more' : null;

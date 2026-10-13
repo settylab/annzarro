@@ -10,13 +10,26 @@ import logging
 from pathlib import Path
 from flask import jsonify, request, current_app as app
 
+from .. import access, cache_reset, permissions
 from ...core import zarr_reader, h5ad_reader_obj
 from ...core import name_index
 from ...core import categories as category_rules
 from ...core import freshness
 from ...core.zarr_reader import consolidated_staleness, consolidated_notice, ZarrFormatError
+from ...core.read_guard import ReadTooLargeError, ReadBusyError
 
 logger = logging.getLogger(__name__)
+
+def _audit_clear(dataset_path):
+    """Record an admin's cache reset; a server without login has no audit log."""
+    if not app.config.get("auth_enabled"):
+        return
+    try:
+        from ..admin import audit
+        audit.record("cache.clear", dataset_path)
+    except Exception:
+        logger.exception("Could not write the audit record of a cache reset")
+
 
 def register_zarr_routes(app, api_version):
     """
@@ -28,6 +41,7 @@ def register_zarr_routes(app, api_version):
     """
     
     @app.route(f"/api/{api_version}/cache/info", methods=["GET"])
+    @access.gate("admin")
     def get_cache_info():
         """
         Get information about the current cache state.
@@ -35,6 +49,12 @@ def register_zarr_routes(app, api_version):
         Returns:
             JSON response with cache information
         """
+        if not permissions.may_see_server_details(app.config):
+            return jsonify({
+                "status": "error",
+                "reason": "admin_only",
+                "message": "Only an admin can see the cache of this server.",
+            }), 403
         try:
             # Get cache info
             result = zarr_reader.get_cache_info()
@@ -47,6 +67,7 @@ def register_zarr_routes(app, api_version):
             }), 500
             
     @app.route(f"/api/{api_version}/cache/reset", methods=["POST"])
+    @access.gate("admin")
     def reset_cache():
         """
         Reset the zarr reader cache.
@@ -78,28 +99,9 @@ def register_zarr_routes(app, api_version):
             # Get optional dataset_path query parameter
             dataset_path = request.args.get('dataset_path', None)
             
-            # Clear the cache: both readers. The h5ad reader keeps its own
-            # result cache (it opens the file per read and holds no handle);
-            # resetting the zarr reader alone served an .h5ad's old reads
-            # until a restart.
-            result = zarr_reader.clear_cache(dataset_path=dataset_path)
-            h5ad_reader_obj.clear_cache(dataset_path=dataset_path)
-            # The name search index is a cache too: a reset must rebuild it.
-            name_index.clear(dataset_path)
-            category_rules.clear_rankings(dataset_path)
-            # A new generation: the ETags change (an in-place chunk write
-            # kept the old ones, so the browser was answered 304 with its old
-            # body), and every other process, each gunicorn worker, drops
-            # its cached reads of the dataset on its next request.
-            freshness.bump(dataset_path, reason="cache_reset")
-            
-            # Add cache configuration to the response
-            result["cache_config"] = {
-                "cache_enabled": zarr_reader.enable_caching,
-                "cache_memory_mb": zarr_reader.max_memory_mb,
-                "cache_dataset_limit": zarr_reader.cache_limit
-            }
-            
+            result = cache_reset.reset_all(dataset_path)
+            _audit_clear(dataset_path)
+
             # Return result as JSON
             return jsonify(result)
         except Exception as e:
@@ -110,6 +112,7 @@ def register_zarr_routes(app, api_version):
             }), 500
     
     @app.route(f"/api/{api_version}/data/refresh", methods=["POST"])
+    @access.gate("dataset")
     def refresh_dataset():
         """Check a dataset against the disk and serve its changes from now on.
 
@@ -137,8 +140,8 @@ def register_zarr_routes(app, api_version):
         from ...core import get_reader
         try:
             get_reader(dataset_path)
-        except FileNotFoundError as exc:
-            return jsonify({"error": str(exc), "reason": "not_found"}), 404
+        except FileNotFoundError:
+            return access.not_found(dataset_path)
         except (ValueError, PermissionError, ImportError) as exc:
             return jsonify({"error": str(exc)}), 400
         after = request.args.get("after")
@@ -154,6 +157,7 @@ def register_zarr_routes(app, api_version):
                         "consolidated_metadata": consolidated_notice(stale)})
 
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/info", methods=["GET"])
+    @access.gate("dataset")
     def get_dataset_metadata(dataset_path: str):
         """
         Get metadata for a dataset by path without loading it into memory.
@@ -305,6 +309,7 @@ def register_zarr_routes(app, api_version):
             }), 500
     
     @app.route(f"/api/{api_version}/zarr/to_anndata", methods=["GET"])
+    @access.gate("dataset")
     def get_anndata_structure():
         """
         Convert a zarr dataset to an AnnData-like structure.
@@ -334,10 +339,13 @@ def register_zarr_routes(app, api_version):
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return jsonify({"error": str(e), "reason": "unsupported_type"}), 400
+            if access.missing_store(dataset_path):
+                return access.not_found(dataset_path)
             logger.error(f"Error getting AnnData structure for {dataset_path}: {e}")
             return jsonify({"error": f"Failed to get AnnData structure: {str(e)}"}), 500
     
     @app.route(f"/api/{api_version}/zarr/url", methods=["GET"])
+    @access.gate("remote")
     def validate_zarr_url():
         """
         Validate a remote zarr URL.
@@ -371,6 +379,7 @@ def register_zarr_routes(app, api_version):
             }), 500
             
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/uns/structure", methods=["GET"])
+    @access.gate("dataset")
     def get_uns_structure(dataset_path: str):
         """
         Get the structure of the uns section including keys and encoding types.
@@ -405,6 +414,7 @@ def register_zarr_routes(app, api_version):
             return jsonify({"error": f"Failed to get uns structure: {str(e)}"}), 500
             
     @app.route(f"/api/{api_version}/datasets/uns/<path:uns_key>", methods=["GET"])
+    @access.gate("dataset")
     def get_uns_data(uns_key: str):
         """
         Get data from the uns section.
@@ -446,13 +456,18 @@ def register_zarr_routes(app, api_version):
             })
         except KeyError as e:
             return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
+        except (ReadTooLargeError, ReadBusyError):
+            raise        # the app's handlers answer 413 read_too_large / 503 read_busy
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return jsonify({"error": str(e), "reason": "unsupported_type"}), 400
+            if access.missing_store(dataset_path):
+                return access.not_found(dataset_path)
             logger.error(f"Error getting uns data for {dataset_path}/{uns_key}: {e}")
             return jsonify({"error": f"Failed to get uns data: {str(e)}"}), 500
         
     @app.route(f"/api/{api_version}/datasets/<path:dataset_path>/uns/<path:uns_key>", methods=["GET"])
+    @access.gate("dataset")
     def get_uns_data_alt(dataset_path: str, uns_key: str):
         """
         Alternative route for getting data from the uns section.
@@ -487,6 +502,8 @@ def register_zarr_routes(app, api_version):
             })
         except KeyError as e:
             return jsonify({"error": e.args[0], "reason": "key_not_found"}), 404
+        except (ReadTooLargeError, ReadBusyError):
+            raise        # the app's handlers answer 413 read_too_large / 503 read_busy
         except Exception as e:
             if isinstance(e, ZarrFormatError):
                 return jsonify({"error": str(e), "reason": "unsupported_type"}), 400

@@ -81,3 +81,23 @@ def test_threads_come_from_the_configuration(site_yaml, monkeypatch):
     import annzarro.server.gunicorn_config as module
     module = importlib.reload(module)
     assert (module.workers, module.threads, module.worker_class) == (1, 2, "gthread")
+
+
+def test_workers_are_recycled_and_requests_are_bounded(site_yaml):
+    """A worker that is never replaced keeps whatever memory crept into it, and
+    a request line or header of any size was accepted up to gunicorn's own defaults."""
+    import annzarro.server.gunicorn_config as module
+    module = importlib.reload(module)
+    cfg = gunicorn_config_mod.Config()
+    for name, value in _settings(module).items():
+        cfg.set(name, value)
+    assert (cfg.max_requests, cfg.max_requests_jitter) == (20000, 2000)
+    assert (cfg.limit_request_line, cfg.limit_request_fields, cfg.limit_request_field_size) == (0, 100, 8190)
+
+
+def test_the_recycling_and_header_limits_come_from_the_configuration(site_yaml):
+    site_yaml.write_text(site_yaml.read_text().replace(
+        "  port: 8839\n", "  port: 8839\n  max_requests: 0\n  limit_request_line: 4094\n"))
+    import annzarro.server.gunicorn_config as module
+    module = importlib.reload(module)
+    assert module.max_requests == 0 and module.limit_request_line == 4094

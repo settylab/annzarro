@@ -102,6 +102,12 @@ def gzip_enabled(config):
     return bool(setting)
 
 
+def wants_gzip(config):
+    """Whether this request is answered with gzip: the client accepts it and
+    the server is set to compress (``compress_responses``)."""
+    return gzip_enabled(config) and "gzip" in (request.headers.get("Accept-Encoding") or "").lower()
+
+
 def install_gzip(app):
     """Compress JSON replies with gzip level 1 when the client accepts it.
 
@@ -115,7 +121,8 @@ def install_gzip(app):
 
     @app.after_request
     def _gzip_json(response):
-        if (response.status_code != 200 or response.direct_passthrough
+        # a streamed reply (names) compresses itself as it is written; get_data() would hold it whole
+        if (response.status_code != 200 or response.direct_passthrough or response.is_streamed
                 or response.mimetype != "application/json"
                 or "Content-Encoding" in response.headers
                 or "gzip" not in (request.headers.get("Accept-Encoding") or "").lower()):

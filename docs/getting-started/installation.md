@@ -5,7 +5,7 @@ command-line tool `annzarro` and the complete web interface (all JavaScript, CSS
 bundled, so the browser fetches nothing from other hosts). If you only want to look at data on
 your own computer and do not want to install Python, use the {doc}`desktop-app` instead.
 
-**Requirements**
+**Requirements** (Python package; the desktop app needs none of these)
 
 - Python 3.9 or later. The package has been installed and its server started on Python 3.9,
   3.10, 3.11, 3.12, 3.13 and 3.14 (macOS, arm64). Python 3.8 and older cannot import it.
@@ -66,6 +66,31 @@ on your `PATH`:
 uv tool install annzarro
 ```
 
+## Desktop app (no Python)
+
+The packaged desktop app needs no Python and no other installation: the server, Python and the
+web interface are inside the download. Download the file for your system from the
+[latest release](https://github.com/settylab/annzarro/releases/latest) of `settylab/annzarro`
+(`<version>` is the release number):
+
+| System | File |
+|---|---|
+| macOS, Apple silicon | `AnnZarro-<version>-macos-arm64.dmg` (or `.zip`) |
+| macOS, Intel | `AnnZarro-<version>-macos-x64.dmg` (or `.zip`) |
+| Windows 10/11, 64-bit | `AnnZarro-<version>-windows-x64-setup.exe` (installer, no admin rights needed), or `AnnZarro-<version>-windows-x64.zip` (portable) |
+| Linux x86-64 | `AnnZarro-<version>-linux-x86_64.AppImage`, or `AnnZarro-<version>-linux-amd64.deb` for Debian and Ubuntu |
+
+`SHA256SUMS.txt` on the same page lists the checksums. First launch:
+
+- **macOS**: open the `.dmg`, drag AnnZarro to Applications and open it.
+- **Windows**: run the installer, or unzip and run `AnnZarro.exe`. SmartScreen may show "Windows
+  protected your PC"; click **More info**, then **Run anyway**.
+- **Linux**: `chmod +x` the AppImage and run it, or `sudo apt install ./AnnZarro-<version>-linux-amd64.deb`.
+
+The app works offline and reads datasets from `~/annzarro-data` or from any `.zarr` folder you
+choose. The app does not include the readers for remote stores (the `remote` extra), so `s3://`,
+`gs://` and `https://` datasets do not open in it; use pip with the `remote` extra for those. Details, file locations and troubleshooting: {doc}`desktop-app`.
+
 ## From source
 
 ```bash
@@ -110,13 +135,31 @@ Without `node` or `npm ci`, the JS and lint tests fail rather than being skipped
 `annzarro start --development` runs the server in development mode
 ({doc}`../reference/configuration`).
 
+#### Running the tests on zarr format 3
+
+The test stores are zarr format 2 by default. Under zarr 3 the same suites can run on format 3, plain or
+sharded, to check that nothing depends on the format:
+
+```bash
+ANNZARRO_TEST_ZARR_FORMAT=3 python -m pytest annzarro/tests/server
+ANNZARRO_TEST_ZARR_FORMAT=3-sharded python -m pytest annzarro/tests/server   # every array sharded
+```
+
+For the length of the run, `annzarro/tests/data/fixture_small.zarr` is replaced by a format 3 copy
+and the stores the helpers in `annzarro/tests/zarr_compat.py` build are format 3. The original is put
+back when the run ends, and also by the next run if this one was killed. Only one such run at a time can use a
+checkout; a second one stops with a message naming the first. A few tests pin the format 2
+fixture on purpose (its fingerprint, the format 2 raw string reader) and skip or build their own
+store. Tests that change a store's metadata do it with `set_attrs`, `require_group`,
+`drop_consolidated` and `consolidate` from `zarr_compat`, so they work in either format.
+
 ## Check the installation
 
 ```bash
 annzarro --help
 ```
 
-lists the subcommands `start`, `stop`, `user`, `install`, `config` and `desktop`. Then show the
+lists the subcommands `start`, `stop`, `user`, `admin`, `install`, `config`, `desktop`, `export` and `store`. Then show the
 configuration the server would start with:
 
 ```bash

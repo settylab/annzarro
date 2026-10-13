@@ -5,6 +5,7 @@ This module contains core functionality for the Annzarro server,
 including configuration, initialization, and routing.
 """
 
+import io
 import os
 import re
 import json
@@ -16,14 +17,20 @@ import time
 from urllib.parse import quote, urlsplit
 
 from flask import (Flask, request, jsonify, session, redirect, url_for, current_app,
-                   render_template, has_request_context)
+                   render_template, has_request_context, make_response)
 from ..utils.json_utils import NumpyJSONEncoder
 from flask_cors import CORS
 from flask.sessions import SecureCookieSessionInterface
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from annzarro.utils.paths import default_data_dir
 from ..core.remote import is_remote_path
+
+__all__ = [
+    "create_app",
+]
+
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +62,30 @@ DEFAULT_CONFIG = {
     "dataset_folder_max_entries": 500,  # entries one dataset-picker folder request returns (the rest is "show more")
     "dataset_search_max_depth": 6,      # folders deep the picker's search of the data directory goes
     "dataset_search_max_entries": 20000, # entries that search looks at before it stops (and says so)
+    "name_search_max_regex_chars": 200,   # longest regex a name search runs (a longer one is a 400 regex_too_long)
+    "name_search_timeout_s": 10,          # seconds a regex name search scans before it answers partially; 0 = no limit
+    "read_user_share_percent": 50,        # % of read_budget_mb one user (else one address) may hold at once; 0 = no share
+    "subset_budget_mb": None,             # MB the cell subsets one worker computes at once may hold (55 B a cell); None = 15% of RAM
+    "subset_wait_s": 30,                  # seconds a subset waits for that budget before a 503
+    "max_requests": 20000,                # gunicorn: requests a worker serves before it is replaced (frees creeping memory); 0 = never
+    "max_requests_jitter": 2000,          # gunicorn: up to this many extra requests, random per worker, so workers do not restart together
+    "limit_request_line": 0,              # gunicorn: longest request line in bytes; 0 = unlimited (the proxy bounds it); gunicorn caps any other value at 8190
+    "limit_request_fields": 100,          # gunicorn: most header fields in a request
+    "limit_request_field_size": 8190,     # gunicorn: longest header field in bytes
+    "max_request_mb": 64,                 # MB one request body may have (panel-set saves and imports); over it 413 request_too_large; 0 = no limit
+    "max_sessions_per_user": 500,         # panel sets one user may keep (login off: all sets are one user's); 0 = no limit
+    "max_sessions": 5000,                 # panel sets on the whole server; 0 = no limit
+    "max_sessions_mb": 256,               # MB all panel sets may take together; 0 = no limit
+    "lock_timeout_s": 10,                 # seconds a request waits for the users file / admin state lock before a 503 busy
+    "admin_data_roots": [],               # directories under which admins may add data directories in the browser (empty = adding is off)
+    "admin_reauth_minutes": 30,           # minutes an admin's password entry lets them change things; 0 = never asked
+    "admin_rate_per_minute": 30,          # admin changes per minute per admin and worker (reads get 8x)
+    "admin_audit_max_mb": 50,             # MB at which the admin audit log rotates (5 files kept); 0 = never
+    "dataset_scan_max_entries": 200000,   # directory entries a dataset listing or /status count reads before it stops
     "max_read_mb": None,            # MB one read of an obsp/varp matrix may hold in memory, sized from metadata; None = 5% of RAM (256 MB..4 GB)
+    "max_names_json_mb": 2048,      # MB a names reply built whole may hold (readers that cannot stream: h5ad); zarr streams; 0 = no limit
+    "names_stream_max_concurrent": 2,   # full cell/gene name lists one worker sends at once (each holds a thread until read); 0 = no limit
+    "names_stream_slot_above": 1000000,  # only name lists of more names than this count against names_stream_max_concurrent
     "read_budget_mb": None,         # MB all pairwise reads in flight in one worker may hold; None = 2 x max_read_mb
     "read_wait_s": 5,               # seconds a pairwise read waits for that budget before a 503
     "remote_stores": "auto",           # auto | allow | deny -- s3://, gs://, http(s):// datasets
@@ -63,6 +93,7 @@ DEFAULT_CONFIG = {
     "remote_credentials": "anonymous", # anonymous | environment (AWS/GCP credential chain)
     "remote_connect_timeout_s": 10,    # seconds to connect to a remote store
     "remote_read_timeout_s": 30,       # seconds between bytes before a 504
+    "remote_request_timeout_s": None,  # seconds one request may spend on remote reads; None = 120 hosted / 600 single-user, 0 = off
     "remote_chunk_cache_mb": 256,      # raw-bytes LRU per open remote store; 0 = off
     "cross_origin_isolation": "off",   # off | on | auto -- COOP/COEP headers (server/isolation.py)
     "app_name": "AnnZarro",            # Application name shown on login page
@@ -282,6 +313,8 @@ def resolve_dataset_segment(endpoint, values):
         return
     data_dir = current_app.config.get("data_dir") or default_data_dir()
     values["dataset_path"] = os.path.join(data_dir, segment)
+    from annzarro.server import access
+    access.remember_spelling(values["dataset_path"], segment)
 
 
 def require_dataset_segment():
@@ -343,6 +376,12 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     if not app.config.get("data_dir"):
         app.config["data_dir"] = default_data_dir()
     
+    # A limit that is not a number would fail at its first request, not here
+    from annzarro.server.limits import validate_limits
+    problems = validate_limits(app.config)
+    if problems:
+        raise ValueError("; ".join(problems))
+
     # Login cookie: not sent on cross-site subrequests or form posts (Lax),
     # Secure per cookie_secure, never readable from JavaScript.
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -365,7 +404,13 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     app.url_value_preprocessor(resolve_dataset_segment)
     app.before_request(confinement.resolve_relative_dataset_paths)
     app.before_request(confinement.enforce)
+    # who may read which dataset: right after confinement, so it sees the final path (access.py)
+    from annzarro.server import access
+    access.install(app)
     app.before_request(require_dataset_segment)
+    # forged requests: the token, Origin and Sec-Fetch-Site on every unsafe route (csrf.py)
+    from annzarro.server import csrf
+    csrf.install(app)
 
     # Initialize zarr reader with cache settings from config
     from annzarro.core import configure_zarr_reader, configure_h5ad_reader
@@ -419,6 +464,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     # COOP/COEP, so the browser can measure the page's memory (isolation.py)
     from .isolation import install_isolation
     install_isolation(app)
+
+    # last, so its hook sees a reply before the others rewrite it
+    from annzarro.server import health
+    health.install(app)
 
     # The desktop app names its server with a per-launch token and only
     # trusts the answer that carries it: two launches that pick the same free
@@ -478,6 +527,59 @@ def configure_app(app: Flask, config: Dict[str, Any]) -> None:
         app: Flask application instance
         config: Configuration dictionary
     """
+    # No request body is larger than this (werkzeug answers 413 before reading
+    # it: panel sets are the only uploads, and were accepted at any size)
+    limit_mb = config.get("max_request_mb", 16)
+    app.config["MAX_CONTENT_LENGTH"] = int(float(limit_mb) * 2 ** 20) if limit_mb else None
+
+    def _too_large():
+        return jsonify({
+            "error": f"The request is larger than this server accepts ({limit_mb:g} MB, server.max_request_mb).",
+            "reason": "request_too_large",
+            "limit_mb": float(limit_mb),
+        }), 413
+
+    # By the length the client declares, before any route runs. A body with no
+    # length (chunked) cannot be judged up front, and werkzeug's own cut-off at
+    # the limit hands the route a truncated body, which fails there as a 400 or
+    # a 500 and never says why. So it is read here, up to the limit and one byte
+    # more: past the limit it is a 413, else it is given back to the route
+    # whole, with the length it turned out to have.
+    @app.before_request
+    def _refuse_oversized_body():
+        cap = app.config.get("MAX_CONTENT_LENGTH")
+        if not cap:
+            return None
+        if request.content_length is not None:
+            return _too_large() if request.content_length > cap else None
+        if request.method in ("POST", "PUT", "PATCH") and \
+                "chunked" in (request.headers.get("Transfer-Encoding") or "").lower():
+            stream = request.environ.get("wsgi.input")
+            data = stream.read(cap + 1) if stream is not None else b""
+            if len(data) > cap:
+                return _too_large()
+            request.environ["wsgi.input"] = io.BytesIO(data)
+            request.environ["CONTENT_LENGTH"] = str(len(data))
+            request.environ["wsgi.input_terminated"] = True
+        return None
+
+    app.register_error_handler(RequestEntityTooLarge, lambda exc: _too_large())
+
+    # A lock on the users file or the admin state that stays taken (a hung
+    # process, a slow disk) must not hold every thread: wait lock_timeout_s,
+    # then answer 503 and let the client retry
+    from annzarro.server import atomic_store
+    atomic_store.set_default_lock_timeout(config.get("lock_timeout_s", 10))
+
+    def _busy(exc):
+        logger.error("Request refused, a lock stayed taken: %s", exc)
+        response = jsonify({"error": "The server is busy. Try again in a moment.", "reason": "busy"})
+        response.status_code = 503
+        response.headers["Retry-After"] = "2"
+        return response
+
+    app.register_error_handler(atomic_store.LockTimeout, _busy)
+
     # Cross-origin API access only when configured. Never with credentials:
     # the login cookie must not authorize requests from other sites.
     if config.get("cors_enabled", False):
@@ -562,6 +664,7 @@ def register_routes(app: Flask) -> None:
         register_zarr_routes, 
         register_static_routes
     )
+    from annzarro.server.policy import install as install_policy
     
     # API version
     api_version = "v1"
@@ -571,6 +674,14 @@ def register_routes(app: Flask) -> None:
     register_data_routes(app, api_version)
     register_zarr_routes(app, api_version)
     register_static_routes(app, api_version)
+
+    # /admin and /api/v1/admin/*: before the auth wrapper loop below, so they
+    # get it too; every one of them also guards itself (admin/guard.py)
+    from annzarro.server.admin import register_admin_routes
+    register_admin_routes(app)
+    install_policy(app, api_version)
+    from annzarro.server.admin.settings import wire_sources
+    wire_sources(app)
     
     # Register authentication routes if auth is enabled
     if app.config.get("auth_enabled", False):
@@ -586,28 +697,50 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
         app: Flask application instance
         api_version: API version string
     """
+    from annzarro.server import access, csrf
+    from annzarro.server.account import register_account_routes
+
+    # before the wrapper loop at the end, which puts require_auth on them
+    register_account_routes(app)
+
     def render_login(**extra):
-        return render_template(
+        from annzarro.server.policy import csp
+        # a fresh double-submit token with every rendering of the form (csrf.py)
+        nonce = csrf.new_login_token()
+        page = render_template(
             "login.html",
             app_name=app.config.get("app_name", "AnnZarro"),
             project_description=app.config.get("project_description", ""),
             contact_info=app.config.get("contact_info", {}),
+            login_csrf=csrf.login_field(nonce),
             **extra
         )
+        # nobody is signed in: no external host at all (the CSP also makes it no-store and Vary: Cookie)
+        response = csp.apply(app.make_response(page), None, external=False)
+        return csrf.set_login_cookie(response, nonce)
 
     @app.route("/login", methods=["GET"])
+    @access.gate("public")
     def login_page():
         """Login page"""
         return render_login(next_url=safe_next(request.args.get("next"), request.script_root),
                             fragment="")
     
     @app.route("/login", methods=["POST"])
+    @access.gate("public")
+    @csrf.exempt
     def login():
         """Handle login POST request"""
         username = request.form.get("username")
         password = request.form.get("password")
         next_url = safe_next(request.form.get("next"), request.script_root)
         fragment = safe_fragment(request.form.get("fragment"))
+        if not csrf.login_token_ok():
+            # a form from another site, or one older than the cookie: no password is tried
+            logger.warning("Refused a sign-in from %s: the form's token does not match the cookie "
+                           "(Origin %r)", request.remote_addr, request.headers.get("Origin"))
+            return render_login(next_url=next_url, fragment=fragment,
+                                error="The sign-in page expired. Please try again."), 400
         
         # Validate credentials using auth manager
         from annzarro.server.auth import UnsupportedPasswordHash
@@ -625,7 +758,9 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
             session["user_id"] = username
             session["is_admin"] = app.auth_manager.get_user(username).is_admin
             session["last_activity"] = session["login_at"] = time.time()
-            
+            from annzarro.server.admin.guard import start_admin_session
+            start_admin_session()
+
             # Back to the page that asked for login, view included
             return redirect(next_url + fragment)
         else:
@@ -636,9 +771,20 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
                 error="Invalid username or password. Please try again."
             )
     
-    @app.route("/logout", methods=["GET"])
+    @app.route("/logout", methods=["GET", "POST"])
+    @access.gate("public")
     def logout():
-        """Handle logout request"""
+        """Sign out. POST only (csrf.enforce asks the token of a logged-in
+        requester): a link or an image on another page must not do it. GET
+        answers 405 with a one-button form."""
+        if request.method == "GET":
+            token = csrf.csrf_token() if is_logged_in() else ""
+            response = make_response(render_template("logout.html", csrf_token=token), 405)
+            response.headers["Allow"] = "POST"
+            from annzarro.server.admin.guard import CSP
+            response.headers["Content-Security-Policy"] = CSP
+            response.headers["Cache-Control"] = "no-store"
+            return response
         # Clear session
         session.clear()
         # Redirect to login page

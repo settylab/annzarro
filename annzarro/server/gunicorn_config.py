@@ -37,6 +37,21 @@ threads = int(_annzarro.get('threads') or 4)
 timeout = 60
 keepalive = 5
 
+# Memory creep and slow leaks are bounded by recycling each worker after this
+# many requests (server.max_requests; 0 = never), staggered by up to
+# max_requests_jitter so they do not all restart together. A recycled worker
+# starts with empty caches, so the default is high.
+max_requests = int(_annzarro.get('max_requests', 20000) or 0)
+max_requests_jitter = int(_annzarro.get('max_requests_jitter', 2000) or 0)
+# A request line and each header have size limits, so one request cannot be
+# made of megabytes of header. The request line is not limited (0): the web
+# client sends the cells or genes it asks for in the URL, 12 KB for 2,000
+# genes, and old deep links carry whole views; gunicorn would cap any other
+# value at 8190. The reverse proxy in front bounds the line.
+limit_request_line = int(_annzarro.get('limit_request_line', 0))
+limit_request_fields = int(_annzarro.get('limit_request_fields', 100))
+limit_request_field_size = int(_annzarro.get('limit_request_field_size', 8190))
+
 # Process naming
 proc_name = 'annzarro'
 

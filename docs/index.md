@@ -5,6 +5,19 @@ the matrices that other viewers leave out: cell-by-cell kernels and distances (`
 gene-by-gene similarities (`varp`), explored one focused cell or gene at a time and linked to
 the cell-by-gene layers.
 
+```bash
+pip install annzarro
+```
+
+This installs AnnZarro on your own computer or on a server. Or download the desktop app, or set
+up a shared server:
+
+```{include} _snippets/modes.md
+```
+
+The desktop app is for one person with data on their own computer; a server shares datasets,
+panel sets and access.
+
 ```{figure} _static/screens/index/overview.png
 :class: screenshot
 :alt: Four linked AnnZarro panels on the demonstration data
