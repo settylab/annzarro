@@ -21,7 +21,7 @@
  * scene saves on every `wheel` of its canvas, but the camera it reads lags
  * the input (gl-plot3d shows the view as of 2 * 16 ms ago), so each save is
  * the camera before that step and the last step is never saved. The next
- * Plotly.react (a focus click, a recolour) then restored the camera of an
+ * redraw (a focus click, a recolour) then restored the camera of an
  * earlier step, or the default view. A zoom is saved once the camera has
  * caught up, as are drags and pinches.
  */
