@@ -978,7 +978,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (!isGenePlot) {
       const nCells = (DataManager.getCells() || []).length;
       const large = nCells > largePlotPoints();
-      updateLargePlotControls(container, large, largePlotPoints());
+      updateLargePlotControls(container, large, largePlotPoints(), await DataManager.getDatasetStructure());
       if (large) {
         const refusal = largePlotRefusal(settings, nCells);
         if (refusal) {
@@ -1000,7 +1000,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         // no marker in large-plot mode, but the line that the focus is not shown
         noteFocusOutside(plotContainer, data, settings, 'cells');
         // again after the draw: panel code that ran meanwhile may have reset a toggle
-        updateLargePlotControls(container, true, largePlotPoints());
+        updateLargePlotControls(container, true, largePlotPoints(), await DataManager.getDatasetStructure());
         return;
       }
     }

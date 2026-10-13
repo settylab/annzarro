@@ -69,3 +69,43 @@ test("axisChangeRelayout retypes, revises and refits only the axes whose field c
   assert.equal(u["scene.zaxis.autorange"], true);
   assert.deepEqual(axisChangeRelayout(s, data, [], "ds"), {});
 });
+
+import {
+  TEXT_AXIS_TIP, isTextColumn, largeThreshold, limitTextAxisOptions, textObsColumns,
+} from "../../../static/js/panels/plot-utilities/large-plot-controls.js";
+
+test("which obs columns are labels", () => {
+  for (const type of ["categorical", "object", "str", "string", "StringDType()", "<U7", "|S4", "U10"]) {
+    assert.equal(isTextColumn({ type }), true, type);
+  }
+  for (const type of ["float64", "int64", "uint8", "bool", "float32"]) assert.equal(isTextColumn({ type }), false, type);
+  assert.equal(isTextColumn(undefined), false);
+  const set = textObsColumns({ obs: { columns_info: { a: { type: "categorical" }, b: { type: "float64" }, c: { type: "object" } } } });
+  assert.deepEqual([...set].sort(), ["a", "c"]);
+  assert.equal(textObsColumns(null).size, 0);
+});
+
+test("limitTextAxisOptions greys label columns of an obs key select and restores them", () => {
+  const options = ["a", "b"].map((value) => ({
+    value, disabled: false, dataset: {}, title: "",
+    getAttribute(n) { return n === "title" ? this.title : null; },
+    setAttribute(n, v) { if (n === "title") this.title = v; },
+    removeAttribute(n) { if (n === "title") this.title = ""; },
+  }));
+  const select = { options, dataset: { keyType: "obs" } };
+  limitTextAxisOptions(select, true, new Set(["a"]));
+  assert.deepEqual(options.map((o) => o.disabled), [true, false]);
+  assert.equal(options[0].title, TEXT_AXIS_TIP);
+  limitTextAxisOptions(select, false, new Set(["a"]));
+  assert.deepEqual(options.map((o) => o.disabled), [false, false]);
+  assert.equal(options[0].title, "");
+  select.dataset.keyType = "obsm";       // an embedding's keys are never label columns
+  limitTextAxisOptions(select, true, new Set(["a"]));
+  assert.deepEqual(options.map((o) => o.disabled), [false, false]);
+});
+
+test("the large-plot threshold defaults to a million", () => {
+  assert.equal(largeThreshold({ LARGE_PLOT_POINTS: 100 }), 100);
+  assert.equal(largeThreshold({}), 1000000);
+  assert.equal(largeThreshold(undefined), 1000000);
+});

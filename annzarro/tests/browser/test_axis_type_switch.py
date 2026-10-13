@@ -143,13 +143,13 @@ def _settle(page, tile, timeout=60):
     pytest.fail(f"plot never settled; last state {s}")
 
 
-def _open(pw, root, store, tile, **fields):
+def _open(pw, root, store, tile, wait_plot=True, **fields):
     browser = pw.chromium.launch()
     page = browser.new_page(viewport={"width": 1400, "height": 1000})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(_link(root, store, tile, **fields))
-    page.wait_for_selector(f'.tile[data-tile-id="{tile}"] .js-plotly-plot', timeout=60_000)
+    page.wait_for_selector(f'.tile[data-tile-id="{tile}"]' + (' .js-plotly-plot' if wait_plot else ''), timeout=60_000)
     return browser, page, errors
 
 
@@ -373,16 +373,62 @@ def test_large_plot_axis_shows_the_new_field_in_full(large_server, zoom):
             browser.close()
 
 
-def test_large_plot_says_why_a_categorical_axis_cannot_be_drawn_and_recovers(large_server):
-    """The picker offers categorical obs columns; their codes are not an axis. The panel used to
-    fail with 'Cannot read properties of undefined'."""
-    root, store = large_server
+OPTIONS = """([tile, axis]) => [...document.querySelector(tile + ' select.axis-key-select[data-axis="' + axis + '"]').options]
+    .map(o => [o.value, o.disabled, o.title])"""
+
+
+def _option_states(page, axis):
     tile = f'.tile[data-tile-id="{CELL}"]'
+    return {v: (d, title) for v, d, title in page.evaluate(OPTIONS, [tile, axis])}
+
+
+def test_large_plot_greys_out_the_label_columns_of_the_axis_pickers(large_server):
+    root, store = large_server
+    tip = "Categorical: use a subset or a numeric column"
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, CELL, x=OBS(NUMERIC), y=OBS("score"))
+        try:
+            _settle(page, CELL)
+            for axis in ("x", "y"):
+                states = _option_states(page, axis)
+                for label in (CATEGORICAL, "leiden", STRING):
+                    assert states[label] == (True, tip), (axis, label, states)
+                for number in (NUMERIC, "score"):
+                    assert states[number][0] is False, (axis, number, states)
+            # the type menu: back to obs from an embedding does not land on a label column
+            _pick(page, CELL, "x", UMAP("0"))
+            _settle(page, CELL)
+            page.select_option(f'.tile[data-tile-id="{CELL}"] .axis-type-select[data-axis="x"]', "obs")
+            s = _settle(page, CELL)
+            chosen = page.evaluate(f"document.querySelector('.tile[data-tile-id=\"{CELL}\"] "
+                                   "select.axis-key-select[data-axis=\"x\"]').value")
+            assert chosen not in (CATEGORICAL, "leiden", STRING), chosen
+            assert s["ax"]["x"]["type"] == "linear"
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_the_regular_plot_keeps_every_column_enabled(server):
+    root, store = server
     with playwright.sync_playwright() as pw:
         browser, page, errors = _open(pw, root, store, CELL, x=OBS(NUMERIC), y=UMAP("1"))
         try:
             _settle(page, CELL)
-            _pick(page, CELL, "x", OBS(CATEGORICAL))
+            states = _option_states(page, "x")
+            assert not [k for k, (disabled, _) in states.items() if disabled], states
+        finally:
+            browser.close()
+
+
+def test_large_plot_says_why_a_saved_categorical_axis_cannot_be_drawn_and_recovers(large_server):
+    """A deep link or saved panel set can still name a label column. The panel used to fail with
+    'Cannot read properties of undefined'; it says why, and the next choice recovers."""
+    root, store = large_server
+    tile = f'.tile[data-tile-id="{CELL}"]'
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, CELL, wait_plot=False, x=OBS(CATEGORICAL), y=UMAP("1"))
+        try:
             page.wait_for_function("(t) => document.querySelector(t).innerText.includes('categorical column')",
                                    arg=tile, timeout=30000)
             text = page.evaluate(f"document.querySelector('{tile}').innerText")

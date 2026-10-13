@@ -5,6 +5,8 @@ import { formatRangeValue, colorBoundToData } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { notify } from '../../utils/notify.js';
+import { Config } from '../../config.js';
+import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
 import { scaleDirection, scaleGradient } from '../../utils/color-scales.js';
 
@@ -235,7 +237,8 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       } else if (type === 'obs' || type === 'var') {
         // The user switched the type menu: take a key of the new type,
         // avoiding _index if there are other options
-        const nonIndexKey = keyValues.find(k => k !== '_index');
+        const blocked = keySelect.__blockedKeys;
+        const nonIndexKey = keyValues.find(k => k !== '_index' && !(blocked && blocked.has(k)));
         settings.key = nonIndexKey || keyValues[0] || '';
       } else {
         settings.key = keyValues[0] || '';
@@ -492,7 +495,14 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     $.setSelectValue($typeSelect, settings.type, false);
   
     // Populate dropdowns which will replace loading indicators
+    // A Cell Plot above the large-plot threshold draws axes from numbers only: label columns
+    // are listed greyed, and are not taken as the key when the type changes (large-plot-controls.js)
+    const large = plotType === 'cells' && (axis === 'x' || axis === 'y')
+      && (DataManager.getCells() || []).length > largeThreshold(Config.DEFAULTS);
+    $keySelect[0].__blockedKeys = large && settings.type === 'obs' ? textObsColumns(datasetStructure) : null;
+    $keySelect[0].dataset.keyType = settings.type;
     populateKeySelector(settings, $keySelect[0], datasetStructure);
+    limitTextAxisOptions($keySelect[0], large, textObsColumns(datasetStructure));
     populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure);
     
     // Add or update the refocus and lock buttons for layer, obsp, and varp types
