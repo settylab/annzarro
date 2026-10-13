@@ -298,6 +298,20 @@ the policy registry also has a variable of its own, which the registry treats as
 |---|---|---|
 | `ANNZARRO_EXTERNAL_REQUESTS` | `integrations.external_requests` | `on`, `ask`, `off` or `none`. It decides the setting for the policy registry too, and beats the YAML in both directions, so a deployment can force a value either way. The admin Settings page shows its source as `env`. A value the setting does not accept is logged and ignored: the YAML decides. |
 
+Seven variables are aliases of `server` keys whose names do not follow `ANNZARRO_<SECTION>_<KEY>`
+(`ENV_ALIASES` in `annzarro/utils/config_manager.py`). They are ordinary environment values, above
+the files, and `config show` reports them as set:
+
+| Variable | Key |
+|---|---|
+| `ANNZARRO_REMOTE_STORES` | `server.remote_stores` |
+| `ANNZARRO_REMOTE_ALLOWLIST` | `server.remote_allowlist` (comma-separated) |
+| `ANNZARRO_REMOTE_CREDENTIALS` | `server.remote_credentials` |
+| `ANNZARRO_REMOTE_CONNECT_TIMEOUT` | `server.remote_connect_timeout_s` |
+| `ANNZARRO_REMOTE_READ_TIMEOUT` | `server.remote_read_timeout_s` |
+| `ANNZARRO_REMOTE_REQUEST_TIMEOUT` | `server.remote_request_timeout_s` (120 s hosted, 600 s single-user; 0 switches it off) |
+| `ANNZARRO_REMOTE_CHUNK_CACHE_MB` | `server.remote_chunk_cache_mb` |
+
 (The registry's list is `ENV_OVERRIDES` in `annzarro/server/policy/resolver.py`.) Any other
 variable, such as `ANNZARRO_SERVER_PROXY_COUNT=1`, acts as a YAML value: for the policy
 registry it is the operator's "config" layer.
