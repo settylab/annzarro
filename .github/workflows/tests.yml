@@ -7,6 +7,11 @@ name: Tests
 # supported Python only. They are the two that differ in kind: 3.9 installs
 # zarr 2 (zarr 3 needs Python >= 3.11), 3.13 installs zarr 3. The versions in
 # between get an install-and-import check.
+#
+# In parallel, for wall time: on 3.13 the browser tests (annzarro/tests/browser)
+# run in four jobs, each a balanced share of the files (--shard, see
+# annzarro/tests/shards.py), and everything else runs in one job with
+# pytest-xdist (-n auto). 3.9 has no browser and runs the whole tree with -n auto.
 
 on:
   push:
@@ -20,31 +25,52 @@ concurrency:
 
 jobs:
   test:
-    name: pytest + JS + ESLint (Python ${{ matrix.python }})
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - python: "3.9"
+          - name: pytest + JS + ESLint (Python 3.9)
+            python: "3.9"
             extras: test,remote   # zarr 2: the remote store tests run here too
-          - python: "3.13"
+            lint: true
+            pytest: -n auto annzarro/tests
+          - name: pytest + JS + ESLint (Python 3.13)
+            python: "3.13"
             extras: test,remote
-            # Playwright + Chromium: the browser tests (annzarro/tests/browser)
-            # run here and fail instead of skipping (ANNZARRO_REQUIRE_BROWSER)
+            lint: true
+            # Playwright + Chromium: the browser tests outside annzarro/tests/browser
+            # (e2e, export, multi-worker) run here and fail instead of skipping
+            # (ANNZARRO_REQUIRE_BROWSER)
             browser: true
+            pytest: -n auto annzarro/tests --ignore=annzarro/tests/browser
+          # annzarro/tests/browser, one shard per job; the shard count is SHARDS
+          # in annzarro/tests/utils/test_browser_shards.py, which checks that
+          # the shards together collect every browser test exactly once
+          - {name: browser tests 1/4 (Python 3.13), python: "3.13", extras: "test,remote", browser: true,
+             pytest: annzarro/tests/browser --shard 1/4}
+          - {name: browser tests 2/4 (Python 3.13), python: "3.13", extras: "test,remote", browser: true,
+             pytest: annzarro/tests/browser --shard 2/4}
+          - {name: browser tests 3/4 (Python 3.13), python: "3.13", extras: "test,remote", browser: true,
+             pytest: annzarro/tests/browser --shard 3/4}
+          - {name: browser tests 4/4 (Python 3.13), python: "3.13", extras: "test,remote", browser: true,
+             pytest: annzarro/tests/browser --shard 4/4}
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
+        if: matrix.lint
         with:
           node-version: "22"
           cache: npm
 
       - name: Install ESLint (pinned in package-lock.json)
+        if: matrix.lint
         run: npm ci
 
       - name: ESLint (errors only; warnings would become PR annotations)
+        if: matrix.lint
         run: npm run lint -- --quiet
 
       - uses: actions/setup-python@v7
@@ -88,10 +114,10 @@ jobs:
         if: matrix.browser
         run: python -m playwright install --with-deps chromium
 
-      - name: pytest (includes every JS suite and ESLint)
+      - name: pytest
         env:
           ANNZARRO_REQUIRE_BROWSER: ${{ matrix.browser && '1' || '' }}
-        run: python -m pytest -q -rsx annzarro/tests
+        run: python -m pytest -q -rsx ${{ matrix.pytest }}
 
   import:
     name: install + import (Python ${{ matrix.python }})
