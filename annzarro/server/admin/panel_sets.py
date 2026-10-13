@@ -129,7 +129,7 @@ def reassign_panel_sets():
     per_user = session_quota.limits(config)[0]
     mine = sum(1 for e in held if e.data.get("owner") == to_owner)
     if moved:
-        audit.record("admin.panel_sets.reassign", to_owner,
+        audit.record("panel_sets.reassign", to_owner,
                      {"count": len(moved), "names": moved[:AUDIT_NAMES],
                       "from": sorted(p for p in previous if p) + (["(none)"] if None in previous else [])})
     return jsonify(moved=len(moved), unchanged=len(unchanged), over_quota=bool(per_user and mine > per_user))
@@ -149,7 +149,7 @@ def delete_panel_sets():
             path = session_store.path_of(sessions_dir, name)
             summary = session_quota.summary(path) if path else None
             try:
-                if path is None:
+                if path is None or not os.path.isfile(path):
                     raise FileNotFoundError(name)
                 os.remove(path)
             except FileNotFoundError:
@@ -158,7 +158,7 @@ def delete_panel_sets():
             deleted.append(os.path.basename(path)[:-len(".json")])
             owners[deleted[-1]] = summary.data.get("owner") if summary else None
     if deleted:
-        audit.record("admin.panel_sets.delete", None,
+        audit.record("panel_sets.delete", None,
                      {"count": len(deleted), "names": [f"{n} ({owners[n] or 'none'})" for n in deleted[:AUDIT_NAMES]]})
     return jsonify(deleted=len(deleted), missing=missing)
 

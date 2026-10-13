@@ -415,12 +415,6 @@ def _user_access(args, auth_manager, config, user_file) -> int:
     from .server import access
 
     username = args.name
-    owner = _state_owner_mismatch(user_file)
-    if owner is not None:
-        logger.error(f"The server's state files belong to uid {owner[0]} and this command runs as uid {owner[1]}: it "
-                     "would leave a file the server cannot read, and every non-admin would be refused until it is "
-                     f"repaired. Run it as the account that runs the server (sudo -u <that account> annzarro user access ...).")
-        return 1
     record = auth_manager.get_user(username)
     if record is None:
         logger.error(f"User '{username}' does not exist")
@@ -494,22 +488,6 @@ def _user_access(args, auth_manager, config, user_file) -> int:
             logger.warning(f"'{username}' is restricted and has no grant yet, so they see nothing. "
                            "Add one with --grant PATH.")
     return 0
-
-
-def _state_owner_mismatch(user_file):
-    """``(owner uid, our uid)`` when the directory of the users file belongs to someone else, else None.
-
-    A command run through sudo would create ``annzarro_admin/access.json`` owned by root with mode 0600,
-    which the server account cannot read.
-    """
-    if not hasattr(os, "geteuid"):
-        return None
-    directory = os.path.dirname(os.path.abspath(user_file))
-    try:
-        owner = os.stat(directory).st_uid
-    except OSError:
-        return None          # not there yet: the command creates it as this account
-    return (owner, os.geteuid()) if owner != os.geteuid() else None
 
 
 def _grants_report(flat, username):

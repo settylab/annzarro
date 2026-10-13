@@ -145,6 +145,17 @@ takes can tell whether a directory component of a path exists (never what is in 
 store whose link is swapped between the check and the open is read through the new link, which
 only someone who can write to the data directory can arrange.
 
+**Forged requests.** `SameSite=Lax` is not the only protection. With login on, every request that
+changes something (saving, renaming, importing or deleting a panel set, refreshing a dataset,
+clearing the cache, signing out) must carry the token the page was given at login, in the
+`X-AnnZarro-CSRF` header, and a browser's `Origin` and `Sec-Fetch-Site` must say the request comes
+from the page itself. The sign-in form has its own one-time token, held in a short-lived
+`SameSite=Strict` cookie and a hidden field. Signing out is a button (`POST /logout`); opening
+`/logout` in the address bar shows that button. Without login there is no token to hold, so only
+the `Origin` and `Sec-Fetch-Site` checks apply, and requests without them (`curl`, `annzarro export`)
+pass. Behind a reverse proxy that terminates TLS, set `server.proxy_count` (above), or the `Origin`
+the browser sends will not match the address the server sees and every change is answered 403.
+
 ## Who may change a panel set
 
 | Action | Without login | With login: any user | With login: owner | With login: admin |

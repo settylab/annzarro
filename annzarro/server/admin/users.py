@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 from flask import current_app, jsonify, request
 
-from .. import atomic_store, permissions, session_quota
+from .. import health, permissions, session_quota, session_store
 from ..auth import LastAdminError
 from . import audit
 from .guard import require_admin
@@ -94,26 +94,9 @@ def panel_set_counts():
 def reassign_panel_sets(from_owner, to_owner):
     """Hand every panel set of ``from_owner`` to ``to_owner``; returns how many.
 
-    Each file is re-read and rewritten atomically under the sessions directory's
-    lock, which excludes other reassigns. Saves take that lock only once the
-    panel-set slice moves this onto the shared session store, so until then a
-    save racing this can still lose its write."""
-    directory = _sessions_dir()
-    if not os.path.isdir(directory):
-        return 0
-    moved = 0
-    with atomic_store.locked(os.path.join(directory, ".lock")):
-        for item in session_quota.entries(directory):
-            if item.data.get("owner") != from_owner:
-                continue
-            fresh = atomic_store.read_json(item.path, None)   # not the cached summary
-            if not isinstance(fresh, dict) or fresh.get("owner") != from_owner:
-                continue
-            permissions.stamp_session(fresh, existing=dict(fresh))
-            fresh["owner"] = to_owner
-            atomic_store.write_json(item.path, fresh, mode=os.stat(item.path).st_mode & 0o777)
-            moved += 1
-    return moved
+    The shared session store does it under its one lock, the same that saves
+    and the panel-set admin take, so a save racing this cannot lose its write."""
+    return session_store.reassign_owner(_sessions_dir(), from_owner, to_owner)
 
 
 def record_audit(action, target=None, detail=None, outcome="ok"):
@@ -159,6 +142,7 @@ def list_users():
     manager = _manager()
     now = time.time()
     counts = panel_set_counts()
+    seen = health.last_seen(current_app)
     users = []
     for name, user in sorted(manager.get_users().items()):
         users.append({
@@ -168,7 +152,7 @@ def list_users():
             "password_changed_at": _iso(user.password_changed_at),
             "locked": _locks(user, now),
             "panel_sets": counts.get(name, 0),
-            "last_seen": None,
+            "last_seen": seen.get(name),
         })
     return jsonify(users)
 
@@ -231,9 +215,9 @@ def remove_user(username):
             moved = reassign_panel_sets(username, reassign_to)
         except Exception:
             logger.exception("Removed %r but could not hand their panel sets to %r", username, reassign_to)
-            record_audit("panelset.reassign", username, {"to": reassign_to}, "failed")
+            record_audit("panel_sets.reassign", username, {"to": reassign_to}, "failed")
             return _reply({"removed": username, "panel_sets_reassigned": 0, "reassign_failed": True}, audited)
-        audited = record_audit("panelset.reassign", username, {"to": reassign_to, "moved": moved}) and audited
+        audited = record_audit("panel_sets.reassign", username, {"to": reassign_to, "moved": moved}) and audited
     return _reply({"removed": username, "panel_sets_reassigned": moved}, audited)
 
 

@@ -308,7 +308,7 @@ def test_remove_can_hand_the_panel_sets_over(app, admin):
     assert [o["owner"] for o in owners] == [ADMIN, ADMIN, ADMIN]
     assert [o["layout"] for o in owners] == [{"k": 0}, {"k": 1}, {"k": 2}], "only the owner changes"
     assert records(app, action="user.remove")[0]["detail"] == {"reassign_to": ADMIN}
-    assert records(app, action="panelset.reassign")[0]["detail"] == {"moved": 2, "to": ADMIN}
+    assert records(app, action="panel_sets.reassign")[0]["detail"] == {"moved": 2, "to": ADMIN}
     assert [f for f in os.listdir(sessions) if f.endswith(".tmp")] == []
 
 
@@ -390,6 +390,15 @@ def _race(tmp_path, first, second):
     for p in procs:
         p.join(60)
         assert p.exitcode == 0
+    # both attempts reached the rule: a child that could not sign in dies before it reports (exit
+    # code above), and an answer that is neither a change nor the rule's own refusal is no race
+    for who, code, reason in results:
+        if who == "api":
+            assert (code, reason) in ((200, None), (403, "admin_only"), (409, "last_admin")), results
+        else:
+            assert code in (0, 1), results
+    changed = [who for who, code, _ in results if code == (200 if who == "api" else 0)]
+    assert len(changed) == 1, results      # exactly one of the two won the race
     return results
 
 
@@ -482,7 +491,7 @@ def broken_audit(monkeypatch):
     monkeypatch.setattr(audit, "append", fail)
 
 
-FAILING = {"user.add", "user.remove", "user.password", "user.set_admin", "user.unlock", "panelset.reassign"}
+FAILING = {"user.add", "user.remove", "user.password", "user.set_admin", "user.unlock", "panel_sets.reassign"}
 
 
 def test_an_audit_failure_still_reports_the_change_that_was_made(app, admin, broken_audit):
@@ -513,7 +522,7 @@ def test_removal_is_audited_before_the_handover_and_the_handover_on_its_own(app,
     call(admin, "DELETE", f"{BASE}/{USER}", {"reassign_to": ADMIN})
     kept = [(r["action"], r["target"], r["detail"]) for r in reversed(audit.read(app.admin_dir, limit=10))]
     assert kept == [("user.remove", USER, {"reassign_to": ADMIN}),
-                    ("panelset.reassign", USER, {"moved": 1, "to": ADMIN})]
+                    ("panel_sets.reassign", USER, {"moved": 1, "to": ADMIN})]
 
 
 def test_a_failed_handover_leaves_the_removal_audited_and_reported(app, admin, monkeypatch):
@@ -528,4 +537,4 @@ def test_a_failed_handover_leaves_the_removal_audited_and_reported(app, admin, m
     assert response.get_json() == {"removed": USER, "panel_sets_reassigned": 0, "reassign_failed": True}
     assert AuthManager(user_file=app.config["user_file"]).get_user(USER) is None
     actions = [(r["action"], r["outcome"]) for r in reversed(audit.read(app.admin_dir, limit=10))]
-    assert actions == [("user.remove", "ok"), ("panelset.reassign", "failed")]
+    assert actions == [("user.remove", "ok"), ("panel_sets.reassign", "failed")]

@@ -6,10 +6,13 @@ the session the committed ``data/fixture_small.zarr`` is replaced by a converted
 """
 import atexit
 import os
+import re
 import shutil
 import tempfile
 
 import pytest
+from flask import Flask
+from flask.testing import FlaskClient
 
 _DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _FIXTURE = os.path.join(_DATA, "fixture_small.zarr")
@@ -113,3 +116,41 @@ def _allow_create_array_data():
 
 
 _allow_create_array_data()
+
+
+class _BrowsesLikeAPage(FlaskClient):
+    """A test client that does what the page does (server/csrf.py): opens the sign-in page
+    before it posts to it, so the form's token and cookie come along, and sends the signed-in
+    user's token (static/js/utils/csrf.js) with a request that changes state. It leaves the
+    admin API alone, whose tests send or withhold the token themselves. Tests about the token
+    (tests/server/test_app_csrf.py) use a plain ``FlaskClient``."""
+
+    def open(self, *args, **kwargs):
+        method = (kwargs.get("method") or "GET").upper()
+        data = kwargs.get("data")
+        path = (args[0] if args and isinstance(args[0], str) else kwargs.get("path", "")).split("?")[0]
+        if (method == "POST" and isinstance(data, dict) and "login_csrf" not in data
+                and path.endswith("/login")):
+            same_request = {k: kwargs[k] for k in ("headers", "base_url", "environ_base", "environ_overrides")
+                            if k in kwargs}      # the page is opened as the form will be posted
+            page = self.get(path, **same_request).get_data(as_text=True)
+            found = re.search(r'name="login_csrf" value="([^"]*)"', page)
+            if found:
+                kwargs["data"] = dict(data, login_csrf=found.group(1))
+        elif (method not in ("GET", "HEAD", "OPTIONS") and "/api/v1/admin/" not in path
+                and "X-AnnZarro-CSRF" not in dict(kwargs.get("headers") or {})):
+            try:
+                with self.session_transaction(path) as sess:
+                    if sess.get("user_id") and not sess.get("csrf"):
+                        sess["csrf"] = "test-token"
+                    token = sess.get("csrf")
+            except RuntimeError:          # login off: no secret key, no session, no token
+                token = None
+            if token:
+                kwargs["headers"] = {**dict(kwargs.get("headers") or {}), "X-AnnZarro-CSRF": token}
+        return super().open(*args, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _browser_like_test_client(monkeypatch):
+    monkeypatch.setattr(Flask, "test_client_class", _BrowsesLikeAPage)

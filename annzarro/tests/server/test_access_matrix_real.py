@@ -72,8 +72,9 @@ def test_variant_spellings_of_a_granted_store_follow_the_volume(app, restricted)
     variants = [v for v in spelling_variants(exact) if v != exact]
     assert variants
     for spelled in variants:
-        expected = 200 if os.path.exists(spelled) else 404
-        assert bob.get("/api/v1/data/obs", query_string={"dataset_path": spelled}).status_code == expected, spelled
+        status = bob.get("/api/v1/data/obs", query_string={"dataset_path": spelled}).status_code
+        # the gate lets it through exactly when the volume has that name (what the reader then does is its own)
+        assert (status != 404) == os.path.exists(spelled), (spelled, status)
 
 
 def test_a_sibling_that_starts_like_a_grant_is_not_covered(app, restricted):

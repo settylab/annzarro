@@ -274,7 +274,8 @@ def test_a_grant_typed_in_another_case_is_spelled_as_the_directory_spells_it(wor
         pytest.skip("case-sensitive filesystem: another case is another directory")
     grant(world, "store", f"{typed}/solo.zarr", restrict=True)
     assert reads(world, "bob", f"{data}/solo.zarr")
-    assert not reads(world, "bob", f"{typed}/solo.zarr")
+    assert reads(world, "bob", f"{typed}/solo.zarr")            # the volume opens it as the same store
+    assert not reads(world, "bob", f"{typed}/other.zarr")
 
 
 def test_case_variants_are_different_names_on_a_case_sensitive_filesystem(world):
@@ -485,13 +486,20 @@ def test_a_restricted_user_cannot_read_the_status_or_the_cache_listing(world):
 
 # --- may_read against an independent model, over spellings it was not written for ---------
 
+def _same(path, granted):
+    try:
+        return os.path.samefile(path, granted)
+    except OSError:
+        return False
+
+
 def test_may_read_agrees_with_pathlib_on_random_spellings(world):
     """A seeded sweep of ``..``, ``.``, empty segments, links, near-miss names and case variants.
 
     The model is the resolved path being a granted path or below one, by pathlib's parents, which
     shares no code with the ancestor lookup in ``Grants.allows_local``; the two must agree on every
-    spelling. A case variant (``A``, ``SOLO.zarr``) resolves to a different string, so the model also
-    says no on a case-insensitive volume.
+    spelling. Identity is ``samefile``, so a case variant (``A``, ``SOLO.zarr``) is the granted store
+    exactly where the volume folds it.
     """
     import pathlib
     import random
@@ -514,7 +522,8 @@ def test_may_read_agrees_with_pathlib_on_random_spellings(world):
             if rng.random() < 0.15:
                 spelled += "/"
             real = pathlib.Path(os.path.realpath(spelled))
-            expected = any(real == g or g in real.parents for g in allowed)
+            # by identity on disk, so a spelling the volume folds (APFS) counts exactly when it is the same file
+            expected = any(_same(p, g) for p in (real, *real.parents) for g in allowed)
             got = access.may_read("bob", spelled)
             covered[got] += 1
             assert got == expected, spelled
@@ -572,3 +581,83 @@ def test_a_panel_set_too_large_to_check_is_not_readable_to_a_restricted_user(wor
         assert permissions.panelset_walk(nested)[2] is True
         assert access.unreadable_dataset("bob", nested) is not None
         assert access.unreadable_dataset("bob", {"dataset": f"{world.world.data}/solo.zarr"}) is None
+
+
+# --- the refusal direction, kept on its own: spellings of what is NOT granted ---------------
+
+def _variants(path):
+    head, name = os.path.split(path)
+    forms = {name.upper(), name.title(), name.swapcase(), unicodedata.normalize("NFD", name), unicodedata.normalize("NFC", name)}
+    return [os.path.join(head, form) for form in sorted(forms) if form != name]
+
+
+def test_variants_of_what_is_not_granted_are_refused(world):
+    """A case or Unicode-form variant never reaches a store, or a sibling folder, that is not granted."""
+    data = world.world.data
+    make_rich_store(f"{data}/café.zarr")
+    grant(world, "dir", f"{data}/a")
+    grant(world, "store", f"{data}/solo.zarr")
+    for target in (f"{data}/other.zarr", f"{data}/ab/y.zarr", f"{data}/ab", f"{data}/café.zarr"):
+        for variant in _variants(target) + [target]:
+            assert not reads(world, "bob", variant), variant
+    # a variant of a granted folder does not reach its denied siblings, with or without dots
+    for variant in _variants(f"{data}/a"):
+        assert not reads(world, "bob", f"{variant}/../ab/y.zarr"), variant
+        assert not reads(world, "bob", f"{variant}/../other.zarr"), variant
+        assert not reads(world, "bob", f"{os.path.dirname(variant)}/AB/y.zarr"), variant
+
+
+def test_on_a_volume_that_keeps_names_apart_a_variant_of_a_granted_path_is_refused(world, monkeypatch):
+    """Simulates a case-sensitive volume on any host: no name has another spelling."""
+    monkeypatch.setattr(access, "_spell", lambda parent, name: name)
+    access._names.clear()
+    data = world.world.data
+    grant(world, "store", f"{data}/solo.zarr")
+    assert reads(world, "bob", f"{data}/solo.zarr")
+    for variant in _variants(f"{data}/solo.zarr"):
+        assert not reads(world, "bob", variant), variant
+    access._names.clear()
+
+
+# --- the spelling cache can only refuse or be re-asked --------------------------------------
+
+def test_a_revoked_grant_is_refused_at_once_whatever_spellings_are_remembered(world):
+    """The cache holds the spelling of a name on disk, never a grant: it is keyed by (real parent directory, name)
+    and bounded at 8192 entries, per worker process."""
+    data = world.world.data
+    grant(world, "store", f"{data}/solo.zarr")
+    access._names.clear()
+    variants = [v for v in _variants(f"{data}/solo.zarr")] + [f"{data}/solo.zarr"]
+    first = [reads(world, "bob", v) for v in variants]            # warms the cache
+    assert access._names, "the lookups were remembered"
+    access.remove_grant(world.config, "bob", f"{data}/solo.zarr")
+    for variant in variants:
+        assert not reads(world, "bob", variant), variant          # at once, inside the 2 s the spellings are kept
+    access.add_grant(world.config, "bob", "store", f"{data}/other.zarr")
+    assert not reads(world, "bob", f"{data}/solo.zarr") and reads(world, "bob", f"{data}/other.zarr")
+    assert first[-1] is True
+
+
+def test_a_link_swapped_or_a_folder_renamed_inside_the_cache_window_is_judged_afresh(world):
+    data = world.world.data
+    grant(world, "store", f"{data}/solo.zarr")
+    link = f"{data}/swap.zarr"
+    os.symlink(f"{data}/solo.zarr", link)
+    assert reads(world, "bob", link) and reads(world, "bob", f"{data}/SWAP.zarr") == os.path.exists(f"{data}/SWAP.zarr")
+    os.unlink(link)
+    os.symlink(f"{data}/other.zarr", link)                        # now another store, within the window
+    assert not reads(world, "bob", link) and not reads(world, "bob", f"{data}/SWAP.zarr")
+    # a granted folder renamed away: its old name is only a path that is not there, and the new name is not granted
+    grant(world, "dir", f"{data}/a")
+    assert reads(world, "bob", f"{data}/a/x.zarr") and reads(world, "bob", f"{data}/A/x.zarr") == os.path.exists(f"{data}/A")
+    os.rename(f"{data}/a", f"{data}/a_moved")
+    assert not reads(world, "bob", f"{data}/a_moved/x.zarr") and not reads(world, "bob", f"{data}/A_MOVED/x.zarr")
+
+
+def test_the_spelling_cache_is_bounded(world, monkeypatch):
+    monkeypatch.setattr(access, "_spell", lambda parent, name: name)
+    access._names.clear()
+    for i in range(8300):
+        access._name_on_disk("/p", f"n{i}")
+    assert len(access._names) <= 8192
+    access._names.clear()
