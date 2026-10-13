@@ -3,7 +3,6 @@
 Over HTTP every chunk read is a request, so reading each selected row on its own
 (one decode of a whole chunk per row) was also one request per row and part.
 """
-import dataclasses
 import functools
 import http.server
 import re
@@ -44,8 +43,10 @@ def served(tmp_path):
 @pytest.mark.skipif(SHARDED, reason="the plain http.server cannot answer the range requests a shard needs")
 def test_subset_gene_fetches_each_chunk_at_most_once(served):
     mat, url, handler = served
-    # no chunk cache, or it would answer the repeats and hide them
-    policy = dataclasses.replace(remote.get_remote_policy(), chunk_cache_mb=0)
+    # no chunk cache, or it would answer the repeats and hide them. The library's own policy,
+    # not the process-wide one: an app built earlier in this process (an auth-enabled one
+    # denies remote stores) must not decide whether this read is allowed.
+    policy = remote.RemotePolicy(chunk_cache_mb=0)
     group = remote.open_remote_group(url, policy)["X"]
     rows = np.sort(np.random.default_rng(1).choice(N_CELLS, 800, replace=False))
     before = len(handler.requests)
