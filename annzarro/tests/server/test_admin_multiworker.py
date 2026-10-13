@@ -158,10 +158,15 @@ def test_two_admins_demoting_each_other_at_once_leave_exactly_one(tmp_path):
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
                 replies = list(pool.map(lambda args: demote(*args), [(ann, "ben"), (ben, "ann")]))
+            # exactly one demotion succeeds. The other is refused one of two ways, by timing: both
+            # passed the admin check and the loser meets the last-admin rule under the lock
+            # (409 last_admin), or the winner's change landed first and the loser is no longer an
+            # admin at all (403 admin_only). Either way one admin is left, which is checked below
             statuses = sorted(r.status for r in replies)
-            assert statuses == [200, 409], (round_, statuses, [r.body for r in replies])
-            refused = next(r for r in replies if r.status == 409)
-            assert refused.json()["reason"] == "last_admin"
+            assert statuses in ([200, 403], [200, 409]), (round_, statuses, [r.body for r in replies])
+            refused = next(r for r in replies if r.status != 200)
+            expected = {409: "last_admin", 403: "admin_only"}[refused.status]
+            assert refused.json()["reason"] == expected, (round_, refused.body)
             survivor = ann if replies[0].status == 200 else ben   # ann's request demoted ben
             listed = survivor.get("/api/v1/admin/users")
             assert listed.status == 200, listed.body
