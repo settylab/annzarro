@@ -86,3 +86,21 @@ def test_an_ordinary_user_sees_no_admin_link_and_gets_403_at_the_page(browser, s
         assert "needs an administrator" in page.inner_text("body")
     finally:
         s.close()
+
+
+def test_sign_out_on_the_admin_page_signs_out_without_a_403(browser, server):
+    """The admin pages' Referrer-Policy must not make the form POST carry Origin: null."""
+    s = Session(browser, server, "root")
+    try:
+        page = s.page
+        page.goto(server + "/admin")
+        page.wait_for_selector("#admin-nav .nav-link", timeout=30000)
+        with page.expect_response(lambda r: r.url.rstrip("/").endswith("/logout") and r.request.method == "POST") as posted:
+            page.click("form[action$='/logout'] button[type=submit]")
+        assert posted.value.status in (200, 302, 303), posted.value.status
+        page.wait_for_url("**/login**", timeout=30000)
+        assert page.locator("#username").count() == 1
+        page.goto(server + "/")
+        page.wait_for_url("**/login**", timeout=30000)
+    finally:
+        s.close()

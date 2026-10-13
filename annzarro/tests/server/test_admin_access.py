@@ -252,7 +252,7 @@ def test_admin_replies_are_not_cached_and_not_framed(app):
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["X-Frame-Options"] == "DENY"
-    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["Referrer-Policy"] == "same-origin"
     refused = login(app, USER).get("/api/v1/admin/audit")
     assert refused.headers["Cache-Control"] == "no-store"
 
@@ -275,6 +275,14 @@ def test_the_page_for_an_admin_carries_the_token_and_the_csp(app):
     assert f'content="{csrf_of(client)}"' in response.get_data(as_text=True)
     assert "script-src 'self'" in response.headers["Content-Security-Policy"]
     assert client.get("/admin/").status_code == 200
+
+
+@pytest.mark.skipif(not os.path.exists(TEMPLATE), reason="templates/admin.html comes with the page shell")
+def test_the_admin_page_keeps_the_referrer_for_its_own_origin(app):
+    """Sign out is a form POST; under no-referrer the browser sends Origin: null and the CSRF check
+    (rightly) refuses it. same-origin still sends nothing to other sites."""
+    response = login(app, ADMIN).get("/admin")
+    assert response.headers["Referrer-Policy"] == "same-origin"
 
 
 def test_an_old_session_without_a_token_gets_one_from_the_page(app, tmp_path):
