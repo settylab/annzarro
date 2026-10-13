@@ -101,6 +101,49 @@ every change without a restart.
   `account.password`, and the refusals. Command-line changes are recorded too, with `via: cli:<account>`.
   `annzarro admin audit verify` checks the chain ({doc}`../reference/cli`).
 
+(admin-access)=
+## Dataset access for external collaborators
+
+By default every signed-in user can open every dataset in the server's data directories. To give
+a collaborator only some of them, **restrict** that user and **grant** what they may see:
+
+- a **folder** (`dir`): its whole subtree;
+- a **store** (`store`): one dataset;
+- a **remote prefix** (`remote`): an `s3://`, `gs://` or `https://` prefix that is inside
+  `server.remote_allowlist`.
+
+A restricted user with no grant sees nothing; admins are never restricted. The grants are in
+`annzarro_admin/access.json`, next to the per-user policy overrides, and are written under the same
+lock as the other admin files, so every worker follows a grant or a revocation on its next request. The
+command line manages them now (`annzarro user access carol --restrict --grant /srv/atlases/pbmc`,
+{doc}`authentication`); the Access panel of the Users section follows.
+
+What a restricted user sees, and how the check works:
+
+- **Not there, not allowed: the same answer.** A dataset, folder or search outside the grants
+  answers exactly as a store that does not exist (`404 not_found`), also outside every data
+  directory, and no reply names the data directory or the folders above a grant. The dropdown,
+  the picker (its root is the list of their grants), the search and panel-set lists show the
+  grants and nothing else ({ref}`http-restricted`).
+- **Real paths.** A grant is matched on real paths: a symbolic link inside a granted folder that
+  leads out of it is not covered (grant the target store, or use `--grant-stores-in` for a folder of
+  links), `/data/a` does not cover `/data/ab`, and a grant is active only while its real path is inside a data
+  directory (a removed directory or a re-pointed link switches it off; `--show` says which are active).
+- **Case and Unicode spellings.** On a case-insensitive or normalising volume (the default
+  macOS file system, APFS), `/Data/A.zarr` and `/data/a.zarr` are the same directory to the operating
+  system. A path matches a grant only when it equals the grant as `realpath` gives it, or as the
+  directory spells it (checked with `samefile`); another spelling is refused, never allowed. On
+  Linux, names that differ in case are different directories.
+- **Open tabs.** A link or panel set naming a dataset outside the grants opens the layout with a
+  "Dataset not available" notice. A grant revoked while a dataset is open turns the next read into the same notice;
+  what the browser already holds cannot be recalled.
+- **Fail closed.** If `access.json` cannot be read, the server cannot tell who is restricted, so every
+  non-admin gets `503 access_unavailable` on the data routes, and their policy falls back to the most
+  restrictive values, until an admin repairs or removes the file. Admins keep working, and the
+  Settings page shows a red banner naming the file.
+- **Audit.** Grants, restrictions and revocations are audited; command-line changes with
+  `via: cli:<account>`.
+
 (admin-data-roots)=
 ## Data directories
 

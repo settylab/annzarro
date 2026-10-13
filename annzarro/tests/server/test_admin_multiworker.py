@@ -14,6 +14,7 @@ workers answer, and requires zero stale answers:
   chain that verifies.
 """
 import concurrent.futures
+import os
 import threading
 import urllib.parse
 
@@ -182,3 +183,45 @@ def test_a_password_reset_ends_the_users_session_on_every_worker(cluster):
     assert reset.status == 200 and reset.json()["password"], reset.body
     answers = {r.status for r in hammer(lambda: alice.get("/api/v1/auth/me"))}
     assert answers <= {401, 302}, f"a worker still honoured the old session: {answers}"
+
+
+def _read(client, store):
+    return client.get("/api/v1/data/info?dataset_path=" + urllib.parse.quote(store, safe="/")).status
+
+
+def test_a_grant_a_revocation_and_a_corrupt_access_file_reach_every_worker_at_once(cluster):
+    import shutil
+
+    from annzarro.tests.server.multiworker_helpers import FIXTURE
+    data = cluster.tmp_path / "data"
+    shutil.copytree(FIXTURE, data / "other.zarr")
+    granted, other = str(data / "home.zarr"), str(data / "other.zarr")
+    carol_name = "alice"             # an ordinary user of the cluster
+    admin = cluster.client("root", admin_page=True)
+    carol = cluster.client(carol_name)
+    both_workers_answer(carol)
+    assert {_read(carol, granted), _read(carol, other)} == {200}
+
+    cluster.cli("user", "access", carol_name, "--restrict", "--grant", granted)
+    assert {r for r in hammer(lambda: _read(carol, granted))} == {200}
+    outside = {r for r in hammer(lambda: _read(carol, other))}
+    missing = {r for r in hammer(lambda: _read(carol, str(data / "nothing.zarr")))}
+    assert outside == missing == {404}, "outside the grant must look like a store that is not there"
+    assert _read(admin, other) == 200, "an admin is never restricted"
+
+    cluster.cli("user", "access", carol_name, "--revoke", granted)
+    assert {r for r in hammer(lambda: _read(carol, granted))} == {404}, "a worker still honoured the revoked grant"
+
+    cluster.cli("user", "access", carol_name, "--unrestrict")
+    assert {r for r in hammer(lambda: _read(carol, other))} == {200}
+
+    # the file that says who is restricted becomes unreadable: everyone but an admin is refused
+    access = os.path.join(cluster.admin_dir, "access.json")
+    with open(access, "w") as fh:
+        fh.write("{ not json")
+    replies = hammer(lambda: carol.get("/api/v1/data/info?dataset_path=" + urllib.parse.quote(granted, safe="/")))
+    assert {r.status for r in replies} == {503}
+    assert {r.json()["reason"] for r in replies} == {"access_unavailable"}
+    assert {_read(admin, granted) for _ in range(20)} == {200}
+    os.remove(access)
+    assert {r for r in hammer(lambda: _read(carol, granted))} == {200}

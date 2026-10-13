@@ -415,7 +415,7 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 
 | Route | Returns |
 |---|---|
-| `GET /auth/me` | `{auth_enabled, username, is_admin, exposed, may_open_any_path}`; `exposed` is true when the server listens beyond localhost with login off; `may_open_any_path` says whether this requester may open paths outside the data directories (`server.arbitrary_paths`) |
+| `GET /auth/me` | `{auth_enabled, username, is_admin, exposed, may_open_any_path, remote_stores, restricted}`; `restricted` is true for a user who sees only the datasets they are granted ({ref}`http-restricted`); `exposed` is true when the server listens beyond localhost with login off; `may_open_any_path` says whether this requester may open paths outside the data directories (`server.arbitrary_paths`) |
 | `GET /config` | the `public` tier of the configuration ({doc}`configuration`): `server` (`host`, `port`, `https_enabled`, `unified_server`), `auth.enabled` (when set), `branding`, `ui` and `integrations`, plus the flat keys the web client reads (`host`, `port`, `app_name`, `project_description`, `contact_info`, `enabled_panel_types`, `integrations`, `ui_*`) and the flags `electron_mode` and `local_mode`. Never `data_dir`, log or users-file paths, limits, cache or remote-store settings |
 | `GET /status` | version, uptime, memory, data directory checks. On a shared server only an admin gets this (it names the data directory, the host and the process); everybody else gets `{"server": {"status": "running", "version"}}`, enough for a load balancer's probe |
 | `GET /cache/info` | the server's result cache of the process that answers: datasets, items, `memory_usage_mb` (exactly what the cache holds), `max_memory_mb`. On a shared server admins only (`403 admin_only` otherwise: the datasets named are what other users opened) |
@@ -423,7 +423,7 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 | `POST /data/refresh?dataset_path=` | check the dataset against the disk (every file's modification time and size) and, if it changed, start a new generation, so every worker serves the change and the browser's revalidations get new tags. Open to every user who may read the dataset; an unchanged store keeps its generation and everyone's cached reads. Bounded: concurrent refreshes in a worker share one walk; a dataset is walked at most once per `server.refresh_min_interval_s` (10 s) across workers, and a refresh sooner never waits in the server: it schedules one walk for the interval's end, shared by every refresh meanwhile, and answers at once `{"status": "scheduled", "after", "retry_after_s"}`; `POST /data/refresh?dataset_path=&after=<after>` then returns the result of the first walk that started at or after `after` (or `scheduled` again until there is one), so the answer always comes from a walk that started after the first request (the browser does this); a walk stops after 3 s, and a store too large to fingerprint fully answers `status: "partial"` (with a `message`) and is not bumped: an admin's `POST /cache/reset` serves its in-place chunk writes (the app shows the `partial` answer to the user as a notice, once per Refresh press). Answers `{"status": "full" or "partial" or "remote" or "scheduled", "changed": bool, "checked": bool, "waited_s", "consolidated_metadata": null or {"stale": true, "detail", "message", "fix"}}`; when the store's consolidated metadata no longer describes it (an element added or rewritten without `zarr.consolidate_metadata`), the store is read without it until it is consolidated again, and `dataset_structure` carries the same `consolidated_metadata` notice. The header's Refresh dataset and each panel's Refresh call it |
 | `GET /policy/effective?keys=a,b` | the policy as this requester gets it (the client never resolves anything itself): `{version, values}` for the settings the page reads, or only the named ones. The reply is `no-store`, and every API reply carries `X-AnnZarro-Policy` with the same `version`, so an open page notices a change on its next request ({doc}`../design/policy-registry`). Open to every signed-in user |
 | `GET /admin/...` | the admin interface, {ref}`below <http-admin>` |
-| `GET /directories/home`, `GET /directories/list?path=` | the data directory and its entries (dataset browser) |
+| `GET /directories/home`, `GET /directories/list?path=` | the data directory and its entries (dataset browser). For a restricted user `directory` is `null` and the listing starts at their grants |
 | `GET /zarr/url?url=` | whether a URL is an acceptable remote store |
 
 Also registered but not used by the web client: `/data/paginated`, `/data/statistics`,
@@ -545,6 +545,27 @@ the operator decided (`reason` `locked_by_config`), one the YAML alone sets
 (`server_scope`), a restrict key set wider than the YAML allows (`config_ceiling`), and any key
 for an administrator's per-user policy (`admin_user`). Audited as `policy.update`; if only the
 audit write fails the change stands and the reply has `audit_failed: true`.
+
+(http-restricted)=
+## Restricted users
+
+An administrator can restrict a user to chosen datasets ({ref}`admin-access`). The routes are the
+same; what differs for a restricted user:
+
+- A dataset, folder or search outside their grants answers exactly as one that does not exist
+  (`404 not_found`, or an empty list on the legacy `core/datasets?dir=`), whatever the cause:
+  allowed directory or not, present or missing. `If-None-Match` of an earlier read does not get a `304`.
+- `GET /directories/home` answers `{"directory": null}`. Their listings start at their grants
+  and name no folder above one: `parent` is `null` at a grant, and `rel_path` is relative to the
+  granted folder (`null` on `/datasets/<path>`).
+- `GET /sessions/list`, `load`, `export` and the other panel-set routes show their own sets and
+  those whose datasets they can all read; the others answer as missing. A save over the name of a
+  hidden one is `409 name_taken` (the owner is not named). Fields that hold the sessions
+  directory's path (`file`, `old_file`, `new_file`, `source_file`) are `null`.
+- `GET /status` and `GET /cache/info` answer `403 admin_only`.
+- If `access.json` cannot be read, every non-admin data route answers
+  `503 {"reason": "access_unavailable", "code": "store_unreadable"}` until it is repaired; admins
+  keep working, and the policy for non-admins falls back to the most restrictive values.
 
 ## Status codes
 
