@@ -10,6 +10,9 @@ coloured by a numeric column and checks:
   10^5000), values with no log10 are explained, the colour bar has 1-2-5
   ticks, saved views store data values and links saved before (log10 under
   Log) open with the range they had, in both drawing paths;
+- with Lock Range on, Center at 0 draws [-m, m] (m the larger |locked limit|) and
+  Log draws a Min at or below 0 from the floor; both keep the locked limits as
+  typed and bring them back when they go off; a 0 to 0 range disables Center;
 - a recolour that waits on the server (a remote store: seconds) shows the
   panel's busy state until the new colours are drawn, and the legend keeps
   the old title until then.
@@ -634,6 +637,202 @@ def test_large_plot_maps_draw_their_own_colours(large_server):
             # Inferno runs black -> pale yellow: its darkest step is near black
             lum = lambda c: sum(w * float(x) for w, x in zip((0.2126, 0.7152, 0.0722), c[c.index("(") + 1:-1].split(",")[:3]))
             assert min(lum(c) for c in inferno) < 40, inferno
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+CENTER = f"""() => {{ const b = document.querySelector('#center-colormap-{PID}');
+    return {{ on: b.getAttribute('aria-pressed') === 'true', disabled: b.disabled, title: b.title,
+             boxTitle: document.querySelector('#color-max-{PID}').title }}; }}"""
+
+
+def _click(page, what):
+    page.click(f"#{what}-{PID}")
+    page.wait_for_timeout(1000)
+
+
+def _range(page):
+    bar = page.evaluate(BAR)
+    return (bar["cmin"], bar["cmax"]), (page.input_value(f"#color-min-{PID}"), page.input_value(f"#color-max-{PID}"))
+
+
+@pytest.mark.parametrize("mode,lo,hi,m", [("regular", -1, 2, 2), ("regular", 0.5, 2, 2), ("regular", -3, -1, 3),
+                                          ("large", -1, 2, 2)])
+def test_center_on_a_locked_range(request, mode, lo, hi, m):
+    """Center at 0 with Lock Range on draws [-m, m], m the larger |locked limit|; the boxes show it, the
+    button and boxes name the locked limits, and Center off brings them back. It used to keep the locked
+    limits with Center lit: [0.5, 2] "centred" was drawn 0.5 to 2."""
+    root = request.getfixturevalue("server" if mode == "regular" else "large_server")
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(root, color=SIGNED, colorScale="RdBu",
+                                                colorMin=lo, colorMax=hi, lockColorRange=True))
+            assert _range(page) == ((lo, hi), (str(lo), str(hi)))
+            _click(page, "center-colormap")
+            assert _range(page) == ((-m, m), (str(-m), str(m)))
+            c = page.evaluate(CENTER)
+            assert c["on"] and not c["disabled"], c
+            assert f"locked limits {lo} to {hi} come back when Center at 0 is off" in c["title"], c
+            assert f"Drawn {-m} to {m}" in c["boxTitle"], c
+            cfg = _saved(page)
+            assert cfg["colorLockedLimits"] == [lo, hi] and (cfg["colorMin"], cfg["colorMax"]) == (-m, m), cfg
+
+            # a link saved like this opens the same, and Center off there brings the limits back
+            keep = {k: cfg[k] for k in ("color", "colorScale", "colorMin", "colorMax", "lockColorRange",
+                                        "centeringActive", "colorLockedLimits", "colorRangeUnits")}
+            linked, errors2 = _open(browser, _link(root, **keep))
+            assert _range(linked) == ((-m, m), (str(-m), str(m)))
+            _click(linked, "center-colormap")
+            assert _range(linked) == ((lo, hi), (str(lo), str(hi)))
+            assert not errors2, errors2
+            linked.close()
+
+            _click(page, "center-colormap")
+            assert _range(page) == ((lo, hi), (str(lo), str(hi)))
+            c = page.evaluate(CENTER)
+            assert not c["on"] and c["boxTitle"] == "", c
+            assert "colorLockedLimits" not in _saved(page)
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_center_on_a_locked_range_old_link(server):
+    """A link saved before (Center at 0 and Lock Range on, limits 0.5 to 2, no kept limits) opens centred
+    on +-2 and keeps 0.5 to 2 for when Center goes off."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=SIGNED, colorMin=0.5, colorMax=2,
+                                                lockColorRange=True, centeringActive=True))
+            assert _range(page) == ((-2, 2), ("-2", "2"))
+            _click(page, "center-colormap")
+            assert _range(page) == ((0.5, 2), ("0.5", "2"))
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_center_then_lock_and_unlock(server):
+    """Centred first, then locked: the symmetric range is the locked one (Center off keeps it). Unlocking
+    while centred on kept limits recentres on the data at once, not after a Refresh."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=SIGNED))
+            _click(page, "center-colormap")
+            (cmin, cmax), _ = _range(page)
+            assert cmin == -cmax and 3.5 < cmax < 4.5
+            _click(page, "lock-range")
+            _type(page, f"#color-max-{PID}", 1)              # centred: Min mirrors
+            assert _range(page) == ((-1, 1), ("-1", "1"))
+            _click(page, "center-colormap")
+            assert _range(page) == ((-1, 1), ("-1", "1")), "typed while centred: that is the locked range"
+            assert "colorLockedLimits" not in _saved(page)
+
+            _type(page, f"#color-min-{PID}", 0.5)            # [0.5, 1]
+            _click(page, "center-colormap")
+            assert _range(page)[0] == (-1, 1)
+            _click(page, "lock-range")                       # unlocked, centred: the data's symmetric range
+            assert _range(page)[0] == (pytest.approx(-cmax), pytest.approx(cmax))
+            assert "colorLockedLimits" not in _saved(page)
+            assert page.evaluate(CENTER)["boxTitle"] == ""
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_center_disabled_on_a_zero_locked_range(server):
+    """A locked range of 0 to 0 has nothing to centre: the button is disabled and says why."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=SIGNED, colorMin=0, colorMax=0, lockColorRange=True))
+            c = page.evaluate(CENTER)
+            assert c["disabled"] and "Nothing to centre" in c["title"], c
+            _click(page, "lock-range")                       # unlocked: centring means the data's range again
+            assert not page.evaluate(CENTER)["disabled"]
+            _click(page, "lock-range")
+            _type(page, f"#color-max-{PID}", 2)              # a range again
+            assert not page.evaluate(CENTER)["disabled"]
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("mode,lo", [("regular", 500), ("regular", 0), ("regular", -5), ("large", -5)])
+def test_log_on_a_locked_range(request, mode, lo):
+    """Log with Lock Range on: a locked Min above 0 is drawn as is; at or below 0 (no log) from the floor,
+    the smallest positive value, as Log draws such values unlocked, and it says so. Log off brings the
+    typed Min back; it used to stay at the floor (103)."""
+    root = request.getfixturevalue("server" if mode == "regular" else "large_server")
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(root, color=LINEAR, colorMin=lo, colorMax=5000, lockColorRange=True))
+            _toggle_log(page)
+            drawn = lo if lo > 0 else LO
+            assert _range(page) == ((pytest.approx(math.log10(drawn)), pytest.approx(math.log10(5000))),
+                                    (str(round(drawn)), "5000"))
+            if lo <= 0:
+                assert any(f"Min {lo} is at or below 0" in n and "come back when Log is off" in n
+                           for n in _notices(page)), _notices(page)
+                assert f"locked limits {lo} to 5000 come back when Log is off" in page.evaluate(CENTER)["boxTitle"]
+                assert _saved(page)["colorLockedLimits"] == [lo, 5000]
+            else:
+                assert "colorLockedLimits" not in _saved(page)
+            _toggle_log(page)
+            assert _range(page) == ((lo, 5000), (str(lo), "5000"))
+            assert "colorLockedLimits" not in _saved(page)
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_log_on_a_locked_negative_range(server):
+    """Locked -5 to -1 on a positive column: under Log Min starts at the floor, Max (no log) at the top,
+    both said; Log off brings -5 to -1 back."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=LINEAR, colorMin=-5, colorMax=-1, lockColorRange=True))
+            _toggle_log(page)
+            assert _range(page)[0] == (pytest.approx(math.log10(LO)), pytest.approx(math.log10(HI)))
+            said = _notices(page)
+            assert any("Max must be above 0" in n and "Min -5 is at or below 0" in n for n in said), said
+            _toggle_log(page)
+            assert _range(page) == ((-5, -1), ("-5", "-1"))
+            assert not errors, errors
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_log_then_lock_then_center(server):
+    """Log on, then locked: Lock keeps what is drawn; Center at 0 under Log centres log10 values (decades
+    around 1) and says so; with the locked limits kept for Center off."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page, errors = _open(browser, _link(server, color=dict(LINEAR, log=True)))
+            _click(page, "lock-range")
+            assert _range(page)[0] == (pytest.approx(math.log10(LO)), pytest.approx(math.log10(HI)))
+            assert "decades around 1" in page.evaluate(CENTER)["title"]
+            _click(page, "center-colormap")
+            m = math.log10(HI)
+            assert _range(page)[0] == (pytest.approx(-m), pytest.approx(m))
+            c = page.evaluate(CENTER)
+            assert "Centred on the locked range" in c["title"] and "decades around 1" in c["title"], c
+            _click(page, "center-colormap")
+            assert _range(page) == ((pytest.approx(math.log10(LO)), pytest.approx(m)), ("103", "9950"))
             assert not errors, errors
             page.close()
         finally:
