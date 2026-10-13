@@ -8,6 +8,7 @@
  * 3. Closing a panel removes its divider with no trace
  * 4. The bottom always has a selection tile for adding new panels
  */
+import * as LayoutMotion from './utils/layout-motion.js';
 
 const LayoutManager = (function() {
     // Constants
@@ -430,6 +431,9 @@ const LayoutManager = (function() {
         secondPane.style.flex = DEFAULT_SPLIT_RATIO;
         secondPane.dataset.flexPercentage = DEFAULT_SPLIT_RATIO;
         
+        // The row eases to its new height; a pane beside opens from zero width
+        LayoutMotion.capture({ slideIn: direction === 'vertical' ? null : secondPane });
+
         // Replace the element with the split container
         container.insertBefore(splitContainer, element);
         container.removeChild(element);
@@ -602,6 +606,9 @@ const LayoutManager = (function() {
         
         // Move all content from the other pane to the parent container
         const otherPaneContents = Array.from(otherPane.children);
+        // The row eases to its new height; a sibling beside widens into the space
+        LayoutMotion.capture({ widen: splitContainer.dataset.splitDirection === 'vertical'
+            ? null : otherPaneContents[0] || null });
         otherPaneContents.forEach(child => {
             containerParent.insertBefore(child, splitContainer);
         });

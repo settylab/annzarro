@@ -7,6 +7,7 @@ import { hoverInfoFromSelection, hoverOffFromSelection, NO_HOVER } from './hover
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { beginLoad, endLoad, wasCancelled } from '../../utils/load-scope.js';
 import { showCancelled } from '../../utils/panel-surface.js';
+import { afterMotion } from '../../utils/layout-motion.js';
 import { DataManager } from '../../data-manager.js';
 import { 
   setupAestheticsMenuListeners, 
@@ -113,22 +114,25 @@ export function setupResizeObserver(plotContainer) {
     }
   
     let resizeTimeout = null;
+    const fit = () => {
+      try {
+        // Check if a Plotly plot exists by verifying the presence of plot data
+        if (plotContainer.data && plotContainer.data.length > 0
+            && sizeChanged(plotContainer)) {
+          Plotly.relayout(plotContainer, { autosize: true });
+        }
+      } catch (error) {
+        console.error('Error during Plotly.relayout:', error);
+      }
+    };
   
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.target === plotContainer) {
           clearTimeout(resizeTimeout);
-          resizeTimeout = setTimeout(() => {
-            try {
-              // Check if a Plotly plot exists by verifying the presence of plot data
-              if (plotContainer.data && plotContainer.data.length > 0
-                  && sizeChanged(plotContainer)) {
-                Plotly.relayout(plotContainer, { autosize: true });
-              }
-            } catch (error) {
-              console.error('Error during Plotly.relayout:', error);
-            }
-          }, 5); // debounce
+          // While the layout eases to a new size (layout-motion.js), fit once
+          // at the end, not on every frame
+          resizeTimeout = setTimeout(() => afterMotion(fit), 5); // debounce
         }
       }
     });
