@@ -124,8 +124,9 @@ A restricted user with no grant sees nothing. For them:
   grants and nothing else, and no reply names the data directory or the folders above a grant.
 - Grants are matched on real paths: a symlink inside a granted folder that leads out of it is not
   covered (grant the link's target store, or use `--grant-stores-in` for a folder of links),
-  `/data/a` does not cover `/data/ab`, and a case or Unicode spelling that differs from the one
-  the listings hand out is refused too, also on a case-insensitive filesystem.
+  `/data/a` does not cover `/data/ab`, and on a case-insensitive filesystem (the macOS default) a
+  case or Unicode-form variant of a granted path is allowed when it names the same file on disk,
+  while a variant of anything not granted, or one that is a different directory, is refused.
 - A grant is active only while its real path is inside a data directory of the server. A
   data directory removed, or a link re-pointed outside, deactivates it (`--show` says so).
 - Panel sets: they see their own, and those whose datasets they can all read. Others answer as

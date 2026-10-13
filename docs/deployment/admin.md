@@ -130,10 +130,12 @@ What a restricted user sees, and how the check works:
   links), `/data/a` does not cover `/data/ab`, and a grant is active only while its real path is inside a data
   directory (a removed directory or a re-pointed link switches it off; `--show` says which are active).
 - **Case and Unicode spellings.** On a case-insensitive or normalising volume (the default
-  macOS file system, APFS), `/Data/A.zarr` and `/data/a.zarr` are the same directory to the operating
-  system. A path matches a grant only when it equals the grant as `realpath` gives it, or as the
-  directory spells it (checked with `samefile`); another spelling is refused, never allowed. On
-  Linux, names that differ in case are different directories.
+  macOS file system, APFS), `/Data/A.zarr` and `/data/a.zarr` are the same directory to the
+  operating system. A variant of a granted path in another case or Unicode form is allowed when
+  it names the same file on disk (the server checks it with `samefile`, and matches nothing by
+  folding strings). A variant of anything that is not granted is refused, and so is a variant that is a
+  different directory, as on a case-sensitive volume (Linux), where names that differ in case are different
+  directories.
 - **Open tabs.** A link or panel set naming a dataset outside the grants opens the layout with a
   "Dataset not available" notice. A grant revoked while a dataset is open turns the next read into the same notice;
   what the browser already holds cannot be recalled.
