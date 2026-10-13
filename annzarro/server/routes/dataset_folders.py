@@ -191,7 +191,6 @@ def list_folder(config, folder, offset=0, limit=None):
         if entry["kind"] == "store":
             _fill_store(entry)
     parent = os.path.dirname(path.rstrip(os.sep))
-    at_top = os.path.realpath(path) == os.path.realpath(data_dir)
     if user and not access.may_read(user, parent):
         parent, at_top = None, True    # the folder above a grant is not theirs
     return {
