@@ -442,7 +442,25 @@ def may_read(user, path):
     # grants are spelled as the directories spell them, so spell the path that way too before
     # refusing. Every substitution is verified with samefile, so an unrelated name never maps.
     spelled = _canonical_memo(real)
-    return spelled != real and grants.allows_local(spelled)
+    if spelled == real or not grants.allows_local(spelled):
+        return False
+    # The remembered spelling is only a hint: it may make a path match a grant, so the two are checked to be the
+    # same file now, and a wrong or stale entry can cause a refusal but never an allow.
+    return _same_where_it_exists(real, spelled)
+
+
+def _same_where_it_exists(a, b):
+    """Whether paths ``a`` and ``b`` (the same names, spelled differently) are the same file, comparing their deepest
+    parents that exist: what lies below a granted store, folder or link may not be there yet, but only with the same names."""
+    while not os.path.exists(a):
+        parent_a, parent_b = os.path.dirname(a), os.path.dirname(b)
+        if parent_a == a or parent_b == b or os.path.basename(a) != os.path.basename(b):
+            return False      # a name that is not there is never re-spelled: only the same text is carried below
+        a, b = parent_a, parent_b
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
 
 
 def _canonical_memo(real):

@@ -9,6 +9,7 @@ propagation across workers in ``test_access_propagation.py``.
 """
 import json
 import os
+import time
 import unicodedata
 
 import pytest
@@ -661,3 +662,42 @@ def test_the_spelling_cache_is_bounded(world, monkeypatch):
         access._name_on_disk("/p", f"n{i}")
     assert len(access._names) <= 8192
     access._names.clear()
+
+
+# --- the spelling is a hint: it can cause a refusal, never an allow -------------------------
+
+def test_a_wrong_remembered_spelling_cannot_turn_a_refusal_into_an_allow(world):
+    """Inject (data, "other.zarr") -> "solo.zarr": a granted name for a store that is another directory."""
+    data = world.world.data
+    grant(world, "store", f"{data}/solo.zarr")
+    assert not reads(world, "bob", f"{data}/other.zarr")
+    access._names[(os.path.realpath(data), "other.zarr")] = (time.monotonic(), "solo.zarr")
+    try:
+        assert not reads(world, "bob", f"{data}/other.zarr")          # not the same file as the granted store
+        assert reads(world, "bob", f"{data}/solo.zarr")                # the exact spelling is untouched
+        # a name that does not exist at all, mapped to a granted one, is refused too
+        access._names[(os.path.realpath(data), "ghost.zarr")] = (time.monotonic(), "solo.zarr")
+        assert not reads(world, "bob", f"{data}/ghost.zarr")
+    finally:
+        access._names.clear()
+
+
+def test_spelling_a_name_never_picks_one_of_two_distinct_fold_equal_entries(monkeypatch):
+    """A case-sensitive parent can hold Foo.zarr and FOO.zarr as two directories: neither is "foo.zarr"."""
+    parent = "/simulated/case-sensitive"
+    real = {"listdir": os.listdir, "lexists": os.path.lexists, "samefile": os.path.samefile}
+    same = {("Foo.zarr", "foo.zarr"): False, ("FOO.zarr", "foo.zarr"): False}
+
+    monkeypatch.setattr(os, "listdir", lambda p: ["Foo.zarr", "FOO.zarr"] if p == parent else real["listdir"](p))
+    monkeypatch.setattr(os.path, "lexists", lambda p: True if p.startswith(parent) else real["lexists"](p))
+
+    def samefile(a, b):
+        if a.startswith(parent):
+            return same[(os.path.basename(a), os.path.basename(b))]
+        return real["samefile"](a, b)
+
+    monkeypatch.setattr(os.path, "samefile", samefile)
+    assert access._spell(parent, "foo.zarr") == "foo.zarr"
+    # and where the volume does say one of them is the same file (a folding volume), that is the spelling
+    same[("FOO.zarr", "foo.zarr")] = True
+    assert access._spell(parent, "foo.zarr") == "FOO.zarr"
