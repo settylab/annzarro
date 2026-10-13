@@ -1231,11 +1231,15 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec, client: Optional[str
 _computing: "Dict[Tuple, threading.Event]" = {}
 
 
-#: Memory one subset computation holds per cell of the dataset, in bytes. Measured on the
-#: 95.6M-cell Tahoe store (run-timed, 2026-10-12, 16 cores): six distinct numeric-filter
-#: subsets at once peaked at 30.5 GB of process memory, 5.1 GB each, 53 B per cell; a random
-#: sample peaked at 0.45 GB in all and a balanced one at 1.1 GB, so the filter is the
-#: figure to charge. Rounded up to 55.
+#: Memory one subset computation holds per cell of the dataset, in bytes: the worst of the
+#: ways a column is read, charged to every subset. Measured on the 95.6M-cell Tahoe store
+#: (run-timed, 2026-10-12, 16 cores). A column read as a Python list (a text condition on
+#: a numeric column, a balance on a plain column, any string column) holds 32 B a cell
+#: for the list and more for what is made of it: six numeric filters read that way at once
+#: peaked at 30.5 GB, 5.1 GB each, 53 B a cell. A numeric filter on the array
+#: (get_obs_var_numeric) peaked at 10.8 GB for six, 19 B a cell; a random sample at 0.46 GB
+#: in all and a balance on a categorical column at 1.1 GB. 55 is the list figure rounded
+#: up, so the charge is conservative for the usual filters and right for the worst.
 SUBSET_BYTES_PER_CELL = 55
 #: Share of the machine's memory the subsets one process computes at once may hold
 #: (server.subset_budget_mb unset)
