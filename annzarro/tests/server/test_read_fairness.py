@@ -4,10 +4,11 @@ admit() gave the pairwise-read budget to whoever asked first, so one user's
 parallel row reads of a big matrix made every other user's focused-cell read
 answer 503 read_busy. Each requester (user, else client address) now holds at
 most read_user_share_percent of it. /data/subset computations are limited per
-worker too (subset_max_concurrent), with the same share of the places
+worker too (subset_budget_mb), with the same share of the places
 (test_subset_fairness.py).
 """
 import threading
+import time
 
 import pytest
 
@@ -121,7 +122,7 @@ def _seen_owner(tmp_path, address="203.0.113.9", **config):
 
 def test_a_shared_server_names_the_requester(tmp_path):
     owner, places = _seen_owner(tmp_path, hosted=True)
-    assert owner == "203.0.113.9" and places == 2
+    assert owner == "203.0.113.9" and places == cell_subset.default_budget_bytes()
 
 
 @pytest.mark.parametrize("address,owner", [
@@ -147,27 +148,97 @@ def test_a_single_user_server_has_no_share_and_no_subset_limit(tmp_path):
             pass
 
 
-def test_subset_computations_are_limited_per_worker():
-    cell_subset.configure(max_concurrent=1, wait_s=0.05)
-    started, release = threading.Event(), threading.Event()
-    real = cell_subset._compute_subset_unbounded
+class _Reader:
+    """Just enough of a reader for the subset gate: the dataset's cell count."""
 
+    def __init__(self, n_obs):
+        self.n_obs = n_obs
+
+    def get_metadata(self, path):
+        return {"shape": (self.n_obs, 10)}
+
+
+def _slow_compute(started, release):
     def slow(*args, **kwargs):
-        started.set()
+        started.release()
         release.wait(5)
         return "subset"
+    return slow
 
-    cell_subset._compute_subset_unbounded = slow
-    try:
-        first = threading.Thread(target=lambda: cell_subset._compute_subset(None, "d", None, None, None))
-        first.start()
-        assert started.wait(5)
-        with pytest.raises(ReadBusyError) as busy:
-            cell_subset._compute_subset(None, "d", None, None, None)
-        assert "subset_max_concurrent" in str(busy.value)
+
+def test_subset_computations_are_charged_by_their_cells_and_limited_per_worker(monkeypatch):
+    """Two subsets of 1M cells fit a 120 MB budget (55 MB each); the third waits and is
+    refused after subset_wait_s, naming the setting; a freed place lets the next one in."""
+    cell_subset.configure(budget_mb=120, wait_s=0.2)
+    started, release = threading.Semaphore(0), threading.Event()
+    monkeypatch.setattr(cell_subset, "_compute_subset_unbounded", _slow_compute(started, release))
+    reader = _Reader(1_000_000)
+    threads = [threading.Thread(target=lambda: cell_subset._compute_subset(reader, "d", None, None, None))
+               for _ in range(2)]
+    for t in threads:
+        t.start()
+    assert started.acquire(timeout=5) and started.acquire(timeout=5)       # both hold the budget
+    assert cell_subset._places.held() == 2 * 1_000_000 * cell_subset.SUBSET_BYTES_PER_CELL
+    began = time.monotonic()
+    with pytest.raises(ReadBusyError) as busy:
+        cell_subset._compute_subset(reader, "d", None, None, None)
+    assert 0.15 < time.monotonic() - began < 2 and busy.value.retry_after_s >= 1
+    assert "subset_budget_mb" in str(busy.value) and "subset_wait_s" in str(busy.value)
+    release.set()
+    for t in threads:
+        t.join(5)
+    assert cell_subset._places.held() == 0
+    assert cell_subset._compute_subset(reader, "d", None, None, None) == "subset"
+
+
+def test_a_small_dataset_is_not_held_to_the_count_a_big_one_is(monkeypatch):
+    cell_subset.configure(budget_mb=120, wait_s=0.05)
+    started, release = threading.Semaphore(0), threading.Event()
+    monkeypatch.setattr(cell_subset, "_compute_subset_unbounded", _slow_compute(started, release))
+    small = _Reader(10_000)                                  # 0.55 MB each
+    threads = [threading.Thread(target=lambda: cell_subset._compute_subset(small, "d", None, None, None))
+               for _ in range(20)]
+    for t in threads:
+        t.start()
+    for _ in range(20):
+        assert started.acquire(timeout=5)
+    release.set()
+    for t in threads:
+        t.join(5)
+
+
+def test_a_subset_larger_than_the_whole_budget_runs_alone_and_says_so(monkeypatch, caplog):
+    cell_subset.configure(budget_mb=100, wait_s=0.1)         # 100 MB; a 95.6M-cell subset needs 5 GB
+    started, release = threading.Semaphore(0), threading.Event()
+    monkeypatch.setattr(cell_subset, "_compute_subset_unbounded", _slow_compute(started, release))
+    big, small = _Reader(95_600_000), _Reader(1_000)
+    with caplog.at_level("WARNING", logger="annzarro.core.subset"):
+        runner = threading.Thread(target=lambda: cell_subset._compute_subset(big, "d", None, None, None))
+        runner.start()
+        assert started.acquire(timeout=5)                    # not refused, not deadlocked
+        assert any("runs alone" in r.getMessage() for r in caplog.records)
+        with pytest.raises(ReadBusyError):                   # nothing else gets in beside it
+            cell_subset._compute_subset(small, "d", None, None, None)
         release.set()
-        first.join(5)
-        assert cell_subset._compute_subset(None, "d", None, None, None) == "subset"
-    finally:
-        cell_subset._compute_subset_unbounded = real
-        release.set()
+        runner.join(5)
+    assert cell_subset._places.held() == 0
+    assert cell_subset._compute_subset(big, "d", None, None, None) == "subset"     # alone again: runs
+
+
+def test_a_waiting_subset_gets_in_when_the_budget_frees_before_the_wait_ends(monkeypatch):
+    cell_subset.configure(budget_mb=60, wait_s=5)            # one 1M-cell subset at a time
+    started, release = threading.Semaphore(0), threading.Event()
+    monkeypatch.setattr(cell_subset, "_compute_subset_unbounded", _slow_compute(started, release))
+    reader = _Reader(1_000_000)
+    results = []
+    first = threading.Thread(target=lambda: results.append(cell_subset._compute_subset(reader, "d", None, None, None)))
+    first.start()
+    assert started.acquire(timeout=5)
+    second = threading.Thread(target=lambda: results.append(cell_subset._compute_subset(reader, "d", None, None, None)))
+    second.start()
+    time.sleep(0.2)
+    assert results == []                                     # waiting, not refused
+    release.set()
+    first.join(5)
+    second.join(5)
+    assert results == ["subset", "subset"]

@@ -145,6 +145,15 @@ def test_search_walks_only_the_grants(granted):
     assert names(admin["results"]) == ["deep.zarr"]
 
 
+def test_a_regex_search_by_a_restricted_user_matches_a_granted_store_and_nothing_else(granted):
+    """The regex path (guard, per-match deadline) is the same one an unrestricted user takes."""
+    bob = client(granted, "bob")
+    hit = bob.get("/api/v1/datasets/search", query_string={"q": r"^in\.zarr$", "mode": "regex"})
+    assert hit.status_code == 200 and names(hit.get_json()["results"]) == ["in.zarr"]
+    assert bob.get("/api/v1/datasets/search", query_string={"q": r"^(out|hidden|deep)", "mode": "regex"}).get_json()["results"] == []
+    assert bob.get("/api/v1/datasets/search", query_string={"q": "(a+)+$", "mode": "regex"}).status_code == 400
+
+
 def test_search_does_not_enter_a_link_that_leaves_the_grant(granted):
     os.symlink(f"{granted.data}/hidden", f"{granted.data}/pub/portal")
     found = client(granted, "bob").get("/api/v1/datasets/search", query_string={"q": "deep"}).get_json()

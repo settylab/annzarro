@@ -83,18 +83,23 @@ server:
   # Longest regular expression a name search (mode=regex) runs, in characters,
   # and the seconds one regex scan may take before it answers with the matches
   # found so far (partial: true). Patterns that repeat a repeat or branch inside
-  # one, such as (a+)+, are always refused (400 regex_too_complex): matching
-  # one 18-character name takes seconds, and the regex engine cannot be
-  # interrupted. 0 = no time limit.
+  # one, such as (a+)+, are refused first (400 regex_too_complex). Every match
+  # also runs under this time limit with the `regex` package, which stops
+  # inside a match. 0 = no scan limit (a single match is still cut at 10 s).
   name_search_max_regex_chars: 200
   name_search_timeout_s: 10
   # Fairness. The percentage of read_budget_mb one user (with login off: one
   # client address) may hold at once; the rest stays for everybody else. Never
   # less than one read of max_read_mb. 0 = no share. And how many cell subsets
   # (/data/subset: a pass over a column of every cell) one worker computes at
-  # once; another waits read_wait_s, then 503 read_busy. Raise it with threads.
+  # once may hold, in MB: each is charged 55 bytes per cell of its dataset (measured
+  # at 95.6M cells: a numeric filter holds 5 GB; six at once held 30 GB). null =
+  # 15% of the machine's RAM per worker. Another subset waits subset_wait_s seconds
+  # for it, then 503 read_busy with Retry-After. A subset larger than the whole budget
+  # runs alone (logged), never refused outright.
   read_user_share_percent: 50
-  subset_max_concurrent: 2
+  subset_budget_mb: null
+  subset_wait_s: 30
   # gunicorn (annzarro/server/gunicorn_config.py; `annzarro start` is not
   # gunicorn and ignores these): a worker is replaced after max_requests
   # requests (+ up to max_requests_jitter, so they do not restart together),

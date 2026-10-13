@@ -94,3 +94,60 @@ def test_a_read_in_flight_holds_the_budget(served):
     with read_guard.admit(read_guard.budget_bytes()):
         reply = _uns(client, store, "small")
     assert reply.status_code == 503 and reply.get_json()["reason"] == "read_busy"
+
+
+# --- strings: their length is in the data, not in the metadata ------------------------------------
+
+import random
+import string
+
+
+def _text(n):
+    rng = random.Random(7)
+    return "".join(rng.choice(string.ascii_letters) for _ in range(n))     # does not compress away
+
+
+@pytest.fixture
+def served_strings(tmp_path):
+    """Strings 2 to 3 times the 1 MB limit, in the two shapes an undercount missed:
+    one huge scalar, and a few huge elements of a short array."""
+    data = tmp_path / "data"
+    data.mkdir()
+    store = str(data / "a.zarr")
+    shutil.copytree(FIXTURE, store)
+    consolidated = os.path.join(store, ".zmetadata")
+    if os.path.exists(consolidated):
+        os.remove(consolidated)
+    root = zarr.open_group(store, mode="r+")
+    uns = root["uns"] if "uns" in root else root.create_group("uns")
+    _array(uns, "bigstr", shape=(), dtype=str)[()] = _text(3_000_000)
+    arr = _array(uns, "strarr", shape=(4,), chunks=(1,), dtype=str)
+    arr[:] = np.array([_text(600_000) for _ in range(4)], dtype=object)
+    _array(uns, "names", shape=(50,), chunks=(50,), dtype=str)[:] = np.array([f"name_{i}" for i in range(50)], dtype=object)
+    app = create_app({"TESTING": True, "DEBUG": False, "auth_enabled": False, "data_dir": str(data),
+                      "cache_enabled": False, "max_read_mb": 1})
+    yield app.test_client(), store
+    read_guard.configure()
+
+
+@pytest.mark.parametrize("key", ["bigstr", "strarr"])
+def test_a_string_member_over_the_limit_is_refused_by_its_real_length(served_strings, key):
+    """Estimated by element count (1 and 4 elements x 160 B) these passed with a 3 MB and a 2.4 MB reply."""
+    client, store = served_strings
+    reply = _uns(client, store, key)
+    assert reply.status_code == 413, (key, reply.status_code, reply.get_data()[:200])
+    body = reply.get_json()
+    assert body["reason"] == "read_too_large" and body["elements"][0]["element"] == f"uns/{key}"
+    assert "max_read_mb" in body["error"]
+
+
+def test_a_short_string_array_is_unchanged(served_strings):
+    client, store = served_strings
+    reply = _uns(client, store, "names")
+    assert reply.status_code == 200 and reply.get_json()["data"] == [f"name_{i}" for i in range(50)]
+
+
+def test_a_refused_string_read_holds_nothing_in_the_budget(served_strings):
+    client, store = served_strings
+    assert _uns(client, store, "bigstr").status_code == 413
+    assert read_guard.in_flight_bytes() == 0

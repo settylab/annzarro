@@ -3059,7 +3059,7 @@ class ZarrReader(CacheSettings):
         return uns_structure
     
     @staticmethod
-    def _uns_value(node) -> Any:
+    def _uns_value(node, budget=None) -> Any:
         """A uns member as plain JSON-able Python.
 
         Arrays are read whole with ``[()]``, which also works for the 0-d
@@ -3069,8 +3069,8 @@ class ZarrReader(CacheSettings):
         dicts, to any depth.
         """
         if hasattr(node, 'keys'):
-            return {name: ZarrReader._uns_value(node[name]) for name in node.keys()}
-        value = node[()]
+            return {name: ZarrReader._uns_value(node[name], budget) for name in node.keys()}
+        value = read_guard.read_uns_array(node, budget)
         if isinstance(value, np.ndarray):
             if value.dtype.kind in ('S', 'O', 'U', 'T'):
                 flat = [v.decode('utf-8') if isinstance(v, bytes) else
@@ -3111,7 +3111,7 @@ class ZarrReader(CacheSettings):
             node = node[part]
         need = read_guard.check_uns(key, node)
         with read_guard.admit(need):
-            return self._uns_value(node)
+            return self._uns_value(node, read_guard.UnsBudget(key))
 
     @cached_method
     def get_cell_gene_names(self, dataset_path: str, entity: Literal["cells", "genes"], use_cache: bool = False) -> List[str]:

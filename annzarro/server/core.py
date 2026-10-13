@@ -5,6 +5,7 @@ This module contains core functionality for the Annzarro server,
 including configuration, initialization, and routing.
 """
 
+import io
 import os
 import re
 import json
@@ -64,7 +65,8 @@ DEFAULT_CONFIG = {
     "name_search_max_regex_chars": 200,   # longest regex a name search runs (a longer one is a 400 regex_too_long)
     "name_search_timeout_s": 10,          # seconds a regex name search scans before it answers partially; 0 = no limit
     "read_user_share_percent": 50,        # % of read_budget_mb one user (else one address) may hold at once; 0 = no share
-    "subset_max_concurrent": 2,           # cell subsets one worker computes at once (each is a pass over a column of every cell)
+    "subset_budget_mb": None,             # MB the cell subsets one worker computes at once may hold (55 B a cell); None = 15% of RAM
+    "subset_wait_s": 30,                  # seconds a subset waits for that budget before a 503
     "max_requests": 20000,                # gunicorn: requests a worker serves before it is replaced (frees creeping memory); 0 = never
     "max_requests_jitter": 2000,          # gunicorn: up to this many extra requests, random per worker, so workers do not restart together
     "limit_request_line": 0,              # gunicorn: longest request line in bytes; 0 = unlimited (the proxy bounds it); gunicorn caps any other value at 8190
@@ -537,14 +539,28 @@ def configure_app(app: Flask, config: Dict[str, Any]) -> None:
             "limit_mb": float(limit_mb),
         }), 413
 
-    # by the length the client declares, before any route runs; a body that
-    # outgrows what it declared (or is chunked) is cut off by werkzeug and
-    # reaches the handler below
+    # By the length the client declares, before any route runs. A body with no
+    # length (chunked) cannot be judged up front, and werkzeug's own cut-off at
+    # the limit hands the route a truncated body, which fails there as a 400 or
+    # a 500 and never says why. So it is read here, up to the limit and one byte
+    # more: past the limit it is a 413, else it is given back to the route
+    # whole, with the length it turned out to have.
     @app.before_request
-    def _refuse_declared_size():
+    def _refuse_oversized_body():
         cap = app.config.get("MAX_CONTENT_LENGTH")
-        if cap and request.content_length is not None and request.content_length > cap:
-            return _too_large()
+        if not cap:
+            return None
+        if request.content_length is not None:
+            return _too_large() if request.content_length > cap else None
+        if request.method in ("POST", "PUT", "PATCH") and \
+                "chunked" in (request.headers.get("Transfer-Encoding") or "").lower():
+            stream = request.environ.get("wsgi.input")
+            data = stream.read(cap + 1) if stream is not None else b""
+            if len(data) > cap:
+                return _too_large()
+            request.environ["wsgi.input"] = io.BytesIO(data)
+            request.environ["CONTENT_LENGTH"] = str(len(data))
+            request.environ["wsgi.input_terminated"] = True
         return None
 
     app.register_error_handler(RequestEntityTooLarge, lambda exc: _too_large())

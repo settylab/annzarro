@@ -165,11 +165,16 @@ server:
       maximum: 100
       description: Percent of read_budget_mb one user (login off - one client address) may hold of pairwise reads at once; never less than one max_read_mb read; 0 = no share
       default: 50
-    subset_max_concurrent:
-      type: integer
+    subset_budget_mb:
+      type: [number, "null"]
       minimum: 1
-      description: Cell subsets one worker computes at once (each is a pass over a column of every cell); another waits read_wait_s, then 503 read_busy
-      default: 2
+      description: MB the cell subsets one worker computes at once may hold, each charged 55 bytes per cell of its dataset; null = 15% of RAM. A subset larger than the whole budget runs alone
+      default: null
+    subset_wait_s:
+      type: number
+      minimum: 0
+      description: Seconds a subset waits for subset_budget_mb before answering 503 read_busy with Retry-After
+      default: 30
     max_requests:
       type: integer
       minimum: 0
