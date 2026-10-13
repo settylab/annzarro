@@ -19,31 +19,6 @@ your own computer and do not want to install Python, use the {doc}`desktop-app` 
 Install AnnZarro on the machine that holds the data. For a cluster, that is the cluster, not
 your laptop ({doc}`../deployment/personal-server`).
 
-## Desktop app
-
-The packaged desktop app needs no Python and no other installation: the server, Python and the
-web interface are inside the download. Download the file for your system from the
-[latest release](https://github.com/settylab/annzarro/releases/latest) of `settylab/annzarro`
-(`<version>` is the release number):
-
-| System | File |
-|---|---|
-| macOS, Apple silicon | `AnnZarro-<version>-macos-arm64.dmg` (or `.zip`) |
-| macOS, Intel | `AnnZarro-<version>-macos-x64.dmg` (or `.zip`) |
-| Windows 10/11, 64-bit | `AnnZarro-<version>-windows-x64-setup.exe` (installer, no admin rights needed), or `AnnZarro-<version>-windows-x64.zip` (portable) |
-| Linux x86-64 | `AnnZarro-<version>-linux-x86_64.AppImage`, or `AnnZarro-<version>-linux-amd64.deb` for Debian and Ubuntu |
-
-`SHA256SUMS.txt` on the same page lists the checksums. First launch:
-
-- **macOS**: open the `.dmg`, drag AnnZarro to Applications and open it.
-- **Windows**: run the installer, or unzip and run `AnnZarro.exe`. SmartScreen may show "Windows
-  protected your PC"; click **More info**, then **Run anyway**.
-- **Linux**: `chmod +x` the AppImage and run it, or `sudo apt install ./AnnZarro-<version>-linux-amd64.deb`.
-
-The app works offline and reads datasets from `~/annzarro-data` or from any `.zarr` folder you
-choose. It does not open remote stores (`s3://`, `gs://`, `https://`); use pip with the `remote`
-extra for those. Details, file locations and troubleshooting: {doc}`desktop-app`.
-
 ## With pip
 
 ```bash
@@ -90,6 +65,31 @@ on your `PATH`:
 ```bash
 uv tool install annzarro
 ```
+
+## Desktop app
+
+The packaged desktop app needs no Python and no other installation: the server, Python and the
+web interface are inside the download. Download the file for your system from the
+[latest release](https://github.com/settylab/annzarro/releases/latest) of `settylab/annzarro`
+(`<version>` is the release number):
+
+| System | File |
+|---|---|
+| macOS, Apple silicon | `AnnZarro-<version>-macos-arm64.dmg` (or `.zip`) |
+| macOS, Intel | `AnnZarro-<version>-macos-x64.dmg` (or `.zip`) |
+| Windows 10/11, 64-bit | `AnnZarro-<version>-windows-x64-setup.exe` (installer, no admin rights needed), or `AnnZarro-<version>-windows-x64.zip` (portable) |
+| Linux x86-64 | `AnnZarro-<version>-linux-x86_64.AppImage`, or `AnnZarro-<version>-linux-amd64.deb` for Debian and Ubuntu |
+
+`SHA256SUMS.txt` on the same page lists the checksums. First launch:
+
+- **macOS**: open the `.dmg`, drag AnnZarro to Applications and open it.
+- **Windows**: run the installer, or unzip and run `AnnZarro.exe`. SmartScreen may show "Windows
+  protected your PC"; click **More info**, then **Run anyway**.
+- **Linux**: `chmod +x` the AppImage and run it, or `sudo apt install ./AnnZarro-<version>-linux-amd64.deb`.
+
+The app works offline and reads datasets from `~/annzarro-data` or from any `.zarr` folder you
+choose. The app does not include the readers for remote stores (the `remote` extra), so `s3://`,
+`gs://` and `https://` datasets do not open in it; use pip with the `remote` extra for those. Details, file locations and troubleshooting: {doc}`desktop-app`.
 
 ## From source
 
@@ -159,7 +159,7 @@ store. Tests that change a store's metadata do it with `set_attrs`, `require_gro
 annzarro --help
 ```
 
-lists the subcommands `start`, `stop`, `user`, `install`, `config` and `desktop`. Then show the
+lists the subcommands `start`, `stop`, `user`, `admin`, `install`, `config`, `desktop`, `export` and `store`. Then show the
 configuration the server would start with:
 
 ```bash

@@ -174,7 +174,8 @@ the browser sends will not match the address the server sees and every change is
 - **Admins** (`user add --admin`) may change any panel set, reassign its owner, clear the
   server's dataset cache and, with the default `server.arbitrary_paths: admins`, open any dataset
   path the server account can read, not only the data directories (each open is logged). They
-  cannot write to datasets, and users are managed only with `annzarro user`, not in the app.
+  cannot write to datasets. Users are managed with `annzarro user` or in the admin interface
+  ({doc}`admin`), not in the viewer.
   To confine admins to the data directories, set `server.arbitrary_paths: local-only` (or
   `none`); see below.
 - Panel sets saved **before owners were recorded** have no owner and can only be changed by an

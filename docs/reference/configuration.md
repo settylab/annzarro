@@ -166,8 +166,7 @@ and for it `total_gb` is the limit to set.
 **How the estimates were made.** On an Apple M3 Max laptop with Chrome, drawing up to 182 million
 points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in large-plot mode keeps
 its points outside the JavaScript heap (0.1 bytes of heap per point; about 65 bytes per point of
-typed arrays, and 200 million points drew with a 13.6 GB tab and 35 MB of heap). Before v0.4.1 it
-held 20.2 bytes of heap per point and a tab died at 182 to 200 million points; a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
+typed arrays, and 200 million points drew with a 13.6 GB tab and 35 MB of heap); a regular plot coloured by a gene 640 bytes per point at its peak (3.36 GB at 5
 million); the app itself 0.17 GB; hover labels of a categorical column 34 bytes per point plus 62 bytes
 and 2 per character per distinct label (measured at a million points: 999,998 barcodes 114 MB,
 65,000 labels 38 MB, plus the reply while it loads). There is no cap on the number of labels: a

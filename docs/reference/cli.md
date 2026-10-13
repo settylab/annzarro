@@ -3,7 +3,7 @@
 The package installs one command, `annzarro`. All output below is from `annzarro <command> --help`.
 
 ```text
-annzarro [-h] [--config CONFIG] [--debug] {start,stop,user,install,config,desktop,export,store} ...
+annzarro [-h] [--config CONFIG] [--debug] {start,stop,user,admin,install,config,desktop,export,store} ...
 ```
 
 | Global option | Meaning |
@@ -61,7 +61,7 @@ its users file directly; otherwise pass the file: `annzarro user --config site.y
 
 | Command | Meaning |
 |---|---|
-| `user add [--username NAME] [--password PW] [--admin]` | Add a user. Prompts for missing values; the password twice. `--admin` lets the user change any shared panel set, reassign its owner, clear the server's dataset cache and, with the default `server.arbitrary_paths: admins`, open any dataset path the server account can read. No dataset writes, no user management in the app. To confine admins, set `server.arbitrary_paths: local-only`. Exit 1 if the user exists. |
+| `user add [--username NAME] [--password PW] [--admin]` | Add a user. Prompts for missing values; the password twice. `--admin` lets the user change any shared panel set, reassign its owner, clear the server's dataset cache and, with the default `server.arbitrary_paths: admins`, open any dataset path the server account can read. No dataset writes. Admins can also manage users in the admin interface ({doc}`/deployment/admin`). To confine admins, set `server.arbitrary_paths: local-only`. Exit 1 if the user exists. |
 | `user list` | Print each username and whether it is an admin. |
 | `user passwd [--username NAME] [--password PW]` | Change a password (prompted for if omitted). Ends the user's existing logins. |
 | `user set-admin [--username NAME] [--no-admin] [--force]` | Grant admin, or revoke it with `--no-admin`. Revoking the last admin is refused unless `--force`. |
@@ -120,7 +120,7 @@ Build and run the Electron desktop app. Works only from a source checkout with N
 | Command | Meaning |
 |---|---|
 | `desktop run [--icon PNG]` | Run the app in development mode. |
-| `desktop build [--platform windows\|win\|mac\|macos\|linux\|all] [--rebuild] [--bundle-venv \| --no-bundle-venv] [--venv-path PATH] [--icon PNG]` | Build installers into `annzarro/desktop/electron/dist/` (default: current platform, with a bundled Python environment). |
+| `desktop build [--platform windows\|win\|mac\|macos\|linux\|all] [--rebuild] [--no-build-server] [--icon PNG]` | Freeze the server with PyInstaller, then build installers into `annzarro/desktop/electron/dist/` (default: current platform). `--no-build-server` reuses the frozen server in `annzarro/desktop/electron/server/`. |
 | `desktop icons --icon PNG [--desktop-icons] [--web-icons] [--all]` | Generate app icons and web favicons from one high-resolution PNG (needs Pillow). |
 
 ## `annzarro export`

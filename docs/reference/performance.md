@@ -10,13 +10,6 @@ Every number on this page is AnnZarro v0.4.0. The paper's performance figure
 ({doc}`../paper/performance`) and scale figure ({doc}`../paper/scale`) summarise the benchmarks;
 their numbers are reproduced below where they matter for setting up a store or a server.
 
-```{important}
-**HPC numbers are being re-measured.** The paper's benchmark on HPC nodes (Xeon Gold 6254, data
-on an NFS scratch filer), which covers dense pairwise matrices up to 160 GB and a
-larger atlas, is being rerun on v0.4.0. Until it lands, neither the paper nor this
-page gives an HPC number. Laptop and demonstration-store numbers are final for v0.4.0.
-```
-
 ## On the demonstration store
 
 Measured for these docs on AnnZarro v0.4.0: `bm_aging.zarr` (8,090 cells × 16,285 genes), server
@@ -156,14 +149,12 @@ The slowest interaction is set by chunk layout, not by data size. Full discussio
 | (256, 4096) | **2.21 s** | 0.015 s | 0.09 GiB |
 
 With whole-gene chunks every chunk holds part of each cell's row, so one cell row decompresses the
-whole layer. The HPC sweep on a larger Kompot layer is being re-measured on v0.4.0.
+whole layer.
 
 ## Pairwise matrices
 
 Dense cells × cells and genes × genes matrices are read one row per click, and a row costs what a
-gene column of the same length costs. The paper's measurements on dense pairwise matrices of 10 to
-160 GB were made on HPC nodes and are being re-measured on v0.4.0; this page will quote them when
-they land.
+gene column of the same length costs.
 
 ## Server memory
 
