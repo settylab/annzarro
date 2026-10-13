@@ -181,6 +181,12 @@ server:
   # stops answering fails the request with HTTP 504 instead of holding it.
   remote_connect_timeout_s: 10
   remote_read_timeout_s: 30
+  # Seconds one request may spend on remote reads in total. The two timeouts
+  # above bound one wait; a host that sends a byte every 29 s never trips them.
+  # Past this the connection is closed and the request answers 504
+  # remote_deadline. null = 120 on a hosted server, 600 on a single-user one;
+  # 0 = no limit.
+  remote_request_timeout_s: null
   # In-memory LRU of raw bytes per open remote store (zarr 3 only; 0 = off).
   # The reader's result cache only answers identical requests; this one makes
   # a different gene or column from already-fetched chunks local.

@@ -126,10 +126,12 @@ so memory grows with `workers x cache_memory_mb`. The production default for
 example sets 1,000. `server.workers` also sets the count; `ANNZARRO_SERVER_WORKERS` overrides it. Logins work across workers because
 the session cookie is signed with one key stored beside the users file.
 
-**Timeouts.** gunicorn kills a worker whose request takes longer than its timeout (60 s in the
-bundled configuration, 30 s in gunicorn's own default). A remote store that stalls fails after
-`remote_read_timeout_s` (30 s) with HTTP 504; a worker timeout above that lets the 504 reach the
-user instead of a dropped connection.
+**Timeouts.** The gunicorn `timeout` (60 s in the bundled configuration) is the worker's heartbeat
+under the threaded worker class: a long request in a worker thread is not cut at that time. A remote
+store that stalls is cut off by `remote_read_timeout_s` (30 s) between bytes with HTTP 504. A host that
+sends data too slowly to trip that is cut off by `remote_request_timeout_s` (120 s on a hosted server),
+the total one request may spend on
+remote reads; keep the proxy's `proxy_read_timeout` at or above it.
 
 ### As a systemd service
 
@@ -192,7 +194,7 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host  $host;
         proxy_set_header X-Forwarded-Prefix "";   # see "Serving under a path"
-        proxy_read_timeout 90s;
+        proxy_read_timeout 120s;
         # the full cell and gene name lists are streamed (chunked, no length);
         # nginx speaks HTTP/1.0 to an upstream unless told otherwise, and then
         # cannot tell a reply that failed half way from one that ended

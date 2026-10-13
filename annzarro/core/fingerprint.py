@@ -173,7 +173,7 @@ def _docs_of_consolidated_zarr_json(raw: bytes) -> Optional[Dict[str, Any]]:
 def _zarr_remote_metadata(url: str) -> Optional[Dict[str, Any]]:
     """The metadata documents of a remote store from its consolidated
     metadata, under the keys a local walk gives; None without one."""
-    from .remote import get_remote_policy, require_backend
+    from .remote import bound_by_deadline, get_remote_policy, require_backend
     import fsspec
 
     require_backend(url)
@@ -181,6 +181,7 @@ def _zarr_remote_metadata(url: str) -> Optional[Dict[str, Any]]:
     policy = get_remote_policy()
     policy.check(url)
     fs, path = fsspec.core.url_to_fs(target, **policy.storage_options(target))
+    bound_by_deadline(fs)
     try:
         return _docs_of_zmetadata(fs.cat_file(f"{path}/.zmetadata"))
     except FileNotFoundError:
@@ -456,8 +457,18 @@ def cached(dataset_path: str) -> Optional[Dict[str, Any]]:
     return fp
 
 
+#: Hashing the names of a large remote store takes minutes, legitimately, so
+#: its deadline is this many times a request's; but it must end, because the
+#: job runs on the one fingerprint thread and a stalled host would otherwise
+#: block every fingerprint after it. No remote_request_timeout_s, no limit.
+BACKGROUND_DEADLINE_FACTOR = 10
+
+
 def _run(reader, dataset_path: str, key: str) -> Dict[str, Any]:
-    fp = compute(reader, dataset_path)
+    from .remote import deadline, get_remote_policy
+    seconds = get_remote_policy().request_timeout
+    with deadline(seconds * BACKGROUND_DEADLINE_FACTOR if seconds else None):
+        fp = compute(reader, dataset_path)
     with _lock:
         _memory[dataset_path] = (key, fp)
         _pending.pop(dataset_path, None)
