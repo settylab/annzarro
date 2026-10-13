@@ -44,7 +44,7 @@ import { colourKind, DEFAULT_MODEL } from '../../utils/memory-guard.js';
 import { probeForDraw, niceFloor, probeMessage } from '../../utils/alloc-probe.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyError, classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
-import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
+import { LARGE_TYPES, formatPoints, largeThreshold } from './large-plot-controls.js';
 import { buildPointIndexSliced } from '../../utils/point-index.js';
 import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
@@ -53,8 +53,7 @@ import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categor
 
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
 export function largePlotPoints() {
-  const v = Config.DEFAULTS && Config.DEFAULTS.LARGE_PLOT_POINTS;
-  return typeof v === 'number' && v >= 0 ? v : 1000000;
+  return largeThreshold(Config.DEFAULTS);
 }
 const TRACE_POINTS = 99999;      // < Plotly's TOO_MANY_POINTS (1e5)
 const COLOR_BINS = 64;
@@ -96,7 +95,7 @@ export function largePlotReason(settings, n) {
   return largePlotRefusal(settings, n);
 }
 
-async function loadSeries(s, datasetPath, structure, signal) {
+async function loadSeries(s, datasetPath, structure, signal, { axis = null } = {}) {
   if (s.type === 'none') return null;
   if (s.type === 'obsm') {
     const v = await DataManager.loadVector(`${Config.API.OBSM}/${s.key}`,
@@ -116,6 +115,11 @@ async function loadSeries(s, datasetPath, structure, signal) {
   const info = structure && structure.obs && structure.obs.columns_info
     && structure.obs.columns_info[s.key];
   if (info && info.type === 'categorical') {
+    // an axis is drawn from numbers; a column of labels would arrive as codes with no `values`
+    if (axis) {
+      throw new Error(`obs.${s.key} is a categorical column and cannot be the ${axis} axis of a plot of this size: `
+        + 'turn on a subset, or choose a numeric column');
+    }
     // past GROUP_COLOURS categories: codes ranked by the server and the
     // legend's few labels, never the column's label list
     return DataManager.loadCategoryCodes(datasetPath, s.key,
@@ -463,8 +467,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     }
   };
   const [xs, ys, cs] = await Promise.all([
-    loadSeries(settings.x, datasetPath, structure, signal),
-    loadSeries(settings.y, datasetPath, structure, signal),
+    loadSeries(settings.x, datasetPath, structure, signal, { axis: 'x' }),
+    loadSeries(settings.y, datasetPath, structure, signal, { axis: 'y' }),
     colour()
   ]);
   stopped();

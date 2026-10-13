@@ -1,7 +1,7 @@
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
-import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker } from './plot-make-helper.js';
+import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds } from './plot-make-helper.js';
 import { autoPointCount, debounced } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
@@ -978,7 +978,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     if (!isGenePlot) {
       const nCells = (DataManager.getCells() || []).length;
       const large = nCells > largePlotPoints();
-      updateLargePlotControls(container, large, largePlotPoints());
+      updateLargePlotControls(container, large, largePlotPoints(), await DataManager.getDatasetStructure());
       if (large) {
         const refusal = largePlotRefusal(settings, nCells);
         if (refusal) {
@@ -1000,7 +1000,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         // no marker in large-plot mode, but the line that the focus is not shown
         noteFocusOutside(plotContainer, data, settings, 'cells');
         // again after the draw: panel code that ran meanwhile may have reset a toggle
-        updateLargePlotControls(container, true, largePlotPoints());
+        updateLargePlotControls(container, true, largePlotPoints(), await DataManager.getDatasetStructure());
         return;
       }
     }
@@ -2580,6 +2580,8 @@ export function buildPlotLayout(settings, data) {
   // (zoom, camera, a category hidden from the legend) is kept while this is
   // the same, i.e. on other cells of the same dataset
   layout.uirevision = DataManager.getCurrentDataset() || 'view';
+  // each axis the type of its field; the zoom kept only for the same field
+  applyAxisKinds(layout, settings, data, layout.uirevision);
 
   return layout;
 }
