@@ -43,6 +43,18 @@ Desktop apps for Windows, macOS and Linux (no Python needed, works offline) are 
 Details: [installation](https://annzarro.readthedocs.io/en/latest/getting-started/installation.html),
 [desktop app](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html).
 
+## Desktop app or server
+
+| | Desktop app | Server mode |
+|---|---|---|
+| For | one person, data on their computer | a lab or institute sharing datasets in the browser |
+| Strengths | no Python needed, works offline, private to your computer, opens local `.zarr` stores | multi-user access with login, panel sets shared between users, large datasets read on the server (the browser receives only the slices a view needs), per-user dataset access control and an admin page, less memory on each user's computer |
+| Set up | [Desktop app](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html) | [Lab server](https://annzarro.readthedocs.io/en/latest/deployment/lab-server.html) |
+
+Use the desktop app if you are the only user and the data are on your computer; use a server
+if several people share datasets or some collaborators may see only some of them.
+[Full comparison](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-or-server.html).
+
 ## Quickstart
 
 ```bash
