@@ -149,3 +149,63 @@ test('under Log the boxes show data values, the settings log10', () => {
     assert.equal(controls['#color-min-l'].value, '1');
     assert.equal(controls['#color-max-l'].value, '82');
 });
+
+const { lockedColorRange } = await import('../../../static/js/utils/array-stats.js');
+const SIGNED = [-3.9, -1, 0.5, 2, 2.4];
+
+test('lockedColorRange: centred, [-m, m] with m the larger |limit|, whatever the signs', () => {
+    const o = { log: false, centred: true, floor: -3.9, top: 2.4 };
+    assert.deepEqual(lockedColorRange([-1, 2], o), { min: -2, max: 2, exact: false });
+    assert.deepEqual(lockedColorRange([0.5, 2], o), { min: -2, max: 2, exact: false });
+    assert.deepEqual(lockedColorRange([-3, -1], o), { min: -3, max: 3, exact: false });
+    // nothing to centre: the limits as they are
+    assert.deepEqual(lockedColorRange([0, 0], o), { min: 0, max: 0, exact: true });
+    // not centred, not Log: drawn as typed
+    assert.deepEqual(lockedColorRange([0.5, 2], { ...o, centred: false }), { min: 0.5, max: 2, exact: true });
+});
+
+test('lockedColorRange: under Log a Min at or below 0 starts at the floor, a Max there at the top', () => {
+    const o = { log: true, centred: false, floor: 2, top: 4 };
+    const r = lockedColorRange([500, 5000], o);
+    assert.ok(Math.abs(r.min - Math.log10(500)) < 1e-12 && Math.abs(r.max - Math.log10(5000)) < 1e-12 && r.exact);
+    assert.deepEqual(lockedColorRange([0, 5000], o), { min: 2, max: Math.log10(5000), exact: false });
+    assert.deepEqual(lockedColorRange([-5, 5000], o), { min: 2, max: Math.log10(5000), exact: false });
+    assert.deepEqual(lockedColorRange([-5, -1], o), { min: 2, max: 4, exact: false });
+});
+
+test('Center at 0 on a locked range draws [-m, m] and keeps the limits; off, they come back', () => {
+    for (const [lo, hi, m] of [[-1, 2, 2], [0.5, 2, 2], [-3, -1, 3]]) {
+        const controls = makeControls('k');
+        const settings = { colorMin: lo, colorMax: hi, lockColorRange: true, centeringActive: true };
+        updateColorSliderUI(controls, { color: SIGNED }, settings, 'k', false);
+        assert.deepEqual([settings.colorMin, settings.colorMax], [-m, m]);
+        assert.deepEqual(settings.colorLockedLimits, [lo, hi]);
+        assert.equal(controls['#color-min-k'].value, String(-m));
+        assert.equal(controls['#color-max-k'].value, String(m));
+        assert.match(controls['#color-max-k'].attrs.title, new RegExp(`locked limits ${lo} to ${hi} come back when Center at 0 is off`));
+        // again (a recolour): the same, not centred on the centred range
+        updateColorSliderUI(controls, { color: SIGNED }, settings, 'k', false);
+        assert.deepEqual([settings.colorMin, settings.colorMax], [-m, m]);
+        settings.centeringActive = false;
+        updateColorSliderUI(controls, { color: SIGNED }, settings, 'k', false);
+        assert.deepEqual([settings.colorMin, settings.colorMax], [lo, hi]);
+        assert.equal(settings.colorLockedLimits, undefined);
+        assert.equal(controls['#color-max-k'].attrs.title, '');
+    }
+});
+
+test('a locked range under Log keeps a Min at or below 0 for when Log goes off', () => {
+    const controls = makeControls('g');
+    const logged = [2, 2.5, 3, 4];   // log10 values, the floor 100
+    const settings = { color: { type: 'obs', key: 'n', log: true }, colorMin: 0, colorMax: 5000,
+                       lockColorRange: true, colorLockedLimits: [-5, 5000] };
+    updateColorSliderUI(controls, { color: logged }, settings, 'g', false);
+    assert.deepEqual([settings.colorMin, settings.colorMax], [2, Math.log10(5000)]);
+    assert.equal(controls['#color-min-g'].value, '100');
+    assert.deepEqual(settings.colorLockedLimits, [-5, 5000]);
+    assert.match(controls['#color-min-g'].attrs.title, /locked limits -5 to 5000 come back when Log is off/);
+    settings.color.log = false;
+    updateColorSliderUI(controls, { color: [100, 316, 1000, 10000] }, settings, 'g', false);
+    assert.deepEqual([settings.colorMin, settings.colorMax], [-5, 5000]);
+    assert.equal(settings.colorLockedLimits, undefined);
+});

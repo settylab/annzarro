@@ -232,6 +232,30 @@ export function colorBoundFromData(v, log, which, floor = null) {
   };
 }
 
+/**
+ * The range a locked colour range is drawn with under Log and Center at 0.
+ * The locked limits stay as typed (settings.colorLockedLimits, data units);
+ * what is drawn: under Log a Min at or below 0 from the floor, a Max at or
+ * below 0 at the data's top; centred at 0, [-m, m] with m the larger |limit|
+ * in drawn units. With m = 0 there is nothing to centre: the limits as they are.
+ * Center at 0 on a locked range used to keep the limits, so [0.5, 2] was drawn
+ * 0.5 to 2 with Center lit; Log off used to leave a typed Min of 0 at the floor.
+ * @param {Array<number|null>} limits - locked [Min, Max] as typed, data units
+ * @param {Object} o
+ * @param {boolean} o.log
+ * @param {boolean} o.centred
+ * @param {number} o.floor - the data's low end, drawn units
+ * @param {number} o.top - the data's high end, drawn units
+ * @returns {{min: number, max: number, exact: boolean}} drawn units; exact: as typed
+ */
+export function lockedColorRange([lo, hi], { log, centred, floor, top }) {
+  const min = (lo == null ? null : colorBoundFromData(lo, log, 'min').value) ?? floor;
+  const max = (hi == null ? null : colorBoundFromData(hi, log, 'max').value) ?? top;
+  const m = Math.max(Math.abs(min), Math.abs(max));
+  if (centred && m > 0 && Number.isFinite(m)) return { min: -m, max: m, exact: false };
+  return { min, max, exact: !log || ((lo == null || lo > 0) && (hi == null || hi > 0)) };
+}
+
 /** Marker for colour bounds stored in data units; views saved before it stored log10 under Log. */
 export const COLOR_RANGE_UNITS = 'data';
 
