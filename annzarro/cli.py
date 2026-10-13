@@ -385,6 +385,9 @@ def manage_users(args: argparse.Namespace) -> int:
                           {"address": args.address, "cleared": cleared})
         logger.info(f"Cleared {cleared} failed-login record(s) of '{username}'")
 
+    elif args.user_command == "access":
+        return _user_access(args, auth_manager, config, user_file)
+
     elif args.user_command == "list":
         # List users
         users = auth_manager.get_users()
@@ -401,6 +404,97 @@ def manage_users(args: argparse.Namespace) -> int:
             print("-" * 40)
             
     return 0
+
+def _user_access(args, auth_manager, config, user_file) -> int:
+    """`annzarro user access <name>`: restrict a user to the datasets they are granted, and say what they see.
+
+    Each change goes through the same locked, atomic store the admin interface
+    writes (``access.json``), takes effect on the running server's next request,
+    and is audited. Admins are never restricted.
+    """
+    from .server import access
+
+    username = args.name
+    record = auth_manager.get_user(username)
+    if record is None:
+        logger.error(f"User '{username}' does not exist")
+        return 1
+    flat = dict(config.get("server") or {})
+    flat["user_file"] = user_file
+    flat.setdefault("auth_enabled", True)        # restricting users only means something where people log in
+    # remote grants are checked against the same allowlist the server applies
+    from .core.remote import configure_remote_policy
+    configure_remote_policy(flat)
+    actor = getpass.getuser()
+    changed = False
+
+    def audit(action, detail, outcome="ok"):
+        _record_cli_audit(auth_manager, config, action, username, detail, outcome)
+
+    if args.restrict and record.is_admin:
+        audit("access.restrict", {"restricted": True}, "refused:admin")
+        logger.error(f"'{username}' is an admin, and admins are never restricted. Remove their admin role first "
+                     "(annzarro user set-admin --no-admin).")
+        return 1
+    try:
+        if args.restrict or args.unrestrict:
+            before = access.set_restricted(flat, username, bool(args.restrict))
+            audit("access.restrict" if args.restrict else "access.unrestrict", {"was_restricted": before})
+            changed = True
+        for path in args.grant or []:
+            grant = access.add_grant(flat, username, "auto", path, actor=actor)
+            audit("access.grant", {"kind": grant["kind"], "path": grant["path"]})
+            logger.info(f"Granted {grant['kind']} {grant['path']} to '{username}'")
+            changed = True
+        for folder in args.grant_stores_in or []:
+            added, skipped = access.add_stores_in(flat, username, folder, actor=actor)
+            audit("access.grant_stores_in", {"folder": folder, "added": len(added), "skipped": len(skipped)})
+            logger.info(f"Granted {len(added)} store(s) of {folder} to '{username}'"
+                        + (f"; skipped {len(skipped)}: " + ", ".join(f"{s['path']} ({s['reason']})" for s in skipped)
+                           if skipped else ""))
+            changed = True
+        for path in args.revoke or []:
+            removed = access.remove_grant(flat, username, path)
+            if not removed:
+                logger.error(f"'{username}' has no grant for {path}")
+                audit("access.revoke", {"path": path}, "refused:not_granted")
+                return 1
+            audit("access.revoke", {"path": path, "removed": len(removed)})
+            logger.info(f"Revoked {len(removed)} grant(s) for {path} from '{username}'")
+            changed = True
+    except access.GrantError as exc:
+        audit("access.grant", {"reason": exc.reason}, f"refused:{exc.reason}")
+        logger.error(str(exc))
+        return 1
+    except ValueError as exc:
+        logger.error(f"access.json is unreadable ({exc}); repair or remove it first")
+        return 1
+
+    if args.show or not changed:
+        entry = access.entry_of(username, flat)
+        restricted = access.is_restricted(username, flat)
+        report = _grants_report(flat, username)
+        print(f"{username}: {'restricted to the grants below' if restricted else 'unrestricted (sees every dataset)'}"
+              + (" [admin: never restricted]" if record.is_admin else ""))
+        for grant in report:
+            state = "active" if grant["active"] else f"inactive: {grant['inactive_reason']}"
+            print(f"  {grant['kind']:6} {grant['path']}  ({state})")
+        if restricted and not any(g["active"] for g in report):
+            print("  (no active grant: this user sees nothing)")
+        if entry.get("policy"):
+            print(f"  per-user settings: {', '.join(sorted(entry['policy']))}")
+    elif args.restrict:
+        if not any(g["active"] for g in _grants_report(flat, username)):
+            logger.warning(f"'{username}' is restricted and has no grant yet, so they see nothing. "
+                           "Add one with --grant PATH.")
+    return 0
+
+
+def _grants_report(flat, username):
+    """The grants of ``username`` with their state, read without a request."""
+    from .server import access
+    return access.describe(username, flat)["grants"]
+
 
 def manage_admin(args: argparse.Namespace) -> int:
     """`annzarro admin audit verify`: check the admin audit log's hash chain."""
@@ -984,6 +1078,30 @@ def main(argv: List[str] = None) -> int:
     user_admin_parser.add_argument(
         '--force', action='store_true',
         help="With --no-admin: allow revoking the last admin (the server is then left without one)")
+
+    # Restrict a user to chosen datasets
+    user_access_parser = user_subparsers.add_parser(
+        'access', help="Restrict a user (an external collaborator, say) to chosen folders, stores and remote "
+                       "prefixes, or show what they see. Takes effect on a running server at once. "
+                       "Admins are never restricted")
+    user_access_parser.add_argument('name', help="Username")
+    group = user_access_parser.add_mutually_exclusive_group()
+    group.add_argument('--restrict', action='store_true',
+                       help="The user sees only what is granted (nothing, until a grant is added)")
+    group.add_argument('--unrestrict', action='store_true',
+                       help="The user sees every dataset again (the grants are kept)")
+    user_access_parser.add_argument('--grant', action='append', metavar='PATH',
+                                    help="Grant a folder (its whole subtree), a store, or a remote URL prefix inside "
+                                         "the remote allowlist. Local paths must lie inside a data directory. "
+                                         "Repeat for several")
+    user_access_parser.add_argument('--grant-stores-in', action='append', metavar='DIR',
+                                    help="Grant every store directly inside DIR, one grant each (for a folder of "
+                                         "links to curated datasets); a link leading outside the data directories "
+                                         "is skipped")
+    user_access_parser.add_argument('--revoke', action='append', metavar='PATH',
+                                    help="Remove the grant of PATH (as it was granted, or any spelling of the same real path)")
+    user_access_parser.add_argument('--show', action='store_true',
+                                    help="Print the user's restriction and grants (the default when nothing else is asked)")
 
     # Clear failed-login lockouts
     user_unlock_parser = user_subparsers.add_parser(

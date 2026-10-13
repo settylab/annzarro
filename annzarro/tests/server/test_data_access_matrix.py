@@ -5,8 +5,10 @@ The matrix is read from ``app.url_map``, with no handwritten route list, so a
 new endpoint that declares no gate fails here first. Until the grants exist
 (``is_restricted`` false, ``may_read`` allows all) the gate changes no reply;
 the tests that need a restricted requester inject a deny-list in place of
-those two functions. Slice A2 replaces the deny-list with the real grants and
-reuses ``Harness`` and the path-trick helpers below.
+those two functions. Slice A2 runs the same checks against the real grants
+(``test_access_matrix_real.py`` imports ``Harness`` and these tests), and
+moved what a restricted listing shows to ``test_access_listings.py``: a
+listing is built from the grants, which a deny-list cannot drive.
 """
 import os
 import unicodedata
@@ -87,14 +89,14 @@ def fold(path):
 def inject_deny_list(monkeypatch, app, denied, remote=False):
     """Make ``RESTRICTED`` a restricted user who may read everything except ``denied`` (paths under them too).
 
-    A2 replaces this with real grants; the harness below does not change.
+    ``test_access_matrix_real.py`` runs the same checks with real grants.
     """
     roots = [fold(os.path.realpath(path)) for path in denied]
 
     def may_read(user, path):
         if "://" in path:
             return not remote
-        path = fold(path)
+        path = fold(os.path.realpath(os.path.expanduser(path)))      # may_read resolves the path itself
         return not any(path == root or path.startswith(root + os.sep) for root in roots)
 
     monkeypatch.setattr(access, "is_restricted", lambda user: user == RESTRICTED)
@@ -161,6 +163,19 @@ def same_reply(rule, a, b):
     if rule.endpoint in STATEFUL:
         return a.status_code == b.status_code
     return (a.status_code, a.data) == (b.status_code, b.data)
+
+
+#: What a restricted user is deliberately not told, by route: the data directory's layout.
+NOT_TOLD = {"get_fingerprint": ("rel_path",), "list_dataset_folder": ("parent", "rel_path")}
+
+
+def same_but_not_told(rule, a, b):
+    """``same_reply``, except for the fields of ``NOT_TOLD`` (a restricted user's reply lacks them)."""
+    hidden = NOT_TOLD.get(rule.endpoint)
+    if not hidden or a.status_code != 200 or b.status_code != 200:
+        return same_reply(rule, a, b)
+    strip = lambda reply: {k: v for k, v in reply.get_json().items() if k not in hidden}
+    return strip(a) == strip(b)
 
 
 def blank(reply, *spellings):
@@ -250,9 +265,13 @@ def test_in_grant_reply_is_the_admin_reply_on_every_route(app, restricted):
             continue   # a remote URL and the listings that name no path are checked on their own
         a = restricted.request(admin, rule, method, "in")
         b = restricted.request(bob, rule, method, "in")
-        assert same_reply(rule, a, b), (rule.rule, method)
+        assert same_but_not_told(rule, a, b), (rule.rule, method)
         served += a.status_code == 200
     assert served >= 20
+    # the layout fields really are withheld from them
+    fingerprint = _rule(app, "get_fingerprint")
+    assert restricted.request(admin, *fingerprint, "in").get_json()["rel_path"] == "in.zarr"
+    assert restricted.request(bob, *fingerprint, "in").get_json()["rel_path"] is None
 
 
 def test_unrestricted_user_and_admin_are_never_gated(app, restricted):
@@ -272,26 +291,6 @@ def test_remote_url_outside_the_grant_is_refused_and_unrestricted_is_not(app, re
     # the gate does not run the validator for them: nothing is fetched
     monkeypatch.setattr(access, "may_read", lambda user, path: path.startswith("https://granted.example/"))
     assert restricted.request(_client(app, RESTRICTED), rule, method, "in").status_code != 404
-
-
-def test_listings_never_show_an_out_of_grant_entry(app, restricted):
-    bob, admin = _client(app, RESTRICTED), _client(app, "alice")
-    data = restricted.data
-    for client, hidden in ((admin, False), (bob, True)):
-        names = lambda payload: {e["name"] for e in payload}
-        everything = client.get("/api/v1/datasets").get_json()
-        assert ("out.zarr" not in names(everything)) == hidden
-        assert "in.zarr" in names(everything)
-        listing = client.get("/api/v1/directories/list", query_string={"path": data}).get_json()
-        assert ("out.zarr" not in names(listing["zarr_stores"])) == hidden
-        assert ("hidden" not in names(listing["directories"])) == hidden
-        folder = client.get("/api/v1/datasets/folder", query_string={"folder": data}).get_json()
-        assert ("out.zarr" not in names(folder["entries"])) == hidden
-        assert ("hidden" not in names(folder["entries"])) == hidden
-        found = client.get("/api/v1/datasets/search", query_string={"q": "zarr"}).get_json()
-        assert ({"out.zarr", "deep.zarr"} & names(found["results"]) == set()) == hidden
-        legacy = client.get("/api/v1/core/datasets").get_json()
-        assert not any("out.zarr" in str(d.get("path")) for d in legacy["datasets"]) == hidden
 
 
 # --- caches and conditional requests sit behind the gate -----------------------------
