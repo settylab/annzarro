@@ -33,8 +33,8 @@ not need Python.
   so the server listens on the loopback interface only, with login off: the
   same local single-user mode as `annzarro start` on a laptop. Datasets are
   only read. The window loads the UI once `GET /api/v1/datasets` answers
-  (up to 180 s: the first start after installing is slowed by Gatekeeper and
-  Defender scanning the server). Quitting the app stops the server.
+  (up to 180 s: the first start after installing is slowed by Defender, or
+  Gatekeeper on an ad-hoc-signed macOS build (0.4.x and earlier), scanning the server). Quitting the app stops the server.
 - Starting is bounded: the loading screen counts the seconds and explains a
   slow first start; if the server has not answered after 180 s, or the
   interface has not loaded 60 s after that, the window shows an error page

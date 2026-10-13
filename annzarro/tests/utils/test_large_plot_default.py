@@ -30,5 +30,5 @@ def test_browser_fallbacks_agree():
         with open(os.path.join(REPO, "static", "js", rel), encoding="utf-8") as f:
             return f.read()
     assert re.search(r"LARGE_PLOT_POINTS: 1000000,", read("config.js"))
-    assert re.search(r"v >= 0 \? v : 1000000;", read("panels/plot-utilities/large-plot.js"))
+    assert re.search(r"v >= 0 \? v : 1000000;", read("panels/plot-utilities/large-plot-controls.js"))
     assert re.search(r"DEFAULT_LARGE_PLOT_POINTS = 1000000;", read("utils/subset-presets.js"))

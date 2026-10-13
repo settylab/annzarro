@@ -24,6 +24,38 @@ export const LARGE_TYPES = Object.freeze({
   color: Object.freeze(['obsm', 'obs', 'layer', 'none'])
 });
 
+/** Points above which a Cell Plot uses large-plot mode; `defaults` is Config.DEFAULTS. */
+export function largeThreshold(defaults) {
+  const v = defaults && defaults.LARGE_PLOT_POINTS;
+  return typeof v === 'number' && v >= 0 ? v : 1000000;
+}
+
+/** The title of an axis choice large-plot mode cannot draw. */
+export const TEXT_AXIS_TIP = 'Categorical: use a subset or a numeric column';
+
+/**
+ * Whether an obs column's info (from the dataset structure) says its values are
+ * labels: a categorical column, or strings stored as text. Large-plot mode draws
+ * an axis from numbers only.
+ * @param {{type?: string}|undefined} info
+ */
+export function isTextColumn(info) {
+  const t = info && typeof info.type === 'string' ? info.type : '';
+  // dtype names as the server reports them: object, str, StringDType(), <U7, |S4 ...
+  return t === 'categorical' || /(str|object|unicode)/i.test(t) || /^[<>|=]?[US]\d*$/.test(t);
+}
+
+/**
+ * The obs columns that cannot be an x or y axis of a large plot.
+ * @returns {Set<string>}
+ */
+export function textObsColumns(structure) {
+  const info = structure && structure.obs && structure.obs.columns_info;
+  const out = new Set();
+  if (info) for (const key of Object.keys(info)) if (isTextColumn(info[key])) out.add(key);
+  return out;
+}
+
 /** "5M", "95.6M" or "12,000". */
 export function formatPoints(n) {
   if (n >= 1e6) return `${Number((n / 1e6).toFixed(1))}M`;
@@ -63,7 +95,23 @@ function _on(el) {
  * @param {boolean} active  the panel shows more points than `threshold`
  * @param {number} threshold
  */
-export function updateLargePlotControls(root, active, threshold) {
+/**
+ * Grey out (or restore) the label columns in an obs axis's key select. They stay
+ * listed, with a title saying why, so users see the limit instead of a missing column.
+ * @param {HTMLSelectElement} keySelect
+ * @param {boolean} active  large-plot mode is on
+ * @param {Set<string>} blocked  textObsColumns(structure)
+ */
+export function limitTextAxisOptions(keySelect, active, blocked) {
+  if (!keySelect) return;
+  const obs = keySelect.dataset.keyType === 'obs';
+  for (const option of Array.from(keySelect.options || [])) {
+    if (active && obs && blocked && blocked.has(option.value)) _off(option, TEXT_AXIS_TIP);
+    else _on(option);
+  }
+}
+
+export function updateLargePlotControls(root, active, threshold, structure = null) {
   if (!root || typeof root.querySelectorAll !== 'function') return;
   const tip = largePlotTooltip(threshold);
   const set = (el) => (active ? _off(el, tip) : _on(el));
@@ -71,6 +119,16 @@ export function updateLargePlotControls(root, active, threshold) {
     for (const select of root.querySelectorAll(`select.axis-type-select[data-axis="${axis}"]`)) {
       for (const option of Array.from(select.options || [])) {
         if (!LARGE_TYPES[axis].includes(option.value) && option.value !== '') set(option);
+      }
+    }
+  }
+  if (structure) {
+    const blocked = textObsColumns(structure);
+    for (const axis of ['x', 'y']) {
+      for (const select of root.querySelectorAll(`select.axis-key-select[data-axis="${axis}"]`)) {
+        const type = root.querySelector(`select.axis-type-select[data-axis="${axis}"]`);
+        select.dataset.keyType = type ? type.value : '';
+        limitTextAxisOptions(select, active, blocked);
       }
     }
   }

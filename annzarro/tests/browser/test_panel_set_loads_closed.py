@@ -504,6 +504,9 @@ def _wait_tiles(page, n):
 def _wait_dataset(page, store):
     page.wait_for_function("s => (document.getElementById('dataset-selector').value || '').endsWith(s)",
                            arg=store, timeout=30000)
+    # the selector shows the store before the app has it open; what the Load buttons say
+    # depends on the open dataset (as in _page)
+    page.wait_for_function("() => window.sessionManager.getCurrentDatasetInfo().hasCurrent", timeout=30000)
 
 
 def _page(browser, server, store="fixture_small.zarr"):
@@ -747,6 +750,9 @@ def test_missing_dataset_in_the_welcome_list_loads_on_the_current_dataset(server
         _wait_dataset(page, "other_small.zarr")
         item = _item(page, "gone-welcome")
         assert item.locator(".session-dataset-badge").inner_text().strip() == "not found here"
+        # the card's buttons follow the open dataset when it opens (datasetChanged), which
+        # can come after the card was first drawn: the label is waited for, then asserted
+        playwright.expect(item.locator(BTN["full"])).to_have_text("Load on the current dataset", timeout=15000)
         assert item.locator(BTN["full"]).inner_text().strip() == "Load on the current dataset"
         item.locator(BTN["full"]).click()
         _wait_tiles(page, 2)
