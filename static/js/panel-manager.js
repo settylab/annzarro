@@ -16,6 +16,7 @@ import { setControlsVisible, controlsElementOf } from './utils/controls-visibili
 import { notifyEach } from './utils/notify-panels.js';
 import { createPlaceholderPanel } from './utils/placeholder-panel.js';
 import { Policy } from './policy.js';
+import * as LayoutMotion from './utils/layout-motion.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -227,7 +228,9 @@ const PanelManager = (function() {
         if (tileSelector) {
             // Only replace non-bottom selectors
             if (!tileSelector.dataset.isBottomSelector) {
-                // Replace the tile selector with the new tile
+                // Replace the tile selector with the new tile; the row eases
+                // from the chooser's height to the panel's
+                LayoutMotion.capture();
                 container.insertBefore(tileElement, tileSelector);
                 tileSelector.remove();
             } else {
