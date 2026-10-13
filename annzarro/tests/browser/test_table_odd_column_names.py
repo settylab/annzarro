@@ -6,7 +6,7 @@ DataTables reads a column's ``data`` string as nested-object notation: "." nests
 "[...]" indexes an array and a trailing "()" calls a function.
 
 The store has obs and var columns named ``orig.ident`` (strings), ``a[0]``, ``f(x)``,
-``with space``, ``x.y.z`` and ``überλ``. Both tables are given all of them, and each is checked
+``with space``, ``x.y.z``, ``überλ``, ``a,b`` and ``50%``. Both tables are given all of them, and each is checked
 for: its values rendered, sorting, the text search, a SearchBuilder condition, hiding and
 showing the column, the CSV export, and a panel set saved and loaded in a fresh page.
 
@@ -38,7 +38,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "..", "data")
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 N_OBS, N_VAR = 200, 20
-NAMES = ["orig.ident", "a[0]", "f(x)", "with space", "x.y.z", "überλ"]
+# no slash: zarr and h5ad would make "a/b" a nested group, so no store has such a column
+NAMES = ["orig.ident", "a[0]", "f(x)", "with space", "x.y.z", "überλ", "a,b", "50%"]
 STRING_COLUMN = "orig.ident"      # S0, S1, S2 ...; every other column is the row number plus one, times its position
 TILES = {"cells": ("cell-table-D", "obs"), "genes": ("gene-table-D", "var")}
 
@@ -351,5 +352,35 @@ def test_a_saved_panel_set_comes_back_with_the_odd_columns(server, kind):
             page.evaluate(f"{_table_js(tile)}.order([0, 'asc']).draw()")
             assert _row_by_name(page, tile) == _first_row_by_name()
             assert not errors, errors
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("x,y", [("a,b", "50%"), ("orig.ident", "x.y.z"), ("a[0]", "f(x)")])
+def test_a_plot_can_draw_odd_column_names_on_its_axes(server, x, y):
+    """The axes read obs columns through the same /data/obs parameter as the tables."""
+    root, store = server
+    view = {"v": 1, "constants": {}, "layout": {"v": 1, "hierarchy": [
+        {"type": "tile", "id": "cell-plot-D", "controlsVisible": False}],
+        "controlState": {"cell-plot-D": False}, "panelConfigs": {"cell-plot-D": {
+            "id": "cell-plot-D", "title": "p", "z": None, "color": {"type": "none"},
+            "x": {"type": "obs", "key": x, "column": ""}, "y": {"type": "obs", "key": y, "column": ""}}}}}
+    enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+    with playwright.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1200, "height": 900})
+            failures = []
+            page.on("response", lambda r: failures.append((r.status, r.url)) if r.status >= 400 else None)
+            page.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}")
+            page.wait_for_selector('.tile[data-tile-id="cell-plot-D"] .js-plotly-plot', timeout=60000)
+            page.wait_for_timeout(2500)
+            drawn = page.evaluate("""() => {
+                const gd = document.querySelector('.tile[data-tile-id="cell-plot-D"] .js-plotly-plot');
+                const ts = gd.data.filter(t => t.x && t.x.length && t.hoverinfo !== 'skip');
+                return ts.length ? [ts.reduce((n, t) => n + t.x.length, 0), typeof ts[0].x[0], typeof ts[0].y[0]] : null;
+            }""")
+            assert drawn and drawn[0] == N_OBS, drawn
+            assert not failures, failures
         finally:
             browser.close()

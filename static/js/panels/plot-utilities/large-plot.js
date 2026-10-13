@@ -44,6 +44,7 @@ import { colourKind, DEFAULT_MODEL } from '../../utils/memory-guard.js';
 import { probeForDraw, niceFloor, probeMessage } from '../../utils/alloc-probe.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyError, classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
+import { columnsParam } from '../../utils/column-param.js';
 import { LARGE_TYPES, formatPoints } from './large-plot-controls.js';
 import { buildPointIndexSliced } from '../../utils/point-index.js';
 import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus } from './large-interact.js';
@@ -121,7 +122,7 @@ async function loadSeries(s, datasetPath, structure, signal) {
     return DataManager.loadCategoryCodes(datasetPath, s.key,
       { ranked: grouped(categoryCount(structure, 'obs', s.key) ?? 0), signal });
   }
-  const v = await DataManager.loadVector(Config.API.OBS, { dataset_path: datasetPath, columns: s.key }, signal);
+  const v = await DataManager.loadVector(Config.API.OBS, { dataset_path: datasetPath, columns: columnsParam(s.key) }, signal);
   if (!v) throw new Error(`obs.${s.key} is neither categorical nor numeric`);
   return { values: v };
 }
