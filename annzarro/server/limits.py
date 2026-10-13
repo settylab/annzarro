@@ -39,7 +39,8 @@ LIMITS: Dict[str, Limit] = {limit.key: limit for limit in (
     Limit("dataset_search_max_entries", 20_000),
     Limit("dataset_scan_max_entries", 200_000),
     Limit("read_user_share_percent", 50, integer=False, zero_off=True),
-    Limit("subset_max_concurrent", 2),
+    Limit("subset_budget_mb", None, integer=False, nullable=True),
+    Limit("subset_wait_s", 30, integer=False, zero_off=True),
     Limit("max_requests", 20000, zero_off=True),
     Limit("max_requests_jitter", 2000, zero_off=True),
     Limit("limit_request_line", 0, zero_off=True),
@@ -80,6 +81,8 @@ def _declare_policy_keys() -> None:
     """Show every limit in the policy registry, read-only (the YAML decides)."""
     from annzarro.server.policy import Float, Int, Key, declare
     for key, limit in LIMITS.items():
+        if limit.nullable:                  # a default derived from the machine: declared below
+            continue
         number = Int if limit.integer else Float
         declare(Key(
             name=f"limits.{key}", type=number(min=limit.minimum), default=limit.default, scope="config",
@@ -94,7 +97,13 @@ def _declare_policy_keys() -> None:
         configured = config.get("max_read_mb")
         return 2 * (configured if configured else derived_max_mb(config))
 
+    def derived_subset_mb(config):
+        from annzarro.core import subset
+        return subset.default_budget_bytes() / 2 ** 20
+
     for name, default, text in (
+            ("subset_budget_mb", derived_subset_mb,
+             "MB the cell subsets one worker computes at once may hold, 55 B a cell (0: 15% of RAM)"),
             ("max_read_mb", derived_max_mb, "MB one read of an obsp/varp matrix may hold (0: 5% of RAM)"),
             ("read_budget_mb", derived_budget_mb, "MB all pairwise reads in flight in one worker may hold (0: twice max_read_mb)")):
         declare(Key(name=f"limits.{name}", type=Float(min=0), default=default, scope="config",

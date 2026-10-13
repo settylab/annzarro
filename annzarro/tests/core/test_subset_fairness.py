@@ -251,6 +251,6 @@ def test_over_its_share_a_requester_is_refused_with_the_setting_named():
     assert a1.wait(2) and a2.wait(2)
     b, rb, tb = _hold(places, "bob")
     assert b.wait(2)                                   # bob waited 0.2 s, then 503
-    assert tb.errors and "subset_max_concurrent" in str(tb.errors[0])
+    assert tb.errors and "subset_budget_mb" in str(tb.errors[0])
     for r in (ra1, ra2, rb):
         r.set()

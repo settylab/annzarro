@@ -47,12 +47,15 @@ import contextvars
 import itertools
 import json
 import math
+import logging
 import threading
 import time
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 
@@ -1203,25 +1206,48 @@ def get_subset(reader, dataset_path: str, spec: SubsetSpec, client: Optional[str
 _computing: "Dict[Tuple, threading.Event]" = {}
 
 
-#: Subsets computed at once in this process (server.subset_max_concurrent)
-DEFAULT_MAX_CONCURRENT = 2
+#: Memory one subset computation holds per cell of the dataset, in bytes. Measured on the
+#: 95.6M-cell Tahoe store (run-timed, 2026-10-12, 16 cores): six distinct numeric-filter
+#: subsets at once peaked at 30.5 GB of process memory, 5.1 GB each, 53 B per cell; a random
+#: sample peaked at 0.45 GB in all and a balanced one at 1.1 GB, so the filter is the
+#: figure to charge. Rounded up to 55.
+SUBSET_BYTES_PER_CELL = 55
+#: Share of the machine's memory the subsets one process computes at once may hold
+#: (server.subset_budget_mb unset)
+DEFAULT_BUDGET_FRACTION = 0.15
+#: Seconds a subset waits for the budget before 503 (server.subset_wait_s)
+DEFAULT_WAIT_S = 30.0
 DEFAULT_SHARE_PCT = 50
+#: A budget no subset reaches (a server only one person uses)
+UNLIMITED_BUDGET = 2 ** 62
+
+
+def default_budget_bytes() -> int:
+    """15% of this machine's memory (8 GB when it cannot be read)."""
+    try:
+        import psutil
+        total = psutil.virtual_memory().total
+    except Exception:
+        total = 8 * 2 ** 30
+    return int(total * DEFAULT_BUDGET_FRACTION)
 
 
 class SubsetPlaces:
-    """The places in which this process computes subsets, shared fairly.
+    """The memory in which this process computes subsets, shared fairly.
 
-    ``total`` subsets are computed at once; another waits up to ``wait_s``,
-    then is refused (ReadBusyError, 503 ``read_busy``). A requester (see
-    read_guard.requester) holds at most ``share`` of them while another
-    requester waits, ``share_pct`` of the places but at least one; alone it
-    may use them all. It may have one request waiting: a second is refused
-    at once, so one requester cannot park every thread of a worker in the
-    wait. Requester None (the desktop, scripts) has no share and no such
-    limit.
+    ``total`` units are held at once (a subset is charged ``weight`` of them: its
+    cells times SUBSET_BYTES_PER_CELL when ``total`` is bytes, 1 in the counting
+    tests); another subset waits up to ``wait_s``, then is refused (ReadBusyError,
+    503 ``read_busy``). A subset larger than the whole budget is not refused: it runs
+    alone, when nothing else is held (and is logged), so it can never deadlock.
+    A requester (see read_guard.requester) holds at most ``share`` of the units while
+    another requester waits (``share_pct`` of them); it may always run one subset,
+    and alone it may use them all. It may have one request waiting: a second is
+    refused at once, so one requester cannot park every thread of a worker in the
+    wait. Requester None (the desktop, scripts) has no share and no such limit.
     """
 
-    def __init__(self, total: int, wait_s: float = 5.0, share_pct: float = DEFAULT_SHARE_PCT):
+    def __init__(self, total: int, wait_s: float = DEFAULT_WAIT_S, share_pct: float = DEFAULT_SHARE_PCT):
         self.total = int(total)
         self.wait_s = float(wait_s)
         pct = float(share_pct)
@@ -1233,73 +1259,84 @@ class SubsetPlaces:
         #: requester -> its requests waiting for a place
         self._waiting: Dict[Optional[str], int] = {}
 
-    def _may_take(self, owner) -> bool:
-        if self._held >= self.total:
-            return False
-        if owner is None or self._by_owner.get(owner, 0) < self.share:
+    def held(self) -> int:
+        return self._held
+
+    def _may_take(self, owner, weight) -> bool:
+        if self._held and self._held + weight > self.total:
+            return False                          # alone, anything runs; else it must fit
+        mine = self._by_owner.get(owner, 0) if owner is not None else 0
+        if owner is None or not mine or mine + weight <= self.share:
             return True
         return not any(n for o, n in self._waiting.items() if o != owner)
 
     @contextmanager
-    def take(self, owner: Optional[str] = None):
+    def take(self, owner: Optional[str] = None, weight: int = 1):
         from .read_guard import ReadBusyError
+        weight = max(1, int(weight))
         retry = max(1, int(round(self.wait_s)))
         with self._cond:
-            if not self._may_take(owner):
+            if not self._may_take(owner, weight):
                 if owner is not None and self._waiting.get(owner):
                     raise ReadBusyError("You are already waiting for the server to compute a cell "
-                                        "subset; try again in a moment (server.subset_max_concurrent).",
+                                        "subset; try again in a moment (server.subset_budget_mb).",
                                         retry)
                 self._waiting[owner] = self._waiting.get(owner, 0) + 1
                 try:
                     deadline = time.monotonic() + self.wait_s
-                    while not self._may_take(owner):
+                    while not self._may_take(owner, weight):
                         left = deadline - time.monotonic()
                         if left <= 0:
                             raise ReadBusyError("The server is computing other cell subsets; try again "
-                                                "in a moment (server.subset_max_concurrent).", retry)
+                                                "in a moment (server.subset_budget_mb, "
+                                                "server.subset_wait_s).", retry)
                         self._cond.wait(left)
                 finally:
                     self._waiting[owner] -= 1
                     if not self._waiting[owner]:
                         del self._waiting[owner]
-            self._held += 1
+            if weight > self.total:
+                logger.warning("A subset needing about %.1f GB is larger than server.subset_budget_mb "
+                               "(%.1f GB): it runs alone.", weight / 2 ** 30, self.total / 2 ** 30)
+            self._held += weight
             if owner is not None:
-                self._by_owner[owner] = self._by_owner.get(owner, 0) + 1
+                self._by_owner[owner] = self._by_owner.get(owner, 0) + weight
         try:
             yield
         finally:
             with self._cond:
-                self._held -= 1
+                self._held -= weight
                 if owner is not None:
-                    self._by_owner[owner] -= 1
+                    self._by_owner[owner] -= weight
                     if not self._by_owner[owner]:
                         del self._by_owner[owner]
                 self._cond.notify_all()
 
 
-_places = SubsetPlaces(DEFAULT_MAX_CONCURRENT)
+_places = SubsetPlaces(default_budget_bytes())
 
 
-def configure(max_concurrent: Optional[int] = None, wait_s: Optional[float] = None,
+def configure(budget_mb: Optional[float] = None, wait_s: Optional[float] = None,
               share_pct: Optional[float] = None) -> None:
-    """How many subsets one process computes at once (None or 0: 2; each is a
-    pass over a column of every cell), how long another waits for a place,
-    and the percentage of the places one requester holds while others wait
+    """The memory the subsets computed at once in this process may hold, in MB
+    (None or 0: 15% of the machine's), how long another waits for it (None: 30 s),
+    and the percentage of it one requester holds while others wait
     (server.read_user_share_percent; None: 50, 0 or 100: no share)."""
     global _places
-    _places = SubsetPlaces(int(max_concurrent) if max_concurrent else DEFAULT_MAX_CONCURRENT,
-                           5.0 if wait_s is None else wait_s,
+    _places = SubsetPlaces(int(budget_mb * 2 ** 20) if budget_mb else default_budget_bytes(),
+                           DEFAULT_WAIT_S if wait_s is None else wait_s,
                            DEFAULT_SHARE_PCT if share_pct is None else share_pct)
 
 
 def _compute_subset(reader, dataset_path: str, spec: SubsetSpec, key, check) -> Subset:
-    """compute_subset in one of the process's places: a pass over every row
-    holds a thread for seconds, and a page asking for many seeds or filters
-    would hold them all. Over the limit a request waits, then is answered 503
-    ``read_busy`` (the web client asks again once)."""
+    """compute_subset within the process's memory budget: a pass over a column of
+    every cell holds seconds of CPU and (53 B per cell measured) gigabytes at
+    95M cells, and a page asking for many seeds or filters would hold them all.
+    Over the budget a request waits, then is answered 503 ``read_busy`` (the web
+    client asks again once)."""
     from .read_guard import current_requester
-    with _places.take(current_requester()):
+    weight = _n_obs(reader, dataset_path) * SUBSET_BYTES_PER_CELL if reader is not None else 1
+    with _places.take(current_requester(), weight):
         return _compute_subset_unbounded(reader, dataset_path, spec, key, check)
 
 

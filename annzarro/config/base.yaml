@@ -92,9 +92,14 @@ server:
   # client address) may hold at once; the rest stays for everybody else. Never
   # less than one read of max_read_mb. 0 = no share. And how many cell subsets
   # (/data/subset: a pass over a column of every cell) one worker computes at
-  # once; another waits read_wait_s, then 503 read_busy. Raise it with threads.
+  # once may hold, in MB: each is charged 55 bytes per cell of its dataset (measured
+  # at 95.6M cells: a numeric filter holds 5 GB; six at once held 30 GB). null =
+  # 15% of the machine's RAM per worker. Another subset waits subset_wait_s seconds
+  # for it, then 503 read_busy with Retry-After. A subset larger than the whole budget
+  # runs alone (logged), never refused outright.
   read_user_share_percent: 50
-  subset_max_concurrent: 2
+  subset_budget_mb: null
+  subset_wait_s: 30
   # gunicorn (annzarro/server/gunicorn_config.py; `annzarro start` is not
   # gunicorn and ignores these): a worker is replaced after max_requests
   # requests (+ up to max_requests_jitter, so they do not restart together),

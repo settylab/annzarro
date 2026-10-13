@@ -20,7 +20,7 @@ request slowly. The reverse proxy in front ({doc}`lab-server`) is the defence fo
 | `name_search_max_regex_chars` | 200 | CPU: a regular-expression name search is a pattern run against every name | `400 regex_too_long` | users paste long patterns |
 | `name_search_timeout_s` | 10 | CPU: a regex name search over millions of names answers with the matches found so far when it runs out of time (`partial: true`, `timed_out: true`) | partial `200` | the host is slow and the dataset has more than about 10 million names; 0 turns it off |
 | `read_user_share_percent` | 50 | Fairness: the pairwise-read budget (`read_budget_mb`) and the subset places are shared; one user (one address, with login off; one /64 for IPv6) may hold this share of each | `503 read_busy` | few users and one big matrix; 0 gives a user the whole budget and every place |
-| `subset_max_concurrent` | 2 | Threads and CPU: a subset is a pass over a column of every cell, and any request can name a new seed or filter. One user holds at most `read_user_share_percent` of the places while another waits, and has at most one request waiting | `503 read_busy` | many users open the largest datasets at once; raise it with `threads` |
+| `subset_budget_mb`, `subset_wait_s` | 15% of RAM, 30 | Memory and threads: a subset is a pass over a column of every cell, held at 55 bytes per cell (5 GB for a numeric filter of 95.6 million cells; six at once held 30 GB), and any request can name a new seed or filter. One user holds at most `read_user_share_percent` of the budget while another waits, and has at most one request waiting | `503 read_busy` after the wait | many users open the largest datasets at once and filters queue longer than 30 s; give the host more RAM or raise the budget |
 | `max_requests`, `max_requests_jitter` | 20,000, 2,000 | Memory: a worker that leaks or fragments is replaced; its caches start empty | (worker restart) | every request is cheap and the dataset index takes long to rebuild: raise it, or 0 |
 | `limit_request_line`, `limit_request_fields`, `limit_request_field_size` | 0 (none), 100, 8,190 | Memory and CPU: one request made of many or huge headers (gunicorn only). The request line is not limited because the web client names the cells and genes it asks for in the URL (about 12 KB for 2,000 genes; gunicorn would cap any other value at 8,190), so bound it in the proxy (`large_client_header_buffers`) | `400` from gunicorn | never needed |
 | `max_request_mb` | 64 | Memory and disk: a request body is read whole, and panel sets are written to the sessions directory | `413 request_too_large` | a panel set legitimately exceeds 64 MB. The largest panel set we have is 0.9 MB (13 panels); a table panel that keeps a million filtered rows is about 7 MB |
@@ -103,7 +103,7 @@ million cells together). The cache is shared fairly between users, the same user
 - **With one user** (the desktop app, or a server only one person uses) this is the cache's
   plain least-recently-used order, as before.
 - **Per worker process.** gunicorn hands each request to any worker, and each worker has its own
-  cache and its own `subset_max_concurrent` places. A user's share holds in every worker, so
+  cache and its own `subset_budget_mb`. A user's share holds in every worker, so
   across the server too; there is no server-wide quota per user. Each worker computes a subset
   the first time it is asked for it.
 - **One address is one user.** People behind one NAT share one share; they lose subsets to each
