@@ -119,6 +119,7 @@ class ConfigManager:
         "ANNZARRO_REMOTE_CREDENTIALS": ("server", "remote_credentials"),
         "ANNZARRO_REMOTE_CONNECT_TIMEOUT": ("server", "remote_connect_timeout_s"),
         "ANNZARRO_REMOTE_READ_TIMEOUT": ("server", "remote_read_timeout_s"),
+        "ANNZARRO_REMOTE_REQUEST_TIMEOUT": ("server", "remote_request_timeout_s"),
         "ANNZARRO_REMOTE_CHUNK_CACHE_MB": ("server", "remote_chunk_cache_mb"),
     }
 

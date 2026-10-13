@@ -179,3 +179,99 @@ def test_the_cli_refuses_to_run_as_another_account(users, monkeypatch):
     assert _run(cfg, "list") == 0, "listing changes nothing, so any account may"
     monkeypatch.setattr(cli, "_dir_owner", lambda directory: (os.geteuid(), "me"))
     assert _run(cfg, "add", "--username", "carol", "--password", "pw") == 0
+
+
+# --- annzarro user access ------------------------------------------------------------
+
+@pytest.fixture
+def access_site(users, tmp_path):
+    from annzarro.tests.server.rich_store import make_rich_store
+    path, cfg = users
+    data = tmp_path / "data"
+    make_rich_store(data / "in.zarr")
+    make_rich_store(data / "curated" / "a.zarr")
+    make_rich_store(data / "curated" / "b.zarr")
+    (data / "pub").mkdir()
+    (tmp_path / "outside").mkdir()
+    with open(cfg, "a") as f:
+        f.write("")
+    text = open(cfg).read().replace("server:\n", f"server:\n  data_dir: \"{data}\"\n", 1)
+    open(cfg, "w").write(text)
+    AuthManager(user_file=str(path)).create_user("bob", "pw")
+    AuthManager(user_file=str(path)).create_user("root", "pw", is_admin=True)
+    return path, cfg, data
+
+
+def _entry(path, user="bob"):
+    import json
+    state = os.path.join(os.path.dirname(str(path)), "annzarro_admin", "access.json")
+    if not os.path.exists(state):
+        return None
+    return json.load(open(state))["principals"].get(f"user:{user}")
+
+
+def test_access_restrict_grant_revoke_and_show(access_site, capsys):
+    path, cfg, data = access_site
+    assert _run(cfg, "access", "bob", "--restrict", "--grant", str(data / "in.zarr"), "--grant", str(data / "pub")) == 0
+    entry = _entry(path)
+    assert entry["restricted"] is True
+    assert [(g["kind"], g["path"]) for g in entry["grants"]] == [("store", str(data / "in.zarr")), ("dir", str(data / "pub"))]
+    assert all(g["added_by"] and g["added_at"] for g in entry["grants"])
+    assert _run(cfg, "access", "bob", "--show") == 0
+    out = capsys.readouterr().out
+    assert "restricted to the grants below" in out and "in.zarr" in out and "(active)" in out
+    assert _run(cfg, "access", "bob", "--revoke", str(data / "pub")) == 0
+    assert [g["path"] for g in _entry(path)["grants"]] == [str(data / "in.zarr")]
+    assert _run(cfg, "access", "bob", "--revoke", str(data / "pub")) == 1       # nothing to revoke
+    assert _run(cfg, "access", "bob", "--unrestrict") == 0
+    assert "restricted" not in _entry(path) and len(_entry(path)["grants"]) == 1     # the grants are kept
+
+
+def test_access_grant_stores_in_a_folder(access_site):
+    path, cfg, data = access_site
+    os.symlink(data / "in.zarr", data / "curated" / "linked.zarr")
+    os.symlink(data.parent / "outside", data / "curated" / "escape.zarr")
+    assert _run(cfg, "access", "bob", "--restrict", "--grant-stores-in", str(data / "curated")) == 0
+    paths = sorted(os.path.basename(g["path"]) for g in _entry(path)["grants"])
+    assert paths == ["a.zarr", "b.zarr", "linked.zarr"]          # the link out of the data directory is skipped
+    assert all(g["kind"] == "store" for g in _entry(path)["grants"])
+
+
+def test_access_refuses_what_the_server_would(access_site):
+    path, cfg, data = access_site
+    assert _run(cfg, "access", "nobody", "--restrict") == 1
+    assert _run(cfg, "access", "root", "--restrict") == 1                  # admins are never restricted
+    assert _entry(path, "root") is None
+    assert _run(cfg, "access", "bob", "--grant", str(data.parent / "outside")) == 1      # outside every data directory
+    assert _run(cfg, "access", "bob", "--grant", str(data / "missing")) == 1
+    assert _run(cfg, "access", "bob", "--grant", str(data / "pub")) == 0
+    assert _run(cfg, "access", "bob", "--grant", str(data / "pub")) == 1                 # already granted
+    assert _run(cfg, "access", "bob", "--grant", "s3://bucket/x/") == 1                  # remote stores are not enabled here
+
+
+def test_access_changes_are_audited(access_site):
+    from annzarro.server.admin import audit, state_dir
+    path, cfg, data = access_site
+    assert _run(cfg, "access", "bob", "--restrict", "--grant", str(data / "pub")) == 0
+    assert _run(cfg, "access", "root", "--restrict") == 1
+    records = audit.read(state_dir({"user_file": str(path)}), limit=50)
+    actions = [(r["action"], r["outcome"]) for r in records]
+    assert ("access.restrict", "ok") in actions and ("access.grant", "ok") in actions
+    assert ("access.restrict", "refused:admin") in actions
+
+
+def test_removing_a_user_drops_their_access_entry(access_site):
+    path, cfg, data = access_site
+    assert _run(cfg, "access", "bob", "--restrict", "--grant", str(data / "pub")) == 0
+    assert _run(cfg, "remove", "--username", "bob") == 0
+    assert _entry(path) is None
+
+
+def test_access_is_refused_to_another_account_by_the_same_check_as_every_user_command(access_site, monkeypatch):
+    """One check (cli._wrong_account, run by manage_users) covers `user access` too: sudo would leave a root-owned access.json."""
+    path, cfg, data = access_site
+    monkeypatch.setattr(cli, "_dir_owner", lambda directory: (os.geteuid() + 1, "svc-annzarro"))
+    assert _run(cfg, "access", "bob", "--restrict") == 1
+    assert _entry(path) is None
+    assert not os.path.exists(os.path.join(os.path.dirname(str(path)), "annzarro_admin", "access.json"))
+    assert _run(cfg, "access", "bob", "--show") == 1          # it reads nothing it need not, but any account change is refused alike

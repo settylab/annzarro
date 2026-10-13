@@ -40,10 +40,12 @@ app; use the Python package with the `remote` extra for those ({doc}`installatio
 
 ## First launch
 
-The builds are not code-signed with a developer identity yet (the macOS app is only ad-hoc
-signed and not notarized), so the first launch needs one extra step:
+From version 0.5.0 the macOS app is signed with the Fred Hutchinson Cancer Center Developer ID and
+notarized by Apple, so it opens like any other app: no warning and no extra step. Windows builds
+are not signed, and macOS builds before 0.5.0 were only ad-hoc signed, so those need one extra
+step on the first launch:
 
-- **macOS 15 (Sequoia) and macOS 26 (Tahoe)**: opening the app the first time shows
+- **macOS before 0.5.0, on macOS 15 (Sequoia) and macOS 26 (Tahoe)**: opening the app the first time shows
   **“AnnZarro” Not Opened** (the name may read “AnnZarro.app”): *Apple could not verify
   “AnnZarro” is free of malware that may harm your Mac or compromise your privacy.*, with the
   buttons **Done** and **Move to Trash**. Click **Done**. Then open **System Settings > Privacy &
@@ -51,7 +53,7 @@ signed and not notarized), so the first launch needs one extra step:
   Mac.**, and click **Open Anyway**. macOS asks once more (**Open “AnnZarro”?**); confirm, and
   enter your password or use Touch ID when asked. This is needed once; later starts open
   normally. Since macOS 15, right-click (Control-click) > **Open** no longer gets past this check.
-- **macOS 14 (Sonoma) and earlier**: right-click (Control-click) the app in Applications, choose
+- **macOS before 0.5.0, on macOS 14 (Sonoma) and earlier**: right-click (Control-click) the app in Applications, choose
   **Open**, then **Open** in the dialog. Once is enough. **System Settings > Privacy & Security >
   Open Anyway** works there too.
 - **Windows**: SmartScreen says "Windows protected your PC". Click **More info**, then

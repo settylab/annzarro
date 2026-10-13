@@ -7,6 +7,12 @@ ONE folder: its subfolders and its stores, a page at a time. Counts come from
 the listing's own probe and cache, and only for the entries of the page being
 returned; a store's format and modification time are read from its root
 metadata file (never by walking its files).
+
+A restricted user (server/access.py) is never shown the data directory. Their
+root is the list of their grants, a granted folder lists normally (entries
+they may not read are dropped), and a search walks only their granted folders.
+Paths are shown from the name of the granted folder or store down
+(``access.display_path``), so the directories above a grant are not disclosed.
 """
 import logging
 import os
@@ -85,13 +91,21 @@ def _resolve_folder(config, folder):
     return folder if os.path.isabs(folder) else os.path.join(data_dir, folder)
 
 
+def rel_path(path, data_dir):
+    """The ``rel_path`` of a listing entry: from the data directory, or for a restricted user from the granted folder's name."""
+    user = access.restricted_user()
+    if user:
+        return access.display_path(user, os.path.realpath(path))
+    return os.path.relpath(path, data_dir)
+
+
 def _entry(data_dir, parent, name):
     """One cheap classification: a folder, a store (counts filled later), or None to skip."""
     path = os.path.join(parent, name)
     if name.startswith(".") or not confinement.listable(app.config, path):
         return None
     base = {"name": name, "path": path, "is_link": os.path.islink(path),
-            "rel_path": os.path.relpath(path, data_dir)}
+            "rel_path": rel_path(path, data_dir)}
     if name.endswith(".h5ad") and os.path.isfile(path):
         return {**base, "kind": "store", "h5ad": True}
     if not os.path.isdir(path):
@@ -159,6 +173,9 @@ def list_folder(config, folder, offset=0, limit=None):
     data_dir = os.path.expanduser(config.get("data_dir"))
     cap = int(config.get("dataset_folder_max_entries") or DEFAULT_MAX_ENTRIES)
     limit = max(1, min(int(limit or cap), cap))
+    user = access.restricted_user()
+    if user and not folder:
+        return _grants_folder(config, user, data_dir, offset, limit)
     path = _resolve_folder(config, folder)
     if not os.path.isdir(path):
         raise FileNotFoundError(path)
@@ -174,9 +191,12 @@ def list_folder(config, folder, offset=0, limit=None):
         if entry["kind"] == "store":
             _fill_store(entry)
     parent = os.path.dirname(path.rstrip(os.sep))
+    at_top = os.path.realpath(path) == os.path.realpath(data_dir)
+    if user and not access.may_read(user, parent):
+        parent, at_top = None, True    # the folder above a grant is not theirs
     return {
         "folder": path,
-        "rel_path": os.path.relpath(path, data_dir),
+        "rel_path": rel_path(path, data_dir),
         "parent": None if at_top or _is_admin_root(config, path) else parent,
         "entries": page,
         "total": len(entries),
@@ -184,6 +204,56 @@ def list_folder(config, folder, offset=0, limit=None):
         "limit": limit,
         "more": offset + len(page) < len(entries),
     }
+
+
+def _grant_entries(user):
+    """The picker's root for a restricted user: one entry per active grant, folders first."""
+    entries = []
+    for grant in access.grants_of(user).active():
+        real, name = grant["real"], grant["name"]
+        if os.path.isfile(real):
+            entry = {"kind": "store", "h5ad": real.endswith(".h5ad")} if real.endswith(".h5ad") else None
+        elif os.path.isdir(real):
+            entry = {"kind": "store", "h5ad": False} if is_store_dir(real, name) else {"kind": "folder"}
+        else:
+            entry = None      # a granted path that is not there (yet) shows nothing
+        if entry is not None:
+            entries.append({"name": name, "path": real, "is_link": False, "rel_path": name, **entry})
+    entries.sort(key=lambda e: (e["kind"] != "folder", e["name"].lower(), e["path"]))
+    return entries
+
+
+def granted_sources(user):
+    """``[(parent, name)]`` of what a restricted user's flat dataset list is built from.
+
+    Each granted store, and the first level of each granted folder (a folder
+    that is itself a store counts as the store). Hidden names are left to the
+    caller's own rule.
+    """
+    from . import data_routes
+    sources, seen = [], set()
+    for entry in _grant_entries(user):
+        real = entry["path"]
+        if entry["kind"] == "folder":
+            batch = [(real, name) for name in data_routes._listdir(real)]
+        else:
+            batch = [(os.path.dirname(real), entry["name"])]
+        for source in batch:
+            if os.path.join(*source) not in seen:
+                seen.add(os.path.join(*source))
+                sources.append(source)
+    return sources
+
+
+def _grants_folder(config, user, data_dir, offset, limit):
+    """``list_folder`` of the virtual root of a restricted user: their grants, with no folder behind it."""
+    entries = _grant_entries(user)
+    page = entries[offset:offset + limit]
+    for entry in page:
+        if entry["kind"] == "store":
+            _fill_store(entry)
+    return {"folder": "", "rel_path": "", "parent": None, "entries": page, "total": len(entries),
+            "offset": offset, "limit": limit, "more": offset + len(page) < len(entries)}
 
 
 def register_dataset_folder_routes(app_, api_version):
@@ -211,7 +281,8 @@ def register_dataset_folder_routes(app_, api_version):
             return jsonify({"error": "offset and limit must be integers"}), 400
         path = _resolve_folder(config, folder)
         # The same rule as every path: a confined server lists only inside its roots
-        if confinement.is_confined(config) and not confinement.is_inside(path, confinement.allowed_roots(config)) \
+        # (a restricted user's root is their grants, which access.enforce has checked)
+        if not access.restricted_user() and confinement.is_confined(config) and not confinement.is_inside(path, confinement.allowed_roots(config)) \
                 and not confinement.may_open_any_path(config):
             logger.warning(f"Refused folder listing outside the data directory: {path!r}")
             return jsonify({"error": "That folder is outside the data directory this server shares.",
@@ -268,18 +339,28 @@ def search_tree(config, query, regex=False, limit=None):
     max_depth = int(config.get("dataset_search_max_depth") or DEFAULT_SEARCH_DEPTH)
     max_visited = int(config.get("dataset_search_max_entries") or DEFAULT_SEARCH_VISITED)
     deadline = time.monotonic() + SEARCH_SECONDS
-    queue = [(data_dir, 0)]
-    seen = {os.path.realpath(data_dir)}
-    # the data directories admins added are top-level folders of the picker, so they are searched too
-    for root in _admin_root_entries(config, data_dir, set()):
-        real = os.path.realpath(root["path"])
-        if real not in seen:
-            seen.add(real)
-            queue.append((root["path"], 1))
+    user = access.restricted_user()
     found, visited, truncated = [], 0, False
+    if user:
+        # only their grants: a granted store is matched by name, a granted folder is walked
+        queue, seen = [], set()
+        for entry in _grant_entries(user):
+            if entry["kind"] == "folder":
+                queue.append((entry["path"], 0))
+                seen.add(entry["path"])
+            elif matches_text(entry["name"]):
+                found.append(entry)
+    else:
+        queue, seen = [(data_dir, 0)], {os.path.realpath(data_dir)}
+        # the data directories admins added are top-level folders of the picker, so they are searched too
+        for root in _admin_root_entries(config, data_dir, set()):
+            real = os.path.realpath(root["path"])
+            if real not in seen:
+                seen.add(real)
+                queue.append((root["path"], 1))
     while queue and not truncated:
         folder, depth = queue.pop(0)
-        skip = ("sessions",) if depth == 0 else ()
+        skip = ("sessions",) if os.path.realpath(folder) == os.path.realpath(data_dir) else ()
         for name in data_routes._listdir(folder):
             if name in skip or name.startswith("."):
                 continue
@@ -290,6 +371,8 @@ def search_tree(config, query, regex=False, limit=None):
             entry = _entry(data_dir, folder, name)
             if entry is None:
                 continue
+            if user and not access.may_read(user, entry["path"]):
+                continue      # a link leading out of the grant is not entered, listed or counted
             if entry["kind"] == "folder":
                 real = os.path.realpath(entry["path"])
                 if depth + 1 < max_depth and real not in seen:
@@ -308,7 +391,7 @@ def search_tree(config, query, regex=False, limit=None):
                 if len(found) >= limit:
                     truncated = True
                     break
-    found = access.filter_entries(found)
+    found = access.filter_entries(found)[:limit]
     found.sort(key=lambda e: (e["rel_path"].count(os.sep), e["rel_path"]))
     for entry in found:
         _fill_store(entry)

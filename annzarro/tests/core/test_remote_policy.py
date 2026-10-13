@@ -367,3 +367,39 @@ def test_missing_backend_names_the_extra(monkeypatch):
         remote.open_remote_group("s3://bucket/x.zarr", policy=_policy(**LOCAL))
     assert isinstance(info.value, ImportError)
     assert "s3fs" in str(info.value)
+
+
+# --------------------------------------------------------------------------
+# the per-request deadline
+# --------------------------------------------------------------------------
+
+HOSTED = {"host": "0.0.0.0", "auth_enabled": True, "proxy_count": 1}
+
+
+def test_request_timeout_defaults_to_120_hosted_and_600_single_user():
+    assert _policy(**HOSTED).request_timeout == 120.0
+    assert _policy(**LOCAL).request_timeout == 600.0
+    assert _policy(hosted=True).request_timeout == 120.0
+    assert _policy(hosted=False, host="0.0.0.0").request_timeout == 600.0
+    assert _policy().request_timeout == 600.0  # no config at all is a library user
+
+
+def test_request_timeout_explicit_applies_everywhere_and_zero_is_off():
+    for config in (HOSTED, LOCAL):
+        assert _policy(**config, remote_request_timeout_s=45).request_timeout == 45.0
+        assert _policy(**config, remote_request_timeout_s="2.5").request_timeout == 2.5
+        assert _policy(**config, remote_request_timeout_s=0).request_timeout is None
+
+
+def test_request_timeout_environment_override_and_validation():
+    env = {remote.ENV_REQUEST_TIMEOUT: "9"}
+    assert _policy(env, **HOSTED, remote_request_timeout_s=99).request_timeout == 9.0
+    assert _policy({remote.ENV_REQUEST_TIMEOUT: "0"}, **HOSTED).request_timeout is None
+    for bad in (-1, "soon"):
+        with pytest.raises(ValueError, match="remote_request_timeout_s"):
+            _policy(**LOCAL, remote_request_timeout_s=bad)
+
+
+def test_describe_names_the_request_limit():
+    assert "request=120s" in _policy(**HOSTED, remote_stores="allow").describe()
+    assert "request=off" in _policy(**LOCAL, remote_request_timeout_s=0).describe()
