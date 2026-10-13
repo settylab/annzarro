@@ -240,6 +240,7 @@ export function createAdminApi({
             unlock: (name, address) => send('POST', `/users/${seg(name)}/unlock`, address ? { address } : {}),
         },
         access: {
+            overview: () => get('/access'),
             get: (name, query) => get(`/users/${seg(name)}/access`, query),
             setRestricted: (name, restricted) => send('PUT', `/users/${seg(name)}/access`, { restricted }),
             grant: (name, kind, path) => send('POST', `/users/${seg(name)}/grants`, { kind, path }),
