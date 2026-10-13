@@ -639,6 +639,12 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
     setStatusTag(plotContainer, 'webgl', null);
     // per-point colours without Plotly's colour strings (once per page)
     if (typeof Plotly !== 'undefined' && typeof Plotly.newPlot === 'function') await installGlColors(scatterglModule);
+    // a large plot a subset made regular is freed here, after the last await before the draw:
+    // released earlier, the panel showed no plot for as long as the new one took to load
+    if (plotContainer.__releaseBeforeDraw) {
+        plotContainer.__releaseBeforeDraw = false;
+        if (plotContainer._fullLayout) releasePlot(plotContainer);
+    }
     // a graph redrawn in place keeps the camera the user turned it to; the
     // camera saved in the settings is for a new graph
     const result = await Plotly.react(
