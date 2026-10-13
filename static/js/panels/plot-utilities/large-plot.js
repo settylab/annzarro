@@ -96,7 +96,7 @@ export function largePlotReason(settings, n) {
   return largePlotRefusal(settings, n);
 }
 
-async function loadSeries(s, datasetPath, structure, signal) {
+async function loadSeries(s, datasetPath, structure, signal, { axis = null } = {}) {
   if (s.type === 'none') return null;
   if (s.type === 'obsm') {
     const v = await DataManager.loadVector(`${Config.API.OBSM}/${s.key}`,
@@ -116,6 +116,11 @@ async function loadSeries(s, datasetPath, structure, signal) {
   const info = structure && structure.obs && structure.obs.columns_info
     && structure.obs.columns_info[s.key];
   if (info && info.type === 'categorical') {
+    // an axis is drawn from numbers; a column of labels would arrive as codes with no `values`
+    if (axis) {
+      throw new Error(`obs.${s.key} is a categorical column and cannot be the ${axis} axis of a plot of this size: `
+        + 'turn on a subset, or choose a numeric column');
+    }
     // past GROUP_COLOURS categories: codes ranked by the server and the
     // legend's few labels, never the column's label list
     return DataManager.loadCategoryCodes(datasetPath, s.key,
@@ -463,8 +468,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     }
   };
   const [xs, ys, cs] = await Promise.all([
-    loadSeries(settings.x, datasetPath, structure, signal),
-    loadSeries(settings.y, datasetPath, structure, signal),
+    loadSeries(settings.x, datasetPath, structure, signal, { axis: 'x' }),
+    loadSeries(settings.y, datasetPath, structure, signal, { axis: 'y' }),
     colour()
   ]);
   stopped();

@@ -307,3 +307,90 @@ def test_a_zoom_is_not_kept_on_another_field(server):
             assert not errors, errors
         finally:
             browser.close()
+
+
+# --- large-plot mode (above ui.defaults.large_plot_points) -----------------------------
+# Its axis pickers offer obs columns, categorical ones too: those are drawn as their codes,
+# numbers on a linear axis, never as text (large-plot.js loadSeries). So the type cannot stick,
+# but the range kept for the old field can.
+
+@pytest.fixture(scope="module")
+def large_server(tmp_path_factory):
+    data = tmp_path_factory.mktemp("data")
+    _store(data / "axes.zarr")
+    home = tmp_path_factory.mktemp("home")
+    cfg = home / "large.yaml"
+    cfg.write_text("ui:\n  defaults:\n    large_plot_points: 100\n")
+    port = _free_port()
+    env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
+               PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--config", str(cfg),
+                             "--host", "127.0.0.1", "--port", str(port), "--data-dir", str(data),
+                             "--no-browser", "--auth-disabled"],
+                            env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    root = f"http://127.0.0.1:{port}"
+    for _ in range(120):
+        try:
+            urllib.request.urlopen(root + "/api/v1/config", timeout=1)
+            break
+        except OSError:
+            time.sleep(0.25)
+    else:
+        proc.kill()
+        pytest.fail("server did not start")
+    yield root, str(data / "axes.zarr")
+    proc.terminate()
+    proc.wait(10)
+
+
+LARGE_RANGE = """() => {
+  const gd = document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot');
+  const large = !!document.querySelector('.tile[data-tile-id="%s"] .plot-status .ps-tag[data-tag="large"]');
+  return {large, type: gd._fullLayout.xaxis.type, range: gd._fullLayout.xaxis.range};
+}""" % (CELL, CELL)
+
+
+@pytest.mark.parametrize("zoom", [False, True], ids=["fitted", "zoomed"])
+def test_large_plot_axis_shows_the_new_field_in_full(large_server, zoom):
+    root, store = large_server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, CELL, x=OBS(NUMERIC), y=UMAP("1"))
+        try:
+            _settle(page, CELL)
+            assert page.evaluate(LARGE_RANGE)["large"], "the panel is in large-plot mode"
+            if zoom:
+                page.evaluate("Plotly.relayout(document.querySelector('.tile[data-tile-id=\"%s\"] .js-plotly-plot'), "
+                              "{'xaxis.range': [0.4, 0.6]})" % CELL)
+                page.wait_for_timeout(800)
+            _pick(page, CELL, "x", OBS("score"))
+            _settle(page, CELL)
+            s = page.evaluate(LARGE_RANGE)
+            assert s["large"] and s["type"] == "linear", s
+            lo, hi = s["range"]
+            assert lo <= -2.9 and hi >= 2.9, ("the axis does not cover the new field (score, -3 to 3)", s)
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_large_plot_says_why_a_categorical_axis_cannot_be_drawn_and_recovers(large_server):
+    """The picker offers categorical obs columns; their codes are not an axis. The panel used to
+    fail with 'Cannot read properties of undefined'."""
+    root, store = large_server
+    tile = f'.tile[data-tile-id="{CELL}"]'
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, CELL, x=OBS(NUMERIC), y=UMAP("1"))
+        try:
+            _settle(page, CELL)
+            _pick(page, CELL, "x", OBS(CATEGORICAL))
+            page.wait_for_function("(t) => document.querySelector(t).innerText.includes('categorical column')",
+                                   arg=tile, timeout=30000)
+            text = page.evaluate(f"document.querySelector('{tile}').innerText")
+            assert "Cannot read properties" not in text and "turn on a subset" in text, text
+            _pick(page, CELL, "x", OBS("score"))
+            s = _settle(page, CELL)
+            assert s["ax"]["x"]["type"] == "linear", s
+            lo, hi = page.evaluate(LARGE_RANGE)["range"]
+            assert lo <= -2.9 and hi >= 2.9, (lo, hi)
+        finally:
+            browser.close()

@@ -91,10 +91,11 @@ export function viewportFitsAxes(settings) {
  */
 export function applyAxisKinds(layout, settings, data, revision) {
   for (const axis of ['x', 'y', 'z']) {
-    if (!settings[axis] || !data || !data[axis]) continue;
+    if (!settings[axis]) continue;
     const target = settings.z ? layout.scene && layout.scene[`${axis}axis`] : layout[`${axis}axis`];
     if (!target) continue;
-    target.type = axisKind(data[axis]);
+    // no series (large-plot mode builds its layout before it has loaded any): numbers
+    target.type = axisKind(data && data[axis]);
     const f = settings[axis];
     target.uirevision = `${revision}|${f.type}.${f.key}.${f.column || ''}|${target.type}`;
   }
