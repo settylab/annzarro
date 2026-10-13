@@ -9,8 +9,8 @@ the cell-by-gene layers.
 pip install annzarro
 ```
 
-The same command works on your own computer and on a server. Or use a standalone desktop app or
-set up a server:
+This installs AnnZarro on your own computer or on a server. Or download the desktop app, or set
+up a shared server:
 
 ```{include} _snippets/modes.md
 ```

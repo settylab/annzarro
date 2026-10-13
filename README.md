@@ -26,10 +26,9 @@ data preparation, deployment and reference). Developed by the [Setty Lab](https:
 pip install annzarro              # or 'annzarro[remote]' for s3://, gs:// and https:// stores
 ```
 
-The same command works on your own computer and on a server. Or use a standalone desktop app or set up a server, below.
+This installs AnnZarro on your own computer or on a server. Or download the desktop app, or set up a shared server, below.
 
-Desktop apps for Windows, macOS and Linux (no Python needed, works offline) are on the
-[releases page](https://github.com/settylab/annzarro/releases). From source:
+From source:
 `git clone https://github.com/settylab/annzarro.git && pip install -e ./annzarro`.
 Details: [installation](https://annzarro.readthedocs.io/en/latest/getting-started/installation.html),
 [desktop app](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html).
