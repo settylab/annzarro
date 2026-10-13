@@ -283,16 +283,28 @@ export function checkDatasetLoadingStatus(id) {
       
       if (!isDatasetLoaded) {
         if (!$select.prop('disabled')) {
+          // what to give back when a dataset comes (below)
+          this.dataset.noDatasetValue = JSON.stringify($select.val() ?? '');
           $select.prop('disabled', true);
-          
+
           // If the select doesn't have a loading option yet, add one
-          if ($select.find('option').length === 0 || 
-              $select.find('option:first').val() !== '' || 
+          if ($select.find('option').length === 0 ||
+              $select.find('option:first').val() !== '' ||
               $select.find('option:first').text() !== 'Loading...') {
             $select.prepend('<option value="">Loading...</option>');
             $select.val('');
           }
         }
+      } else if (this.dataset.noDatasetValue !== undefined) {
+        // Disabled above while there was no dataset: a panel made then is
+        // checked again when the dataset comes, and its selects that the
+        // panel's own setup does not refill (palettes, hover columns, the
+        // table filter) were left disabled, still showing "Loading...".
+        const $loading = $select.find('option:first');
+        if ($loading.val() === '' && $loading.text() === 'Loading...') $loading.remove();
+        $select.val(JSON.parse(this.dataset.noDatasetValue));
+        $select.prop('disabled', false);
+        delete this.dataset.noDatasetValue;
       }
     });
     
