@@ -145,6 +145,12 @@ def test_a_slow_pattern_that_passes_the_check_stops_at_the_limit_on_a_big_index(
     assert elapsed < 1.5, elapsed
 
 
+def test_the_regex_package_is_installed():
+    """It is a declared dependency (pyproject): without it the timeout engine, the picker's regex search and
+    the tests of both would quietly turn into their refusal path. Fail, never skip."""
+    assert name_index._regex is not None, "pip install regex (a dependency of annzarro)"
+
+
 # --- the guarantee: a single match is bounded, whatever the pattern -------------------------------
 #
 # check_regex is a cheap first filter and a list of refused shapes is never complete (an independent
