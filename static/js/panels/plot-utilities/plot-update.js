@@ -18,7 +18,7 @@ import {
   followDrawnPoints
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
-import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, NOT_IN_TABLE } from './plot-make-helper.js';
+import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE } from './plot-make-helper.js';
 import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
@@ -759,6 +759,27 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     await Plotly.relayout(plotContainer, pinned);
                 } catch (err) {
                     console.warn('Axis range update skipped:', err && err.message);
+                }
+            }
+        }
+
+        // A new field on an axis: the axis takes the type of its data (the old type
+        // stays on a graph redrawn in place), and the zoom made on the old field goes
+        const changedAxes = ['x', 'y', 'z'].filter(a => updateOptions[`${a}Axis`]);
+        if (changedAxes.length) {
+            const update = axisChangeRelayout(settings, data, changedAxes,
+                (plotContainer.layout && plotContainer.layout.uirevision) || 'view');
+            if (!settings.z) settings.viewport2D = null;
+            const pinned = settings.z ? null : stableAxisRanges(data, settings);
+            if (pinned) {       // hidden points keep the axes on all points: that range, not a fit
+                for (const key of Object.keys(pinned)) delete update[key.replace('.range', '.autorange')];
+                Object.assign(update, pinned);
+            }
+            if (Object.keys(update).length) {
+                try {
+                    await Plotly.relayout(plotContainer, update);
+                } catch (err) {
+                    console.warn('Axis type update skipped:', err && err.message);
                 }
             }
         }

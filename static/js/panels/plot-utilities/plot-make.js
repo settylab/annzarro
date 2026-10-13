@@ -1,7 +1,7 @@
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
-import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker } from './plot-make-helper.js';
+import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds } from './plot-make-helper.js';
 import { autoPointCount, debounced } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
@@ -2580,6 +2580,8 @@ export function buildPlotLayout(settings, data) {
   // (zoom, camera, a category hidden from the legend) is kept while this is
   // the same, i.e. on other cells of the same dataset
   layout.uirevision = DataManager.getCurrentDataset() || 'view';
+  // each axis the type of its field; the zoom kept only for the same field
+  applyAxisKinds(layout, settings, data, layout.uirevision);
 
   return layout;
 }

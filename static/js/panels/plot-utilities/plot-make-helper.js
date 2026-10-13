@@ -44,6 +44,86 @@ export function axisTitle(settings, axis) {
   return `${a.type}.${a.key}` + (a.column ? `.${a.column}` : '');
 }
 
+/**
+ * The Plotly axis type a loaded series needs: text (categorical, string) is
+ * drawn on a category axis, everything else on a linear one. Set on every draw:
+ * left to Plotly's own guess, an axis keeps the type it was first given when
+ * the graph is redrawn in place, and numbers switched onto a text axis were
+ * drawn as categories (and the reverse) until the page was reloaded.
+ * @param {{type?: string}|null|undefined} series - as loadAxisData returns it
+ * @returns {'category'|'linear'}
+ */
+export function axisKind(series) {
+  const t = series && series.type;
+  return t === 'categorical' || t === 'string' ? 'category' : 'linear';
+}
+
+/**
+ * Which fields are on the axes. A kept zoom or axis range belongs to these
+ * fields only: on others it is a range of different values.
+ * @param {Object} settings
+ * @returns {string}
+ */
+export function axesSignature(settings) {
+  return ['x', 'y', 'z'].map((axis) => {
+    const f = settings[axis];
+    return f ? `${f.type}.${f.key}.${f.column || ''}` : '-';
+  }).join('|');
+}
+
+/**
+ * Whether the 2D zoom in `settings.viewport2D` was made on the fields now on
+ * the axes. A zoom without a record of its fields (an older saved view) counts.
+ */
+export function viewportFitsAxes(settings) {
+  const v = settings.viewport2D;
+  return !!v && (v.axes === undefined || v.axes === axesSignature(settings));
+}
+
+/**
+ * Give each axis the type of its series, and a revision that changes with its
+ * field, so the range the user zoomed to on one field is not kept on another.
+ * What stays as is: the 3D camera, the legend, a zoom while the fields are the same.
+ * @param {Object} layout - from createLayout (2D xaxis/yaxis, or scene)
+ * @param {Object} settings
+ * @param {Object} data - holds the loaded series x, y, z
+ * @param {string} revision - the uirevision of the plot (its dataset)
+ */
+export function applyAxisKinds(layout, settings, data, revision) {
+  for (const axis of ['x', 'y', 'z']) {
+    if (!settings[axis] || !data || !data[axis]) continue;
+    const target = settings.z ? layout.scene && layout.scene[`${axis}axis`] : layout[`${axis}axis`];
+    if (!target) continue;
+    target.type = axisKind(data[axis]);
+    const f = settings[axis];
+    target.uirevision = `${revision}|${f.type}.${f.key}.${f.column || ''}|${target.type}`;
+  }
+}
+
+/**
+ * The relayout that makes the axes whose field just changed what the new field
+ * is: its type, a revision of its own (so Plotly drops the range kept for the
+ * old field), and its range fitted again. The caller also drops the zoom.
+ * @param {Object} settings
+ * @param {Object} data - holds the loaded series
+ * @param {string[]} axes - the axes ('x', 'y', 'z') whose field changed
+ * @param {string} revision - the uirevision of the plot
+ * @returns {Object} relayout keys
+ */
+export function axisChangeRelayout(settings, data, axes, revision) {
+  const update = {};
+  for (const axis of axes) {
+    const f = settings[axis];
+    if (!f || !data || !data[axis]) continue;
+    const prefix = settings.z ? `scene.${axis}axis` : `${axis}axis`;
+    const kind = axisKind(data[axis]);
+    update[`${prefix}.type`] = kind;
+    update[`${prefix}.uirevision`] = `${revision}|${f.type}.${f.key}.${f.column || ''}|${kind}`;
+    update[`${prefix}.autorange`] = true;
+  }
+  return update;
+}
+
 export function createLayout(settings) {
   // Base axis settings for both 2D and 3D axes.
   const baseAxis = {
@@ -112,8 +192,8 @@ export function createLayout(settings) {
     // Remove the 2D axis configuration for 3D plots.
     delete layout.xaxis;
     delete layout.yaxis;
-  } else if (settings.viewport2D) {
-    // Restore 2D axis ranges if available
+  } else if (viewportFitsAxes(settings)) {
+    // Restore 2D axis ranges if available (only for the fields they were made on)
     if (settings.viewport2D.xrange) {
       layout.xaxis.range = settings.viewport2D.xrange;
     }
@@ -389,6 +469,7 @@ export function attachViewportTracking(plotContainer, settings) {
     const fl = plotContainer._fullLayout || {};
     const shown = (axis) => (fl[axis] && Array.isArray(fl[axis].range) ? [...fl[axis].range] : null);
     settings.viewport2D = {
+      axes: axesSignature(settings),
       xrange: xrange ? [...xrange] : (settings.viewport2D && settings.viewport2D.xrange) || shown('xaxis'),
       yrange: yrange ? [...yrange] : (settings.viewport2D && settings.viewport2D.yrange) || shown('yaxis')
     };
@@ -406,7 +487,7 @@ export function attachViewportTracking(plotContainer, settings) {
  * @returns {Object|null}
  */
 export function keptViewRanges(settings) {
-  const v = !settings.z && settings.viewport2D;
+  const v = !settings.z && viewportFitsAxes(settings) && settings.viewport2D;
   if (!v) return null;
   const out = {};
   if (Array.isArray(v.xrange)) out['xaxis.range'] = [...v.xrange];
