@@ -232,7 +232,7 @@ request is answered `503` with `Retry-After` before any byte, and the web client
 final chunk, which the browser reports as a failed read. Over HTTP/1.0 the close would look like
 a normal end, so a failed stream also writes `<names stream aborted>` before closing, which is not
 JSON, and the web client checks that the array closed and holds the number of names the reply
-announced. `proxy_read_timeout` counts the time between two reads, not the whole reply, so 90 s is
+announced. `proxy_read_timeout` counts the time between two reads, not the whole reply, so 120 s is
 fine.
 
 Any other proxy (Apache, Caddy, Traefik, an institutional gateway) works the same way: forward
