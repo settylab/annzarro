@@ -1,7 +1,7 @@
 import { DataManager } from '../../data-manager.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { updatePlotElements } from './plot-update.js';
-import { formatRangeValue, colorBoundToData } from '../../utils/array-stats.js';
+import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { notify } from '../../utils/notify.js';
@@ -854,22 +854,12 @@ function showColorRange($container, id, scales, settings) {
  */
 export function updateColorSliderUI(container, data, settings, id, isFirstLoad = false) {
   const $container = jQuery(container);
-  const $centerColormapButton = $container.find(`#center-colormap-${id}`);
 
-  // If centering is active, update the UI accordingly and apply centering
+  // If centering is active, apply it; the button says what is drawn
   if (settings.centeringActive) {
-    if ($centerColormapButton.length) {
-      $.updateButtonState($centerColormapButton, true);
-      $centerColormapButton.attr('title', 'Centering active - click to disable');
-    }
-    // Delegate the centering update to the applyCentering function
     applyCentering(container, data, settings, id);
+    showCenterButton($container, id, settings);
     return;
-  }
-  // Reset the center button appearance
-  if ($centerColormapButton.length) {
-    $.updateButtonState($centerColormapButton, false);
-    $centerColormapButton.attr('title', 'Center color scale at 0');
   }
   if (!data || !data.color || typeof data.color === 'string') return;
   const scales = colorSliderScales(data.color, false);
@@ -886,7 +876,9 @@ export function updateColorSliderUI(container, data, settings, id, isFirstLoad =
     // (plot-make.js), so the settings now say what is drawn.
     if (settings.colorMin == null) settings.colorMin = dataMin;
     if (settings.colorMax == null) settings.colorMax = dataMax;
+    if (settings.lockColorRange) drawLockedRange(settings, dataMin, dataMax);
   }
+  showCenterButton($container, id, settings);
   // Show them in the boxes too, not only on the sliders: the boxes would
   // otherwise keep the template's "0" and "100" after a restore whose
   // config had no colorMin/colorMax, while the plot is coloured over the
@@ -914,13 +906,70 @@ export function applyCentering(container, data, settings, id) {
   if (!scales) return;
   const absMax = scales.max.max;
 
-  // If not locked, update settings with the computed symmetric range;
-  // otherwise keep the locked values
+  // Not locked: the data's symmetric range. Locked: the locked limits'
+  // (drawLockedRange), the limits kept for when Center goes off.
   if (!settings.lockColorRange) {
     settings.colorMin = -absMax;
     settings.colorMax = absMax;
+  } else {
+    const plain = colorSliderScales(data.color, false).max;
+    drawLockedRange(settings, plain.min, plain.max);
   }
   showColorRange(jQuery(container), id, scales, settings);
+}
+
+/**
+ * Draw a locked range under Log and Center at 0 (array-stats.js
+ * lockedColorRange). The limits as typed are kept in
+ * settings.colorLockedLimits (data units, so Log does not change them; saved
+ * with the panel) while the drawn range differs from them, and dropped once
+ * it is them again. Center at 0 keeps them as it starts; Log as it is
+ * clicked (listeners.js).
+ * @param {number} dataMin - the data's low end, drawn units
+ * @param {number} dataMax - the data's high end, drawn units
+ */
+export function drawLockedRange(settings, dataMin, dataMax) {
+  const log = !!(settings.color && settings.color.log);
+  if (!settings.colorLockedLimits) {
+    if (!settings.centeringActive) return;
+    settings.colorLockedLimits = [colorBoundToData(settings.colorMin, log), colorBoundToData(settings.colorMax, log)];
+  }
+  const { min, max, exact } = lockedColorRange(settings.colorLockedLimits,
+    { log, centred: !!settings.centeringActive, floor: dataMin, top: dataMax });
+  settings.colorMin = min;
+  settings.colorMax = max;
+  if (exact) delete settings.colorLockedLimits;
+}
+
+/**
+ * The Center at 0 button's state and tooltip. On a locked range it says the
+ * range drawn and the limits kept; a locked range of 0 to 0 has nothing to
+ * centre and disables it (while off). Under Log it centres log10 values.
+ */
+export function showCenterButton($container, id, settings) {
+  const on = !!settings.centeringActive, locked = !!settings.lockColorRange;
+  const log = !!(settings.color && settings.color.log);
+  const text = v => colorBoundText(settings, v);
+  const range = `${text(settings.colorMin)} to ${text(settings.colorMax)}`;
+  const kept = settings.colorLockedLimits;
+  const keptText = kept ? `locked limits ${formatRangeValue(kept[0])} to ${formatRangeValue(kept[1])}` : '';
+  // the boxes show what is drawn; their tooltip, the limits kept
+  for (const which of ['min', 'max']) {
+    $container.find(`#color-${which}-${id}`).attr('title', kept
+      ? `Drawn ${range}; ${keptText} come back when ${on ? 'Center at 0' : 'Log'} is off` : '');
+  }
+  const $button = $container.find(`#center-colormap-${id}`);
+  if (!$button.length) return;
+  const nothing = locked && !on && settings.colorMin === 0 && settings.colorMax === 0;
+  let title;
+  if (nothing) title = `Nothing to centre: the locked range is ${range}. Change Min/Max or unlock the range`;
+  else if (on && locked) title = `Centred on the locked range: ${range}`
+    + (kept ? ` (${keptText} come back when Center at 0 is off)` : '') + ' - click to disable';
+  else if (on) title = 'Centering active - click to disable';
+  else title = 'Center color scale at 0';
+  if (log) title += '. Under Log: log10 0, i.e. symmetric in decades around 1';
+  $.updateButtonState($button, on);
+  $button.prop('disabled', nothing).attr('title', title);
 }
 
 /**

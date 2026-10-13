@@ -1,5 +1,5 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
-    colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText } from './panel-ui-update.js';
+    colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { autoPointCount } from '../../utils/view-point-style.js';
 import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator, hoverPickFits, showHoverChoice } from './plot-make.js';
@@ -430,9 +430,15 @@ export function setupPlotControlListeners(
     $lockRangeButton.on('click', () => {
       settings.lockColorRange = !settings.lockColorRange;
       $.updateButtonState($lockRangeButton, settings.lockColorRange);
+      // unlocked: no limits to keep; centred, the data's symmetric range at
+      // once (colorRange alone restyles nothing on the regular path)
+      const recentre = !settings.lockColorRange && settings.centeringActive;
+      if (!settings.lockColorRange) delete settings.colorLockedLimits;
+      if (recentre) updateColorSliderUI(controlsContainer, data, settings, id);
+      showCenterButton($controlsContainer, id, settings);
       
       // Optionally trigger a plot update if needed:
-      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { colorRange: true })
+      updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { colorRange: true, colors: recentre })
         .catch(error => {
           console.error("Error updating color range:", error);
           loadDataAndCreatePlot();
@@ -522,8 +528,16 @@ export function setupColorControls(
     // Ensure centeringActive is defined.
     settings.centeringActive = settings.centeringActive || false;
 
+    // A bound set by hand is the range now: limits kept for Log or Center
+    // at 0 (panel-ui-update.js drawLockedRange) no longer come back.
+    function _boundSet() {
+        delete settings.colorLockedLimits;
+        showCenterButton($container, id, settings);
+    }
+
     // Helper to update color range values without affecting slider UI
     function _updateColorRange(min, max, updateSliders = true, triggerPlotUpdate = true) {
+        delete settings.colorLockedLimits;
         settings.colorMin = min !== '' && min !== null ? parseFloat(min) : null;
         settings.colorMax = max !== '' && max !== null ? parseFloat(max) : null;
         $colorMinInput.val(settings.colorMin !== null ? colorBoundText(settings, settings.colorMin) : '');
@@ -560,6 +574,7 @@ export function setupColorControls(
             showColorBound(other === 'min' ? $colorMinSlider : $colorMaxSlider, mirrored, other === 'min' ? 'low' : 'high');
             updateColorRangeDirect(other, mirrored);
         }
+        _boundSet();
         _updatePlotElements({
             colors: false,
             colorRange: true,
@@ -702,15 +717,20 @@ export function setupColorControls(
     $logColorButton.on('click', () => {
         if (!settings.color) return;
         if (settings.lockColorRange) {
-            // a locked range stays the same data values in the new units
+            // a locked range stays the same data values in the new units; the
+            // limits are kept as typed (panel-ui-update.js drawLockedRange),
+            // so a Min of 0 drawn from the floor is 0 again when Log goes off
             const was = !!settings.color.log;
-            const floor = was ? (data.colorLog ? data.colorLog.floor : null) : null;
-            const min = colorBoundToData(settings.colorMin, was), max = colorBoundToData(settings.colorMax, was);
-            const lo = colorBoundFromData(min, !was, 'min', floor ?? settings.color.logFloor ?? null);
-            const hi = colorBoundFromData(max, !was, 'max');
-            if (lo.note || hi.refused) notify('Log colour scale', hi.refused || lo.note, 'warning');
-            settings.colorMin = lo.value;
-            settings.colorMax = hi.value;
+            if (!settings.colorLockedLimits) {
+                settings.colorLockedLimits = [colorBoundToData(settings.colorMin, was), colorBoundToData(settings.colorMax, was)];
+            }
+            if (!was) {
+                const [min, max] = settings.colorLockedLimits;
+                const lo = colorBoundFromData(min, true, 'min', settings.color.logFloor ?? null);
+                const hi = colorBoundFromData(max, true, 'max');
+                const said = [hi.refused, lo.note].filter(Boolean);
+                if (said.length) notify('Log colour scale', `${said.join(' ')} The locked limits come back when Log is off.`, 'warning');
+            }
         }
         settings.color.log = !settings.color.log;
         $.updateButtonState($logColorButton, settings.color.log);
@@ -750,6 +770,7 @@ export function setupColorControls(
         const minValue = colorSliderValue(e.target);
         $colorMinInput.val(colorBoundText(settings, minValue));
         settings.colorMin = minValue;
+        _boundSet();
         updateColorRangeDirect('min', minValue);
         _updatePlotElements({
             colors: false,
@@ -763,6 +784,7 @@ export function setupColorControls(
         const maxValue = colorSliderValue(e.target);
         $colorMaxInput.val(colorBoundText(settings, maxValue));
         settings.colorMax = maxValue;
+        _boundSet();
         updateColorRangeDirect('max', maxValue);
         _updatePlotElements({
             colors: false,
@@ -818,6 +840,7 @@ export function setupColorControls(
         const maxValue = -minValue;
         settings.colorMin = minValue;
         settings.colorMax = maxValue;
+        _boundSet();
         $csColorMinInput.val(colorBoundText(settings, minValue));
         $csColorMaxInput.val(colorBoundText(settings, maxValue));
         showColorBound($csColorMaxSlider, maxValue, 'high');
@@ -893,6 +916,7 @@ export function setupColorControls(
         const minValue = -maxValue;
         settings.colorMin = minValue;
         settings.colorMax = maxValue;
+        _boundSet();
         $csColorMaxInput.val(colorBoundText(settings, maxValue));
         $csColorMinInput.val(colorBoundText(settings, minValue));
         showColorBound($csColorMinSlider, minValue, 'low');
