@@ -75,6 +75,33 @@ def pytest_unconfigure(config):
         _restore_fixture()
 
 
+def pytest_addoption(parser):
+    parser.addoption("--shard", metavar="I/N", default=None,
+                     help="run only shard I of N of the collected test files (annzarro/tests/shards.py)")
+
+
+def _shard_file(config, item):
+    return os.path.relpath(str(item.path), str(config.rootpath)).replace(os.sep, "/")
+
+
+def pytest_collection_modifyitems(config, items):
+    if not config.getoption("--shard"):
+        return
+    from annzarro.tests.shards import load_durations, parse_shard, split
+    i, n = parse_shard(config.getoption("--shard"))
+    mine = set(split({_shard_file(config, it) for it in items}, n, load_durations())[i - 1])
+    keep = [it for it in items if _shard_file(config, it) in mine]
+    dropped = [it for it in items if _shard_file(config, it) not in mine]
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+    items[:] = keep
+    config._annzarro_shard = f"shard {i}/{n}: {len(mine)} files, {len(keep)} tests"
+
+
+def pytest_report_collectionfinish(config):
+    return getattr(config, "_annzarro_shard", None)
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _private_state_dir(tmp_path_factory):
     """Keep logs, PID files and generated secrets out of the real ~/.annzarro.
@@ -86,6 +113,17 @@ def _private_state_dir(tmp_path_factory):
     mp.setenv("ANNZARRO_HOME", str(tmp_path_factory.mktemp("annzarro_home")))
     yield
     mp.undo()
+
+
+@pytest.fixture(autouse=True)
+def _restore_remote_policy():
+    """Every app a test builds sets the process-wide remote store policy (server/core.py); put
+    it back, or a later test in the same process (an xdist worker runs any mix of files) reads
+    remote stores under whatever app came before it: an auth-enabled one denies them."""
+    from annzarro.core import remote
+    saved = remote.get_remote_policy()
+    yield
+    remote._policy = saved
 
 
 def _allow_create_array_data():
