@@ -102,9 +102,19 @@ async function main() {
     log(`UI loaded from ${base}`);
 
     // Control: the guard must catch an external request. The page tries one
-    // CDN fetch; it has to be cancelled and recorded, then is set aside.
+    // CDN request; it has to be cancelled and recorded, then is set aside.
+    // The probe is an image, not a fetch: the page's Content-Security-Policy
+    // (connect-src, 0.5.0) refuses a fetch to a host the policy does not allow
+    // inside the page, before the session ever sees it, so a fetch cannot show
+    // that the guard works. An image load is outside connect-src and takes the
+    // same route to the network as a script or stylesheet would.
     const probe = 'https://cdn.jsdelivr.net/npm/plotly.js-dist-min/plotly.min.js';
-    const probeReached = await win.evaluate((u) => fetch(u).then(() => true, () => false), probe);
+    const probeReached = await win.evaluate((u) => new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(true);
+        img.onerror = () => resolve(false);
+        img.src = u;
+    }), probe);
     const caught = await app.evaluate((_, u) => {
         const hit = global.__requests.blocked.some(r => r.url === u);
         global.__requests.blocked = global.__requests.blocked.filter(r => r.url !== u);
@@ -113,7 +123,7 @@ async function main() {
     if (probeReached || !caught) {
         throw new Error(`network guard did not stop ${probe} (reached=${probeReached}, recorded=${caught})`);
     }
-    log('network guard verified: an external fetch was cancelled and recorded');
+    log('network guard verified: an external request was cancelled and recorded');
 
     // 1. Open the dataset (as a share link / the dataset picker would).
     await win.goto(`${base}/?dataset_path=${encodeURIComponent(datasetPath)}`);
