@@ -7,6 +7,7 @@
 
 import { h, setChildren, badge, table } from './dom.js';
 import { formatTimestamp, formatCount } from './admin-format.js';
+import { grantedToText } from './access.js';
 
 const SOURCE_TEXT = { data_dir: 'data_dir', config: 'config', admin: 'admin' };
 
@@ -23,8 +24,9 @@ export const inactiveText = (reason) => INACTIVE_TEXT[reason] || reason || '';
  * The cells of one root's row.
  * @param {Object} root - one entry of `roots`
  * @param {Object} [actions] - the last cell's content (nodes), a fifth column
+ * @param {Object} [granted] - `roots` of GET /admin/access; adds the "Granted to" column when given
  */
-export function rootRow(root, actions) {
+export function rootRow(root, actions, granted) {
     const reason = inactiveText(root.inactive_reason);
     const path = h('span', null, h('code', { text: root.path }),
         root.active === false ? h('span', { class: 'ms-2' }, badge('inactive', 'warning', reason)) : null,
@@ -33,6 +35,7 @@ export function rootRow(root, actions) {
         : `${formatCount(root.stores)}${root.stores_capped ? '+' : ''}`;
     const added = root.added_by ? `${root.added_by}, ${formatTimestamp(root.added_at)}` : '-';
     const cells = [path, SOURCE_TEXT[root.source] || root.source, stores, added];
+    if (granted) cells.push(grantedToText(granted, root));
     if (actions !== undefined) cells.push(actions);
     return cells;
 }
@@ -54,6 +57,7 @@ let chooser = null;         // {path, dirs, capped, error}: the add dialog's bro
 let typed = '';
 let notice = null;          // {level, text}
 let listing = null;         // the last GET /admin/data-roots
+let granted = null;         // `roots` of the last GET /admin/access, or null
 
 function say(level, text) {
     notice = { level, text };
@@ -236,11 +240,18 @@ function parentFolder(root, folder) {
 }
 
 async function load(fetchRoots = true) {
-    if (fetchRoots || !listing) listing = await apiRef.dataRoots.list();
+    if (fetchRoots || !listing) {
+        listing = await apiRef.dataRoots.list();
+        try {
+            granted = (await apiRef.access.overview()).roots;
+        } catch {
+            granted = null;     // the table stays useful without the column
+        }
+    }
     const data = listing;
     const parents = data.parents || [];
     const roots = data.roots || [];
-    const rows = roots.map((r) => rootRow(r, actionsCell(r)));
+    const rows = roots.map((r) => rootRow(r, actionsCell(r), granted || undefined));
     setChildren(el,
         data.overlay && data.overlay.ok === false
             ? h('div', { class: 'alert alert-danger', role: 'alert', id: 'data-root-overlay-error' },
@@ -254,7 +265,7 @@ async function load(fetchRoots = true) {
                 ? h('div', null, parents.map((p) => h('span', { class: 'me-3' }, h('code', { text: p.path }),
                     p.ok === false ? h('span', { class: 'ms-1' }, badge('missing', 'warning')) : null)))
                 : h('p', { class: 'text-muted mb-0', text: 'Adding directories is off. Set server.admin_data_roots.' })),
-        table(['Directory', 'Source', 'Stores', 'Added', ''], rows),
+        table(['Directory', 'Source', 'Stores', 'Added', ...(granted ? ['Granted to'] : []), ''], rows),
         datasetsView(),
         parents.length ? chooserView(parents) : null);
 }
@@ -266,7 +277,7 @@ export default {
         el = target;
         apiRef = api;
         ctxRef = ctx;
-        confirming = viewing = chooser = notice = listing = null;
+        confirming = viewing = chooser = notice = listing = granted = null;
         typed = '';
         await load();
     },

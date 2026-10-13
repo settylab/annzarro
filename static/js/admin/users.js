@@ -12,6 +12,7 @@
 
 import { h, setChildren, badge, table } from './dom.js';
 import { formatTimestamp, formatCount, isValidUsername } from './admin-format.js';
+import { accessCell, mountAccessPanel } from './access.js';
 
 /** @param {Object} user - one entry of GET /admin/users */
 export function lockedCell(user) {
@@ -40,8 +41,9 @@ export function protectedReason(user, users, me) {
  * @param {Object[]} users
  * @param {string|null} me
  * @param {function(Object): (Node|null)} [actions]
+ * @param {Object} [access] - `users` of GET /admin/access; adds the Access column when given
  */
-export function userRows(users, me, actions) {
+export function userRows(users, me, actions, access) {
     return users.map((u) => {
         const cells = [
             h('span', null, u.username, u.username === me ? h('span', { class: 'text-muted ms-1', text: '(you)' }) : null),
@@ -51,6 +53,7 @@ export function userRows(users, me, actions) {
             lockedCell(u),
             formatTimestamp(u.last_seen),
         ];
+        if (access) cells.push(accessCell(access[u.username]));
         if (actions) cells.push(actions(u));
         return cells;
     });
@@ -61,7 +64,9 @@ let apiRef = null;
 let meRef = null;
 let toastRef = null;
 let users = [];
-/** What is open above the table: {kind: 'add'|'reset'|'remove', user?}. */
+/** The access summary of each user (GET /admin/access), or null when it could not be loaded. */
+let summary = null;
+/** What is open above the table: {kind: 'add'|'reset'|'remove'|'access', user?, host?}. */
 let open = null;
 /** The one-time password notice: {username, password}. Memory only. */
 let secret = null;
@@ -122,9 +127,33 @@ async function attempt(errorEl, work) {
     }
 }
 
+async function loadSummary() {
+    try {
+        summary = (await apiRef.access.overview()).users;
+    } catch {
+        summary = null;      // the table stays useful without the column
+    }
+}
+
 async function reload() {
     users = await apiRef.users.list();
+    await loadSummary();
     draw();
+}
+
+async function reloadSummary() {
+    await loadSummary();
+    draw();
+}
+
+function accessPanel(user) {
+    if (!open.host) {
+        open.host = h('div', { class: 'card card-body mb-3', id: 'user-access' });
+        mountAccessPanel(open.host, apiRef, user.username, {
+            toast: toastRef, onChange: reloadSummary, onClose: () => { open = null; draw(); },
+        }).catch((e) => setChildren(open.host, h('div', { class: 'text-danger', text: (e && e.message) || 'Could not load the access.' })));
+    }
+    return open.host;
 }
 
 function addPanel() {
@@ -253,6 +282,7 @@ function actionCell(user) {
     const why = protectedReason(user, users, meRef && meRef.username);
     const lockedReason = why;
     return h('span', { class: 'text-nowrap' },
+        button('Access', () => { open = { kind: 'access', user }; draw(); }, { name: 'access' }),
         button('Reset password', () => { open = { kind: 'reset', user }; draw(); }, { name: 'reset' }),
         user.is_admin
             ? button('Revoke admin', () => act('Revoke admin', async () => {
@@ -278,6 +308,7 @@ function draw() {
     if (open && open.kind === 'add') panel = addPanel();
     else if (open && open.kind === 'reset') panel = resetPanel(open.user);
     else if (open && open.kind === 'remove') panel = removePanel(open.user);
+    else if (open && open.kind === 'access') panel = accessPanel(open.user);
     setChildren(root,
         h('div', { class: 'd-flex align-items-center mb-2' },
             h('h2', { class: 'h5 mb-0', text: `Users (${users.length})` }),
@@ -285,8 +316,8 @@ function draw() {
                 { tone: 'primary', name: 'add' }))),
         secretNotice(),
         panel,
-        table(['User', 'Admin', 'Last login', 'Panel sets', 'Locked', 'Last seen', 'Actions'],
-            userRows(users, meRef && meRef.username, actionCell)));
+        table(['User', 'Admin', 'Last login', 'Panel sets', 'Locked', 'Last seen', ...(summary ? ['Access'] : []), 'Actions'],
+            userRows(users, meRef && meRef.username, actionCell, summary || undefined)));
 }
 
 async function load() {
