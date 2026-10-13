@@ -76,7 +76,7 @@ client_max_body_size  64m;           # as server.max_request_mb
 limit_conn_zone $binary_remote_addr zone=annzarro_addr:10m;
 server {
     limit_conn annzarro_addr 40;     # simultaneous connections per client address
-    proxy_read_timeout 120s;         # a request that runs longer is cut off at the proxy
+    proxy_read_timeout 120s;         # a reply that sends nothing for 120 s is cut off at the proxy
 }
 ```
 

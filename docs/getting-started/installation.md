@@ -5,7 +5,7 @@ command-line tool `annzarro` and the complete web interface (all JavaScript, CSS
 bundled, so the browser fetches nothing from other hosts). If you only want to look at data on
 your own computer and do not want to install Python, use the {doc}`desktop-app` instead.
 
-**Requirements**
+**Requirements** (Python package; the desktop app needs none of these)
 
 - Python 3.9 or later. The package has been installed and its server started on Python 3.9,
   3.10, 3.11, 3.12, 3.13 and 3.14 (macOS, arm64). Python 3.8 and older cannot import it.
@@ -66,7 +66,7 @@ on your `PATH`:
 uv tool install annzarro
 ```
 
-## Desktop app
+## Desktop app (no Python)
 
 The packaged desktop app needs no Python and no other installation: the server, Python and the
 web interface are inside the download. Download the file for your system from the

@@ -10,6 +10,8 @@ Every number on this page is AnnZarro v0.4.0. The paper's performance figure
 ({doc}`../paper/performance`) and scale figure ({doc}`../paper/scale`) summarise the benchmarks;
 their numbers are reproduced below where they matter for setting up a store or a server.
 
+This page gives laptop and demonstration-store numbers only; it gives no numbers from HPC nodes.
+
 ## On the demonstration store
 
 Measured for these docs on AnnZarro v0.4.0: `bm_aging.zarr` (8,090 cells × 16,285 genes), server

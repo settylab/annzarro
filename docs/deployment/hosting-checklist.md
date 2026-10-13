@@ -26,12 +26,11 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 - **Users file private.** `auth.user_file` points outside the data directory, mode 0600,
   owned by the service account.
 - **Admins are few.** `annzarro user list` shows "Admin: Yes" only for people who should be
-  able to change anyone's panel sets, manage users and dataset access, and use the admin
-  interface ({doc}`admin`).
+  manage users, data directories and settings in the admin interface ({doc}`admin`) and delete or
+  overwrite anyone's panel sets.
 - **Data directory and allowed directories are what you mean to share.**
   `annzarro config show --config <file>` lists `server.data_dir` and `server.allowed_dirs`. Every
-  readable store under those trees can be opened by every user who is not restricted to chosen
-  datasets ({doc}`authentication`), linked or not.
+  readable store under those trees can be opened by every unrestricted user, linked or not ({doc}`authentication`).
 - **Admins can read any file the server process can.** By default
   (`server.arbitrary_paths: admins`) an admin may open any path the service account can read,
   and each such open is logged with the admin's name; other users stay confined to the trees
@@ -62,7 +61,7 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 
 | A signed-in user can | A signed-in user cannot |
 |---|---|
-| list and open every dataset under `data_dir` and `allowed_dirs` (a user restricted to chosen datasets sees only their grants) | open files or list directories outside those trees (admins can, unless `server.arbitrary_paths` is `none` or `local-only`) |
+| list and open every dataset under `data_dir` and `allowed_dirs` (a restricted user: only their grants) | open files or list directories outside those trees (admins can, unless `server.arbitrary_paths` is `none` or `local-only`) |
 | read every slot of those datasets (X, layers, obs/var, obsm/varm, obsp/varp, uns), one vector or a bounded slice at a time | download a whole matrix: a reply larger than `max_response_elements` is refused with 413, and a pairwise (`obsp`/`varp`) read that would hold more than `max_read_mb` (5% of RAM by default) in server memory is refused with 413 `read_too_large`, admins included |
 | save, load, export, duplicate and import panel sets | change or delete another user's panel set (admins can) |
 | open remote stores under `remote_allowlist` (a restricted user: only those they are granted) | make the server fetch any other URL |
@@ -72,7 +71,7 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 
 Things to know:
 
-- **Panel sets are shared.** Every user sees every panel set's name, dataset and layout. Do not
+- **Panel sets are shared.** Every unrestricted user sees every panel set's name, dataset and layout (a restricted user sees their own and those whose datasets they can read). Do not
   put anything in a panel-set name you would not show the whole server.
 - **Panel sets and links name server paths.** They reproduce a view on the same server with an
   unchanged store, not on another installation.
@@ -86,7 +85,7 @@ Things to know:
 
 - New dataset: add a link in the data directory (plus `allowed_dirs` for its target); no
   restart needed.
-- Changed or replaced store: **Refresh dataset** in the viewer re-checks it against the disk and serves the change to every user; an admin's refresh also clears the server's cache for it ({doc}`../user-guide/interface`). A restart picks up every change.
+- Rewritten elements of a store: **Refresh dataset** (`POST /data/refresh`); for an admin it also clears the cache for that dataset. A whole store replaced behind the same link: restart the service ({doc}`lab-server`).
 - New or removed user, changed admin rights or dataset access: `annzarro user ...` or the admin interface; no restart needed.
 - Configuration change: restart the service, then check `annzarro config show` and the startup
   log (`Remote store policy: ...`, confinement warnings, `SECURITY` lines).
