@@ -3995,3 +3995,12 @@ button.dtsb-button.dtsb-clear:hover {
     flex: 1 1 auto; min-width: 0; width: auto !important; margin-bottom: 0;
 }
 .dataset-select-dropdown .dataset-browse { flex: 0 0 auto; white-space: nowrap; }
+
+/* Links to the admin interface next to the signed-in badge (main.js _loadAuthIndicator) */
+.account-links {
+    margin-left: 4px;
+}
+
+.account-links .auth-indicator {
+    margin-right: 4px;
+}

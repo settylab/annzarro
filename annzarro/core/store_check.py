@@ -27,6 +27,14 @@ import zarr
 from . import layout_thresholds as T
 from . import read_guard
 
+__all__ = [
+    "check_store",
+    "exceeds",
+    "format_report",
+    "StoreCheckError",
+]
+
+
 SCHEMA = "annzarro-store-check/1"
 
 DOCS = "https://annzarro.readthedocs.io/en/latest/data/chunking.html"
@@ -578,8 +586,26 @@ class _Checker:
 
 
 def check_store(path: str, max_read_mb: Optional[float] = None) -> Dict[str, Any]:
-    """The report for the store at ``path`` (a local directory or a URL).
-    Metadata only. Raises StoreCheckError when it cannot be opened."""
+    """Report what in a store's layout makes AnnZarro slow, from metadata only.
+
+    Reads shapes, dtypes, chunks, attributes and the consolidated metadata, and no
+    chunk. This is what ``annzarro store check`` prints.
+
+    Args:
+        path: A zarr store: a local directory, or an ``s3://``, ``gs://`` or
+            ``http(s)://`` URL (read-only; needs the ``annzarro[remote]`` extras).
+        max_read_mb: The limit, in MB, to judge ``obsp``/``varp`` row reads against.
+            Default: the server's own default for this machine (``server.max_read_mb``).
+
+    Returns:
+        dict: The report (schema ``annzarro-store-check/1``): ``store``, ``zarr_format``,
+        ``consolidated``, ``arrays`` (one entry per 2-D array), ``findings`` (most
+        severe first, each with ``code``, ``severity``, ``element``, ``summary``,
+        ``cost``, ``fix`` and ``details``), ``counts`` per severity and ``worst``.
+
+    Raises:
+        StoreCheckError: The store cannot be opened.
+    """
     path = str(path)
     if len(path) > 1 and path.endswith("/"):
         path = path.rstrip("/")
@@ -612,7 +638,15 @@ def check_store(path: str, max_read_mb: Optional[float] = None) -> Dict[str, Any
 
 
 def exceeds(report: Dict[str, Any], fail_on: str) -> bool:
-    """True when the report has a finding at or above ``fail_on`` (never: "never")."""
+    """Whether a report has a finding at or above a severity.
+
+    Args:
+        report: The result of :func:`check_store`.
+        fail_on: ``"info"``, ``"warning"`` or ``"slow"``; ``"never"`` is never exceeded.
+
+    Returns:
+        bool: True when a finding is at or above ``fail_on``.
+    """
     if fail_on == "never":
         return False
     floor = T.SEVERITIES.index(fail_on)
@@ -622,6 +656,14 @@ def exceeds(report: Dict[str, Any], fail_on: str) -> bool:
 # --- text -----------------------------------------------------------------
 
 def format_report(report: Dict[str, Any]) -> str:
+    """The text ``annzarro store check`` prints for a report.
+
+    Args:
+        report: The result of :func:`check_store`.
+
+    Returns:
+        str: The array table and each finding with its cost and fix.
+    """
     out = [f"Store {report['store']}",
            f"  zarr format {report['zarr_format']}, "
            f"{'consolidated' if report['consolidated'] else 'NOT consolidated'} metadata, "

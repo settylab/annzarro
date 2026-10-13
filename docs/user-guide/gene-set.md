@@ -185,8 +185,10 @@ Whether gene ids may be sent to a service is decided in the browser, within what
 allows. The first rule that applies wins:
 
 1. **The server.** An administrator's `integrations.external_requests: off` sends nothing, ever;
-   `on` sends without asking ({doc}`../reference/configuration`). The default, `ask`, leaves it
-   to the rules below.
+   `none` the same and removes the Links; `on` sends without asking
+   ({doc}`../reference/configuration`). The default, `ask`, leaves it to the rules below. The same
+   settings can be changed in the browser by an administrator, for everyone or for one user
+   ({ref}`gene-set-admin`).
 2. **Your "Never"** for a service, remembered in this browser. The section says so, with **Ask
    again**.
 3. **A share link's consent, for its selection only.** When you agreed to send a selection, the
@@ -208,6 +210,25 @@ from "the browser blocked the reply" ({ref}`gs-when-a-service-fails`). It carrie
 genes, no query, no body, no cookie and no referrer, and its reply is not read. It goes only to a
 host you already agreed to send to, once per failed attempt, and never when the browser is
 offline or the server has external requests turned off.
+
+(gene-set-admin)=
+## When an administrator has turned something off
+
+An administrator of a shared server can switch off ({doc}`../deployment/admin`):
+
+- **The whole panel.** Gene Set Analysis is missing from the panel menu. A panel set or link
+  that holds one opens with a grey box, "Disabled by the administrator", in its place; the other
+  panels work, and saving the layout again keeps the panel's settings, so nothing is lost when
+  the panel is switched on again.
+- **Services.** A service that is not offered has no section and is never asked. A Run in a tab
+  that was open when it was switched off says "The administrator turned off ..." and does not send.
+- **All external hosts.** The panel sends nothing and has no Links section (the setting `none`).
+  A tab that was already open reads the setting again at its next Run and says that external
+  services were turned off and nothing was sent.
+- **The species lookup** at NCBI Taxonomy, and **the Links**, one by one.
+
+This is enforced by the browser, not only by the page: the server tells it which hosts it may
+contact, and it refuses any other. Enrichr and Reactome are off by default on a shared server.
 
 ## Links
 

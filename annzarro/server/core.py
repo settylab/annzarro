@@ -26,6 +26,11 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from annzarro.utils.paths import default_data_dir
 from ..core.remote import is_remote_path
 
+__all__ = [
+    "create_app",
+]
+
+
 logger = logging.getLogger(__name__)
 
 # Default configuration
