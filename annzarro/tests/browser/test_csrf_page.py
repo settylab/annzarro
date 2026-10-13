@@ -14,8 +14,8 @@ import urllib.parse
 
 import pytest
 
-from annzarro.tests.browser.test_session_expiry import (  # noqa: F401  (server is a fixture)
-    STORE, _link, _settle, _sign_in, playwright, server)
+from annzarro.tests.browser.test_session_expiry import (  # noqa: F401  (server, _own_data_dir: fixtures)
+    _link, _own_data_dir, _settle, _sign_in, playwright, server)
 
 CALLS = """async () => {
   const { SessionManager } = await import('./static/js/session-manager.js');
@@ -30,7 +30,7 @@ CALLS = """async () => {
   out.reset = await DataManager.resetBackendCache();
   out.afterImport = await names();
   out.delete = await SessionManager.deleteSession('csrf_set');
-  await SessionManager.deleteSession(out.import.name);   // the server's data dir is the repository's
+  await SessionManager.deleteSession(out.import.name);
   out.afterDelete = await names();
   return out;
 }"""
