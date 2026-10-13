@@ -2503,6 +2503,17 @@ button.dtsb-button.dtsb-clear:hover {
 .dataset-select-dropdown {
     max-width: min(90vw, 900px);
 }
+/* A tall list that follows the window: one scrollbar (the results), the search box stays on top.
+   The generic 400px cap on the dropdown and the 200px default of the results list do not apply here;
+   select2 flips the list above the box when there is more room there. */
+.select2-container--open .select2-dropdown.dataset-select-dropdown.select2-dropdown--below,
+.select2-container--open .select2-dropdown.dataset-select-dropdown.select2-dropdown--above {
+    max-height: none;
+    overflow: visible;
+}
+.dataset-select-dropdown .select2-results > .select2-results__options {
+    max-height: min(70vh, 640px) !important;
+}
 .dataset-select-dropdown .select2-results__option {
     height: auto !important;
     white-space: normal;
