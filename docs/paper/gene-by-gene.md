@@ -4,7 +4,7 @@
 :alt: The paper's gene-by-gene figure, four panels: two Kompot volcanoes coloured by a gene's row of the fold-change correlation matrix, two rank strips coloured by module, and a scatter of two correlation rows.
 
 *A gene-by-gene matrix over a differential expression volcano*, a figure of the AnnZarro paper
-(Otto, Baasri and Setty, in preparation), made in Python by
+{cite:p}`otto2026annzarro`, made in Python by
 {repro}`figures/fig3_gene_by_gene.py` in the paper's {ref}`companion repository <paper-companion>`.
 ```
 

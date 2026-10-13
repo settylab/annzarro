@@ -4,8 +4,7 @@
 :alt: Flowchart of the procedure. Installation, data preparation and starting AnnZarro lead to Worked examples 1 to 5 on the bone marrow store, and separately to Worked example 6 on Tahoe-100M; both lead to saving and sharing, then to optional hosting for a lab.
 :width: 100%
 
-*Overview of the procedure*, a figure of the AnnZarro paper (Otto, Baasri and Setty, in
-preparation): the stages of the protocol with their step numbers. Dashed box, optional stage.
+*Overview of the procedure*, a figure of the AnnZarro paper {cite:p}`otto2026annzarro`: the stages of the protocol with their step numbers. Dashed box, optional stage.
 ```
 
 The paper's Procedure takes a processed AnnData object to linked, shareable views in five

@@ -26,7 +26,7 @@ numbers have to be in the store, so this one store holds them next to the data t
 ## Get the store
 
 **Download.** The store is deposited on Zenodo as one zip, `bm_aging_annzarro.zarr.zip`
-(5.7 GB), in the record [doi:10.5281/zenodo.23277103](https://doi.org/10.5281/zenodo.23277103).
+(5.7 GB), in the record [doi:10.5281/zenodo.23277102](https://doi.org/10.5281/zenodo.23277102).
 The record cites the source data below and carries the same CC BY 4.0 licence. Its
 `SHA256SUMS` lists the zip's checksum, and its `FIELDS.md` is the field list of this page,
 generated from the store. Fetch the zip, check it against `SHA256SUMS`, and unzip it into your

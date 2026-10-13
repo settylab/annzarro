@@ -83,16 +83,35 @@ The AppImage keeps the X11 libraries libXss and libXtst (MIT), with their notice
 
 ## Citing AnnZarro
 
+If you use AnnZarro, please cite the preprint {cite:p}`otto2026annzarro`:
+
+Otto, D. J., Baasri, S. and Setty, M. AnnZarro: scalable, interactive exploration of cell-by-cell
+and gene-by-gene relationships in single-cell data. bioRxiv (2026).
+<https://doi.org/10.64898/2026.10.10.758158>
+
+```bibtex
+@article{otto2026annzarro,
+  author  = {Otto, Dominik J. and Baasri, Siddharth and Setty, Manu},
+  title   = {{AnnZarro}: scalable, interactive exploration of cell-by-cell and gene-by-gene relationships in single-cell data},
+  journal = {bioRxiv},
+  year    = {2026},
+  doi     = {10.64898/2026.10.10.758158},
+  url     = {https://doi.org/10.64898/2026.10.10.758158}
+}
+```
+
 The citation metadata are in
 [`CITATION.cff`](https://github.com/settylab/annzarro/blob/main/CITATION.cff) at the top of the
-repository; GitHub's "Cite this repository" button reads it. From v0.4.1, each release is
-archived on Zenodo with a DOI, with the same authors (`.zenodo.json`).
+repository; GitHub's "Cite this repository" button reads it, and it names the preprint as the
+preferred citation. To cite the software itself, use the DOI of the release you ran. From v0.4.1,
+each release is archived on Zenodo with its own version DOI, with the same authors
+(`.zenodo.json`); v0.4.3 is
+[10.5281/zenodo.23306026](https://doi.org/10.5281/zenodo.23306026).
 
 Otto, D. J., Baasri, S. and Setty, M. AnnZarro (software). Zenodo.
 <https://doi.org/10.5281/zenodo.23222216>
 
-This DOI always resolves to the latest release. To cite the version you used, take its version
-DOI from the Zenodo record (each release has its own).
+The concept DOI above always resolves to the latest release.
 
 ```bibtex
 @software{otto_annzarro_software,

@@ -578,6 +578,7 @@ audit write fails the change stands and the reply has `audit_failed: true`.
 | 500 | `read_failed` | any other failure to read an array the store lists, with the exception text |
 | 501 | `missing_dependency` | a remote store without the `annzarro[remote]` extras |
 | 504 | `remote_timeout` | a remote store did not answer in time |
+| 504 | `remote_deadline` | one request used up `server.remote_request_timeout_s` on a remote store; the body has `host`, `limit_name` and `limit_s` |
 
 ```console
 $ curl -s -w "\nHTTP %{http_code}\n" "http://127.0.0.1:8812/api/v1/data/layer/kompot_de_Young_to_Old_fold_change?dataset_path=$DS"

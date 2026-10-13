@@ -308,6 +308,11 @@ server:
       description: Seconds to wait between bytes from a remote store before failing with 504
       default: 30
       security: internal
+    remote_request_timeout_s:
+      type: number
+      description: Seconds one request may spend on remote reads in total before 504 remote_deadline; null = 120 on a hosted server, 600 on a single-user one; 0 = no limit
+      default: null
+      security: internal
     remote_chunk_cache_mb:
       type: integer
       description: In-memory LRU of raw chunk bytes per open remote store (zarr 3 only); 0 disables

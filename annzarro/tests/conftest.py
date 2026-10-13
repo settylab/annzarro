@@ -123,7 +123,13 @@ class _BrowsesLikeAPage(FlaskClient):
     before it posts to it, so the form's token and cookie come along, and sends the signed-in
     user's token (static/js/utils/csrf.js) with a request that changes state. It leaves the
     admin API alone, whose tests send or withhold the token themselves. Tests about the token
-    (tests/server/test_app_csrf.py) use a plain ``FlaskClient``."""
+    (tests/server/test_app_csrf.py) use a plain ``FlaskClient``.
+
+    To send NO token from this client, pass the header yourself, even empty
+    (``headers={"X-AnnZarro-CSRF": ""}``): a request that names the header is left as it is. A test
+    that claims "no token is refused" without that, or a plain client, tests nothing: the client
+    adds one. A spawned process builds its app with ``admin_helpers.make_app``, which installs this
+    client too."""
 
     def open(self, *args, **kwargs):
         method = (kwargs.get("method") or "GET").upper()
