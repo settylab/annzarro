@@ -22,6 +22,7 @@ ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
 import base64
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -38,9 +39,22 @@ else:
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
-DATA_DIR = os.path.join(os.path.dirname(HERE), "data")
+DATA_DIR = os.path.join(os.path.dirname(HERE), "data")      # _own_data_dir points both at a copy
 STORE = os.path.join(DATA_DIR, "fixture_small.zarr")
 TILE = '.tile[data-tile-id="cell-plot-K"] '
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _own_data_dir(tmp_path_factory):
+    """Serve a copy of the fixture store: a panel set saved through ``server`` (test_csrf_page.py
+    saves and deletes some) writes <data dir>/sessions, and that must not be the checkout's."""
+    data = tmp_path_factory.mktemp("data")
+    shutil.copytree(STORE, data / "fixture_small.zarr")
+    mp = pytest.MonkeyPatch()
+    mp.setattr(sys.modules[__name__], "DATA_DIR", str(data))
+    mp.setattr(sys.modules[__name__], "STORE", str(data / "fixture_small.zarr"))
+    yield
+    mp.undo()
 
 
 def _free_port():
