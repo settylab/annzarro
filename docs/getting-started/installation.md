@@ -71,7 +71,13 @@ uv tool install annzarro
 The packaged desktop app needs no Python and no other installation: the server, Python and the
 web interface are inside the download. Download the file for your system from the
 [latest release](https://github.com/settylab/annzarro/releases/latest) of `settylab/annzarro`
-(`<version>` is the release number):
+(`<version>` is the release number). Each release also has copies without the version in the
+name, so these links always give the latest app:
+[macOS Apple silicon](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-arm64.dmg),
+[macOS Intel](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-x64.dmg),
+[Windows](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-windows-x64-setup.exe),
+[Linux AppImage](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-x86_64.AppImage) and
+[Linux .deb](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-amd64.deb). The versioned files on the release page:
 
 | System | File |
 |---|---|
