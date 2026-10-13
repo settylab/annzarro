@@ -115,8 +115,42 @@ a collaborator only some of them, **restrict** that user and **grant** what they
 A restricted user with no grant sees nothing; admins are never restricted. The grants are in
 `annzarro_admin/access.json`, next to the per-user policy overrides, and are written under the same
 lock as the other admin files, so every worker follows a grant or a revocation on its next request. The
-command line manages them now (`annzarro user access carol --restrict --grant /srv/atlases/pbmc`,
-{doc}`authentication`); the Access panel of the Users section follows.
+command line manages them as well (`annzarro user access carol --restrict --grant /srv/atlases/pbmc`,
+{doc}`authentication`) and both are audited.
+
+### The Access panel
+
+In the Users section, **Access** on a user's row opens their panel above the table. The table's
+**Access** column says `all`, or `restricted: 2 grants` (with `(1 inactive)` when a grant does not
+apply), `unknown` while `access.json` cannot be read, and a red **reads nothing** badge for a
+restricted user with no active grant; a blue badge counts the user's own settings.
+
+- **Restricted to these datasets** is a checkbox. Restricting a user who has an active grant takes one
+  click. Anything that could cut someone off or open everything asks first, in a box with a second
+  button: restricting a user without an active grant says "*carol* has no active grant, so *carol* will lose
+  access to everything now, until you add a grant." (**Restrict now**), and un-restricting says "*carol* will be able to read
+  every dataset in the data directories." (**Allow everything**). **Cancel** leaves it as it was.
+  Un-restricting keeps the grants, so restricting again brings them back.
+- **Grant** adds a grant in one of four modes: *this folder* (the whole subtree), *every store in this
+  folder* (one store grant for each, for a folder of links), *one store*, or *remote prefix*. Type the path, or
+  **Browse data directories** (the directories the server reads from, folder by folder). The grants table
+  lists each grant with an *inactive* line with the reason (outside every data
+  directory, remote stores off, outside the remote allowlist, not a valid URL) when it does not apply, and a **Revoke** button.
+- **Effective** says how many grants are active and how many stores they add up to
+  ("at least 5,000 stores" when the count stopped at its limit), and lists the stores a page at a time (**Show more**).
+- **Check a path** asks the server whether this user can read a path or URL and why: covered by
+  which grant, covered only by an inactive one, outside every data directory, or no grant at all.
+- **Settings for the user** are the per-user overrides of the settings ({ref}`admin-policy`) for that user.
+- An admin is never restricted. If a user who was restricted is made an admin, the panel says
+  "Administrators read every dataset the server serves. They cannot be restricted. Stored as restricted: that
+  applies again if their admin right is revoked."
+
+The **Data directories** table has a **Granted to** column: the restricted users with an active grant in or
+below that directory (`-` for none). It is the quick check that a directory an admin is about to remove or
+re-point is not what a collaborator depends on.
+
+While `access.json` cannot be read, the Users table says `unknown` for everyone and the panel refuses
+changes (`503 store_unreadable`) instead of overwriting the file.
 
 What a restricted user sees, and how the check works:
 

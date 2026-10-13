@@ -526,6 +526,24 @@ save, so a save running at the same time loses neither.
 | `POST /admin/panel-sets/reassign` | `{"to_owner", "names": [...]}` or `{"to_owner", "from_owner"}` (not both; 1 to 1000 names) | `{"moved", "unchanged", "over_quota"}`. All or nothing: `404` `not_found` with `names` for a set that does not exist, `409` `unreadable` with `names` for a file that cannot be read, `404` `unknown_user` for `to_owner`, `400` `bad_request`. An admin may take a user past their quota; `over_quota` says so. Audited as `panel_sets.reassign` (target: the new owner; the count, up to 50 names and the previous owners) |
 | `DELETE /admin/panel-sets` | `{"names": [...]}` (1 to 1000) | `{"deleted", "missing"}`; names that are not sets are listed in `missing`. Audited as `panel_sets.delete` (the count and up to 50 names with their owners) |
 
+### Access
+
+Who may read which datasets ({ref}`admin-access`). All of these are admin routes with the checks above
+and are audited (`access.restrict`, `access.unrestrict`, `access.grant`, `access.revoke`; a refusal
+as `refused:<reason>`). Changes run under the lock of `access.json`, next to the per-user settings
+that live in the same entry, which they keep. A file that exists but does not parse is never
+replaced: the routes answer `503 store_unreadable` and the data routes refuse every non-admin
+until it is repaired.
+
+| Route | Body or query | Returns |
+|---|---|---|
+| `GET /admin/access` | | `{"store": {ok, error}, "users": {<name>: {restricted, is_admin, grants, active, policy_overrides}}, "roots": {<real path of a data directory>: [users]}}`. The line per user of the Users table, and, for each data directory, the restricted users with an active local grant in it or below it. `restricted` is `false` for an admin whatever is stored. While `access.json` is unreadable (`store.ok` false), `restricted`, `grants`, `active` and `policy_overrides` are `null` ("unknown", not a guess) and `roots` is empty |
+| `GET /admin/users/<u>/access` | `offset`, `limit` (1 to 500, default 100) | `{restricted, stored_restricted, is_admin, all, grants: [{kind, path, real, active, inactive_reason, added_by, added_at}], stores: {items: [{name, path}], total, offset, capped}, remote_prefixes, policy_overrides}`. `all` is true when the user reads everything (not restricted, or an admin). `stores` lists what the active local grants add up to (at most 5,000; `capped` says when it stopped there, and the walk shares the `dataset_scan_max_entries` budget; a link leading out of a granted folder is not counted). `stored_restricted` is the stored flag, which stays true for an admin who was restricted before being made one. `404` `unknown_user`, `400` `bad_request`, `503` `store_unreadable` |
+| `PUT /admin/users/<u>/access` | `{"restricted": true or false}` | the same document after the change. `409` `admin_unrestricted` for an administrator. Un-restricting keeps the grants |
+| `POST /admin/users/<u>/grants` | `{"kind": "dir" or "store" or "remote" or "stores_in", "path"}` | `201 {"added": [{kind, path, added_by}], "skipped": [...]}`. `stores_in` adds one `store` grant for every store directly in the folder. `400` `bad_path`, `bad_kind`, `not_a_directory`, `too_many`, `bad_request`; `403` `outside_data_roots` (the path is not inside a data directory), `remote_not_allowed` (remote stores are off or the URL is outside `server.remote_allowlist`); `404` `not_found`; `409` `already_granted` |
+| `DELETE /admin/users/<u>/grants` | `{"path"}` | `{"removed": [{kind, path}]}`. `404` `not_found` |
+| `GET /admin/access/check` | `user`, `path` (an absolute path or a remote URL) | `{"allowed", "via": {kind, path} or null, "reason"}`: a sentence for the admin, including that a grant is inactive and why, or that the path is outside every data directory. `404` `unknown_user`, `400` `bad_request` |
+
 ### Settings
 
 The settings are the keys of the policy registry ({doc}`../design/policy-registry`).
