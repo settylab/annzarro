@@ -37,7 +37,8 @@ pip install annzarro              # or 'annzarro[remote]' for s3://, gs:// and h
 ```
 
 Desktop apps for Windows, macOS and Linux (no Python needed, works offline) are on the
-[releases page](https://github.com/settylab/annzarro/releases). From source:
+[releases page](https://github.com/settylab/annzarro/releases); from 0.5.0 the macOS app is signed
+and notarized and opens without security warnings. From source:
 `git clone https://github.com/settylab/annzarro.git && pip install -e ./annzarro`.
 Details: [installation](https://annzarro.readthedocs.io/en/latest/getting-started/installation.html),
 [desktop app](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html).

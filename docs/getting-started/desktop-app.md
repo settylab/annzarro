@@ -22,10 +22,9 @@ Standalone apps for macOS, Windows and Linux are published with each release on 
 | | `SHA256SUMS.txt` | checksums: `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` |
 
 ```{important}
-Releases on that page that predate the preprint release do not have the features described in
-this documentation (login, panel-set ownership, share links, remote datasets, the binary
-transfer format) and ship only some of the files above. Until the new release is out, use the
-Python package ({doc}`installation`).
+Use the latest release on that page. Older releases may lack features described in this
+documentation (login, panel-set ownership, share links, the binary transfer format) and some
+ship only some of the files above. The Python package ({doc}`installation`) is the alternative.
 ```
 
 The app contains its own AnnZarro server, frozen with PyInstaller together with Python, numpy,
@@ -40,30 +39,26 @@ app; use the Python package with the `remote` extra for those ({doc}`installatio
 
 ## First launch
 
-From version 0.5.0 the macOS app is signed with the Fred Hutchinson Cancer Center Developer ID and
-notarized by Apple, so it opens like any other app: no warning and no extra step. Windows builds
-are not signed, and macOS builds before 0.5.0 were only ad-hoc signed, so those need one extra
-step on the first launch:
-
-- **macOS before 0.5.0, on macOS 15 (Sequoia) and macOS 26 (Tahoe)**: opening the app the first time shows
-  **“AnnZarro” Not Opened** (the name may read “AnnZarro.app”): *Apple could not verify
-  “AnnZarro” is free of malware that may harm your Mac or compromise your privacy.*, with the
-  buttons **Done** and **Move to Trash**. Click **Done**. Then open **System Settings > Privacy &
-  Security**, scroll down to **Security**, where it says **“AnnZarro” was blocked to protect your
-  Mac.**, and click **Open Anyway**. macOS asks once more (**Open “AnnZarro”?**); confirm, and
-  enter your password or use Touch ID when asked. This is needed once; later starts open
-  normally. Since macOS 15, right-click (Control-click) > **Open** no longer gets past this check.
-- **macOS before 0.5.0, on macOS 14 (Sonoma) and earlier**: right-click (Control-click) the app in Applications, choose
-  **Open**, then **Open** in the dialog. Once is enough. **System Settings > Privacy & Security >
-  Open Anyway** works there too.
-- **Windows**: SmartScreen says "Windows protected your PC". Click **More info**, then
-  **Run anyway**.
+- **macOS**: open the `.dmg`, drag **AnnZarro** to **Applications**, and open it. From version
+  0.5.0 the app is signed by "Fred Hutchinson Cancer Research Center" and notarized by Apple, so
+  it opens like any other Mac app: no warning, no extra step, and no need to change a security
+  setting. The `.zip` holds the same app.
+- **Windows**: the build is not code-signed. SmartScreen says "Windows protected your PC". Click
+  **More info**, then **Run anyway**.
 - **Linux**: no extra step beyond `chmod +x` for the AppImage. On Ubuntu 24.04 and later an
   AppImage that fails to start may need `--no-sandbox`.
 
-The very first start can take up to a minute while the system's malware scanner (Gatekeeper,
-Defender) checks the bundled server; the loading screen counts the seconds and says so. Later
-starts take a few seconds. The wait is bounded: if the server has not answered after 180 s, or
+### Older versions
+
+macOS apps before 0.5.0 (0.4.x and earlier) were only ad-hoc signed and not notarized, so macOS
+blocks the first launch. On macOS 15 and later click **Done** on the "Not Opened" message, then
+open **System Settings > Privacy & Security**, scroll to **Security** and click **Open Anyway**
+next to AnnZarro, and confirm (once; right-click > Open no longer works there). On macOS 14 and
+earlier, right-click (Control-click) the app and choose **Open**.
+
+The very first start can take longer than later ones, up to about a minute, while the system's
+malware scanner (Windows Defender, or Gatekeeper on the older macOS builds) checks the bundled
+server; the loading screen counts the seconds and says so. Later starts take a few seconds. The wait is bounded: if the server has not answered after 180 s, or
 the interface has not loaded 60 s after that, the window shows an error page with the reason,
 the path of the log file and a **Retry** button. Starting the app again while it runs brings
 the open window to the front instead of starting a second server. Quitting the app stops the
