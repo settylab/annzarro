@@ -55,6 +55,29 @@ export function isPlotDataCurrent(data) {
 }
 
 /**
+ * Where each name is in `entities`, as a function, from one pass over the list.
+ * A search of the list per point was quadratic: an axis change on a categorical
+ * Cell Plot of 100,000 cells held the page for 4 s, and two changes in a row
+ * (the second made while the first loaded) froze it. Cells kept on the server
+ * (RemoteNames) answer from their own index.
+ * @param {Array|Object} entities - the names of the plot's points
+ * @returns {(name: string) => number} the position of a name, -1 if absent
+ */
+export function positionLookup(entities) {
+    if (entities instanceof RemoteNames) return (name) => entities.indexOf(name);
+    const at = typeof entities.at === 'function' ? (i) => entities.at(i) : (i) => entities[i];
+    const index = new Map();
+    for (let i = 0; i < entities.length; i++) {
+        const name = at(i);
+        if (!index.has(name)) index.set(name, i);      // the first, as indexOf
+    }
+    return (name) => {
+        const i = index.get(name);
+        return i === undefined ? -1 : i;
+    };
+}
+
+/**
  * Centralized function to efficiently update plot elements.
  *
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
@@ -298,13 +321,14 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     }
                     
                     // Update each trace independently for categorical data.
+                    const positionOf = positionLookup(entities);
                     plotContainer.data.forEach((trace, i) => {
                         if (trace.mode !== 'markers') return;
                         const entityNames = trace.customdata;
                         if (!entityNames || !entityNames.length) return;
 
                         // Map entity names back to indices for accessing coordinate data
-                        const indices = entityNames.map(name => entities.indexOf(name)).filter(idx => idx !== -1);
+                        const indices = entityNames.map(positionOf).filter(idx => idx !== -1);
                         if (!indices.length) return;
 
                         const update = {};
