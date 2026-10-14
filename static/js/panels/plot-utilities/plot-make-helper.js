@@ -81,6 +81,49 @@ export function viewportFitsAxes(settings) {
 }
 
 /**
+ * A 2D zoom saved before views recorded their fields (no `axes`): kept, and
+ * recorded as made on the fields now on the axes, if it shows any of their
+ * points; dropped if it shows none. Such a zoom made on the spatial
+ * coordinates (thousands) and saved with the UMAP on the axes showed no cell
+ * at all, with no way to tell why.
+ * @param {Object} settings
+ * @param {Object} data - holds the loaded series x, y
+ */
+export function adoptUnrecordedViewport(settings, data) {
+  const v = settings.viewport2D;
+  if (!v || v.axes !== undefined || settings.z) return;
+  const xs = data && data.x && data.x.values, ys = data && data.y && data.y.values;
+  // text axes have ranges in category positions, not values: left as they are
+  if (!xs || !ys || axisKind(data.x) === 'category' || axisKind(data.y) === 'category') return;
+  const within = (range) => {
+    if (!Array.isArray(range)) return () => true;
+    const lo = Math.min(range[0], range[1]), hi = Math.max(range[0], range[1]);
+    return (value) => value >= lo && value <= hi;
+  };
+  const inX = within(v.xrange), inY = within(v.yrange);
+  for (let i = 0; i < xs.length; i++) {
+    if (inX(xs[i]) && inY(ys[i])) {
+      settings.viewport2D = { ...v, axes: axesSignature(settings) };
+      return;
+    }
+  }
+  settings.viewport2D = null;
+}
+
+/**
+ * The uirevision of an axis: Plotly keeps the range the user zoomed to while
+ * it stays the same. In 2D both axes are one view, revised with the fields
+ * of both: a zoom kept on the axis whose field did not change held the other
+ * to its span under Equal aspect, and left the new field's points out of view.
+ * In 3D the camera is the view, and each axis is revised with its own field.
+ */
+function axisRevision(settings, axis, kind, revision) {
+  const f = settings[axis];
+  const fields = settings.z ? `${f.type}.${f.key}.${f.column || ''}` : axesSignature(settings);
+  return `${revision}|${fields}|${kind}`;
+}
+
+/**
  * Give each axis the type of its series, and a revision that changes with its
  * field, so the range the user zoomed to on one field is not kept on another.
  * What stays as is: the 3D camera, the legend, a zoom while the fields are the same.
@@ -96,15 +139,15 @@ export function applyAxisKinds(layout, settings, data, revision) {
     if (!target) continue;
     // no series (large-plot mode builds its layout before it has loaded any): numbers
     target.type = axisKind(data && data[axis]);
-    const f = settings[axis];
-    target.uirevision = `${revision}|${f.type}.${f.key}.${f.column || ''}|${target.type}`;
+    target.uirevision = axisRevision(settings, axis, target.type, revision);
   }
 }
 
 /**
  * The relayout that makes the axes whose field just changed what the new field
- * is: its type, a revision of its own (so Plotly drops the range kept for the
- * old field), and its range fitted again. The caller also drops the zoom.
+ * is: its type, a new revision (so Plotly drops the range kept for the old
+ * field), and its range fitted again; in 2D both axes, as one view. The caller
+ * also drops the zoom.
  * @param {Object} settings
  * @param {Object} data - holds the loaded series
  * @param {string[]} axes - the axes ('x', 'y', 'z') whose field changed
@@ -113,13 +156,15 @@ export function applyAxisKinds(layout, settings, data, revision) {
  */
 export function axisChangeRelayout(settings, data, axes, revision) {
   const update = {};
-  for (const axis of axes) {
+  // 2D: one view, so a change of either field refits both axes
+  const refit = settings.z || !axes.length ? axes : ['x', 'y'];
+  for (const axis of refit) {
     const f = settings[axis];
     if (!f || !data || !data[axis]) continue;
     const prefix = settings.z ? `scene.${axis}axis` : `${axis}axis`;
     const kind = axisKind(data[axis]);
     update[`${prefix}.type`] = kind;
-    update[`${prefix}.uirevision`] = `${revision}|${f.type}.${f.key}.${f.column || ''}|${kind}`;
+    update[`${prefix}.uirevision`] = axisRevision(settings, axis, kind, revision);
     update[`${prefix}.autorange`] = true;
   }
   return update;
