@@ -6,6 +6,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { snapPointSize } from '../../../static/js/utils/slider-scales.js';
 import { autoPointStyle, initAutoPointStyle, applyAutoPointStyle, autoValue, AUTO_CURVE } from '../../../static/js/utils/point-style.js';
 
 const BASE = { size: 5, opacity: 1 };
@@ -146,10 +147,27 @@ test('3D: automatic opacity is 1 at every N (Plotly draws translucent scatter3d 
     assert.equal(chosen.pointOpacity, 0.3);
 });
 
-test('greyMarker: the greyed-out points of a table link keep the style of all points drawn, or the set one', async () => {
-    const { greyMarker } = await import('../../../static/js/utils/point-style.js');
+test('greyMarker: the greyed-out points follow the curve for their own count, whatever the main points have', async () => {
+    const { greyMarker, NOT_IN_TABLE_COLOR } = await import('../../../static/js/utils/point-style.js');
+    const want = autoPointStyle(1e6, BASE);
     const auto = { autoPointSize: true, autoPointOpacity: true, pointSize: 1.18, pointOpacity: 0.43 };
-    assert.deepEqual(greyMarker(auto, 1e6), autoPointStyle(1e6, BASE));
-    const set = { autoPointSize: false, autoPointOpacity: false, pointSize: 2.2, pointOpacity: 0.3 };
-    assert.deepEqual(greyMarker(set, 1e6), { size: 2.2, opacity: 0.3 });
+    assert.deepEqual(greyMarker(auto, 1e6), { ...want, color: NOT_IN_TABLE_COLOR });
+    // a size or opacity set for the main points does not enter
+    const set = { autoPointSize: false, autoPointOpacity: false, pointSize: 9, pointOpacity: 0.1 };
+    assert.deepEqual(greyMarker(set, 1e6), { ...want, color: NOT_IN_TABLE_COLOR });
+    // their count decides: fewer points, a larger size
+    assert.ok(greyMarker(set, 1e3).size > greyMarker(set, 1e6).size);
+});
+
+test('greyMarker: scale, opacity and colour of the panel replace the defaults; bad values fall back', async () => {
+    const { greyMarker } = await import('../../../static/js/utils/point-style.js');
+    const base = greyMarker({}, 1e6);
+    const m = greyMarker({ notInTableScale: 2, notInTableOpacity: 0.25, notInTableColor: '#ff0000' }, 1e6);
+    assert.equal(m.size, snapPointSize(base.size * 2));
+    assert.equal(m.opacity, 0.25);
+    assert.equal(m.color, '#ff0000');
+    assert.deepEqual(greyMarker({ notInTableScale: -1, notInTableOpacity: 7 }, 1e6), base);
+    // 3D sizes are not snapped
+    const z = { z: { type: 'obsm', key: 'X_umap', column: '2' }, notInTableScale: 1.37 };
+    assert.equal(greyMarker(z, 1e6).size, autoPointStyle(1e6, BASE, true).size * 1.37);
 });

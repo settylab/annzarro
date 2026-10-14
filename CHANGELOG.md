@@ -9,6 +9,11 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Fixes
+- **Not in table:** the grey points a table filter leaves in a plot are sized from their own
+  count, the way the plot's points are, instead of keeping the size they had before they were
+  excluded. Setting the point size by hand after the table is active, switching the table on in
+  the panel and opening a plot that names it now give the same grey points, and a different
+  table or subset readjusts them.
 - **Equal aspect:** switching a 2D plot's coordinates refits both axes together and keeps every
   cell in view. A zoom saved in a link from before v0.5.0 is kept only if it shows the data.
 - **Equal aspect:** a zoom is kept when the panel is resized, for example when a neighbouring
@@ -23,6 +28,9 @@ with the release after it. Older releases are listed on
   instead of 3.8 s for 200,000 values with 20,000 such labels.
 
 ### Changed
+- **Not in table:** the grey points have no legend entry, like the highlighted cell. Plot
+  Options has a "Not in table" group with their size (relative to the automatic size, 1x by
+  default), opacity and colour; links, copies and saved panel sets keep them.
 - Without Equal aspect, switching the x field also resets a zoom on y, as reloading the page or
   opening a link already did.
 - Stable download links that always fetch the newest desktop app, for example
