@@ -41,7 +41,21 @@ def test_options_on_a_large_plot(page, server):
     _menu(page, A, "legend")
     page.select_option(f"#colorbar-position-{A}", "bottom")
     page.wait_for_timeout(500)
-    page.click(f"#preset-publication-{A}") if page.query_selector(f"#preset-publication-{A}") else None
+    # B has a numerical colour: its colour bar options on a large plot
+    assert page.evaluate("(id) => !!(%s)(id).__isLarge" % GD, B)
+    _menu(page, B, "legend")
+    page.select_option(f"#colorbar-position-{B}", "bottom")
+    _slide(page, f"#colorbar-length-{B}", 50)
+    _change(page, f"#colorbar-ticks-{B}", 3)
+    # a preset and Apply to other panels
+    _menu(page, A, "presets")
+    page.click(f"#preset-publication-{A}")
     page.wait_for_timeout(800)
-    # still drawn, still large
-    assert page.evaluate("(id) => !!(%s)(id).__isLarge && (%s)(id).data.some(t => t.x && t.x.length > 1)" % (GD, GD), A)
+    _menu(page, A, "apply")
+    page.click(f"#apply-others-{A}")
+    page.click(f"#apply-others-yes-{A}")
+    page.wait_for_function("(id) => (%s)(id)._fullLayout.xaxis.showgrid === false" % GD, arg=B, timeout=15000)
+    page.wait_for_timeout(800)
+    # both still drawn, still large
+    for pid in (A, B):
+        assert page.evaluate("(id) => !!(%s)(id).__isLarge && (%s)(id).data.some(t => t.x && t.x.length > 0)" % (GD, GD), pid)
