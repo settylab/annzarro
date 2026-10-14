@@ -17,7 +17,7 @@ import {
   createPopoverContent
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
-import { aspectUpdate, keepsOwnMarker } from './plot-make-helper.js';
+import { aspectUpdate, keepsOwnMarker, refreshScaleBar } from './plot-make-helper.js';
 import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
 import { notify } from '../../utils/notify.js';
 import { partialRefreshNotice } from '../../utils/session-permissions.js';
@@ -753,6 +753,11 @@ export function setupColorControls(
     $equalAspectButton.on('click', () => {
         settings.equalAspect = !settings.equalAspect;
         $.updateButtonState($equalAspectButton, settings.equalAspect);
+        // the scale bar needs Equal aspect: without it the option is off (and stays off when it comes back)
+        if (!settings.equalAspect && settings.showScaleBar) {
+          settings.showScaleBar = false;
+          refreshScaleBar(plotContainer, settings);
+        }
         // refit both axes for the new constraint (unless hiding pins them)
         const refit = (settings.hideNaN || settings.hideOutliers) ? {} : { 'xaxis.autorange': true, 'yaxis.autorange': true };
         Promise.resolve().then(() => Plotly.relayout(plotContainer, { ...aspectUpdate(settings), ...refit }))

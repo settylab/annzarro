@@ -306,18 +306,22 @@ export function createPopoverContent(id, settings) {
 
             <!-- Spatial scale bar -->
             <div class="mb-2 scale-bar-options ${scaleBarOk ? '' : 'scale-bar-off'}" id="scale-bar-options-${id}">
-                <div class="form-check form-switch">
+                <div class="form-check form-switch" ${scaleBarOk ? '' : 'title="Needs Equal aspect"'}>
                     <input class="form-check-input" type="checkbox" id="show-scale-bar-${id}"
                         ${settings.showScaleBar ? 'checked' : ''} ${scaleBarOk ? '' : 'disabled'}>
                     <label class="form-check-label" for="show-scale-bar-${id}">Scale bar</label>
                 </div>
-                <div class="form-text mt-0 mb-1" id="scale-bar-note-${id}">${scaleBarOk ? 'A round length, about a fifth of the width in view; it follows the zoom.' : escapeAttr(scaleBarWhy)}</div>
+                <div class="form-text mt-0 mb-1" id="scale-bar-note-${id}">${scaleBarOk ? 'A round length in coordinate units, about a fifth of the width in view; it follows the zoom.' : escapeAttr(scaleBarWhy)}</div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="small text-nowrap">Size</span>
+                    <input type="range" class="form-range flex-grow-1" id="scale-bar-size-${id}" min="25" max="400" step="5"
+                        value="${Math.round(settings.scaleBarSize * 100)}" title="Length, line and label together" ${scaleBarOk ? '' : 'disabled'}>
+                    <span class="small text-nowrap" id="scale-bar-size-value-${id}">${Math.round(settings.scaleBarSize * 100)}%</span>
+                </div>
                 <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">1 coordinate =</span>
-                    <input type="number" class="form-control" id="scale-bar-units-${id}" value="${settings.scaleBarUnitsPerCoord}"
-                        min="0" step="any" ${scaleBarOk ? '' : 'disabled'}>
+                    <span class="input-group-text">Unit</span>
                     <input type="text" class="form-control" id="scale-bar-unit-${id}" value="${escapeAttr(settings.scaleBarUnit)}"
-                        maxlength="20" style="max-width: 5rem" placeholder="units" ${scaleBarOk ? '' : 'disabled'}>
+                        maxlength="20" placeholder="optional, e.g. µm" ${scaleBarOk ? '' : 'disabled'}>
                 </div>
                 <select class="form-select form-select-sm" id="scale-bar-corner-${id}" title="Corner" ${scaleBarOk ? '' : 'disabled'}>
                     ${SCALE_BAR_CORNERS.map(c => `<option value="${c}" ${settings.scaleBarCorner === c ? 'selected' : ''}>${c.replace('-', ' ')}</option>`).join('')}
@@ -1069,15 +1073,15 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             refreshScaleBar(plotContainer, settings);
             return;
         }
-        if (target.id === `scale-bar-units-${id}`) {
-            const v = parseFloat(target.value);
-            if (!(v > 0)) return;
-            settings.scaleBarUnitsPerCoord = v;
+        if (target.id === `scale-bar-size-${id}`) {
+            settings.scaleBarSize = Math.max(0.25, Math.min(4, parseInt(target.value, 10) / 100));
+            const out = document.getElementById(`scale-bar-size-value-${id}`);
+            if (out) out.textContent = `${Math.round(settings.scaleBarSize * 100)}%`;
             refreshScaleBar(plotContainer, settings);
             return;
         }
         if (target.id === `scale-bar-unit-${id}`) {
-            settings.scaleBarUnit = target.value.trim().slice(0, 20) || 'units';
+            settings.scaleBarUnit = target.value.trim().slice(0, 20);
             refreshScaleBar(plotContainer, settings);
             return;
         }

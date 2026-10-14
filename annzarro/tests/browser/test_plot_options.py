@@ -210,26 +210,42 @@ SB = """(id) => { const gd = (%s)(id);
             drawn: gd.querySelectorAll('.shapelayer path').length}; }""" % GD
 
 
-def test_scale_bar_round_length_unit_corner_and_zoom(page, server):
+def _slide(page, selector, value):
+    page.eval_on_selector(selector, "(e, v) => { e.value = v; e.dispatchEvent(new Event('input', {bubbles: true})); }", value)
+    page.wait_for_timeout(400)
+
+
+def test_scale_bar_round_length_size_unit_corner_and_zoom(page, server):
     _open(page, server)
     _menu(page, A, "axes")
     assert page.evaluate(SB, A)["shapes"] == 0
-    _change(page, f"#scale-bar-units-{A}", 0.5)
-    _change(page, f"#scale-bar-unit-{A}", "µm")
+    assert not page.is_checked(f"#show-scale-bar-{A}")                  # off by default
     page.check(f"#show-scale-bar-{A}")
     page.wait_for_function("(id) => (%s)(id).layout.shapes && (%s)(id).layout.shapes.some(s => s.name === 'az-scalebar')" % (GD, GD), arg=A)
     first = page.evaluate(SB, A)
     assert first["shapes"] == 1 and first["annotations"] == 1
-    n, unit = first["text"].split(" ")
-    assert unit == "µm" and float(n) > 0
+    n = first["text"]                                                   # coordinate units, no suffix yet
+    assert float(n) > 0
     # a round length: 1, 2 or 5 times a power of ten
     mant = float(f"{float(n):.6e}".split("e")[0])
     assert round(mant) in (1, 2, 5) and abs(mant - round(mant)) < 1e-9, first["text"]
-    # about a fifth of the visible width, in µm
+    # about a fifth of the visible width
     width = page.evaluate("(id) => { const r = (%s)(id)._fullLayout.xaxis.range; return Math.abs(r[1] - r[0]); }" % GD, A)
-    assert 0.5 * (width * 0.5 / 5) <= float(n) <= 2 * (width * 0.5 / 5), (n, width)
-    assert abs(abs(first["x"][1] - first["x"][0]) - float(n) / 0.5) < 1e-6          # drawn: µm / (µm per coordinate)
+    assert 0.5 * (width / 5) <= float(n) <= 2 * (width / 5), (n, width)
+    assert abs(abs(first["x"][1] - first["x"][0]) - float(n)) < 1e-6
     assert first["drawn"] >= 1
+    # the size control: a larger bar, with a thicker line
+    line = "(id) => (%s)(id).layout.shapes.find(s => s.name === 'az-scalebar').line.width" % GD
+    w1 = page.evaluate(line, A)
+    _slide(page, f"#scale-bar-size-{A}", 400)
+    big = page.evaluate(SB, A)
+    assert float(big["text"]) > float(n) and page.evaluate(line, A) > w1, (first, big)
+    _slide(page, f"#scale-bar-size-{A}", 100)
+    # the optional unit suffix
+    _change(page, f"#scale-bar-unit-{A}", "µm")
+    assert page.evaluate(SB, A)["text"] == f"{n} µm"
+    _change(page, f"#scale-bar-unit-{A}", "")
+    assert page.evaluate(SB, A)["text"] == n
     # zoomed in to a tenth, it is shorter
     page.evaluate("""async (id) => { const gd = (%s)(id); const [a, b] = gd._fullLayout.xaxis.range; const m = (a + b) / 2, w = (b - a) / 10;
         await Plotly.relayout(gd, {'xaxis.range': [m - w / 2, m + w / 2]}); }""" % GD, A)
@@ -264,13 +280,29 @@ def test_scale_bar_is_greyed_with_its_reason_without_equal_aspect(page, server):
     _open(page, server)
     _menu(page, B, "axes")
     assert page.is_disabled(f"#show-scale-bar-{B}")
-    assert page.is_disabled(f"#scale-bar-units-{B}")
+    assert page.is_disabled(f"#scale-bar-size-{B}")
     assert "Equal aspect" in page.inner_text(f"#scale-bar-note-{B}")
+    assert "Needs Equal aspect" in page.get_attribute(f"#scale-bar-options-{B} .form-check", "title")
     assert page.evaluate(SB, B)["shapes"] == 0
 
 
+def test_turning_equal_aspect_off_switches_the_scale_bar_off_for_good(page, server):
+    _open(page, server, _cfgs(extra_a={"showScaleBar": True}))
+    page.wait_for_function("(id) => (%s)(id).layout.shapes && (%s)(id).layout.shapes.some(s => s.name === 'az-scalebar')" % (GD, GD), arg=A)
+    page.click(f"#equal-aspect-{A}")                                    # Equal aspect off
+    page.wait_for_function("(id) => !(%s)(id).layout.shapes || !(%s)(id).layout.shapes.some(s => s.name === 'az-scalebar')" % (GD, GD), arg=A)
+    assert _settings(page, A)["showScaleBar"] is False                  # the setting itself is off
+    page.click(f"#equal-aspect-{A}")                                    # back on: the bar stays off
+    page.wait_for_timeout(800)
+    assert _settings(page, A)["showScaleBar"] is False
+    assert page.evaluate(SB, A)["shapes"] == 0
+    _menu(page, A, "axes")
+    assert not page.is_checked(f"#show-scale-bar-{A}") and not page.is_disabled(f"#show-scale-bar-{A}")
+
+
 def test_publication_and_default_presets(page, server):
-    _open(page, server, _cfgs(extra_a={"scaleBarUnit": "µm", "scaleBarUnitsPerCoord": 0.5}))
+    _open(page, server, _cfgs(extra_a={"showScaleBar": True}))
+    page.wait_for_function("(id) => (%s)(id).layout.shapes && (%s)(id).layout.shapes.some(s => s.name === 'az-scalebar')" % (GD, GD), arg=A)
     base_font = _full(page, A, "font.size")
     assert _full(page, A, "xaxis.showgrid") is True
     _menu(page, A, "presets")
@@ -280,9 +312,9 @@ def test_publication_and_default_presets(page, server):
     assert _full(page, A, "paper_bgcolor") == "#ffffff"
     assert _full(page, A, "font.size") > base_font
     assert _full(page, A, "xaxis.nticks") == 5 and _full(page, A, "xaxis.ticks") == "outside"
-    page.wait_for_function("(id) => (%s)(id).layout.shapes && (%s)(id).layout.shapes.some(s => s.name === 'az-scalebar')" % (GD, GD), arg=A)   # configured: on
     cfg = _settings(page, A)
-    assert cfg["showGrid"] is False and cfg["tickCount"] == 5 and cfg["showScaleBar"] is True
+    assert cfg["showGrid"] is False and cfg["tickCount"] == 5
+    assert cfg["showScaleBar"] is True and page.evaluate(SB, A)["shapes"] == 1      # the scale bar is not part of the preset
     # the menu shows what it did
     assert not page.is_checked(f"#grid-toggle-{A}") if page.query_selector(f"#grid-toggle-{A}") else True
     page.click(f"#preset-default-{A}")
@@ -292,15 +324,6 @@ def test_publication_and_default_presets(page, server):
     page.wait_for_function("(id) => !(%s)(id).layout.shapes || !(%s)(id).layout.shapes.some(s => s.name === 'az-scalebar')" % (GD, GD), arg=A)
     cfg = _settings(page, A)
     assert cfg["showGrid"] is True and cfg["tickCount"] is None and cfg["showScaleBar"] is False
-    assert cfg["scaleBarUnit"] == "µm"                              # what the data is stays
-
-
-def test_publication_leaves_the_scale_bar_off_when_none_is_set_up(page, server):
-    _open(page, server)
-    _menu(page, A, "presets")
-    page.click(f"#preset-publication-{A}")
-    page.wait_for_function("(id) => (%s)(id)._fullLayout.xaxis.showgrid === false" % GD, arg=A)
-    assert _settings(page, A)["showScaleBar"] is False
 
 
 def test_apply_to_other_panels_asks_in_the_page_and_copies_only_the_look(page, server):
@@ -340,15 +363,15 @@ def test_options_travel_with_the_panel_and_old_configs_get_defaults(page, server
     _open(page, server)
     old = _settings(page, A)
     for key in ("tickCount", "marginsUnlinked", "colorbarPosition", "colorbarLength", "colorbarTicks", "showScaleBar",
-                "scaleBarCorner", "scaleBarUnitsPerCoord", "scaleBarUnit"):
+                "scaleBarCorner", "scaleBarSize", "scaleBarUnit"):
         assert key in old, key
     assert old["tickCount"] is None and old["marginsUnlinked"] is False and old["colorbarPosition"] == "legend"
-    assert old["colorbarLength"] == 1 and old["showScaleBar"] is False and old["scaleBarUnit"] == "units"
+    assert old["colorbarLength"] == 1 and old["showScaleBar"] is False and old["scaleBarUnit"] == ""
     # set several, read the saved layout, open it as a link: the plot draws them
     _menu(page, A, "axes")
     _change(page, f"#tick-count-{A}", 4)
     page.uncheck(f"#show-tick-marks-{A}")
-    _change(page, f"#scale-bar-units-{A}", 0.25)
+    _slide(page, f"#scale-bar-size-{A}", 200)
     _change(page, f"#scale-bar-unit-{A}", "nm")
     page.select_option(f"#scale-bar-corner-{A}", "bottom-left")
     page.check(f"#show-scale-bar-{A}")
@@ -367,7 +390,7 @@ def test_options_travel_with_the_panel_and_old_configs_get_defaults(page, server
     assert _full(page, A, "xaxis.nticks") == 4 and _full(page, A, "xaxis.ticks") == ""
     assert _full(page, A, "margin.l") == 33
     page.wait_for_function("(id) => (%s)(id).layout.shapes && (%s)(id).layout.shapes.some(s => s.name === 'az-scalebar')" % (GD, GD), arg=A)
-    assert "nm" in page.evaluate(SB, A)["text"]
+    assert page.evaluate(SB, A)["text"].endswith(" nm") and cfg["scaleBarSize"] == 2
     assert _settings(page, B)["tickCount"] is None
 
 

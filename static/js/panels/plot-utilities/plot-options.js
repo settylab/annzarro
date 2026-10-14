@@ -23,8 +23,8 @@ export const OPTION_DEFAULTS = Object.freeze({
   colorbarTicks: null,             // null: automatic
   showScaleBar: false,
   scaleBarCorner: 'bottom-right',
-  scaleBarUnitsPerCoord: 1,        // physical units per coordinate unit
-  scaleBarUnit: 'units'
+  scaleBarSize: 1,                 // scales the bar's target length, line and label together
+  scaleBarUnit: ''                 // optional suffix after the number, e.g. 'µm'
 });
 
 export const DEFAULT_MARGINS = Object.freeze({ l: 80, r: 80, t: 80, b: 60, pad: 4 });
@@ -45,12 +45,11 @@ export function normalizePlotOptions(settings) {
   s.colorbarLength = isNum(s.colorbarLength) && s.colorbarLength >= 0.1 && s.colorbarLength <= 1
     ? s.colorbarLength : OPTION_DEFAULTS.colorbarLength;
   s.colorbarTicks = isNum(s.colorbarTicks) && s.colorbarTicks >= 2 ? Math.min(Math.round(s.colorbarTicks), 30) : null;
-  s.showScaleBar = s.showScaleBar === true;
+  s.showScaleBar = s.showScaleBar === true && !!s.equalAspect;     // it needs Equal aspect
   s.scaleBarCorner = SCALE_BAR_CORNERS.includes(s.scaleBarCorner) ? s.scaleBarCorner : OPTION_DEFAULTS.scaleBarCorner;
-  s.scaleBarUnitsPerCoord = isNum(s.scaleBarUnitsPerCoord) && s.scaleBarUnitsPerCoord > 0
-    ? s.scaleBarUnitsPerCoord : OPTION_DEFAULTS.scaleBarUnitsPerCoord;
-  s.scaleBarUnit = typeof s.scaleBarUnit === 'string' && s.scaleBarUnit.trim()
-    ? s.scaleBarUnit.slice(0, 20) : OPTION_DEFAULTS.scaleBarUnit;
+  s.scaleBarSize = isNum(s.scaleBarSize) && s.scaleBarSize >= 0.25 && s.scaleBarSize <= 4
+    ? s.scaleBarSize : OPTION_DEFAULTS.scaleBarSize;
+  s.scaleBarUnit = typeof s.scaleBarUnit === 'string' ? s.scaleBarUnit.trim().slice(0, 20) : OPTION_DEFAULTS.scaleBarUnit;
   if (s.showTickMarks !== undefined && typeof s.showTickMarks !== 'boolean') delete s.showTickMarks;
   return s;
 }
@@ -134,9 +133,9 @@ export function scaleBarActive(settings) {
 
 /**
  * The shape and the label of the scale bar for the x range on screen.
- * Its length is the round number nearest a fifth of the visible width, in
- * the unit of the panel (units per coordinate unit), so it changes as the
- * plot is zoomed. Returns null when the bar does not draw.
+ * Its length is the round number nearest a fifth of the visible width
+ * times the size factor, in coordinate units, so it changes as the plot is
+ * zoomed. Returns null when the bar does not draw.
  * @param {Object} settings
  * @param {number[]} xRange - the visible x range (either direction)
  * @returns {{shapes: Object[], annotations: Object[], length: number, label: string}|null}
@@ -146,26 +145,26 @@ export function scaleBar(settings, xRange) {
   const x0 = +xRange[0], x1 = +xRange[1];
   const width = Math.abs(x1 - x0);
   if (!(width > 0)) return null;
-  const perUnit = settings.scaleBarUnitsPerCoord > 0 ? settings.scaleBarUnitsPerCoord : 1;
-  const length = niceLength(width * perUnit / 5);
-  const span = length / perUnit;                        // in coordinates
+  const size = settings.scaleBarSize > 0 ? settings.scaleBarSize : 1;
+  const length = niceLength(width * size / 5);          // coordinate units
   const dir = x1 >= x0 ? 1 : -1;                        // an axis can be reversed
   const corner = SCALE_BAR_CORNERS.includes(settings.scaleBarCorner) ? settings.scaleBarCorner : OPTION_DEFAULTS.scaleBarCorner;
   const [vert, side] = corner.split('-');
   const inset = 0.04 * width;
   const near = side === 'left' ? x0 + dir * inset : x1 - dir * inset;      // the edge the bar sits against
-  const a = side === 'left' ? near : near - dir * span;
-  const b = side === 'left' ? near + dir * span : near;
+  const a = side === 'left' ? near : near - dir * length;
+  const b = side === 'left' ? near + dir * length : near;
   const y = vert === 'top' ? 0.95 : 0.05;
   const colour = settings.textColor || '#000000';
-  const label = `${formatLength(length)} ${settings.scaleBarUnit || OPTION_DEFAULTS.scaleBarUnit}`;
+  const unit = (settings.scaleBarUnit || '').trim();
+  const label = unit ? `${formatLength(length)} ${unit}` : formatLength(length);
   return {
     length, label,
     shapes: [{ type: 'line', name: SCALE_BAR, xref: 'x', yref: 'paper', x0: a, x1: b, y0: y, y1: y,
-               line: { color: colour, width: 3 }, layer: 'above' }],
+               line: { color: colour, width: 3 * size }, layer: 'above' }],
     annotations: [{ name: SCALE_BAR, text: label, showarrow: false, xref: 'x', yref: 'paper',
                     x: (a + b) / 2, y, xanchor: 'center', yanchor: vert === 'top' ? 'top' : 'bottom',
-                    yshift: vert === 'top' ? -6 : 6, font: { color: colour, size: 12 } }]
+                    yshift: (vert === 'top' ? -6 : 6) * size, font: { color: colour, size: 12 * size } }]
   };
 }
 
@@ -189,32 +188,28 @@ export function defaultLook() {
   };
 }
 
-/** The scale bar was set up: a unit or a scale other than the defaults. */
-export function scaleBarConfigured(settings) {
-  return settings.scaleBarUnitsPerCoord !== OPTION_DEFAULTS.scaleBarUnitsPerCoord
-    || settings.scaleBarUnit !== OPTION_DEFAULTS.scaleBarUnit;
-}
-
 export const PRESETS = Object.freeze(['default', 'publication']);
 
 /**
  * Settings changes of a preset. Default restores the look above (data
  * choices, the scale bar's unit and the Not in table group stay).
  * Publication: white background, no grid, minimal ticks (about five per
- * axis, marks on), larger fonts and lines, a tight margin, and the scale
- * bar when one is set up and Equal aspect is on.
+ * axis, marks on), larger fonts and lines and a tight margin. The scale bar
+ * is not part of either preset.
  */
-export function presetChanges(name, settings) {
+export function presetChanges(name) {
   const look = defaultLook();
   if (name === 'default') return { ...look, showTickMarks: undefined };
   if (name === 'publication') {
+    const rest = { ...look };
+    delete rest.showScaleBar;                       // the scale bar stays as it is
+    delete rest.scaleBarCorner;
     return {
-      ...look,
+      ...rest,
       showGrid: false, showZeroLines: false, showTickMarks: true, tickCount: 5,
       fontSize: 16, axisLineWidth: 1.5,
       margins: { ...DEFAULT_MARGINS, l: 70, r: 70, t: 40, b: 60 },
-      colorbarTicks: 5, colorbarLength: 0.6,
-      showScaleBar: scaleBarConfigured(settings) && !!settings.equalAspect && !settings.z
+      colorbarTicks: 5, colorbarLength: 0.6
     };
   }
   return {};
@@ -222,7 +217,7 @@ export function presetChanges(name, settings) {
 
 /** Apply a preset to the settings; returns the keys it set. */
 export function applyPreset(settings, name) {
-  const changes = presetChanges(name, settings);
+  const changes = presetChanges(name);
   for (const [k, v] of Object.entries(changes)) {
     if (v === undefined) delete settings[k]; else settings[k] = v;
   }
@@ -236,7 +231,7 @@ export const STYLE_KEYS = Object.freeze([
   'axisLineWidth', 'gridLineWidth', 'zeroLineWidth', 'fontSize', 'fontFamily',
   'margins', 'marginsUnlinked', 'legendPosition', 'showLegend',
   'colorbarPosition', 'colorbarLength', 'colorbarTicks',
-  'showScaleBar', 'scaleBarCorner', 'scaleBarUnitsPerCoord', 'scaleBarUnit',
+  'showScaleBar', 'scaleBarCorner', 'scaleBarSize', 'scaleBarUnit',
   'notInTableScale', 'notInTableOpacity', 'notInTableColor',
   'exportWidth', 'exportHeight', 'scaleExport'
 ]);

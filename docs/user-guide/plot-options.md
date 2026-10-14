@@ -16,10 +16,9 @@ Plot Options. A group opens and folds with a click, and the menu opens again as 
 
 - **Publication** sets a white background, no grid or zero lines, tick marks with about five
   ticks per axis, larger text (16 px) and axis lines, a tighter margin and a shorter colour bar
-  with five ticks. If a scale bar is set up (a unit or a scale other than the defaults) and
-  **Equal aspect** is on, the preset switches it on too.
-- **Default** returns every look setting to what a new plot has. What the plot shows, the scale
-  bar's unit and scale, and the Not in table group stay.
+  with five ticks. It does not touch the scale bar.
+- **Default** returns every look setting to what a new plot has, the scale bar off included.
+  What the plot shows and the Not in table group stay.
 
 A preset is a starting point: change anything afterwards.
 
@@ -32,13 +31,15 @@ before, plus:
   had a switch of their own hides the marks with the labels until you set them here.)
 - **Ticks per axis** asks for about that many ticks on each axis (2 to 30). Empty is automatic.
   Plotly treats it as a hint and picks round values near it.
-- **Scale bar** draws a bar with a label such as `200 µm` in a corner of the plot. Say what one
-  coordinate unit is in the box (**1 coordinate =** a number and a unit label, for example `0.65`
-  and `µm`). The length is the round number (1, 2 or 5 times a power of ten) nearest a fifth of
-  the width in view, so it gets shorter as you zoom in and is redrawn when the panel is resized.
-  Choose its corner below. A scale bar is only true when a unit is as long on y as on x, so it
-  needs **Equal aspect** (the panel's button) and a 2D plot; otherwise its controls are greyed
-  out and say why. The bar is part of an export. See {doc}`spatial-coordinates`.
+- **Scale bar** (off by default) draws a bar with a label such as `200` in a corner of the plot.
+  The length is the round number (1, 2 or 5 times a power of ten) of coordinate units nearest a
+  fifth of the width in view, so it gets shorter as you zoom in and is redrawn when the panel is
+  resized. **Size** scales the bar's length together with its line and label. **Unit** is an
+  optional text after the number (for example `µm`) for when the coordinates are in known units.
+  A scale bar is only true when a unit is as long on y as on x, so it needs **Equal aspect** (the
+  panel's button) and a 2D plot; otherwise its controls are greyed out and say why. Turning Equal
+  aspect off switches the scale bar off, and turning it back on does not bring the bar back. The
+  bar is part of an export. See {doc}`spatial-coordinates`.
 
 ## Points
 

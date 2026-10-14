@@ -34,17 +34,18 @@ with the release after it. Older releases are listed on
   Legend and colour bar, Text, Margins, Export, Apply to other panels). The menu opens again as
   you left it.
 - **Publication** preset: white background, no grid, five ticks per axis, larger text, a tighter
-  margin, and the scale bar when one is set up. **Default** returns every look setting to a new
+  margin. **Default** returns every look setting to a new
   plot's.
 - Tick marks and tick labels switch separately, and **Ticks per axis** asks for about N ticks
   (2 to 30; empty is automatic).
 - Margins: one slider sets all four sides; **Set each side separately** shows a box for each.
 - Colour bar: its own position (right, left, top, bottom or with the legend), a length from 10 to
   100 % and a tick count.
-- **Scale bar** for embeddings and spatial coordinates: enter what one coordinate unit is (for
-  example 0.65 µm) and a labelled bar of a round length, about a fifth of the width in view, is
-  drawn in the corner you choose and redrawn as you zoom. It needs Equal aspect on a 2D plot and
-  is greyed out, with the reason, otherwise. It is part of an export.
+- **Scale bar** (off by default) for embeddings and spatial coordinates: a bar of a round length in
+  coordinate units, about a fifth of the width in view, redrawn as you zoom or resize, with a
+  Size slider (length, line and label together), an optional unit text such as µm and a corner.
+  It needs Equal aspect on a 2D plot: greyed out otherwise, and turning Equal aspect off switches
+  it off. It is part of an export and not part of the Publication preset.
 - **Apply to other panels** copies a plot's look (not what it shows) to every other cell plot or
   gene plot, after a confirm in the menu. All of it is kept in links and panel sets; links from
   before use the defaults.

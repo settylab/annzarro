@@ -87,9 +87,8 @@ Ttr panel did not change, because it depends on the focused gene.
   share links. For an export, set the export width and height in proportion to the tile
   ({doc}`export`).
 - **Scale bar.** With **Equal aspect** on, **Plot Options > Axes and ticks > Scale bar** draws a
-  bar labelled in your unit (for example `100 µm`): enter how many units one coordinate is, and
-  a round length about a fifth of the width in view is picked and redrawn as you zoom
-  ({doc}`plot-options`).
+  bar of a round length (about a fifth of the width in view, redrawn as you zoom) labelled in
+  coordinate units, with an optional unit text such as `µm` ({doc}`plot-options`).
 - **Kernels and distances.** A dense obsp matrix of spot neighbourhoods, like `spatial_kernel`,
   makes "what is near this spot" one click. How to compute and store such matrices is in
   {doc}`../data/pairwise-matrices`.

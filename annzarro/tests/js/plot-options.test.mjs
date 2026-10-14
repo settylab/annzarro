@@ -24,20 +24,21 @@ test('a config from before these options gets the defaults', () => {
 test('options survive a link: JSON out and back, then normalised, unchanged', () => {
     const set = normalizePlotOptions({ tickCount: 6, showTickMarks: false, marginsUnlinked: true,
         margins: { l: 10, r: 20, t: 30, b: 40, pad: 4 }, colorbarPosition: 'bottom', colorbarLength: 0.5, colorbarTicks: 4,
-        showScaleBar: true, scaleBarCorner: 'top-left', scaleBarUnitsPerCoord: 0.65, scaleBarUnit: 'µm' });
+        showScaleBar: true, equalAspect: true, scaleBarCorner: 'top-left', scaleBarSize: 2, scaleBarUnit: 'µm' });
     const back = normalizePlotOptions(roundTrip(set));
     assert.deepEqual(back, set);
 });
 
 test('values that cannot be used fall back', () => {
     const s = normalizePlotOptions({ tickCount: 1, colorbarLength: 5, colorbarPosition: 'middle', scaleBarCorner: 'centre',
-        scaleBarUnitsPerCoord: -2, scaleBarUnit: '  ', colorbarTicks: 'many', showTickMarks: 'yes' });
+        scaleBarSize: -2, scaleBarUnit: '  ', showScaleBar: true, colorbarTicks: 'many', showTickMarks: 'yes' });
     assert.equal(s.tickCount, null);
     assert.equal(s.colorbarLength, 1);
     assert.equal(s.colorbarPosition, 'legend');
     assert.equal(s.scaleBarCorner, 'bottom-right');
-    assert.equal(s.scaleBarUnitsPerCoord, 1);
-    assert.equal(s.scaleBarUnit, 'units');
+    assert.equal(s.scaleBarSize, 1);
+    assert.equal(s.scaleBarUnit, '');
+    assert.equal(s.showScaleBar, false);          // on without Equal aspect: off
     assert.equal(s.colorbarTicks, null);
     assert.equal(s.showTickMarks, undefined);
 });
@@ -96,7 +97,7 @@ test('formatLength has no floating point noise', () => {
     assert.equal(formatLength(2e8), '2e8');
 });
 
-const SB = { showScaleBar: true, equalAspect: true, scaleBarUnitsPerCoord: 1, scaleBarUnit: 'µm', scaleBarCorner: 'bottom-right', textColor: '#111111' };
+const SB = { showScaleBar: true, equalAspect: true, scaleBarSize: 1, scaleBarUnit: 'µm', scaleBarCorner: 'bottom-right', textColor: '#111111' };
 
 test('scale bar: about a fifth of the visible width, a round number, label with the unit', () => {
     const bar = scaleBar(SB, [0, 1000]);
@@ -109,10 +110,19 @@ test('scale bar: about a fifth of the visible width, a round number, label with 
     assert.equal(bar.annotations[0].text, '200 µm');
 });
 
-test('scale bar: units per coordinate unit change the number and not the drawn length ratio', () => {
-    const bar = scaleBar({ ...SB, scaleBarUnitsPerCoord: 0.5 }, [0, 1000]);       // 1000 coordinates are 500 µm: a fifth is 100 µm
-    assert.equal(bar.length, 100);
-    assert.equal(bar.shapes[0].x1 - bar.shapes[0].x0, 200);                      // 100 µm are 200 coordinates
+test('scale bar: the size factor scales the length and the line and label with it', () => {
+    const big = scaleBar({ ...SB, scaleBarSize: 2 }, [0, 1000]);                  // a fifth of 2000: 400
+    assert.equal(big.length, 500);                                                // the round number nearest 400 is 500
+    assert.equal(big.shapes[0].line.width, 6);
+    assert.equal(big.annotations[0].font.size, 24);
+    const small = scaleBar({ ...SB, scaleBarSize: 0.5 }, [0, 1000]);              // 100
+    assert.equal(small.length, 100);
+    assert.equal(small.shapes[0].line.width, 1.5);
+});
+
+test('scale bar: no unit suffix by default, the number is in coordinate units', () => {
+    const bar = scaleBar({ ...SB, scaleBarUnit: '' }, [0, 1000]);
+    assert.equal(bar.label, '200');
 });
 
 test('scale bar: zooming in shortens it', () => {
@@ -177,16 +187,15 @@ test('presets: default restores the look, publication is white, gridless, sparse
     assert.equal(s.tickCount, 5);
     assert.equal(s.showTickMarks, true);
     assert.ok(s.fontSize > 12);
-    assert.equal(s.showScaleBar, true);           // configured (µm) and Equal aspect on
+    assert.equal(s.showScaleBar, false);          // the scale bar is not part of the preset
 });
 
-test('publication turns the scale bar on only when one is set up and Equal aspect is on', () => {
-    const base = normalizePlotOptions({});
-    assert.equal(presetChanges('publication', { ...base, equalAspect: true }).showScaleBar, false);
-    assert.equal(presetChanges('publication', { ...base, scaleBarUnit: 'µm', equalAspect: false }).showScaleBar, false);
-    assert.equal(presetChanges('publication', { ...base, scaleBarUnit: 'µm', equalAspect: true }).showScaleBar, true);
-    assert.equal(presetChanges('publication', { ...base, scaleBarUnitsPerCoord: 0.5, equalAspect: true }).showScaleBar, true);
-    assert.deepEqual(presetChanges('nope', base), {});
+test('publication does not touch the scale bar', () => {
+    assert.equal('showScaleBar' in presetChanges('publication'), false);
+    const s = normalizePlotOptions({ showScaleBar: true, equalAspect: true });
+    applyPreset(s, 'publication');
+    assert.equal(s.showScaleBar, true);
+    assert.deepEqual(presetChanges('nope'), {});
 });
 
 test('copying styling takes the look and none of the data choices', () => {
