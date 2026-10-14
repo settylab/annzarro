@@ -39,6 +39,11 @@ fail in CI. More ways to run the tests, including on zarr format 3, are in the
   build fails on a warning. A page that is not in a table of contents needs `orphan: true`.
 - A change to an HTTP route, a configuration key or a limit changes `docs/reference/http-api.md`
   or `docs/reference/configuration.md` too, and the tests that hold them to the code.
+- A change a user can notice (a feature, a fix, a new limit or default, anything they must
+  change when they upgrade) adds a line under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md),
+  in the section it belongs to (Added, Changed, Fixes, Upgrade notes, ...). Say what the user
+  sees, not what the code does, and give a measured number where there is one. Tests, CI and
+  refactors need no line.
 - Commit messages are one sentence in the imperative that says what the change does; the body says why.
 
 ## Review

@@ -83,6 +83,7 @@ remote = [
 "Preprint" = "https://doi.org/10.64898/2026.10.10.758158"
 "Source" = "https://github.com/settylab/annzarro"
 "Issues" = "https://github.com/settylab/annzarro/issues"
+"Changelog" = "https://annzarro.readthedocs.io/en/latest/reference/changelog.html"
 
 [project.scripts]
 annzarro = "annzarro.cli:main"
