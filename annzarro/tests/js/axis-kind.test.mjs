@@ -64,12 +64,15 @@ test("a kept zoom applies to the fields it was made on, and to a view that recor
   assert.equal(viewportFitsAxes(s), true);
 });
 
-test("a zoom saved without its fields is kept if it shows a point, and dropped if it shows none", () => {
+test("a zoom saved without its fields is kept if it overlaps their extent, and dropped if not", () => {
   const s = settings({ x: field("obsm", "X_umap", "0") });
   const data = { x: { type: "numerical", values: [-3, 0, 2] }, y: { type: "numerical", values: [-2, 1, 2] } };
   s.viewport2D = { xrange: [-1, 1], yrange: [0, 3] };
   adoptUnrecordedViewport(s, data);
   assert.deepEqual(s.viewport2D, { xrange: [-1, 1], yrange: [0, 3], axes: axesSignature(s) });
+  s.viewport2D = { xrange: [1.5, 2.5], yrange: [-1.5, -0.5] };   // inside the extent, around no point
+  adoptUnrecordedViewport(s, data);
+  assert.equal(s.viewport2D.axes, axesSignature(s));
   s.viewport2D = { xrange: [2832, 5944], yrange: [3455, 5558] };   // spatial units on the UMAP
   adoptUnrecordedViewport(s, data);
   assert.equal(s.viewport2D, null);
@@ -138,4 +141,24 @@ test("the large-plot threshold defaults to a million", () => {
   assert.equal(largeThreshold({ LARGE_PLOT_POINTS: 100 }), 100);
   assert.equal(largeThreshold({}), 1000000);
   assert.equal(largeThreshold(undefined), 1000000);
+});
+
+import { equalAspectZoom, rangesForSize } from "../../../static/js/panels/plot-utilities/plot-make-helper.js";
+
+test("an Equal aspect zoom keeps its centre and units per pixel at any size, and its ranges at its own", () => {
+  const axes = (xr, yr, w, h) => ({
+    xaxis: { type: "linear", autorange: false, range: xr, _length: w },
+    yaxis: { type: "linear", autorange: false, range: yr, _length: h, scaleanchor: "x" },
+  });
+  const drawn = axes([0, 100], [50, 100], 400, 200);
+  const zoom = equalAspectZoom(drawn);
+  assert.deepEqual(zoom, { centre: [50, 75], perPixel: [0.25, 0.25], size: [400, 200] });
+  assert.equal(rangesForSize(zoom, drawn), null, "the same size: nothing to do");
+  const wider = axes([0, 100], [25, 125], 800, 200);    // as Plotly widened it
+  assert.deepEqual(rangesForSize(zoom, wider), { "xaxis.range": [-50, 150], "yaxis.range": [50, 100] });
+  assert.deepEqual(rangesForSize(zoom, axes([1, 2], [3, 4], 400, 200)), null);
+  assert.equal(equalAspectZoom({ ...drawn, yaxis: { ...drawn.yaxis, scaleanchor: undefined } }), null);
+  assert.equal(equalAspectZoom({ ...drawn, xaxis: { ...drawn.xaxis, autorange: true } }), null);
+  assert.equal(equalAspectZoom({ ...drawn, xaxis: { ...drawn.xaxis, type: "category" } }), null);
+  assert.equal(rangesForSize(null, wider), null);
 });
