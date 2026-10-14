@@ -79,6 +79,22 @@ test("categorical codes: data before categories (key order not assumed)", async 
   assert.deepEqual(Array.from(codes), [1, 0, 1]);
 });
 
+test("categorical codes: escaped labels are matched in one pass, not one search each", async () => {
+  // labels with a quote are sent escaped (as are \u escapes): each value used to be searched for in
+  // the list of distinct values, and each distinct value in the category list
+  const k = 20000, n = 200000;
+  const cats = Array.from({ length: k }, (_, i) => `type "${i}"`);
+  const values = Array.from({ length: n }, (_, i) => cats[(i * 7919) % k]);
+  const body = JSON.stringify({ categories: { ct: cats }, data: { ct: values } });
+  const start = Date.now();
+  const { codes, categories, MISSING } = await categoryCodesFromJSON(chunked(body, 1 << 16), "ct");
+  const took = Date.now() - start;
+  assert.deepEqual(categories, cats);
+  assert.equal(codes.length, n);
+  for (const i of [0, 1, 12345, n - 1]) assert.equal(codes[i] === MISSING ? null : categories[codes[i]], values[i]);
+  assert.ok(took < 2000, `${took} ms`);
+});
+
 // --- names kept on the server (static/js/utils/remote-names.js) -------------
 const { RemoteNames } = await import(
   pathToFileURL(path.resolve(__dirname, "../../../static/js/utils/remote-names.js")).href

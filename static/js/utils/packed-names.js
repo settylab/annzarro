@@ -150,6 +150,7 @@ export async function categoryCodesFromJSON(response, column, expected = 0) {
     let n = 0;
     const listed = [];            // the response's category list
     const seen = [];              // distinct values in order of first appearance
+    const codeOf = new Map();     // distinct value -> its index in seen (escaped values)
     const buckets = new Map();    // FNV-1a hash of bytes -> [{bytes, code}]
     const lookup = (buf, start, end) => {
         let h = 0x811c9dc5;
@@ -165,7 +166,9 @@ export async function categoryCodesFromJSON(response, column, expected = 0) {
         }
         const code = seen.length;
         if (code >= MISSING) throw new RangeError('more than 65534 categories');
-        seen.push(decodeElement(buf, start, end, false));
+        const value = decodeElement(buf, start, end, false);
+        seen.push(value);
+        if (!codeOf.has(value)) codeOf.set(value, code);
         const entry = { bytes: buf.slice(start, end), code };
         if (list) list.push(entry); else buckets.set(h, [entry]);
         return code;
@@ -184,9 +187,10 @@ export async function categoryCodesFromJSON(response, column, expected = 0) {
         }
         if (start < 0) codes[n++] = MISSING;
         else if (escaped) {
+            // a map, not a search of seen per value: quadratic for many labels
             const v = decodeElement(buf, start, end, true);
-            let code = seen.indexOf(v);
-            if (code === -1) { code = seen.length; seen.push(v); }
+            let code = codeOf.get(v);
+            if (code === undefined) { code = seen.length; seen.push(v); codeOf.set(v, code); }
             codes[n++] = code;
         } else codes[n++] = lookup(buf, start, end);
     });
@@ -194,10 +198,12 @@ export async function categoryCodesFromJSON(response, column, expected = 0) {
     // Report codes against the response's category order (the dataset's),
     // with values it does not list appended.
     const categories = listed.slice();
+    const position = new Map();
+    categories.forEach((v, k) => { if (!position.has(v)) position.set(v, k); });
     const remap = new Uint16Array(seen.length);
     seen.forEach((v, i) => {
-        let k = categories.indexOf(v);
-        if (k === -1) { k = categories.length; categories.push(v); }
+        let k = position.get(v);
+        if (k === undefined) { k = categories.length; categories.push(v); position.set(v, k); }
         remap[i] = k;
     });
     for (let i = 0; i < n; i++) if (codes[i] !== MISSING) codes[i] = remap[codes[i]];

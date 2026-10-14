@@ -150,6 +150,19 @@ INIT = """
 })();
 """
 
+# Counted from here on: the Plotly calls that draw, and the long tasks (over 50 ms).
+WATCH = """() => {
+  window.__azCalls = {}; window.__azLong = [];
+  for (const fn of ['react', 'newPlot', 'relayout', 'restyle', 'update', 'addTraces', 'deleteTraces', 'redraw']) {
+    const o = Plotly[fn];
+    if (typeof o !== 'function') continue;
+    Plotly[fn] = function(...args) { window.__azCalls[fn] = (window.__azCalls[fn] || 0) + 1; return o.apply(this, args); };
+  }
+  new PerformanceObserver(list => { for (const e of list.getEntries()) window.__azLong.push(e.duration); })
+    .observe({entryTypes: ['longtask']});
+  window.__azGap = 0;
+}"""
+
 GD = f'document.querySelector(\'.tile[data-tile-id="{CELL}"] .js-plotly-plot\')'
 
 STATE = """() => {
@@ -192,6 +205,12 @@ def _choose(page, axis, field):
     page.select_option(col, field["column"])
 
 
+def _no_stall(page):
+    gap, tasks = page.evaluate("[window.__azGap, window.__azLong]")
+    assert gap < 2000, f"the main thread was busy for {gap:.0f} ms"
+    assert max(tasks, default=0) < 1000, f"long tasks {[round(t) for t in tasks]} ms"
+
+
 @pytest.mark.parametrize("equal", [True, False], ids=["equal-aspect", "free-aspect"])
 @pytest.mark.parametrize("first", ["x", "y"])
 def test_two_axes_changed_while_loading(server, equal, first):
@@ -208,14 +227,17 @@ def test_two_axes_changed_while_loading(server, equal, first):
             page.wait_for_selector(f'.tile[data-tile-id="{CELL}"] .js-plotly-plot', timeout=120_000)
             s = _settle(page)
             assert s["n"] == SUBSET, s
-            page.evaluate(f"() => {{ window.__azHold = {HOLD_MS}; window.__azGap = 0; }}")
+            page.evaluate(WATCH)
+            page.evaluate(f"() => {{ window.__azHold = {HOLD_MS}; }}")
             _choose(page, first, EMB("X_umap_allcells", "0" if first == "x" else "1"))
             page.wait_for_timeout(300)
             assert page.evaluate(STATE)["busy"], "the first axis is still loading"
             _choose(page, second, EMB("X_umap_allcells", "0" if second == "x" else "1"))
             s = _settle(page)
-            gap = page.evaluate("window.__azGap")
-            assert gap < 2000, f"the main thread was busy for {gap:.0f} ms"
+            _no_stall(page)
+            calls = page.evaluate("window.__azCalls")
+            # one redraw per axis, and nothing drawn over again (no relayout rounds)
+            assert calls.get("react", 0) <= 2 and not calls.get("newPlot") and calls.get("relayout", 0) <= 1, calls
             assert s["title"] == ["obsm.X_umap_allcells.0", "obsm.X_umap_allcells.1"], s
             assert s["n"] == SUBSET, s
             for axis in ("x", "y"):       # the new embedding (about 20 +- 40), in view
@@ -223,6 +245,35 @@ def test_two_axes_changed_while_loading(server, equal, first):
                 assert lo > -60 and hi < 100 and hi - lo > 40, (axis, s)
                 r = s[f"{axis}range"]
                 assert min(r) <= lo and max(r) >= hi, (axis, s)
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_a_superseded_load_draws_nothing(server):
+    """X changed twice while loading: only the newer field is drawn, once."""
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page(viewport={"width": 1400, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.add_init_script(INIT)
+        try:
+            page.goto(_link(root, store, True))
+            page.wait_for_selector(f'.tile[data-tile-id="{CELL}"] .js-plotly-plot', timeout=120_000)
+            _settle(page)
+            page.evaluate(WATCH)
+            page.evaluate(f"() => {{ window.__azHold = {HOLD_MS}; }}")
+            _choose(page, "x", EMB("X_umap_allcells", "0"))
+            page.wait_for_timeout(300)
+            assert page.evaluate(STATE)["busy"], "the first load is still on its way"
+            page.select_option(f'.tile[data-tile-id="{CELL}"] .axis-column-select[data-axis="x"]', "1")
+            s = _settle(page)
+            _no_stall(page)
+            assert s["title"][0] == "obsm.X_umap_allcells.1", s
+            calls = page.evaluate("window.__azCalls")
+            assert calls.get("react", 0) == 1 and not calls.get("newPlot"), calls
             assert not errors, errors
         finally:
             browser.close()
