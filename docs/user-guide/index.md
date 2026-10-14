@@ -11,6 +11,7 @@ tables-and-filters
 gene-set
 panel-sets
 share-links
+plot-options
 export
 reproducing
 spatial-coordinates

@@ -3,6 +3,7 @@ import { RemoteNames } from '../../utils/remote-names.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
 import { greyMarker } from '../../utils/point-style.js';
+import { scaleBar, replaceScaleBar, SCALE_BAR } from './plot-options.js';
 import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName } from '../../utils/categories.js';
 
 /**
@@ -480,6 +481,30 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
  * @param {HTMLElement} plotContainer - The container for the plot.
  * @param {Object} settings - The settings object for the plot.
  */
+/**
+ * Draw (or remove) the spatial scale bar for the x range on screen
+ * (plot-options.js scaleBar). Other shapes and annotations stay. Does
+ * nothing when the bar is as drawn, so the relayout it makes, which Plotly
+ * announces like any other, does not come back here as a change.
+ * @param {HTMLElement} gd
+ * @param {Object} settings
+ */
+export function refreshScaleBar(gd, settings) {
+  if (!gd || !gd._fullLayout || !gd.layout || typeof Plotly === 'undefined') return;
+  const ours = (items) => (items || []).filter(it => it && it.name === SCALE_BAR);
+  const have = ours(gd.layout.shapes);
+  const xaxis = gd._fullLayout.xaxis;
+  const bar = settings.z ? null : scaleBar(settings, xaxis && xaxis.range);
+  if (!bar && !have.length && !ours(gd.layout.annotations).length) return;
+  const drawn = JSON.stringify([have, ours(gd.layout.annotations)]);
+  const want = JSON.stringify(bar ? [bar.shapes, bar.annotations] : [[], []]);
+  if (drawn === want) return;
+  Plotly.relayout(gd, {
+    shapes: replaceScaleBar(gd.layout.shapes, bar ? bar.shapes : []),
+    annotations: replaceScaleBar(gd.layout.annotations, bar ? bar.annotations : [])
+  }).catch(() => {});
+}
+
 export function attachViewportTracking(plotContainer, settings) {
   if (typeof plotContainer.on !== 'function') return;
   // a 3D turn released outside the plot is recorded too (scene-camera.js)
@@ -495,6 +520,10 @@ export function attachViewportTracking(plotContainer, settings) {
   };
   const onRelayout = (eventData) => {
     if (!eventData) return;
+    // the scale bar follows the x range on screen and the plot's size
+    if (Object.keys(eventData).some(k => /^xaxis\.(range|autorange)/.test(k) || k === 'autosize' || k === 'width')) {
+      refreshScaleBar(plotContainer, settings);
+    }
     // The plot was resized (its pane opened, closed or moved): Plotly widens one
     // axis of a zoom to keep the aspect, and never narrows it back
     if (eventData.autosize !== undefined || eventData.width !== undefined || eventData.height !== undefined) {
@@ -537,6 +566,7 @@ export function attachViewportTracking(plotContainer, settings) {
   plotContainer.__azViewportHandler = onRelayout;
   plotContainer.on('plotly_relayout', onRelayout);
   noteZoom();
+  refreshScaleBar(plotContainer, settings);
   // a redraw that keeps a zoomed view was drawn with the style for every point
   if (settings.viewport2D && !settings.z) followView();
 }

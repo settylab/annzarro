@@ -3447,6 +3447,46 @@ button.dtsb-button.dtsb-clear:hover {
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
+/* the groups of the menu fold; the open ones show their body */
+details.aesthetics-section {
+    margin-bottom: 8px;
+    padding: 0;
+}
+
+details.aesthetics-section > summary {
+    cursor: pointer;
+    padding: 6px 10px;
+    font-weight: 600;
+    color: #495057;
+    list-style: none;
+    user-select: none;
+}
+
+details.aesthetics-section > summary::-webkit-details-marker {
+    display: none;
+}
+
+details.aesthetics-section > summary::before {
+    content: "\25B8";
+    display: inline-block;
+    width: 1em;
+    transition: transform 0.1s;
+}
+
+details.aesthetics-section[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+details.aesthetics-section > .aesthetics-body {
+    padding: 4px 10px 10px;
+    border-top: 1px solid #dee2e6;
+}
+
+.scale-bar-off .form-text,
+.scale-bar-off label {
+    color: #6c757d;
+}
+
 .aesthetics-section h6 {
     margin-bottom: 10px;
     font-weight: 600;

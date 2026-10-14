@@ -115,6 +115,7 @@ def test_controls_style_the_grey_points_and_travel_with_the_panel(page, server):
     base = _grey_is_curve(page, A)
     assert not base["legend"] and base["colors"] == ["#b4b4b4"]
     page.click(f"#aesthetics-menu-btn-{A}")
+    page.click(f"details[data-panel='{A}'][data-section='points'] > summary")     # the Points group, folded at first
     page.wait_for_selector(f"#not-in-table-scale-{A}", state="visible")
     page.fill(f"#not-in-table-scale-{A}", "2")
     _grey_is_curve(page, A, scale=2)

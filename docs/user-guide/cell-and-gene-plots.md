@@ -64,7 +64,7 @@ Cell plot controls, coloured by a categorical obs column.
     as set, in saved panel sets and links too. The **auto** button beside each box is highlighted
     while its value is automatic; click it to make that value automatic again.
 11. **Table** links the plot to a table ({doc}`tables-and-filters`).
-12. **Plot Options** opens appearance and export settings ({doc}`export`). **Refresh**, next to
+12. **Plot Options** opens appearance and export settings ({doc}`plot-options`, {doc}`export`). **Refresh**, next to
     it, reloads the panel's data and redraws it: the server first re-checks the dataset against
     the disk, and the panel reads past this browser's copies, so values written to the store since
     it was drawn appear (as with **Refresh dataset**, {doc}`interface`).
