@@ -81,6 +81,47 @@ export function viewportFitsAxes(settings) {
 }
 
 /**
+ * A 2D zoom saved before views recorded their fields (no `axes`): kept, and
+ * recorded as made on the fields now on the axes, if it overlaps their extent
+ * (the box around all their values, whichever points are hidden); dropped if
+ * it does not. Such a zoom made on the spatial coordinates (thousands) and
+ * saved with the UMAP on the axes showed no cell at all.
+ * @param {Object} settings
+ * @param {Object} data - holds the loaded series x, y
+ */
+export function adoptUnrecordedViewport(settings, data) {
+  const v = settings.viewport2D;
+  if (!v || v.axes !== undefined || settings.z) return;
+  const xs = data && data.x && data.x.values, ys = data && data.y && data.y.values;
+  // text axes have ranges in category positions, not values: left as they are
+  if (!xs || !ys || axisKind(data.x) === 'category' || axisKind(data.y) === 'category') return;
+  const overlaps = (range, values) => {
+    if (!Array.isArray(range)) return true;
+    let lo = Infinity, hi = -Infinity;
+    for (const value of values) {
+      if (typeof value === 'number' && Number.isFinite(value)) { if (value < lo) lo = value; if (value > hi) hi = value; }
+    }
+    if (lo === Infinity) return true;      // nothing to measure against
+    return Math.min(range[0], range[1]) <= hi && Math.max(range[0], range[1]) >= lo;
+  };
+  settings.viewport2D = overlaps(v.xrange, xs) && overlaps(v.yrange, ys)
+    ? { ...v, axes: axesSignature(settings) } : null;
+}
+
+/**
+ * The uirevision of an axis: Plotly keeps the range the user zoomed to while
+ * it stays the same. In 2D both axes are one view, revised with the fields
+ * of both: a zoom kept on the axis whose field did not change held the other
+ * to its span under Equal aspect, and left the new field's points out of view.
+ * In 3D the camera is the view, and each axis is revised with its own field.
+ */
+function axisRevision(settings, axis, kind, revision) {
+  const f = settings[axis];
+  const fields = settings.z ? `${f.type}.${f.key}.${f.column || ''}` : axesSignature(settings);
+  return `${revision}|${fields}|${kind}`;
+}
+
+/**
  * Give each axis the type of its series, and a revision that changes with its
  * field, so the range the user zoomed to on one field is not kept on another.
  * What stays as is: the 3D camera, the legend, a zoom while the fields are the same.
@@ -96,15 +137,15 @@ export function applyAxisKinds(layout, settings, data, revision) {
     if (!target) continue;
     // no series (large-plot mode builds its layout before it has loaded any): numbers
     target.type = axisKind(data && data[axis]);
-    const f = settings[axis];
-    target.uirevision = `${revision}|${f.type}.${f.key}.${f.column || ''}|${target.type}`;
+    target.uirevision = axisRevision(settings, axis, target.type, revision);
   }
 }
 
 /**
  * The relayout that makes the axes whose field just changed what the new field
- * is: its type, a revision of its own (so Plotly drops the range kept for the
- * old field), and its range fitted again. The caller also drops the zoom.
+ * is: its type, a new revision (so Plotly drops the range kept for the old
+ * field), and its range fitted again; in 2D both axes, as one view. The caller
+ * also drops the zoom.
  * @param {Object} settings
  * @param {Object} data - holds the loaded series
  * @param {string[]} axes - the axes ('x', 'y', 'z') whose field changed
@@ -113,13 +154,15 @@ export function applyAxisKinds(layout, settings, data, revision) {
  */
 export function axisChangeRelayout(settings, data, axes, revision) {
   const update = {};
-  for (const axis of axes) {
+  // 2D: one view, so a change of either field refits both axes
+  const refit = settings.z || !axes.length ? axes : ['x', 'y'];
+  for (const axis of refit) {
     const f = settings[axis];
     if (!f || !data || !data[axis]) continue;
     const prefix = settings.z ? `scene.${axis}axis` : `${axis}axis`;
     const kind = axisKind(data[axis]);
     update[`${prefix}.type`] = kind;
-    update[`${prefix}.uirevision`] = `${revision}|${f.type}.${f.key}.${f.column || ''}|${kind}`;
+    update[`${prefix}.uirevision`] = axisRevision(settings, axis, kind, revision);
     update[`${prefix}.autorange`] = true;
   }
   return update;
@@ -441,14 +484,29 @@ export function attachViewportTracking(plotContainer, settings) {
   if (typeof plotContainer.on !== 'function') return;
   // a 3D turn released outside the plot is recorded too (scene-camera.js)
   recordCameraOnRelease();
+  forgetInitialRanges(plotContainer);
   if (plotContainer.__azViewportHandler && typeof plotContainer.removeListener === 'function') {
     plotContainer.removeListener('plotly_relayout', plotContainer.__azViewportHandler);
   }
   const followView = () => { if (typeof plotContainer.__azFollowView === 'function') plotContainer.__azFollowView(); };
+  // The zoom as drawn under Equal aspect: its centre and data units per pixel
+  const noteZoom = () => {
+    plotContainer.__azZoom = settings.viewport2D && !settings.z ? equalAspectZoom(plotContainer._fullLayout) : null;
+  };
   const onRelayout = (eventData) => {
     if (!eventData) return;
+    // The plot was resized (its pane opened, closed or moved): Plotly widens one
+    // axis of a zoom to keep the aspect, and never narrows it back
+    if (eventData.autosize !== undefined || eventData.width !== undefined || eventData.height !== undefined) {
+      const kept = rangesForSize(plotContainer.__azZoom, plotContainer._fullLayout);
+      if (kept) Plotly.relayout(plotContainer, kept).catch(() => {});
+      return;
+    }
     // automatic point size and opacity for the points now in view (listeners.js)
-    if (trackView(eventData) && !settings.z) followView();
+    if (trackView(eventData) && !settings.z) {
+      noteZoom();
+      followView();
+    }
   };
   const trackView = (eventData) => {
     if (settings.z) {
@@ -478,8 +536,61 @@ export function attachViewportTracking(plotContainer, settings) {
   };
   plotContainer.__azViewportHandler = onRelayout;
   plotContainer.on('plotly_relayout', onRelayout);
+  noteZoom();
   // a redraw that keeps a zoomed view was drawn with the style for every point
   if (settings.viewport2D && !settings.z) followView();
+}
+
+/**
+ * The zoom drawn on a 2D graph with Equal aspect (y anchored to x): the
+ * centre and the data units per pixel of each axis, at the size it has.
+ * Null when Equal aspect is off, an axis is fitted, or an axis holds text.
+ * @param {Object} fl - the graph's _fullLayout
+ * @returns {{centre: number[], perPixel: number[], size: number[]}|null}
+ */
+export function equalAspectZoom(fl) {
+  const x = fl && fl.xaxis, y = fl && fl.yaxis;
+  if (!x || !y || y.scaleanchor !== 'x' || x.autorange || y.autorange) return null;
+  if (x.type !== 'linear' || y.type !== 'linear' || !x._length || !y._length) return null;
+  if (!Array.isArray(x.range) || !Array.isArray(y.range)) return null;
+  return {
+    centre: [(x.range[0] + x.range[1]) / 2, (y.range[0] + y.range[1]) / 2],
+    perPixel: [(x.range[1] - x.range[0]) / x._length, (y.range[1] - y.range[0]) / y._length],
+    size: [x._length, y._length]
+  };
+}
+
+/**
+ * The ranges that show `zoom` at the size the graph has now: the same centre
+ * and units per pixel, so only the extent shown grows or shrinks with the plot,
+ * and the size it had gives back the ranges it had. Null when nothing changed.
+ * @param {Object|null} zoom - from equalAspectZoom, before the resize
+ * @param {Object} fl - the graph's _fullLayout, after it
+ * @returns {Object|null} relayout keys
+ */
+export function rangesForSize(zoom, fl) {
+  const x = fl && fl.xaxis, y = fl && fl.yaxis;
+  if (!zoom || !x || !y || y.scaleanchor !== 'x' || !x._length || !y._length) return null;
+  if (Math.abs(x._length - zoom.size[0]) < 1 && Math.abs(y._length - zoom.size[1]) < 1) return null;
+  const span = (i, length) => [zoom.centre[i] - zoom.perPixel[i] * length / 2, zoom.centre[i] + zoom.perPixel[i] * length / 2];
+  return { 'xaxis.range': span(0, x._length), 'yaxis.range': span(1, y._length) };
+}
+
+/**
+ * Double-click and Reset axes show every point. Plotly resets to the ranges an
+ * axis was first drawn with, if it was drawn with fixed ones, and keeps that
+ * record across redraws: after a link opened on a zoom, or the coordinates
+ * were switched, it reset to that zoom (or to ranges of the old coordinates)
+ * rather than fitting the data. Dropped after every draw, so it fits.
+ * @param {HTMLElement} gd
+ */
+function forgetInitialRanges(gd) {
+  if (gd.__azForgetsInitialRanges) return;
+  gd.__azForgetsInitialRanges = true;
+  gd.on('plotly_afterplot', () => {
+    const fl = gd._fullLayout;
+    for (const axis of ['xaxis', 'yaxis']) if (fl && fl[axis]) delete fl[axis]._rangeInitial;
+  });
 }
 
 /**

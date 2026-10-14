@@ -1,7 +1,7 @@
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
-import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds } from './plot-make-helper.js';
+import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport } from './plot-make-helper.js';
 import { autoPointCount, debounced } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
@@ -2296,6 +2296,8 @@ export function buildPlotLayout(settings, data) {
   settings.enablePan = settings.enablePan !== undefined ? settings.enablePan : defaults.ENABLE_PAN || true;
   settings.showHoverInfo = settings.showHoverInfo !== undefined ? settings.showHoverInfo : defaults.SHOW_HOVER_INFO || true;
 
+  // a zoom saved without its fields: kept only if it shows any of these points
+  if (data) adoptUnrecordedViewport(settings, data);
   // Build layout with our pure helper
   const layout = createLayout(settings);
   // Hide NaN / Hide Outliers remove points; keep the axes where all points are
