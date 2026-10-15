@@ -24,28 +24,20 @@ The browser saves `annzarro_plot.png`, drawn at 1200 × 800 and scaled by 2: the
 
 ## Choose format and size in Plot Options
 
-1. Open the panel's controls and click **Plot Options**. A panel with appearance settings opens
-   next to the button.
-2. Scroll to **Export**.
+1. Open the panel's controls and click **Plot Options**. A menu of folded groups opens next to
+   the button.
+2. Open **Export** ({doc}`plot-options`).
 
-   ```{figure} ../_static/screens/user-guide/export-plot-options.png
-   :class: screenshot
-   :width: 45%
-   :alt: The lower part of Plot Options: Font, Margins, Legend, and Export with JPEG, SVG, WEBP and PNG buttons (PNG outlined, 1) and Dimensions Width 1200 (2) and Height 800 (3).
-
-   Plot Options, Export section.
-   ```
-
-3. Set **Width** (2) and **Height** (3) in pixels (defaults 1200 and 800).
-4. Click **JPEG**, **SVG**, **WEBP** or **PNG** (1). The file is called `plot_<date and time>`
+3. Set **Width** and **Height** in pixels (defaults 1200 and 800).
+4. Click **JPEG**, **SVG**, **WEBP** or **PNG**. The file is called `plot_<date and time>`
    with that extension and has exactly the width and height you set (a 1000 × 1000 PNG for
    1000 and 1000).
 
-The rest of **Plot Options** changes how the plot looks on screen and in the export: background
-colour and a **Dark Theme**, grid, axis titles, tick labels, axis lines, zero lines, line widths
-and colours, the font (Arial, Times New Roman, Courier, Georgia, Trebuchet MS, Verdana), its size
-and colour, the margins, and whether and where the legend is shown. These settings
-are part of the panel and are kept in panel sets and share links.
+The rest of **Plot Options** changes how the plot looks on screen and in the export: presets
+(**Publication**), background colour and a **Dark Theme**, grid, axis titles, tick labels, marks
+and count, axis lines, zero lines, line widths and colours, a scale bar, the font and its size and
+colour, the margins, the legend and the colour bar. {doc}`plot-options` describes each group. These
+settings are part of the panel and are kept in panel sets and share links.
 
 ```{note}
 Plots are drawn with WebGL (Plotly's `scattergl` and `scatter3d`) to stay responsive with many

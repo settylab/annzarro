@@ -148,8 +148,12 @@ The link is live: change a condition, and the plot follows. The tutorial
 {doc}`../tutorials/cells-and-genes` uses an AND/OR table filter in an analysis ({ref}`tut-cg-andor`). Several plots can follow the same table,
 and a cell plot can follow a cell table the same way.
 
+The grey points have no legend entry. Their size follows their own count (a few chosen rows are
+not drawn as a solid grey backdrop), and **Plot Options > Points > Not in table** sets a size
+scale, opacity and colour for them ({doc}`plot-options`).
+
 ```{note}
-The grey of excluded points (`rgb(180, 180, 180)`) is close to the middle of RdBu, so with a
+The grey of excluded points (`rgb(180, 180, 180)` by default) is close to the middle of RdBu, so with a
 diverging map, genes with a value near 0 and genes outside the table look alike. Use the eye
 toggle, or a colour map without grey, when that matters ({doc}`colour-scales`).
 ```

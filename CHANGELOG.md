@@ -9,6 +9,8 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Fixes
+- With the grid off, tick labels no longer disappear on a plot's first draw and reappear after the
+  next edit: they follow **Show Tick Labels** alone.
 - **Not in table:** the grey points a table filter leaves in a plot are sized from their own
   count, the way the plot's points are, instead of keeping the size they had before they were
   excluded. Setting the point size by hand after the table is active, switching the table on in
@@ -26,6 +28,27 @@ with the release after it. Older releases are listed on
   Unresponsive"; both now take 0.1 to 0.15 s.
 - Decoding a categorical column whose labels contain quotes or escaped characters takes 0.1 s
   instead of 3.8 s for 200,000 values with 20,000 such labels.
+
+### Plot Options
+- Plot Options is grouped into nine folding sections (Presets, Appearance, Axes and ticks, Points,
+  Legend and colour bar, Text, Margins, Export, Apply to other panels). The menu opens again as
+  you left it.
+- **Publication** preset: white background, no grid, five ticks per axis, larger text, a tighter
+  margin. **Default** returns every look setting to a new
+  plot's.
+- Tick marks and tick labels switch separately, and **Ticks per axis** asks for about N ticks
+  (2 to 30; empty is automatic).
+- Margins: one slider sets all four sides; **Set each side separately** shows a box for each.
+- Colour bar: its own position (right, left, top, bottom or with the legend), a length from 10 to
+  100 % and a tick count.
+- **Scale bar** (off by default) for embeddings and spatial coordinates: a bar of a round length in
+  coordinate units, about a fifth of the width in view, redrawn as you zoom or resize, with a
+  Size slider (length, line and label together), an optional unit text such as µm and a corner.
+  It needs Equal aspect on a 2D plot: greyed out otherwise, and turning Equal aspect off switches
+  it off. It is part of an export and not part of the Publication preset.
+- **Apply to other panels** copies a plot's look (not what it shows) to every other cell plot or
+  gene plot, after a confirm in the menu. All of it is kept in links and panel sets; links from
+  before use the defaults.
 
 ### Changed
 - **Not in table:** the grey points have no legend entry, like the highlighted cell. Plot

@@ -344,6 +344,9 @@ def _png_size(path):
 
 def _open_menu(page, pid="cell-plot-a"):
     page.click(f"#aesthetics-menu-btn-{pid}")
+    group = page.locator(f"details[data-panel='{pid}'][data-section='export']")      # folded at first, then as it was left
+    if not group.evaluate("e => e.open"):
+        group.locator("summary").click()
     page.wait_for_selector(f"#download-png-{pid}", state="visible")
 
 

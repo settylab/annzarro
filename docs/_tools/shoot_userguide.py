@@ -732,11 +732,10 @@ def shoot_export(sh, data_dir):
     finish(OUT / "export-modebar.png")
     toggle_controls(sh, page, "cell-plot-W")
     page.locator(f"{w} [id^=aesthetics-menu-btn]").click(); time.sleep(1.2)
-    pop = page.locator(".popover").last
+    # the menu as it opens (groups folded; user-guide/plot-options.md), then the Export group
+    capture(sh, page, "plot-options-menu", ".popover .popover-body")
+    page.locator("details[data-section=export] > summary").click(); time.sleep(0.4)
     page.locator("[id^=download-png-cell-plot-W]").scroll_into_view_if_needed(); time.sleep(0.4)
-    capture(sh, page, "export-plot-options", ".popover .popover-body", marks=[
-        (1, "[id^=download-png-cell-plot-W]"), (2, "[id^=plot-width-cell-plot-W]"),
-        (3, "[id^=plot-height-cell-plot-W]")])
     page.context.close()
 
 

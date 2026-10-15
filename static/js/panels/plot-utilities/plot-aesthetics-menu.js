@@ -1,7 +1,11 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
-import { axisTitle, NOT_IN_TABLE } from './plot-make-helper.js';
+import { axisTitle, NOT_IN_TABLE, refreshScaleBar } from './plot-make-helper.js';
 import { restyleMarkers } from './plot-update.js';
 import { NOT_IN_TABLE_COLOR } from '../../utils/point-style.js';
+import {
+  normalizePlotOptions, tickMarksOn, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
+  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle
+} from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
 import { exportCheck, guarded, refusalText } from '../../utils/memory-guard-ui.js';
 /**
@@ -76,6 +80,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
 
   // Click-away handler
   const clickAway = (e) => {
+    if (!e.target.isConnected) return;   // a control the menu drew again (a preset) is not outside it
     if (!menuButton.contains(e.target) && !e.target.closest('.popover')) {
       popover.hide();
     }
@@ -109,6 +114,19 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
  * @param {Object} settings - Plot settings object
  * @returns {string} - HTML string for popover content
  */
+/** Sections the user opened, per panel; a menu opens again as it was left. */
+const sectionOpen = new Map();
+const OPEN_AT_FIRST = ['presets'];
+
+/** A collapsible group of the menu. */
+function details(id, key, title, body) {
+    const open = (sectionOpen.get(id) || new Set(OPEN_AT_FIRST)).has(key);
+    return `<details class="aesthetics-section" data-section="${key}" data-panel="${escapeAttr(id)}"${open ? ' open' : ''}>
+            <summary>${title}</summary>
+            <div class="aesthetics-body">${body}</div>
+        </details>`;
+}
+
 export function createPopoverContent(id, settings) {
     // Ensure all required settings have defaults
     initializeAestheticsSettings(settings);
@@ -120,6 +138,12 @@ export function createPopoverContent(id, settings) {
     const marginLeft = settings.margins?.l ?? 80;
     const marginRight = settings.margins?.r ?? 80;
     
+    const marginsLinkedValue = marginTop;
+    const scaleBarOk = !settings.z && !!settings.equalAspect;
+    const scaleBarWhy = settings.z ? 'The scale bar is for 2D plots.'
+        : 'Needs Equal aspect (the panel controls): without it a unit is not as long on y as on x.';
+    const plotKind = settings.highlightFocusedGene !== undefined ? 'gene' : 'cell';
+
     // Create a custom ID to ensure we're getting fresh HTML each time
     const uniqueId = `aesthetics-${id}-${Date.now()}`;
     
@@ -129,9 +153,16 @@ export function createPopoverContent(id, settings) {
          data-margin-bottom="${marginBottom}" 
          data-margin-left="${marginLeft}"
          data-margin-right="${marginRight}">
-        <!-- Appearance Section -->
-        <div class="aesthetics-section">
-            <h6>Appearance</h6>
+        ${details(id, 'presets', 'Presets', `
+
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-publication-${id}"
+                    title="White background, no grid, five ticks per axis, larger text, scale bar if set up">Publication</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
+                    title="Back to the look every plot starts with">Default</button>
+            </div>
+        `)}
+        ${details(id, 'appearance', 'Appearance', `
             
             <!-- Background Color -->
             <div class="mb-2">
@@ -172,11 +203,8 @@ export function createPopoverContent(id, settings) {
                     </button>
                 </div>
             </div>
-        </div>
-        
-        <!-- Axes Section -->
-        <div class="aesthetics-section">
-            <h6>Axes</h6>
+        `)}
+        ${details(id, 'axes', 'Axes and ticks', `
             
             <!-- Grid Controls -->
             <div class="form-check form-switch mb-2">
@@ -262,6 +290,103 @@ export function createPopoverContent(id, settings) {
                 </div>
             </div>
             
+            <!-- Ticks -->
+            <div class="mb-2">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="show-tick-marks-${id}"
+                        ${tickMarksOn(settings) ? 'checked' : ''}>
+                    <label class="form-check-label" for="show-tick-marks-${id}">Show Tick Marks</label>
+                </div>
+                <div class="input-group input-group-sm mt-1">
+                    <span class="input-group-text">Ticks per axis</span>
+                    <input type="number" class="form-control" id="tick-count-${id}" value="${settings.tickCount ?? ''}"
+                        placeholder="auto" min="2" max="30" step="1" title="About this many ticks on each axis; empty: automatic">
+                </div>
+            </div>
+
+            <!-- Spatial scale bar -->
+            <div class="mb-2 scale-bar-options ${scaleBarOk ? '' : 'scale-bar-off'}" id="scale-bar-options-${id}">
+                <div class="form-check form-switch" ${scaleBarOk ? '' : 'title="Needs Equal aspect"'}>
+                    <input class="form-check-input" type="checkbox" id="show-scale-bar-${id}"
+                        ${settings.showScaleBar ? 'checked' : ''} ${scaleBarOk ? '' : 'disabled'}>
+                    <label class="form-check-label" for="show-scale-bar-${id}">Scale bar</label>
+                </div>
+                <div class="form-text mt-0 mb-1" id="scale-bar-note-${id}">${scaleBarOk ? 'A round length in coordinate units, about a fifth of the width in view; it follows the zoom.' : escapeAttr(scaleBarWhy)}</div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="small text-nowrap">Size</span>
+                    <input type="range" class="form-range flex-grow-1" id="scale-bar-size-${id}" min="25" max="400" step="5"
+                        value="${Math.round(settings.scaleBarSize * 100)}" title="Length, line and label together" ${scaleBarOk ? '' : 'disabled'}>
+                    <span class="small text-nowrap" id="scale-bar-size-value-${id}">${Math.round(settings.scaleBarSize * 100)}%</span>
+                </div>
+                <div class="input-group input-group-sm mb-1">
+                    <span class="input-group-text">Unit</span>
+                    <input type="text" class="form-control" id="scale-bar-unit-${id}" value="${escapeAttr(settings.scaleBarUnit)}"
+                        maxlength="20" placeholder="optional, e.g. µm" ${scaleBarOk ? '' : 'disabled'}>
+                </div>
+                <select class="form-select form-select-sm" id="scale-bar-corner-${id}" title="Corner" ${scaleBarOk ? '' : 'disabled'}>
+                    ${SCALE_BAR_CORNERS.map(c => `<option value="${c}" ${settings.scaleBarCorner === c ? 'selected' : ''}>${c.replace('-', ' ')}</option>`).join('')}
+                </select>
+            </div>
+
+        `)}
+        ${details(id, 'points', 'Points', `
+            <div class="form-text mt-0 mb-1">The grey points a table filter leaves in the plot.</div>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Size</span>
+                <input type="number" class="form-control" id="not-in-table-scale-${id}"
+                    value="${settings.notInTableScale ?? 1}" min="0.1" max="20" step="0.1"
+                    title="Relative to the size their count gets automatically">
+                <span class="input-group-text">x auto</span>
+            </div>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Opacity</span>
+                <input type="number" class="form-control" id="not-in-table-opacity-${id}"
+                    value="${settings.notInTableOpacity ?? ''}" placeholder="auto" min="0.01" max="1" step="0.05">
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 me-2">Color</label>
+                <input type="color" class="form-control form-control-sm form-control-color"
+                    id="not-in-table-color-${id}" value="${settings.notInTableColor || NOT_IN_TABLE_COLOR}" title="Choose the colour of the points not in the table">
+                <button class="btn btn-sm btn-outline-secondary" id="reset-not-in-table-color-${id}">Reset</button>
+            </div>
+        `)}
+        ${details(id, 'legend', 'Legend and colour bar', `
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="show-legend-${id}" 
+                    ${settings.showLegend !== false ? 'checked' : ''}>
+                <label class="form-check-label" for="show-legend-${id}">Show Legend</label>
+            </div>
+            
+            <div class="mb-2">
+                <label class="form-label mb-1">Legend Position</label>
+                <select class="form-select form-select-sm" id="legend-position-${id}">
+                    <option value="right" ${(settings.legendPosition === 'right') ? 'selected' : ''}>Right</option>
+                    <option value="left" ${(settings.legendPosition === 'left') ? 'selected' : ''}>Left</option>
+                    <option value="top" ${(settings.legendPosition === 'top') ? 'selected' : ''}>Top</option>
+                    <option value="bottom" ${(settings.legendPosition === 'bottom') ? 'selected' : ''}>Bottom</option>
+                </select>
+            </div>
+            <!-- Colour bar -->
+            <div class="mb-2">
+                <label class="form-label mb-1">Colour bar</label>
+                <select class="form-select form-select-sm mb-1" id="colorbar-position-${id}" title="Position">
+                    ${COLORBAR_POSITIONS.map(c => `<option value="${c}" ${settings.colorbarPosition === c ? 'selected' : ''}>${c === 'legend' ? 'with the legend' : c}</option>`).join('')}
+                </select>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="small text-nowrap">Length</span>
+                    <input type="range" class="form-range flex-grow-1" id="colorbar-length-${id}" min="10" max="100" step="5"
+                        value="${Math.round(settings.colorbarLength * 100)}" title="Length of the colour bar, % of the plot">
+                    <span class="small text-nowrap" id="colorbar-length-value-${id}">${Math.round(settings.colorbarLength * 100)}%</span>
+                </div>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">Ticks</span>
+                    <input type="number" class="form-control" id="colorbar-ticks-${id}" value="${settings.colorbarTicks ?? ''}"
+                        placeholder="auto" min="2" max="30" step="1">
+                </div>
+            </div>
+
+        `)}
+        ${details(id, 'text', 'Text', `
             <!-- Font Settings -->
             <div class="mb-2">
                 <label class="form-label mb-1">Font</label>
@@ -288,83 +413,43 @@ export function createPopoverContent(id, settings) {
                     <button class="btn btn-sm btn-outline-secondary" id="reset-text-color-${id}">Reset</button>
                 </div>
             </div>
-        </div>
-        
-        <!-- Margins Section -->
-        <div class="aesthetics-section">
-            <h6>Margins</h6>
-            <div class="row g-2">
+        `)}
+        ${details(id, 'margins', 'Margins', `
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <input type="range" class="form-range flex-grow-1" id="margin-all-${id}" min="0" max="200" step="1"
+                    value="${marginsLinkedValue}" ${settings.marginsUnlinked ? 'disabled' : ''} title="All four sides">
+                <input type="number" class="form-control form-control-sm" style="width: 4.5rem" id="margin-all-input-${id}"
+                    value="${marginsLinkedValue}" min="0" max="200" ${settings.marginsUnlinked ? 'disabled' : ''}>
+            </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="margins-unlink-${id}" ${settings.marginsUnlinked ? 'checked' : ''}>
+                <label class="form-check-label" for="margins-unlink-${id}">Set each side separately</label>
+            </div>
+            <div class="row g-2 ${settings.marginsUnlinked ? '' : 'd-none'}" id="margin-sides-${id}">
                 <div class="col-6">
                     <label class="form-label mb-1">Top</label>
-                    <input type="number" class="form-control form-control-sm margin-input" id="margin-top-${id}" 
+                    <input type="number" class="form-control form-control-sm margin-input" id="margin-top-${id}"
                         value="${marginTop}" min="0" max="200">
                 </div>
                 <div class="col-6">
                     <label class="form-label mb-1">Bottom</label>
-                    <input type="number" class="form-control form-control-sm margin-input" id="margin-bottom-${id}" 
+                    <input type="number" class="form-control form-control-sm margin-input" id="margin-bottom-${id}"
                         value="${marginBottom}" min="0" max="200">
                 </div>
                 <div class="col-6">
                     <label class="form-label mb-1">Left</label>
-                    <input type="number" class="form-control form-control-sm margin-input" id="margin-left-${id}" 
+                    <input type="number" class="form-control form-control-sm margin-input" id="margin-left-${id}"
                         value="${marginLeft}" min="0" max="200">
                 </div>
                 <div class="col-6">
                     <label class="form-label mb-1">Right</label>
-                    <input type="number" class="form-control form-control-sm margin-input" id="margin-right-${id}" 
+                    <input type="number" class="form-control form-control-sm margin-input" id="margin-right-${id}"
                         value="${marginRight}" min="0" max="200">
                 </div>
             </div>
             <button class="btn btn-sm btn-outline-secondary w-100 mt-2" id="reset-margins-${id}">Reset Margins</button>
-        </div>
-        
-        <!-- Legend Section -->
-        <div class="aesthetics-section">
-            <h6>Legend</h6>
-            <div class="form-check form-switch mb-2">
-                <input class="form-check-input" type="checkbox" id="show-legend-${id}" 
-                    ${settings.showLegend !== false ? 'checked' : ''}>
-                <label class="form-check-label" for="show-legend-${id}">Show Legend</label>
-            </div>
-            
-            <div class="mb-2">
-                <label class="form-label mb-1">Legend Position</label>
-                <select class="form-select form-select-sm" id="legend-position-${id}">
-                    <option value="right" ${(settings.legendPosition === 'right') ? 'selected' : ''}>Right</option>
-                    <option value="left" ${(settings.legendPosition === 'left') ? 'selected' : ''}>Left</option>
-                    <option value="top" ${(settings.legendPosition === 'top') ? 'selected' : ''}>Top</option>
-                    <option value="bottom" ${(settings.legendPosition === 'bottom') ? 'selected' : ''}>Bottom</option>
-                </select>
-            </div>
-        </div>
-        
-        <!-- Not in table Section -->
-        <div class="aesthetics-section">
-            <h6>Not in table</h6>
-            <div class="form-text mt-0 mb-1">The grey points a table filter leaves in the plot.</div>
-            <div class="input-group input-group-sm mb-1">
-                <span class="input-group-text">Size</span>
-                <input type="number" class="form-control" id="not-in-table-scale-${id}"
-                    value="${settings.notInTableScale ?? 1}" min="0.1" max="20" step="0.1"
-                    title="Relative to the size their count gets automatically">
-                <span class="input-group-text">x auto</span>
-            </div>
-            <div class="input-group input-group-sm mb-1">
-                <span class="input-group-text">Opacity</span>
-                <input type="number" class="form-control" id="not-in-table-opacity-${id}"
-                    value="${settings.notInTableOpacity ?? ''}" placeholder="auto" min="0.01" max="1" step="0.05">
-            </div>
-            <div class="d-flex align-items-center gap-2">
-                <label class="form-label mb-0 me-2">Color</label>
-                <input type="color" class="form-control form-control-sm form-control-color"
-                    id="not-in-table-color-${id}" value="${settings.notInTableColor || NOT_IN_TABLE_COLOR}" title="Choose the colour of the points not in the table">
-                <button class="btn btn-sm btn-outline-secondary" id="reset-not-in-table-color-${id}">Reset</button>
-            </div>
-        </div>
-
-        <!-- Export Section -->
-        <div class="aesthetics-section">
-            <h6>Export</h6>
+        `)}
+        ${details(id, 'export', 'Export', `
             ${exportButtonsHtml(id, settings)}
             
             <div class="mb-2">
@@ -383,7 +468,20 @@ export function createPopoverContent(id, settings) {
                 </div>
             </div>
             
-        </div>
+        `)}
+        ${details(id, 'apply', 'Apply to other panels', `
+
+            <div class="form-text mt-0 mb-2">Copy this plot's look (colours, axes, ticks, text, margins, legend, colour bar, scale bar, Not in table) to the other ${plotKind} plots. What they show is not touched.</div>
+            <div id="apply-others-ask-${id}" class="d-none">
+                <div class="small mb-1" id="apply-others-text-${id}"></div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-primary flex-fill" id="apply-others-yes-${id}">Apply</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="apply-others-no-${id}">Cancel</button>
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="apply-others-${id}">Apply to other panels</button>
+            <div class="small mt-1" id="apply-others-done-${id}" role="status"></div>
+        `)}
     </div>
     `;
 }
@@ -521,7 +619,7 @@ export function initializeAestheticsSettings(settings) {
     settings.fontFamily = settings.fontFamily || defaults.FONT_FAMILY;
     
     // Margins
-    settings.margins = settings.margins || defaults.MARGINS;
+    settings.margins = settings.margins || { ...defaults.MARGINS };
     
     // Export options
     settings.exportWidth = settings.exportWidth || defaults.EXPORT_WIDTH;
@@ -535,6 +633,9 @@ export function initializeAestheticsSettings(settings) {
     settings.enableZoom = settings.enableZoom !== undefined ? settings.enableZoom : defaults.ENABLE_ZOOM;
     settings.enablePan = settings.enablePan !== undefined ? settings.enablePan : defaults.ENABLE_PAN;
     settings.showHoverInfo = settings.showHoverInfo !== undefined ? settings.showHoverInfo : defaults.SHOW_HOVER_INFO;
+
+    // Options added later (ticks, colour bar, scale bar, margin link): defaults for configs without them
+    normalizePlotOptions(settings);
 }
 
 /**
@@ -889,16 +990,8 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             // Default margins
             settings.margins = { l: 80, r: 80, t: 80, b: 60, pad: 4 };
             
-            // Update the input fields directly
-            const marginTopInput = document.getElementById(`margin-top-${id}`);
-            const marginBottomInput = document.getElementById(`margin-bottom-${id}`);
-            const marginLeftInput = document.getElementById(`margin-left-${id}`);
-            const marginRightInput = document.getElementById(`margin-right-${id}`);
-            
-            if (marginTopInput) marginTopInput.value = settings.margins.t;
-            if (marginBottomInput) marginBottomInput.value = settings.margins.b;
-            if (marginLeftInput) marginLeftInput.value = settings.margins.l;
-            if (marginRightInput) marginRightInput.value = settings.margins.r;
+            settings.marginsUnlinked = false;
+            syncMarginInputs(id, settings);
             
             // Apply the changes to the plot
             updateMargins(plotContainer, settings);
@@ -922,6 +1015,118 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
+        // Margins: one value for all four sides, or each side
+        if (target.id === `margin-all-${id}` || target.id === `margin-all-input-${id}`) {
+            const v = parseFloat(target.value);
+            if (!Number.isFinite(v)) return;
+            settings.margins = linkedMargins(settings, v);
+            syncMarginInputs(id, settings);
+            updateMargins(plotContainer, settings);
+            return;
+        }
+        if (target.id === `margins-unlink-${id}`) {
+            settings.marginsUnlinked = target.checked;
+            if (!target.checked) settings.margins = linkedMargins(settings, settings.margins.t);   // one value again: the top one
+            syncMarginInputs(id, settings);
+            updateMargins(plotContainer, settings);
+            return;
+        }
+
+        // Ticks
+        if (target.id === `show-tick-marks-${id}`) {
+            settings.showTickMarks = target.checked;
+            relayoutTicks(plotContainer, settings);
+            return;
+        }
+        if (target.id === `tick-count-${id}`) {
+            const n = parseInt(target.value, 10);
+            if (target.value !== '' && !(n >= 2)) return;
+            settings.tickCount = target.value === '' ? null : Math.min(n, 30);
+            relayoutTicks(plotContainer, settings);
+            return;
+        }
+
+        // Colour bar
+        if (target.id === `colorbar-position-${id}`) {
+            settings.colorbarPosition = target.value;
+            updateLegendPosition(plotContainer, settings);
+            return;
+        }
+        if (target.id === `colorbar-length-${id}`) {
+            settings.colorbarLength = Math.max(0.1, Math.min(1, parseInt(target.value, 10) / 100));
+            const out = document.getElementById(`colorbar-length-value-${id}`);
+            if (out) out.textContent = `${Math.round(settings.colorbarLength * 100)}%`;
+            updateLegendPosition(plotContainer, settings);
+            return;
+        }
+        if (target.id === `colorbar-ticks-${id}`) {
+            const n = parseInt(target.value, 10);
+            if (target.value !== '' && !(n >= 2)) return;
+            settings.colorbarTicks = target.value === '' ? null : Math.min(n, 30);
+            updateLegendPosition(plotContainer, settings);
+            return;
+        }
+
+        // Spatial scale bar
+        if (target.id === `show-scale-bar-${id}`) {
+            settings.showScaleBar = target.checked;
+            refreshScaleBar(plotContainer, settings);
+            return;
+        }
+        if (target.id === `scale-bar-size-${id}`) {
+            settings.scaleBarSize = Math.max(0.25, Math.min(4, parseInt(target.value, 10) / 100));
+            const out = document.getElementById(`scale-bar-size-value-${id}`);
+            if (out) out.textContent = `${Math.round(settings.scaleBarSize * 100)}%`;
+            refreshScaleBar(plotContainer, settings);
+            return;
+        }
+        if (target.id === `scale-bar-unit-${id}`) {
+            settings.scaleBarUnit = target.value.trim().slice(0, 20);
+            refreshScaleBar(plotContainer, settings);
+            return;
+        }
+        if (target.id === `scale-bar-corner-${id}`) {
+            settings.scaleBarCorner = target.value;
+            refreshScaleBar(plotContainer, settings);
+            return;
+        }
+
+        // Presets
+        if ((target.id === `preset-publication-${id}` || target.id === `preset-default-${id}`) && e.type === 'click') {
+            applyPreset(settings, target.id === `preset-publication-${id}` ? 'publication' : 'default');
+            relookPlot(plotContainer, settings);
+            // the menu shows the new values: drawn again, the open groups as they are
+            const body = document.querySelector('.aesthetics-popover .popover-body');
+            if (body) body.innerHTML = createPopoverContent(id, settings);
+            return;
+        }
+
+        // Apply this panel's look to the other plots of its kind, after a confirm in the menu
+        if (target.id === `apply-others-${id}` && e.type === 'click') {
+            const n = otherPlots(id).length;
+            const text = document.getElementById(`apply-others-text-${id}`);
+            const done = document.getElementById(`apply-others-done-${id}`);
+            if (done) done.textContent = '';
+            if (!n) {
+                if (done) done.textContent = 'There are no other plots of this kind.';
+                return;
+            }
+            if (text) text.textContent = `Replace the look of ${n} other plot${n === 1 ? '' : 's'} with this one's?`;
+            document.getElementById(`apply-others-ask-${id}`)?.classList.remove('d-none');
+            target.classList.add('d-none');
+            return;
+        }
+        if ((target.id === `apply-others-no-${id}` || target.id === `apply-others-yes-${id}`) && e.type === 'click') {
+            document.getElementById(`apply-others-ask-${id}`)?.classList.add('d-none');
+            document.getElementById(`apply-others-${id}`)?.classList.remove('d-none');
+            if (target.id === `apply-others-yes-${id}`) {
+                const n = applyLookToOthers(id, settings);
+                const done = document.getElementById(`apply-others-done-${id}`);
+                if (done) done.textContent = `Applied to ${n} plot${n === 1 ? '' : 's'}.`;
+            }
+            return;
+        }
+
         // Not in table points: size scale, opacity, colour (greyMarker)
         if (target.id === `not-in-table-scale-${id}` || target.id === `not-in-table-opacity-${id}`
             || target.id === `not-in-table-color-${id}` || target.id === `reset-not-in-table-color-${id}`) {
@@ -995,6 +1200,16 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         }
     };
     
+    // which sections are open: the menu opens again as it was left
+    const onToggle = (e) => {
+        const d = e.target;
+        if (!d || d.tagName !== 'DETAILS' || d.dataset.panel !== String(id)) return;
+        const open = sectionOpen.get(id) || new Set(OPEN_AT_FIRST);
+        if (d.open) open.add(d.dataset.section); else open.delete(d.dataset.section);
+        sectionOpen.set(id, open);
+    };
+    document.addEventListener('toggle', onToggle, true);   // 'toggle' does not bubble
+
     // Use event delegation on document body for better event handling
     document.body.addEventListener('click', menuHandler);
     document.body.addEventListener('change', menuHandler);
@@ -1002,10 +1217,67 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
     
     // Return a cleanup function to remove listeners when needed
     return function cleanup() {
+        document.removeEventListener('toggle', onToggle, true);
         document.body.removeEventListener('click', menuHandler);
         document.body.removeEventListener('change', menuHandler);
         document.body.removeEventListener('input', menuHandler);
     };
+}
+
+/** Put the margin controls in step with settings.margins. */
+function syncMarginInputs(id, settings) {
+    const set = (suffix, v) => { const el = document.getElementById(`${suffix}-${id}`); if (el) el.value = v; };
+    set('margin-top', settings.margins.t);
+    set('margin-bottom', settings.margins.b);
+    set('margin-left', settings.margins.l);
+    set('margin-right', settings.margins.r);
+    set('margin-all', settings.margins.t);
+    set('margin-all-input', settings.margins.t);
+    for (const suffix of ['margin-all', 'margin-all-input']) {
+        const el = document.getElementById(`${suffix}-${id}`);
+        if (el) el.disabled = !!settings.marginsUnlinked;
+    }
+    const unlink = document.getElementById(`margins-unlink-${id}`);
+    if (unlink) unlink.checked = !!settings.marginsUnlinked;
+    document.getElementById(`margin-sides-${id}`)?.classList.toggle('d-none', !settings.marginsUnlinked);
+}
+
+/** Tick marks, labels and count on every axis. */
+function relayoutTicks(plotContainer, settings) {
+    if (!plotContainer) return;
+    Plotly.relayout(plotContainer, tickKeys(settings, axisPaths(settings))).catch(() => {});
+}
+
+/** The other plots of the same kind (cell or gene) as panel `id`: their panel objects. */
+function otherPlots(id) {
+    const pm = window.PanelManager;
+    if (!pm || typeof pm.getActivePanels !== 'function') return [];
+    const mine = pm.getActivePanels().find(p => p.getId && p.getId() === id);
+    if (!mine) return [];
+    return pm.getActivePanels().filter(p => p !== mine && p.getType && p.getType() === mine.getType()
+        && document.getElementById(`plot-container-${p.getId()}`));
+}
+
+/** The plot drawn again from its settings, as after a preset or a copied look. */
+function relookPlot(plotContainer, settings) {
+    if (!plotContainer || !plotContainer._fullLayout) return;
+    applyAllAestheticSettings(plotContainer, settings);
+    restyleMarkers(plotContainer, settings).catch(() => {});
+}
+
+/** Copy the look of panel `id` onto the other plots of its kind; returns how many. */
+function applyLookToOthers(id, settings) {
+    const style = pickStyle(settings);
+    const others = otherPlots(id);
+    for (const panel of others) {
+        const cfg = panel.getConfig();
+        adoptStyle(cfg, style);
+        const next = {};
+        for (const k of Object.keys(style)) next[k] = cfg[k];      // an unset option stays unset
+        panel.setConfig(next);
+        relookPlot(document.getElementById(`plot-container-${panel.getId()}`), panel.getConfig());
+    }
+    return others.length;
 }
 
 /**
@@ -1106,22 +1378,8 @@ function updateAxisVisibility(plotContainer, settings) {
         }
     }
     
-    // Tick label visibility
-    if (settings.showAxisLabels !== undefined) {
-        if (is3D) {
-            update['scene.xaxis.showticklabels'] = settings.showAxisLabels;
-            update['scene.yaxis.showticklabels'] = settings.showAxisLabels;
-            update['scene.zaxis.showticklabels'] = settings.showAxisLabels;
-            update['scene.xaxis.ticks'] = settings.showAxisLabels ? 'outside' : 'none';
-            update['scene.yaxis.ticks'] = settings.showAxisLabels ? 'outside' : 'none';
-            update['scene.zaxis.ticks'] = settings.showAxisLabels ? 'outside' : 'none';
-        } else {
-            update['xaxis.showticklabels'] = settings.showAxisLabels;
-            update['yaxis.showticklabels'] = settings.showAxisLabels;
-            update['xaxis.ticks'] = settings.showAxisLabels ? 'outside' : 'none';
-            update['yaxis.ticks'] = settings.showAxisLabels ? 'outside' : 'none';
-        }
-    }
+    // Tick labels, marks and count
+    Object.assign(update, tickKeys(settings, axisPaths(settings)));
     
     // Axis line visibility
     if (settings.showAxisLines !== undefined) {
@@ -1688,6 +1946,10 @@ export function getPositioningByLocation(position) {
   export function updateLegendPosition(plotContainer, settings) {
     if (!plotContainer) return;
     const posConfig = getPositioningByLocation(settings.legendPosition || 'right');
+    // the colour bar has a position of its own (default: the legend's), a length and a tick count
+    const barPos = getPositioningByLocation(colorbarPosition(settings));
+    const barExtras = colorbarExtras(settings);
+    const nticks = barExtras.nticks || 0;      // 0: Plotly's automatic
   
     // 1) Legend positioning (layout update), off the colour bar if both show
     Plotly.relayout(plotContainer, legendPlacement(plotContainer.data, posConfig));
@@ -1700,12 +1962,15 @@ export function getPositioningByLocation(position) {
     const coloraxisVisible = plotContainer.layout.coloraxis?.showscale ?? false;
     if (coloraxisVisible) {
         Plotly.relayout(plotContainer, {
-        'coloraxis.colorbar.x':         posConfig.x,
-        'coloraxis.colorbar.y':         posConfig.y,
-        'coloraxis.colorbar.xanchor':   posConfig.xanchor,
-        'coloraxis.colorbar.yanchor':   posConfig.yanchor,
-        'coloraxis.colorbar.orientation': posConfig.orientation,
-        'coloraxis.colorbar.titleside':   posConfig.titleside,
+        'coloraxis.colorbar.x':         barPos.x,
+        'coloraxis.colorbar.y':         barPos.y,
+        'coloraxis.colorbar.xanchor':   barPos.xanchor,
+        'coloraxis.colorbar.yanchor':   barPos.yanchor,
+        'coloraxis.colorbar.orientation': barPos.orientation,
+        'coloraxis.colorbar.titleside':   barPos.titleside,
+        'coloraxis.colorbar.len':         barExtras.len,
+        'coloraxis.colorbar.lenmode':     barExtras.lenmode,
+        'coloraxis.colorbar.nticks':      nticks,
         'coloraxis.showscale': coloraxisVisible
         });
     }
@@ -1727,24 +1992,30 @@ export function getPositioningByLocation(position) {
         Plotly.restyle(plotContainer, { 'marker.showscale': false }, [i]);
         // 3b) Update position/orientation + re‑show
         Plotly.restyle(plotContainer, {
-          'marker.colorbar.x':          posConfig.x,
-          'marker.colorbar.y':          posConfig.y,
-          'marker.colorbar.xanchor':    posConfig.xanchor,
-          'marker.colorbar.yanchor':    posConfig.yanchor,
-          'marker.colorbar.orientation': posConfig.orientation,
-          'marker.colorbar.titleside':   posConfig.titleside,
+          'marker.colorbar.x':          barPos.x,
+          'marker.colorbar.y':          barPos.y,
+          'marker.colorbar.xanchor':    barPos.xanchor,
+          'marker.colorbar.yanchor':    barPos.yanchor,
+          'marker.colorbar.orientation': barPos.orientation,
+          'marker.colorbar.titleside':   barPos.titleside,
+          'marker.colorbar.len':         barExtras.len,
+          'marker.colorbar.lenmode':     barExtras.lenmode,
+          'marker.colorbar.nticks':      nticks,
           'marker.showscale':           currentVisible
         }, [i]);
       }
       else if (isHeat) {
         Plotly.restyle(plotContainer, { showscale: false }, [i]);
         Plotly.restyle(plotContainer, {
-          'colorbar.x':          posConfig.x,
-          'colorbar.y':          posConfig.y,
-          'colorbar.xanchor':    posConfig.xanchor,
-          'colorbar.yanchor':    posConfig.yanchor,
-          'colorbar.orientation': posConfig.orientation,
-          'colorbar.titleside':   posConfig.titleside,
+          'colorbar.x':          barPos.x,
+          'colorbar.y':          barPos.y,
+          'colorbar.xanchor':    barPos.xanchor,
+          'colorbar.yanchor':    barPos.yanchor,
+          'colorbar.orientation': barPos.orientation,
+          'colorbar.titleside':   barPos.titleside,
+          'colorbar.len':         barExtras.len,
+          'colorbar.lenmode':     barExtras.lenmode,
+          'colorbar.nticks':      nticks,
           showscale:             currentVisible
         }, [i]);
       }
@@ -1964,12 +2235,8 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'yaxis.zerolinecolor': zeroLineColor,
         'xaxis.zerolinewidth': settings.zeroLineWidth || 1,
         'yaxis.zerolinewidth': settings.zeroLineWidth || 1,
-        'xaxis.ticks': settings.showAxisLabels !== false ? 'outside' : 'none',
-        'yaxis.ticks': settings.showAxisLabels !== false ? 'outside' : 'none',
         'xaxis.tickcolor': axisColor,
         'yaxis.tickcolor': axisColor,
-        'xaxis.showticklabels': settings.showAxisLabels !== false,
-        'yaxis.showticklabels': settings.showAxisLabels !== false,
         'xaxis.color': axisColor,
         'yaxis.color': axisColor,
         'xaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'x') : '',
@@ -2027,15 +2294,9 @@ export function applyAllAestheticSettings(plotContainer, settings) {
             'scene.xaxis.zerolinewidth': settings.zeroLineWidth || 1,
             'scene.yaxis.zerolinewidth': settings.zeroLineWidth || 1,
             'scene.zaxis.zerolinewidth': settings.zeroLineWidth || 1,
-            'scene.xaxis.ticks': settings.showAxisLabels !== false ? 'outside' : 'none',
-            'scene.yaxis.ticks': settings.showAxisLabels !== false ? 'outside' : 'none',
-            'scene.zaxis.ticks': settings.showAxisLabels !== false ? 'outside' : 'none',
             'scene.xaxis.tickcolor': axisColor,
             'scene.yaxis.tickcolor': axisColor,
             'scene.zaxis.tickcolor': axisColor,
-            'scene.xaxis.showticklabels': settings.showAxisLabels !== false,
-            'scene.yaxis.showticklabels': settings.showAxisLabels !== false,
-            'scene.zaxis.showticklabels': settings.showAxisLabels !== false,
             'scene.xaxis.color': axisColor,
             'scene.yaxis.color': axisColor,
             'scene.zaxis.color': axisColor,
@@ -2073,10 +2334,14 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         }
     }
     
+    // Ticks: labels, marks and count
+    Object.assign(update, tickKeys(settings, axisPaths(settings)));
+    
     // Apply the basic layout first
     Plotly.relayout(plotContainer, update);
     
     // Then handle legend and colorbar visibility specifically based on trace type
     updateLegendVisibility(plotContainer, settings);
     updateLegendPosition(plotContainer, settings);
+    refreshScaleBar(plotContainer, settings);
 }

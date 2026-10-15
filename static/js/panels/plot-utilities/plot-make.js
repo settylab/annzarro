@@ -8,6 +8,7 @@ import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, sho
 import { applyAutoPointStyle, pointStyleBase, greyMarker } from '../../utils/point-style.js';
 export { pointStyleBase };
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
+import { colorbarPosition, colorbarExtras, tickKeys, axisPaths } from './plot-options.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
@@ -2328,8 +2329,6 @@ export function buildPlotLayout(settings, data) {
   layout.yaxis.gridwidth = settings.gridLineWidth;
   layout.xaxis.zerolinewidth = settings.zeroLineWidth;
   layout.yaxis.zerolinewidth = settings.zeroLineWidth;
-  layout.xaxis.ticks = settings.showAxisLabels !== false ? 'outside' : 'none';
-  layout.yaxis.ticks = settings.showAxisLabels !== false ? 'outside' : 'none';
   
   // Apply text color to all axis title fonts and tick fonts
   if (settings.z) { // 3D plot
@@ -2585,6 +2584,14 @@ export function buildPlotLayout(settings, data) {
   layout.uirevision = DataManager.getCurrentDataset() || 'view';
   // each axis the type of its field; the zoom kept only for the same field
   applyAxisKinds(layout, settings, data, layout.uirevision);
+
+  // tick marks, labels and count of every axis (plot-options.js)
+  for (const [path, value] of Object.entries(tickKeys(settings, axisPaths(settings)))) {
+    const keys = path.split('.');
+    const leaf = keys.pop();
+    const holder = keys.reduce((o, k) => (o[k] = o[k] || {}), layout);
+    holder[leaf] = value;
+  }
 
   return layout;
 }
@@ -2844,9 +2851,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       };
       
       // Use the centralized positioning function
-      const position = settings.legendPosition || 'right';
-      const posConfig = getPositioningByLocation(position);
+      const posConfig = getPositioningByLocation(colorbarPosition(settings));
       
+      Object.assign(colorbarSettings, colorbarExtras(settings));
       colorbarSettings.x = posConfig.x;
       colorbarSettings.xanchor = posConfig.xanchor;
       colorbarSettings.y = posConfig.y;
@@ -2999,9 +3006,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       };
   
       // Use the centralized positioning function
-      const position = settings.legendPosition || 'right';
-      const posConfig = getPositioningByLocation(position);
+      const posConfig = getPositioningByLocation(colorbarPosition(settings));
       
+      Object.assign(baseTrace.marker.colorbar, colorbarExtras(settings));
       baseTrace.marker.colorbar.x = posConfig.x;
       baseTrace.marker.colorbar.xanchor = posConfig.xanchor;
       baseTrace.marker.colorbar.y = posConfig.y;
