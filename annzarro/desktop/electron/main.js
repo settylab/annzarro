@@ -483,6 +483,11 @@ function setupIpcHandlers() {
         if (!mainWindow || event.sender !== mainWindow.webContents || !Array.isArray(paths)) return null;
         return opener.openDropped(paths);
     });
+    // The page reports the dataset it has open, wherever it was opened from
+    ipcMain.handle('app:datasetOpened', (event, p) => {
+        if (!mainWindow || event.sender !== mainWindow.webContents) return false;
+        return opener.datasetOpened(p);
+    });
     // Kept until the page's folder button moves to app:openDataset
     ipcMain.handle('app:selectDirectory', async () => {
         const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] });

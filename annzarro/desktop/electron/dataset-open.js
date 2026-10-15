@@ -54,10 +54,33 @@ function createDatasetOpener(deps) {
     }
 
     function noteOpened(p) {
+        // The dialog's own open and the page's report of it (datasetOpened) both land here
+        if (recents[0] === p) return;
         recents = logic.addRecent(recents, p);
         saveRecents();
         app.addRecentDocument(p);
         buildMenu();
+    }
+
+    /**
+     * The page reports the dataset it has open (opened from the page itself, a
+     * restored session ...): a local dataset joins the recent list and the
+     * proxy icon; a remote one or none clears the icon. Validated here as for
+     * the dialog. Returns whether the path was recorded.
+     */
+    function datasetOpened(p) {
+        if (typeof p !== 'string' || !p || /^[a-z][a-z0-9+.-]*:\/\//i.test(p)) {
+            setRepresented(null);
+            return false;
+        }
+        const cls = logic.classifyPath(p, fs, path.join);
+        if (!logic.isRecordable(cls)) {
+            setRepresented(null);
+            return false;
+        }
+        noteOpened(cls.path);
+        setRepresented(cls.path);
+        return true;
     }
 
     function forget(p) {
@@ -116,10 +139,18 @@ function createDatasetOpener(deps) {
         }
     }
 
-    function tell(message, detail) {
+    /** Say something to the user: a toast in the page if it has window.annzarro.notify, else a message box. */
+    async function tell(message) {
         const win = getWindow();
         log.info(`Told the user: ${message}`);
-        const options = { type: 'info', message, detail: detail || undefined, buttons: ['OK'] };
+        if (win && !win.isDestroyed()) {
+            try {
+                if (await win.webContents.executeJavaScript(logic.notifyScript(message))) return;
+            } catch (err) {
+                // fall through to the message box
+            }
+        }
+        const options = { type: 'info', message, buttons: ['OK'] };
         const shown = win && !win.isDestroyed() ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options);
         shown.catch(() => {});
     }
@@ -149,7 +180,7 @@ function createDatasetOpener(deps) {
         }
         const error = logic.refusal(cls) || (cls.kind === 'folder' ? `${logic.baseName(cls.path)} is not a zarr store. ${logic.NOT_A_DATASET}` : null);
         if (error) {
-            tell(error);
+            await tell(error);
             return { path: cls.path, kind: cls.kind, error };
         }
         const result = await openInPage(cls.path);
@@ -162,7 +193,7 @@ function createDatasetOpener(deps) {
 
     async function openFirst(first, extra) {
         const note = logic.extraNotice(first, extra);
-        if (note) tell(note);
+        if (note) await tell(note);
         return open(first);
     }
 
@@ -246,6 +277,7 @@ function createDatasetOpener(deps) {
         openDialog,
         openDropped,
         openFromOs,
+        datasetOpened,
         openBrowser,
         refreshDataset,
         setRepresented,

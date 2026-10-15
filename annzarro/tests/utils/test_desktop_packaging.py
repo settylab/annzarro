@@ -419,9 +419,9 @@ def test_dataset_types_are_declared_and_wired_into_the_app():
     with open(os.path.join(ELECTRON, "main.js")) as f:
         main = f.read()
     for needle in ("app.on('open-file'", "logic.argvPaths(argv, process.defaultApp)",
-                   "ipcMain.handle('app:openDataset'", "ipcMain.handle('app:dropPaths'"):
+                   "ipcMain.handle('app:openDataset'", "ipcMain.handle('app:dropPaths'", "ipcMain.handle('app:datasetOpened'"):
         assert needle in main, needle
     with open(os.path.join(ELECTRON, "preload.js")) as f:
         preload = f.read()
-    for needle in ("webUtils.getPathForFile", "openDatasetDialog", "onMenuOpenDataset", "app:dropPaths"):
+    for needle in ("webUtils.getPathForFile", "openDatasetDialog", "onMenuOpenDataset", "app:dropPaths", "datasetOpened"):
         assert needle in preload, needle

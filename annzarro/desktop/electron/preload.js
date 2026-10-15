@@ -138,6 +138,9 @@ contextBridge.exposeInMainWorld(
     // was cancelled. {path, allowFolder: true} lets a plain folder go to the browser as a place.
     openDatasetDialog: (which) => ipcRenderer.invoke('app:openDataset', { which }),
     openDatasetPath: (path, options) => ipcRenderer.invoke('app:openDataset', { path, allowFolder: Boolean(options && options.allowFolder) }),
+    // The page tells the app which dataset it has open (null for none), however it was opened, so
+    // the recent list, the Dock/jump list and the macOS proxy icon follow. Remote URLs clear the icon.
+    datasetOpened: (path) => ipcRenderer.invoke('app:datasetOpened', path || null),
     // File > Open Dataset... (Cmd/Ctrl+O): callback(folder|null); returns an unsubscribe function
     onMenuOpenDataset: (callback) => {
       if (typeof callback !== 'function') return () => {};

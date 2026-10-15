@@ -64,6 +64,25 @@ function refusal(classified) {
     return null;
 }
 
+/** Whether a classified local path is a dataset the app records as opened. */
+function isRecordable(classified) {
+    return classified.kind === 'zarr' || classified.kind === 'h5ad';
+}
+
+/**
+ * JavaScript for the page: show `message` through window.annzarro.notify if the
+ * page has it. The message is JSON-encoded, never spliced as text. The script
+ * evaluates to whether the page took it.
+ */
+function notifyScript(message) {
+    return `(() => {
+        const notify = window.annzarro && window.annzarro.notify;
+        if (typeof notify !== 'function') return false;
+        notify(${JSON.stringify(String(message))}, { level: 'warning' });
+        return true;
+    })()`;
+}
+
 /** The first of several items to open, and how many are left unopened. */
 function pickOpenTarget(paths) {
     const list = (paths || []).filter((p) => typeof p === 'string' && p);
@@ -240,6 +259,8 @@ module.exports = {
     isStoreDir,
     classifyPath,
     refusal,
+    isRecordable,
+    notifyScript,
     pickOpenTarget,
     extraNotice,
     parseRecents,

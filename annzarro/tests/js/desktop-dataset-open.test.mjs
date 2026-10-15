@@ -180,3 +180,25 @@ test('dialogs: macOS shows one for a file or a folder, elsewhere never both', ()
     assert.deepEqual(logic.dialogOptions('zarr', 'win32').properties, ['openDirectory']);
     assert.deepEqual(logic.dialogOptions('h5ad', 'darwin').properties, ['openFile']);
 });
+
+test('only datasets are recorded as opened', () => {
+    assert.equal(logic.isRecordable({ kind: 'zarr', path: '/a.zarr' }), true);
+    assert.equal(logic.isRecordable({ kind: 'h5ad', path: '/a.h5ad' }), true);
+    for (const kind of ['folder', 'other', 'missing']) assert.equal(logic.isRecordable({ kind, path: '/x' }), false, kind);
+});
+
+test('the notice for the page carries the message as data, never as code', async () => {
+    const vm = await import('node:vm');
+    const nasty = 'a "quote", a \\ backslash, `tick` ${1+1} </script>   and \'single\'';
+    const run = (annzarro) => {
+        const calls = [];
+        const win = { annzarro: annzarro && { notify: (...a) => calls.push(a) } };
+        const result = vm.runInNewContext(logic.notifyScript(nasty), { window: win });
+        return { result, calls };
+    };
+    const withNotify = run(true);
+    assert.equal(withNotify.result, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(withNotify.calls)), [[nasty, { level: 'warning' }]]);  // across vm realms
+    assert.equal(run(false).result, false, 'a page without notify gets the message box');
+    assert.equal(vm.runInNewContext(logic.notifyScript('x'), { window: { annzarro: { notify: 'no' } } }), false);
+});
