@@ -44,6 +44,7 @@
       "main.js",
       "updates.js",
       "update-logic.js",
+      "window-chrome.js",
       "preload.js",
       "loading.html",
       "error.html",

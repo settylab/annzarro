@@ -143,6 +143,9 @@
       .btn { background-color: #0d6efd; }
       .btn:hover { background-color: #0b5ed7; }
     }
+    /* No native title bar on macOS and Windows (window-chrome.js): the page is the drag region */
+    html[data-desktop-frame] body { -webkit-app-region: drag; user-select: none; box-sizing: border-box; padding-top: 36px; }
+    html[data-desktop-frame] button, html[data-desktop-frame] a, html[data-desktop-frame] .container { -webkit-app-region: no-drag; user-select: text; }
   </style>
 </head>
 <body>

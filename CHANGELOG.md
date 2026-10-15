@@ -26,6 +26,13 @@ with the release after it. Older releases are listed on
   colours are slightly darker for WCAG AA contrast.
 
 ### Added
+- The desktop app has no title bar on macOS and Windows: the AnnZarro header is the title bar.
+  On macOS the three window buttons sit in a strip above the title, which moves down to make room
+  (the strip goes away in full screen). On Windows the minimise, maximise and close buttons, in the
+  header's colours in the light and the dark theme, sit at the top right, and the Save / Load /
+  Close all / Share buttons move down below them. Drag the empty part of the header to move the
+  window and double-click it to zoom it. Linux keeps its normal window frame, and the browser
+  version is unchanged.
 - The desktop app can update itself. It looks for a newer release on launch and then once a day,
   asks before it downloads (Download, Later, Skip this version) and again before it restarts, and
   does nothing without your say-so. **Check for Updates...** is in the AnnZarro menu (macOS) or Help

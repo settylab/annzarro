@@ -1,0 +1,61 @@
+/*
+ * The desktop app (Electron) has no native title bar on macOS and Windows: the header is the
+ * title bar. The preload marks <html> (annzarro/desktop/electron/preload.js):
+ *
+ *   data-desktop-frame="mac"   traffic lights float over the top left of the header
+ *   data-desktop-frame="win"   minimise / maximise / close float over the top right
+ *   data-desktop-fullscreen    full screen: no controls, so no room is kept for them
+ *
+ * Linux keeps its native frame and the browser has no flag, so none of this applies there.
+ * The numbers match annzarro/desktop/electron/window-chrome.js.
+ */
+:root {
+    --az-mac-strip: 28px;      /* the strip above the header's content that the traffic lights sit in */
+    --az-win-overlay-h: 36px;  /* height of the Windows window controls */
+    /* their width: the system's where Electron reports it, else the usual three buttons */
+    --az-win-overlay-w: max(140px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+}
+
+/* The header's empty area drags the window (and a double click zooms it, as the OS does) ... */
+html[data-desktop-frame] .app-header {
+    -webkit-app-region: drag;
+}
+
+/* ... and everything you can use in it does not. The popups and dialogs that open over it
+   (select2 lists, menus, modals, toasts) are children of <body>: no-drag, or the
+   part of them over the header would move the window instead of taking the click. */
+html[data-desktop-frame] .app-header :is(
+    a, button, input, select, textarea, label, summary, [role="button"], [role="combobox"],
+    [role="listbox"], [role="menu"], [tabindex]:not([tabindex="-1"]),
+    .btn, .form-control, .form-select, .select2-container, .name-picker, .name-picker-menu,
+    .dataset-pick, .theme-toggle, .share-link-fallback, .account-links, .auth-indicator
+),
+html[data-desktop-frame] body > :not(.app-header) {
+    -webkit-app-region: no-drag;
+}
+
+/* macOS: the title (and the user line under it) moves down out of the traffic lights' way. The
+   strip belongs to the header, so nothing in it can sit under the buttons at any window width. */
+html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header {
+    padding-top: calc(0.5rem + var(--az-mac-strip));
+}
+
+/* Windows: the panel set controls move down below the window controls. Narrower, where the
+   dataset box takes a row of its own, that row would run under them: it stops short of them
+   and the controls, on the second row, are already below. */
+html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .header-actions {
+    margin-top: calc(var(--az-win-overlay-h) - 0.5rem + 2px);
+    min-width: var(--az-win-overlay-w);
+    display: flex;
+    justify-content: flex-end;
+}
+
+@media (min-width: 768.02px) {
+    html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .app-header.dataset-stacked .global-controls > .row > .dataset-col {
+        flex-basis: calc(100% - var(--az-win-overlay-w) - 0.5rem);
+        max-width: calc(100% - var(--az-win-overlay-w) - 0.5rem);
+    }
+    html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .app-header.dataset-stacked .header-actions {
+        margin-top: 0;
+    }
+}

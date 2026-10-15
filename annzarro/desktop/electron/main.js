@@ -39,6 +39,7 @@ const { spawn } = require('child_process');
 const crypto = require('crypto');
 const log = require('electron-log');
 const { createUpdater } = require('./updates');
+const chrome = require('./window-chrome');
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'info';
@@ -358,6 +359,12 @@ async function smokeCheck() {
     if (!hasPlotly || !response.ok) {
         throw new Error(`UI loaded without Plotly (${hasPlotly}) or /api/v1/datasets failed (${response.status})`);
     }
+    // The preload marks <html> for the frame this platform has (no frame flag on Linux)
+    const frame = await mainWindow.webContents.executeJavaScript(
+        "document.documentElement.getAttribute('data-desktop-frame') || ''");
+    if (frame !== (chrome.frameFlag(process.platform) || '')) {
+        throw new Error(`<html data-desktop-frame> is "${frame}" on ${process.platform}`);
+    }
     if (externalRequests.length) {
         throw new Error(`the UI requested external resources: ${externalRequests.join(', ')}`);
     }
@@ -378,7 +385,10 @@ function createWindow() {
         // the page follows the OS through prefers-color-scheme (static/css/theme.css)
         backgroundColor: nativeTheme.shouldUseDarkColors ? '#14171a' : '#ffffff',
         icon: path.join(__dirname, 'icons', 'icon.png'),
+        // No native title bar on macOS and Windows: the page's header is the title bar
+        ...chrome.frameOptions(process.platform, nativeTheme.shouldUseDarkColors),
         webPreferences: {
+            additionalArguments: chrome.frameArguments(process.platform),
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: true,
@@ -386,6 +396,15 @@ function createWindow() {
         },
     });
     mainWindow.loadFile(path.join(__dirname, 'loading.html'));
+
+    // The window controls follow the page: loading.html and error.html have their own colours,
+    // the app's page sets those of its header (static/js/utils/desktop-frame.js)
+    const win = mainWindow;
+    win.webContents.on('did-finish-load', () => {
+        if (win.webContents.getURL().startsWith('file:')) setOverlay(chrome.pageOverlay(nativeTheme.shouldUseDarkColors));
+    });
+    win.on('enter-full-screen', () => win.webContents.send('app:fullscreen', true));
+    win.on('leave-full-screen', () => win.webContents.send('app:fullscreen', false));
 
     // Links to anything but the local server open in the system browser.
     const isLocal = (url) => Boolean(serverUrl) && (url === serverUrl || url.startsWith(serverUrl + '/'));
@@ -409,7 +428,22 @@ function createWindow() {
     });
 }
 
+function setOverlay(colors) {
+    if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
+    try {
+        mainWindow.setTitleBarOverlay({ ...colors, height: chrome.WIN_OVERLAY_HEIGHT_PX });
+    } catch (err) {
+        log.warn(`Could not set the title bar colours: ${err.message}`);
+    }
+}
+
 function setupIpcHandlers() {
+    ipcMain.handle('app:isFullScreen', () => Boolean(mainWindow && mainWindow.isFullScreen()));
+    ipcMain.handle('app:setTitleBarOverlay', (event, colors) => {
+        const clean = chrome.sanitizeOverlay(colors);
+        if (clean) setOverlay(clean);
+        return Boolean(clean);
+    });
     ipcMain.handle('app:getVersion', () => app.getVersion());
     ipcMain.handle('app:restartServer', async () => {
         try {
