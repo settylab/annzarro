@@ -14,6 +14,7 @@ import { PanelManager } from './panel-manager.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { errorFromResponse } from './utils/session-permissions.js';
 import { csrfFetch } from './utils/csrf.js';
+import { DatasetState } from './utils/dataset-state.js';
 import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
 import { storeRecord, storeName } from './utils/view-store.js';
 import { modeOptions } from './utils/panelset-load.js';
@@ -402,51 +403,9 @@ const SessionManager = (function() {
                 await _applySessionPanels(autosaveData);
 
 
-                const datasetSelector = document.getElementById('dataset-selector');
-                if (datasetSelector) {
-                    // First check if the option exists
-                    let optionExists = false;
-                    for (let i = 0; i < datasetSelector.options.length; i++) {
-                        if (datasetSelector.options[i].value === autosaveData.dataset) {
-                            optionExists = true;
-                            break;
-                        }
-                    }
-                    
-                    // If option doesn't exist, create it
-                    if (!optionExists && window.$ && $.fn.select2) {
-                        const newOption = new Option(
-                            `${autosaveData.dataset} (Custom)`, 
-                            autosaveData.dataset, 
-                            true, 
-                            true
-                        );
-                        $(datasetSelector).append(newOption);
-                    } else if (!optionExists) {
-                        // For regular select (non-Select2)
-                        const option = document.createElement('option');
-                        option.value = autosaveData.dataset;
-                        option.textContent = autosaveData.dataset;
-                        option.selected = true;
-                        datasetSelector.appendChild(option);
-                    }
-
-                    datasetSelector.value = autosaveData.dataset;
-
-                    // Also manually trigger the change event on the select element
-                    // to ensure UI components are notified about the dataset change
-                    datasetSelector.dispatchEvent(new Event('change'));
-                    
-                    // If using Select2, update its UI and load the dataset
-                    if (window.$ && $.fn.select2) {
-                        // Create proper event object with dataset value
-                        $(datasetSelector).trigger({
-                            type: 'select2:select',
-                            params: {
-                                data: {id: autosaveData.dataset}
-                            }
-                        });
-                    }
+                // open its dataset as the user would, through the one entry point (no control is asked)
+                if (autosaveData.dataset) {
+                    await DatasetState.open(autosaveData.dataset, { source: 'autosave' });
                 }
 
                 return { status: 'success', message: 'Autosaved session loaded successfully' };

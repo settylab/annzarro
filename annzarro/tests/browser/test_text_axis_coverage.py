@@ -26,6 +26,7 @@ import urllib.request
 
 import numpy as np
 import pytest
+from annzarro.tests.ui_helpers import open_dataset
 import zarr
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
@@ -171,8 +172,7 @@ def test_missing_colour_default_of_another_dataset_is_not_reported(server):
         try:
             s = _settle(page)
             assert s["drawn"] == N_GENES, s
-            page.click("#dataset-selector + .select2-container")
-            page.click(".dataset-select-dropdown .select2-results__option:has-text('plain.zarr')")
+            open_dataset(page, os.path.join(data, "plain.zarr"))
             page.wait_for_function("() => document.body.innerText.includes('Dataset: Plain')", timeout=60_000)
             page.wait_for_function("() => !document.body.innerText.includes('highly_variable')", timeout=60_000)
             s = _settle(page)

@@ -622,7 +622,9 @@ def test_the_dropdown_takes_a_relative_path_from_a_confined_user_and_refuses_the
         s.close()
 
 
-RECENTS = "() => Object.keys(localStorage).filter(k => k.startsWith('annzarro.recentDatasets:'))"
+# kept per origin and user: `local` when login is off
+RECENTS_KEY = "'annzarro.recents:' + location.origin + '|local'"
+RECENTS = "() => Object.keys(localStorage).filter(k => k.startsWith('annzarro.recents:'))"
 
 
 def test_a_first_visit_and_an_auto_opened_dataset_record_no_recent(server):
@@ -653,11 +655,77 @@ def test_a_dataset_the_user_picks_is_recorded_in_the_dropdown_and_the_picker(ser
         page = s.page
         s.open_dropdown()
         page.click(".dataset-select-dropdown .select2-results__option:has-text('short.zarr')")
-        page.wait_for_function("localStorage.getItem('annzarro.recentDatasets:' + location.origin) !== null", timeout=30_000)
-        assert page.evaluate("JSON.parse(localStorage.getItem('annzarro.recentDatasets:' + location.origin))")[0].endswith("short.zarr")
+        page.wait_for_function(f"localStorage.getItem({RECENTS_KEY}) !== null", timeout=30_000)
+        recent = page.evaluate(f"JSON.parse(localStorage.getItem({RECENTS_KEY}))")[0]
+        assert recent["path"].endswith("short.zarr") and recent["label"] == "short.zarr" and recent["openedAt"] > 0
         s.browse("other_small")
         page.click(f"{MODAL} .change-dataset-item[data-path$='other_small.zarr'] button")
         page.wait_for_selector(MODAL, state="hidden", timeout=10_000)
-        page.wait_for_function("JSON.parse(localStorage.getItem('annzarro.recentDatasets:' + location.origin))[0].endsWith('other_small.zarr')", timeout=30_000)
+        page.wait_for_function(f"JSON.parse(localStorage.getItem({RECENTS_KEY}))[0].path.endsWith('other_small.zarr')", timeout=30_000)
     finally:
         s.close()
+
+
+def _recent_rows(page):
+    return page.eval_on_selector_all(
+        f"{MODAL} [aria-label='Recently opened'] .change-dataset-item",
+        "els => els.map(e => [e.dataset.path, e.classList.contains('change-dataset-unreadable'), e.textContent.trim()])")
+
+
+def test_recents_show_a_store_in_a_subfolder_and_grey_one_that_is_gone(server):
+    """The list of recents is answered by POST /datasets/lookup, so it is not limited to the top level."""
+    from annzarro.tests.ui_helpers import open_dataset
+    base, data = server
+    s = Session(base)
+    try:
+        page = s.page
+        deep = os.path.join(data, "projects", "liver", "deep_store.zarr")
+        open_dataset(page, deep)                                   # a user choice: recorded
+        page.wait_for_function(f"localStorage.getItem({RECENTS_KEY}) !== null", timeout=30_000)
+        assert page.evaluate(f"JSON.parse(localStorage.getItem({RECENTS_KEY}))")[0]["label"] == "projects/liver/deep_store.zarr"
+        # a store that has since been removed stays in the list, greyed
+        gone = os.path.join(data, "removed_since.zarr")
+        page.evaluate(f"""() => {{
+            const key = {RECENTS_KEY};
+            const list = JSON.parse(localStorage.getItem(key));
+            list.splice(1, 0, {{path: {gone!r}, label: 'removed_since.zarr', openedAt: 1}});
+            localStorage.setItem(key, JSON.stringify(list));
+        }}""")
+        s.browse()
+        rows = _recent_rows(page)
+        assert [r[0] for r in rows[:2]] == [deep, gone], rows
+        assert not rows[0][1] and "deep_store.zarr" in rows[0][2] and "200 cells" in rows[0][2].replace(",", "")
+        assert rows[1][1] and "removed_since.zarr" in rows[1][2], "unavailable: greyed, not openable"
+        # a store is listed once: not again under another group
+        assert page.locator(f"{MODAL} #change-dataset-list .change-dataset-item[data-path='{deep}']").count() == 1
+    finally:
+        s.close()
+
+
+def test_the_tab_is_titled_with_the_open_dataset(server):
+    from annzarro.tests.ui_helpers import open_dataset
+    base, data = server
+    s = Session(base)
+    try:
+        page = s.page
+        open_dataset(page, os.path.join(data, "projects", "lung", "lung_v2.zarr"))
+        page.wait_for_function("document.title === 'lung_v2.zarr \\u00b7 AnnZarro'", timeout=10_000)
+    finally:
+        s.close()
+
+
+def test_recents_are_kept_per_signed_in_user(hosted_server):
+    from annzarro.tests.ui_helpers import open_dataset
+    base, data, _ = hosted_server
+    keys = {}
+    for user, password in (("alice", "alice-pw"), ("root", "root-pw")):
+        s = Session(base, login=(user, password))
+        try:
+            page = s.page
+            open_dataset(page, os.path.join(data, "short.zarr"))
+            page.wait_for_function("Object.keys(localStorage).some(k => k.startsWith('annzarro.recents:'))", timeout=30_000)
+            keys[user] = page.evaluate("Object.keys(localStorage).filter(k => k.startsWith('annzarro.recents:'))")
+        finally:
+            s.close()
+    assert [k.rsplit("|", 1)[1] for k in keys["alice"]] == ["user:alice"]
+    assert [k.rsplit("|", 1)[1] for k in keys["root"]] == ["user:root"]

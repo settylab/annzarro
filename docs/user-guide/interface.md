@@ -17,7 +17,11 @@ The header. Numbers match the list below.
 
 1. **Dataset** lists every dataset the server found at the top level of its data directory
    (`~/annzarro-data` unless set with `--data-dir`) and in that directory's `datasets` folder. You can also type a
-   path or a remote URL into its search field and press Enter ({doc}`remote-datasets`).
+   path or a remote URL into its search field and press Enter ({doc}`remote-datasets`). The browser
+   tab (and the desktop window) is titled with the open dataset's name, `bm_aging_annzarro.zarr · AnnZarro`.
+   **Browse...** in the list opens a picker that starts with **Recently opened**: the datasets you chose,
+   newest first, including stores in subfolders and remote stores. A recent dataset that has since been removed, or is no
+   longer shared with you, is greyed. The list is kept in your browser, separately for each server and each user.
 2. **Refresh dataset** reloads the dataset list and reopens the current dataset. The server first
    re-checks the store against the disk and, if any file changed (an in-place write of values
    included), serves the change from then on, to every user; the panels then read the dataset

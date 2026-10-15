@@ -24,6 +24,7 @@ import socket
 import threading
 
 import pytest
+from annzarro.tests.ui_helpers import SHOWN_DATASET
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402
@@ -165,7 +166,7 @@ def test_a_deep_link_outside_the_grants_is_not_available(browser, served):
         # the same link to a store they may read opens it
         page.goto(f"{base}/?dataset_path={data}/in.zarr")
         wait_for_dataset(page)
-        assert page.input_value("#dataset-selector").endswith("in.zarr")
+        assert page.evaluate(SHOWN_DATASET).endswith("in.zarr")
         if SHOT:
             page.goto(f"{base}/?dataset_path=out.zarr")
             page.wait_for_selector(".notification-title", timeout=30000)
@@ -198,7 +199,7 @@ def test_a_grant_revoked_while_the_dataset_is_open_returns_to_the_picker(browser
     try:
         page.goto(f"{base}/?dataset_path={data}/in.zarr")
         wait_for_dataset(page)
-        assert page.input_value("#dataset-selector").endswith("in.zarr")
+        assert page.evaluate(SHOWN_DATASET).endswith("in.zarr")
         access.remove_grant(app.config, "bob", f"{data}/in.zarr")          # the next read of it is 404
         outcome = page.evaluate("""async () => {
             const { DataManager } = await import('/static/js/data-manager.js');

@@ -22,6 +22,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
+from annzarro.tests.ui_helpers import start_open_dataset
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -194,12 +195,7 @@ def test_a_panel_made_while_switching_datasets_shows_the_new_one(server, panel):
             for pattern in ("**/data/dataset_structure?*", "**/data/cells?*", "**/data/genes?*",
                             "**/data/names?*", "**/data/subset?*"):
                 page.route(pattern, hold)
-            target = page.evaluate("""(name) => [...document.querySelectorAll('#dataset-selector option')]
-                .map(o => o.value).find(v => v && v.includes(name))""", os.path.basename(OTHER))
-            assert target, "the other fixture is not listed"
-            # what choosing it in the select2 dropdown sends
-            page.evaluate("""(v) => jQuery('#dataset-selector').val(v)
-                .trigger({type: 'select2:select', params: {data: {id: v}}})""", target)
+            start_open_dataset(page, OTHER)    # the requests are held: it opens when they are released
             for _ in range(50):
                 if held:
                     break

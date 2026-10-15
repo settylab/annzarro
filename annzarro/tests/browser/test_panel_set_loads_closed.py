@@ -30,6 +30,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
+from annzarro.tests.ui_helpers import SHOWN_DATASET, wait_for_open
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -432,7 +433,7 @@ def test_add_to_closed_from_the_welcome_list_and_another_dataset(server, browser
         other.wait_for_timeout(500)
         assert _tile_ids(other) == []
         # not switched: still the dataset that was open
-        assert other.evaluate("() => document.getElementById('dataset-selector').value").endswith("other_small.zarr")
+        assert other.evaluate(SHOWN).endswith("other_small.zarr")
         tags = other.evaluate(TAGS)
         assert tags[plot] == tags[table] == "other dataset · from elsewhere"
         assert other.evaluate(RAW_CONFIG, plot)["tableFilter"] == table
@@ -484,7 +485,7 @@ def _write_set(name, open_ids, legacy=False, dataset=None):
 
 
 GONE = "/nowhere/gone.zarr"      # a store this server does not have
-SHOWN = "() => document.getElementById('dataset-selector').value"
+SHOWN = SHOWN_DATASET
 
 
 def _shape(node):
@@ -502,10 +503,8 @@ def _wait_tiles(page, n):
 
 
 def _wait_dataset(page, store):
-    page.wait_for_function("s => (document.getElementById('dataset-selector').value || '').endsWith(s)",
-                           arg=store, timeout=30000)
-    # the selector shows the store before the app has it open; what the Load buttons say
-    # depends on the open dataset (as in _page)
+    wait_for_open(page, store, timeout=30000)
+    # what the Load buttons say depends on the open dataset (as in _page)
     page.wait_for_function("() => window.sessionManager.getCurrentDatasetInfo().hasCurrent", timeout=30000)
 
 

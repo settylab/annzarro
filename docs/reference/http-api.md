@@ -406,6 +406,29 @@ $ curl -s "http://127.0.0.1:8812/api/v1/datasets/details?path=liver.zarr" | pyth
 }
 ```
 
+### Looking up datasets by path
+
+`POST /datasets/lookup` with `{"paths": [...]}` (a JSON body, at most 200 paths) answers
+`{"results": [...]}`, one result per path, in the order sent. This is how the list of recently opened
+datasets is shown: it can name a store in a subfolder or a remote URL, which the top-level listing does
+not carry.
+
+- A store the requester may read comes back as the entry `GET /datasets/folder` lists for it: `name`,
+  `path`, `kind`, `rel_path` (inside the data directory only), `cells`, `genes`, `format`, `modified` and
+  `is_link`; a store that cannot be read as AnnData has `cells: null` and an `error` sentence. A remote
+  store has `remote: true`.
+- Anything else is `{"path": "<as sent>", "status": "unavailable"}`. A store that does not exist, one
+  outside the data directories, one a restricted user ({ref}`http-restricted`) is not granted, a folder that
+  is not a store, a remote URL this server or this user may not open and a remote store that does not
+  answer all get this one answer, so it never tells a missing store from one the requester may not read.
+- Counts of a local store come from the listing's probe, cached by the store's stat signature. A remote
+  store is opened only where remote stores are enabled and the requester may read the URL, and its counts
+  are kept for five minutes. At most 20 remote stores are opened per request; the others are answered
+  `{"path": ..., "status": "unchecked"}` and a repeat of the request gets them.
+- It only reads, but it is a POST, so the forgery check of every other POST applies: the page's
+  `X-AnnZarro-CSRF` header with login on, the `Origin` check without.
+- More than 200 paths, or a body that is not `{"paths": [strings]}`: `400` (`cap_exceeded`, `bad_request`).
+
 ## Panel sets
 
 Panel sets are JSON files in `<data_dir>/sessions/`, shared by all users of a server
@@ -673,6 +696,7 @@ HTTP 400
 | `server.max_sessions_per_user`, `server.max_sessions`, `server.max_sessions_mb` | 500, 5,000, 256 MB | panel sets of the user, of the server, and their total size, when one is saved, duplicated or imported | `409 session_quota_user`, `409 session_quota_total` |
 | `server.dataset_folder_max_entries`, `dataset_search_max_depth`, `dataset_search_max_entries` | 500, 6, 20,000 (and 3 s) | the picker's folder listing (`GET /datasets/folder`) and tree search (`GET /datasets/search`) | `200` with `more` / `truncated: true`; `400` `regex_too_long`, `regex_too_complex`, `invalid_regex`, `query_too_long` |
 | `server.dataset_details_check_budget_s` | 1.5 s | the store check inside `GET /datasets/details` | `200` with `store_check.budget_reached: true` |
+| `POST /datasets/lookup` paths | 200 | the paths in the body | `400 cap_exceeded` |
 | `max_cells=` / `max_genes=` query parameters | none | number of requested cell / gene indices | `400 cap_exceeded` |
 | groups for subset balancing | 10,000 | a column's categories (metadata) | `400 too_many_categories` |
 
