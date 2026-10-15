@@ -339,6 +339,9 @@ def test_the_details_pane_is_a_pane_above_1100_px_a_sheet_below_and_hidden_on_a_
         page.set_viewport_size({"width": 900, "height": 800})
         page.wait_for_timeout(200)
         assert not shown("#dsb-details") and shown("#dsb-places") and shown(".dsb-info")
+        cols = page.eval_on_selector_all("#dsb-table thead th", "els => els.filter(e => getComputedStyle(e).display !== 'none').length")
+        assert cols == 3, "Name, Cells and Modified fit a window this narrow"
+        assert page.evaluate("(() => { const w = document.querySelector('#dsb-table-wrap'); return w.scrollWidth <= w.clientWidth + 1; })()")
         # the (i) button of a row opens the details as a sheet, with a way to close it
         browser_row(page, "short.zarr").first.locator(".dsb-info").click()
         page.wait_for_selector("#dataset-browser.dsb-sheet #dsb-details .dsb-details-name")

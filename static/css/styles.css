@@ -3890,8 +3890,8 @@ details.aesthetics-section > .aesthetics-body {
     --dp-active-bg: var(--az-accent-bg);
     --dp-mark-bg: var(--az-mark-bg);
 }
-@media (min-width: 1200px) {
-    .dsb-dialog { --bs-modal-width: min(1280px, 96vw); }
+@media (min-width: 768px) {
+    .dsb-dialog { --bs-modal-width: min(1280px, 96vw); max-width: var(--bs-modal-width); }
 }
 #dataset-browser .modal-body {
     display: flex;
@@ -4040,7 +4040,8 @@ details.aesthetics-section > .aesthetics-body {
     align-items: center;
 }
 .dsb-sort-mark { font-size: 0.65rem; color: var(--az-link); min-width: 0.7em; }
-.dsb-namecell { font-weight: 400; min-width: 12rem; }
+.dsb-namecell { font-weight: 400; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.dsb-table td { white-space: nowrap; }
 .dsb-nameline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.5rem; }
 .dsb-name {
     display: inline;
@@ -4114,6 +4115,9 @@ details.aesthetics-section > .aesthetics-body {
 @media (max-width: 1099.98px) {
     .dsb-layout { grid-template-columns: 210px minmax(0, 1fr); }
     .dsb-details { display: none; }
+    .dsb-crumb-hint { display: none; }
+    .dsb-col-genes, .dsb-col-format, .dsb-col-opened,
+    .dsb-table td:nth-child(3), .dsb-table td:nth-child(4), .dsb-table td:nth-child(6) { display: none; }
     .dsb-info { display: inline-block; border: 0; background: transparent; color: var(--az-link); padding: 0 0.25rem; }
     #dataset-browser.dsb-sheet .dsb-details {
         display: block;
