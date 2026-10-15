@@ -301,6 +301,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: assets
@@ -321,7 +323,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # the release notes are the version's CHANGELOG.md section; the build stops if it has none
+          version="${GITHUB_REF_NAME#v}"
+          {
+            echo "## AnnZarro $version"
+            echo
+            python3 scripts/changelog.py notes "$version"
+            echo
+            echo "### Install"
+            echo
+            echo "\`pip install annzarro==$version\` (PyPI), or a desktop app below. macOS: open the dmg, drag AnnZarro to Applications and open it. Windows: the build is not signed, so SmartScreen asks for More info > Run anyway. Details: https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html (First launch). Verify downloads against SHA256SUMS.txt."
+          } > notes.md
           gh release create "$GITHUB_REF_NAME" assets/* \
             --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
-            --title "AnnZarro ${GITHUB_REF_NAME#v}" \
-            --notes "Desktop apps for Windows, macOS and Linux. macOS: open the dmg, drag AnnZarro to Applications and open it. Windows: the build is not signed, so SmartScreen asks for More info > Run anyway. Details: https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html (First launch). Verify downloads against SHA256SUMS.txt."
+            --title "AnnZarro $version" \
+            --notes-file notes.md

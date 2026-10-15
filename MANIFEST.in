@@ -3,3 +3,4 @@
 # config defaults, third-party licenses) is added from setup.py's package_data.
 include scripts/vendor_assets.py scripts/vendor-assets.json
 prune annzarro/tests
+include CHANGELOG.md

@@ -7,6 +7,7 @@ This script updates the version number in all relevant files:
 - pyproject.toml
 - annzarro/desktop/electron/package.json
 - annzarro/desktop/electron/package-lock.json (its root and packages[""] versions)
+- CHANGELOG.md (the Unreleased section becomes the new version's; it must not be empty)
 
 Usage:
   python bump_version.py [major|minor|patch]
@@ -26,6 +27,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).parent
+sys.path.insert(0, str(ROOT / "scripts"))
+import changelog  # noqa: E402
 ELECTRON = Path("annzarro") / "desktop" / "electron"
 
 def get_current_version(root=ROOT):
@@ -159,7 +162,9 @@ def main():
         new_version = calculate_new_version(current_version, bump_type)
         print(f"New version: {new_version}")
         
-        # Update files
+        # Update files; the changelog first, so an empty Unreleased section stops the bump
+        if changelog.release(new_version):
+            print("Updated CHANGELOG.md")
         update_python_init(new_version)
         update_pyproject_toml(new_version)
         update_package_json(new_version)

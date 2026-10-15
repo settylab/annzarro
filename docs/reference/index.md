@@ -13,6 +13,7 @@ architecture
 performance
 troubleshooting
 license
+changelog
 ../design/subsetting
 ../design/policy-registry
 ```
