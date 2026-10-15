@@ -8,34 +8,19 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
-### Fixes
-- With the grid off, tick labels no longer disappear on a plot's first draw and reappear after the
-  next edit: they follow **Show Tick Labels** alone.
-- **Not in table:** the grey points a table filter leaves in a plot are sized from their own
-  count, the way the plot's points are, instead of keeping the size they had before they were
-  excluded. Setting the point size by hand after the table is active, switching the table on in
-  the panel and opening a plot that names it now give the same grey points, and a different
-  table or subset readjusts them.
-- **Equal aspect:** switching a 2D plot's coordinates refits both axes together and keeps every
-  cell in view. A zoom saved in a link from before v0.5.0 is kept only if it shows the data.
-- **Equal aspect:** a zoom is kept when the panel is resized, for example when a neighbouring
-  panel is closed and the panel is split again.
-- Double-click (Reset axes) fits all the data again, also on a plot opened from a link with a
-  saved zoom.
-- Changing a plot axis on a large subset coloured by a category no longer freezes the page. On a
-  100,000-cell subset of a 1.06 million cell dataset coloured by 60 categories, one axis change
-  blocked the page for about 4 s and two in quick succession made the browser report "Page
-  Unresponsive"; both now take 0.1 to 0.15 s.
-- Decoding a categorical column whose labels contain quotes or escaped characters takes 0.1 s
-  instead of 3.8 s for 200,000 values with 20,000 such labels.
+## 0.5.1 (2026-10-14)
+
+A reworked Plot Options menu, with tick, margin, colour bar and scale bar controls, presets, and
+copying a plot's look to other panels. The grey "Not in table" points follow their own count and
+have their own controls. Equal aspect plots keep their cells and zoom, and changing an axis on a
+large subset no longer freezes the page.
 
 ### Plot Options
 - Plot Options is grouped into nine folding sections (Presets, Appearance, Axes and ticks, Points,
   Legend and colour bar, Text, Margins, Export, Apply to other panels). The menu opens again as
   you left it.
 - **Publication** preset: white background, no grid, five ticks per axis, larger text, a tighter
-  margin. **Default** returns every look setting to a new
-  plot's.
+  margin. **Default** returns every look setting to a new plot's.
 - Tick marks and tick labels switch separately, and **Ticks per axis** asks for about N ticks
   (2 to 30; empty is automatic).
 - Margins: one slider sets all four sides; **Set each side separately** shows a box for each.
@@ -59,6 +44,30 @@ with the release after it. Older releases are listed on
 - Stable download links that always fetch the newest desktop app, for example
   `https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-arm64.dmg`. The
   README and the docs link their platform badges to them.
+
+### Fixes
+- With the grid off, tick labels no longer disappear on a plot's first draw and reappear after the
+  next edit: they follow **Show Tick Labels** alone.
+- **Not in table:** the grey points a table filter leaves in a plot are sized from their own
+  count, the way the plot's points are, instead of keeping the size they had before they were
+  excluded. Setting the point size by hand after the table is active, switching the table on in
+  the panel and opening a plot that names it now give the same grey points, and a different
+  table or subset readjusts them.
+- **Equal aspect:** switching a 2D plot's coordinates refits both axes together and keeps every
+  cell in view. A zoom saved in a link from before v0.5.0 is kept only if it shows the data.
+- **Equal aspect:** a zoom is kept when the panel is resized, for example when a neighbouring
+  panel is closed and the panel is split again.
+- Double-click (Reset axes) fits all the data again, also on a plot opened from a link with a
+  saved zoom.
+- Changing a plot axis on a large subset coloured by a category no longer freezes the page. On a
+  100,000-cell subset of a 1.06 million cell dataset coloured by 60 categories, one axis change
+  blocked the page for about 4 s and two in quick succession made the browser report "Page
+  Unresponsive"; both now take 0.1 to 0.15 s.
+- Decoding a categorical column whose labels contain quotes or escaped characters takes 0.1 s
+  instead of 3.8 s for 200,000 values with 20,000 such labels.
+- A slow reply to the page's settings request no longer makes a large dataset download every cell
+  name: the first dataset load waits for the settings (at most 10 s) before it decides whether
+  names stay on the server.
 
 ### Docs
 - The README and the licence page cite v0.5.0 by its DOI,
