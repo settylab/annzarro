@@ -368,6 +368,9 @@ $ curl -s "http://127.0.0.1:8812/api/v1/data/subset/locate?dataset_path=$DS&subs
 | Route | Returns |
 |---|---|
 | `GET /datasets` | list of `{name, path, rel_path, cells, genes, is_link}` for the stores at the top of the data directory and in its `datasets/` subdirectory (`rel_path` says which); a store the server's zarr cannot read is listed with `cells: null` and an `error` sentence |
+| `GET /datasets/folder?folder=&offset=&limit=&sort=&order=` | one folder of the data directory, a page at a time: `{folder, rel_path, parent, entries, total, offset, limit, more}`. An entry is `{name, path, rel_path, is_link, kind}` with `kind` `folder` (plus `modified`) or `store` (plus `cells`, `genes`, `format`, `modified`, or `cells: null` and an `error`). Folders come first. `sort` is `name` (default) or `modified` and `order` `asc` (default) or `desc`; the sort covers the whole folder before it is cut into pages, uses file times only (no store is opened to order it) and breaks ties by name, so pages never overlap. `limit` is capped at `server.dataset_folder_max_entries`. `404` `not_found` for a folder that is missing or that the user may not read, `400` `bad_sort` |
+| `GET /datasets/search?q=&mode=&folder=&limit=` | stores below the data directory (or below `folder`) whose name or path matches `q` (a substring, or a regular expression with `mode=regex`): `{results, truncated, visited}`, each result shaped like a store entry above. `folder` limits the walk to that folder (a path, or one relative to the data directory); the path part of a match is read relative to it, depth counts from it, and the data directories an admin added are searched only when no `folder` is given. Same caps as an unscoped search. `404` `not_found` for a `folder` that is missing or not readable, `400` for a refused pattern |
+| `GET /datasets/details?path=&check=` | what one store holds, from its metadata only (no matrix is read): `name`, `path` (an absolute path; `null` for a restricted user), `rel_path`, `cells`, `genes`, `format` (`h5ad`, `zarr format 2`, `zarr format 3`, `zarr format 3, sharded`), `zarr_format`, `sharded`, `modified`, `is_link`, `link_target` (`null` unless a link and the user may see paths), `size_bytes` (an `.h5ad` file), `remote`, `readable`, `error`, `obs_columns` and `var_columns` (`[{name, kind}]`, `kind` is `categorical`, `integer`, `float`, `bool`, `string`, `datetime` or `other`; at most 500, the count in `obs_columns_total` and `var_columns_total`), `obsm_keys`, `layers_keys` (with `obsm_total`, `layers_total`), `uns_count` and `store_check`. A store that cannot be read as AnnData answers `200` with `readable: false` and the reason in `error`. `store_check` is `{ran, reason, complete, budget_reached, budget_s, worst, counts, findings, docs}` with the findings of `annzarro store check` ({doc}`../data/chunking`), stopped after `server.dataset_details_check_budget_s` (1.5 s) with `complete: false` and `budget_reached: true`. When `ran` is `false`, `reason` is `not_requested` (`check=0`, or a remote store without `check=1`), `h5ad`, `disabled` (budget `0`), `unreadable` or `unavailable`. `check=1` runs the check on a remote store, `check=0` skips it on a local one. The answer is cached by the store's file times, so asking again costs a few `stat` calls. A missing store, and one the user may not read, answer alike: `404` `not_found`, as `/data/info` does; `403` for a path outside the server's data directories or a remote URL the server refuses |
 | `GET /data/dataset_structure?dataset_path=` | everything the menus need: `shape`, `n_obs`, `n_vars`, and per slot `available`, `keys` / `columns`, `info` (shape and type per key), `columns_info` (dtype per obs/var column), dataframe columns of `obsm`/`varm`. A store without `X` has `"X": {"available": false, "shape": null}` |
 | `GET /data/fingerprint?dataset_path=&wait=` | the store's fingerprint for saved views: `{status, fingerprint, path, rel_path, annzarro_version}`. `status` is `ready`, or `pending` while a large store's cell and gene names are hashed in the background (then `fingerprint` holds `n_obs`, `n_var`, `meta`, `groups` and `fields` only); `wait` (seconds, at most 10) waits for it, and is what starts the hashing: a call with `wait=0` (opening a dataset) answers from what is known and never starts it. The metadata tier (`meta`, `groups`, `fields`) is read from the store's consolidated metadata, one file plus a directory listing each of the root and the field groups, whatever the number of nodes; a store without consolidated metadata, or whose consolidated metadata is out of date (a refresh found it stale, or its members are not those on disk), is walked instead, which on a network file system takes seconds when cached and minutes when cold. `rel_path` is the path relative to the data directory, `null` outside it. Missing store: 404 `not_found` ({doc}`../user-guide/reproducing`) |
 | `GET /data/info?dataset_path=` | a shorter summary: `shape`, `has_*` flags, `obs_columns`, `var_columns`, `layers`, `embeddings` |
@@ -387,6 +390,20 @@ $ curl -s "http://127.0.0.1:8812/api/v1/datasets" | python -m json.tool | head -
         "path": "/Users/me/annzarro-data/bm_aging_annzarro.zarr",
         "rel_path": "bm_aging_annzarro.zarr"
     },
+```
+
+```console
+$ curl -s "http://127.0.0.1:8812/api/v1/datasets/details?path=liver.zarr" | python -m json.tool
+{
+    "cells": 8090,
+    "format": "zarr format 2",
+    "genes": 16285,
+    "name": "liver.zarr",
+    "obs_columns": [{"kind": "categorical", "name": "cell_type"}, ...],
+    "obsm_keys": ["X_umap"],
+    "store_check": {"ran": true, "complete": true, "budget_reached": false, "worst": "ok", "findings": [], ...},
+    ...
+}
 ```
 
 ## Panel sets
@@ -573,6 +590,8 @@ same; what differs for a restricted user:
 - A dataset, folder or search outside their grants answers exactly as one that does not exist
   (`404 not_found`, or an empty list on the legacy `core/datasets?dir=`), whatever the cause:
   allowed directory or not, present or missing. `If-None-Match` of an earlier read does not get a `304`.
+- `GET /datasets/details` leaves `path` and `link_target` out (`null`) and gives `rel_path` from the name of
+  the granted folder or store; a `folder=` of `GET /datasets/search` must lie inside a grant.
 - `GET /directories/home` answers `{"directory": null}`. Their listings start at their grants
   and name no folder above one: `parent` is `null` at a grant, and `rel_path` is relative to the
   granted folder (`null` on `/datasets/<path>`).
@@ -653,6 +672,7 @@ HTTP 400
 | `server.max_request_mb` | 64 | the request body (`POST /sessions/save`, `/sessions/import`, `/login`), from `Content-Length` and while reading | `413 request_too_large` |
 | `server.max_sessions_per_user`, `server.max_sessions`, `server.max_sessions_mb` | 500, 5,000, 256 MB | panel sets of the user, of the server, and their total size, when one is saved, duplicated or imported | `409 session_quota_user`, `409 session_quota_total` |
 | `server.dataset_folder_max_entries`, `dataset_search_max_depth`, `dataset_search_max_entries` | 500, 6, 20,000 (and 3 s) | the picker's folder listing (`GET /datasets/folder`) and tree search (`GET /datasets/search`) | `200` with `more` / `truncated: true`; `400` `regex_too_long`, `regex_too_complex`, `invalid_regex`, `query_too_long` |
+| `server.dataset_details_check_budget_s` | 1.5 s | the store check inside `GET /datasets/details` | `200` with `store_check.budget_reached: true` |
 | `max_cells=` / `max_genes=` query parameters | none | number of requested cell / gene indices | `400 cap_exceeded` |
 | groups for subset balancing | 10,000 | a column's categories (metadata) | `400 too_many_categories` |
 

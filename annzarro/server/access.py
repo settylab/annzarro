@@ -111,7 +111,7 @@ DATA_KINDS = ("dataset", "remote", "listing", "panelset")
 
 #: Extra argument that carries a path or URL, by endpoint (the rest is in confinement).
 URL_ENDPOINTS = {"validate_zarr_url": "url"}
-FOLDER_ENDPOINTS = {"list_dataset_folder": "folder"}
+FOLDER_ENDPOINTS = {"list_dataset_folder": "folder", "list_dataset_search": "folder"}
 
 
 def gate(kind):
@@ -859,7 +859,7 @@ def not_found(path=None, segment=False, endpoint=None):
     path = spelled(path) if path is not None else None
     if endpoint == "list_directory":
         return jsonify({"error": f"Directory not found: {request.args.get('path')}"}), 404
-    if endpoint == "list_dataset_folder":
+    if endpoint in ("list_dataset_folder", "list_dataset_search"):
         return jsonify({"error": "Folder not found", "reason": "not_found"}), 404
     if segment:
         return jsonify({"error": "Dataset not found. /datasets/<path> is relative "

@@ -145,6 +145,11 @@ server:
       type: integer
       description: Folders deep the dataset picker's search of the data directory goes
       default: 6
+    dataset_details_check_budget_s:
+      type: number
+      minimum: 0
+      description: Seconds the dataset browser's details request spends on the store check of one zarr store before it answers with the findings so far; 0 turns the check off there
+      default: 1.5
     dataset_search_max_entries:
       type: integer
       description: Entries the dataset picker's search of the data directory looks at before it stops and says the result is partial

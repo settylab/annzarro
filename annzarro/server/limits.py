@@ -37,6 +37,7 @@ LIMITS: Dict[str, Limit] = {limit.key: limit for limit in (
     Limit("dataset_folder_max_entries", 500),
     Limit("dataset_search_max_depth", 6),
     Limit("dataset_search_max_entries", 20_000),
+    Limit("dataset_details_check_budget_s", 1.5, integer=False, zero_off=True),
     Limit("dataset_scan_max_entries", 200_000),
     Limit("read_user_share_percent", 50, integer=False, zero_off=True),
     Limit("subset_budget_mb", None, integer=False, nullable=True),

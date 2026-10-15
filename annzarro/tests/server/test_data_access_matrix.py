@@ -40,6 +40,8 @@ URL_VALUES = {"layer_name": "counts", "obsm_key": "X_umap", "varm_key": "x", "ob
               "varp_key": "corr", "uns_key": "title"}
 #: The argument that names the folder on the listing routes that take one.
 FOLDER_ARG = {"list_directory": "path", "list_dataset_folder": "folder", "list_legacy_datasets": "dir"}
+#: The argument that names the store where it is not ``dataset_path``.
+STORE_ARG = {"dataset_details": "path"}
 CHECKED_KINDS = ("dataset", "remote", "listing")
 #: Routes whose reply carries state of the call (a rate-limited refresh): compare the status only.
 STATEFUL = ("refresh_dataset",)
@@ -143,7 +145,7 @@ class Harness:
             query["url"] = {"in": "https://granted.example/in.zarr", "out": "https://other.example/out.zarr",
                             "nope": "https://other.example/nope.zarr"}[target]
         elif kind == "dataset":
-            query["dataset_path"] = path
+            query[STORE_ARG.get(rule.endpoint, "dataset_path")] = path
         url = rule.rule
         for arg, value in values.items():
             for converter in ("path:", "string:", ""):
@@ -166,7 +168,8 @@ def same_reply(rule, a, b):
 
 
 #: What a restricted user is deliberately not told, by route: the data directory's layout.
-NOT_TOLD = {"get_fingerprint": ("rel_path",), "list_dataset_folder": ("parent", "rel_path")}
+NOT_TOLD = {"get_fingerprint": ("rel_path",), "list_dataset_folder": ("parent", "rel_path"),
+            "dataset_details": ("path", "rel_path", "link_target")}
 
 
 def same_but_not_told(rule, a, b):

@@ -83,6 +83,51 @@ def store_meta(entry_path):
         return {"format": None, "modified": None}
 
 
+SORT_KEYS = ("name", "modified")
+SORT_ORDERS = ("asc", "desc")
+
+_STORE_MARKERS = ("zarr.json", ".zgroup", ".zattrs")
+
+
+def _mtime(entry):
+    """Modification time of an entry for sorting, from stat() alone (the same file ``store_meta`` reads); 0 when unreadable."""
+    path = entry["path"]
+    try:
+        if entry["kind"] == "store" and os.path.isdir(path):
+            marker = next((m for m in _STORE_MARKERS if os.path.exists(os.path.join(path, m))), None)
+            if marker:
+                return os.stat(os.path.join(path, marker)).st_mtime
+        return os.stat(path).st_mtime
+    except OSError:
+        return 0
+
+
+def sort_entries(entries, sort="name", order="asc"):
+    """``entries`` in place: folders first, then by ``sort`` (name or modified) in ``order``, ties by name.
+
+    Stat data only; a store is never opened. Stable, so a page boundary never moves between requests.
+    """
+    descending = order == "desc"
+    entries.sort(key=lambda e: e["name"])
+    if sort == "modified":
+        for entry in entries:
+            entry["_mtime"] = _mtime(entry)
+        entries.sort(key=lambda e: e["_mtime"], reverse=descending)
+        # reverse=True keeps equal times in their previous (name ascending) order
+    elif descending:
+        entries.sort(key=lambda e: e["name"], reverse=True)
+    entries.sort(key=lambda e: e["kind"] != "folder")
+    return entries
+
+
+def _modified_of_folders(page):
+    """A folder row carries its modification time (stat only) and drops the sort helper."""
+    for entry in page:
+        stamp = entry.pop("_mtime", None)
+        if entry["kind"] == "folder":
+            entry["modified"] = stamp if stamp is not None else _mtime(entry)
+
+
 def _resolve_folder(config, folder):
     data_dir = os.path.expanduser(config.get("data_dir"))
     if not folder:
@@ -115,8 +160,8 @@ def _entry(data_dir, parent, name):
     return {**base, "kind": "folder"}
 
 
-def _fill_store(entry):
-    """Counts (or the reason the store is unreadable), format and mtime for a page entry."""
+def fill_counts(entry):
+    """``cells`` and ``genes`` of the store at ``entry["path"]``, or ``error`` with the reason it is unreadable (the probe cache is shared)."""
     from . import data_routes
     from ...core import get_reader, zarr_reader
     from ...core.zarr_reader import ZarrFormatError
@@ -131,13 +176,18 @@ def _fill_store(entry):
         return c["cell_count"], c["gene_count"]
 
     counts = data_routes._probe_dataset_counts(path, h5ad_counts if entry.pop("h5ad") else zarr_counts)
-    entry.update(store_meta(path))
     if counts is None:
         entry.update(cells=None, genes=None, error="Not readable as an AnnData store")
     elif isinstance(counts, ZarrFormatError):
         entry.update(cells=None, genes=None, error=str(counts))
     else:
         entry.update(cells=counts[0], genes=counts[1])
+
+
+def _fill_store(entry):
+    """Counts (or the reason the store is unreadable), format and mtime for a page entry."""
+    fill_counts(entry)
+    entry.update(store_meta(entry["path"]))
 
 
 def _admin_root_entries(config, data_dir, taken):
@@ -162,8 +212,8 @@ def _is_admin_root(config, path):
     return os.path.realpath(path) in overlay.active_data_roots(config)
 
 
-def list_folder(config, folder, offset=0, limit=None):
-    """One page of ``folder``: subfolders first, then stores, each by name.
+def list_folder(config, folder, offset=0, limit=None, sort="name", order="asc"):
+    """One page of ``folder``: subfolders first, then stores, each by ``sort`` (``name`` or ``modified``, ``order`` asc or desc).
     The data directory's own listing also carries the data directories an
     admin added, as folders.
 
@@ -175,7 +225,7 @@ def list_folder(config, folder, offset=0, limit=None):
     limit = max(1, min(int(limit or cap), cap))
     user = access.restricted_user()
     if user and not folder:
-        return _grants_folder(config, user, data_dir, offset, limit)
+        return _grants_folder(config, user, data_dir, offset, limit, sort, order)
     path = _resolve_folder(config, folder)
     if not os.path.isdir(path):
         raise FileNotFoundError(path)
@@ -185,8 +235,9 @@ def list_folder(config, folder, offset=0, limit=None):
     if at_top:
         entries += _admin_root_entries(config, data_dir, {e["path"] for e in entries})
     entries = access.filter_entries(entries)
-    entries.sort(key=lambda e: (e["kind"] != "folder", e["name"]))
+    sort_entries(entries, sort, order)
     page = entries[offset:offset + limit]
+    _modified_of_folders(page)
     for entry in page:
         if entry["kind"] == "store":
             _fill_store(entry)
@@ -244,10 +295,11 @@ def granted_sources(user):
     return sources
 
 
-def _grants_folder(config, user, data_dir, offset, limit):
+def _grants_folder(config, user, data_dir, offset, limit, sort="name", order="asc"):
     """``list_folder`` of the virtual root of a restricted user: their grants, with no folder behind it."""
-    entries = _grant_entries(user)
+    entries = sort_entries(_grant_entries(user), sort, order) if (sort, order) != ("name", "asc") else _grant_entries(user)
     page = entries[offset:offset + limit]
+    _modified_of_folders(page)
     for entry in page:
         if entry["kind"] == "store":
             _fill_store(entry)
@@ -256,17 +308,27 @@ def _grants_folder(config, user, data_dir, offset, limit):
 
 
 def register_dataset_folder_routes(app_, api_version):
+    from .dataset_details import register_dataset_details_routes
+    register_dataset_details_routes(app_, api_version)
+
     @app_.route(f"/api/{api_version}/datasets/search", methods=["GET"])
     @access.gate("listing")
     def list_dataset_search():
         query = request.args.get("q", "")
+        folder = request.args.get("folder") or ""
+        if folder:
+            refused = _confined_refusal(app_.config, folder)
+            if refused:
+                return refused
         if not query:
             return jsonify({"results": [], "truncated": False, "visited": 0})
         try:
             return jsonify(search_tree(app_.config, query, request.args.get("mode") == "regex",
-                                       request.args.get("limit", type=int)))
+                                       request.args.get("limit", type=int), folder))
         except SearchRefusedError as exc:
             return jsonify({"error": str(exc), "reason": exc.reason}), 400
+        except FileNotFoundError:
+            return jsonify({"error": "Folder not found", "reason": "not_found"}), 404
 
     @app_.route(f"/api/{api_version}/datasets/folder", methods=["GET"])
     @access.gate("listing")
@@ -278,21 +340,35 @@ def register_dataset_folder_routes(app_, api_version):
             limit = int(request.args["limit"]) if "limit" in request.args else None
         except ValueError:
             return jsonify({"error": "offset and limit must be integers"}), 400
-        path = _resolve_folder(config, folder)
-        # The same rule as every path: a confined server lists only inside its roots
-        # (a restricted user's root is their grants, which access.enforce has checked)
-        if not access.restricted_user() and confinement.is_confined(config) and not confinement.is_inside(path, confinement.allowed_roots(config)) \
-                and not confinement.may_open_any_path(config):
-            logger.warning(f"Refused folder listing outside the data directory: {path!r}")
-            return jsonify({"error": "That folder is outside the data directory this server shares.",
-                            "reason": "outside_data_dir"}), 403
+        sort, order = request.args.get("sort", "name"), request.args.get("order", "asc")
+        if sort not in SORT_KEYS or order not in SORT_ORDERS:
+            return jsonify({"error": f"sort is one of {', '.join(SORT_KEYS)} and order one of {', '.join(SORT_ORDERS)}",
+                            "reason": "bad_sort"}), 400
+        refused = _confined_refusal(config, folder)
+        if refused:
+            return refused
         try:
-            return jsonify(list_folder(config, folder, offset, limit))
+            return jsonify(list_folder(config, folder, offset, limit, sort, order))
         except FileNotFoundError:
             return jsonify({"error": "Folder not found", "reason": "not_found"}), 404
         except Exception as exc:
-            logger.error(f"Error listing folder {path}: {exc}")
+            logger.error(f"Error listing folder {_resolve_folder(config, folder)}: {exc}")
             return jsonify({"error": "Failed to list the folder"}), 500
+
+
+def _confined_refusal(config, folder):
+    """The 403 for a folder outside a confined server's roots, else None.
+
+    The same rule as every path: a confined server lists only inside its roots (a restricted
+    user's root is their grants, which access.enforce has checked).
+    """
+    path = _resolve_folder(config, folder)
+    if not access.restricted_user() and confinement.is_confined(config) and not confinement.is_inside(path, confinement.allowed_roots(config)) \
+            and not confinement.may_open_any_path(config):
+        logger.warning(f"Refused folder listing outside the data directory: {path!r}")
+        return jsonify({"error": "That folder is outside the data directory this server shares.",
+                        "reason": "outside_data_dir"}), 403
+    return None
 
 
 def _compile_query(query, regex):
@@ -319,8 +395,13 @@ def _compile_query(query, regex):
     return rx.search      # (text, deadline): TimeoutError inside a match once the walk's clock is up
 
 
-def search_tree(config, query, regex=False, limit=None):
-    """Stores of the data directory's whole tree whose name or relative path matches.
+def search_tree(config, query, regex=False, limit=None, folder=""):
+    """Stores of the data directory's whole tree, or of ``folder`` and below, whose name or relative path matches.
+
+    With a ``folder`` the walk starts there (depth 0), a path is matched relative to it, and the
+    admin-added roots are walked only when the folder is the data directory. Raises
+    FileNotFoundError when it is not a directory; a store is never searched into, so a folder
+    that is a store has no results.
 
     Breadth first from the data directory and the admin-added roots, never into a store, at most
     ``dataset_search_max_depth`` folders deep, ``dataset_search_max_entries``
@@ -340,7 +421,15 @@ def search_tree(config, query, regex=False, limit=None):
     deadline = time.monotonic() + SEARCH_SECONDS
     user = access.restricted_user()
     found, visited, truncated = [], 0, False
-    if user:
+    scope = None
+    if folder:
+        scope = _resolve_folder(config, folder)
+        if not os.path.isdir(scope):
+            raise FileNotFoundError(scope)
+        if is_store_dir(scope, os.path.basename(scope.rstrip(os.sep))):
+            return {"results": [], "truncated": False, "visited": 0}
+        queue, seen = [(scope, 0)], {os.path.realpath(scope)}
+    elif user:
         # only their grants: a granted store is matched by name, a granted folder is walked
         queue, seen = [], set()
         for entry in _grant_entries(user):
@@ -355,6 +444,7 @@ def search_tree(config, query, regex=False, limit=None):
                     truncated = True
     else:
         queue, seen = [(data_dir, 0)], {os.path.realpath(data_dir)}
+    if scope is None and not user:
         # the data directories admins added are top-level folders of the picker, so they are searched too
         for root in _admin_root_entries(config, data_dir, set()):
             real = os.path.realpath(root["path"])
@@ -385,7 +475,8 @@ def search_tree(config, query, regex=False, limit=None):
                     truncated = True
                 continue
             try:
-                hit = matches_text(name, deadline) or matches_text(entry["rel_path"], deadline)
+                below = os.path.relpath(entry["path"], scope) if scope else entry["rel_path"]
+                hit = matches_text(name, deadline) or matches_text(below, deadline)
             except TimeoutError:         # the clock ran out inside a match
                 truncated = True
                 break

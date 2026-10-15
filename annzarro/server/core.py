@@ -62,6 +62,7 @@ DEFAULT_CONFIG = {
     "dataset_folder_max_entries": 500,  # entries one dataset-picker folder request returns (the rest is "show more")
     "dataset_search_max_depth": 6,      # folders deep the picker's search of the data directory goes
     "dataset_search_max_entries": 20000, # entries that search looks at before it stops (and says so)
+    "dataset_details_check_budget_s": 1.5,  # seconds the details request spends on a store check before it answers with the findings so far; 0 = no check
     "name_search_max_regex_chars": 200,   # longest regex a name search runs (a longer one is a 400 regex_too_long)
     "name_search_timeout_s": 10,          # seconds a regex name search scans before it answers partially; 0 = no limit
     "read_user_share_percent": 50,        # % of read_budget_mb one user (else one address) may hold at once; 0 = no share

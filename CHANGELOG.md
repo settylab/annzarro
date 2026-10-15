@@ -26,6 +26,12 @@ with the release after it. Older releases are listed on
   colours are slightly darker for WCAG AA contrast.
 
 ### Added
+- Three dataset endpoints for the dataset browser: `GET /api/v1/datasets/details?path=` (a store's
+  counts, format, columns, obsm keys, layers and store-check findings, read from metadata only and
+  stopped after `server.dataset_details_check_budget_s`, 1.5 s by default), `sort=` and `order=` on
+  `GET /api/v1/datasets/folder` (name or modified, applied before paging), and `folder=` on
+  `GET /api/v1/datasets/search` to search below one folder
+  ([details](https://annzarro.readthedocs.io/en/latest/reference/http-api.html)).
 - The desktop app has no title bar on macOS and Windows: the AnnZarro header is the title bar, at
   the same height as before. On macOS the three window buttons sit at the top left and the
   AnnZarro title moves down below them. On Windows the minimise, maximise and close buttons, in the
