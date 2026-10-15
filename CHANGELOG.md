@@ -8,7 +8,13 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
-- The macOS desktop app can be installed with Homebrew: `brew install --cask settylab/annzarro/annzarro`. A cask template, a renderer (`scripts/homebrew_cask.py`) and a workflow that updates the tap on each published release are under `packaging/homebrew/` and `.github/workflows/homebrew.yml`.
+### Added
+- The macOS desktop app installs with Homebrew: `brew install --cask settylab/annzarro/annzarro`,
+  and `brew upgrade --cask annzarro` updates it. The tap follows each release.
+
+### Docs
+- The README and the licence page cite v0.5.1 by its DOI,
+  [10.5281/zenodo.23386903](https://doi.org/10.5281/zenodo.23386903).
 
 ## 0.5.1 (2026-10-14)
 
@@ -22,7 +28,8 @@ large subset no longer freezes the page.
   Legend and colour bar, Text, Margins, Export, Apply to other panels). The menu opens again as
   you left it.
 - **Publication** preset: white background, no grid, five ticks per axis, larger text, a tighter
-  margin. **Default** returns every look setting to a new plot's.
+  margin. **Default** returns the look to a new plot's; the font, the scale bar's size and
+  unit, the Points group and the export size stay.
 - Tick marks and tick labels switch separately, and **Ticks per axis** asks for about N ticks
   (2 to 30; empty is automatic).
 - Margins: one slider sets all four sides; **Set each side separately** shows a box for each.
