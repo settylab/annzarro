@@ -493,6 +493,7 @@ class ConfigManager:
         "app_name": ("branding", "app_name"),
         "project_description": ("branding", "project_description"),
         "contact_info": ("branding", "contact_info"),
+        "admin_contact": ("branding", "admin_contact"),
     }
 
     def _nest_flat_config(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -701,6 +702,7 @@ class ConfigManager:
                 "project_description", "Zarr-based AnnData Visualization Tool"
             )
             flat["contact_info"] = branding.get("contact_info", {})
+            flat["admin_contact"] = branding.get("admin_contact")
         
         # UI defaults
         if "ui" in tree and "defaults" in tree["ui"]:

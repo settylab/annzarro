@@ -205,14 +205,17 @@ def register_core_routes(app, api_version):
 
         Returns:
             JSON ``{auth_enabled, username, is_admin, exposed, may_open_any_path, remote_stores, restricted}``.
-            ``restricted`` is true for a user who sees only the datasets they are granted.
+            ``restricted`` is true for a user who sees only the datasets they are granted;
+            ``admin_contact`` (``branding.admin_contact``) is then added when the site names whom to ask
+            for access.
         """
         from .. import confinement, permissions
         from ...core.remote import get_remote_policy
         username, is_admin = permissions.current_user()
         from .. import csrf
         from ..core import is_logged_in
-        response = jsonify({
+        restricted = access.is_restricted_requester()
+        payload = {
             # the token of this login, for a page that was open before it changed (utils/csrf.js)
             "csrf": csrf.csrf_token() if permissions.auth_enabled() and is_logged_in() else "",
             "auth_enabled": permissions.auth_enabled(),
@@ -221,8 +224,12 @@ def register_core_routes(app, api_version):
             "exposed": permissions.is_exposed(app.config),
             "may_open_any_path": confinement.may_open_any_path(app.config),
             "remote_stores": bool(get_remote_policy().enabled),
-            "restricted": access.is_restricted_requester(),
-        })
+            "restricted": restricted,
+        }
+        contact = app.config.get("admin_contact")
+        if restricted and isinstance(contact, str) and contact.strip():
+            payload["admin_contact"] = contact.strip()
+        response = jsonify(payload)
         response.headers["Cache-Control"] = "no-store"   # it carries the login's token
         return response
 

@@ -39,7 +39,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
-from annzarro.tests.ui_helpers import SHOWN_DATASET, button_state, button_text, choose_in_browser, open_dataset
+from annzarro.tests.ui_helpers import BROWSER, SHOWN_DATASET, button_state, button_text, choose_in_browser, open_browser, open_dataset
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -218,8 +218,11 @@ def test_missing_store_opens_the_layout_without_data(browser, servers):
 def test_change_dataset_onto_the_right_store_restores_the_view(browser, servers):
     ctx, page, errors = _open_without_data(browser, servers)
     try:
-        # the button of a view without data opens the browser in "choose for this view" mode
-        choose_in_browser(page, "fixture_small.zarr")
+        # the button of a view without data opens the browser in "choose for this view" mode, with what it was saved on
+        open_browser(page)
+        assert page.inner_text("#dataset-browser-title") == "Choose a dataset for this view"
+        assert "This view was saved on /no/such/dir/gone.zarr" in page.inner_text("#dataset-browser-banner")
+        page.locator(f"{BROWSER} tr.dsb-row[data-path$='fixture_small.zarr']").locator(".dsb-name").click()
         _drawn(page)
         assert page.query_selector(".panel-no-data") is None
         assert _plot_config(page)["color"]["key"] == "leiden"
@@ -291,6 +294,34 @@ def test_a_link_opened_on_other_cells_warns_first(browser, servers):
         page.click('.notification-ask button[data-action="open"]')
         _drawn(page)
         assert _missing_marked(page)
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+def test_choosing_a_dataset_for_a_view_marks_the_stores_that_match_it(browser, servers):
+    """The view's fingerprint says which stores of the server are the same cells and genes: they get a badge, and the
+    "Matches this view" chip (on) narrows to them; a store with other cells is not one."""
+    link = _shared_view(browser, servers)
+    ctx, page, errors = _page(browser)
+    try:
+        page.goto(link.replace("dataset_path=fixture_small.zarr", "dataset_path=cells.zarr"))
+        page.wait_for_selector(".notification-ask", timeout=30000)
+        page.click('.notification-ask button[data-action="change"]')               # the notice offers to choose another
+        page.locator(BROWSER).wait_for(state="visible")
+        page.wait_for_selector(f"{BROWSER} #dsb-table tbody tr")
+        assert page.inner_text("#dataset-browser-title") == "Choose a dataset for this view"
+        assert "This view was saved on fixture_small.zarr (200 cells x 20 genes)." in page.inner_text("#dataset-browser-banner")
+        assert page.get_attribute("#dsb-filter-matches", "aria-pressed") == "true"
+        rows = page.locator(f"{BROWSER} tr.dsb-row[data-kind='store']")
+        paths = [r.get_attribute("data-path") for r in rows.all()]
+        assert any(p.endswith("/fixture_small.zarr") for p in paths) and any(p.endswith("/fields.zarr") for p in paths), paths
+        assert not any(p.endswith("/cells.zarr") for p in paths), "other cells: not a match"
+        badge = page.locator(f"{BROWSER} tr.dsb-row[data-path$='fixture_small.zarr'] .dsb-badge-match")
+        assert badge.inner_text() == "same cells and genes"
+        page.click("#dsb-filter-matches")                                           # off: every store
+        page.locator(f"{BROWSER} tr.dsb-row[data-path$='cells.zarr']").wait_for()
+        assert page.locator(f"{BROWSER} tr.dsb-row[data-path$='cells.zarr'] .dsb-badge-match").count() == 0
         assert not errors, errors
     finally:
         ctx.close()

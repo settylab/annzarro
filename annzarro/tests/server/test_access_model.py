@@ -402,6 +402,17 @@ def test_auth_me_reports_restricted(world):
     assert client(world, "alice").get("/api/v1/auth/me").get_json()["restricted"] is False
 
 
+def test_auth_me_names_the_admin_contact_only_to_a_restricted_user_and_only_when_one_is_set(world):
+    """branding.admin_contact: the dataset browser tells a user who sees only some datasets whom to ask."""
+    access.set_restricted(world.config, "bob", True)
+    assert "admin_contact" not in client(world, "bob").get("/api/v1/auth/me").get_json(), "none set: nothing to say"
+    world.config["admin_contact"] = "  the data team <data@example.org>  "
+    assert client(world, "bob").get("/api/v1/auth/me").get_json()["admin_contact"] == "the data team <data@example.org>"
+    assert "admin_contact" not in client(world, "alice").get("/api/v1/auth/me").get_json(), "an unrestricted user is not told"
+    world.config["admin_contact"] = "   "
+    assert "admin_contact" not in client(world, "bob").get("/api/v1/auth/me").get_json()
+
+
 # --- remote prefixes ---------------------------------------------------------------------
 
 @pytest.fixture

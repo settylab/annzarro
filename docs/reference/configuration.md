@@ -122,6 +122,7 @@ Shown on the login page and as the app title.
 |---|---|---|
 | `app_name` | `AnnZarro` | Title in the header and on the login page. |
 | `project_description` | `Zarr-based AnnData Visualization Tool` | Line under the login form. HTML is allowed. |
+| `admin_contact` | `null` | Whom a user who sees only some datasets is told to ask for access: the dataset browser says "Ask *admin_contact* for access." when a link or panel set names a dataset they cannot read. A name or an email address; nothing is said when empty. |
 | `contact_info.lab_name`, `.lab_url`, `.email` | `null` | Contact block on the login page, shown only when set. |
 | `contact_info.custom_html` | `null` | Extra HTML under the contact block. |
 

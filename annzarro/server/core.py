@@ -99,6 +99,7 @@ DEFAULT_CONFIG = {
     "cross_origin_isolation": "off",   # off | on | auto -- COOP/COEP headers (server/isolation.py)
     "app_name": "AnnZarro",            # Application name shown on login page
     "project_description": "Zarr-based AnnData Visualization Tool",  # Project description shown on login page
+    "admin_contact": None,             # Who a user who sees only some datasets is told to ask for access
     "contact_info": {                  # Contact information shown on login page
         "email": None,                 # Contact email address
         "lab_name": None,              # Name of the lab or organization

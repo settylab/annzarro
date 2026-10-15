@@ -54,7 +54,8 @@ def served(tmp_path):
     for name, admin in (("alice", True), ("bob", False), ("carol", False)):
         manager.add_user(name, PASSWORD, is_admin=admin)
     app = create_app({"TESTING": True, "host": "127.0.0.1", "data_dir": str(data), "log_file": str(tmp_path / "t.log"),
-                      "auth_enabled": True, "user_file": str(tmp_path / "users.json"), "secret_key": "browser-test"})
+                      "auth_enabled": True, "user_file": str(tmp_path / "users.json"), "secret_key": "browser-test",
+                      "admin_contact": "the data team"})
     access.add_grant(app.config, "bob", "store", str(data / "in.zarr"), actor="alice")
     access.add_grant(app.config, "bob", "dir", str(data / "pub"), actor="alice")
     access.set_restricted(app.config, "bob", True)
@@ -168,6 +169,7 @@ def test_a_deep_link_outside_the_grants_is_not_available(browser, served):
         modal = open_browser(page)
         banner = page.inner_text("#dataset-browser-banner")
         assert "not available to you, or no longer exists" in banner and "Its panels are kept" in banner, banner
+        assert "Ask the data team for access." in banner, "the site names whom to ask (branding.admin_contact)"
         assert data not in modal.inner_text() and os.path.dirname(data) not in modal.inner_text()
         page.keyboard.press("Escape")
         # the same link to a store they may read opens it
@@ -226,7 +228,8 @@ def test_a_grant_revoked_while_the_dataset_is_open_returns_to_the_browser(browse
         page.wait_for_function("() => !/Loading/.test(document.querySelector('#dsb-table-wrap').innerText)")
         page.wait_for_timeout(1500)       # the lists load after the dialog opens
         assert page.locator(f"{BROWSER} tr.dsb-row[data-path$='in.zarr']").count() == 0
-        assert "not available to you, or no longer exists" in page.inner_text("#dataset-browser-banner")
+        banner = page.inner_text("#dataset-browser-banner")
+        assert "not available to you, or no longer exists" in banner and "Ask the data team for access." in banner
         assert button_state(page) == "unavailable"
         assert not errors, errors
     finally:

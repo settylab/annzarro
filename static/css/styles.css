@@ -4069,9 +4069,17 @@ details.aesthetics-section > .aesthetics-body {
 .dsb-badge-open { background: var(--az-info-bg); color: var(--az-info-text); }
 .dsb-badge-quiet { background: var(--az-surface-3); color: var(--az-text-2); }
 .dsb-pinned { color: var(--az-warn-accent); font-size: 0.75rem; }
+/* Bootstrap paints a table's cells (--bs-table-bg, an inset shadow): the row's states are set on the cells */
+.dsb-table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--az-text);
+    --bs-table-accent-bg: transparent;
+    --bs-table-border-color: var(--az-border);
+}
 .dsb-row { cursor: pointer; }
-.dsb-row:hover { background: var(--az-surface-2); }
-.dsb-row.selected { background: var(--dp-active-bg); box-shadow: inset 3px 0 0 var(--az-link); }
+.dsb-row:hover > * { background-color: var(--az-surface-2); }
+.dsb-row.selected > * { background-color: var(--dp-active-bg); }
+.dsb-row.selected > :first-child { box-shadow: inset 3px 0 0 var(--az-link); }
 .dsb-row.dsb-unreadable .dsb-name { color: var(--az-muted); font-weight: 400; }
 .dsb-row.dsb-unreadable .dsb-icon { opacity: 1; }
 .dsb-state { padding: 1rem; color: var(--az-muted); font-size: 0.9rem; }
@@ -4138,8 +4146,8 @@ details.aesthetics-section > .aesthetics-body {
 }
 /* Windows high contrast: selection is the system's, and the outline stays */
 @media (forced-colors: active) {
-    .dsb-row.selected { forced-color-adjust: none; background: Highlight; color: HighlightText; }
-    .dsb-row.selected :is(.dsb-name, .dsb-rel, .dsb-reason, td) { color: HighlightText; }
+    .dsb-row.selected > * { forced-color-adjust: none; background-color: Highlight; color: HighlightText; }
+    .dsb-row.selected :is(.dsb-name, .dsb-rel, .dsb-reason) { color: HighlightText; }
     .dsb-dialog :is(button, input, select, [tabindex], a):focus-visible,
     .dataset-button:focus-visible { outline: 2px solid CanvasText; }
 }
