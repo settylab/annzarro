@@ -114,6 +114,8 @@ export function createDatasetBrowser(services) {
 
     let S = null;                 // the state of the dialog while it is open
     let shown = false;
+    let closing = false;
+    let hiddenPromise = null;      // while the dialog is closing: settles when it has closed
     let returnFocus = null;
     let detailsTimer = null;
     let detailsAbort = null;
@@ -450,6 +452,8 @@ export function createDatasetBrowser(services) {
 
     function closePathField() {
         if (!S) return;
+        // the field is about to be hidden: keep the focus inside the dialog (a key chord needs it there)
+        if (document.activeElement === dom.path) dom.search.focus();
         S.pathOpen = false;
         dom.pathForm.hidden = true;
         dom.crumbs.hidden = false;
@@ -607,7 +611,7 @@ export function createDatasetBrowser(services) {
         }
         if (S.remote && S.remote.error && searching()) wrap.appendChild(el('div', 'dsb-state text-danger', S.remote.error));
         if (S.remote && S.remote.truncated && searching()) wrap.appendChild(el('div', 'dsb-state', 'The search stopped at its limit; narrow it to see more.'));
-        if (serverMore === false && inFolderPlace() && !searching() && sort.key && !sort.server && L.more) {
+        if (inFolderPlace() && !searching() && sort.key && !sort.server && L.more) {
             wrap.appendChild(el('div', 'dsb-state', `Sorted among ${L.offset} loaded.`));
         }
         if (hadFocus) {
@@ -889,7 +893,7 @@ export function createDatasetBrowser(services) {
         chips('Obsm', meta.obsm_keys, meta.obsm_total);
         chips('Layers', meta.layers_keys, meta.layers_total);
         // what the open panels use that this dataset lacks
-        const missing = S.used && S.used.length && meta.readable ? missingKeys(S.used, meta) : [];
+        const missing = S.used && S.used.length && meta.readable && row.path !== services.currentPath() ? missingKeys(S.used, meta) : [];
         if (missing.length) {
             const warn = el('div', 'dsb-note dsb-note-warn');
             warn.id = 'dsb-missing-keys';
@@ -1109,6 +1113,13 @@ export function createDatasetBrowser(services) {
         if (resolve) resolve(null);
     });
 
+    // The dialog is closing from the moment it starts to hide (Escape, the close button, a choice) until its `hidden`
+    // event, which ends the state: a dialog opened in between must wait for that event, not be ended by it.
+    root.addEventListener('hide.bs.modal', () => {
+        closing = true;
+        hiddenPromise = new Promise(resolve => root.addEventListener('hidden.bs.modal', () => { hiddenPromise = null; resolve(); }, { once: true }));
+    });
+
     function hide() {
         if (shown || root.classList.contains('show')) modal.hide();
     }
@@ -1126,7 +1137,10 @@ export function createDatasetBrowser(services) {
      * @returns {Promise<null>} resolves when the dialog has closed
      */
     async function open(options = {}) {
-        if (S) { hide(); }
+        // one that is still closing has to finish first (its `hidden` event ends its state, not the new one's)
+        if (S) hide();
+        if (hiddenPromise) await hiddenPromise;
+        closing = false;
         S = freshState(options);
         S.unavailableName = options.unavailableName || null;
         S.pinned = new Set();
@@ -1181,5 +1195,5 @@ export function createDatasetBrowser(services) {
         return closed;
     }
 
-    return { open, close: hide, isOpen: () => !!S };
+    return { open, close: hide, isOpen: () => !!S && !closing };
 }

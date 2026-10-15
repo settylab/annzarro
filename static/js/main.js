@@ -2001,7 +2001,7 @@ const App = (function() {
                 return window.api && typeof window.api.openDatasetDialog === 'function' ? () => window.api.openDatasetDialog() : null;
             },
             isDesktop: document.documentElement.hasAttribute('data-desktop'),
-            get localMode() { return Config.SERVER_CONFIG.local_mode === true; },
+            get localMode() { return Config.SERVER_CONFIG.local_mode === true || Config.SERVER_CONFIG.single_user === true; },
             copy: (text) => navigator.clipboard.writeText(text),
             shortcut: { open: _isMac() ? '\u2318O' : 'Ctrl+O', path: _isMac() ? '\u2318L' : 'Ctrl+L' }
         };
@@ -3805,23 +3805,24 @@ const App = (function() {
             return true;
         }
 
+        // Chords with a modifier work wherever the focus is, also in a text field that handles its own keys (so: in
+        // the capture phase). Cmd/Ctrl+O opens the dataset browser, Cmd/Ctrl+Shift+L the Load Panel Set dialog;
+        // neither opens over another dialog.
         document.addEventListener('keydown', (e) => {
             const shortcuts = Config.KEYBOARD_SHORTCUTS;
-
-            // Chords with a modifier work wherever the focus is (also in a text field): Cmd/Ctrl+O opens
-            // the dataset browser, Cmd/Ctrl+Shift+L the Load Panel Set dialog. Not over another dialog.
             const otherModal = document.querySelector('.modal.show:not(#dataset-browser)');
             if (matchesShortcut(e, shortcuts.OPEN_DATASET)) {
                 e.preventDefault();
                 if (!otherModal && !_browser.isOpen()) _showChangeDataset({ browse: true });
                 else if (_browser.isOpen()) document.getElementById('dsb-search').focus();
-                return;
-            }
-            if (matchesShortcut(e, shortcuts.LOAD_SESSION)) {
+            } else if (matchesShortcut(e, shortcuts.LOAD_SESSION)) {
                 e.preventDefault();
                 if (!otherModal && !_browser.isOpen()) _showLoadSessionModal();
-                return;
             }
+        }, true);
+
+        document.addEventListener('keydown', (e) => {
+            const shortcuts = Config.KEYBOARD_SHORTCUTS;
 
             // Skip if user is typing in an input field
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
