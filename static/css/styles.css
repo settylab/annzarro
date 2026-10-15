@@ -2378,6 +2378,10 @@ button.dtsb-button.dtsb-clear:hover {
         flex: 0 0 auto;
         width: auto;
     }
+    /* the buttons stay at the right edge (the focus columns do not stretch to fill the row) */
+    .global-controls > .row > .header-actions {
+        margin-left: auto;
+    }
     /* Tight: the columns give up just the width the row is short of, down to their minimum;
        the inputs keep the width of their value and are only narrowed by their column */
     .app-header.focus-tight .global-controls > .row > .focus-col {
@@ -3749,12 +3753,32 @@ details.aesthetics-section > .aesthetics-body {
 .panel-no-data-message { max-width: 32rem; font-size: 0.875rem; overflow-wrap: anywhere; }
 
 /* ---- The dataset bar and the dataset button (utils/dataset-button.js) ---- */
+.dataset-stats {
+    padding-top: 0.125rem;      /* the bar is 31 px with its 26 px button, as tall as it was */
+    padding-bottom: 0.125rem;
+}
 .dataset-bar {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;          /* one line: the button gives way (its name is cut) before anything wraps */
     align-items: center;
     gap: 0.15rem 1rem;
-    min-height: 28px;
+    min-height: 26px;
+}
+@media (max-width: 639.98px) {
+    .dataset-bar { flex-wrap: wrap; }
+}
+.dataset-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+}
+.dataset-bar .dataset-fact,
+.dataset-bar .theme-toggle,
+.dataset-bar .dataset-refresh {
+    flex: 0 0 auto;
 }
 .dataset-bar .dataset-fact {
     white-space: nowrap;
@@ -3772,6 +3796,7 @@ details.aesthetics-section > .aesthetics-body {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
+    flex: 0 1 auto;
     min-width: 120px;
     max-width: min(340px, 100%);
     height: 26px;
@@ -4129,6 +4154,11 @@ details.aesthetics-section > .aesthetics-body {
 
 /* The welcome screen's "Open a dataset" section (selection-tile.js), shown while no dataset is open */
 .welcome-open-dataset[hidden] { display: none; }
+.welcome-recents-table { margin: 0 auto 0.5rem; width: auto; }
+.welcome-recents-table td { border: 0; padding: 0 0.5rem; vertical-align: baseline; }
+.welcome-open-actions { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+
+/* The welcome screen's "Open a dataset" section (selection-tile.js), shown while no dataset is open */
 .welcome-recents-table { margin: 0 auto 0.5rem; width: auto; }
 .welcome-recents-table td { border: 0; padding: 0 0.5rem; vertical-align: baseline; }
 .welcome-open-actions { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }

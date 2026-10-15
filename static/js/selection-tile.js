@@ -64,27 +64,45 @@ export class SelectionTile {
      * are `window.annzarro` (main.js).
      */
     _initOpenDataset() {
-      const section = this.tileSelector.querySelector('.welcome-open-dataset');
+      const host = this.tileSelector.querySelector('.selection-sections');
       const app = window.annzarro;
-      if (!section || !app || !app.getDataset) return;
+      if (!host || !app || !app.getDataset) return;
       const none = () => ['none', 'nodata', 'unavailable'].includes(app.getDataset().status);
-      const browse = this.tileSelector.querySelector(`#welcome-browse-${this.selectionId}`);
-      const native = this.tileSelector.querySelector(`#welcome-native-${this.selectionId}`);
-      const list = this.tileSelector.querySelector(`#welcome-recents-${this.selectionId}`);
-      browse.addEventListener('click', () => app.openBrowser({ browse: true }));
-      if (window.api && typeof window.api.openDatasetDialog === 'function') {
-        native.hidden = false;
-        native.addEventListener('click', async () => {
-          const picked = await window.api.openDatasetDialog();
-          const path = typeof picked === 'string' ? picked : picked && picked.path;
-          if (path) app.openDataset(path);
-        });
-      }
+      let section = null;
+      const build = () => {
+        const node = document.createElement('div');
+        node.className = 'selection-section welcome-open-dataset';
+        node.innerHTML = `
+          <h3>Open a dataset</h3>
+          <div class="welcome-recents"></div>
+          <div class="welcome-open-actions">
+            <button type="button" class="btn btn-primary btn-sm welcome-browse"><i class="fas fa-database" aria-hidden="true"></i> Browse datasets&hellip;</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm welcome-native" hidden><i class="fas fa-folder-open" aria-hidden="true"></i> Open file or folder&hellip;</button>
+          </div>`;
+        node.querySelector('.welcome-browse').addEventListener('click', () => app.openBrowser({ browse: true }));
+        const native = node.querySelector('.welcome-native');
+        if (window.api && typeof window.api.openDatasetDialog === 'function') {
+          native.hidden = false;
+          native.addEventListener('click', async () => {
+            const picked = await window.api.openDatasetDialog();
+            const path = typeof picked === 'string' ? picked : picked && picked.path;
+            if (path) app.openDataset(path);
+          });
+        }
+        host.insertBefore(node, host.firstChild);
+        return node;
+      };
       const fill = async () => {
-        section.hidden = !none();
-        if (section.hidden || !app.recentDatasets) return;
+        if (!none()) {
+          if (section) { section.remove(); section = null; }
+          return;
+        }
+        if (!section) section = build();
+        if (!app.recentDatasets) return;
         let entries = [];
         try { entries = await app.recentDatasets(5); } catch { entries = []; }
+        if (!section) return;
+        const list = section.querySelector('.welcome-recents');
         list.textContent = '';
         if (!entries.length) return;
         const table = document.createElement('table');
@@ -112,7 +130,10 @@ export class SelectionTile {
       };
       fill();
       // the section follows the dataset: it goes when one opens and comes back when none is
-      const sync = () => { if (!this.tileSelector.isConnected) { document.removeEventListener('datasetState', sync); return; } fill(); };
+      const sync = () => {
+        if (!this.tileSelector.isConnected) { document.removeEventListener('datasetState', sync); return; }
+        fill();
+      };
       document.addEventListener('datasetState', sync);
     }
 
@@ -199,14 +220,6 @@ export class SelectionTile {
               <button class="tile-close-btn" id="close-selection-${this.selectionId}" title="Close">×</button>
             </div>
             <div class="selection-sections">
-              <div class="selection-section welcome-open-dataset" id="open-dataset-section-${this.selectionId}" hidden>
-                <h3>Open a dataset</h3>
-                <div class="welcome-recents" id="welcome-recents-${this.selectionId}"></div>
-                <div class="welcome-open-actions">
-                  <button type="button" class="btn btn-primary btn-sm" id="welcome-browse-${this.selectionId}"><i class="fas fa-database" aria-hidden="true"></i> Browse datasets&hellip;</button>
-                  <button type="button" class="btn btn-outline-secondary btn-sm" id="welcome-native-${this.selectionId}" hidden><i class="fas fa-folder-open" aria-hidden="true"></i> Open file or folder&hellip;</button>
-                </div>
-              </div>
               <div class="selection-section">
                 <h3>Create New Panel</h3>
                 <div class="tile-selection-grid" id="panel-type-grid-${this.selectionId}"></div>

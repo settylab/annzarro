@@ -171,7 +171,7 @@ def test_header_is_one_row_down_to_tablet_width():
     block = block[:block.index("\n}\n")]
     assert ".global-controls > .row {" in block or ".global-controls > .row," in block
     assert "flex-wrap: nowrap" in block
-    for sel in (".global-controls > .row > .col", ".global-controls .select2-container", ".global-controls .name-picker"):
+    for sel in (".global-controls > .row > .col", ".global-controls .name-picker"):
         assert sel in block, sel
     assert "min-width: 0" in block
     assert re.search(r"#focused-cell \{\s*max-width: 100%", block)

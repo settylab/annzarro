@@ -39,7 +39,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
-from annzarro.tests.ui_helpers import SHOWN_DATASET, open_dataset
+from annzarro.tests.ui_helpers import SHOWN_DATASET, button_state, button_text, choose_in_browser, open_dataset
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -200,7 +200,9 @@ def test_missing_store_opens_the_layout_without_data(browser, servers):
             == ["cell-plot", "cell-table"]
         notices = " ".join(_notices(page))
         assert "Dataset not found" in notices and "/no/such/dir/gone.zarr" in notices
-        assert page.is_visible("#btn-change-dataset")
+        # the dataset button says so, and offers to choose one
+        assert button_state(page) == "nodata" and button_text(page).startswith("No data: "), button_text(page)
+        assert page.is_visible("#dataset-button .dataset-button-action")
         # the view as saved: every setting, the focus, the store it names
         captured = page.evaluate("() => sessionManager.captureView()")
         for tid, cfg in VIEW["layout"]["panelConfigs"].items():
@@ -216,15 +218,14 @@ def test_missing_store_opens_the_layout_without_data(browser, servers):
 def test_change_dataset_onto_the_right_store_restores_the_view(browser, servers):
     ctx, page, errors = _open_without_data(browser, servers)
     try:
-        page.click("#btn-change-dataset")
-        page.wait_for_selector('#change-dataset-modal .change-dataset-item[data-path$="fixture_small.zarr"]', timeout=20000)
-        page.click('#change-dataset-modal .change-dataset-item[data-path$="fixture_small.zarr"] button')
+        # the button of a view without data opens the browser in "choose for this view" mode
+        choose_in_browser(page, "fixture_small.zarr")
         _drawn(page)
         assert page.query_selector(".panel-no-data") is None
         assert _plot_config(page)["color"]["key"] == "leiden"
         assert not _missing_marked(page)
         assert page.input_value("#focused-gene") == "GENE003"
-        assert not page.is_visible("#btn-change-dataset")
+        assert button_state(page) == "open" and button_text(page) == "fixture_small.zarr", button_text(page)
         assert not errors, errors
     finally:
         ctx.close()
@@ -234,9 +235,7 @@ def test_a_store_without_a_field_marks_it_and_switching_back_restores_it(browser
     _, dirs = servers
     ctx, page, errors = _open_without_data(browser, servers)
     try:
-        page.click("#btn-change-dataset")
-        page.wait_for_selector('#change-dataset-modal .change-dataset-item[data-path$="fields.zarr"]', timeout=20000)
-        page.click('#change-dataset-modal .change-dataset-item[data-path$="fields.zarr"] button')
+        choose_in_browser(page, "fields.zarr")
         _drawn(page)
         # the panel says what is missing; the view did not fail
         assert _missing_marked(page)
@@ -246,7 +245,7 @@ def test_a_store_without_a_field_marks_it_and_switching_back_restores_it(browser
         path = str(dirs["A"] / "fixture_small.zarr")
         open_dataset(page, path)
         page.wait_for_function("(p) => JSON.parse(window.annzarroPlotState()).loading === false"
-                               " && document.getElementById('dataset-path').textContent !== ''", arg=path)
+                               " && document.getElementById('dataset-button-name').textContent !== ''", arg=path)
         page.wait_for_timeout(2500)
         assert _plot_config(page)["color"]["key"] == "leiden"
         assert not _missing_marked(page)

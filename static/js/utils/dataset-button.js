@@ -45,18 +45,19 @@ export function mountDatasetButton({ button, onOpen, shortcut }) {
     function fit() {
         if (!name || !whole) return;
         name.textContent = whole;
-        if (button.scrollWidth <= button.clientWidth + 1) return;
+        const over = () => name.scrollWidth - name.clientWidth;
+        if (over() <= 0) return;
         const style = getComputedStyle(name);
         canvas = canvas || document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
         const measure = str => ctx.measureText(str).width;
         let room = name.clientWidth || 200;
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 8; i++) {      // the canvas is a model of the DOM: check it, and tighten if it was off
             name.textContent = truncateDatasetLabel(whole, room, measure);
-            const over = button.scrollWidth - button.clientWidth;
-            if (over <= 0) return;
-            room -= Math.max(4, over);
+            const left = over();
+            if (left <= 0) return;
+            room -= Math.max(4, left);
         }
     }
 
@@ -83,7 +84,19 @@ export function mountDatasetButton({ button, onOpen, shortcut }) {
         if (alert && (state.error || state.failed)) alert.textContent = (state.failed && state.failed.message) || state.error;
     }
 
-    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => fit()).observe(button.parentElement || button);
-    window.addEventListener('resize', fit);
-    return { update, refit: fit };
+    // Refit when the room changes: the window, or another item of the bar (the format appears) squeezing the button.
+    let queued = false;
+    const refit = () => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => { queued = false; fit(); });
+    };
+    if (typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(refit);
+        observer.observe(button);
+        if (button.parentElement) observer.observe(button.parentElement);
+    }
+    window.addEventListener('resize', refit);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
+    return { update, refit };
 }

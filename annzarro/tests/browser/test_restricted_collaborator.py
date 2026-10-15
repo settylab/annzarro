@@ -4,14 +4,14 @@
 directory also holds ``out.zarr`` and ``hidden/deep.zarr``, which he must never
 see, find, or be told about:
 
-* the dataset dropdown, the picker (its root is "Your datasets"), its folder
-  tree and its search show the grants and nothing else, and no text of the
-  page names the data directory;
+* the dataset browser (its root place is "Your datasets"), its folders and its
+  search show the grants and nothing else, and no text of the page names the
+  data directory;
 * a deep link to a dataset outside the grants opens the layout without data and
   says "not available to you, or no longer exists", on the notice, on the
   placeholder panels and on the no-dataset screen;
 * a grant revoked while a dataset is open turns the next read into the same
-  notice and returns to the picker;
+  notice and returns to the browser, which names it;
 * the panel sets listed to him are his own and those on datasets he can read;
 * an unrestricted user is unchanged.
 
@@ -24,7 +24,8 @@ import socket
 import threading
 
 import pytest
-from annzarro.tests.ui_helpers import SHOWN_DATASET
+from annzarro.tests.ui_helpers import (
+    BROWSER, SHOWN_DATASET, browser_row, browser_rows, button_state, button_text, open_browser)
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402
@@ -91,58 +92,57 @@ def sign_in(browser, base, username):
 
 
 def wait_for_dataset(page):
-    page.wait_for_function("() => { const el = document.getElementById('dataset-path');"
-                           " return el && el.textContent.trim().length > 0 && !el.textContent.includes('Loading'); }",
-                           timeout=30000)
+    page.wait_for_function("() => window.annzarro && window.annzarro.getDataset().status === 'open'", timeout=30000)
     page.wait_for_timeout(1000)
 
 
-def options(page):
-    return page.eval_on_selector_all("#dataset-selector option", "os => os.map(o => [o.value, o.text])")
+def wait_for_page(page):
+    """The page has started, with no dataset open (a restricted user's first visit opens none)."""
+    page.wait_for_function("() => window.annzarro && window.annzarro.getDataset", timeout=30000)
+    page.wait_for_timeout(1000)
 
 
-def open_picker(page):
-    page.click("#dataset-selector + .select2-container")
-    page.click(".select2-dropdown .dataset-browse")
-    page.locator("#change-dataset-modal").wait_for(state="visible")
-    page.wait_for_function("() => document.querySelectorAll('#change-dataset-tree .change-dataset-folder').length > 0")
-
-
-def test_dropdown_picker_and_search_show_only_the_grants(browser, served):
+def test_the_browser_and_its_search_show_only_the_grants(browser, served):
     app, base, data = served
     context, page, errors = sign_in(browser, base, "bob")
     try:
         page.goto(base + "/")
-        wait_for_dataset(page)
-        listed = " ".join(v + " " + t for v, t in options(page))
-        assert "in.zarr" in listed and "p.zarr" in listed
-        assert "out.zarr" not in listed and "deep.zarr" not in listed and "hidden" not in listed
+        wait_for_page(page)
         assert page.evaluate("fetch('/api/v1/auth/me').then(r => r.json()).then(m => m.restricted)") is True
 
-        open_picker(page)
-        modal = page.locator("#change-dataset-modal")
-        assert modal.locator(".change-dataset-folder-name").first.inner_text() == "Your datasets"
-        modal.locator("#change-dataset-tree .change-dataset-folder").first.click()      # open the root
-        modal.locator("#change-dataset-tree .change-dataset-folder", has_text="pub").wait_for()
-        modal.locator("#change-dataset-tree .change-dataset-folder", has_text="pub").click()
-        modal.locator("#change-dataset-tree .change-dataset-item[data-path$='p.zarr']").wait_for()
-        tree = modal.locator("#change-dataset-tree").inner_text()
-        assert "in.zarr" in tree and "p.zarr" in tree and "out.zarr" not in tree and "hidden" not in tree
+        modal = open_browser(page)
+        # the places: the grants' root is "Your datasets", the granted folder a place of its own
+        places = page.inner_text("#dsb-places")
+        assert "Your datasets" in places and "pub" in places and "Data directory" not in places
+        rows = browser_rows(page)
+        assert any(r.endswith("in.zarr") for r in rows) and any(r.endswith("pub") for r in rows), rows
+        listed = modal.inner_text()
+        assert "out.zarr" not in listed and "hidden" not in listed and "deep.zarr" not in listed
+        # into the granted folder, by its row and by its place
+        browser_row(page, "/pub").locator(".dsb-name").click()
+        browser_row(page, "p.zarr").wait_for()
+        shown = page.inner_text("#dsb-table-wrap")
+        assert "p.zarr" in shown and "out.zarr" not in shown and "hidden" not in shown
+        assert "pub" in page.inner_text("#dsb-crumbs")
+        page.click("#dsb-places [data-place='root']")
+        browser_row(page, "in.zarr").wait_for()
 
-        page.fill("#change-dataset-search", "zarr")
-        page.wait_for_function("() => document.querySelector('#change-dataset-list').innerText.includes('p.zarr')")
-        page.wait_for_timeout(800)          # the subfolder search answers after its pause
+        page.fill("#dsb-search", "zarr")
+        browser_row(page, "p.zarr").wait_for()
+        page.wait_for_timeout(800)          # the search below the folders answers after its pause
         everything = modal.inner_text()
         assert "in.zarr" in everything and "p.zarr" in everything
         for forbidden in ("out.zarr", "deep.zarr", "hidden", data, os.path.dirname(data)):
             assert forbidden not in everything, forbidden
-        page.fill("#change-dataset-search", "deep")
+        page.fill("#dsb-search", "deep")
         page.wait_for_timeout(1500)
         assert "deep.zarr" not in modal.inner_text()
-        label = page.inner_text("#change-dataset-path-label")
-        assert "shared with you" in label
+        # the path field says what this user may open
+        page.keyboard.press("Control+l")
+        assert "shared with you" in page.inner_text("#dsb-path-label")
+        page.keyboard.press("Escape")
         if SHOT:
-            page.fill("#change-dataset-search", "")
+            page.fill("#dsb-search", "")
             page.screenshot(path=os.path.join(SHOT, "restricted-picker.png"))
         assert not errors, errors
     finally:
@@ -161,8 +161,15 @@ def test_a_deep_link_outside_the_grants_is_not_available(browser, served):
         # nothing says it exists, and nothing says where the data directory is
         assert "not on this server" not in notice
         assert os.path.dirname(data) not in page.inner_text("body").replace(data, "")
-        # the page is open without data and says where: the name they asked for, as they wrote it
-        assert page.inner_text("#dataset-path").startswith("No data")
+        # the page is open without data and says where: the dataset button names what they asked for, as they wrote it
+        assert button_state(page) == "nodata" and button_text(page).startswith("No data"), button_text(page)
+        # the button opens the browser for this view, with the sentence that is true of both cases (it may not exist,
+        # or may not be theirs) and no word of where the data directory is
+        modal = open_browser(page)
+        banner = page.inner_text("#dataset-browser-banner")
+        assert "not available to you, or no longer exists" in banner and "Its panels are kept" in banner, banner
+        assert data not in modal.inner_text() and os.path.dirname(data) not in modal.inner_text()
+        page.keyboard.press("Escape")
         # the same link to a store they may read opens it
         page.goto(f"{base}/?dataset_path={data}/in.zarr")
         wait_for_dataset(page)
@@ -181,9 +188,12 @@ def test_an_unrestricted_user_still_sees_everything_and_the_old_wording(browser,
     context, page, errors = sign_in(browser, base, "carol")
     try:
         page.goto(base + "/")
-        wait_for_dataset(page)
-        listed = " ".join(v for v, t in options(page))
+        wait_for_page(page)
+        open_browser(page)
+        listed = " ".join(browser_rows(page))
         assert "in.zarr" in listed and "out.zarr" in listed
+        assert page.locator("#dataset-browser-banner").is_hidden()          # nobody is told to ask anyone
+        page.keyboard.press("Escape")
         page.goto(f"{base}/?dataset_path={data}/nope.zarr")
         page.wait_for_selector(".notification-title", timeout=30000)
         notice = page.inner_text("#notification-container")
@@ -193,7 +203,7 @@ def test_an_unrestricted_user_still_sees_everything_and_the_old_wording(browser,
         context.close()
 
 
-def test_a_grant_revoked_while_the_dataset_is_open_returns_to_the_picker(browser, served):
+def test_a_grant_revoked_while_the_dataset_is_open_returns_to_the_browser(browser, served):
     app, base, data = served
     context, page, errors = sign_in(browser, base, "bob")
     try:
@@ -212,9 +222,12 @@ def test_a_grant_revoked_while_the_dataset_is_open_returns_to_the_picker(browser
             pytest.skip("the fixture has no such column to read after the revoke")
         page.wait_for_selector(".notification-title")
         assert "Dataset not available" in page.inner_text("#notification-container")
-        page.locator("#change-dataset-modal").wait_for(state="visible")
-        page.wait_for_timeout(1500)       # the lists load after the modal opens
-        assert page.locator("#change-dataset-modal .change-dataset-item[data-path$='in.zarr']").count() == 0
+        page.locator(BROWSER).wait_for(state="visible")
+        page.wait_for_function("() => !/Loading/.test(document.querySelector('#dsb-table-wrap').innerText)")
+        page.wait_for_timeout(1500)       # the lists load after the dialog opens
+        assert page.locator(f"{BROWSER} tr.dsb-row[data-path$='in.zarr']").count() == 0
+        assert "not available to you, or no longer exists" in page.inner_text("#dataset-browser-banner")
+        assert button_state(page) == "unavailable"
         assert not errors, errors
     finally:
         context.close()
@@ -232,7 +245,7 @@ def test_panel_sets_listed_to_a_restricted_user(browser, served):
                 body: JSON.stringify({name, dataset})})).status""", [name, dataset])
             assert reply == 200
         bob.goto(base + "/")
-        wait_for_dataset(bob)
+        wait_for_page(bob)
         names = bob.evaluate("fetch('/api/v1/sessions/list').then(r => r.json()).then(l => l.map(s => s.name))")
         assert names == ["carol on in"] or sorted(names) == ["carol on in"], names
         status = bob.evaluate("fetch('/api/v1/sessions/load?name=carol%20on%20out').then(r => r.status)")

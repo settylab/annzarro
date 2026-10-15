@@ -34,6 +34,7 @@ import urllib.request
 
 import pytest
 
+from annzarro.tests.ui_helpers import button_state, button_text, dataset_path
 from .test_subset_parts_browser import (  # noqa: F401
     FIXTURE, HERE, _free_port, _skip_or_fail, sync_api)
 
@@ -409,9 +410,9 @@ def test_a_part_step_during_a_dataset_load_does_not_close_the_panels(two_dataset
             s.close()
 
 
-# -- the dataset picker ---------------------------------------------------------
+# -- the dataset button ---------------------------------------------------------
 
-def test_the_picker_shows_the_dataset_that_is_loading_and_survives_refreshing_twice(two_datasets):
+def test_the_dataset_button_shows_the_dataset_that_is_loading_and_survives_refreshing_twice(two_datasets):
     base, dataset = two_datasets
     with sync_api.sync_playwright() as pw:
         s = _Page(pw, base, dataset, delay=1500, wait=False)
@@ -419,37 +420,38 @@ def test_the_picker_shows_the_dataset_that_is_loading_and_survives_refreshing_tw
             s.page.wait_for_selector("#subset-button:not([hidden])", timeout=60_000)
             s.delay(0)
             s.wait_drawn()
-            assert s.page.evaluate("() => document.querySelector('#dataset-selector').value") == dataset
+            assert dataset_path(s.page) == dataset
             s.delay(800)                               # the list is read slowly: the two refreshes overlap
             s.page.click("#refresh-dataset")
             s.page.click("#refresh-dataset")
             s.page.wait_for_timeout(5000)
-            assert s.page.evaluate("() => document.querySelector('#dataset-selector').value") == dataset, \
-                "Refresh twice left the picker on another dataset"
+            assert dataset_path(s.page) == dataset, "Refresh twice left the page on another dataset"
+            assert os.path.basename(dataset) in button_text(s.page), button_text(s.page)
         finally:
             s.close()
 
 
-def test_the_picker_names_the_dataset_a_link_is_loading(two_datasets):
+def test_the_dataset_button_names_the_dataset_a_link_is_loading(two_datasets):
     base, dataset = two_datasets
     with sync_api.sync_playwright() as pw:
         s = _Page(pw, base, dataset, delay=2500, wait=False)
         try:
-            s.page.wait_for_function("() => document.querySelector('#dataset-selector')?.options.length > 1", timeout=30_000)
+            s.page.wait_for_function("() => window.annzarro && window.annzarro.getDataset().status !== 'none'", timeout=30_000)
             s.page.wait_for_timeout(300)
-            shown = s.page.evaluate("() => document.querySelector('#dataset-selector').value")
-            assert shown == dataset, f"while the link's dataset loads the picker shows {shown!r}, not {dataset!r}"
+            shown = dataset_path(s.page)
+            assert shown == dataset, f"while the link's dataset loads the page names {shown!r}, not {dataset!r}"
+            assert button_state(s.page) == "opening" and os.path.basename(dataset) in button_text(s.page), button_text(s.page)
         finally:
             s.close()
 
 
 def test_refresh_while_a_link_loads_does_not_open_the_first_dataset(two_datasets):
-    """The picker listed the first dataset while the link's loaded, and Refresh reads the picker."""
+    """Refresh re-reads the dataset that is open (or opening), never another one the page might list first."""
     base, dataset = two_datasets
     with sync_api.sync_playwright() as pw:
         s = _Page(pw, base, dataset, delay=2500, wait=False)
         try:
-            s.page.wait_for_function("() => document.querySelector('#dataset-selector')?.options.length > 1", timeout=30_000)
+            s.page.wait_for_function("() => window.annzarro && window.annzarro.getDataset().status !== 'none'", timeout=30_000)
             s.page.wait_for_timeout(300)
             s.page.click("#refresh-dataset")
             s.page.wait_for_timeout(12_000)
@@ -458,7 +460,7 @@ def test_refresh_while_a_link_loads_does_not_open_the_first_dataset(two_datasets
             s.delay(0)
             s.page.wait_for_selector("#subset-button:not([hidden])", timeout=60_000)
             s.wait_drawn()
-            assert s.page.evaluate("() => document.querySelector('#dataset-selector').value") == dataset
+            assert dataset_path(s.page) == dataset
         finally:
             s.close()
 

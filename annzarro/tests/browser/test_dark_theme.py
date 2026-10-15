@@ -497,7 +497,7 @@ COLOURS = """(sel) => {
 
 # (selector, what), checked in both themes on the main page; text needs 4.5:1
 MAIN_TEXT = [
-    "body", ".app-title", "label[for=dataset-selector]", "#dataset-stats", "#cell-count",
+    "body", ".app-title", "#dataset-button", "#dataset-stats", "#cell-count",
     ".tile-title", ".tile .form-select", ".tile .form-control", "#btn-save-session", "#btn-load-session",
     "#btn-close-all", "#btn-share-link", ".tile .btn-outline-secondary", ".tile .btn-light",
     ".dataTables_wrapper .table td", ".dataTables_wrapper .table th", ".nav-tabs .nav-link.active", ".nav-tabs .nav-link:not(.active)",

@@ -4,7 +4,9 @@
 (``DatasetState``, static/js/utils/dataset-state.js), or by loading the link
 ``?dataset_path=``. No test needs to know which control the page offers for choosing a dataset, so
 replacing that control changes this module and not the tests. A test of the control itself
-(test_dataset_dropdown_browser.py, test_dataset_picker_browser.py) still drives the control.
+(test_dataset_browser.py, test_dataset_browser_a11y.py) drives the dataset button and the browser;
+the helpers at the end of this module are what those tests and the ones that choose a dataset
+through the dialog share.
 """
 import urllib.parse
 
@@ -62,3 +64,68 @@ def open_dataset(page, path, *, base=None, timeout=60_000):
     else:
         start_open_dataset(page, path, timeout=timeout)
     return wait_for_open(page, path, timeout=timeout)
+
+
+# ---- the dataset button and the dataset browser (static/js/utils/dataset-button.js, dataset-browser.js) ----
+
+#: The button at the left of the dataset bar that names the open dataset and opens the browser.
+BUTTON = "#dataset-button"
+#: The dataset browser dialog.
+BROWSER = "#dataset-browser"
+#: A table row of the browser (a store or a folder), and its name button.
+ROW = f"{BROWSER} #dsb-table tbody tr.dsb-row"
+
+
+def button_text(page):
+    """What the dataset button says (the cut name, or "Open a dataset...", "No data: ...")."""
+    return page.inner_text(f"{BUTTON} .dataset-button-name").strip()
+
+
+def button_state(page):
+    """``none``, ``opening``, ``open``, ``nodata`` or ``unavailable``: the state the button shows."""
+    return page.get_attribute(BUTTON, "data-state")
+
+
+def open_browser(page, *, query=None, shortcut=False, timeout=30_000):
+    """Open the dataset browser (the button, or Ctrl+O with ``shortcut``) and wait until it has listed something.
+
+    ``query`` is typed into its search field. Returns the dialog locator.
+    """
+    if shortcut:
+        page.keyboard.press("Control+o")
+    else:
+        page.click(BUTTON)
+    dialog = page.locator(BROWSER)
+    dialog.wait_for(state="visible", timeout=timeout)
+    page.wait_for_function(
+        "() => { const w = document.querySelector('#dsb-table-wrap');"
+        " return w && (w.querySelector('#dsb-table tbody tr') || w.querySelector('.dsb-state')) && !/Loading/.test(w.innerText); }",
+        timeout=timeout)
+    page.wait_for_function("() => document.activeElement && document.activeElement.id === 'dsb-search'", timeout=5_000)
+    if query is not None:
+        page.fill("#dsb-search", query)
+    return dialog
+
+
+def browser_rows(page):
+    """The path of every row of the browser's table, in order."""
+    return page.eval_on_selector_all(f"{ROW}[data-kind]", "rows => rows.map(r => r.dataset.path)")
+
+
+def browser_row(page, suffix):
+    """The row whose path ends with ``suffix``."""
+    return page.locator(f"{ROW}[data-path$='{suffix}']")
+
+
+def choose_in_browser(page, suffix, *, query=None):
+    """Open the browser, search for ``query`` if given, and open the store whose path ends with ``suffix`` (a click on its name)."""
+    open_browser(page, query=query)
+    row = browser_row(page, suffix)
+    row.first.wait_for(timeout=30_000)
+    row.first.locator(".dsb-name").click()
+
+
+def close_browser(page):
+    """Close the browser with Escape and wait until it is gone."""
+    page.keyboard.press("Escape")
+    page.locator(BROWSER).wait_for(state="hidden", timeout=10_000)

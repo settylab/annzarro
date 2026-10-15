@@ -23,6 +23,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
+from annzarro.tests.ui_helpers import open_browser
 
 REQUIRED = os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1"
 if REQUIRED:
@@ -103,7 +104,7 @@ auth:
 
 def _no_data_link(url, data):
     """A link whose store is missing: the page opens its layout without data,
-    and offers Change dataset (the picker)."""
+    and its dataset button offers to choose one (the browser)."""
     plot = {"id": "cell-plot-K",
             "x": {"type": "obsm", "key": "X_umap", "column": "0"},
             "y": {"type": "obsm", "key": "X_umap", "column": "1"}, "z": None,
@@ -128,15 +129,14 @@ def _sign_in(browser, url, username, password, target):
     return context, page, errors
 
 
-def _open_picker_root(page):
-    """Open Change dataset and expand the Data directory folder."""
-    page.click("#btn-change-dataset")
-    page.wait_for_selector('#change-dataset-tree .change-dataset-folder[data-folder=""]', timeout=30000)
-    page.click('#change-dataset-tree .change-dataset-folder[data-folder=""]')
-    page.wait_for_selector("#change-dataset-tree .change-dataset-item", timeout=30000)
+def _open_browser_root(page):
+    """Open the dataset browser (from the button of a view without data); its places are listed."""
+    page.wait_for_selector("#dataset-button[data-state='nodata']", timeout=60000)
+    open_browser(page)
+    page.wait_for_selector("#dsb-places [data-place='root']", timeout=30000)
 
 
-def test_an_added_directory_reaches_the_picker_and_removal_takes_it_away(server):
+def test_an_added_directory_reaches_the_browser_and_removal_takes_it_away(server):
     url, data, parent = server
     lab2 = str(parent / "lab2")
     store = urllib.parse.quote(os.path.join(lab2, "cells.zarr"), safe="/")
@@ -165,31 +165,29 @@ def test_an_added_directory_reaches_the_picker_and_removal_takes_it_away(server)
             admin.wait_for_selector("#data-root-datasets")
             assert "cells.zarr" in admin.inner_text("#data-root-datasets")
 
-            # an ordinary user sees it at once, as a top-level folder of the picker
+            # an ordinary user sees it at once, as a place of the browser
             user_ctx, user, user_errors = _sign_in(browser, url, "alice", "alice-pw", _no_data_link(url, data))
-            user.wait_for_selector("#btn-change-dataset", state="visible", timeout=60000)
-            _open_picker_root(user)
-            folder = user.locator(f'#change-dataset-tree .change-dataset-folder[data-folder="{lab2}"]')
-            assert folder.count() == 1 and "lab2" in folder.inner_text()
-            folder.click()
-            user.wait_for_selector(f'#change-dataset-tree .change-dataset-item[data-path="{lab2}/cells.zarr"]', timeout=30000)
+            _open_browser_root(user)
+            place = user.locator(f'#dsb-places [data-place="folder:{lab2}"]')
+            assert place.count() == 1 and "lab2" in place.inner_text()
+            place.click()
+            user.wait_for_selector(f'#dsb-table tr.dsb-row[data-path="{lab2}/cells.zarr"]', timeout=30000)
             opened = user.evaluate("""async (path) => (await fetch('api/v1/data/info?dataset_path=' + path)).status""", store)
             assert opened == 200
 
-            # the picker's search finds the store inside the admin root
-            user.fill("#change-dataset-search", "cells")
-            user.wait_for_selector(f'#change-dataset-list .change-dataset-item[data-path="{lab2}/cells.zarr"]', timeout=30000)
-            user.fill("#change-dataset-search", "")
+            # the search finds the store inside the admin root (from the data directory, which searches the roots too)
+            user.click("#dsb-places [data-place='root']")
+            user.fill("#dsb-search", "cells")
+            user.wait_for_selector(f'#dsb-table tr.dsb-row[data-path="{lab2}/cells.zarr"]', timeout=30000)
+            user.fill("#dsb-search", "")
 
-            # removing it takes it away from the picker and from reads
             admin.click(f'button[data-action="remove"][data-path="{lab2}"]')
             admin.click(f'button[data-action="confirm-remove"][data-path="{lab2}"]')
             admin.wait_for_selector(f'button[data-action="remove"][data-path="{lab2}"]', state="detached", timeout=30000)
             user.goto(url + _no_data_link(url, data))
             user.reload()
-            user.wait_for_selector("#btn-change-dataset", state="visible", timeout=60000)
-            _open_picker_root(user)
-            assert user.locator(f'#change-dataset-tree .change-dataset-folder[data-folder="{lab2}"]').count() == 0
+            _open_browser_root(user)
+            assert user.locator(f'#dsb-places [data-place="folder:{lab2}"]').count() == 0
             refused = user.evaluate("""async (path) => (await fetch('api/v1/data/info?dataset_path=' + path)).status""", store)
             assert refused == 403
             assert not admin_errors and not user_errors, (admin_errors, user_errors)
