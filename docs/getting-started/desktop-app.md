@@ -19,6 +19,7 @@ Standalone apps for macOS, Windows and Linux are published with each release on 
 | | `AnnZarro-<version>-windows-x64.zip` | portable: unzip and run `AnnZarro.exe` |
 | Linux x86-64 | `AnnZarro-<version>-linux-x86_64.AppImage` | single file: `chmod +x` it and run |
 | Debian/Ubuntu | `AnnZarro-<version>-linux-amd64.deb` | `sudo apt install ./AnnZarro-<version>-linux-amd64.deb` |
+| | `latest.yml`, `latest-mac.yml`, `latest-linux.yml`, `*.blockmap` | update information the app reads ({ref}`desktop-updates`); you do not need them |
 | | `SHA256SUMS.txt` | checksums: `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` |
 
 ```{important}
@@ -81,6 +82,44 @@ to **Security**, click **Open Anyway** next to AnnZarro and confirm (once; right
 longer works there). On macOS 14 and earlier, right-click (Control-click) the app and choose
 **Open**.
 
+(desktop-updates)=
+## Updates
+
+The app looks for a newer release on launch and then at most once a day while it runs. It
+never downloads anything without asking: a window says "AnnZarro X.Y.Z is available" with
+**Download**, **Later**, **Skip this version** and **Release notes** (the GitHub release page).
+After **Download** the app fetches the update, checks it against the checksum published with
+the release, and asks **Restart to update**; it then saves your open panels, closes, installs
+and starts again. If you choose **Later**, the next launch offers the update again.
+
+| Installation | What happens |
+|---|---|
+| macOS (dmg or zip) | updates itself |
+| Windows installer (`-setup.exe`) | updates itself, per user, no admin rights |
+| Linux AppImage | replaces the AppImage file in place |
+| Linux `.deb` (or any non-AppImage Linux install), Windows portable zip | cannot update itself: the window says a new version is available and opens the release page, where you download the new file |
+
+- **Check now:** **AnnZarro > Check for Updates...** on macOS, **Help > Check for Updates...**
+  on Windows and Linux. This also shows an update you skipped.
+- **Turn automatic checks off:** untick **Check for Updates Automatically** in the same menu.
+  The choice, the version you skipped and the time of the last check are kept in
+  `update-settings.json` in the app's settings folder: macOS
+  `~/Library/Application Support/AnnZarro`, Windows `%APPDATA%\AnnZarro`, Linux `~/.config/AnnZarro`.
+- **Turn updates off completely** (managed installs): start the app with the environment variable
+  `ANNZARRO_DISABLE_UPDATES=1`. The app then never contacts GitHub; the menu item says so.
+- **Privacy:** a check requests the release list and update information from `github.com`, and a
+  download comes from `github.com`, which redirects to `objects.githubusercontent.com`. Nothing
+  else is contacted, and the request carries no dataset, user or usage information beyond what
+  any HTTPS request to GitHub reveals (your IP address and the app's user agent). The datasets and
+  the server stay local either way.
+
+```{note}
+Updating needs the first release that contains this feature. If you run 0.5.1 or older, download
+the newest release by hand once (the files above); from then on the app updates itself. macOS
+updates need the notarized builds, so a build you made yourself ({ref}`building <building-the-app>`)
+does not update.
+```
+
 ## Where the app keeps its files
 
 | What | Where |
@@ -94,6 +133,7 @@ longer works there). On macOS 14 and earlier, right-click (Control-click) the ap
 If the server does not start, the app shows an error page that names the log file and offers
 **Retry**.
 
+(building-the-app)=
 ## Building the app yourself
 
 The `annzarro desktop` commands build and run the app from a **source checkout**; a pip

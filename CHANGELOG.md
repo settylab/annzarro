@@ -8,6 +8,15 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+The desktop app can update itself. It looks for a newer release on launch and then once a day, asks
+before it downloads (Download, Later, Skip this version) and again before it restarts, and does
+nothing without your say-so. **Check for Updates...** is in the AnnZarro menu (macOS) or Help menu
+(Windows, Linux), next to an option that turns the automatic checks off; `ANNZARRO_DISABLE_UPDATES=1`
+turns updates off entirely. macOS, the Windows installer and the Linux AppImage update in place; a
+`.deb` and the Windows portable zip show a link to the new release. Checks contact only `github.com`.
+Updating starts with the first release that contains this; users of 0.5.1 and older update by hand
+once ([details](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html#updates)).
+
 ## 0.5.1 (2026-10-14)
 
 A reworked Plot Options menu, with tick, margin, colour bar and scale bar controls, presets, and
