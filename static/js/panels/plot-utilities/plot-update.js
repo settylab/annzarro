@@ -556,8 +556,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                       x: nonTableIndices.map(i => data.x.values[i]),
                       y: nonTableIndices.map(i => data.y.values[i]),
                       marker: {
-                        ...greyMarker(settings, data.x.values.length),
-                        color: 'rgba(180, 180, 180, 1.)',
+                        ...greyMarker(settings, nonTableIndices.length),
                         showscale: false
                       },
                       // For numerical coloring, don't show in legend
@@ -696,11 +695,10 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 x: nonTableIndices.map(i => data.x.values[i]),
                                 y: nonTableIndices.map(i => data.y.values[i]),
                                 marker: {
-                                    ...greyMarker(settings, data.x.values.length),
-                                    color: 'rgba(180, 180, 180, 1.)', // Lighter gray for non-table entities
+                                    ...greyMarker(settings, nonTableIndices.length),
                                     showscale: false
                                 },
-                                showlegend: true
+                                showlegend: false
                             };
                             
                             // Add z-values for 3D plots
@@ -1385,10 +1383,26 @@ export async function restyleMarkers(plotContainer, settings) {
     // every trace: out of V8 heap at 95.6M points, the heap nearly doubled
     // at 5M (utils/gl-markers.js). The axes keep their range.
     const is3D = plotContainer.data.some(t => t && t.type === 'scatter3d');
-    if (!is3D && setGlMarkers(plotContainer, (trace) => (keepsOwnMarker(trace) ? null
-        : isHighlight(trace) ? { size: settings.pointSize * 2 }
-        : { size: settings.pointSize, opacity: settings.pointOpacity }))) return;
+    // the greyed-out points: their own style, from their own count (greyMarker)
+    const isGrey = (trace) => !!trace && trace.name === NOT_IN_TABLE && !isLegendProxy(trace);
+    const greyOf = (trace) => greyMarker(settings, (trace.x && trace.x.length) || 0);
+    const greyIdx = [];
+    plotContainer.data.forEach((trace, i) => { if (isGrey(trace)) greyIdx.push(i); });
+    if (!is3D && setGlMarkers(plotContainer, (trace) => {
+        if (isGrey(trace)) { const m = greyOf(trace); return { size: m.size, opacity: m.opacity }; }
+        return keepsOwnMarker(trace) ? null
+            : isHighlight(trace) ? { size: settings.pointSize * 2 }
+            : { size: settings.pointSize, opacity: settings.pointOpacity };
+    })) {
+        // the regl scene takes size and opacity; the colour goes through Plotly
+        for (const i of greyIdx) {
+            const color = greyOf(plotContainer.data[i]).color;
+            if (plotContainer.data[i].marker.color !== color) await Plotly.restyle(plotContainer, { 'marker.color': color }, [i]);
+        }
+        return;
+    }
     plotContainer.data.forEach((trace, i) => {
+        if (isGrey(trace)) return;
         if (keepsOwnMarker(trace)) return;   // legend entries stay at full opacity, the colour bar's point hidden
         (isHighlight(trace) ? highlightIdx : dataIdx).push(i);
     });
@@ -1398,6 +1412,10 @@ export async function restyleMarkers(plotContainer, settings) {
     }
     if (highlightIdx.length) {
         await Plotly.restyle(plotContainer, { 'marker.size': settings.pointSize * 2 }, highlightIdx);
+    }
+    for (const i of greyIdx) {
+        const m = greyOf(plotContainer.data[i]);
+        await Plotly.restyle(plotContainer, { 'marker.size': m.size, 'marker.opacity': m.opacity, 'marker.color': m.color }, [i]);
     }
 }
 

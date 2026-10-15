@@ -1,5 +1,7 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
-import { axisTitle } from './plot-make-helper.js';
+import { axisTitle, NOT_IN_TABLE } from './plot-make-helper.js';
+import { restyleMarkers } from './plot-update.js';
+import { NOT_IN_TABLE_COLOR } from '../../utils/point-style.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
 import { exportCheck, guarded, refusalText } from '../../utils/memory-guard-ui.js';
 /**
@@ -336,6 +338,30 @@ export function createPopoverContent(id, settings) {
             </div>
         </div>
         
+        <!-- Not in table Section -->
+        <div class="aesthetics-section">
+            <h6>Not in table</h6>
+            <div class="form-text mt-0 mb-1">The grey points a table filter leaves in the plot.</div>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Size</span>
+                <input type="number" class="form-control" id="not-in-table-scale-${id}"
+                    value="${settings.notInTableScale ?? 1}" min="0.1" max="20" step="0.1"
+                    title="Relative to the size their count gets automatically">
+                <span class="input-group-text">x auto</span>
+            </div>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Opacity</span>
+                <input type="number" class="form-control" id="not-in-table-opacity-${id}"
+                    value="${settings.notInTableOpacity ?? ''}" placeholder="auto" min="0.01" max="1" step="0.05">
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 me-2">Color</label>
+                <input type="color" class="form-control form-control-sm form-control-color"
+                    id="not-in-table-color-${id}" value="${settings.notInTableColor || NOT_IN_TABLE_COLOR}" title="Choose the colour of the points not in the table">
+                <button class="btn btn-sm btn-outline-secondary" id="reset-not-in-table-color-${id}">Reset</button>
+            </div>
+        </div>
+
         <!-- Export Section -->
         <div class="aesthetics-section">
             <h6>Export</h6>
@@ -896,6 +922,29 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
+        // Not in table points: size scale, opacity, colour (greyMarker)
+        if (target.id === `not-in-table-scale-${id}` || target.id === `not-in-table-opacity-${id}`
+            || target.id === `not-in-table-color-${id}` || target.id === `reset-not-in-table-color-${id}`) {
+            const v = parseFloat(target.value);
+            if (target.id === `not-in-table-scale-${id}`) {
+                if (!(v > 0)) return;
+                settings.notInTableScale = v;
+            } else if (target.id === `not-in-table-opacity-${id}`) {
+                if (target.value === '') delete settings.notInTableOpacity;
+                else if (v > 0 && v <= 1) settings.notInTableOpacity = v;
+                else return;
+            } else if (target.id === `not-in-table-color-${id}`) {
+                settings.notInTableColor = target.value;
+            } else {
+                if (e.type !== 'click') return;
+                delete settings.notInTableColor;
+                const input = container.querySelector(`#not-in-table-color-${id}`);
+                if (input) input.value = NOT_IN_TABLE_COLOR;
+            }
+            restyleMarkers(plotContainer, settings).catch(err => console.warn('Not-in-table style not updated:', err && err.message));
+            return;
+        }
+
         // Export width
         if (target.id === `plot-width-${id}`) {
             settings.exportWidth = parseInt(target.value, 10);
@@ -1568,8 +1617,9 @@ function updateLegendVisibility(plotDiv, settings) {
             update.showlegend = false;
             update.showscale   = show;
         }
-        else if (trace.meta === 'az-points') {
-            // points whose legend entry is a proxy trace (withLegendProxies)
+        else if (trace.meta === 'az-points' || (trace.name === NOT_IN_TABLE && trace.meta !== 'az-legend')) {
+            // points whose legend entry is a proxy trace (withLegendProxies),
+            // and the greyed-out points, which have no legend entry
             update.showlegend = false;
         }
         else {

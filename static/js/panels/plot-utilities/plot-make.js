@@ -2871,8 +2871,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           x: nonTableIndices.map(idx => filteredData.x.values[idx]),
           y: nonTableIndices.map(idx => filteredData.y.values[idx]),
           marker: {
-            ...greyMarker(settings, filteredData.x.values.length),
-            color: 'rgba(180, 180, 180, 1.)',
+            ...greyMarker(settings, nonTableIndices.length),
           },
           showlegend: false
         };
@@ -3067,10 +3066,9 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           x: nonTableIndices.map(idx => filteredData.x.values[idx]),
           y: nonTableIndices.map(idx => filteredData.y.values[idx]),
           marker: {
-            ...greyMarker(settings, filteredData.x.values.length),
-            color: 'rgba(180, 180, 180, 1.)'
+            ...greyMarker(settings, nonTableIndices.length)
           },
-          showlegend: true
+          showlegend: false
         };
         
         // Add z-axis values for 3D plots if applicable

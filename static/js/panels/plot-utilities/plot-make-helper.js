@@ -744,11 +744,11 @@ export function keptViewRanges(settings) {
         x: indices.map(idx => data.x.values[idx]),
         y: indices.map(idx => data.y.values[idx]),
         marker: {
-          ...(name === NOT_IN_TABLE ? greyMarker(settings, data.x.values.length)
-            : { size: settings.pointSize, opacity: settings.pointOpacity }),
-          color: markerColor
+          ...(name === NOT_IN_TABLE ? greyMarker(settings, indices.length)
+            : { size: settings.pointSize, opacity: settings.pointOpacity, color: markerColor })
         },
-        showlegend: true
+        // the greyed-out points, like the highlighted cell, get no legend entry
+        showlegend: name !== NOT_IN_TABLE
       };
       // Add z-axis values for 3D plots if applicable.
       if (settings.z && data.z) {
@@ -761,7 +761,7 @@ export function keptViewRanges(settings) {
 
     // One trace for all non-table entities, drawn first so it sits at the bottom.
     if (nonTableIndices.length > 0) {
-      traces.push(makeTrace(nonTableIndices, NOT_IN_TABLE, 'rgba(180, 180, 180, 1.)', null));
+      traces.push(makeTrace(nonTableIndices, NOT_IN_TABLE, null, null));
     }
 
     // Points with no value, under the categories and last in the legend.

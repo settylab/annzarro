@@ -172,8 +172,8 @@ def test_greyed_out_points_do_not_count_and_stay_behind(page, server):
     assert narrowed["size"] != full["size"]
     for pid, v in page.evaluate(STATE).items():
         assert v["grey"] == 100, (pid, v)
-        # the grey ones keep the style of all 200 points, behind the others
-        assert v["greySizes"] == [full["size"]], (pid, v, full)
+        # the grey ones follow the curve for their own 100 points, behind the others
+        assert v["greySizes"] == [narrowed["size"]], (pid, v, narrowed)
 
     page.fill(f'.tile[data-tile-id="{TABLE}"] input[type="search"]', "")
     assert _check(page, 200) == full

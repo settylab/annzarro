@@ -103,18 +103,28 @@ export function pointStyleBase() {
   return { size: d.POINT_SIZE || 5, opacity: d.POINT_OPACITY || 0.7 };
 }
 
+export const NOT_IN_TABLE_COLOR = '#b4b4b4';
+
 /**
  * The marker of the grey points a table link leaves in the plot (the rows
- * not in the table, drawn first so they sit behind). They do not count for
- * the plot's automatic style, which follows the points shown in full; they
- * keep the automatic style of everything drawn (`nAll` points), so a few
- * chosen rows do not sit on a solid grey backdrop. A size or opacity the
- * user set applies to them too.
+ * not in the table, drawn first so they sit behind). They have a style of
+ * their own, always derived the same way: the automatic style of their own
+ * count (`nGrey` points, the same curve the main points follow), the size
+ * times the panel's `notInTableScale` (1 = as the curve gives it). Neither
+ * the main points' manual size nor their automatic one enters, so a few
+ * chosen rows do not sit on a solid grey backdrop and a size set later
+ * does not leave these behind. `notInTableOpacity` and `notInTableColor`
+ * replace the curve's opacity and the default grey when set.
  */
-export function greyMarker(settings, nAll) {
-  const auto = autoPointStyle(nAll, pointStyleBase(), !!settings.z);
+export function greyMarker(settings, nGrey) {
+  const auto = autoPointStyle(nGrey, pointStyleBase(), !!settings.z);
+  const scale = settings.notInTableScale > 0 ? settings.notInTableScale : 1;
+  const size = auto.size * scale;
+  const opacity = settings.notInTableOpacity > 0 && settings.notInTableOpacity <= 1
+    ? settings.notInTableOpacity : auto.opacity;
   return {
-    size: settings.autoPointSize ? auto.size : settings.pointSize,
-    opacity: settings.autoPointOpacity ? auto.opacity : settings.pointOpacity
+    size: settings.z ? Math.max(size, snapPointSize(0)) : snapPointSize(size),
+    opacity,
+    color: settings.notInTableColor || NOT_IN_TABLE_COLOR
   };
 }
