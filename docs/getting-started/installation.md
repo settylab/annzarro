@@ -81,7 +81,7 @@ brew install --cask settylab/annzarro/annzarro
 ```
 
 This installs the same notarized app as the download below, for your chip, on macOS 13 or later, and
-skips the manual steps. `brew upgrade --cask annzarro` updates it. `brew uninstall --cask annzarro`
+skips the manual steps. The app then updates itself (`brew upgrade --cask --greedy annzarro` also does). `brew uninstall --cask annzarro`
 removes the app; add `--zap` to also delete its settings, logs and caches. Your datasets and saved
 panel sets in `~/annzarro-data` are kept.
 

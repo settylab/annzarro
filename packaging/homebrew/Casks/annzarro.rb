@@ -15,9 +15,8 @@ cask "annzarro" do
     strategy :github_latest
   end
 
-  # Set to true once the app updates itself (electron-updater ships). One-line change here
-  # and in packaging/homebrew/annzarro.rb.template; then Homebrew leaves upgrades to the app.
-  auto_updates false
+  # The app updates itself (electron-updater), so Homebrew leaves upgrades to it.
+  auto_updates true
   depends_on macos: :ventura
 
   app "AnnZarro.app"

@@ -5,8 +5,8 @@ brew install --cask settylab/annzarro/annzarro
 ```
 
 This installs the notarized AnnZarro desktop app for macOS 13 (Ventura) or later, Apple silicon
-or Intel, from the GitHub release of the same version. Upgrade with `brew upgrade --cask annzarro`,
-remove with `brew uninstall --cask annzarro` (add `--zap` to also delete the app's settings, logs and
+or Intel, from the GitHub release of the same version. The app updates itself; `brew upgrade --cask --greedy annzarro` also upgrades it. Remove
+with `brew uninstall --cask annzarro` (add `--zap` to also delete the app's settings, logs and
 caches; your datasets in `~/annzarro-data` are never touched).
 
 The Python package is a separate install (`pip install annzarro`); see the
@@ -39,8 +39,8 @@ it expires, so renew it before then (the workflow skips with a notice while the 
 the push fails). To re-render by hand, run the workflow "Homebrew cask" with a published version;
 the tap gets a commit only if the cask changed.
 
-`auto_updates` is `false` until the in-app updater ships; then set it to `true` in the template
-(one line, marked in the file).
+`auto_updates` is `true`: the app updates itself, so `brew upgrade` leaves it to the app (use
+`brew upgrade --cask --greedy annzarro` to force it).
 
 ### Official homebrew/cask
 
