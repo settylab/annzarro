@@ -264,7 +264,7 @@ function createUpdater(deps) {
         timer.unref();
     }
 
-    return { start, check };
+    return { start, check, installMenu };
 }
 
 module.exports = { createUpdater };

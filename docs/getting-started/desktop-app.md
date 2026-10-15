@@ -89,6 +89,34 @@ to **Security**, click **Open Anyway** next to AnnZarro and confirm (once; right
 longer works there). On macOS 14 and earlier, right-click (Control-click) the app and choose
 **Open**.
 
+## Open a dataset
+
+The **File** menu opens datasets from anywhere on your computer:
+
+- **Open Dataset...** (`Cmd+O` on macOS, `Ctrl+O` elsewhere) opens the dataset browser.
+- **Open File or Folder...** (`Cmd+Shift+O`, macOS) shows one system dialog in which you pick an
+  `.h5ad` file or a `.zarr` folder. Windows and Linux cannot show such a dialog, so there are two
+  items: **Open .h5ad File...** (`Ctrl+Shift+O`) and **Open .zarr Folder...**.
+- **Open Recent** lists the last ten datasets you opened from this computer; **Clear Menu** empties
+  it. A dataset that has been moved or deleted is dropped from the list when you choose it.
+- **Refresh Dataset** reads the open dataset again, as the refresh button beside the dataset box does.
+
+You can also:
+
+- **Drag** a `.zarr` folder or an `.h5ad` file onto the window. A target covers the window while you
+  drag; drop to open. If you drop several items, the first is opened and a message says the rest were not.
+  Anything else is refused with "AnnZarro opens .zarr folders and .h5ad files".
+- **Double-click** an `.h5ad` file, or choose **Open With > AnnZarro** (for an `.h5ad` file or a
+  `.zarr` folder), or drop it on the app's icon in the Dock or taskbar. On macOS a `.zarr` folder stays
+  a plain folder in Finder, so you can still look inside it. Linux associates `.h5ad` files only,
+  because a file manager has no type for a folder.
+- Start the app from a terminal with a path: `AnnZarro /data/sample.zarr`. If AnnZarro is already
+  running, that window opens the dataset.
+
+On macOS, the window's title bar shows the open dataset's file as a proxy icon (drag it into
+another app, or Cmd-click the title for its folders). Datasets opened from the File menu, by drop or
+through the system also appear in the Dock icon's recent items and the Windows jump list.
+
 (desktop-updates)=
 ## Updates
 
