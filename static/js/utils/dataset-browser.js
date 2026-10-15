@@ -27,7 +27,8 @@
  *   currentPath()   the dataset open now, or null
  *   usedKeys()      Promise of the keys the open panels use ([{key, kind}])
  *   label(path)     how the interface names a dataset (relative to the data directory)
- *   nativeOpen      the desktop app's `openDatasetDialog` (a function), or null
+ *   nativeOpen      the desktop app's `openDatasetDialog(which)` (a function), or null
+ *   nativeKinds     [undefined] where one dialog takes a file or a folder, ['h5ad', 'zarr'] where two buttons are needed
  *   isDesktop       whether this is the desktop app
  *   localMode       whether this server belongs to the one user at it
  *   copy(text)      Promise of copying text to the clipboard
@@ -1081,13 +1082,16 @@ export function createDatasetBrowser(services) {
     dom.path.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); submitPath(); }
     });
-    dom.native.addEventListener('click', async () => {
+    const nativeButtons = [dom.native];
+    async function nativeClick(which) {
         if (!services.nativeOpen) return;
         let picked;
-        try { picked = await services.nativeOpen(); } catch { picked = null; }
+        try { picked = await services.nativeOpen(which); } catch { picked = null; }
         const path = typeof picked === 'string' ? picked : picked && picked.path;
         if (path) await choose(path);
-    });
+    }
+    dom.native.addEventListener('click', () => nativeClick(dom.native.dataset.which || undefined));
+
     // Escape closes the path field first, then the dialog
     root.addEventListener('keydown', (e) => {
         if (!S) return;
@@ -1120,6 +1124,34 @@ export function createDatasetBrowser(services) {
         hiddenPromise = new Promise(resolve => root.addEventListener('hidden.bs.modal', () => { hiddenPromise = null; resolve(); }, { once: true }));
     });
 
+    /** One "Open file or folder..." button, or on Windows and Linux one per kind (the system has no dialog for both). */
+    function configureNative() {
+        dom.native.hidden = !services.nativeOpen;
+        for (const extra of nativeButtons.slice(1)) extra.remove();
+        nativeButtons.length = 1;
+        if (!services.nativeOpen) return;
+        const kinds = services.nativeKinds || [undefined];
+        if (kinds.length === 1) {
+            dom.native.dataset.which = '';
+            dom.native.innerHTML = '<i class="fas fa-folder-open" aria-hidden="true"></i> Open file or folder&hellip;';
+            return;
+        }
+        const labels = { h5ad: 'Open .h5ad File\u2026', zarr: 'Open .zarr Folder\u2026' };
+        kinds.forEach((kind, i) => {
+            let b = dom.native;
+            if (i > 0) {
+                b = dom.native.cloneNode(true);
+                b.id = `dsb-open-native-${kind}`;
+                b.addEventListener('click', () => nativeClick(kind));
+                dom.native.after(b);
+                nativeButtons.push(b);
+            }
+            b.dataset.which = kind;
+            b.innerHTML = `<i class="fas fa-folder-open" aria-hidden="true"></i> ${labels[kind]}`;
+            b.classList.toggle('me-2', true);
+        });
+    }
+
     function hide() {
         if (shown || root.classList.contains('show')) modal.hide();
     }
@@ -1151,7 +1183,7 @@ export function createDatasetBrowser(services) {
         dom.search.value = S.query;
         dom.regex.classList.remove('active');
         dom.regex.setAttribute('aria-pressed', 'false');
-        dom.native.hidden = !services.nativeOpen;
+        configureNative();
         dom.hintPath.textContent = services.shortcut.path;
         dom.tableWrap.textContent = '';
         dom.tableWrap.appendChild(el('div', 'dsb-state', 'Loading…'));
@@ -1190,7 +1222,12 @@ export function createDatasetBrowser(services) {
         const landOnRecent = !S.query && S.mode === 'change' && S.recents.length > 0;
         S.ready = true;
         scheduleSearch();
-        if (landOnRecent) goPlace('recent');
+        if (options.startFolder) {
+            // a folder the desktop app was handed: the place that holds it, then the folder itself
+            const holder = S.places.find(p => p.kind === 'folder' && p.folder && options.startFolder.startsWith(p.folder.replace(/\/+$/, '') + '/'));
+            if (holder) { S.placeId = holder.id; S.folderRoot = holder.folder; }
+            goFolder(options.startFolder);
+        } else if (landOnRecent) goPlace('recent');
         else render();
         return closed;
     }

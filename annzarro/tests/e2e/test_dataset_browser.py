@@ -981,11 +981,16 @@ def test_a_folder_that_fails_to_list_shows_the_error_with_retry_and_the_rest_kee
         s.close()
 
 
-DESKTOP = """(() => {
+def _desktop(platform):
+    """What the desktop app's preload gives the page (annzarro/desktop/electron/preload.js), as far as the page uses it."""
+    return """(() => {
   const mark = () => document.documentElement.setAttribute('data-desktop', '');
   if (document.documentElement) mark(); else new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); mark(); } }).observe(document, {childList: true});
-  window.api = { openDatasetDialog: async () => { window.__nativeCalls = (window.__nativeCalls || 0) + 1; return window.__nativePick || null; } };
-})()"""
+  window.__calls = []; window.__opened = [];
+  window.api = { platform: %r,
+    openDatasetDialog: async (which) => { window.__calls.push(which === undefined ? null : which); return window.__nativePick || null; },
+    datasetOpened: (p) => { window.__opened.push(p); } };
+})()""" % platform
 
 
 def test_the_desktop_app_adds_open_file_or_folder_to_the_browser_and_the_welcome_screen(server):
@@ -998,24 +1003,72 @@ def test_the_desktop_app_adds_open_file_or_folder_to_the_browser_and_the_welcome
         assert s.page.locator(".welcome-native").is_hidden()
     finally:
         s.close()
-    s = Session(base, init_script=DESKTOP)
+    # macOS: one dialog takes a file or a folder
+    s = Session(base, init_script=_desktop("darwin"))
     page = s.page
     try:
         assert page.is_visible(".welcome-open-dataset .welcome-native")
         open_browser(page)
         assert page.is_visible("#dsb-open-native") and "Open file or folder" in page.inner_text("#dsb-open-native")
+        assert page.locator("[id^='dsb-open-native-']").count() == 0
         # cancelled in the native dialog: nothing opens, the browser stays
         page.click("#dsb-open-native")
-        page.wait_for_function("window.__nativeCalls === 1")
+        page.wait_for_function("window.__calls.length === 1")
+        assert page.evaluate("window.__calls") == [None]
         assert page.locator(BROWSER).is_visible() and dataset_path(page) is None
-        # a path picked there opens
+        # a path picked there opens, and the app is told (proxy icon, recent documents)
         page.evaluate("p => { window.__nativePick = p; }", os.path.join(data, "short.zarr"))
         page.click("#dsb-open-native")
         wait_for_open(page, "short.zarr")
+        page.wait_for_function("window.__opened.length > 0")
+        assert page.evaluate("window.__opened.at(-1)") == os.path.join(data, "short.zarr")
         # the page's entry point for the app's menu, drops and the OS
         result = page.evaluate("(p) => window.annzarro.openDataset(p)", os.path.join(data, "other_small.zarr"))
         assert result["ok"] is True
         assert page.title().startswith("other_small.zarr")
+        page.wait_for_function("window.__opened.at(-1).endsWith('other_small.zarr')")
+        assert not s.errors, s.errors
+    finally:
+        s.close()
+    # Windows and Linux: no dialog takes both, so one button each
+    s = Session(base, init_script=_desktop("win32"))
+    page = s.page
+    try:
+        assert page.locator(".welcome-open-dataset .welcome-native:visible").count() == 2
+        open_browser(page)
+        assert page.inner_text("#dsb-open-native").strip() == "Open .h5ad File\u2026"
+        assert page.inner_text("#dsb-open-native-zarr").strip() == "Open .zarr Folder\u2026"
+        page.click("#dsb-open-native-zarr")
+        page.click("#dsb-open-native")
+        page.wait_for_function("window.__calls.length === 2")
+        assert page.evaluate("window.__calls") == ["zarr", "h5ad"]
+    finally:
+        s.close()
+
+
+def test_the_app_menu_opens_the_browser_on_a_folder_and_can_show_a_message(server):
+    base, data = server
+    s = Session(base, init_script=_desktop("darwin"))
+    page = s.page
+    try:
+        # "Open Dataset..." without a path: the browser; with a plain folder: that folder, and the app is told it was handled
+        handled = page.evaluate("""() => { const e = new CustomEvent('annzarro:open-dataset-browser', {cancelable: true, detail: {}});
+            document.dispatchEvent(e); return e.defaultPrevented; }""")
+        assert handled is False
+        page.locator(BROWSER).wait_for(state="visible")
+        page.wait_for_function("document.activeElement && document.activeElement.id === 'dsb-search'")
+        close_browser(page)
+        folder = os.path.join(data, "projects", "lung")
+        handled = page.evaluate("""(p) => { const e = new CustomEvent('annzarro:open-dataset-browser', {cancelable: true, detail: {path: p}});
+            document.dispatchEvent(e); return e.defaultPrevented; }""", folder)
+        assert handled is True
+        browser_row(page, "lung_v2.zarr").wait_for(timeout=15_000)
+        assert "lung" in page.inner_text("#dsb-crumbs")
+        page.wait_for_function("document.activeElement && document.activeElement.id === 'dsb-search'")
+        close_browser(page)
+        # a message for the app (a refused drop): shown as a toast, true when shown
+        assert page.evaluate("window.annzarro.notify('AnnZarro opens .zarr folders and .h5ad files', {level: 'warning'})") is True
+        assert page.locator(".notification:has-text('opens .zarr folders')").count() == 1
         assert not s.errors, s.errors
     finally:
         s.close()

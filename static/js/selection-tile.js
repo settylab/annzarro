@@ -82,11 +82,19 @@ export class SelectionTile {
         node.querySelector('.welcome-browse').addEventListener('click', () => app.openBrowser({ browse: true }));
         const native = node.querySelector('.welcome-native');
         if (window.api && typeof window.api.openDatasetDialog === 'function') {
-          native.hidden = false;
-          native.addEventListener('click', async () => {
-            const picked = await window.api.openDatasetDialog();
-            const path = typeof picked === 'string' ? picked : picked && picked.path;
-            if (path) app.openDataset(path);
+          // one dialog for a file or a folder on macOS, one button per kind elsewhere
+          const kinds = window.api.platform === 'darwin' ? [undefined] : ['h5ad', 'zarr'];
+          const labels = { h5ad: 'Open .h5ad File\u2026', zarr: 'Open .zarr Folder\u2026' };
+          kinds.forEach((kind, i) => {
+            const b = i === 0 ? native : native.cloneNode(true);
+            if (kind) b.lastChild.textContent = ' ' + labels[kind];
+            b.hidden = false;
+            b.addEventListener('click', async () => {
+              const picked = await window.api.openDatasetDialog(kind);
+              const path = typeof picked === 'string' ? picked : picked && picked.path;
+              if (path) app.openDataset(path);
+            });
+            if (i > 0) native.after(b);
           });
         }
         host.insertBefore(node, host.firstChild);

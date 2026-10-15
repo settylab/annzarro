@@ -38,7 +38,7 @@ import { DatasetState, documentTitle, isUserSource } from './utils/dataset-state
 import { loadRecents, recordRecent, userKey, lookupPaths, recentEntries } from './utils/dataset-recents.js';
 import { formatLabel } from './utils/dataset-browser-model.js';
 import { createDatasetBrowser } from './utils/dataset-browser.js';
-import { firstDatasetChoice, keysUsedByPanels } from './utils/dataset-browser-model.js';
+import { firstDatasetChoice, keysUsedByPanels, isRemote } from './utils/dataset-browser-model.js';
 import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, datasetNameOf } from './utils/dataset-button.js';
 import { defaultHierarchy } from './utils/deeplink.js';
@@ -236,6 +236,13 @@ const App = (function() {
             getDataset: () => DatasetState.get(),
             // the dataset browser, for the desktop app's menu and the welcome screen
             openBrowser: (options = {}) => _showChangeDataset({ browse: true, ...options }),
+            // a message of the page for the desktop app (a refused drop, say); true when shown
+            notify: (message, { level = 'info' } = {}) => {
+                if (!message) return false;
+                const type = level === 'danger' ? 'error' : level === 'warning' ? 'warning' : 'info';
+                _showNotification(type === 'error' ? 'Error' : type === 'warning' ? 'Notice' : 'AnnZarro', String(message), type);
+                return true;
+            },
             recentDatasets: (limit = 5) => _recentEntries().then(list => list.slice(0, limit)),
             openDataset: async (path) => {
                 await _booted;
@@ -259,6 +266,12 @@ const App = (function() {
         _showFormatOf(state);
         _focusInputsFollow(state);
         document.dispatchEvent(new CustomEvent('datasetState', { detail: state }));
+        // the desktop app follows the dataset (proxy icon, recent documents), whoever opened it
+        if (window.api && typeof window.api.datasetOpened === 'function'
+            && (previous === null || state.status !== previous.status || state.path !== previous.path)) {
+            if (state.status === 'open' && state.path && !isRemote(state.path)) window.api.datasetOpened(state.path);
+            else if (state.status === 'none') window.api.datasetOpened(null);
+        }
         // an open that something else started (the desktop app's menu or a drop) ends the browser
         if (_browser.isOpen() && state.status === 'opening' && !(previous && previous.path === state.path && previous.status === 'opening')) _browser.close();
     }
@@ -978,7 +991,7 @@ const App = (function() {
      * view" chip. A path is taken as the server confines it.
      * @private
      */
-    async function _showChangeDataset({ pending: given = null, onChoose = null, browse = false, query = '', unavailableName = null } = {}) {
+    async function _showChangeDataset({ pending: given = null, onChoose = null, browse = false, query = '', unavailableName = null, startFolder = null } = {}) {
         const normal = browse && !given && !onChoose && !_noDataView;
         const mode = normal ? 'change' : onChoose ? 'set' : 'view';
         const pending = given || _noDataView || {
@@ -1008,7 +1021,7 @@ const App = (function() {
             await _applyView({ datasetPath: path, view }, { exact: true });
             PanelManager.ensureWelcomeFallback();
         };
-        await _browser.open({ mode, pending, onChoose: choose, query, unavailableName });
+        await _browser.open({ mode, pending, onChoose: choose, query, unavailableName, startFolder });
     }
 
     /**
@@ -1684,6 +1697,13 @@ const App = (function() {
         });
         _datasetButton.update(DatasetState.get());
         _focusInputsFollow(DatasetState.get());
+        // the desktop app's Open Dataset... menu item; a plain folder it was handed is shown as a place
+        // (preventDefault: the app then does not say "not a zarr store")
+        document.addEventListener('annzarro:open-dataset-browser', (e) => {
+            const folder = e.detail && e.detail.path;
+            if (folder) e.preventDefault();
+            _showChangeDataset({ browse: true, startFolder: folder || null });
+        });
 
         // Setup dataset refresh button
         const refreshDatasetBtn = document.getElementById('refresh-dataset');
@@ -1998,7 +2018,11 @@ const App = (function() {
             label: _labelOf,
             // the desktop app's own dialog for a file or a folder; absent in the browser
             get nativeOpen() {
-                return window.api && typeof window.api.openDatasetDialog === 'function' ? () => window.api.openDatasetDialog() : null;
+                return window.api && typeof window.api.openDatasetDialog === 'function' ? (which) => window.api.openDatasetDialog(which) : null;
+            },
+            // macOS has one dialog for a file or a folder; Windows and Linux cannot show one, so two buttons
+            get nativeKinds() {
+                return window.api && window.api.platform === 'darwin' ? [undefined] : ['h5ad', 'zarr'];
             },
             isDesktop: document.documentElement.hasAttribute('data-desktop'),
             get localMode() { return Config.SERVER_CONFIG.local_mode === true || Config.SERVER_CONFIG.single_user === true; },

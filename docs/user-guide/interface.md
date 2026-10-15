@@ -164,7 +164,8 @@ opening are announced politely.
 
 In the desktop app **Open file or folder...** (also **Ctrl+Shift+O**, **Cmd+Shift+O**) in the browser
 and on the welcome screen opens your system's dialog and takes a `.zarr` folder or an `.h5ad` file
-from anywhere on disk ({doc}`../getting-started/desktop-app`).
+from anywhere on disk (on Windows and Linux, whose dialogs take one kind at a time, as two buttons,
+**Open .h5ad File...** and **Open .zarr Folder...**) ({doc}`../getting-started/desktop-app`).
 
 ## Pick a gene or a cell by name
 

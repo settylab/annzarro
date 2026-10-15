@@ -60,7 +60,8 @@ with the release after it. Older releases are listed on
   outline in the link colour in both themes; forced colours, reduced motion and touch targets
   (44 px) are respected; below 768 px the dialog fills the screen.
 - The desktop app's **Open file or folder...** button appears in the browser and on the welcome
-  screen where the app provides its dialog.
+  screen (on Windows and Linux as **Open .h5ad File...** and **Open .zarr Folder...**), and the
+  app's Open Dataset menu item opens the browser, on a folder when it is given one.
 - Select2 (the dropdown's library) is removed from the page and the licence notices.
 
 ### Added
