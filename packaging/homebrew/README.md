@@ -12,6 +12,10 @@ caches; your datasets in `~/annzarro-data` are never touched).
 The Python package is a separate install (`pip install annzarro`); see the
 [documentation](https://annzarro.readthedocs.io).
 
+The cask is updated automatically when a release of
+[settylab/annzarro](https://github.com/settylab/annzarro) is published; its template lives there in
+`packaging/homebrew/`. Please report problems in that repository.
+
 ## Maintainers
 
 This directory is the content of the tap repository `settylab/homebrew-annzarro`. It lives in
@@ -26,19 +30,17 @@ This directory is the content of the tap repository `settylab/homebrew-annzarro`
 `scripts/homebrew_cask.py` renders the template from a release's `SHA256SUMS.txt`, and
 `.github/workflows/homebrew.yml` does that on every published release and pushes the result to the tap.
 
-### One-time setup (needs an organisation owner)
+### The tap
 
-1. Create the public repository `settylab/homebrew-annzarro` (the `homebrew-` prefix is what lets
-   `brew tap settylab/annzarro` find it). Initial commit: `Casks/annzarro.rb` and this README as `README.md`.
-2. Create a fine-grained personal access token (resource owner `settylab`, repository access
-   "Only select repositories": `settylab/homebrew-annzarro`, permission "Contents: Read and write",
-   nothing else; set an expiry and note it).
-3. Add it to `settylab/annzarro` as the Actions repository secret `HOMEBREW_TAP_TOKEN`.
-4. Check: run the workflow "Homebrew cask" by hand with the current version; the tap gets a commit
-   only if the cask changed.
+The tap `settylab/homebrew-annzarro` exists and holds `Casks/annzarro.rb` plus the user part of this
+README (everything above "Maintainers"). The repository secret `HOMEBREW_TAP_TOKEN` in
+`settylab/annzarro` is a fine-grained token with "Contents: Read and write" on that one repository;
+it expires, so renew it before then (the workflow skips with a notice while the secret is missing or
+the push fails). To re-render by hand, run the workflow "Homebrew cask" with a published version;
+the tap gets a commit only if the cask changed.
 
-Until the secret exists the workflow skips with a notice. After the in-app updater ships, set
-`auto_updates true` in the template (one line, marked in the file).
+`auto_updates` is `false` until the in-app updater ships; then set it to `true` in the template
+(one line, marked in the file).
 
 ### Official homebrew/cask
 

@@ -54,5 +54,6 @@ def test_the_cask_declares_the_things_a_user_relies_on():
     text = CASK.read_text()
     assert 'app "AnnZarro.app"' in text
     assert "strategy :github_latest" in text
+    assert "verified:" not in text  # deprecated; the url host matches the homepage
     assert "~/annzarro-data" in text.split("zap trash")[0]  # the datasets are documented as kept
     assert "annzarro-data\"" not in text.split("zap trash")[1]

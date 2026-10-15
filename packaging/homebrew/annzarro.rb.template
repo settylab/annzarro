@@ -5,8 +5,7 @@ cask "annzarro" do
   sha256 arm:   "@@SHA256_ARM64@@",
          intel: "@@SHA256_X64@@"
 
-  url "https://github.com/settylab/annzarro/releases/download/v#{version}/AnnZarro-#{version}-macos-#{arch}.dmg",
-      verified: "github.com/settylab/annzarro/"
+  url "https://github.com/settylab/annzarro/releases/download/v#{version}/AnnZarro-#{version}-macos-#{arch}.dmg"
   name "AnnZarro"
   desc "Viewer for single-cell AnnData stored as zarr or h5ad"
   homepage "https://github.com/settylab/annzarro"
