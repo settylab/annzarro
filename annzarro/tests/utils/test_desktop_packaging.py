@@ -370,3 +370,23 @@ def test_static_lgpl_is_accepted_only_in_the_electron_executable(tmp_path, monke
     monkeypatch.setattr(lc, "ELECTRON", table)
     _, _, failures = lc.check(app)
     assert any("Crashpad" in f and "not a separate shared library" in f for f in failures)
+
+
+def test_window_frame_is_wired_into_the_app():
+    """No native title bar on macOS and Windows: the frame options, the preload's flag and the page's
+    stylesheet must all ship (annzarro/tests/js/desktop-frame.test.mjs and
+    annzarro/tests/browser/test_desktop_frame.py test their behaviour)."""
+    with open(os.path.join(ELECTRON, "package.json")) as f:
+        assert "window-chrome.js" in json.load(f)["build"]["files"]
+    with open(os.path.join(ELECTRON, "main.js")) as f:
+        main = f.read()
+    assert "...chrome.frameOptions(process.platform" in main
+    assert "additionalArguments: chrome.frameArguments(process.platform)" in main
+    with open(os.path.join(ELECTRON, "preload.js")) as f:
+        preload = f.read()
+    assert "data-desktop-frame" in preload and "--annzarro-frame=" in preload
+    with open(os.path.join(ROOT, "templates", "index.html")) as f:
+        assert "css/desktop-frame.css" in f.read()
+    for page in ("loading.html", "error.html"):  # the window must be movable while these show
+        with open(os.path.join(ELECTRON, page)) as f:
+            assert "-webkit-app-region: drag" in f.read(), page

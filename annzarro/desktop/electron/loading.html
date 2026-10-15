@@ -52,6 +52,9 @@
       p { color: #a3acb5; }
       .spinner { border-color: rgba(255, 255, 255, 0.15); border-top-color: #6ea8fe; }
     }
+    /* No native title bar on macOS and Windows (window-chrome.js): the page is the drag region */
+    html[data-desktop-frame] body { -webkit-app-region: drag; user-select: none; box-sizing: border-box; padding-top: 36px; }
+    html[data-desktop-frame] button, html[data-desktop-frame] a { -webkit-app-region: no-drag; user-select: text; }
   </style>
 </head>
 <body>

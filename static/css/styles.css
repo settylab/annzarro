@@ -145,6 +145,14 @@ body {
     white-space: nowrap;
 }
 
+/* The panel set buttons line up with the dataset and focus boxes (the bottom of the row,
+   below those boxes' labels), not with the middle of the labelled columns. On a row of their
+   own (narrow windows) this changes nothing. In the desktop app on Windows it also keeps them
+   below the window controls. */
+.global-controls .header-actions {
+    align-self: flex-end;
+}
+
 .app-header.actions-compact .header-actions .btn:not(.show-label) .btn-label {
     display: none;
 }

@@ -66,6 +66,8 @@
     <!-- Custom Styles: the theme's colours (light and dark) first, then the app's own -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <!-- The desktop app has no native title bar on macOS and Windows; applies only with <html data-desktop-frame> (set by its preload) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/desktop-frame.css') }}">
 </head>
 <body>
     <!-- Top Bar with Global Controls -->

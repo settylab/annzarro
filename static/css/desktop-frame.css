@@ -1,0 +1,67 @@
+/*
+ * The desktop app (Electron) has no native title bar on macOS and Windows: the header is the
+ * title bar. The preload marks <html> (annzarro/desktop/electron/preload.js):
+ *
+ *   data-desktop-frame="mac"   traffic lights float over the top left of the header
+ *   data-desktop-frame="win"   minimise / maximise / close float over the top right
+ *   data-desktop-fullscreen    full screen: no controls, so no room is kept for them
+ *
+ * Linux keeps its native frame and the browser has no flag, so none of this applies there.
+ * The numbers match annzarro/desktop/electron/window-chrome.js.
+ */
+:root {
+    --az-win-overlay-h: 32px;  /* height of the Windows window controls */
+    /* their width: the system's where Electron reports it, else the usual three buttons */
+    --az-win-overlay-w: max(140px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+}
+
+/* The header's empty area drags the window (and a double click zooms it, as the OS does) ... */
+html[data-desktop-frame] .app-header {
+    -webkit-app-region: drag;
+}
+
+/* ... and everything you can use in it does not. The popups and dialogs that open over it
+   (select2 lists, menus, modals, toasts) are children of <body>: no-drag, or the
+   part of them over the header would move the window instead of taking the click. */
+html[data-desktop-frame] .app-header :is(
+    a, button, input, select, textarea, label, summary, [role="button"], [role="combobox"],
+    [role="listbox"], [role="menu"], [tabindex]:not([tabindex="-1"]),
+    .btn, .form-control, .form-select, .select2-container, .name-picker, .name-picker-menu,
+    .dataset-pick, .theme-toggle, .share-link-fallback, .account-links, .auth-indicator
+),
+html[data-desktop-frame] body > :not(.app-header) {
+    -webkit-app-region: no-drag;
+}
+
+/* macOS: the header keeps its height. In the browser the title column is the title with a line
+   under it for who is signed in and the admin links; the app has no login, so that line is empty.
+   Here the line goes above the title instead, which drops the title into the space it held:
+   the traffic lights sit in the room that opens above it. Nothing else in the header moves. */
+html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header > .container-fluid > .row > .col-auto:first-child {
+    display: flex;
+    flex-direction: column;
+}
+html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header .account-links,
+html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header .auth-indicator {
+    order: -1;
+}
+html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header .account-links {
+    display: block;
+    min-height: 1lh;  /* the line it occupied as an inline box */
+}
+
+/* Windows: the header keeps its height too. The panel set buttons sit on the row of the
+   input boxes (styles.css), below the window controls. Narrower, where the dataset box takes a
+   row of its own, that row would run under the controls: it stops short of them and the
+   buttons, on the second row, are already below. */
+html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .header-actions {
+    min-width: var(--az-win-overlay-w);
+    text-align: right;
+}
+
+@media (min-width: 768.02px) {
+    html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .app-header.dataset-stacked .global-controls > .row > .dataset-col {
+        flex-basis: calc(100% - var(--az-win-overlay-w) - 0.5rem);
+        max-width: calc(100% - var(--az-win-overlay-w) - 0.5rem);
+    }
+}

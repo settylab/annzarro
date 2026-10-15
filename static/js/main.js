@@ -40,6 +40,7 @@ import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
 import { mountThemeToggle } from './utils/theme-toggle.js';
+import { startDesktopFrame } from './utils/desktop-frame.js';
 import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
 import { markDatasetUnavailable, clearDatasetUnavailable, notAvailableText, UNAVAILABLE_TITLE } from './utils/no-dataset-screen.js';
 
@@ -90,6 +91,8 @@ const App = (function() {
             // System / Light / Dark; the plots follow it (utils/plot-theme.js)
             const themeHost = document.getElementById('theme-toggle');
             if (themeHost) mountThemeToggle(themeHost);
+            // Desktop app on Windows: the window controls take the header's colours
+            startDesktopFrame();
             
             // Check for autosave session before initializing panel manager.
             //
