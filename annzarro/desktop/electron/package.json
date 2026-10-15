@@ -45,11 +45,22 @@
       "updates.js",
       "update-logic.js",
       "window-chrome.js",
+      "dataset-open.js",
+      "dataset-open-logic.js",
       "preload.js",
       "loading.html",
       "error.html",
       "icons/**/*",
       "package.json"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "h5ad",
+        "name": "AnnData h5ad file",
+        "description": "AnnData h5ad file",
+        "mimeType": "application/x-anndata-h5ad",
+        "role": "Viewer"
+      }
     ],
     "extraResources": [
       {
@@ -90,7 +101,34 @@
       "artifactName": "AnnZarro-${version}-macos-${arch}.${ext}",
       "hardenedRuntime": true,
       "entitlements": "entitlements.mac.plist",
-      "entitlementsInherit": "entitlements.mac.plist"
+      "entitlementsInherit": "entitlements.mac.plist",
+      "extendInfo": {
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Zarr store (folder)",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Default",
+            "LSItemContentTypes": [
+              "com.annzarro.zarr-store"
+            ],
+            "LSTypeIsPackage": false
+          }
+        ],
+        "UTImportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "com.annzarro.zarr-store",
+            "UTTypeDescription": "Zarr store",
+            "UTTypeConformsTo": [
+              "public.folder"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "zarr"
+              ]
+            }
+          }
+        ]
+      }
     },
     "dmg": {
       "background": null,
