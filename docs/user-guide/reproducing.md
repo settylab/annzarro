@@ -45,7 +45,7 @@ AnnZarro then compares the fingerprints:
 | found under another path (step 2 or 3) | the view opens, with a notice: "Opened on another path", naming both |
 | the same cells and genes, other fields (a column added or removed, say) | the view opens, with a notice naming the fields, e.g. "fields differ: obs/leiden is not in this store" |
 | other cells or genes | a warning, "This store differs from the one the view was saved on", with the cell and gene counts of both. The layout is shown without data until you choose **Open anyway**, **Change dataset** or **Keep without data** |
-| not found at all | the layout opens **without data**: every panel shows "no data" and keeps all its settings. A notice names the missing path and offers **Change dataset** |
+| not found at all | the layout opens **without data**: every panel shows "no data" and keeps all its settings. A notice names the missing path and offers **Change dataset**, and the dataset button reads "No data: *path*" |
 | saved with another AnnZarro version | the view opens, with a notice: "Saved with AnnZarro 0.4.1; this is 0.5.1. The view may look different." |
 
 Opening a store does not hash its cell and gene names. They are hashed in the background the
@@ -56,13 +56,13 @@ gene names are checked when they are ready.
 
 ### Change dataset
 
-**Change dataset** (in the notice, on every "no data" panel, and in the header while a view has
-no data) lists the stores of the data directory: those with the same cells and genes first, then
-those of the same size, then a store with the saved name, then the rest. You can also type a path;
-a shared server opens it only inside its data directory ({doc}`../deployment/hosting-checklist`). The view then opens on the chosen
-store. On a store with other cells or genes the warning above comes first.
-
-Choosing the **dataset menu** in the header while a view has no data does the same.
+**Change dataset** (in the notice, on every "no data" panel, and the dataset button while a view has
+no data) opens the dataset browser ({ref}`dataset-browser`) titled "Choose a dataset for this view", with
+what the view was saved on at the top. The datasets with the same cells and genes carry a **same cells and
+genes** tag (or **same size**, **same name**) and the **Matches this view** button, on at first, narrows the
+table to them. You can also type a path in the path field; a shared server opens it only inside its data
+directory ({doc}`../deployment/hosting-checklist`). The view then opens on the chosen store. On a store
+with other cells or genes the warning above comes first.
 
 ### Fields the store does not have
 

@@ -20,7 +20,7 @@ prepared by `docs/_tools/make_spatial_demo.py`. It holds
 
 ## Plot spots in tissue coordinates
 
-1. Open `spatial_demo.zarr` in the **Dataset** picker and add a **Cell Plot**. It opens on the
+1. Open `spatial_demo.zarr` with the dataset button and add a **Cell Plot**. It opens on the
    expression UMAP.
 2. Open its controls. Set **X** to `obsm` → `spatial_upright` → `0` and **Y** to `obsm`
    → `spatial_upright` → `1`.

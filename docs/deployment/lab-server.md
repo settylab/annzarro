@@ -331,7 +331,7 @@ it also clears the server's cache for the dataset. Use it after adding or rewrit
 a store; {doc}`analyst-workflow` walks through one round. After replacing a whole store (a new
 directory behind the same link), restart the service (`sudo systemctl restart annzarro`) to be
 sure no worker keeps the old one open. Adding a new dataset (a new link in the data directory)
-needs no restart; it appears after the Dataset picker's refresh button is clicked.
+needs no restart; it appears after the dataset bar's refresh button is clicked.
 
 ## Logs
 

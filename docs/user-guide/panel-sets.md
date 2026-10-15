@@ -114,13 +114,13 @@ changes:
 
 - the blue button becomes **Load on the current dataset** (2): the set's panels open in their
   layout on the dataset that is open. Panels whose fields it lacks say so. With no dataset open,
-  the blue button reads **Choose dataset...** and opens the picker;
-- the database icon, **Choose dataset...** (3), opens the picker of {doc}`reproducing` (the
-  stores of this server, those with the same cells and genes first, and a field for a path) and
-  loads the set onto the store you pick, opening its panels. Close the picker without choosing and
+  the blue button reads **Choose dataset...** and opens the dataset browser;
+- the database icon, **Choose dataset...** (3), opens the dataset browser of {doc}`reproducing` (the
+  stores of this server, those with the same cells and genes tagged, and a field for a path) and
+  loads the set onto the store you pick, opening its panels. Close the browser without choosing and
   nothing is loaded.
 
-A store you chose yourself (the open one, or one from the picker) is used as asked: if its cells or
+A store you chose yourself (the open one, or one from the browser) is used as asked: if its cells or
 genes differ from the saved ones, a notice says so instead of asking first.
 
 (panelsets-add)=
