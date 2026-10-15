@@ -731,9 +731,15 @@ def shoot_export(sh, data_dir):
     im.crop((im.width - int(380 * DSF), 0, im.width, int(110 * DSF))).save(OUT / "export-modebar.png")
     finish(OUT / "export-modebar.png")
     toggle_controls(sh, page, "cell-plot-W")
+    page.evaluate("(w) => document.querySelector(w + ' [id^=equal-aspect-]').click()", w); time.sleep(1.0)
     page.locator(f"{w} [id^=aesthetics-menu-btn]").click(); time.sleep(1.2)
-    # the menu as it opens (groups folded; user-guide/plot-options.md), then the Export group
+    # the menu as it opens (groups folded; user-guide/plot-options.md), then Axes and ticks, then the Export group
     capture(sh, page, "plot-options-menu", ".popover .popover-body")
+    page.locator("details[data-section=presets] > summary").click()
+    page.locator("details[data-section=axes] > summary").click(); time.sleep(0.4)
+    page.locator("[id^=show-scale-bar-]").check(); time.sleep(0.4)
+    capture(sh, page, "plot-options-axes", ".popover .popover-body")
+    page.locator("details[data-section=axes] > summary").click(); time.sleep(0.4)
     page.locator("details[data-section=export] > summary").click(); time.sleep(0.4)
     page.locator("[id^=download-png-cell-plot-W]").scroll_into_view_if_needed(); time.sleep(0.4)
     page.context.close()
