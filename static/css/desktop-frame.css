@@ -50,15 +50,13 @@ html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header .accou
     min-height: 1lh;  /* the line it occupied as an inline box */
 }
 
-/* Windows: the header keeps its height too. The panel set buttons drop to the bottom of
-   their column, below the window controls. Narrower, where the dataset box takes a row of its
-   own, that row would run under the controls: it stops short of them and the buttons, on the
-   second row, are already below. */
+/* Windows: the header keeps its height too. The panel set buttons sit on the row of the
+   input boxes (styles.css), below the window controls. Narrower, where the dataset box takes a
+   row of its own, that row would run under the controls: it stops short of them and the
+   buttons, on the second row, are already below. */
 html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .header-actions {
-    align-self: flex-end;
     min-width: var(--az-win-overlay-w);
-    display: flex;
-    justify-content: flex-end;
+    text-align: right;
 }
 
 @media (min-width: 768.02px) {

@@ -12,6 +12,8 @@ Chromium (the page cannot tell the difference) and measures the header on the pa
 - win: nothing in the header reaches under the window controls at the top right (also with the
   dataset box on a row of its own), and the panel set buttons sit below them; the controls
   get the header's colours, light and dark;
+- all: the panel set buttons line up with the dataset and focus boxes, not with the middle
+  of their labelled columns (on a row of their own when the window is too narrow);
 - both: the header is the drag region, everything you can use in it (and the popups over it)
   is not; with no flag (browser, Linux) nothing changes.
 
@@ -133,6 +135,25 @@ def test_mac_keeps_the_header_out_of_the_traffic_lights(open_page, width):
     assert abs(_title_top(page) - base_top) < 1
     page.evaluate("document.documentElement.removeAttribute('data-desktop-fullscreen')")
     assert _title_top(page) >= MAC_LIGHTS[3]
+    assert not page.errors
+
+
+@pytest.mark.parametrize("frame", [None, "mac", "win"])
+@pytest.mark.parametrize("width", WIDTHS)
+def test_panel_set_buttons_sit_on_the_row_of_the_input_boxes(open_page, width, frame):
+    page = open_page(frame, width)
+    plain = open_page(None, width)
+    height = "document.getElementById('app-header').offsetHeight"
+    assert page.evaluate(height) == plain.evaluate(height)
+    box = "(s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.top, r.bottom]; }"
+    (b_top, b_bottom), (g_top, g_bottom), (c_top, _) = (
+        page.evaluate(box, s) for s in ("#btn-save-session", "#focused-gene", "#focused-cell"))
+    assert abs(g_top - c_top) < 1
+    if b_top < g_bottom:  # on the row of the focus boxes: the same top and bottom as the boxes
+        assert abs(b_top - g_top) < 1 and abs(b_bottom - g_bottom) < 1, \
+            f"buttons at {b_top}, input boxes at {g_top} ({width}px, {frame})"
+    else:  # narrow: a row of their own below the boxes
+        assert width < 900, f"buttons on a row of their own at {width}px"
     assert not page.errors
 
 

@@ -29,8 +29,8 @@ with the release after it. Older releases are listed on
 - The desktop app has no title bar on macOS and Windows: the AnnZarro header is the title bar, at
   the same height as before. On macOS the three window buttons sit at the top left and the
   AnnZarro title moves down below them. On Windows the minimise, maximise and close buttons, in the
-  header's colours in the light and the dark theme, sit at the top right, and the Save / Load /
-  Close all / Share buttons move down below them. Drag the empty part of the header to move the
+  header's colours in the light and the dark theme, sit at the top right, above the Save / Load /
+  Close all / Share buttons. Drag the empty part of the header to move the
   window and double-click it to zoom it. Linux keeps its normal window frame, and the browser
   version is unchanged.
 - The desktop app can update itself. It looks for a newer release on launch and then once a day,
@@ -44,6 +44,10 @@ with the release after it. Older releases are listed on
   ([details](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html#updates)).
 - The macOS desktop app installs with Homebrew: `brew install --cask settylab/annzarro/annzarro`,
   and the app then updates itself. The tap follows each release.
+
+### Changed
+- The Save / Load / Close all / Share buttons in the header line up with the dataset and focus
+  boxes instead of the middle of their labels.
 
 ### Docs
 - The README and the licence page cite v0.5.1 by its DOI,
