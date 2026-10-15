@@ -104,6 +104,15 @@ test('search rows by name or relative path, substring or regex', () => {
     assert.equal(M.searchRows(rows, '(', { regex: true }).rows.length, 2, 'an invalid regex filters nothing');
 });
 
+test('a regex is anchored to the name or to the path, not to both joined; a substring is literal', () => {
+    const rows = [S('deep.zarr', { rel_path: 'projects/deep.zarr' }), S('a.b.zarr'), S('axb.zarr')];
+    assert.deepEqual(names(M.searchRows(rows, '^deep\\.zarr$', { regex: true }).rows), ['deep.zarr']);
+    assert.deepEqual(names(M.searchRows(rows, '^projects/', { regex: true }).rows), ['deep.zarr']);
+    assert.deepEqual(names(M.searchRows(rows, 'a.b').rows), ['a.b.zarr'], 'the dot is only a dot');
+    assert.deepEqual(names(M.searchRows(rows, '(').rows), [], 'an unbalanced bracket is only text');
+    assert.deepEqual(names(M.searchRows(rows, '').rows), ['deep.zarr', 'a.b.zarr', 'axb.zarr']);
+});
+
 test('type-ahead finds the first name that starts with the typed text and cycles one letter', () => {
     const rows = [S('alpha.zarr'), S('beta.zarr'), S('bravo.zarr'), S('charlie.zarr')];
     assert.equal(M.typeAheadIndex(rows, 'b', -1), 1);

@@ -99,7 +99,7 @@ export class SelectionTile {
         }
         if (!section) section = build();
         if (!app.recentDatasets) return;
-        let entries = [];
+        let entries;
         try { entries = await app.recentDatasets(5); } catch { entries = []; }
         if (!section) return;
         const list = section.querySelector('.welcome-recents');
