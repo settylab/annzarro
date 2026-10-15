@@ -8,6 +8,7 @@ missing values. Categorical colour
 is covered in {doc}`cell-and-gene-plots`.
 
 The numerical colour controls appear in a panel's controls once its colour is numerical.
+The colour bar's position, length and tick count are in **Plot Options** ({doc}`plot-options`).
 
 ```{figure} ../_static/screens/user-guide/colour-controls.png
 :class: screenshot

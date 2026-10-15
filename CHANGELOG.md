@@ -8,14 +8,22 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
-The desktop app can update itself. It looks for a newer release on launch and then once a day, asks
-before it downloads (Download, Later, Skip this version) and again before it restarts, and does
-nothing without your say-so. **Check for Updates...** is in the AnnZarro menu (macOS) or Help menu
-(Windows, Linux), next to an option that turns the automatic checks off; `ANNZARRO_DISABLE_UPDATES=1`
-turns updates off entirely. macOS, the Windows installer and the Linux AppImage update in place; a
-`.deb` and the Windows portable zip show a link to the new release. Checks contact only `github.com`.
-Updating starts with the first release that contains this; users of 0.5.1 and older update by hand
-once ([details](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html#updates)).
+### Added
+- The desktop app can update itself. It looks for a newer release on launch and then once a day,
+  asks before it downloads (Download, Later, Skip this version) and again before it restarts, and
+  does nothing without your say-so. **Check for Updates...** is in the AnnZarro menu (macOS) or Help
+  menu (Windows, Linux), next to an option that turns the automatic checks off;
+  `ANNZARRO_DISABLE_UPDATES=1` turns updates off entirely. macOS, the Windows installer and the
+  Linux AppImage update in place; a `.deb` and the Windows portable zip show a link to the new
+  release. Checks contact only `github.com`. Updating starts with the first release that contains
+  this; users of 0.5.1 and older update by hand once
+  ([details](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html#updates)).
+- The macOS desktop app installs with Homebrew: `brew install --cask settylab/annzarro/annzarro`,
+  and the app then updates itself. The tap follows each release.
+
+### Docs
+- The README and the licence page cite v0.5.1 by its DOI,
+  [10.5281/zenodo.23386903](https://doi.org/10.5281/zenodo.23386903).
 
 ## 0.5.1 (2026-10-14)
 
@@ -29,7 +37,8 @@ large subset no longer freezes the page.
   Legend and colour bar, Text, Margins, Export, Apply to other panels). The menu opens again as
   you left it.
 - **Publication** preset: white background, no grid, five ticks per axis, larger text, a tighter
-  margin. **Default** returns every look setting to a new plot's.
+  margin. **Default** returns the look to a new plot's; the font, the scale bar's size and
+  unit, the Points group and the export size stay.
 - Tick marks and tick labels switch separately, and **Ticks per axis** asks for about N ticks
   (2 to 30; empty is automatic).
 - Margins: one slider sets all four sides; **Set each side separately** shows a box for each.
