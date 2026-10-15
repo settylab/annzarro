@@ -238,14 +238,20 @@ def test_concurrent_gathers_share_one_byte_budget(tmp_path, monkeypatch):
 @sharded_only
 def test_a_small_gather_does_not_queue_behind_a_big_one(tmp_path, monkeypatch):
     """A 10-row read that starts while a big gather has its batches queued on the shared pool is read
-    inline, from the budget's reserve: it took 6.5x as long behind a 100k-row read."""
+    inline, from the budget's reserve: it took 6.5x as long behind a 100k-row read.
+
+    Each batch of the big gather takes DELAY; a read queued behind them waits for the running batch,
+    about DELAY - 0.15 s (0.87 s with the inline path switched off). Read inline it
+    takes milliseconds. The bound of 0.25 s leaves a loaded CI runner room (a fixed 50 ms against a
+    0.1 s DELAY failed once at 52 ms under pytest-xdist) and stays far below a queued read."""
     import threading
     import time
     monkeypatch.setattr(zr, "WHOLE_READ_MAX_BYTES", 0)
     monkeypatch.setattr(zr, "GATHER_BLOCK_BYTES", 1 << 20)
     n = 1 << 18
     a, data = _sharded(tmp_path / "a.zarr", (n, 4), (1024, 4), (n, 4))
-    slow = _Spy(a, delay=0.1)
+    DELAY = 1.0
+    slow = _Spy(a, delay=DELAY)
     big = np.sort(np.random.default_rng(1).choice(n, 100_000, replace=False))
     thread = threading.Thread(target=lambda: zr.take_rows(slow, big))
     thread.start()
@@ -257,4 +263,4 @@ def test_a_small_gather_does_not_queue_behind_a_big_one(tmp_path, monkeypatch):
     still_running = thread.is_alive()
     thread.join()
     assert np.array_equal(got, data[few])
-    assert still_running and waited < 0.05, f"{waited:.3f} s for 10 rows during a big gather"
+    assert still_running and waited < 0.25, f"{waited:.3f} s for 10 rows during a big gather"
