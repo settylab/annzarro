@@ -11,9 +11,11 @@
 
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/all.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
 </head>
 <body class="admin-page">
@@ -22,7 +24,8 @@
         <div class="container-fluid d-flex flex-wrap align-items-center gap-3 py-2">
             <h1 class="admin-title h4 mb-0">{{ app_name|default('AnnZarro') }} admin</h1>
             <span id="admin-user" class="text-muted small"></span>
-            <div class="ms-auto d-flex gap-2">
+            <div class="ms-auto d-flex gap-2 align-items-center">
+                <span id="theme-toggle" class="theme-toggle"></span>
                 <a class="btn btn-sm btn-outline-secondary" href="{{ request.script_root }}/">
                     <i class="fas fa-arrow-left" aria-hidden="true"></i> Back to {{ app_name|default('AnnZarro') }}
                 </a>

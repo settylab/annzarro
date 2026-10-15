@@ -129,6 +129,7 @@ def refuse():
         response = jsonify(error=message, reason="csrf_failed")
     else:
         response = make_response(f"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+                                 f"<meta name=\"color-scheme\" content=\"light dark\">"
                                  f"<title>403</title></head><body><h1>403</h1><p>{message}</p></body></html>")
         response.mimetype = "text/html"
     response.status_code = 403

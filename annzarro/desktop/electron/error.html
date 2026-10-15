@@ -131,6 +131,18 @@
       background-color: #f8f9fa;
       border-radius: 0 0 4px 4px;
     }
+    @media (prefers-color-scheme: dark) {
+      body { background-color: #14171a; color: #e6e9ec; }
+      p { color: #a3acb5; }
+      h1, .error-icon { color: #f1a3ab; }
+      .debug-info { background-color: #23282d; border-color: #3a424a; color: #e6e9ec; }
+      .help-section { border-top-color: #3a424a; }
+      .collapsible { background-color: #2d333a; color: #e6e9ec; }
+      .active, .collapsible:hover { background-color: #3a424a; }
+      .collapsible:after { color: #a3acb5; }
+      .btn { background-color: #0d6efd; }
+      .btn:hover { background-color: #0b5ed7; }
+    }
   </style>
 </head>
 <body>

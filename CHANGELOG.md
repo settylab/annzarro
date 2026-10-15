@@ -8,6 +8,23 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Dark theme
+- AnnZarro follows your system's light or dark setting, live: switch the system while the page is
+  open and the app switches. The new **System / Light / Dark** buttons at the right end of the statistics bar override it for
+  this browser and are remembered there. The login page, the admin pages, the account page and the
+  desktop app are themed too, and there is no flash of the wrong theme on load.
+- Plots follow the theme for every colour you have not set (background, grid, axes, text, legend,
+  colour bar, the toolbar, the grey Not in table points and the scale bar). A colour you set, or a
+  plot theme button, is kept when the theme changes. Plot Options > Appearance has **Follow app
+  theme** (and **Light colours** / **Dark colours**); a colour's **Reset** follows the theme again.
+  The **Default** preset follows the theme, **Publication** stays white.
+- Share links and panel sets store only the colours you set. A link from an earlier version opens
+  with its colours equal to the old light defaults following the theme; the colours you chose, and
+  the old Dark Theme button's, stay.
+- Exports use the colours on screen: export in the Light theme (or with **Publication**) for a paper.
+- Grid and axis colours now apply from the first draw, and several grey-on-white text and control
+  colours are slightly darker for WCAG AA contrast.
+
 ### Added
 - The desktop app can update itself. It looks for a newer release on launch and then once a day,
   asks before it downloads (Download, Later, Skip this version) and again before it restarts, and

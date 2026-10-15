@@ -117,7 +117,8 @@ def refuse(status, reason, message, **extra):
         response = jsonify(dict(error=message, reason=reason, **extra))
     else:
         response = make_response(
-            "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>"
+            "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"color-scheme\" content=\"light dark\"><title>"
             f"{status}</title></head><body><h1>{status}</h1><p>{html.escape(message)}</p>"
             "</body></html>")
         response.mimetype = "text/html"

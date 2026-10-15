@@ -14,6 +14,7 @@
 import { createAdminApi } from './admin-api.js';
 import { createReauthModal } from './reauth-modal.js';
 import { h, setChildren } from './dom.js';
+import { mountThemeToggle } from '../utils/theme-toggle.js';
 import users from './users.js';
 import dataRoots from './data-roots.js';
 import health from './health.js';
@@ -122,6 +123,8 @@ export function createRouter({ nav, view, api, ctx = {}, sections = SECTIONS, se
 
 /** Wire the page. */
 export async function boot(doc = globalThis.document) {
+    const themeHost = doc.getElementById('theme-toggle');
+    if (themeHost) mountThemeToggle(themeHost);
     const toasts = doc.getElementById('admin-toasts');
     const toast = (message, level, ms) => showToast(toasts, message, level, ms);
     let modal = null;

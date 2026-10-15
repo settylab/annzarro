@@ -39,6 +39,7 @@ import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
+import { mountThemeToggle } from './utils/theme-toggle.js';
 import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
 import { markDatasetUnavailable, clearDatasetUnavailable, notAvailableText, UNAVAILABLE_TITLE } from './utils/no-dataset-screen.js';
 
@@ -85,6 +86,10 @@ const App = (function() {
             // Say who is signed in, or that nobody needs to be (not awaited:
             // the header must not hold up the first render)
             _loadAuthIndicator();
+
+            // System / Light / Dark; the plots follow it (utils/plot-theme.js)
+            const themeHost = document.getElementById('theme-toggle');
+            if (themeHost) mountThemeToggle(themeHost);
             
             // Check for autosave session before initializing panel manager.
             //
@@ -3817,11 +3822,11 @@ const App = (function() {
                 }
                 
                 #keyboard-shortcuts-modal kbd {
-                    background-color: #f7f7f7;
-                    border: 1px solid #ccc;
+                    background-color: var(--az-surface-3, #f7f7f7);
+                    border: 1px solid var(--az-border-strong, #ccc);
                     border-radius: 3px;
                     box-shadow: 0 1px 0 rgba(0,0,0,0.2);
-                    color: #333;
+                    color: var(--az-text, #333);
                     display: inline-block;
                     font-size: 0.85em;
                     font-weight: 700;
@@ -3831,8 +3836,8 @@ const App = (function() {
                 }
                 
                 #keyboard-shortcuts-modal .platform-note {
-                    background-color: #f8f9fa;
-                    border-left: 4px solid #6c757d;
+                    background-color: var(--az-surface-2, #f8f9fa);
+                    border-left: 4px solid var(--az-muted, #6c757d);
                     padding: 0.75rem;
                     margin-top: 1rem;
                     font-size: 0.9em;

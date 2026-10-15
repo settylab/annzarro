@@ -5,15 +5,15 @@ export. It never changes what the plot shows. Its settings belong to the panel: 
 panel sets and share links, and a link that lacks an option draws that option's default.
 
 The menu has nine groups, described below in the order the menu shows them. A group opens and
-folds with a click, and the menu opens again as you left it. Only **Presets** is open the first
+folds with a click, and the menu opens again as you left it. Only **Export** is open the first
 time.
 
 ```{figure} ../_static/screens/user-guide/plot-options-menu.png
 :class: screenshot
 :width: 35%
-:alt: The Plot Options menu with nine folded groups: Presets (open, with Publication and Default buttons), Appearance, Axes and ticks, Points, Legend and colour bar, Text, Margins, Export, Apply to other panels.
+:alt: The Plot Options menu with nine groups: Presets, Appearance, Axes and ticks, Points, Legend and colour bar, Text, Margins, Export (open, with the format buttons and size), Apply to other panels.
 
-Plot Options with its nine groups.
+Plot Options with its nine groups. Every group starts folded except Export.
 ```
 
 ## Recipes
@@ -33,29 +33,54 @@ plot of the same kind takes the look. Do this after the look is final: it replac
 
 **A dark plot**
 
-In **Appearance**, click **Dark Theme**. **Light Defaults** goes back.
+The plot follows the app's light or dark theme by itself. To keep one look in either theme, click
+**Dark colours** (or **Light colours**) in **Appearance**; **Follow app theme** goes back.
 
 ## Presets
 
-- **Publication** sets a white background, no grid and no zero lines, tick marks with about five
+- **Publication** sets a white background and black text and axes (kept in either app theme), no grid and no zero lines, tick marks with about five
   ticks per axis, text of 16 px, axis lines of 1.5 px, margins of 70 px left and right, 40 px
   top and 60 px bottom, and a colour bar 60 % long with five ticks. It also resets the
-  colours, the legend position and the other look settings to those of a new plot. It does not
+  legend position and the other look settings to those of a new plot. It does not
   touch the scale bar, the font, the **Points** group or the export size.
-- **Default** returns the look settings to what a new plot has: colours, grid, axes, tick count,
+- **Default** returns the look settings to what a new plot has, with every colour following the app theme again: grid, axes, tick count,
   text size, line widths, margins, legend, colour bar, and the scale bar's switch and corner
   (the scale bar goes off). The font, the scale bar's size and unit, the **Points** group, the
   export size, and what the plot shows stay.
 
 A preset is a starting point: change anything afterwards.
 
+(plot-colours-theme)=
+## Plot colours and the app theme
+
+The plot's background, grid, axis lines, zero lines, text, 3D backdrop and the grey of the Not in
+table points follow the app's light or dark theme ({ref}`colour-theme`), **for every colour you
+have not set**. This is the rule:
+
+- A colour you choose (a colour box in Plot Options), or a plot theme button you press, is
+  **kept** when the app theme changes. The plot's other colours keep following.
+- **Appearance > Plot colours** has three buttons. **Follow app theme** releases every colour so the
+  plot follows the theme again. **Light colours** and **Dark colours** set the colours of that
+  palette and keep them in either app theme.
+- Each colour's **Reset** releases that one colour (it is greyed out while the colour already
+  follows). The colour box always shows the colour on screen.
+- The scale bar takes the text colour, so it follows the theme until you set the text colour.
+- Only the colours you set are stored in panel sets and share links, so a link opens in the
+  theme of whoever opens it, with your colours where you set them. A link saved by an earlier
+  version stored every colour; a colour in it that equals the old light default counts as not set
+  (it looks the same in the Light theme and follows the theme in the Dark one), any other colour
+  stays as saved, including what the old **Dark Theme** button set.
+- Colours of the data (palettes, colour scales) do not change with the theme.
+
+An export uses the colours on screen. For a figure in a paper, switch to Light (or press
+**Publication**) before exporting.
+
 ## Appearance
 
 - **Background** colour, with **Reset**.
 - **3D Backdrop** (3D plots only): **Show** and the backdrop colour, with **Reset**.
-- **Apply Color Theme**: **Light Defaults** sets the background, grid, axis, text and zero-line
-  colours (and the 3D backdrop colour) to those of a new plot. **Dark Theme** sets them to a dark
-  background with light axes and text. Neither changes anything else.
+- **Plot colours**: **Follow app theme**, **Light colours** and **Dark colours**
+  ({ref}`how plots follow the app theme <plot-colours-theme>`). Neither changes anything else.
 
 ## Axes and ticks
 

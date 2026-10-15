@@ -30,7 +30,7 @@
  *   ANNZARRO_DISABLE_UPDATES=1 never look for updates (managed installs); see updates.js.
  *                            Smoke and test profiles do not look for them either.
  */
-const { app, BrowserWindow, dialog, ipcMain, Menu, MenuItem, net: electronNet, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, MenuItem, nativeTheme, net: electronNet, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -374,6 +374,9 @@ function createWindow() {
         minWidth: 800,
         minHeight: 600,
         show: !SMOKE,
+        // No white flash before the page paints. nativeTheme.themeSource stays "system":
+        // the page follows the OS through prefers-color-scheme (static/css/theme.css)
+        backgroundColor: nativeTheme.shouldUseDarkColors ? '#14171a' : '#ffffff',
         icon: path.join(__dirname, 'icons', 'icon.png'),
         webPreferences: {
             nodeIntegration: false,

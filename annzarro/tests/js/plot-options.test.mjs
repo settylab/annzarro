@@ -169,7 +169,7 @@ test('presets: default restores the look, publication is white, gridless, sparse
         margins: { l: 1, r: 1, t: 1, b: 1, pad: 4 }, marginsUnlinked: true, showScaleBar: true, scaleBarUnit: 'µm',
         notInTableScale: 3, equalAspect: true });
     applyPreset(s, 'default');
-    assert.equal(s.bgColor, '#ffffff');
+    assert.equal('bgColor' in s, false);          // a set colour is released: the plot follows the app theme again
     assert.equal(s.showGrid, true);
     assert.equal(s.fontSize, 12);
     assert.equal(s.tickCount, null);
@@ -182,7 +182,8 @@ test('presets: default restores the look, publication is white, gridless, sparse
     assert.equal(s.equalAspect, true);
 
     applyPreset(s, 'publication');
-    assert.equal(s.bgColor, '#ffffff');
+    assert.equal(s.bgColor, '#ffffff');           // pinned light: a figure for a paper in either app theme
+    assert.equal(s.textColor, '#000000');
     assert.equal(s.showGrid, false);
     assert.equal(s.tickCount, 5);
     assert.equal(s.showTickMarks, true);

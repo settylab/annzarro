@@ -2,6 +2,7 @@
  * Configuration module for AnnZarro
  */
 import { appUrl } from './utils/app-url.js';
+import { PLOT_PALETTES } from './utils/plot-theme.js';
 // the panel registry: the server declares panel.<type>.enabled for each entry (policy.js)
 import panelTypes from './panels/panel-types.json' with { type: 'json' };
 
@@ -200,13 +201,15 @@ const Config = (function() {
             SHOW_AXIS_LINES: true,
             SHOW_ZERO_LINES: false,
             
-            // Default colors (light theme)
-            BG_COLOR: '#ffffff',
-            GRID_COLOR: '#e6e6e6',
-            AXIS_COLOR: '#000000',
-            TEXT_COLOR: '#000000',
-            ZERO_LINE_COLOR: '#cccccc',
-            BACKDROP_COLOR: '#f0f0f0', // 3D backdrop color
+            // The light colours; a plot shows these in the light app theme and the
+            // DARK_THEME ones in the dark, for every colour not set explicitly
+            // (utils/plot-theme.js)
+            BG_COLOR: PLOT_PALETTES.light.bgColor,
+            GRID_COLOR: PLOT_PALETTES.light.gridColor,
+            AXIS_COLOR: PLOT_PALETTES.light.axisColor,
+            TEXT_COLOR: PLOT_PALETTES.light.textColor,
+            ZERO_LINE_COLOR: PLOT_PALETTES.light.zeroLineColor,
+            BACKDROP_COLOR: PLOT_PALETTES.light.backdropColor, // 3D backdrop color
             
             // 3D backdrop settings
             SHOW_BACKDROP: false, // Hidden by default
@@ -216,14 +219,14 @@ const Config = (function() {
             GRID_LINE_WIDTH: 1,
             ZERO_LINE_WIDTH: 1,
             
-            // Dark theme colors (for application via button)
+            // Dark theme colors (the dark app theme, and the Dark colours button)
             DARK_THEME: {
-                BG_COLOR: '#1e1e1e',
-                GRID_COLOR: '#444444',
-                AXIS_COLOR: '#ffffff',
-                TEXT_COLOR: '#ffffff',
-                ZERO_LINE_COLOR: '#666666',
-                BACKDROP_COLOR: '#121212' // 3D backdrop color for dark theme
+                BG_COLOR: PLOT_PALETTES.dark.bgColor,
+                GRID_COLOR: PLOT_PALETTES.dark.gridColor,
+                AXIS_COLOR: PLOT_PALETTES.dark.axisColor,
+                TEXT_COLOR: PLOT_PALETTES.dark.textColor,
+                ZERO_LINE_COLOR: PLOT_PALETTES.dark.zeroLineColor,
+                BACKDROP_COLOR: PLOT_PALETTES.dark.backdropColor // 3D backdrop color for dark theme
             },
             
             // Fonts

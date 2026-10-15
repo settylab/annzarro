@@ -15,6 +15,7 @@
  */
 import { roundSig, snapPointSize } from './slider-scales.js';
 import { Config } from '../config.js';
+import { PLOT_PALETTES, plotColour } from './plot-theme.js';
 
 /*
  * value(N) = base * (1 + N / N_HALF) ** -EXPONENT, rounded to 2 significant
@@ -103,7 +104,8 @@ export function pointStyleBase() {
   return { size: d.POINT_SIZE || 5, opacity: d.POINT_OPACITY || 0.7 };
 }
 
-export const NOT_IN_TABLE_COLOR = '#b4b4b4';
+/** The grey of the points not in the table in the light theme; the dark one is in utils/plot-theme.js. */
+export const NOT_IN_TABLE_COLOR = PLOT_PALETTES.light.notInTableColor;
 
 /**
  * The marker of the grey points a table link leaves in the plot (the rows
@@ -125,6 +127,6 @@ export function greyMarker(settings, nGrey) {
   return {
     size: settings.z ? Math.max(size, snapPointSize(0)) : snapPointSize(size),
     opacity,
-    color: settings.notInTableColor || NOT_IN_TABLE_COLOR
+    color: plotColour(settings, 'notInTableColor')
   };
 }

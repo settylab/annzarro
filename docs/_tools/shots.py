@@ -147,9 +147,11 @@ class Shooter:
         self.out.mkdir(parents=True, exist_ok=True)
 
     def open(self, view: dict | None, dataset="bm_aging_annzarro.zarr", viewport=VIEWPORT,
-             clipboard_denied=False) -> Page:
+             clipboard_denied=False, scheme="light") -> Page:
+        # `scheme` is the operating system's colour scheme the browser reports: "light" (every
+        # shot but the dark-theme one) or "dark"
         ctx = self.browser.new_context(viewport=viewport, device_scale_factor=DSF,
-                                       color_scheme="light")
+                                       color_scheme=scheme)
         if clipboard_denied:
             # The plain-http cluster case: writeText rejects, the app shows the field.
             ctx.add_init_script("""
