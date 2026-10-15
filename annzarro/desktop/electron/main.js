@@ -28,7 +28,7 @@
  *                            window: any request not to 127.0.0.1 is cancelled
  *                            and fails the check.
  */
-const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -370,6 +370,9 @@ function createWindow() {
         minWidth: 800,
         minHeight: 600,
         show: !SMOKE,
+        // No white flash before the page paints. nativeTheme.themeSource stays "system":
+        // the page follows the OS through prefers-color-scheme (static/css/theme.css)
+        backgroundColor: nativeTheme.shouldUseDarkColors ? '#14171a' : '#ffffff',
         icon: path.join(__dirname, 'icons', 'icon.png'),
         webPreferences: {
             nodeIntegration: false,

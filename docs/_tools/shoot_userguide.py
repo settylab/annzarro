@@ -1032,11 +1032,28 @@ def shoot_subset_balanced_parts(sh, data_dir):
     page.context.close()
 
 
+def shoot_theme(sh, data_dir):
+    """The app in the dark theme: the operating system reports a dark scheme and the toggle is on
+    System, so nothing but the browser's setting differs from the other shots."""
+    D = ds("bm_aging_annzarro.zarr", data_dir)
+    v = save_view("dark-theme", view(
+        split("horizontal",
+              tile("cell-plot-D"),
+              tile("gene-plot-D"), 50),
+        {"cell-plot-D": cell_plot("cell-plot-D", "Cell plot", {"type": "obs", "key": "highres_celltype", "column": ""}),
+         "gene-plot-D": gene_plot("gene-plot-D", "Volcano", {"type": "var", "key": "gene_module_k3", "column": ""})}))
+    page = sh.open(v, dataset=D, scheme="dark")
+    page.evaluate("window.scrollTo(0, 0)")
+    capture(sh, page, "ui-dark-theme", None)
+    sh.log.append("theme: html data-theme = " + page.evaluate("document.documentElement.dataset.theme"))
+    page.context.close()
+
+
 STEPS = {"interface": shoot_interface, "focus": shoot_focus, "plots": shoot_plots,
          "colour": shoot_colour, "tables": shoot_tables, "panelsets": shoot_panelsets,
          "share": shoot_share, "export": shoot_export, "spatial": shoot_spatial,
          "subsets": shoot_subsets, "subsets-balanced": shoot_subset_balanced_parts,
-         "focus-outside": shoot_focus_outside}
+         "focus-outside": shoot_focus_outside, "theme": shoot_theme}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

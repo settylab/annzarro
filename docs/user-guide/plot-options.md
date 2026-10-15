@@ -14,13 +14,39 @@ Plot Options. A group opens and folds with a click, and the menu opens again as 
 
 ## Presets
 
-- **Publication** sets a white background, no grid or zero lines, tick marks with about five
+- **Publication** sets a white background and black text and axes (kept in either app theme), no grid or zero lines, tick marks with about five
   ticks per axis, larger text (16 px) and axis lines, a tighter margin and a shorter colour bar
   with five ticks. It does not touch the scale bar.
-- **Default** returns every look setting to what a new plot has, the scale bar off included.
+- **Default** returns every look setting to what a new plot has, the scale bar off included, and
+  lets every colour follow the app theme again.
   What the plot shows and the Not in table group stay.
 
 A preset is a starting point: change anything afterwards.
+
+(plot-colours-theme)=
+## Plot colours and the app theme
+
+The plot's background, grid, axis lines, zero lines, text, 3D backdrop and the grey of the Not in
+table points follow the app's light or dark theme ({ref}`colour-theme`), **for every colour you
+have not set**. This is the rule:
+
+- A colour you choose (a colour box in Plot Options), or a plot theme button you press, is
+  **kept** when the app theme changes. The plot's other colours keep following.
+- **Appearance > Plot colours** has three buttons. **Follow app theme** releases every colour so the
+  plot follows the theme again. **Light colours** and **Dark colours** set the colours of that
+  palette and keep them in either app theme.
+- Each colour's **Reset** releases that one colour (it is greyed out while the colour already
+  follows). The colour box always shows the colour on screen.
+- The scale bar takes the text colour, so it follows the theme until you set the text colour.
+- Only the colours you set are stored in panel sets and share links, so a link opens in the
+  theme of whoever opens it, with your colours where you set them. A link saved by an earlier
+  version stored every colour; a colour in it that equals the old light default counts as not set
+  (it looks the same in the Light theme and follows the theme in the Dark one), any other colour
+  stays as saved, including what the old **Dark Theme** button set.
+- Colours of the data (palettes, colour scales) do not change with the theme.
+
+An export uses the colours on screen. For a figure in a paper, switch to Light (or press
+**Publication**) before exporting.
 
 ## Axes and ticks
 

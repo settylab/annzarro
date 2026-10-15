@@ -14,6 +14,9 @@
     <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     
+    <!-- Theme (System, Light or Dark) before anything paints: sets <html data-theme>; see static/js/theme-init.js -->
+    <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
+
     <!-- External Dependencies (local for offline use) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/bootstrap.min.css') }}">
     
@@ -60,7 +63,8 @@
         }
     </style>
     
-    <!-- Custom Styles -->
+    <!-- Custom Styles: the theme's colours (light and dark) first, then the app's own -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
@@ -160,8 +164,12 @@
                 <div class="col-md-3">
                     <span>Genes: <span id="gene-count">-</span></span>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md dataset-path-col">
                     <span>Dataset: <span id="dataset-path">-</span></span>
+                </div>
+                <div class="col-md-auto d-flex align-items-center">
+                    <!-- System / Light / Dark (static/js/utils/theme-toggle.js); here, not in the header, which has no room to spare -->
+                    <span id="theme-toggle" class="theme-toggle"></span>
                 </div>
             </div>
         </div>

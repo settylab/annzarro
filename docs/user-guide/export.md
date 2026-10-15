@@ -34,9 +34,11 @@ The browser saves `annzarro_plot.png`, drawn at 1200 × 800 and scaled by 2: the
    1000 and 1000).
 
 The rest of **Plot Options** changes how the plot looks on screen and in the export: presets
-(**Publication**), background colour and a **Dark Theme**, grid, axis titles, tick labels, marks
+(**Publication**), background colour and the plot colours (**Follow app theme**, **Light colours**, **Dark colours**), grid, axis titles, tick labels, marks
 and count, axis lines, zero lines, line widths and colours, a scale bar, the font and its size and
-colour, the margins, the legend and the colour bar. {doc}`plot-options` describes each group. These
+colour, the margins, the legend and the colour bar. {doc}`plot-options` describes each group.
+An image is exported with the colours you see, so in the dark theme it has a dark background; for a
+paper, export in the Light theme or after pressing **Publication**. These
 settings are part of the panel and are kept in panel sets and share links.
 
 ```{note}

@@ -1,5 +1,6 @@
 import { plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
+import { plotColour } from '../../utils/plot-theme.js';
 import { RemoteNames } from '../../utils/remote-names.js';
 import { 
   loadAxisData, 
@@ -460,7 +461,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     'legend.title.font': { 
                         size: settings.fontSize ? settings.fontSize + 2 : 14,
                         family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-                        color: settings.textColor || '#000000'
+                        color: plotColour(settings, 'textColor')
                     }
                 });
                   
@@ -855,7 +856,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                             font: { 
                                 size: settings.fontSize ? settings.fontSize + 2 : 14,
                                 family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-                                color: settings.textColor || '#000000'
+                                color: plotColour(settings, 'textColor')
                             }
                         },
                         titleside: 'right'
@@ -873,7 +874,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         'legend.title.font': { 
                             size: settings.fontSize ? settings.fontSize + 2 : 14,
                             family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-                            color: settings.textColor || '#000000'
+                            color: plotColour(settings, 'textColor')
                         }
                     });
                 } else if (settings.color.type === 'none' || data.colorType === 'constant') {

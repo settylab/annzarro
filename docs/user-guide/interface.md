@@ -35,6 +35,9 @@ The header. Numbers match the list below.
 8. **Load Panel Set** opens the list of stored panel sets.
 9. **Share Link** copies a URL that reopens this dataset, layout and focus ({doc}`share-links`).
 
+The **System / Light / Dark** buttons at the right end of the statistics bar below set the colour
+theme ({ref}`colour-theme`).
+
 A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).
 
 **Which version is this?** Hold the pointer over the app name at the top left: the tooltip reads
@@ -42,6 +45,29 @@ A **Close all** button sits between Load Panel Set and Share Link (not numbered 
 AnnZarro 0.5.1"). On a server with login, the tooltip of your user name under the app name ends with the
 same line. Say this version in a bug report. The desktop app shows its own, bundled version the
 same way.
+
+(colour-theme)=
+## Light and dark theme
+
+AnnZarro follows your system's light or dark setting. Switch the system setting while the page is
+open and the app, plots included, switches with it. The three buttons at the right end of the statistics bar override this for this browser: **System** follows the system, **Light** and
+**Dark** stay as chosen. The choice is remembered in the browser (not on the server, and not in
+panel sets or share links) and applies to the login page and the admin pages too. The desktop app
+follows the operating system the same way.
+
+```{figure} ../_static/screens/user-guide/ui-dark-theme.png
+:class: screenshot
+:alt: The AnnZarro window in the dark theme: a dark header and panels, a cell plot coloured by cell type and a gene plot, both on a dark plot background with light axis text.
+
+The dark theme. Plot colours (data colours) are the same as in the light theme.
+```
+
+Plots follow the theme for every colour you have not set yourself ({ref}`plot colours
+<plot-colours-theme>`). Colours that show your data (palettes and colour scales) are never changed
+by the theme; a very dark end of a colour scale, such as black in **Greys** or **Hot**, is hard to
+see on a dark plot, so pick another map there. A figure for a paper is usually exported in the
+Light theme, or with the **Publication** preset, which keeps its white background in either theme
+({doc}`export`).
 
 Below the header, the statistics bar shows the number of cells (8,090) with a badge, **All
 cells**, the number of genes (16285) and the dataset's display name. Datasets with more than

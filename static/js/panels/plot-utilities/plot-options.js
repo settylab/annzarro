@@ -9,7 +9,10 @@
  * Every option here is a plain value on the panel's settings, so a link, a
  * reload, a copied panel and a saved panel set keep them as they keep
  * `showGrid`. A config without them (older links) gets the defaults below.
+ * The plot's colours are the exception: they are stored only when set, and
+ * follow the app theme otherwise (utils/plot-theme.js).
  */
+import { adoptColourModel, plotColour, pinPalette, COLOUR_MODEL } from '../../utils/plot-theme.js';
 
 export const SCALE_BAR_CORNERS = ['bottom-right', 'bottom-left', 'top-right', 'top-left'];
 export const COLORBAR_POSITIONS = ['legend', 'right', 'left', 'top', 'bottom'];
@@ -51,6 +54,7 @@ export function normalizePlotOptions(settings) {
     ? s.scaleBarSize : OPTION_DEFAULTS.scaleBarSize;
   s.scaleBarUnit = typeof s.scaleBarUnit === 'string' ? s.scaleBarUnit.trim().slice(0, 20) : OPTION_DEFAULTS.scaleBarUnit;
   if (s.showTickMarks !== undefined && typeof s.showTickMarks !== 'boolean') delete s.showTickMarks;
+  adoptColourModel(s);                                           // links from before plots followed the app theme
   return s;
 }
 
@@ -155,7 +159,7 @@ export function scaleBar(settings, xRange) {
   const a = side === 'left' ? near : near - dir * length;
   const b = side === 'left' ? near + dir * length : near;
   const y = vert === 'top' ? 0.95 : 0.05;
-  const colour = settings.textColor || '#000000';
+  const colour = plotColour(settings, 'textColor');       // it follows the text colour, so the app theme
   const unit = (settings.scaleBarUnit || '').trim();
   const label = unit ? `${formatLength(length)} ${unit}` : formatLength(length);
   return {
@@ -175,10 +179,14 @@ export function replaceScaleBar(items, ours) {
 
 // ---- presets and copying ----
 
-/** The look the app starts with, for every option a preset sets. */
+/**
+ * The look the app starts with, for every option a preset sets. The colours
+ * are undefined: unset, so the plot follows the app theme.
+ */
 export function defaultLook() {
   return {
-    bgColor: '#ffffff', textColor: '#000000', gridColor: '#e6e6e6', axisColor: '#000000', zeroLineColor: '#cccccc',
+    bgColor: undefined, textColor: undefined, gridColor: undefined, axisColor: undefined, zeroLineColor: undefined,
+    backdropColor: undefined,
     showGrid: true, showAxisTitles: true, showAxisLabels: true, showAxisLines: true, showZeroLines: false,
     tickCount: null, fontSize: 12, axisLineWidth: 1, gridLineWidth: 1, zeroLineWidth: 1,
     margins: { ...DEFAULT_MARGINS }, marginsUnlinked: false,
@@ -193,7 +201,8 @@ export const PRESETS = Object.freeze(['default', 'publication']);
 /**
  * Settings changes of a preset. Default restores the look above (data
  * choices, the scale bar's unit and the Not in table group stay).
- * Publication: white background, no grid, minimal ticks (about five per
+ * Publication: white background and black text and lines in any app theme
+ * (the colours are pinned light), no grid, minimal ticks (about five per
  * axis, marks on), larger fonts and lines and a tight margin. The scale bar
  * is not part of either preset.
  */
@@ -204,8 +213,12 @@ export function presetChanges(name) {
     const rest = { ...look };
     delete rest.showScaleBar;                       // the scale bar stays as it is
     delete rest.scaleBarCorner;
+    const light = {};
+    pinPalette(light, 'light');
     return {
       ...rest,
+      bgColor: light.bgColor, textColor: light.textColor, gridColor: light.gridColor,
+      axisColor: light.axisColor, zeroLineColor: light.zeroLineColor, backdropColor: light.backdropColor,
       showGrid: false, showZeroLines: false, showTickMarks: true, tickCount: 5,
       fontSize: 16, axisLineWidth: 1.5,
       margins: { ...DEFAULT_MARGINS, l: 70, r: 70, t: 40, b: 60 },
@@ -247,6 +260,7 @@ export function pickStyle(settings) {
 
 /** Put a picked style on `target`; null unsets the option. */
 export function adoptStyle(target, style) {
+  target.colourModel = COLOUR_MODEL;      // an unset colour in `style` is auto, not a light default of an old link
   for (const k of STYLE_KEYS) {
     if (!(k in style)) continue;
     if (style[k] === null) delete target[k];

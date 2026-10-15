@@ -9,6 +9,7 @@ import { applyAutoPointStyle, pointStyleBase, greyMarker } from '../../utils/poi
 export { pointStyleBase };
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { colorbarPosition, colorbarExtras, tickKeys, axisPaths } from './plot-options.js';
+import { plotColour, modebarColours } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
@@ -2267,13 +2268,7 @@ export function buildPlotLayout(settings, data) {
   settings.showZeroLines = settings.showZeroLines !== undefined ? settings.showZeroLines : defaults.SHOW_ZERO_LINES || false;
   settings.showLegend = settings.showLegend !== undefined ? settings.showLegend : defaults.SHOW_LEGEND || true;
   
-  // Colors with fallbacks
-  settings.bgColor = settings.bgColor || defaults.BG_COLOR || '#ffffff';
-  settings.gridColor = settings.gridColor || defaults.GRID_COLOR || '#e6e6e6';
-  settings.axisColor = settings.axisColor || defaults.AXIS_COLOR || '#000000';
-  settings.textColor = settings.textColor || defaults.TEXT_COLOR || '#000000';
-  settings.zeroLineColor = settings.zeroLineColor || defaults.ZERO_LINE_COLOR || '#cccccc';
-  settings.backdropColor = settings.backdropColor || defaults.BACKDROP_COLOR || '#f0f0f0';
+  // Colours are not filled in: an unset one follows the app theme (utils/plot-theme.js)
   
   // Fonts and sizing
   settings.fontSize = settings.fontSize || defaults.FONT_SIZE || 12;
@@ -2310,14 +2305,14 @@ export function buildPlotLayout(settings, data) {
   layout.font = {
     family: settings.fontFamily,
     size: settings.fontSize,
-    color: settings.textColor
+    color: plotColour(settings, 'textColor')
   };
+  layout.modebar = modebarColours(settings);      // Plotly draws its toolbar in a fixed grey otherwise
   
   // Initialize settings with defaults if not set
   settings.axisLineWidth = settings.axisLineWidth || defaults.AXIS_LINE_WIDTH || 1;
   settings.gridLineWidth = settings.gridLineWidth || defaults.GRID_LINE_WIDTH || 1;
   settings.zeroLineWidth = settings.zeroLineWidth || defaults.ZERO_LINE_WIDTH || 1;
-  settings.backdropColor = settings.backdropColor || defaults.BACKDROP_COLOR || '#f0f0f0';
   settings.showBackdrop = settings.showBackdrop !== undefined ? settings.showBackdrop : defaults.SHOW_BACKDROP;
   
   // Apply line width settings
@@ -2369,9 +2364,9 @@ export function buildPlotLayout(settings, data) {
     layout.scene.yaxis.title.font.size = settings.fontSize + 2;
     layout.scene.zaxis.title.font.size = settings.fontSize + 2;
     
-    layout.scene.xaxis.title.font.color = settings.textColor;
-    layout.scene.yaxis.title.font.color = settings.textColor;
-    layout.scene.zaxis.title.font.color = settings.textColor;
+    layout.scene.xaxis.title.font.color = plotColour(settings, 'textColor');
+    layout.scene.yaxis.title.font.color = plotColour(settings, 'textColor');
+    layout.scene.zaxis.title.font.color = plotColour(settings, 'textColor');
     
     // Initialize and set tick fonts
     layout.scene.xaxis.tickfont = layout.scene.xaxis.tickfont || {};
@@ -2386,9 +2381,9 @@ export function buildPlotLayout(settings, data) {
     layout.scene.yaxis.tickfont.size = settings.fontSize;
     layout.scene.zaxis.tickfont.size = settings.fontSize;
     
-    layout.scene.xaxis.tickfont.color = settings.textColor;
-    layout.scene.yaxis.tickfont.color = settings.textColor;
-    layout.scene.zaxis.tickfont.color = settings.textColor;
+    layout.scene.xaxis.tickfont.color = plotColour(settings, 'textColor');
+    layout.scene.yaxis.tickfont.color = plotColour(settings, 'textColor');
+    layout.scene.zaxis.tickfont.color = plotColour(settings, 'textColor');
     
     // Apply line width settings for 3D
     layout.scene.xaxis.linewidth = settings.axisLineWidth;
@@ -2407,9 +2402,17 @@ export function buildPlotLayout(settings, data) {
     layout.scene.xaxis.zeroline = settings.showZeroLines;
     layout.scene.yaxis.zeroline = settings.showZeroLines;
     layout.scene.zaxis.zeroline = settings.showZeroLines;
-    layout.scene.xaxis.zerolinecolor = settings.zeroLineColor;
-    layout.scene.yaxis.zerolinecolor = settings.zeroLineColor;
-    layout.scene.zaxis.zerolinecolor = settings.zeroLineColor;
+    layout.scene.xaxis.zerolinecolor = plotColour(settings, 'zeroLineColor');
+    layout.scene.yaxis.zerolinecolor = plotColour(settings, 'zeroLineColor');
+    layout.scene.zaxis.zerolinecolor = plotColour(settings, 'zeroLineColor');
+
+    // Grid and axis colours from the first draw (an unset one is the app theme's)
+    for (const axis of [layout.scene.xaxis, layout.scene.yaxis, layout.scene.zaxis]) {
+      axis.gridcolor = plotColour(settings, 'gridColor');
+      axis.linecolor = plotColour(settings, 'axisColor');
+      axis.tickcolor = plotColour(settings, 'axisColor');
+      axis.color = plotColour(settings, 'axisColor');
+    }
     
   } else { // 2D plot
     // Make sure all required objects exist
@@ -2439,8 +2442,8 @@ export function buildPlotLayout(settings, data) {
     layout.xaxis.title.font.size = settings.fontSize + 2;
     layout.yaxis.title.font.size = settings.fontSize + 2;
     
-    layout.xaxis.title.font.color = settings.textColor;
-    layout.yaxis.title.font.color = settings.textColor;
+    layout.xaxis.title.font.color = plotColour(settings, 'textColor');
+    layout.yaxis.title.font.color = plotColour(settings, 'textColor');
     
     // Initialize and set tick fonts
     layout.xaxis.tickfont = layout.xaxis.tickfont || {};
@@ -2452,14 +2455,22 @@ export function buildPlotLayout(settings, data) {
     layout.xaxis.tickfont.size = settings.fontSize;
     layout.yaxis.tickfont.size = settings.fontSize;
     
-    layout.xaxis.tickfont.color = settings.textColor;
-    layout.yaxis.tickfont.color = settings.textColor;
+    layout.xaxis.tickfont.color = plotColour(settings, 'textColor');
+    layout.yaxis.tickfont.color = plotColour(settings, 'textColor');
     
     // Apply zero line visibility and color
     layout.xaxis.zeroline = settings.showZeroLines;
     layout.yaxis.zeroline = settings.showZeroLines;
-    layout.xaxis.zerolinecolor = settings.zeroLineColor;
-    layout.yaxis.zerolinecolor = settings.zeroLineColor;
+    layout.xaxis.zerolinecolor = plotColour(settings, 'zeroLineColor');
+    layout.yaxis.zerolinecolor = plotColour(settings, 'zeroLineColor');
+
+    // Grid and axis colours from the first draw (an unset one is the app theme's)
+    for (const axis of [layout.xaxis, layout.yaxis]) {
+      axis.gridcolor = plotColour(settings, 'gridColor');
+      axis.linecolor = plotColour(settings, 'axisColor');
+      axis.tickcolor = plotColour(settings, 'axisColor');
+      axis.color = plotColour(settings, 'axisColor');
+    }
   }
 
   // Apply aesthetic settings from the settings object
@@ -2470,14 +2481,14 @@ export function buildPlotLayout(settings, data) {
     }
 
     // Apply background color settings
-    if (settings.bgColor) {
-      layout.paper_bgcolor = settings.bgColor;
-      layout.plot_bgcolor = settings.bgColor;
+    if (plotColour(settings, 'bgColor')) {
+      layout.paper_bgcolor = plotColour(settings, 'bgColor');
+      layout.plot_bgcolor = plotColour(settings, 'bgColor');
       
       // For 3D plots, also set the scene background and backdrop colors
       if (settings.z) {
         layout.scene = layout.scene || {};
-        layout.scene.bgcolor = settings.bgColor;
+        layout.scene.bgcolor = plotColour(settings, 'bgColor');
         
         // Set backdrop color for each axis
         layout.scene.xaxis = layout.scene.xaxis || {};
@@ -2487,9 +2498,9 @@ export function buildPlotLayout(settings, data) {
         layout.scene.xaxis.showbackground = settings.showBackdrop;
         layout.scene.yaxis.showbackground = settings.showBackdrop;
         layout.scene.zaxis.showbackground = settings.showBackdrop;
-        layout.scene.xaxis.backgroundcolor = settings.backdropColor;
-        layout.scene.yaxis.backgroundcolor = settings.backdropColor;
-        layout.scene.zaxis.backgroundcolor = settings.backdropColor;
+        layout.scene.xaxis.backgroundcolor = plotColour(settings, 'backdropColor');
+        layout.scene.yaxis.backgroundcolor = plotColour(settings, 'backdropColor');
+        layout.scene.zaxis.backgroundcolor = plotColour(settings, 'backdropColor');
       }
     }
 
@@ -2732,7 +2743,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           font: { 
             size: settings.fontSize ? settings.fontSize + 2 : 14,
             family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            color: settings.textColor || '#000000'
+            color: plotColour(settings, 'textColor')
           }
         }
       };
@@ -2845,7 +2856,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           font: { 
             size: settings.fontSize ? settings.fontSize + 2 : 14,
             family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            color: settings.textColor || '#000000'
+            color: plotColour(settings, 'textColor')
           }
         }
       };
@@ -3000,7 +3011,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           font: { 
             size: settings.fontSize ? settings.fontSize + 2 : 14,
             family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            color: settings.textColor || '#000000'
+            color: plotColour(settings, 'textColor')
           }
         }
       };

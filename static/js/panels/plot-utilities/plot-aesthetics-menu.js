@@ -1,7 +1,10 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, NOT_IN_TABLE, refreshScaleBar } from './plot-make-helper.js';
 import { restyleMarkers } from './plot-update.js';
-import { NOT_IN_TABLE_COLOR } from '../../utils/point-style.js';
+import {
+  plotColour, isFollowing, followsTheme, followTheme, pinPalette, modebarColours, THEMED_COLOURS
+} from '../../utils/plot-theme.js';
+import { THEME_EVENT } from '../../utils/theme.js';
 import {
   normalizePlotOptions, tickMarksOn, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
   SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle
@@ -169,7 +172,7 @@ export function createPopoverContent(id, settings) {
                 <label class="form-label mb-1">Background</label>
                 <div class="d-flex align-items-center gap-2">
                     <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="plot-bg-color-${id}" value="${settings.bgColor || '#ffffff'}" title="Choose background color">
+                        id="plot-bg-color-${id}" value="${plotColour(settings, 'bgColor')}" title="Choose background color">
                     <button class="btn btn-sm btn-outline-secondary" id="reset-bg-color-${id}">Reset</button>
                 </div>
             </div>
@@ -186,22 +189,30 @@ export function createPopoverContent(id, settings) {
                 </div>
                 <div class="d-flex align-items-center gap-2">
                     <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="backdrop-color-${id}" value="${settings.backdropColor || '#f0f0f0'}" title="Choose 3D backdrop color">
+                        id="backdrop-color-${id}" value="${plotColour(settings, 'backdropColor')}" title="Choose 3D backdrop color">
                     <button class="btn btn-sm btn-outline-secondary" id="reset-backdrop-color-${id}">Reset</button>
                 </div>
             </div>
 
-            <!-- Color Theme Buttons -->
+            <!-- Color Theme Buttons: follow the app theme, or keep one palette in either -->
             <div class="mb-2">
-                <label class="form-label mb-1">Apply Color Theme</label>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="light-theme-${id}">
-                        <i class="fas fa-sun"></i> Light Defaults
+                <label class="form-label mb-1">Plot colours</label>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary ${followsTheme(settings) ? 'active' : ''}" id="follow-theme-${id}"
+                        aria-pressed="${followsTheme(settings)}"
+                        title="Every colour follows the app theme (light or dark) again">
+                        <i class="fas fa-circle-half-stroke"></i> Follow app theme
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="dark-theme-${id}">
-                        <i class="fas fa-moon"></i> Dark Theme
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="light-theme-${id}"
+                        title="Keep the light colours in either app theme">
+                        <i class="fas fa-sun"></i> Light colours
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="dark-theme-${id}"
+                        title="Keep the dark colours in either app theme">
+                        <i class="fas fa-moon"></i> Dark colours
                     </button>
                 </div>
+                <div class="form-text" id="colour-follow-note-${id}"></div>
             </div>
         `)}
         ${details(id, 'axes', 'Axes and ticks', `
@@ -218,7 +229,7 @@ export function createPopoverContent(id, settings) {
                 <label class="form-label mb-1">Grid Color</label>
                 <div class="d-flex align-items-center gap-2">
                     <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="grid-color-${id}" value="${settings.gridColor || '#e6e6e6'}" title="Choose grid color">
+                        id="grid-color-${id}" value="${plotColour(settings, 'gridColor')}" title="Choose grid color">
                     <button class="btn btn-sm btn-outline-secondary" id="reset-grid-color-${id}">Reset</button>
                 </div>
             </div>
@@ -275,7 +286,7 @@ export function createPopoverContent(id, settings) {
                 <label class="form-label mb-1">Axis Color</label>
                 <div class="d-flex align-items-center gap-2">
                     <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="axis-color-${id}" value="${settings.axisColor || '#000000'}" title="Choose axis color">
+                        id="axis-color-${id}" value="${plotColour(settings, 'axisColor')}" title="Choose axis color">
                     <button class="btn btn-sm btn-outline-secondary" id="reset-axis-color-${id}">Reset</button>
                 </div>
             </div>
@@ -285,7 +296,7 @@ export function createPopoverContent(id, settings) {
                 <label class="form-label mb-1">Zero Line Color</label>
                 <div class="d-flex align-items-center gap-2">
                     <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="zero-line-color-${id}" value="${settings.zeroLineColor || '#cccccc'}" title="Choose zero line color">
+                        id="zero-line-color-${id}" value="${plotColour(settings, 'zeroLineColor')}" title="Choose zero line color">
                     <button class="btn btn-sm btn-outline-secondary" id="reset-zero-line-color-${id}">Reset</button>
                 </div>
             </div>
@@ -346,7 +357,7 @@ export function createPopoverContent(id, settings) {
             <div class="d-flex align-items-center gap-2">
                 <label class="form-label mb-0 me-2">Color</label>
                 <input type="color" class="form-control form-control-sm form-control-color"
-                    id="not-in-table-color-${id}" value="${settings.notInTableColor || NOT_IN_TABLE_COLOR}" title="Choose the colour of the points not in the table">
+                    id="not-in-table-color-${id}" value="${plotColour(settings, 'notInTableColor')}" title="Choose the colour of the points not in the table">
                 <button class="btn btn-sm btn-outline-secondary" id="reset-not-in-table-color-${id}">Reset</button>
             </div>
         `)}
@@ -409,7 +420,7 @@ export function createPopoverContent(id, settings) {
                 <div class="d-flex align-items-center gap-2">
                     <label class="form-label mb-0 me-2">Color</label>
                     <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="text-color-${id}" value="${settings.textColor || '#000000'}" title="Choose text color">
+                        id="text-color-${id}" value="${plotColour(settings, 'textColor')}" title="Choose text color">
                     <button class="btn btn-sm btn-outline-secondary" id="reset-text-color-${id}">Reset</button>
                 </div>
             </div>
@@ -595,13 +606,8 @@ export function initializeAestheticsSettings(settings) {
     settings.showZeroLines = settings.showZeroLines !== undefined ? settings.showZeroLines : defaults.SHOW_ZERO_LINES;
     settings.showLegend = settings.showLegend !== undefined ? settings.showLegend : defaults.SHOW_LEGEND;
     
-    // Colors
-    settings.bgColor = settings.bgColor || defaults.BG_COLOR;
-    settings.gridColor = settings.gridColor || defaults.GRID_COLOR;
-    settings.axisColor = settings.axisColor || defaults.AXIS_COLOR;
-    settings.textColor = settings.textColor || defaults.TEXT_COLOR;
-    settings.zeroLineColor = settings.zeroLineColor || defaults.ZERO_LINE_COLOR;
-    settings.backdropColor = settings.backdropColor || defaults.BACKDROP_COLOR;
+    // Colours are not filled in: a colour that is not set follows the app theme
+    // (utils/plot-theme.js). normalizePlotOptions below migrates an older link.
     
     // 3D Backdrop settings
     settings.showBackdrop = settings.showBackdrop !== undefined ? settings.showBackdrop : defaults.SHOW_BACKDROP;
@@ -696,16 +702,14 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         if (target.id === `plot-bg-color-${id}`) {
             settings.bgColor = target.value;
             updatePlotBackground(plotContainer, settings);
-            notifySettingsChanged(id, 'bgColor', settings.bgColor);
+            notifySettingsChanged(id, 'bgColor', plotColour(settings, 'bgColor'));
             return;
         }
         
-        // Reset background color
+        // Reset bgColor: follow the app theme again
         if (target.id === `reset-bg-color-${id}`) {
-            const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
-            const colorInput = container.querySelector(`#plot-bg-color-${id}`);
-            settings.bgColor = defaults.BG_COLOR || '#ffffff';
-            if (colorInput) colorInput.value = settings.bgColor;
+            followTheme(settings, ['bgColor']);
+            updateColorInputs(container, id, settings);
             updatePlotBackground(plotContainer, settings);
             notifySettingsChanged(id, 'bgColor', settings.bgColor);
             return;
@@ -723,16 +727,14 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         if (target.id === `backdrop-color-${id}`) {
             settings.backdropColor = target.value;
             update3DBackdrop(plotContainer, settings);
-            notifySettingsChanged(id, 'backdropColor', settings.backdropColor);
+            notifySettingsChanged(id, 'backdropColor', plotColour(settings, 'backdropColor'));
             return;
         }
         
-        // Reset backdrop color
+        // Reset backdropColor: follow the app theme again
         if (target.id === `reset-backdrop-color-${id}`) {
-            const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
-            const colorInput = container.querySelector(`#backdrop-color-${id}`);
-            settings.backdropColor = defaults.BACKDROP_COLOR || '#f0f0f0';
-            if (colorInput) colorInput.value = settings.backdropColor;
+            followTheme(settings, ['backdropColor']);
+            updateColorInputs(container, id, settings);
             update3DBackdrop(plotContainer, settings);
             notifySettingsChanged(id, 'backdropColor', settings.backdropColor);
             return;
@@ -742,16 +744,14 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         if (target.id === `text-color-${id}`) {
             settings.textColor = target.value;
             updateTextColor(plotContainer, settings);
-            notifySettingsChanged(id, 'textColor', settings.textColor);
+            notifySettingsChanged(id, 'textColor', plotColour(settings, 'textColor'));
             return;
         }
         
-        // Reset text color
+        // Reset textColor: follow the app theme again
         if (target.id === `reset-text-color-${id}`) {
-            const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
-            const colorInput = container.querySelector(`#text-color-${id}`);
-            settings.textColor = defaults.TEXT_COLOR || '#000000';
-            if (colorInput) colorInput.value = settings.textColor;
+            followTheme(settings, ['textColor']);
+            updateColorInputs(container, id, settings);
             updateTextColor(plotContainer, settings);
             notifySettingsChanged(id, 'textColor', settings.textColor);
             return;
@@ -761,16 +761,14 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         if (target.id === `grid-color-${id}`) {
             settings.gridColor = target.value;
             updateGridColor(plotContainer, settings);
-            notifySettingsChanged(id, 'gridColor', settings.gridColor);
+            notifySettingsChanged(id, 'gridColor', plotColour(settings, 'gridColor'));
             return;
         }
         
-        // Reset grid color
+        // Reset gridColor: follow the app theme again
         if (target.id === `reset-grid-color-${id}`) {
-            const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
-            const colorInput = container.querySelector(`#grid-color-${id}`);
-            settings.gridColor = defaults.GRID_COLOR || '#e6e6e6';
-            if (colorInput) colorInput.value = settings.gridColor;
+            followTheme(settings, ['gridColor']);
+            updateColorInputs(container, id, settings);
             updateGridColor(plotContainer, settings);
             notifySettingsChanged(id, 'gridColor', settings.gridColor);
             return;
@@ -780,16 +778,14 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         if (target.id === `axis-color-${id}`) {
             settings.axisColor = target.value;
             updateAxisColor(plotContainer, settings);
-            notifySettingsChanged(id, 'axisColor', settings.axisColor);
+            notifySettingsChanged(id, 'axisColor', plotColour(settings, 'axisColor'));
             return;
         }
         
-        // Reset axis color
+        // Reset axisColor: follow the app theme again
         if (target.id === `reset-axis-color-${id}`) {
-            const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
-            const colorInput = container.querySelector(`#axis-color-${id}`);
-            settings.axisColor = defaults.AXIS_COLOR || '#000000';
-            if (colorInput) colorInput.value = settings.axisColor;
+            followTheme(settings, ['axisColor']);
+            updateColorInputs(container, id, settings);
             updateAxisColor(plotContainer, settings);
             notifySettingsChanged(id, 'axisColor', settings.axisColor);
             return;
@@ -799,87 +795,31 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         if (target.id === `zero-line-color-${id}`) {
             settings.zeroLineColor = target.value;
             updateZeroLineColor(plotContainer, settings);
-            notifySettingsChanged(id, 'zeroLineColor', settings.zeroLineColor);
+            notifySettingsChanged(id, 'zeroLineColor', plotColour(settings, 'zeroLineColor'));
             return;
         }
         
-        // Reset zero line color
+        // Reset zeroLineColor: follow the app theme again
         if (target.id === `reset-zero-line-color-${id}`) {
-            const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
-            const colorInput = container.querySelector(`#zero-line-color-${id}`);
-            settings.zeroLineColor = defaults.ZERO_LINE_COLOR || '#cccccc';
-            if (colorInput) colorInput.value = settings.zeroLineColor;
+            followTheme(settings, ['zeroLineColor']);
+            updateColorInputs(container, id, settings);
             updateZeroLineColor(plotContainer, settings);
             notifySettingsChanged(id, 'zeroLineColor', settings.zeroLineColor);
             return;
         }
         
-        // Apply light theme defaults
-        if (target.id === `light-theme-${id}` || target.closest(`#light-theme-${id}`)) {
-            const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
-            
-            // Apply light theme defaults - with fallbacks in case Config is not available
-            settings.bgColor = defaults.BG_COLOR || '#ffffff';
-            settings.gridColor = defaults.GRID_COLOR || '#e6e6e6';
-            settings.axisColor = defaults.AXIS_COLOR || '#000000';
-            settings.textColor = defaults.TEXT_COLOR || '#000000';
-            settings.zeroLineColor = defaults.ZERO_LINE_COLOR || '#cccccc';
-            settings.backdropColor = defaults.BACKDROP_COLOR || '#f0f0f0';
-            
-            // Update color inputs
-            updateColorInputs(container, id, settings);
-            
-            // Apply to plot - use the full applyAllAestheticSettings for consistent handling
-            applyAllAestheticSettings(plotContainer, settings);
-            
-            // Notify changes
-            notifyMultipleSettingsChanged(id, [
-                {setting: 'bgColor', value: settings.bgColor},
-                {setting: 'gridColor', value: settings.gridColor},
-                {setting: 'axisColor', value: settings.axisColor},
-                {setting: 'textColor', value: settings.textColor},
-                {setting: 'zeroLineColor', value: settings.zeroLineColor},
-                {setting: 'backdropColor', value: settings.backdropColor},
-                {setting: 'showBackdrop', value: settings.showBackdrop}
-            ]);
+        // Light colours / Dark colours: pin this plot's colours to a palette, whatever the app theme
+        if (target.id === `light-theme-${id}` || target.closest(`#light-theme-${id}`)
+            || target.id === `dark-theme-${id}` || target.closest(`#dark-theme-${id}`)) {
+            pinPalette(settings, (target.id === `dark-theme-${id}` || target.closest(`#dark-theme-${id}`)) ? 'dark' : 'light');
+            colourSetChanged(container, id, settings, plotContainer);
             return;
         }
-        
-        // Apply dark theme
-        if (target.id === `dark-theme-${id}` || target.closest(`#dark-theme-${id}`)) {
-            const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
-            const darkTheme = defaults.DARK_THEME || {
-                BG_COLOR: '#1e1e1e',
-                GRID_COLOR: '#444444',
-                AXIS_COLOR: '#ffffff',
-                TEXT_COLOR: '#ffffff',
-                ZERO_LINE_COLOR: '#666666'
-            };
-            
-            // Apply dark theme
-            settings.bgColor = darkTheme.BG_COLOR;
-            settings.gridColor = darkTheme.GRID_COLOR;
-            settings.axisColor = darkTheme.AXIS_COLOR;
-            settings.textColor = darkTheme.TEXT_COLOR;
-            settings.zeroLineColor = darkTheme.ZERO_LINE_COLOR;
-            settings.backdropColor = darkTheme.BACKDROP_COLOR || '#121212';
-            
-            // Update color inputs
-            updateColorInputs(container, id, settings);
-            
-            // Apply to plot - use the full applyAllAestheticSettings for consistent handling
-            applyAllAestheticSettings(plotContainer, settings);
-            
-            // Notify changes
-            notifyMultipleSettingsChanged(id, [
-                {setting: 'bgColor', value: settings.bgColor},
-                {setting: 'gridColor', value: settings.gridColor},
-                {setting: 'axisColor', value: settings.axisColor},
-                {setting: 'textColor', value: settings.textColor},
-                {setting: 'zeroLineColor', value: settings.zeroLineColor},
-                {setting: 'backdropColor', value: settings.backdropColor},
-                {setting: 'showBackdrop', value: settings.showBackdrop}
-            ]);
+
+        // Follow app theme: every colour auto again
+        if (target.id === `follow-theme-${id}` || target.closest(`#follow-theme-${id}`)) {
+            followTheme(settings);
+            colourSetChanged(container, id, settings, plotContainer);
             return;
         }
         
@@ -1142,10 +1082,11 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
                 settings.notInTableColor = target.value;
             } else {
                 if (e.type !== 'click') return;
-                delete settings.notInTableColor;
+                followTheme(settings, ['notInTableColor']);
                 const input = container.querySelector(`#not-in-table-color-${id}`);
-                if (input) input.value = NOT_IN_TABLE_COLOR;
+                if (input) input.value = plotColour(settings, 'notInTableColor');
             }
+            syncColourControls(id, settings);
             restyleMarkers(plotContainer, settings).catch(err => console.warn('Not-in-table style not updated:', err && err.message));
             return;
         }
@@ -1222,6 +1163,51 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         document.body.removeEventListener('change', menuHandler);
         document.body.removeEventListener('input', menuHandler);
     };
+}
+
+/** The colours were changed as a set (a plot theme button): inputs, plot and listeners follow. */
+function colourSetChanged(container, id, settings, plotContainer) {
+    updateColorInputs(container, id, settings);
+    relookColours(plotContainer, settings);
+    notifyMultipleSettingsChanged(id, [
+        ...THEMED_COLOURS.map(k => ({ setting: k, value: settings[k] })),
+        { setting: 'showBackdrop', value: settings.showBackdrop }
+    ]);
+}
+
+/**
+ * Draw a plot's colours again, as they are now (the pinned ones and the app
+ * theme's for the rest): axes, text, background, legend and colour bar text,
+ * the toolbar, the grey of points not in the table, the scale bar. Used when
+ * the colours change as a set and when the app theme switches.
+ */
+export function relookColours(plotContainer, settings) {
+    if (!plotContainer || !plotContainer._fullLayout) return;
+    applyThemeColors(plotContainer, settings);
+    applyAllAestheticSettings(plotContainer, settings);
+    restyleMarkers(plotContainer, settings).catch(() => {});
+}
+
+/** Every open plot takes the app theme's colours for what it has not set (the theme changed); returns how many were redrawn. */
+export function relookAllPlots() {
+    const pm = window.PanelManager;
+    if (!pm || typeof pm.getActivePanels !== 'function') return 0;
+    let n = 0;
+    for (const panel of pm.getActivePanels()) {
+        if (!panel.getId || !panel.getConfig) continue;
+        const gd = document.getElementById(`plot-container-${panel.getId()}`);
+        if (!gd || !gd._fullLayout) continue;
+        const settings = panel.getConfig();
+        relookColours(gd, settings);
+        updateColorInputs(document.body, panel.getId(), settings);     // the menu shows what is drawn
+        n += 1;
+    }
+    return n;
+}
+
+// The app theme switching (the header toggle, the system) redraws the plots' unset colours
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener(THEME_EVENT, () => { relookAllPlots(); });
 }
 
 /** Put the margin controls in step with settings.margins. */
@@ -1473,13 +1459,13 @@ function updatePlotBackground(plotContainer, settings) {
     
     const is3D = settings.z !== null;
     const update = {
-        'paper_bgcolor': settings.bgColor,
-        'plot_bgcolor': settings.bgColor
+        'paper_bgcolor': plotColour(settings, 'bgColor'),
+        'plot_bgcolor': plotColour(settings, 'bgColor')
     };
     
     // For 3D plots, also update the scene background color
     if (is3D) {
-        update['scene.bgcolor'] = settings.bgColor;
+        update['scene.bgcolor'] = plotColour(settings, 'bgColor');
     }
     
     Plotly.relayout(plotContainer, update);
@@ -1497,9 +1483,9 @@ function update3DBackdrop(plotContainer, settings) {
         'scene.xaxis.showbackground': settings.showBackdrop,
         'scene.yaxis.showbackground': settings.showBackdrop,
         'scene.zaxis.showbackground': settings.showBackdrop,
-        'scene.xaxis.backgroundcolor': settings.backdropColor,
-        'scene.yaxis.backgroundcolor': settings.backdropColor,
-        'scene.zaxis.backgroundcolor': settings.backdropColor
+        'scene.xaxis.backgroundcolor': plotColour(settings, 'backdropColor'),
+        'scene.yaxis.backgroundcolor': plotColour(settings, 'backdropColor'),
+        'scene.zaxis.backgroundcolor': plotColour(settings, 'backdropColor')
     };
     
     Plotly.relayout(plotContainer, update);
@@ -1515,21 +1501,21 @@ function updateTextColor(plotContainer, settings) {
     
     const is3D = settings.z !== null;
     const update = {
-        'font.color': settings.textColor
+        'font.color': plotColour(settings, 'textColor')
     };
     
     if (is3D) {
-        update['scene.xaxis.title.font.color'] = settings.textColor;
-        update['scene.yaxis.title.font.color'] = settings.textColor;
-        update['scene.zaxis.title.font.color'] = settings.textColor;
-        update['scene.xaxis.tickfont.color'] = settings.textColor;
-        update['scene.yaxis.tickfont.color'] = settings.textColor;
-        update['scene.zaxis.tickfont.color'] = settings.textColor;
+        update['scene.xaxis.title.font.color'] = plotColour(settings, 'textColor');
+        update['scene.yaxis.title.font.color'] = plotColour(settings, 'textColor');
+        update['scene.zaxis.title.font.color'] = plotColour(settings, 'textColor');
+        update['scene.xaxis.tickfont.color'] = plotColour(settings, 'textColor');
+        update['scene.yaxis.tickfont.color'] = plotColour(settings, 'textColor');
+        update['scene.zaxis.tickfont.color'] = plotColour(settings, 'textColor');
     } else {
-        update['xaxis.title.font.color'] = settings.textColor;
-        update['yaxis.title.font.color'] = settings.textColor;
-        update['xaxis.tickfont.color'] = settings.textColor;
-        update['yaxis.tickfont.color'] = settings.textColor;
+        update['xaxis.title.font.color'] = plotColour(settings, 'textColor');
+        update['yaxis.title.font.color'] = plotColour(settings, 'textColor');
+        update['xaxis.tickfont.color'] = plotColour(settings, 'textColor');
+        update['yaxis.tickfont.color'] = plotColour(settings, 'textColor');
     }
     
     Plotly.relayout(plotContainer, update);
@@ -1547,12 +1533,12 @@ function updateGridColor(plotContainer, settings) {
     const update = {};
     
     if (is3D) {
-        update['scene.xaxis.gridcolor'] = settings.gridColor;
-        update['scene.yaxis.gridcolor'] = settings.gridColor;
-        update['scene.zaxis.gridcolor'] = settings.gridColor;
+        update['scene.xaxis.gridcolor'] = plotColour(settings, 'gridColor');
+        update['scene.yaxis.gridcolor'] = plotColour(settings, 'gridColor');
+        update['scene.zaxis.gridcolor'] = plotColour(settings, 'gridColor');
     } else {
-        update['xaxis.gridcolor'] = settings.gridColor;
-        update['yaxis.gridcolor'] = settings.gridColor;
+        update['xaxis.gridcolor'] = plotColour(settings, 'gridColor');
+        update['yaxis.gridcolor'] = plotColour(settings, 'gridColor');
     }
     
     Plotly.relayout(plotContainer, update);
@@ -1570,17 +1556,17 @@ function updateAxisColor(plotContainer, settings) {
     const update = {};
     
     if (is3D) {
-        update['scene.xaxis.color'] = settings.axisColor;
-        update['scene.yaxis.color'] = settings.axisColor;
-        update['scene.zaxis.color'] = settings.axisColor;
-        update['scene.xaxis.linecolor'] = settings.axisColor;
-        update['scene.yaxis.linecolor'] = settings.axisColor;
-        update['scene.zaxis.linecolor'] = settings.axisColor;
+        update['scene.xaxis.color'] = plotColour(settings, 'axisColor');
+        update['scene.yaxis.color'] = plotColour(settings, 'axisColor');
+        update['scene.zaxis.color'] = plotColour(settings, 'axisColor');
+        update['scene.xaxis.linecolor'] = plotColour(settings, 'axisColor');
+        update['scene.yaxis.linecolor'] = plotColour(settings, 'axisColor');
+        update['scene.zaxis.linecolor'] = plotColour(settings, 'axisColor');
     } else {
-        update['xaxis.color'] = settings.axisColor;
-        update['yaxis.color'] = settings.axisColor;
-        update['xaxis.linecolor'] = settings.axisColor;
-        update['yaxis.linecolor'] = settings.axisColor;
+        update['xaxis.color'] = plotColour(settings, 'axisColor');
+        update['yaxis.color'] = plotColour(settings, 'axisColor');
+        update['xaxis.linecolor'] = plotColour(settings, 'axisColor');
+        update['yaxis.linecolor'] = plotColour(settings, 'axisColor');
     }
     
     Plotly.relayout(plotContainer, update);
@@ -1598,12 +1584,12 @@ function updateZeroLineColor(plotContainer, settings) {
     const update = {};
     
     if (is3D) {
-        update['scene.xaxis.zerolinecolor'] = settings.zeroLineColor;
-        update['scene.yaxis.zerolinecolor'] = settings.zeroLineColor;
-        update['scene.zaxis.zerolinecolor'] = settings.zeroLineColor;
+        update['scene.xaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
+        update['scene.yaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
+        update['scene.zaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
     } else {
-        update['xaxis.zerolinecolor'] = settings.zeroLineColor;
-        update['yaxis.zerolinecolor'] = settings.zeroLineColor;
+        update['xaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
+        update['yaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
     }
     
     Plotly.relayout(plotContainer, update);
@@ -1632,12 +1618,48 @@ export function updateColorInputs(container, id, settings) {
     const zeroLineColorInput = document.getElementById(`zero-line-color-${id}`);
     const backdropColorInput = document.getElementById(`backdrop-color-${id}`);
     
-    if (bgColorInput) bgColorInput.value = settings.bgColor;
-    if (textColorInput) textColorInput.value = settings.textColor;
-    if (gridColorInput) gridColorInput.value = settings.gridColor;
-    if (axisColorInput) axisColorInput.value = settings.axisColor;
-    if (zeroLineColorInput) zeroLineColorInput.value = settings.zeroLineColor;
-    if (backdropColorInput) backdropColorInput.value = settings.backdropColor;
+    if (bgColorInput) bgColorInput.value = plotColour(settings, 'bgColor');
+    if (textColorInput) textColorInput.value = plotColour(settings, 'textColor');
+    if (gridColorInput) gridColorInput.value = plotColour(settings, 'gridColor');
+    if (axisColorInput) axisColorInput.value = plotColour(settings, 'axisColor');
+    if (zeroLineColorInput) zeroLineColorInput.value = plotColour(settings, 'zeroLineColor');
+    if (backdropColorInput) backdropColorInput.value = plotColour(settings, 'backdropColor');
+    syncColourControls(id, settings);
+}
+
+/** The ids of each colour's Reset button, by settings key. */
+const RESET_IDS = {
+    bgColor: 'reset-bg-color', backdropColor: 'reset-backdrop-color', textColor: 'reset-text-color',
+    gridColor: 'reset-grid-color', axisColor: 'reset-axis-color', zeroLineColor: 'reset-zero-line-color',
+    notInTableColor: 'reset-not-in-table-color'
+};
+
+/**
+ * Show which colours follow the app theme: a following colour's Reset has
+ * nothing to do (disabled, with the reason as its tooltip), the Follow app
+ * theme button is pressed while every colour follows, and a line says which.
+ */
+export function syncColourControls(id, settings) {
+    for (const key of THEMED_COLOURS) {
+        const reset = document.getElementById(`${RESET_IDS[key]}-${id}`);
+        if (!reset) continue;
+        const following = isFollowing(settings, key);
+        reset.disabled = following;
+        reset.title = following ? 'Following the app theme' : 'Follow the app theme again';
+    }
+    const all = THEMED_COLOURS.every(k => isFollowing(settings, k));
+    const follow = document.getElementById(`follow-theme-${id}`);
+    if (follow) {
+        follow.classList.toggle('active', all);
+        follow.setAttribute('aria-pressed', all ? 'true' : 'false');
+    }
+    const note = document.getElementById(`colour-follow-note-${id}`);
+    if (note) {
+        const set = THEMED_COLOURS.filter(k => !isFollowing(settings, k)).length;
+        note.textContent = all ? 'All colours follow the app theme.'
+            : set === THEMED_COLOURS.length ? 'All colours are set; they stay as they are in either app theme.'
+                : 'Some colours are set; the others follow the app theme.';
+    }
 }
 
 /**
@@ -1651,55 +1673,70 @@ export function applyThemeColors(plotContainer, settings) {
     // Apply theme to plot
     const is3D = settings.z !== null;
     const update = {
-        'paper_bgcolor': settings.bgColor,
-        'plot_bgcolor': settings.bgColor,
-        'font.color': settings.textColor,
-        'xaxis.gridcolor': settings.gridColor,
-        'yaxis.gridcolor': settings.gridColor,
-        'xaxis.color': settings.axisColor,
-        'yaxis.color': settings.axisColor,
-        'xaxis.linecolor': settings.axisColor, 
-        'yaxis.linecolor': settings.axisColor,
-        'xaxis.zerolinecolor': settings.zeroLineColor,
-        'yaxis.zerolinecolor': settings.zeroLineColor,
-        'xaxis.tickfont.color': settings.textColor,
-        'yaxis.tickfont.color': settings.textColor,
-        'xaxis.title.font.color': settings.textColor,
-        'yaxis.title.font.color': settings.textColor
+        'paper_bgcolor': plotColour(settings, 'bgColor'),
+        'plot_bgcolor': plotColour(settings, 'bgColor'),
+        'font.color': plotColour(settings, 'textColor'),
+        'xaxis.gridcolor': plotColour(settings, 'gridColor'),
+        'yaxis.gridcolor': plotColour(settings, 'gridColor'),
+        'xaxis.color': plotColour(settings, 'axisColor'),
+        'yaxis.color': plotColour(settings, 'axisColor'),
+        'xaxis.linecolor': plotColour(settings, 'axisColor'), 
+        'yaxis.linecolor': plotColour(settings, 'axisColor'),
+        'xaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
+        'yaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
+        'xaxis.tickcolor': plotColour(settings, 'axisColor'),
+        'yaxis.tickcolor': plotColour(settings, 'axisColor'),
+        'xaxis.tickfont.color': plotColour(settings, 'textColor'),
+        'yaxis.tickfont.color': plotColour(settings, 'textColor'),
+        'xaxis.title.font.color': plotColour(settings, 'textColor'),
+        'yaxis.title.font.color': plotColour(settings, 'textColor'),
+        'legend.font.color': plotColour(settings, 'textColor'),
+        'legend.title.font.color': plotColour(settings, 'textColor'),
+        'modebar.color': modebarColours(settings).color,
+        'modebar.activecolor': modebarColours(settings).activecolor
     };
     
     // For 3D plots
     if (is3D) {
         Object.assign(update, {
-            'scene.bgcolor': settings.bgColor,
+            'scene.bgcolor': plotColour(settings, 'bgColor'),
             'scene.xaxis.showbackground': settings.showBackdrop,
             'scene.yaxis.showbackground': settings.showBackdrop,
             'scene.zaxis.showbackground': settings.showBackdrop,
-            'scene.xaxis.backgroundcolor': settings.backdropColor,
-            'scene.yaxis.backgroundcolor': settings.backdropColor,
-            'scene.zaxis.backgroundcolor': settings.backdropColor,
-            'scene.xaxis.gridcolor': settings.gridColor,
-            'scene.yaxis.gridcolor': settings.gridColor,
-            'scene.zaxis.gridcolor': settings.gridColor,
-            'scene.xaxis.color': settings.axisColor,
-            'scene.yaxis.color': settings.axisColor,
-            'scene.zaxis.color': settings.axisColor,
-            'scene.xaxis.linecolor': settings.axisColor,
-            'scene.yaxis.linecolor': settings.axisColor,
-            'scene.zaxis.linecolor': settings.axisColor,
-            'scene.xaxis.zerolinecolor': settings.zeroLineColor,
-            'scene.yaxis.zerolinecolor': settings.zeroLineColor,
-            'scene.zaxis.zerolinecolor': settings.zeroLineColor,
-            'scene.xaxis.tickfont.color': settings.textColor,
-            'scene.yaxis.tickfont.color': settings.textColor,
-            'scene.zaxis.tickfont.color': settings.textColor,
-            'scene.xaxis.title.font.color': settings.textColor,
-            'scene.yaxis.title.font.color': settings.textColor,
-            'scene.zaxis.title.font.color': settings.textColor
+            'scene.xaxis.backgroundcolor': plotColour(settings, 'backdropColor'),
+            'scene.yaxis.backgroundcolor': plotColour(settings, 'backdropColor'),
+            'scene.zaxis.backgroundcolor': plotColour(settings, 'backdropColor'),
+            'scene.xaxis.gridcolor': plotColour(settings, 'gridColor'),
+            'scene.yaxis.gridcolor': plotColour(settings, 'gridColor'),
+            'scene.zaxis.gridcolor': plotColour(settings, 'gridColor'),
+            'scene.xaxis.color': plotColour(settings, 'axisColor'),
+            'scene.yaxis.color': plotColour(settings, 'axisColor'),
+            'scene.zaxis.color': plotColour(settings, 'axisColor'),
+            'scene.xaxis.linecolor': plotColour(settings, 'axisColor'),
+            'scene.yaxis.linecolor': plotColour(settings, 'axisColor'),
+            'scene.zaxis.linecolor': plotColour(settings, 'axisColor'),
+            'scene.xaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
+            'scene.yaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
+            'scene.zaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
+            'scene.xaxis.tickfont.color': plotColour(settings, 'textColor'),
+            'scene.yaxis.tickfont.color': plotColour(settings, 'textColor'),
+            'scene.zaxis.tickfont.color': plotColour(settings, 'textColor'),
+            'scene.xaxis.title.font.color': plotColour(settings, 'textColor'),
+            'scene.yaxis.title.font.color': plotColour(settings, 'textColor'),
+            'scene.zaxis.title.font.color': plotColour(settings, 'textColor')
         });
     }
     
     Plotly.relayout(plotContainer, update);
+
+    // the colour bar's title and ticks are the traces' own
+    const bars = (plotContainer.data || []).map((t, i) => (t && t.marker && t.marker.colorbar ? i : -1)).filter(i => i >= 0);
+    if (bars.length) {
+        Plotly.restyle(plotContainer, {
+            'marker.colorbar.title.font.color': plotColour(settings, 'textColor'),
+            'marker.colorbar.tickfont.color': plotColour(settings, 'textColor')
+        }, bars);
+    }
 }
 
 /**
@@ -2183,13 +2220,12 @@ export function applyAllAestheticSettings(plotContainer, settings) {
     // Apply all settings at once with a single relayout call
     const is3D = settings.z !== null;
     
-    // Get colors - either from settings or from defaults
-    const defaults = (window.Config && window.Config.DEFAULTS && window.Config.DEFAULTS.PLOT_AESTHETICS) || {};
-    const gridColor = settings.gridColor || defaults.GRID_COLOR || '#e6e6e6';
-    const textColor = settings.textColor || defaults.TEXT_COLOR || '#000000';
-    const axisColor = settings.axisColor || defaults.AXIS_COLOR || '#000000';
-    const zeroLineColor = settings.zeroLineColor || defaults.ZERO_LINE_COLOR || '#cccccc';
-    const bgColor = settings.bgColor || defaults.BG_COLOR || '#ffffff';
+    // The colours on screen: the ones the user set, the app theme's for the rest
+    const gridColor = plotColour(settings, 'gridColor');
+    const textColor = plotColour(settings, 'textColor');
+    const axisColor = plotColour(settings, 'axisColor');
+    const zeroLineColor = plotColour(settings, 'zeroLineColor');
+    const bgColor = plotColour(settings, 'bgColor');
     
     // First, update the basic layout (without legend/colorbar details)
     const update = {
@@ -2258,7 +2294,7 @@ export function applyAllAestheticSettings(plotContainer, settings) {
     
     // For 3D plots
     if (is3D) {
-        const backdropColor = settings.backdropColor || defaults.BACKDROP_COLOR || '#f0f0f0';
+        const backdropColor = plotColour(settings, 'backdropColor');
         Object.assign(update, {
             'scene.bgcolor': bgColor,
             'scene.xaxis.showbackground': settings.showBackdrop,

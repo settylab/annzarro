@@ -33,6 +33,7 @@
  */
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
+import { plotColour } from '../../utils/plot-theme.js';
 import { Config } from '../../config.js';
 import { buildPlotLayout, knownMissingSource, seriesSource, withSubsetCoverage } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
@@ -243,7 +244,7 @@ function interleave(groups) {
 
 function titleFont(settings) {
   return { size: settings.fontSize ? settings.fontSize + 2 : 14,
-    family: settings.fontFamily || 'Arial, Helvetica, sans-serif', color: settings.textColor || '#000000' };
+    family: settings.fontFamily || 'Arial, Helvetica, sans-serif', color: plotColour(settings, 'textColor') };
 }
 
 /** The colour bar as the regular path draws it (plot-make.js, numerical branch). */
