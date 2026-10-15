@@ -390,3 +390,38 @@ def test_window_frame_is_wired_into_the_app():
     for page in ("loading.html", "error.html"):  # the window must be movable while these show
         with open(os.path.join(ELECTRON, page)) as f:
             assert "-webkit-app-region: drag" in f.read(), page
+
+
+def test_dataset_types_are_declared_and_wired_into_the_app():
+    """.h5ad is a document type with a file association on every platform;
+    .zarr is a folder type on macOS (an imported UTI that conforms to
+    public.folder, not a package, so Finder keeps showing stores as folders
+    while Open With and the Dock icon accept them). The open-file event, argv
+    and the preload's drop and dialog API must ship and be wired
+    (annzarro/tests/js/desktop-dataset-open.test.mjs tests the decisions)."""
+    with open(os.path.join(ELECTRON, "package.json")) as f:
+        build = json.load(f)["build"]
+    for name in ("dataset-open.js", "dataset-open-logic.js"):
+        assert name in build["files"]
+        assert os.path.exists(os.path.join(ELECTRON, name))
+    [h5ad] = [a for a in build["fileAssociations"] if a["ext"] == "h5ad"]
+    assert h5ad["role"] == "Viewer" and h5ad["name"] and h5ad["mimeType"]
+    info = build["mac"]["extendInfo"]
+    [doc] = info["CFBundleDocumentTypes"]
+    assert doc["CFBundleTypeRole"] == "Viewer"
+    assert doc["LSTypeIsPackage"] is False
+    [uti] = info["UTImportedTypeDeclarations"]
+    assert uti["UTTypeConformsTo"] == ["public.folder"]
+    assert uti["UTTypeTagSpecification"]["public.filename-extension"] == ["zarr"]
+    assert doc["LSItemContentTypes"] == [uti["UTTypeIdentifier"]]
+    assert "UTExportedTypeDeclarations" not in info  # the type is not ours to own
+
+    with open(os.path.join(ELECTRON, "main.js")) as f:
+        main = f.read()
+    for needle in ("app.on('open-file'", "logic.argvPaths(argv, process.defaultApp)",
+                   "ipcMain.handle('app:openDataset'", "ipcMain.handle('app:dropPaths'", "ipcMain.handle('app:datasetOpened'"):
+        assert needle in main, needle
+    with open(os.path.join(ELECTRON, "preload.js")) as f:
+        preload = f.read()
+    for needle in ("webUtils.getPathForFile", "openDatasetDialog", "onMenuOpenDataset", "app:dropPaths", "datasetOpened"):
+        assert needle in preload, needle

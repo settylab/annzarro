@@ -40,6 +40,8 @@ const crypto = require('crypto');
 const log = require('electron-log');
 const { createUpdater } = require('./updates');
 const chrome = require('./window-chrome');
+const logic = require('./dataset-open-logic');
+const { createDatasetOpener } = require('./dataset-open');
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'info';
@@ -73,6 +75,7 @@ let serverUrl = null;
 let isQuitting = false;
 let appDataPath = null;
 let updater = null;
+let opener = null;
 // SMOKE: requests the window tried to make beyond the local server.
 const externalRequests = [];
 
@@ -403,6 +406,14 @@ function createWindow() {
     win.webContents.on('did-finish-load', () => {
         if (win.webContents.getURL().startsWith('file:')) setOverlay(chrome.pageOverlay(nativeTheme.shouldUseDarkColors));
     });
+    // Datasets asked for by the OS wait until the app's page is loaded (dataset-open.js)
+    win.webContents.on('did-start-navigation', (event, url, isInPlace, isMainFrame) => {
+        if (isMainFrame && !isInPlace && opener) opener.markPageBusy();
+    });
+    win.webContents.on('did-finish-load', () => {
+        const url = win.webContents.getURL();
+        if (opener && serverUrl && (url === serverUrl || url.startsWith(serverUrl + '/'))) opener.markPageReady();
+    });
     win.on('enter-full-screen', () => win.webContents.send('app:fullscreen', true));
     win.on('leave-full-screen', () => win.webContents.send('app:fullscreen', false));
 
@@ -456,6 +467,28 @@ function setupIpcHandlers() {
             return { error: err.message };
         }
     });
+    // The File menu's dialogs, the browser's "open a file or folder" button and a drop all end
+    // here. {which: 'h5ad' | 'zarr'} shows a dialog (none: the platform's best: one for a file or
+    // a folder on macOS); {path} opens a local path. Both validate in the main process and then
+    // run window.annzarro.openDataset(path) in the page. Resolves to {path, kind, result} (result:
+    // the page's answer) or {path, kind, error}; null when the dialog was cancelled.
+    ipcMain.handle('app:openDataset', async (event, request) => {
+        if (!mainWindow || event.sender !== mainWindow.webContents) return null;
+        const req = request && typeof request === 'object' ? request : {};
+        if (typeof req.path === 'string' && req.path) return opener.open(req.path, { allowFolder: Boolean(req.allowFolder) });
+        return opener.openDialog(req.which === 'h5ad' || req.which === 'zarr' ? req.which : undefined);
+    });
+    // Files dropped on the window (preload.js resolves their paths)
+    ipcMain.handle('app:dropPaths', async (event, paths) => {
+        if (!mainWindow || event.sender !== mainWindow.webContents || !Array.isArray(paths)) return null;
+        return opener.openDropped(paths);
+    });
+    // The page reports the dataset it has open, wherever it was opened from
+    ipcMain.handle('app:datasetOpened', (event, p) => {
+        if (!mainWindow || event.sender !== mainWindow.webContents) return false;
+        return opener.datasetOpened(p);
+    });
+    // Kept until the page's folder button moves to app:openDataset
     ipcMain.handle('app:selectDirectory', async () => {
         const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] });
         return result.canceled ? null : result.filePaths[0];
@@ -484,8 +517,9 @@ if (!app.requestSingleInstanceLock()) {
     log.info('AnnZarro is already running; handing this launch to its window');
     app.quit();
 } else {
-    app.on('second-instance', () => {
+    app.on('second-instance', (event, argv) => {
         log.info('Second launch: focusing the existing window');
+        if (opener) opener.openFromOs(logic.argvPaths(argv, process.defaultApp));
         if (!mainWindow) {
             createWindow();
             if (serverUrl) mainWindow.loadURL(serverUrl);
@@ -509,6 +543,16 @@ if (!app.requestSingleInstanceLock()) {
             });
         }
         setupIpcHandlers();
+        opener = createDatasetOpener({
+            app, dialog, Menu, log,
+            getWindow: () => mainWindow,
+            userDataDir: app.getPath('userData'),
+            // the updater adds its items to whichever menu is current
+            onMenuBuilt: () => { if (updater) updater.installMenu(); },
+        });
+        opener.start();
+        opener.openFromOs(pendingOsPaths.splice(0));
+        opener.openFromOs(logic.argvPaths(process.argv, process.defaultApp));
         createWindow();
         launch();
         updater = createUpdater({
@@ -526,6 +570,15 @@ if (!app.requestSingleInstanceLock()) {
         });
     });
 }
+
+// macOS: double click, "Open With" and a drop on the Dock icon arrive here, also before the
+// app is ready; Windows and Linux pass the path as an argument (above).
+const pendingOsPaths = [];
+app.on('open-file', (event, p) => {
+    event.preventDefault();
+    if (opener) opener.openFromOs(p);
+    else pendingOsPaths.push(p);
+});
 
 app.on('window-all-closed', () => {
     app.quit();

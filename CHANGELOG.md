@@ -8,6 +8,17 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Desktop app: opening datasets
+- A **File** menu on every platform: **Open Dataset...** (`Cmd/Ctrl+O`), **Open File or Folder...**
+  (`Cmd+Shift+O` on macOS; **Open .h5ad File...** and **Open .zarr Folder...** on Windows and Linux),
+  **Open Recent** and **Refresh Dataset**.
+- Drag a `.zarr` folder or an `.h5ad` file onto the window to open it. Several items open the first and
+  say so; anything else is refused with a message.
+- `.h5ad` files can be opened by double click and **Open With**, and `.zarr` folders through **Open With**
+  or a drop on the Dock icon (on macOS they stay folders in Finder). Passing a path on the command line
+  opens it in the running window. Opened datasets go to the Dock's and jump list's recent items, and the
+  macOS title bar shows the file.
+
 ### Dark theme
 - AnnZarro follows your system's light or dark setting, live: switch the system while the page is
   open and the app switches. The new **System / Light / Dark** buttons at the right end of the dataset bar override it for
