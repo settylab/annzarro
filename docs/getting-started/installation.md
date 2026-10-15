@@ -89,6 +89,8 @@ name, so these links always give the latest app:
 `SHA256SUMS.txt` on the same page lists the checksums. First launch:
 
 - **macOS**: open the `.dmg`, drag AnnZarro to Applications and open it.
+- **macOS with Homebrew**: `brew install --cask settylab/annzarro/annzarro` installs the same notarized app
+  (macOS 13 or later, Apple silicon or Intel); `brew upgrade --cask annzarro` updates it.
 - **Windows**: run the installer, or unzip and run `AnnZarro.exe`. SmartScreen may show "Windows
   protected your PC"; click **More info**, then **Run anyway**.
 - **Linux**: `chmod +x` the AppImage and run it, or `sudo apt install ./AnnZarro-<version>-linux-amd64.deb`.

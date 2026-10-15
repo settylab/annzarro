@@ -8,6 +8,8 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+- The macOS desktop app can be installed with Homebrew: `brew install --cask settylab/annzarro/annzarro`. A cask template, a renderer (`scripts/homebrew_cask.py`) and a workflow that updates the tap on each published release are under `packaging/homebrew/` and `.github/workflows/homebrew.yml`.
+
 ## 0.5.1 (2026-10-14)
 
 A reworked Plot Options menu, with tick, margin, colour bar and scale bar controls, presets, and
