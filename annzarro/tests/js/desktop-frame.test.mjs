@@ -17,12 +17,12 @@ test('only macOS and Windows lose the native frame', () => {
     assert.deepEqual(chrome.frameArguments('win32'), ['--annzarro-frame=win']);
 });
 
-test('macOS: traffic lights in the strip, no title bar', () => {
+test('macOS: traffic lights above the title, no title bar', () => {
     const o = chrome.frameOptions('darwin', false);
     assert.equal(o.titleBarStyle, 'hidden');
     assert.ok(o.trafficLightPosition.x > 0);
-    // the lights (about 16 px tall) fit in the strip the page reserves
-    assert.ok(o.trafficLightPosition.y + 16 <= chrome.MAC_STRIP_PX);
+    // the lights (about 16 px tall) end where the page says they do; the title starts below that
+    assert.ok(o.trafficLightPosition.y + 16 <= chrome.MAC_LIGHTS_BOTTOM_PX);
     assert.equal(o.titleBarOverlay, undefined);
 });
 

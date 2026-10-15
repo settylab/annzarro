@@ -10,8 +10,7 @@
  * The numbers match annzarro/desktop/electron/window-chrome.js.
  */
 :root {
-    --az-mac-strip: 28px;      /* the strip above the header's content that the traffic lights sit in */
-    --az-win-overlay-h: 36px;  /* height of the Windows window controls */
+    --az-win-overlay-h: 32px;  /* height of the Windows window controls */
     /* their width: the system's where Electron reports it, else the usual three buttons */
     --az-win-overlay-w: max(140px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
 }
@@ -34,17 +33,29 @@ html[data-desktop-frame] body > :not(.app-header) {
     -webkit-app-region: no-drag;
 }
 
-/* macOS: the title (and the user line under it) moves down out of the traffic lights' way. The
-   strip belongs to the header, so nothing in it can sit under the buttons at any window width. */
-html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header {
-    padding-top: calc(0.5rem + var(--az-mac-strip));
+/* macOS: the header keeps its height. In the browser the title column is the title with a line
+   under it for who is signed in and the admin links; the app has no login, so that line is empty.
+   Here the line goes above the title instead, which drops the title into the space it held:
+   the traffic lights sit in the room that opens above it. Nothing else in the header moves. */
+html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header > .container-fluid > .row > .col-auto:first-child {
+    display: flex;
+    flex-direction: column;
+}
+html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header .account-links,
+html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header .auth-indicator {
+    order: -1;
+}
+html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header .account-links {
+    display: block;
+    min-height: 1lh;  /* the line it occupied as an inline box */
 }
 
-/* Windows: the panel set controls move down below the window controls. Narrower, where the
-   dataset box takes a row of its own, that row would run under them: it stops short of them
-   and the controls, on the second row, are already below. */
+/* Windows: the header keeps its height too. The panel set buttons drop to the bottom of
+   their column, below the window controls. Narrower, where the dataset box takes a row of its
+   own, that row would run under the controls: it stops short of them and the buttons, on the
+   second row, are already below. */
 html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .header-actions {
-    margin-top: calc(var(--az-win-overlay-h) - 0.5rem + 2px);
+    align-self: flex-end;
     min-width: var(--az-win-overlay-w);
     display: flex;
     justify-content: flex-end;
@@ -54,8 +65,5 @@ html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .header-actions {
     html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .app-header.dataset-stacked .global-controls > .row > .dataset-col {
         flex-basis: calc(100% - var(--az-win-overlay-w) - 0.5rem);
         max-width: calc(100% - var(--az-win-overlay-w) - 0.5rem);
-    }
-    html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .app-header.dataset-stacked .header-actions {
-        margin-top: 0;
     }
 }

@@ -5,9 +5,10 @@ On macOS and Windows the Electron app has no native title bar; its preload marks
 static/css/desktop-frame.css does the rest. This test sets the same attributes in a headless
 Chromium (the page cannot tell the difference) and measures the header on the page:
 
-- mac: nothing in the header reaches into the strip at the top left that the traffic lights
-  float over, at window widths from the 800 px minimum to 1920, and the title is lower than in
-  the browser; in full screen it is back where it was;
+- both: the header is exactly as tall as in the browser at the same width (no extra strip);
+- mac: nothing in the header reaches into the area at the top left that the traffic lights
+  float over, at window widths from the 800 px minimum to 1920; only the title drops (into the
+  space the signed-in line has in the browser), at the same x; in full screen it is back where it was;
 - win: nothing in the header reaches under the window controls at the top right (also with the
   dataset box on a row of its own), and the panel set buttons sit below them; the controls
   get the header's colours, light and dark;
@@ -28,8 +29,8 @@ else:
 from annzarro.tests.browser.test_memory_guard import _serve  # noqa: E402
 
 WIDTHS = [800, 900, 1000, 1100, 1280, 1500, 1920]
-MAC_STRIP = (0, 0, 80, 28)           # x0, y0, x1, y1: the traffic lights (14..~66 px, 8..24 px)
-OVERLAY_W, OVERLAY_H = 140, 36       # the window controls, at the top right
+MAC_LIGHTS = (0, 0, 80, 24)          # x0, y0, x1, y1: the traffic lights (14..~66 px, 8..24 px)
+OVERLAY_W, OVERLAY_H = 140, 32       # the window controls, at the top right
 
 # What you use in the header: visible boxes of these must stay out of the controls' way.
 USABLE = "#app-header :is(a, button, input, select, textarea, label, h1, .select2-container, .auth-indicator)"
@@ -103,7 +104,7 @@ def _title_top(page):
 def test_browser_and_linux_are_unchanged(open_page):
     page = open_page(None)
     assert page.evaluate("document.documentElement.hasAttribute('data-desktop-frame')") is False
-    assert _title_top(page) < MAC_STRIP[3]
+    assert _title_top(page) < MAC_LIGHTS[3]
     for sel in ("#app-header", "#app-header button", "#dataset-stats"):
         assert page.evaluate("(s) => getComputedStyle(document.querySelector(s)).webkitAppRegion || 'none'", sel) == "none", sel
     assert not page.errors
@@ -116,18 +117,22 @@ def test_mac_keeps_the_header_out_of_the_traffic_lights(open_page, width):
     page = open_page("mac", width)
     boxes = page.evaluate(BOXES, USABLE)
     assert boxes, "nothing measured"
-    under = [b["id"] for b in boxes if _hits(b, MAC_STRIP)]
+    under = [b["id"] for b in boxes if _hits(b, MAC_LIGHTS)]
     assert not under, f"under the traffic lights at {width}px: {under}"
-    # the title moved down, not right, to the strip's lower edge or below
-    assert _title_top(page) >= MAC_STRIP[3]
-    title_x = page.evaluate("document.querySelector('#app-header .app-title').getBoundingClientRect().left")
-    assert title_x == plain.evaluate("document.querySelector('#app-header .app-title').getBoundingClientRect().left")
-    assert page.evaluate("document.getElementById('app-header').offsetHeight") == base_h + 28
-    # full screen: no traffic lights, the room is given back
+    # the header keeps its height; only the title drops, below the lights, and does not move right
+    assert page.evaluate("document.getElementById('app-header').offsetHeight") == base_h
+    assert _title_top(page) >= MAC_LIGHTS[3]
+    assert _title_top(page) > base_top  # it did move down (by the height of the line)
+    left = "document.querySelector('#app-header .app-title').getBoundingClientRect().left"
+    assert page.evaluate(left) == plain.evaluate(left)
+    # nothing else in the header moved
+    others = "[...document.querySelectorAll('#app-header :is(input, select, .btn)')].map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })"
+    assert page.evaluate(others) == plain.evaluate(others)
+    # full screen: no traffic lights, the title is back where it was
     page.evaluate("document.documentElement.setAttribute('data-desktop-fullscreen', '')")
     assert abs(_title_top(page) - base_top) < 1
     page.evaluate("document.documentElement.removeAttribute('data-desktop-fullscreen')")
-    assert _title_top(page) >= MAC_STRIP[3]
+    assert _title_top(page) >= MAC_LIGHTS[3]
     assert not page.errors
 
 
@@ -138,6 +143,10 @@ def test_windows_keeps_the_header_out_of_the_window_controls(open_page, width, s
     if stacked:  # the dataset box on a row of its own (header-fit.js does this when the row is short)
         page.evaluate("document.getElementById('app-header').classList.add('dataset-stacked')")
     rect = (width - OVERLAY_W, 0, width, OVERLAY_H)
+    if not stacked:  # the header keeps the browser's height
+        plain = open_page(None, width)
+        assert page.evaluate("document.getElementById('app-header').offsetHeight") == \
+            plain.evaluate("document.getElementById('app-header').offsetHeight")
     boxes = page.evaluate(BOXES, USABLE)
     assert boxes, "nothing measured"
     under = [b["id"] for b in boxes if _hits(b, rect)]

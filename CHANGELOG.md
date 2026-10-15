@@ -26,9 +26,9 @@ with the release after it. Older releases are listed on
   colours are slightly darker for WCAG AA contrast.
 
 ### Added
-- The desktop app has no title bar on macOS and Windows: the AnnZarro header is the title bar.
-  On macOS the three window buttons sit in a strip above the title, which moves down to make room
-  (the strip goes away in full screen). On Windows the minimise, maximise and close buttons, in the
+- The desktop app has no title bar on macOS and Windows: the AnnZarro header is the title bar, at
+  the same height as before. On macOS the three window buttons sit at the top left and the
+  AnnZarro title moves down below them. On Windows the minimise, maximise and close buttons, in the
   header's colours in the light and the dark theme, sit at the top right, and the Save / Load /
   Close all / Share buttons move down below them. Drag the empty part of the header to move the
   window and double-click it to zoom it. Linux keeps its normal window frame, and the browser

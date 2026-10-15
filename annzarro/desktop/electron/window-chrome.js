@@ -3,17 +3,18 @@
  * annzarro/tests/js/desktop-frame.test.mjs can test them.
  *
  * macOS and Windows have no native title bar: the AnnZarro header is the
- * title bar. macOS floats the traffic lights over a strip at the top left of
+ * title bar. macOS floats the traffic lights over the top left of
  * the header; Windows draws minimise / maximise / close over the top right
  * (titleBarOverlay), in the colours of the header. Linux keeps the native frame.
  * static/css/desktop-frame.css makes room for them and sets the drag region.
  */
 'use strict';
 
-// The strip above the header's content that the traffic lights sit in, and the
-// height of the Windows overlay. static/css/desktop-frame.css uses the same numbers.
-const MAC_STRIP_PX = 28;
-const WIN_OVERLAY_HEIGHT_PX = 36;
+// How far down the traffic lights reach (the title below them starts lower), and the
+// height of the Windows overlay, which the panel set buttons clear. The header keeps its
+// height; static/css/desktop-frame.css uses the same numbers.
+const MAC_LIGHTS_BOTTOM_PX = 24;
+const WIN_OVERLAY_HEIGHT_PX = 32;
 const TRAFFIC_LIGHTS = { x: 14, y: 8 };
 
 // What <html data-desktop-frame> says: 'mac', 'win', or null (a native frame).
@@ -65,7 +66,7 @@ function sanitizeOverlay(input) {
 }
 
 module.exports = {
-    MAC_STRIP_PX,
+    MAC_LIGHTS_BOTTOM_PX,
     WIN_OVERLAY_HEIGHT_PX,
     FRAME_ARG,
     frameFlag,
