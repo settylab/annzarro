@@ -19,7 +19,7 @@ Linux
 ```
 ::::
 
-<p class="badge-alt">macOS: <a href="https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-arm64.dmg">Apple silicon</a>, <a href="https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-x64.dmg">Intel</a>. Linux: <a href="https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-x86_64.AppImage">AppImage</a>, <a href="https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-amd64.deb">.deb</a>. <a href="https://github.com/settylab/annzarro/releases/latest">All files and checksums</a></p>
+<p class="badge-alt">macOS: <a href="https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-arm64.dmg">Apple silicon</a>, <a href="https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-x64.dmg">Intel</a>, or <code>brew install --cask settylab/annzarro/annzarro</code>. Linux: <a href="https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-x86_64.AppImage">AppImage</a>, <a href="https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-amd64.deb">.deb</a>. <a href="https://github.com/settylab/annzarro/releases/latest">All files and checksums</a></p>
 
 - Standalone on your laptop, no Python needed
 - Works offline
