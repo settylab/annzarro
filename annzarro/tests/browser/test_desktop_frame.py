@@ -214,6 +214,14 @@ def test_header_drags_the_window_and_what_you_use_does_not(open_page, frame):
         .map(e => [e.id || e.className || e.tagName, getComputedStyle(e).webkitAppRegion])""")
     assert len(usable) > 8
     assert [u for u in usable if u[1] != "no-drag"] == []
+    # the signed-in line is empty in the app: a box beside the traffic lights that must still drag
+    # (it was a 96 x 24 px dead zone at 1100 px and wider); with links in it, they are clickable
+    assert page.evaluate("document.getElementById('account-links').textContent") == ""
+    assert page.evaluate(region, "#account-links") == "drag"
+    page.evaluate("document.getElementById('account-links').innerHTML = '<a href=\"#\">Change password</a>'")
+    assert page.evaluate(region, "#account-links") == "no-drag"
+    assert page.evaluate(region, "#account-links a") == "no-drag"
+    page.evaluate("document.getElementById('account-links').textContent = ''")
     # everything outside the header: the stats bar, the panels, and popups that open over the header
     assert page.evaluate(region, "#dataset-stats") == "no-drag"
     page.click("#dataset-selector + .select2-container")

@@ -32,6 +32,11 @@ html[data-desktop-frame] .app-header :is(
 html[data-desktop-frame] body > :not(.app-header) {
     -webkit-app-region: no-drag;
 }
+/* The signed-in line is empty in the app (no login) but still a box beside the traffic lights:
+   empty, it is part of the header to drag by. */
+html[data-desktop-frame] .app-header :is(.account-links, .auth-indicator):empty {
+    -webkit-app-region: drag;
+}
 
 /* macOS: the header keeps its height. In the browser the title column is the title with a line
    under it for who is signed in and the admin links; the app has no login, so that line is empty.
