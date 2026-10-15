@@ -25,7 +25,7 @@ from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core import subset as cell_subset
 from .. import access, atomic_store, confinement, permissions, session_quota, session_store
 from .. import http_cache
-from . import dataset_folders
+from . import dataset_folders, dataset_lookup
 from ...core.array_response import wants_binary, wants_codes
 from ...core import categories as category_rules
 from ...core import remote
@@ -603,6 +603,7 @@ def register_data_routes(app, api_version):
     def _end_remote_deadline(_exc):
         remote.request_deadline(None)
     dataset_folders.register_dataset_folder_routes(app, api_version)
+    dataset_lookup.register_dataset_lookup_routes(app, api_version)
 
     http_cache.install_gzip(app)
 

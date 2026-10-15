@@ -39,6 +39,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
+from annzarro.tests.ui_helpers import SHOWN_DATASET, open_dataset
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -230,6 +231,7 @@ def test_change_dataset_onto_the_right_store_restores_the_view(browser, servers)
 
 
 def test_a_store_without_a_field_marks_it_and_switching_back_restores_it(browser, servers):
+    _, dirs = servers
     ctx, page, errors = _open_without_data(browser, servers)
     try:
         page.click("#btn-change-dataset")
@@ -241,10 +243,8 @@ def test_a_store_without_a_field_marks_it_and_switching_back_restores_it(browser
         assert _plot_config(page)["color"]["key"] == "leiden"
         assert page.query_selector('.tile[data-tile-id="cell-table-1"] table') is not None
         # back on the store that has it: drawn again, by leiden
-        path = page.evaluate("""() => [...document.querySelectorAll('#dataset-selector option')]
-            .map(o => o.value).find(v => v.endsWith('/fixture_small.zarr'))""")
-        page.evaluate("""(path) => { const sel = document.getElementById('dataset-selector');
-            $(sel).val(path).trigger({type: 'select2:select', params: {data: {id: path}}}); }""", path)
+        path = str(dirs["A"] / "fixture_small.zarr")
+        open_dataset(page, path)
         page.wait_for_function("(p) => JSON.parse(window.annzarroPlotState()).loading === false"
                                " && document.getElementById('dataset-path').textContent !== ''", arg=path)
         page.wait_for_timeout(2500)
@@ -461,7 +461,7 @@ def test_load_on_the_current_dataset_says_what_differs_and_does_not_ask(browser,
         assert page.query_selector(".notification-ask:not([data-offer])") is None
         assert page.query_selector(".panel-no-data") is None
         assert _missing_marked(page)
-        assert page.evaluate("() => document.getElementById('dataset-selector').value").endswith(store)
+        assert page.evaluate(SHOWN_DATASET).endswith(store)
         assert not errors, errors
     finally:
         ctx.close()

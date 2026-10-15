@@ -39,7 +39,7 @@ function el(tag, className, text) {
  * @param {Object} o
  * @param {Object} o.dom - {list, tree, search, regexBtn, sortSel, searchError}
  * @param {Array} o.entries - listing entries with `match` (orderCandidates), unreadable ones with `error`
- * @param {string[]} o.recents - recent paths, newest first
+ * @param {Array<string|Object>} o.recents - recent paths or entries (a lookup's), newest first; an entry with `error` is shown unreadable
  * @param {string|null} o.currentPath - the open dataset (marked)
  * @param {(path:string) => void} o.onChoose
  * @param {(folder:string, offset:number) => Promise<Object>} o.fetchFolder - the folder endpoint's body
@@ -182,7 +182,9 @@ export function mountDatasetPicker({ dom, entries, recents, currentPath, onChoos
         const found = searchEntries(entries, search.value, { regex: state.regex });
         searchError.hidden = !found.error;
         searchError.textContent = found.error || '';
-        const sorted = buildGroups(found.entries, { recents, otherTitle })
+        // a recent that is not in the listing (a subfolder's, a remote one) is searched like the rest
+        const shownRecents = recents.filter(r => typeof r === 'string' || entryMatches(found, r));
+        const sorted = buildGroups(found.entries, { recents: shownRecents, otherTitle })
             .map(g => ({ ...g, entries: g.key === 'recent' ? g.entries : sortEntries(g.entries, state.sort) }));
         const page = pageGroups(sorted, state.limit);
         const activePath = rows[state.active] && (rows[state.active].dataset.path || rows[state.active].dataset.folder);

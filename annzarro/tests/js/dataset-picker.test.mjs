@@ -1,8 +1,8 @@
 /**
  * The dataset picker's logic (static/js/utils/dataset-picker.js): search by
  * name and relative path (substring and regex; an invalid regex is an error,
- * not a throw), sort, the per-server recents (storage may be broken),
- * grouping and paging.
+ * not a throw), sort, grouping (the recently opened list first) and paging.
+ * The recents' storage is tested in dataset-recents.test.mjs.
  *
  * Run:  node --test annzarro/tests/js/dataset-picker.test.mjs
  */
@@ -10,13 +10,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const {
-    compileQuery, searchEntries, sortEntries, loadRecents, pushRecent, buildGroups, pageGroups,
-    splitByRanges, countsLabel, modifiedLabel, RECENT_LIMIT, folderOf, displayPath, searchParts, pathFieldWording
+    compileQuery, searchEntries, sortEntries, buildGroups, pageGroups,
+    splitByRanges, countsLabel, modifiedLabel, folderOf, displayPath, searchParts, pathFieldWording
 } = await import('../../../static/js/utils/dataset-picker.js');
 
 const E = (name, extra = {}) => ({ path: `/data/${name}`, name, rel_path: name, cells: 10, genes: 5, match: 'other', ...extra });
 const names = list => list.map(e => e.name);
-const memory = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v) }; };
 
 test('substring search is case-insensitive over the name and the relative path', () => {
     const list = [E('liver.zarr', { rel_path: 'proj/liver.zarr' }), E('lung.zarr'), E('x.zarr', { rel_path: 'Liver/x.zarr' })];
@@ -62,27 +61,6 @@ test('sort by name (natural), cells and modified; best keeps the given order', (
     assert.deepEqual(names(list), ['s10', 's2', 's1'], 'the input is not reordered');
 });
 
-test('recents: newest first, no duplicates, capped, kept per server', () => {
-    const st = memory();
-    for (let i = 0; i < RECENT_LIMIT + 3; i++) pushRecent(st, 'http://a', `/p${i}`);
-    pushRecent(st, 'http://a', '/p5');
-    const list = loadRecents(st, 'http://a');
-    assert.equal(list.length, RECENT_LIMIT);
-    assert.equal(list[0], '/p5');
-    assert.equal(new Set(list).size, RECENT_LIMIT);
-    assert.deepEqual(loadRecents(st, 'http://b'), []);
-});
-
-test('recents survive broken storage', () => {
-    const throwing = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('full'); } };
-    assert.deepEqual(loadRecents(throwing, 's'), []);
-    assert.doesNotThrow(() => pushRecent(throwing, 's', '/x'));
-    const garbage = { getItem: () => '{not json', setItem() {} };
-    assert.deepEqual(loadRecents(garbage, 's'), []);
-    const wrong = { getItem: () => '{"a":1}', setItem() {} };
-    assert.deepEqual(loadRecents(wrong, 's'), []);
-});
-
 test('groups: recents first, match groups, other, unreadable last; a store shows once', () => {
     const list = [E('a', { match: 'same' }), E('b', { match: 'name' }), E('c'), E('d', { error: 'zarr format 4' }), E('e', { match: 'counts' })];
     const groups = buildGroups(list, { recents: ['/data/c', '/data/gone', '/data/a'] });
@@ -91,6 +69,18 @@ test('groups: recents first, match groups, other, unreadable last; a store shows
     assert.deepEqual(names(groups.at(-1).entries), ['d']);
     const all = groups.flatMap(g => names(g.entries));
     assert.equal(new Set(all).size, all.length);
+});
+
+test('groups: recents given as entries show a subfolder, a remote and an unavailable store, each once', () => {
+    const list = [E('a', { match: 'same' }), E('c')];
+    const deep = E('deep.zarr', { path: '/data/projects/deep.zarr', rel_path: 'projects/deep.zarr' });
+    const remote = { path: 's3://lab/x.zarr', name: 'x.zarr' };
+    const gone = { path: '/data/gone.zarr', name: 'gone.zarr', error: 'Not available' };
+    const groups = buildGroups(list, { recents: [deep, remote, { ...list[1] }, gone] });
+    assert.equal(groups[0].title, 'Recently opened');
+    assert.deepEqual(names(groups[0].entries), ['deep.zarr', 'x.zarr', 'c', 'gone.zarr']);
+    assert.deepEqual(names(groups.slice(1).flatMap(g => g.entries)), ['a'], 'a recent store is not listed a second time');
+    assert.deepEqual(groups.map(g => g.title).filter(t => t === 'Cannot be opened'), [], 'an unavailable recent stays in its group');
 });
 
 test('without recents the first group is the best match', () => {

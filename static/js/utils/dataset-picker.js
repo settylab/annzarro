@@ -2,7 +2,7 @@
  * The logic of the dataset picker (#change-dataset-modal), apart from the
  * DOM: searching entries by name and relative path (substring, or a regular
  * expression like the Focused Cell / Gene pickers' ".*" toggle), sorting,
- * the "Recently opened" list, grouping, and the labels a row shows.
+ * grouping (with the "Recently opened" list, which utils/dataset-recents.js keeps), and the labels a row shows.
  *
  * An entry is a listing entry: {path, name?, rel_path?, cells?, genes?,
  * format?, modified?, is_link?, error?, match?}.
@@ -10,8 +10,8 @@
 
 import { datasetLabel } from './dataset-label.js';
 
+/** Recently opened datasets the picker shows. */
 export const RECENT_LIMIT = 8;
-export const RECENT_KEY_PREFIX = 'annzarro.recentDatasets:';
 
 /** What an entry is searched by: its name, and its path relative to the data directory (each on its own, so ^ and $ anchor one of them). */
 export function searchParts(entry) {
@@ -90,28 +90,6 @@ export function sortEntries(entries, key) {
     return list;
 }
 
-// ---- recently opened ------------------------------------------------------------
-
-function recentKey(serverKey) { return RECENT_KEY_PREFIX + (serverKey || ''); }
-
-/** The recent paths for a server, newest first; [] when storage is missing or broken. */
-export function loadRecents(storage, serverKey) {
-    try {
-        const parsed = JSON.parse(storage.getItem(recentKey(serverKey)) || '[]');
-        return Array.isArray(parsed) ? parsed.filter(p => typeof p === 'string' && p).slice(0, RECENT_LIMIT) : [];
-    } catch (e) {
-        return [];
-    }
-}
-
-/** Put `path` first in the server's recents (the last RECENT_LIMIT are kept); returns the new list. Never throws. */
-export function pushRecent(storage, serverKey, path) {
-    if (!path) return loadRecents(storage, serverKey);
-    const next = [path, ...loadRecents(storage, serverKey).filter(p => p !== path)].slice(0, RECENT_LIMIT);
-    try { storage.setItem(recentKey(serverKey), JSON.stringify(next)); } catch (e) { /* storage full or blocked */ }
-    return next;
-}
-
 // ---- groups -----------------------------------------------------------------------
 
 const MATCH_GROUPS = [
@@ -127,14 +105,16 @@ const MATCH_GROUPS = [
  * A store shows once: a recent one only under "Recently opened". An entry
  * with `error` goes last, in "Cannot be opened".
  * @param {Array} entries - listing entries with `match` (orderCandidates)
- * @param {{recents?: string[], otherTitle?: string}} [opts]
+ * @param {{recents?: Array<string|Object>, otherTitle?: string}} [opts] - `recents`, newest first: entries
+ *   (what `POST /datasets/lookup` answers, so a store in a subfolder or a remote one is shown too; one that is
+ *   unavailable carries `error` and is shown unreadable) or paths of `entries`
  * @returns {Array<{title: string, key: string, entries: Array}>} non-empty groups only
  */
 export function buildGroups(entries, { recents = [], otherTitle = 'Other datasets in the data directory' } = {}) {
     const groups = [];
     const readable = entries.filter(e => !e.error);
     const byPath = new Map(readable.map(e => [e.path, e]));
-    const recent = recents.map(p => byPath.get(p)).filter(Boolean);
+    const recent = recents.map(r => (typeof r === 'string' ? byPath.get(r) : r)).filter(Boolean).slice(0, RECENT_LIMIT);
     const taken = new Set(recent.map(e => e.path));
     if (recent.length) groups.push({ title: 'Recently opened', key: 'recent', entries: recent });
     const rest = readable.filter(e => !taken.has(e.path));

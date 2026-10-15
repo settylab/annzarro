@@ -33,7 +33,9 @@ import {
     savedStoreOf, storeName, hasDataTier
 } from './utils/view-store.js';
 import { probeStore, prewarmStore, appVersion, knownStore } from './utils/store-identity.js';
-import { loadRecents, pushRecent, displayPath, pathFieldWording } from './utils/dataset-picker.js';
+import { displayPath, pathFieldWording, RECENT_LIMIT } from './utils/dataset-picker.js';
+import { DatasetState, documentTitle, isUserSource } from './utils/dataset-state.js';
+import { loadRecents, recordRecent, userKey, lookupPaths, recentEntries } from './utils/dataset-recents.js';
 import { mountDatasetPicker } from './utils/dataset-picker-ui.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
@@ -74,6 +76,10 @@ const App = (function() {
             // Make SessionManager and PanelManager accessible globally
             window.sessionManager = SessionManager;
             window.PanelManager = PanelManager;
+
+            // The current dataset lives in DatasetState; the tab title and the
+            // dataset box follow it, and the desktop app opens datasets through it
+            _installDatasetState();
             
             // Initialize Plotly with optimized canvas settings
             _initPlotly();
@@ -157,7 +163,7 @@ const App = (function() {
                 }
                 PanelManager.ensureWelcomeFallback();
             } else if (datasets && datasets.length > 0 && !hasAutosave) {
-                await _loadDataset(datasets[0].path);
+                await DatasetState.open(datasets[0].path, { source: 'default' });
             } else if (hasAutosave) {
                 // Genuine autosave restore. If it throws or restores zero panels,
                 // don't hang on the spinner — drop back to the Welcome screen.
@@ -195,6 +201,51 @@ const App = (function() {
         } catch (error) {
             console.error('Error initializing application:', error);
             _showNotification('Initialization failed', error.message, 'error');
+        } finally {
+            _bootDone();
+        }
+    }
+
+    // ── The current dataset (utils/dataset-state.js) ──────────────────────
+
+    let _bootDone = () => {};
+    const _booted = new Promise(resolve => { _bootDone = resolve; });
+
+    /**
+     * Wire DatasetState: what opening runs, the views that follow it (tab
+     * title, dataset box) and the entry point the desktop app calls
+     * (`window.annzarro.openDataset`, contract in utils/dataset-state.js).
+     * @private
+     */
+    function _installDatasetState() {
+        DatasetState.setOpener(_openDataset);
+        DatasetState.subscribe(_followDatasetState);
+        window.annzarro = Object.assign(window.annzarro || {}, {
+            ready: _booted,
+            getDataset: () => DatasetState.get(),
+            openDataset: async (path) => {
+                await _booted;
+                try {
+                    const state = await DatasetState.open(path, { source: 'external' });
+                    return { ok: state.status === 'open' && state.path !== null && !state.failed, path: state.path, status: state.status,
+                        error: (state.failed && state.failed.message) || state.error };
+                } catch (error) {
+                    const state = DatasetState.get();
+                    return { ok: false, path: state.path, status: state.status, error: (error && error.message) || String(error) };
+                }
+            }
+        });
+    }
+
+    /** The tab title, and the dataset box, follow the state. @private */
+    function _followDatasetState(state, previous = null) {
+        const app = document.querySelector('.app-title');
+        document.title = documentTitle(state, (app && app.textContent.trim()) || 'AnnZarro');
+        if (state.failed) _revertDatasetPicker(state.failed.path);
+        else if (state.path && (state.status === 'opening' || state.status === 'open')
+            && !(previous && previous.path === state.path && previous.status === 'opening')) {
+            // when the dataset starts opening; the box is not written again when it has opened
+            _showDatasetInPicker(state.path);
         }
     }
 
@@ -445,22 +496,13 @@ const App = (function() {
 
         // 1. Load the dataset through the normal (non-silent) path so selectors
         //    and dataset info populate exactly as a manual selection would.
-        await _loadDataset(datasetPath);
+        await DatasetState.open(datasetPath, { source: 'view' });
 
-        // Reflect the selection in the dataset dropdown. A dataset that is not
-        // in the listing (a remote URL, a path outside the data directory) gets
-        // its own option; otherwise the picker showed its placeholder.
-        const datasetSelector = document.getElementById('dataset-selector');
-        if (datasetSelector) {
-            if (DataManager.getCurrentDataset() === datasetPath &&
-                ![...datasetSelector.options].some(o => o.value === datasetPath)) {
-                datasetSelector.appendChild(new Option(datasetPath, datasetPath));
-            }
-            datasetSelector.value = datasetPath;
-            if (window.$ && $.fn.select2) {
-                $(datasetSelector).trigger('change.select2');
-            }
-        }
+        // The dataset box follows DatasetState (_followDatasetState). Draw it again now that the
+        // dataset is open: the header refits to the box's final label (utils/header-fit.js), and a
+        // load skipped as a repeat leaves the box on the dataset that is open
+        const shown = DatasetState.get();
+        if (shown.status === 'open') _showDatasetInPicker(shown.path, { redraw: true });
 
         if (view) {
             // 2. Restore the focused gene (drives highlighting + the gene selector).
@@ -655,6 +697,7 @@ const App = (function() {
         const saved = located.saved || null;
         const missing = located.missing || (saved && saved.path) || 'its dataset';
         _noDataView = { view, saved, missing, differs: !!located.differs };
+        DatasetState.set({ path: missing, label: missing, status: 'nodata' });
         SessionManager.setDetachedStore(saved, view);
         const button = document.getElementById('btn-change-dataset');
         if (button) button.hidden = false;
@@ -778,6 +821,7 @@ const App = (function() {
      * @private
      */
     function _datasetGone(path) {
+        DatasetState.set({ path, label: _labelOf(path), status: 'unavailable', error: notAvailableText(path) });
         markDatasetUnavailable(path);
         _showNotification(UNAVAILABLE_TITLE, notAvailableText(path), 'warning');
         _showChangeDataset();
@@ -945,8 +989,8 @@ const App = (function() {
             modal.hide();
             // a caller that asked for a store (the Load dialog) takes it from here
             if (onChoose) { await onChoose(path); return; }
-            // the dropdown's own handler: the same dataset, panels and view as picking it there
-            if (normal) { await _selectDataset(path); return; }
+            // the same dataset, panels and view as picking it in the dropdown
+            if (normal) { await DatasetState.open(path, { source: 'user' }); return; }
             const view = pending.view || { v: VIEW_SCHEMA_VERSION };
             await _applyView({ datasetPath: path, view }, { exact: true });
             PanelManager.ensureWelcomeFallback();
@@ -987,8 +1031,7 @@ const App = (function() {
             if (!response.ok) throw new Error(body.error || response.statusText);
             return body;
         };
-        let recents = [];
-        try { recents = loadRecents(window.localStorage, window.location.origin); } catch (e) { /* storage blocked */ }
+        const recents = await _recentEntries();
         const restricted = await _isRestricted();
         const picker = mountDatasetPicker({
             rootLabel: restricted ? 'Your datasets' : undefined,
@@ -1708,25 +1751,7 @@ const App = (function() {
                     }
                     
                     if (selectedDir) {
-                        // Set the dataset selector to the selected directory path
-                        const datasetSelector = document.getElementById('dataset-selector');
-                        if (datasetSelector) {
-                            // Update the Select2 component if it exists
-                            if (window.$ && $.fn.select2 && $(datasetSelector).hasClass('select2-hidden-accessible')) {
-                                // Create or select option
-                                const newOption = new Option(selectedDir, selectedDir, true, true);
-                                $(datasetSelector).append(newOption).trigger({
-                                    type: 'select2:select',
-                                    params: {
-                                        data: {id: selectedDir}
-                                    }
-                                });
-                            } else {
-                                // Regular select
-                                datasetSelector.value = selectedDir;
-                                datasetSelector.dispatchEvent(new Event('change'));
-                            }
-                        }
+                        await DatasetState.open(selectedDir, { source: 'user' });
                     }
                 } catch (error) {
                     console.error('Error selecting directory:', error);
@@ -1746,8 +1771,7 @@ const App = (function() {
                 // a time: a second click used to read the list again over the
                 // first and leave the picker on the first dataset
                 if (_refreshingDataset) return;
-                const datasetSelector = document.getElementById('dataset-selector');
-                const datasetPath = _lastLoadedDatasetPath || DataManager.getCurrentDataset() || datasetSelector.value;
+                const datasetPath = _lastLoadedDatasetPath || DataManager.getCurrentDataset() || DatasetState.get().path;
                 
                 // Reset backend cache for the current dataset (if one is selected)
                 if (!datasetPath) {
@@ -1794,7 +1818,7 @@ const App = (function() {
                 if (datasetPath) {
                     // Clear the DataManager's frontend cache for this dataset
                     DataManager.refreshCacheForDataset(datasetPath);
-                    await _loadDataset(datasetPath);
+                    await DatasetState.open(datasetPath, { source: 'refresh' });
                 }
                 } finally {
                     _refreshingDataset = false;
@@ -1988,7 +2012,42 @@ const App = (function() {
         if (!_userChoice || Date.now() - _userChoice.at > _USER_CHOICE_MS) return;
         if (_userChoice.path !== datasetPath) return;
         _userChoice = null;
-        try { pushRecent(window.localStorage, window.location.origin, datasetPath); } catch (e) { /* storage blocked */ }
+        const label = _labelOf(datasetPath);
+        _recentsUser().then(user => {
+            try { recordRecent(window.localStorage, window.location.origin, user, { path: datasetPath, label }); } catch { /* storage blocked */ }
+        });
+    }
+
+    /** How the interface names a dataset: its path relative to the data directory, a URL as it is. @private */
+    function _labelOf(path) {
+        return datasetLabel(path, _listedDatasets, knownStore(path));
+    }
+
+    /** The user the recents are kept for (utils/dataset-recents.js): from auth/me, `local` with login off. @private */
+    let _recentsUserKey = null;
+    async function _recentsUser() {
+        if (_recentsUserKey) return _recentsUserKey;
+        try {
+            const response = await fetch(Config.API.AUTH_ME);
+            if (response.ok) return (_recentsUserKey = userKey(await response.json()));
+        } catch { /* offline: the next call asks again */ }
+        return 'local';
+    }
+
+    /**
+     * The recents of this user as picker entries: what the server says of
+     * each (it may read it, or it is no longer available), so a store in a
+     * subfolder or a remote one shows too; one that is no longer available
+     * is greyed where it was. The label alone if the server cannot be asked.
+     * @private
+     */
+    async function _recentEntries() {
+        let recents = [];
+        try { recents = loadRecents(window.localStorage, window.location.origin, await _recentsUser()); } catch { /* storage blocked */ }
+        recents = recents.slice(0, RECENT_LIMIT);
+        let results = [];
+        try { results = await lookupPaths(Config.API.DATASET_LOOKUP, recents.map(r => r.path)); } catch { /* shown by label */ }
+        return recentEntries(recents, results);
     }
 
     // The dataset listing the dropdown was last filled from (labels of unlisted paths derive from it)
@@ -2034,15 +2093,17 @@ const App = (function() {
     }
 
     /**
-     * What choosing a dataset does: the dropdown's handler, and the Browse
-     * picker's in the normal case (one code path, one end state).
+     * What opening a dataset runs (DatasetState.open): the user's own
+     * choices are remembered for "Recently opened", and a view open without
+     * data opens on the dataset chosen. Every other source loads it as it is.
      * @private
      */
-    function _selectDataset(datasetPath) {
+    function _openDataset(datasetPath, { source = 'user' } = {}) {
         if (!datasetPath) return Promise.resolve();
-        _markUserChoice(datasetPath);
+        const chosen = isUserSource(source);
+        if (chosen) _markUserChoice(datasetPath);
         // a view open without data opens on the chosen dataset
-        if (_noDataView) {
+        if (chosen && _noDataView) {
             return _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
                 .then(() => PanelManager.ensureWelcomeFallback());
         }
@@ -2080,7 +2141,7 @@ const App = (function() {
         if (!sel) return;
       
         // 0) remember current selection (the open dataset if the picker is empty)
-        const currentValue = sel.value || DataManager.getCurrentDataset() || '';
+        const currentValue = DatasetState.get().path || DataManager.getCurrentDataset() || '';
       
         // 1) destroy any existing Select2 so the native <select> is visible
         if (window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) {
@@ -2172,7 +2233,7 @@ const App = (function() {
           // 9) bind the select2:select → _loadDataset handler
           $(sel)
             .off('select2:select')
-            .on('select2:select', e => _selectDataset(e.params.data.id));
+            .on('select2:select', e => DatasetState.open(e.params.data.id, { source: 'user' }));
         }
       }
     
@@ -2191,12 +2252,13 @@ const App = (function() {
     /**
      * Show `datasetPath` in the dataset picker without loading it (the
      * picker's select2:select is what loads). A path the listing lacks (a
-     * link's, a remote URL) gets its own option.
+     * link's, a remote URL) gets its own option. `redraw` draws the box again
+     * even when it already shows the path.
      * @private
      */
-    function _showDatasetInPicker(datasetPath) {
+    function _showDatasetInPicker(datasetPath, { redraw = false } = {}) {
         const sel = document.getElementById('dataset-selector');
-        if (!sel || !datasetPath || sel.value === datasetPath) return;
+        if (!sel || !datasetPath || (sel.value === datasetPath && !redraw)) return;
         if (![...sel.options].some(o => o.value === datasetPath)) sel.appendChild(new Option(datasetPath, datasetPath));
         sel.value = datasetPath;
         if (window.$ && $.fn.select2 && $(sel).hasClass('select2-hidden-accessible')) $(sel).trigger('change.select2');
@@ -2254,10 +2316,10 @@ const App = (function() {
             // Set loading flag
             _isLoadingDataset = true;
             _lastLoadedDatasetPath = datasetPath;
-            // The picker names the dataset that is loading. It listed the
-            // first dataset until the load was done, and a Refresh made then
+            // The state (and so the picker) names the dataset that is loading. The picker
+            // listed the first dataset until the load was done, and a Refresh made then
             // opened that one instead.
-            _showDatasetInPicker(datasetPath);
+            DatasetState.set({ path: datasetPath, label: _labelOf(datasetPath), status: 'opening' });
             console.log(`Loading dataset: ${datasetPath}${silent ? ' (silent mode)' : ''}`);
             
             // Show loading indicators
@@ -2314,6 +2376,8 @@ const App = (function() {
                 await PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath });
             }
             
+            DatasetState.set({ path: datasetPath, label: _labelOf(datasetPath), status: 'open' });
+
             // Update last loaded dataset path and reset loading flag
             release();
 
@@ -2337,12 +2401,21 @@ const App = (function() {
 
                 // Revert _lastLoadedDatasetPath so the same dataset can be retried
                 _lastLoadedDatasetPath = DataManager.getCurrentDataset() || null;
-                _revertDatasetPicker(datasetPath);
 
                 // Strip a leading exception class name ("ValueError: ...") so the
                 // notification reads as a message rather than a traceback fragment.
                 const rawMsg = error.message || 'Unknown error';
                 const userMsg = rawMsg.replace(/^[A-Za-z]+Error:\s*/i, '') || rawMsg;
+
+                // The state goes back to the dataset that is open (the picker drops the refused path)
+                const stayed = DataManager.getCurrentDataset();
+                if (stayed) {
+                    DatasetState.set({ path: stayed, label: _labelOf(stayed), status: 'open', failed: { path: datasetPath, message: userMsg } });
+                } else if (_noDataView) {
+                    DatasetState.set({ path: _noDataView.missing, label: _noDataView.missing, status: 'nodata', error: userMsg });
+                } else {
+                    DatasetState.set({ status: 'none', error: userMsg });
+                }
 
                 // Get the current dataset information to determine how to handle the error
                 const currentDataset = DataManager.getCurrentDataset();

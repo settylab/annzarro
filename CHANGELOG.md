@@ -55,6 +55,19 @@ with the release after it. Older releases are listed on
 - The Save / Load / Close all / Share buttons in the header line up with the dataset and focus
   boxes instead of the middle of their labels.
 
+### Recently opened datasets
+- **Recently opened** keeps a store in a subfolder and a remote store (`s3://`, `https://`), not only
+  the stores at the top of the data directory. A recent dataset you can no longer open (removed, or
+  no longer shared with you) is shown greyed in place.
+- Recently opened is kept per server **and per user**: two people who sign in to one server from one
+  browser no longer see each other's list. Each entry records when it was opened. The list kept
+  before moves to the first user who signs in afterwards, once.
+- The browser tab and the window are titled with the open dataset, `bm_aging_annzarro.zarr ·
+  AnnZarro` (with your `app_name`), and with the app name alone when none is open.
+- New route `POST /api/v1/datasets/lookup` (in the HTTP API reference) answers which of a
+  list of paths you may open, with the counts of each, and the same answer for a store that is not
+  there and one you may not read.
+
 ### Docs
 - The README and the licence page cite v0.5.1 by its DOI,
   [10.5281/zenodo.23386903](https://doi.org/10.5281/zenodo.23386903).

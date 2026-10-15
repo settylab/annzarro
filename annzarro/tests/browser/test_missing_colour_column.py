@@ -33,6 +33,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
+from annzarro.tests.ui_helpers import open_dataset
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -190,10 +191,7 @@ def test_dataset_switch(server, which):
         try:
             page, s = _open(browser, _link(root, has, colour, SUBSET))
             assert "not in this dataset" not in (s["notice"] or ""), s
-            target = page.evaluate("""(name) => [...document.querySelectorAll('#dataset-selector option')]
-                .map(o => o.value).find(v => v && v.includes(name))""", os.path.basename(lacks))
-            page.evaluate("""(v) => jQuery('#dataset-selector').val(v)
-                .trigger({type: 'select2:select', params: {data: {id: v}}})""", target)
+            open_dataset(page, lacks)
             s = _settle(page, s)
             _grey_with_notice(s, label, large)
         finally:
@@ -208,10 +206,7 @@ def test_subset_change_in_the_dialog(server, which):
         browser = p.chromium.launch()
         try:
             page, s = _open(browser, _link(root, has, colour, SUBSET))
-            target = page.evaluate("""(name) => [...document.querySelectorAll('#dataset-selector option')]
-                .map(o => o.value).find(v => v && v.includes(name))""", os.path.basename(lacks))
-            page.evaluate("""(v) => jQuery('#dataset-selector').val(v)
-                .trigger({type: 'select2:select', params: {data: {id: v}}})""", target)
+            open_dataset(page, lacks)
             s = _settle(page, s)
             _grey_with_notice(s, label, large)
             _set_subset(page, 70)
@@ -306,10 +301,7 @@ def test_a_known_gap_asks_for_nothing_and_warns_once(server, which):
             page.wait_for_selector(f'.tile[data-tile-id="{PID}"]', timeout=30000)
             s = _settle(page)
             asked.clear()
-            target = page.evaluate("""(name) => [...document.querySelectorAll('#dataset-selector option')]
-                .map(o => o.value).find(v => v && v.includes(name))""", os.path.basename(lacks))
-            page.evaluate("""(v) => jQuery('#dataset-selector').val(v)
-                .trigger({type: 'select2:select', params: {data: {id: v}}})""", target)
+            open_dataset(page, lacks)
             s = _settle(page, s)
             _grey_with_notice(s, label, large)
             _set_subset(page, 70)

@@ -34,6 +34,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
+from annzarro.tests.ui_helpers import open_dataset
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -287,12 +288,8 @@ def test_dataset_change_resets_the_zoom_without_a_blank_plot(server):
             s = _settle(page, lambda s: large or s["rows"])
             _zoom(page, s)
             page.evaluate(WATCH)
-            target = page.evaluate("""(name) => [...document.querySelectorAll('#dataset-selector option')]
-                .map(o => o.value).find(v => v && v.includes(name))""", os.path.basename(OTHER))
             before = page.evaluate(STATE)
-            # what choosing it in the select2 dropdown sends
-            page.evaluate("""(v) => jQuery('#dataset-selector').val(v)
-                .trigger({type: 'select2:select', params: {data: {id: v}}})""", target)
+            open_dataset(page, OTHER)
             s = _settle(page, lambda s: s["dataset"] != before["dataset"] and "_v3" in (s["dataset"] or "")
                         and (large or s["rows"]))
             assert s["same"]["plot"] and s["same"]["tile"], s["same"]
