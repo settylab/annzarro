@@ -68,11 +68,6 @@ export function setSelectValue(select, value, triggerEvents = true) {
   if (triggerEvents) {
     // Trigger standard change event
     $select.trigger('change');
-    
-    // If it's a Select2, trigger Select2 specific events
-    if ($select.hasClass('select2-hidden-accessible')) {
-      $select.trigger('change.select2');
-    }
   }
   
   return $select;

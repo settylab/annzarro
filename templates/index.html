@@ -27,9 +27,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/select.bootstrap5.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/fixedHeader.bootstrap5.min.css') }}">
     
-    <!-- Font Awesome and Select2 -->
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/all.min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/select2.min.css') }}">
 
     <!-- FontAwesome webfont paths -->
     <style>
@@ -82,25 +81,6 @@
                 <div class="col">
                     <div class="global-controls">
                         <div class="row align-items-center">
-                            <div class="col dataset-col">
-                                <label for="dataset-selector">Dataset:</label>
-                                <div class="dataset-row">
-                                    <div class="dataset-pick">
-                                    <select id="dataset-selector" class="form-select" data-allow-custom="true">
-                                        <option value="">Loading..</option>
-                                    </select>
-                                    <button id="refresh-dataset" class="btn btn-outline-secondary ms-1" title="Refresh dataset">
-                                        <i class="fas fa-sync-alt"></i>
-                                    </button>
-                                    <button id="select-directory" class="btn btn-outline-secondary ms-1" title="Select directory" style="display: none;">
-                                        <i class="fas fa-folder-open"></i>
-                                    </button>
-                                    </div>
-                                    <button id="btn-change-dataset" class="btn btn-outline-warning ms-1" title="Choose the dataset this view opens on" hidden>
-                                        <i class="fas fa-exchange-alt"></i> <span class="btn-label">Change dataset</span>
-                                    </button>
-                                </div>
-                            </div>
                             <div class="col focus-col">
                                 <label for="focused-gene">Focused Gene:</label>
                                 <div class="d-flex">
@@ -150,11 +130,22 @@
         </div>
     </header>
     
-    <!-- Dataset Stats Bar -->
-    <div id="dataset-stats" class="dataset-stats">
+    <!-- Dataset bar: the dataset (a button that opens the dataset browser), then what describes it -->
+    <div id="dataset-stats" class="dataset-stats" role="region" aria-label="Dataset">
         <div class="container-fluid">
-            <div class="row">
-                <div class="col-md-3">
+            <div class="dataset-bar">
+                <button id="dataset-button" type="button" class="btn btn-sm dataset-button" data-state="none"
+                        aria-haspopup="dialog" aria-controls="dataset-browser" aria-label="Open a dataset">
+                    <i class="fas fa-database dataset-button-icon" aria-hidden="true"></i>
+                    <span id="dataset-button-name" class="dataset-button-name">Open a dataset&hellip;</span>
+                    <span class="dataset-button-action"></span>
+                    <kbd id="dataset-button-hint" class="dataset-button-hint" aria-hidden="true"></kbd>
+                    <i class="fas fa-caret-down dataset-button-caret" aria-hidden="true"></i>
+                </button>
+                <button id="refresh-dataset" type="button" class="btn btn-sm btn-outline-secondary dataset-refresh" title="Refresh dataset" aria-label="Refresh dataset">
+                    <i class="fas fa-sync-alt" aria-hidden="true"></i>
+                </button>
+                <span class="dataset-fact">
                     <span>Cells: <span id="cell-count">-</span></span>
                     <button id="subset-button" type="button" class="btn btn-sm subset-badge" hidden>All cells</button>
                     <span id="subset-parts" class="subset-parts" hidden>
@@ -162,18 +153,15 @@
                         <label class="subset-part-label">Part <input id="subset-part-input" type="number" min="1" step="1" class="subset-part-input" aria-label="Part number"> of <span id="subset-part-count">-</span></label>
                         <button id="subset-part-next" type="button" class="btn btn-sm subset-part-step" aria-label="Next part" title="Next part">&rsaquo;</button>
                     </span>
-                </div>
-                <div class="col-md-3">
-                    <span>Genes: <span id="gene-count">-</span></span>
-                </div>
-                <div class="col-md dataset-path-col">
-                    <span>Dataset: <span id="dataset-path">-</span></span>
-                </div>
-                <div class="col-md-auto d-flex align-items-center">
-                    <!-- System / Light / Dark (static/js/utils/theme-toggle.js); here, not in the header, which has no room to spare -->
-                    <span id="theme-toggle" class="theme-toggle"></span>
-                </div>
+                </span>
+                <span class="dataset-fact">Genes: <span id="gene-count">-</span></span>
+                <span id="dataset-format-fact" class="dataset-fact" hidden>Format: <span id="dataset-format">-</span></span>
+                <!-- System / Light / Dark (static/js/utils/theme-toggle.js); here, not in the header, which has no room to spare -->
+                <span id="theme-toggle" class="theme-toggle"></span>
             </div>
+            <!-- "Opening X", "Opened X: 8,090 cells, 16,285 genes" for a screen reader; errors are assertive -->
+            <span id="dataset-status" class="visually-hidden" role="status" aria-live="polite"></span>
+            <span id="dataset-alert" class="visually-hidden" role="alert"></span>
         </div>
     </div>
     
@@ -200,35 +188,48 @@
         </div>
     </template>
 
-    <!-- Change dataset: the store a view opens on (main.js _showChangeDataset) -->
-    <div class="modal fade" id="change-dataset-modal" tabindex="-1" aria-hidden="true" aria-labelledby="change-dataset-title">
-        <div class="modal-dialog modal-xl">
+    <!-- Dataset browser: every way of choosing a dataset (static/js/utils/dataset-browser.js, opened by main.js) -->
+    <div class="modal fade" id="dataset-browser" tabindex="-1" aria-hidden="true" aria-labelledby="dataset-browser-title" aria-describedby="dataset-browser-banner">
+        <div class="modal-dialog modal-xl modal-fullscreen-md-down dsb-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="change-dataset-title">Change dataset</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <h5 class="modal-title" id="dataset-browser-title">Open a dataset</h5>
+                    <button type="button" id="dsb-open-native" class="btn btn-sm btn-outline-secondary ms-auto me-2" hidden>
+                        <i class="fas fa-folder-open" aria-hidden="true"></i> Open file or folder&hellip;
+                    </button>
+                    <button type="button" class="btn-close ms-0" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p id="change-dataset-saved" class="small text-muted dataset-name"></p>
-                    <div class="change-dataset-toolbar">
-                        <input id="change-dataset-search" type="search" class="form-control form-control-sm" placeholder="Search name or path" aria-label="Search datasets by name or path" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="true">
-                        <button id="change-dataset-regex" type="button" class="btn btn-sm btn-outline-secondary name-picker-regex" title="Regular expression search" aria-label="Regular expression search" aria-pressed="false">.*</button>
-                        <select id="change-dataset-sort" class="form-select form-select-sm" aria-label="Sort datasets by">
-                            <option value="best">Best match</option>
-                            <option value="name">Name</option>
-                            <option value="cells">Cells (most first)</option>
-                            <option value="modified">Modified (newest first)</option>
-                        </select>
+                    <div id="dataset-browser-banner" class="dsb-banner" hidden></div>
+                    <div class="dsb-toolbar">
+                        <div class="dsb-search">
+                            <input id="dsb-search" type="search" class="form-control form-control-sm" placeholder="Search name or path" aria-label="Search datasets by name or path" autocomplete="off" spellcheck="false">
+                            <button id="dsb-regex" type="button" class="btn btn-sm btn-outline-secondary dsb-regex" title="Regular expression search" aria-label="Regular expression search" aria-pressed="false">.*</button>
+                        </div>
+                        <div id="dsb-chips" class="dsb-chips" role="group" aria-label="Filters"></div>
                     </div>
-                    <div id="change-dataset-search-error" class="small text-danger" hidden></div>
-                    <div id="change-dataset-list" class="change-dataset-list"></div>
-                    <div id="change-dataset-tree" class="change-dataset-list"></div>
-                    <label id="change-dataset-path-label" for="change-dataset-path" class="form-label mt-3 small">Or open a path on this server</label>
-                    <div class="input-group input-group-sm">
-                        <input id="change-dataset-path" type="text" class="form-control" placeholder="name in the data directory, or a full path">
-                        <button id="change-dataset-open-path" class="btn btn-outline-primary" type="button">Open</button>
+                    <div id="dsb-search-error" class="small text-danger dsb-search-error" hidden></div>
+                    <div class="dsb-layout">
+                        <nav id="dsb-places" class="dsb-places" aria-label="Places"></nav>
+                        <select id="dsb-places-select" class="form-select form-select-sm dsb-places-select" aria-label="Place"></select>
+                        <section class="dsb-main" aria-label="Datasets">
+                            <div id="dsb-pathbar" class="dsb-pathbar">
+                                <nav id="dsb-crumbs" class="dsb-crumbs" aria-label="Folder"></nav>
+                                <div id="dsb-pathform" class="dsb-pathform" hidden>
+                                    <label id="dsb-path-label" for="dsb-path" class="visually-hidden">Open a path</label>
+                                    <input id="dsb-path" type="text" class="form-control form-control-sm" autocomplete="off" spellcheck="false">
+                                    <button id="dsb-path-open" class="btn btn-sm btn-outline-primary" type="button">Open</button>
+                                </div>
+                            </div>
+                            <div id="dsb-path-error" class="small text-danger dsb-path-error" hidden></div>
+                            <div id="dsb-table-wrap" class="dsb-table-wrap"></div>
+                        </section>
+                        <aside id="dsb-details" class="dsb-details" aria-label="Details"></aside>
                     </div>
-                    <div id="change-dataset-error" class="small text-danger mt-1" hidden></div>
+                </div>
+                <div class="modal-footer">
+                    <span id="dsb-status" class="dsb-status" role="status" aria-live="polite"></span>
+                    <span class="dsb-hints" aria-hidden="true"><kbd>Enter</kbd> open <kbd>Esc</kbd> close <kbd id="dsb-hint-path">Ctrl+L</kbd> path</span>
                 </div>
             </div>
         </div>
@@ -349,7 +350,6 @@
     </script>
     
     <!-- Other libraries -->
-    <script src="{{ url_for('static', filename='vendor/js/select2.min.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/js/chroma.min.js') }}"></script>
     
     <!-- Make bootstrap globally available for script modules -->

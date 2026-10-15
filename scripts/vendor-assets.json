@@ -209,29 +209,6 @@
       ]
     },
     {
-      "name": "Select2",
-      "version": "4.1.0-rc.0",
-      "license": "MIT",
-      "homepage": "https://select2.org/",
-      "license_files": [
-        "select2.txt"
-      ],
-      "files": [
-        {
-          "path": "js/select2.min.js",
-          "url": "https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js",
-          "sha256": "f7244fff610595b944f76bf3080d74e3af42b5dd234f8f079e698cc39ac966b0",
-          "size": 73163
-        },
-        {
-          "path": "css/select2.min.css",
-          "url": "https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css",
-          "sha256": "cda4a81c187015d95ed2c71f1841540b08203cdec5fa2a7d5d1825a3c2166f8c",
-          "size": 16264
-        }
-      ]
-    },
-    {
       "name": "chroma.js",
       "version": "2.4.2",
       "license": "BSD-3-Clause AND Apache-2.0",
