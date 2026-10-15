@@ -52,6 +52,10 @@ PATH_ARGS = ("dataset_path", "dataset_id", "dir")
 #: (``data/by_path``) ``path`` names an array INSIDE a dataset, not a file.
 DIRECTORY_PATH_ENDPOINTS = ("list_directory",)
 
+#: Endpoints whose ``path`` argument names a store, like ``dataset_path`` elsewhere
+#: (a relative one is in the data directory).
+STORE_PATH_ENDPOINTS = ("dataset_details",)
+
 
 ARBITRARY_PATH_MODES = ("admins", "local-only", "none")
 DEFAULT_ARBITRARY_PATHS = "admins"
@@ -142,6 +146,8 @@ def request_paths(remote=False):
     Shared with ``access.enforce``, which asks for the remote URLs too.
     """
     paths = [request.args.get(name) for name in PATH_ARGS]
+    if request.endpoint in STORE_PATH_ENDPOINTS:
+        paths.append(request.args.get("path"))
     if request.view_args:
         paths.append(request.view_args.get("dataset_path"))
     if request.endpoint in DIRECTORY_PATH_ENDPOINTS:
@@ -186,7 +192,7 @@ def resolve_relative_dataset_paths():
     confined = is_confined(current_app.config)
     base = os.path.expanduser(data_dir)
     args = None
-    for name in ("dataset_path", "dataset_id"):
+    for name in ("dataset_path", "dataset_id") + (("path",) if request.endpoint in STORE_PATH_ENDPOINTS else ()):
         value = request.args.get(name)
         if not value or is_remote_path(value) or os.path.isabs(os.path.expanduser(value)):
             continue

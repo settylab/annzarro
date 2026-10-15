@@ -521,3 +521,43 @@ def test_max_read_mb_from_config_and_flag(store, tmp_path, capsys):
     assert slow_elements("--max-read-mb", "64") == (64, set())
     assert slow_elements("--config", str(cfg)) == (16, {"obsp/mid"})
     assert slow_elements("--config", str(cfg), "--max-read-mb", "64") == (64, set())
+
+
+# --- a deadline -------------------------------------------------------------
+
+def test_an_expired_deadline_returns_what_was_found_and_says_partial(store):
+    import time
+    root = new_store(store, x="csr")
+    _array(root["layers"], "whole_gene", (N_OBS, N_VARS), "float32", (N_OBS, 64))
+    whole = store_check.check_store(str(store))
+    assert "partial" not in whole, "the command's JSON keeps its keys"
+    stopped = store_check.check_store(str(store), deadline=time.monotonic() - 1)
+    assert stopped["partial"] is True and len(stopped["findings"]) < len(whole["findings"])
+
+
+def test_a_deadline_that_is_not_reached_changes_nothing(store):
+    import time
+    root = new_store(store, x="csr")
+    _array(root["layers"], "whole_gene", (N_OBS, N_VARS), "float32", (N_OBS, 64))
+    whole = store_check.check_store(str(store))
+    timed = store_check.check_store(str(store), deadline=time.monotonic() + 600)
+    assert timed.pop("partial") is False and timed == whole
+
+
+def test_a_deadline_midway_keeps_the_earlier_findings(store, monkeypatch):
+    import time
+    root = new_store(store, x="csr")
+    for name in ("a_whole_gene", "b_whole_gene"):
+        _array(root["layers"], name, (N_OBS, N_VARS), "float32", (N_OBS, 64))
+    real = store_check._Checker.dense
+
+    def slow(self, *a, **k):
+        time.sleep(0.2)
+        return real(self, *a, **k)
+    monkeypatch.setattr(store_check._Checker, "dense", slow)
+    report = store_check.check_store(str(store), deadline=time.monotonic() + 0.05)
+    whole = store_check.check_store(str(store))
+    assert report["partial"] is True and not whole.get("partial")
+    assert codes(report, "X") == codes(whole, "X") != set(), "the finding made before the deadline stays"
+    assert codes(report, "layers/a_whole_gene") and not codes(report, "layers/b_whole_gene")
+    assert codes(whole, "layers/b_whole_gene")

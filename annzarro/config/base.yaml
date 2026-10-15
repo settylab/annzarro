@@ -80,6 +80,10 @@ server:
   # directory goes before it stops and says the result is partial.
   dataset_search_max_depth: 6
   dataset_search_max_entries: 20000
+  # Seconds the dataset browser's details request (GET /datasets/details) spends
+  # on the store check of one zarr store before it answers with the findings so
+  # far (budget_reached: true). 0 = the details never run the check.
+  dataset_details_check_budget_s: 1.5
   # Longest regular expression a name search (mode=regex) runs, in characters,
   # and the seconds one regex scan may take before it answers with the matches
   # found so far (partial: true). Patterns that repeat a repeat or branch inside

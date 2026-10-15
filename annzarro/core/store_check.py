@@ -18,6 +18,7 @@ dumped as JSON; ``SCHEMA`` names the JSON layout.
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
@@ -45,6 +46,10 @@ _ZARR3 = int(zarr.__version__.split(".")[0]) >= 3
 
 class StoreCheckError(RuntimeError):
     """The store cannot be opened or is not a zarr store; the message says why."""
+
+
+class _BudgetReached(Exception):
+    """The caller's time budget ran out between two steps of the check."""
 
 
 @dataclass
@@ -125,17 +130,22 @@ def _is_array(node) -> bool:
     return hasattr(node, "shape") and hasattr(node, "dtype")
 
 
-def _walk(group, prefix: str = "", depth: int = 0) -> Iterator[Tuple[str, Any]]:
-    """Every node below ``group`` as (path, node), groups before their members."""
+def _walk(group, prefix: str = "", depth: int = 0, tick=None) -> Iterator[Tuple[str, Any]]:
+    """Every node below ``group`` as (path, node), groups before their members.
+
+    ``tick`` is called before each node and may raise to stop the walk.
+    """
     try:
         members = _members(group)
     except Exception:
         return
     for name, node in members:
+        if tick:
+            tick()
         path = f"{prefix}/{name}" if prefix else name
         yield path, node
         if not _is_array(node) and depth < 8:
-            yield from _walk(node, path, depth + 1)
+            yield from _walk(node, path, depth + 1, tick)
 
 
 def _meta(arr) -> Dict[str, Any]:
@@ -233,11 +243,21 @@ def _fix(template: str, path: str, **kw) -> str:
 # --- the checks -----------------------------------------------------------
 
 class _Checker:
-    def __init__(self, root, path: str, remote: bool, consolidated: bool, limit_bytes: int):
+    def __init__(self, root, path: str, remote: bool, consolidated: bool, limit_bytes: int,
+                 deadline: Optional[float] = None):
         self.root, self.path, self.remote, self.consolidated = root, path, remote, consolidated
         self.limit = limit_bytes
+        self.deadline = deadline
+        self.partial = False
         self.findings: List[Finding] = []
         self.arrays: List[Dict[str, Any]] = []
+        self.zarr_format = int(getattr(getattr(root, "metadata", None), "zarr_format", 2) or 2)
+        self.n_nodes = self.n_files = self.n_chunks = 0
+
+    def tick(self):
+        """Stop the check (``_BudgetReached``) once the caller's deadline has passed."""
+        if self.deadline is not None and time.monotonic() > self.deadline:
+            raise _BudgetReached()
 
     def add(self, code, severity, element, summary, cost, fix, **details):
         self.findings.append(Finding(code, severity, element, summary, cost, fix, details))
@@ -425,6 +445,7 @@ class _Checker:
         except Exception:
             pass
         for name, node in _members(group):
+            self.tick()
             if name == group.attrs.get("_index", "_index"):
                 continue
             label = f"{axis}/{name}"
@@ -498,7 +519,7 @@ class _Checker:
 
     def run(self, stale: Optional[str]):
         root = self.root
-        nodes = list(_walk(root))
+        nodes = list(_walk(root, tick=self.tick))
         n_files = 0
         n_chunks_total = 0
         biggest: List[Tuple[int, str]] = []
@@ -512,6 +533,7 @@ class _Checker:
         slots = {name: node for name, node in _members(root)} if nodes else {}
 
         x = slots.get("X")
+        self.tick()
         if x is not None:
             if _is_array(x):
                 self.dense("X", x, "matrix")
@@ -522,6 +544,7 @@ class _Checker:
             if group is None or _is_array(group):
                 continue
             for name, node in sorted(_members(group), key=lambda kv: kv[0]):
+                self.tick()
                 label = f"{slot}/{name}"
                 try:
                     if _is_array(node):
@@ -585,7 +608,7 @@ class _Checker:
                      _fix(FIX_CONSOLIDATE, self.path))
 
 
-def check_store(path: str, max_read_mb: Optional[float] = None) -> Dict[str, Any]:
+def check_store(path: str, max_read_mb: Optional[float] = None, deadline: Optional[float] = None) -> Dict[str, Any]:
     """Report what in a store's layout makes AnnZarro slow, from metadata only.
 
     Reads shapes, dtypes, chunks, attributes and the consolidated metadata, and no
@@ -596,12 +619,16 @@ def check_store(path: str, max_read_mb: Optional[float] = None) -> Dict[str, Any
             ``http(s)://`` URL (read-only; needs the ``annzarro[remote]`` extras).
         max_read_mb: The limit, in MB, to judge ``obsp``/``varp`` row reads against.
             Default: the server's own default for this machine (``server.max_read_mb``).
+        deadline: A ``time.monotonic()`` instant after which the check stops between two steps and
+            returns the findings so far with ``partial: true``. The step in progress is not
+            interrupted, so a single slow read can overrun it. Default: no deadline.
 
     Returns:
         dict: The report (schema ``annzarro-store-check/1``): ``store``, ``zarr_format``,
         ``consolidated``, ``arrays`` (one entry per 2-D array), ``findings`` (most
         severe first, each with ``code``, ``severity``, ``element``, ``summary``,
-        ``cost``, ``fix`` and ``details``), ``counts`` per severity and ``worst``.
+        ``cost``, ``fix`` and ``details``), ``counts`` per severity, ``worst``; with a ``deadline``
+        also ``partial`` (the deadline stopped the check before it finished).
 
     Raises:
         StoreCheckError: The store cannot be opened.
@@ -615,12 +642,15 @@ def check_store(path: str, max_read_mb: Optional[float] = None) -> Dict[str, Any
     if not remote and consolidated:
         from .zarr_reader import consolidated_staleness
         stale = consolidated_staleness(path)
-    checker = _Checker(root, path, remote, consolidated, limit)
-    checker.run(stale)
+    checker = _Checker(root, path, remote, consolidated, limit, deadline)
+    try:
+        checker.run(stale)
+    except _BudgetReached:
+        checker.partial = True
     findings = sorted(checker.findings, key=lambda f: (-T.SEVERITIES.index(f.severity), f.element, f.code))
     counts = {s: sum(1 for f in findings if f.severity == s) for s in T.SEVERITIES}
     from .. import __version__
-    return {
+    report = {
         "schema": SCHEMA,
         "annzarro_version": __version__,
         "store": path,
@@ -635,6 +665,9 @@ def check_store(path: str, max_read_mb: Optional[float] = None) -> Dict[str, Any
         "counts": counts,
         "worst": next((s for s in reversed(T.SEVERITIES) if counts[s]), "ok"),
     }
+    if deadline is not None:
+        report["partial"] = checker.partial       # the CLI has no deadline; its JSON keeps its keys
+    return report
 
 
 def exceeds(report: Dict[str, Any], fail_on: str) -> bool:
