@@ -74,6 +74,6 @@ opacity, Equal aspect and the title are not copied.
 ## Large plots
 
 A plot with more than about a million cells is drawn in large-plot mode ({ref}`large-plot-mode`).
-Presets, ticks, margins, the scale bar and the text and colour settings of the graph work there as
-usual. The colour bar position, length and tick count and the Not in table group do not apply: a
-large plot draws its own colour bar and has no table-filter greying.
+Presets, ticks, margins, the scale bar, the colour bar options and the text and colour settings of
+the graph work there as usual. The Not in table group has nothing to style there: a large plot cannot be
+filtered by a table.

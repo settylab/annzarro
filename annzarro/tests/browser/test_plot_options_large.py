@@ -1,9 +1,8 @@
 """Plot Options in large-plot mode: the controls that apply work, the rest do not break the plot.
 
 The fixture's 200 cells are drawn in large-plot mode by a threshold of 100 points. Tick marks, the
-tick count, margins and the scale bar act on the graph as in the regular mode; the colour bar and
-point-style controls of the regular mode have no effect on a large plot's own legend and bar, and
-changing them must leave the plot drawn.
+tick count, margins, the scale bar and the colour bar options (position, length, ticks) act on the
+graph as in the regular mode, and the plot stays drawn.
 """
 import pytest
 
@@ -43,10 +42,19 @@ def test_options_on_a_large_plot(page, server):
     page.wait_for_timeout(500)
     # B has a numerical colour: its colour bar options on a large plot
     assert page.evaluate("(id) => !!(%s)(id).__isLarge" % GD, B)
+    BAR = """(id) => { const gd = (%s)(id); const t = gd.data.find(t => t.meta === 'az-colorbar');
+        return t ? { orientation: t.marker.colorbar.orientation, len: t.marker.colorbar.len, nticks: t.marker.colorbar.nticks,
+                     x: t.marker.colorbar.x, drawn: gd.querySelectorAll('.colorbar .cbaxis text').length } : null; }""" % GD
+    before = page.evaluate(BAR, B)
+    assert before and before["drawn"] > 0, before                      # the large plot's colour bar is drawn
     _menu(page, B, "legend")
     page.select_option(f"#colorbar-position-{B}", "bottom")
     _slide(page, f"#colorbar-length-{B}", 50)
     _change(page, f"#colorbar-ticks-{B}", 3)
+    after = page.evaluate(BAR, B)
+    assert after and after["drawn"] > 0, after                         # still drawn
+    assert (after["orientation"], after["len"], after["nticks"]) == ("h", 0.5, 3), after     # and the options apply to it
+    assert after["x"] != before["x"]
     # a preset and Apply to other panels
     _menu(page, A, "presets")
     page.click(f"#preset-publication-{A}")
