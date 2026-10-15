@@ -5,6 +5,9 @@ command-line tool `annzarro` and the complete web interface (all JavaScript, CSS
 bundled, so the browser fetches nothing from other hosts). If you only want to look at data on
 your own computer and do not want to install Python, use the {doc}`desktop-app` instead.
 
+The ways to install: [pip](#with-pip), [uv](#with-uv), the [desktop app](#desktop-app-no-python)
+(a download, or Homebrew on macOS) and [from source](#from-source).
+
 **Requirements** (Python package; the desktop app needs none of these)
 
 - Python 3.9 or later. The package has been installed and its server started on Python 3.9,
@@ -69,7 +72,22 @@ uv tool install annzarro
 ## Desktop app (no Python)
 
 The packaged desktop app needs no Python and no other installation: the server, Python and the
-web interface are inside the download. Download the file for your system from the
+web interface are inside the download.
+
+### macOS with Homebrew
+
+```bash
+brew install --cask settylab/annzarro/annzarro
+```
+
+This installs the same notarized app as the download below, for your chip, on macOS 13 or later, and
+skips the manual steps. `brew upgrade --cask annzarro` updates it. `brew uninstall --cask annzarro`
+removes the app; add `--zap` to also delete its settings, logs and caches. Your datasets and saved
+panel sets in `~/annzarro-data` are kept.
+
+### Download
+
+Download the file for your system from the
 [latest release](https://github.com/settylab/annzarro/releases/latest) of `settylab/annzarro`
 (`<version>` is the release number). Each release also has copies without the version in the
 name, so these links always give the latest app:
@@ -89,8 +107,6 @@ name, so these links always give the latest app:
 `SHA256SUMS.txt` on the same page lists the checksums. First launch:
 
 - **macOS**: open the `.dmg`, drag AnnZarro to Applications and open it.
-- **macOS with Homebrew**: `brew install --cask settylab/annzarro/annzarro` installs the same notarized app
-  (macOS 13 or later, Apple silicon or Intel); `brew upgrade --cask annzarro` updates it.
 - **Windows**: run the installer, or unzip and run `AnnZarro.exe`. SmartScreen may show "Windows
   protected your PC"; click **More info**, then **Run anyway**.
 - **Linux**: `chmod +x` the AppImage and run it, or `sudo apt install ./AnnZarro-<version>-linux-amd64.deb`.
