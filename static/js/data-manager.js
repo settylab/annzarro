@@ -498,6 +498,12 @@ const DataManager = (function() {
             if (signal && signal.aborted) {
                 throw new DOMException("Dataset loading aborted", "AbortError");
             }
+
+            // The server's settings decide below whether the names of the cells
+            // are downloaded (names_on_demand_above, the large-plot threshold):
+            // a page that reads them late must not download every name of a
+            // huge dataset first
+            await Config.ready;
             
             // Load dataset structure 
             const _datasetStructure = await getDatasetStructure(datasetPath, signal);

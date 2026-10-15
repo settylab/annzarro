@@ -421,8 +421,16 @@ const Config = (function() {
         }
     }
     
-    // Load server config on module initialization
-    loadServerConfig();
+    // Load server config on module initialization. `ready` settles once it has
+    // been read (or failed, or 10 s have passed): what depends on a setting
+    // (whether the names of the cells are downloaded, from names_on_demand_above)
+    // must not be decided before it, or a slow reply makes a page of a huge
+    // dataset download every name.
+    const READY_MS = 10000;
+    const ready = Promise.race([
+        loadServerConfig(),
+        new Promise(resolve => setTimeout(resolve, READY_MS))
+    ]);
     
     return {
         API,
@@ -434,6 +442,7 @@ const Config = (function() {
         PANEL_TYPES,
         KEYBOARD_SHORTCUTS,
         SERVER_CONFIG,
+        ready,
         showVersion
     };
 })();
