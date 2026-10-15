@@ -119,7 +119,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
  */
 /** Sections the user opened, per panel; a menu opens again as it was left. */
 const sectionOpen = new Map();
-const OPEN_AT_FIRST = ['presets'];
+const OPEN_AT_FIRST = ['export'];      // a panel with no remembered state: only Export is open
 
 /** A collapsible group of the menu. */
 function details(id, key, title, body) {

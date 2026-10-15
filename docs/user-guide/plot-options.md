@@ -7,9 +7,9 @@ panel sets and share links, and a link written before an option existed draws th
 ```{figure} ../_static/screens/user-guide/plot-options-menu.png
 :class: screenshot
 :width: 35%
-:alt: The Plot Options menu with nine folded groups: Presets (open, with Publication and Default buttons), Appearance, Axes and ticks, Points, Legend and colour bar, Text, Margins, Export, Apply to other panels.
+:alt: The Plot Options menu with nine groups: Presets, Appearance, Axes and ticks, Points, Legend and colour bar, Text, Margins, Export (open, with the format buttons and size), Apply to other panels.
 
-Plot Options. A group opens and folds with a click, and the menu opens again as you left it.
+Plot Options. Every group starts folded except Export. A group opens and folds with a click, and the menu opens again as you left it.
 ```
 
 ## Presets

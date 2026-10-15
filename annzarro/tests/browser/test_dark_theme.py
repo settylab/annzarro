@@ -154,11 +154,11 @@ def _toggle(page, mode):
     page.click(f'#theme-toggle button[data-theme-mode="{mode}"]')
 
 
-def _menu(page, pid):
+def _menu(page, pid, section="appearance"):
     if not page.query_selector(f"details[data-panel='{pid}']"):
         page.click(f"#aesthetics-menu-btn-{pid}")
         page.wait_for_selector(f"details[data-panel='{pid}']", state="visible")
-    d = page.query_selector(f"details[data-panel='{pid}'][data-section='appearance']")
+    d = page.query_selector(f"details[data-panel='{pid}'][data-section='{section}']")
     if not d.evaluate("e => e.open"):
         d.query_selector("summary").click()
     page.wait_for_function("(e) => e.open", arg=d)
@@ -454,7 +454,7 @@ def test_old_links_follow_the_theme_unless_a_colour_was_chosen(tab, server):
 def test_the_publication_preset_stays_white_in_a_dark_app(tab, server):
     t = tab("dark")
     page = _open(t, server)
-    _menu(page, A)
+    _menu(page, A, "presets")
     page.click(f"#preset-publication-{A}")
     page.wait_for_timeout(800)
     s = _snap(page, A)

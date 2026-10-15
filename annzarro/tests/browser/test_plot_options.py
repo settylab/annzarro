@@ -122,12 +122,12 @@ def test_menu_is_grouped_in_folding_sections_that_stay_as_left(page, server):
     titles = page.eval_on_selector_all(f"details[data-panel='{A}'] > summary", "els => els.map(e => e.textContent.trim())")
     assert titles == GROUPS
     opened = page.eval_on_selector_all(f"details[data-panel='{A}']", "els => els.filter(e => e.open).map(e => e.dataset.section)")
-    assert opened == ["presets"]
+    assert opened == ["export"]          # a panel with no remembered state: only Export starts open
     _menu(page, A, "margins")
     _close_menu(page, A)
     _menu(page, A)
     opened = page.eval_on_selector_all(f"details[data-panel='{A}']", "els => els.filter(e => e.open).map(e => e.dataset.section)")
-    assert sorted(opened) == ["margins", "presets"]
+    assert sorted(opened) == ["export", "margins"]
     # the Not in table group lives under Points
     _menu(page, A, "points")
     assert page.is_visible(f"#not-in-table-scale-{A}")

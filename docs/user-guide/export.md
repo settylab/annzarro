@@ -26,7 +26,7 @@ The browser saves `annzarro_plot.png`, drawn at 1200 × 800 and scaled by 2: the
 
 1. Open the panel's controls and click **Plot Options**. A menu of folded groups opens next to
    the button.
-2. Open **Export** ({doc}`plot-options`).
+2. The **Export** group is open when the menu first opens (open it if you folded it; {doc}`plot-options`).
 
 3. Set **Width** and **Height** in pixels (defaults 1200 and 800).
 4. Click **JPEG**, **SVG**, **WEBP** or **PNG**. The file is called `plot_<date and time>`
