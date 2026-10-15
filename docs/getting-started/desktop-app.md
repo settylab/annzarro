@@ -33,6 +33,10 @@ zarr, h5py, Flask and the web interface (57 to 98 MB installed, depending on the
 downloads are 122 to 132 MB: the .dmg 125 MB (Apple silicon) or 132 MB (Intel), the Windows
 installer 127 MB, the AppImage and .deb 123 MB. You do not need Python on the computer.
 
+On macOS and Windows the window has no title bar of its own: the AnnZarro header is the title bar. Drag its empty part to
+move the window, double-click it to zoom, and use the window buttons at the top left (macOS) or top right (Windows).
+Linux keeps the normal window frame.
+
 The app works fully offline. Python, the server and every script, style and font of the
 interface are in the download; nothing is fetched at install, at first launch or later, and no
 page loads anything from the internet. Remote stores (S3, GCS, HTTP) are not supported in the
