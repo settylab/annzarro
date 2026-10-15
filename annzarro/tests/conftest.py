@@ -43,7 +43,24 @@ def _swapped_by_another_run():
     return pid if pid != os.getpid() else None
 
 
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _test_this_checkout():
+    """Servers and CLIs the tests spawn import this checkout's annzarro, not an installed copy.
+
+    A child process started from another directory (most tests use a temporary one) imports
+    whichever annzarro the Python environment has installed: from a worktree that is another
+    tree, and the suite passes or fails on code it is not testing. The checkout goes first on
+    PYTHONPATH, which every child inherits (tests/utils/test_checkout_is_tested.py checks it).
+    """
+    old = os.environ.get("PYTHONPATH", "")
+    if _REPO not in old.split(os.pathsep):
+        os.environ["PYTHONPATH"] = _REPO + (os.pathsep + old if old else "")
+
+
 def pytest_configure(config):
+    _test_this_checkout()
     if hasattr(config, "workerinput"):      # an xdist worker: the controller swaps
         return
     other = _swapped_by_another_run()
