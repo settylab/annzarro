@@ -71,6 +71,7 @@ ROUTES = [
 NO_PATH = {
     "serve_static", "static", "get_current_user", "policy_effective", "get_cache_info", "get_config", "get_status",
     "list_all_datasets", "list_dataset_folder", "list_dataset_search",  # the folder listing confines itself (test_dataset_folders.py)
+    "lookup_datasets",    # names its paths in the body, not the URL: swept below (test_lookup_*)
     "get_home_directory", "validate_zarr_url",  # remote policy, below
     "delete_session", "duplicate_session", "check_session_exists", "export_session",
     "import_session", "list_sessions", "load_session", "set_session_owner",
@@ -310,3 +311,27 @@ def test_a_misspelt_setting_is_refused(layout, monkeypatch, tmp_path):
     mgr.load_config(env="production")
     valid, errors = mgr.validate_config()
     assert not valid and any("arbitrary_paths" in e for e in errors)
+
+
+def _lookup(client, paths):
+    resp = client.post("/api/v1/datasets/lookup", json={"paths": paths})
+    assert resp.status_code == 200, resp.get_data(as_text=True)[:200]
+    return resp.get_json()["results"]
+
+
+@pytest.mark.parametrize("who,settings", CONFINED, ids=[f"{w}-{s.get('arbitrary_paths', 'default')}" for w, s in CONFINED])
+def test_lookup_answers_every_escape_as_unavailable(layout, who, settings):
+    """POST /datasets/lookup carries its paths in the body: the escapes of the sweep above get the answer of a missing store."""
+    client = _cached_client(layout, who, **settings)
+    names, paths = list(escapes(layout)), list(escapes(layout).values())
+    for name, result in zip(names, _lookup(client, paths)):
+        assert result.get("status") == "unavailable", f"{name}: {result}"
+
+
+@pytest.mark.parametrize("who,settings", OPEN, ids=[f"{w}-{s.get('arbitrary_paths', 'default')}" for w, s in OPEN])
+def test_lookup_reads_arbitrary_paths_where_allowed(layout, who, settings):
+    client = _cached_client(layout, who, **settings)
+    found = dict(zip(escapes(layout), _lookup(client, list(escapes(layout).values()))))
+    for name in ("absolute", "dotdot", "relative to data_dir"):
+        assert found[name].get("cells"), f"{name}: {found[name]}"
+    assert found["file://"].get("status") == "unavailable", "a file: URL is not a store of ours"
