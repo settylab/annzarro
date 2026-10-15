@@ -69,6 +69,17 @@ DELAY = """() => {
 }"""
 
 
+# The server settings (/api/v1/config) answer late (format with the delay in ms)
+CONFIG_DELAY = """(() => {
+  const real = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    return /\\/api\\/v1\\/config(\\?|$)/.test(url)
+      ? new Promise(resolve => setTimeout(() => resolve(real(input, init)), %d)) : real(input, init);
+  };
+})();"""
+
+
 @pytest.fixture(scope="module")
 def two_datasets(tmp_path_factory):
     """A server over two datasets: 'a_first' (listed first) and the fixture."""
@@ -120,7 +131,8 @@ def _link(base, dataset, table=False, plot=True):
 
 
 class _Page:
-    def __init__(self, pw, base, dataset, on_demand=False, table=False, plot=True, delay=0, wait=True, defaults=None):
+    def __init__(self, pw, base, dataset, on_demand=False, table=False, plot=True, delay=0, wait=True, defaults=None,
+                 config_delay=0):
         try:
             self.browser = pw.chromium.launch()
         except Exception as exc:
@@ -140,6 +152,8 @@ class _Page:
                 route.fulfill(json={**config, "ui": ui})
             self.page.route("**/api/v1/config", patch)
         self.page.add_init_script(f"window.addEventListener('DOMContentLoaded', ({DELAY}));")
+        if config_delay:                  # the server's settings arrive late, as on a slow or loaded connection
+            self.page.add_init_script(CONFIG_DELAY % config_delay)
         if delay:
             self.page.add_init_script(f"window.addEventListener('DOMContentLoaded', () => {{ window.__delay = {delay}; }});")
         self.page.goto(_link(base, dataset, table, bool(plot)))
@@ -536,5 +550,23 @@ def test_the_part_after_each_step_is_read_ahead_too(two_datasets):
             while time.time() < deadline and 2 not in _parts_of(s.coordinate_requests()):
                 s.page.wait_for_timeout(200)
             assert 2 in _parts_of(s.coordinate_requests()), "after stepping to part 2, part 3 was not read ahead"
+        finally:
+            s.close()
+
+
+@pytest.mark.parametrize("config_delay", [1500, 4000])
+def test_a_cell_table_does_not_download_the_names_when_the_settings_arrive_late(two_datasets, config_delay):
+    """The names-on-demand threshold comes from /api/v1/config. A page whose settings arrive after the
+    dataset's first read must still not download every name (a 1B-cell store: minutes and gigabytes)."""
+    base, dataset = two_datasets
+    with sync_api.sync_playwright() as pw:
+        s = _Page(pw, base, dataset, on_demand=True, table=True, config_delay=config_delay)
+        try:
+            s.page.wait_for_selector('.tile[data-tile-id="cell-table-A"] .entity-index-value', timeout=60_000)
+            s.page.wait_for_function(
+                "(sel) => [...document.querySelectorAll(sel)].length > 0 && [...document.querySelectorAll(sel)].every(e => e.textContent.trim() && e.textContent.trim() !== '…')",
+                arg='.tile[data-tile-id="cell-table-A"] .entity-index-value', timeout=30_000)
+            s.page.wait_for_timeout(1000)
+            assert s.requests_to("cells") == [], "the table downloaded every name to show a page"
         finally:
             s.close()
