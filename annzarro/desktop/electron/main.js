@@ -27,8 +27,10 @@
  *                            or 1 on failure). The network is cut off for the
  *                            window: any request not to 127.0.0.1 is cancelled
  *                            and fails the check.
+ *   ANNZARRO_DISABLE_UPDATES=1 never look for updates (managed installs); see updates.js.
+ *                            Smoke and test profiles do not look for them either.
  */
-const { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, MenuItem, nativeTheme, net: electronNet, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -36,6 +38,7 @@ const net = require('net');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const log = require('electron-log');
+const { createUpdater } = require('./updates');
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'info';
@@ -68,6 +71,7 @@ let serverProcess = null;
 let serverUrl = null;
 let isQuitting = false;
 let appDataPath = null;
+let updater = null;
 // SMOKE: requests the window tried to make beyond the local server.
 const externalRequests = [];
 
@@ -473,6 +477,12 @@ if (!app.requestSingleInstanceLock()) {
         setupIpcHandlers();
         createWindow();
         launch();
+        updater = createUpdater({
+            app, dialog, shell, Menu, MenuItem, net: electronNet, log, prepareToQuit,
+            getWindow: () => mainWindow,
+            testProfile: SMOKE || Boolean(PROFILE_DIR),
+        });
+        updater.start();
         app.on('activate', () => {
             if (!mainWindow) {
                 createWindow();
@@ -487,15 +497,22 @@ app.on('window-all-closed', () => {
     app.quit();
 });
 
+/**
+ * Get ready to exit: let the page autosave (preload.js), stop the server and
+ * mark the app as quitting, so the before-quit handler below lets the quit
+ * through. The updater calls this before it installs an update.
+ */
+async function prepareToQuit() {
+    isQuitting = true;
+    if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('app:will-quit');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await stopServer();
+}
+
 app.on('before-quit', (event) => {
     if (isQuitting) return;
     event.preventDefault();
-    isQuitting = true;
-    if (mainWindow && mainWindow.webContents) {
-        // Lets the page autosave (preload.js) before the server goes away.
-        mainWindow.webContents.send('app:will-quit');
-    }
-    setTimeout(() => {
-        stopServer().finally(() => app.exit(0));
-    }, 500);
+    prepareToQuit().finally(() => app.exit(0));
 });

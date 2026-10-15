@@ -39,7 +39,7 @@ Details: [installation](https://annzarro.readthedocs.io/en/latest/getting-starte
 
 [![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-arm64.dmg) [![Windows](https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyBmaWxsPSJ3aGl0ZSIgcm9sZT0iaW1nIiB2aWV3Qm94PSIwIDAgMjQgMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPHRpdGxlPldpbmRvd3M8L3RpdGxlPjxwYXRoIGQ9Ik0wLDBIMTEuMzc3VjExLjM3MkgwWk0xMi42MjMsMEgyNFYxMS4zNzJIMTIuNjIzWk0wLDEyLjYyM0gxMS4zNzdWMjRIMFptMTIuNjIzLDBIMjRWMjRIMTIuNjIzIi8%2BPC9zdmc%2B)](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-windows-x64-setup.exe) [![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-x86_64.AppImage)
 
-macOS: [Apple silicon](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-arm64.dmg), [Intel](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-x64.dmg). Linux: [AppImage](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-x86_64.AppImage), [.deb](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-amd64.deb). [All files and checksums](https://github.com/settylab/annzarro/releases/latest).
+macOS: [Apple silicon](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-arm64.dmg), [Intel](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-macos-x64.dmg), or `brew install --cask settylab/annzarro/annzarro`. Linux: [AppImage](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-x86_64.AppImage), [.deb](https://github.com/settylab/annzarro/releases/latest/download/AnnZarro-linux-amd64.deb). [All files and checksums](https://github.com/settylab/annzarro/releases/latest).
 
 - Standalone on your laptop, no Python needed
 - Works offline
@@ -114,8 +114,8 @@ gene-by-gene relationships in single-cell data. bioRxiv (2026).
 ```
 
 To cite the software itself, for example the exact release you ran, use its Zenodo DOI. Each release
-is archived on Zenodo with its own version DOI (v0.5.0:
-[10.5281/zenodo.23353417](https://doi.org/10.5281/zenodo.23353417)); the concept DOI below always
+is archived on Zenodo with its own version DOI (v0.5.1:
+[10.5281/zenodo.23386903](https://doi.org/10.5281/zenodo.23386903)); the concept DOI below always
 resolves to the latest release.
 
 ```bibtex

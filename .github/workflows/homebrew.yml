@@ -1,0 +1,97 @@
+name: Homebrew cask
+
+# Keeps the Homebrew tap settylab/homebrew-annzarro (users: brew install --cask
+# settylab/annzarro/annzarro) on the latest published release. Renders
+# Casks/annzarro.rb from packaging/homebrew/annzarro.rb.template and the release's
+# SHA256SUMS.txt (scripts/homebrew_cask.py) and pushes it to the tap.
+#
+# Needs the repository secret HOMEBREW_TAP_TOKEN: a fine-grained personal access token
+# with "Contents: read and write" on settylab/homebrew-annzarro only. Without it the job
+# skips with a notice and the release is unaffected. Setup: packaging/homebrew/README.md.
+#
+# - release: published  the release a maintainer just published (build.yml drafts it).
+#                       Prereleases are skipped.
+# - workflow_dispatch   re-render for a given published version, e.g. 0.5.1.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Published release to put in the tap, without the v (e.g. 0.5.1)'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homebrew-tap
+  cancel-in-progress: false
+
+jobs:
+  cask:
+    name: Update the tap
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    env:
+      TAP: settylab/homebrew-annzarro
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      INPUT_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Token present
+        id: gate
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::notice title=Homebrew tap not updated::The secret HOMEBREW_TAP_TOKEN is not set, so $TAP was not updated. See packaging/homebrew/README.md."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.go == 'true'
+
+      - uses: actions/setup-python@v7
+        if: steps.gate.outputs.go == 'true'
+        with:
+          python-version: "3.13"
+
+      - name: Render the cask
+        if: steps.gate.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${RELEASE_TAG:-v$INPUT_VERSION}"
+          version="${tag#v}"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          mkdir sums
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --dir sums
+          mkdir -p tap-out
+          python scripts/homebrew_cask.py "$version" sums/SHA256SUMS.txt -o tap-out/annzarro.rb
+          cat tap-out/annzarro.rb
+
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.go == 'true'
+        with:
+          repository: settylab/homebrew-annzarro
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Push to the tap
+        if: steps.gate.outputs.go == 'true'
+        run: |
+          mkdir -p tap/Casks
+          cp tap-out/annzarro.rb tap/Casks/annzarro.rb
+          cd tap
+          if git diff --quiet -- Casks/annzarro.rb && [ -z "$(git ls-files --others --exclude-standard Casks)" ]; then
+            echo "::notice title=Homebrew tap unchanged::Casks/annzarro.rb already is $VERSION."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/annzarro.rb
+          git commit -m "annzarro $VERSION" -- Casks/annzarro.rb
+          git push

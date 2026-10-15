@@ -234,7 +234,19 @@ jobs:
         run: |
           mkdir -p out
           cp annzarro/desktop/electron/dist/AnnZarro-"$VERSION"-* out/
-          rm -f out/*.blockmap
+          # Blockmaps let the app download only the changed parts of an update; keep the
+          # macOS zip's and the Windows installer's. The dmg, AppImage and deb are not
+          # updated by block (the AppImage was repacked, so its blockmap no longer fits).
+          find out -name '*.blockmap' ! -name 'AnnZarro-*-macos-*.zip.blockmap' ! -name 'AnnZarro-*-setup.exe.blockmap' -delete
+          # The updater metadata (latest.yml, latest-mac.yml, latest-linux.yml): sha512 and
+          # size are recomputed here, after the repack and the notarization changed files.
+          # The two macOS jobs each write latest-mac.yml; the release job merges them.
+          pip install -q pyyaml
+          cp annzarro/desktop/electron/dist/latest*.yml out/
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            mv out/latest-mac.yml "out/latest-mac-${{ matrix.name == 'macos-arm64' && 'arm64' || 'x64' }}.yml"
+          fi
+          python annzarro/desktop/scripts/update_metadata.py refresh out
           ls -la out
 
       - name: Licence check of the release files
@@ -309,6 +321,21 @@ jobs:
           pattern: AnnZarro-*
           merge-multiple: true
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Updater metadata
+        # The app updates itself from latest-mac.yml, latest.yml and latest-linux.yml of the
+        # published release. The macOS ones come per architecture and become one file listing
+        # both; then every file the three name must be among the assets with the stated
+        # sha512 (the versionless copies below are not named in them).
+        run: |
+          pip install -q pyyaml
+          python annzarro/desktop/scripts/update_metadata.py merge-mac assets
+          python annzarro/desktop/scripts/update_metadata.py verify assets
+          for f in latest.yml latest-mac.yml latest-linux.yml; do test -f "assets/$f" || { echo "::error::$f is missing"; exit 1; }; done
+
       - name: Checksums
         working-directory: assets
         run: |
@@ -316,7 +343,7 @@ jobs:
           for f in macos-arm64.dmg macos-x64.dmg windows-x64-setup.exe linux-x86_64.AppImage linux-amd64.deb; do
             cp AnnZarro-*-"$f" "AnnZarro-$f"
           done
-          sha256sum AnnZarro-* > SHA256SUMS.txt
+          sha256sum AnnZarro-* latest*.yml > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Create draft release

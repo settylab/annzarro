@@ -10,7 +10,7 @@ with the release after it. Older releases are listed on
 
 ### Dark theme
 - AnnZarro follows your system's light or dark setting, live: switch the system while the page is
-  open and the app switches. The new **System / Light / Dark** buttons in the header override it for
+  open and the app switches. The new **System / Light / Dark** buttons at the right end of the statistics bar override it for
   this browser and are remembered there. The login page, the admin pages, the account page and the
   desktop app are themed too, and there is no flash of the wrong theme on load.
 - Plots follow the theme for every colour you have not set (background, grid, axes, text, legend,
@@ -25,6 +25,23 @@ with the release after it. Older releases are listed on
 - Grid and axis colours now apply from the first draw, and several grey-on-white text and control
   colours are slightly darker for WCAG AA contrast.
 
+### Added
+- The desktop app can update itself. It looks for a newer release on launch and then once a day,
+  asks before it downloads (Download, Later, Skip this version) and again before it restarts, and
+  does nothing without your say-so. **Check for Updates...** is in the AnnZarro menu (macOS) or Help
+  menu (Windows, Linux), next to an option that turns the automatic checks off;
+  `ANNZARRO_DISABLE_UPDATES=1` turns updates off entirely. macOS, the Windows installer and the
+  Linux AppImage update in place; a `.deb` and the Windows portable zip show a link to the new
+  release. Checks contact only `github.com`. Updating starts with the first release that contains
+  this; users of 0.5.1 and older update by hand once
+  ([details](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html#updates)).
+- The macOS desktop app installs with Homebrew: `brew install --cask settylab/annzarro/annzarro`,
+  and the app then updates itself. The tap follows each release.
+
+### Docs
+- The README and the licence page cite v0.5.1 by its DOI,
+  [10.5281/zenodo.23386903](https://doi.org/10.5281/zenodo.23386903).
+
 ## 0.5.1 (2026-10-14)
 
 A reworked Plot Options menu, with tick, margin, colour bar and scale bar controls, presets, and
@@ -37,7 +54,8 @@ large subset no longer freezes the page.
   Legend and colour bar, Text, Margins, Export, Apply to other panels). The menu opens again as
   you left it.
 - **Publication** preset: white background, no grid, five ticks per axis, larger text, a tighter
-  margin. **Default** returns every look setting to a new plot's.
+  margin. **Default** returns the look to a new plot's; the font, the scale bar's size and
+  unit, the Points group and the export size stay.
 - Tick marks and tick labels switch separately, and **Ticks per axis** asks for about N ticks
   (2 to 30; empty is automatic).
 - Margins: one slider sets all four sides; **Set each side separately** shows a box for each.

@@ -103,8 +103,8 @@ The citation metadata are in
 repository; GitHub's "Cite this repository" button reads it, and it names the preprint as the
 preferred citation. To cite the software itself, use the DOI of the release you ran. From v0.4.1,
 each release is archived on Zenodo with its own version DOI, with the same authors
-(`.zenodo.json`); v0.5.0 is
-[10.5281/zenodo.23353417](https://doi.org/10.5281/zenodo.23353417).
+(`.zenodo.json`); v0.5.1 is
+[10.5281/zenodo.23386903](https://doi.org/10.5281/zenodo.23386903).
 
 Otto, D. J., Baasri, S. and Setty, M. AnnZarro (software). Zenodo.
 <https://doi.org/10.5281/zenodo.23222216>
