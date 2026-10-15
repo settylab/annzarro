@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- The macOS desktop app installs with Homebrew: `brew install --cask settylab/annzarro/annzarro`,
+  and `brew upgrade --cask annzarro` updates it. The tap follows each release.
+
 ### Docs
 - The README and the licence page cite v0.5.1 by its DOI,
   [10.5281/zenodo.23386903](https://doi.org/10.5281/zenodo.23386903).

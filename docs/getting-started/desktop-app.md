@@ -41,6 +41,9 @@ app; use the Python package with the `remote` extra for those ({doc}`installatio
 
 - **macOS**: open the `.dmg`, drag **AnnZarro** to **Applications**, and open it. The `.zip` holds
   the same app. (Version 0.4.x and earlier: see Older versions below.)
+- **macOS with Homebrew**: `brew install --cask settylab/annzarro/annzarro` installs the app for your
+  chip; `brew upgrade --cask annzarro` updates it and `brew uninstall --cask --zap annzarro` removes it with
+  its settings and logs (not `~/annzarro-data`).
 - **Windows**: the build is not code-signed. SmartScreen says "Windows protected your PC". Click
   **More info**, then **Run anyway**.
 - **Linux**: no extra step beyond `chmod +x` for the AppImage. On Ubuntu 24.04 and later an
