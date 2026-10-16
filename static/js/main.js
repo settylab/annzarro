@@ -40,7 +40,7 @@ import { formatLabel } from './utils/dataset-browser-model.js';
 import { createDatasetBrowser } from './utils/dataset-browser.js';
 import { firstDatasetChoice, keysUsedByPanels, isRemote } from './utils/dataset-browser-model.js';
 import { loadPins, togglePin } from './utils/dataset-pins.js';
-import { mountDatasetButton, datasetNameOf } from './utils/dataset-button.js';
+import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
@@ -1015,14 +1015,12 @@ const App = (function() {
             }
         });
         await _recentsUser();     // the recents and pins are the user's: know who that is before they are read
-        const before = DatasetState.get();
         const choose = async (path) => {
             _markUserChoice(path);
             // a caller that asked for a store (the Load dialog) takes it from here
             if (onChoose) { await onChoose(path); return; }
             if (normal) {
                 await DatasetState.open(path, { source: 'user' });
-                _toastOpened(before, DatasetState.get(), path);
                 return;
             }
             const view = pending.view || { v: VIEW_SCHEMA_VERSION };
@@ -1033,30 +1031,18 @@ const App = (function() {
     }
 
     /**
-     * "Opened X. Panels re-read from it. [Back to Y]" after a switch: nothing asks first (it would
-     * interrupt the common case), and the dataset that was open is one click away.
+     * After a switch nothing asks first (it would interrupt the common case), and the dataset that
+     * was open is one click away: the back button of the dataset bar. Every open of the user's own
+     * choice offers it (DatasetState.onSwitch), going back included, so the button then offers the
+     * dataset just left.
      * @private
      */
-    function _toastOpened(before, after, path) {
-        if (after.status !== 'open' || after.path !== path || !before.path || before.path === path
-            || (before.status !== 'open' && before.status !== 'opening')) return;
-        const panels = PanelManager.getActivePanels().length;
-        const id = _showNotification(`Opened ${datasetNameOf(after)}`, panels ? 'Panels re-read from it.' : '', 'info', 12000);
-        const toast = document.getElementById(id);
-        if (!toast) return;
-        const bar = document.createElement('div');
-        bar.className = 'notification-actions';
-        const back = document.createElement('button');
-        back.type = 'button';
-        back.className = 'btn btn-sm btn-outline-secondary';
-        back.dataset.action = 'back';
-        back.textContent = `Back to ${datasetNameOf(before)}`;
-        back.addEventListener('click', () => {
-            _removeNotification(id);
-            DatasetState.open(before.path, { source: 'user' });
-        });
-        bar.appendChild(back);
-        toast.appendChild(bar);
+    function _offerBack({ before, after }) {
+        if (_datasetButton) _datasetButton.setBack(backOffer(before, after), after);
+    }
+
+    async function _goBack(offer) {
+        await DatasetState.open(offer.path, { source: 'user' });
     }
 
     /**
@@ -1702,9 +1688,12 @@ const App = (function() {
         _datasetButton = mountDatasetButton({
             button: document.getElementById('dataset-button'),
             onOpen: () => _showChangeDataset({ browse: true }),
-            shortcut: _isMac() ? '\u2318O' : 'Ctrl+O'
+            shortcut: _isMac() ? '\u2318O' : 'Ctrl+O',
+            back: document.getElementById('dataset-back'),
+            onBack: _goBack
         });
         _datasetButton.update(DatasetState.get());
+        DatasetState.onSwitch(_offerBack);
         _focusInputsFollow(DatasetState.get());
         // the desktop app's Open Dataset... menu item; a plain folder it was handed is shown as a place
         // (preventDefault: the app then does not say "not a zarr store")

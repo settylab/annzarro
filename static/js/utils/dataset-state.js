@@ -76,6 +76,7 @@ export function createDatasetState() {
     let state = NONE;
     let opener = null;
     const listeners = new Set();
+    const switchListeners = new Set();
 
     function emit(previous) {
         for (const listener of [...listeners]) {
@@ -120,6 +121,16 @@ export function createDatasetState() {
             emit(previous);
         },
 
+        /**
+         * Call `listener({before, after, source})` when an `open` of a user's own
+         * choice (`isUserSource`) has finished, with the state at the call and the
+         * state after it. Every call site is covered: none has to report its switch.
+         */
+        onSwitch(listener) {
+            switchListeners.add(listener);
+            return () => switchListeners.delete(listener);
+        },
+
         /** Register what `open` runs: `(path, {source}) => Promise`. */
         setOpener(fn) {
             opener = fn;
@@ -132,8 +143,19 @@ export function createDatasetState() {
         async open(path, { source = 'user' } = {}) {
             if (!opener) throw new Error('No dataset can be opened yet');
             if (!path) return this.get();
+            const before = this.get();
             await opener(path, { source });
-            return this.get();
+            const after = this.get();
+            if (isUserSource(source)) {
+                for (const listener of [...switchListeners]) {
+                    try {
+                        listener({ before, after, source });
+                    } catch (e) {
+                        console.error('Dataset switch subscriber failed:', e);
+                    }
+                }
+            }
+            return after;
         }
     };
 }

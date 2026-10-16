@@ -9,6 +9,10 @@
  *                middle to fit) and a caret; the whole path is the tooltip
  *   nodata       a view without its dataset: "No data: <name>" and "Choose..."
  *   unavailable  the open dataset turned unreadable: "Not available: <name>"
+ *
+ * Beside it sits the back button (#dataset-back): after a switch it names the
+ * dataset that was open before and opens it again, which is itself a switch,
+ * so the two datasets toggle.
  */
 import { datasetName } from './dataset-state.js';
 import { truncateDatasetLabel } from './dataset-label.js';
@@ -28,10 +32,27 @@ export function buttonText(state) {
 }
 
 /**
+ * What the back button offers after a switch from `before` to `after`: the
+ * dataset that was open (or opening) before, or null when nothing was, when
+ * the switch did not end on an open dataset, or when it was not a switch.
+ */
+export function backOffer(before, after) {
+    if (!before || !after || !before.path || before.path === after.path) return null;
+    if (before.status !== 'open' && before.status !== 'opening') return null;
+    if (after.status !== 'open' || !after.path) return null;
+    return { path: before.path, name: datasetName(before), from: after.path };
+}
+
+/** The words of the back button for an offer (also its tooltip: the button shows no text). */
+export function backText(offer) {
+    return `Back to ${offer.name}`;
+}
+
+/**
  * @param {{button: HTMLElement, onOpen: () => void, shortcut: string}} o
  * @returns {{update: (state: Object) => void, refit: () => void}}
  */
-export function mountDatasetButton({ button, onOpen, shortcut }) {
+export function mountDatasetButton({ button, onOpen, shortcut, back = null, onBack = null }) {
     const name = button.querySelector('.dataset-button-name');
     const hint = button.querySelector('.dataset-button-hint');
     const live = document.getElementById('dataset-status');
@@ -39,6 +60,24 @@ export function mountDatasetButton({ button, onOpen, shortcut }) {
     let whole = '';
     if (hint) hint.textContent = shortcut;
     button.addEventListener('click', () => onOpen());
+
+    // the back button follows the offer while the dataset it was made for is the open one
+    let offer = null;
+    function showBack(state) {
+        if (!back) return;
+        // another dataset opened by something that is not a user's switch (a link, a panel set): the offer is stale
+        if (offer && state.status === 'open' && state.path !== offer.from) offer = null;
+        const shown = !!offer && state.status === 'open' && state.path === offer.from;
+        back.hidden = !shown;
+        if (shown) {
+            back.title = backText(offer);
+            back.setAttribute('aria-label', backText(offer));
+        } else {
+            back.removeAttribute('title');
+            back.removeAttribute('aria-label');
+        }
+    }
+    if (back) back.addEventListener('click', () => { if (offer && onBack) onBack(offer); });
 
     let canvas = null;
     /** Cut the text to the room the button has (start and end kept), so that no CSS ellipsis has to. */
@@ -81,6 +120,7 @@ export function mountDatasetButton({ button, onOpen, shortcut }) {
             else if (state.status === 'open' && previous.status === 'opening') said = `Opened ${state.label}`;
             if (said && said !== lastAnnounced) { live.textContent = said; lastAnnounced = said; }
         }
+        showBack(state);
         if (alert && (state.error || state.failed)) alert.textContent = (state.failed && state.failed.message) || state.error;
     }
 
@@ -98,5 +138,10 @@ export function mountDatasetButton({ button, onOpen, shortcut }) {
     }
     window.addEventListener('resize', refit);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
-    return { update, refit };
+    /** Offer the way back (or withdraw it with null) for the state now open. */
+    function setBack(next, state) {
+        offer = next;
+        showBack(state);
+    }
+    return { update, refit, setBack };
 }

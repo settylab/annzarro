@@ -135,8 +135,9 @@ The dataset browser with a dataset selected. Numbers match the list below.
    When panels are open, the pane also names the keys they use that the selected dataset lacks
    ("cell_type: missing"), so that the switch holds no surprise.
 
-Switching datasets does not ask: the open panels stay and read from the new dataset, and a message,
-"Opened *name*. Panels re-read from it.", has a **Back to** *old name* button for a few seconds.
+Switching datasets does not ask: the open panels stay and read from the new dataset, and a back button
+beside the dataset name ("Back to *old name*") returns to the dataset you left. It stays until the next
+switch, and going back is itself a switch, so the button then offers the dataset you just left.
 
 When you can see only some datasets (an administrator restricted your account), the places are **Your
 datasets** and each folder you were given, no path above one is ever shown, and a link or panel

@@ -20,7 +20,7 @@ from annzarro.tests.ui_helpers import (
     open_dataset, wait_for_open)
 
 from .dsb_servers import (  # noqa: F401  (fixtures)
-    LONG, SHOTS, Session, big_server, empty_server, hosted_server, server, session, single_server)
+    LONG, SHOTS, SUBSTORE_LONG, Session, big_server, empty_server, hosted_server, server, session, single_server)
 
 # kept per origin and user: `local` when login is off
 RECENTS_KEY = "'annzarro.recents:' + location.origin + '|local'"
@@ -754,7 +754,11 @@ def test_the_tab_is_titled_with_the_open_dataset(server):
 
 # ---- switching ------------------------------------------------------------------------------
 
-def test_switching_keeps_the_open_panels_and_toasts_with_a_way_back(server):
+def _back(page):
+    return page.locator("#dataset-back")
+
+
+def test_switching_keeps_the_open_panels_and_offers_a_way_back_in_the_bar(server):
     from annzarro.tests.browser.test_memory_guard import _link
     base, data = server
     s = Session(base)
@@ -763,16 +767,89 @@ def test_switching_keeps_the_open_panels_and_toasts_with_a_way_back(server):
         page.goto(re.sub(r"dataset_path=[^#]*", "dataset_path=" + os.path.join(data, "short.zarr").replace("/", "%2F"), _link(base)))
         page.wait_for_selector('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot', timeout=60_000)
         wait_for_open(page, "short.zarr")
+        assert _back(page).is_hidden(), "nothing to go back to before a switch"
         open_browser(page, query="other_small")
         browser_row(page, "other_small.zarr").first.locator(".dsb-name").click()
         wait_for_open(page, "other_small.zarr")
-        toast = page.locator(".notification:has-text('Opened other_small.zarr')")
-        toast.wait_for(timeout=10_000)
-        assert "Panels re-read from it." in toast.inner_text()
+        back = _back(page)
+        back.wait_for(state="visible", timeout=10_000)
+        assert page.locator(".notification:has-text('Opened')").count() == 0, "a switch shows no notice"
+        assert back.get_attribute("aria-label") == "Back to short.zarr"
+        assert back.get_attribute("title") == "Back to short.zarr"
+        assert back.inner_text().strip() == "", "icon only"
         assert page.evaluate("window.PanelManager.getActivePanels().map(p => p.getId())") == ["cell-plot-a"], "the open panel stays"
-        toast.locator("[data-action='back']").click()
+        # a screen reader hears the switch once, through the dataset button's live region
+        assert page.inner_text("#dataset-status") == "Opened other_small.zarr"
+        back.click()
         wait_for_open(page, "short.zarr")
         assert button_text(page) == "short.zarr"
+        # going back is a switch: the button now offers the dataset just left
+        back.wait_for(state="visible", timeout=10_000)
+        assert back.get_attribute("aria-label") == "Back to other_small.zarr"
+        back.click()
+        wait_for_open(page, "other_small.zarr")
+        assert back.get_attribute("aria-label") == "Back to short.zarr"
+        assert not s.errors, s.errors
+    finally:
+        s.close()
+
+
+def test_every_switch_of_the_users_offers_the_way_back_and_no_other_open_does(server):
+    base, data = server
+    s = Session(base)
+    page = s.page
+    try:
+        open_dataset(page, os.path.join(data, "short.zarr"))
+        wait_for_open(page, "short.zarr")
+        back = _back(page)
+        assert back.is_hidden()
+        # the desktop app's entry point, which is not the browser
+        result = page.evaluate("(p) => window.annzarro.openDataset(p)", os.path.join(data, "other_small.zarr"))
+        assert result["ok"] is True, result
+        back.wait_for(state="visible", timeout=10_000)
+        assert back.get_attribute("aria-label") == "Back to short.zarr"
+        back.click()
+        wait_for_open(page, "short.zarr")
+        back.wait_for(state="visible", timeout=10_000)
+        assert back.get_attribute("aria-label") == "Back to other_small.zarr"
+        # an open that is not the user's (a refresh) changes nothing, and a link to another dataset withdraws the offer
+        page.evaluate("""async (p) => { const m = await import('/static/js/utils/dataset-state.js'); await m.DatasetState.open(p, {source: 'view'}); }""",
+                      os.path.join(data, "projects", "lung", "lung_v2.zarr"))
+        wait_for_open(page, "lung_v2.zarr")
+        back.wait_for(state="hidden", timeout=10_000)
+        assert not s.errors, s.errors
+    finally:
+        s.close()
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_back_button_stays_inside_the_bar_for_a_long_dataset_name(server, scheme):
+    base, data = server
+    LONG_NAME = SUBSTORE_LONG.rsplit('/', 1)[1]
+    s = Session(base, scheme=scheme)
+    page = s.page
+    try:
+        open_dataset(page, os.path.join(data, SUBSTORE_LONG))
+        wait_for_open(page, LONG_NAME)
+        assert _back(page).is_hidden()
+        open_browser(page, query="other_small")
+        browser_row(page, "other_small.zarr").first.locator(".dsb-name").click()
+        wait_for_open(page, "other_small.zarr")
+        page.wait_for_selector(BROWSER, state="hidden", timeout=10_000)
+        back = _back(page)
+        back.wait_for(state="visible", timeout=10_000)
+        assert back.get_attribute("title") == f"Back to {LONG_NAME}", "the tooltip carries the whole name"
+        box, bar, btn = back.bounding_box(), page.locator(".dataset-bar").bounding_box(), page.locator("#dataset-button").bounding_box()
+        assert box["x"] >= bar["x"] and box["x"] + box["width"] <= bar["x"] + bar["width"], (box, bar)
+        assert box["y"] >= bar["y"] and box["y"] + box["height"] <= bar["y"] + bar["height"], (box, bar)
+        assert box["width"] <= 30 and box["height"] == btn["height"], (box, btn)
+        assert box["x"] >= btn["x"] + btn["width"], "right of the dataset button"
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        page.wait_for_function("() => !document.querySelector('.modal-backdrop, dialog[open]')", timeout=10_000)
+        _shot(page, f"dataset-bar-back-{scheme}.png")
+        back.hover()
+        page.wait_for_timeout(300)
+        _shot(page, f"dataset-bar-back-{scheme}-hover.png")
         assert not s.errors, s.errors
     finally:
         s.close()
