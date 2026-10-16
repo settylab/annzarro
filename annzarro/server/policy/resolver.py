@@ -142,7 +142,8 @@ class PolicyEngine:
             logger.warning("policy.locked names %r, which is not a policy key", name)
         self._config_layer, self.config_issues = self._read_config()
         for issue in self.config_issues:
-            logger.warning("Configuration %s is ignored: %s (%r)", self.registry.keys[issue.name].config_path,
+            logger.warning("Configuration %s is ignored: %s (%r)",
+                           self.registry.keys[issue.name].config_path or issue.name,
                            issue.reason, issue.value)
         self._config_id = self._digest({"locked": sorted(self.locked),
                                         "config": {n: self._config_layer[n] for n in sorted(self._config_layer)},
@@ -187,6 +188,17 @@ class PolicyEngine:
         values, issues = {}, []
         self._env_keys = set()
         for key in self.registry:
+            if key.config_reader:
+                found, raw, from_env = key.config_reader(self.config)
+                if not found:
+                    continue
+                try:
+                    values[key.name] = key.type.validate(raw)
+                    if from_env:
+                        self._env_keys.add(key.name)
+                except PolicyValueError as exc:
+                    issues.append(Issue(CONFIG, key.name, raw, exc.reason))
+                continue
             if not key.config_path:
                 continue
             variable = ENV_OVERRIDES.get(key.config_path)

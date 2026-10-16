@@ -20,7 +20,7 @@ from typing import Any, Dict, Mapping
 from flask import current_app, jsonify, request
 
 from .. import atomic_store
-from ..policy import OVERLAY, USER, engine, status_for
+from ..policy import OVERLAY, USER, PolicyValueError, engine, status_for
 from ..policy.resolver import CONFLICTS, UNKNOWN_KEY
 from . import audit, overlay, state_dir
 from .guard import require_admin
@@ -168,10 +168,26 @@ def _sentence(errors: Mapping[str, str]) -> str:
                      for name, reason in sorted(errors.items()))
 
 
-def _refusal(errors: Mapping[str, str]):
+def _messages(eng, changes, errors):
+    """The type's own sentence for each value it refused (which URL, and why)."""
+    out = {}
+    for name, reason in errors.items():
+        key = eng.registry.get(name)
+        if key is None or reason not in ("bad_type", "bad_choice", "out_of_range"):
+            continue
+        try:
+            key.type.validate(changes.get(name))
+        except PolicyValueError as exc:
+            out[name] = str(exc)
+    return out
+
+
+def _refusal(errors: Mapping[str, str], messages: Mapping[str, str] = ()):
     conflicts = CONFLICTS + (ADMIN_USER,)
     status = 409 if any(r in conflicts for r in errors.values()) else status_for(errors)
-    body = {"error": _sentence(errors), "errors": dict(errors)}
+    body = {"error": "; ".join(f"{n} {messages[n]}" if n in messages else _sentence({n: r})
+                                for n, r in sorted(errors.items())),
+            "errors": dict(errors), **({"messages": dict(messages)} if messages else {})}
     if status == 409:
         body["reason"] = next(r for r in errors.values() if r in conflicts)
     else:
@@ -213,7 +229,9 @@ def _key_entry(eng, key, res, config):
             "default": res.layers.get("default", eng.default(key)),
             "outbound_hosts_now": _hosts_now(key, res.value, config),
             "locked": res.locked, "value": res.value, "source": res.source,
-            **({"config_value": res.config_value} if res.has_config else {}),
+            **({"config_value": res.config_value,
+                "config_origin": "env" if key.name in getattr(eng, "_env_keys", ()) else "config"}
+               if res.has_config else {}),
             "layers": res.layers, "inherited": res.inherited}
 
 
@@ -253,9 +271,15 @@ def _user_view(eng, user, config, is_admin):
             "issues": issues}
 
 
-def _diff(before, after, names):
-    return {n: {"from": before.get(n), "to": after.get(n)} for n in names
-            if before.get(n) != after.get(n) or (n in before) != (n in after)}
+def _diff(before, after, names, eng=None):
+    out = {n: {"from": before.get(n), "to": after.get(n)} for n in names
+           if before.get(n) != after.get(n) or (n in before) != (n in after)}
+    for name, entry in out.items():
+        key = eng.registry.get(name) if eng is not None else None
+        describe = getattr(key.type, "describe_change", None) if key is not None else None
+        if describe:
+            entry.update(describe(entry["from"], entry["to"]))
+    return out
 
 
 def _record(target, changes, diff, outcome="ok"):
@@ -309,10 +333,10 @@ def policy():
         before, update = overlay.update(config, mutate)
     except _Refused as refused:
         _record("overlay", changes, {}, "refused:" + ",".join(sorted(set(refused.errors.values()))))
-        return _refusal(refused.errors)
+        return _refusal(refused.errors, _messages(eng, changes, refused.errors))
     except ValueError as exc:
         return _unreadable(exc)
-    saved = _record("overlay", changes, _diff(before, update.stored, changes))
+    saved = _record("overlay", changes, _diff(before, update.stored, changes, eng))
     return jsonify({**_server_view(eng, config), "capped": update.capped, **({} if saved else {"audit_failed": True})})
 
 

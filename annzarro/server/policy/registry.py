@@ -53,6 +53,11 @@ class Key:
     routes: Tuple[str, ...] = ()
     #: where the YAML keeps it, "integrations.external_requests"
     config_path: Optional[str] = None
+    #: for a key the YAML spells with more than one setting: callable(config) -> (found, raw, from_env),
+    #: used instead of ``config_path`` to read the config layer (``raw`` is validated like any value)
+    config_reader: Optional[Callable[[dict], Tuple[bool, Any, bool]]] = None
+    #: a page of the admin interface that owns this key's control (the Settings page leaves it out)
+    section: str = ""
     client: bool = True             # included in /api/v1/policy/effective
     restart: bool = False           # takes effect only after a restart; implies scope "config"
 
@@ -79,7 +84,7 @@ class Key:
         """What the Settings page needs of the declaration (not the value)."""
         return {"name": self.name, "type": self.type.describe(), "scope": self.scope, "area": self.area,
                 "description": self.description, "combine": self.combine, "restart": self.restart,
-                "routes": list(self.routes), "config_path": self.config_path}
+                "routes": list(self.routes), "config_path": self.config_path, "section": self.section}
 
 
 @dataclass

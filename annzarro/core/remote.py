@@ -24,7 +24,7 @@ from collections import OrderedDict
 from contextlib import contextmanager
 from contextvars import ContextVar
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 import zarr
@@ -404,7 +404,8 @@ class RemotePolicy:
         parts = validate_remote_url(url)
         if not self.enabled:
             raise RemoteAccessDenied(
-                f"Remote datasets are disabled on this server ({self.reason})")
+                f"Remote datasets are disabled on this server ({self.reason}). An administrator can "
+                f"allow them under {ADMIN_WHERE}; the configuration key is server.remote_stores")
         if self.allowlist and not any(p.matches(parts) for p in self.allowlist):
             raise RemoteAccessDenied(
                 f"Remote dataset URL is not under an allowed prefix "
@@ -601,11 +602,11 @@ def configure_remote_policy(config: Optional[Mapping[str, Any]] = None,
 
 
 def get_remote_policy() -> RemotePolicy:
-    return _policy
+    return effective_remote_policy(_policy)
 
 
 def check_remote_access(url: str) -> None:
-    _policy.check(url)
+    get_remote_policy().check(url)
 
 
 def require_backend(url: str) -> None:
@@ -642,7 +643,7 @@ def open_remote_group(url: str, policy: Optional[RemotePolicy] = None):
         RemoteTimeout: no connection or no answer within the policy's timeouts
         RuntimeError: any other failure (network, DNS, TLS, ...)
     """
-    policy = policy or _policy
+    policy = policy or get_remote_policy()
     policy.check(url)
     require_backend(url)
     # fsspec keys are paths; a trailing '/' would produce '//.zgroup'.
@@ -777,7 +778,7 @@ def _define_lru_store(base):
 
 
 def timeout_message(url: str, policy: Optional[RemotePolicy] = None) -> str:
-    policy = policy or _policy
+    policy = policy or get_remote_policy()
     return (f"Remote store {url} did not respond in time (connect timeout "
             f"{policy.connect_timeout:g}s, read timeout {policy.read_timeout:g}s; "
             f"see remote_connect_timeout_s / remote_read_timeout_s)")
@@ -806,15 +807,106 @@ def _classify_open_error(exc: Exception, url: str, policy: RemotePolicy,
     return RuntimeError(f"Could not open remote store {url}: {type(exc).__name__}: {exc}")
 
 
+REMOTE_KEY = "feature.remote_stores"
+ADMIN_WHERE = "Admin > Data sources > Remote datasets"
+
+
+def _access_from_settings(mode: str, listed) -> Optional[Dict[str, Any]]:
+    """The policy-registry value (``off`` | ``allowlist`` | ``any``) the YAML settings
+    ``remote_stores`` and ``remote_allowlist`` come to, as ``RemotePolicy.from_config``
+    reads them; None for ``auto`` with no allowlist, which is the default (off on a
+    hosted server, any location on a local one) and not a decision of the operator."""
+    if mode == "deny":
+        return {"mode": "off", "allowlist": []}
+    if listed:
+        return {"mode": "allowlist", "allowlist": list(listed)}
+    return {"mode": "any", "allowlist": []} if mode == "allow" else None
+
+
+def _read_remote_config(config: Mapping[str, Any]) -> Tuple[bool, Any, bool]:
+    """``(found, raw, from_env)`` of ``server.remote_stores`` / ``remote_allowlist``
+    and their environment variables (which win, either way) for the policy registry.
+    Values the package ships (``base.yaml``) do not count as set; ``auto`` with no
+    allowlist is not a decision either, so an administrator may widen it."""
+    from annzarro.server.policy import config_lookup
+    env_mode, env_list = os.environ.get(ENV_MODE, "").strip(), os.environ.get(ENV_ALLOWLIST, "").strip()
+    found_mode, yaml_mode = config_lookup(config, "server.remote_stores")
+    found_list, yaml_list = config_lookup(config, "server.remote_allowlist")
+    mode = _normalise_mode(env_mode or (yaml_mode if found_mode else "auto"))
+    listed = _split_list(env_list or (yaml_list if found_list else None))
+    value = _access_from_settings(mode, listed)
+    if value is None:
+        return False, None, False
+    return True, value, bool(env_mode or env_list)
+
+
+def _default_remote_access(config: Mapping[str, Any]) -> Dict[str, Any]:
+    return {"mode": "off" if hosted_reasons(config) else "any", "allowlist": []}
+
+
 def _declare_policy_keys() -> None:
-    """Show ``server.remote_stores`` in the policy registry, read-only: the
-    YAML (or ANNZARRO_REMOTE_STORES) decides, and /auth/me says what it came to."""
-    from annzarro.server.policy import Enum, Key, declare
+    """``server.remote_stores`` and ``remote_allowlist`` as one policy key, which the
+    administrator may set under Data sources. The YAML or an environment variable is
+    the operator's ceiling: the administrator can narrow it, never widen it."""
+    from annzarro.server.policy import Key, RemoteAccess, declare
     declare(Key(
-        name="feature.remote_stores", type=Enum(_MODES, aliases={True: "allow", False: "deny", **_MODE_ALIASES}),
-        default="auto", scope="config", area="features", config_path="server.remote_stores", client=False,
-        description="Whether s3://, gs:// and http(s):// datasets may be opened: auto allows them on a local "
-                    "single-user server only (server.remote_stores)"))
+        name=REMOTE_KEY, type=RemoteAccess(), default=_default_remote_access, scope="server", combine="restrict",
+        area="data", section="data", config_reader=_read_remote_config, client=False,
+        description="Which s3://, gs:// and http(s):// locations the server may read datasets from "
+                    "(server.remote_stores, server.remote_allowlist)"))
 
 
 _declare_policy_keys()
+
+
+# -- the effective policy ------------------------------------------------------
+
+_engine = None
+
+
+def bind_policy_engine(eng) -> None:
+    """Let the policy read the administrator's setting (called when the app's engine is made)."""
+    global _engine
+    _engine = eng
+
+
+def _app_engine():
+    try:
+        from flask import current_app, has_app_context
+        if has_app_context():
+            from annzarro.server.policy import engine
+            return engine(current_app._get_current_object())
+    except (KeyError, ImportError):
+        pass
+    return _engine
+
+
+_effective_cache: Tuple[Any, Any, Optional[RemotePolicy]] = (None, None, None)
+
+
+def effective_remote_policy(base: RemotePolicy) -> RemotePolicy:
+    """``base`` (from the configuration) with the administrator's setting applied, when
+    an administrator set one. Read on every call, so a change takes effect without a
+    restart, in every worker (the stored setting is checked by its stat stamp)."""
+    global _effective_cache
+    eng = _app_engine()
+    if eng is None or REMOTE_KEY not in eng.registry.keys:
+        return base
+    version = eng.version()
+    cached = _effective_cache
+    if cached[0] is eng and cached[1] == (version, id(base)) and cached[2] is not None:
+        return cached[2]
+    resolution = eng.resolve(REMOTE_KEY)
+    if resolution.source != "admin":
+        result = base
+    else:
+        value = resolution.value
+        if value["mode"] == "off":
+            result = replace(base, enabled=False, allowlist=(),
+                             reason=f"switched off by an administrator ({ADMIN_WHERE})")
+        else:
+            prefixes = tuple(_Prefix.parse(e) for e in value["allowlist"])
+            result = replace(base, enabled=True, allowlist=prefixes,
+                             reason="set by an administrator (" + ADMIN_WHERE + ")")
+    _effective_cache = (eng, (version, id(base)), result)
+    return result
