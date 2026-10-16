@@ -315,6 +315,8 @@ class RemoteAccess(PolicyType):
         if not isinstance(value, dict):
             raise PolicyValueError(BAD_TYPE, "expected {mode, allowlist}")
         mode = value.get("mode")
+        if not isinstance(mode, str):
+            raise PolicyValueError(BAD_TYPE, "expected {mode, allowlist}")
         if mode not in self.MODES:
             raise PolicyValueError(BAD_CHOICE, "mode is one of " + ", ".join(self.MODES))
         listed = value.get("allowlist", [])
