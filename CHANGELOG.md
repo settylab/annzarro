@@ -9,10 +9,13 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Fixes
-
 - A release build no longer fails when Apple's ticket service drops the connection while the
   notarization ticket of the macOS app or its dmg is being checked (`stapler validate`); the check
   is retried up to five times, and a missing ticket still fails at once.
+
+### Docs
+- The README and the licence page cite v0.5.4 by its DOI,
+  [10.5281/zenodo.23426323](https://doi.org/10.5281/zenodo.23426323).
 
 ## 0.5.4 (2026-10-16)
 
