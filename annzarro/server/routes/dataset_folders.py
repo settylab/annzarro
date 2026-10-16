@@ -102,20 +102,31 @@ def _mtime(entry):
         return 0
 
 
+_DIGITS = re.compile(r"(\d+)")
+
+
+def name_key(entry):
+    """The order of names everywhere: case-insensitive, numbers by value (liver_2 before liver_10), ties by the exact
+    name and then the path. The browser sorts the rows it holds the same way (dataset-browser-model.js sortRows)."""
+    name = entry["name"]
+    chunks = tuple((0, int(part)) if part.isdigit() else (1, part) for part in _DIGITS.split(name.casefold()) if part)
+    return chunks, name, entry.get("path", "")
+
+
 def sort_entries(entries, sort="name", order="asc"):
     """``entries`` in place: folders first, then by ``sort`` (name or modified) in ``order``, ties by name.
 
     Stat data only; a store is never opened. Stable, so a page boundary never moves between requests.
     """
     descending = order == "desc"
-    entries.sort(key=lambda e: e["name"])
+    entries.sort(key=name_key)
     if sort == "modified":
         for entry in entries:
             entry["_mtime"] = _mtime(entry)
         entries.sort(key=lambda e: e["_mtime"], reverse=descending)
         # reverse=True keeps equal times in their previous (name ascending) order
     elif descending:
-        entries.sort(key=lambda e: e["name"], reverse=True)
+        entries.sort(key=name_key, reverse=True)
     entries.sort(key=lambda e: e["kind"] != "folder")
     return entries
 
@@ -269,7 +280,7 @@ def _grant_entries(user):
             entry = None      # a granted path that is not there (yet) shows nothing
         if entry is not None:
             entries.append({"name": name, "path": real, "is_link": False, "rel_path": name, **entry})
-    entries.sort(key=lambda e: (e["kind"] != "folder", e["name"].lower(), e["path"]))
+    entries.sort(key=lambda e: (e["kind"] != "folder", name_key(e)))
     return entries
 
 

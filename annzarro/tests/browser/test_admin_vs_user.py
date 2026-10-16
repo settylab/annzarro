@@ -4,7 +4,7 @@ A hosted server as deployed: gunicorn with the bundled configuration
 (gthread), login on, two accounts made with `annzarro user add`
 (one --admin). Each signs in through the login form, then:
 
-* user: the header Refresh and Ctrl+R re-check the dataset (POST
+* user: the dataset bar's Refresh (pressed twice) re-checks the dataset (POST
   /data/refresh) and never POST /cache/reset; the button says only an admin
   can clear the server's cache; a path outside the data directory is
   refused (403);
@@ -216,15 +216,14 @@ def _fetch(page, path, **query):
     }""", [path.lstrip("/"), query])
 
 
-def _refresh(page, how):
-    """Press the header Refresh (or Ctrl+R) and wait for its re-check."""
+def _refresh(page):
+    """Press the dataset bar's Refresh and wait for its re-check.
+
+    (Ctrl+R is not a Refresh shortcut in the browser build: it reloads the page, as the browser does.)
+    """
     with page.expect_response(lambda r: r.request.method == "POST" and "/api/v1/data/refresh" in r.url,
                               timeout=30000):
-        if how == "button":
-            page.click("#refresh-dataset")
-        else:
-            page.locator("body").click(position={"x": 5, "y": 5})
-            page.keyboard.press("Control+r")
+        page.click("#refresh-dataset")
     page.wait_for_timeout(1500)                   # the reset (admin) and the reload follow
     _settle(page)
 
@@ -253,8 +252,8 @@ def test_admin_and_user_through_the_login_page(server):
             me = _fetch(page, "api/v1/auth/me")["body"]
             assert (me["username"], me["is_admin"], me["may_open_any_path"]) == ("alice", False, False)
             assert "only an admin" in page.get_attribute("#refresh-dataset", "title")
-            for how in ("button", "ctrl+r"):
-                _refresh(page, how)
+            for _ in range(2):
+                _refresh(page)
             assert posts.count("/api/v1/data/refresh") >= 2
             assert "/api/v1/cache/reset" not in posts, posts
             refused = _fetch(page, "api/v1/data/info", dataset_path=srv.outside)
@@ -276,14 +275,14 @@ def test_admin_and_user_through_the_login_page(server):
             assert all(values == {old} for values in stale.values()), \
                 f"a chunk write is served from each worker's cache until a refresh: {stale}"
 
-            _refresh(page, "button")
+            _refresh(page)
             assert "/api/v1/cache/reset" in posts, posts
             fresh = _per_worker(srv, cookie)
             assert all(values == {old + 1000} for values in fresh.values()), \
                 f"after the admin's Refresh every worker serves the new chunk: {fresh}"
 
             posts.clear()
-            _refresh(page, "ctrl+r")
+            _refresh(page)
             assert "/api/v1/data/refresh" in posts and "/api/v1/cache/reset" in posts, posts
 
             opened = _fetch(page, "api/v1/data/info", dataset_path=srv.outside)

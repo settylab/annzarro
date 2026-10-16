@@ -1,7 +1,7 @@
 # Interface
 
-AnnZarro has one window: a header with the dataset and the two focus pickers, a statistics bar,
-and below it a canvas of tiles. Each tile holds one panel (a cell plot, gene plot, cell table or
+AnnZarro has one window: a header with the two focus pickers and the panel set buttons, a dataset
+bar with the dataset and its size, and below it a canvas of tiles. Each tile holds one panel (a cell plot, gene plot, cell table or
 gene table). You add tiles, split them side by side or stacked, resize them by dragging, and
 close them. This page walks through every control on that screen with `bm_aging_annzarro.zarr`
 ({doc}`../data/demo-data`).
@@ -10,19 +10,22 @@ close them. This page walks through every control on that screen with `bm_aging_
 
 ```{figure} ../_static/screens/user-guide/ui-header.png
 :class: screenshot
-:alt: The AnnZarro header with nine numbered controls: dataset picker, refresh, gene history arrows, focused gene picker, cell history arrows, focused cell picker, Save Panel Set, Load Panel Set, Share Link.
+:alt: The AnnZarro header and dataset bar with nine numbered controls: dataset button, refresh, gene history arrows, focused gene picker, cell history arrows, focused cell picker, Save Panel Set, Load Panel Set, Share Link.
 
-The header. Numbers match the list below.
+The header and the dataset bar under it. Numbers match the list below.
 ```
 
-1. **Dataset** lists every dataset the server found at the top level of its data directory
-   (`~/annzarro-data` unless set with `--data-dir`) and in that directory's `datasets` folder. You can also type a
-   path or a remote URL into its search field and press Enter ({doc}`remote-datasets`). The browser
-   tab (and the desktop window) is titled with the open dataset's name, `bm_aging_annzarro.zarr · AnnZarro`.
-   **Browse...** in the list opens a picker that starts with **Recently opened**: the datasets you chose,
-   newest first, including stores in subfolders and remote stores. A recent dataset that has since been removed, or is no
-   longer shared with you, is greyed. The list is kept in your browser, separately for each server and each user.
-2. **Refresh dataset** reloads the dataset list and reopens the current dataset. The server first
+1. **The dataset button**, at the left of the dataset bar, names the open dataset (its path relative
+   to the data directory, cut in the middle when it is long; the whole path is its tooltip) and opens
+   the dataset browser ({ref}`dataset-browser`). The same happens with **Ctrl+O** (**Cmd+O** on a Mac),
+   wherever the focus is. With no dataset open it reads "Open a dataset...". While one loads it reads
+   "Opening ...". A view whose dataset is not on this server shows "No data: *name*" with **Choose...**,
+   and a dataset that turned unreadable (a revoked grant, a removed store) "Not available: *name*",
+   both in warning colours; the button then opens the browser to choose a dataset for the view.
+   The bar goes on with the open dataset's cells (and the subset badge), genes and format
+   (`zarr v2`, `zarr v3`, `zarr v3 sharded` or `h5ad`). The browser tab (and the desktop window) is
+   titled with the open dataset's name, `bm_aging_annzarro.zarr · AnnZarro`.
+2. **Refresh dataset**, the icon beside the button, reopens the current dataset. The server first
    re-checks the store against the disk and, if any file changed (an in-place write of values
    included), serves the change from then on, to every user; the panels then read the dataset
    again, past this browser's copies. On your own machine, and for admins of a hosted server, it
@@ -30,7 +33,8 @@ The header. Numbers match the list below.
    A store with too many files to check within the server's 3 s budget cannot be fully checked: the
    app then says so ("Refresh may not show every change"), because a write that only overwrote
    data chunks may not show for a user other than an admin. An admin's Refresh dataset (or a server
-   restart) picks it up, and says so when it did. A panel's **Refresh** gives the same notice.
+   restart) picks it up, and says so when it did. A panel's **Refresh** gives the same notice. (In
+   the browser, **Ctrl+R** reloads the page as usual; the desktop app binds it to Refresh dataset.)
 3. **Previous gene / Next gene** step through the genes you focused in this session.
 4. **Focused Gene** is the gene every gene-dependent panel follows ({doc}`focus-and-lock`).
 5. **Previous cell / Next cell** step through the cells you focused.
@@ -39,7 +43,7 @@ The header. Numbers match the list below.
 8. **Load Panel Set** opens the list of stored panel sets.
 9. **Share Link** copies a URL that reopens this dataset, layout and focus ({doc}`share-links`).
 
-The **System / Light / Dark** buttons at the right end of the statistics bar below set the colour
+The **System / Light / Dark** buttons at the right end of the dataset bar set the colour
 theme ({ref}`colour-theme`).
 
 A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).
@@ -54,7 +58,7 @@ same way.
 ## Light and dark theme
 
 AnnZarro follows your system's light or dark setting. Switch the system setting while the page is
-open and the app, plots included, switches with it. The three buttons at the right end of the statistics bar override this for this browser: **System** follows the system, **Light** and
+open and the app, plots included, switches with it. The three buttons at the right end of the dataset bar override this for this browser: **System** follows the system, **Light** and
 **Dark** stay as chosen. The choice is remembered in the browser (not on the server, and not in
 panel sets or share links) and applies to the login page and the admin pages too. The desktop app
 follows the operating system the same way.
@@ -73,10 +77,95 @@ see on a dark plot, so pick another map there. A figure for a paper is usually e
 Light theme, or with the **Publication** preset, which keeps its white background in either theme
 ({doc}`export`).
 
-Below the header, the statistics bar shows the number of cells (8,090) with a badge, **All
-cells**, the number of genes (16285) and the dataset's display name. Datasets with more than
+In the dataset bar, after the dataset button and Refresh, come the number of cells (8,090) with a
+badge, **All cells**, the number of genes (16,285) and the format. Datasets with more than
 200,000 cells open on a reproducible subset of 100,000 cells; the badge then reads **Subset ·
 seed 0** ({doc}`subsets`).
+
+(dataset-browser)=
+## Choose a dataset
+
+The dataset button, **Ctrl+O** (**Cmd+O**), and the **Browse datasets...** button of the welcome
+screen all open the same dialog, the dataset browser. It is also what opens to choose a dataset for a
+view that has none ({doc}`reproducing`) or for a panel set ({doc}`panel-sets`); its title and a banner
+at the top say which.
+
+```{figure} ../_static/screens/user-guide/ui-dataset-browser.png
+:class: screenshot
+:alt: The dataset browser: a search field (1), the places Recent, Pinned and Data directory (2), the path of the folder shown (3), a table of datasets with sortable column headers (4) and, on the right, the selected dataset's cells, genes, format, obs and obsm keys and the result of the store check (5).
+
+The dataset browser with a dataset selected. Numbers match the list below.
+```
+
+1. **Search** finds datasets by name or path as you type (the **.\*** button switches to a regular
+   expression, as in the gene picker). It searches the folder shown and everything below it; on
+   **Recent** or **Pinned** it searches the data directory as well. Typing a path or a URL offers
+   **Open** *path* as the first row. **Enter** opens the first dataset found. The filters beside
+   it narrow the rows by format (h5ad, zarr v2, zarr v3, sharded), by number of cells and by
+   modification date, hide the datasets that cannot be opened (the button says how many there are),
+   and, when a view is open or being given a dataset, keep only the datasets that match it.
+2. **Places.** **Recent** lists what you opened, newest first, including datasets in subfolders
+   and remote stores; one that has since been removed, or is no longer shared with you, stays in
+   the list, greyed. **Pinned** lists the datasets you pinned. **Data directory** is the folder the
+   server shares; a hosted server's administrators can add more data directories, each a place of
+   its own. **Remote** lists the remote stores you opened, where the server opens them
+   ({doc}`remote-datasets`). Recent and pinned datasets are kept in your browser, separately for
+   each server and each user.
+3. **The path above the table** is the folder shown, each part a link back. Click the empty part
+   of it, or press **Ctrl+L** (**Cmd+L**), to type instead: a path to a dataset opens it, a path to
+   a folder shows it, a URL opens a remote store, and what the server refuses is said under the
+   field, with your text kept. What it accepts depends on you: a path in the data directory (on
+   your own machine, any path), and a store URL only where remote stores are enabled.
+4. **The table** lists folders first, then datasets, with their cells, genes, format, the date they
+   were modified and, for those you opened, when. Click a column header to sort; click it again
+   to reverse. The server sorts by name and by modification date before it pages, so a folder of
+   thousands of datasets sorts as a whole; the other columns sort the rows loaded so far, and the
+   table says so ("Sorted among 500 loaded"). It shows 200 rows at a time and **Show more** adds more.
+   A dataset that cannot be opened is listed last with the reason; it is selected by a click and never opened.
+   A **same cells and genes** tag marks the datasets that match the view you are choosing for.
+   **Click the name** of a dataset to open it (of a folder, to enter it). A click elsewhere in the
+   row selects it and fills the details pane. **Enter** and a double click open it.
+5. **The details pane** (in a window wider than 1100 px; below that, the (i) button of a row opens it
+   as a sheet) shows the selected dataset's path, cells, genes, format, modification date, file size
+   for an `.h5ad`, where a link leads, and its obs and var columns, obsm keys and layers, read from
+   the store's metadata alone, never its data. For a local zarr store it then runs the store check
+   ({doc}`../data/chunking`) within a time budget (`server.dataset_details_check_budget_s`, 1.5 s by
+   default) and says in one line what it found; for a remote store a **Check chunking** button runs
+   it. **Open** opens the dataset, **Pin** keeps it under Pinned, **Copy path** copies its path.
+   When panels are open, the pane also names the keys they use that the selected dataset lacks
+   ("cell_type: missing"), so that the switch holds no surprise.
+
+Switching datasets does not ask: the open panels stay and read from the new dataset, and a message,
+"Opened *name*. Panels re-read from it.", has a **Back to** *old name* button for a few seconds.
+
+When you can see only some datasets (an administrator restricted your account), the places are **Your
+datasets** and each folder you were given, no path above one is ever shown, and a link or panel
+set that names a dataset you cannot read is opened without data with the sentence that is true
+whether it is missing or just not yours. If the site names a contact (`branding.admin_contact`,
+{doc}`../reference/configuration`), the banner adds "Ask *contact* for access."
+
+### Keyboard
+
+The browser is made for the keyboard. **Ctrl+O** (**Cmd+O**) opens it with the cursor in the search
+field, so typing a few letters and pressing **Enter** opens a dataset. **Down** moves into the table, which is one tab stop: **Up**,
+**Down**, **Home**, **End**, **Page Up** and **Page Down** move between rows, **Enter** opens, **Right**
+enters a folder, **Left** or **Backspace** goes up one, typing letters jumps to the name that starts with
+them, **/** returns to the search field, and **Escape** closes the dialog and puts the focus back on
+the dataset button. Rows and column headers are those of an ordinary table, so a screen reader reads
+a row as "short.zarr, 200 cells, 20 genes, zarr v2, modified ..."; counts and the progress of an
+opening are announced politely.
+
+| Keys | Action |
+|---|---|
+| **Ctrl+O** (**Cmd+O**) | Open the dataset browser |
+| **Ctrl+Shift+L** (**Cmd+Shift+L**) | Load Panel Set |
+| **Ctrl+L** (**Cmd+L**), in the browser | Type a path or URL |
+| **F1** | List the keyboard shortcuts |
+
+In the desktop app **Open file or folder...** (also **Ctrl+Shift+O**, **Cmd+Shift+O**) in the browser
+and on the welcome screen opens your system's dialog and takes a `.zarr` folder or an `.h5ad` file
+from anywhere on disk (on Windows and Linux, whose dialogs take one kind at a time, as two buttons,
+**Open .h5ad File...** and **Open .zarr Folder...**) ({doc}`../getting-started/desktop-app`).
 
 ## Pick a gene or a cell by name
 

@@ -94,7 +94,7 @@ chunks (12 GB at 1M × 5,000 in the paper's laptop sweep). See {doc}`performance
 ## Browser
 
 The client is plain JavaScript modules served by the same Flask app (`static/js`), with
-plotly.js for plots, DataTables (with SearchBuilder) for tables, select2 and chroma.js.
+plotly.js for plots, DataTables (with SearchBuilder) for tables and chroma.js.
 
 | Module | Role |
 |---|---|

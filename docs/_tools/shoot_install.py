@@ -3,7 +3,7 @@
 Run: .venv-docs/bin/python docs/_tools/shoot_install.py [--port 8811]
 
 getting-started/
-  welcome-picker.png   the Welcome tile with the Dataset picker open (local server, no login)
+  welcome-browser.png  the Welcome tile with the dataset browser open (local server, no login)
   first-plot.png       the Cell Plot tile, controls open, right after clicking "Cell Plot"
 deployment/
   login.png            the login page of a server with login enabled (custom branding)
@@ -54,10 +54,11 @@ def wait_up(url: str, proc: subprocess.Popen, log: Path) -> None:
 
 
 def header_left(page, path: Path) -> None:
-    """The left of the header: app name, sign-in badge and dataset picker."""
+    """The left of the header and the dataset bar: app name, sign-in badge, dataset button."""
     box = page.locator("#app-header").bounding_box()
+    bar = page.locator("#dataset-stats").bounding_box()
     page.screenshot(path=str(path), clip={"x": 0, "y": box["y"], "width": 620,
-                                          "height": box["height"]})
+                                          "height": bar["y"] + bar["height"] - box["y"]})
 
 
 def settle(page, seconds=1.0):
@@ -74,14 +75,18 @@ def local_shots(port: int) -> None:
         page = ctx.new_page()
         page.goto(s.base + "/")
         page.wait_for_selector("text=Welcome to AnnZarro")
-        page.wait_for_function("() => document.getElementById('cell-count').textContent !== '-'")
+        page.wait_for_function("() => window.annzarro && window.annzarro.getDataset")
         settle(page)
-        page.click("#dataset-selector + .select2 .select2-selection")
-        page.wait_for_selector(".select2-results__option")
+        page.click("#dataset-button")
+        page.wait_for_selector("#dataset-browser.show #dsb-table tbody tr")
+        page.wait_for_function("() => document.activeElement && document.activeElement.id === 'dsb-search'")
         time.sleep(0.5)
-        page.screenshot(path=str(out / "welcome-picker.png"))
-        s.log.append("wrote welcome-picker.png")
-        page.keyboard.press("Escape")
+        page.screenshot(path=str(out / "welcome-browser.png"))
+        s.log.append("wrote welcome-browser.png")
+        # choose the demo dataset in it, as the quickstart says
+        page.locator("#dsb-table tr.dsb-row[data-path$='bm_aging_annzarro.zarr'] .dsb-name").click()
+        page.wait_for_function("() => document.getElementById('cell-count').textContent !== '-'", timeout=60000)
+        settle(page)
 
         page.get_by_text("Cell Plot", exact=True).first.click()
         page.wait_for_function("""() => { const g = document.querySelector('.tile .js-plotly-plot');
@@ -91,7 +96,7 @@ def local_shots(port: int) -> None:
         page.locator(".tile").first.screenshot(path=str(out / "first-plot.png"))
         s.log.append("wrote first-plot.png")
         ctx.close()
-    for name in ("welcome-picker", "first-plot"):
+    for name in ("welcome-browser", "first-plot"):
         shrink(out / f"{name}.png")
 
 
@@ -156,7 +161,7 @@ branding:
             page.click("button[type=submit]")
             page.set_viewport_size(VIEWPORT)
             page.wait_for_selector("#auth-indicator:not([hidden])")
-            page.wait_for_function("() => document.getElementById('cell-count').textContent !== '-'")
+            page.wait_for_function("() => window.annzarro && window.annzarro.getDataset")
             settle(page)
             header_left(page, out / "header-signed-in.png")
             ctx.close()
@@ -175,7 +180,7 @@ auth:
             page = ctx.new_page()
             page.goto(base + "/")
             page.wait_for_selector("#auth-indicator:not([hidden])")
-            page.wait_for_function("() => document.getElementById('cell-count').textContent !== '-'")
+            page.wait_for_function("() => window.annzarro && window.annzarro.getDataset")
             settle(page)
             header_left(page, out / "header-no-login.png")
             ctx.close()

@@ -119,8 +119,8 @@ A restricted user with no grant sees nothing. For them:
 
 - Every dataset route, folder listing and search answers a path outside their grants exactly as
   it answers a dataset that does not exist (404 `not_found`, naming the path as they wrote it),
-  whether the path is in a data directory, outside every one, or missing. The dropdown, the
-  picker (its root is the list of their grants), the search and the legacy listing show the
+  whether the path is in a data directory, outside every one, or missing. The dataset
+  browser (its root is the list of their grants), its search and the legacy listing show the
   grants and nothing else, and no reply names the data directory or the folders above a grant.
 - Grants are matched on real paths: a symlink inside a granted folder that leads out of it is not
   covered (grant the link's target store, or use `--grant-stores-in` for a folder of links),
@@ -223,7 +223,7 @@ before any path is looked at.
   linked into the data directory. To share single datasets, list the stores themselves
   (`/lab/atlases/bm_aging_annzarro.zarr`).
 - A symlink in the data directory whose target is outside every allowed root is left out of the
-  Dataset picker and refused if opened by path. The startup log names every such link.
+  dataset browser and refused if opened by path. The startup log names every such link.
 - Who may open a path outside those directories is `server.arbitrary_paths`:
 
   | `arbitrary_paths` | shared server (login on, or a network host) | local single-user server (loopback, no login) |

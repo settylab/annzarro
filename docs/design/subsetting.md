@@ -181,7 +181,7 @@ remains: SearchBuilder lets a cell with no value pass `≠`; the subset does not
 
 ## What the UI shows
 
-- Stats bar, for example: `Cells: 100,000 of 1,160,000 [Subset · seed 0]`; with every cell,
+- Dataset bar, for example: `Cells: 100,000 of 1,160,000 [Subset · seed 0]`; with every cell,
   `Cells: 8,090 [All cells]`. The badge's tooltip spells out the spec
   (seed, balance, filter, cells passing the filter).
 - The badge opens the dialog: on/off; size presets below the eligible count,

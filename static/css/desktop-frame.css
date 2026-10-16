@@ -21,13 +21,14 @@ html[data-desktop-frame] .app-header {
 }
 
 /* ... and everything you can use in it does not. The popups and dialogs that open over it
-   (select2 lists, menus, modals, toasts) are children of <body>: no-drag, or the
-   part of them over the header would move the window instead of taking the click. */
+   (menus, modals, toasts) are children of <body>: no-drag, or the part of them over the header
+   would move the window instead of taking the click. The dataset button and the dataset bar are
+   not in the header: they are a <body> child below it, which is no-drag as a whole. */
 html[data-desktop-frame] .app-header :is(
     a, button, input, select, textarea, label, summary, [role="button"], [role="combobox"],
     [role="listbox"], [role="menu"], [tabindex]:not([tabindex="-1"]),
-    .btn, .form-control, .form-select, .select2-container, .name-picker, .name-picker-menu,
-    .dataset-pick, .theme-toggle, .share-link-fallback, .account-links, .auth-indicator
+    .btn, .form-control, .form-select, .name-picker, .name-picker-menu,
+    .theme-toggle, .share-link-fallback, .account-links, .auth-indicator
 ),
 html[data-desktop-frame] body > :not(.app-header) {
     -webkit-app-region: no-drag;
@@ -56,17 +57,8 @@ html[data-desktop-frame="mac"]:not([data-desktop-fullscreen]) .app-header .accou
 }
 
 /* Windows: the header keeps its height too. The panel set buttons sit on the row of the
-   input boxes (styles.css), below the window controls. Narrower, where the dataset box takes a
-   row of its own, that row would run under the controls: it stops short of them and the
-   buttons, on the second row, are already below. */
+   input boxes (styles.css), below the window controls; wrapped, onto a second row they are already below. */
 html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .header-actions {
     min-width: var(--az-win-overlay-w);
     text-align: right;
-}
-
-@media (min-width: 768.02px) {
-    html[data-desktop-frame="win"]:not([data-desktop-fullscreen]) .app-header.dataset-stacked .global-controls > .row > .dataset-col {
-        flex-basis: calc(100% - var(--az-win-overlay-w) - 0.5rem);
-        max-width: calc(100% - var(--az-win-overlay-w) - 0.5rem);
-    }
 }

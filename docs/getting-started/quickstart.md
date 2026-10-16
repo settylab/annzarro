@@ -24,7 +24,7 @@ The check should print `bm_aging_annzarro.zarr.zip: OK`. The zip is no longer ne
 unzipping. To use a store you already have, link it into the data directory instead:
 `ln -s /path/to/store.zarr ~/annzarro-data/`.
 
-The picker lists `.zarr` directories and `.h5ad` files at the top level of the data directory
+The dataset browser lists `.zarr` directories and `.h5ad` files at the top level of the data directory
 and in its `datasets` subdirectory, if there is one. Panel sets you save are written to
 `~/annzarro-data/sessions/`.
 
@@ -44,24 +44,26 @@ use a server on another machine, see {doc}`../deployment/personal-server`.
 
 ## 3. Open the dataset
 
-The first dataset in the data directory opens automatically. The bar under the header shows
-its size (for the demonstration store, "Cells: 8090" and "Genes: 16285") and the main area
-shows the Welcome tile.
+The server opens a dataset by itself only when it is the only one in the data directory, or the
+one you opened last time; with several it opens none, and the main area shows the Welcome tile with
+**Open a dataset** on top.
 
-```{figure} ../_static/screens/getting-started/welcome-picker.png
+```{figure} ../_static/screens/getting-started/welcome-browser.png
 :class: screenshot
-:alt: The AnnZarro Welcome tile with the Dataset picker open
+:alt: The AnnZarro Welcome tile with the dataset browser open, listing the stores of the data directory
 
-The Welcome tile after the server has opened `bm_aging_annzarro.zarr`. The **Dataset** picker (open
-here) lists every store in the data directory. "Create New Panel" starts an empty panel;
-"Load Saved Panel Set" lists the panel sets saved on this server (here the five protocol views
-of the demonstration data).
+The Welcome tile with the dataset browser open (the dataset button at the left of the bar under the
+header, or **Ctrl+O**, opens it). It lists every store in the data directory, with its cells, genes and
+format. "Create New Panel" starts an empty panel; "Load Saved Panel Set" lists the panel sets saved on
+this server (here the five protocol views of the demonstration data).
 ```
 
-1. Click the **Dataset** picker at the top left and choose `bm_aging_annzarro.zarr`. To open a store
-   outside the data directory on your own machine, type its full path into the picker's search
-   field and press Enter; it appears as "(Custom)". A remote URL such as
-   `s3://bucket/atlas.zarr` is entered the same way ({doc}`../user-guide/remote-datasets`).
+1. Click the dataset button at the left of the bar under the header (it reads "Open a dataset...") and
+   click the name `bm_aging_annzarro.zarr`. The bar then shows its size (for the demonstration store,
+   "Cells: 8,090" and "Genes: 16,285"). To open a store
+   outside the data directory on your own machine, press **Ctrl+L** in the browser and type its full
+   path; a remote URL such as `s3://bucket/atlas.zarr` is entered the same way
+   ({doc}`../user-guide/remote-datasets`).
 2. Check the **Focused Gene** and **Focused Cell** boxes in the header. They start at the
    first gene and a cell of the dataset; every panel follows them
    ({doc}`../user-guide/focus-and-lock`).

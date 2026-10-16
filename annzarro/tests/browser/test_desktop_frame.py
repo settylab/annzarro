@@ -35,7 +35,7 @@ MAC_LIGHTS = (0, 0, 80, 24)          # x0, y0, x1, y1: the traffic lights (14..~
 OVERLAY_W, OVERLAY_H = 140, 32       # the window controls, at the top right
 
 # What you use in the header: visible boxes of these must stay out of the controls' way.
-USABLE = "#app-header :is(a, button, input, select, textarea, label, h1, .select2-container, .auth-indicator)"
+USABLE = "#app-header :is(a, button, input, select, textarea, label, h1, .auth-indicator)"
 
 BOXES = """(sel) => [...document.querySelectorAll(sel)].map(e => {
     const r = e.getBoundingClientRect(), cs = getComputedStyle(e);
@@ -161,8 +161,8 @@ def test_panel_set_buttons_sit_on_the_row_of_the_input_boxes(open_page, width, f
 @pytest.mark.parametrize("width", WIDTHS)
 def test_windows_keeps_the_header_out_of_the_window_controls(open_page, width, stacked):
     page = open_page("win", width)
-    if stacked:  # the dataset box on a row of its own (header-fit.js does this when the row is short)
-        page.evaluate("document.getElementById('app-header').classList.add('dataset-stacked')")
+    if stacked:  # the buttons on a row of their own (header-fit.js does this when the row is short)
+        page.evaluate("document.getElementById('app-header').classList.add('header-wrapped')")
     rect = (width - OVERLAY_W, 0, width, OVERLAY_H)
     if not stacked:  # the header keeps the browser's height
         plain = open_page(None, width)
@@ -209,7 +209,7 @@ def test_header_drags_the_window_and_what_you_use_does_not(open_page, frame):
     assert page.evaluate(region, "#app-header") == "drag"
     assert page.evaluate(region, "#app-header .app-title") != "no-drag"
     usable = page.evaluate("""() => [...document.querySelectorAll(
-        '#app-header :is(a, button, input, select, textarea, label, .select2-container, .name-picker, .dataset-pick)')]
+        '#app-header :is(a, button, input, select, textarea, label, .name-picker)')]
         .filter(e => e.getBoundingClientRect().width > 0)
         .map(e => [e.id || e.className || e.tagName, getComputedStyle(e).webkitAppRegion])""")
     assert len(usable) > 8
@@ -222,9 +222,10 @@ def test_header_drags_the_window_and_what_you_use_does_not(open_page, frame):
     assert page.evaluate(region, "#account-links") == "no-drag"
     assert page.evaluate(region, "#account-links a") == "no-drag"
     page.evaluate("document.getElementById('account-links').textContent = ''")
-    # everything outside the header: the stats bar, the panels, and popups that open over the header
+    # everything outside the header: the dataset bar (and its button), the panels, and dialogs that open over the header
     assert page.evaluate(region, "#dataset-stats") == "no-drag"
-    page.click("#dataset-selector + .select2-container")
-    page.wait_for_selector(".select2-dropdown")
-    assert page.evaluate("getComputedStyle(document.querySelector('.select2-dropdown').closest('body > *')).webkitAppRegion") == "no-drag"
+    assert page.evaluate(region, "#dataset-button") == "no-drag"
+    page.click("#dataset-button")
+    page.wait_for_selector("#dataset-browser.show")
+    assert page.evaluate("getComputedStyle(document.querySelector('#dataset-browser').closest('body > *')).webkitAppRegion") == "no-drag"
     assert not page.errors

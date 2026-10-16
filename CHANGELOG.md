@@ -33,7 +33,7 @@ with the release after it. Older releases are listed on
 
 ### Dark theme
 - AnnZarro follows your system's light or dark setting, live: switch the system while the page is
-  open and the app switches. The new **System / Light / Dark** buttons at the right end of the statistics bar override it for
+  open and the app switches. The new **System / Light / Dark** buttons at the right end of the dataset bar override it for
   this browser and are remembered there. The login page, the admin pages, the account page and the
   desktop app are themed too, and there is no flash of the wrong theme on load.
 - Plots follow the theme for every colour you have not set (background, grid, axes, text, legend,
@@ -47,6 +47,45 @@ with the release after it. Older releases are listed on
 - Exports use the colours on screen: export in the Light theme (or with **Publication**) for a paper.
 - Grid and axis colours now apply from the first draw, and several grey-on-white text and control
   colours are slightly darker for WCAG AA contrast.
+
+### Dataset browser
+- The dataset is a button at the left of the bar under the header, in place of the dropdown, and
+  **Ctrl+O** (**Cmd+O**) opens the **dataset browser** from anywhere, also in a text field. The
+  header keeps only the focus boxes and the panel set buttons, so a long dataset name no longer
+  squeezes them. The button names the open dataset (its path relative to the data directory, cut in the
+  middle to fit, the whole path as its tooltip) and shows when a dataset is opening, when a view has no
+  data ("No data: *name*", **Choose...**) and when the open dataset became unreadable ("Not available").
+  The bar shows the dataset's format beside its cells and genes, and says its name once: there is no
+  "Dataset:" label and no title-cased copy of the name.
+- The browser lists **Recent** (stores in subfolders and remote stores too, greyed when gone),
+  **Pinned**, the data directory (and the directories an admin added, or a restricted user's grants)
+  and **Remote**. The path above the table turns into a path or URL field with **Ctrl+L**. The table is
+  sortable (the server sorts by name and by date before it pages), filters by format, number of cells
+  and date, tags the datasets that match a view you are choosing for, and a **Show more** button pages
+  it. Clicking a name opens the dataset; clicking elsewhere in the row selects it. The search
+  (substring or regular expression) stays inside the folder shown.
+- A details pane (a sheet below 1100 px) shows a dataset's counts, format, size, columns, obsm keys
+  and layers, and runs the store check for a local store within its time budget; a remote store has a
+  **Check chunking** button. **Pin**, **Copy path** and **Open** are there too. When panels are open,
+  it names the keys they use that the selected dataset lacks.
+- After a switch a message, "Opened *name*", has a **Back to** *old name* button. Opening a dataset
+  needs no confirmation.
+- Opening with nothing asked for: the dataset you opened last, if the server still lets you read it,
+  else the only dataset there is, else none, with the welcome screen offering **Open a dataset** (your
+  recent ones and **Browse datasets...**). A server with several datasets no longer opens the first one
+  alphabetically, which on a shared server could be a very large store.
+- New optional setting `branding.admin_contact` (a name or an email address): a user who sees only
+  some datasets is told "Ask *contact* for access." when a link or panel set names a dataset they
+  cannot read.
+- Keyboard and screen readers: the table is a native table with a caption and sortable header
+  buttons, one tab stop with arrow keys, Home, End, type-ahead, **/** for the search field and
+  **Escape** back to the dataset button; counts and openings are announced; the focus ring is a 2 px
+  outline in the link colour in both themes; forced colours, reduced motion and touch targets
+  (44 px) are respected; below 768 px the dialog fills the screen.
+- The desktop app's **Open file or folder...** button appears in the browser and on the welcome
+  screen (on Windows and Linux as **Open .h5ad File...** and **Open .zarr Folder...**), and the
+  app's Open Dataset menu item opens the browser, on a folder when it is given one.
+- Select2 (the dropdown's library) is removed from the page and the licence notices.
 
 ### Added
 - Three dataset endpoints for the dataset browser: `GET /api/v1/datasets/details?path=` (a store's
@@ -75,8 +114,13 @@ with the release after it. Older releases are listed on
   and the app then updates itself. The tap follows each release.
 
 ### Changed
-- The Save / Load / Close all / Share buttons in the header line up with the dataset and focus
-  boxes instead of the middle of their labels.
+- The Save / Load / Close all / Share buttons in the header line up with the focus boxes instead of
+  the middle of their labels, at the right end of the header.
+- **Load Panel Set** moved from Ctrl+O to **Ctrl+Shift+L** (**Cmd+Shift+L**); Ctrl+O opens the dataset
+  browser. In the browser Ctrl+R reloads the page as the browser does and no longer refreshes the
+  dataset (the **Refresh dataset** button does); the desktop app keeps Ctrl+R/Cmd+R for it.
+- The header wraps the panel set buttons below the focus boxes only when the focus boxes and
+  the icon-only buttons do not fit one row; a dataset name never changes the header.
 
 ### Recently opened datasets
 - **Recently opened** keeps a store in a subfolder and a remote store (`s3://`, `https://`), not only

@@ -156,8 +156,8 @@ What a restricted user sees, and how the check works:
 
 - **Not there, not allowed: the same answer.** A dataset, folder or search outside the grants
   answers exactly as a store that does not exist (`404 not_found`), also outside every data
-  directory, and no reply names the data directory or the folders above a grant. The dropdown,
-  the picker (its root is the list of their grants), the search and panel-set lists show the
+  directory, and no reply names the data directory or the folders above a grant. The dataset
+  browser (its root is the list of their grants), its search and panel-set lists show the
   grants and nothing else ({ref}`http-restricted`).
 - **Real paths.** A grant is matched on real paths: a symbolic link inside a granted folder that
   leads out of it is not covered (grant the target store, or use `--grant-stores-in` for a folder of
@@ -205,7 +205,7 @@ the YAML, switches the directory off at once and the datasets in it answer `403`
 shows it as inactive, with the reason. Adding is refused for a path that is not absolute,
 outside every parent, not a directory, already readable, an allowed parent itself, or one that
 holds the server's own state (the users file's directory, the admin state, the saved panel
-sets). At most 100 directories can be added. Removing one takes it away from the dataset picker
+sets). At most 100 directories can be added. Removing one takes it away from the dataset browser
 and from reads at once, and the answer says how many saved panel sets name a dataset in it.
 Directories from the YAML cannot be removed here.
 

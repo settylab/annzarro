@@ -56,6 +56,35 @@ def test_default_order_is_unchanged(tree):
     assert names(folder(_app(tree).test_client(), sort="name", order="asc").get_json()) == names(body)
 
 
+@pytest.fixture
+def mixed(tmp_path):
+    """Names that differ in case and in numbers: Zebra, apple, Banana, cherry, liver_2, liver_10, and a folder Zoo and one ant."""
+    data = tmp_path / "data"
+    for name in ("Zebra", "apple", "Banana", "cherry", "liver_2", "liver_10"):
+        shutil.copytree(FIXTURE, data / f"{name}.zarr")
+    for name in ("Zoo", "ant"):
+        (data / name).mkdir()
+    data_routes._LISTING_PROBE_CACHE.clear()
+    yield tmp_path
+    data_routes._LISTING_PROBE_CACHE.clear()
+
+
+ASC = ["ant", "Zoo", "apple.zarr", "Banana.zarr", "cherry.zarr", "liver_2.zarr", "liver_10.zarr", "Zebra.zarr"]
+
+
+def test_name_order_ignores_case_and_reads_numbers_by_value_in_every_direction(mixed):
+    """sort=name is the same order as the default listing: Zebra after cherry, not before apple; liver_2 before liver_10."""
+    client = _app(mixed).test_client()
+    default = names(folder(client).get_json())
+    assert default == ASC
+    assert names(folder(client, sort="name", order="asc").get_json()) == ASC
+    desc = names(folder(client, sort="name", order="desc").get_json())
+    assert desc == ["Zoo", "ant"] + list(reversed(ASC[2:]))
+    # paged: the order is that of the whole folder, whatever the page size
+    first = names(folder(client, sort="name", order="asc", limit=3).get_json())
+    assert first == ASC[:3]
+
+
 def test_name_descending_keeps_folders_first(tree):
     assert names(folder(_app(tree).test_client(), sort="name", order="desc").get_json()) == \
         ["zeta", "projects", "alpha", "d.zarr", "c.zarr", "b.zarr", "a.zarr"]

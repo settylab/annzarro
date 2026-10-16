@@ -8,21 +8,23 @@ stores are switched on and limited in the server's configuration.
 
 ## Open a remote store
 
-1. Click the **Dataset** picker in the header.
-2. Type the store's URL into its search field, for example
-   `https://data.example.org/zarr/atlas.zarr` or `s3://my-lab-bucket/atlases/atlas.zarr`. The list
-   offers it as "*URL* (Custom)".
+1. Click the dataset button at the left of the dataset bar (or press **Ctrl+O**, **Cmd+O** on a Mac).
+2. Type the store's URL into the search field of the dataset browser, for example
+   `https://data.example.org/zarr/atlas.zarr` or `s3://my-lab-bucket/atlases/atlas.zarr`. The table
+   offers **Open** *URL* as its first row. (The path field, **Ctrl+L**, takes a URL too.)
 
    ```{figure} ../_static/screens/user-guide/remote-typed.png
    :class: screenshot
    :width: 60%
-   :alt: The Dataset picker open, with a URL typed into its search field and offered as the only entry.
+   :alt: The dataset browser open, with a URL typed into its search field and offered as the first row, Open http://127.0.0.1:8837/bm_aging_annzarro.zarr.
 
-   A URL typed into the Dataset picker.
+   A URL typed into the dataset browser.
    ```
 
-3. Press **Enter**. The statistics bar shows the store's cells and genes, and new panels read from
-   it.
+3. Press **Enter**. The dataset bar shows the store's cells and genes, and new panels read from
+   it. The store is then listed under **Recent** and **Remote** in the browser; select it there and
+   **Check chunking** in the details pane runs the store check on it (a remote store is never
+   checked on its own: that reads over the network).
 
    ```{figure} ../_static/screens/user-guide/remote-plot.png
    :class: screenshot
@@ -125,7 +127,7 @@ There was no public HTTPS AnnData Zarr store at hand, so this page was checked w
 server: `python -m http.server 8837` serving the folder that holds `bm_aging_annzarro.zarr` (Zarr v2,
 consolidated metadata), and AnnZarro started with
 `ANNZARRO_REMOTE_ALLOWLIST=http://127.0.0.1:8837/`. Typing
-`http://127.0.0.1:8837/bm_aging_annzarro.zarr` into the Dataset picker opened the store (8,090 cells,
+`http://127.0.0.1:8837/bm_aging_annzarro.zarr` into the dataset browser opened the store (8,090 cells,
 16,285 genes) and the plots on this page were drawn from it. A URL outside the allowlist
 (`https://example.org/x.zarr`) was refused with the message above. S3 and GCS stores go through
 the same code path with a different fsspec backend but were not tested here.

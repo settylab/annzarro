@@ -382,6 +382,11 @@ branding:
       description: Project description
       default: Zarr-based AnnData Visualization Tool
       security: public
+    admin_contact:
+      type: [string, "null"]
+      description: Who a user who sees only some datasets is told to ask for access (the dataset browser's banner), e.g. a name or an email address
+      default: null
+      security: public
     contact_info:
       type: object
       description: Contact information shown on login page

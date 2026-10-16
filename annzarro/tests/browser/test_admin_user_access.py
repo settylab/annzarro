@@ -15,6 +15,7 @@ import socket
 import threading
 
 import pytest
+from annzarro.tests.ui_helpers import open_browser
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402
@@ -78,8 +79,8 @@ def info_status(page, path):
     return page.evaluate("async (p) => (await fetch('/api/v1/data/info?dataset_path=' + encodeURIComponent(p))).status", path)
 
 
-def dropdown(page):
-    """The collaborator's own dataset dropdown listing, as one string."""
+def listing(page):
+    """The collaborator's own dataset listing (what the dataset browser's first page is built on), as one string."""
     return page.evaluate("async () => JSON.stringify(await (await fetch('/api/v1/datasets')).json())")
 
 
@@ -142,12 +143,14 @@ def test_grant_a_collaborator_see_only_the_grants_then_revoke(served):
             assert info_status(bob, os.path.join(data, "pub", "p.zarr")) == 200
             assert info_status(bob, os.path.join(data, "out.zarr")) == 404
             assert info_status(bob, os.path.join(data, "hidden", "deep.zarr")) == 404
-            listed = dropdown(bob)
+            listed = listing(bob)
             assert "in.zarr" in listed and "p.zarr" in listed
             assert "out.zarr" not in listed and "deep.zarr" not in listed
             bob.goto(base + "/")
-            bob.wait_for_selector("#dataset-selector", state="attached")
-            assert "out.zarr" not in bob.inner_html("#dataset-selector") and "deep.zarr" not in bob.inner_html("#dataset-selector")
+            open_browser(bob)
+            browser_text = bob.inner_text("#dataset-browser")
+            assert "in.zarr" in browser_text and "out.zarr" not in browser_text and "deep.zarr" not in browser_text
+            assert "out.zarr" not in bob.inner_html("#dataset-browser") and "deep.zarr" not in bob.inner_html("#dataset-browser")
 
             # the effective stores, and the check tool
             admin.click('#user-access button[data-action="toggle-stores"]')

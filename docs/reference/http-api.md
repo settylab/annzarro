@@ -544,7 +544,7 @@ Adding needs `server.admin_data_roots` ({ref}`admin data directories <admin-data
 |---|---|---|
 | `GET /admin/data-roots` | | `{"parents": [{path, ok}], "roots": [...], "overlay": {ok, error}}`. A root is `{path, real, source, active, stores, stores_capped}`; `source` is `data_dir`, `config` or `admin`; an admin root also has `added_by`, `added_at`, and an inactive one `inactive_reason` |
 | `GET /admin/data-roots/browse` | `path` (absolute; none lists the parents) | `{"path", "dirs": [{name, path, is_root}], "capped"}`: the sub-directories that lie inside a parent. `403` `admin_roots_disabled`, `400` `not_absolute`, `403` `outside_admin_parents`, `404` `not_found` |
-| `GET /admin/data-roots/datasets` | `root`, `folder`, `offset`, `limit` | one page of the stores in a folder of an active root, as the dataset picker lists them. `403` `not_a_root`, `400` `bad_request`, `404` `not_found` |
+| `GET /admin/data-roots/datasets` | `root`, `folder`, `offset`, `limit` | one page of the stores in a folder of an active root, as the dataset browser lists them. `403` `not_a_root`, `400` `bad_request`, `404` `not_found` |
 | `POST /admin/data-roots` | `{"path"}` | `201` with the root. `400` `bad_request`, `not_absolute`, `not_a_directory`; `403` `admin_roots_disabled`, `outside_admin_parents`, `is_a_parent`, `contains_server_state`; `409` `already_allowed`, `too_many` (100). Audited as `data_roots.add` |
 | `DELETE /admin/data-roots` | `{"path"}` | `{"removed", "panel_sets_affected"}`. `409` `from_config` (a directory of the YAML), `404` `unknown_root`. Audited as `data_roots.remove` |
 
@@ -694,7 +694,7 @@ HTTP 400
 | `server.dataset_scan_max_entries` | 200,000 | directory entries read by `GET /core/datasets` and the store count in `GET /status` | `200` with `truncated: true` |
 | `server.max_request_mb` | 64 | the request body (`POST /sessions/save`, `/sessions/import`, `/login`), from `Content-Length` and while reading | `413 request_too_large` |
 | `server.max_sessions_per_user`, `server.max_sessions`, `server.max_sessions_mb` | 500, 5,000, 256 MB | panel sets of the user, of the server, and their total size, when one is saved, duplicated or imported | `409 session_quota_user`, `409 session_quota_total` |
-| `server.dataset_folder_max_entries`, `dataset_search_max_depth`, `dataset_search_max_entries` | 500, 6, 20,000 (and 3 s) | the picker's folder listing (`GET /datasets/folder`) and tree search (`GET /datasets/search`) | `200` with `more` / `truncated: true`; `400` `regex_too_long`, `regex_too_complex`, `invalid_regex`, `query_too_long` |
+| `server.dataset_folder_max_entries`, `dataset_search_max_depth`, `dataset_search_max_entries` | 500, 6, 20,000 (and 3 s) | the dataset browser's folder listing (`GET /datasets/folder`) and search (`GET /datasets/search`) | `200` with `more` / `truncated: true`; `400` `regex_too_long`, `regex_too_complex`, `invalid_regex`, `query_too_long` |
 | `server.dataset_details_check_budget_s` | 1.5 s | the store check inside `GET /datasets/details` | `200` with `store_check.budget_reached: true` |
 | `POST /datasets/lookup` paths | 200 | the paths in the body | `400 cap_exceeded` |
 | `max_cells=` / `max_genes=` query parameters | none | number of requested cell / gene indices | `400 cap_exceeded` |

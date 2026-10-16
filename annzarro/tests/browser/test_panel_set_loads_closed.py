@@ -30,7 +30,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
-from annzarro.tests.ui_helpers import SHOWN_DATASET, wait_for_open
+from annzarro.tests.ui_helpers import BROWSER, SHOWN_DATASET, browser_row, open_dataset, wait_for_open
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -540,6 +540,9 @@ def test_a_card_has_one_blue_load_and_four_icons_with_tooltips(server, browser, 
             page = ctx.new_page()
             seen = _guard(page)
             page.goto(DATA["root"] + "/")
+            # a first visit opens no dataset of several: open one, as the user would
+            open_dataset(page, str(DATA["dir"] / "fixture_small.zarr"))
+            _wait_dataset(page, "fixture_small.zarr")
             card = _item(page, "buttons-card")
         primary = card.locator(".session-load")
         assert primary.inner_text().strip() == "Load"
@@ -701,9 +704,9 @@ def test_missing_dataset_with_none_open_chooses_one_then_loads_onto_it(server, b
         assert card.locator(BTN["current"]).get_attribute("aria-disabled") == "true"
         listing_back()
         primary.click()
-        # the Change dataset picker of portable views
-        page.locator("#change-dataset-modal").wait_for(state="visible", timeout=10000)
-        page.locator("#change-dataset-modal .change-dataset-item[data-path$='other_small.zarr'] button").click()
+        # the dataset browser, to choose a dataset for the set
+        page.locator(BROWSER).wait_for(state="visible", timeout=10000)
+        browser_row(page, "other_small.zarr").locator(".dsb-name").click()
         _wait_dataset(page, "other_small.zarr")
         _wait_tiles(page, 2)
         assert sorted(_tile_ids(page)) == ["cell-plot-P1", "cell-table-T1"]
@@ -718,7 +721,7 @@ def test_choose_dataset_icon_loads_onto_any_store_and_cancel_changes_nothing(ser
     try:
         _open_dialog(page)
         _card(page, "gone-icon").locator(BTN["choose"]).click()
-        modal = page.locator("#change-dataset-modal")
+        modal = page.locator(BROWSER)
         modal.wait_for(state="visible", timeout=10000)
         # closed without a choice: nothing was loaded
         modal.locator(".btn-close").click()
@@ -730,7 +733,7 @@ def test_choose_dataset_icon_loads_onto_any_store_and_cancel_changes_nothing(ser
         _open_dialog(page)
         _card(page, "gone-icon").locator(BTN["choose"]).click()
         modal.wait_for(state="visible", timeout=10000)
-        modal.locator(".change-dataset-item[data-path$='other_small.zarr'] button").click()
+        browser_row(page, "other_small.zarr").locator(".dsb-name").click()
         _wait_dataset(page, "other_small.zarr")
         _wait_tiles(page, 1)
         assert _tile_ids(page) == ["cell-plot-P1"]
