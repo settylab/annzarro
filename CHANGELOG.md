@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Docs
+- The README and the licence page cite v0.5.4 by its DOI,
+  [10.5281/zenodo.23426323](https://doi.org/10.5281/zenodo.23426323).
+
 ## 0.5.4 (2026-10-16)
 
 A filtered Cell Table opens about twice as fast on large datasets, and switching datasets no longer
