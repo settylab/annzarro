@@ -17,7 +17,6 @@ header. The full license texts are in this directory.
 | [DataTables Select](https://datatables.net/extensions/select/) | 1.6.2 | `MIT` | [datatables.txt](datatables.txt) |
 | [DataTables FixedHeader](https://datatables.net/extensions/fixedheader/) | 3.3.2 | `MIT` | [datatables.txt](datatables.txt) |
 | [Plotly.js](https://plotly.com/javascript/) | 2.20.0 | `MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense` | [plotly.txt](plotly.txt), [plotly-bundled.txt](plotly-bundled.txt) |
-| [Select2](https://select2.org/) | 4.1.0-rc.0 | `MIT` | [select2.txt](select2.txt) |
 | [chroma.js](https://gka.github.io/chroma.js/) | 2.4.2 | `BSD-3-Clause AND Apache-2.0` | [chroma.txt](chroma.txt), [Apache-2.0.txt](Apache-2.0.txt) |
 | [Font Awesome Free](https://fontawesome.com/) | 6.4.0 | `MIT AND OFL-1.1` | [fontawesome.txt](fontawesome.txt) |
 
@@ -70,11 +69,6 @@ buttons.html5.min.js includes FileSaver.js 1.3.3 (MIT, Copyright (c) 2016 Eli Gr
 The minified bundle includes npm modules under MIT, ISC (d3-color, d3-interpolate, earcut, geojson-vt, supercluster, topojson-client, ...), BSD-3-Clause (mapbox-gl 1.10.1, @plotly/d3, d3-*, pbf, @mapbox/vector-tile, ieee754, ...), BSD-2-Clause (@mapbox/tiny-sdf, @mapbox/unitbezier, ...), Zlib (gl-mat4) and Unlicense (mumath). plotly-bundled.txt keeps the bundle's own licence banners and the licence text of every package in plotly.js 2.20.0's production dependency tree (scripts/plotly_licences.py), a superset of the bundle that also lists one Apache-2.0 and one BlueOak-1.0.0 package.
 
 - `vendor/js/plotly-2.20.0.min.js` (`MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense`), from <https://cdn.plot.ly/plotly-2.20.0.min.js>, sha256 `d908ccb86ab3c39f41a0196ca0d59ed4e54e76885bb32904a8c937aec963f394`
-
-### Select2 4.1.0-rc.0
-
-- `vendor/js/select2.min.js` (`MIT`), from <https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js>, sha256 `f7244fff610595b944f76bf3080d74e3af42b5dd234f8f079e698cc39ac966b0`
-- `vendor/css/select2.min.css` (`MIT`), from <https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css>, sha256 `cda4a81c187015d95ed2c71f1841540b08203cdec5fa2a7d5d1825a3c2166f8c`
 
 ### chroma.js 2.4.2
 

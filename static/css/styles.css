@@ -175,7 +175,6 @@ body {
     .app-header > .container-fluid > .row > .col,
     .global-controls > .row > .col,
     .global-controls .d-flex > .flex-grow-1,
-    .global-controls .select2-container,
     .global-controls .name-picker {
         min-width: 0;
     }
@@ -225,18 +224,6 @@ body {
 
 .global-controls {
     width: 100%;
-}
-
-/* The strip's dataset title is one line, cut at its end (the full title is the tooltip), so a
-   long title never makes the strip taller */
-.dataset-stats .dataset-path-col {
-    min-width: 0;
-}
-.dataset-stats .dataset-path-col > span {
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 /* The theme toggle at the right end of the statistics bar: small enough not to make the bar taller */
@@ -2280,14 +2267,6 @@ button.dtsb-button.dtsb-clear:hover {
     background: var(--az-muted);
 }
 
-/* Select2 Customizations */
-.select2-container--default .select2-selection--single {
-    border: 1px solid var(--az-border-strong);
-    border-radius: 0.25rem;
-    height: 38px;
-    line-height: 38px;
-}
-
 /* Focused gene / cell typeaheads (static/js/utils/name-picker.js) */
 #focused-gene {
     width: 160px;
@@ -2391,71 +2370,17 @@ button.dtsb-button.dtsb-clear:hover {
     font-weight: normal;
 }
 
-/* The dataset row: box, then the Refresh / Change dataset buttons on one line.
-   The dataset column takes the header's free width. The closed box is always one
-   line: it shrinks as the header gets tight (to 220px, then to 140px) and cuts
-   the name in the middle, keeping its start and its end (the version, the
-   suffix); the full path is its tooltip. The open list and the picker show names
-   whole. Select2 would otherwise size the box to the name and push the buttons to
-   a second line. The box and Refresh never separate. */
-.dataset-row {
-    display: flex;
-    flex-wrap: wrap; /* only Change dataset (when shown) drops to a second line */
-    row-gap: 4px;
-}
-.dataset-pick {
-    display: flex;
-    align-items: flex-start;
-    flex: 0 1 auto;
-    flex-wrap: nowrap;
-    min-width: 0;
-    max-width: 100%;
-}
-.dataset-pick > button {
-    flex: 0 0 auto;
-}
-#dataset-selector {
-    min-width: 180px !important;
-    max-width: 200px !important;
-}
-#dataset-selector + .select2-container {
-    flex: 0 1 auto;
-    width: max-content !important;
-    min-width: 0;
-    max-width: min(100%, 760px); /* the open list (900px at most) stays wider than the box */
-}
-#dataset-selector + .select2-container .select2-selection__rendered {
-    display: block;
-    overflow: hidden;
-    white-space: nowrap;
-}
-/* the closed box's label is cut by script to the box's width (utils/header-fit.js); this only
-   keeps it on one line meanwhile */
-.dataset-name-mid {
-    white-space: nowrap;
-}
-
 @media (min-width: 768.02px) {
-    /* The least the dataset box may shrink to, by step: its name's natural width up to
-       420px while the header is relaxed (utils/header-fit.js measures --dataset-natural),
-       then down to 140px, before the focus inputs give way. */
-    .app-header {
-        --dataset-box-min: min(var(--dataset-natural, 220px), 420px);
-    }
-    .app-header.dataset-tight {
-        --dataset-box-min: min(var(--dataset-natural, 140px), 140px);
-    }
     .global-controls > .row {
         --bs-gutter-x: 0.375rem;
-    }
-    .global-controls > .row > .dataset-col {
-        flex: 1 1 auto;
-        width: auto;
-        min-width: calc(var(--dataset-box-min) + 54px); /* the box and Refresh */
     }
     .global-controls > .row > .focus-col {
         flex: 0 0 auto;
         width: auto;
+    }
+    /* the buttons stay at the right edge (the focus columns do not stretch to fill the row) */
+    .global-controls > .row > .header-actions {
+        margin-left: auto;
     }
     /* Tight: the columns give up just the width the row is short of, down to their minimum;
        the inputs keep the width of their value and are only narrowed by their column */
@@ -2495,196 +2420,21 @@ button.dtsb-button.dtsb-clear:hover {
     .global-controls .name-picker > input {
         text-overflow: clip;
     }
-    .app-header.dataset-stacked .global-controls > .row {
+    /* Too narrow for one row (utils/header-fit.js): the buttons take a row of their own */
+    .app-header.header-wrapped .global-controls > .row {
         flex-wrap: wrap;
         row-gap: 0.25rem;
     }
-    .app-header.dataset-stacked .global-controls > .row > .dataset-col {
-        flex: 0 0 100%;
-    }
-    .app-header.dataset-stacked .global-controls > .row > .header-actions {
+    .app-header.header-wrapped .global-controls > .row > .header-actions {
         margin-left: auto; /* the buttons stay at the right edge on the second row */
     }
 }
 
-/* Dataset names are shown whole in the open list and the picker: they wrap at
-   / _ . - (a <wbr> follows each, see main.js) and, failing that, anywhere. */
+
+/* Dataset names are shown whole in the browser: they wrap at / _ . - (a <wbr> follows each,
+   utils/dataset-browser.js) and, failing that, anywhere. */
 .dataset-name {
     overflow-wrap: anywhere;
-}
-
-/* The open dataset list may be wider than its box, up to the viewport
-   (main.js narrows it to the room right of the box); entries that still do not
-   fit wrap onto more lines, and the highlight covers all of them */
-.dataset-select-dropdown {
-    max-width: min(90vw, 900px);
-}
-/* A tall list that follows the window: one scrollbar (the results), the search box stays on top.
-   The generic 400px cap on the dropdown and the 200px default of the results list do not apply here;
-   select2 flips the list above the box when there is more room there. */
-.select2-container--open .select2-dropdown.dataset-select-dropdown.select2-dropdown--below,
-.select2-container--open .select2-dropdown.dataset-select-dropdown.select2-dropdown--above {
-    max-height: none;
-    overflow: visible;
-}
-.dataset-select-dropdown .select2-results > .select2-results__options {
-    max-height: min(70vh, 640px) !important;
-}
-.dataset-select-dropdown .select2-results__option {
-    height: auto !important;
-    white-space: normal;
-    overflow: visible;
-    text-overflow: clip;
-}
-
-/* Fix Select2 container width to match parent */
-.select2-container {
-    width: auto !important;
-}
-
-/* Fix dropdown container height to be more consistent */
-.select2-container--open .select2-dropdown.select2-dropdown--below,
-.select2-container--open .select2-dropdown.select2-dropdown--above {
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-/* Fix Select2 selection text rendering */
-.select2-container--default .select2-selection--single .select2-selection__rendered {
-    line-height: 36px;
-    padding-left: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    overflow: hidden;
-    max-width: 100%;
-}
-
-.select2-container--default .select2-selection--single .select2-selection__arrow {
-    height: 36px;
-}
-
-.select2-search--dropdown .select2-search__field {
-    border: 1px solid var(--az-border-strong);
-    border-radius: 0.25rem;
-    padding: 6px 10px;
-    font-size: 16px; /* Larger font size for better visibility */
-    width: 100% !important; /* Ensure search box uses full width */
-    margin-bottom: 8px; /* Add space below search box */
-    background-color: var(--az-surface-2); /* Light background to highlight search box */
-}
-
-.select2-search--dropdown .select2-search__field:focus {
-    outline: none;
-    border-color: #86b7fe;
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-    background-color: var(--az-surface); /* White background when focused */
-}
-
-/* Make the search box more prominent */
-.select2-search--dropdown {
-    padding: 10px;
-    background-color: var(--az-surface-2);
-    border-bottom: 1px solid var(--az-surface-3);
-    position: sticky;
-    top: 0;
-    z-index: 10;
-}
-
-/* Ensure search field is visible and prominent */
-.select2-container--open .select2-search--dropdown {
-    display: block !important;
-}
-
-.select2-dropdown {
-    border: 1px solid var(--az-border-strong);
-    border-radius: 0.25rem;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-/* Custom Select2 dropdowns */
-.gene-select-dropdown {
-    min-width: 300px !important;
-    width: 300px !important;
-    max-height: 600px !important;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important;
-    border: 1px solid var(--az-faint) !important;
-    overflow: hidden !important; /* Remove outer scrollbar */
-}
-
-.cell-select-dropdown {
-    min-width: 320px !important;
-    width: 320px !important;
-    max-height: 600px !important;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important;
-    border: 1px solid var(--az-faint) !important;
-    overflow: hidden !important; /* Remove outer scrollbar */
-}
-
-.gene-select-dropdown .select2-results__options, 
-.cell-select-dropdown .select2-results__options {
-    max-height: 580px !important; /* Make dropdown even longer */
-}
-
-.select2-results__option {
-    padding: 8px 12px !important;
-    height: 36px !important; /* Fixed height to prevent jumping */
-    line-height: 20px !important; /* Consistent line height */
-    white-space: nowrap; /* Prevent wrapping */
-    overflow: hidden; /* Hide overflow */
-    text-overflow: ellipsis; /* Show ellipsis for long text */
-}
-
-.select2-results__option--highlighted {
-    background-color: #0d6efd !important;
-    color: white !important;
-}
-
-/* Style for selected item in dropdown - without checkmark */
-.select2-results__option[aria-selected=true] {
-    background-color: var(--az-info-bg) !important;
-    color: var(--az-text) !important;
-    font-weight: bold !important;
-}
-/* Highlighted selected item (hover over already selected) */
-.select2-container--default .select2-results__option--highlighted[aria-selected=true] {
-    background-color: #0b5ed7 !important;
-    color: white !important;
-}
-
-.select2-container--open .select2-dropdown {
-    animation: select2FadeIn 0.2s ease-in-out;
-    min-width: 200px !important;
-}
-
-/* Fix the container to be higher priority and avoid scroll issues */
-.select2-container--open .select2-dropdown.select2-dropdown--below {
-    border-top: none !important;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2) !important;
-}
-
-.select2-container--open {
-    z-index: 9999 !important; /* Ensure it's on top of everything */
-}
-
-/* Make results container large and scrollable */
-.select2-container--default .select2-results {
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-}
-
-.select2-container--default .select2-results > .select2-results__options {
-    min-height: 200px !important;
-}
-
-@keyframes select2FadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(-5px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 
 /* Tile Type Grid */
@@ -4002,56 +3752,409 @@ details.aesthetics-section > .aesthetics-body {
 .panel-no-data-title { font-weight: 600; color: var(--az-text-2); }
 .panel-no-data-message { max-width: 32rem; font-size: 0.875rem; overflow-wrap: anywhere; }
 
-/* Change dataset: stores grouped by how they match the view's store */
-.change-dataset-list .change-dataset-group { margin-bottom: 0.75rem; }
-.change-dataset-list .change-dataset-group h6 { font-size: 0.8rem; text-transform: uppercase; color: var(--az-muted); margin-bottom: 0.25rem; }
-.change-dataset-list .change-dataset-item {
-    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
-    padding: 0.25rem 0.5rem; border: 1px solid var(--az-surface-3); border-radius: 4px; margin-bottom: 0.25rem;
+/* ---- The dataset bar and the dataset button (utils/dataset-button.js) ---- */
+.dataset-stats {
+    padding-top: 0.125rem;      /* the bar is 31 px with its 26 px button, as tall as it was */
+    padding-bottom: 0.125rem;
 }
-.change-dataset-list .change-dataset-item .change-dataset-meta { font-size: 0.8rem; color: var(--az-muted); overflow-wrap: anywhere; }
-
-/* The picker takes its colours from these, so a dark theme only has to set them */
-#change-dataset-modal {
-    --dp-border: var(--az-surface-3);
+.dataset-bar {
+    display: flex;
+    flex-wrap: nowrap;          /* one line: the button gives way (its name is cut) before anything wraps */
+    align-items: center;
+    gap: 0.15rem 1rem;
+    min-height: 26px;
+}
+@media (max-width: 639.98px) {
+    .dataset-bar { flex-wrap: wrap; }
+}
+.dataset-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+}
+.dataset-bar .dataset-fact,
+.dataset-bar .theme-toggle,
+.dataset-bar .dataset-refresh {
+    flex: 0 0 auto;
+}
+.dataset-bar .dataset-fact {
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.dataset-bar .theme-toggle {
+    margin-left: auto;
+}
+.dataset-bar #refresh-dataset {
+    margin-left: -0.5rem;      /* the refresh button belongs to the dataset button */
+}
+.dataset-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex: 0 1 auto;
+    min-width: 120px;
+    max-width: min(340px, 100%);
+    height: 26px;
+    padding: 0 0.55rem;
+    border: 1px solid var(--az-control-border);
+    border-radius: 0.25rem;
+    background: var(--az-surface);
+    color: var(--az-text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1;
+}
+.dataset-button:hover {
+    background: var(--az-accent-bg);
+    color: var(--az-text);
+    border-color: var(--az-control-border);
+}
+.dataset-button-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.dataset-button-hint {
+    display: none;
+    flex: 0 0 auto;
+    padding: 0 0.3rem;
+    border-radius: 3px;
+    background: var(--az-surface-3);
+    color: var(--az-text-2);
+    font-size: 0.7rem;
+    font-weight: 400;
+}
+.dataset-button-action {
+    display: none;
+    flex: 0 0 auto;
+    font-weight: 400;
+    text-decoration: underline;
+}
+.dataset-button-caret,
+.dataset-button-icon {
+    flex: 0 0 auto;
+}
+.dataset-button-caret {
+    color: var(--az-muted);
+}
+.dataset-button[data-state="none"] {
+    border-style: dashed;
+    font-weight: 400;
+}
+.dataset-button[data-state="none"] .dataset-button-hint {
+    display: inline;
+}
+.dataset-button[data-state="nodata"],
+.dataset-button[data-state="unavailable"] {
+    background: var(--az-warn-bg);
+    color: var(--az-warn-text);
+    border-color: var(--az-warn-border);
+}
+.dataset-button[data-state="nodata"] .dataset-button-action,
+.dataset-button[data-state="unavailable"] .dataset-button-action {
+    display: inline;
+}
+.dataset-button[data-state="nodata"] .dataset-button-caret,
+.dataset-button[data-state="unavailable"] .dataset-button-caret {
+    display: none;
+}
+.dataset-spin {
+    animation: dataset-spin 1s linear infinite;
+}
+@keyframes dataset-spin {
+    to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    /* a static hourglass and the text say "opening": nothing turns */
+    .dataset-spin { animation: none; }
+    .dataset-spin::before { content: "\f254"; }
+}
+.dataset-button:focus-visible,
+.dataset-refresh:focus-visible,
+.dsb-dialog :is(button, input, select, [tabindex], a):focus-visible {
+    outline: 2px solid var(--az-link);
+    outline-offset: 2px;
+    box-shadow: none;
+}
+/* ---- The dataset browser (utils/dataset-browser.js) ---- */
+/* The browser takes its colours from these, so a dark theme only has to set the --az-* tokens */
+#dataset-browser {
+    --dp-border: var(--az-border);
     --dp-muted: var(--az-muted);
     --dp-active-bg: var(--az-accent-bg);
-    --dp-active-border: var(--az-focus-border);
     --dp-mark-bg: var(--az-mark-bg);
 }
-#change-dataset-modal .modal-body { max-height: 75vh; overflow-y: auto; }
-.change-dataset-toolbar { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.5rem; position: sticky; top: -1rem; background: var(--bs-modal-bg, #fff); padding: 0.25rem 0; z-index: 2; }
-.change-dataset-toolbar #change-dataset-search { flex: 1 1 auto; min-width: 0; }
-.change-dataset-toolbar #change-dataset-sort { flex: 0 0 auto; width: auto; }
-.change-dataset-list .change-dataset-item { border-color: var(--dp-border); align-items: flex-start; }
-.change-dataset-list .change-dataset-item.active, .change-dataset-folder.active { background: var(--dp-active-bg); border-color: var(--dp-active-border); }
-.change-dataset-list .change-dataset-label { min-width: 0; flex: 1 1 auto; }
-.change-dataset-list .change-dataset-item > button { flex: 0 0 auto; }
-.change-dataset-list .change-dataset-name { font-weight: 500; }
-.change-dataset-list .change-dataset-rel { font-size: 0.8rem; color: var(--dp-muted); }
-.change-dataset-list .change-dataset-reason { font-size: 0.8rem; color: var(--az-danger-text); overflow-wrap: anywhere; }
-.change-dataset-list .change-dataset-unreadable { opacity: 0.85; }
-.change-dataset-list mark { background: var(--dp-mark-bg); color: inherit; padding: 0; }
-.change-dataset-list .change-dataset-nested { margin-left: calc(var(--depth, 0) * 1rem); }
-.change-dataset-list .change-dataset-folder {
-    display: flex; align-items: baseline; gap: 0.4rem; cursor: pointer; border-radius: 4px;
-    padding: 0.2rem 0.5rem; margin-left: calc(var(--depth, 0) * 1rem); margin-bottom: 0.2rem;
+@media (min-width: 768px) {
+    .dsb-dialog { --bs-modal-width: min(1280px, 96vw); max-width: var(--bs-modal-width); }
 }
-.change-dataset-list .change-dataset-folder:hover { background: var(--dp-active-bg); }
-.change-dataset-list .change-dataset-folder-name { overflow-wrap: anywhere; font-weight: 500; }
-.change-dataset-list .change-dataset-caret { width: 1em; flex: 0 0 auto; color: var(--dp-muted); }
-.change-dataset-list .change-dataset-status { font-size: 0.85rem; color: var(--dp-muted); padding: 0.25rem 0.5rem; margin-left: calc(var(--depth, 0) * 1rem); }
-.change-dataset-list .change-dataset-more { padding-left: 0.5rem; }
+#dataset-browser .modal-body {
+    display: flex;
+    flex-direction: column;
+    height: min(76vh, 760px);
+    padding: 0;
+    overflow: hidden;
+}
+#dataset-browser .modal-footer {
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--az-muted);
+}
+.dsb-hints kbd {
+    padding: 0 0.3rem;
+    background: var(--az-surface-3);
+    color: var(--az-text-2);
+    font-size: 0.72rem;
+}
+.dsb-banner {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--az-warn-border);
+    background: var(--az-warn-bg);
+    color: var(--az-warn-text);
+    font-size: 0.9rem;
+}
+.dsb-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--dp-border);
+}
+.dsb-search {
+    display: flex;
+    flex: 1 1 280px;
+    min-width: 0;
+}
+.dsb-search .form-control { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.dsb-regex { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
+.dsb-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+}
+.dsb-chip.form-select {
+    width: auto;
+    border-radius: 1rem;
+}
+.dsb-chip.active {
+    border-color: var(--az-link);
+    color: var(--az-link);
+    background-color: var(--az-accent-bg);
+}
+.dsb-toggle { border-radius: 1rem; }
+.dsb-toggle.active { color: var(--az-link); border-color: var(--az-link); background: var(--az-accent-bg); }
+.dsb-search-error { padding: 0 1rem; }
+.dsb-layout {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr) 300px;
+    min-height: 0;
+}
+.dsb-places {
+    overflow: auto;
+    padding: 0.5rem;
+    background: var(--az-surface-2);
+    border-right: 1px solid var(--dp-border);
+}
+.dsb-places-select { display: none; margin: 0.4rem 1rem; width: auto; }
+.dsb-places-group { margin-bottom: 0.75rem; }
+.dsb-places-group h6 {
+    margin: 0.4rem 0.4rem 0.2rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--az-muted);
+}
+.dsb-place {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.25rem 0.5rem;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--az-text);
+    text-align: left;
+    font-size: 0.9rem;
+}
+.dsb-place:hover { background: var(--az-surface-3); }
+.dsb-place[aria-current="true"] { background: var(--az-accent-bg); color: var(--az-link); font-weight: 600; }
+.dsb-place-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsb-place-count { font-size: 0.75rem; color: var(--az-muted); font-weight: 400; }
+.dsb-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.dsb-pathbar {
+    display: flex;
+    align-items: center;
+    padding: 0.35rem 1rem;
+    border-bottom: 1px solid var(--dp-border);
+    min-height: 2.4rem;
+}
+.dsb-crumbs { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; gap: 0.5rem; }
+.dsb-crumb-list { display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; list-style: none; }
+.dsb-crumb-list li + li::before { content: "\203A"; padding: 0 0.35rem; color: var(--az-muted); }
+.dsb-crumb { border: 0; background: transparent; padding: 0.1rem 0.2rem; color: var(--az-link); font-size: 0.9rem; border-radius: 3px; }
+.dsb-crumb[aria-current="location"] { color: var(--az-text); font-weight: 600; }
+.dsb-crumb-edit {
+    flex: 1 1 auto;
+    min-height: 1.6rem;
+    border: 0;
+    background: transparent;
+    text-align: right;
+    color: var(--az-muted);
+    font-size: 0.8rem;
+    cursor: text;
+}
+.dsb-pathform { display: flex; flex: 1 1 auto; gap: 0.4rem; }
+.dsb-pathform[hidden], .dsb-crumbs[hidden] { display: none; }
+.dsb-path-error { padding: 0.25rem 1rem; }
+.dsb-table-wrap { flex: 1 1 auto; overflow: auto; }
+.dsb-table { width: 100%; margin: 0; font-size: 0.9rem; }
+.dsb-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--az-surface);
+    border-bottom: 1px solid var(--az-border-strong);
+    padding: 0.25rem 0.75rem;
+    white-space: nowrap;
+}
+.dsb-table td, .dsb-table th { vertical-align: top; padding: 0.35rem 0.75rem; }
+.dsb-num { text-align: right; font-variant-numeric: tabular-nums; }
+.dsb-sort {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-weight: 600;
+    color: var(--az-text);
+    display: inline-flex;
+    gap: 0.3rem;
+    align-items: center;
+}
+.dsb-sort-mark { font-size: 0.65rem; color: var(--az-link); min-width: 0.7em; }
+.dsb-namecell { font-weight: 400; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.dsb-table td { white-space: nowrap; }
+.dsb-nameline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.5rem; }
+.dsb-name {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--az-link);
+    font-weight: 600;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+.dsb-name:hover .dsb-name-text { text-decoration: underline; }
+.dsb-icon { margin-right: 0.4rem; color: var(--az-muted); }
+.dsb-rel { font-size: 0.8rem; color: var(--dp-muted); }
+.dsb-reason { font-size: 0.8rem; color: var(--az-danger-text); overflow-wrap: anywhere; }
+.dsb-table mark { background: var(--dp-mark-bg); color: var(--az-text); padding: 0; }
+.dsb-badge {
+    padding: 0 0.4rem;
+    border-radius: 0.7rem;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.dsb-badge-match { background: var(--az-ok-bg); color: var(--az-ok-text); }
+.dsb-badge-open { background: var(--az-info-bg); color: var(--az-info-text); }
+.dsb-badge-quiet { background: var(--az-surface-3); color: var(--az-text-2); }
+.dsb-pinned { color: var(--az-warn-accent); font-size: 0.75rem; }
+/* Bootstrap paints a table's cells (--bs-table-bg, an inset shadow): the row's states are set on the cells */
+.dsb-table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--az-text);
+    --bs-table-accent-bg: transparent;
+    --bs-table-border-color: var(--az-border);
+}
+.dsb-row { cursor: pointer; }
+.dsb-row:hover > * { background-color: var(--az-surface-2); }
+.dsb-row.selected > * { background-color: var(--dp-active-bg); }
+.dsb-row.selected > :first-child { box-shadow: inset 3px 0 0 var(--az-link); }
+.dsb-row.dsb-unreadable .dsb-name { color: var(--az-muted); font-weight: 400; }
+.dsb-row.dsb-unreadable .dsb-icon { opacity: 1; }
+.dsb-state { padding: 1rem; color: var(--az-muted); font-size: 0.9rem; }
+.dsb-state.dsb-error { color: var(--az-danger-text); }
+.dsb-more { margin: 0.25rem 0.75rem; }
+.dsb-details {
+    overflow: auto;
+    padding: 0.75rem 1rem;
+    border-left: 1px solid var(--dp-border);
+    background: var(--az-surface);
+    font-size: 0.85rem;
+}
+.dsb-details-empty { color: var(--az-muted); }
+.dsb-details-name { font-size: 1.05rem; margin: 0 0 0.5rem; overflow-wrap: anywhere; }
+.dsb-fields { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.75rem; margin: 0 0 0.5rem; }
+.dsb-fields dt { font-weight: 400; color: var(--az-muted); }
+.dsb-fields dd { margin: 0; overflow-wrap: anywhere; }
+.dsb-details-path { font-size: 0.8rem; color: var(--az-text-2); overflow-wrap: anywhere; }
+.dsb-keys h3 { margin: 0.6rem 0 0.25rem; font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--az-muted); }
+.dsb-chiplist { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.dsb-key { padding: 0 0.4rem; border: 1px solid var(--az-border-strong); border-radius: 4px; font-size: 0.75rem; color: var(--az-text-2); }
+.dsb-note { margin: 0.6rem 0; padding: 0.4rem 0.6rem; border: 1px solid; border-radius: 4px; }
+.dsb-note-warn { background: var(--az-warn-bg); color: var(--az-warn-text); border-color: var(--az-warn-border); }
+.dsb-note-ok { background: var(--az-ok-bg); color: var(--az-ok-text); border-color: var(--az-ok-border); }
+.dsb-note a { color: inherit; text-decoration: underline; }
+.dsb-check:empty { display: none; }
+.dsb-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; min-height: 31px; }
+.dsb-info { display: none; }
+.dsb-sheet-close { display: none; }
 
-/* The Browse button in the open dataset dropdown, beside its search field */
-.select2-container--open .dataset-select-dropdown .select2-search--dropdown {
-    display: flex !important; gap: 6px; align-items: flex-start;
+/* Below 1100 px there is no room for the details pane */
+@media (max-width: 1099.98px) {
+    .dsb-layout { grid-template-columns: 210px minmax(0, 1fr); }
+    .dsb-details { display: none; }
+    .dsb-crumb-hint { display: none; }
+    .dsb-col-genes, .dsb-col-format, .dsb-col-opened,
+    .dsb-table td:nth-child(3), .dsb-table td:nth-child(4), .dsb-table td:nth-child(6) { display: none; }
+    .dsb-info { display: inline-block; border: 0; background: transparent; color: var(--az-link); padding: 0 0.25rem; }
+    #dataset-browser.dsb-sheet .dsb-details {
+        display: block;
+        position: fixed;
+        inset: auto 0 0 0;
+        height: 60vh;          /* a fixed height: the actions at its top do not move as the details arrive */
+        z-index: 5;
+        border-top: 2px solid var(--az-link);
+        box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+    }
+    #dataset-browser.dsb-sheet .dsb-sheet-close { display: inline-block; float: right; }
 }
-.dataset-select-dropdown .select2-search--dropdown .select2-search__field {
-    flex: 1 1 auto; min-width: 0; width: auto !important; margin-bottom: 0;
+/* Phones: the dialog is full screen (modal-fullscreen-md-down), places a select, columns Name and Modified */
+@media (max-width: 767.98px) {
+    .dsb-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+    .dsb-places { display: none; }
+    .dsb-places-select { display: block; }
+    .dsb-col-genes, .dsb-col-format, .dsb-col-opened,
+    .dsb-table td:nth-child(3), .dsb-table td:nth-child(4), .dsb-table td:nth-child(6) { display: none; }
+    .dsb-crumb-edit { display: none; }
+    #dataset-browser .modal-body { height: auto; flex: 1 1 auto; }
 }
-.dataset-select-dropdown .dataset-browse { flex: 0 0 auto; white-space: nowrap; }
-
+@media (pointer: coarse) {
+    .dsb-name, .dsb-place, .dsb-crumb, .dsb-sort { min-height: 44px; display: inline-flex; align-items: center; }
+    .dsb-place { display: flex; }
+    .dsb-row td, .dsb-row th { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #dataset-browser.fade, #dataset-browser.fade .modal-dialog { transition: none; }
+}
+/* Windows high contrast: selection is the system's, and the outline stays */
+@media (forced-colors: active) {
+    .dsb-row.selected > * { forced-color-adjust: none; background-color: Highlight; color: HighlightText; }
+    .dsb-row.selected :is(.dsb-name, .dsb-rel, .dsb-reason) { color: HighlightText; }
+    .dsb-dialog :is(button, input, select, [tabindex], a):focus-visible,
+    .dataset-button:focus-visible { outline: 2px solid CanvasText; }
+}
 /* Links to the admin interface next to the signed-in badge (main.js _loadAuthIndicator) */
 .account-links {
     margin-left: 4px;
@@ -4060,3 +4163,14 @@ details.aesthetics-section > .aesthetics-body {
 .account-links .auth-indicator {
     margin-right: 4px;
 }
+
+/* The welcome screen's "Open a dataset" section (selection-tile.js), shown while no dataset is open */
+.welcome-open-dataset[hidden] { display: none; }
+.welcome-recents-table { margin: 0 auto 0.5rem; width: auto; }
+.welcome-recents-table td { border: 0; padding: 0 0.5rem; vertical-align: baseline; }
+.welcome-open-actions { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+
+/* The welcome screen's "Open a dataset" section (selection-tile.js), shown while no dataset is open */
+.welcome-recents-table { margin: 0 auto 0.5rem; width: auto; }
+.welcome-recents-table td { border: 0; padding: 0 0.5rem; vertical-align: baseline; }
+.welcome-open-actions { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }

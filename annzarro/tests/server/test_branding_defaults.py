@@ -26,6 +26,7 @@ def test_defaults_carry_no_contact_and_spell_the_name(env):
     flat = mgr.to_flask_config()
     assert flat["app_name"] == "AnnZarro"
     assert not any(flat["contact_info"].values())
+    assert flat["admin_contact"] is None, "nobody is named to ask for access until the site says so"
 
 
 def _login_html(tmp_path, **extra):

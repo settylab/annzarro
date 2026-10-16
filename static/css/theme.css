@@ -10,7 +10,7 @@
  * notices is a --az-* variable defined here, in both themes. The vendored
  * Bootstrap is 5.2.3, which has no data-bs-theme, so the second half re-points
  * its variables and the few components that hard-code a colour (form controls,
- * close button, DataTables, Select2) at those tokens in the dark theme.
+ * close button, DataTables) at those tokens in the dark theme.
  *
  * Text and controls meet WCAG AA (4.5:1 text, 3:1 controls) in both themes;
  * annzarro/tests/browser/test_dark_theme.py measures the key pairs.
@@ -158,9 +158,7 @@
 
 /* ---- controls in both themes: edges that can be seen, text that can be read ---- */
 
-.form-control, .form-select, .input-group-text, .form-check-input,
-.select2-container--default .select2-selection--single,
-.select2-container--default .select2-selection--multiple { border-color: var(--az-control-border); }
+.form-control, .form-select, .input-group-text, .form-check-input { border-color: var(--az-control-border); }
 .btn-outline-secondary { --bs-btn-color: var(--az-muted); }
 
 /* ---- Bootstrap 5.2.3 components in the dark theme ---- */
@@ -415,20 +413,3 @@
 [data-theme="dark"] div.dt-button-collection div.dt-button { color: var(--az-text); }
 [data-theme="dark"] .dt-button-background { background: rgba(0, 0, 0, 0.5); }
 
-/* ---- Select2 ---- */
-[data-theme="dark"] .select2-container--default .select2-selection--single,
-[data-theme="dark"] .select2-container--default .select2-selection--multiple {
-    background-color: var(--az-input-bg);
-    border-color: var(--az-control-border);
-}
-[data-theme="dark"] .select2-container--default .select2-selection--single .select2-selection__rendered { color: var(--az-text); }
-[data-theme="dark"] .select2-container--default .select2-selection--single .select2-selection__placeholder { color: var(--az-faint); }
-[data-theme="dark"] .select2-container--default .select2-selection--single .select2-selection__arrow b { border-color: var(--az-muted) transparent transparent transparent; }
-[data-theme="dark"] .select2-container--default.select2-container--open .select2-selection--single .select2-selection__arrow b { border-color: transparent transparent var(--az-muted) transparent; }
-[data-theme="dark"] .select2-container--default .select2-selection--multiple .select2-selection__choice { background-color: var(--az-surface-3); border-color: var(--az-border-strong); color: var(--az-text); }
-[data-theme="dark"] .select2-dropdown { background-color: var(--az-surface); border-color: var(--az-border-strong); color: var(--az-text); }
-[data-theme="dark"] .select2-container--default .select2-search--dropdown .select2-search__field { background-color: var(--az-input-bg); color: var(--az-text); border-color: var(--az-border-strong); }
-[data-theme="dark"] .select2-container--default .select2-results__option { color: var(--az-text); }
-[data-theme="dark"] .select2-container--default .select2-results__option--selected { background-color: var(--az-surface-3); }
-[data-theme="dark"] .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable { background-color: #0d6efd; color: #fff; }
-[data-theme="dark"] .select2-container--default .select2-results__option[aria-disabled="true"] { color: var(--az-faint); }

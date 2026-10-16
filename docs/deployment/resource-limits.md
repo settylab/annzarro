@@ -28,13 +28,13 @@ request slowly. The reverse proxy in front ({doc}`lab-server`) is the defence fo
 | `max_sessions_per_user` | 500 | Disk: panel sets are files, written by any user (anyone, with login off) | `409 session_quota_user` | one person legitimately keeps more than 500 sets |
 | `max_sessions` | 5,000 | Disk and CPU: the panel-set list reads the files | `409 session_quota_total` | many users each keep many sets |
 | `max_sessions_mb` | 256 | Disk | `409 session_quota_total` | sets are large and the disk is |
-| `dataset_folder_max_entries` | 500 | Disk and CPU: the picker's folder listing opens each store on the page (counts, format), the search returns at most this many matches | partial `200` (`more`, `truncated`) | folders hold thousands of stores and users page through them |
-| `dataset_search_max_depth`, `dataset_search_max_entries` | 6, 20,000 | Disk and CPU: the picker's search walks the data directory tree for any user; it also stops after 3 s. A regex is refused as in the name search (`regex_too_long`, `regex_too_complex`) | partial `200` (`truncated`), `400` for a refused pattern | the tree is deeper than 6 folders or has more than 20,000 entries |
+| `dataset_folder_max_entries` | 500 | Disk and CPU: the dataset browser's folder listing opens each store on the page (counts, format), the search returns at most this many matches | partial `200` (`more`, `truncated`) | folders hold thousands of stores and users page through them |
+| `dataset_search_max_depth`, `dataset_search_max_entries` | 6, 20,000 | Disk and CPU: the dataset browser's search walks the data directory tree for any user; it also stops after 3 s. A regex is refused as in the name search (`regex_too_long`, `regex_too_complex`) | partial `200` (`truncated`), `400` for a refused pattern | the tree is deeper than 6 folders or has more than 20,000 entries |
 | `dataset_details_check_budget_s` | 1.5 | CPU and file system reads: the details request (`GET /datasets/details`) runs the store check of one zarr store, which reads metadata only, never a chunk. The check stops between steps once the budget is spent; a remote store is checked only when the client asks (`check=1`). `0` turns the check off | partial `200` (`store_check.budget_reached: true`) | a store has so many arrays that the check does not finish in 1.5 s |
 | `dataset_scan_max_entries` | 200,000 | Disk and threads: the legacy dataset listing and the store count in `/status` (and the directory browser) walk the data directory on every call, for any client | partial `200`, `truncated: true` | the data directory holds more than that many directory entries outside the stores |
 
 A regular expression typed by a user runs with the `regex` package, one match at a time, under the
-search's time limit (`name_search_timeout_s` for the name search, 3 s for the picker's folder
+search's time limit (`name_search_timeout_s` for the name search, 3 s for the dataset browser's folder
 search). The package stops inside a match and lets other threads run; the standard `re` cannot be
 interrupted and holds the GIL, so a pattern such as `.?` repeated 33 times followed by `!` kept a
 worker busy for more than 200 s on one cell name and stopped every request it served. That time

@@ -27,7 +27,6 @@ Each file keeps its original copyright header. The versions are pinned with SHA-
 | DataTables Select | 1.6.2 | `MIT` |
 | DataTables FixedHeader | 3.3.2 | `MIT` |
 | [Plotly.js](https://plotly.com/javascript/) (bundles npm modules, see below) | 2.20.0 | `MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense` |
-| [Select2](https://select2.org/) | 4.1.0-rc.0 | `MIT` |
 | [chroma.js](https://gka.github.io/chroma.js/) | 2.4.2 | `BSD-3-Clause AND Apache-2.0` |
 | [Font Awesome Free](https://fontawesome.com/) | 6.4.0 | `MIT AND OFL-1.1` |
 

@@ -90,6 +90,7 @@ const Config = (function() {
         DATASET_FOLDER: `${API_BASE}/datasets/folder`,
         DATASET_SEARCH: `${API_BASE}/datasets/search`,
         DATASET_LOOKUP: `${API_BASE}/datasets/lookup`,
+        DATASET_DETAILS: `${API_BASE}/datasets/details`,
         DATASET_INFO: `${API_BASE}/data/info`,
         DATASET_STRUCTURE: `${API_BASE}/data/dataset_structure`,
         FINGERPRINT: `${API_BASE}/data/fingerprint`,
@@ -287,7 +288,8 @@ const Config = (function() {
         
         // Default shortcuts that work in both browser and desktop modes
         SAVE_SESSION: { key: 's', modifiers: { ctrl: true } },
-        LOAD_SESSION: { key: 'o', modifiers: { ctrl: true } },
+        LOAD_SESSION: { key: 'l', modifiers: { ctrl: true, shift: true } },
+        OPEN_DATASET: { key: 'o', modifiers: { ctrl: true } },
         REFRESH_DATASETS: { key: 'r', modifiers: { ctrl: true } },
         
         // Single-key shortcuts for when no text field is active

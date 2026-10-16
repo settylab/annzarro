@@ -122,7 +122,7 @@ STATE = """() => {
     busy,
     colour: sel ? sel.value : null,
     traces: g && g.data ? g.data.map(t => t.name || '').join('|') : '',
-    dataset: (document.getElementById('dataset-path') || {}).textContent || ''
+    dataset: (document.getElementById('dataset-button-name') || {}).textContent || ''
   };
 }"""
 
@@ -165,7 +165,7 @@ def test_expired_login_returns_to_the_current_view(server, how):
             assert "/login" in page.url and "#view=" in page.url
             _sign_in(page, "pw-one")
             s = _settle(page, lambda s: s["colour"] == "cell_type")
-            assert s["dataset"] == "Fixture Small"
+            assert s["dataset"] == "fixture_small.zarr"
 
             # Change the view, so "current" differs from the link
             before = s["traces"]
@@ -202,7 +202,7 @@ def test_expired_login_returns_to_the_current_view(server, how):
             # Sign in again: same dataset, current view (leiden), not the link's
             _sign_in(page, password)
             s = _settle(page, lambda s: s["colour"] == "leiden")
-            assert s["dataset"] == "Fixture Small"
+            assert s["dataset"] == "fixture_small.zarr"
             assert s["traces"] == leiden_traces
             assert urllib.parse.urlsplit(page.url).path == "/"
             assert not errors, errors

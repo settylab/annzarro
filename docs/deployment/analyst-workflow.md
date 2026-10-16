@@ -63,9 +63,9 @@ was rewritten with another shape or dtype while `.zmetadata` still describes the
 
 ## 2. Refresh in AnnZarro
 
-In the AnnZarro tab, click **Refresh dataset**, the button right of the **Dataset** menu, or
-press **Ctrl+R** (**Cmd+R** on a Mac), which the app takes over from the browser's reload
-({doc}`../user-guide/interface`). It:
+In the AnnZarro tab, click **Refresh dataset**, the icon right of the dataset button
+({doc}`../user-guide/interface`). (In the desktop app **Ctrl+R**, **Cmd+R** on a Mac, does the same;
+in a browser it reloads the page.) It:
 
 1. asks the server to check the store against the disk (`POST /api/v1/data/refresh`). If any file
    changed, the server starts a new generation of the dataset: every server process (each
@@ -98,8 +98,7 @@ the store keeps the column.
   ({ref}`revalidation`). Writing an element with `write_elem` changes the store's directory
   times, which changes those tags; overwriting chunk files in place
   (`g["obs/x"][:] = values`) does not, and both the browser and the server keep serving the old
-  values until a **Refresh dataset** finds the change. Use **Refresh dataset** (or Ctrl+R inside
-  the app) after every write.
+  values until a **Refresh dataset** finds the change. Use **Refresh dataset** after every write.
 - **A non-admin's refresh re-checks the disk but does not clear the shared cache.** On a hosted
   server, clearing the server's cache is for admins (`POST /api/v1/cache/reset` answers
   `403 admin_only` otherwise); the button's tooltip says so. A non-admin's refresh still starts a

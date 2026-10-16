@@ -67,12 +67,12 @@ The app then behaves like `annzarro start` on your own computer:
 - The server listens on `127.0.0.1` only, starting at port 39487 and taking the next free port
   if that one is busy, also when another program takes it while the server starts. Login is off.
 - The data directory is `~/annzarro-data` (in your home folder). Put or link datasets into
-  `~/annzarro-data/datasets`; the Dataset picker lists stores both there and directly in
+  `~/annzarro-data/datasets`; the dataset browser lists stores both there and directly in
   `~/annzarro-data`. Saved panel sets go to `~/annzarro-data/sessions`. This is also the default
   data directory of `annzarro start`, so the app and a command-line server on the same computer
   see the same datasets and panel sets.
-- A folder button next to the Dataset picker opens your system's folder dialog; choosing a
-  `.zarr` folder anywhere on disk opens it directly.
+- **Open file or folder...** in the dataset browser and on the Welcome screen opens your system's
+  dialog; choosing a `.zarr` folder or an `.h5ad` file anywhere on disk opens it directly.
 - Remote stores (`s3://`, `gs://`, `http(s)://`) are not supported in the desktop app; use
   `pip install 'annzarro[remote]'` and `annzarro start` for those
   ({doc}`../user-guide/remote-datasets`).

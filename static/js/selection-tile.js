@@ -48,11 +48,101 @@ export class SelectionTile {
       // Initialize sections that are common to both variants.
       this._initPanelTypeGrid();
       this._initSourcePanelGrid();
+      if (this.variant === "welcome") this._initOpenDataset();
       if (this.variant === "welcome" && this.showSessions) {
         this._initSessionsList();
       }
       this._attachCloseButton();
       this._watchMemory();
+    }
+
+    // --- Open a dataset (only while no dataset is open) ---
+    /**
+     * The welcome screen offers the dataset first when none is open: the datasets this user opened
+     * last (up to five), Browse datasets..., and in the desktop app Open file or folder... (the
+     * app's own dialog, `window.api.openDatasetDialog`, when it has one). The page's entry points
+     * are `window.annzarro` (main.js).
+     */
+    _initOpenDataset() {
+      const host = this.tileSelector.querySelector('.selection-sections');
+      const app = window.annzarro;
+      if (!host || !app || !app.getDataset) return;
+      const none = () => ['none', 'nodata', 'unavailable'].includes(app.getDataset().status);
+      let section = null;
+      const build = () => {
+        const node = document.createElement('div');
+        node.className = 'selection-section welcome-open-dataset';
+        node.innerHTML = `
+          <h3>Open a dataset</h3>
+          <div class="welcome-recents"></div>
+          <div class="welcome-open-actions">
+            <button type="button" class="btn btn-primary btn-sm welcome-browse"><i class="fas fa-database" aria-hidden="true"></i> Browse datasets&hellip;</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm welcome-native" hidden><i class="fas fa-folder-open" aria-hidden="true"></i> Open file or folder&hellip;</button>
+          </div>`;
+        node.querySelector('.welcome-browse').addEventListener('click', () => app.openBrowser({ browse: true }));
+        const native = node.querySelector('.welcome-native');
+        if (window.api && typeof window.api.openDatasetDialog === 'function') {
+          // one dialog for a file or a folder on macOS, one button per kind elsewhere
+          const kinds = window.api.platform === 'darwin' ? [undefined] : ['h5ad', 'zarr'];
+          const labels = { h5ad: 'Open .h5ad File\u2026', zarr: 'Open .zarr Folder\u2026' };
+          kinds.forEach((kind, i) => {
+            const b = i === 0 ? native : native.cloneNode(true);
+            if (kind) b.lastChild.textContent = ' ' + labels[kind];
+            b.hidden = false;
+            b.addEventListener('click', async () => {
+              const picked = await window.api.openDatasetDialog(kind);
+              const path = typeof picked === 'string' ? picked : picked && picked.path;
+              if (path) app.openDataset(path);
+            });
+            if (i > 0) native.after(b);
+          });
+        }
+        host.insertBefore(node, host.firstChild);
+        return node;
+      };
+      const fill = async () => {
+        if (!none()) {
+          if (section) { section.remove(); section = null; }
+          return;
+        }
+        if (!section) section = build();
+        if (!app.recentDatasets) return;
+        let entries;
+        try { entries = await app.recentDatasets(5); } catch { entries = []; }
+        if (!section) return;
+        const list = section.querySelector('.welcome-recents');
+        list.textContent = '';
+        if (!entries.length) return;
+        const table = document.createElement('table');
+        table.className = 'table table-sm welcome-recents-table';
+        const caption = document.createElement('caption');
+        caption.className = 'visually-hidden';
+        caption.textContent = 'Recently opened datasets';
+        table.appendChild(caption);
+        for (const entry of entries) {
+          const row = table.insertRow();
+          const cell = row.insertCell();
+          const open = document.createElement('button');
+          open.type = 'button';
+          open.className = 'btn btn-link btn-sm welcome-recent';
+          open.textContent = entry.rel_path || entry.name || entry.path;
+          open.title = entry.path;
+          if (entry.error) { open.disabled = true; open.title = `${entry.path}: ${entry.error}`; }
+          open.addEventListener('click', () => app.openDataset(entry.path));
+          cell.appendChild(open);
+          const counts = row.insertCell();
+          counts.className = 'text-muted small';
+          counts.textContent = Number.isFinite(entry.cells) ? `${entry.cells.toLocaleString('en-US')} cells` : (entry.error || '');
+        }
+        list.appendChild(table);
+      };
+      fill();
+      // the section follows the dataset: it goes when one opens and comes back when none is
+      const sync = () => {
+        if (!this.tileSelector.isConnected) { document.removeEventListener('datasetState', sync); return; }
+        fill();
+      };
+      document.addEventListener('datasetState', sync);
     }
 
     // --- Browser memory ---

@@ -1,38 +1,20 @@
 /**
- * The logic of the dataset picker (#change-dataset-modal), apart from the
- * DOM: searching entries by name and relative path (substring, or a regular
- * expression like the Focused Cell / Gene pickers' ".*" toggle), sorting,
- * grouping (with the "Recently opened" list, which utils/dataset-recents.js keeps), and the labels a row shows.
+ * What the dataset browser (utils/dataset-browser.js) shares with the rest of the page, apart from the DOM:
+ * compiling a search (substring, or a regular expression like the Focused Cell / Gene pickers' ".*" toggle) and
+ * where it matches, and what the typed-path field says to each kind of user. Rows, filters and sorting are
+ * in dataset-browser-model.js.
  *
  * An entry is a listing entry: {path, name?, rel_path?, cells?, genes?,
  * format?, modified?, is_link?, error?, match?}.
  */
 
-import { datasetLabel } from './dataset-label.js';
-
-/** Recently opened datasets the picker shows. */
-export const RECENT_LIMIT = 8;
+/** Recently opened datasets the browser lists (the page keeps more). */
+export const RECENT_LIMIT = 50;
 
 /** What an entry is searched by: its name, and its path relative to the data directory (each on its own, so ^ and $ anchor one of them). */
 export function searchParts(entry) {
     const name = entry.name || basename(entry.path);
     return { name, rel: entry.rel_path || '' };
-}
-
-/** The folder part of an entry's relative path, with its trailing slash ('' for a store at the top). */
-export function folderOf(entry) {
-    const rel = entry.rel_path || '';
-    const at = rel.lastIndexOf('/');
-    return at > 0 ? rel.slice(0, at + 1) : '';
-}
-
-/**
- * How a path is shown everywhere: relative to the data directory. `listing`
- * is the entries of the picker; a path outside the data directory, or a
- * remote URL, is shown as it is (utils/dataset-label.js, which the dropdown also uses).
- */
-export function displayPath(path, listing = [], known = null) {
-    return datasetLabel(path, listing, known);
 }
 
 export function basename(path) {
@@ -64,102 +46,6 @@ export function compileQuery(query, { regex = false } = {}) {
         return out;
     };
     return { test: (text) => ranges(text).length > 0, ranges, error: null, empty: false };
-}
-
-export function entryMatches(compiled, entry) {
-    const { name, rel } = searchParts(entry);
-    return compiled.test(name) || (!!rel && compiled.test(rel));
-}
-
-/** Entries matching the query (all of them when it is empty or invalid), with the compiled query. */
-export function searchEntries(entries, query, { regex = false } = {}) {
-    const compiled = compileQuery(query, { regex });
-    if (compiled.empty || compiled.error) return { entries: entries.slice(), ...compiled };
-    return { entries: entries.filter(e => entryMatches(compiled, e)), ...compiled };
-}
-
-export const SORTS = ['best', 'name', 'cells', 'modified'];
-
-/** A new array in the order asked: 'best' keeps the order given; cells and modified put the largest and newest first. */
-export function sortEntries(entries, key) {
-    const list = entries.slice();
-    const byName = (a, b) => String(a.name || a.path).localeCompare(String(b.name || b.path), undefined, { numeric: true, sensitivity: 'base' });
-    if (key === 'name') return list.sort(byName);
-    if (key === 'cells') return list.sort((a, b) => (b.cells ?? -1) - (a.cells ?? -1) || byName(a, b));
-    if (key === 'modified') return list.sort((a, b) => (b.modified ?? -1) - (a.modified ?? -1) || byName(a, b));
-    return list;
-}
-
-// ---- groups -----------------------------------------------------------------------
-
-const MATCH_GROUPS = [
-    ['Same cells and genes', e => e.match === 'same' || e.match === 'fields'],
-    ['Same size (cell and gene names not compared yet)', e => e.match === 'counts'],
-    ['Same name, other cells or genes', e => e.match === 'name-different'],
-    ['Same name', e => e.match === 'name']
-];
-
-/**
- * The groups of the picker, in order: "Recently opened" first, then the
- * match groups relative to the saved store (when `relative`) and the rest.
- * A store shows once: a recent one only under "Recently opened". An entry
- * with `error` goes last, in "Cannot be opened".
- * @param {Array} entries - listing entries with `match` (orderCandidates)
- * @param {{recents?: Array<string|Object>, otherTitle?: string}} [opts] - `recents`, newest first: entries
- *   (what `POST /datasets/lookup` answers, so a store in a subfolder or a remote one is shown too; one that is
- *   unavailable carries `error` and is shown unreadable) or paths of `entries`
- * @returns {Array<{title: string, key: string, entries: Array}>} non-empty groups only
- */
-export function buildGroups(entries, { recents = [], otherTitle = 'Other datasets in the data directory' } = {}) {
-    const groups = [];
-    const readable = entries.filter(e => !e.error);
-    const byPath = new Map(readable.map(e => [e.path, e]));
-    const recent = recents.map(r => (typeof r === 'string' ? byPath.get(r) : r)).filter(Boolean).slice(0, RECENT_LIMIT);
-    const taken = new Set(recent.map(e => e.path));
-    if (recent.length) groups.push({ title: 'Recently opened', key: 'recent', entries: recent });
-    const rest = readable.filter(e => !taken.has(e.path));
-    for (const [title, test] of MATCH_GROUPS) {
-        const members = rest.filter(test);
-        if (members.length) groups.push({ title, key: title, entries: members });
-    }
-    const other = rest.filter(e => !MATCH_GROUPS.some(([, test]) => test(e)));
-    if (other.length) groups.push({ title: otherTitle, key: 'other', entries: other });
-    const broken = entries.filter(e => e.error);
-    if (broken.length) groups.push({ title: 'Cannot be opened', key: 'errors', entries: broken });
-    return groups;
-}
-
-/**
- * Cut groups to at most `limit` rows in all (the picker renders in pages so
- * 2,000 entries stay smooth). Returns the shown groups and how many rows remain.
- */
-export function pageGroups(groups, limit) {
-    let left = limit;
-    let total = 0;
-    let shownCount = 0;
-    const shown = [];
-    for (const g of groups) {
-        total += g.entries.length;
-        if (left <= 0) continue;
-        const take = g.entries.slice(0, left);
-        left -= take.length;
-        shownCount += take.length;
-        shown.push({ ...g, entries: take });
-    }
-    return { groups: shown, remaining: total - shownCount };
-}
-
-// ---- labels ---------------------------------------------------------------------------
-
-export function countsLabel(entry) {
-    return Number.isFinite(entry.cells) && Number.isFinite(entry.genes)
-        ? `${entry.cells.toLocaleString('en-US')} cells x ${entry.genes.toLocaleString('en-US')} genes` : '';
-}
-
-export function modifiedLabel(entry) {
-    if (!Number.isFinite(entry.modified)) return '';
-    const d = new Date(entry.modified * 1000);
-    return `modified ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /** Split `text` into [{text, hit}] by the given ranges (for highlighting). */

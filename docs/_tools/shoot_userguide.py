@@ -268,11 +268,30 @@ def ds(name, data_dir):
 def shoot_interface(sh, data_dir):
     page = open_plain(sh, ds("bm_aging_annzarro.zarr", data_dir))
     capture(sh, page, "ui-welcome")
-    capture(sh, page, "ui-header", "#app-header", marks=[
-        (1, "#select2-dataset-selector-container"), (2, "#refresh-dataset"),
+    capture_union(sh, page, "ui-header", ["#app-header", "#dataset-stats"], pad=0, marks=[
+        (1, "#dataset-button"), (2, "#refresh-dataset"),
         (3, "#gene-history-back"), (4, "#focused-gene"),
         (5, "#cell-history-back"), (6, "#focused-cell"),
         (7, "#btn-save-session"), (8, "#btn-load-session"), (9, "#btn-share-link")])
+
+    # The dataset browser: open with the button, as a user does; Recent first, then a store selected for its details
+    page.click("#dataset-button")
+    page.wait_for_selector("#dataset-browser.show #dsb-table tbody tr", timeout=20000)
+    page.wait_for_function("document.activeElement && document.activeElement.id === 'dsb-search'")
+    time.sleep(0.8)
+    row = page.locator("#dsb-table tbody tr.dsb-row[data-kind='store']").first
+    row.locator("td").first.click()
+    page.wait_for_selector("#dsb-details .dsb-key", timeout=20000)
+    page.wait_for_function("document.querySelector('#dsb-check') && !/Checking/.test(document.querySelector('#dsb-check').textContent)", timeout=20000)
+    time.sleep(0.6)
+    # the paths of this machine are not for a public page: show the ones a user would have
+    page.evaluate("""() => document.querySelectorAll('#dsb-details .dsb-details-path').forEach(e => {
+        e.textContent = '~/annzarro-data/' + e.textContent.split('/').pop(); })""")
+    capture(sh, page, "ui-dataset-browser", "#dataset-browser .modal-content", marks=[
+        (1, "#dsb-search"), (2, "#dsb-places"), (3, "#dsb-crumbs"), (4, "#dsb-table thead"), (5, "#dsb-details")])
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#dataset-browser", state="hidden")
+    time.sleep(0.4)
 
     # Gene picker: open it, type a prefix
     page.click("#focused-gene")
@@ -810,13 +829,12 @@ def shoot_remote(sh_unused, data_dir, port, remote_python, log):
             sh = Shooter(browser, f"http://127.0.0.1:{port}", log, OUT)
             page = open_plain(sh, ds("bm_aging_annzarro.zarr", data_dir))
             url = f"http://127.0.0.1:{http_port}/bm_aging_annzarro.zarr"
-            page.click("#select2-dataset-selector-container"); time.sleep(0.8)
-            page.locator(".select2-container--open .select2-search__field").fill(url)
+            page.click("#dataset-button")
+            page.wait_for_selector("#dataset-browser.show #dsb-table tbody tr", timeout=20000)
+            page.wait_for_function("document.activeElement && document.activeElement.id === 'dsb-search'")
+            page.fill("#dsb-search", url)
             time.sleep(0.8)
-            capture(sh, page, "remote-typed", None)
-            im = Image.open(OUT / "remote-typed.png")
-            im.crop((0, 0, int(800 * DSF), int(330 * DSF))).save(OUT / "remote-typed.png")
-            finish(OUT / "remote-typed.png")
+            capture(sh, page, "remote-typed", "#dataset-browser .modal-content")
             page.keyboard.press("Enter")
             sh.ready(page)
             page.context.close()

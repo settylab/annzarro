@@ -222,6 +222,11 @@ auth:
 branding:
   app_name: "AnnZarro"
   project_description: "Zarr-based AnnData Visualization Tool"
+
+  # Who a user who sees only some datasets (access.restricted) is told to ask for more, in the
+  # dataset browser's banner when a link or a panel set names a dataset they cannot read:
+  # "Ask <admin_contact> for access." A name or an email address; nothing is said when it is empty.
+  admin_contact: null
   
   # Contact block on the login page, shown only when something is set here.
   # Fill it in for your site, e.g.:

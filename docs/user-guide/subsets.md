@@ -14,12 +14,12 @@ At or below 200,000 cells every cell is shown and nothing changes. The three num
 settings: `ui.defaults.subset_threshold`, `subset_size` and `subset_seed`
 ({doc}`../reference/configuration`).
 
-The statistics bar under the header says which cells are shown:
+The dataset bar under the header says which cells are shown:
 
 ```{figure} ../_static/screens/user-guide/subsets-badge-all.png
 :class: screenshot
 :width: 25%
-:alt: The statistics bar reading Cells 8,090 with the badge All cells (1).
+:alt: The dataset bar reading Cells 8,090 with the badge All cells (1).
 
 Every cell is shown: the badge reads **All cells**.
 ```
@@ -27,7 +27,7 @@ Every cell is shown: the badge reads **All cells**.
 ```{figure} ../_static/screens/user-guide/subsets-badge.png
 :class: screenshot
 :width: 35%
-:alt: The statistics bar reading Cells 3,000 of 8,090 with the yellow badge Subset · seed 0 (1).
+:alt: The dataset bar reading Cells 3,000 of 8,090 with the yellow badge Subset · seed 0 (1).
 
 A subset is active: **Cells: 3,000 of 8,090** and the badge **Subset · seed 0**. A balanced
 subset says so in the badge too, for example **Subset · seed 0 · balanced by cell_line_id**, and a
@@ -118,7 +118,7 @@ show the dialog. On a large dataset the steps are the same.
 
 ```{figure} ../_static/screens/user-guide/subsets-applied.png
 :class: screenshot
-:alt: The app with the subset applied: "Cells: 3,000 of 8,090" and the badge "Subset · seed 0" in the statistics bar, a UMAP with fewer points coloured by cell type and a status line under it "3,000 of 8,090 cells shown · 5,090 not in part 1 of 3", and a cell table "Showing 1 to 25 of 3,000 entries".
+:alt: The app with the subset applied: "Cells: 3,000 of 8,090" and the badge "Subset · seed 0" in the dataset bar, a UMAP with fewer points coloured by cell type and a status line under it "3,000 of 8,090 cells shown · 5,090 not in part 1 of 3", and a cell table "Showing 1 to 25 of 3,000 entries".
 
 After **Apply**: the UMAP and the cell table show the same 3,000 cells. View before the subset:
 {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`.
@@ -128,12 +128,12 @@ After **Apply**: the UMAP and the cell table show the same 3,000 cells. View bef
 
 A subset is the first of several **parts** that split the cells into disjoint groups of the
 chosen size; together the parts hold every cell (every cell passing the filter) once. With more
-than one part, the statistics bar shows the part next to the badge:
+than one part, the dataset bar shows the part next to the badge:
 
 ```{figure} ../_static/screens/user-guide/subsets-parts.png
 :class: screenshot
 :width: 35%
-:alt: The statistics bar reading Cells 3,000 of 8,090, the badge Subset · seed 0, and below it a previous-part button (1), the part number 1 in a box (2), "of 3" and a next-part button (3).
+:alt: The dataset bar reading Cells 3,000 of 8,090, the badge Subset · seed 0, and below it a previous-part button (1), the part number 1 in a box (2), "of 3" and a next-part button (3).
 
 The 8,063 cells passing the filter above, in parts of 3,000: **Part 1 of 3**.
 ```
@@ -161,7 +161,7 @@ The same view on part 1 and, after one click on **›**, on part 2:
 
 ```{figure} ../_static/screens/user-guide/subsets-parts-view-1.png
 :class: screenshot
-:alt: Part 1 of 3: a UMAP of 3,000 cells coloured by cell type and a cell table of 3,000 rows whose first row is HSPC_Mid_1#AAACCCATCGCTGCGA-1; the statistics bar reads Cells 3,000 of 8,090, Part 1 of 3.
+:alt: Part 1 of 3: a UMAP of 3,000 cells coloured by cell type and a cell table of 3,000 rows whose first row is HSPC_Mid_1#AAACCCATCGCTGCGA-1; the dataset bar reads Cells 3,000 of 8,090, Part 1 of 3.
 
 Part 1 of 3.
 ```
