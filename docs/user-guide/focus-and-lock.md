@@ -167,7 +167,7 @@ The walk from the HSC over the cells of part 3, which does not contain the HSC.
 
 ```{figure} ../_static/screens/user-guide/focus-outside-header.png
 :class: screenshot
-:alt: The header: the Focused Cell picker showing HSPC_Old_1… and next to it the badge "not in part 3 of 3" (1); below, the statistics bar at Part 3 of 3.
+:alt: The header: the Focused Cell picker showing HSPC_Old_1… and next to it the badge "not in part 3 of 3" (1); below, the dataset bar at Part 3 of 3.
 
 The header after the step.
 ```

@@ -30,10 +30,10 @@
      },
      {
       "percentage": 50,
-      "controlsVisible": false
+      "controlsVisible": true
      }
     ],
-    "height": 1000
+    "height": 890
    },
    {
     "type": "selector"
@@ -110,12 +110,6 @@
     "showAxisLines": true,
     "showZeroLines": false,
     "showLegend": true,
-    "bgColor": "#ffffff",
-    "gridColor": "#e6e6e6",
-    "axisColor": "#000000",
-    "textColor": "#000000",
-    "zeroLineColor": "#cccccc",
-    "backdropColor": "#f0f0f0",
     "axisLineWidth": 1,
     "gridLineWidth": 1,
     "zeroLineWidth": 1,
@@ -134,10 +128,21 @@
     "enableZoom": true,
     "enablePan": true,
     "showHoverInfo": true,
+    "tickCount": null,
+    "marginsUnlinked": false,
+    "colorbarPosition": "legend",
+    "colorbarLength": 1,
+    "colorbarTicks": null,
+    "showScaleBar": false,
+    "scaleBarCorner": "bottom-right",
+    "scaleBarSize": 1,
+    "scaleBarUnit": "",
+    "colourModel": 2,
     "tableFilter": "gene-table-T",
     "removeNonTableEntries": false,
     "viewport2D": null,
-    "centeringActive": false
+    "centeringActive": false,
+    "colorRangeUnits": "data"
    },
    "gene-table-T": {
     "id": "gene-table-T",
@@ -162,14 +167,13 @@
     "searchBuilderEnabled": true,
     "responsive": false,
     "fixedHeader": true,
-    "filteredGenes": null,
     "searchBuilderConfig": {
      "criteria": [
       {
        "condition": ">",
        "data": "kompot_de_Young_to_Old_mahalanobis",
        "origData": "var_kompot_de_Young_to_Old_mahalanobis_main",
-       "type": "num",
+       "type": "az-num",
        "value": [
         "5"
        ]
@@ -180,7 +184,7 @@
          "condition": ">",
          "data": "kompot_de_Young_to_Old_mean_lfc",
          "origData": "var_kompot_de_Young_to_Old_mean_lfc_main",
-         "type": "num",
+         "type": "az-num",
          "value": [
           "0.05"
          ]
@@ -189,7 +193,7 @@
          "condition": "<",
          "data": "kompot_de_Young_to_Old_mean_lfc",
          "origData": "var_kompot_de_Young_to_Old_mean_lfc_main",
-         "type": "num",
+         "type": "az-num",
          "value": [
           "-0.05"
          ]
@@ -199,7 +203,9 @@
       }
      ],
      "logic": "AND"
-    }
+    },
+    "searchText": "",
+    "filteredGenes": null
    }
   }
  }

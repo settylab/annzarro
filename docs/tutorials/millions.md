@@ -42,13 +42,13 @@ ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 1. Choose the store in **Dataset**. Add a **Cell Plot** with **X** `obsm` · `X_umap` · `0`,
    **Y** `obsm` · `X_umap` · `1` and **Color** `obs` · `cell_line_id`.
 
-The statistics bar reads "Cells: 100,000 of 95,624,334" with the badge **Subset · seed 0**,
+The dataset bar reads "Cells: 100,000 of 95,624,334" with the badge **Subset · seed 0**,
 and the part controls below it read "Part 1 of 957". The line under the plot counts what it
 draws: "100,000 of 95.6M cells shown · 95.5M not in part 1 of 957".
 
 ```{figure} ../_static/screens/tutorials/millions-badge.png
 :class: screenshot
-:alt: Statistics bar reading "Cells: 100,000 of 95,624,334" with a yellow badge "Subset · seed 0", and below it a Part box holding 1 "of 957" with previous and next arrows.
+:alt: Dataset bar reading "Cells: 100,000 of 95,624,334" with a yellow badge "Subset · seed 0", and below it a Part box holding 1 "of 957" with previous and next arrows.
 :width: 60%
 
 The badge and the part controls.
@@ -103,7 +103,7 @@ load time; sizes above the dashed line switch the plot to large-plot mode.
 
 ```{figure} ../_static/screens/tutorials/millions-part-controls.png
 :class: screenshot
-:alt: The statistics bar with "Part 250 of 957", the UMAP of part 250 by cell line, and the status line "100,000 of 95.6M cells shown, 95.5M not in part 250 of 957".
+:alt: The dataset bar with "Part 250 of 957", the UMAP of part 250 by cell line, and the status line "100,000 of 95.6M cells shown, 95.5M not in part 250 of 957".
 :width: 100%
 
 Part 250 of the balanced subset. The islands are the same as in part 1: each part is a sample
@@ -167,7 +167,7 @@ and the status line under the plot reads "95.6M cells" and, at the right, **Larg
 
 ```{figure} ../_static/screens/tutorials/millions-large.png
 :class: screenshot
-:alt: All 95,624,334 cells of Tahoe-100M on the UMAP coloured by cell line, dense solid islands; the statistics bar reads "Cells: 95,624,334" with an "All cells" badge, and the status line reads "95.6M cells" and "Large plot".
+:alt: All 95,624,334 cells of Tahoe-100M on the UMAP coloured by cell line, dense solid islands; the dataset bar reads "Cells: 95,624,334" with an "All cells" badge, and the status line reads "95.6M cells" and "Large plot".
 :width: 100%
 
 Every cell, in large-plot mode, at the automatic point size and opacity.
@@ -190,7 +190,7 @@ Each statement was read from the app (v0.4.0) on the Tahoe-100M store.
 
 | Statement | Where it shows |
 |---|---|
-| 100,000 of 95,624,334 cells, seed 0 | statistics bar and badge, step 1 |
+| 100,000 of 95,624,334 cells, seed 0 | dataset bar and badge, step 1 |
 | 957 parts of 100,000 | part controls; the 100k size card |
 | 2,000 cells from each of the 50 cell lines | preview line of the dialog, step 3 |
 | 95.5M cells not in part 250 | status line, step 6 |
