@@ -8,6 +8,12 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.5.3 (2026-10-16)
+
+The desktop apps of 0.5.2 with a fix for Windows. 0.5.2 was published on PyPI only; its desktop
+apps were not released, because the Windows build found this bug. Everything in 0.5.2 below is in
+0.5.3.
+
 ### Fixes
 - Windows: the dataset browser's details, the folder listing and the recent datasets work for a
   store on another drive than the data directory (for example the data directory on `C:` and the
@@ -88,7 +94,7 @@ admin interface.
   next to an option that turns the automatic checks off; `ANNZARRO_DISABLE_UPDATES=1` turns updates off
   entirely. macOS, the Windows installer and the Linux AppImage update in place; a `.deb` and the
   Windows portable zip show a link to the new release. Checks contact only `github.com`. Updating
-  starts with 0.5.2: users of 0.5.1 and older update by hand once
+  starts with 0.5.3: users of 0.5.2 and older update by hand once
   ([details](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html#updates)).
 - **Homebrew** on macOS: `brew install --cask settylab/annzarro/annzarro`; the app then updates itself.
   The tap follows each release.
