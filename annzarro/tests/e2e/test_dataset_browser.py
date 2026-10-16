@@ -308,7 +308,7 @@ def test_sorting_by_a_header_button_sets_aria_sort_and_the_server_sorts_name_and
     page.wait_for_function("document.querySelector(\"#dsb-table th:has(.dsb-sort[data-sort='name'])\").getAttribute('aria-sort') === 'descending'")
     assert requests and "sort=name" in requests[-1] and "order=desc" in requests[-1], requests
     names = [n for n in _names(page) if not n.startswith("broken")]
-    assert names == sorted(names, reverse=True), "the server's order: by name, descending"
+    assert names == sorted(names, key=str.lower, reverse=True)
     page.click(".dsb-sort[data-sort='modified']")
     page.wait_for_function("document.querySelector(\"#dsb-table th:has(.dsb-sort[data-sort='modified'])\").getAttribute('aria-sort') === 'descending'")
     assert "sort=modified" in requests[-1] and "order=desc" in requests[-1], requests
