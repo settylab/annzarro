@@ -8,6 +8,12 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixes
+
+- A release build no longer fails when Apple's ticket service drops the connection while the
+  notarization ticket of the macOS app or its dmg is being checked (`stapler validate`); the check
+  is retried up to five times, and a missing ticket still fails at once.
+
 ## 0.5.4 (2026-10-16)
 
 A filtered Cell Table opens about twice as fast on large datasets, and switching datasets no longer
