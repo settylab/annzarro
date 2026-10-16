@@ -2,7 +2,7 @@
  * Utilities for loading and processing table data
  */
 import { notify } from '../../utils/notify.js';
-import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, TEXT_ONLY_NUM_TYPE, manyValuesType, textOnlyConditions, textOnlyNumConditions, fastSelectConditions } from '../../utils/search-builder.js';
+import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, TEXT_ONLY_NUM_TYPE, manyValuesType, textOnlyConditions, textOnlyNumConditions, fastSelectConditions, installCriteriaSearch } from '../../utils/search-builder.js';
 import { VALUE_LIST_MAX } from '../../utils/categories.js';
 import { DataManager } from '../../data-manager.js';
 import { RemoteNames } from '../../utils/remote-names.js';
@@ -1010,16 +1010,14 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                                '<"row"<"col-sm-12 col-md-7"i><"col-sm-12 col-md-5"p>>';
         }
         
-        // Initialize with SearchBuilder extension explicitly
+        // Initialize with SearchBuilder extension explicitly; it applies the
+        // saved conditions (preDefined) in the same pass. No rebuild after
+        // it: that rebuilt the filter from its own getDetails() and ran the
+        // search over every row a second time (6 s at 484,125 rows).
+        installCriteriaSearch($.fn.dataTable.Criteria);
         dataTable = $(table).DataTable(tableOptions);
         
-        // Make sure SearchBuilder is visible
         setTimeout(() => {
-            // Force the SearchBuilder to refresh and show properly
-            if (dataTable.searchBuilder && typeof dataTable.searchBuilder.rebuild === 'function') {
-                dataTable.searchBuilder.rebuild(settings.searchBuilderConfig || {});
-            }
-            
             // Make logic buttons more visible by adding custom classes
             $(tableContainer).find('.dtsb-logicButton').each(function() {
                 const $button = $(this);
