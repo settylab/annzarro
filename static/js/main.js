@@ -220,6 +220,14 @@ const App = (function() {
 
     let _bootDone = () => {};
     const _booted = new Promise(resolve => { _bootDone = resolve; });
+    // a click on the dataset button, Ctrl/Cmd+O or the desktop menu before the app started opens the browser, once, now
+    _booted.then(() => {
+        if (window.annzarroEarlyOpen) {
+            window.annzarroEarlyOpen.flush((asked) => {
+                if (!_browser.isOpen()) _showChangeDataset({ browse: true, startFolder: (asked && asked.path) || null });
+            });
+        }
+    });
 
     /**
      * Wire DatasetState: what opening runs, the views that follow it (tab
@@ -1690,6 +1698,7 @@ const App = (function() {
         _initKeyboardShortcuts();
         
         // The dataset button opens the browser (Cmd/Ctrl+O does too: _initKeyboardShortcuts)
+        if (window.annzarroEarlyOpen) window.annzarroEarlyOpen.detach();   // the real handlers take over (js/early-open.js)
         _datasetButton = mountDatasetButton({
             button: document.getElementById('dataset-button'),
             onOpen: () => _showChangeDataset({ browse: true }),

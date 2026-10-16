@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Dataset button on a slow load
+- A click on the dataset button, Ctrl/Cmd+O or the desktop menu's Open Dataset before the page has finished
+  starting is no longer lost: the button shows it is busy and the dataset browser opens once the page is ready.
+
 ### Admin: remote datasets
 - Whether the server may read `s3://`, `gs://`, `gcs://` and `http(s)://` datasets is set in the admin
   interface: **Data sources > Remote datasets** (the section formerly called Data directories) offers Off,
