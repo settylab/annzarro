@@ -152,3 +152,55 @@ test('a numeric column with too many values to list keeps the number conditions 
     assert.equal(c['>'].search(0.6, ['0.5']), true);
     assert.equal(Criteria.numConditions['='].init, select, 'the shared number conditions are not changed');
 });
+
+// A condition as SearchBuilder makes it (Criteria, 1.4.2), on a table whose
+// settings() is counted: every call built a DataTables API object.
+function criterion({ type = 'num', condition = '=', value = ['11'], decimal = '', thousands = '', orthogonal } = {}) {
+    const calls = { settings: 0 };
+    const settings = {
+        oLanguage: { sDecimal: decimal, sThousands: thousands },
+        oApi: { _fnGetCellData: (s, row, col, kind) => `${kind}:${row}:${col}` }
+    };
+    const eq = (t, v) => t === v[0];
+    return {
+        calls,
+        s: {
+            condition, value, type, dataIdx: 1,
+            conditions: { '=': { search: eq }, contains: { search: (t, v) => t.includes(v[0]) } },
+            dt: { settings: () => { calls.settings++; return [settings]; } }
+        },
+        c: { orthogonal: orthogonal || { display: 'display', search: 'filter' } }
+    };
+}
+
+test('a filter reads the table settings once, not twice per row (484,125-row landing stall)', async () => {
+    const { criteriaSearch } = await import('../../../static/js/utils/search-builder.js');
+    const c = criterion();
+    let kept = 0;
+    for (let i = 0; i < 10000; i++) if (criteriaSearch(c, [`c${i}`, String(i % 20)], i)) kept++;
+    assert.equal(kept, 500);
+    assert.equal(c.calls.settings, 1);
+});
+
+test('a filter tests the value SearchBuilder tests', async () => {
+    const { criteriaSearch, installCriteriaSearch } = await import('../../../static/js/utils/search-builder.js');
+    assert.equal(criteriaSearch(criterion({ condition: 'between' }), ['a', '11'], 0), undefined, 'not complete');
+    assert.equal(criteriaSearch(criterion({ decimal: ',', value: ['1.5'] }), ['a', '1,5'], 0), true, 'decimal mark');
+    assert.equal(criteriaSearch(criterion({ thousands: '.', decimal: ',', value: ['1,000.5'] }), ['a', '1.000,5'], 0), true,
+        'thousands and decimal marks');
+    assert.equal(criteriaSearch(criterion({ type: 'html', value: ['bold'] }), ['a', '<b>bold</b>'], 0), true, 'tags dropped');
+    assert.equal(criteriaSearch(criterion({ type: 'string', value: ['a b'] }), ['a', 'a\nb'], 0), true, 'line breaks');
+    assert.equal(criteriaSearch(criterion({ type: 'string', value: [''] }), ['a', null], 0), true, 'null tests as empty');
+    const sorted = criterion({ type: 'array', condition: '=', value: [undefined] });
+    sorted.s.conditions['='].search = (t) => t.join() === 'a,b';
+    assert.equal(criteriaSearch(sorted, ['x', ['b', 'a']], 0), true, 'arrays sorted');
+    assert.equal(criteriaSearch(criterion({ type: 'string', value: ['sort:3:1'], orthogonal: 'sort' }), ['a', 'z'], 3), true,
+        'another orthogonal data kind is read from the table');
+    function Criteria() {}
+    Criteria.prototype.search = () => 'theirs';
+    installCriteriaSearch(Criteria);
+    const once = Criteria.prototype.search;
+    installCriteriaSearch(Criteria);
+    assert.equal(Criteria.prototype.search, once, 'put in place once');
+    assert.equal(once.call(criterion(), ['a', '11'], 0), true);
+});

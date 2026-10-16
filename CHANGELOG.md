@@ -11,6 +11,11 @@ with the release after it. Older releases are listed on
 ### Fixes
 - A release build no longer fails when Apple's ticket service drops the connection while the macOS
   app or its dmg is being stapled: stapling is retried up to five times.
+- A Cell Table with a filter opens about twice as fast on large datasets, from a share link, a
+  panel set or a reload: the filter goes over the rows once instead of twice, and each row costs
+  less. Landing on a link with a filtered table of 484,125 cells held the page for two stretches of
+  over 6 s each (long enough for the browser to report the page unresponsive); the longest is now
+  about 2 s.
 
 ### Docs
 - The README and the licence page cite v0.5.3 by its DOI,

@@ -213,6 +213,58 @@ export function fastSelectInit(Criteria, $) {
 }
 
 /**
+ * SearchBuilder's test of one row against one condition (Criteria.search,
+ * 1.4.2), with the table's settings read once per condition. Its own asked
+ * `dt.settings()` twice per row of a number column, for the decimal and
+ * thousands marks, and each call builds a DataTables API object with every
+ * API method copied onto it: a filter on a 484,125 row table spent 4.7 s of
+ * each pass on that alone. The value tested and the result are SearchBuilder's.
+ * @param {Object} criterion  a SearchBuilder Criteria (`this`)
+ * @param {Array} rowData
+ * @param {number} rowIdx
+ * @returns {boolean|undefined} undefined when the condition is not complete
+ */
+export function criteriaSearch(criterion, rowData, rowIdx) {
+    const s = criterion.s;
+    const condition = s.conditions[s.condition];
+    if (s.condition === undefined || condition === undefined) return undefined;
+    // one table per condition: its settings object does not change
+    const settings = criterion._azSettings || (criterion._azSettings = s.dt.settings()[0]);
+    const lang = settings.oLanguage;
+    let value = rowData[s.dataIdx];
+    if (s.type.includes('num') && (lang.sDecimal !== '' || lang.sThousands !== '')) {
+        let parts = [rowData[s.dataIdx]];
+        if (lang.sDecimal !== '') parts = rowData[s.dataIdx].split(lang.sDecimal);
+        if (lang.sThousands !== '') parts = parts.map((p) => p.replace(lang.sThousands, ','));
+        value = parts.join('.');
+    }
+    const orth = criterion.c.orthogonal;
+    if (orth.search !== 'filter') {
+        value = settings.oApi._fnGetCellData(settings, rowIdx, s.dataIdx, typeof orth === 'string' ? orth : orth.search);
+    }
+    if (s.type === 'array') {
+        value = Array.isArray(value) ? value : [value];
+        value.sort();
+    } else if (value !== null && typeof value === 'string') {
+        value = value.replace(/[\r\n\u2028]/g, ' ');
+    }
+    if (s.type.includes('html') && typeof value === 'string') value = value.replace(/(<([^>]+)>)/gi, '');
+    return condition.search(value === null ? '' : value, s.value, criterion);
+}
+
+/**
+ * Put {@link criteriaSearch} in place of Criteria.prototype.search, once.
+ * @param {Object} Criteria  $.fn.dataTable.Criteria (SearchBuilder)
+ */
+export function installCriteriaSearch(Criteria) {
+    if (!Criteria || !Criteria.prototype || Criteria.prototype.search.azOnePass) return;
+    const search = function (rowData, rowIdx) { return criteriaSearch(this, rowData, rowIdx); };
+    search.azOnePass = true;
+    search.azOriginal = Criteria.prototype.search;   // for the tests that compare the two
+    Criteria.prototype.search = search;
+}
+
+/**
  * The string and number conditions with "Equals" and "Not" on
  * fastSelectInit, for SearchBuilder's `conditions` option.
  * @param {Object} Criteria  $.fn.dataTable.Criteria
