@@ -114,8 +114,8 @@ gene-by-gene relationships in single-cell data. bioRxiv (2026).
 ```
 
 To cite the software itself, for example the exact release you ran, use its Zenodo DOI. Each release
-is archived on Zenodo with its own version DOI (v0.5.1:
-[10.5281/zenodo.23386903](https://doi.org/10.5281/zenodo.23386903)); the concept DOI below always
+is archived on Zenodo with its own version DOI (v0.5.3:
+[10.5281/zenodo.23423797](https://doi.org/10.5281/zenodo.23423797)); the concept DOI below always
 resolves to the latest release.
 
 ```bibtex

@@ -150,13 +150,13 @@ jobs:
           ls -la dist
 
       - name: Notarize the dmg and check the macOS signature
-        # electron-builder notarized and stapled the .app; the dmg around it is a separate
-        # file, notarized here. Then the checks that fail the release: the signature is intact,
+        # The .app was notarized and stapled during the build (the afterSign hook, with retries, so
+        # the dmg and zip carry it); the dmg around it is a separate file, notarized here. Then the checks that fail the release: the signature is intact,
         # Gatekeeper reports "Notarized Developer ID", and both tickets are stapled.
         if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
         working-directory: annzarro/desktop/electron
         run: |
-          for dmg in dist/AnnZarro-*.dmg; do ../scripts/mac_notarize_dmg.sh "$dmg"; done
+          for dmg in dist/AnnZarro-*.dmg; do ../scripts/mac_notarize.sh "$dmg"; done
           ../scripts/mac_verify_signature.sh "$(ls -d dist/mac*/AnnZarro.app)" dist/AnnZarro-*.dmg
 
       - name: Remove the API key
