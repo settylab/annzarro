@@ -8,7 +8,7 @@ separate Python installation and no login. It is the "Desktop app" arrangement o
 
 Standalone apps for macOS, Windows and Linux are published with each release on the
 [GitHub releases page](https://github.com/settylab/annzarro/releases) of `settylab/annzarro`.
-`<version>` below is the release, for example `0.5.1`.
+`<version>` below is the release, for example `0.5.2`.
 
 | System | File | What it is |
 |---|---|---|
@@ -149,7 +149,7 @@ and starts again. If you choose **Later**, the next launch offers the update aga
   the server stay local either way.
 
 ```{note}
-Updating needs the first release that contains this feature. If you run 0.5.1 or older, download
+Updating starts with 0.5.2. If you run 0.5.1 or older, download
 the newest release by hand once (the files above); from then on the app updates itself. macOS
 updates need the notarized builds, so a build you made yourself ({ref}`building <building-the-app>`)
 does not update.
@@ -198,8 +198,8 @@ to `annzarro/__init__.py`, `annzarro/desktop/electron/package.json` and its `pac
 CI refuses a build whose `package.json` differs, and `annzarro/tests/utils/test_bump_version.py`
 checks that all of them agree.
 
-1. `python bump_version.py 0.5.1`, commit, merge.
-2. Tag and push: `git tag v0.5.1 && git push origin v0.5.1`.
+1. `python bump_version.py 0.5.2`, commit, merge.
+2. Tag and push: `git tag v0.5.2 && git push origin v0.5.2`.
 3. The workflow `.github/workflows/build.yml` builds and smoke-tests macOS (arm64, x64), Windows
    and Linux, then creates a **draft** release with all files and `SHA256SUMS.txt`. Review it
    and publish.
