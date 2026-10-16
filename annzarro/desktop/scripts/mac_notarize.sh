@@ -39,15 +39,11 @@ if ! grep -q "status: Accepted" "$log"; then
 fi
 # Stapling fetches the ticket Apple just issued; right after notarization that service has dropped
 # the connection (error 68, "The network connection was lost") on three releases in a row, for the
-# dmg and for the app. Retry with a growing pause (ANNZARRO_STAPLE_PAUSE_S per attempt, 20 s)
-# before failing the build.
-pause=${ANNZARRO_STAPLE_PAUSE_S:-20}
-for attempt in 1 2 3 4 5; do
-  if xcrun stapler staple "$target"; then
-    exit 0
-  fi
-  echo "mac_notarize: stapling $target failed (attempt $attempt of 5), retrying in $((attempt * pause)) s" >&2
-  sleep $((attempt * pause))
-done
+# dmg and for the app. Retry (see mac_stapler_retry.sh) before failing the build.
+# shellcheck source=mac_stapler_retry.sh
+source "$(dirname "$0")/mac_stapler_retry.sh"
+if stapler_retry staple "$target" any; then
+  exit 0
+fi
 echo "mac_notarize: could not staple $target" >&2
 exit 1
