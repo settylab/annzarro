@@ -794,6 +794,34 @@ def test_switching_keeps_the_open_panels_and_offers_a_way_back_in_the_bar(server
         s.close()
 
 
+def test_every_switch_of_the_users_offers_the_way_back_and_no_other_open_does(server):
+    base, data = server
+    s = Session(base)
+    page = s.page
+    try:
+        open_dataset(page, os.path.join(data, "short.zarr"))
+        wait_for_open(page, "short.zarr")
+        back = _back(page)
+        assert back.is_hidden()
+        # the desktop app's entry point, which is not the browser
+        result = page.evaluate("(p) => window.annzarro.openDataset(p)", os.path.join(data, "other_small.zarr"))
+        assert result["ok"] is True, result
+        back.wait_for(state="visible", timeout=10_000)
+        assert back.get_attribute("aria-label") == "Back to short.zarr"
+        back.click()
+        wait_for_open(page, "short.zarr")
+        back.wait_for(state="visible", timeout=10_000)
+        assert back.get_attribute("aria-label") == "Back to other_small.zarr"
+        # an open that is not the user's (a refresh) changes nothing, and a link to another dataset withdraws the offer
+        page.evaluate("""async (p) => { const m = await import('/static/js/utils/dataset-state.js'); await m.DatasetState.open(p, {source: 'view'}); }""",
+                      os.path.join(data, "projects", "lung", "lung_v2.zarr"))
+        wait_for_open(page, "lung_v2.zarr")
+        back.wait_for(state="hidden", timeout=10_000)
+        assert not s.errors, s.errors
+    finally:
+        s.close()
+
+
 @pytest.mark.parametrize("scheme", ["light", "dark"])
 def test_the_back_button_stays_inside_the_bar_for_a_long_dataset_name(server, scheme):
     base, data = server
@@ -817,7 +845,11 @@ def test_the_back_button_stays_inside_the_bar_for_a_long_dataset_name(server, sc
         assert box["width"] <= 30 and box["height"] == btn["height"], (box, btn)
         assert box["x"] >= btn["x"] + btn["width"], "right of the dataset button"
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        page.wait_for_function("() => !document.querySelector('.modal-backdrop, dialog[open]')", timeout=10_000)
         _shot(page, f"dataset-bar-back-{scheme}.png")
+        back.hover()
+        page.wait_for_timeout(300)
+        _shot(page, f"dataset-bar-back-{scheme}-hover.png")
         assert not s.errors, s.errors
     finally:
         s.close()

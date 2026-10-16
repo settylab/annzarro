@@ -65,6 +65,8 @@ export function mountDatasetButton({ button, onOpen, shortcut, back = null, onBa
     let offer = null;
     function showBack(state) {
         if (!back) return;
+        // another dataset opened by something that is not a user's switch (a link, a panel set): the offer is stale
+        if (offer && state.status === 'open' && state.path !== offer.from) offer = null;
         const shown = !!offer && state.status === 'open' && state.path === offer.from;
         back.hidden = !shown;
         if (shown) {

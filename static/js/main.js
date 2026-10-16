@@ -1015,14 +1015,12 @@ const App = (function() {
             }
         });
         await _recentsUser();     // the recents and pins are the user's: know who that is before they are read
-        const before = DatasetState.get();
         const choose = async (path) => {
             _markUserChoice(path);
             // a caller that asked for a store (the Load dialog) takes it from here
             if (onChoose) { await onChoose(path); return; }
             if (normal) {
                 await DatasetState.open(path, { source: 'user' });
-                _offerBack(before, DatasetState.get());
                 return;
             }
             const view = pending.view || { v: VIEW_SCHEMA_VERSION };
@@ -1034,19 +1032,17 @@ const App = (function() {
 
     /**
      * After a switch nothing asks first (it would interrupt the common case), and the dataset that
-     * was open is one click away: the back button of the dataset bar. Going back is a switch too,
-     * so the button then offers the dataset just left.
+     * was open is one click away: the back button of the dataset bar. Every open of the user's own
+     * choice offers it (DatasetState.onSwitch), going back included, so the button then offers the
+     * dataset just left.
      * @private
      */
-    function _offerBack(before, after) {
-        if (!_datasetButton) return;
-        _datasetButton.setBack(backOffer(before, after), after);
+    function _offerBack({ before, after }) {
+        if (_datasetButton) _datasetButton.setBack(backOffer(before, after), after);
     }
 
     async function _goBack(offer) {
-        const before = DatasetState.get();
         await DatasetState.open(offer.path, { source: 'user' });
-        _offerBack(before, DatasetState.get());
     }
 
     /**
@@ -1697,6 +1693,7 @@ const App = (function() {
             onBack: _goBack
         });
         _datasetButton.update(DatasetState.get());
+        DatasetState.onSwitch(_offerBack);
         _focusInputsFollow(DatasetState.get());
         // the desktop app's Open Dataset... menu item; a plain folder it was handed is shown as a place
         // (preventDefault: the app then does not say "not a zarr store")

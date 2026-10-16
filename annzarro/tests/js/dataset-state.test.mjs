@@ -102,3 +102,34 @@ test('the shared state is its own instance', () => {
     assert.equal(DatasetState.get().status, 'none');
     assert.notEqual(DatasetState, createDatasetState());
 });
+
+test('onSwitch tells of an open of the user\'s own choice, with the state before and after, and of no other', async () => {
+    const state = createDatasetState();
+    state.setOpener(async (path) => state.set({ path, label: path, status: 'open' }));
+    const seen = [];
+    state.onSwitch(({ before, after, source }) => seen.push([before.path, after.path, after.status, source]));
+    await state.open('/d/a.zarr', { source: 'link' });
+    await state.open('/d/b.zarr', { source: 'user' });
+    await state.open('/d/c.zarr', { source: 'view' });
+    await state.open('/d/a.zarr', { source: 'external' });
+    await state.open('/d/a.zarr', { source: 'refresh' });
+    await state.open('/d/b.zarr', { source: 'autosave' });
+    assert.deepEqual(seen, [['/d/a.zarr', '/d/b.zarr', 'open', 'user'], ['/d/c.zarr', '/d/a.zarr', 'open', 'external']]);
+});
+
+test('onSwitch stops when its remover is called, and a failing listener does not stop the open', async () => {
+    const state = createDatasetState();
+    state.setOpener(async (path) => state.set({ path, label: path, status: 'open' }));
+    let calls = 0;
+    const off = state.onSwitch(() => { calls++; });
+    state.onSwitch(() => { throw new Error('boom'); });
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+        const after = await state.open('/d/a.zarr', { source: 'user' });
+        assert.equal(after.path, '/d/a.zarr');
+    } finally { console.error = quiet; }
+    off();
+    await state.open('/d/b.zarr', { source: 'user' });
+    assert.equal(calls, 1);
+});
