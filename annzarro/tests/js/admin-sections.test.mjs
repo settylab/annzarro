@@ -67,7 +67,7 @@ test("the router builds the tabs, marks the active one and mounts the section", 
   const { api } = mockApi();
   const router = makeRouter({ nav, view, api, ctx: { me: F.me } });
   assert.deepEqual(findAll(nav, (n) => n.tagName === "A").map((a) => a.textContent),
-    ["Users", "Data directories", "Server health", "Panel sets", "Settings", "Audit log"]);
+    ["Users", "Data sources", "Server health", "Panel sets", "Settings", "Audit log"]);
   assert.deepEqual(findAll(nav, (n) => n.tagName === "A").map((a) => a.getAttribute("href")),
     ["#users", "#data", "#health", "#panel-sets", "#settings", "#audit"]);
   await router.show("health");
@@ -289,7 +289,7 @@ test("settings: the tab renders the registry", async () => {
   const { api, calls } = mockApi({ "/policy": (init) => (init.method === "PUT" ? F.policy : F.policy) });
   const router = makeRouter({ nav, view, api, ctx: {} });
   await router.show("settings");
-  assert.match(view.textContent, /No external hosts/);
+  assert.match(view.textContent, /Gene Set Analysis: no external services/);
   assert.match(view.textContent, /Limits/);
   assert.match(view.textContent, /Unknown keys in stored files/);
   const row = find(view, (n) => n.getAttribute("data-key") === "panel.cell-plot.enabled");

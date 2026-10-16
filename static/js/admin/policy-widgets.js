@@ -28,7 +28,7 @@ export const AREAS = [
 const SOURCE_TONE = { default: 'secondary', config: 'info', env: 'warning', admin: 'primary', user: 'primary', forced: 'danger' };
 const SOURCE_TITLE = {
     env: 'An environment variable of the server overrides the config file',
-    forced: 'Forced by another setting, for example No external hosts',
+    forced: 'Forced by another setting, for example Gene Set Analysis: no external services',
 };
 
 /**
@@ -391,7 +391,7 @@ function renderIssues(policy, onRemove, titles) {
  * @param {{onChange: function, onRemoveUnknown: function}} handlers
  */
 export function renderPolicy(el, policy, { onChange, onRemoveUnknown } = {}) {
-    const keys = policy.keys || [];
+    const keys = (policy.keys || []).filter((k) => !k.section);     // a key with a `section` has its control on that page
     const master = keys.find((k) => k.name === 'outbound.allow_external');
     const groups = groupByArea(keys.filter((k) => k !== master));
     const blocks = [];
@@ -450,7 +450,7 @@ export function renderUserPolicy(el, policy, { onChange, onRemoveUnknown } = {})
 }
 
 /**
- * "No external hosts", the inverse of `outbound.allow_external`, as the
+ * "Gene Set Analysis: no external services", the inverse of `outbound.allow_external`, as the
  * header switch of the tab: on means the key is false.
  */
 function renderMasterSwitch(key, onChange) {
@@ -472,8 +472,10 @@ function renderMasterSwitch(key, onChange) {
         },
     });
     return h('div', { class: 'policy-master d-flex align-items-center justify-content-between', data: { key: key.name } },
-        h('div', null, h('div', { class: 'fw-semibold', text: 'No external hosts' }),
-            h('div', { class: 'small text-muted', text: key.description || 'Stops the browser from contacting any outside service.' })),
+        h('div', null, h('div', { class: 'fw-semibold', text: 'Gene Set Analysis: no external services' }),
+            h('div', { class: 'small text-muted' }, key.description || 'Stops the browser from contacting any outside service.',
+                ' It does not affect remote datasets: the server reading s3://, gs:// and http(s):// stores is set under ',
+                h('a', { href: '#data', text: 'Data sources' }), '.')),
         h('div', { class: 'form-check form-switch m-0' }, input,
             h('label', { class: 'form-check-label', for: 'policy-no-external', text: noExternal ? 'ON' : 'OFF' }),
             h('span', { class: 'ms-2' }, badge(key.locked ? 'locked' : (key.source || 'default'), key.locked ? 'dark' : (SOURCE_TONE[key.source] || 'secondary'))),

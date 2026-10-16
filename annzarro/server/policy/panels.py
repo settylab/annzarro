@@ -6,7 +6,8 @@ hosts the browser may contact for them.
 a new panel type gets its switch without a line here. The Gene Set Analysis
 panel is the one panel that sends data out: its keys say how (``external_requests``),
 to whom (``services``, ``species_search``) and whether it links out (``links``).
-``outbound.allow_external`` is the "No external hosts" switch. The hosts these
+``outbound.allow_external`` is the "Gene Set Analysis: no external services" switch (it does not
+govern remote datasets, ``feature.remote_stores``). The hosts these
 keys allow become the page's Content-Security-Policy (``csp.py``), which is
 what holds even against a modified client. See docs/design/policy-registry.md.
 """
@@ -121,8 +122,8 @@ def _declare_panel_keys() -> None:
 def _declare_outbound_keys() -> None:
     declare(Key(
         name="outbound.allow_external", type=Bool(), default=True, scope="user", combine="restrict", area="outbound",
-        description="Whether the browser may contact hosts outside this server (off: the \"No external hosts\" switch, "
-                    "which turns every outbound setting off)"))
+        description="Whether the browser may contact hosts outside this server (off: the \"Gene Set Analysis: no external services\" switch, "
+                    "which turns every outbound setting off; it does not affect remote datasets)"))
     gate = ("panel.gene-set.enabled", "panel.gene-set.external_requests")
     declare(Key(
         name="panel.gene-set.external_requests", type=ExternalRequests(list(EXTERNAL_REQUESTS), off=["off", "none"],
