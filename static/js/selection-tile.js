@@ -100,18 +100,24 @@ export class SelectionTile {
         host.insertBefore(node, host.firstChild);
         return node;
       };
+      // Every change of the state fills the section again, each with a lookup of its own; an answer is shown only if no
+      // newer fill has started since (a slow, older answer must not replace a newer one).
+      let latest = 0;
       const fill = async () => {
+        const mine = ++latest;
         if (!none()) {
           if (section) { section.remove(); section = null; }
           return;
         }
         if (!section) section = build();
-        if (!app.recentDatasets) return;
+        section.dataset.recents = 'loading';
+        if (!app.recentDatasets) { section.dataset.recents = 'ready'; return; }
         let entries;
         try { entries = await app.recentDatasets(5); } catch { entries = []; }
-        if (!section) return;
+        if (!section || mine !== latest) return;
         const list = section.querySelector('.welcome-recents');
         list.textContent = '';
+        section.dataset.recents = 'ready';
         if (!entries.length) return;
         const table = document.createElement('table');
         table.className = 'table table-sm welcome-recents-table';
