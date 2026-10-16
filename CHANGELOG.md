@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+- A release build no longer fails when Apple's ticket service drops the connection while the macOS
+  app or its dmg is being stapled: stapling is retried up to five times.
+
 ## 0.5.3 (2026-10-16)
 
 The desktop apps of 0.5.2 with a fix for Windows. 0.5.2 was published on PyPI only; its desktop
