@@ -49,8 +49,8 @@ theme ({ref}`colour-theme`).
 A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).
 
 **Which version is this?** Hold the pointer over the app name at the top left: the tooltip reads
-"AnnZarro 0.5.1" (the version the server runs; a custom app name comes first, as "Lab Atlas ·
-AnnZarro 0.5.1"). On a server with login, the tooltip of your user name under the app name ends with the
+"AnnZarro 0.5.2" (the version the server runs; a custom app name comes first, as "Lab Atlas ·
+AnnZarro 0.5.2"). On a server with login, the tooltip of your user name under the app name ends with the
 same line. Say this version in a bug report. The desktop app shows its own, bundled version the
 same way.
 
