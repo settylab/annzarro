@@ -97,6 +97,19 @@ def test_auth_me_carries_the_effective_allowlist_for_the_dataset_browser(app, ad
     assert me()["remote_stores"] is False and "remote_allowlist" not in me()
 
 
+def test_changes_made_back_to_back_are_each_seen_by_the_next_request(tmp_path):
+    """Whatever the file system's clock, a write is noticed: the answer follows every one of many quick changes."""
+    app = make_app(tmp_path, admin_rate_per_minute=1000)
+    admin = login(app, ADMIN)
+    alice = login(app, USER)
+    states = [(OFF, False), (ANY, True), (allow("s3://lab/a/"), True), (OFF, False), (allow("s3://lab/b/"), True),
+              (OFF, False), (ANY, True), (OFF, False)] * 4
+    for value, expected in states:
+        assert put(admin, {KEY: value}).status_code == 200
+        assert alice.get("/api/v1/auth/me").get_json()["remote_stores"] is expected, value
+        assert policy_in_app(app).enabled is expected, value
+
+
 def test_the_allowlist_is_enforced_by_the_server_policy(app, admin):
     put(admin, {KEY: allow("s3://lab/atlases", "HTTPS://Data.Example.org/zarr/")})
     assert entry(admin)["value"]["allowlist"] == ["s3://lab/atlases/", "https://data.example.org/zarr/"]
@@ -310,5 +323,10 @@ def test_a_change_reaches_every_worker_at_once(tmp_path):
             reply = admin.put(POLICY, {KEY: value})
             assert reply.status == 200, reply.body
             assert remote_flags() == {expected}, f"a worker is stale after {value}"
+        # many changes in quick succession, each seen by both workers on the very next request
+        for i in range(16):
+            value, expected = (OFF, False) if i % 2 else (ANY, True)
+            assert admin.put(POLICY, {KEY: value}).status == 200
+            assert remote_flags() == {expected}, f"a worker missed change {i} ({value})"
     finally:
         stop_all(procs)
