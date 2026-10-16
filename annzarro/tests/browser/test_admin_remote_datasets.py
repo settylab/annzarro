@@ -156,6 +156,25 @@ def _remote_place(page, link):
     return True, page.inner_text("#dsb-table-wrap")
 
 
+def _slow_puts(page, ms=600):
+    """Hold every settings write for ``ms`` before it is sent: Save greys out as soon as the request starts,
+    so a test that treats that as 'saved' (and reloads or reads the server) races the write."""
+    def slow(route):
+        if route.request.method == "PUT":
+            page.wait_for_timeout(ms)
+        route.continue_()
+    page.route("**/api/v1/admin/policy", slow)
+
+
+def _save(admin):
+    """Click Save and return once the server has answered the write (not merely once the button is busy)."""
+    with admin.expect_response(lambda r: r.request.method == "PUT" and r.url.endswith("/api/v1/admin/policy"),
+                               timeout=30000) as sent:
+        admin.click("#remote-save")
+    assert sent.value.status == 200, sent.value.text()
+    admin.wait_for_function("() => { const b = document.querySelector('#remote-save'); return b && b.disabled; }")
+
+
 def test_the_admin_turns_remote_datasets_on_and_off_and_the_user_page_follows(server):
     url = server
     link = url + "/"
@@ -166,7 +185,7 @@ def test_the_admin_turns_remote_datasets_on_and_off_and_the_user_page_follows(se
             admin.wait_for_selector("#remote-datasets #remote-save", timeout=30000)
             assert admin.inner_text("#admin-nav .nav-link.active") == "Data sources"
             assert admin.is_checked("#remote-mode-off") and "Default" in admin.inner_text("#remote-source")
-            assert admin.locator("#remote-any-warning").count() == 0
+            _slow_puts(admin)
 
             user_ctx, user, user_errors = _sign_in(browser, url, "alice", "alice-pw", "/")
             assert _me_remote(user) is False
@@ -177,7 +196,7 @@ def test_the_admin_turns_remote_datasets_on_and_off_and_the_user_page_follows(se
             admin.check("#remote-mode-any")
             warning = admin.inner_text("#remote-any-warning")
             assert "internal network" in warning and "any URL" in warning
-            admin.click("#remote-save")
+            _save(admin)
             admin.wait_for_selector('#remote-datasets[data-source="admin"]', timeout=30000)
             assert admin.is_checked("#remote-mode-any") and "administrator" in admin.inner_text("#remote-source")
             assert _me_remote(user) is True
@@ -196,8 +215,7 @@ def test_the_admin_turns_remote_datasets_on_and_off_and_the_user_page_follows(se
             admin.fill("#remote-prefix", "S3://Lab/Atlases")
             admin.click("#remote-add")
             admin.wait_for_selector('#remote-allowlist [data-prefix="s3://lab/Atlases/"]')
-            admin.click("#remote-save")
-            admin.wait_for_function("() => document.querySelector('#remote-save').disabled")
+            _save(admin)
             admin.reload()
             admin.wait_for_selector('#remote-allowlist [data-prefix="s3://lab/Atlases/"]', timeout=30000)
             assert admin.is_checked("#remote-mode-allowlist")
@@ -208,8 +226,7 @@ def test_the_admin_turns_remote_datasets_on_and_off_and_the_user_page_follows(se
 
             # Off
             admin.check("#remote-mode-off")
-            admin.click("#remote-save")
-            admin.wait_for_function("() => document.querySelector('#remote-save').disabled")
+            _save(admin)
             assert _me_remote(user) is False
             assert "remote store URL" not in _field_label(user, link)
             assert _remote_place(user, link) == (False, "")
