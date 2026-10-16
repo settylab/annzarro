@@ -13,8 +13,10 @@ registry does not know, and stored values it ignores, are kept and reported
 :func:`wire_sources` hands the engine its two stored layers: the overlay, and
 the user layer, which is empty for an administrator.
 """
+import json
 import logging
 import os
+import re
 from typing import Any, Dict, Mapping
 
 from flask import current_app, jsonify, request
@@ -282,11 +284,19 @@ def _diff(before, after, names, eng=None):
     return out
 
 
+_URL_CREDENTIALS = re.compile(r"(://)[^/@\s\"']+@")
+
+
+def _redacted(value):
+    """``value`` with the user:password part of any URL in it hidden (a refused URL is logged as typed)."""
+    return json.loads(_URL_CREDENTIALS.sub(r"\1***@", json.dumps(value)))
+
+
 def _record(target, changes, diff, outcome="ok"):
     """Write the audit record; False (and an ERROR in the log) if it could not
     be written. The change is already stored, so the caller still answers 200."""
     try:
-        audit.record("policy.update", target, {"requested": changes, "changed": diff}, outcome)
+        audit.record("policy.update", target, {"requested": _redacted(changes), "changed": _redacted(diff)}, outcome)
         return True
     except Exception:
         logger.exception("Could not write the audit record of a settings change")
