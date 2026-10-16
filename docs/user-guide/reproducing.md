@@ -46,7 +46,7 @@ AnnZarro then compares the fingerprints:
 | the same cells and genes, other fields (a column added or removed, say) | the view opens, with a notice naming the fields, e.g. "fields differ: obs/leiden is not in this store" |
 | other cells or genes | a warning, "This store differs from the one the view was saved on", with the cell and gene counts of both. The layout is shown without data until you choose **Open anyway**, **Change dataset** or **Keep without data** |
 | not found at all | the layout opens **without data**: every panel shows "no data" and keeps all its settings. A notice names the missing path and offers **Change dataset**, and the dataset button reads "No data: *path*" |
-| saved with another AnnZarro version | the view opens, with a notice: "Saved with AnnZarro 0.4.1; this is 0.5.2. The view may look different." |
+| saved with another AnnZarro version | the view opens, with a notice: "Saved with AnnZarro 0.4.1; this is 0.5.3. The view may look different." |
 
 Opening a store does not hash its cell and gene names. They are hashed in the background the
 first time a view is saved or shared, or a saved view is checked against the store (about
