@@ -81,6 +81,22 @@ def test_the_admin_sets_each_state_and_the_server_follows_at_once(app, admin, va
     assert me_remote(alice) is (expected_mode != "off")
 
 
+def test_auth_me_carries_the_effective_allowlist_for_the_dataset_browser(app, admin):
+    alice = login(app, USER)
+
+    def me():
+        return alice.get("/api/v1/auth/me").get_json()
+
+    assert me()["remote_stores"] is False and "remote_allowlist" not in me()
+    put(admin, {KEY: allow("s3://lab/atlases/", "https://data.example.org/zarr/")})
+    assert me()["remote_stores"] is True
+    assert me()["remote_allowlist"] == ["s3://lab/atlases/", "https://data.example.org/zarr/"]
+    put(admin, {KEY: ANY})
+    assert me()["remote_stores"] is True and "remote_allowlist" not in me()
+    put(admin, {KEY: OFF})
+    assert me()["remote_stores"] is False and "remote_allowlist" not in me()
+
+
 def test_the_allowlist_is_enforced_by_the_server_policy(app, admin):
     put(admin, {KEY: allow("s3://lab/atlases", "HTTPS://Data.Example.org/zarr/")})
     assert entry(admin)["value"]["allowlist"] == ["s3://lab/atlases/", "https://data.example.org/zarr/"]

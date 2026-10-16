@@ -9,21 +9,18 @@ reads remote stores, and the Change dataset field says whether a remote store
 URL may be typed. A second server whose YAML turns remote datasets off shows
 the card locked, with the reason.
 
-The dataset picker's Remote place is not part of this branch's base; the user
-side is checked through /auth/me and the typed-path field.
+The dataset browser's Remote place follows each change: absent while off, present
+with the allowlist named in its empty state for a list of locations.
 
 Needs Playwright with Chromium and a gunicorn executable; skipped otherwise,
 unless ANNZARRO_REQUIRE_BROWSER=1 (set in CI).
 """
-import base64
-import json
 import os
 import shutil
 import socket
 import subprocess
 import sys
 import time
-import urllib.parse
 import urllib.request
 
 import pytest
@@ -33,6 +30,8 @@ if REQUIRED:
     import playwright.sync_api as playwright  # noqa: E402
 else:
     playwright = pytest.importorskip("playwright.sync_api")
+
+from annzarro.tests.ui_helpers import open_browser  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -100,7 +99,7 @@ def _serve(tmp_path, extra_server=""):
 def server(tmp_path):
     url, proc, log = _serve(tmp_path)
     try:
-        yield url, tmp_path / "data"
+        yield url
     finally:
         proc.terminate()                           # this test's own master, by PID
         proc.wait(15)
@@ -136,32 +135,30 @@ def _me_remote(page):
     return page.evaluate("async () => (await (await fetch('api/v1/auth/me')).json()).remote_stores")
 
 
-def _no_data_link(url, data):
-    """A link whose store is missing: the page opens its layout without data and offers Change dataset."""
-    plot = {"id": "cell-plot-K",
-            "x": {"type": "obsm", "key": "X_umap", "column": "0"},
-            "y": {"type": "obsm", "key": "X_umap", "column": "1"}, "z": None,
-            "color": {"type": "obs", "key": "cell_type", "column": ""}}
-    view = {"v": 1, "layout": {"v": 1, "hierarchy": [{"type": "tile", "id": "cell-plot-K", "controlsVisible": True}],
-                               "controlState": {"cell-plot-K": True}, "panelConfigs": {"cell-plot-K": plot}}}
-    payload = base64.urlsafe_b64encode(json.dumps(view, separators=(",", ":")).encode()).decode().rstrip("=")
-    return f"/?dataset_path={urllib.parse.quote(str(data / 'gone.zarr'), safe='/')}#view={payload}"
-
-
 def _field_label(page, link):
-    """What the Change dataset field says it accepts (it follows /auth/me)."""
+    """What the dataset browser's path field says it accepts (it follows /auth/me)."""
     page.goto(link)
     page.reload()
-    page.wait_for_selector("#btn-change-dataset", state="visible", timeout=60000)
-    page.click("#btn-change-dataset")
-    page.wait_for_function(
-        "() => document.getElementById('change-dataset-path-label').textContent.trim().startsWith('Open')", timeout=30000)
-    return page.inner_text("#change-dataset-path-label")
+    open_browser(page)
+    page.keyboard.press("Control+l")        # opens the path field, which words itself from /auth/me
+    return page.inner_text("#dsb-path-label").strip()
+
+
+def _remote_place(page, link):
+    """Open the dataset browser of a page with no data: (whether it offers the Remote place, the text of its empty state)."""
+    page.goto(link)
+    page.reload()
+    open_browser(page)
+    place = page.locator("#dsb-places [data-place='remote']")
+    if not place.count():
+        return False, ""
+    place.click()
+    return True, page.inner_text("#dsb-table-wrap")
 
 
 def test_the_admin_turns_remote_datasets_on_and_off_and_the_user_page_follows(server):
-    url, data = server
-    link = url + _no_data_link(url, data)
+    url = server
+    link = url + "/"
     with playwright.sync_playwright() as p:
         browser = p.chromium.launch()
         try:
@@ -174,6 +171,7 @@ def test_the_admin_turns_remote_datasets_on_and_off_and_the_user_page_follows(se
             user_ctx, user, user_errors = _sign_in(browser, url, "alice", "alice-pw", "/")
             assert _me_remote(user) is False
             assert "remote store URL" not in _field_label(user, link)
+            assert _remote_place(user, link) == (False, "")
 
             # Any location: the warning, then saved
             admin.check("#remote-mode-any")
@@ -184,6 +182,8 @@ def test_the_admin_turns_remote_datasets_on_and_off_and_the_user_page_follows(se
             assert admin.is_checked("#remote-mode-any") and "administrator" in admin.inner_text("#remote-source")
             assert _me_remote(user) is True
             assert "remote store URL" in _field_label(user, link)
+            present, text = _remote_place(user, link)
+            assert present and "this server opens only" not in text
 
             # Only these locations: a bad one is refused, a good one is normalised and kept
             admin.check("#remote-mode-allowlist")
@@ -202,6 +202,9 @@ def test_the_admin_turns_remote_datasets_on_and_off_and_the_user_page_follows(se
             admin.wait_for_selector('#remote-allowlist [data-prefix="s3://lab/Atlases/"]', timeout=30000)
             assert admin.is_checked("#remote-mode-allowlist")
             assert _me_remote(user) is True
+            present, text = _remote_place(user, link)
+            assert present and "this server opens only s3://lab/Atlases" in text, text
+            assert user.evaluate("async () => (await (await fetch('api/v1/auth/me')).json()).remote_allowlist") == ["s3://lab/Atlases/"]
 
             # Off
             admin.check("#remote-mode-off")
@@ -209,6 +212,7 @@ def test_the_admin_turns_remote_datasets_on_and_off_and_the_user_page_follows(se
             admin.wait_for_function("() => document.querySelector('#remote-save').disabled")
             assert _me_remote(user) is False
             assert "remote store URL" not in _field_label(user, link)
+            assert _remote_place(user, link) == (False, "")
 
             # the Settings page does not carry a second control for it, and says what its switch covers
             admin.goto(url + "/admin#settings")
