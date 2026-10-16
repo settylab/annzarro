@@ -8,8 +8,9 @@
  *   - a Developer ID Application identity is available (CSC_LINK, CSC_NAME, or one in
  *     the keychain): the app is signed with it, hardened runtime and timestamp, every
  *     nested Mach-O of the frozen server included, and the dmg is signed too.
- *     electron-builder 26 notarizes the app (and staples it) when it finds notarization
- *     credentials in the environment: APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER,
+ *     the app is notarized and stapled, with retries, before the dmg and zip are packed
+ *     (electron-builder's own notarization is off: mac_after_sign.js, mac_notarize.sh) when
+ *     notarization credentials are in the environment: APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER,
  *     or APPLE_KEYCHAIN_PROFILE (a `notarytool store-credentials` profile, by name), or
  *     APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID. Without credentials the
  *     build is signed but not notarized, and says so.
@@ -62,6 +63,11 @@ if (wantsMac) {
   }
   if (haveIdentity) {
     args.push("-c.dmg.sign=true");
+    // electron-builder's own notarization has no retry for `stapler staple`, which Apple's ticket
+    // service fails often enough to break releases. Off here; mac_after_sign.js notarizes the app
+    // (before the dmg and zip are packed) through mac_notarize.sh, which retries.
+    args.push("-c.mac.notarize=false", `-c.afterSign=${path.join(__dirname, "mac_after_sign.js")}`);
+    if (creds) env.ANNZARRO_NOTARIZE = "1";
     console.log(`electron_build: macOS signed with a Developer ID identity; ${creds ? "notarized with " + creds : "NOT notarized (no credentials in the environment)"}`);
   } else {
     // package.json names no identity, so electron-builder would skip signing here. Ad-hoc
