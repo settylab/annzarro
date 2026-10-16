@@ -8,6 +8,11 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixes
+- Windows: the dataset browser's details, the folder listing and the recent datasets work for a
+  store on another drive than the data directory (for example the data directory on `C:` and the
+  store on `D:`); the details answered with a server error.
+
 ## 0.5.2 (2026-10-16)
 
 A dataset browser replaces the dataset dropdown, AnnZarro has a dark theme that follows your system,

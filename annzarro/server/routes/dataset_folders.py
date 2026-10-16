@@ -152,7 +152,10 @@ def rel_path(path, data_dir):
     user = access.restricted_user()
     if user:
         return access.display_path(user, os.path.realpath(path))
-    return os.path.relpath(path, data_dir)
+    try:
+        return os.path.relpath(path, data_dir)
+    except ValueError:                  # Windows: another drive than the data directory, no relative path
+        return os.path.abspath(path)
 
 
 def _entry(data_dir, parent, name):
