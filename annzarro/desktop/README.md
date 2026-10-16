@@ -160,8 +160,12 @@ runs) chooses the mode for the machine it runs on:
   keychain): the app is signed with it, with the hardened runtime and a secure timestamp. That
   includes every nested Mach-O file of the frozen server in `Resources/server` (the Python
   binary, `.so` and `.dylib` files), because electron-builder signs each one it finds. The dmg is
-  signed too. electron-builder 26 notarizes and staples the `.app` when it finds credentials in the
-  environment: `APPLE_API_KEY` (path to the `.p8`), `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`,
+  signed too. The `.app` is notarized and stapled when the environment holds credentials, before the
+  dmg and the zip are packed, so both carry the ticket. electron-builder's own notarization is off:
+  it has no retry when `stapler staple` loses its connection to Apple's ticket service, so the
+  `afterSign` hook `scripts/mac_after_sign.js` runs `scripts/mac_notarize.sh` on the app, which zips
+  it with `ditto`, submits it with `notarytool --wait` and staples it, trying up to five times.
+  The credentials are: `APPLE_API_KEY` (path to the `.p8`), `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`,
   or `APPLE_KEYCHAIN_PROFILE` (the name of a `xcrun notarytool store-credentials` profile), or
   `APPLE_ID` with `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`. Without them the build is signed
   and says it is not notarized.
@@ -172,8 +176,9 @@ runs) chooses the mode for the machine it runs on:
 Entitlements are in `electron/entitlements.mac.plist` (JIT and unsigned executable memory for
 the frozen Python, library validation off).
 
-The dmg is a separate file that Apple has not seen, so `scripts/mac_notarize_dmg.sh <dmg>`
-notarizes and staples it, and `scripts/mac_verify_signature.sh <app> [<dmg>...]` runs the checks
+The dmg is a separate file that Apple has not seen, so `scripts/mac_notarize.sh <dmg>` (the same
+script, which takes an `.app` or a `.dmg`; `mac_notarize_dmg.sh` is its old name) notarizes and
+staples it, and `scripts/mac_verify_signature.sh <app> [<dmg>...]` runs the checks
 a release must pass: `codesign --verify --deep --strict`, `spctl -a -vv -t exec` (must say
 `Notarized Developer ID`) and `xcrun stapler validate` on the app and each dmg.
 
@@ -206,7 +211,7 @@ and a profile stored once with `xcrun notarytool store-credentials settylab-nota
 ```bash
 cd annzarro/desktop/electron
 APPLE_KEYCHAIN_PROFILE=settylab-notary npm run dist -- --mac --arm64
-../scripts/mac_notarize_dmg.sh dist/AnnZarro-*-macos-arm64.dmg   # also needs APPLE_KEYCHAIN_PROFILE
+../scripts/mac_notarize.sh dist/AnnZarro-*-macos-arm64.dmg   # also needs APPLE_KEYCHAIN_PROFILE
 ../scripts/mac_verify_signature.sh dist/mac-arm64/AnnZarro.app dist/AnnZarro-*-macos-arm64.dmg
 ```
 
