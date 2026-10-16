@@ -206,6 +206,7 @@ def register_core_routes(app, api_version):
         Returns:
             JSON ``{auth_enabled, username, is_admin, exposed, may_open_any_path, remote_stores, restricted}``.
             ``restricted`` is true for a user who sees only the datasets they are granted;
+            ``remote_allowlist`` lists the URL prefixes remote stores may use when the policy restricts them;
             ``admin_contact`` (``branding.admin_contact``) is then added when the site names whom to ask
             for access.
         """
@@ -226,6 +227,10 @@ def register_core_routes(app, api_version):
             "remote_stores": bool(get_remote_policy().enabled),
             "restricted": restricted,
         }
+        policy = get_remote_policy()
+        if policy.enabled and policy.allowlist:
+            # where a remote URL may point, for the dataset browser's Remote place
+            payload["remote_allowlist"] = [str(prefix) for prefix in policy.allowlist]
         contact = app.config.get("admin_contact")
         if restricted and isinstance(contact, str) and contact.strip():
             payload["admin_contact"] = contact.strip()

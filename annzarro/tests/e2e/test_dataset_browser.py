@@ -278,7 +278,7 @@ def test_an_unreadable_store_is_focusable_shows_its_reason_and_never_opens(sessi
     row.locator(".dsb-name").click(force=True)      # aria-disabled: a click selects it, nothing more
     page.wait_for_selector("#dsb-details .dsb-reason")
     assert "Not readable" in page.inner_text("#dsb-details")
-    assert page.locator("#dsb-details-open").count() == 0, "no Open button for a store that cannot be opened"
+    assert page.is_disabled("#dsb-details-open"), "Open is there, disabled, for a store that cannot be opened"
     row.locator(".dsb-name").dblclick(force=True)
     page.keyboard.press("Enter")
     page.wait_for_timeout(500)
@@ -308,7 +308,7 @@ def test_sorting_by_a_header_button_sets_aria_sort_and_the_server_sorts_name_and
     page.wait_for_function("document.querySelector(\"#dsb-table th:has(.dsb-sort[data-sort='name'])\").getAttribute('aria-sort') === 'descending'")
     assert requests and "sort=name" in requests[-1] and "order=desc" in requests[-1], requests
     names = [n for n in _names(page) if not n.startswith("broken")]
-    assert names == sorted(names, key=str.lower, reverse=True)
+    assert names == sorted(names, reverse=True), "the server's order: by name, descending"
     page.click(".dsb-sort[data-sort='modified']")
     page.wait_for_function("document.querySelector(\"#dsb-table th:has(.dsb-sort[data-sort='modified'])\").getAttribute('aria-sort') === 'descending'")
     assert "sort=modified" in requests[-1] and "order=desc" in requests[-1], requests
@@ -802,6 +802,105 @@ def test_details_show_the_metadata_first_then_the_check_for_a_local_store(server
         page.locator("#dsb-details-open").click()
         wait_for_open(page, "short.zarr")
         assert not s.errors, s.errors
+    finally:
+        s.close()
+
+
+def _boxes(page):
+    return page.evaluate("""() => ['#dsb-details-open', '#dsb-details-pin', '#dsb-details-copy'].map(s => {
+        const b = document.querySelector(s).getBoundingClientRect(); return [s, Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]; })""")
+
+
+@pytest.mark.parametrize("width,sheet", [(1280, False), (900, True)])
+def test_the_details_actions_never_move_while_the_details_and_the_check_arrive(server, width, sheet):
+    base, data = server
+    s = Session(base, width=width)
+    page = s.page
+    try:
+        open_browser(page)
+        held = []
+        release = []
+
+        def hold(route):
+            if not release:
+                held.append(route)           # metadata and check both wait: the first paint is the listing's
+            else:
+                route.continue_()
+        page.route("**/api/v1/datasets/details*", hold)
+        row = browser_row(page, "short.zarr").first
+        if sheet:
+            row.locator(".dsb-info").click()
+        else:
+            row.locator("td").first.click()
+        page.wait_for_selector("#dsb-details-open")
+        before = _boxes(page)
+        assert all(b[3] > 0 and b[4] > 0 for b in before), before
+        # the three are at the top, right under the name, before anything has loaded
+        name = page.eval_on_selector("#dsb-details .dsb-details-name", "e => e.getBoundingClientRect().bottom")
+        assert before[0][2] - name < 24, (name, before)
+        release.append(True)
+        for route in held:
+            route.continue_()
+        page.wait_for_selector("#dsb-details .dsb-key", timeout=10_000)
+        page.wait_for_function("document.querySelector('#dsb-check') && !/Checking/.test(document.querySelector('#dsb-check').textContent)", timeout=20_000)
+        assert _boxes(page) == before, "they did not move"
+        # an unreadable store: the same row of buttons, Open disabled
+        page.unroute("**/api/v1/datasets/details*")
+        if sheet:
+            page.click("#dsb-details .dsb-sheet-close")
+            browser_row(page, "broken.zarr").first.locator(".dsb-info").click()
+        else:
+            browser_row(page, "broken.zarr").first.locator("td").first.click()
+        page.wait_for_selector("#dsb-details .dsb-reason")
+        assert page.is_disabled("#dsb-details-open") and not page.is_disabled("#dsb-details-copy")
+        assert _boxes(page)[0][1:3] == before[0][1:3] or abs(_boxes(page)[0][2] - before[0][2]) < 30
+        assert not s.errors, s.errors
+    finally:
+        s.close()
+
+
+def test_the_remote_place_is_there_whenever_remote_stores_are_allowed_and_asks_for_a_url(server):
+    base, data = server
+    s = Session(base)
+    page = s.page
+    try:
+        assert page.evaluate("fetch('/api/v1/auth/me').then(r => r.json()).then(m => m.remote_stores)") is True
+        open_browser(page)
+        assert page.locator("#dsb-places [data-place='remote']").count() == 1, "no recent remote URL needed"
+        page.click("#dsb-places [data-place='remote']")
+        # what can be opened is said, and the path field is open with its placeholder, focused
+        text = page.inner_text("#dsb-table-wrap")
+        assert "s3://" in text and "gs://" in text and "https://" in text, text
+        assert page.is_visible("#dsb-path") and page.evaluate("document.activeElement.id") == "dsb-path"
+        assert "https://" in page.get_attribute("#dsb-path", "placeholder")
+    finally:
+        s.close()
+    # a policy that restricts the hosts names them
+    s = Session(base)
+    page = s.page
+    try:
+        page.route("**/api/v1/auth/me", lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(
+            {"auth_enabled": False, "username": None, "is_admin": False, "may_open_any_path": True, "restricted": False, "csrf": "",
+             "remote_stores": True, "remote_allowlist": ["https://data.example.org/", "s3://lab-bucket/atlases/"]})))
+        page.reload()
+        page.evaluate("() => window.annzarro.ready")
+        open_browser(page)
+        page.click("#dsb-places [data-place='remote']")
+        text = page.inner_text("#dsb-table-wrap")
+        assert "only https://data.example.org/, s3://lab-bucket/atlases/" in text, text
+    finally:
+        s.close()
+    # remote stores off for this user: no place
+    s = Session(base)
+    page = s.page
+    try:
+        page.route("**/api/v1/auth/me", lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(
+            {"auth_enabled": False, "username": None, "is_admin": False, "may_open_any_path": True, "restricted": False, "csrf": "",
+             "remote_stores": False})))
+        page.reload()
+        page.evaluate("() => window.annzarro.ready")
+        open_browser(page)
+        assert page.locator("#dsb-places [data-place='remote']").count() == 0
     finally:
         s.close()
 

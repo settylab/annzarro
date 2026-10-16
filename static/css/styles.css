@@ -4107,7 +4107,7 @@ details.aesthetics-section > .aesthetics-body {
 .dsb-note-ok { background: var(--az-ok-bg); color: var(--az-ok-text); border-color: var(--az-ok-border); }
 .dsb-note a { color: inherit; text-decoration: underline; }
 .dsb-check:empty { display: none; }
-.dsb-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; }
+.dsb-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; min-height: 31px; }
 .dsb-info { display: none; }
 .dsb-sheet-close { display: none; }
 
@@ -4123,7 +4123,7 @@ details.aesthetics-section > .aesthetics-body {
         display: block;
         position: fixed;
         inset: auto 0 0 0;
-        max-height: 60vh;
+        height: 60vh;          /* a fixed height: the actions at its top do not move as the details arrive */
         z-index: 5;
         border-top: 2px solid var(--az-link);
         box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);

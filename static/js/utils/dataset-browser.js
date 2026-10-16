@@ -242,6 +242,8 @@ export function createDatasetBrowser(services) {
         }
         scheduleSearch();
         render();
+        // Remote has nothing to browse: it is for typing a URL, so the path field is open and has the focus
+        if (p.kind === 'remote' && !baseRows().length) openPathField();
     }
 
     function goFolder(path) {
@@ -514,7 +516,11 @@ export function createDatasetBrowser(services) {
         const restricted = !!(S.me && S.me.restricted);
         if (p.kind === 'recent') return 'Nothing opened yet. Datasets you open show up here.';
         if (p.kind === 'pinned') return 'Nothing pinned. Select a dataset and press Pin to keep it here.';
-        if (p.kind === 'remote') return 'No remote stores opened yet. Type a store URL with the path field.';
+        if (p.kind === 'remote') {
+            const hosts = (S.me && S.me.remote_allowlist) || [];
+            return 'No remote stores opened yet. Type the URL of an s3://, gs:// or https:// zarr store in the field above'
+                + (hosts.length ? `; this server opens only ${hosts.join(', ')}.` : '.');
+        }
         if (restricted) return 'No datasets have been shared with you.';
         if (services.isDesktop) return `No datasets in ${p.label} yet. Use Open file or folder… to choose a .zarr folder or .h5ad file.`;
         if (services.localMode) return `No datasets in the ${p.label.toLowerCase()} yet. Put a .zarr folder or .h5ad file there, then press Refresh.`;
@@ -774,31 +780,23 @@ export function createDatasetBrowser(services) {
         closeSheet.addEventListener('click', () => root.classList.remove('dsb-sheet'));
         pane.appendChild(closeSheet);
         pane.appendChild(el('h2', 'dsb-details-name', row.name || basename(row.path)));
-        if (row.kind === 'folder') {
-            pane.appendChild(el('p', 'dsb-details-path', row.path));
-            const open = el('button', 'btn btn-sm btn-primary', 'Open folder');
-            open.type = 'button';
-            open.addEventListener('click', () => goFolder(row.path));
-            pane.appendChild(open);
-            return;
-        }
-        pane.appendChild(el('dl', 'dsb-fields'));
-        pane.appendChild(el('div', 'dsb-details-body'));
+        // The actions sit right under the name from the first paint and never move while the details arrive;
+        // one that does not apply (Open for a store that cannot be opened) is disabled, not removed.
+        const known = detailsCache.get(`${row.path}|0`) || null;
         const actions = el('div', 'dsb-actions');
         pane.appendChild(actions);
-        const known = detailsCache.get(`${row.path}|0`) || null;
-        repaintDetails(row, known || listingMeta(row));
-        if (!row.error) {
-            const open = el('button', 'btn btn-sm btn-primary', 'Open');
-            open.type = 'button';
-            open.id = 'dsb-details-open';
-            open.addEventListener('click', () => choose(row.path));
-            actions.appendChild(open);
-        }
-        const pinned = S.pinned.has(row.path);
+        const folder = row.kind === 'folder';
+        const open = el('button', 'btn btn-sm btn-primary', folder ? 'Open folder' : 'Open');
+        open.type = 'button';
+        open.id = 'dsb-details-open';
+        open.disabled = !folder && !!row.error;
+        open.addEventListener('click', () => (folder ? goFolder(row.path) : choose(row.path)));
+        actions.appendChild(open);
+        const pinned = !folder && S.pinned.has(row.path);
         const pin = el('button', 'btn btn-sm btn-outline-secondary', pinned ? 'Unpin' : 'Pin');
         pin.type = 'button';
         pin.id = 'dsb-details-pin';
+        pin.disabled = folder;
         pin.setAttribute('aria-pressed', String(pinned));
         pin.addEventListener('click', async () => {
             const now = services.togglePin({ path: row.path, label: services.label(row.path) });
@@ -817,6 +815,13 @@ export function createDatasetBrowser(services) {
             setTimeout(() => { copy.textContent = 'Copy path'; }, 1500);
         });
         actions.appendChild(copy);
+        if (folder) {
+            pane.appendChild(el('p', 'dsb-details-path', row.path));
+            return;
+        }
+        pane.appendChild(el('dl', 'dsb-fields'));
+        pane.appendChild(el('div', 'dsb-details-body'));
+        repaintDetails(row, known || listingMeta(row));
         if (!row.error) detailsTimer = setTimeout(() => loadDetails(row), known ? 0 : DETAILS_DELAY_MS);
     }
 

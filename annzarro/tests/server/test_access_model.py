@@ -413,6 +413,21 @@ def test_auth_me_names_the_admin_contact_only_to_a_restricted_user_and_only_when
     assert "admin_contact" not in client(world, "bob").get("/api/v1/auth/me").get_json()
 
 
+def test_auth_me_lists_the_remote_allowlist_when_the_policy_restricts_hosts(world):
+    from annzarro.core import remote
+    saved = remote._policy
+    me = lambda: client(world, "bob").get("/api/v1/auth/me").get_json()
+    try:
+        remote.configure_remote_policy({"remote_stores": "allow", "remote_allowlist": ["https://data.example.org", "s3://lab/atlases"]})
+        assert me()["remote_allowlist"] == ["https://data.example.org", "s3://lab/atlases/"]
+        remote.configure_remote_policy({"remote_stores": "allow"})
+        assert "remote_allowlist" not in me()
+        remote.configure_remote_policy({"remote_stores": "deny"})
+        assert "remote_allowlist" not in me() and me()["remote_stores"] is False
+    finally:
+        remote._policy = saved
+
+
 # --- remote prefixes ---------------------------------------------------------------------
 
 @pytest.fixture
