@@ -8,6 +8,12 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.5.4 (2026-10-16)
+
+A filtered Cell Table opens about twice as fast on large datasets, and switching datasets no longer
+shows a notice: a back button beside the dataset name returns to the previous one. The first release
+the desktop app can install over 0.5.3 by itself.
+
 ### Changed
 - Switching datasets no longer shows a notice. A back button beside the dataset name returns to the
   previous dataset, and then offers the one you left, so the two toggle. The notice's button used to
