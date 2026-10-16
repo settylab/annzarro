@@ -105,6 +105,26 @@ def test_sharded_store(tmp_path):
     assert (body["cells"], body["genes"]) == (2000, 50)
 
 
+def test_a_store_on_another_drive_than_the_data_directory(client, tmp_path, monkeypatch):
+    """On Windows ``os.path.relpath`` raises ValueError across drives (the desktop app's data
+    directory on C:, a store opened from D:): the details answer with the absolute path instead of
+    a 500 (found by the Windows build's packaged-app test of v0.5.2)."""
+    other = tmp_path / "other"
+    other.mkdir()
+    shutil.copytree(FIXTURE, other / "elsewhere.zarr")
+    real_relpath = os.path.relpath
+
+    def windows_relpath(path, start=os.curdir):
+        if str(other) in str(path):
+            raise ValueError("path is on mount 'D:', start on mount 'C:'")
+        return real_relpath(path, start)
+    monkeypatch.setattr(os.path, "relpath", windows_relpath)
+    reply = details(client, other / "elsewhere.zarr")
+    assert reply.status_code == 200, reply.get_json()
+    body = reply.get_json()
+    assert body["rel_path"] == str(other / "elsewhere.zarr") and (body["cells"], body["genes"]) == (200, 20)
+
+
 def test_h5ad_file(client, data):
     body = details(client, data / "table.h5ad").get_json()
     assert body["format"] == "h5ad" and body["zarr_format"] is None
