@@ -277,3 +277,88 @@ class Subset(_List):
 
     def _universe(self):
         return list(self.ids)
+
+
+class RemoteAccess(PolicyType):
+    """Which remote (URL) locations the server may read datasets from.
+
+    The value is ``{"mode": "off" | "allowlist" | "any", "allowlist": [prefix, ...]}``;
+    the list is empty unless the mode is ``allowlist``. Prefixes are normalised
+    (lower-case scheme and host, a trailing ``/``) and validated like
+    ``server.remote_allowlist``. The most restrictive of several values is
+    ``off`` if any is off, else what every allowlist permits (prefixes narrowed
+    pairwise; nothing in common is ``off``), else ``any``.
+    """
+
+    kind = "remote_access"
+    MODES = ("any", "allowlist", "off")
+
+    @staticmethod
+    def prefix(item: Any) -> str:
+        """The canonical form of one allowlist entry, or a PolicyValueError saying what is wrong."""
+        from ...core.remote import REMOTE_SCHEMES, _Prefix, validate_remote_url
+        if not isinstance(item, str) or not item.strip():
+            raise PolicyValueError(BAD_TYPE, "expected a URL prefix")
+        text = item.strip()
+        scheme = text.split("://", 1)[0].lower() if "://" in text else ""
+        if scheme not in REMOTE_SCHEMES:
+            raise PolicyValueError(BAD_TYPE, f"{text!r} must start with one of "
+                                   + ", ".join(f"{s}://" for s in sorted(REMOTE_SCHEMES)))
+        try:
+            validate_remote_url(text)
+            parsed = _Prefix.parse(text)
+        except ValueError as exc:
+            raise PolicyValueError(BAD_TYPE, str(exc))
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path or '/'}"
+
+    def validate(self, value):
+        if not isinstance(value, dict):
+            raise PolicyValueError(BAD_TYPE, "expected {mode, allowlist}")
+        mode = value.get("mode")
+        if not isinstance(mode, str):
+            raise PolicyValueError(BAD_TYPE, "expected {mode, allowlist}")
+        if mode not in self.MODES:
+            raise PolicyValueError(BAD_CHOICE, "mode is one of " + ", ".join(self.MODES))
+        listed = value.get("allowlist", [])
+        if not isinstance(listed, (list, tuple)):
+            raise PolicyValueError(BAD_TYPE, "allowlist must be a list")
+        out: List[str] = []
+        for item in listed:
+            item = self.prefix(item)
+            if item not in out:
+                out.append(item)
+        if mode == "allowlist" and not out:
+            raise PolicyValueError(BAD_TYPE, "an allowlist needs at least one location")
+        if mode != "allowlist" and out:
+            raise PolicyValueError(BAD_TYPE, "only the allowlist mode takes locations")
+        return {"mode": mode, "allowlist": out}
+
+    @staticmethod
+    def _under(inner: str, outer: str) -> bool:
+        return inner.startswith(outer)      # both end in '/', so this is a path boundary
+
+    def restrict(self, values):
+        if any(v["mode"] == "off" for v in values):
+            return {"mode": "off", "allowlist": []}
+        lists = [v["allowlist"] for v in values if v["mode"] == "allowlist"]
+        if not lists:
+            return {"mode": "any", "allowlist": []}
+        common = lists[0]
+        for other in lists[1:]:
+            narrowed: List[str] = []
+            for a in common:
+                for b in other:
+                    keep = a if self._under(a, b) else (b if self._under(b, a) else None)
+                    if keep is not None and keep not in narrowed:
+                        narrowed.append(keep)
+            common = narrowed
+        return {"mode": "allowlist", "allowlist": common} if common else {"mode": "off", "allowlist": []}
+
+    def describe_change(self, old, new):
+        """For the audit log: the allowlist entries added and removed."""
+        before = set((old or {}).get("allowlist", []))
+        after = set((new or {}).get("allowlist", []))
+        return {"allowlist_added": sorted(after - before), "allowlist_removed": sorted(before - after)}
+
+    def samples(self):
+        return ({"mode": "any", "allowlist": []}, {"mode": "off", "allowlist": []})

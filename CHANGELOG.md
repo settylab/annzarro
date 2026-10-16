@@ -8,6 +8,22 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Dataset button on a slow load
+- A click on the dataset button, Ctrl/Cmd+O or the desktop menu's Open Dataset before the page has finished
+  starting is no longer lost: the button shows it is busy and the dataset browser opens once the page is ready.
+
+### Admin: remote datasets
+- Whether the server may read `s3://`, `gs://`, `gcs://` and `http(s)://` datasets is set in the admin
+  interface: **Data sources > Remote datasets** (the section formerly called Data directories) offers Off,
+  Only these locations (a validated list of URL prefixes) and Any location (with a warning that the server
+  then fetches any URL, internal addresses included). It takes effect at once in every worker and is audited.
+  `server.remote_stores`, `server.remote_allowlist` and their environment variables stay the upper limit:
+  an admin narrows them, never widens them, and the card shows what set the value.
+- The Settings switch "No external hosts" is now "Gene Set Analysis: no external services" and says it does
+  not affect remote datasets. Its key and API name are unchanged.
+- The refusal "Remote datasets are disabled on this server" names Admin > Data sources > Remote datasets
+  as well as `server.remote_stores`.
+
 ### Desktop app: opening datasets
 - A **File** menu on every platform: **Open Dataset...** (`Cmd/Ctrl+O`), **Open File or Folder...**
   (`Cmd+Shift+O` on macOS; **Open .h5ad File...** and **Open .zarr Folder...** on Windows and Linux),

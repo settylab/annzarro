@@ -1,13 +1,15 @@
 /**
- * Data directories section (design 5): the allowed parents and every
+ * Data sources section (design 5): the allowed parents and every
  * effective root from GET /admin/data-roots, adding a directory by browsing
  * an allowed parent, removing one an admin added, and a paged look at the
- * datasets inside a root.
+ * datasets inside a root. Below them the Remote datasets card (remote-datasets.js)
+ * sets whether the server may read s3://, gs:// and http(s):// stores.
  */
 
 import { h, setChildren, badge, table } from './dom.js';
 import { formatTimestamp, formatCount } from './admin-format.js';
 import { grantedToText } from './access.js';
+import { KEY as REMOTE_KEY, renderRemoteDatasets } from './remote-datasets.js';
 
 const SOURCE_TEXT = { data_dir: 'data_dir', config: 'config', admin: 'admin' };
 
@@ -58,6 +60,7 @@ let typed = '';
 let notice = null;          // {level, text}
 let listing = null;         // the last GET /admin/data-roots
 let granted = null;         // `roots` of the last GET /admin/access, or null
+let remoteKey = null;       // the remote datasets key of the last GET /admin/policy, or {error}
 
 function say(level, text) {
     notice = { level, text };
@@ -239,13 +242,44 @@ function parentFolder(root, folder) {
     return up.length > root.length && up.startsWith(root) ? up : '';
 }
 
+async function saveRemote(value) {
+    const out = await apiRef.policy.set({ [REMOTE_KEY]: value });
+    say('success', 'Remote datasets setting saved.');
+    remoteKey = (out.keys || []).find((k) => k.name === REMOTE_KEY) || remoteKey;
+    await load(false);
+}
+
+async function resetRemote() {
+    const out = await apiRef.policy.set({ [REMOTE_KEY]: null });
+    say('success', 'Remote datasets setting reset to the default.');
+    remoteKey = (out.keys || []).find((k) => k.name === REMOTE_KEY) || remoteKey;
+    await load(false);
+}
+
+function remoteCard() {
+    const body = h('div', { class: 'card-body' });
+    if (!remoteKey || remoteKey.error) {
+        setChildren(body, h('h2', { class: 'h6', text: 'Remote datasets' }),
+            h('div', { class: 'text-danger small', text: remoteKey ? remoteKey.error : 'Not loaded.' }));
+    } else {
+        renderRemoteDatasets(body, remoteKey, { save: saveRemote, reset: resetRemote });
+    }
+    return h('div', { class: 'card mb-3', id: 'remote-datasets', data: { source: remoteKey && remoteKey.source || '' } }, body);
+}
+
 async function load(fetchRoots = true) {
-    if (fetchRoots || !listing) {
+    if (fetchRoots || !listing || !remoteKey) {
         listing = await apiRef.dataRoots.list();
         try {
             granted = (await apiRef.access.overview()).roots;
         } catch {
             granted = null;     // the table stays useful without the column
+        }
+        try {
+            const policy = await apiRef.policy.get();
+            remoteKey = (policy.keys || []).find((k) => k.name === REMOTE_KEY) || { error: 'This server does not offer the remote datasets setting.' };
+        } catch (e) {
+            remoteKey = { error: (e && e.message) || 'The remote datasets setting could not be read.' };
         }
     }
     const data = listing;
@@ -259,6 +293,7 @@ async function load(fetchRoots = true) {
                 data.overlay.error ? h('code', { text: data.overlay.error }) : null)
             : null,
         notice && !ctxRef.toast ? h('div', { class: `alert alert-${notice.level}`, role: 'status', text: notice.text }) : null,
+        h('h2', { class: 'h5', id: 'local-data-heading', text: 'Local data directories' }),
         h('div', { class: 'mb-3' },
             h('h2', { class: 'h6', text: 'Allowed parents (server.admin_data_roots)' }),
             parents.length
@@ -267,17 +302,18 @@ async function load(fetchRoots = true) {
                 : h('p', { class: 'text-muted mb-0', text: 'Adding directories is off. Set server.admin_data_roots.' })),
         table(['Directory', 'Source', 'Stores', 'Added', ...(granted ? ['Granted to'] : []), ''], rows),
         datasetsView(),
-        parents.length ? chooserView(parents) : null);
+        parents.length ? chooserView(parents) : null,
+        remoteCard());
 }
 
 export default {
     id: 'data',
-    title: 'Data directories',
+    title: 'Data sources',
     async mount(target, api, ctx = {}) {
         el = target;
         apiRef = api;
         ctxRef = ctx;
-        confirming = viewing = chooser = notice = listing = granted = null;
+        confirming = viewing = chooser = notice = listing = granted = remoteKey = null;
         typed = '';
         await load();
     },

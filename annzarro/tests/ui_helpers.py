@@ -91,6 +91,10 @@ def open_browser(page, *, query=None, shortcut=False, timeout=30_000):
 
     ``query`` is typed into its search field. Returns the dialog locator.
     """
+    # The button is in the page's HTML and the app wires it (and Ctrl+O) while it starts; a click or a
+    # key before that is lost, so wait until the app says it has finished starting.
+    page.wait_for_function("() => !!(window.annzarro && window.annzarro.ready)", timeout=timeout)
+    page.evaluate("() => window.annzarro.ready")
     if shortcut:
         page.keyboard.press("Control+o")
     else:

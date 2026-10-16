@@ -10,12 +10,12 @@ from .resolver import (CONFIG, DEFAULT, OVERLAY, USER, Issue, PolicyEngine, Reso
                        status_for)
 from .routes import POLICY_HEADER, check_routes, engine, install, requester, requires
 from .types import (BAD_CHOICE, BAD_TYPE, OUT_OF_RANGE, Bool, Enum, Float, Hosts, Int, Paths, PolicyType,
-                    PolicyValueError, Subset)
+                    PolicyValueError, RemoteAccess, Subset)
 
 __all__ = [
     "AREAS", "COMBINES", "DECLARING_MODULES", "REGISTRY", "load_declarations", "SCOPES", "Key", "Registry", "declare",
     "CONFIG", "DEFAULT", "OVERLAY", "USER", "Issue", "PolicyEngine", "Resolution", "config_lookup", "status_for",
     "POLICY_HEADER", "check_routes", "engine", "install", "requester", "requires",
     "BAD_CHOICE", "BAD_TYPE", "OUT_OF_RANGE", "Bool", "Enum", "Float", "Hosts", "Int", "Paths", "PolicyType",
-    "PolicyValueError", "Subset",
+    "PolicyValueError", "RemoteAccess", "Subset",
 ]

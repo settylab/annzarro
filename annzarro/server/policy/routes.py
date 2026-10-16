@@ -82,6 +82,8 @@ def install(app, api_version: str = "v1", registry: Optional[Registry] = None) -
         load_declarations()
     eng = PolicyEngine(app.config, registry or REGISTRY)
     app.extensions[EXTENSION] = eng
+    from ...core.remote import bind_policy_engine
+    bind_policy_engine(eng)
 
     @app.route(f"/api/{api_version}/policy/effective", methods=["GET"])
     @access.gate("public")   # client keys only, resolved for the requester; no dataset is named

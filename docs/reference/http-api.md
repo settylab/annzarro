@@ -591,7 +591,7 @@ The settings are the keys of the policy registry ({doc}`../design/policy-registr
 | Route | Body | Returns |
 |---|---|---|
 | `GET /admin/policy` | | `{version, store_problems, keys, unknown, issues}`. A key is its declaration (`name`, `type`, `scope`, `area`, `description`, `combine`, `restart`, `routes`, `config_path`) with `default`, `value`, `source` (`user`, `admin`, `env`, `config`, `default` or `forced`), `locked`, `layers` (the value of each layer that set it), `inherited` (what applies if the admin value is removed) and `outbound_hosts_now`. `unknown` lists stored names no version declares; `issues` the stored values that are ignored |
-| `PUT /admin/policy` | `{"<key>": value, ...}`; `null` removes a value | the same document after the change, and `capped` (for values wider than the layer below) |
+| `PUT /admin/policy` | `{"<key>": value, ...}`; `null` removes a value. `feature.remote_stores` (Remote datasets, with a `section` of `data`) takes `{"mode": "off" or "allowlist" or "any", "allowlist": [URL prefix]}`; its key also carries `config_value` and `config_origin` (`config` or `env`) when the operator set it; a refused value is `400` with `messages` naming the problem per key | the same document after the change, and `capped` (for values wider than the layer below) |
 | `GET /admin/users/<username>/policy` | | the keys a user may override, with `override` and `has_override`, `values` (what is stored), and `effective`. `404` `unknown_user` |
 | `PUT /admin/users/<username>/policy` | as above | the same document after the change |
 

@@ -100,7 +100,7 @@ def test_default_callable_gets_the_config_and_is_validated():
         key.default_value({"n": 0})
 
 
-def test_limits_and_remote_stores_are_declared_read_only():
+def test_limits_are_declared_read_only_and_remote_stores_is_the_admins_to_narrow():
     from annzarro.server.policy import load_declarations
     from annzarro.server.limits import LIMITS
     load_declarations()
@@ -110,4 +110,6 @@ def test_limits_and_remote_stores_are_declared_read_only():
     for name in ("max_read_mb", "read_budget_mb", "read_wait_s"):
         assert REGISTRY.get(f"limits.{name}").scope == "config"
     assert REGISTRY.get("limits.max_requests").restart and not REGISTRY.get("limits.max_sessions").restart
-    assert REGISTRY.get("feature.remote_stores").scope == "config"
+    # an administrator sets remote datasets under Data sources (it was read-only before that control existed)
+    remote = REGISTRY.get("feature.remote_stores")
+    assert (remote.scope, remote.combine, remote.section) == ("server", "restrict", "data")

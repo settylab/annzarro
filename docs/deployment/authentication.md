@@ -263,6 +263,12 @@ On a shared server that would let any user point it at internal services, so the
   allowlist on a server with login logs a warning.
 - `deny` turns them off.
 
+An administrator can set the same decision in the browser under **Admin > Data sources > Remote
+datasets** (off, only a list of locations, or any location), without a restart
+({ref}`admin-remote-datasets`). The YAML or environment value is the upper limit: the admin
+can narrow it, never widen it, and `deny` leaves the card locked. A restricted user still opens
+only the remote prefixes they were granted.
+
 A refused URL gets HTTP 403 and is never fetched. Credentials are never accepted inside the URL,
 and query strings (pre-signed URLs) are refused. Each connection is bounded by
 `remote_connect_timeout_s` (10 s) and `remote_read_timeout_s` (30 s); a store that stops answering

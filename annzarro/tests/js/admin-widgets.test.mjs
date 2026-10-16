@@ -227,11 +227,11 @@ test("the full tab: master switch inverted, groups in order, unknown keys flagge
     onRemoveUnknown: (n) => removed.push(n),
   });
   const master = find(el, (n) => n.classes().includes("policy-master"));
-  assert.match(master.textContent, /No external hosts/);
+  assert.match(master.textContent, /Gene Set Analysis: no external services/);
   assert.match(master.textContent, /OFF/);
   const sw = find(master, (n) => n.tagName === "INPUT");
   assert.equal(sw.checked, false);
-  sw.checked = true; // turn "No external hosts" on
+  sw.checked = true; // turn "no external services" on
   await sw.dispatch("change");
   assert.deepEqual(changes, [["outbound.allow_external", false]]);
   // the master key is not repeated as an ordinary row

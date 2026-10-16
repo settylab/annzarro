@@ -1,4 +1,4 @@
-// The Data directories section: add by typing or browsing, remove with a
+// The Data sources section: add by typing or browsing, remove with a
 // confirmation, a paged look at a root's datasets. API calls are recorded.
 // Run: `node --test annzarro/tests/js/admin-data-roots.test.mjs`.
 import assert from "node:assert/strict";
