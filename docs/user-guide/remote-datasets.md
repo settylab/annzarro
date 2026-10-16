@@ -54,6 +54,11 @@ The `server` section of the configuration decides which URLs may be opened
 | `remote_request_timeout_s` | `120` hosted, `600` single-user | seconds one request may spend on remote reads in total; a host that trickles data slowly enough to avoid the read timeout still fails the request with HTTP 504 `remote_deadline` when this runs out (0 switches it off) |
 | `remote_chunk_cache_mb` | `256` | in-memory cache of raw chunk bytes per open remote store (Zarr v3 stores; 0 switches it off) |
 
+On a server with the admin interface, an administrator can also set this under **Admin > Data
+sources > Remote datasets**: off, only a list of locations, or any location. The two keys above and
+their environment variables are the upper limit; the admin can narrow it and not widen it
+({ref}`admin-remote-datasets`).
+
 The environment variables `ANNZARRO_REMOTE_STORES`, `ANNZARRO_REMOTE_ALLOWLIST`,
 `ANNZARRO_REMOTE_CREDENTIALS`, `ANNZARRO_REMOTE_CONNECT_TIMEOUT`, `ANNZARRO_REMOTE_READ_TIMEOUT`,
 `ANNZARRO_REMOTE_REQUEST_TIMEOUT` and `ANNZARRO_REMOTE_CHUNK_CACHE_MB` override these keys.

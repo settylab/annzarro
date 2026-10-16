@@ -40,6 +40,15 @@ Settings page shows that badge. A value the key's type does not accept is logged
 ignored, and the YAML decides, as `/api/v1/config` does; the environment never
 turns an invalid value into the default.
 
+A key the YAML spells with more than one setting declares `config_reader` instead of `config_path`:
+a function of the configuration returning `(found, raw, from_env)`. `feature.remote_stores` does
+this for `server.remote_stores`, `server.remote_allowlist` and their environment variables, and uses
+the `RemoteAccess` type, whose value is `{mode: off | allowlist | any, allowlist: [...]}` and whose
+`restrict` narrows allowlists pairwise (a prefix inside another is kept; nothing in common is
+`off`). A key with a `section` has its control on that page of the admin interface (here Data
+sources) and is left out of the Settings page. A type may define `describe_change(old, new)`; the
+audit record of a change carries what it returns.
+
 The operator can take a key out of the administrator's hands with `policy.locked` in
 the YAML (see {doc}`../reference/configuration`).
 

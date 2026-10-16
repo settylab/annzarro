@@ -34,7 +34,7 @@ stores goes into one small directory, and the YAML always wins where the two dis
    in the log.
 4. **Open `/admin`** after signing in (`https://your-host/admin`, or under `server.url_prefix`).
 
-The page has six sections: Users, Data directories, Server health, Panel sets, Settings and
+The page has six sections: Users, Data sources, Server health, Panel sets, Settings and
 Audit log.
 
 ### Where the state lives
@@ -145,7 +145,7 @@ restricted user with no active grant; a blue badge counts the user's own setting
   "Administrators read every dataset the server serves. They cannot be restricted. Stored as restricted: that
   applies again if their admin right is revoked."
 
-The **Data directories** table has a **Granted to** column: the restricted users with an active grant in or
+The **Data sources** table of local directories has a **Granted to** column: the restricted users with an active grant in or
 below that directory (`-` for none). It is the quick check that a directory an admin is about to remove or
 re-point is not what a collaborator depends on.
 
@@ -181,7 +181,12 @@ What a restricted user sees, and how the check works:
   `via: cli:<account>`.
 
 (admin-data-roots)=
-## Data directories
+## Data sources
+
+The section has two parts: the local data directories the server reads from, and the **Remote
+datasets** card, which says whether it may also read stores from URLs.
+
+### Local data directories
 
 By default the server reads from `server.data_dir` and `server.allowed_dirs`, set in the YAML.
 With `server.admin_data_roots` an admin can add more in the browser: the section lists the
@@ -206,6 +211,51 @@ Directories from the YAML cannot be removed here.
 
 Keep the parents writable by trusted accounts only: whoever can write there can swap a directory
 for a link between the check and the read.
+
+(admin-remote-datasets)=
+### Remote datasets
+
+Opening an `s3://`, `gs://`, `gcs://` or `http(s)://` store makes the server fetch a URL a user
+chose, so the server decides whether to do that at all ({doc}`authentication`). The **Remote
+datasets** card of the Data sources section sets it for everyone, without a restart, in every
+worker. It is a setting of its own: the Gene Set Analysis switch on the Settings page
+(`outbound.allow_external`) does not affect it.
+
+| State | Meaning |
+|---|---|
+| **Off** | The server opens no remote dataset; a remote URL is refused with `403`. |
+| **Only these locations** | The server opens remote datasets whose URL starts with one of the listed locations. |
+| **Any location** | The server opens any remote URL a user gives it, including addresses on its internal network (cloud metadata services, other machines behind the firewall). The card shows a warning while this is chosen. |
+
+A location is a URL prefix with one of the schemes `s3`, `gs`, `gcs`, `http` or `https`. It is
+checked when it is added and again by the server: no credentials in the URL, no query string or
+fragment, no `.` or `..` segment. It is stored normalised (lower-case scheme and host, ending in
+`/`, so `S3://Lab/atlases` is kept as `s3://lab/atlases/`), and a location matches whole path
+segments only: `s3://lab/atlases/` allows `s3://lab/atlases/mouse.zarr`, not `s3://lab/atlases-old/`.
+Duplicates are removed. HTTP redirects are not followed while a list is in force.
+
+Without an admin value the default applies: **off** on a shared server (login on, a network
+address or a proxy) and **any location** on a single-user local one. The key is
+`feature.remote_stores`, a restrict key like the others ({ref}`admin-policy`):
+
+- `server.remote_stores` and `server.remote_allowlist` in the YAML, or the environment variables
+  `ANNZARRO_REMOTE_STORES` and `ANNZARRO_REMOTE_ALLOWLIST` (which beat the YAML in both
+  directions), are the operator's decision and the **upper limit**. `deny` leaves nothing to
+  change: the card is shown locked, with the reason. `allow` leaves all three states open. A
+  `remote_allowlist` leaves **Off** and a narrower list; locations outside it, and **Any
+  location**, are refused with `409 config_ceiling`. The shipped `remote_stores: auto` with no
+  allowlist is not a decision, so an admin may widen it.
+- `policy.locked: [feature.remote_stores]` takes the card away from the admins altogether.
+- The card shows the effective state and where it comes from: default, configuration file,
+  environment or administrator. **Reset to the default** removes the admin value.
+- Credentials for private buckets (`remote_credentials`) are configuration only and are not shown.
+- A restricted user's access does not widen: they still open only the remote prefixes they were
+  granted, and a grant is inactive while remote datasets are off or outside the list
+  ({ref}`admin-access`).
+
+Every change is audited as `policy.update` with the old and new value and the locations added and
+removed; a URL with credentials in a refused request is logged with them hidden. Changing it needs
+the same password confirmation as other admin changes. A page that is already open picks the change up at its next load.
 
 ## Disabling panels and external hosts
 
@@ -262,7 +312,7 @@ Its keys:
 
 | Key | Meaning | YAML equivalent |
 |---|---|---|
-| `outbound.allow_external` | "No external hosts". Off forces all the keys below to their no-outbound value. | |
+| `outbound.allow_external` | "Gene Set Analysis: no external services". Off forces all the keys below to their no-outbound value. It does not govern remote datasets ({ref}`admin-remote-datasets`). | |
 | `panel.gene-set.external_requests` | `on`, `ask`, `off` or `none`. `off` never sends; its Links still work. `none` never sends and removes the Links. | `integrations.external_requests` |
 | `panel.gene-set.services` | The services the panel offers (`string-enrichment`, `string-network`, `string-partners`, `gprofiler-gost`, `mygene-mapping`, `mygene-card`, `hpa`, `enrichr`, `reactome`). | `integrations.gene_set.services` |
 | `panel.gene-set.species_search` | Whether a typed species name is looked up at NCBI Taxonomy and the ENA (no genes are sent). | |

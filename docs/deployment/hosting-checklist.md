@@ -40,7 +40,10 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 - **Stores read-only for the service account;** only `<data_dir>/sessions/` writable.
 - **Remote stores.** Either `remote_stores: deny`, or a `remote_allowlist` of the exact
   bucket or URL prefixes you serve. Never `allow` without an allowlist on a shared server (the
-  server logs a warning if you do). Use `remote_credentials: environment` only if the service
+  server logs a warning if you do). Admins can change the state in the browser under Admin > Data
+  sources > Remote datasets; what the YAML sets is the upper limit, and `policy.locked:
+  [feature.remote_stores]` takes the card away from them. It is separate from the Gene Set Analysis
+  switch on the Settings page. Use `remote_credentials: environment` only if the service
   account's cloud credentials may be read by every user.
 - **`proxy_count` matches the number of proxies** in front (1 for nginx alone). It is 0 by
   default; without it the login cookie is not marked `Secure` behind a TLS proxy. A higher value
