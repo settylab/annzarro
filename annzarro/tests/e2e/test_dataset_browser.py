@@ -692,10 +692,51 @@ def test_the_welcome_screen_lists_recents_and_opens_one(server):
         server_back.append(True)
         page.evaluate("""async () => { const m = await import('/static/js/utils/dataset-state.js');
             m.DatasetState.set({path: 'x', label: 'x', status: 'nodata'}); m.DatasetState.set({status: 'none'}); }""")
-        page.wait_for_selector(".welcome-open-dataset .welcome-recent:not([disabled])", timeout=10_000)
+        page.wait_for_selector(".welcome-open-dataset[data-recents='ready'] .welcome-recent:not([disabled])", timeout=10_000)
         page.locator(".welcome-open-dataset .welcome-recent").first.click()
         wait_for_open(page, "short.zarr")
         page.wait_for_function("document.querySelectorAll('.welcome-open-dataset').length === 0", timeout=10_000)
+        assert not s.errors, s.errors
+    finally:
+        s.close()
+
+
+def test_a_late_answer_for_an_earlier_state_does_not_overwrite_the_welcome_recents(server):
+    """The welcome section is filled again at every change of the dataset state, each with its own lookup. An answer that
+    arrives after a newer one (the first state's, slow under load) must not replace it: with the server saying the recent
+    is readable, it stays openable. The section says when its list is settled (data-recents)."""
+    base, data = server
+    s = Session(base)
+    page = s.page
+    try:
+        held = []
+        mode = ["gone"]                  # what the server says: "gone" for the first state's lookup, "there" after
+
+        def lookup(route):
+            paths = json.loads(route.request.post_data)["paths"]
+            if mode[0] == "gone":
+                held.append((route, paths))               # the first state's lookup is answered late
+            else:
+                route.continue_()
+        page.route("**/api/v1/datasets/lookup", lookup)
+        page.evaluate(f"""() => localStorage.setItem({RECENTS_KEY}, JSON.stringify([
+            {{path: {os.path.join(data, 'short.zarr')!r}, label: 'short.zarr', openedAt: 3}}]))""")
+        # two states in a row: each fills the section, the first one's lookup is still out
+        page.evaluate("""async () => { const m = await import('/static/js/utils/dataset-state.js');
+            m.DatasetState.set({path: 'x', label: 'x', status: 'nodata'}); }""")
+        deadline = time.time() + 10
+        while not held and time.time() < deadline:
+            page.wait_for_timeout(50)
+        assert held, "the first state asked the server"
+        mode[0] = "there"
+        page.evaluate("""async () => { const m = await import('/static/js/utils/dataset-state.js'); m.DatasetState.set({status: 'none'}); }""")
+        page.wait_for_selector(".welcome-open-dataset[data-recents='ready'] .welcome-recent:not([disabled])", timeout=15_000)
+        # now the stale answer arrives: the server said, at that time, that it was gone
+        for route, paths in held:
+            route.fulfill(status=200, content_type="application/json", body=json.dumps({"results": [{"path": p, "status": "unavailable"} for p in paths]}))
+        page.wait_for_timeout(800)
+        assert page.locator(".welcome-open-dataset .welcome-recent").is_enabled(), "a late, older answer replaced the newer one"
+        assert page.get_attribute(".welcome-open-dataset", "data-recents") == "ready"
         assert not s.errors, s.errors
     finally:
         s.close()
