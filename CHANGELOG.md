@@ -8,6 +8,12 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+
+- Switching datasets no longer shows a notice. A back button beside the dataset name returns to the
+  previous dataset, and then offers the one you left, so the two toggle. The notice's button used to
+  spread across the page when a dataset name was long.
+
 ## 0.5.3 (2026-10-16)
 
 The desktop apps of 0.5.2 with a fix for Windows. 0.5.2 was published on PyPI only; its desktop

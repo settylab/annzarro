@@ -3775,8 +3775,27 @@ details.aesthetics-section > .aesthetics-body {
     height: 26px;
     padding: 0;
 }
+.dataset-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    margin-left: -0.5rem;      /* flush with the dataset button, which it belongs to */
+    border-color: var(--az-control-border);
+    background: var(--az-surface);
+    color: var(--az-text);
+    -webkit-app-region: no-drag;
+}
+.dataset-back:hover {
+    background: var(--az-accent-bg);
+    color: var(--az-text);
+}
+.dataset-back[hidden] { display: none; }
 .dataset-bar .dataset-fact,
 .dataset-bar .theme-toggle,
+.dataset-bar .dataset-back,
 .dataset-bar .dataset-refresh {
     flex: 0 0 auto;
 }
@@ -3876,6 +3895,7 @@ details.aesthetics-section > .aesthetics-body {
     .dataset-spin::before { content: "\f254"; }
 }
 .dataset-button:focus-visible,
+.dataset-back:focus-visible,
 .dataset-refresh:focus-visible,
 .dsb-dialog :is(button, input, select, [tabindex], a):focus-visible {
     outline: 2px solid var(--az-link);
@@ -4153,6 +4173,7 @@ details.aesthetics-section > .aesthetics-body {
     .dsb-row.selected > * { forced-color-adjust: none; background-color: Highlight; color: HighlightText; }
     .dsb-row.selected :is(.dsb-name, .dsb-rel, .dsb-reason) { color: HighlightText; }
     .dsb-dialog :is(button, input, select, [tabindex], a):focus-visible,
+    .dataset-back:focus-visible,
     .dataset-button:focus-visible { outline: 2px solid CanvasText; }
 }
 /* Links to the admin interface next to the signed-in badge (main.js _loadAuthIndicator) */
