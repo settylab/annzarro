@@ -83,7 +83,7 @@ test("values are compared by mode and list", () => {
 
 function card(k, over = {}) {
   const saved = [];
-  const el = document.createElement("div");
+  const el = globalThis.document.createElement("div");
   renderRemoteDatasets(el, k, {
     save: async (v) => { saved.push(v); },
     reset: async () => { saved.push(null); },
