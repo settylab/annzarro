@@ -10,7 +10,6 @@ with the release after it. Older releases are listed on
 
 ### Added
 - Click the app name at the top left to see which version you are running, how to cite AnnZarro, and who develops and funds it (the Setty Lab at Fred Hutch Cancer Center, with the NIH award numbers), with links to the documentation, the repository and the changelog.
-
 - A server can show who runs it and what it owes its visitors. Under `site:` in the configuration, set an imprint, privacy notice, accessibility statement and terms of use, each as a link, a Markdown text or a Markdown file, plus an operator, a contact and the link labels (`Impressum`, `Datenschutz` for German sites). A small footer line on every page, including the sign-in, account and admin pages, links them; the About dialog gets a "This site" block, and a click on the imprint opens it in place. The texts are also served at `/site/imprint`, `/site/privacy`, `/site/accessibility` and `/site/terms`, which need no sign-in. Nothing appears until you configure it.
 - `site.robots` tells search engines to stay away (by default on a server with login), `site.security_contact` serves `/.well-known/security.txt`, and `site.storage.persistent_convenience: false` keeps the layout autosave and recent datasets only until the tab closes.
 - The Gene Set panel's question before it sends gene lists now says that each service also receives your IP address, and links the service's privacy policy.
