@@ -8,6 +8,12 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.5.5 (2026-10-17)
+
+Fewer pop-ups, with messages shown where you are looking; automatic point size and opacity that
+follow the panel's size; a subset size that follows you from dataset to dataset; and Plot Options
+for the focused cell's marker.
+
 ### Added
 - Plot Options has a **Focused cell** group (**Focused gene** in gene plots) that sets the size
   (a multiple of the point size), opacity, fill colour, edge colour and edge width of the marker on
@@ -46,7 +52,8 @@ with the release after it. Older releases are listed on
   up are held while the pointer or keyboard focus is on them and last longer when they are longer.
 
 ### Fixes
-- The Save Panel Set dialog now closes when a save finishes while it is still fading in (a quick save, or Overwrite pressed at once); it used to stay open.
+- The Save Panel Set dialog now closes when a save finishes while it is still fading in (a quick
+  save, or Overwrite pressed at once); it used to stay open.
 - A plot coloured by nothing, or by a column the dataset does not have (after switching datasets),
   no longer shows a grey "trace 0" in a legend after an axis change; such a plot has no legend.
 - An error notice is no longer wiped by the notices that follow it from the same action (a shared
