@@ -52,7 +52,7 @@ import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus, ap
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { usableUnsPalette, unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
-import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount } from '../../utils/categories.js';
+import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount, colourGroupKey } from '../../utils/categories.js';
 
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
 export function largePlotPoints() {
@@ -202,12 +202,12 @@ function pushTraces(traces, X, Y, a, b, name, color, settings) {
 }
 
 /** Single-colour traces for points [a, b), cut below TRACE_POINTS, without legend entries. */
-function chunkTraces(X, Y, a, b, name, color, settings) {
+function chunkTraces(X, Y, a, b, name, color, settings, group = name) {
   const out = [];
   for (let p = a; p < b; p += TRACE_POINTS) {
     const q = Math.min(p + TRACE_POINTS, b);
     out.push({
-      type: 'scattergl', mode: 'markers', name, legendgroup: name, showlegend: false, meta: LEGEND_POINTS,
+      type: 'scattergl', mode: 'markers', name, legendgroup: group, showlegend: false, meta: LEGEND_POINTS,
       x: X.subarray(p, q), y: Y.subarray(p, q),
       hoverinfo: 'skip',
       marker: { size: settings.pointSize, opacity: settings.pointOpacity, color }
@@ -220,10 +220,12 @@ function chunkTraces(X, Y, a, b, name, color, settings) {
  * The legend entry of one category: a trace with no points, at full opacity,
  * in the category's legend group (clicking it toggles all its chunks). The
  * point traces carry the panel's opacity; Plotly would draw their legend
- * symbols just as pale.
+ * symbols just as pale. `group` is the entry's identity (a colour group's
+ * names change with the cells drawn; utils/legend-entries.js keeps hidden
+ * entries by it).
  */
-function legendTrace(name, color, settings, rank) {
-  return { type: 'scattergl', mode: 'markers', name, legendgroup: name, showlegend: true, meta: LEGEND_PROXY,
+function legendTrace(name, color, settings, rank, group = name) {
+  return { type: 'scattergl', mode: 'markers', name, legendgroup: group, showlegend: true, meta: LEGEND_PROXY,
     legendrank: rank, x: [null], y: [null], hoverinfo: 'skip',
     marker: { size: settings.pointSize, opacity: 1, color } };
 }
@@ -577,10 +579,11 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     const groups = [];
     for (let k = 0; k < nc; k++) {
       const name = many ? groupNames[k] : String(cs.categories[k]);
+      const group = many ? colourGroupKey(k) : name;
       const color = palette[k % palette.length];
       if (start[k + 1] > start[k]) {
-        groups.push(chunkTraces(X, Y, start[k], start[k + 1], name, color, settings));
-        traces.push(legendTrace(name, color, settings, k + 1));
+        groups.push(chunkTraces(X, Y, start[k], start[k + 1], name, color, settings, group));
+        traces.push(legendTrace(name, color, settings, k + 1, group));
       }
     }
     if (start[NA + 1] > start[NA]) traces.push(legendTrace('NA', NA_COLOR, settings, 1001));

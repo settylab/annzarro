@@ -227,8 +227,12 @@ async function recolour(batched, overrides) {
     return { gd, calls: [...calls], refreshed };
 }
 
+// The trace uids are left out: the batch draws with Plotly.react, which is
+// given a uid per trace (legend-entries.js withLegendState, so hidden legend
+// entries follow their category); the unbatched calls never react. The
+// batched figure is checked to carry them.
 const strip = (gd) => JSON.parse(JSON.stringify({ data: gd.data, layout: gd.layout }, (k, v) =>
-    (typeof v === 'number' && Number.isNaN(v) ? 'NaN' : v)));
+    (k === 'uid' ? undefined : typeof v === 'number' && Number.isNaN(v) ? 'NaN' : v)));
 
 for (const [label, overrides] of [
     ['log colour, hide outliers, focus, legend left', {}],
@@ -248,6 +252,7 @@ for (const [label, overrides] of [
         assert.ok(seq.calls.length > 8, `unbatched made ${seq.calls.length} calls: ${seq.calls}`);
         assert.deepEqual(one.calls, ['react'], `batched made: ${one.calls}`);
         assert.deepEqual(strip(one.gd), strip(seq.gd));
+        assert.ok(one.gd.data.every(t => typeof t.uid === 'string' && t.uid), 'every trace drawn has a uid');
         if (overrides.color && overrides.color.type === 'obs') {
             assert.ok(one.gd.data.length >= KINDS.length, 'one trace per category');
             return;
