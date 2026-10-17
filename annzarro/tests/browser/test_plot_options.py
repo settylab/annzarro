@@ -23,7 +23,7 @@ else:
 from annzarro.tests.browser.test_memory_guard import STORE, _serve  # noqa: E402
 
 A, B = "cell-plot-A", "cell-plot-B"
-GROUPS = ["Presets", "Appearance", "Axes and ticks", "Points", "Legend and colour bar", "Text", "Margins", "Export",
+GROUPS = ["Presets", "Appearance", "Axes and ticks", "Points", "Focused cell", "Legend and colour bar", "Text", "Margins", "Export",
           "Apply to other panels"]
 
 
