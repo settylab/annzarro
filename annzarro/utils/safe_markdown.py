@@ -10,7 +10,16 @@ markup, so no input can produce a tag, an attribute or an event handler of its o
 * links ``[text](url)`` with an ``http://``, ``https://`` or ``mailto:`` address only,
   always ``rel="noopener noreferrer"``
 
-No raw HTML, no images, no tables, no nested lists. Input is capped
+* GitHub-style pipe tables (alignment by ``:---``, ``:---:``, ``---:``), at most ``MAX_TABLE_ROWS`` rows
+  and ``MAX_TABLE_COLUMNS`` columns, the rest announced as "... N more rows"
+* fenced (``` or ~~~) and indented (4 spaces or a tab) code blocks, escaped, no highlighting
+* horizontal rules, setext headings (``===`` and ``---`` under a line), blockquotes (``>``, three deep)
+
+An indented line starts a code block even right under a paragraph line (CommonMark would continue the
+paragraph), because READMEs written by hand put code under a line of prose; right under a list item it
+continues the item.
+
+No raw HTML, no images, no nested lists. Input is capped
 (``max_chars``), a paragraph at ``MAX_BLOCK_CHARS``, and every pattern is bounded,
 so a hostile text costs a bounded amount of work.
 
@@ -23,6 +32,12 @@ MAX_CHARS = 200_000
 MAX_BLOCK_CHARS = 10_000
 MAX_BLOCKS = 2_000
 MAX_DEPTH = 4
+MAX_TABLE_ROWS = 500
+MAX_TABLE_COLUMNS = 30
+MAX_CELL_CHARS = 2_000
+MAX_CODE_LINES = 2_000
+MAX_CODE_LINE_CHARS = 2_000
+MAX_QUOTE_DEPTH = 3
 
 _ESCAPES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}
 _ESCAPE_RE = re.compile(r"[&<>\"']")
@@ -43,6 +58,12 @@ _HEADING_RE = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]+(.*?)[ \t#]*$")
 _BULLET_RE = re.compile(r"^[ \t]{0,3}[-*+][ \t]+(.*)$")
 _NUMBER_RE = re.compile(r"^[ \t]{0,3}\d{1,9}[.)][ \t]+(.*)$")
 _WORD_RE = re.compile(r"[A-Za-z0-9]")
+_FENCE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})(.*)$")
+_HR_RE = re.compile(r"^[ ]{0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+_SETEXT_RE = re.compile(r"^[ ]{0,3}(?:=+|-+)[ \t]*$")
+_QUOTE_RE = re.compile(r"^[ ]{0,3}>[ ]?(.*)$")
+_INDENT_RE = re.compile(r"^(?: {4}|\t)")
+_DELIMITER_RE = re.compile(r"^[ ]{0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$")
 
 
 def escape(text):
@@ -116,6 +137,219 @@ def _join_lines(lines):
     return result
 
 
+def _split_cells(line):
+    """The cells of a table row: split on pipes that are not escaped (``\\|`` is a pipe in the text), the
+    pipes at the row's two ends not counted."""
+    cells, current, i = [], [], 0
+    text = line.strip()
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and i + 1 < len(text) and text[i + 1] == "|":
+            current.append("|")
+            i += 2
+            continue
+        if ch == "|":
+            cells.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+    cells.append("".join(current))
+    if text.startswith("|"):
+        cells = cells[1:]
+    if text.endswith("|") and not text.endswith("\\|") and cells:
+        cells = cells[:-1]
+    return [c.strip() for c in cells]
+
+
+def _alignment(cell):
+    left, right = cell.startswith(":"), cell.endswith(":")
+    return "center" if left and right else "left" if left else "right" if right else ""
+
+
+def _is_table_at(lines, i):
+    """Whether lines[i] is a table's header row: it has a pipe and the next line is a delimiter row of as many cells."""
+    if i + 1 >= len(lines) or "|" not in lines[i] or "|" not in lines[i + 1] or not _DELIMITER_RE.match(lines[i + 1]):
+        return False
+    return len(_split_cells(lines[i])) == len(_split_cells(lines[i + 1]))
+
+
+def _table(lines, i):
+    """(html, next index) of the table whose header row is lines[i]."""
+    header = _split_cells(lines[i])
+    aligns = [_alignment(c) for c in _split_cells(lines[i + 1])]
+    width = min(len(header), MAX_TABLE_COLUMNS)
+    rows, total, j = [], 0, i + 2
+    while j < len(lines) and lines[j].strip() and "|" in lines[j] and not _starts_block(lines[j]):
+        total += 1
+        if len(rows) < MAX_TABLE_ROWS:
+            cells = _split_cells(lines[j])[:width]
+            rows.append(cells + [""] * (width - len(cells)))
+        j += 1
+
+    def cell(tag, text, k):
+        cls = f' class="md-{aligns[k]}"' if aligns[k] else ""
+        return f"<{tag}{cls}>" + _inline(text[:MAX_CELL_CHARS]) + f"</{tag}>"
+
+    out = ['<div class="md-table"><table><thead><tr>'
+           + "".join(cell("th", header[k], k) for k in range(width)) + "</tr></thead><tbody>"]
+    for row in rows:
+        out.append("<tr>" + "".join(cell("td", row[k], k) for k in range(width)) + "</tr>")
+    if total > len(rows):
+        out.append(f'<tr><td class="md-more" colspan="{width}">\u2026 {total - len(rows)} more rows</td></tr>')
+    out.append("</tbody></table></div>")
+    return "".join(out), j
+
+
+def _starts_block(line):
+    """Whether a line begins a block of its own, which ends a table."""
+    return bool(_HEADING_RE.match(line) or _FENCE_RE.match(line) or _QUOTE_RE.match(line) or _HR_RE.match(line))
+
+
+def _code(body, hidden=0):
+    if hidden:
+        body = body + [f"\u2026 {hidden} more lines"]
+    return "<pre><code>" + escape("\n".join(body)) + "</code></pre>"
+
+
+def _render_blocks(lines, base, depth, state):
+    blocks = []
+    paragraph = []
+    items = []
+    paragraph_chars = 0
+    kind = None
+    after_blank = True
+    n = len(lines)
+
+    def emit(html):
+        state[0] += 1
+        blocks.append(html)
+
+    def flush_paragraph():
+        nonlocal paragraph_chars
+        paragraph_chars = 0
+        if paragraph:
+            emit("<p>" + _inline(_join_lines(paragraph)[:MAX_BLOCK_CHARS]) + "</p>")
+            paragraph.clear()
+
+    def flush_list():
+        nonlocal kind
+        if items:
+            tag = "ul" if kind == "bullet" else "ol"
+            emit("<" + tag + ">" + "".join("<li>" + _inline(i[:MAX_BLOCK_CHARS]) + "</li>" for i in items) + "</" + tag + ">")
+            items.clear()
+        kind = None
+
+    i = 0
+    while i < n:
+        if state[0] >= MAX_BLOCKS:
+            break
+        line = lines[i]
+        if not line.strip():
+            flush_paragraph()
+            flush_list()
+            after_blank = True
+            i += 1
+            continue
+        in_list = bool(items) and not after_blank
+        after_blank = False
+        fence = _FENCE_RE.match(line)
+        if fence and not (fence.group(1)[0] == "`" and "`" in fence.group(2)):
+            flush_paragraph()
+            flush_list()
+            marker = fence.group(1)
+            closer = re.compile(r"^[ ]{0,3}" + re.escape(marker[0]) + "{" + str(len(marker)) + r",}[ \t]*$")
+            body, hidden, i = [], 0, i + 1
+            while i < n and not closer.match(lines[i]):
+                if len(body) < MAX_CODE_LINES:
+                    body.append(lines[i][:MAX_CODE_LINE_CHARS])
+                else:
+                    hidden += 1
+                i += 1
+            emit(_code(body, hidden))
+            i += 1
+            continue
+        if paragraph and not in_list and _SETEXT_RE.match(line):
+            level = min(6, (1 if line.strip()[0] == "=" else 2) + base - 1)
+            emit(f"<h{level}>" + _inline(_join_lines(paragraph)[:MAX_BLOCK_CHARS]) + f"</h{level}>")
+            paragraph.clear()
+            paragraph_chars = 0
+            i += 1
+            continue
+        if _HR_RE.match(line):
+            flush_paragraph()
+            flush_list()
+            emit("<hr>")
+            i += 1
+            continue
+        heading = _HEADING_RE.match(line)
+        if heading:
+            flush_paragraph()
+            flush_list()
+            level = min(6, len(heading.group(1)) + base - 1)
+            emit(f"<h{level}>" + _inline(heading.group(2)[:MAX_BLOCK_CHARS]) + f"</h{level}>")
+            i += 1
+            continue
+        if depth < MAX_QUOTE_DEPTH and _QUOTE_RE.match(line):
+            flush_paragraph()
+            flush_list()
+            inner = []
+            while i < n and _QUOTE_RE.match(lines[i]):
+                inner.append(_QUOTE_RE.match(lines[i]).group(1))
+                i += 1
+            emit("<blockquote>" + _render_blocks(inner, base, depth + 1, state) + "</blockquote>")
+            continue
+        bullet = _BULLET_RE.match(line)
+        number = None if bullet else _NUMBER_RE.match(line)
+        if bullet or number:
+            flush_paragraph()
+            want = "bullet" if bullet else "number"
+            if kind != want:
+                flush_list()
+                kind = want
+            items.append((bullet or number).group(1).strip())
+            i += 1
+            continue
+        if _INDENT_RE.match(line):
+            if in_list:                         # a continuation of the item above, not code
+                items[-1] = (items[-1] + " " + line.strip())[:MAX_BLOCK_CHARS]
+                i += 1
+                continue
+            flush_paragraph()
+            body, blanks, hidden = [], 0, 0
+            while i < n:
+                if not lines[i].strip():
+                    blanks += 1
+                elif _INDENT_RE.match(lines[i]):
+                    for _ in range(blanks):
+                        body.append("")
+                    blanks = 0
+                    if len(body) < MAX_CODE_LINES:
+                        body.append(re.sub(r"^(?: {4}|\t)", "", lines[i], count=1)[:MAX_CODE_LINE_CHARS])
+                    else:
+                        hidden += 1
+                else:
+                    break
+                i += 1
+            emit(_code(body[:MAX_CODE_LINES], hidden))
+            continue
+        if _is_table_at(lines, i):
+            flush_paragraph()
+            flush_list()
+            html, i = _table(lines, i)
+            emit(html)
+            continue
+        flush_list()
+        # lines past the paragraph cap are read but not kept, so a text of endless short lines costs a bounded amount
+        if paragraph_chars < MAX_BLOCK_CHARS:
+            paragraph.append(line)
+            paragraph_chars += len(line) + 1
+        i += 1
+    flush_paragraph()
+    flush_list()
+    return "\n".join(blocks)
+
+
 def render_safe_markdown(markdown, heading_base=1, max_chars=MAX_CHARS):
     """``markdown`` as safe HTML (see the module docstring). Anything that is not a string gives ``""``."""
     if not isinstance(markdown, str):
@@ -123,56 +357,4 @@ def render_safe_markdown(markdown, heading_base=1, max_chars=MAX_CHARS):
     text = markdown[:max_chars].replace("\r\n", "\n").replace("\r", "\n")
     text = _CONTROL_RE.sub("", text)
     base = max(1, min(6, int(heading_base)))
-    blocks = []
-    paragraph = []
-    items = []
-    paragraph_chars = 0
-    kind = None
-
-    def flush_paragraph():
-        nonlocal paragraph_chars
-        paragraph_chars = 0
-        if paragraph:
-            blocks.append("<p>" + _inline(_join_lines(paragraph)[:MAX_BLOCK_CHARS]) + "</p>")
-            paragraph.clear()
-
-    def flush_list():
-        nonlocal kind
-        if items:
-            tag = "ul" if kind == "bullet" else "ol"
-            blocks.append("<" + tag + ">" + "".join("<li>" + _inline(i[:MAX_BLOCK_CHARS]) + "</li>"
-                                                       for i in items) + "</" + tag + ">")
-            items.clear()
-        kind = None
-
-    for line in text.split("\n"):
-        if len(blocks) >= MAX_BLOCKS:
-            break
-        if not line.strip():
-            flush_paragraph()
-            flush_list()
-            continue
-        heading = _HEADING_RE.match(line)
-        bullet = None if heading else _BULLET_RE.match(line)
-        number = None if heading or bullet else _NUMBER_RE.match(line)
-        if heading:
-            flush_paragraph()
-            flush_list()
-            level = min(6, len(heading.group(1)) + base - 1)
-            blocks.append(f"<h{level}>" + _inline(heading.group(2)[:MAX_BLOCK_CHARS]) + f"</h{level}>")
-        elif bullet or number:
-            flush_paragraph()
-            want = "bullet" if bullet else "number"
-            if kind != want:
-                flush_list()
-                kind = want
-            items.append((bullet or number).group(1).strip())
-        else:
-            flush_list()
-            # lines past the paragraph cap are read but not kept, so a text of endless short lines costs a bounded amount
-            if paragraph_chars < MAX_BLOCK_CHARS:
-                paragraph.append(line)
-                paragraph_chars += len(line) + 1
-    flush_paragraph()
-    flush_list()
-    return "\n".join(blocks)
+    return _render_blocks(text.split("\n"), base, 0, [0])

@@ -7,7 +7,8 @@ const CASES = JSON.parse(readFileSync(new URL("../data/safe_markdown_cases.json"
 
 const TAG_RE = /<[^>]*>/g;
 const ALLOWED_TAG = new RegExp(
-  "^</?(p|h[1-6]|ul|ol|li|strong|em|code|br)>$" +
+  "^</?(p|h[1-6]|ul|ol|li|strong|em|code|br|pre|blockquote|table|thead|tbody|tr)>$|^<hr>$|^</(div|th|td)>$" +
+  "|^<div class=\"md-table\">$|^<t[hd]( class=\"md-(left|center|right)\")?>$|^<td class=\"md-more\" colspan=\"\\d+\">$" +
   "|^<a href=\"(https?://|mailto:)[^\"<>\\s]*\" rel=\"noopener noreferrer\"( target=\"_blank\")?>$|^</a>$", "i");
 
 function assertSafe(html) {
@@ -104,3 +105,47 @@ for (const [name, text] of Object.entries(ADVERSARIAL)) {
     assertSafe(html);
   });
 }
+
+const rep = (body, count) => Array(count).fill(body).join("\n");
+const HOSTILE_BLOCKS = {
+  "fence with a 100k-line body": "```\n" + rep("x", 100000),
+  "closed fence, 100k lines": "```\n" + rep("<b>", 90000) + "\n```",
+  "table with 100k rows": "| a | b |\n|---|---|\n" + rep("| 1 | 2 |", 20000),
+  "table with 100k columns": "|" + "a|".repeat(50000) + "\n|" + "-|".repeat(50000) + "\n",
+  "100k pipes": "|".repeat(CAP),
+  "table of long cells": "| a |\n|---|\n" + rep("| " + "*a ".repeat(600) + " |", 100),
+  "nested quotes": rep(">".repeat(50) + " x", 3000),
+  "100k indented lines": rep("    x", 30000),
+  "100k rules": rep("---", 50000),
+  "100k fences opening": rep("```", 60000),
+  "alternating table headers": rep("a | b\n--- | ---", 30000),
+};
+for (const [name, text] of Object.entries(HOSTILE_BLOCKS)) {
+  test(`hostile block structure is bounded: ${name}`, () => {
+    const started = performance.now();
+    const html = renderSafeMarkdown(text);
+    const ms = performance.now() - started;
+    console.log(`safe-markdown ${name}: ${ms.toFixed(0)} ms, ${html.length} bytes`);
+    assert.ok(ms < 1000, `${ms} ms`);
+    assert.ok(html.length < 4 * CAP);
+    assertSafe(html);
+  });
+}
+
+test("a long table and a long code block say how much was cut", () => {
+  let html = renderSafeMarkdown("| a |\n|---|\n" + rep("| 1 |", 700));
+  assert.equal((html.match(/<tr>/g) || []).length, 1 + 500 + 1);
+  assert.ok(html.includes("\u2026 200 more rows"));
+  html = renderSafeMarkdown("```\n" + rep("x", 2500) + "\n```");
+  assert.ok(html.includes("\u2026 500 more lines"));
+  assert.equal((html.match(/x\n/g) || []).length, 2000);
+  const wide = renderSafeMarkdown("|" + "a|".repeat(40) + "\n|" + "-|".repeat(40) + "\n|" + "1|".repeat(40));
+  assert.equal((wide.match(/<th>/g) || []).length, 30);
+  assert.equal((wide.match(/<td>/g) || []).length, 30);
+});
+
+test("cells cannot carry markup or scripts", () => {
+  const html = renderSafeMarkdown("| <b>x</b> |\n|---|\n| <img src=x onerror=alert(1)> [a](javascript:alert(1)) |");
+  assert.ok(!html.includes("<b>") && !html.includes("<img") && !html.includes('href="javascript'));
+  assertSafe(html);
+});

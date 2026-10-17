@@ -302,21 +302,227 @@
   "html": ""
  },
  {
-  "name": "blockquote is text",
-  "markdown": "> quote",
-  "options": {},
-  "html": "<p>&gt; quote</p>"
- },
- {
-  "name": "table is text",
-  "markdown": "| a | b |\n|---|---|",
-  "options": {},
-  "html": "<p>| a | b | |---|---|</p>"
- },
- {
   "name": "unicode",
   "markdown": "Impressum: Universität Zürich, Straße 1 – äöü",
   "options": {},
   "html": "<p>Impressum: Universität Zürich, Straße 1 – äöü</p>"
+ },
+ {
+  "name": "table basic",
+  "markdown": "| name | what |\n|---|---|\n| a | b |\n| c | d |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>name</th><th>what</th></tr></thead><tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table without outer pipes",
+  "markdown": "name | what\n--- | ---\na | b",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>name</th><th>what</th></tr></thead><tbody><tr><td>a</td><td>b</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table alignment",
+  "markdown": "| l | c | r | n |\n|:---|:---:|---:|---|\n| 1 | 2 | 3 | 4 |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th class=\"md-left\">l</th><th class=\"md-center\">c</th><th class=\"md-right\">r</th><th>n</th></tr></thead><tbody><tr><td class=\"md-left\">1</td><td class=\"md-center\">2</td><td class=\"md-right\">3</td><td>4</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table inline markup",
+  "markdown": "| x |\n|---|\n| **b** `c` [l](https://e.org) *i* |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>x</th></tr></thead><tbody><tr><td><strong>b</strong> <code>c</code> <a href=\"https://e.org\" rel=\"noopener noreferrer\" target=\"_blank\">l</a> <em>i</em></td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table escaped pipe",
+  "markdown": "| x | y |\n|---|---|\n| a\\|b | `c\\|d` |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>x</th><th>y</th></tr></thead><tbody><tr><td>a|b</td><td><code>c|d</code></td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table ragged rows",
+  "markdown": "| a | b | c |\n|---|---|---|\n| 1 |\n| 1 | 2 | 3 | 4 | 5 |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>a</th><th>b</th><th>c</th></tr></thead><tbody><tr><td>1</td><td></td><td></td></tr><tr><td>1</td><td>2</td><td>3</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table after paragraph",
+  "markdown": "text\n| a | b |\n|---|---|\n| 1 | 2 |\nafter",
+  "options": {},
+  "html": "<p>text</p>\n<div class=\"md-table\"><table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table></div>\n<p>after</p>"
+ },
+ {
+  "name": "table ends at blank line",
+  "markdown": "| a |\n|---|\n| 1 |\n\n| not | table |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table></div>\n<p>| not | table |</p>"
+ },
+ {
+  "name": "table needs matching delimiter",
+  "markdown": "| a | b |\n|---|\n| 1 | 2 |",
+  "options": {},
+  "html": "<p>| a | b | |---| | 1 | 2 |</p>"
+ },
+ {
+  "name": "a dash line under a pipe line is a setext heading",
+  "markdown": "| a | b |\n---\n| 1 | 2 |",
+  "options": {},
+  "html": "<h2>| a | b |</h2>\n<p>| 1 | 2 |</p>"
+ },
+ {
+  "name": "table html in cells",
+  "markdown": "| <script>alert(1)</script> | <img src=x onerror=1> |\n|---|---|\n| [x](javascript:1) | \" ' & |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>&lt;script&gt;alert(1)&lt;/script&gt;</th><th>&lt;img src=x onerror=1&gt;</th></tr></thead><tbody><tr><td>[x](javascript:1)</td><td>&quot; &#39; &amp;</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table pipes only",
+  "markdown": "|||\n|||",
+  "options": {},
+  "html": "<p>||| |||</p>"
+ },
+ {
+  "name": "table then heading",
+  "markdown": "| a |\n|---|\n| 1 |\n## H",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table></div>\n<h2>H</h2>"
+ },
+ {
+  "name": "fence backticks",
+  "markdown": "```python\ndef f(x):\n    return <x> & 1\n```\nafter",
+  "options": {},
+  "html": "<pre><code>def f(x):\n    return &lt;x&gt; &amp; 1</code></pre>\n<p>after</p>"
+ },
+ {
+  "name": "fence tildes",
+  "markdown": "~~~\n```\n~~~",
+  "options": {},
+  "html": "<pre><code>```</code></pre>"
+ },
+ {
+  "name": "fence longer closer",
+  "markdown": "````\n```\n````",
+  "options": {},
+  "html": "<pre><code>```</code></pre>"
+ },
+ {
+  "name": "fence unterminated",
+  "markdown": "```\nstill code\n\nmore",
+  "options": {},
+  "html": "<pre><code>still code\n\nmore</code></pre>"
+ },
+ {
+  "name": "fence info with backtick is text",
+  "markdown": "``` a`b\nx",
+  "options": {},
+  "html": "<p>``<code> a</code>b x</p>"
+ },
+ {
+  "name": "fence interrupts paragraph",
+  "markdown": "text\n```\ncode\n```",
+  "options": {},
+  "html": "<p>text</p>\n<pre><code>code</code></pre>"
+ },
+ {
+  "name": "fence keeps markup literal",
+  "markdown": "```\n# no heading\n**no bold** <b>\n```",
+  "options": {},
+  "html": "<pre><code># no heading\n**no bold** &lt;b&gt;</code></pre>"
+ },
+ {
+  "name": "indented code",
+  "markdown": "para\n    def f():\n        return 1\n\n    more\nafter",
+  "options": {},
+  "html": "<p>para</p>\n<pre><code>def f():\n    return 1\n\nmore</code></pre>\n<p>after</p>"
+ },
+ {
+  "name": "indented code tab",
+  "markdown": "\tcode line\n\tsecond",
+  "options": {},
+  "html": "<pre><code>code line\nsecond</code></pre>"
+ },
+ {
+  "name": "indented code after list item continues the item",
+  "markdown": "- item\n    more",
+  "options": {},
+  "html": "<ul><li>item more</li></ul>"
+ },
+ {
+  "name": "indented code after blank is code",
+  "markdown": "- item\n\n    code",
+  "options": {},
+  "html": "<ul><li>item</li></ul>\n<pre><code>code</code></pre>"
+ },
+ {
+  "name": "indented code blank between",
+  "markdown": "    a\n\n\n    b",
+  "options": {},
+  "html": "<pre><code>a\n\n\nb</code></pre>"
+ },
+ {
+  "name": "rule dashes",
+  "markdown": "a\n\n---\n\nb",
+  "options": {},
+  "html": "<p>a</p>\n<hr>\n<p>b</p>"
+ },
+ {
+  "name": "rule stars and underscores",
+  "markdown": "***\n___\n* * *\n- - -",
+  "options": {},
+  "html": "<hr>\n<hr>\n<hr>\n<hr>"
+ },
+ {
+  "name": "rule not a list",
+  "markdown": "- - -",
+  "options": {},
+  "html": "<hr>"
+ },
+ {
+  "name": "setext headings",
+  "markdown": "Title\n=====\n\nSub\n---",
+  "options": {},
+  "html": "<h1>Title</h1>\n<h2>Sub</h2>"
+ },
+ {
+  "name": "setext multi line",
+  "markdown": "one\ntwo\n===",
+  "options": {},
+  "html": "<h1>one two</h1>"
+ },
+ {
+  "name": "setext base 3",
+  "markdown": "T\n=\nS\n-",
+  "options": {
+   "heading_base": 3
+  },
+  "html": "<h3>T</h3>\n<h4>S</h4>"
+ },
+ {
+  "name": "blockquote",
+  "markdown": "> a\n> b\n\n> c",
+  "options": {},
+  "html": "<blockquote><p>a b</p></blockquote>\n<blockquote><p>c</p></blockquote>"
+ },
+ {
+  "name": "blockquote with blocks",
+  "markdown": "> # H\n> - x\n> ```\n> code\n> ```",
+  "options": {},
+  "html": "<blockquote><h1>H</h1>\n<ul><li>x</li></ul>\n<pre><code>code</code></pre></blockquote>"
+ },
+ {
+  "name": "blockquote nested",
+  "markdown": "> a\n> > b\n> > > c\n> > > > d",
+  "options": {},
+  "html": "<blockquote><p>a</p>\n<blockquote><p>b</p>\n<blockquote><p>c &gt; d</p></blockquote></blockquote></blockquote>"
+ },
+ {
+  "name": "blockquote html",
+  "markdown": "> <b>x</b>",
+  "options": {},
+  "html": "<blockquote><p>&lt;b&gt;x&lt;/b&gt;</p></blockquote>"
+ },
+ {
+  "name": "readme sample",
+  "markdown": "# Title\n\nUsing:\ndef log_transform(ad, ps=0.1):\n    ad.X.data = np.log2(ad.X.data + ps)\n    \nHVGs.\n\n| name | what |\n|---|---|\n| `a` | b |",
+  "options": {},
+  "html": "<h1>Title</h1>\n<p>Using: def log_transform(ad, ps=0.1):</p>\n<pre><code>ad.X.data = np.log2(ad.X.data + ps)</code></pre>\n<p>HVGs.</p>\n<div class=\"md-table\"><table><thead><tr><th>name</th><th>what</th></tr></thead><tbody><tr><td><code>a</code></td><td>b</td></tr></tbody></table></div>"
  }
 ]
