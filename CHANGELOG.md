@@ -30,6 +30,7 @@ with the release after it. Older releases are listed on
 
 ### Fixes
 - A categorical colour whose `uns["<column>_colors"]` has fewer colours than the column has categories no longer repeats them, which gave different categories the same colour. As in scanpy, the stored colours are then set aside and the default palette is used, in regular and large plots, and the panel's status strip says so ("Default colours: see why").
+- Clicking a cell in a Cell Plot focuses it every time. In plots of hundreds of thousands of cells, a click soon after the plot was drawn or resized, or while the previous focus change was still being shown, often did nothing. In large plots, a click made while the plot is still preparing click selection (which can take a while at tens of millions of cells) shows a busy cursor and "Preparing click selection…" in the status strip, and focuses the cell once it is ready, instead of doing nothing.
 
 ### Docs
 - New page [Running a public site](https://annzarro.readthedocs.io/en/latest/deployment/public-site.html): who is responsible, what a public site owes its visitors (imprint, privacy notice, accessibility), what AnnZarro stores and sends, the `site` settings, and privacy-notice templates in English and German.

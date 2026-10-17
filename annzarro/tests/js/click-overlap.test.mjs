@@ -21,7 +21,7 @@ globalThis.document = {
 };
 globalThis.fetch = async () => ({ ok: false, statusText: 'test' });
 
-const { nextOverlappingEntity } = await import('../../../static/js/panels/plot-utilities/plot-make-helper.js');
+const { nextOverlappingEntity, pointNear } = await import('../../../static/js/panels/plot-utilities/plot-make-helper.js');
 
 const axis = { c2p: v => v };   // 1 data unit = 1 px
 const gd = {
@@ -51,4 +51,18 @@ test('a lone point, a 3D plot or no layout keep Plotly\'s pick', () => {
     assert.equal(nextOverlappingEntity(gd, { x: 50, y: 50 }, 'away', null, { x: 50, y: 50 }), 'away');
     assert.equal(nextOverlappingEntity({ ...gd, data: [{ ...gd.data[0], type: 'scatter3d' }] }, { x: 10, y: 10 }, 'hidden', null), 'hidden');
     assert.equal(nextOverlappingEntity({ data: [] }, { x: 1 }, 'a', null), 'a');
+});
+
+test('a click Plotly reported nothing for finds the nearest point within the radius', () => {
+    // the focused-cell marker sits exactly under the pointer and does not count
+    assert.deepEqual(pointNear(gd, { x: 10.1, y: 10 }, 20), { x: 10, y: 10, name: 'hidden' });
+    assert.equal(pointNear(gd, { x: 50, y: 50 }, 20).name, 'away');
+    assert.equal(pointNear(gd, { x: 80, y: 80 }, 20), null);              // nothing within 20 px
+    assert.equal(pointNear(gd, { x: 50, y: 62 }, 10), null);
+    // traces hidden with the legend, or not hoverable, are not clicked
+    const hidden = { ...gd, data: gd.data.map(t => (t.name === 'Monocyte' ? { ...t, visible: 'legendonly' } : t)) };
+    assert.equal(pointNear(hidden, { x: 10, y: 10 }, 20).name, 'top');
+    const skip = { ...gd, data: gd.data.map(t => (t.name === 'cMoP' ? { ...t, hoverinfo: 'skip' } : t)) };
+    assert.equal(pointNear(skip, { x: 10.2, y: 9.9 }, 0.3).name, 'hidden');
+    assert.equal(pointNear({ data: [] }, { x: 1, y: 1 }, 20), null);
 });

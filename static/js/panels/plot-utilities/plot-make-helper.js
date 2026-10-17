@@ -303,14 +303,24 @@ export const CLICK_MAX_MOVE_PX = 5;
 
 /**
  * Track the primary pointer on a graph div. `gd.__azGesture.settle(commit)`
- * runs `commit` once the press ends if it was a click, at once if the press
- * has already ended as a click (2D reports plotly_click after the release),
- * and never for a long or moving press. Listeners live on the div, added once;
- * the release is caught on window so a drag ending outside the plot still ends.
+ * runs `commit` once the press ends if it was a click (3D reports
+ * plotly_click when the button goes down), or at once for the click that has
+ * just ended (2D reports plotly_click after the release), and never for a
+ * long or moving press. A 2D click is one claim, taken by the first
+ * plotly_click after it; when none comes, `g.fallback(click)` gets it (Plotly
+ * reports none when its hover data was cleared, e.g. by a redraw for a
+ * resize). Listeners live on the div, added once; the release is caught on
+ * window so a drag ending outside the plot still ends.
+ *
+ * The click is matched to its plotly_click by order, not by time: the time
+ * from the release to plotly_click is that of Plotly's hover search and of a
+ * main thread busy elsewhere (at 1M points both are tens of milliseconds, and
+ * a focus change keeps the thread busy for a second), so a window of 50 ms
+ * after the release dropped clicks without a word.
  */
 function trackGesture(gd) {
   if (gd.__azGesture || !gd.addEventListener) return gd.__azGesture;
-  const g = gd.__azGesture = { down: null, pending: null, lastClickAt: -Infinity, settle: null };
+  const g = gd.__azGesture = { down: null, pending: null, click: null, settle: null, fallback: null };
   const finish = (ev) => {
     const d = g.down;
     if (!d || ev.pointerId !== d.id) return;
@@ -322,22 +332,59 @@ function trackGesture(gd) {
     const commit = g.pending;
     g.pending = null;
     if (!isClick) return;
-    g.lastClickAt = ev.timeStamp;
-    if (commit) commit();
+    if (commit) { commit(); return; }
+    if (!d.onArea) return;
+    // Plotly's mouseup (and its plotly_click) follows this pointerup in the same task
+    const click = g.click = { clientX: ev.clientX, clientY: ev.clientY };
+    setTimeout(() => {
+      if (g.click !== click) return;
+      g.click = null;
+      if (g.fallback) g.fallback(click);
+    }, 0);
   };
   gd.addEventListener('pointerdown', (ev) => {
     gd.__lastPointer = { clientX: ev.clientX, clientY: ev.clientY };
+    g.click = null;
     if (!ev.isPrimary || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
-    g.down = { id: ev.pointerId, t: ev.timeStamp, x: ev.clientX, y: ev.clientY };
+    const onArea = !!(ev.target && ev.target.closest && ev.target.closest('.nsewdrag'));
+    g.down = { id: ev.pointerId, t: ev.timeStamp, x: ev.clientX, y: ev.clientY, onArea };
     g.pending = null;
     window.addEventListener('pointerup', finish, true);
     window.addEventListener('pointercancel', finish, true);
   }, true);
   g.settle = (commit) => {
-    if (g.down) g.pending = commit;                       // pressed: decide on release
-    else if (performance.now() - g.lastClickAt < 50) commit(); // just released as a click
+    if (g.down) { g.pending = commit; return; }           // pressed: decide on release
+    if (g.click) { g.click = null; commit(); }            // the click just released
   };
   return g;
+}
+
+/**
+ * The drawn point nearest to a pointer in a 2D plot, within `radiusPx`
+ * (screen pixels), as Plotly's hover would report it: `{x, y, name}`, or
+ * null. Traces hidden (the legend) or not hoverable, and the focused-cell
+ * marker, do not count. One pass over the points (25 ms at 1M).
+ * @param {HTMLElement} gd
+ * @param {{x: number, y: number}} mouse  plot-area pixels
+ * @param {number} radiusPx
+ */
+export function pointNear(gd, mouse, radiusPx) {
+  const fl = gd && gd._fullLayout;
+  const xa = fl && fl.xaxis, ya = fl && fl.yaxis;
+  if (!xa || !ya || typeof xa.c2p !== 'function' || !Array.isArray(gd.data)) return null;
+  let best = null, bestD = radiusPx * radiusPx;
+  for (const t of gd.data) {
+    if (!t || t.type === 'scatter3d' || t.visible === false || t.visible === 'legendonly'
+        || t.hoverinfo === 'skip' || (typeof t.name === 'string' && t.name.includes('Focused'))) continue;
+    const names = Array.isArray(t.customdata) ? t.customdata : t.text;
+    if (!Array.isArray(names) || !t.x || !t.y) continue;
+    for (let i = 0; i < t.x.length; i++) {
+      const dx = xa.c2p(t.x[i]) - mouse.x, dy = ya.c2p(t.y[i]) - mouse.y;
+      const d = dx * dx + dy * dy;
+      if (d <= bestD && names[i] !== undefined && names[i] !== '') { bestD = d; best = { x: t.x[i], y: t.y[i], name: names[i] }; }
+    }
+  }
+  return best;
 }
 
 /**
@@ -409,15 +456,61 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
     if (plotContainer.__azClickHandler && typeof plotContainer.removeListener === 'function') {
       plotContainer.removeListener('plotly_click', plotContainer.__azClickHandler);
     }
+    // Plotly's hover search reaches this far (20 px unless the layout says otherwise)
+    const reach = () => {
+      const d = plotContainer._fullLayout && plotContainer._fullLayout.hoverdistance;
+      return Number.isFinite(d) && d > 0 ? d : 20;
+    };
+    const mouseOf = (at) => {
+      const area = plotContainer.querySelector && plotContainer.querySelector('.nsewdrag');
+      const box = area && area.getBoundingClientRect ? area.getBoundingClientRect() : null;
+      return box && at ? { x: at.clientX - box.left, y: at.clientY - box.top } : null;
+    };
+    const isGenePlot = data.genes !== undefined;
+    // Focus `entityName`, the point at `point` ({x, y}) under `mouse`, stepping
+    // through the points overlapping there
+    const focusAt = (point, entityName, mouse) => {
+      // Points drawn under a neighbour could not be clicked: Plotly reports
+      // the one on top. Clicking the same spot again now steps through every
+      // point within a few pixels of it.
+      let current = isGenePlot ? DataManager.getFocusedGene() : DataManager.getFocusedCell();
+      // names fetched when needed: the plot holds tokens, the focus a name
+      const cells = isGenePlot ? null : DataManager.getCells();
+      const byToken = cells instanceof RemoteNames && RemoteNames.isToken(entityName);
+      if (byToken) current = cells.tokenOf(current);
+      entityName = nextOverlappingEntity(plotContainer, point, entityName, current, mouse);
+      // The name (a token's, asked of the server) is read inside the commit: the
+      // gesture decides on the release, and a wait here would outlast it.
+      return async () => {
+        if (byToken) {
+          entityName = await DataManager.nameOfCell(entityName);
+          if (!entityName) return;
+        }
+        if (isGenePlot) {
+          DataManager.setFocusedGene(entityName, false);
+        } else {
+          DataManager.setFocusedCell(entityName, false);
+        }
+      };
+    };
+    // A 2D click Plotly reported nothing for: the point under it, found here
+    const pick = (at) => {
+      const mouse = mouseOf(at);
+      const hit = mouse && pointNear(plotContainer, mouse, reach());
+      return hit ? focusAt(hit, hit.name, mouse) : null;
+    };
+    if (gesture) {
+      gesture.fallback = (click) => {
+        const commit = pick(click);
+        if (commit) commit().catch(err => console.warn('Focus by click failed:', err && err.message));
+      };
+    }
     const onClick = async (e) => {
       if (!e || !e.points || e.points.length === 0) return;
   
       const point = e.points[0];
       const pointIndex = point.pointIndex;
       const traceIndex = point.curveNumber;
-      
-      // Determine if this is a gene plot or cell plot
-      const isGenePlot = data.genes !== undefined;
       let entityName;
   
       // Since customdata now stores entity names directly, use it as the primary source
@@ -434,34 +527,20 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
         return;
       }
       
-      // Points drawn under a neighbour could not be clicked: Plotly reports
-      // the one on top. Clicking the same spot again now steps through every
-      // point within a few pixels of it.
-      let current = isGenePlot ? DataManager.getFocusedGene() : DataManager.getFocusedCell();
-      // names fetched when needed: the plot holds tokens, the focus a name
-      const cells = isGenePlot ? null : DataManager.getCells();
-      const byToken = cells instanceof RemoteNames && RemoteNames.isToken(entityName);
-      if (byToken) current = cells.tokenOf(current);
-      const area = plotContainer.querySelector && plotContainer.querySelector('.nsewdrag');
-      const box = area && area.getBoundingClientRect ? area.getBoundingClientRect() : null;
       // scattergl click events carry no mouse event; use the last pointer
       // position recorded on the graph div
       const ev = plotContainer.__lastPointer || ((e.event && Number.isFinite(e.event.clientX)) ? e.event : null);
-      const mouse = box && ev ? { x: ev.clientX - box.left, y: ev.clientY - box.top } : null;
-      entityName = nextOverlappingEntity(plotContainer, point, entityName, current, mouse);
-      // The name (a token's, asked of the server) is read inside the commit: the
-      // gesture decides on the release, and a wait here would outlast its window.
-      const commit = async () => {
-        if (byToken) {
-          entityName = await DataManager.nameOfCell(entityName);
-          if (!entityName) return;
-        }
-        if (isGenePlot) {
-          DataManager.setFocusedGene(entityName, false);
-        } else {
-          DataManager.setFocusedCell(entityName, false);
-        }
-      };
+      const mouse = mouseOf(ev);
+      // Plotly's click reports the point of its last hover search, which is
+      // throttled: a click soon after the pointer moved can carry the point of
+      // an earlier position. A 2D point farther from the press than Plotly
+      // searches is such a stale one: the click is left to the gesture's
+      // fallback, which finds the point under the press.
+      const fl = plotContainer._fullLayout;
+      if (gesture && mouse && fl && fl.xaxis && fl.yaxis && typeof fl.xaxis.c2p === 'function'
+          && !plotContainer.data.some(t => t && t.type === 'scatter3d')
+          && Math.hypot(fl.xaxis.c2p(point.x) - mouse.x, fl.yaxis.c2p(point.y) - mouse.y) > reach() + 1) return;
+      const commit = focusAt(point, entityName, mouse);
       if (gesture) gesture.settle(commit); else commit();
     };
     plotContainer.__azClickHandler = onClick;
