@@ -118,7 +118,7 @@ def test_about_opens_by_click_and_shows_everything(server, scheme):
             for a in modal.locator("a").all():
                 assert a.get_attribute("target") == "_blank" and "noopener" in a.get_attribute("rel")
             text = modal.inner_text()
-            assert "Setty Lab at Fred Hutch Cancer Center" in text
+            assert "Setty Lab at Fred Hutch Cancer Center" in " ".join(text.split())   # the line breaks before Fred Hutch
             assert "R35GM147125" in text and "K99GM159044" in text
             assert "National Institute of General Medical Sciences" in text
             # only the lab's logo shows (Fred Hutch is credited in text until its brand team approves the logo)
