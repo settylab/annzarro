@@ -6,6 +6,7 @@
  * because the server reports it after the page has loaded. The text is the
  * one the title's tooltip shows (config.js showVersion).
  */
+import { Config } from '../config.js';
 import { appVersion } from './store-identity.js';
 
 /**
@@ -28,12 +29,17 @@ export function initAboutDialog(doc = document) {
     const opener = doc.getElementById('about-open');
     if (!modal || !opener) return;
     const siteName = (opener.textContent || '').trim();
-    modal.addEventListener('show.bs.modal', () => {
+    const fill = () => {
         const text = aboutText(siteName, appVersion());
         doc.getElementById('about-version').textContent = text.version;
         const site = doc.getElementById('about-site');
         site.hidden = !text.site;
         site.textContent = text.site ? `This is ${text.site}, a site running AnnZarro.` : '';
+        return text.version;
+    };
+    modal.addEventListener('show.bs.modal', () => {
+        // opened before the server's config has arrived: fill the version in when it does
+        if (!fill()) Config.ready.then(fill);
     });
     // Back to the name, however the dialog closed
     modal.addEventListener('hidden.bs.modal', () => opener.focus());

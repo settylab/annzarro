@@ -10,6 +10,7 @@
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
+import json
 import os
 import shutil
 import socket
@@ -187,5 +188,31 @@ def test_about_fits_a_phone(server, scheme):
             assert box["x"] >= 0 and box["x"] + box["width"] <= 390
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
             _shot(page, f"about-{scheme}-phone")
+        finally:
+            browser.close()
+
+
+def test_about_version_appears_when_opened_before_the_config_arrives(server):
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_context(viewport={"width": 1440, "height": 900}).new_page()
+            release = []
+
+            def slow(route):
+                release.append(route)   # held until the dialog is open
+
+            page.route("**/api/v1/config", slow)
+            page.goto(server, wait_until="domcontentloaded")
+            page.wait_for_selector("#about-open")
+            page.click("#about-open")
+            page.wait_for_selector("#about-modal.show", timeout=5000)
+            assert page.locator("#about-version").inner_text() == ""
+            for route in release:
+                route.continue_()
+            page.wait_for_function("() => document.getElementById('about-version').textContent.trim() !== ''",
+                                   timeout=10000)
+            version = json.load(urllib.request.urlopen(server + "/api/v1/config"))["annzarro_version"]
+            assert page.locator("#about-version").inner_text() == version
         finally:
             browser.close()
