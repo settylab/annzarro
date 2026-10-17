@@ -11,6 +11,7 @@ Needs Playwright with Chromium; skipped without it, or failed when ANNZARRO_REQU
 import base64
 import json
 import os
+import re
 
 import numpy as np
 import pytest
@@ -188,3 +189,54 @@ def test_the_badge_with_the_size_in_effect_light_and_dark(stores):
             assert not s.errors, s.errors
         finally:
             s.close()
+
+
+# The read of a plot's coordinates fails as a browser out of memory does: the arrayBuffer of an obsm
+# reply rejects with V8's RangeError while window.__oom is set
+OOM = """window.__oom = true;
+const read = Response.prototype.arrayBuffer;
+Response.prototype.arrayBuffer = function () {
+    if (window.__oom && /\\/data\\/obsm/.test(this.url)) return Promise.reject(new RangeError('Array buffer allocation failed'));
+    return read.call(this);
+};"""
+
+
+def test_a_read_out_of_memory_says_so_and_offers_fewer_cells(stores):
+    base, data = stores
+    large = os.path.join(data, "large_a.zarr")
+    x = {"type": "obsm", "key": "X_umap", "column": "0"}
+    y = {"type": "obsm", "key": "X_umap", "column": "1"}
+    plot = {"id": "cell-plot-M", "title": "umap", "x": x, "y": y, "z": None,
+            "color": {"type": "obs", "key": "score", "column": ""}}
+    layout = {"v": 1, "hierarchy": [{"type": "tile", "id": "cell-plot-M"}],
+              "controlState": {"cell-plot-M": False}, "panelConfigs": {"cell-plot-M": plot}}
+    enc = base64.urlsafe_b64encode(json.dumps({"v": 1, "layout": layout}).encode()).decode().rstrip("=")
+    s = Session(base, width=1280, height=800, init_script=OOM)
+    page = s.page
+    try:
+        page.goto(f"{base}/?dataset_path={large}#view={enc}")
+        wait_for_open(page, large)
+        tile = '.tile[data-tile-id="cell-plot-M"]'
+        place = page.wait_for_selector(f"{tile} .coverage-placeholder", timeout=60_000)
+        text = place.inner_text()
+        assert re.search(r"obsm\.X_umap\.\d: the browser ran out of memory \(30,000 cells\) -- "
+                         r"Close a plot, or show fewer cells \(a smaller subset\), and try again\.", text), text
+        assert "allocation" not in text, "the engine's words are not shown"
+        assert page.locator(f"{tile} .coverage-placeholder__hints").count() == 0, "no hints about a missing embedding"
+        assert page.locator(f"{tile} .coverage-placeholder [data-ps-action='subset']").count() == 1
+        half = page.locator(f"{tile} .coverage-placeholder [data-ps-action='subset-half']")
+        assert half.inner_text() == "Half the cells"
+        if SHOTS:
+            page.locator(tile).screenshot(path=os.path.join(SHOTS, "oom-placeholder.png"))
+
+        # memory again: half the cells, a choice of size like any other
+        page.evaluate("() => { window.__oom = false; }")
+        half.click()
+        _wait_count(page, "15,000 of 30,000")
+        page.wait_for_function(f"""() => {{ const g = document.querySelector('{tile} .js-plotly-plot');
+            return !!(g && g._fullData && g._fullData.length); }}""", timeout=60_000)
+        assert page.locator(f"{tile} .coverage-placeholder").count() == 0
+        assert _kept(page) == LARGE // 2, "half the cells is the size kept"
+        assert not s.errors, s.errors
+    finally:
+        s.close()

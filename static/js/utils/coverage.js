@@ -43,6 +43,8 @@
  * "nobody said", so there is no silent residue. Anything a future contributor
  * fails to classify lands there and is displayed as such.
  */
+import { isOutOfMemory, OUT_OF_MEMORY_ADVICE } from './memory-guard.js';
+
 export const GAP = Object.freeze({
     /** The column/key exists and legitimately carries no values. */
     EMPTY: 'empty',
@@ -136,6 +138,8 @@ const GAP_LABEL = Object.freeze({
 
 /** A label that says more than its reason's, for a gap of this kind. */
 const KIND_LABEL = Object.freeze({
+    // a read or draw the browser had no memory for (isOutOfMemory)
+    memory: 'the browser ran out of memory',
     mode: 'not available in large-plot mode',
     // the gene set panel's external services: ids a service does not know,
     // a request that failed, a request not made (species, limit, turned off)
@@ -222,6 +226,17 @@ function isBlank(v) {
  */
 
 /**
+ * A failed read whose error is the browser running out of memory says so, in
+ * the memory guard's words, instead of the engine's ("failed to read --
+ * Array buffer allocation failed"); kind `memory` offers the way out. Every
+ * gap passes here, so no caller has to recognise the error itself.
+ */
+function outOfMemory(g) {
+    if (!g || g.reason !== GAP.FAILED || (g.kind && g.kind !== 'memory') || !isOutOfMemory(g.detail)) return g;
+    return { ...g, kind: 'memory', detail: OUT_OF_MEMORY_ADVICE };
+}
+
+/**
  * An immutable description of what a panel is showing and what it is not.
  *
  * Construct via the static factories rather than `new`; they enforce the
@@ -242,7 +257,7 @@ export class Coverage {
         this.unit = unit;
         this.role = (role === ROLE.DESCRIBES) ? ROLE.DESCRIBES : ROLE.RESTRICTS;
         this.gaps = Object.freeze(
-            gaps.map(g => Object.freeze({
+            gaps.map(g => outOfMemory(g)).map(g => Object.freeze({
                 reason: isReason(g.reason) ? g.reason : GAP.UNREPORTED,
                 detail: g.detail || '',
                 source: g.source || '',
@@ -490,7 +505,9 @@ export class Coverage {
             return `${fmt(this.shown)} of ${fmt(this.total)} ${this.unit} shown`;
         }
         // Every entity is on screen, but something about them is missing.
-        return REASON_HEADLINE[this.worstReason] || 'Incomplete data shown';
+        const worst = this.worstReason;
+        if (worst === GAP.FAILED && this.gaps.some(g => g.kind === 'memory')) return 'The browser ran out of memory';
+        return REASON_HEADLINE[worst] || 'Incomplete data shown';
     }
 
     /**
@@ -1068,7 +1085,7 @@ export function breakdown(coverage) {
         if (g.hides && typeof g.count === 'number' && g.count > 0 && counted) {
             rows.push({ kind: g.kind, reason: g.reason, chip: chip(g), label: label(g), count: g.count, names: g.names });
         } else {
-            notes.push({ reason: g.reason, label: label(g) });
+            notes.push({ reason: g.reason, kind: g.kind, label: label(g) });
         }
     }
     rows.sort((a, b) => (KIND_ORDER[a.kind] ?? 2) - (KIND_ORDER[b.kind] ?? 2));

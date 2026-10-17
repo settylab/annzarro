@@ -645,6 +645,36 @@ export function predictSubsetChange(n, panels, threshold, model = DEFAULT_MODEL,
 
 // -- words -----------------------------------------------------------------------
 
+/** What the guard advises when an action needs more memory than the browser has. */
+export const MEMORY_ADVICE = 'Close a plot, or show fewer cells (a smaller subset).';
+
+/** The same, after a read or a draw already ran out: the action is worth trying again. */
+export const OUT_OF_MEMORY_ADVICE = 'Close a plot, or show fewer cells (a smaller subset), and try again.';
+
+// What the engines throw when an allocation does not fit: V8 (Chrome, Edge,
+// the desktop app), SpiderMonkey (Firefox) and JavaScriptCore (Safari).
+const OUT_OF_MEMORY_MESSAGES = [
+    /array buffer allocation failed/i,           // V8: new ArrayBuffer / typed array
+    /invalid (typed )?array length/i,            // V8: new Array(n), new Float32Array(n) too large
+    /\bout of memory\b/i,                        // SpiderMonkey "out of memory", JSC "Out of memory"
+    /allocation size overflow/i,                 // SpiderMonkey
+    /array size is not a small enough positive integer/i,   // JSC
+    /cannot allocate/i,
+    /failed to allocate/i
+];
+
+/**
+ * Did `error` (an Error, or its message) come from the browser running out of
+ * memory? Only the messages engines use for a failed allocation count: a
+ * RangeError of another kind (a bad argument) is not one.
+ */
+export function isOutOfMemory(error) {
+    if (!error) return false;
+    const message = typeof error === 'string' ? error : String(error.message || '');
+    if (typeof error === 'object' && error.name === 'InternalError' && /memory/i.test(message)) return true;
+    return OUT_OF_MEMORY_MESSAGES.some(re => re.test(message));
+}
+
 /** "0.8 GB", "120 MB": rounded, so it does not look more precise than it is. */
 export function formatGB(bytes) {
     const b = Math.max(0, Number(bytes) || 0);

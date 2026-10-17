@@ -14,6 +14,10 @@ with the release after it. Older releases are listed on
   then reads, for example, "All cells (≤ 10,000)", and the next larger dataset is subsampled to the
   size again. The size is kept per browser and user, so a reload keeps it. Share links, panel sets
   and the restored session still open on the subset they saved.
+- A plot or table whose data the browser ran out of memory for says so in plain words ("the
+  browser ran out of memory -- Close a plot, or show fewer cells (a smaller subset), and try
+  again") instead of "failed to read -- Array buffer allocation failed", and offers **Half the
+  cells** and **Subset…** where it says it.
 
 ### Fixes
 - A release build no longer fails when Apple's ticket service drops the connection while the

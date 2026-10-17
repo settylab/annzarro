@@ -100,6 +100,24 @@ export function sizeAfterChoice(spec, nTotal, size, defaults = null) {
 }
 
 /**
+ * The subset with half the cells of the one shown (every cell when none is),
+ * keeping its seed, balance and filter: the panel's way out when the browser
+ * ran out of memory. `info` is the subset in effect (DataManager.getSubset),
+ * `reply` the /data/subset reply of the open dataset, `defaults` the server's.
+ * Null when there is nothing to halve (one cell, or no dataset).
+ */
+export function halfSubset(info, reply, defaults = null) {
+    const spec = info && info.subset;
+    const shown = info ? info.n : (reply ? reply.n_total : null);
+    if (!knownSize(shown) || shown < 2) return null;
+    const n = Math.ceil(shown / 2);
+    if (!spec) return { n, seed: defaults && Number.isInteger(defaults.seed) ? defaults.seed : 0 };
+    const half = { ...spec, n };
+    delete half.part;   // part 1 of the new partition
+    return half;
+}
+
+/**
  * What the subset badge adds when every cell is shown because the dataset
  * is no larger than the size kept: a short note for the badge and a line for
  * its tooltip. Null when there is nothing to add.

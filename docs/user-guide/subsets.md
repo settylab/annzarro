@@ -362,6 +362,12 @@ If the tab does close while drawing a plot, the next visit restores the panel se
 plot undrawn, with **Draw anyway** and **Subset…**, so the same plot does not close the tab
 again; the browser also becomes a little more careful in its estimates from then on.
 
+When a read runs out of memory anyway (the estimate was short, or another tab took the memory),
+the panel says so in place of the engine's error: "the browser ran out of memory -- Close a plot,
+or show fewer cells (a smaller subset), and try again", with **Half the cells** and **Subset…**.
+**Half the cells** keeps the subset's seed, balance and filter with half its cells, and that size
+is then the one that [follows you to other datasets](#subset-size-carried).
+
 ## Measured on a large store
 
 On a synthetic store of 1,160,000 cells (Apple M3 Max, Chromium, two UMAP panels, one coloured by

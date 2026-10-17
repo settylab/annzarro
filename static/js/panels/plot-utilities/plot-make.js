@@ -21,7 +21,7 @@ import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
 import { RemoteNames } from '../../utils/remote-names.js';
-import { colourKind } from '../../utils/memory-guard.js';
+import { colourKind, MEMORY_ADVICE } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
@@ -1300,13 +1300,11 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       // The classification carried on the error says WHY; the existing
       // troubleshooting hints are kept underneath it as the "what to do next".
       const unit = data && data.entities === 'genes' ? 'genes' : 'cells';
-      drawPlaceholder(
-        plotContainer,
-        error.coverage || Coverage.missing(GAP.FAILED, error.message || 'unknown error',
-          { source: 'plot data', unit }),
-        unit
-      );
-      if (errorDetails) {
+      const coverage = error.coverage || Coverage.missing(GAP.FAILED, error.message || 'unknown error',
+        { source: 'plot data', unit });
+      drawPlaceholder(plotContainer, coverage, unit);
+      // out of memory: the data is there, and the placeholder says what helps
+      if (errorDetails && !coverage.gaps.some(g => g.kind === 'memory')) {
         const extra = document.createElement('div');
         extra.className = 'coverage-placeholder__hints';
         extra.innerHTML = errorDetails;
@@ -1369,7 +1367,7 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
       actions: [['draw-anyway', 'Draw anyway'], ['subset', 'Subset\u2026']] };
   } else if (result.verdict === 'block' && !override) {
     refusal = { text: 'Not drawn: browser memory',
-      why: refusalText(result, 'Close a plot, or show fewer cells (a smaller subset).'),
+      why: refusalText(result, MEMORY_ADVICE),
       actions: [['subset', 'Subset\u2026']] };
   }
   if (refusal) {
