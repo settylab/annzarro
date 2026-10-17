@@ -121,7 +121,8 @@ export function mountDatasetButton({ button, onOpen, shortcut, back = null, onBa
             if (said && said !== lastAnnounced) { live.textContent = said; lastAnnounced = said; }
         }
         showBack(state);
-        if (alert && (state.error || state.failed)) alert.textContent = (state.failed && state.failed.message) || state.error;
+        // a failed open is announced by its error toast (role=alert); the button says what cannot be opened
+        if (alert && state.status === 'unavailable' && state.error) alert.textContent = state.error;
     }
 
     // Refit when the room changes: the window, or another item of the bar (the format appears) squeezing the button.

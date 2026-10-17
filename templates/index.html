@@ -69,6 +69,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/desktop-frame.css') }}">
 </head>
 <body>
+    <!-- Toasts (main.js _showNotification): in the page from the start, so that the first one is announced -->
+    <div id="notification-container" role="status" aria-live="polite"></div>
     <!-- Top Bar with Global Controls -->
     <header id="app-header" class="app-header">
         <div class="container-fluid">

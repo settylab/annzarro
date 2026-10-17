@@ -15,6 +15,7 @@ import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refr
 import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
+import { noticeDuration, planReplacement } from './utils/notice-rules.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
 import { clearSiteStorage, clearSiteStorageNow, bareUrl } from './utils/site-storage.js';
@@ -144,8 +145,8 @@ const App = (function() {
 
             // Notices raised by modules that cannot import main.js (utils/notify.js)
             document.addEventListener(NOTIFY_EVENT, (e) => {
-                const { title, message, type } = e.detail || {};
-                _showNotification(title || 'Notice', message || '', type || 'warning');
+                const { title, message, type, duration } = e.detail || {};
+                _showNotification(title || '', message || '', type || 'warning', duration);
             });
 
             // Load available datasets
@@ -3423,25 +3424,31 @@ const App = (function() {
     let _notificationCounter = 0;
     
     /**
-     * Show a toast: the outcome of something the user did (a link copied, a
-     * panel set saved, an export that failed). Persistent state -- what a
-     * panel does not show, a mode it is in -- belongs in the panel's status
-     * strip (utils/panel-surface.js), never here.
+     * Show a toast: something the user did not cause or cannot see (an
+     * error, data that changed under them, a partial outcome, something not
+     * done as asked). A confirmation of what is already on screen is no
+     * toast; persistent state -- what a panel does not show, a mode it is
+     * in -- belongs in the panel's status strip (utils/panel-surface.js).
      *
-     * One at a time: a new toast replaces the one shown, and the same toast
-     * again only restarts its timer. Errors stay until closed.
-     * @param {string} title - Notification title
+     * A new toast replaces those shown of equal or lower severity
+     * (utils/notice-rules.js) and stacks below a more severe one, so an
+     * error is never wiped by the info notice that follows it. The same
+     * toast again only restarts its timer. Errors stay until closed; the
+     * others for a time that scales with their length, paused while the
+     * pointer or focus is on them.
+     * @param {string} title - Notification title (sentence case, never generic)
      * @param {string} message - Notification message
      * @param {string} type - Notification type ('error', 'warning', 'info', 'success')
-     * @param {number} [duration] - How long to show it (ms); default 4 s for
-     *   success, 8 s for info and warning, until closed for an error
+     * @param {number} [duration] - How long to show it (ms; 0 until closed);
+     *   default by type and length (noticeDuration)
      * @private
      */
     function _showNotification(title, message, type = 'info', duration = undefined) {
-        console.log(`Notification (${type}): ${title} - ${message}`);
-        if (duration === undefined) duration = type === 'error' ? 0 : type === 'success' ? 4000 : 8000;
+        console.debug(`Notification (${type}): ${title} - ${message}`);
+        duration = noticeDuration(type, title, message, duration);
 
-        // Create container if it doesn't exist (thread-safe)
+        // The container is in the page from the start (templates/index.html), so its
+        // live region is known to assistive technology before the first toast
         let container = document.getElementById('notification-container');
         if (!container) {
             container = document.createElement('div');
@@ -3451,15 +3458,18 @@ const App = (function() {
             document.body.appendChild(container);
         }
 
-        // The toast shown now (a question asked by _askNotification waits for
+        // The toasts shown now (a question asked by _askNotification waits for
         // its answer and is not replaced)
-        const current = [...container.children].find(el =>
+        const shown = [...container.children].filter(el =>
             el.classList.contains('notification') && !el.classList.contains('notification-ask'));
-        if (current && current.dataset.key === JSON.stringify([title, message, type])) {
-            _armNotification(current.id, duration);
-            return current.id;
+        const key = JSON.stringify([title, message, type]);
+        const same = shown.find(el => el.dataset.key === key);
+        if (same) {
+            _armNotification(same.id, duration);
+            return same.id;
         }
-        if (current) _dropNotification(current.id);
+        const { replace } = planReplacement(shown.map(el => ({ id: el.id, type: el.dataset.type })), type);
+        replace.forEach(_dropNotification);
 
         // Generate a unique ID for this notification
         const notificationId = `notification-${Date.now()}-${_notificationCounter++}`;
@@ -3468,13 +3478,15 @@ const App = (function() {
         const notification = document.createElement('div');
         notification.id = notificationId;
         notification.className = `notification notification-${type}`;
-        notification.dataset.key = JSON.stringify([title, message, type]);
+        notification.dataset.key = key;
+        notification.dataset.type = type;
         if (type === 'error') notification.setAttribute('role', 'alert');
         
         // Add close button
         const closeBtn = document.createElement('button');
         closeBtn.innerHTML = '&times;';
         closeBtn.className = 'notification-close';
+        closeBtn.setAttribute('aria-label', 'Close');
         closeBtn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -3492,8 +3504,14 @@ const App = (function() {
         
         // Assemble the notification
         notification.appendChild(closeBtn);
-        notification.appendChild(titleEl);
+        if (title) notification.appendChild(titleEl);
         notification.appendChild(messageEl);
+
+        // Reading it takes time the clock must not run out of: hold it while the pointer or focus is on it
+        notification.addEventListener('mouseenter', () => _holdNotification(notificationId, true));
+        notification.addEventListener('mouseleave', () => _holdNotification(notificationId, false));
+        notification.addEventListener('focusin', () => _holdNotification(notificationId, true));
+        notification.addEventListener('focusout', () => _holdNotification(notificationId, false));
         
         // Add to container
         container.appendChild(notification);
@@ -3509,19 +3527,51 @@ const App = (function() {
         return notificationId;
     }
 
+    // what is left of each timed toast: id -> {left (ms), since (ms epoch, 0 while held)}
+    const _notificationClocks = new Map();
+    /** The least a toast gets after the pointer leaves it. */
+    const _NOTIFICATION_GRACE_MS = 2000;
+
     /** (Re)start the timer that removes a toast; 0 keeps it until closed. */
     function _armNotification(notificationId, duration) {
         if (_notificationTimers.has(notificationId)) {
             clearTimeout(_notificationTimers.get(notificationId));
             _notificationTimers.delete(notificationId);
         }
+        _notificationClocks.delete(notificationId);
         if (duration > 0) {
+            _notificationClocks.set(notificationId, { left: duration, since: Date.now() });
             _notificationTimers.set(notificationId, setTimeout(() => _removeNotification(notificationId), duration));
+            // restarted under the pointer (the same toast again): hold it
+            const el = document.getElementById(notificationId);
+            if (el && (el.matches(':hover') || el.contains(document.activeElement))) _holdNotification(notificationId, true);
+        }
+    }
+
+    /** Stop (hold) or restart the clock of a toast the pointer or focus is on. */
+    function _holdNotification(notificationId, hold) {
+        const clock = _notificationClocks.get(notificationId);
+        const el = document.getElementById(notificationId);
+        if (!clock || !el) return;
+        if (hold) {
+            if (!clock.since) return;
+            clearTimeout(_notificationTimers.get(notificationId));
+            _notificationTimers.delete(notificationId);
+            clock.left = Math.max(0, clock.left - (Date.now() - clock.since));
+            clock.since = 0;
+        } else {
+            // leaving one part while still on another (pointer out, focus in) does not restart it
+            if (clock.since || el.matches(':hover') || el.contains(document.activeElement)) return;
+            const left = Math.max(_NOTIFICATION_GRACE_MS, clock.left);
+            clock.left = left;
+            clock.since = Date.now();
+            _notificationTimers.set(notificationId, setTimeout(() => _removeNotification(notificationId), left));
         }
     }
 
     /** Take a toast away at once, without its fade: the next one replaces it. */
     function _dropNotification(notificationId) {
+        _notificationClocks.delete(notificationId);
         if (_notificationTimers.has(notificationId)) {
             clearTimeout(_notificationTimers.get(notificationId));
             _notificationTimers.delete(notificationId);
@@ -3540,6 +3590,7 @@ const App = (function() {
         if (!notification) return;
         
         // Clear any existing timer
+        _notificationClocks.delete(notificationId);
         if (_notificationTimers.has(notificationId)) {
             clearTimeout(_notificationTimers.get(notificationId));
             _notificationTimers.delete(notificationId);
