@@ -5,7 +5,9 @@ removed). Their style is derived one way, whichever way the table came to
 filter the plot (a link, or picked in the panel): the automatic style of
 their own count times the panel's scale, never the main points' size.
 The page gets a steep size curve (as test_auto_point_size.py), so 100 and
-200 points draw at different sizes.
+200 points draw at different sizes. Like every automatic size, the grey
+points' size follows the plot area too (utils/point-style.js), so the
+expected size is the curve's for their count in that plot's own area.
 
 1. a size set by hand after the table filters the plot leaves the grey
    points at the size for their count (the bug: they kept the size from
@@ -50,7 +52,8 @@ def _grey_is_curve(page, pid, scale=1):
     for _ in range(50):
         g = page.evaluate(GREY, pid)
         if g["n"]:
-            want = page.evaluate(AUTO, g["n"])
+            # the curve for their own count, in this plot's own plot area
+            want = page.evaluate(AUTO, [g["n"], [pid]])[pid]
             size = page.evaluate(SNAP, want["size"] * scale)
             if g["sizes"] == [size]:
                 return g
