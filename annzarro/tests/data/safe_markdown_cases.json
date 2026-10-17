@@ -1,0 +1,322 @@
+[
+ {
+  "name": "plain paragraph",
+  "markdown": "Hello world",
+  "options": {},
+  "html": "<p>Hello world</p>"
+ },
+ {
+  "name": "two paragraphs",
+  "markdown": "One\n\nTwo",
+  "options": {},
+  "html": "<p>One</p>\n<p>Two</p>"
+ },
+ {
+  "name": "soft wrap joins",
+  "markdown": "one\ntwo",
+  "options": {},
+  "html": "<p>one two</p>"
+ },
+ {
+  "name": "hard break two spaces",
+  "markdown": "one  \ntwo",
+  "options": {},
+  "html": "<p>one<br>two</p>"
+ },
+ {
+  "name": "hard break backslash",
+  "markdown": "one\\\ntwo",
+  "options": {},
+  "html": "<p>one<br>two</p>"
+ },
+ {
+  "name": "heading levels",
+  "markdown": "# A\n## B\n###### F\n####### seven",
+  "options": {},
+  "html": "<h1>A</h1>\n<h2>B</h2>\n<h6>F</h6>\n<p>####### seven</p>"
+ },
+ {
+  "name": "heading base 3",
+  "markdown": "# A\n## B\n### C\n#### D",
+  "options": {
+   "heading_base": 3
+  },
+  "html": "<h3>A</h3>\n<h4>B</h4>\n<h5>C</h5>\n<h6>D</h6>"
+ },
+ {
+  "name": "heading trailing hashes",
+  "markdown": "## Title ##",
+  "options": {},
+  "html": "<h2>Title</h2>"
+ },
+ {
+  "name": "bullets",
+  "markdown": "- a\n- b\n* c\n+ d",
+  "options": {},
+  "html": "<ul><li>a</li><li>b</li><li>c</li><li>d</li></ul>"
+ },
+ {
+  "name": "numbers",
+  "markdown": "1. a\n2) b\n10. c",
+  "options": {},
+  "html": "<ol><li>a</li><li>b</li><li>c</li></ol>"
+ },
+ {
+  "name": "list then paragraph",
+  "markdown": "- a\n- b\ntext",
+  "options": {},
+  "html": "<ul><li>a</li><li>b</li></ul>\n<p>text</p>"
+ },
+ {
+  "name": "bullets then numbers",
+  "markdown": "- a\n1. b",
+  "options": {},
+  "html": "<ul><li>a</li></ul>\n<ol><li>b</li></ol>"
+ },
+ {
+  "name": "bold and italic",
+  "markdown": "**b** *i* _u_ ***both***",
+  "options": {},
+  "html": "<p><strong>b</strong> <em>i</em> <em>u</em> <strong><em>both</em></strong></p>"
+ },
+ {
+  "name": "nested emphasis",
+  "markdown": "**bold *and italic* text**",
+  "options": {},
+  "html": "<p><strong>bold <em>and italic</em> text</strong></p>"
+ },
+ {
+  "name": "snake case not emphasis",
+  "markdown": "use snake_case_name here",
+  "options": {},
+  "html": "<p>use snake_case_name here</p>"
+ },
+ {
+  "name": "unclosed markers",
+  "markdown": "**open and *half",
+  "options": {},
+  "html": "<p>**open and *half</p>"
+ },
+ {
+  "name": "inline code",
+  "markdown": "run `a<b>&c` now",
+  "options": {},
+  "html": "<p>run <code>a&lt;b&gt;&amp;c</code> now</p>"
+ },
+ {
+  "name": "code hides emphasis",
+  "markdown": "`**no**`",
+  "options": {},
+  "html": "<p><code>**no**</code></p>"
+ },
+ {
+  "name": "https link",
+  "markdown": "[docs](https://example.org/a?b=1&c=2)",
+  "options": {},
+  "html": "<p><a href=\"https://example.org/a?b=1&amp;c=2\" rel=\"noopener noreferrer\" target=\"_blank\">docs</a></p>"
+ },
+ {
+  "name": "http link",
+  "markdown": "[x](http://example.org)",
+  "options": {},
+  "html": "<p><a href=\"http://example.org\" rel=\"noopener noreferrer\" target=\"_blank\">x</a></p>"
+ },
+ {
+  "name": "mailto link",
+  "markdown": "[mail](mailto:a@example.org)",
+  "options": {},
+  "html": "<p><a href=\"mailto:a@example.org\" rel=\"noopener noreferrer\">mail</a></p>"
+ },
+ {
+  "name": "uppercase scheme",
+  "markdown": "[x](HTTPS://EXAMPLE.ORG)",
+  "options": {},
+  "html": "<p><a href=\"HTTPS://EXAMPLE.ORG\" rel=\"noopener noreferrer\" target=\"_blank\">x</a></p>"
+ },
+ {
+  "name": "javascript url refused",
+  "markdown": "[x](javascript:alert(1))",
+  "options": {},
+  "html": "<p>[x](javascript:alert(1))</p>"
+ },
+ {
+  "name": "javascript url simple",
+  "markdown": "[x](javascript:alert)",
+  "options": {},
+  "html": "<p>[x](javascript:alert)</p>"
+ },
+ {
+  "name": "mixed case javascript",
+  "markdown": "[x](JaVaScRiPt:alert)",
+  "options": {},
+  "html": "<p>[x](JaVaScRiPt:alert)</p>"
+ },
+ {
+  "name": "data url refused",
+  "markdown": "[x](data:text/html;base64,AAAA)",
+  "options": {},
+  "html": "<p>[x](data:text/html;base64,AAAA)</p>"
+ },
+ {
+  "name": "vbscript refused",
+  "markdown": "[x](vbscript:msgbox)",
+  "options": {},
+  "html": "<p>[x](vbscript:msgbox)</p>"
+ },
+ {
+  "name": "relative url refused",
+  "markdown": "[x](/admin)",
+  "options": {},
+  "html": "<p>[x](/admin)</p>"
+ },
+ {
+  "name": "protocol relative refused",
+  "markdown": "[x](//evil.example)",
+  "options": {},
+  "html": "<p>[x](//evil.example)</p>"
+ },
+ {
+  "name": "entity scheme refused",
+  "markdown": "[x](&#106;avascript:alert)",
+  "options": {},
+  "html": "<p>[x](&amp;#106;avascript:alert)</p>"
+ },
+ {
+  "name": "tab in scheme refused",
+  "markdown": "[x](java\tscript:alert)",
+  "options": {},
+  "html": "<p>[x](java\tscript:alert)</p>"
+ },
+ {
+  "name": "newline in scheme refused",
+  "markdown": "[x](java\nscript:alert)",
+  "options": {},
+  "html": "<p>[x](java script:alert)</p>"
+ },
+ {
+  "name": "attribute injection in url",
+  "markdown": "[x](https://e.org/\"onmouseover=\"alert(1))",
+  "options": {},
+  "html": "<p>[x](https://e.org/&quot;onmouseover=&quot;alert(1))</p>"
+ },
+ {
+  "name": "quote in url escaped",
+  "markdown": "[x](https://e.org/a'b\"c)",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/a&#39;b&quot;c\" rel=\"noopener noreferrer\" target=\"_blank\">x</a></p>"
+ },
+ {
+  "name": "angle in link text",
+  "markdown": "[<b>x</b>](https://e.org)",
+  "options": {},
+  "html": "<p><a href=\"https://e.org\" rel=\"noopener noreferrer\" target=\"_blank\">&lt;b&gt;x&lt;/b&gt;</a></p>"
+ },
+ {
+  "name": "emphasis in link text",
+  "markdown": "[**x**](https://e.org)",
+  "options": {},
+  "html": "<p><a href=\"https://e.org\" rel=\"noopener noreferrer\" target=\"_blank\"><strong>x</strong></a></p>"
+ },
+ {
+  "name": "link in link text refused",
+  "markdown": "[[a](https://a.org)](https://b.org)",
+  "options": {},
+  "html": "<p>[<a href=\"https://a.org\" rel=\"noopener noreferrer\" target=\"_blank\">a</a>](https://b.org)</p>"
+ },
+ {
+  "name": "link inside bold",
+  "markdown": "**see [x](https://e.org)**",
+  "options": {},
+  "html": "<p><strong>see <a href=\"https://e.org\" rel=\"noopener noreferrer\" target=\"_blank\">x</a></strong></p>"
+ },
+ {
+  "name": "script tag",
+  "markdown": "<script>alert(1)</script>",
+  "options": {},
+  "html": "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>"
+ },
+ {
+  "name": "img tag",
+  "markdown": "<img src=x onerror=alert(1)>",
+  "options": {},
+  "html": "<p>&lt;img src=x onerror=alert(1)&gt;</p>"
+ },
+ {
+  "name": "image syntax is text",
+  "markdown": "![alt](https://e.org/a.png)",
+  "options": {},
+  "html": "<p>!<a href=\"https://e.org/a.png\" rel=\"noopener noreferrer\" target=\"_blank\">alt</a></p>"
+ },
+ {
+  "name": "html entity text",
+  "markdown": "&lt;b&gt; &#60; &amp;",
+  "options": {},
+  "html": "<p>&amp;lt;b&amp;gt; &amp;#60; &amp;amp;</p>"
+ },
+ {
+  "name": "iframe in heading",
+  "markdown": "# <iframe src=//e.org>",
+  "options": {},
+  "html": "<h1>&lt;iframe src=//e.org&gt;</h1>"
+ },
+ {
+  "name": "tags in list",
+  "markdown": "- <b>x</b>\n- <a href=\"javascript:1\">y</a>",
+  "options": {},
+  "html": "<ul><li>&lt;b&gt;x&lt;/b&gt;</li><li>&lt;a href=&quot;javascript:1&quot;&gt;y&lt;/a&gt;</li></ul>"
+ },
+ {
+  "name": "quotes",
+  "markdown": "it's \"quoted\"",
+  "options": {},
+  "html": "<p>it&#39;s &quot;quoted&quot;</p>"
+ },
+ {
+  "name": "control chars removed",
+  "markdown": "a\u0000b\u0007c d",
+  "options": {},
+  "html": "<p>abcd</p>"
+ },
+ {
+  "name": "crlf",
+  "markdown": "a\r\nb\r\n\r\nc",
+  "options": {},
+  "html": "<p>a b</p>\n<p>c</p>"
+ },
+ {
+  "name": "empty",
+  "markdown": "",
+  "options": {},
+  "html": ""
+ },
+ {
+  "name": "blank only",
+  "markdown": "\n\n  \n",
+  "options": {},
+  "html": ""
+ },
+ {
+  "name": "non string",
+  "markdown": null,
+  "options": {},
+  "html": ""
+ },
+ {
+  "name": "blockquote is text",
+  "markdown": "> quote",
+  "options": {},
+  "html": "<p>&gt; quote</p>"
+ },
+ {
+  "name": "table is text",
+  "markdown": "| a | b |\n|---|---|",
+  "options": {},
+  "html": "<p>| a | b | |---|---|</p>"
+ },
+ {
+  "name": "unicode",
+  "markdown": "Impressum: Universität Zürich, Straße 1 – äöü",
+  "options": {},
+  "html": "<p>Impressum: Universität Zürich, Straße 1 – äöü</p>"
+ }
+]
