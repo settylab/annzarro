@@ -156,3 +156,75 @@ def test_a_panel_saved_with_scale_off_keeps_it(page, server):
     assert _settings(page, B)["scaleExport"] is True        # unset in an older link: the new default
     _menu(page, A, "export")
     assert not page.is_checked(f"#scale-export-{A}")
+
+
+# -- the colour bar and legend survive a change of the colour ------------------------------
+
+from annzarro.tests.browser.test_axis_title_restore import _start  # noqa: E402
+
+CONT = {"type": "obs", "key": "total_counts", "column": ""}
+UMAP0 = {"type": "obsm", "key": "X_umap", "column": "0"}
+GENE = {"type": "layer", "key": "X", "column": "GENE000"}
+CAT = {"type": "obs", "key": "cell_type", "column": ""}
+FIRST = """(id) => { const gd = (%s)(id); const t = gd._fullData.find(t => t.marker && t.marker.colorbar && t.marker.showscale);
+    if (!t) return null; const c = t.marker.colorbar;
+    return {nticks: c.nticks, len: c.len, orientation: c.orientation, titleFamily: c.title.font.family,
+            tickFamily: c.tickfont.family, titleSize: c.title.font.size, tickSize: c.tickfont.size}; }""" % GD
+
+
+@pytest.fixture(scope="module")
+def large_server(tmp_path_factory):
+    proc, root = _start(tmp_path_factory.mktemp("home-large"), 100)
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
+def _pick(page, pid, field):
+    base = f'.tile[data-tile-id="{pid}"] '
+    page.select_option(base + '.axis-type-select[data-axis="color"]', field["type"])
+    key = base + '.axis-key-select[data-axis="color"]'
+    page.wait_for_function("([sel, v]) => [...document.querySelector(sel).options].some(o => o.value === v)",
+                           arg=[key, field["key"]], timeout=15000)
+    page.select_option(key, field["key"])
+    if field["column"]:
+        col = base + '.axis-column-select[data-axis="color"]'
+        page.wait_for_function("([sel, v]) => [...document.querySelector(sel).options].some(o => o.value === v)",
+                               arg=[col, field["column"]], timeout=15000)
+        page.select_option(col, field["column"])
+    page.wait_for_timeout(2500)
+
+
+def _bar_kept(page, step):
+    bar = page.evaluate(FIRST, B)
+    assert bar is not None, f"{step}: no colour bar"
+    assert bar["len"] == 0.4 and bar["nticks"] == 3 and bar["orientation"] == "h", (step, bar)
+    assert bar["titleFamily"] == ARIAL and bar["tickFamily"] == ARIAL, (step, bar)
+    assert bar["tickSize"] == 16 and bar["titleSize"] == 18, (step, bar)
+
+
+@pytest.mark.parametrize("mode", ["regular", "large"])
+def test_colour_bar_and_legend_keep_their_options_through_a_colour_change(page, server, large_server, mode):
+    root = server if mode == "regular" else large_server
+    _open(page, root, _cfgs(extra_b={"fontFamily": SERIF}))
+    if mode == "large":
+        assert page.evaluate("(id) => !!(%s)(id).__isLarge" % GD, B)
+    _menu(page, B, "presets")
+    page.click(f"#preset-publication-{B}")
+    _menu(page, B, "legend")
+    page.select_option(f"#colorbar-position-{B}", "bottom")
+    page.wait_for_timeout(800)
+    _close_menu(page, B)
+    _bar_kept(page, "after Publication")
+    for step, field in (("another continuous column", UMAP0), ("a gene", GENE), ("total counts again", CONT)):
+        _pick(page, B, field)
+        _bar_kept(page, step)
+    # categorical and back: the legend takes the font, the colour bar comes back as it was
+    _pick(page, B, CAT)
+    leg = page.evaluate(LEG, B)
+    assert leg["titleFamily"] == ARIAL and leg["itemFamily"] == ARIAL, leg
+    assert leg["itemSize"] == 16 and leg["titleSize"] == 18, leg
+    _pick(page, B, CONT)
+    _bar_kept(page, "categorical back to continuous")
+    cfg = _settings(page, B)
+    assert cfg["colorbarLength"] == 0.4 and cfg["colorbarTicks"] == 3 and cfg["colorbarPosition"] == "bottom"

@@ -8,7 +8,8 @@ import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, sho
 import { applyAutoPointStyle, pointStyleBase, greyMarker, styleArea } from '../../utils/point-style.js';
 export { pointStyleBase };
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
-import { colorbarPosition, colorbarExtras, tickKeys, axisPaths } from './plot-options.js';
+import { colorbarPosition, tickKeys, axisPaths } from './plot-options.js';
+import { colourBar } from './colour-bar.js';
 import { plotColour, modebarColours } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
@@ -2874,30 +2875,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       }
       
       // Common colorbar settings for table entities
-      const colorbarSettings = {
-        title: {
-          text: colourTitle(settings.color),
-          side: 'right',
-          font: { 
-            size: settings.fontSize ? settings.fontSize + 2 : 14,
-            family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            color: plotColour(settings, 'textColor')
-          }
-        }
-      };
-      
-      // Use the centralized positioning function
-      const posConfig = getPositioningByLocation(colorbarPosition(settings));
-      
-      Object.assign(colorbarSettings, colorbarExtras(settings));
-      colorbarSettings.x = posConfig.x;
-      colorbarSettings.xanchor = posConfig.xanchor;
-      colorbarSettings.y = posConfig.y;
-      colorbarSettings.yanchor = posConfig.yanchor;
-      colorbarSettings.ypad = posConfig.ypad;
-      colorbarSettings.ticklabelposition = posConfig.ticklabelposition;
-      colorbarSettings.titleside = posConfig.titleside;
-      colorbarSettings.orientation = posConfig.orientation;
+      const colorbarSettings = colourBar(settings, colourTitle(settings.color));
       
       const traces = [];
       
@@ -3033,30 +3011,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       
       baseTrace.marker.cmin = cmin;
       baseTrace.marker.cmax = cmax;
-      baseTrace.marker.colorbar = {
-        title: {
-          text: colourTitle(settings.color),
-          side: 'right',
-          font: { 
-            size: settings.fontSize ? settings.fontSize + 2 : 14,
-            family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            color: plotColour(settings, 'textColor')
-          }
-        }
-      };
-  
-      // Use the centralized positioning function
-      const posConfig = getPositioningByLocation(colorbarPosition(settings));
-      
-      Object.assign(baseTrace.marker.colorbar, colorbarExtras(settings));
-      baseTrace.marker.colorbar.x = posConfig.x;
-      baseTrace.marker.colorbar.xanchor = posConfig.xanchor;
-      baseTrace.marker.colorbar.y = posConfig.y;
-      baseTrace.marker.colorbar.yanchor = posConfig.yanchor;
-      baseTrace.marker.colorbar.ypad = posConfig.ypad;
-      baseTrace.marker.colorbar.ticklabelposition = posConfig.ticklabelposition;
-      baseTrace.marker.colorbar.titleside = posConfig.titleside;
-      baseTrace.marker.colorbar.orientation = posConfig.orientation;
+      baseTrace.marker.colorbar = colourBar(settings, colourTitle(settings.color));
   
       await drawPlot(
         plotContainer,

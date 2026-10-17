@@ -23,6 +23,7 @@ import { unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
 import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
 import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
+import { colourBar } from './colour-bar.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
 import { renderCoverageNotice, setStatusTag, withCoverageAnnotation, showCancelled } from '../../utils/panel-surface.js';
@@ -398,18 +399,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         reversescale: settings.colorReversed,
                         cmin: settings.colorMin !== null ? settings.colorMin : arrayMin(data.color.filter(v => !isNaN(v))),
                         cmax: settings.colorMax !== null ? settings.colorMax : arrayMax(data.color.filter(v => !isNaN(v))),
-                        colorbar: {
-                            title: {
-                                text: colourTitle(settings.color),
-                                side: 'right',
-                                font: {
-                                    size: settings.fontSize ? settings.fontSize + 2 : 14,
-                                    family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-                                    color: plotColour(settings, 'textColor')
-                                }
-                            },
-                            titleside: 'right'
-                        },
+                        colorbar: colourBar(settings, colourTitle(settings.color)),
                         showscale: true
                     },
                     showlegend: false
@@ -609,18 +599,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         reversescale: settings.colorReversed,
                         cmin: settings.colorMin !== null ? settings.colorMin : undefined,
                         cmax: settings.colorMax !== null ? settings.colorMax : undefined,
-                        colorbar: {
-                          title: {
-                            text: colourTitle(settings.color),
-                            side: 'right',
-                            font: {
-                              size: settings.fontSize ? settings.fontSize + 2 : 14,
-                              family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-                              color: plotColour(settings, 'textColor')
-                            }
-                          },
-                          titleside: 'right'
-                        },
+                        colorbar: colourBar(settings, colourTitle(settings.color)),
                         showscale: true
                       },
                       showlegend: false
@@ -869,18 +848,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             
             if (settings && settings.color && settings.color.type && settings.color.key) {
                 if (data.colorType === 'numerical') {
-                    const colorbar = {
-                        title: {
-                            text: colourTitle(settings.color),
-                            side: 'right',
-                            font: { 
-                                size: settings.fontSize ? settings.fontSize + 2 : 14,
-                                family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-                                color: plotColour(settings, 'textColor')
-                            }
-                        },
-                        titleside: 'right'
-                    };
+                    const colorbar = colourBar(settings, colourTitle(settings.color));
                     const restyleUpdate = {
                         'marker.colorbar': colorbar,
                         'marker.showscale': true,

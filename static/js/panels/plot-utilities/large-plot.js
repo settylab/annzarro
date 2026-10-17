@@ -37,6 +37,7 @@ import { plotColour } from '../../utils/plot-theme.js';
 import { Config } from '../../config.js';
 import { buildPlotLayout, knownMissingSource, seriesSource, withSubsetCoverage } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
+import { colourBar } from './colour-bar.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, COLOUR_BAR, attachViewportTracking } from './plot-make-helper.js';
@@ -248,15 +249,6 @@ function interleave(groups) {
 function titleFont(settings) {
   return { size: settings.fontSize ? settings.fontSize + 2 : 14,
     family: settings.fontFamily || 'Arial, Helvetica, sans-serif', color: plotColour(settings, 'textColor') };
-}
-
-/** The colour bar as the regular path draws it (plot-make.js, numerical branch). */
-function colourBar(settings, title) {
-  const pos = getPositioningByLocation(settings.legendPosition || 'right');
-  return { title: { text: title, side: 'right', font: titleFont(settings) },
-    x: pos.x, xanchor: pos.xanchor, y: pos.y, yanchor: pos.yanchor,
-    ypad: pos.ypad, ticklabelposition: pos.ticklabelposition,
-    titleside: pos.titleside, orientation: pos.orientation };
 }
 
 /**
