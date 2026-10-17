@@ -37,10 +37,12 @@ export function initAboutDialog(doc = document) {
         site.textContent = text.site ? `This is ${text.site}, a site running AnnZarro.` : '';
         return text.version;
     };
-    modal.addEventListener('show.bs.modal', () => {
-        // opened before the server's config has arrived: fill the version in when it does
-        if (!fill()) Config.ready.then(fill);
-    });
+    // Fill it now and once the server's config has arrived, not only on
+    // opening: the name can be clicked before this script has loaded, and
+    // Bootstrap then opens the dialog without a show event this code sees.
+    fill();
+    Config.ready.then(fill);
+    modal.addEventListener('show.bs.modal', fill);
     // Back to the name, however the dialog closed
     modal.addEventListener('hidden.bs.modal', () => opener.focus());
 }

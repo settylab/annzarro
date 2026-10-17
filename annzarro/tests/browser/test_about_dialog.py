@@ -216,3 +216,28 @@ def test_about_version_appears_when_opened_before_the_config_arrives(server):
             assert page.locator("#about-version").inner_text() == version
         finally:
             browser.close()
+
+
+def test_about_version_appears_when_opened_before_the_script_loads(server):
+    """A click on the name before the app's scripts have run: Bootstrap opens
+    the dialog by itself, and the version still appears once they have."""
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_context(viewport={"width": 1440, "height": 900}).new_page()
+            held = []
+            page.route("**/static/js/utils/about-dialog.js", lambda route: held.append(route))
+            page.goto(server, wait_until="commit")
+            page.wait_for_selector("#about-open")
+            page.click("#about-open")
+            page.wait_for_selector("#about-modal.show", timeout=5000)
+            assert held, "about-dialog.js was not requested before the click"
+            assert page.locator("#about-version").inner_text() == ""
+            for route in held:
+                route.continue_()
+            page.wait_for_function("() => document.getElementById('about-version').textContent.trim() !== ''",
+                                   timeout=10000)
+            version = json.load(urllib.request.urlopen(server + "/api/v1/config"))["annzarro_version"]
+            assert page.locator("#about-version").inner_text() == version
+        finally:
+            browser.close()

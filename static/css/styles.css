@@ -231,8 +231,10 @@ body {
     all: unset;
     cursor: pointer;
     border-radius: 0.25rem;
+    transition: opacity 0.15s ease-in-out;
 }
-.app-title-btn:hover { text-decoration: underline; }
+/* a quiet hint that the name opens About: a slight fade, no underline */
+.app-title-btn:hover { opacity: 0.75; }
 .app-title-btn:focus-visible {
     outline: 2px solid var(--az-link);
     outline-offset: 2px;
