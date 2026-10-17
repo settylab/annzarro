@@ -8,6 +8,7 @@
  *   - headings `#` to `######` (`headingBase` shifts the levels, e.g. 3 for `<h3>`)
  *   - flat bullet lists (`-`, `*`, `+`) and numbered lists (`1.`, `1)`)
  *   - `**bold**`, `*italic*`, `_italic_`, `code` in backticks, nested emphasis
+ *   - bare http(s):// addresses and <address> autolinks, under the same rules
  *   - links `[text](url)` with an http://, https:// or mailto: address only,
  *     always rel="noopener noreferrer"
  *
@@ -48,6 +49,8 @@ const BREAK = '\x01';
 const INLINE_SOURCE =
     '`([^`\\n]{1,500})`' +
     '|\\[([^\\[\\]\\n]{1,300})\\]\\(\\s*([^()\\s]{1,2000})\\s*\\)' +
+    '|<((?:https?://|mailto:)[^\\s<>\\x01]{1,2000})>' +
+    '|(https?://[^\\s<>\\x01]{1,2000})' +
     '|\\*\\*\\*(\\S(?:.{0,998}?\\S)??)\\*\\*\\*' +
     '|\\*\\*(\\S(?:.{0,998}?\\S)??)\\*\\*' +
     '|\\*(\\S(?:[^*\\n]{0,998}?\\S)??)\\*' +
@@ -79,6 +82,24 @@ function literal(text) {
     return escapeHtml(text).split(BREAK).join('<br>').split('\n').join(' ');
 }
 
+function anchor(href, text, escaped = false) {
+    const target = href.toLowerCase().startsWith('mailto:') ? '' : ' target="_blank"';
+    return '<a href="' + escapeHtml(href) + '" rel="noopener noreferrer"' + target + '>'
+        + (escaped ? text : escapeHtml(text)) + '</a>';
+}
+
+/** A bare address without the punctuation that ends the sentence around it (GFM): ?!.,:;*_~'" and a closing parenthesis it does not open. */
+function trimUrl(url) {
+    let u = url;
+    while (u) {
+        const last = u[u.length - 1];
+        if ('?!.,:;*_~\'"'.includes(last)) u = u.slice(0, -1);
+        else if (last === ')' && u.split(')').length > u.split('(').length) u = u.slice(0, -1);
+        else break;
+    }
+    return u;
+}
+
 function inline(raw, depth = 0, links = true) {
     if (depth > MAX_DEPTH) return literal(raw);
     const re = new RegExp(INLINE_SOURCE, 'g');
@@ -90,7 +111,7 @@ function inline(raw, depth = 0, links = true) {
         if (!match) break;
         const start = match.index;
         out.push(literal(raw.slice(pos, start)));
-        const [whole, code, text, url, both, strong, emStar, emUnder] = match;
+        const [whole, code, text, url, angle, bare, both, strong, emStar, emUnder] = match;
         let end = start + whole.length;
         if (code !== undefined) {
             out.push('<code>' + escapeHtml(code) + '</code>');
@@ -99,9 +120,20 @@ function inline(raw, depth = 0, links = true) {
             if (href === null) {
                 out.push(literal(whole));
             } else {
-                const target = href.toLowerCase().startsWith('mailto:') ? '' : ' target="_blank"';
-                out.push('<a href="' + escapeHtml(href) + '" rel="noopener noreferrer"' + target + '>'
-                    + inline(text, depth + 1, false) + '</a>');
+                out.push(anchor(href, inline(text, depth + 1, false), true));
+            }
+        } else if (angle !== undefined) {
+            const href = links ? safeUrl(angle) : null;
+            out.push(href === null ? literal(whole) : anchor(href, href));
+        } else if (bare !== undefined) {
+            const before = start > 0 ? raw[start - 1] : '';
+            const address = trimUrl(bare);
+            if (!links || (before && WORD_RE.test(before)) || safeUrl(address) === null) {
+                out.push(literal(raw[start]));      // not a link: go on after its first character
+                end = start + 1;
+            } else {
+                out.push(anchor(address, address));
+                end = start + address.length;
             }
         } else if (both !== undefined) {
             out.push('<strong><em>' + inline(both, depth + 1, links) + '</em></strong>');

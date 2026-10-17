@@ -133,6 +133,13 @@ HOSTILE_BLOCKS = {
     "100k rules": lines_of("---", 50_000),
     "100k fences opening": lines_of("```", 60_000),
     "alternating table headers": lines_of("a | b\n--- | ---", 30_000),
+    "100k addresses": "http://a " * (CAP // 9),
+    "100k addresses, one per paragraph": "http://a\n\n" * (CAP // 10),
+    "one huge address": "https://e.org/" + "a" * CAP,
+    "addresses glued together": "http://" * (CAP // 7),
+    "100k angle autolinks": "<http://a>" * (CAP // 10),
+    "javascript addresses": "<javascript:alert(1)> javascript:alert(1) " * (CAP // 44),
+    "address with parentheses": "https://e.org/" + "(" * 50_000 + ")" * 50_000,
 }
 
 
@@ -143,7 +150,7 @@ def test_hostile_block_structures_are_bounded(name):
     elapsed = time.perf_counter() - started
     print(f"safe_markdown {name!r}: {elapsed * 1000:.0f} ms, {len(html)} bytes")
     assert elapsed < 1.0
-    assert len(html) < 4 * CAP
+    assert len(html) < 12 * CAP      # an address becomes a link, about ten times its length
     assert_safe(html)
 
 
@@ -160,3 +167,12 @@ def test_cells_cannot_carry_markup_or_scripts():
     html = render_safe_markdown("| <b>x</b> |\n|---|\n| <img src=x onerror=alert(1)> [a](javascript:alert(1)) |")
     assert "<b>" not in html and "<img" not in html and 'href="javascript' not in html
     assert_safe(html)
+
+
+def test_no_script_address_is_ever_linked():
+    for text in ("javascript:alert(1)", "<javascript:alert(1)>", "<JaVaScRiPt:alert(1)>", "data:text/html,x", "vbscript:x",
+                 "http://x.org\"><script>alert(1)</script>", "file:///etc/passwd", "ftp://x.org"):
+        html = render_safe_markdown(text)
+        assert "javascript" not in re.findall(r'href="([^"]*)"', html) and 'href="javascript' not in html.lower()
+        assert not re.findall(r'href="(?!https?://|mailto:)', html), html
+        assert "<script" not in html

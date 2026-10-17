@@ -104,7 +104,7 @@ is escaped first, and only a small set of constructs is turned back into markup.
 
 Supported: paragraphs, headings (`#` to `######`, or a line underlined with `===` or `---`), bullet and
 numbered lists (one level), `**bold**`, `*italic*` and `_italic_`, `` `code` ``, links
-`[text](address)` with an `http://`, `https://` or `mailto:` address, pipe tables, code blocks,
+`[text](address)` with an `http://`, `https://` or `mailto:` address, bare web addresses (`https://...` and `<https://...>`, without the full stop or comma that ends the sentence), pipe tables, code blocks,
 horizontal rules and block quotes. Links open in a new tab (in the desktop app, in the system browser).
 
 - **Tables** are GitHub's pipe tables: a header row, a delimiter row (`|---|:---:|---:|` sets left,

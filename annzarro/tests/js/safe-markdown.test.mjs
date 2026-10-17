@@ -119,6 +119,13 @@ const HOSTILE_BLOCKS = {
   "100k rules": rep("---", 50000),
   "100k fences opening": rep("```", 60000),
   "alternating table headers": rep("a | b\n--- | ---", 30000),
+  "100k addresses": "http://a ".repeat(CAP / 9),
+  "100k addresses, one per paragraph": "http://a\n\n".repeat(CAP / 10),
+  "one huge address": "https://e.org/" + "a".repeat(CAP),
+  "addresses glued together": "http://".repeat(Math.floor(CAP / 7)),
+  "100k angle autolinks": "<http://a>".repeat(CAP / 10),
+  "javascript addresses": "<javascript:alert(1)> javascript:alert(1) ".repeat(Math.floor(CAP / 44)),
+  "address with parentheses": "https://e.org/" + "(".repeat(50000) + ")".repeat(50000),
 };
 for (const [name, text] of Object.entries(HOSTILE_BLOCKS)) {
   test(`hostile block structure is bounded: ${name}`, () => {
@@ -127,7 +134,7 @@ for (const [name, text] of Object.entries(HOSTILE_BLOCKS)) {
     const ms = performance.now() - started;
     console.log(`safe-markdown ${name}: ${ms.toFixed(0)} ms, ${html.length} bytes`);
     assert.ok(ms < 1000, `${ms} ms`);
-    assert.ok(html.length < 4 * CAP);
+    assert.ok(html.length < 12 * CAP);      // an address becomes a link, about ten times its length
     assertSafe(html);
   });
 }
@@ -148,4 +155,13 @@ test("cells cannot carry markup or scripts", () => {
   const html = renderSafeMarkdown("| <b>x</b> |\n|---|\n| <img src=x onerror=alert(1)> [a](javascript:alert(1)) |");
   assert.ok(!html.includes("<b>") && !html.includes("<img") && !html.includes('href="javascript'));
   assertSafe(html);
+});
+
+test("no script address is ever linked", () => {
+  for (const text of ["javascript:alert(1)", "<javascript:alert(1)>", "<JaVaScRiPt:alert(1)>", "data:text/html,x", "vbscript:x",
+    "http://x.org\"><script>alert(1)</script>", "file:///etc/passwd", "ftp://x.org"]) {
+    const html = renderSafeMarkdown(text);
+    assert.ok(!/href="(?!https?:\/\/|mailto:)/.test(html), html);
+    assert.ok(!html.includes("<script"));
+  }
 });

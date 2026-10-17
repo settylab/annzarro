@@ -93,3 +93,19 @@ test("density and the richer types", () => {
   assert.equal(columnType({ kind: "categorical", categories: 3, ordered: true, codes_dtype: "int8" }), "categorical, 3 categories, ordered, codes int8");
   assert.equal(columnType({ kind: "integer", dtype: "int64", nullable: true }), "integer, int64, nullable");
 });
+
+const { setName } = await import("../../../static/js/utils/dataset-info-dialog.js");
+
+test("a short dataset name is plain text; a long one keeps its last characters in their own span", () => {
+  const made = [];
+  const doc = { createElement: () => { const e = { children: [], set textContent(v) { this._t = v; this.children = []; }, get textContent() { return this._t; }, append(...c) { this.children.push(...c); } }; made.push(e); return e; } };
+  const node = { ownerDocument: doc, children: [], set textContent(v) { this._t = v; this.children = []; }, get textContent() { return this._t; }, append(...c) { this.children.push(...c); } };
+  setName(node, "liver.zarr");
+  assert.equal(node.textContent, "liver.zarr");
+  assert.equal(node.children.length, 0);
+  const long = "projects/liver/2026-10_batch3/bm_aging_liver_hepatocyte_atlas_final_v7_approved_for_sharing.zarr";
+  setName(node, long);
+  assert.deepEqual(node.children.map((c) => c.className), ["dataset-info-name-head", "dataset-info-name-tail"]);
+  assert.equal(node.children[0].textContent + node.children[1].textContent, long);
+  assert.equal(node.children[1].textContent.length, 28);
+});

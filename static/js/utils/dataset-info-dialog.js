@@ -11,6 +11,23 @@ import { createInfoLoader, drawAbout, drawReadme, drawStructure, showPart } from
 
 const DRAW = { about: drawAbout, readme: drawReadme, structure: drawStructure };
 
+/** The dataset's name on one line: the start is cut with an ellipsis when it does not fit, the last characters (the file name's end) always show. */
+export function setName(node, text, tail = 28) {
+    node.textContent = '';
+    if (text.length <= tail) {
+        node.textContent = text;
+        return;
+    }
+    const doc = node.ownerDocument;
+    const head = doc.createElement('span');
+    head.className = 'dataset-info-name-head';
+    head.textContent = text.slice(0, -tail);
+    const end = doc.createElement('span');
+    end.className = 'dataset-info-name-tail';
+    end.textContent = text.slice(-tail);
+    node.append(head, end);
+}
+
 /**
  * @param {{url: string, state: () => Object, doc?: Document, loader?: Object}} options
  * @returns {{update: (state: Object) => void, loader: Object}}
@@ -55,7 +72,7 @@ export function mountDatasetInfo({ url, state, doc = document, loader = createIn
 
     modal.addEventListener('show.bs.modal', () => {
         const s = state();
-        title.textContent = (s && (s.label || s.path)) || '';
+        setName(title, (s && (s.label || s.path)) || '');
         title.title = (s && s.path) || '';
         ensure(activePart());
     });

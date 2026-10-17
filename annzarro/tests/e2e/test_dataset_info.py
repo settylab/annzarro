@@ -322,7 +322,9 @@ def test_a_hostile_readme_and_hostile_fields_execute_nothing(opened):
     assert set(attrs) <= {"href", "rel", "target"}, attrs
     assert box.locator("a[href^='javascript' i], a[href^='data' i]").count() == 0
     hrefs = box.locator("a").evaluate_all("els => els.map(a => a.getAttribute('href'))")
-    assert hrefs == ["https://example.org/ok"], hrefs
+    # bare addresses in the text are links too (the image's address and the raw anchor's), each a plain
+    # https address with nothing else of the hostile text in it
+    assert hrefs == ["https://example.org/a.png", "https://example.org", "https://example.org/ok"], hrefs
     text = box.inner_text()
     assert "<script>window.pwned = 'h1'</script>" in text, "raw HTML is shown as text"
     assert "&lt;script&gt;window.pwned='entity'&lt;/script&gt;" in text, "an entity is shown as typed, not decoded into markup"

@@ -7,6 +7,7 @@ markup, so no input can produce a tag, an attribute or an event handler of its o
 * headings ``#`` to ``######`` (``heading_base`` shifts the levels, e.g. 3 for ``<h3>``)
 * flat bullet lists (``-``, ``*``, ``+``) and numbered lists (``1.``, ``1)``)
 * ``**bold**``, ``*italic*``, ``_italic_``, ``code`` in backticks, nested emphasis
+* bare ``http(s)://`` addresses and ``<address>`` autolinks, under the same rules
 * links ``[text](url)`` with an ``http://``, ``https://`` or ``mailto:`` address only,
   always ``rel="noopener noreferrer"``
 
@@ -48,6 +49,8 @@ _BREAK = "\x01"
 _INLINE_RE = re.compile(
     r"`([^`\n]{1,500})`"
     r"|\[([^\[\]\n]{1,300})\]\(\s*([^()\s]{1,2000})\s*\)"
+    r"|<((?:https?://|mailto:)[^\s<>\x01]{1,2000})>"
+    r"|(https?://[^\s<>\x01]{1,2000})"
     r"|\*\*\*(\S(?:.{0,998}?\S)??)\*\*\*"
     r"|\*\*(\S(?:.{0,998}?\S)??)\*\*"
     r"|\*(\S(?:[^*\n]{0,998}?\S)??)\*"
@@ -81,6 +84,25 @@ def _literal(text):
     return escape(text).replace(_BREAK, "<br>").replace("\n", " ")
 
 
+def _anchor(href, text, escaped=False):
+    target = "" if href.lower().startswith("mailto:") else ' target="_blank"'
+    return ('<a href="' + escape(href) + '" rel="noopener noreferrer"' + target + ">"
+            + (text if escaped else escape(text)) + "</a>")
+
+
+def _trim_url(url):
+    """A bare address without the punctuation that ends the sentence around it (GFM): ``?!.,:;*_~'"``,
+    and a closing parenthesis the address does not open."""
+    while url:
+        if url[-1] in "?!.,:;*_~'\"":
+            url = url[:-1]
+        elif url[-1] == ")" and url.count(")") > url.count("("):
+            url = url[:-1]
+        else:
+            break
+    return url
+
+
 def _inline(raw, depth=0, links=True):
     if depth > MAX_DEPTH:
         return _literal(raw)
@@ -92,7 +114,7 @@ def _inline(raw, depth=0, links=True):
             break
         start = match.start()
         out.append(_literal(raw[pos:start]))
-        code, text, url, both, strong, em_star, em_under = match.groups()
+        code, text, url, angle, bare, both, strong, em_star, em_under = match.groups()
         end = match.end()
         if code is not None:
             out.append("<code>" + escape(code) + "</code>")
@@ -101,9 +123,22 @@ def _inline(raw, depth=0, links=True):
             if href is None:
                 out.append(_literal(match.group(0)))
             else:
-                target = "" if href.lower().startswith("mailto:") else ' target="_blank"'
-                out.append('<a href="' + escape(href) + '" rel="noopener noreferrer"' + target + ">"
-                           + _inline(text, depth + 1, False) + "</a>")
+                out.append(_anchor(href, _inline(text, depth + 1, False), escaped=True))
+        elif angle is not None:
+            href = safe_url(angle) if links else None
+            if href is None:
+                out.append(_literal(match.group(0)))
+            else:
+                out.append(_anchor(href, href))
+        elif bare is not None:
+            before = raw[start - 1] if start > 0 else ""
+            url = _trim_url(bare)
+            if not links or (before and _WORD_RE.match(before)) or safe_url(url) is None:
+                out.append(_literal(raw[start]))      # not a link: go on after its first character
+                end = start + 1
+            else:
+                out.append(_anchor(url, url))
+                end = start + len(url)
         elif both is not None:
             out.append("<strong><em>" + _inline(both, depth + 1, links) + "</em></strong>")
         elif strong is not None:

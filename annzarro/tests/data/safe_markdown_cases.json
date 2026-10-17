@@ -197,7 +197,7 @@
   "name": "attribute injection in url",
   "markdown": "[x](https://e.org/\"onmouseover=\"alert(1))",
   "options": {},
-  "html": "<p>[x](https://e.org/&quot;onmouseover=&quot;alert(1))</p>"
+  "html": "<p>[x](<a href=\"https://e.org/&quot;onmouseover=&quot;alert(1)\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/&quot;onmouseover=&quot;alert(1)</a>)</p>"
  },
  {
   "name": "quote in url escaped",
@@ -221,7 +221,7 @@
   "name": "link in link text refused",
   "markdown": "[[a](https://a.org)](https://b.org)",
   "options": {},
-  "html": "<p>[<a href=\"https://a.org\" rel=\"noopener noreferrer\" target=\"_blank\">a</a>](https://b.org)</p>"
+  "html": "<p>[<a href=\"https://a.org\" rel=\"noopener noreferrer\" target=\"_blank\">a</a>](<a href=\"https://b.org\" rel=\"noopener noreferrer\" target=\"_blank\">https://b.org</a>)</p>"
  },
  {
   "name": "link inside bold",
@@ -524,5 +524,77 @@
   "markdown": "# Title\n\nUsing:\ndef log_transform(ad, ps=0.1):\n    ad.X.data = np.log2(ad.X.data + ps)\n    \nHVGs.\n\n| name | what |\n|---|---|\n| `a` | b |",
   "options": {},
   "html": "<h1>Title</h1>\n<p>Using: def log_transform(ad, ps=0.1):</p>\n<pre><code>ad.X.data = np.log2(ad.X.data + ps)</code></pre>\n<p>HVGs.</p>\n<div class=\"md-table\"><table><thead><tr><th>name</th><th>what</th></tr></thead><tbody><tr><td><code>a</code></td><td>b</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "autolink bare",
+  "markdown": "see https://github.com/settylab/mds-aging-private/tree/main/02_CITE_aging for more",
+  "options": {},
+  "html": "<p>see <a href=\"https://github.com/settylab/mds-aging-private/tree/main/02_CITE_aging\" rel=\"noopener noreferrer\" target=\"_blank\">https://github.com/settylab/mds-aging-private/tree/main/02_CITE_aging</a> for more</p>"
+ },
+ {
+  "name": "autolink trailing punctuation",
+  "markdown": "(https://e.org/a), https://e.org/b. https://e.org/c! https://e.org/d?",
+  "options": {},
+  "html": "<p>(<a href=\"https://e.org/a\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/a</a>), <a href=\"https://e.org/b\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/b</a>. <a href=\"https://e.org/c\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/c</a>! <a href=\"https://e.org/d\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/d</a>?</p>"
+ },
+ {
+  "name": "autolink balanced parenthesis",
+  "markdown": "https://e.org/w_(x) and (https://e.org/y)",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/w_(x)\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/w_(x)</a> and (<a href=\"https://e.org/y\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/y</a>)</p>"
+ },
+ {
+  "name": "autolink keeps query and ampersand",
+  "markdown": "https://e.org/p?a=1&b=2#frag",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/p?a=1&amp;b=2#frag\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/p?a=1&amp;b=2#frag</a></p>"
+ },
+ {
+  "name": "autolink angle",
+  "markdown": "<https://e.org/a> <mailto:me@e.org> <javascript:alert(1)> <http://x>",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/a\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/a</a> <a href=\"mailto:me@e.org\" rel=\"noopener noreferrer\">mailto:me@e.org</a> &lt;javascript:alert(1)&gt; <a href=\"http://x\" rel=\"noopener noreferrer\" target=\"_blank\">http://x</a></p>"
+ },
+ {
+  "name": "autolink javascript never",
+  "markdown": "javascript:alert(1) <javascript:1> [x](javascript:1) data:text/html,x",
+  "options": {},
+  "html": "<p>javascript:alert(1) &lt;javascript:1&gt; [x](javascript:1) data:text/html,x</p>"
+ },
+ {
+  "name": "autolink needs a boundary",
+  "markdown": "xhttps://e.org and _https://e.org/_u_",
+  "options": {},
+  "html": "<p>xhttps://e.org and _<a href=\"https://e.org/_u\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/_u</a>_</p>"
+ },
+ {
+  "name": "autolink inside code and link text",
+  "markdown": "`https://e.org` [https://e.org](https://other.org) **https://e.org/b**",
+  "options": {},
+  "html": "<p><code>https://e.org</code> <a href=\"https://other.org\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org</a> <strong><a href=\"https://e.org/b\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/b</a></strong></p>"
+ },
+ {
+  "name": "autolink in table and list",
+  "markdown": "- https://e.org/l\n\n| u |\n|---|\n| https://e.org/t |",
+  "options": {},
+  "html": "<ul><li><a href=\"https://e.org/l\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/l</a></li></ul>\n<div class=\"md-table\"><table><thead><tr><th>u</th></tr></thead><tbody><tr><td><a href=\"https://e.org/t\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/t</a></td></tr></tbody></table></div>"
+ },
+ {
+  "name": "autolink hard break",
+  "markdown": "https://e.org/a  \nnext",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/a\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/a</a><br>next</p>"
+ },
+ {
+  "name": "autolink html is text",
+  "markdown": "https://e.org/\"onmouseover=\"x <b>",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/&quot;onmouseover=&quot;x\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/&quot;onmouseover=&quot;x</a> &lt;b&gt;</p>"
+ },
+ {
+  "name": "autolink bare scheme only",
+  "markdown": "https:// and http://.",
+  "options": {},
+  "html": "<p>https:// and http://.</p>"
  }
 ]

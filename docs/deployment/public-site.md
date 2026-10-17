@@ -188,7 +188,7 @@ start and says what is wrong.
 
 Texts are written in a small, safe subset of Markdown: paragraphs, headings (`#` to `######`),
 lists (`-` or `1.`), `**bold**`, `*italic*`, `` `code` ``, links `[text](https://...)` with
-`http://`, `https://` or `mailto:`, pipe tables, fenced or indented code blocks, horizontal rules and
+`http://`, `https://` or `mailto:`, bare web addresses (`https://...`, `<https://...>`), pipe tables, fenced or indented code blocks, horizontal rules and
 block quotes (`>`). A line ending in two spaces or a backslash breaks. Raw HTML,
 images and scripts are not possible: they are shown as text. This keeps a text from a file or a
 configuration that someone else edited from running anything in your visitors' browsers.
