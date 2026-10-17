@@ -269,6 +269,29 @@ test('a category keeps its colour across parts and a table filter', () => {
     assert.ok(!cf.has('k0') && cf.has('k3'));
 });
 
+test('a colour group is one legend group, whatever categories a table filter leaves in it', () => {
+    // its name lists the categories drawn; the group (what a legend click hides) does not change
+    const { settings, data } = panel(500);
+    const all = { ...data, colorRankOf: columnRanks(data.colorCategories) };
+    const filtered = { ...all, tableEntities: new Set(data.cells.filter((_, i) => !['k0', 'k64'].includes(data.color[i]))) };
+    const groupOfLabel = (traces) => {
+        const out = new Map();
+        for (const t of traces.filter(t => !isLegendProxy(t) && t._azLabels)) t._azLabels.forEach(l => out.set(l, [t.legendgroup, t.name]));
+        return out;
+    };
+    const whole = groupOfLabel(processCategories(settings, all, data.colorCategories));
+    const cut = groupOfLabel(processCategories({ ...settings, tableFilter: 'cell-table', removeNonTableEntries: true },
+        filtered, data.colorCategories));
+    assert.equal(whole.get('k128')[0], cats.colourGroupKey(0));
+    assert.notEqual(cut.get('k128')[1], whole.get('k128')[1], 'the name follows the categories drawn');
+    for (const [label, [group]] of cut) assert.equal(group, whole.get(label)[0], label);
+    // and its legend proxy is in the same group
+    const traces = processCategories(settings, all, data.colorCategories);
+    for (const p of traces.filter(isLegendProxy)) {
+        assert.ok(traces.some(t => !isLegendProxy(t) && t.legendgroup === p.legendgroup && t.name === p.name), p.name);
+    }
+});
+
 test('up to 64 categories the legend lists each one, as before', () => {
     const { settings, data, categories } = panel(cats.GROUP_COLOURS);
     const legend = processCategories(settings, data, categories).filter(isLegendProxy);

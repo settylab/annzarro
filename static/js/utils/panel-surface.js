@@ -44,7 +44,7 @@ import { releasePlot } from './release-plot.js';
 import { forget } from './memory-guard-ui.js';
 import { withShownCamera } from './scene-camera.js';
 import { installGlColors } from './scattergl-calc.js';
-import { withLegendInvariant } from './legend-entries.js';
+import { withLegendInvariant, withLegendState, traceUid } from './legend-entries.js';
 import { watchModebarAnchor } from './modebar-anchor.js';
 import { watchBelowLegend } from './legend-below.js';
 
@@ -652,10 +652,13 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
     }
     // no legend entry without a name, no legend without an entry (legend-entries.js)
     withLegendInvariant(traces, layout);
+    // categories hidden with the legend stay hidden by name, and each trace
+    // gets a uid from what it is (legend-entries.js withLegendState)
+    withLegendState(plotContainer, traces, layout);
     // a graph redrawn in place keeps the camera the user turned it to; the
     // camera saved in the settings is for a new graph
     const result = await Plotly.react(
-        plotContainer, withTraceUids(traces),
+        plotContainer, traces,
         withShownCamera(plotContainer, withCoverageAnnotation(layout, cov)),
         withCoverageExportButton(config)
     );
@@ -704,25 +707,8 @@ export function clearForDraw(plotContainer) {
     plotContainer.innerHTML = '';
 }
 
-/**
- * Traces with a `uid`: their name where names are unique. React matches
- * traces by uid, so what the user set on one (a legend click hiding a
- * category) follows that category when another part lacks some of them.
- *
- * Plotly puts the uid into element ids it later queries as CSS selectors
- * (a colour bar's '#...-cb<uid>'), so it is spelled with [A-Za-z0-9_-]
- * only: "t:total_counts" made the next draw throw 'not a valid selector'.
- * Other characters are written as _<hex>_, which keeps uids distinct.
- */
-export function traceUid(name) {
-    return 't-' + Array.from(name).map(c => (/[A-Za-z0-9-]/.test(c) ? c : `_${c.codePointAt(0).toString(16)}_`)).join('');
-}
-
-function withTraceUids(traces) {
-    const names = traces.map(t => t && t.name);
-    if (names.some(n => typeof n !== 'string' || !n) || new Set(names).size !== names.length) return traces;
-    return traces.map(t => (t.uid ? t : { ...t, uid: traceUid(t.name) }));
-}
+/** A trace uid that is a valid CSS id fragment (legend-entries.js, where the uids are given). */
+export { traceUid };
 
 /**
  * THE empty-state chokepoint. Replaces the family of

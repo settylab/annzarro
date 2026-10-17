@@ -29,6 +29,7 @@ import { sourceKeyMissing } from '../../utils/structure-keys.js';
 import { NO_HOVER } from './hover-columns.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
+import { legendUirevision } from '../../utils/legend-entries.js';
 import { cancelLoads } from '../../utils/load-scope.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck
@@ -2610,6 +2611,8 @@ export function buildPlotLayout(settings, data) {
   // (zoom, camera, a category hidden from the legend) is kept while this is
   // the same, i.e. on other cells of the same dataset
   layout.uirevision = DataManager.getCurrentDataset() || 'view';
+  // the categories hidden with the legend are kept for the same colour column only
+  layout.legend = { ...(layout.legend || {}), uirevision: legendUirevision(layout.uirevision, settings.color) };
   // each axis the type of its field; the zoom kept only for the same field
   applyAxisKinds(layout, settings, data, layout.uirevision);
 
