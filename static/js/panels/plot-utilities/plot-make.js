@@ -2752,8 +2752,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       // 2. When removeNonTableEntries is false, non-table entities are shown in gray
       const categoricalTraces = processCategories(settings, filteredData, catValues, customColors);
       
-      // Set up the legend
-      layout.showlegend = true;
+      // Set up the legend (Show Legend off: none, as when it is switched off in Plot Options)
+      layout.showlegend = settings.showLegend !== false;
       layout.legend = { 
         ...(layout.legend || {}), 
         title: { 
@@ -2972,6 +2972,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
             reversescale: settings.colorReversed,
             cmin: cmin,
             cmax: cmax,
+            showscale: settings.showLegend !== false,     // Show Legend off hides the colour bar too
             colorbar: colorbarSettings
           },
           showlegend: false
@@ -3007,6 +3008,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       baseTrace.marker.color = filteredData.color;
       baseTrace.marker.colorscale = plotlyColorscale(settings.colorScale);
       baseTrace.marker.reversescale = settings.colorReversed;
+      baseTrace.marker.showscale = settings.showLegend !== false;     // Show Legend off hides the colour bar too
       
       // Update color sliders with the loaded data while preserving saved settings
       updateColorSliderUI(container, filteredData, settings, id, isFirstLoad);
