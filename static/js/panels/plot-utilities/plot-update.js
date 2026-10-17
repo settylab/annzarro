@@ -30,6 +30,7 @@ import { withPlotlyBatch } from '../../utils/plotly-batch.js';
 import { setGlMarkers } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
+import { MEMORY_ADVICE } from '../../utils/memory-guard.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { highlightLargeFocus, clearLargeFocus, restyleLargeFocus } from './large-interact.js';
 import { focusMarker, focusRestyle, focusSize, focusParams } from '../../utils/focus-style.js';
@@ -942,7 +943,7 @@ export async function loadColorDataAndUpdatePlot(
     // the new colour series and the restyle need memory next to the old ones
     const memory = recolourCheck(plotContainer);
     if (memory.verdict === 'block') {
-        const why = refusalText(memory, 'Close a plot, or show fewer cells (a smaller subset).');
+        const why = refusalText(memory, MEMORY_ADVICE);
         setStatusTag(plotContainer, 'memory', { text: 'Colour not changed: browser memory', severity: 'warning',
             title: why, pop: { text: why, actions: [['subset', 'Subset\u2026']] } });
         return;

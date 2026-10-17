@@ -21,6 +21,15 @@ with the release after it. Older releases are listed on
   smaller, fainter ones, so points look about as dense at any panel size. They update when the
   window is resized, a split is dragged, the controls are shown or hidden, or a panel is
   maximised; a size or opacity you set stays as set.
+- The cell subset size you choose follows you to other datasets. A dataset you switch to opens
+  on that many cells when it has more, and with every cell when it has as many or fewer; its badge
+  then reads, for example, "All cells (≤ 10,000)", and the next larger dataset is subsampled to the
+  size again. The size is kept per browser and user, so a reload keeps it. Share links, panel sets
+  and the restored session still open on the subset they saved.
+- A plot or table whose data the browser ran out of memory for says so in plain words ("the
+  browser ran out of memory -- Close a plot, or show fewer cells (a smaller subset), and try
+  again") instead of "failed to read -- Array buffer allocation failed", and offers **Half the
+  cells** and **Subset…** where it says it.
 
 ### Fixes
 - A release build no longer fails when Apple's ticket service drops the connection while the

@@ -57,10 +57,12 @@ const DataManager = (function() {
     // its key, so _cells, every index into it and every panel's arrays are
     // the subset's. _subsetRequest is what the next dataset load applies:
     // 'auto' (the server's default for the dataset's size; for a reload of
-    // the same dataset, keep the current one), null (every cell) or a spec.
+    // the same dataset, keep the current one), null (every cell), a spec, or
+    // a function of the dataset's number of cells that returns one of these.
     let _subset = null;
     let _subsetRequest = 'auto';
     let _subsetReply = null;   // the last /data/subset reply, also when it was "every cell"
+    let _subsetDefaults = null;   // the server's subset defaults, from the last reply of any dataset
 
     // Dataset rows of cells by name, for the open dataset (see locateCell):
     // learned rows, and unconfirmed hints from a link or panel set
@@ -517,7 +519,11 @@ const DataManager = (function() {
             _cells = null;
             _genes = null;
 
-            // Decide which cells this dataset shows, before naming them
+            // Decide which cells this dataset shows, before naming them (a
+            // request made for the dataset's size learns it here)
+            if (typeof _subsetRequest === 'function') {
+                _subsetRequest = _subsetRequest(_datasetStructure ? _datasetStructure.n_obs : null);
+            }
             _subset = await _resolveSubset(datasetPath, previousSubset, signal);
 
             // Load cells and genes
@@ -630,13 +636,15 @@ const DataManager = (function() {
                 { dataset_path: datasetPath, subset: 'auto', client: _clientId }, signal);
         }
         _subsetReply = info ? { ...info, datasetPath } : null;
+        if (info && info.defaults) _subsetDefaults = { ...info.defaults };
         return info && info.subset ? { ...info, datasetPath } : null;
     }
 
     /**
      * Choose the cells the next dataset load shows.
-     * @param {'auto'|null|Object} request - 'auto' (the server's default for
-     *   the dataset's size), null (every cell) or a subset spec
+     * @param {'auto'|null|Object|Function} request - 'auto' (the server's
+     *   default for the dataset's size), null (every cell), a subset spec, or
+     *   `(nObs) => request`, called once the dataset's size is known
      */
     function setSubsetRequest(request) {
         _subsetRequest = request === undefined ? 'auto' : request;
@@ -664,6 +672,11 @@ const DataManager = (function() {
             return null;
         }
         return undefined;
+    }
+
+    /** The server's subset defaults ({size, seed, threshold}) from the last reply, or null before one. */
+    function getSubsetDefaults() {
+        return _subsetDefaults ? { ..._subsetDefaults } : null;
     }
 
     /** The /data/subset reply for the open dataset (n_total, defaults), also without a subset. */
@@ -2631,6 +2644,7 @@ const DataManager = (function() {
         getSubsetParam,
         getSubsetForView,
         getSubsetReply,
+        getSubsetDefaults,
         getCellsNotInSubset,
         // Caching
         clearCache: (pattern) => CacheManager.clear(pattern),
