@@ -46,6 +46,14 @@ The header and the dataset bar under it. Numbers match the list below.
 The **System / Light / Dark** buttons at the right end of the dataset bar set the colour
 theme ({ref}`colour-theme`).
 
+The **Dataset information** button (an "i" icon, shown while a dataset is open) sits beside the dataset
+button (not numbered in the picture). It opens a dialog with the dataset's attribution (title,
+licence, authors, citation with a copy button, DOI, source, contact) under **About**, its README
+under **README** and its AnnData structure (cells and genes, the obs and var columns with their types,
+the keys of obsm, layers and the rest with their shapes, the `uns` tree) under **Structure**. Each tab
+is read when you first open it. What the dataset's owner writes there is described in
+{doc}`../deployment/dataset-attribution`; a dataset that records nothing says so.
+
 A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).
 
 **Which version is this?** Hold the pointer over the app name at the top left: the tooltip reads
@@ -138,7 +146,9 @@ The dataset browser with a dataset selected. Numbers match the list below.
    default) and says in one line what it found; for a remote store a **Check chunking** button runs
    it. **Open** opens the dataset, **Pin** keeps it under Pinned, **Copy path** copies its path.
    When panels are open, the pane also names the keys they use that the selected dataset lacks
-   ("cell_type: missing"), so that the switch holds no surprise.
+   ("cell_type: missing"), so that the switch holds no surprise. A dataset that records its licence,
+   citation or README ({doc}`../deployment/dataset-attribution`) shows them under these facts; the
+   README and the structure open when you click their headings.
 
 Switching datasets does not ask: the open panels stay and read from the new dataset, and a back button
 beside the dataset name ("Back to *old name*") returns to the dataset you left. It stays until the next

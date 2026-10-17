@@ -12,4 +12,5 @@ admin
 hosting-checklist
 public-site
 resource-limits
+dataset-attribution
 ```

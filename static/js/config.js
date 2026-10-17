@@ -91,6 +91,7 @@ const Config = (function() {
         DATASET_SEARCH: `${API_BASE}/datasets/search`,
         DATASET_LOOKUP: `${API_BASE}/datasets/lookup`,
         DATASET_DETAILS: `${API_BASE}/datasets/details`,
+        DATASET_ABOUT: `${API_BASE}/datasets/info`,
         DATASET_INFO: `${API_BASE}/data/info`,
         DATASET_STRUCTURE: `${API_BASE}/data/dataset_structure`,
         FINGERPRINT: `${API_BASE}/data/fingerprint`,

@@ -33,6 +33,7 @@ ROUTES = [
     ("GET", "/api/v1/data/info?dataset_id={p}"),
     ("GET", "/api/v1/data/dataset_structure?dataset_path={p}"),
     ("GET", "/api/v1/datasets/details?path={p}"),
+    ("GET", "/api/v1/datasets/info?path={p}"),
     ("GET", "/api/v1/data/X?dataset_path={p}&cols=0"),
     ("GET", "/api/v1/data/layer/counts?dataset_path={p}&cols=0"),
     ("GET", "/api/v1/data/obs?dataset_path={p}&columns=leiden"),

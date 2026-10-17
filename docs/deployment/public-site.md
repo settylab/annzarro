@@ -41,7 +41,7 @@ Run a server that is reachable only by your own lab? Then most of this does not 
 | Consent for storage in the browser, unless strictly necessary | Germany: TDDDG §25. EU: ePrivacy Directive Art. 5(3). UK: PECR reg. 6. Switzerland: information and opt-out (FMG Art. 45c) | Any cookie or local storage | AnnZarro stores only exempt data, so no banner is needed (see [below](#no-banner)). Adding tracking changes this |
 | Accessibility statement and conformance with WCAG 2.1 AA / EN 301 549 | EU: Directive 2016/2102 (public bodies; Germany: BGG §12a, BITV 2.0) | Public sector bodies | See [Accessibility](#accessibility-status) |
 | WCAG 2.1 AA for web content | USA: ADA Title II rule (28 CFR 35 Subpart H) for state and local government, including public universities; HHS Section 504 rule (45 CFR 84.84) for recipients of HHS funding, including NIH-funded institutions | Those entities | See [Accessibility](#accessibility-status) |
-| Dataset licence and attribution | The data's licence, for example CC BY 4.0 §3(a) | When a licence asks for it | Name licence, citation and source for every dataset you show |
+| Dataset licence and attribution | The data's licence, for example CC BY 4.0 §3(a) | When a licence asks for it | Name licence, citation and source for every dataset you show ([Dataset information and attribution](#dataset-information-and-attribution)) |
 | Lawful publication of the data | GDPR Art. 9; NIH Genomic Data Sharing Policy | Human donor data | See [Human data](#human-data) |
 | Terms of use, "research use only, not for clinical decisions" | none | Good practice | Set `site.terms` |
 | `security.txt`, `robots`/`noindex` | RFC 9116, RFC 9309 | Good practice | `site.security_contact`, `site.robots` |
@@ -477,8 +477,56 @@ app shows no site footer unless you configure `site` for a server you run yourse
 
 ## Dataset information and attribution
 
-*Placeholder: the section on licences, citations and attribution of the datasets you show is
-written together with the dataset information feature.*
+A dataset carries its own licence, citation and description, and AnnZarro shows them to your
+visitors: behind the **Dataset information** button next to the open dataset's name (tabs
+**About**, **README** and **Structure**, each read from the server only when opened) and in the details pane of the
+dataset browser. The text lives in the dataset, so it travels with the store and needs no
+configuration. {doc}`dataset-attribution` has every field, the command-line tool and what the server
+reads; the rest of this section is what you, as the host, need.
+
+**Licences and attribution are your duty.** AnnZarro displays what a dataset records; it cannot
+check that the licence is true, that you may serve the data, or that a citation is right.
+
+- Serve only data you may serve, and meet the licence's conditions. Open licences such as `CC-BY-4.0`
+  ask that the creator is credited: give every dataset a `license`, an `attribution` or `citation`,
+  and a `doi` or `source_url` where one exists.
+- A dataset with no licence is not free to reuse. Say what applies ("All rights reserved, shown
+  with the owner's permission") instead of leaving it blank. A dataset that records nothing shows
+  "This dataset records no attribution", which is not a licence.
+- For human donor data, see [Human data](#human-data) first; a licence field does not settle consent.
+- Where you cannot rewrite a store (read-only or remote), state the terms in your own pages (the
+  site's `terms` text), and say where each dataset came from.
+
+**Write it into the dataset** as `uns["annzarro"]`, a dictionary of text values (all optional:
+`title`, `description`, `license`, `license_url`, `citation`, `doi`, `authors`, `source_url`,
+`contact`, `attribution`), and `uns["README"]`, one Markdown string:
+
+```python
+import anndata as ad
+
+adata = ad.read_zarr("liver.zarr")
+adata.uns["annzarro"] = {
+    "title": "Liver atlas",
+    "license": "CC-BY-4.0",                       # an SPDX identifier, or the licence in words
+    "citation": "Doe J, Roe J. A liver atlas. Nature 2026.",
+    "doi": "10.1234/abcd",
+    "authors": ["Jane Doe", "John Roe"],
+    "attribution": "Liver Consortium, 2026",
+}
+adata.uns["README"] = open("README.md", encoding="utf-8").read()
+adata.write_zarr("liver.zarr")
+```
+
+For a zarr store that is already written, `annzarro store annotate liver.zarr --license CC-BY-4.0
+--doi 10.1234/abcd --readme README.md` writes the same fields without loading the matrices. Datasets
+from CZ CELLxGENE Discover show their `uns["title"]` and `uns["citation"]` without any change.
+
+**The README is shown as safe Markdown.** Supported: paragraphs, headings, bullet and numbered
+lists, bold, italic, code, and links with an `http://`, `https://` or `mailto:` address (they open in a
+new tab). Raw HTML is not run: tags appear as the text that was written, as do images, tables and
+links with any other address, so a README cannot execute anything on your site. It is shown
+up to 256 KB, and the dialog says when it was cut. Read each README before you publish it: every
+visitor sees it, and the renderer can keep it harmless but not judge it.
 
 ## Sources
 

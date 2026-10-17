@@ -324,6 +324,8 @@ def _grants_folder(config, user, data_dir, offset, limit, sort="name", order="as
 def register_dataset_folder_routes(app_, api_version):
     from .dataset_details import register_dataset_details_routes
     register_dataset_details_routes(app_, api_version)
+    from .dataset_info import register_dataset_info_routes
+    register_dataset_info_routes(app_, api_version)
 
     @app_.route(f"/api/{api_version}/datasets/search", methods=["GET"])
     @access.gate("listing")
