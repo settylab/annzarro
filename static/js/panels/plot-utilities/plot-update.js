@@ -19,7 +19,7 @@ import {
   followDrawnPoints
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
-import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE } from './plot-make-helper.js';
+import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
 import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
@@ -380,6 +380,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 const newTrace = {
                     type: settings.z ? 'scatter3d' : 'scattergl',
                     mode: 'markers',
+                    name: POINTS,
                     x: data.x.values,
                     y: data.y.values,
                     text: DataManager.cellLabels(data[entityType]),

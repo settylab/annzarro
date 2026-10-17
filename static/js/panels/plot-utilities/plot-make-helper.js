@@ -888,6 +888,9 @@ export function keptViewRanges(settings) {
   /** The trace of the points a table link greys out: behind the rest, in a style of its own (greyMarker). */
   export const NOT_IN_TABLE = 'Not in table';
 
+  /** The one trace of a plot coloured by a scale or by nothing: named, and never a legend entry. */
+  export const POINTS = 'Points';
+
   /** True for a trace the point size and opacity leave alone: a legend proxy, a colour bar's point or the greyed-out points. */
   export function keepsOwnMarker(trace) {
     return isLegendProxy(trace) || (!!trace && (trace.meta === COLOUR_BAR || trace.name === NOT_IN_TABLE));

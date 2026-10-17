@@ -32,6 +32,8 @@ with the release after it. Older releases are listed on
   cells** and **Subset…** where it says it.
 
 ### Fixes
+- A plot coloured by nothing, or by a column the dataset does not have (after switching datasets),
+  no longer shows a grey "trace 0" in a legend after an axis change; such a plot has no legend.
 - A release build no longer fails when Apple's ticket service drops the connection while the
   notarization ticket of the macOS app or its dmg is being checked (`stapler validate`); the check
   is retried up to five times, and a missing ticket still fails at once.

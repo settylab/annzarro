@@ -1,5 +1,6 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
-import { axisTitle, NOT_IN_TABLE, refreshScaleBar } from './plot-make-helper.js';
+import { axisTitle, refreshScaleBar } from './plot-make-helper.js';
+import { hasLegendEntries } from '../../utils/legend-entries.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
@@ -1964,12 +1965,16 @@ function updateLegendVisibility(plotDiv, settings) {
         hasColoraxis = true;
       });
    
+    // The legend, when there is one: which traces are entries is the
+    // builders' to say (utils/legend-entries.js). Turning the legend on used
+    // to give every trace without a colour scale an entry, the unnamed grey
+    // trace of a plot coloured by nothing too, which read "trace 0".
     if (hasColoraxis) {
         Plotly.relayout(plotDiv, { showlegend: false, showscale: show });
     } else {
-        Plotly.relayout(plotDiv, { showlegend: show, showscale: false });
+        Plotly.relayout(plotDiv, { showlegend: show && hasLegendEntries(plotDiv.data), showscale: false });
     }
-    // 3) Per-trace toggles
+    // 3) Per-trace colour bars
     plotDiv.data.forEach((trace, i) => {
         if (typeof trace.name === 'string' && (trace.name.includes('Focused'))) return;
         const update = {};
@@ -1986,14 +1991,8 @@ function updateLegendVisibility(plotDiv, settings) {
             update.showlegend = false;
             update.showscale   = show;
         }
-        else if (trace.meta === 'az-points' || (trace.name === NOT_IN_TABLE && trace.meta !== 'az-legend')) {
-            // points whose legend entry is a proxy trace (withLegendProxies),
-            // and the greyed-out points, which have no legend entry
-            update.showlegend = false;
-        }
         else {
-            // categorical / other traces: toggle legend, ensure no leftover colorbars
-            update.showlegend          = hasColoraxis ? false : show;
+            // categorical / other traces: no leftover colour bars
             if (trace.marker) update['marker.showscale'] = false;
             if (trace.showscale !== undefined) update.showscale = false;
         }
@@ -2323,8 +2322,8 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'xaxis.fixedrange': !settings.enableZoom,
         'yaxis.fixedrange': !settings.enableZoom,
         
-        // Set legend visibility (global setting)
-        'showlegend': settings.showLegend !== false,
+        // Set legend visibility (global setting), when there is a legend entry
+        'showlegend': settings.showLegend !== false && hasLegendEntries(plotContainer.data),
         
         // 2D axes
         'xaxis.showgrid': settings.showGrid,

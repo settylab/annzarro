@@ -1,7 +1,7 @@
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
-import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport, NOT_IN_TABLE } from './plot-make-helper.js';
+import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
 import { autoPointCount, debounced, plotArea } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
@@ -2695,6 +2695,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   const baseTrace = {
     type: settings.z ? 'scatter3d' : 'scattergl',
     mode: 'markers',
+    name: POINTS,
     x: filteredData.x.values,
     y: filteredData.y.values,
     text: DataManager.cellLabels(filteredData[entityKey]),
