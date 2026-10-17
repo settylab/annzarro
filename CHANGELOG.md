@@ -18,6 +18,13 @@ with the release after it. Older releases are listed on
 - The server warns at start when `integrations.external_requests` is `"on"` on a shared server, and when `branding.contact_info.custom_html` contains a script, an iframe or an address on another server.
 
 ### Changed
+- A plot's toolbar (zoom, pan, reset, camera) sits in the top right corner of the plotting area
+  instead of the figure's, so a legend or colour bar placed on the right, the default, no longer
+  runs into it.
+- A colour bar placed on top of or below a plot lies wholly outside the axes, with the margin it needs
+  made for it, instead of over the top or bottom of the plot. It sits below the x-axis title at the
+  bottom. A legend above or below a plot does the same, clear of the axes and the x-axis title, in short
+  panels too.
 - The About dialog says that the Setty Lab develops and funds AnnZarro (the software), so that a site that runs it is not mistaken for the lab's own.
 
 ### Fixes

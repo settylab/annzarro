@@ -145,11 +145,15 @@ size, the opacity and the fill colour as its line colour, with the edge width as
 
 ## Legend and colour bar
 
-- **Show Legend** and **Legend Position** (right, left, top or bottom).
+- **Show Legend** and **Legend Position** (right, left, top or bottom). A legend on top or at the
+  bottom lies outside the axes, below the x-axis title at the bottom, and the margin grows to make room.
 - **Colour bar**, for a numerical colour, has its own **position** (right, left, top, bottom, or
   **with the legend**, the default, which follows **Legend Position**), a **Length** from 10 to
   100 % of the plot's height (or width when horizontal; 100 % by default) and **Ticks**, the
-  tick count (2 to 30; empty is automatic).
+  tick count (2 to 30; empty is automatic). A colour bar on top or at the bottom lies outside the
+  axes (below the x-axis title at the bottom), and the margin grows to make room for it.
+- The plot's toolbar sits in the top right corner of the plotting area, so a legend or colour bar
+  placed beside the plot does not cover it.
 
 ## Text
 

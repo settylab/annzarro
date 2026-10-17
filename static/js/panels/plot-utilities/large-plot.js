@@ -253,6 +253,7 @@ function colourBar(settings, title) {
   const pos = getPositioningByLocation(settings.legendPosition || 'right');
   return { title: { text: title, side: 'right', font: titleFont(settings) },
     x: pos.x, xanchor: pos.xanchor, y: pos.y, yanchor: pos.yanchor,
+    ypad: pos.ypad, ticklabelposition: pos.ticklabelposition,
     titleside: pos.titleside, orientation: pos.orientation };
 }
 
