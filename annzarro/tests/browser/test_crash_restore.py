@@ -27,6 +27,7 @@ ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
 import base64
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -228,6 +229,24 @@ def _refused_ids(page):
         .map(t => t.dataset.tileId).sort()""")
 
 
+# Each plot tile's header: the title, the buttons, whether they sit on one
+# row (every button at the title's height) and whether the title has room
+# to be read (at least 40 px wide).
+HEADERS = """() => Object.fromEntries([...document.querySelectorAll('.tile[data-tile-id^="cell-plot"]')].map(t => {
+    const h = t.querySelector('.tile-header'), title = h.querySelector('.tile-title');
+    const buttons = [...h.querySelectorAll('.tile-controls > .btn')];
+    const tr = title.getBoundingClientRect(), mid = tr.top + tr.height / 2;
+    const boxes = buttons.map(b => b.getBoundingClientRect());
+    return [t.dataset.tileId, {
+        // the whole title is read: the input does not scroll its text
+        title: title.value, titleShown: tr.width >= 40 && title.scrollWidth <= title.clientWidth,
+        buttons: buttons.map(b => b.className.split(' ').find(c => c.startsWith('tile-'))),
+        oneRow: boxes.every(r => r.top <= mid && r.bottom >= mid),
+        inside: boxes.every(r => r.right <= t.getBoundingClientRect().right)
+    }];
+}))"""
+
+
 def _restore_four(page, server):
     """The welcome screen's last session restored with room for two plots."""
     _seed(page, server, {"annzarro_autosave": _autosave("earlier-page")})
@@ -246,8 +265,19 @@ def test_plots_drawn_at_once_take_turns_and_the_later_ones_are_refused(server, p
     assert refused == ["cell-plot-c", "cell-plot-d"], (drawn, refused)
     box = page.locator(PLACEHOLDER.format("cell-plot-c"))
     text = " ".join(box.inner_text().split())
-    assert "Needs ~" in text and "of browser memory" in text and "with 3 plots open" in text, text
-    assert "Draw anyway may run the tab out of memory; the browser then closes it, with every panel." in text, text
+    # one line of numbers, the risk of Draw anyway, the actions: no ceiling, no advice sentence
+    lines = box.locator(".coverage-placeholder__reasons li").all_inner_texts()
+    assert len(lines) == 2, lines
+    assert re.fullmatch(r"Needs ~\d+ MB; \d+ MB free with 3 plots open\.", lines[0]), lines
+    assert lines[1] == "Draw anyway may run the tab out of memory; the browser then closes it, with every panel.", lines
+    assert "estimated" not in text and "Close a plot, or show fewer cells" not in text, text
+    # a refused panel keeps the header of a drawn one: its title, every button, on one row
+    heads = page.evaluate(HEADERS)
+    assert heads["cell-plot-c"]["title"] == heads["cell-plot-a"]["title"] == "Cell Plot", heads
+    for pid in ("cell-plot-c", "cell-plot-d"):
+        h = heads[pid]
+        assert h["buttons"] == heads["cell-plot-a"]["buttons"], heads
+        assert h["oneRow"] and h["inside"] and h["titleShown"], (pid, h)
     actions = box.locator("[data-ps-action]").evaluate_all("bs => bs.map(b => [b.dataset.psAction, b.textContent])")
     assert [a for a, _ in actions] == ["subset", "close-others", "draw-anyway"] or \
         [a for a, _ in actions] == ["subset-half", "subset", "close-others", "draw-anyway"], actions
@@ -327,7 +357,8 @@ def test_the_load_dialog_lists_the_last_sessions_first(server, page):
     cards.nth(1).locator(".last-session-restore").click()
     _drawn(page, "cell-plot-a")
     assert page.locator('.tile[data-tile-id^="cell-plot"]').count() == 1
-    assert not page.locator("#session-modal").is_visible()
+    # the dialog closes (after its fade)
+    page.wait_for_selector("#session-modal", state="hidden", timeout=10000)
 
 
 def test_a_reload_of_the_tab_restores_it(server, page):

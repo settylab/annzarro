@@ -5,8 +5,8 @@
  * Refused, the table says why and offers the ways out a plot offers.
  */
 import { DataManager } from '../../data-manager.js';
-import { tableCheck, refusalText, takeOverride } from '../../utils/memory-guard-ui.js';
-import { MEMORY_ADVICE, DRAW_ANYWAY_RISK } from '../../utils/memory-guard.js';
+import { tableCheck, shortRefusalText, takeOverride } from '../../utils/memory-guard-ui.js';
+import { DRAW_ANYWAY_RISK } from '../../utils/memory-guard.js';
 import { drawPlaceholder } from '../../utils/panel-surface.js';
 
 /**
@@ -36,7 +36,7 @@ export function tableMayLoad(container, id, kind, letGo = () => {}) {
     drawPlaceholder(container, null, unit, {
         actions: [...fewer, ['close-others', 'Close other plots'], ['draw-anyway', 'Load anyway']],
         say: { severity: 'warning', headline: 'Not loaded: not enough browser memory',
-            lines: [refusalText(result, MEMORY_ADVICE), DRAW_ANYWAY_RISK.replace(/^Draw anyway/, 'Load anyway')] }
+            lines: [shortRefusalText(result), DRAW_ANYWAY_RISK.replace(/^Draw anyway/, 'Load anyway')] }
     });
     return false;
 }

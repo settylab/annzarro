@@ -17,7 +17,7 @@ import { CacheManager } from '../cache-manager.js';
 import {
     Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, labelCost, check, addCost, predictSubsetChange, drawNeed,
     largestFitting, headroomLine, markPending, clearPending, takeCrashed, learnedMargin, learnFromCrash,
-    formatGB, CONTEXTS_PER_PLOT, DrawTurns, isHeavyDraw
+    formatGB, CONTEXTS_PER_PLOT, DrawTurns, isHeavyDraw, shortWhy
 } from './memory-guard.js';
 import { liveWebglContexts } from './release-plot.js';
 import { probe, blockParts, largePlotParts, PROBE_MIN_BYTES } from './alloc-probe.js';
@@ -293,6 +293,11 @@ export function refusalText(result, advice) {
     // a browser that cannot allocate: closing other plots may not help, a smaller step does
     if (result && result.binding === 'alloc') advice = advice.replace(/^Close a plot, or s/, 'S');
     return `${result.why ? result.why.charAt(0).toUpperCase() + result.why.slice(1) : 'Not enough browser memory'}. ${advice}`;
+}
+
+/** The short form for a refused panel: one line of numbers (memory-guard.js shortWhy); its ways out are buttons. */
+export function shortRefusalText(result) {
+    return shortWhy(result && result.why);
 }
 
 /** Leave a crash marker when `result` says the action comes close to the ceiling. */

@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const {
-    GB, DrawTurns, isHeavyDraw, HEAVY_SHARE, Ledger, panelCost, check, drawNeed, addCost, memorySettings, DEFAULT_SETTINGS
+    GB, DrawTurns, isHeavyDraw, HEAVY_SHARE, Ledger, panelCost, check, drawNeed, addCost, memorySettings, DEFAULT_SETTINGS, shortWhy
 } = await import('../../../static/js/utils/memory-guard.js');
 
 const limits = (heapGb, totalGb) => ({
@@ -123,4 +123,17 @@ test('drawn at once, unchecked against each other, they would all have passed', 
     // and the four together are well over the budget
     const all = [0, 1, 2, 3].reduce((t) => addCost(t, need), ledger.totals());
     assert.ok(all.heap + all.off > L.total.bytes);
+});
+
+test('a refused panel says one line of numbers: no ceiling, no advice', () => {
+    const L = limits(4.4, 0.23);
+    const r = check({ heap: 1e6, off: 6e6, gpu: 0, contexts: 0 }, { heap: 0.17 * GB, off: 0.055 * GB, gpu: 0, contexts: 0 }, L,
+        DEFAULT_SETTINGS, { panels: 3 });
+    assert.match(r.why, /^needs ~\d+ MB of browser memory; \d+ MB free with 3 plots open \(of 230 MB, estimated\)$/);
+    assert.match(shortWhy(r.why), /^Needs ~\d+ MB; \d+ MB free with 3 plots open\.$/);
+    assert.equal(shortWhy('needs ~1.2 GB of browser JS memory; 0.4 GB free with 2 plots open (of 4.0 GB, measured)'),
+        'Needs ~1.2 GB of JS memory; 0.4 GB free with 2 plots open.');
+    assert.equal(shortWhy('the browser keeps at most 16 WebGL canvases; 16 are in use and the oldest plot would go blank'),
+        'The browser keeps at most 16 WebGL canvases; 16 are in use and the oldest plot would go blank.');
+    assert.equal(shortWhy(''), 'Not enough browser memory.');
 });

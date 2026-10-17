@@ -521,6 +521,8 @@ body {
     padding: 0.5rem;
     background-color: var(--az-surface-2);
     border-bottom: 1px solid var(--az-border);
+    /* a narrow tile compacts its header (below) */
+    container: tile-header / inline-size;
 }
 
 .tile-title {
@@ -551,6 +553,31 @@ body {
     justify-content: flex-end;
     min-width: 0;
     gap: 0.25rem;
+}
+
+/* A narrow tile (a split of a split): the title and every button stay on
+   one row, smaller, instead of the buttons wrapping under each other and
+   squeezing the title out. */
+@container tile-header (max-width: 300px) {
+    .tile-header > .tile-title {
+        padding: 0.125rem 0.25rem;
+        font-size: 0.85rem;
+    }
+    .tile-header > .tile-controls {
+        flex-wrap: nowrap;
+        flex-shrink: 0;
+        /* apart, so each keeps its own rounded corners */
+        gap: 2px;
+    }
+    .tile-header > .tile-controls > .btn {
+        width: 20px;
+        height: 22px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+    }
 }
 
 .tile-content {

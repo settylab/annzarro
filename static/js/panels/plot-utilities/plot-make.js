@@ -33,7 +33,7 @@ import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
 import { cancelLoads } from '../../utils/load-scope.js';
 import {
-  drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck,
+  drawCheck, reserve, commit, cancel, refusalText, shortRefusalText, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck,
   takeTurn, bindTurn, releaseTurn, noteOutOfMemory
 } from '../../utils/memory-guard-ui.js';
 
@@ -1399,8 +1399,9 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
       why: `The browser tab ended (most likely out of memory) while it drew this plot of ${Number(crashed.n || n).toLocaleString('en-US')} points. `
         + 'Draw it anyway, or show fewer cells first.' };
   } else if (result.verdict === 'block' && !override) {
+    // in the panel one line of numbers (the buttons are the advice); the whole sentence in the tooltip
     refusal = { text: 'Not drawn: browser memory', headline: 'Not drawn: not enough browser memory',
-      why: refusalText(result, MEMORY_ADVICE) };
+      why: shortRefusalText(result), full: refusalText(result, MEMORY_ADVICE) };
   }
   if (refusal) {
     releaseTurn(ticket);
@@ -1411,7 +1412,7 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
       drawPlaceholder(plotContainer, null, unit, { actions: refusal.actions,
         say: { severity: 'warning', headline: refusal.headline, lines: [refusal.why, DRAW_ANYWAY_RISK] } });
     } else {
-      setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.why,
+      setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.full || refusal.why,
         pop: { text: `${refusal.why} ${DRAW_ANYWAY_RISK}`, actions: refusal.actions } });
     }
     return null;

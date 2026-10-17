@@ -736,6 +736,22 @@ export function predictSubsetChange(n, panels, threshold, model = DEFAULT_MODEL,
 /** What the guard advises when an action needs more memory than the browser has. */
 export const MEMORY_ADVICE = 'Close a plot, or show fewer cells (a smaller subset).';
 
+/**
+ * The one line of numbers a refused panel shows, from check()'s `why`:
+ * "Needs ~7 MB; 4 MB free with 3 plots open." The ceiling and whether it
+ * was measured are left to the tooltip, and the advice to the panel's
+ * action buttons. A JS-heap refusal keeps "of JS memory": that ceiling is
+ * not the computer's memory.
+ */
+export function shortWhy(why) {
+    const s = String(why || 'not enough browser memory')
+        .replace(/ of browser JS memory/, ' of JS memory')
+        .replace(/ of browser memory/, '')
+        .replace(/ \(of [^)]*\)\s*$/, '')
+        .replace(/\.$/, '');
+    return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
+}
+
 /** What "Draw anyway" risks, said beside it. */
 export const DRAW_ANYWAY_RISK = 'Draw anyway may run the tab out of memory; the browser then closes it, with every panel.';
 
