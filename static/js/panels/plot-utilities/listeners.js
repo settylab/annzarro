@@ -1,7 +1,7 @@
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
-import { autoPointCount } from '../../utils/view-point-style.js';
+import { autoPointCount, plotArea } from '../../utils/view-point-style.js';
 import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator, hoverPickFits, showHoverChoice } from './plot-make.js';
 import { hoverInfoFromSelection, hoverOffFromSelection, NO_HOVER } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
@@ -254,7 +254,8 @@ export function setupPlotControlListeners(
       });
       $controlsContainer.find(`#${name}-auto-${id}`).on('click', () => {
         settings[autoKey] = true;
-        applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
+        applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase(),
+          plotArea(plotContainer, settings));
         showPointStyle(id, settings);
         redrawStyling();
       });

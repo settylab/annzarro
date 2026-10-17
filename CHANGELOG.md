@@ -15,6 +15,13 @@ with the release after it. Older releases are listed on
   the values are kept in panel sets and share links, and a link without them draws the usual red
   dot.
 
+### Changed
+- Automatic point size and opacity follow the plot area as well as the number of points: a large
+  plot (a full window, a big export) draws larger, more opaque points and a small split pane
+  smaller, fainter ones, so points look about as dense at any panel size. They update when the
+  window is resized, a split is dragged, the controls are shown or hidden, or a panel is
+  maximised; a size or opacity you set stays as set.
+
 ### Fixes
 - A release build no longer fails when Apple's ticket service drops the connection while the
   notarization ticket of the macOS app or its dmg is being checked (`stapler validate`); the check

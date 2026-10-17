@@ -62,3 +62,14 @@ test('autoPointCount: the points left after the plot filters, else the loaded on
     assert.equal(autoPointCount({ _pointCount: 1000, _drawnCount: 40 }, {}), 40);
     assert.equal(autoPointCount({ _pointCount: 1000, _drawnCount: 0 }, {}), 0, 'all hidden is 0, not the loaded count');
 });
+
+test('plotArea: the axes\' area drawn, else the container less the margins, else unknown', async () => {
+    const { plotArea } = await import('../../../static/js/utils/view-point-style.js');
+    assert.equal(plotArea({ _fullLayout: { _size: { w: 660, h: 332, l: 80, r: 158 } }, clientWidth: 1, clientHeight: 1 }), 660 * 332);
+    const margins = { l: 80, r: 80, t: 80, b: 60 };
+    assert.equal(plotArea({ clientWidth: 900, clientHeight: 500 }, { margins }), 740 * 360);
+    assert.equal(plotArea({ clientWidth: 900, clientHeight: 500 }), 900 * 500);
+    assert.equal(plotArea({ clientWidth: 100, clientHeight: 100 }, { margins }), undefined);
+    assert.equal(plotArea({ _fullLayout: { _size: { w: 0, h: 0 } } }), undefined);
+    assert.equal(plotArea(null), undefined);
+});

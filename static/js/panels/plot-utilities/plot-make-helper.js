@@ -2,7 +2,8 @@ import { DataManager } from '../../data-manager.js';
 import { RemoteNames } from '../../utils/remote-names.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
-import { greyMarker } from '../../utils/point-style.js';
+import { greyMarker, styleArea } from '../../utils/point-style.js';
+import { plotArea } from '../../utils/view-point-style.js';
 import { scaleBar, replaceScaleBar, SCALE_BAR } from './plot-options.js';
 import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName } from '../../utils/categories.js';
 
@@ -513,6 +514,9 @@ export function attachViewportTracking(plotContainer, settings) {
   if (plotContainer.__azViewportHandler && typeof plotContainer.removeListener === 'function') {
     plotContainer.removeListener('plotly_relayout', plotContainer.__azViewportHandler);
   }
+  if (plotContainer.__azAreaHandler && typeof plotContainer.removeListener === 'function') {
+    plotContainer.removeListener('plotly_afterplot', plotContainer.__azAreaHandler);
+  }
   const followView = () => { if (typeof plotContainer.__azFollowView === 'function') plotContainer.__azFollowView(); };
   // The zoom as drawn under Equal aspect: its centre and data units per pixel
   const noteZoom = () => {
@@ -529,6 +533,8 @@ export function attachViewportTracking(plotContainer, settings) {
     if (eventData.autosize !== undefined || eventData.width !== undefined || eventData.height !== undefined) {
       const kept = rangesForSize(plotContainer.__azZoom, plotContainer._fullLayout);
       if (kept) Plotly.relayout(plotContainer, kept).catch(() => {});
+      // automatic point size and opacity for the new plot area (plot-make.js)
+      followView();
       return;
     }
     // automatic point size and opacity for the points now in view (listeners.js)
@@ -565,10 +571,20 @@ export function attachViewportTracking(plotContainer, settings) {
   };
   plotContainer.__azViewportHandler = onRelayout;
   plotContainer.on('plotly_relayout', onRelayout);
+  // The plot area changes without a resize too: a redraw in place whose
+  // legend is wider or narrower (a table search that leaves fewer
+  // categories). Only then; a restyle leaves the area as it is.
+  const onAfterPlot = () => {
+    if (plotArea(plotContainer, settings) !== styleArea(settings)) followView();
+  };
+  plotContainer.__azAreaHandler = onAfterPlot;
+  plotContainer.on('plotly_afterplot', onAfterPlot);
   noteZoom();
   refreshScaleBar(plotContainer, settings);
-  // a redraw that keeps a zoomed view was drawn with the style for every point
-  if (settings.viewport2D && !settings.z) followView();
+  // the graph drawn: its plot area is known now (the legend's width with
+  // it), and a redraw that keeps a zoomed view was drawn with the style for
+  // every point. Restyles the markers only if a value changes.
+  followView();
 }
 
 /**

@@ -31,7 +31,9 @@ The browser saves `annzarro_plot.png`, drawn at 1200 × 800 and scaled by 2: the
 3. Set **Width** and **Height** in pixels (defaults 1200 and 800).
 4. Click **JPEG**, **SVG**, **WEBP** or **PNG**. The file is called `plot_<date and time>`
    with that extension and has exactly the width and height you set (a 1000 × 1000 PNG for
-   1000 and 1000).
+   1000 and 1000). Automatic point size and opacity are worked out for the export's own plot
+   area, so a larger export is as dense as the plot on screen ({doc}`cell-and-gene-plots`); a
+   size or opacity you set is exported as set.
 
 The rest of **Plot Options** changes how the plot looks on screen and in the export: presets
 (**Publication**), background colour and the plot colours (**Follow app theme**, **Light colours**, **Dark colours**), grid, axis titles, tick labels, marks
