@@ -655,6 +655,30 @@ body {
     contain: size;
 }
 
+/* Plotly's toolbar sits top left, clear of a legend or colour bar on the
+   right; it moves back to the top right when one is placed on the left
+   (utils/modebar-side.js sets the class). Plotly gives the container and the
+   bar inline or injected right-offsets, hence the !important. */
+.js-plotly-plot .modebar-container {
+    left: 0 !important;
+    right: auto !important;
+}
+
+.js-plotly-plot .modebar-container .modebar {
+    left: 2px !important;
+    right: auto !important;
+}
+
+.js-plotly-plot.az-modebar-right .modebar-container {
+    left: auto !important;
+    right: 0 !important;
+}
+
+.js-plotly-plot.az-modebar-right .modebar-container .modebar {
+    left: auto !important;
+    right: 2px !important;
+}
+
 /* Table Panel Styles */
 .table-panel {
     display: flex;

@@ -150,6 +150,8 @@ size, the opacity and the fill colour as its line colour, with the edge width as
   **with the legend**, the default, which follows **Legend Position**), a **Length** from 10 to
   100 % of the plot's height (or width when horizontal; 100 % by default) and **Ticks**, the
   tick count (2 to 30; empty is automatic).
+- The plot's toolbar sits at the top left, and moves to the top right when the legend or colour bar
+  is placed on the left, so it never covers either.
 
 ## Text
 

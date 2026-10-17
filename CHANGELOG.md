@@ -8,6 +8,11 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- A plot's toolbar (zoom, pan, reset, camera) sits at the top left, so it no longer runs into a
+  legend or colour bar on the right, the default. It moves to the top right when the legend or
+  colour bar is placed on the left.
+
 ### Docs
 - The README and the licence page cite v0.5.5 by its DOI,
   [10.5281/zenodo.23440020](https://doi.org/10.5281/zenodo.23440020).
