@@ -67,7 +67,8 @@ const KIND_ACTIONS = Object.freeze({
     outside: [['next-part', 'Next part'], ['subset', 'Subset…']],
     table: [['stop-table', 'Stop filtering']],
     nan: [['show-nan', 'Show NaN']],
-    outliers: [['show-outliers', 'Show outliers']]
+    outliers: [['show-outliers', 'Show outliers']],
+    memory: [['subset-half', 'Half the cells'], ['subset', 'Subset\u2026']]
 });
 
 function coerce(coverage, unit) {
@@ -184,7 +185,8 @@ function stripHtml(host, s) {
     const total = b.rows.length
         ? `<tr class="ps-total"><td>Not shown</td><td class="ps-n">${exactCount(b.hidden)}</td><td></td></tr>` : '';
     const notes = b.notes.length
-        ? `<ul class="ps-notes">${b.notes.map(n => `<li data-reason="${escapeHtml(n.reason)}">${escapeHtml(n.label)}</li>`).join('')}</ul>` : '';
+        ? `<ul class="ps-notes">${b.notes.map(n => `<li data-reason="${escapeHtml(n.reason)}">${escapeHtml(n.label)}`
+            + `${n.kind === 'memory' ? ` <span class="ps-do">${actionButtons(KIND_ACTIONS.memory, host)}</span>` : ''}</li>`).join('')}</ul>` : '';
     const title = b.hidden
         ? `Why ${exactCount(b.hidden)} of ${exactCount(b.total)} ${b.unit} are not shown`
         : b.headlineExact;
@@ -731,6 +733,8 @@ function withTraceUids(traces) {
 export function drawPlaceholder(host, coverage, unit, { actions, say } = {}) {
     if (!host) return;
     const cov = coerce(coverage, unit);
+    // the browser ran out of memory: offer fewer cells, as the strip does
+    if (!actions && cov.gaps.some(g => g.kind === 'memory')) actions = KIND_ACTIONS.memory;
     // `say`: {severity, headline, lines} for a state that is not a coverage (a load that was cancelled)
     const { severity, headline, lines } = say || cov.describe();
 

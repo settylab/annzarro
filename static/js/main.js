@@ -25,7 +25,9 @@ import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/
 import { registerStatusActions } from './utils/panel-surface.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
-import { overrideOnce } from './utils/memory-guard-ui.js';
+import { overrideOnce, maxSubsetCells } from './utils/memory-guard-ui.js';
+import { DEFAULT_LARGE_PLOT_POINTS } from './utils/subset-presets.js';
+import { carriedRequest, sizeAfterChoice, loadSubsetSize, saveSubsetSize, halfSubset } from './utils/subset-carry.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
 import {
@@ -1215,6 +1217,12 @@ const App = (function() {
             if (!(await _swapSubset(spec))) {
                 return;     // a later request took over
             }
+            // a size chosen by hand is the one the next datasets open on (a part step is not)
+            if (!step) {
+                const reply = DataManager.getSubsetReply();
+                if (reply) _keepSubsetSize(spec, reply.n_total);
+                SubsetControl.update();
+            }
             // No toast: the header and every plot's status strip say what is shown
         } catch (error) {
             if (error && error.name === 'AbortError') return;
@@ -1378,6 +1386,7 @@ const App = (function() {
         switch (action) {
             case 'next-part': return !!(subset && subset.parts > 1 && subset.part < subset.parts - 1);
             case 'subset': case 'subset-regular': return !!DataManager.getCurrentDataset();
+            case 'subset-half': return !!halfSubset(DataManager.getSubset(), DataManager.getSubsetReply(), DataManager.getSubsetDefaults());
             case 'focus-part': return DataManager.hasSubsetFeature('locate_parts');
             case 'stop-table': return !!document.getElementById(`remove-non-table-entries-${id}`);
             case 'show-nan': return !!document.getElementById(`hide-nan-${id}`);
@@ -1417,6 +1426,12 @@ const App = (function() {
         switch (action) {
             case 'next-part': SubsetControl.step(1); break;
             case 'subset': SubsetControl.open(); break;
+            case 'subset-half': {
+                // the browser ran out of memory: half the cells, chosen as by hand (the size is kept)
+                const spec = halfSubset(DataManager.getSubset(), DataManager.getSubsetReply(), DataManager.getSubsetDefaults());
+                if (spec) await _changeSubset(spec);
+                break;
+            }
             case 'subset-regular':
                 document.dispatchEvent(new CustomEvent('annzarro:open-subset', { detail: { preset: 'largest-regular' } }));
                 break;
@@ -1677,7 +1692,9 @@ const App = (function() {
 
         // Cell count and subset badge in the stats bar; its dialog reloads
         // the open view on the chosen cells
-        SubsetControl.init({ onApply: _changeSubset });
+        SubsetControl.init({ onApply: _changeSubset, keptSize: _keptSubsetSize });
+        // the size is kept per user: name the user, then say it in the badge
+        _recentsUser().then(() => { if (DataManager.getCurrentDataset()) SubsetControl.update(); }).catch(() => {});
         registerStatusActions({ available: _statusActionAvailable, run: _runStatusAction });
         
         // Setup keyboard shortcuts
@@ -2047,7 +2064,36 @@ const App = (function() {
             return _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
                 .then(() => PanelManager.ensureWelcomeFallback());
         }
+        // the user's own switch opens on the subset size they chose last
+        // (utils/subset-carry.js); a link, a panel set or a restored session
+        // asked for its own subset already
+        if (chosen && !(datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset)) {
+            const size = _keptSubsetSize();
+            const defaults = DataManager.getSubsetDefaults();
+            const seed = defaults && Number.isInteger(defaults.seed) ? defaults.seed : 0;
+            if (size !== undefined) {
+                DataManager.setSubsetRequest(nTotal => carriedRequest(size, nTotal,
+                    { seed, maxCells: maxSubsetCells(nTotal, _largePlotPoints()) }));
+            }
+        }
         return _loadDataset(datasetPath);
+    }
+
+    /** The subset size the user chose last (utils/subset-carry.js), kept per user. @private */
+    function _keptSubsetSize() {
+        try { return loadSubsetSize(window.localStorage, window.location.origin, _recentsUserKey || 'local'); } catch { return undefined; }
+    }
+
+    /** Keep the size of a subset the user applied by hand on a dataset of `nTotal` cells. @private */
+    function _keepSubsetSize(spec, nTotal) {
+        const size = sizeAfterChoice(spec, nTotal, _keptSubsetSize(), DataManager.getSubsetDefaults());
+        try { saveSubsetSize(window.localStorage, window.location.origin, _recentsUserKey || 'local', size); } catch { /* storage blocked */ }
+    }
+
+    /** Points above which a Cell Plot uses large-plot mode (as the subset dialog reads it). @private */
+    function _largePlotPoints() {
+        const v = Config.DEFAULTS && Config.DEFAULTS.LARGE_PLOT_POINTS;
+        return typeof v === 'number' && v >= 0 ? v : DEFAULT_LARGE_PLOT_POINTS;
     }
 
     /** Read the dataset listing the labels derive from (one read at a time: a second call joins it). */
