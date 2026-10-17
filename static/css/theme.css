@@ -444,3 +444,29 @@ body.site-centered > .site-footer { align-self: stretch; }
 .site-text h3 { font-size: 1.05rem; margin-top: 1.25rem; }
 body.site-text-page { background: var(--az-page-bg); color: var(--az-page-text); margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
 .site-text a { color: var(--az-link); }
+
+/* ---- Markdown from the safe renderer (safe-markdown.js): tables, code, rules, quotes.
+   Used in a dataset's README, the About dialog's site texts and the /site pages. ---- */
+.dsi-readme, .about-text-body, .site-text { --md-border: var(--az-border); --md-head: var(--az-surface-2); --md-code: var(--az-surface-3, var(--az-surface-2)); }
+:is(.dsi-readme, .about-text-body, .site-text) .md-table {
+    max-width: 100%; overflow-x: auto; margin: 0 0 0.8rem; border: 1px solid var(--md-border); border-radius: 0.3rem;
+}
+:is(.dsi-readme, .about-text-body, .site-text) .md-table table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 0.9em; }
+:is(.dsi-readme, .about-text-body, .site-text) .md-table :is(th, td) {
+    padding: 0.25rem 0.55rem; border: 1px solid var(--md-border); vertical-align: top;
+    min-width: 6ch; max-width: 48ch; overflow-wrap: break-word; word-break: normal; text-align: left;
+}
+:is(.dsi-readme, .about-text-body, .site-text) .md-table th { background: var(--md-head); font-weight: 600; }
+:is(.dsi-readme, .about-text-body, .site-text) .md-table .md-center { text-align: center; }
+:is(.dsi-readme, .about-text-body, .site-text) .md-table .md-right { text-align: right; }
+:is(.dsi-readme, .about-text-body, .site-text) .md-table .md-more { text-align: center; font-style: italic; color: var(--az-muted); }
+:is(.dsi-readme, .about-text-body, .site-text) pre {
+    background: var(--md-code); border: 1px solid var(--md-border); border-radius: 0.3rem; padding: 0.5rem 0.7rem;
+    margin: 0 0 0.8rem; overflow-x: auto; font-size: 0.85em; line-height: 1.4; max-width: 100%;
+}
+:is(.dsi-readme, .about-text-body, .site-text) pre code { background: none; padding: 0; color: inherit; white-space: pre; overflow-wrap: normal; word-break: normal; }
+:is(.dsi-readme, .about-text-body, .site-text) hr { margin: 1rem 0; color: var(--md-border); opacity: 1; }
+:is(.dsi-readme, .about-text-body, .site-text) blockquote {
+    margin: 0 0 0.8rem; padding: 0.1rem 0.8rem; border-left: 3px solid var(--md-border); color: var(--az-muted);
+}
+:is(.dsi-readme, .about-text-body, .site-text) blockquote > :last-child { margin-bottom: 0; }

@@ -175,12 +175,24 @@ README over 256 KB. An `.h5ad` file is annotated with anndata as above. See
 `uns["README"]` is rendered as Markdown by a renderer that cannot produce active content: the text
 is escaped first, and only a small set of constructs is turned back into markup.
 
-Supported: paragraphs, headings (`#` to `######`), bullet and numbered lists (one level), `**bold**`,
-`*italic*` and `_italic_`, `` `code` `` and links `[text](address)` with an `http://`, `https://` or
-`mailto:` address. Links open in a new tab (in the desktop app, in the system browser).
+Supported: paragraphs, headings (`#` to `######`, or a line underlined with `===` or `---`), bullet and
+numbered lists (one level), `**bold**`, `*italic*` and `_italic_`, `` `code` ``, links
+`[text](address)` with an `http://`, `https://` or `mailto:` address, bare web addresses (`https://...` and `<https://...>`, without the full stop or comma that ends the sentence), pipe tables, code blocks,
+horizontal rules and block quotes. Links open in a new tab (in the desktop app, in the system browser).
+
+- **Tables** are GitHub's pipe tables: a header row, a delimiter row (`|---|:---:|---:|` sets left,
+  centred and right alignment) and body rows. Cells take bold, italic, code and links; write a
+  pipe inside a cell as `\|`. Rows with too few cells are padded and rows with too many are cut. A
+  table shows at most 500 rows and 30 columns and says how many rows it left out. A table wider than
+  the dialog scrolls sideways inside its own box.
+- **Code blocks** are fenced with three backticks or tildes (a language word after them is ignored) or
+  indented by four spaces or a tab. They are shown as plain text with no highlighting, at most 2,000
+  lines. An indented line starts a code block even right under a line of prose, where Markdown
+  would continue the paragraph; right under a list item it continues the item.
+- **Rules** are a line of three or more `-`, `*` or `_`. A block quote starts each line with `>`.
 
 Not supported, and shown as the text you wrote: raw HTML (`<b>`, `<img>`, `<script>` and the
-rest appear literally), images (`![alt](url)`), tables, nested lists, and links with any other
+rest appear literally), images (`![alt](url)`), nested lists, and links with any other
 address. This is deliberate. A dataset on a public site is content of someone else, and the page
 must not run it. Entities such as `&amp;` are shown as typed.
 

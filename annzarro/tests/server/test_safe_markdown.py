@@ -14,7 +14,8 @@ CASES = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.absp
 
 TAG_RE = re.compile(r"<[^>]*>")
 ALLOWED_TAG = re.compile(
-    r"^</?(p|h[1-6]|ul|ol|li|strong|em|code|br)>$"
+    r"^</?(p|h[1-6]|ul|ol|li|strong|em|code|br|pre|blockquote|table|thead|tbody|tr)>$|^<hr>$|^</(div|th|td)>$"
+    r"|^<div class=\"md-table\">$|^<t[hd]( class=\"md-(left|center|right)\")?>$|^<td class=\"md-more\" colspan=\"\d+\">$"
     r"|^<a href=\"(https?://|mailto:)[^\"<>\s]*\" rel=\"noopener noreferrer\"( target=\"_blank\")?>$"
     r"|^</a>$", re.IGNORECASE)
 
@@ -114,3 +115,64 @@ def test_worst_case_input_at_the_cap_is_fast(name):
     print(f"safe_markdown {name!r}: {elapsed * 1000:.0f} ms")
     assert elapsed < 1.0
     assert_safe(html)
+
+
+def lines_of(body, count):
+    return "\n".join([body] * count)
+
+
+HOSTILE_BLOCKS = {
+    "fence with a 100k-line body": "```\n" + lines_of("x", 100_000),
+    "closed fence, 100k lines": "```\n" + lines_of("<b>", 90_000) + "\n```",
+    "table with 100k rows": "| a | b |\n|---|---|\n" + lines_of("| 1 | 2 |", 20_000),
+    "table with 100k columns": "|" + "a|" * 50_000 + "\n|" + "-|" * 50_000 + "\n",
+    "100k pipes": "|" * CAP,
+    "table of long cells": "| a |\n|---|\n" + lines_of("| " + "*a " * 600 + " |", 100),
+    "nested quotes": lines_of(">" * 50 + " x", 3_000),
+    "100k indented lines": lines_of("    x", 30_000),
+    "100k rules": lines_of("---", 50_000),
+    "100k fences opening": lines_of("```", 60_000),
+    "alternating table headers": lines_of("a | b\n--- | ---", 30_000),
+    "100k addresses": "http://a " * (CAP // 9),
+    "100k addresses, one per paragraph": "http://a\n\n" * (CAP // 10),
+    "one huge address": "https://e.org/" + "a" * CAP,
+    "addresses glued together": "http://" * (CAP // 7),
+    "100k angle autolinks": "<http://a>" * (CAP // 10),
+    "javascript addresses": "<javascript:alert(1)> javascript:alert(1) " * (CAP // 44),
+    "address with parentheses": "https://e.org/" + "(" * 50_000 + ")" * 50_000,
+}
+
+
+@pytest.mark.parametrize("name", list(HOSTILE_BLOCKS))
+def test_hostile_block_structures_are_bounded(name):
+    started = time.perf_counter()
+    html = render_safe_markdown(HOSTILE_BLOCKS[name])
+    elapsed = time.perf_counter() - started
+    print(f"safe_markdown {name!r}: {elapsed * 1000:.0f} ms, {len(html)} bytes")
+    assert elapsed < 1.0
+    assert len(html) < 12 * CAP      # an address becomes a link, about ten times its length
+    assert_safe(html)
+
+
+def test_a_long_table_and_a_long_code_block_say_how_much_was_cut():
+    html = render_safe_markdown("| a |\n|---|\n" + lines_of("| 1 |", 700))
+    assert html.count("<tr>") == 1 + 500 + 1 and "\u2026 200 more rows" in html
+    html = render_safe_markdown("```\n" + lines_of("x", 2500) + "\n```")
+    assert "\u2026 500 more lines" in html and html.count("x\n") == 2000
+    wide = render_safe_markdown("|" + "a|" * 40 + "\n|" + "-|" * 40 + "\n|" + "1|" * 40)
+    assert wide.count("<th>") == 30 and wide.count("<td>") == 30
+
+
+def test_cells_cannot_carry_markup_or_scripts():
+    html = render_safe_markdown("| <b>x</b> |\n|---|\n| <img src=x onerror=alert(1)> [a](javascript:alert(1)) |")
+    assert "<b>" not in html and "<img" not in html and 'href="javascript' not in html
+    assert_safe(html)
+
+
+def test_no_script_address_is_ever_linked():
+    for text in ("javascript:alert(1)", "<javascript:alert(1)>", "<JaVaScRiPt:alert(1)>", "data:text/html,x", "vbscript:x",
+                 "http://x.org\"><script>alert(1)</script>", "file:///etc/passwd", "ftp://x.org"):
+        html = render_safe_markdown(text)
+        assert "javascript" not in re.findall(r'href="([^"]*)"', html) and 'href="javascript' not in html.lower()
+        assert not re.findall(r'href="(?!https?://|mailto:)', html), html
+        assert "<script" not in html
