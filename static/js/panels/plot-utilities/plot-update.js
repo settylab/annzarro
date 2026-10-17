@@ -33,6 +33,7 @@ import { recordLoad } from '../../utils/subset-presets.js';
 import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
 import { MEMORY_ADVICE } from '../../utils/memory-guard.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { legendUirevision } from '../../utils/legend-entries.js';
 import { highlightLargeFocus, clearLargeFocus, restyleLargeFocus } from './large-interact.js';
 import { focusMarker, focusRestyle, focusSize, focusParams } from '../../utils/focus-style.js';
 
@@ -463,8 +464,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         unsPaletteTag(settings.color.key, customColors, categoricalTraces.categoryCount));
                 }
                 
-                // Update the legend title for categorical data
+                // Update the legend title for categorical data; the entries
+                // hidden with the legend are kept for this colour column only
                 Plotly.relayout(plotContainer, {
+                    'legend.uirevision': legendUirevision(
+                        (plotContainer.layout && plotContainer.layout.uirevision) || 'view', settings.color),
                     'legend.title.text': colourTitle(settings.color),
                     'legend.title.font': { 
                         size: settings.fontSize ? settings.fontSize + 2 : 14,

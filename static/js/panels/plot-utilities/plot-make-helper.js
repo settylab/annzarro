@@ -6,7 +6,7 @@ import { greyMarker, styleArea } from '../../utils/point-style.js';
 import { plotArea } from '../../utils/view-point-style.js';
 import { scaleBar, replaceScaleBar, SCALE_BAR } from './plot-options.js';
 import { usableUnsPalette } from '../../utils/uns-palette.js';
-import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName } from '../../utils/categories.js';
+import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName, colourGroupKey } from '../../utils/categories.js';
 
 /**
  * Generates a Plotly layout configuration based on the provided settings.
@@ -941,6 +941,8 @@ export function keptViewRanges(settings) {
           trace.hovertemplate = trace.hovertemplate.replace('<extra></extra>', '%{hovertext}<extra></extra>');
         }
         trace.legendrank = g + 1;
+        // its identity: the name lists the categories drawn, which a filter changes
+        trace.legendgroup = colourGroupKey(g);
         traces.push(trace);
       });
       return withLegendProxies(traces, settings);
