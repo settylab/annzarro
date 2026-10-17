@@ -82,6 +82,7 @@ class Site:
         self.security_contact: Optional[str] = None
         self.language = "en"
         self.persistent_convenience = True
+        self.software_credits = True
         self.warnings: List[str] = []
 
     @property
@@ -202,6 +203,12 @@ class Site:
             convenience = True
         site.persistent_convenience = convenience
 
+        credits = section.get("software_credits", True)
+        if not isinstance(credits, bool):
+            problems.append("site.software_credits must be true or false")
+            credits = True
+        site.software_credits = credits
+
         if problems:
             raise ValueError("; ".join(problems))
         return site
@@ -236,6 +243,7 @@ class SiteView:
         self.configured = site.configured
         self.operator = site.operator
         self.language = site.language
+        self.software_credits = site.software_credits
         contact = site.contact or site.contact_fallback
         href = Site.contact_href(contact)
         self.contact = {"label": site.contact_label, "text": contact, "href": href,

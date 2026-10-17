@@ -126,9 +126,12 @@ def render_safe_markdown(markdown, heading_base=1, max_chars=MAX_CHARS):
     blocks = []
     paragraph = []
     items = []
+    paragraph_chars = 0
     kind = None
 
     def flush_paragraph():
+        nonlocal paragraph_chars
+        paragraph_chars = 0
         if paragraph:
             blocks.append("<p>" + _inline(_join_lines(paragraph)[:MAX_BLOCK_CHARS]) + "</p>")
             paragraph.clear()
@@ -166,7 +169,10 @@ def render_safe_markdown(markdown, heading_base=1, max_chars=MAX_CHARS):
             items.append((bullet or number).group(1).strip())
         else:
             flush_list()
-            paragraph.append(line)
+            # lines past the paragraph cap are read but not kept, so a text of endless short lines costs a bounded amount
+            if paragraph_chars < MAX_BLOCK_CHARS:
+                paragraph.append(line)
+                paragraph_chars += len(line) + 1
     flush_paragraph()
     flush_list()
     return "\n".join(blocks)

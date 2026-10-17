@@ -167,6 +167,7 @@ Other keys:
 | `robots` | `auto` | `auto`: search engines are told to stay away when login is on, and may index a login-free site. `index`, `noindex` force either. `noindex` sends `X-Robots-Tag: noindex, nofollow` and serves a `/robots.txt` that disallows everything |
 | `security_contact` | none | A `mailto:` or `https://` address. Serves `/.well-known/security.txt` (RFC 9116). The file must sit at the root of your domain, so a proxy that mounts AnnZarro under a path has to pass this one through |
 | `languages` | `en` | The language of the texts (`de`, `en`): the `lang` of the text pages and `Preferred-Languages` in `security.txt` |
+| `software_credits` | `true` | Whether the About dialog keeps AnnZarro's credit: the Setty Lab and Fred Hutch logos and links, the NIH funding statement and the citation. `false` leaves the name, the version, the MIT licence and links to the documentation and the repository. The credit is about the software, never about your site, and the authors appreciate hosters keeping it beside their own content |
 | `storage.persistent_convenience` | `true` | `false` keeps the autosave and recents until the tab closes |
 
 A wrong value (a `javascript:` address, a missing file, an unknown option) stops the server at
@@ -178,7 +179,7 @@ start and says what is wrong.
   admin pages: "Impressum · Datenschutz · Barrierefreiheit · Kontakt". It takes a line of about
   1.4 rem from the bottom of the window and never covers a panel. Nothing appears when nothing is
   configured.
-* The **About dialog** (the app name at the top left) gets a "This site" block: the operator, the
+* The **About dialog** (the app name at the top left) gets a "This site" block above AnnZarro's own credit: the operator, the
   contact, and each text. A footer link for a text written in the configuration opens About
   straight at that text, so it is one click away; a link to an address opens it in a new tab.
 * **`/site/imprint`, `/site/privacy`, `/site/accessibility`, `/site/terms`** serve the same texts
