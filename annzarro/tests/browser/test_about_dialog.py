@@ -2,7 +2,7 @@
 
 1. a click or Enter on the name opens a centred dialog with the running version, the
    documentation, repository and changelog links, the paper and software DOIs, the Setty Lab
-   and Fred Hutch logos (both load, in the light and the dark theme) with their links, and the
+   logo (it loads, in the light and the dark theme) and the Setty Lab and Fred Hutch links, and the
    funding statement in text (no NIH logo);
 2. Escape and the close button close it, and focus returns to the name;
 3. at 390 px wide nothing overflows sideways;
@@ -121,27 +121,25 @@ def test_about_opens_by_click_and_shows_everything(server, scheme):
             assert "Setty Lab at Fred Hutch Cancer Center" in text
             assert "R35GM147125" in text and "K99GM159044" in text
             assert "National Institute of General Medical Sciences" in text
-            # exactly the logos of the lab and Fred Hutch show, whatever the theme, and they loaded
+            # only the lab's logo shows (Fred Hutch is credited in text until its brand team approves the logo)
             logos = page.evaluate(LOGOS)
-            assert sorted(l[0] for l in logos) == ["Fred Hutch Cancer Center", "Setty Lab"]
+            assert sorted(l[0] for l in logos) == ["Setty Lab"]
             assert all(l[1] > 0 for l in logos)
             _shot(page, f"about-{scheme}-desktop")
         finally:
             browser.close()
 
 
-def test_about_logos_follow_the_theme(server):
+def test_about_logo_files_are_served_in_both_themes(server):
     with playwright.sync_playwright() as p:
         browser = p.chromium.launch()
         try:
-            for scheme, want in (("light", "fredhutch-navy.png"), ("dark", "fredhutch-white.png")):
+            for scheme in ("light", "dark"):
                 page = _open(browser, server, scheme)
                 _show(page)
-                shown = page.evaluate("[...document.querySelectorAll('.about-logo-fh')]"
-                                      ".filter(i => i.offsetParent !== null).map(i => i.src.split('/').pop())")
-                assert shown == [want]
-                # every logo file the dialog names is served
-                for src in page.evaluate("[...document.querySelectorAll('#about-modal img')].map(i => i.src)"):
+                srcs = page.evaluate("[...document.querySelectorAll('#about-modal img')].map(i => i.src)")
+                assert srcs and not any("fredhutch" in s for s in srcs)
+                for src in srcs:
                     assert urllib.request.urlopen(src, timeout=5).status == 200
         finally:
             browser.close()

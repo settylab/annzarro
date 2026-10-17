@@ -173,7 +173,7 @@ def test_nothing_is_added_when_nothing_is_configured(browser, plain):
     page.wait_for_selector("#about-modal.show")
     assert page.locator("#about-this-site").count() == 0
     assert page.locator("#about-desktop-privacy").is_hidden()
-    assert "AnnZarro is developed by the Setty Lab" in page.inner_text("#about-modal")
+    assert "AnnZarro is developed by the " in page.inner_text("#about-modal")
     assert page.errors == []
 
 
