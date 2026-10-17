@@ -44,6 +44,7 @@ import { releasePlot } from './release-plot.js';
 import { forget } from './memory-guard-ui.js';
 import { withShownCamera } from './scene-camera.js';
 import { installGlColors } from './scattergl-calc.js';
+import { withLegendInvariant } from './legend-entries.js';
 
 /** Class of the status strip; styled in static/css/styles.css. */
 const STRIP_CLASS = 'plot-status';
@@ -647,6 +648,8 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
         plotContainer.__releaseBeforeDraw = false;
         if (plotContainer._fullLayout) releasePlot(plotContainer);
     }
+    // no legend entry without a name, no legend without an entry (legend-entries.js)
+    withLegendInvariant(traces, layout);
     // a graph redrawn in place keeps the camera the user turned it to; the
     // camera saved in the settings is for a new graph
     const result = await Plotly.react(

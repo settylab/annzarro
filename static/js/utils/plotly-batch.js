@@ -17,7 +17,8 @@
  * deletes, the implied edits below), and helpers that read `gd.data` /
  * `gd.layout` in between see the edited copy. At the end the copy is drawn
  * once with Plotly.react. The result is the figure the separate calls left
- * behind, computed and drawn once.
+ * behind, computed and drawn once, with the legend rule of drawPlot applied
+ * (utils/legend-entries.js: no entry without a name).
  *
  * Calls for other graphs pass straight through. Any other Plotly function
  * called on a batched graph (newPlot, react, purge, toImage, ...) first draws
@@ -35,6 +36,7 @@
  */
 
 import { syncSceneCamera } from './scene-camera.js';
+import { withLegendInvariant } from './legend-entries.js';
 
 const VIRTUAL = new Set(['restyle', 'relayout', 'update', 'addTraces', 'deleteTraces']);
 
@@ -248,6 +250,8 @@ function _draw(gd) {
     _uninstall();
     if (gd.data !== b.origData) return Promise.resolve(gd);   // replaced meanwhile (newPlot)
     syncSceneCamera(gd);
+    // no legend entry without a name, no legend without an entry (legend-entries.js)
+    withLegendInvariant(b.data, b.layout);
     return real.react(gd, b.data, b.layout);
 }
 
