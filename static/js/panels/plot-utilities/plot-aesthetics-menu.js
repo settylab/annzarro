@@ -389,8 +389,13 @@ export function createPopoverContent(id, settings) {
             <div class="d-flex align-items-center gap-2 mb-1">
                 <label class="form-label mb-0 me-2">Fill</label>
                 <input type="color" class="form-control form-control-sm form-control-color"
-                    id="focused-color-${id}" value="${plotColour(settings, 'focusedColor')}" title="Choose the fill colour of the focused marker">
+                    id="focused-color-${id}" value="${plotColour(settings, 'focusedColor')}" title="Choose the fill colour of the focused marker (also the ring of a cell outside the subset)">
                 <button class="btn btn-sm btn-outline-secondary" id="reset-focused-color-${id}" ${resetState(settings, 'focusedColor')}>Reset</button>
+                <div class="form-check mb-0 ms-1">
+                    <input class="form-check-input" type="checkbox" id="focused-no-fill-${id}" ${settings.focusedNoFill ? 'checked' : ''}
+                        title="Draw the marker as an open circle: its edge only (at least 1 px wide)">
+                    <label class="form-check-label" for="focused-no-fill-${id}">No fill</label>
+                </div>
             </div>
             <div class="d-flex align-items-center gap-2">
                 <label class="form-label mb-0 me-2">Edge</label>
@@ -1139,6 +1144,18 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             [`focused-edge-color-${id}`]: 'focusedEdgeColor',
             [`reset-focused-color-${id}`]: 'focusedColor', [`reset-focused-edge-color-${id}`]: 'focusedEdgeColor'
         }[target.id];
+        if (target.id === `focused-no-fill-${id}`) {
+            if (e.type !== 'change') return;
+            if (target.checked) {
+                settings.focusedNoFill = true;
+                // an open circle is its edge: without one it would vanish
+                if (!((settings.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth) >= 1)) settings.focusedEdgeWidth = 1;
+            } else delete settings.focusedNoFill;
+            syncFocusedFill(id, settings);
+            syncColourControls(id, settings);
+            restyleFocus(plotContainer, settings).catch(err => console.warn('Focused marker style not updated:', err && err.message));
+            return;
+        }
         if (focusKey) {
             const v = parseFloat(target.value);
             if (target.id.startsWith('reset-')) {
@@ -1152,7 +1169,12 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
                 delete settings[focusKey];          // the default
             } else if (focusKey === 'focusedScale' ? v > 0 && v <= FOCUS_SCALE_MAX
                 : focusKey === 'focusedOpacity' ? v > 0 && v <= 1 : v >= 0 && v <= FOCUS_EDGE_MAX) {
-                settings[focusKey] = v;
+                // no fill: the edge is all there is of the marker, so it stays at least 1 px (judged once the entry is done)
+                if (focusKey === 'focusedEdgeWidth' && settings.focusedNoFill && v < 1) {
+                    if (e.type !== 'change') return;
+                    target.value = 1;
+                    settings[focusKey] = 1;
+                } else settings[focusKey] = v;
             } else return;
             syncColourControls(id, settings);
             restyleFocus(plotContainer, settings).catch(err => console.warn('Focused marker style not updated:', err && err.message));
@@ -1635,6 +1657,14 @@ export function updateColorInputs(container, id, settings) {
     if (focusedColorInput) focusedColorInput.value = plotColour(settings, 'focusedColor');
     if (focusedEdgeColorInput) focusedEdgeColorInput.value = plotColour(settings, 'focusedEdgeColor');
     syncColourControls(id, settings);
+}
+
+/** Show the Focused fill controls as the settings have them: the checkbox, and the edge width that is drawn. */
+function syncFocusedFill(id, settings) {
+    const noFill = document.getElementById(`focused-no-fill-${id}`);
+    const width = document.getElementById(`focused-edge-width-${id}`);
+    if (noFill) noFill.checked = !!settings.focusedNoFill;
+    if (width && settings.focusedEdgeWidth !== undefined) width.value = settings.focusedEdgeWidth;
 }
 
 /** A Reset button's state as drawn: disabled while its colour follows the theme (syncColourControls keeps it so). */

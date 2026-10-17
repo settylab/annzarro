@@ -7,7 +7,10 @@ width. Without the keys it is drawn as before them; a change replaces the
 shape (one relayout), with no restyle or new plot; a set colour stays
 across a theme switch.
 """
+import io
+
 import pytest
+from PIL import Image
 
 from annzarro.tests.browser.test_axis_title_restore import _start
 from annzarro.tests.browser.test_focused_style import A, GD, SPY, _link, _menu, _set, _spied
@@ -77,3 +80,38 @@ def test_the_focused_shape_takes_every_option(page, server):
     page.wait_for_timeout(800)
     s = _shape(page)
     assert (s["fill"], s["lineColor"], s["opacity"]) == ("#ff0000", "#0000ff", 0.4), s
+
+
+def test_no_fill_makes_the_shape_an_open_circle(page, server):
+    page.goto(_link(server, {A: {"focusedScale": 6, "focusedEdgeWidth": 3, "focusedEdgeColor": "#0000ff", "focusedColor": "#ff0000"}}))
+    page.wait_for_function("(id) => !!(%s)(id)" % SHAPE, arg=A, timeout=60000)
+    page.wait_for_timeout(1000)
+    assert _shape(page)["fill"] == "#ff0000"
+    _menu(page, A, "focused")
+    page.evaluate(SPY)
+    page.set_checked(f"#focused-no-fill-{A}", True)
+    _wait(page, "fill", "rgba(0,0,0,0)")
+    spy = _spied(page)
+    assert spy["newPlot"] == spy["react"] == spy["restyle"] == spy["addTraces"] == spy["deleteTraces"] == 0 and spy["relayout"] == 1, spy
+    assert (_shape(page)["lineColor"], _shape(page)["lineWidth"]) == ("#0000ff", 3)
+    px = lambda p: (p[0], p[1], p[2])  # noqa: E731
+    page.mouse.move(2, 2)
+    page.wait_for_timeout(400)
+    at = page.evaluate("""(id) => { const gd = (%s)(id); const s = gd.layout.shapes.find(s => s.name === 'Focused Cell');
+        const fl = gd._fullLayout, r = gd.querySelector('.nsewdrag').getBoundingClientRect();
+        return { x: r.left + fl.xaxis.l2p(s.xanchor), y: r.top + fl.yaxis.l2p(s.yanchor), r: s.x1 }; }""" % GD, A)
+    img = Image.open(io.BytesIO(page.screenshot())).convert("RGB")
+    blue = lambda p: p[2] > 200 and p[0] < 60 and p[1] < 60  # noqa: E731
+    red = lambda p: p[0] > 220 and p[1] < 50 and p[2] < 50  # noqa: E731
+    r = at["r"]
+    pts = [(x, y) for x in range(int(at["x"] - r - 3), int(at["x"] + r + 4)) for y in range(int(at["y"] - r - 3), int(at["y"] + r + 4))]
+    assert sum(1 for x, y in pts if blue(px(img.getpixel((x, y))))) > 2 * 3.14 * r * 0.5
+    assert not any(red(px(img.getpixel((x, y)))) for x, y in pts)
+    centre = [(x, y) for x, y in pts if (x - at["x"]) ** 2 + (y - at["y"]) ** 2 < (r / 2) ** 2]
+    assert not any(blue(px(img.getpixel(p))) or red(px(img.getpixel(p))) for p in centre)
+    # it survives a focus move and a link
+    page.evaluate("async () => (await import('/static/js/data-manager.js')).DataManager.setFocusedCell('cell_0042', false)")
+    page.wait_for_timeout(800)
+    assert _shape(page)["fill"] == "rgba(0,0,0,0)"
+    layout = page.evaluate("() => window.PanelManager.saveLayout()")
+    assert layout["panelConfigs"][A]["focusedNoFill"] is True

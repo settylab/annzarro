@@ -250,7 +250,7 @@ export const STYLE_KEYS = Object.freeze([
   'colorbarPosition', 'colorbarLength', 'colorbarTicks',
   'showScaleBar', 'scaleBarCorner', 'scaleBarSize', 'scaleBarUnit',
   'notInTableScale', 'notInTableOpacity', 'notInTableColor',
-  'focusedScale', 'focusedOpacity', 'focusedColor', 'focusedEdgeColor', 'focusedEdgeWidth',
+  'focusedScale', 'focusedOpacity', 'focusedColor', 'focusedNoFill', 'focusedEdgeColor', 'focusedEdgeWidth',
   'exportWidth', 'exportHeight', 'scaleExport'
 ]);
 
