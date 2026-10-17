@@ -4353,6 +4353,17 @@ details.aesthetics-section > .aesthetics-body {
 .dsi-tree { list-style: none; margin: 0.2rem 0 0; padding-left: 1rem; font-size: 0.85rem; }
 .dsi-tree .dsi-tree { border-left: 1px solid var(--az-border-soft); }
 .dsi-tree li { padding: 0.05rem 0; overflow-wrap: anywhere; }
+/* search in the Structure tab */
+.dsi-search { position: sticky; top: -1px; z-index: 2; margin: 0 0 0.6rem; padding: 0.1rem 0 0.35rem; background: var(--bs-modal-bg, var(--bs-body-bg, transparent)); }
+.dsi-search-row { display: flex; gap: 0.3rem; align-items: stretch; }
+.dsi-search-input { flex: 1 1 auto; min-width: 0; }
+.dsi-search-toggle { flex: 0 0 auto; font-family: var(--bs-font-monospace, monospace); line-height: 1.2; min-width: 2.2rem; }
+.dsi-search-toggle[aria-pressed="true"] { background: var(--az-link); border-color: var(--az-link); color: var(--bs-modal-bg, #fff); }
+.dsi-search-notes { display: flex; flex-wrap: wrap; gap: 0 0.8rem; min-height: 1.2rem; font-size: 0.8rem; padding-top: 0.15rem; }
+.dsi-search-error { color: var(--az-warn-text); }
+.dsi-hits { color: var(--az-muted); font-weight: 400; }
+mark.dsi-mark { background: rgba(255, 200, 0, 0.5); color: inherit; padding: 0 0.05em; border-radius: 2px; }
+[data-theme="dark"] mark.dsi-mark { background: rgba(255, 200, 0, 0.35); }
 /* the browser's details pane: the same parts, smaller, under the facts of the store */
 .dsb-about { margin: 0.5rem 0; }
 .dsb-about > .dsi-fields { margin-bottom: 0.4rem; }
