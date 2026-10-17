@@ -255,6 +255,7 @@ def test_inline_texts_are_escaped_in_the_dialog_too(tmp_path):
     ({"footer_links": "never"}, "site.footer_links"),
     ({"languages": "<x>"}, "site.languages"),
     ({"storage": {"persistent_convenience": "yes"}}, "persistent_convenience"),
+    ({"software_credits": "no"}, "site.software_credits"),
 ])
 def test_wrong_values_stop_the_server_at_start(tmp_path, site, fragment):
     with pytest.raises(ValueError, match=re.escape(fragment)):
@@ -463,3 +464,26 @@ def test_the_cookies_the_server_sets_are_the_documented_ones():
                 sources += open(os.path.join(folder, name), encoding="utf-8").read()
     assert len(re.findall(r"set_cookie\(", sources)) == 1, "a new cookie: describe it in the docs, then update this count"
     assert "annzarro_login_csrf" in sources
+
+
+CREDIT = ("settylab-logo", "fredhutch", "R35GM147125", "Citing AnnZarro", "AnnZarro is developed by the Setty Lab")
+
+
+def test_the_software_credit_stays_by_default_everywhere_and_below_the_site_block(tmp_path):
+    for name, site in (("plain", None), ("sited", SITE)):
+        (tmp_path / name).mkdir()
+        html = body(get(app_with(tmp_path / name, site), "/"))
+        for needle in CREDIT:
+            assert needle in html, f"{needle} missing ({name})"
+    assert html.index('id="about-this-site"') < html.index("Citing AnnZarro")
+
+
+def test_software_credits_off_leaves_name_version_licence_and_two_links(tmp_path):
+    html = body(get(app_with(tmp_path, {**SITE, "software_credits": False}), "/"))
+    modal = html[html.index('id="about-modal"'):html.index('id="session-modal"')]
+    for needle in CREDIT:
+        assert needle not in modal
+    assert 'id="about-version"' in modal and "AnnZarro is released under the MIT licence." in modal
+    assert 'href="https://annzarro.readthedocs.io"' in modal and 'href="https://github.com/settylab/annzarro"' in modal
+    assert 'id="about-this-site"' in modal, "the site's own block is unaffected"
+    assert "site-footer" in html, "so is the footer"

@@ -128,11 +128,13 @@ export function renderSafeMarkdown(markdown, { headingBase = 1, maxChars = MAX_C
     const blocks = [];
     const paragraph = [];
     const items = [];
+    let paragraphChars = 0;
     let kind = null;
 
     const flushParagraph = () => {
         if (paragraph.length) blocks.push('<p>' + inline(joinLines(paragraph).slice(0, MAX_BLOCK_CHARS)) + '</p>');
         paragraph.length = 0;
+        paragraphChars = 0;
     };
     const flushList = () => {
         if (items.length) {
@@ -168,7 +170,11 @@ export function renderSafeMarkdown(markdown, { headingBase = 1, maxChars = MAX_C
             items.push((bullet || number)[1].trim());
         } else {
             flushList();
-            paragraph.push(line);
+            // lines past the paragraph cap are read but not kept, so a text of endless short lines costs a bounded amount
+            if (paragraphChars < MAX_BLOCK_CHARS) {
+                paragraph.push(line);
+                paragraphChars += line.length + 1;
+            }
         }
     }
     flushParagraph();

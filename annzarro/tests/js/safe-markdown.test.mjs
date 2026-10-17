@@ -85,3 +85,22 @@ test("hostile input is bounded in time", () => {
 test("non-strings give nothing", () => {
   for (const v of [null, undefined, 5, [], {}]) assert.equal(renderSafeMarkdown(v), "");
 });
+
+const CAP = MAX_CHARS;
+const ADVERSARIAL = {
+  "**a": "**a".repeat(Math.floor(CAP / 3)), "*a": "*a".repeat(CAP / 2), "_a": "_a".repeat(CAP / 2),
+  "*** and x": "***" + "x ".repeat(CAP / 2), "[": "[".repeat(CAP), "[a](": "[a](".repeat(CAP / 4),
+  backtick: "`" + "a".repeat(CAP - 1), "stars in one paragraph": "*".repeat(10000),
+  "many short lines": Array(CAP / 5).fill("**a b").join("\n"), "bold lines apart": Array(Math.floor(CAP / 6)).fill("**a b").join("\n\n"),
+  "emphasis then spaces": "**" + " a".repeat(CAP / 2),
+};
+for (const [name, text] of Object.entries(ADVERSARIAL)) {
+  test(`worst case at the cap is fast: ${name}`, () => {
+    const started = performance.now();
+    const html = renderSafeMarkdown(text);
+    const ms = performance.now() - started;
+    console.log(`safe-markdown ${name}: ${ms.toFixed(0)} ms`);
+    assert.ok(ms < 1000, `${ms} ms`);
+    assertSafe(html);
+  });
+}

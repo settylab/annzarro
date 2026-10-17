@@ -531,6 +531,10 @@ site:
       type: string
       description: "The language of the texts (for security.txt and the text pages)"
       default: en
+    software_credits:
+      type: boolean
+      description: "false reduces the About dialog's software credit to the name, version, licence and links"
+      default: true
     storage:
       type: object
       description: "What the browser keeps between visits"
