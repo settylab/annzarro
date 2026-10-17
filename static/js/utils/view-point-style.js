@@ -67,6 +67,25 @@ export function autoPointCount(gd, settings, skip) {
 }
 
 /**
+ * The plot area automatic values follow (point-style.js), in CSS px^2: the
+ * axes' area of the graph drawn (`_fullLayout._size`), or before the first
+ * draw the container less the margins of `settings` (the legend's width is
+ * not known yet; the graph is styled again once drawn). Undefined when
+ * neither is known.
+ * @param {HTMLElement} gd - The Plotly graph div.
+ * @param {Object} [settings] - The panel's settings (margins).
+ * @returns {number|undefined}
+ */
+export function plotArea(gd, settings) {
+  const size = gd && gd._fullLayout && gd._fullLayout._size;
+  if (size && size.w > 0 && size.h > 0) return size.w * size.h;
+  const m = (settings && settings.margins) || {};
+  const w = ((gd && gd.clientWidth) || 0) - (m.l || 0) - (m.r || 0);
+  const h = ((gd && gd.clientHeight) || 0) - (m.t || 0) - (m.b || 0);
+  return w > 0 && h > 0 ? w * h : undefined;
+}
+
+/**
  * A trailing debounce: `run` once, `delay` ms after the last call.
  * @param {Function} run
  * @param {number} [delay]

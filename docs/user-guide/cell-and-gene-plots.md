@@ -40,24 +40,34 @@ Cell plot controls, coloured by a categorical obs column.
     point is not drawn at all (8-bit alpha). The boxes take any value, also outside the sliders'
     range.
 
-    Until you set them, both are **automatic**: they follow the number of points drawn (not the
-    size of the panel). That is the cells of the subset less the points the plot hides itself:
+    Until you set them, both are **automatic**: they follow how densely the points fill the
+    plot, the number of points drawn per plot area (the area inside the axes). The number is
+    the cells of the subset less the points the plot hides itself:
     those a table link removes (**Remove non-table entries**), **Hide NaN** and **Hide outliers**,
     and less the points a table link greys out: only the points shown in full count, so a table
     search that picks a few rows gives them the larger size of a small plot. The grey points,
     drawn behind, keep the automatic style of all the points drawn (or the size and opacity you
-    set), so they stay a quiet backdrop. From the default
+    set), so they stay a quiet backdrop. In a plot area of 660 × 332 px (one panel in a
+    900 × 700 browser window, with a legend), from the default
     5.1 px and opaque at a few thousand points, the size falls by about half with every tenfold
     in points: 3.5 px / 0.87 at 10,000, 1.96 px / 0.64 at 100,000, 1.18 px / 0.43 at a million,
     and 0.39 px (one step, the smallest WebGL draws) from about 10 million, with opacity 0.28
     there and 0.19 at 95.6 million.
+    A larger plot draws what fewer points would get in that area, a smaller one what more points
+    would: twice the area draws as half the points do. A single panel filling a 2560 × 1440
+    window (about 8 times that area) draws a million points at 1.96 px / 0.62 rather than
+    1.18 px / 0.43; the effect stops at 8 times larger and 8 times smaller. The size never
+    exceeds the default.
     The curve was set on screenshots of Tahoe-100M UMAPs and checked on 1, 2 and 5 million cells
     at cell-line colours; sizes above 5 million points were not looked at again. An
     automatic value is shown in grey italics and changes when the number of points does, for
-    example when you turn the subset off. In a 2D plot it also follows the zoom: once a zoom or
+    example when you turn the subset off, and when the plot area does: resizing the window,
+    dragging a split, showing or hiding the controls, maximising the panel. An image export at
+    its own **Width** and **Height** ({doc}`export`) gets the automatic values for its own plot
+    area, so it looks as dense as the screen. In a 2D plot it also follows the zoom: once a zoom or
     pan has settled, the count is the points inside the view, so a close view of a dense
     region gets larger, more opaque points; Reset axes (or a double click) goes back to the
-    value for every point drawn. In a 3D plot the automatic opacity is always 1: below 1,
+    value for every point drawn. In a 3D plot the automatic size follows the area as in 2D, and the automatic opacity is always 1: below 1,
     Plotly draws 3D points out of depth order (far points over near ones). An opacity you choose is
     kept in 3D as well; its tooltip warns about the drawing order. Moving a slider or typing a value
     sets it; it then stays

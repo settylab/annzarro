@@ -16,6 +16,11 @@ with the release after it. Older releases are listed on
   dot.
 
 ### Changed
+- Automatic point size and opacity follow the plot area as well as the number of points: a large
+  plot (a full window, a big export) draws larger, more opaque points and a small split pane
+  smaller, fainter ones, so points look about as dense at any panel size. They update when the
+  window is resized, a split is dragged, the controls are shown or hidden, or a panel is
+  maximised; a size or opacity you set stays as set.
 - The cell subset size you choose follows you to other datasets. A dataset you switch to opens
   on that many cells when it has more, and with every cell when it has as many or fewer; its badge
   then reads, for example, "All cells (≤ 10,000)", and the next larger dataset is subsampled to the

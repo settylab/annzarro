@@ -90,6 +90,11 @@ export async function fullImage(gd, { format = 'png', width = 1200, height = 800
         const layout = { ...copyLayout(gd.layout), width, height };
         const config = { ...(gd._context || {}), _exportedPlot: true, staticPlot: true, setBackground: false };
         await P.newPlot(clone, data, layout, config);
+        // automatic point size and opacity for the export's own plot area
+        // (the panel's hook, plot-make.js), so it is as dense as on screen
+        if (typeof gd.__azExportMarkers === 'function') {
+            try { await gd.__azExportMarkers(clone); } catch (err) { console.warn('Export point size/opacity not updated:', err && err.message); }
+        }
         await S.getRedrawFunc(clone)();
         await new Promise(resolve => setTimeout(resolve, S.getDelay(clone._fullLayout)));
         w = clone._fullLayout.width;
