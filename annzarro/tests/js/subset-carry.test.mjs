@@ -67,16 +67,37 @@ test("a size chosen by hand is the new size; a filter, a balance and a part are 
   assert.equal(sizeAfterChoice({ n: 50000, seed: 0 }, 3000, 10000, DEFAULTS), 50000);
 });
 
-test("every cell chosen: a new intent only where the size kept would have subsampled", () => {
-  // a larger dataset than the size: every cell is the new choice
-  assert.equal(sizeAfterChoice(null, 30000, 10000, DEFAULTS), "all");
-  assert.equal(sizeAfterChoice({ n: null, seed: 0, where: [{ col: "a", op: "empty" }] }, 30000, 10000, DEFAULTS), "all");
-  // a dataset the size already shows in full: the size stays for the larger ones
-  assert.equal(sizeAfterChoice(null, 3000, 10000, DEFAULTS), 10000);
-  // never chosen: every cell of a dataset over the server's threshold is a choice, under it is not
+test("every cell chosen: a new intent only above the server's threshold", () => {
+  // above the threshold: every cell is the new choice, over a smaller number or none
+  assert.equal(sizeAfterChoice(null, 300000, 10000, DEFAULTS), "all");
+  assert.equal(sizeAfterChoice({ n: null, seed: 0, where: [{ col: "a", op: "empty" }] }, 300000, 10000, DEFAULTS), "all");
   assert.equal(sizeAfterChoice(null, 500000, undefined, DEFAULTS), "all");
+  assert.equal(sizeAfterChoice(null, 200001, undefined, DEFAULTS), "all");
+  // at and below it: the server would show these in full anyway, so the size is forgotten
+  assert.equal(sizeAfterChoice(null, 200000, undefined, DEFAULTS), undefined);
   assert.equal(sizeAfterChoice(null, 50000, undefined, DEFAULTS), undefined);
+  assert.equal(sizeAfterChoice(null, 50000, 10000, DEFAULTS), undefined);
+  assert.equal(sizeAfterChoice(null, 200000, 10000, DEFAULTS), undefined);
+  assert.equal(sizeAfterChoice(null, 30000, 10000, DEFAULTS), undefined);
+  // a dataset the size kept already shows in full changes nothing, an 'all' from a large one included
+  assert.equal(sizeAfterChoice(null, 3000, 10000, DEFAULTS), 10000);
   assert.equal(sizeAfterChoice(null, 50000, "all", DEFAULTS), "all");
+  // a number is kept wherever it was chosen
+  assert.equal(sizeAfterChoice({ n: 20000, seed: 0 }, 50000, undefined, DEFAULTS), 20000);
+  assert.equal(sizeAfterChoice({ n: 20000, seed: 0 }, 300000, "all", DEFAULTS), 20000);
+});
+
+test("every cell chosen: the threshold falls back to the default size, then to no opinion", () => {
+  assert.equal(sizeAfterChoice(null, 80000, 10000, { size: 100000 }), undefined);
+  assert.equal(sizeAfterChoice(null, 120000, 10000, { size: 100000 }), "all");
+  // no defaults known: nothing to compare to, so a larger dataset than the size is a choice of 'all'
+  assert.equal(sizeAfterChoice(null, 50000, 10000, null), "all");
+  assert.equal(sizeAfterChoice(null, 50000, undefined, null), undefined);
+});
+
+test("a kept 'all' that the memory guard refuses falls back to the server's default", () => {
+  assert.equal(carriedRequest("all", 100e6, { maxCells: 5e6 }), "auto");
+  assert.equal(carriedRequest("all", 1e6, { maxCells: 5e6 }), null);
 });
 
 test("showsAll follows the server's threshold for a size never chosen", () => {

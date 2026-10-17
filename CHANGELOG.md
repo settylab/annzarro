@@ -71,7 +71,10 @@ for the focused cell's marker.
   on that many cells when it has more, and with every cell when it has as many or fewer; its badge
   then reads, for example, "All cells (≤ 10,000)", and the next larger dataset is subsampled to the
   size again. The size is kept per browser and user, so a reload keeps it, and the dataset AnnZarro
-  opens when it starts uses it too. "Close all" with the tick box for clearing everything forgets
+  opens when it starts uses it too. Choosing "every cell" on a dataset the server shows in full
+  anyway (up to its subsampling threshold) does not carry every cell to large datasets: the size
+  is forgotten and they open on the server's default subset; only every cell chosen on a larger
+  dataset is carried. "Close all" with the tick box for clearing everything forgets
   it. Share links, panel sets and the restored session still open on the subset they saved.
 - A plot or table whose data the browser ran out of memory for says so in plain words ("the
   browser ran out of memory -- Close a plot, or show fewer cells (a smaller subset), and try
