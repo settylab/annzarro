@@ -246,7 +246,7 @@ const Config = (function() {
             // Export options
             EXPORT_WIDTH: 1200,
             EXPORT_HEIGHT: 800,
-            SCALE_EXPORT: false,
+            SCALE_EXPORT: true,
             
             // Interaction settings
             ENABLE_ZOOM: true,

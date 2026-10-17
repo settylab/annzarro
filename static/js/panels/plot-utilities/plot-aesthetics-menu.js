@@ -9,7 +9,7 @@ import {
 import { THEME_EVENT } from '../../utils/theme.js';
 import {
   normalizePlotOptions, tickMarksOn, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
-  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle
+  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
 import { exportCheck, guarded, refusalText } from '../../utils/memory-guard-ui.js';
@@ -163,7 +163,7 @@ export function createPopoverContent(id, settings) {
 
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-publication-${id}"
-                    title="White background, no grid, five ticks per axis, larger text, scale bar if set up">Publication</button>
+                    title="White background, no grid, five ticks per axis, Arial at a larger size, a short colour bar with three ticks, scale bar if set up">Publication</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
                     title="Back to the look every plot starts with">Default</button>
             </div>
@@ -516,6 +516,11 @@ export function createPopoverContent(id, settings) {
                     <span class="input-group-text">px</span>
                 </div>
             </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="scale-export-${id}" ${exportOptions(settings).scale > 1 ? 'checked' : ''}>
+                <label class="form-check-label" for="scale-export-${id}"
+                    title="Draw the image at twice the width and height, so it stays sharp in print; the PNG, JPEG and WEBP files are then twice the pixels set above">Export at 2x</label>
+            </div>
             
         `)}
         ${details(id, 'apply', 'Apply to other panels', `
@@ -535,10 +540,7 @@ export function createPopoverContent(id, settings) {
     `;
 }
 
-/** The export's pixel size and scale from the panel's settings. */
-export function exportOptions(settings) {
-  return { width: settings.exportWidth || 1200, height: settings.exportHeight || 800, scale: settings.scaleExport ? 2 : 1 };
-}
+export { exportOptions };
 
 const EXPORT_ADVICE = 'Export it as shown instead, close a plot, or show fewer cells.';
 
@@ -628,7 +630,7 @@ export function initializeAestheticsSettings(settings) {
         // Export options
         EXPORT_WIDTH: 1200,
         EXPORT_HEIGHT: 800,
-        SCALE_EXPORT: false,
+        SCALE_EXPORT: true,
         
         // Interaction settings
         ENABLE_ZOOM: true,
@@ -668,7 +670,7 @@ export function initializeAestheticsSettings(settings) {
     // Export options
     settings.exportWidth = settings.exportWidth || defaults.EXPORT_WIDTH;
     settings.exportHeight = settings.exportHeight || defaults.EXPORT_HEIGHT;
-    settings.scaleExport = settings.scaleExport || defaults.SCALE_EXPORT;
+    settings.scaleExport = settings.scaleExport !== undefined ? settings.scaleExport : defaults.SCALE_EXPORT;
     
     // Legend settings
     settings.legendPosition = settings.legendPosition || defaults.LEGEND_POSITION;
@@ -722,6 +724,7 @@ function getPanelId(element) {
 export function setupAestheticsMenuListeners(container, settings, plotContainer, id) {
     // Ensure settings are initialized
     initializeAestheticsSettings(settings);
+    if (plotContainer) plotContainer.__exportOptions = () => exportOptions(settings);
     
     // Create one-time event handlers using delegation for all menu controls
     const menuHandler = function(e) {
@@ -1377,29 +1380,47 @@ export function toggleGrid(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateFontFamily(plotContainer, settings) {
+    applyTextFont(plotContainer, settings);
+}
+
+/**
+ * The panel's text on the plot, in one place: font family, size and colour of
+ * the axes (titles and tick labels), the legend (title and items) and the
+ * colour bar (title and tick labels, shared or the traces' own). A live change
+ * of the font, size or text colour, a preset, a theme change and a plot drawn
+ * from a link all come here. Set explicitly, so a change shows at once.
+ */
+function applyTextFont(plotContainer, settings) {
     if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
+    const family = settings.fontFamily || 'Arial, Helvetica, sans-serif';
+    const size = settings.fontSize || 12;
+    const colour = plotColour(settings, 'textColor');
+    const text = (prefix, extra) => ({
+        [`${prefix}.family`]: family, [`${prefix}.size`]: size + extra, [`${prefix}.color`]: colour
+    });
     const update = {
-        'font.family': settings.fontFamily,
-        'legend.title.font.family': settings.fontFamily
+        ...text('font', 0),
+        ...text('legend.font', 0), ...text('legend.title.font', 2),
+        ...text('coloraxis.colorbar.tickfont', 0), ...text('coloraxis.colorbar.title.font', 2)
     };
-    
-    if (is3D) {
-        update['scene.xaxis.title.font.family'] = settings.fontFamily;
-        update['scene.yaxis.title.font.family'] = settings.fontFamily;
-        update['scene.zaxis.title.font.family'] = settings.fontFamily;
-        update['scene.xaxis.tickfont.family'] = settings.fontFamily;
-        update['scene.yaxis.tickfont.family'] = settings.fontFamily;
-        update['scene.zaxis.tickfont.family'] = settings.fontFamily;
-    } else {
-        update['xaxis.title.font.family'] = settings.fontFamily;
-        update['yaxis.title.font.family'] = settings.fontFamily;
-        update['xaxis.tickfont.family'] = settings.fontFamily;
-        update['yaxis.tickfont.family'] = settings.fontFamily;
-    }
-    
+    for (const axis of axisPaths(settings)) Object.assign(update, text(`${axis}.tickfont`, 0), text(`${axis}.title.font`, 2));
     Plotly.relayout(plotContainer, update);
+    restyleColourBars(plotContainer,
+        { ...text('marker.colorbar.tickfont', 0), ...text('marker.colorbar.title.font', 2) },
+        { ...text('colorbar.tickfont', 0), ...text('colorbar.title.font', 2) });
+}
+
+/**
+ * Restyle the colour bars of a plot: `markerUpdate` on the traces whose
+ * marker has one (scatter), `traceUpdate` on those with a colorbar of their
+ * own (heatmap, contour, surface). The focused-cell trace is left alone.
+ */
+function restyleColourBars(plotContainer, markerUpdate, traceUpdate) {
+    (plotContainer.data || []).forEach((trace, i) => {
+        if (!trace || (trace.name && String(trace.name).includes('Focused'))) return;
+        if (trace.marker && trace.marker.colorbar) Plotly.restyle(plotContainer, markerUpdate, [i]);
+        else if (trace.colorbar) Plotly.restyle(plotContainer, traceUpdate, [i]);
+    });
 }
 
 /**
@@ -1670,7 +1691,6 @@ export function applyThemeColors(plotContainer, settings) {
     const update = {
         'paper_bgcolor': plotColour(settings, 'bgColor'),
         'plot_bgcolor': plotColour(settings, 'bgColor'),
-        'font.color': plotColour(settings, 'textColor'),
         'xaxis.gridcolor': plotColour(settings, 'gridColor'),
         'yaxis.gridcolor': plotColour(settings, 'gridColor'),
         'xaxis.color': plotColour(settings, 'axisColor'),
@@ -1681,12 +1701,6 @@ export function applyThemeColors(plotContainer, settings) {
         'yaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
         'xaxis.tickcolor': plotColour(settings, 'axisColor'),
         'yaxis.tickcolor': plotColour(settings, 'axisColor'),
-        'xaxis.tickfont.color': plotColour(settings, 'textColor'),
-        'yaxis.tickfont.color': plotColour(settings, 'textColor'),
-        'xaxis.title.font.color': plotColour(settings, 'textColor'),
-        'yaxis.title.font.color': plotColour(settings, 'textColor'),
-        'legend.font.color': plotColour(settings, 'textColor'),
-        'legend.title.font.color': plotColour(settings, 'textColor'),
         'modebar.color': modebarColours(settings).color,
         'modebar.activecolor': modebarColours(settings).activecolor
     };
@@ -1713,25 +1727,12 @@ export function applyThemeColors(plotContainer, settings) {
             'scene.xaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
             'scene.yaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
             'scene.zaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
-            'scene.xaxis.tickfont.color': plotColour(settings, 'textColor'),
-            'scene.yaxis.tickfont.color': plotColour(settings, 'textColor'),
-            'scene.zaxis.tickfont.color': plotColour(settings, 'textColor'),
-            'scene.xaxis.title.font.color': plotColour(settings, 'textColor'),
-            'scene.yaxis.title.font.color': plotColour(settings, 'textColor'),
-            'scene.zaxis.title.font.color': plotColour(settings, 'textColor')
         });
     }
     
     Plotly.relayout(plotContainer, update);
 
-    // the colour bar's title and ticks are the traces' own
-    const bars = (plotContainer.data || []).map((t, i) => (t && t.marker && t.marker.colorbar ? i : -1)).filter(i => i >= 0);
-    if (bars.length) {
-        Plotly.restyle(plotContainer, {
-            'marker.colorbar.title.font.color': plotColour(settings, 'textColor'),
-            'marker.colorbar.tickfont.color': plotColour(settings, 'textColor')
-        }, bars);
-    }
+    applyTextFont(plotContainer, settings);      // the text colour: axes, legend, colour bar
 }
 
 /**
@@ -1754,68 +1755,7 @@ function notifyMultipleSettingsChanged(id, changes) {
  * @param {Object} settings - Plot settings object
  */
 function updateFontSize(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    
-    // Basic layout updates for axes
-    const update = {
-        'font.size': settings.fontSize,
-        'xaxis.title.font.size': settings.fontSize + 2,
-        'yaxis.title.font.size': settings.fontSize + 2,
-        'xaxis.tickfont.size': settings.fontSize,
-        'yaxis.tickfont.size': settings.fontSize,
-        
-        // Legend font settings
-        'legend.title.font.size': settings.fontSize + 2,
-        'legend.font.size': settings.fontSize,
-        
-        // Global colorbar font settings (if any)
-        'coloraxis.colorbar.title.font.size': settings.fontSize + 2,
-        'coloraxis.colorbar.tickfont.size': settings.fontSize
-    };
-    
-    // For 3D plots
-    if (is3D) {
-        Object.assign(update, {
-            'scene.xaxis.title.font.size': settings.fontSize + 2,
-            'scene.yaxis.title.font.size': settings.fontSize + 2,
-            'scene.zaxis.title.font.size': settings.fontSize + 2,
-            'scene.xaxis.tickfont.size': settings.fontSize,
-            'scene.yaxis.tickfont.size': settings.fontSize,
-            'scene.zaxis.tickfont.size': settings.fontSize
-        });
-    }
-    
-    // Apply the layout updates
-    Plotly.relayout(plotContainer, update);
-    
-    // Update trace-specific colorbar settings
-    if (plotContainer.data) {
-        plotContainer.data.forEach((trace, i) => {
-            // Skip focused entity trace
-            if (trace.name && trace.name.includes('Focused')) return;
-            
-            const traceUpdate = {};
-            
-            // Update marker.colorbar (for scatter plots with continuous color)
-            if (trace.marker && trace.marker.colorbar) {
-                traceUpdate['marker.colorbar.title.font.size'] = settings.fontSize + 2;
-                traceUpdate['marker.colorbar.tickfont.size'] = settings.fontSize;
-            }
-            
-            // Update colorbar directly (for heatmaps, contour plots)
-            if (trace.colorbar) {
-                traceUpdate['colorbar.title.font.size'] = settings.fontSize + 2;
-                traceUpdate['colorbar.tickfont.size'] = settings.fontSize;
-            }
-            
-            // Apply trace updates if we have any
-            if (Object.keys(traceUpdate).length > 0) {
-                Plotly.restyle(plotContainer, traceUpdate, [i]);
-            }
-        });
-    }
+    applyTextFont(plotContainer, settings);
 }
 
 /**
@@ -2101,6 +2041,7 @@ export async function exportPlot(plotContainer, format, settings, how = 'full') 
   const panelId = getPanelId(plotContainer);
   const downloadButton = document.getElementById(how === 'shown' ? `download-shown-${format}-${panelId}` : `download-${format}-${panelId}`);
   const opts = exportOptions(settings);
+  if (format === 'svg') opts.scale = 1;      // vector: no pixels to sharpen, and the size stays as set
   const filename = 'plot_' + new Date()
     .toISOString()
     .replace(/[:.]/g, '-');
@@ -2180,7 +2121,9 @@ function flashLabel(button, text, ms = 2000) {
  * status strip says why, with "Export as shown" (a click, never a reroute).
  */
 registerCameraExport(async (gd, opts) => {
-  const o = { width: opts.width || 1200, height: opts.height || 800, scale: opts.scale || 1 };
+  // the panel's own export size and scale (Plot Options), else the toolbar's
+  const o = typeof gd.__exportOptions === 'function' ? gd.__exportOptions()
+    : { width: opts.width || 1200, height: opts.height || 800, scale: opts.scale || 1 };
   const check = exportCheck(gd, o);
   if (check.verdict === 'block') {
     refuseInStatus(gd, 'exported', check);
@@ -2249,9 +2192,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'margin': settings.margins,
         'paper_bgcolor': bgColor,
         'plot_bgcolor': bgColor,
-        'font.color': textColor,
-        'font.size': settings.fontSize,
-        'font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
         'hovermode': settings.showHoverInfo ? 'closest' : false,
         
         // Legend position settings (actual visibility will be handled separately)
@@ -2293,18 +2233,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'yaxis.color': axisColor,
         'xaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'x') : '',
         'yaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'y') : '',
-        'xaxis.title.font.size': settings.fontSize + 2,
-        'yaxis.title.font.size': settings.fontSize + 2,
-        'xaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'yaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'xaxis.title.font.color': textColor,
-        'yaxis.title.font.color': textColor,
-        'xaxis.tickfont.size': settings.fontSize,
-        'yaxis.tickfont.size': settings.fontSize,
-        'xaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'yaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'xaxis.tickfont.color': textColor,
-        'yaxis.tickfont.color': textColor,
         
     };
     
@@ -2355,24 +2283,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
             'scene.xaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'x') : '',
             'scene.yaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'y') : '',
             'scene.zaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'z') : '',
-            'scene.xaxis.title.font.size': settings.fontSize + 2,
-            'scene.yaxis.title.font.size': settings.fontSize + 2,
-            'scene.zaxis.title.font.size': settings.fontSize + 2,
-            'scene.xaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.yaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.zaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.xaxis.title.font.color': textColor,
-            'scene.yaxis.title.font.color': textColor,
-            'scene.zaxis.title.font.color': textColor,
-            'scene.xaxis.tickfont.size': settings.fontSize,
-            'scene.yaxis.tickfont.size': settings.fontSize,
-            'scene.zaxis.tickfont.size': settings.fontSize,
-            'scene.xaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.yaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.zaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.xaxis.tickfont.color': textColor,
-            'scene.yaxis.tickfont.color': textColor,
-            'scene.zaxis.tickfont.color': textColor,
             
         });
         
@@ -2395,5 +2305,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
     // Then handle legend and colorbar visibility specifically based on trace type
     updateLegendVisibility(plotContainer, settings);
     updateLegendPosition(plotContainer, settings);
+    applyTextFont(plotContainer, settings);
     refreshScaleBar(plotContainer, settings);
 }

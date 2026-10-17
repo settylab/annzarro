@@ -49,7 +49,7 @@ PANEL_SET = {
                    "panelConfigs": {
                        "cell-plot-1": {"id": "cell-plot-1", **UMAP,
                                        "color": {"type": "obs", "key": "cell_type", "column": ""},
-                                       "exportWidth": 900, "exportHeight": 600},
+                                       "exportWidth": 900, "exportHeight": 600, "scaleExport": False},
                        "cell-plot-2": {"id": "cell-plot-2", **UMAP,
                                        "color": {"type": "layer", "key": "X", "column": "GENE004"},
                                        "exportWidth": 700, "exportHeight": 700, "scaleExport": True}}},
@@ -113,7 +113,7 @@ def test_png_is_pixel_identical(runs):
 def test_png_size_follows_the_panel_settings(runs):
     from PIL import Image
     one, two = _files(runs[(1, "png")])
-    assert Image.open(one).size == (900, 600)
+    assert Image.open(one).size == (900, 600)        # scaleExport off: the pixels set (unset it is twice the size)
     assert Image.open(two).size == (1400, 1400)      # scaleExport: twice the size
 
 
