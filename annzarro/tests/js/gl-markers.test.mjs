@@ -28,7 +28,8 @@ function fakeGd() {
         { type: 'scattergl', meta: 'az-points', x: [1, 2], marker: { size: 5, opacity: 1 } },
         { type: 'scattergl', meta: 'az-legend', x: [null], marker: { size: 5, opacity: 1 } },   // legend entry: full opacity
         { type: 'scattergl', meta: 'az-points', x: [3, 4], marker: { size: 5, opacity: 1 } },
-        { type: 'scattergl', name: 'Focused Cell', x: [3], marker: { size: 10, opacity: 1 } }
+        // as plot-update.js draws it by default (utils/focus-style.js)
+        { type: 'scattergl', name: 'Focused Cell', x: [3], marker: { size: 10, opacity: 1, color: '#ff0000', line: { color: '#000000', width: 2 } } }
     ];
     const gd = {
         data: traces,
@@ -81,6 +82,9 @@ test('without the scene internals: false, nothing changed, one warning', () => {
     }
 });
 
+// The highlight takes its own style (utils/focus-style.js): by default twice
+// the size, opaque; its opacity goes with the size, since Apply to other
+// panels and a preset end here too. Its colours restyle only when they change.
 test('restyleMarkers: 2D plots go to the scene (the highlight at twice the size), 3D and fallback restyle', async () => {
     const settings = { pointSize: 1.96, pointOpacity: 0.39 };
     const { gd, calls } = fakeGd();
@@ -88,14 +92,21 @@ test('restyleMarkers: 2D plots go to the scene (the highlight at twice the size)
     await restyleMarkers(gd, settings);
     assert.equal(restyles.length, 0, 'no restyle for a 2D plot');
     assert.equal(calls.draw, 1);
-    assert.deepEqual(calls.update, [{ size: 1.96, opacity: 0.39 }, {}, { size: 1.96, opacity: 0.39 }, { size: 3.92 }]);
+    assert.deepEqual(calls.update, [{ size: 1.96, opacity: 0.39 }, {}, { size: 1.96, opacity: 0.39 }, { size: 3.92, opacity: 1 }]);
+
+    const recoloured = fakeGd();                   // a fill colour set: one restyle, of the highlight's colour only
+    restyles.length = 0;
+    await restyleMarkers(recoloured.gd, { ...settings, focusedColor: '#00ff00' });
+    assert.deepEqual(restyles, [[{ 'marker.color': '#00ff00' }, [3]]]);
+    restyles.length = 0;
 
     const broken = fakeGd().gd;
     delete broken._fullLayout._plots;              // the fallback
     const warn = console.warn; console.warn = () => {};
     try { await restyleMarkers(broken, settings); } finally { console.warn = warn; }
     assert.deepEqual(restyles[0], [{ 'marker.size': 1.96, 'marker.opacity': 0.39 }, [0, 2]]);
-    assert.deepEqual(restyles[1], [{ 'marker.size': 3.92 }, [3]]);
+    assert.deepEqual(restyles[1], [{ 'marker.size': 3.92, 'marker.color': '#ff0000', 'marker.opacity': 1,
+                                     'marker.line.color': '#000000', 'marker.line.width': 2 }, [3]]);
 
     const flat = fakeGd();
     flat.gd.data.forEach(t => { t.type = 'scatter3d'; });   // 3D: restyle, no scene

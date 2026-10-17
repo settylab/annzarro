@@ -1,6 +1,7 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, NOT_IN_TABLE, refreshScaleBar } from './plot-make-helper.js';
-import { restyleMarkers } from './plot-update.js';
+import { restyleMarkers, restyleFocus } from './plot-update.js';
+import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
   plotColour, isFollowing, followsTheme, followTheme, pinPalette, modebarColours, THEMED_COLOURS
 } from '../../utils/plot-theme.js';
@@ -71,6 +72,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
       if (leftInput && marginLeft) leftInput.value = marginLeft;
       if (rightInput && marginRight) rightInput.value = marginRight;
     }
+    syncColourControls(id, settings);     // a colour that follows the theme has nothing to reset
   };
   
   const onHide = () => {
@@ -359,6 +361,41 @@ export function createPopoverContent(id, settings) {
                 <input type="color" class="form-control form-control-sm form-control-color"
                     id="not-in-table-color-${id}" value="${plotColour(settings, 'notInTableColor')}" title="Choose the colour of the points not in the table">
                 <button class="btn btn-sm btn-outline-secondary" id="reset-not-in-table-color-${id}">Reset</button>
+            </div>
+        `)}
+        ${details(id, 'focused', `Focused ${plotKind}`, `
+            <div class="form-text mt-0 mb-1">The marker on the focused ${plotKind}, while Highlight Focused ${plotKind === 'gene' ? 'Gene' : 'Cell'} is on.</div>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Size</span>
+                <input type="number" class="form-control" id="focused-scale-${id}"
+                    value="${settings.focusedScale ?? FOCUS_DEFAULTS.scale}" min="0.1" max="${FOCUS_SCALE_MAX}" step="0.1"
+                    title="Relative to the point size; ${FOCUS_DEFAULTS.scale} is twice as large">
+                <span class="input-group-text">x points</span>
+            </div>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Opacity</span>
+                <input type="number" class="form-control" id="focused-opacity-${id}"
+                    value="${settings.focusedOpacity ?? ''}" placeholder="${FOCUS_DEFAULTS.opacity}" min="0.01" max="1" step="0.05"
+                    title="0 to 1; empty: opaque">
+            </div>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Edge width</span>
+                <input type="number" class="form-control" id="focused-edge-width-${id}"
+                    value="${settings.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth}" min="0" max="${FOCUS_EDGE_MAX}" step="0.5"
+                    title="0: no edge">
+                <span class="input-group-text">px</span>
+            </div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <label class="form-label mb-0 me-2">Fill</label>
+                <input type="color" class="form-control form-control-sm form-control-color"
+                    id="focused-color-${id}" value="${plotColour(settings, 'focusedColor')}" title="Choose the fill colour of the focused marker">
+                <button class="btn btn-sm btn-outline-secondary" id="reset-focused-color-${id}" ${resetState(settings, 'focusedColor')}>Reset</button>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 me-2">Edge</label>
+                <input type="color" class="form-control form-control-sm form-control-color"
+                    id="focused-edge-color-${id}" value="${plotColour(settings, 'focusedEdgeColor')}" title="Choose the edge colour of the focused marker">
+                <button class="btn btn-sm btn-outline-secondary" id="reset-focused-edge-color-${id}" ${resetState(settings, 'focusedEdgeColor')}>Reset</button>
             </div>
         `)}
         ${details(id, 'legend', 'Legend and colour bar', `
@@ -1091,6 +1128,33 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
 
+        // The focused marker: size factor, opacity, edge width, fill and edge colour (utils/focus-style.js)
+        const focusKey = {
+            [`focused-scale-${id}`]: 'focusedScale', [`focused-opacity-${id}`]: 'focusedOpacity',
+            [`focused-edge-width-${id}`]: 'focusedEdgeWidth', [`focused-color-${id}`]: 'focusedColor',
+            [`focused-edge-color-${id}`]: 'focusedEdgeColor',
+            [`reset-focused-color-${id}`]: 'focusedColor', [`reset-focused-edge-color-${id}`]: 'focusedEdgeColor'
+        }[target.id];
+        if (focusKey) {
+            const v = parseFloat(target.value);
+            if (target.id.startsWith('reset-')) {
+                if (e.type !== 'click') return;
+                followTheme(settings, [focusKey]);
+                const input = document.getElementById(target.id.slice('reset-'.length));   // the menu is in <body>, not the panel
+                if (input) input.value = plotColour(settings, focusKey);
+            } else if (focusKey === 'focusedColor' || focusKey === 'focusedEdgeColor') {
+                settings[focusKey] = target.value;
+            } else if (target.value === '') {
+                delete settings[focusKey];          // the default
+            } else if (focusKey === 'focusedScale' ? v > 0 && v <= FOCUS_SCALE_MAX
+                : focusKey === 'focusedOpacity' ? v > 0 && v <= 1 : v >= 0 && v <= FOCUS_EDGE_MAX) {
+                settings[focusKey] = v;
+            } else return;
+            syncColourControls(id, settings);
+            restyleFocus(plotContainer, settings).catch(err => console.warn('Focused marker style not updated:', err && err.message));
+            return;
+        }
+
         // Export width
         if (target.id === `plot-width-${id}`) {
             settings.exportWidth = parseInt(target.value, 10);
@@ -1617,6 +1681,8 @@ export function updateColorInputs(container, id, settings) {
     const axisColorInput = document.getElementById(`axis-color-${id}`);
     const zeroLineColorInput = document.getElementById(`zero-line-color-${id}`);
     const backdropColorInput = document.getElementById(`backdrop-color-${id}`);
+    const focusedColorInput = document.getElementById(`focused-color-${id}`);
+    const focusedEdgeColorInput = document.getElementById(`focused-edge-color-${id}`);
     
     if (bgColorInput) bgColorInput.value = plotColour(settings, 'bgColor');
     if (textColorInput) textColorInput.value = plotColour(settings, 'textColor');
@@ -1624,14 +1690,22 @@ export function updateColorInputs(container, id, settings) {
     if (axisColorInput) axisColorInput.value = plotColour(settings, 'axisColor');
     if (zeroLineColorInput) zeroLineColorInput.value = plotColour(settings, 'zeroLineColor');
     if (backdropColorInput) backdropColorInput.value = plotColour(settings, 'backdropColor');
+    if (focusedColorInput) focusedColorInput.value = plotColour(settings, 'focusedColor');
+    if (focusedEdgeColorInput) focusedEdgeColorInput.value = plotColour(settings, 'focusedEdgeColor');
     syncColourControls(id, settings);
+}
+
+/** A Reset button's state as drawn: disabled while its colour follows the theme (syncColourControls keeps it so). */
+function resetState(settings, key) {
+    return isFollowing(settings, key) ? 'disabled title="Following the app theme"' : 'title="Follow the app theme again"';
 }
 
 /** The ids of each colour's Reset button, by settings key. */
 const RESET_IDS = {
     bgColor: 'reset-bg-color', backdropColor: 'reset-backdrop-color', textColor: 'reset-text-color',
     gridColor: 'reset-grid-color', axisColor: 'reset-axis-color', zeroLineColor: 'reset-zero-line-color',
-    notInTableColor: 'reset-not-in-table-color'
+    notInTableColor: 'reset-not-in-table-color',
+    focusedColor: 'reset-focused-color', focusedEdgeColor: 'reset-focused-edge-color'
 };
 
 /**

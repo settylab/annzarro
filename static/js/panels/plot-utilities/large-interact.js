@@ -21,6 +21,7 @@ import { DataManager } from '../../data-manager.js';
 import { nearestPoint, pointOfRow } from '../../utils/point-index.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { CLICK_MAX_MS, CLICK_MAX_MOVE_PX } from './plot-make-helper.js';
+import { focusShapeStyle } from '../../utils/focus-style.js';
 
 const HOVER_PX = 10;           // how close the pointer must be to a point
 const HOVER_MS = 16;           // hover lookups are coalesced to one per this long
@@ -241,12 +242,15 @@ export function detachLargeInteraction(gd) {
   if (area && area.dataset.largeCursor !== undefined) { area.style.cursor = area.dataset.largeCursor; delete area.dataset.largeCursor; }
 }
 
-/** The shape that marks the focused cell: a filled circle sized in pixels, as the regular path's marker. */
-function focusShape(x, y, pointSize) {
-  const r = Math.max(2, Number(pointSize) || 4);
+/**
+ * The shape that marks the focused cell: a filled circle sized in pixels, in
+ * the panel's Focused style as the regular path's marker (utils/focus-style.js;
+ * a shape's opacity covers fill and edge, as a marker's does).
+ */
+function focusShape(x, y, settings) {
+  const { r, opacity, fillcolor, line } = focusShapeStyle(settings);
   return { name: 'Focused Cell', type: 'circle', xref: 'x', yref: 'y', xsizemode: 'pixel', ysizemode: 'pixel',
-    xanchor: x, yanchor: y, x0: -r, x1: r, y0: -r, y1: r, layer: 'above',
-    fillcolor: 'rgba(255, 0, 0, 1)', line: { color: 'rgba(0, 0, 0, 1)', width: 2 } };
+    xanchor: x, yanchor: y, x0: -r, x1: r, y0: -r, y1: r, layer: 'above', opacity, fillcolor, line };
 }
 
 function setShape(gd, shape) {
@@ -286,5 +290,21 @@ export async function highlightLargeFocus(gd, settings) {
   }
   if (seq !== st.seq || gd.__largeState !== st || !st.index) return;
   if (p < 0) return setShape(gd, null);
-  return setShape(gd, focusShape(st.index.X[p], st.index.Y[p], settings.pointSize));
+  return setShape(gd, focusShape(st.index.X[p], st.index.Y[p], settings));
+}
+
+/**
+ * Draw the highlight shape, where it is, in the panel's Focused style as it
+ * is now (a Plot Options change, the point size, the app theme). No shape,
+ * or one drawn so already: nothing to do.
+ */
+export function restyleLargeFocus(gd, settings) {
+  const shapes = gd && gd.layout && gd.layout.shapes;
+  const shape = Array.isArray(shapes) ? shapes.find(s => s && s.name === 'Focused Cell') : null;
+  if (!shape) return Promise.resolve();
+  const next = focusShape(shape.xanchor, shape.yanchor, settings);
+  const line = shape.line || {};
+  if (shape.x1 === next.x1 && shape.opacity === next.opacity && shape.fillcolor === next.fillcolor
+      && line.color === next.line.color && line.width === next.line.width) return Promise.resolve();
+  return setShape(gd, next);
 }

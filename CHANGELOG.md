@@ -8,6 +8,13 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- Plot Options has a **Focused cell** group (**Focused gene** in gene plots) that sets the size
+  (a multiple of the point size), opacity, fill colour, edge colour and edge width of the marker on
+  the focused cell, in 2D, 3D and large plots. The colours follow the app theme until you set them;
+  the values are kept in panel sets and share links, and a link without them draws the usual red
+  dot.
+
 ### Changed
 - The cell subset size you choose follows you to other datasets. A dataset you switch to opens
   on that many cells when it has more, and with every cell when it has as many or fewer; its badge
