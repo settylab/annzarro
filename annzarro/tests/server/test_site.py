@@ -402,6 +402,7 @@ def test_no_warning_for_ask_or_a_local_server(tmp_path, caplog, monkeypatch, aut
 #: Every key the app writes to the browser, with where the docs describe it (docs/deployment/public-site.md).
 #: A new key fails test_the_storage_inventory_is_complete until it is listed here AND in the docs.
 STORAGE_KEYS = {
+    "annzarro.structure-search": "static/js/utils/structure-search.js",
     "annzarro-theme": "static/js/utils/theme.js",
     "annzarro_autosave": "static/js/config.js",
     "annzarro.recents:": "static/js/utils/dataset-recents.js",
@@ -419,7 +420,8 @@ NOT_STORAGE = {"annzarro-csrf", "annzarro-root", "annzarro:open-dataset-browser"
 STORAGE_USERS = {"static/js/theme-init.js", "static/js/session-manager.js", "static/js/main.js",
                  "static/js/panels/gene-set.js", "static/js/utils/memory-guard-ui.js", "static/js/utils/theme.js",
                  "static/js/utils/site-storage.js", "static/js/utils/convenience-storage.js",
-                 "static/js/utils/memory-guard.js", "static/js/panels/gene-set-utilities/consent.js"}
+                 "static/js/utils/memory-guard.js", "static/js/panels/gene-set-utilities/consent.js",
+                 "static/js/utils/structure-search.js"}
 
 
 def js_files():
