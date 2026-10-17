@@ -159,7 +159,7 @@ test("partialRefreshNotice speaks only for a partial check, and says who can ser
   const user = partialRefreshNotice({ status: "partial" });
   assert.match(user.message, /inside its data chunks may not show/);
   assert.match(user.message, /admin/);
-  assert.match(user.message, /restart/);
+  assert.match(user.message, /Refresh dataset/);
   const admin = partialRefreshNotice({ status: "partial" }, { cleared: true });
   assert.match(admin.message, /cache/);
   assert.doesNotMatch(admin.message, /may not show/);

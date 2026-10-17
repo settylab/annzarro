@@ -397,7 +397,7 @@ const SessionManager = (function() {
                         { keepDataset: !!DataManager.getCurrentDataset() });
                     return applied && applied.status
                         ? applied
-                        : { status: 'success', message: 'Autosaved session loaded successfully' };
+                        : { status: 'success', message: 'Autosave loaded' };
                 }
                 
                 await _applySessionPanels(autosaveData);
@@ -408,7 +408,7 @@ const SessionManager = (function() {
                     await DatasetState.open(autosaveData.dataset, { source: 'autosave' });
                 }
 
-                return { status: 'success', message: 'Autosaved session loaded successfully' };
+                return { status: 'success', message: 'Autosave loaded' };
             }
             
             // Regular server-side session
@@ -433,7 +433,7 @@ const SessionManager = (function() {
             });
             if (applied && applied.status && applied.status !== 'success') return applied;
             
-            return { status: 'success', message: `Session ${name} loaded successfully` };
+            return { status: 'success', message: `Loaded "${name}"` };
         } catch (error) {
             console.error('Error loading session:', error);
             return { status: 'error', message: error.message };
@@ -514,7 +514,7 @@ const SessionManager = (function() {
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
             
-            return { status: 'success', message: `Session ${name} exported successfully` };
+            return { status: 'success', message: `Exported "${name}"` };
         } catch (error) {
             console.error('Error exporting session:', error);
             return { status: 'error', message: error.message };

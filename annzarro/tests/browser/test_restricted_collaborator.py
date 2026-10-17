@@ -222,9 +222,8 @@ def test_a_grant_revoked_while_the_dataset_is_open_returns_to_the_browser(browse
         assert outcome in (404, 'read'), outcome
         if outcome == 'read':
             pytest.skip("the fixture has no such column to read after the revoke")
-        page.wait_for_selector(".notification-title")
-        assert "Dataset not available" in page.inner_text("#notification-container")
         page.locator(BROWSER).wait_for(state="visible")
+        assert page.locator(".notification").count() == 0, "the browser's banner says it; no toast repeats it"
         page.wait_for_function("() => !/Loading/.test(document.querySelector('#dsb-table-wrap').innerText)")
         page.wait_for_timeout(1500)       # the lists load after the dialog opens
         assert page.locator(f"{BROWSER} tr.dsb-row[data-path$='in.zarr']").count() == 0

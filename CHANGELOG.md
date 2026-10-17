@@ -30,10 +30,28 @@ with the release after it. Older releases are listed on
   browser ran out of memory -- Close a plot, or show fewer cells (a smaller subset), and try
   again") instead of "failed to read -- Array buffer allocation failed", and offers **Half the
   cells** and **Subset…** where it says it.
+- Fewer pop-ups: AnnZarro now pops a notice up only for what you did not cause or cannot see (an
+  error, data that changed under you, a partial outcome). Messages about what you just did appear
+  where you are looking. A panel set that cannot be saved, loaded, imported or deleted says why
+  on its card or under the name box in the dialog, and saving over an existing name turns Save into
+  Overwrite and deleting asks on the card, in place of the browser's own confirmation windows
+  (also for Clear closed panels). A plot export or copy that the memory check refuses, or that
+  fails, says so in the plot's status line, with the advice, until the next one succeeds. What the Log
+  colour scale does to a Min or Max you typed is shown under the boxes. Share Link is off, with a
+  tooltip, until a dataset is open. No notice any more for a restored autosave, an imported panel
+  set, a plot source missing from the dataset (the menu and the plot already say it), or a
+  dataset that became unavailable (the dataset browser says it). Several columns removed from
+  tables in one restore, or two notes about one store, come as one notice, and notices that stay
+  up are held while the pointer or keyboard focus is on them and last longer when they are longer.
 
 ### Fixes
 - A plot coloured by nothing, or by a column the dataset does not have (after switching datasets),
   no longer shows a grey "trace 0" in a legend after an axis change; such a plot has no legend.
+- An error notice is no longer wiped by the notices that follow it from the same action (a shared
+  link that could not be read, a cell subset that could not be applied): a notice is replaced only
+  by one at least as severe, and a lower one waits below it.
+- The first notice after the page loads is announced by screen readers, and a dataset that fails to
+  open is announced once, not twice.
 - A release build no longer fails when Apple's ticket service drops the connection while the
   notarization ticket of the macOS app or its dmg is being checked (`stapler validate`); the check
   is retried up to five times, and a missing ticket still fails at once.

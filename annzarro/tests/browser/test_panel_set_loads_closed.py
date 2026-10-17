@@ -792,8 +792,8 @@ def test_load_opens_only_the_panels_open_at_save(server, browser, case, open_ids
             notice.wait_for(timeout=30000)
             page.wait_for_timeout(500)
             text = notice.inner_text()
-            assert "No panel was open when the set was saved, so none opened" in text
-            assert "5 panels listed closed" in text
+            assert f'Loaded "{name}": no panels open' in text
+            assert "Its 5 panels listed closed under Duplicate or Reopen Panel." in text
             assert _tile_ids(page) == []
             assert sorted(page.evaluate(CLOSED_ALL)) == sorted(FIVE)
             assert page.locator(".open-saved-layout-btn, .notification[data-offer]").count() == 0

@@ -15,7 +15,7 @@ import { escapeHtml, canModify, lockReason, failureLine, authIndicator, refreshP
 import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
-import { noticeDuration, planReplacement } from './utils/notice-rules.js';
+import { noticeDuration, planReplacement, joinNotices, focusOutsideSubsetNotice, fingerprintPendingNotice } from './utils/notice-rules.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
 import { clearSiteStorage, clearSiteStorageNow, bareUrl } from './utils/site-storage.js';
@@ -165,7 +165,7 @@ const App = (function() {
                     await _applyDeepLink(deepLink);
                 } catch (error) {
                     console.error('Deep-link application failed:', error);
-                    _showNotification('Deep-link failed', error.message || 'Could not open the shared view.', 'error');
+                    _showNotification('Shared link not opened', error.message || 'Could not open the shared view.', 'error');
                 }
                 PanelManager.ensureWelcomeFallback();
             } else if (!hasAutosave) {
@@ -210,7 +210,7 @@ const App = (function() {
             _isInitialized = true;
         } catch (error) {
             console.error('Error initializing application:', error);
-            _showNotification('Initialization failed', error.message, 'error');
+            _showNotification('AnnZarro did not start', error.message, 'error');
         } finally {
             _bootDone();
         }
@@ -248,10 +248,10 @@ const App = (function() {
             // the dataset browser, for the desktop app's menu and the welcome screen
             openBrowser: (options = {}) => _showChangeDataset({ browse: true, ...options }),
             // a message of the page for the desktop app (a refused drop, say); true when shown
-            notify: (message, { level = 'info' } = {}) => {
+            notify: (message, { level = 'info', title = '' } = {}) => {
                 if (!message) return false;
                 const type = level === 'danger' ? 'error' : level === 'warning' ? 'warning' : 'info';
-                _showNotification(type === 'error' ? 'Error' : type === 'warning' ? 'Notice' : 'AnnZarro', String(message), type);
+                _showNotification(String(title || ''), String(message), type);
                 return true;
             },
             recentDatasets: (limit = 5) => _recentEntries().then(list => list.slice(0, limit)),
@@ -365,8 +365,8 @@ const App = (function() {
                 // A mangled view (truncated by a mail client, say) should still
                 // open the dataset the link names rather than nothing at all.
                 console.error('Failed to decode deep-link view:', error);
-                _showNotification('Invalid deep-link',
-                    'The shared view could not be decoded; opening the dataset only.', 'error');
+                _showNotification('Shared view not readable',
+                    'The shared view could not be decoded; opening the dataset only.', 'warning');
             }
         }
         return { datasetPath: parts.datasetPath, view };
@@ -411,7 +411,7 @@ const App = (function() {
             // A large store's names may still be being fingerprinted: wait
             // briefly, then share with what is known and say so
             const settled = _noDataView ? { complete: true } : await SessionManager.settleStoreOfView(3000);
-            if (!settled.complete) _noticeFingerprintPending();
+            if (!settled.complete) _noticeFingerprintPending('link');
             link = await _buildShareView(datasetPath);
         } catch (error) {
             console.error('Building share link failed:', error);
@@ -437,17 +437,16 @@ const App = (function() {
     let _shareLabelTimer = null;
 
     /**
-     * Said when a view is saved before the open store's cell and gene names
-     * are fingerprinted (a large store, just opened). The view records the
-     * counts and the fields; only the names are not checked when it opens.
+     * Said when a view is saved, or a link made, before the open store's cell
+     * and gene names are fingerprinted (a large store, just opened). The view
+     * records the counts and the fields; only the names are not checked when
+     * it opens.
+     * @param {'saved'|'link'} [what]
      * @private
      */
-    function _noticeFingerprintPending() {
-        _showNotification('Saved without the cell and gene check',
-            'This store is still being fingerprinted (a large store takes a few seconds once). ' +
-            'The view records its size and fields, but not yet its cell and gene names, so a store ' +
-            'with other names of the same size is not detected when it opens. Save again in a moment to include them.',
-            'info', 10000);
+    function _noticeFingerprintPending(what = 'saved') {
+        const { title, message } = fingerprintPendingNotice(what);
+        _showNotification(title, message, 'info');
     }
 
     /**
@@ -604,9 +603,8 @@ const App = (function() {
                 if (cell && cell.unreadable) {
                     // Said once: loading the dataset may already have said it
                     if (_focusOutsideSubsetNoticed !== constants.focusedCell) {
-                        _showNotification('Focused cell not in the subset',
-                            `${constants.focusedCell} is not among the cells shown, so it is not focused. ` +
-                            'This server cannot read a cell outside the subset.', 'warning', 8000);
+                        const said = focusOutsideSubsetNotice(constants.focusedCell);
+                        _showNotification(said.title, said.message, 'warning');
                     }
                 } else {
                     DataManager.setFocusedCell(constants.focusedCell);
@@ -658,15 +656,6 @@ const App = (function() {
 
     /** A view open without data: {view, saved, missing}; null otherwise. */
     let _noDataView = null;
-    /** When the last notice about an opened view was shown (a later toast would hide it). */
-    let _viewNoticeAt = 0;
-    // what that notice said, so a notice that replaces it can carry it on
-    let _viewNotice = null;
-
-    /** The last view notice, if it is from this load, to begin a notice that replaces it. @private */
-    function _carriedViewNotice() {
-        return _viewNotice && Date.now() - _viewNoticeAt < 3000 ? `${_viewNotice}\n\n` : '';
-    }
 
     /**
      * Find the store a view names on this server.
@@ -938,7 +927,7 @@ const App = (function() {
      */
     function _afterViewOpened(view, located, cmp, said) {
         if (!located) return;
-        // One notice (a toast replaces the one before it), every point in it
+        // One notice, every point in it
         const parts = [];
         let title = null;
         if (located.repointed) {
@@ -960,9 +949,8 @@ const App = (function() {
             parts.push(version);
         }
         if (parts.length) {
-            _viewNoticeAt = Date.now();
-            _viewNotice = `${title}: ${parts.join('\n\n')}`;
-            _showNotification(title, parts.join('\n\n'), 'info', 12000);
+            // it lists fields when the store differs: stays until closed
+            _showNotification(title, parts.join('\n\n'), 'info', said && !said.strong ? 0 : undefined);
         }
         const savedFp = located.saved && located.saved.fp;
         if (cmp && hasDataTier(savedFp) && !cmp.dataKnown && cmp.level !== 'different') {
@@ -1131,12 +1119,10 @@ const App = (function() {
         PanelManager.updateSourcePanelSelection();
         PanelManager.ensureWelcomeFallback();
         const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
-        // A toast replaces the one before it: these keep what the view's
-        // notice said (opened on another path, another version)
         if (!(plan.view && plan.view.layout && collectTileIds(plan.view.layout.hierarchy).length)) {
             // a set saved with no panel open
-            _showNotification(`Loaded "${name}"`, _carriedViewNotice() + `No panel was open when the set was saved, so none ` +
-                `opened; its ${listed} under Duplicate or Reopen Panel.`, 'success', 8000);
+            _showNotification(`Loaded "${name}": no panels open`,
+                `Its ${listed} under Duplicate or Reopen Panel.`, 'success');
         }
         if (applied && applied.status === 'no-data') {
             return { status: 'no-data', message: `Loaded "${name}" without data: ${applied.message}` };
@@ -1183,9 +1169,9 @@ const App = (function() {
         PanelManager.updateSourcePanelSelection();
         const panels = `${n} panel${n === 1 ? '' : 's'}`;
         _showNotification(`Added "${name}"`,
-            `${panels} added to the closed panels under Duplicate or Reopen Panel; the open view is unchanged.` +
+            `${panels} added to the closed panels under Duplicate or Reopen Panel.` +
             (other ? ` The set was saved on ${other}: its panels are marked "other dataset".` : ''),
-            'success', 8000);
+            'success');
         return { status: 'success', message: `Added ${panels} of "${name}" to the closed panels` };
     }
 
@@ -1785,7 +1771,7 @@ const App = (function() {
                 // A store too large to check within the budget: say what a
                 // chunk-only write needs (once per press, not per poll)
                 const partial = partialRefreshNotice(refreshed, { cleared });
-                if (partial) _showNotification(partial.title, partial.message, 'info', 12000);
+                if (partial) _showNotification(partial.title, partial.message, 'info');
                 
                 // Reload available datasets
                 await _loadDatasets();
@@ -2200,13 +2186,15 @@ const App = (function() {
             document.getElementById('gene-count').textContent = datasetStructure.n_vars || 0;
             // A refresh found the store's consolidated metadata out of date:
             // it is read without it now, and the fix is the user's to run
-            if (datasetStructure.consolidated_metadata && datasetStructure.consolidated_metadata.stale) {
-                _showNotification('Consolidated metadata out of date', datasetStructure.consolidated_metadata.message, 'warning');
-            }
             // dense obsp/varp chunked so that one row read is more than the server allows
-            if (datasetStructure.pairwise_chunking) {
-                _showNotification('Pairwise matrix chunking', datasetStructure.pairwise_chunking.message, 'warning');
-            }
+            // (the two can come together: one toast, so the second does not replace the first)
+            const storeNotice = joinNotices([
+                datasetStructure.consolidated_metadata && datasetStructure.consolidated_metadata.stale
+                    ? { title: 'Consolidated metadata out of date', message: datasetStructure.consolidated_metadata.message } : null,
+                datasetStructure.pairwise_chunking
+                    ? { title: 'Pairwise matrices read in part', message: datasetStructure.pairwise_chunking.message } : null
+            ]);
+            if (storeNotice) _showNotification(storeNotice.title, storeNotice.message, 'warning');
             
             if (signal.aborted) {
                 console.log(`Dataset load aborted before populating selectors: ${datasetPath}`);
@@ -2276,8 +2264,8 @@ const App = (function() {
                 if (currentDataset) {
                     // We have a current dataset loaded, so show a non-blocking notification
                     _showNotification(
-                        'Dataset Loading Error',
-                        `Could not load dataset:\n${datasetPath}\n\n${userMsg}\n\nThe previous dataset is still loaded.`,
+                        'Dataset not opened',
+                        `${datasetPath}\n${userMsg}\n${_labelOf(currentDataset)} is still open.`,
                         'error'
                     );
 
@@ -2292,7 +2280,7 @@ const App = (function() {
                         countNoun(genes.length, 'genes');
                 } else {
                     // No current dataset, so show an error notification
-                    _showNotification('Failed to load dataset', userMsg, 'error');
+                    _showNotification('Dataset not opened', userMsg, 'error');
 
                     // Reset UI elements
                     document.getElementById('cell-count').textContent = 'No dataset loaded';
@@ -2438,9 +2426,8 @@ const App = (function() {
                 if (cell && cell.unreadable) {
                     // An older server: say why the focus moves
                     _focusOutsideSubsetNoticed = current;
-                    _showNotification('Focused cell not in the subset',
-                        `${current} is not among the cells shown, so another cell is focused. ` +
-                        'This server cannot read a cell outside the subset.', 'warning', 8000);
+                    const said = focusOutsideSubsetNotice(current);
+                    _showNotification(said.title, said.message, 'warning');
                 }
             } else if (current) {
                 const hit = await fetchNameMatches(Config.API.NAMES, {

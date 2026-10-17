@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 import {
     SEVERITY, severityRank, mayReplace, noticeDuration, planReplacement,
+    joinNotices, focusOutsideSubsetNotice, fingerprintPendingNotice, removedColumnsNotice,
     MIN_SUCCESS_MS, MIN_NOTICE_MS, MAX_NOTICE_MS,
 } from '../../../static/js/utils/notice-rules.js';
 
@@ -54,4 +55,41 @@ test('an explicit duration wins, including 0 (until closed)', () => {
     assert.equal(noticeDuration('info', 'a', 'b', 12000), 12000);
     assert.equal(noticeDuration('info', 'a', 'b', 0), 0);
     assert.equal(noticeDuration('error', 'a', 'b', 3000), 3000);
+});
+
+test('joinNotices: none is null, one is itself, several are one toast that keeps every title', () => {
+    assert.equal(joinNotices([]), null);
+    assert.equal(joinNotices([null, undefined]), null);
+    assert.deepEqual(joinNotices([{ title: 'A', message: 'a.' }]), { title: 'A', message: 'a.' });
+    assert.deepEqual(joinNotices([{ title: 'A', message: 'a.' }, null, { title: 'B', message: 'b.' }]),
+        { title: 'A', message: 'a.\n\nB: b.' });
+});
+
+test('the focus-outside-subset notice has one text for a link and for a dataset load', () => {
+    const n = focusOutsideSubsetNotice('AAAC-1');
+    assert.equal(n.title, 'Focused cell not in the subset');
+    assert.match(n.message, /^AAAC-1 is not among the cells shown, so it is not focused\./);
+    assert.match(n.message, /cannot read a cell outside the subset/);
+});
+
+test('the fingerprint notice names the link or the save, in sentence case, in few words', () => {
+    const link = fingerprintPendingNotice('link');
+    const saved = fingerprintPendingNotice('saved');
+    assert.equal(link.title, 'Link made before the names were checked');
+    assert.equal(saved.title, 'Saved before the names were checked');
+    assert.match(link.message, /Make the link again/);
+    assert.match(saved.message, /Save again/);
+    for (const n of [link, saved]) assert.ok(n.message.split(/\s+/).length <= 35, n.message);
+});
+
+test('removed columns: one column reads as a title, several tables as one toast', () => {
+    assert.equal(removedColumnsNotice([]), null);
+    assert.equal(removedColumnsNotice([{ title: 'Cell Table 1', keys: [] }]), null);
+    const one = removedColumnsNotice([{ title: 'Cell Table 1', keys: ['expr (focused gene)'] }]);
+    assert.equal(one.title, 'Cell Table 1: column expr (focused gene) removed');
+    assert.match(one.message, /Add it again/);
+    const many = removedColumnsNotice([{ title: 'Cell Table 1', keys: ['a', 'b'] }, { title: 'Gene Table', keys: ['c'] }]);
+    assert.equal(many.title, '3 columns removed');
+    assert.match(many.message, /Cell Table 1: a, b\nGene Table: c/);
+    assert.match(many.message, /Add them again/);
 });

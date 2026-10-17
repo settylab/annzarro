@@ -328,7 +328,8 @@ plot.
 4. Click anywhere else on a card to open a **copy** of that panel (a duplicate with a new
    title). This works for open and closed panels.
 5. The small **×** on a closed card forgets that panel. **Clear closed panels** forgets all
-   closed panels after a confirmation.
+   closed panels: the first press turns the button into "Delete all N closed panels?", the second
+   (within a few seconds) deletes them.
 
 ## The browser remembers your last layout
 

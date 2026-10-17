@@ -828,7 +828,7 @@ export class SelectionTile {
             try {
               if (this.variant != "welcome") this.remove();
               const result = await sessionManager.loadSession(session.name, { mode });
-              if (result && result.status === 'error') notify('Failed to load panel set', result.message, 'error');
+              if (result && result.status === 'error') notify('Panel set not loaded', result.message, 'error');
             } finally {
               if (item.isConnected) actions.setBusy(false);
             }

@@ -64,3 +64,74 @@ export function planReplacement(shown, incoming) {
     for (const t of shown) (mayReplace(t.type, incoming) ? replace : keep).push(t.id);
     return { replace, keep };
 }
+
+// ---- message builders -------------------------------------------------------------------------
+// Notices that more than one place raises say the same thing: one builder each.
+
+/**
+ * Several notices of one moment as one toast, so that the second does not
+ * replace the first: the first as it is, the others as paragraphs that
+ * begin with their titles.
+ * @param {Array<{title: string, message: string}>} notices
+ * @returns {{title: string, message: string}|null}
+ */
+export function joinNotices(notices) {
+    const list = (notices || []).filter(Boolean);
+    if (!list.length) return null;
+    const [first, ...rest] = list;
+    return {
+        title: first.title,
+        message: [first.message, ...rest.map(n => `${n.title}: ${n.message}`)].join('\n\n')
+    };
+}
+
+/**
+ * A focus (from a link, a panel set or the dataset's own) on a cell the
+ * subset does not show, on a server that cannot read a cell outside it.
+ * @param {string} cell
+ * @returns {{title: string, message: string}}
+ */
+export function focusOutsideSubsetNotice(cell) {
+    return {
+        title: 'Focused cell not in the subset',
+        message: `${cell} is not among the cells shown, so it is not focused. `
+            + 'This server cannot read a cell outside the subset.'
+    };
+}
+
+/**
+ * A view saved, or a link made, before a large store's names were checked.
+ * @param {'saved'|'link'} what
+ * @returns {{title: string, message: string}}
+ */
+export function fingerprintPendingNotice(what) {
+    return {
+        title: what === 'link' ? 'Link made before the names were checked' : 'Saved before the names were checked',
+        message: 'This store\'s cell and gene names are still being checked, so the view records only its '
+            + 'size and fields. '
+            + (what === 'link' ? 'Make the link again in a minute to include them.' : 'Save again in a minute to include them.')
+    };
+}
+
+/**
+ * Columns that followed the focused cell or gene in an older view and were
+ * removed when it was restored with nothing focused, from one or several
+ * tables of one restore.
+ * @param {Array<{title: string, keys: string[]}>} removed - per table
+ * @returns {{title: string, message: string}|null}
+ */
+export function removedColumnsNotice(removed) {
+    const list = (removed || []).filter(r => r && r.keys && r.keys.length);
+    if (!list.length) return null;
+    const why = 'It followed the focused cell or gene, and nothing was focused when the view was restored. '
+        + 'Add it again from the cell or gene you want.';
+    if (list.length === 1 && list[0].keys.length === 1) {
+        return { title: `${list[0].title}: column ${list[0].keys[0]} removed`, message: why };
+    }
+    const count = list.reduce((n, r) => n + r.keys.length, 0);
+    return {
+        title: `${count} columns removed`,
+        message: `${list.map(r => `${r.title}: ${r.keys.join(', ')}`).join('\n')}\n\n`
+            + why.replace('It followed', 'They followed').replace('Add it again', 'Add them again')
+    };
+}

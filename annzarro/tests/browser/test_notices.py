@@ -76,6 +76,10 @@ def test_an_error_survives_the_info_notice_that_follows(page):
     _notify(page, "A warning", "Something partial.", "warning")
     page.wait_for_function(f"document.querySelectorAll('{TOAST}').length === 2")
     assert _titles(page) == ["Shared view not readable", "A warning"]
+    shot = os.environ.get("ANNZARRO_SHOT")
+    if shot:
+        page.wait_for_timeout(500)
+        page.screenshot(path=shot + "-error-and-warning.png", clip={"x": 900, "y": 0, "width": 500, "height": 300})
 
 
 def test_a_more_severe_notice_replaces_a_lower_one(page):
@@ -165,6 +169,7 @@ def test_a_refused_save_says_so_in_the_dialog(served):  # noqa: F811
             assert _no_toasts(page)
             shot = os.environ.get("ANNZARRO_SHOT")
             if shot:
+                page.wait_for_timeout(600)      # the dialog has faded in
                 page.screenshot(path=shot + "-save-refused.png")
         finally:
             browser.close()

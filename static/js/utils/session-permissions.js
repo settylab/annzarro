@@ -182,14 +182,13 @@ export function partialRefreshNotice(result, { cleared = false } = {}) {
     if (cleared) {
         return {
             title: 'Large dataset refreshed',
-            message: 'This dataset is too large to check completely during a refresh, so the server\'s ' +
-                'cache for it was cleared instead. Changes inside its data chunks are shown.'
+            message: 'This dataset is too large to check completely, so the server\'s cache for it was ' +
+                'cleared instead. Changes inside its data chunks are shown.'
         };
     }
     return {
         title: 'Refresh may not show every change',
-        message: 'This dataset is too large to check completely during a refresh. Changes made only ' +
-            'inside its data chunks may not show yet. An admin\'s Refresh dataset (or a server ' +
-            'restart) will pick them up.'
+        message: 'This dataset is too large to check completely, so a change made only inside its ' +
+            'data chunks may not show. An admin\'s Refresh dataset will show it.'
     };
 }

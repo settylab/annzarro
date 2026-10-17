@@ -87,7 +87,7 @@ function actionBar(data) {
         type: 'button', class: 'btn btn-sm btn-primary', id: 'ps-reassign', disabled: !(count && state.target),
         text: count ? `Reassign ${formatCount(count)} selected` : 'Reassign selected',
         onclick: () => run(() => apiRef.panelSets.reassign({ names: [...state.selected], to_owner: state.target }),
-            (r) => { const m = reassignMessage(r, state.target); toast(m.text, m.level, m.level === 'warning' ? 0 : 6000); }),
+            (r) => { const m = reassignMessage(r, state.target); toast(m.text, m.level, m.level === 'warning' ? 0 : undefined); }),
     });
     parts.push(controls.reassign);
     if (state.owner) {
@@ -98,7 +98,7 @@ function actionBar(data) {
             title: `Every set ${state.owner} owns, on every page`,
             text: `Reassign all of ${state.owner}'s ${controls.owned ? formatCount(controls.owned.count) : 0}`,
             onclick: () => run(() => apiRef.panelSets.reassign({ from_owner: state.owner, to_owner: state.target }),
-                (r) => { const m = reassignMessage(r, state.target); toast(m.text, m.level, m.level === 'warning' ? 0 : 6000); }),
+                (r) => { const m = reassignMessage(r, state.target); toast(m.text, m.level, m.level === 'warning' ? 0 : undefined); }),
         });
         parts.push(controls.reassignAll);
     }

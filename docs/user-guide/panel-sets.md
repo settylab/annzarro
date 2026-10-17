@@ -30,9 +30,10 @@ the end of this page.
 
 The name is stored with spaces replaced by underscores (`HSC_walk_and_H2-Q7_fold_change`); the
 server keeps only letters, digits, spaces, `_` and `-`. Saving under a name that exists already
-asks "A panel set with the name … already exists. Do you want to overwrite it?" first. On a server
-with login, if the existing panel set belongs to someone else, AnnZarro says so ("Choose another
-name") and keeps the dialog open.
+turns **Save** into **Overwrite** and says so under the name box; press it to replace the set, or
+type another name. On a server with login, if the existing panel set belongs to someone else, the
+name box says so and the dialog stays open. A save, load, import or delete that the server refuses
+is reported in the dialog, on the card it concerns.
 
 ## Load a panel set
 
@@ -48,7 +49,7 @@ The Load Panel Set dialog.
 - The search field (1) filters the list by name or dataset.
 - Each card (2) shows the name, the dataset, one icon per panel and the date; on a server with
   login it also shows the owner. The download button exports the panel set as a JSON file; the
-  red bin deletes it after a confirmation.
+  red bin asks "Delete panel set …?" on the card, with **Delete** and **Cancel**.
 - The badge (3) says whether the set's dataset is on this server: **available here**, or **not
   found here** ({ref}`below <panelsets-missing>`). It is found by the store's path or, failing
   that, by a store with the same cells and genes, as for a {doc}`share link <share-links>`.
