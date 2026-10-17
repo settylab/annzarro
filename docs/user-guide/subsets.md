@@ -133,8 +133,10 @@ or the desktop app's File menu, and so does the dataset AnnZarro opens by itself
 (the one you opened last), unless a link or the restored session asks for its own. A dataset with
 more cells than that size opens on a subset of that many cells, with the server's default seed; one with as many or fewer opens with every cell, and its
 badge reads, for example, **All cells (≤ 10,000)**: the size is kept, and the next larger dataset
-is subsampled to it again. Choosing **every cell** on a dataset larger than the size makes every
-cell the size you carry. Only the size travels: a filter, a balance column, a seed and a part
+is subsampled to it again. Choosing **every cell** on a dataset above the server's threshold
+([The default](#the-default)) makes every cell the size you carry. Choosing it on a dataset the
+server shows in full anyway (up to the threshold) says nothing about large datasets: the carried
+size is forgotten and the next large dataset opens on the server's default subset again. Only the size travels: a filter, a balance column, a seed and a part
 belong to the dataset they were chosen on. Stepping through parts does not change the size.
 A size the
 [browser memory](#browser-memory) guard would refuse on the new dataset opens on the server's

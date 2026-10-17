@@ -6,6 +6,9 @@ and its badge says the size is still in effect; the other large one opens on 10,
 button returns to the rule (not to the part the dataset was left on); a reload keeps the size; a
 share link applies its own subset and leaves the size unchanged.
 
+A second server (threshold 1,000) shows when every cell chosen is a new intent: see
+test_every_cell_is_carried_only_from_a_dataset_above_the_threshold.
+
 Needs Playwright with Chromium; skipped without it, or failed when ANNZARRO_REQUIRE_BROWSER=1.
 """
 import base64
@@ -155,14 +158,15 @@ def test_the_size_chosen_follows_the_user_across_datasets(stores):
         open_dataset(page, large_a)
         _wait_count(page, "10,000 of 30,000")
 
-        # every cell, chosen on a large store: the new intent, carried the same way
+        # every cell, chosen on a store the server shows in full anyway (30,000 is under its threshold):
+        # not a statement about large datasets, so the size is forgotten and the default applies again
         page.click("#subset-button")
         page.wait_for_selector(".modal.show #subset-apply", timeout=10_000)
         page.uncheck("#subset-enabled")
         page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
         page.click("#subset-apply")
         _wait_count(page, "30,000")
-        assert _kept(page) == "all"
+        assert _kept(page) is None
         open_dataset(page, large_b)
         _wait_count(page, "30,000")
         assert _badge(page) == "All cells"
@@ -295,6 +299,69 @@ def test_a_read_out_of_memory_says_so_and_offers_fewer_cells(stores):
             return !!(g && g._fullData && g._fullData.length); }}""", timeout=60_000)
         assert page.locator(f"{tile} .coverage-placeholder").count() == 0
         assert _kept(page) == LARGE // 2, "half the cells is the size kept"
+        assert not s.errors, s.errors
+    finally:
+        s.close()
+
+
+THRESHOLD = 1_000
+TINY, BIG = 500, 3_000
+
+
+@pytest.fixture(scope="module")
+def low_threshold(tmp_path_factory):
+    """A server that subsamples above 1,000 cells to 1,000: 3,000-cell stores are 'large' on it."""
+    _require()
+    tmp = tmp_path_factory.mktemp("carry_low")
+    data = tmp / "data"
+    data.mkdir()
+    for name, n in (("tiny.zarr", TINY), ("big_a.zarr", BIG), ("big_b.zarr", BIG)):
+        _store(data / name, n)
+    (tmp / "site.yaml").write_text(f"ui:\n  defaults:\n    subset_threshold: {THRESHOLD}\n    subset_size: {THRESHOLD}\n")
+    base, proc = start(tmp, data, extra=("--config", str(tmp / "site.yaml")))
+    yield base, str(data)
+    proc.terminate()
+    proc.wait(20)
+
+
+def _choose_every_cell(page):
+    """The dialog, as the user uses it: turn the subset on, tick every cell, Apply."""
+    page.click("#subset-button")
+    page.wait_for_selector(".modal.show #subset-apply", timeout=10_000)
+    if not page.is_checked("#subset-enabled"):
+        page.check("#subset-enabled")
+    if not page.is_checked("#subset-n-all"):
+        page.check("#subset-n-all")
+    page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
+    page.click("#subset-apply")
+
+
+def test_every_cell_is_carried_only_from_a_dataset_above_the_threshold(low_threshold):
+    base, data = low_threshold
+    tiny, big_a, big_b = (os.path.join(data, n) for n in ("tiny.zarr", "big_a.zarr", "big_b.zarr"))
+    s = Session(base, width=1280, height=800)
+    page = s.page
+    try:
+        # every cell on a store the server shows in full anyway: nothing is kept
+        open_dataset(page, tiny)
+        _wait_count(page, "500")
+        _choose_every_cell(page)
+        _wait_count(page, "500")
+        assert _kept(page) is None
+        # a large store opens on the server's default subset, not on every cell
+        open_dataset(page, big_a)
+        _wait_count(page, "1,000 of 3,000")
+
+        # every cell on a large store: the intent is kept, and the next large store opens with every cell
+        _choose_every_cell(page)
+        _wait_count(page, "3,000")
+        assert _kept(page) == "all"
+        open_dataset(page, big_b)
+        _wait_count(page, "3,000")
+        # a small store, then every cell there again: the kept 'all' stays (it was chosen on a large store)
+        open_dataset(page, tiny)
+        _wait_count(page, "500")
+        assert _kept(page) == "all"
         assert not s.errors, s.errors
     finally:
         s.close()

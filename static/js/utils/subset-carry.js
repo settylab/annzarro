@@ -89,14 +89,20 @@ export function carriedRequest(size, nTotal, { seed = 0, maxCells = Infinity } =
 
 /**
  * The size kept after the user applied `spec` (null or `n: null`: every
- * cell) on a dataset of `nTotal` cells. Choosing every cell where the size
- * kept already shows every cell keeps it (the dataset is just small);
- * choosing it on a larger dataset is a new intent: every cell.
+ * cell) on a dataset of `nTotal` cells. A number is kept as chosen. Every
+ * cell where the size kept already shows every cell keeps it (the dataset is
+ * just small). Every cell on a dataset the server would show in full anyway
+ * (no more cells than its threshold, else its default size) says nothing
+ * about large datasets: the kept size is forgotten and the server's default
+ * applies again. Only every cell on a dataset above that is a new intent:
+ * 'all'. Without the server's defaults there is no threshold to compare to.
  */
 export function sizeAfterChoice(spec, nTotal, size, defaults = null) {
     const n = spec ? spec.n : null;
     if (Number.isInteger(n) && n >= 1) return n;
-    return showsAll(size, nTotal, defaults) ? size : 'all';
+    if (showsAll(size, nTotal, defaults)) return size;
+    const limit = defaults ? [defaults.threshold, defaults.size].find(Number.isFinite) : undefined;
+    return limit !== undefined && nTotal <= limit ? undefined : 'all';
 }
 
 /**
