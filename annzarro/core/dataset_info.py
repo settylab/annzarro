@@ -28,7 +28,8 @@ from urllib.parse import quote
 
 import numpy as np
 
-from . import store_details
+from . import dataset_schema, store_details
+from .dataset_schema import FIELDS, MAX_FIELD_BYTES, contact_url as _contact_url, http_url as _http_url
 
 __all__ = ["PARTS", "MAX_README_BYTES", "read_info", "InfoError"]
 
@@ -39,28 +40,12 @@ MAX_README_BYTES = 256 * 1024
 #: A text value stored bigger than this (compressed) is not read at all.
 MAX_STORED_TEXT = 8 * 1024 * 1024
 #: Longest accepted value of an attribution field (UTF-8 bytes); one long field is cut, not refused.
-MAX_FIELD_BYTES = 16 * 1024
-MAX_AUTHORS = 500
-MAX_AUTHOR_BYTES = 300
 #: Names listed per group of the structure, and nodes and depth of the uns tree.
 MAX_ITEMS = 200
 MAX_UNS_NODES = 400
 MAX_UNS_CHILDREN = 100
 MAX_UNS_DEPTH = 4
 
-#: Keys of ``uns["annzarro"]``, with the spellings accepted for each (the first is the name).
-FIELDS = {
-    "title": ("title",),
-    "description": ("description",),
-    "license": ("license", "licence"),
-    "license_url": ("license_url", "licence_url"),
-    "citation": ("citation",),
-    "doi": ("doi",),
-    "authors": ("authors", "author"),
-    "source_url": ("source_url",),
-    "contact": ("contact",),
-    "attribution": ("attribution",),
-}
 #: Keys of ``uns`` that other tools write and that say the same thing (CELLxGENE: title, citation).
 UNS_FALLBACKS = {"title": "title", "citation": "citation", "license": "license", "doi": "doi",
                  "description": "description"}
@@ -75,9 +60,14 @@ SPDX_IDS = {
     "LGPL-3.0-only", "AGPL-3.0-only", "MPL-2.0", "ODbL-1.0", "ODC-By-1.0", "PDDL-1.0", "Unlicense",
 }
 _DOI = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)?(10\.\d{4,9}/\S+)$", re.IGNORECASE)
-_EMAIL = re.compile(r"^[^\s@<>\"']+@[^\s@<>\"']+\.[^\s@<>\"']+$")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _STRING_KINDS = ("S", "U", "O", "T")
+_MISSING = object()
+#: Bounds of the plain tree read from ``uns["annzarro"]``: depth, nodes, children of a group, items of a list.
+TREE_DEPTH = 4
+TREE_NODES = 300
+TREE_CHILDREN = 100
+TREE_LIST = 500
 
 
 class InfoError(RuntimeError):
@@ -200,53 +190,76 @@ def _read_field(node, limit: int = MAX_FIELD_BYTES):
     return _cut(text, limit)[0], None
 
 
-def _read_authors(node):
+def _read_tree(node, path: str, state: Dict[str, Any], depth: int = 0):
+    """``node`` of uns as plain Python (dicts, lists, strings, numbers), bounded in depth, nodes and size.
+
+    Whatever cannot be read as one of those (a matrix, a too-large or too-deep member) is left out and its
+    path appended to ``state["skipped"]``; the caller decides what that means.
+    """
+    state["nodes"] -= 1
+    if state["nodes"] < 0:
+        state["skipped"].append(path)
+        return _MISSING
     if _is_group(node):
-        return None, "not_text"
-    status, values = _read_strings(node, MAX_AUTHORS)
-    if status != "ok":
-        return None, status
-    authors = [_cut(_clean(v), MAX_AUTHOR_BYTES)[0] for v in values if _clean(v)]
-    return (authors or None), (None if authors else "empty")
+        if depth >= TREE_DEPTH:
+            state["skipped"].append(path)
+            return _MISSING
+        out = {}
+        for name in _names(node)[:TREE_CHILDREN]:
+            try:
+                value = _read_tree(node[name], f"{path}/{name}", state, depth + 1)
+            except Exception:
+                value = _MISSING
+                state["skipped"].append(f"{path}/{name}")
+            if value is not _MISSING:
+                out[name] = value
+        return out
+    kind = getattr(getattr(node, "dtype", None), "kind", None)
+    shape = tuple(int(d) for d in getattr(node, "shape", ()) or ())
+    if kind in _STRING_KINDS or "string" in str(getattr(node, "dtype", "")).lower():
+        status, values = _read_strings(node, TREE_LIST)
+        if status != "ok":
+            state["skipped"].append(path)
+            return _MISSING
+        return values[0] if not shape else values
+    count = 1
+    for d in shape:
+        count *= d
+    if len(shape) > 1 or count > TREE_LIST or not _stored_bytes_ok(node):
+        state["skipped"].append(path)
+        return _MISSING
+    try:
+        value = node[()]
+    except Exception:
+        state["skipped"].append(path)
+        return _MISSING
+    return value.item() if not shape and hasattr(value, "item") else np.asarray(value).tolist()
 
 
-# ---- about -----------------------------------------------------------------------------------
-
-def _http_url(value: Optional[str]) -> Optional[str]:
-    if not value or re.search(r"\s", value):
-        return None
-    return value if re.match(r"^https?://[^/\s]+", value, re.IGNORECASE) else None
-
-
-def _contact_url(value: Optional[str]) -> Optional[str]:
-    if not value:
-        return None
-    if _EMAIL.match(value):
-        return "mailto:" + value
-    return _http_url(value)
+def _stored_bytes_ok(node) -> bool:
+    size = _stored_bytes(node)
+    return size is None or size <= MAX_STORED_TEXT
 
 
 def _about_from(uns) -> Dict[str, Any]:
     fields: Dict[str, Any] = {}
     ignored: List[str] = []
     fallbacks: List[str] = []
+    unknown: List[str] = []
+    schema = dataset_schema.normalise(None)["schema"]
     group = uns["annzarro"] if uns is not None and _has(uns, "annzarro") else None
     if group is not None and not _is_group(group):
         ignored.append("annzarro")
         group = None
     if group is not None:
-        for name, spellings in FIELDS.items():
-            for spelling in spellings:
-                if not _has(group, spelling):
-                    continue
-                reader = _read_authors if name == "authors" else _read_field
-                value, note = reader(group[spelling])
-                if value is None:
-                    if note != "empty":
-                        ignored.append(f"annzarro/{spelling}")
-                    continue
-                fields[name] = value
-                break
+        state = {"nodes": TREE_NODES, "skipped": []}
+        tree = _read_tree(group, "annzarro", state)
+        result = dataset_schema.normalise(tree)
+        fields.update(result["fields"])
+        unknown = result["unknown"]
+        schema = result["schema"]
+        ignored.extend(f"annzarro/{name}" for name in result["ignored"])
+        ignored.extend(p for p in state["skipped"] if p.count("/") == 1 and p not in ignored)
     from_annzarro = bool(fields)
     if uns is not None:
         for name, key in UNS_FALLBACKS.items():
@@ -256,29 +269,26 @@ def _about_from(uns) -> Dict[str, Any]:
             if value is not None:
                 fields[name] = value
                 fallbacks.append(key)
-    # derived: normalised DOI and the links a client may show; only http(s) and mailto ever leave here
+    # derived links; only http(s) and mailto ever leave here
     doi = fields.get("doi")
     match = _DOI.match(doi) if doi else None
-    if match:
+    if match and "doi_url" not in fields:
         fields["doi"] = match.group(1)
         fields["doi_url"] = "https://doi.org/" + quote(match.group(1), safe="/()-._~:;")
-    for key in ("license_url", "source_url"):
-        if key in fields and not _http_url(fields[key]):
-            ignored.append(f"annzarro/{key}")
-            del fields[key]
     if "license" in fields and "license_url" not in fields:
-        spdx = fields["license"]
+        spdx = fields.get("license_id") or fields["license"]
         if spdx in SPDX_IDS:
             fields["license_url"] = SPDX_URL.format(spdx)
-        elif _http_url(spdx):
-            fields["license_url"] = spdx
-    contact = _contact_url(fields.get("contact"))
-    if contact:
-        fields["contact_url"] = contact
+        elif _http_url(fields["license"]):
+            fields["license_url"] = fields["license"]
+    if "contact" in fields and "contact_url" not in fields:
+        link = _contact_url(fields["contact"])
+        if link:
+            fields["contact_url"] = link
     source = "annzarro" if from_annzarro else ("uns" if fallbacks else None)
     has_readme = uns is not None and any(_has(uns, k) for k in README_KEYS)
     return {"present": bool(fields), "source": source, "fallbacks": fallbacks, "ignored": ignored,
-            "has_readme": has_readme, **fields}
+            "unknown": unknown, "schema": schema, "has_readme": has_readme, **fields}
 
 
 # ---- readme ----------------------------------------------------------------------------------

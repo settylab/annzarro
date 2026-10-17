@@ -33,30 +33,84 @@ system browser.
 
 ## Where to write it: `uns["annzarro"]`
 
-Put the attribution in `adata.uns["annzarro"]`, a dictionary of text values, and the description in
+Put the attribution in `adata.uns["annzarro"]`, a dictionary, and the description in
 `adata.uns["README"]`, a single Markdown string. All fields are optional; write what you have.
 
-| Key of `uns["annzarro"]` | Content |
-|---|---|
-| `title` | A short title. |
-| `description` | One or two sentences about the data. Shown as plain text. |
-| `license` | An [SPDX identifier](https://spdx.org/licenses/) such as `CC-BY-4.0`, `CC0-1.0` or `MIT`, or the licence in words. A known identifier is linked to its text. (`licence` is accepted too.) |
-| `license_url` | A link to the licence, for a licence of your own or one that has no identifier. |
-| `citation` | How to cite the data, as you want it cited. |
-| `doi` | The DOI of the data or its paper: `10.1234/abcd`, `doi:10.1234/abcd` or the `https://doi.org/` link. It is shown as a link. |
-| `authors` | A list of names, or one string. |
-| `source_url` | Where the data came from (`http://` or `https://`). |
-| `contact` | An email address or a web address. |
-| `attribution` | The credit the licence asks for, for example "Liver Consortium, 2026". |
+(dataset-info-schema)=
+### The schema, version 1.0
+
+The dictionary is a versioned format, `annzarro.dataset-info`. Two plain text keys mark it:
+
+```python
+adata.uns["annzarro"] = {
+    "schema": "annzarro.dataset-info",
+    "schema_version": "1.0",
+    # ... the fields below
+}
+```
+
+The marker is two ordinary values, not attributes, because anndata writes a nested `uns` dictionary
+as plain values in zarr format 2, zarr format 3 and h5ad and keeps them; the `encoding-type` and
+`encoding-version` attributes are anndata's own (it sets them on every group it writes), so a dictionary
+you assign cannot carry them. `annzarro store annotate` writes the marker at the version it
+knows. **A dictionary without the marker is version 1**, which is everything written before the marker
+existed.
+
+Every field takes its **simple form** (text) and, where it says so, a **richer form** (an object, or a list
+of objects). The reader turns both into one shape, so you can start simple and grow, and a dataset
+written with a richer form still shows its simple fields in an older AnnZarro.
+
+| Key | Forms | Since | Meaning |
+|---|---|---|---|
+| `title` | text | 1.0 | A short title. |
+| `description` | text | 1.0 | One or two sentences about the data. Shown as plain text. |
+| `license` | text, or `{id, name, url, text}` | 1.0 | An [SPDX identifier](https://spdx.org/licenses/) such as `CC-BY-4.0`, `CC0-1.0` or `MIT`, or the licence in words. A known identifier is linked to its text. `licence` is accepted too. |
+| `license_url` | http(s) URL | 1.0 | A link to the licence, for a licence of your own or one that has no identifier (`licence_url` too). |
+| `citation` | text, or `{text}` | 1.0 | How to cite the data, as you want it cited. |
+| `doi` | text, or `{id}` | 1.0 | The DOI of the data or its paper: `10.1234/abcd`, `doi:10.1234/abcd` or the `https://doi.org/` link. Shown as a link. |
+| `authors` | text, a list of text, or a list of `{name, orcid, affiliation}` | 1.0 | Who made the data. An ORCID iD becomes a link. `author` is accepted too. |
+| `source_url` | http(s) URL | 1.0 | Where the data came from. |
+| `contact` | text, or `{name, email, url, role}` | 1.0 | An email address, a web address or a name. |
+| `contacts` | a list of text, or of `{name, email, url, role}` | 1.0 | Several contacts; `contact` comes first. |
+| `attribution` | text | 1.0 | The credit the licence asks for, for example "Liver Consortium, 2026". |
+| `funding` | text, a list of text, or a list of `{funder, award, url}` | 1.0 | Who paid for the data. |
+| `provenance` | object of text values | 1.0 | How the data came to be: `source`, `processing`, `software`, `date`, `notes` or any other short entries. |
+
+Keys named `views` and `panels` are reserved for curated default views and are not read yet.
+
+A list of objects (`authors`, `contacts`, `funding`) cannot be written by anndata as a list. Write
+it as an object keyed `"0"`, `"1"`, ...: AnnZarro reads that as the same list, in numeric order.
+`annzarro store annotate` does this for you.
 
 Only `http://`, `https://` and `mailto:` addresses become links; anything else (a `javascript:`
-address, for instance) is not shown as a link. A text longer than 16 KB is cut. A value that is not
-text (a number, a nested group) is ignored.
+address, for instance) is dropped and listed as ignored. A text longer than 16 KB is cut, a list
+at 500 items. A value of the wrong kind (a number where text goes) is ignored, never an error.
 
 For datasets that other tools wrote, AnnZarro falls back on keys they already use: `uns["title"]`,
 `uns["citation"]`, `uns["license"]`, `uns["doi"]` and `uns["description"]`. A dataset from CZ
 CELLxGENE Discover shows its title and citation this way. `uns["annzarro"]` wins where both exist,
 and the dialog says when a field was taken from the fallback.
+
+### Compatibility rules
+
+These hold for every version of the schema, so a dataset written today keeps working.
+
+- **Additive changes raise the minor version** (1.0 to 1.1): a new optional key, or a new accepted
+  form of a key. **Renames, removals and changes of meaning raise the major version** (1.x to 2.0).
+- **A reader ignores keys it does not know.** They stay in the dataset, are never an error, and are
+  listed as `unknown` in the reply of `GET /datasets/info`.
+- **A newer minor is read in full:** the reader takes everything it knows and ignores the rest.
+- **A newer major is read for the fields that did not change.** The reader of the newest major it has
+  is used, whatever fields are still there are shown, and the dialog says that the dataset was written
+  for a newer AnnZarro.
+- **There is one reader per major version** (`READERS` in `annzarro/core/dataset_schema.py`), so a
+  version 2 reader sits beside the version 1 one, and a version 1 dataset is always read by the version 1 reader.
+- **The writer and the reader agree:** `annzarro store annotate` writes the current version and refuses
+  a value the reader would ignore.
+
+The schema has no separate JSON Schema file: `jsonschema` is not a dependency of AnnZarro, so the
+field table above and the tests (`annzarro/tests/core/test_dataset_schema.py`, which checks this table
+against the code) are the specification.
 
 ### With Python
 
@@ -65,6 +119,8 @@ import anndata as ad
 
 adata = ad.read_h5ad("liver.h5ad")          # or ad.read_zarr("liver.zarr")
 adata.uns["annzarro"] = {
+    "schema": "annzarro.dataset-info",           # the version marker; without it the dictionary is read as version 1
+    "schema_version": "1.0",
     "title": "Liver atlas",
     "description": "Single cells of the adult human liver.",
     "license": "CC-BY-4.0",
@@ -90,6 +146,14 @@ annzarro store annotate liver.zarr \
     --author "Jane Doe" --author "John Roe" \
     --citation "Doe J, Roe J. A liver atlas. Nature 2026." \
     --readme README.md
+```
+
+The richer forms go in a JSON file (`--from-json info.json`, the options override it):
+
+```json
+{"license": {"id": "CC-BY-4.0"},
+ "authors": [{"name": "Jane Doe", "orcid": "0000-0002-1825-0097"}],
+ "funding": [{"funder": "NIH", "award": "R35GM147125"}]}
 ```
 
 Only the fields you give are written; run it again to change one. It works on a local zarr store

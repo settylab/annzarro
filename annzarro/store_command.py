@@ -56,6 +56,9 @@ def add_parser(subparsers) -> None:
         annotate.add_argument(flag, dest=dest, default=None, help=text)
     annotate.add_argument("--author", dest="authors", action="append", default=None,
                           help="An author; repeat for several")
+    annotate.add_argument("--from-json", default=None, metavar="FILE",
+                          help="A JSON object of fields, richer forms included (funding, contacts, an object "
+                               "for license ...); the options above override it")
     annotate.add_argument("--readme", default=None, metavar="FILE", help="A Markdown file to store as uns['README']")
     annotate.set_defaults(func=store_annotate_command)
     parser.set_defaults(func=lambda args: (parser.print_help(), 1)[1])
@@ -89,7 +92,20 @@ def store_check_command(args) -> int:
 
 def store_annotate_command(args) -> int:
     from annzarro.core import dataset_annotate
-    fields = {name: getattr(args, name) for name in dataset_annotate.FIELDS}
+    fields = {}
+    if getattr(args, "from_json", None):
+        try:
+            with open(args.from_json, encoding="utf-8") as fh:
+                loaded = json.load(fh)
+        except (OSError, ValueError) as exc:
+            print(f"annzarro store annotate: cannot read {args.from_json}: {exc}", file=sys.stderr)
+            return 2
+        if not isinstance(loaded, dict):
+            print(f"annzarro store annotate: {args.from_json} is not a JSON object", file=sys.stderr)
+            return 2
+        fields.update(loaded)
+    fields.update({name: getattr(args, name, None) for name in dataset_annotate.FIELDS
+                   if getattr(args, name, None) not in (None, [])})
     readme = None
     if args.readme:
         try:

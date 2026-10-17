@@ -506,6 +506,7 @@ import anndata as ad
 
 adata = ad.read_zarr("liver.zarr")
 adata.uns["annzarro"] = {
+    "schema": "annzarro.dataset-info", "schema_version": "1.0",   # the version marker
     "title": "Liver atlas",
     "license": "CC-BY-4.0",                       # an SPDX identifier, or the licence in words
     "citation": "Doe J, Roe J. A liver atlas. Nature 2026.",

@@ -26,7 +26,7 @@ def read(store, *parts):
 
 def test_fields_and_readme_round_trip(store):
     written = dataset_annotate.annotate_store(store, {"title": "T", "license": "MIT", "authors": ["A", "B"]}, "# Hi")
-    assert written == ["uns/annzarro/title", "uns/annzarro/license", "uns/annzarro/authors", "uns/README"]
+    assert written == ["uns/annzarro/schema_version", "uns/annzarro/title", "uns/annzarro/license", "uns/annzarro/authors", "uns/README"]
     got = read(store, "about", "readme")
     assert got["about"]["title"] == "T" and got["about"]["authors"] == ["A", "B"] and got["readme"]["text"] == "# Hi"
 
