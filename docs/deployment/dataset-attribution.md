@@ -26,6 +26,15 @@ dataset browser's details pane shows the same attribution under the facts of a s
 README and the structure as sections that load when you open them. A dataset that records no
 attribution and has no README adds nothing to the pane.
 
+The Structure tab has a search box at its top. It filters column names, keys, `uns` paths, types and
+category labels as you type, marks the matched text, opens the sections that hold matches, counts them
+per section and in total, and keeps the path to a nested `uns` key. The `.*` button reads the query as
+a regular expression and `Aa` matches case. Both choices are remembered by the browser. An invalid
+expression is named below the box and the last result stays; a pattern that repeats a repeat, such as
+`(a+)+`, or one that takes too long is refused. **Escape** clears the search (a second press closes the
+dialog), and `/` or **Ctrl/Cmd+F** moves to the box. Only the items the tab lists are searched; a
+section cut at its limit says so. The dataset browser's details pane has no search.
+
 Everything is read from metadata: AnnZarro never reads the expression matrix for this, so it is fast
 on a store of any size, local or remote, and it needs no network access beyond the AnnZarro server
 itself. The desktop app shows the same for the files it opens; links in the information open in the
