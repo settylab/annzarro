@@ -54,6 +54,10 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 - **Session timeout.** `auth.session_timeout` (default 28,800 s, 8 hours idle) suits your users.
 - **Branding.** `branding.contact_info` names your lab and a contact who answers questions
   about accounts. Without it the login page shows no contact.
+- **Open to the public?** Then you also owe your visitors an imprint (Germany and Austria), a
+  privacy notice, a log retention period, `site.robots: noindex` unless you want search engines,
+  and a licence for every dataset you show. Set `site.imprint`, `site.privacy` and
+  `site.accessibility` so the links appear on every page, and read {doc}`public-site` first.
 - **Memory.** `gunicorn workers x cache_memory_mb` fits the host, with room for the chunks
   being read.
 - **Long URLs.** gunicorn `--limit-request-line 8190` and nginx

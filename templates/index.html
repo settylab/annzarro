@@ -176,7 +176,7 @@
     <!-- Main Content Area - Tile Container -->
     <main id="tile-container" class="tile-container">
         <!-- Tiles will be dynamically added here -->
-    </main>
+    </main>{# site:begin #}{% set about_dialog = true %}{% include "_site_footer.html" %}{# site:end #}
     
     <!-- We're removing the footer as we'll add tile creation in the layout manager -->
     
@@ -251,7 +251,17 @@
                     <h5 class="modal-title" id="about-title">About AnnZarro</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body">{# site:begin #}{% if site.show_block %}
+                    <section id="about-this-site" class="about-this-site" aria-labelledby="about-this-site-title">
+                        <h6 id="about-this-site-title" class="about-section-title">This site</h6>
+                        {% if site.operator %}<p class="about-operator">Operated by {{ site.operator }}</p>{% endif %}
+                        {% if site.contact %}<p class="about-contact">{{ site.contact.label }}: <a href="{{ site.contact.href }}"{% if site.contact.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ site.contact.text }}</a></p>{% endif %}
+                        {% for t in site.texts %}{% if t.inline %}<details id="about-{{ t.kind }}" class="about-text"><summary>{{ t.label }}</summary><div class="about-text-body">{{ t.html|safe }}</div></details>
+                        {% else %}<div class="about-text about-text-link"><a href="{{ t.url }}"{% if t.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ t.label }}</a></div>
+                        {% endif %}{% endfor %}
+                    </section>
+                    <hr>
+{% endif %}{# site:end #}
                     <p class="about-version"><strong id="about-name">AnnZarro</strong> <span id="about-version" class="about-muted"></span></p>
                     <p class="about-site" id="about-site" hidden></p>
                     <p>Interactive exploration of cell-by-cell and gene-by-gene relationships in single-cell data, straight from Zarr.</p>
@@ -265,13 +275,14 @@
                         The software, all versions:
                         <a href="https://doi.org/10.5281/zenodo.23222216" target="_blank" rel="noopener noreferrer">doi:10.5281/zenodo.23222216</a>.</p>
                     <hr>
-                    <p class="about-dev">Developed by the Setty Lab at Fred Hutch Cancer Center</p>
+                    <p class="about-dev">AnnZarro is developed by the Setty Lab at Fred Hutch Cancer Center</p>
                     <div class="about-logos">
                         <a href="https://research.fredhutch.org/setty" target="_blank" rel="noopener noreferrer" title="Setty Lab"><img class="about-logo about-logo-lab" src="{{ url_for('static', filename='img/settylab-logo.svg') }}" alt="Setty Lab"></a>
                         <a href="https://www.fredhutch.org" target="_blank" rel="noopener noreferrer" title="Fred Hutch Cancer Center"><img class="about-logo about-logo-fh about-logo-light" src="{{ url_for('static', filename='img/fredhutch-navy.png') }}" alt="Fred Hutch Cancer Center"><img class="about-logo about-logo-fh about-logo-dark" src="{{ url_for('static', filename='img/fredhutch-white.png') }}" alt="Fred Hutch Cancer Center"></a>
                     </div>
-                    <p class="about-funding">Supported by the National Institute of General Medical Sciences of the National Institutes of Health under award numbers R35GM147125 and K99GM159044.</p>
-                    <p class="about-fine">The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health. Released under the MIT licence.</p>
+                    <p class="about-funding">The development of AnnZarro is supported by the National Institute of General Medical Sciences of the National Institutes of Health under award numbers R35GM147125 and K99GM159044.</p>
+                    <p class="about-fine">The content of AnnZarro is solely the responsibility of its authors and does not necessarily represent the official views of the National Institutes of Health. AnnZarro is released under the MIT licence.</p>
+                    <p id="about-desktop-privacy" class="about-privacy" hidden><strong>Privacy.</strong> This desktop app keeps everything on your computer and has no analytics or accounts. It contacts github.com for the newest release at launch and then daily (GitHub sees your IP address; turn this off under &ldquo;Check for Updates Automatically&rdquo;). The Gene Set panel sends gene lists and your IP address to the service you choose, only after you agree. A dataset opened from a web address is read from that address. <a href="https://annzarro.readthedocs.io/en/latest/deployment/public-site.html#desktop-privacy" target="_blank" rel="noopener noreferrer">Details</a></p>
                 </div>
             </div>
         </div>

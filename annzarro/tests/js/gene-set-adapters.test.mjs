@@ -460,3 +460,14 @@ test('FDR within category: the column says so, and a note when the table pools c
     assert.ok(gel.byTag('th').some(th => th.textContent === 'p (adj., within source)'));
     assert.ok(g.exportRows(gr).columns.includes('p_value_adjusted_within_source'));
 });
+
+test('every service names its own privacy policy, over https, for the consent bar', () => {
+    for (const adapter of ADAPTERS) {
+        const url = adapter.provider.privacyUrl;
+        assert.ok(typeof url === 'string' && url.startsWith('https://'), `${adapter.id} has no https privacyUrl`);
+        assert.ok(url.includes(adapter.provider.host.replace(/^www\./, '').split('.').slice(-2).join('.')),
+            `${adapter.id}: the privacy policy is on the provider's own site`);
+    }
+    assert.ok(registry.adapterProblems({ ...ADAPTERS[0], provider: { ...ADAPTERS[0].provider, privacyUrl: 'javascript:1' } })
+        .includes('provider.privacyUrl'));
+});

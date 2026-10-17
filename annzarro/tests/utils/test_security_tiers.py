@@ -71,6 +71,27 @@ def _is_free_string(path):
     return "string" in types and "enum" not in node and not path[-1].startswith("remote_")
 
 
+def _valid_form(path, canary, tmp_path):
+    """The canary, in the form the server accepts for that key (server/site.py checks the site's
+    addresses, files and language at start): an address or file name that still carries it."""
+    if path[0] != "site":
+        return canary
+    leaf = path[-1]
+    if leaf == "url":
+        return f"https://{canary}.example"
+    if leaf == "file":
+        target = tmp_path / canary
+        target.write_text("text")
+        return str(target)
+    if leaf == "contact":
+        return f"{canary}@example.org"
+    if leaf == "security_contact":
+        return f"mailto:{canary}@example.org"
+    if leaf == "languages":
+        return "en-" + canary.split("-")[1][:6] + "x"      # a language tag has no room for the whole canary
+    return canary
+
+
 def _site_with_canaries(tmp_path):
     """A config file setting every free-text schema leaf to a unique string."""
     tree, canaries = {}, {}
@@ -78,7 +99,7 @@ def _site_with_canaries(tmp_path):
         for path in paths:
             if not _is_free_string(path):
                 continue
-            value = f"canary-{tier}-{'-'.join(path)}"
+            value = _valid_form(path, f"canary-{tier}-{'-'.join(path)}", tmp_path)
             node = tree
             for part in path[:-1]:
                 node = node.setdefault(part, {})

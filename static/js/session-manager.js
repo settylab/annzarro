@@ -19,6 +19,7 @@ import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializable
 import { storeRecord, storeName } from './utils/view-store.js';
 import { modeOptions } from './utils/panelset-load.js';
 import { knownStore, settleStore, appVersion } from './utils/store-identity.js';
+import { convenienceStorage, dropPersistentConvenience } from './utils/convenience-storage.js';
 
 const SessionManager = (function() {
     // Private variables
@@ -718,7 +719,7 @@ const SessionManager = (function() {
             
             // Save to localStorage
             try {
-                localStorage.setItem(Config.AUTOSAVE.STORAGE_KEY, JSON.stringify(autosaveData));
+                convenienceStorage(Config.SERVER_CONFIG).setItem(Config.AUTOSAVE.STORAGE_KEY, JSON.stringify(autosaveData));
                 return { status: 'success', message: 'Autosaved to browser storage' };
             } catch (e) {
                 // Handle localStorage errors (quota exceeded, etc.)
@@ -737,7 +738,8 @@ const SessionManager = (function() {
      */
     function loadFromLocalStorage() {
         try {
-            const data = localStorage.getItem(Config.AUTOSAVE.STORAGE_KEY);
+            dropPersistentConvenience(Config.SERVER_CONFIG, Config.AUTOSAVE.STORAGE_KEY);
+            const data = convenienceStorage(Config.SERVER_CONFIG).getItem(Config.AUTOSAVE.STORAGE_KEY);
             if (!data) return null;
             
             return JSON.parse(data);
@@ -793,7 +795,7 @@ const SessionManager = (function() {
      * Clear autosaved session
      */
     function clearAutosave() {
-        localStorage.removeItem(Config.AUTOSAVE.STORAGE_KEY);
+        try { convenienceStorage(Config.SERVER_CONFIG).removeItem(Config.AUTOSAVE.STORAGE_KEY); } catch { /* storage blocked */ }
     }
     
     /**

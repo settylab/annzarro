@@ -80,6 +80,7 @@ NO_PATH = {
     "admin.users", "admin.users_add", "admin.users_remove", "admin.users_password",
     "admin.users_admin", "admin.users_unlock",     # test_admin_users.py
     "account_password_page", "account_password_change",   # own account (test_account_password.py)
+    "site_page", "site_robots", "site_security_txt",      # the site's texts, robots.txt, security.txt (test_site.py); no dataset paths
     "admin.access_overview", "admin.access_check", "admin.user_access", "admin.user_access_set",
     "admin.user_grants_add", "admin.user_grants_remove",   # access admin: paths to grant or check, never opened (test_admin_user_access.py)
     "admin.policy", "admin.user_policy",           # test_admin_settings.py

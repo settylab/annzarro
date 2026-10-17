@@ -411,6 +411,135 @@ branding:
   required:
     - app_name
 
+# The site: who runs it and the texts it owes its visitors (docs/deployment/public-site.md)
+site:
+  type: object
+  description: "Site identity and legal texts; nothing shows until it is set"
+  security: public   # the browser shows them
+  properties:
+    imprint:
+      type: object
+      description: "The imprint (Impressum): provider identification"
+      properties:
+        url:
+          type: [string, "null"]
+          description: "A link to the page (http, https or mailto); it wins over markdown and file"
+          default: null
+        markdown:
+          type: [string, "null"]
+          description: "The text itself, in Markdown (rendered safely; no HTML)"
+          default: null
+        file:
+          type: [string, "null"]
+          description: "Path of a Markdown file with the text, read at start (256 KB at most)"
+          default: null
+          security: internal
+        label:
+          type: string
+          description: "The link text"
+          default: "Imprint"
+    privacy:
+      type: object
+      description: "The privacy notice"
+      properties:
+        url:
+          type: [string, "null"]
+          description: "A link to the page (http, https or mailto); it wins over markdown and file"
+          default: null
+        markdown:
+          type: [string, "null"]
+          description: "The text itself, in Markdown (rendered safely; no HTML)"
+          default: null
+        file:
+          type: [string, "null"]
+          description: "Path of a Markdown file with the text, read at start (256 KB at most)"
+          default: null
+          security: internal
+        label:
+          type: string
+          description: "The link text"
+          default: "Privacy"
+    accessibility:
+      type: object
+      description: "The accessibility statement"
+      properties:
+        url:
+          type: [string, "null"]
+          description: "A link to the page (http, https or mailto); it wins over markdown and file"
+          default: null
+        markdown:
+          type: [string, "null"]
+          description: "The text itself, in Markdown (rendered safely; no HTML)"
+          default: null
+        file:
+          type: [string, "null"]
+          description: "Path of a Markdown file with the text, read at start (256 KB at most)"
+          default: null
+          security: internal
+        label:
+          type: string
+          description: "The link text"
+          default: "Accessibility"
+    terms:
+      type: object
+      description: "Terms of use or a disclaimer"
+      properties:
+        url:
+          type: [string, "null"]
+          description: "A link to the page (http, https or mailto); it wins over markdown and file"
+          default: null
+        markdown:
+          type: [string, "null"]
+          description: "The text itself, in Markdown (rendered safely; no HTML)"
+          default: null
+        file:
+          type: [string, "null"]
+          description: "Path of a Markdown file with the text, read at start (256 KB at most)"
+          default: null
+          security: internal
+        label:
+          type: string
+          description: "The link text"
+          default: "Terms of use"
+    operator:
+      type: [string, "null"]
+      description: "Who runs this site, as one line"
+      default: null
+    contact:
+      type: [string, "null"]
+      description: "A contact for the site, an e-mail address or an http(s) address"
+      default: null
+    contact_label:
+      type: string
+      description: "The link text for the contact in the footer and the About dialog"
+      default: Contact
+    footer_links:
+      type: string
+      enum: [auto, about-only]
+      description: "auto puts the links in a small footer line of every page; about-only only in the About dialog"
+      default: auto
+    robots:
+      type: string
+      enum: [auto, index, noindex]
+      description: "Whether search engines may index the site; auto means not when login is on"
+      default: auto
+    security_contact:
+      type: [string, "null"]
+      description: "A mailto or https address for vulnerability reports; serves /.well-known/security.txt"
+      default: null
+    languages:
+      type: string
+      description: "The language of the texts (for security.txt and the text pages)"
+      default: en
+    storage:
+      type: object
+      description: "What the browser keeps between visits"
+      properties:
+        persistent_convenience:
+          type: boolean
+          description: "false keeps the layout autosave and the recent datasets only until the tab closes"
+          default: true
+
 # UI configuration
 ui:
   type: object
