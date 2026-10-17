@@ -23,11 +23,24 @@
  */
 
 /**
+ * Where the toolbar sits against the top edge of the plot area. 'inside': in the
+ * corner, over the axes (it can cover data in a small panel). 'above': just above
+ * the axes, in the top margin, right-aligned to the axes' right edge (it is held
+ * at the figure's top when the margin is thinner than the toolbar). One word to switch.
+ * @type {'inside'|'above'}
+ */
+export const TOOLBAR_VERTICAL = 'inside';
+
+/** The toolbar's height (px): one row of 22 px buttons and Plotly's 2 px inset, with a pixel to spare. */
+export const TOOLBAR_HEIGHT = 27;
+
+/**
  * The toolbar container's top offset and width: it spans from the figure's left edge to the plot area's right edge, so its top right corner is the plot area's.
  * @param {Object} fullLayout  gd._fullLayout
+ * @param {'inside'|'above'} [vertical]  see TOOLBAR_VERTICAL
  * @returns {{top: number, width: number}|null}  null when the layout has no plot area yet
  */
-export function modebarAnchor(fullLayout) {
+export function modebarAnchor(fullLayout, vertical = TOOLBAR_VERTICAL) {
     const L = fullLayout;
     const s = L && L._size;
     if (!s || ![s.l, s.t, s.w, s.h].every(Number.isFinite)) return null;
@@ -37,6 +50,7 @@ export function modebarAnchor(fullLayout) {
         right = s.l + d.x[1] * s.w;
         top = s.t + (1 - d.y[1]) * s.h;
     }
+    if (vertical === 'above') top -= TOOLBAR_HEIGHT;
     return { top: Math.max(0, Math.round(top)), width: Math.max(0, Math.round(right)) };
 }
 

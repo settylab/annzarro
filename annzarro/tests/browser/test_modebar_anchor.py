@@ -150,6 +150,49 @@ def test_colour_bar_anywhere(page, server, side):
     assert bar["nXText"] and not bar["onAxes"] and not bar["onXAxisText"] and bar["inFigure"], (side, bar)
 
 
+LEGEND = """([id]) => {
+    const gd = (%s)(id), g = gd.getBoundingClientRect(), L = gd._fullLayout, s = L._size;
+    const box = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - g.left, r: r.right - g.left, t: r.top - g.top, b: r.bottom - g.top }; };
+    const axes = { l: s.l, r: s.l + s.w, t: s.t, b: s.t + s.h };
+    const meets = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+    const leg = box(gd.querySelector('.legend'));
+    const xs = [...gd.querySelectorAll('.xtick text, .g-xtitle')].map(box);
+    return { leg, axes, onAxes: meets(leg, axes), onXAxisText: xs.some(x => meets(leg, x)), nXText: xs.length,
+             inFigure: leg.l >= 0 && leg.t >= 0 && leg.r <= g.width && leg.b <= g.height };
+}""" % GD
+
+
+def _settled(page, pid, expr, arg):
+    prev = None
+    for _ in range(40):
+        got = page.evaluate(expr, arg)
+        if got == prev:
+            return got
+        prev = got
+        page.wait_for_timeout(250)
+    return got
+
+
+@pytest.mark.parametrize("height", [1000, 640])
+@pytest.mark.parametrize("side", ["top", "bottom"])
+def test_a_top_or_bottom_legend_clears_the_axes_and_their_text(page, server, side, height):
+    page.set_viewport_size({"width": 1500, "height": height})
+    _open(page, server, _cfgs({"legendPosition": side}, {}))
+    got = _settled(page, A, LEGEND, [A])
+    assert got["nXText"] and not got["onAxes"] and not got["onXAxisText"] and got["inFigure"], (side, height, got)
+    got = _boxes(page, A, ".legend")
+    assert _in_corner(got) and not got["hit"], (side, height, got)
+
+
+def test_a_bottom_legend_stays_clear_after_a_resize(page, server):
+    _open(page, server, _cfgs({"legendPosition": "bottom"}, {}))
+    for w, h in ((1100, 800), (1500, 640), (900, 1000)):
+        page.set_viewport_size({"width": w, "height": h})
+        page.wait_for_timeout(800)
+        got = _settled(page, A, LEGEND, [A])
+        assert not got["onAxes"] and not got["onXAxisText"] and got["inFigure"], (w, h, got)
+
+
 @pytest.mark.parametrize("side", ["top", "bottom"])
 def test_a_top_or_bottom_colour_bar_is_whole_in_an_export(page, server, side):
     _open(page, server, _cfgs(THIN, {**THIN, "colorbarPosition": side, "legendPosition": side}))
@@ -208,3 +251,13 @@ def test_large_plot_colour_bar_clears_the_axes_and_the_toolbar(page, large, side
     assert _in_corner(got) and not got["hit"], (side, got)
     bar = page.evaluate(BAR, [B, ".colorbar"])
     assert not bar["onAxes"] and not bar["onXAxisText"] and bar["inFigure"], (side, bar)
+
+
+@pytest.mark.parametrize("side", ["top", "bottom"])
+def test_large_plot_legend_clears_the_axes_and_their_text(page, large, side):
+    page.goto(_link(large, {A: _cfgs({**THIN, "marginsUnlinked": False, "legendPosition": side}, {})[A]}))
+    page.wait_for_function("() => { const g = document.querySelector('.js-plotly-plot'); return !!(g && g.__isLarge && g._fullLayout); }",
+                           timeout=60000)
+    page.wait_for_timeout(1500)
+    got = _settled(page, A, LEGEND, [A])
+    assert got["nXText"] and not got["onAxes"] and not got["onXAxisText"] and got["inFigure"], (side, got)

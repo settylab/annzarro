@@ -2036,15 +2036,19 @@ export function getPositioningByLocation(position) {
         orientation: 'v', titleside: 'right'
       },
       top: {
-        legendOrientation: 'h', legendX: 0.5, legendY: 1.15,
-        legendXanchor: 'center', legendYanchor: 'top',
+        // above the axes, growing upwards: Plotly makes the top margin it needs. (A 15% paper offset with the
+        // legend hanging down from it was less than the legend's own height in a short panel.)
+        legendOrientation: 'h', legendX: 0.5, legendY: 1,
+        legendXanchor: 'center', legendYanchor: 'bottom',
         // a horizontal bar lies wholly outside the axes: above them with its tick labels above it, or below
         // them (and their tick labels and title, hence ypad) with its tick labels below it
         x: 0.5, xanchor: 'center', y: 1, yanchor: 'bottom', ypad: 6, ticklabelposition: 'outside top',
         orientation: 'h', titleside: 'top'
       },
       bottom: {
-        legendOrientation: 'h', legendX: 0.5, legendY: -0.15,
+        // below the axes' tick labels and title, hanging down: legend-below.js sets the offset in px, as a paper
+        // fraction of the plot height, once the plot is drawn
+        legendOrientation: 'h', legendX: 0.5, legendY: 0,
         legendXanchor: 'center', legendYanchor: 'top',
         x: 0.5, xanchor: 'center', y: 0, yanchor: 'top', ypad: BOTTOM_BAR_PAD, ticklabelposition: 'outside bottom',
         orientation: 'h', titleside: 'bottom'
@@ -2333,9 +2337,9 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         // Legend position settings (actual visibility will be handled separately)
         'legend.orientation': (settings.legendPosition === 'left' || settings.legendPosition === 'right') ? 'v' : 'h',
         'legend.x': settings.legendPosition === 'right' ? 1.05 : settings.legendPosition === 'left' ? -0.05 : 0.5,
-        'legend.y': settings.legendPosition === 'top' ? 1.15 : settings.legendPosition === 'bottom' ? -0.15 : 0.5,
+        'legend.y': settings.legendPosition === 'top' ? 1 : settings.legendPosition === 'bottom' ? 0 : 0.5,
         'legend.xanchor': settings.legendPosition === 'right' ? 'left' : settings.legendPosition === 'left' ? 'right' : 'center',
-        'legend.yanchor': settings.legendPosition === 'top' ? 'top' : settings.legendPosition === 'bottom' ? 'top' : 'middle',
+        'legend.yanchor': settings.legendPosition === 'top' ? 'bottom' : settings.legendPosition === 'bottom' ? 'top' : 'middle',
         
         // Interaction
         'xaxis.fixedrange': !settings.enableZoom,

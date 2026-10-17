@@ -5,12 +5,21 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { modebarAnchor, syncModebarAnchor, watchModebarAnchor } from '../../../static/js/utils/modebar-anchor.js';
+import { TOOLBAR_VERTICAL, TOOLBAR_HEIGHT, modebarAnchor, syncModebarAnchor, watchModebarAnchor } from '../../../static/js/utils/modebar-anchor.js';
 
 const layout = (extra = {}) => ({ width: 800, height: 500, _size: { l: 60, t: 40, w: 600, h: 380 }, ...extra });
 
 test('2D: the corner of the axes, as offsets from the figure\'s top and width', () => {
     assert.deepEqual(modebarAnchor(layout()), { top: 40, width: 660 });
+});
+
+test('"above": the toolbar sits in the top margin, held at the figure\'s top when the margin is thinner', () => {
+    assert.deepEqual(modebarAnchor(layout(), 'above'), { top: 40 - TOOLBAR_HEIGHT, width: 660 });
+    assert.deepEqual(modebarAnchor(layout({ _size: { l: 60, t: 8, w: 600, h: 380 } }), 'above'), { top: 0, width: 660 });
+});
+
+test('the default is the one the constant names', () => {
+    assert.deepEqual(modebarAnchor(layout()), modebarAnchor(layout(), TOOLBAR_VERTICAL));
 });
 
 test('3D: the corner of the scene domain', () => {

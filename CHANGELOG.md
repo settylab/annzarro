@@ -14,7 +14,8 @@ with the release after it. Older releases are listed on
   runs into it.
 - A colour bar placed on top of or below a plot lies wholly outside the axes, with the margin it needs
   made for it, instead of over the top or bottom of the plot. It sits below the x-axis title at the
-  bottom.
+  bottom. A legend above or below a plot does the same, clear of the axes and the x-axis title, in short
+  panels too.
 
 ### Docs
 - The README and the licence page cite v0.5.5 by its DOI,
