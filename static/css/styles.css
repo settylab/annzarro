@@ -226,6 +226,46 @@ body {
     width: 100%;
 }
 
+/* The app name opens the About dialog: a button that looks like the heading it replaces */
+.app-title-btn {
+    all: unset;
+    cursor: pointer;
+    border-radius: 0.25rem;
+}
+.app-title-btn:hover { text-decoration: underline; }
+.app-title-btn:focus-visible {
+    outline: 2px solid var(--az-link);
+    outline-offset: 2px;
+}
+
+/* ---- About AnnZarro ---- */
+.about-dialog { max-width: 30rem; }
+.about-dialog .modal-body { font-size: 0.9rem; }
+.about-dialog p { margin-bottom: 0.65rem; }
+.about-version { font-size: 1.15rem; margin-bottom: 0.25rem !important; }
+.about-muted { color: var(--az-muted); }
+.about-links { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; }
+.about-dialog hr { margin: 0.9rem 0; color: var(--az-border); }
+.about-dev { text-align: center; color: var(--az-muted); margin-bottom: 0.6rem !important; }
+.about-logos {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.75rem;
+    margin-bottom: 0.9rem;
+}
+.about-logos a { display: inline-flex; border-radius: 0.25rem; }
+.about-logos a:focus-visible { outline: 2px solid var(--az-link); outline-offset: 4px; }
+.about-logo { height: 3.75rem; width: auto; display: block; }
+@media (max-width: 440px) { .about-logo { height: 3rem; } .about-logos { gap: 1.25rem; } }
+/* the lab's tree has dark outlines: on a light tile in the dark theme */
+[data-theme="dark"] .about-logo-lab { background: #fff; border-radius: 0.4rem; padding: 0.3rem 0.45rem; box-sizing: content-box; }
+.about-logo-dark { display: none; }
+[data-theme="dark"] .about-logo-light { display: none; }
+[data-theme="dark"] .about-logo-dark { display: block; }
+.about-funding { margin-bottom: 0.4rem !important; }
+.about-fine { font-size: 0.75rem; color: var(--az-muted); margin-bottom: 0 !important; }
+
 /* The theme toggle at the right end of the statistics bar: small enough not to make the bar taller */
 .dataset-stats .theme-toggle .btn {
     --bs-btn-padding-y: 0;
