@@ -46,8 +46,8 @@ export const PLOT_PALETTES = Object.freeze({
     dark: Object.freeze({
         bgColor: '#1e1e1e', gridColor: '#444444', axisColor: '#ffffff', textColor: '#ffffff',
         zeroLineColor: '#666666', backdropColor: '#121212', notInTableColor: '#6b7178',
-        // the focused marker is the same red dot with a black edge in both themes
-        focusedColor: '#ff0000', focusedEdgeColor: '#000000'
+        // the same red dot in both themes; its edge is white on the dark plot, black on the light one
+        focusedColor: '#ff0000', focusedEdgeColor: '#ffffff'
     })
 });
 
