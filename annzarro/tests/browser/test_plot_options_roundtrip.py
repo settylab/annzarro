@@ -175,7 +175,7 @@ CONTROLS = {
     "showGrid": ("check", "grid-toggle"), "showAxisTitles": ("check", "show-axis-titles"), "showAxisLabels": ("check", "show-axis-labels"),
     "showAxisLines": ("check", "show-axis-lines"), "showZeroLines": ("check", "zero-lines"), "showBackdrop": ("check", "show-backdrop"),
     "showTickMarks": ("check", "show-tick-marks"), "showLegend": ("check", "show-legend"), "showScaleBar": ("check", "show-scale-bar"),
-    "marginsUnlinked": ("check", "margins-unlink"),
+    "marginsUnlinked": ("check", "margins-unlink"), "focusedNoFill": ("check", "focused-no-fill"),
     "tickCount": ("fill", "tick-count"), "axisLineWidth": ("fill", "axis-line-width"), "gridLineWidth": ("fill", "grid-line-width"),
     "zeroLineWidth": ("fill", "zero-line-width"), "fontSize": ("fill", "font-size"), "colorbarTicks": ("fill", "colorbar-ticks"),
     "scaleBarUnit": ("fill", "scale-bar-unit"), "notInTableScale": ("fill", "not-in-table-scale"),

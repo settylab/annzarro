@@ -38,6 +38,8 @@ import { legendUirevision } from '../../utils/legend-entries.js';
 import { highlightLargeFocus, clearLargeFocus, restyleLargeFocus } from './large-interact.js';
 import { focusMarker, focusRestyle, focusSize, focusParams } from '../../utils/focus-style.js';
 
+const FOCUS_RING = 'focused-ring';   // trace.meta of the ring of a cell outside the subset: a 3D no-fill dot is open too
+
 
 
 
@@ -834,7 +836,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             const highlightIndex = plotContainer.data.findIndex(trace => trace && trace.name === `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
             if (highlightIndex >= 0) {
                 // the focused marker's own style (utils/focus-style.js)
-                Plotly.restyle(plotContainer, focusRestyle(settings, isRingTrace(plotContainer.data[highlightIndex])), [highlightIndex]);
+                Plotly.restyle(plotContainer, focusWant(plotContainer.data[highlightIndex], settings), [highlightIndex]);
             }
         }
         
@@ -1194,7 +1196,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     mode: 'markers',
     type: is3D ? 'scatter3d' : 'scattergl',
     // the panel's Focused style (utils/focus-style.js); by default a red dot twice the point size
-    marker: focusMarker(settings),
+    marker: focusMarker(settings, false, is3D),
     hoverinfo: 'skip',
     name: `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`,
     showlegend: false  // Prevent the trace from appearing in the legend.
@@ -1318,6 +1320,7 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
     mode: 'markers',
     type: is3D ? 'scatter3d' : 'scattergl',
     marker: focusMarker(settings, true),
+    meta: FOCUS_RING,
     // like the filled dot: a ring on top must not take the clicks and hover
     // of the shown points under it (the plot's note names the cell)
     hoverinfo: 'skip',
@@ -1396,7 +1399,7 @@ export async function restyleMarkers(plotContainer, settings) {
             { 'marker.size': settings.pointSize, 'marker.opacity': settings.pointOpacity }, dataIdx);
     }
     for (const i of highlightIdx) {
-        await Plotly.restyle(plotContainer, focusRestyle(settings, isRingTrace(plotContainer.data[i])), [i]);
+        await Plotly.restyle(plotContainer, focusWant(plotContainer.data[i], settings), [i]);
     }
     for (const i of greyIdx) {
         const m = greyOf(plotContainer.data[i]);
@@ -1412,16 +1415,21 @@ function isFocusTrace(trace) {
 
 /** The ring drawn for a focused cell the subset does not show (drawOutsideRing). */
 function isRingTrace(trace) {
-    return !!(trace && trace.marker && trace.marker.symbol === 'circle-open');
+    return !!trace && trace.meta === FOCUS_RING;
+}
+
+/** The restyle keys of the panel's Focused style for the highlight `trace` (a ring, a 3D or a 2D dot). */
+function focusWant(trace, settings) {
+    return focusRestyle(settings, isRingTrace(trace), !!trace && trace.type === 'scatter3d');
 }
 
 /** The keys of `focusRestyle` whose value differs from what the highlight `trace` draws (all but `skip`). */
 function focusChanges(trace, settings, skip = []) {
-    const want = focusRestyle(settings, isRingTrace(trace));
+    const want = focusWant(trace, settings);
     const m = trace.marker || {};
     const line = m.line || {};
     const have = { 'marker.size': m.size, 'marker.color': m.color, 'marker.opacity': m.opacity,
-                   'marker.line.color': line.color, 'marker.line.width': line.width };
+                   'marker.line.color': line.color, 'marker.line.width': line.width, 'marker.symbol': m.symbol || 'circle' };
     const update = {};
     for (const k of Object.keys(want)) if (!skip.includes(k) && have[k] !== want[k]) update[k] = want[k];
     return update;

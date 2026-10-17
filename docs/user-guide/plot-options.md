@@ -138,10 +138,16 @@ one.
 - **Fill** colour, red by default, and **Edge** colour, black (light theme) or white (dark theme)
   by default, each with **Reset**. A colour you choose stays as chosen in either theme; one you
   leave alone follows the theme.
+- **No fill** draws the marker as an open circle: its edge alone, in the edge colour and width,
+  with the plot showing through the middle. Switching it on raises an edge width under 1 px to
+  1 px, and the width cannot go below 1 px while it is on, so the circle always shows. In a 3D
+  plot the open circle is drawn in the edge colour. The fill colour is kept for when No fill is
+  switched off, and **Reset** still only returns the colour to the theme.
 
 The hollow ring of a focused cell the subset does not show ({ref}`focus-outside-subset`) takes the
 size, the opacity and the fill colour as its line colour, with the edge width as its line width
-(at least 1 px). The marker is part of an export.
+(at least 1 px), with or without **No fill**. The marker is part of an export, PNG and SVG,
+and **Apply to other panels** copies it.
 
 ## Legend and colour bar
 
