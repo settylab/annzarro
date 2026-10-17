@@ -531,8 +531,9 @@ export const DERIVED_CONFIG_KEYS = ['currentEntries', 'filteredCells', 'closedSe
  */
 export function serializableConfig(config) {
     const out = {};
-    for (const [key, value] of Object.entries(config || {})) {
-        if (!DERIVED_CONFIG_KEYS.includes(key)) out[key] = value;
+    // the keys first: a derived value (a table's row list) is not read only to be left out
+    for (const key of Object.keys(config || {})) {
+        if (!DERIVED_CONFIG_KEYS.includes(key)) out[key] = config[key];
     }
     return out;
 }
