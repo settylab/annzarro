@@ -58,6 +58,18 @@ const App = (function() {
     let _isInitialized = false;
     let _closeAllAsking = false; // the Close all question is open
     let _sessionModal = null;
+    let _sessionModalMoving = false;
+
+    /** Close the panel-set dialog; a close asked while it is still fading in waits for it to finish. @private */
+    function _hideSessionModal() {
+        if (!_sessionModal) return;
+        const el = document.getElementById('session-modal');
+        if (_sessionModalMoving && el && el.classList.contains('show')) {
+            el.addEventListener('shown.bs.modal', () => _sessionModal.hide(), { once: true });
+            return;
+        }
+        _sessionModal.hide();
+    }
     
     /**
      * Initialize the application
@@ -548,7 +560,7 @@ const App = (function() {
         if (said && said.strong && !trust) {
             // Open the layout without data while the user decides
             await _applyViewWithoutData(view, { ...located, differs: true, missing: located.path });
-            if (_sessionModal) _sessionModal.hide();
+            if (_sessionModal) _hideSessionModal();
             const choice = await _askNotification(said.title, said.message, [
                 { key: 'open', label: 'Open anyway', primary: true },
                 { key: 'change', label: 'Change dataset' },
@@ -867,7 +879,7 @@ const App = (function() {
     function _chooseDatasetForSet(plan) {
         return new Promise(resolve => {
             let picked = false;
-            if (_sessionModal) _sessionModal.hide();
+            if (_sessionModal) _hideSessionModal();
             const modalEl = document.getElementById('dataset-browser');
             if (modalEl) {
                 modalEl.addEventListener('hidden.bs.modal', () => { if (!picked) resolve(null); }, { once: true });
@@ -1691,7 +1703,12 @@ const App = (function() {
      */
     function _initUI() {
         // Setup bootstrap modals
-        _sessionModal = new bootstrap.Modal(document.getElementById('session-modal'));
+        const sessionModalEl = document.getElementById('session-modal');
+        _sessionModal = new bootstrap.Modal(sessionModalEl);
+        // Bootstrap ignores hide() while the modal is still fading in or out
+        sessionModalEl.addEventListener('show.bs.modal', () => { _sessionModalMoving = true; });
+        sessionModalEl.addEventListener('shown.bs.modal', () => { _sessionModalMoving = false; });
+        sessionModalEl.addEventListener('hidden.bs.modal', () => { _sessionModalMoving = false; });
 
         // Cell count and subset badge in the stats bar; its dialog reloads
         // the open view on the chosen cells
@@ -2947,7 +2964,7 @@ const App = (function() {
                         const result = await SessionManager.loadSession(sessionName);
                         
                         if (result.status === 'success') {
-                            _sessionModal.hide();
+                            _hideSessionModal();
                         } else {
                             _dialogNote(card, failureLine(result, 'Restoring the autosave'));
                         }
@@ -3025,7 +3042,7 @@ const App = (function() {
         _dialogNote(host, '');
         const result = await load();
         if (result.status === 'success' || result.status === 'no-data') {
-            _sessionModal.hide();
+            _hideSessionModal();
         } else if (result.status !== 'cancelled') {
             // (a cancelled load is the user closing the dataset picker: nothing to report)
             _dialogNote(host, failureLine(result, 'Loading this panel set'));
@@ -3405,7 +3422,7 @@ const App = (function() {
             const result = await SessionManager.saveSession(sanitizedName);
             
             if (result.status === 'success') {
-                _sessionModal.hide();
+                _hideSessionModal();
                 if (result.fingerprintPending) _noticeFingerprintPending();
             } else {
                 note.hidden = false;

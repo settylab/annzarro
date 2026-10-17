@@ -45,6 +45,7 @@ with the release after it. Older releases are listed on
   up are held while the pointer or keyboard focus is on them and last longer when they are longer.
 
 ### Fixes
+- The Save Panel Set dialog now closes when a save finishes while it is still fading in (a quick save, or Overwrite pressed at once); it used to stay open.
 - A plot coloured by nothing, or by a column the dataset does not have (after switching datasets),
   no longer shows a grey "trace 0" in a legend after an axis change; such a plot has no legend.
 - An error notice is no longer wiped by the notices that follow it from the same action (a shared
