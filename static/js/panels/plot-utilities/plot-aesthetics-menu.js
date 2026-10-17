@@ -1,6 +1,8 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
-import { axisTitle, NOT_IN_TABLE, refreshScaleBar } from './plot-make-helper.js';
-import { restyleMarkers } from './plot-update.js';
+import { axisTitle, refreshScaleBar } from './plot-make-helper.js';
+import { hasLegendEntries } from '../../utils/legend-entries.js';
+import { restyleMarkers, restyleFocus } from './plot-update.js';
+import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
   plotColour, isFollowing, followsTheme, followTheme, pinPalette, modebarColours, THEMED_COLOURS
 } from '../../utils/plot-theme.js';
@@ -71,6 +73,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
       if (leftInput && marginLeft) leftInput.value = marginLeft;
       if (rightInput && marginRight) rightInput.value = marginRight;
     }
+    syncColourControls(id, settings);     // a colour that follows the theme has nothing to reset
   };
   
   const onHide = () => {
@@ -359,6 +362,41 @@ export function createPopoverContent(id, settings) {
                 <input type="color" class="form-control form-control-sm form-control-color"
                     id="not-in-table-color-${id}" value="${plotColour(settings, 'notInTableColor')}" title="Choose the colour of the points not in the table">
                 <button class="btn btn-sm btn-outline-secondary" id="reset-not-in-table-color-${id}">Reset</button>
+            </div>
+        `)}
+        ${details(id, 'focused', `Focused ${plotKind}`, `
+            <div class="form-text mt-0 mb-1">The marker on the focused ${plotKind}, while Highlight Focused ${plotKind === 'gene' ? 'Gene' : 'Cell'} is on.</div>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Size</span>
+                <input type="number" class="form-control" id="focused-scale-${id}"
+                    value="${settings.focusedScale ?? FOCUS_DEFAULTS.scale}" min="0.1" max="${FOCUS_SCALE_MAX}" step="0.1"
+                    title="Relative to the point size; ${FOCUS_DEFAULTS.scale} is twice as large">
+                <span class="input-group-text">x points</span>
+            </div>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Opacity</span>
+                <input type="number" class="form-control" id="focused-opacity-${id}"
+                    value="${settings.focusedOpacity ?? ''}" placeholder="${FOCUS_DEFAULTS.opacity}" min="0.01" max="1" step="0.05"
+                    title="0 to 1; empty: opaque">
+            </div>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Edge width</span>
+                <input type="number" class="form-control" id="focused-edge-width-${id}"
+                    value="${settings.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth}" min="0" max="${FOCUS_EDGE_MAX}" step="0.5"
+                    title="0: no edge">
+                <span class="input-group-text">px</span>
+            </div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <label class="form-label mb-0 me-2">Fill</label>
+                <input type="color" class="form-control form-control-sm form-control-color"
+                    id="focused-color-${id}" value="${plotColour(settings, 'focusedColor')}" title="Choose the fill colour of the focused marker">
+                <button class="btn btn-sm btn-outline-secondary" id="reset-focused-color-${id}" ${resetState(settings, 'focusedColor')}>Reset</button>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 me-2">Edge</label>
+                <input type="color" class="form-control form-control-sm form-control-color"
+                    id="focused-edge-color-${id}" value="${plotColour(settings, 'focusedEdgeColor')}" title="Choose the edge colour of the focused marker">
+                <button class="btn btn-sm btn-outline-secondary" id="reset-focused-edge-color-${id}" ${resetState(settings, 'focusedEdgeColor')}>Reset</button>
             </div>
         `)}
         ${details(id, 'legend', 'Legend and colour bar', `
@@ -1091,6 +1129,33 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
 
+        // The focused marker: size factor, opacity, edge width, fill and edge colour (utils/focus-style.js)
+        const focusKey = {
+            [`focused-scale-${id}`]: 'focusedScale', [`focused-opacity-${id}`]: 'focusedOpacity',
+            [`focused-edge-width-${id}`]: 'focusedEdgeWidth', [`focused-color-${id}`]: 'focusedColor',
+            [`focused-edge-color-${id}`]: 'focusedEdgeColor',
+            [`reset-focused-color-${id}`]: 'focusedColor', [`reset-focused-edge-color-${id}`]: 'focusedEdgeColor'
+        }[target.id];
+        if (focusKey) {
+            const v = parseFloat(target.value);
+            if (target.id.startsWith('reset-')) {
+                if (e.type !== 'click') return;
+                followTheme(settings, [focusKey]);
+                const input = document.getElementById(target.id.slice('reset-'.length));   // the menu is in <body>, not the panel
+                if (input) input.value = plotColour(settings, focusKey);
+            } else if (focusKey === 'focusedColor' || focusKey === 'focusedEdgeColor') {
+                settings[focusKey] = target.value;
+            } else if (target.value === '') {
+                delete settings[focusKey];          // the default
+            } else if (focusKey === 'focusedScale' ? v > 0 && v <= FOCUS_SCALE_MAX
+                : focusKey === 'focusedOpacity' ? v > 0 && v <= 1 : v >= 0 && v <= FOCUS_EDGE_MAX) {
+                settings[focusKey] = v;
+            } else return;
+            syncColourControls(id, settings);
+            restyleFocus(plotContainer, settings).catch(err => console.warn('Focused marker style not updated:', err && err.message));
+            return;
+        }
+
         // Export width
         if (target.id === `plot-width-${id}`) {
             settings.exportWidth = parseInt(target.value, 10);
@@ -1617,6 +1682,8 @@ export function updateColorInputs(container, id, settings) {
     const axisColorInput = document.getElementById(`axis-color-${id}`);
     const zeroLineColorInput = document.getElementById(`zero-line-color-${id}`);
     const backdropColorInput = document.getElementById(`backdrop-color-${id}`);
+    const focusedColorInput = document.getElementById(`focused-color-${id}`);
+    const focusedEdgeColorInput = document.getElementById(`focused-edge-color-${id}`);
     
     if (bgColorInput) bgColorInput.value = plotColour(settings, 'bgColor');
     if (textColorInput) textColorInput.value = plotColour(settings, 'textColor');
@@ -1624,14 +1691,22 @@ export function updateColorInputs(container, id, settings) {
     if (axisColorInput) axisColorInput.value = plotColour(settings, 'axisColor');
     if (zeroLineColorInput) zeroLineColorInput.value = plotColour(settings, 'zeroLineColor');
     if (backdropColorInput) backdropColorInput.value = plotColour(settings, 'backdropColor');
+    if (focusedColorInput) focusedColorInput.value = plotColour(settings, 'focusedColor');
+    if (focusedEdgeColorInput) focusedEdgeColorInput.value = plotColour(settings, 'focusedEdgeColor');
     syncColourControls(id, settings);
+}
+
+/** A Reset button's state as drawn: disabled while its colour follows the theme (syncColourControls keeps it so). */
+function resetState(settings, key) {
+    return isFollowing(settings, key) ? 'disabled title="Following the app theme"' : 'title="Follow the app theme again"';
 }
 
 /** The ids of each colour's Reset button, by settings key. */
 const RESET_IDS = {
     bgColor: 'reset-bg-color', backdropColor: 'reset-backdrop-color', textColor: 'reset-text-color',
     gridColor: 'reset-grid-color', axisColor: 'reset-axis-color', zeroLineColor: 'reset-zero-line-color',
-    notInTableColor: 'reset-not-in-table-color'
+    notInTableColor: 'reset-not-in-table-color',
+    focusedColor: 'reset-focused-color', focusedEdgeColor: 'reset-focused-edge-color'
 };
 
 /**
@@ -1890,12 +1965,16 @@ function updateLegendVisibility(plotDiv, settings) {
         hasColoraxis = true;
       });
    
+    // The legend, when there is one: which traces are entries is the
+    // builders' to say (utils/legend-entries.js). Turning the legend on used
+    // to give every trace without a colour scale an entry, the unnamed grey
+    // trace of a plot coloured by nothing too, which read "trace 0".
     if (hasColoraxis) {
         Plotly.relayout(plotDiv, { showlegend: false, showscale: show });
     } else {
-        Plotly.relayout(plotDiv, { showlegend: show, showscale: false });
+        Plotly.relayout(plotDiv, { showlegend: show && hasLegendEntries(plotDiv.data), showscale: false });
     }
-    // 3) Per-trace toggles
+    // 3) Per-trace colour bars
     plotDiv.data.forEach((trace, i) => {
         if (typeof trace.name === 'string' && (trace.name.includes('Focused'))) return;
         const update = {};
@@ -1912,14 +1991,8 @@ function updateLegendVisibility(plotDiv, settings) {
             update.showlegend = false;
             update.showscale   = show;
         }
-        else if (trace.meta === 'az-points' || (trace.name === NOT_IN_TABLE && trace.meta !== 'az-legend')) {
-            // points whose legend entry is a proxy trace (withLegendProxies),
-            // and the greyed-out points, which have no legend entry
-            update.showlegend = false;
-        }
         else {
-            // categorical / other traces: toggle legend, ensure no leftover colorbars
-            update.showlegend          = hasColoraxis ? false : show;
+            // categorical / other traces: no leftover colour bars
             if (trace.marker) update['marker.showscale'] = false;
             if (trace.showscale !== undefined) update.showscale = false;
         }
@@ -2097,51 +2170,74 @@ export async function exportPlot(plotContainer, format, settings, how = 'full') 
     .toISOString()
     .replace(/[:.]/g, '-');
 
-  const showNotification = (message, autoHide = true, type = 'success') => {
-      if (!downloadButton) return null;
-      // Remove any existing notification
-      const existingPopover = bootstrap.Popover.getInstance(downloadButton);
-      if (existingPopover) existingPopover.dispose();
-      
-      // Create new notification popover
-      const popover = new bootstrap.Popover(downloadButton, {
-        content: message,
-        placement: 'top',
-        customClass: `notification-popover ${type}-notification`,
-        trigger: 'manual',
-        delay: { hide: 1500 }
-      });
-      
-      // Show and auto-hide after 2 seconds
-      popover.show();
-      if (autoHide) {
-        setTimeout(() => {
-            if (popover) popover.dispose();
-        }, 2000);
-      }
-      return popover;
-      
-    };
-
   // checked again at the click: the panels open may have changed since the menu was drawn
   const check = how === 'full' ? exportCheck(plotContainer, opts) : null;
   if (check && check.verdict === 'block') {
-    showNotification(`Not exported: ${refusalText(check, EXPORT_ADVICE)}`, true, 'error');
+    refuseInStatus(plotContainer, 'exported', check);
     return;
   }
   _exportInProgress = true;
-  const popoverContainer = showNotification("Preparing Image", false);
+  const done = markBusy(downloadButton, 'Preparing image\u2026');
   try {
     await guarded(check, { panel: panelId, action: 'export', format }, () =>
       exportImage(plotContainer, how, { format, ...opts, filename }));
+    setStatusTag(plotContainer, 'export', null);
   } catch (err) {
     console.error('Error exporting plot:', err);
-    // beside the button, as the other export outcomes are; not a blocking alert
-    showNotification('Export failed; please try again', true, 'error');
+    failInStatus(plotContainer, 'Export failed', 'The image could not be made; try again, or at a smaller size.');
   } finally {
     _exportInProgress = false;
-    if (popoverContainer) popoverContainer.dispose();
+    done();
   }
+}
+
+/**
+ * An export or copy the memory check refused: the panel's status strip says so,
+ * with the advice and (for an export) "Export as shown", as for the modebar camera.
+ * @param {HTMLElement} gd - the plot
+ * @param {'exported'|'copied'} verb
+ * @param {Object} check - exportCheck's answer, with verdict 'block'
+ */
+function refuseInStatus(gd, verb, check) {
+  const why = refusalText(check, EXPORT_ADVICE);
+  setStatusTag(gd, 'memory', { text: `Not ${verb}: browser memory`, severity: 'warning', title: why,
+    pop: { text: why, actions: verb === 'exported' && canSnapshot(gd) ? [['export-shown', 'Export as shown']] : [] } });
+  nudgeStatusTag(gd, 'memory');
+}
+
+/**
+ * An export or copy that failed: a tag in the panel's status strip that stays
+ * until the next export succeeds, not a message that vanishes in seconds.
+ * @param {HTMLElement} gd - the plot
+ * @param {string} text - the tag
+ * @param {string} why - the sentence under it
+ */
+function failInStatus(gd, text, why) {
+  setStatusTag(gd, 'export', { text, severity: 'error', title: why, pop: { text: why } });
+  nudgeStatusTag(gd, 'export');
+}
+
+/**
+ * Show on a button that its action is running (its label, and aria-busy for
+ * assistive technology); the returned function puts the button back.
+ * @param {HTMLElement|null} button
+ * @param {string} label
+ * @returns {Function}
+ */
+function markBusy(button, label) {
+  if (!button) return () => {};
+  const before = button.innerHTML;
+  button.setAttribute('aria-busy', 'true');
+  button.textContent = label;
+  return () => { button.removeAttribute('aria-busy'); button.innerHTML = before; };
+}
+
+/** Say "Copied" on a button for a moment, then put its label back. */
+function flashLabel(button, text, ms = 2000) {
+  if (!button) return;
+  const before = button.innerHTML;
+  button.textContent = text;
+  setTimeout(() => { button.innerHTML = before; }, ms);
 }
 
 /**
@@ -2152,10 +2248,7 @@ registerCameraExport(async (gd, opts) => {
   const o = { width: opts.width || 1200, height: opts.height || 800, scale: opts.scale || 1 };
   const check = exportCheck(gd, o);
   if (check.verdict === 'block') {
-    const why = refusalText(check, EXPORT_ADVICE);
-    setStatusTag(gd, 'memory', { text: 'Not exported: browser memory', severity: 'warning', title: why,
-      pop: { text: why, actions: canSnapshot(gd) ? [['export-shown', 'Export as shown']] : [] } });
-    nudgeStatusTag(gd, 'memory');
+    refuseInStatus(gd, 'exported', check);
     return;
   }
   await guarded(check, { panel: getPanelId(gd), action: 'export', format: 'png' }, () =>
@@ -2172,25 +2265,9 @@ async function copyPlotToClipboard(plotContainer, settings) {
     if (!plotContainer) return;
     const opts = { ...exportOptions(settings), scale: 1 };
     const copyBtn = document.getElementById(`copy-to-clipboard-${getPanelId(plotContainer)}`);
-    const showNotification = (message, type = 'success') => {
-      if (!copyBtn) return;
-      const existingPopover = bootstrap.Popover.getInstance(copyBtn);
-      if (existingPopover) existingPopover.dispose();
-      const popover = new bootstrap.Popover(copyBtn, {
-        content: message,
-        placement: 'top',
-        customClass: `notification-popover ${type}-notification`,
-        trigger: 'manual',
-        delay: { hide: 1500 }
-      });
-      popover.show();
-      setTimeout(() => {
-        if (popover) popover.dispose();
-      }, 2000);
-    };
     const check = exportCheck(plotContainer, opts);
     if (check.verdict === 'block') {
-      showNotification(`Not copied: ${refusalText(check, EXPORT_ADVICE)}`, 'error');
+      refuseInStatus(plotContainer, 'copied', check);
       return;
     }
     try {
@@ -2199,10 +2276,14 @@ async function copyPlotToClipboard(plotContainer, settings) {
       const blob = await fetch(dataUrl).then(res => res.blob());
       if (!navigator.clipboard || !window.ClipboardItem) throw new Error('Clipboard API not supported');
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      showNotification('Plot image copied to clipboard', 'success');
+      setStatusTag(plotContainer, 'export', null);
+      flashLabel(copyBtn, 'Copied');
     } catch (err) {
       console.error('Copy to clipboard failed:', err);
-      showNotification('Could not copy image', 'error');
+      failInStatus(plotContainer, 'Not copied',
+        navigator.clipboard && window.ClipboardItem
+          ? 'The image could not be copied; use Download instead.'
+          : 'The browser copies images only on https or localhost; use Download instead.');
     }
   }
 
@@ -2249,8 +2330,8 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'xaxis.fixedrange': !settings.enableZoom,
         'yaxis.fixedrange': !settings.enableZoom,
         
-        // Set legend visibility (global setting)
-        'showlegend': settings.showLegend !== false,
+        // Set legend visibility (global setting), when there is a legend entry
+        'showlegend': settings.showLegend !== false && hasLegendEntries(plotContainer.data),
         
         // 2D axes
         'xaxis.showgrid': settings.showGrid,

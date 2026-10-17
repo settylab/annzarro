@@ -456,3 +456,35 @@ test("toasts are text, dismissable, and expire", () => {
     globalThis.setTimeout = real;
   }
 });
+
+test("admin toasts follow the rules of the page's: errors stay, a lower one stacks below, hover holds the clock", () => {
+  const host = doc.createElement("div");
+  const timers = [];
+  const real = globalThis.setTimeout;
+  const realClear = globalThis.clearTimeout;
+  globalThis.setTimeout = (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length - 1; };
+  globalThis.clearTimeout = (id) => { if (timers[id]) timers[id].live = false; };
+  try {
+    const error = showToast(host, "Could not save", "danger");
+    assert.equal(timers.length, 0, "an error has no timer");
+    showToast(host, "Saved elsewhere", "info");
+    assert.equal(host.children.length, 2, "the info stacks below the error");
+    assert.equal(host.children[0], error);
+    showToast(host, "Another info", "info");
+    assert.equal(host.children.length, 2, "an info replaces the info, not the error");
+    showToast(host, "A second error", "danger");
+    assert.equal(host.children.length, 1, "an error replaces everything of lower or equal severity");
+    // a short success takes its floor (4 s), and hover holds it
+    const ok = showToast(host, "Done", "success");
+    const timer = timers.length - 1;
+    assert.equal(timers[timer].ms, 4000);
+    ok.dispatch("mouseenter");
+    assert.equal(timers[timer].live, false, "the clock stops under the pointer");
+    ok.dispatch("mouseleave");
+    assert.equal(timers[timers.length - 1].live, true);
+    assert.ok(timers[timers.length - 1].ms >= 2000);
+  } finally {
+    globalThis.setTimeout = real;
+    globalThis.clearTimeout = realClear;
+  }
+});

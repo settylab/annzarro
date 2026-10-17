@@ -171,3 +171,79 @@ test('greyMarker: scale, opacity and colour of the panel replace the defaults; b
     const z = { z: { type: 'obsm', key: 'X_umap', column: '2' }, notInTableScale: 1.37 };
     assert.equal(greyMarker(z, 1e6).size, autoPointStyle(1e6, BASE, true).size * 1.37);
 });
+
+test('plot area: the reference area draws the calibrated values exactly, an unknown area is the reference', async () => {
+    const { REF_AREA } = await import('../../../static/js/utils/point-style.js');
+    assert.equal(REF_AREA, 660 * 332);
+    for (const n of [0, 100, 1e3, 1e4, 1e5, 1e6, 5e6, 1e7, 95.6e6]) {
+        for (const is3D of [false, true]) {
+            const today = autoPointStyle(n, BASE, is3D);
+            assert.deepEqual(autoPointStyle(n, BASE, is3D, REF_AREA), today, `n=${n} 3D=${is3D}`);
+            for (const unknown of [undefined, 0, -5, NaN, null]) {
+                assert.deepEqual(autoPointStyle(n, BASE, is3D, unknown), today, `n=${n} area=${unknown}`);
+            }
+        }
+    }
+    assert.deepEqual(Object.values(autoPointStyle(1e6, BASE, false, REF_AREA)), [1.18, 0.43]);
+});
+
+test('plot area: N points in k times the area draw as N/k points do; larger is larger and more opaque', async () => {
+    const { REF_AREA, areaCount } = await import('../../../static/js/utils/point-style.js');
+    for (const k of [1 / 8, 1 / 4, 1 / 2, 2, 3, 8]) {
+        assert.equal(areaCount(1e6, REF_AREA * k), 1e6 / k);
+        assert.deepEqual(autoPointStyle(1e6, BASE, false, REF_AREA * k), autoPointStyle(1e6 / k, BASE), `k=${k}`);
+    }
+    for (const n of [1e5, 1e6, 5e6]) {
+        let prev = { size: 0, opacity: 0 };
+        for (let e = -4; e <= 4; e += 0.25) {
+            const s = autoPointStyle(n, BASE, false, REF_AREA * 2 ** e);
+            assert.ok(s.size >= prev.size && s.opacity >= prev.opacity, `n=${n} area 2^${e}`);
+            prev = s;
+        }
+        const ref = autoPointStyle(n, BASE, false, REF_AREA);
+        const big = autoPointStyle(n, BASE, false, REF_AREA * 4);
+        const small = autoPointStyle(n, BASE, false, REF_AREA / 4);
+        assert.ok(big.size > ref.size && big.opacity > ref.opacity, `n=${n} bigger`);
+        assert.ok(small.size < ref.size && small.opacity < ref.opacity, `n=${n} smaller`);
+    }
+    // 3D: the size follows the area, the opacity stays 1
+    assert.ok(autoPointStyle(1e6, BASE, true, REF_AREA * 4).size > autoPointStyle(1e6, BASE, true).size);
+    assert.equal(autoPointStyle(1e6, BASE, true, REF_AREA * 4).opacity, 1);
+    assert.equal(autoPointStyle(1e6, BASE, true, REF_AREA / 4).opacity, 1);
+});
+
+test('plot area: the factor is held within 1/8 and 8; never above the base for few points', async () => {
+    const { REF_AREA, AREA_RANGE, areaCount } = await import('../../../static/js/utils/point-style.js');
+    assert.deepEqual([...AREA_RANGE], [1 / 8, 8]);
+    for (const n of [1e5, 1e6, 1e7]) {
+        assert.deepEqual(autoPointStyle(n, BASE, false, REF_AREA * 100), autoPointStyle(n, BASE, false, REF_AREA * 8));
+        assert.deepEqual(autoPointStyle(n, BASE, false, REF_AREA / 100), autoPointStyle(n, BASE, false, REF_AREA / 8));
+    }
+    assert.equal(areaCount(8e6, REF_AREA * 1e6), 1e6);
+    assert.equal(areaCount(1e6, 1), 8e6);
+    for (const n of [1, 200, 1e3]) {
+        const s = autoPointStyle(n, BASE, false, REF_AREA * 8);
+        assert.ok(s.size <= snapPointSize(BASE.size) && s.opacity <= BASE.opacity, `n=${n}`);
+    }
+});
+
+test('plot area: applyAutoPointStyle keeps the area per panel; the grey points follow it; a set value stays', async () => {
+    const { REF_AREA, styleArea, greyMarker } = await import('../../../static/js/utils/point-style.js');
+    const auto = { autoPointSize: true, autoPointOpacity: true };
+    assert.equal(styleArea(auto), undefined);
+    applyAutoPointStyle(auto, 1e6, BASE);
+    assert.equal(auto.pointSize, 1.18);
+    assert.equal(applyAutoPointStyle(auto, 1e6, BASE, REF_AREA * 4), true);
+    assert.equal(styleArea(auto), REF_AREA * 4);
+    assert.deepEqual([auto.pointSize, auto.pointOpacity], Object.values(autoPointStyle(1e6, BASE, false, REF_AREA * 4)));
+    // no area given: the panel's last one
+    assert.equal(applyAutoPointStyle(auto, 1e6, BASE), false);
+    assert.equal(greyMarker(auto, 1e6).size, autoPointStyle(1e6, { size: 5, opacity: 0.7 }, false, REF_AREA * 4).size);
+    // the area is not a setting: nothing saved or shared carries it
+    assert.deepEqual(Object.keys(auto).sort(), ['autoPointOpacity', 'autoPointSize', 'pointOpacity', 'pointSize']);
+
+    const set = { autoPointSize: false, autoPointOpacity: false, pointSize: 3, pointOpacity: 0.5 };
+    assert.equal(applyAutoPointStyle(set, 1e6, BASE, REF_AREA / 8), false);
+    assert.equal(applyAutoPointStyle(set, 1e6, BASE, REF_AREA * 8), false);
+    assert.deepEqual([set.pointSize, set.pointOpacity], [3, 0.5]);
+});

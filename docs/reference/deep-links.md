@@ -238,7 +238,7 @@ Other fields (`pointSize`, `pointOpacity`, `colorScale`, `colorReversed`, `hover
 `highlightFocusedCell`, `tableFilter`, ...) are whatever the panel saved; copy them from a link
 the app produced rather than writing them from scratch. A plot config without `pointSize` or
 `pointOpacity` gets automatic values that follow the number of points drawn (in a zoomed 2D
-view, the points in view); one with them keeps
+view, the points in view) per plot area; one with them keeps
 them (`autoPointSize: true` / `autoPointOpacity: true` mark a saved value as automatic).
 
 A Gene Set Analysis panel (`gene-set-…`) saves its settings and nothing derived from the

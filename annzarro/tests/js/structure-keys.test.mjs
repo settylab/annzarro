@@ -55,8 +55,12 @@ test('notify dispatches the event main.js shows', () => {
     globalThis.document = new EventTarget();
     globalThis.CustomEvent = class extends Event { constructor(t, i = {}) { super(t); this.detail = i.detail; } };
     document.addEventListener(NOTIFY_EVENT, e => seen.push(e.detail));
-    notify('Plot source not found', 'layer "raw" is not in this dataset');
-    assert.deepEqual(seen, [{ title: 'Plot source not found', message: 'layer "raw" is not in this dataset', type: 'warning' }]);
+    notify('Column removed', 'It followed the focused cell.');
+    notify('Refresh may not show every change', 'Too large to check.', 'info', 12000);
+    assert.deepEqual(seen, [
+        { title: 'Column removed', message: 'It followed the focused cell.', type: 'warning' },
+        { title: 'Refresh may not show every change', message: 'Too large to check.', type: 'info', duration: 12000 },
+    ]);
 });
 
 test('sourceKeyMissing is true only when the structure lists that kind without the key', () => {

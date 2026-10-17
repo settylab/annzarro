@@ -1,11 +1,11 @@
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
-import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport } from './plot-make-helper.js';
-import { autoPointCount, debounced } from '../../utils/view-point-style.js';
+import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
+import { autoPointCount, debounced, plotArea } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
-import { applyAutoPointStyle, pointStyleBase, greyMarker } from '../../utils/point-style.js';
+import { applyAutoPointStyle, pointStyleBase, greyMarker, styleArea } from '../../utils/point-style.js';
 export { pointStyleBase };
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { colorbarPosition, colorbarExtras, tickKeys, axisPaths } from './plot-options.js';
@@ -21,7 +21,7 @@ import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
 import { RemoteNames } from '../../utils/remote-names.js';
-import { colourKind } from '../../utils/memory-guard.js';
+import { colourKind, MEMORY_ADVICE } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
@@ -816,7 +816,8 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
  */
 export function followDrawnPoints(plotContainer, settings, drawn, id = plotContainer.__azPanelId) {
   plotContainer._drawnCount = drawn;
-  const changed = applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
+  const changed = applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase(),
+    plotArea(plotContainer, settings));
   if (changed && id !== undefined) showPointStyle(id, settings);
   return changed;
 }
@@ -887,26 +888,42 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     }
     
     // Size and opacity the user has not set follow the number of points
-    // drawn: the subset, or every cell (utils/point-style.js)
+    // drawn (the subset, or every cell) per plot area (utils/point-style.js)
     const nPoints = (isGenePlot ? DataManager.getGenes() : DataManager.getCells()).length;
     plotContainer._pointCount = nPoints;
     plotContainer._drawnCount = nPoints;   // narrowed by the filters once the data is read (followDrawnPoints)
     plotContainer.__azPanelId = id;
     // in a zoomed view kept from the graph drawn now, the points in that view
     // (utils/view-point-style.js; checked again once the new graph is drawn)
-    applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase());
-    // and after every zoom or pan, once it has settled (plot-make-helper.js
-    // attachViewportTracking calls it). Here, not with the controls: a panel
-    // whose controls are hidden has none.
+    applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase(),
+      plotArea(plotContainer, settings));
+    // and after every draw, zoom, pan or resize, once it has settled
+    // (plot-make-helper.js attachViewportTracking calls it). Here, not with
+    // the controls: a panel whose controls are hidden has none. A marker
+    // restyle only, which neither resizes nor relayouts the graph.
     if (plotContainer.__azFollowView) plotContainer.__azFollowView.cancel();
     plotContainer.__azFollowView = debounced(() => {
-      if (!settings.autoPointSize && !settings.autoPointOpacity) return;
       if (!plotContainer._fullLayout) return;
-      if (applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase())) {
-        showPointStyle(id, settings);
+      const area = plotArea(plotContainer, settings);
+      // the greyed-out points follow the area whatever the main points do
+      const greysMoved = area !== styleArea(settings)
+        && (plotContainer.data || []).some(t => t && t.name === NOT_IN_TABLE);
+      if (!settings.autoPointSize && !settings.autoPointOpacity && !greysMoved) return;
+      const changed = applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker),
+        pointStyleBase(), area);
+      if (changed) showPointStyle(id, settings);
+      if (changed || greysMoved) {
         restyleMarkers(plotContainer, settings).catch(err => console.warn('Point size/opacity not updated:', err && err.message));
       }
     });
+    // An image export at its own size: the automatic values for its plot
+    // area, on the copy drawn for it (utils/plot-export.js fullImage)
+    plotContainer.__azExportMarkers = async (copy) => {
+      const own = { ...settings };
+      const area = plotArea(copy, own);
+      applyAutoPointStyle(own, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase(), area);
+      await restyleMarkers(copy, own);
+    };
     showPointStyle(id, settings);
     showColorSortControl(id, settings);
 
@@ -1300,13 +1317,11 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       // The classification carried on the error says WHY; the existing
       // troubleshooting hints are kept underneath it as the "what to do next".
       const unit = data && data.entities === 'genes' ? 'genes' : 'cells';
-      drawPlaceholder(
-        plotContainer,
-        error.coverage || Coverage.missing(GAP.FAILED, error.message || 'unknown error',
-          { source: 'plot data', unit }),
-        unit
-      );
-      if (errorDetails) {
+      const coverage = error.coverage || Coverage.missing(GAP.FAILED, error.message || 'unknown error',
+        { source: 'plot data', unit });
+      drawPlaceholder(plotContainer, coverage, unit);
+      // out of memory: the data is there, and the placeholder says what helps
+      if (errorDetails && !coverage.gaps.some(g => g.kind === 'memory')) {
         const extra = document.createElement('div');
         extra.className = 'coverage-placeholder__hints';
         extra.innerHTML = errorDetails;
@@ -1369,7 +1384,7 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
       actions: [['draw-anyway', 'Draw anyway'], ['subset', 'Subset\u2026']] };
   } else if (result.verdict === 'block' && !override) {
     refusal = { text: 'Not drawn: browser memory',
-      why: refusalText(result, 'Close a plot, or show fewer cells (a smaller subset).'),
+      why: refusalText(result, MEMORY_ADVICE),
       actions: [['subset', 'Subset\u2026']] };
   }
   if (refusal) {
@@ -2680,6 +2695,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   const baseTrace = {
     type: settings.z ? 'scatter3d' : 'scattergl',
     mode: 'markers',
+    name: POINTS,
     x: filteredData.x.values,
     y: filteredData.y.values,
     text: DataManager.cellLabels(filteredData[entityKey]),

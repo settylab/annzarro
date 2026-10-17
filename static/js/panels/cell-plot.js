@@ -44,7 +44,7 @@ const CellPlotPanel = (function() {
             color: { type: 'none', key: '', column: '' }, // Start with no coloring
             pointSize: (Config && Config.DEFAULTS && Config.DEFAULTS.POINT_SIZE) || 5,
             pointOpacity: (Config && Config.DEFAULTS && Config.DEFAULTS.POINT_OPACITY) || 0.7,
-            autoPointSize: true,      // size and opacity follow the number of points
+            autoPointSize: true,      // size and opacity follow the points per plot area
             autoPointOpacity: true,   // until set (utils/point-style.js)
             colorScale: (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALE) || 'Portland',
             categoryPalette: 'uns', // Default to using colors from uns if available

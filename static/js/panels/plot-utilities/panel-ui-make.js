@@ -150,6 +150,8 @@ export function createPanelStructure(container, id, settings) {
               </div>
             </div>
 
+            <div class="color-log-hint small" id="color-log-hint-${id}" role="status" hidden></div>
+
             <div class="btn-toolbar ctl-toggles" role="toolbar" aria-label="Colour scale options">
               <div class="ctl-toggle-set" role="group">
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="center-colormap-${id}" aria-pressed="false">Center at 0</button>

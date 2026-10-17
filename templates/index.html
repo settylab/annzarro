@@ -69,6 +69,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/desktop-frame.css') }}">
 </head>
 <body>
+    <!-- Toasts (main.js _showNotification): in the page from the start, so that the first one is announced -->
+    <div id="notification-container" role="status" aria-live="polite"></div>
     <!-- Top Bar with Global Controls -->
     <header id="app-header" class="app-header">
         <div class="container-fluid">
@@ -269,11 +271,13 @@
                     <div id="save-session-container" style="display: none;">
                         <div class="mb-3">
                             <label for="session-name" class="form-label">Panel Set Name</label>
-                            <input type="text" class="form-control" id="session-name" placeholder="Enter a name for your session">
+                            <input type="text" class="form-control" id="session-name" placeholder="Enter a name for your panel set">
+                            <!-- a failed save or an overwrite to confirm, in place (main.js _dialogNote) -->
+                            <div id="session-save-note" class="small mt-2" role="alert" hidden></div>
                             <div id="existing-sessions" class="mt-2">
-                                <h6 class="text-muted small">Existing sessions:</h6>
+                                <h6 class="text-muted small">Existing panel sets:</h6>
                                 <div id="session-suggestions" class="session-suggestions">
-                                    <!-- Existing sessions will be displayed here -->
+                                    <!-- Existing panel sets will be displayed here -->
                                 </div>
                             </div>
                         </div>
@@ -282,7 +286,7 @@
                 <div id="file-upload-section" style="display: none;">
                     <div class="upload-container">
                         <div class="file-drop-area">
-                            <span class="file-message">Drag & drop a session file here or</span>
+                            <span class="file-message">Drag & drop a panel set file here or</span>
                             <label for="session-file-upload" class="browse-btn">Browse files</label>
                             <input type="file" id="session-file-upload" class="file-input" accept=".json">
                             <span id="file-name-display" class="file-name"></span>

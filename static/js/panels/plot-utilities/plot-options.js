@@ -200,7 +200,7 @@ export const PRESETS = Object.freeze(['default', 'publication']);
 
 /**
  * Settings changes of a preset. Default restores the look above (data
- * choices, the scale bar's unit and the Not in table group stay).
+ * choices, the scale bar's unit, the Not in table and Focused groups stay).
  * Publication: white background and black text and lines in any app theme
  * (the colours are pinned light), no grid, minimal ticks (about five per
  * axis, marks on), larger fonts and lines and a tight margin. The scale bar
@@ -246,6 +246,7 @@ export const STYLE_KEYS = Object.freeze([
   'colorbarPosition', 'colorbarLength', 'colorbarTicks',
   'showScaleBar', 'scaleBarCorner', 'scaleBarSize', 'scaleBarUnit',
   'notInTableScale', 'notInTableOpacity', 'notInTableColor',
+  'focusedScale', 'focusedOpacity', 'focusedColor', 'focusedEdgeColor', 'focusedEdgeWidth',
   'exportWidth', 'exportHeight', 'scaleExport'
 ]);
 

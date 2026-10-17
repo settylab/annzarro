@@ -978,7 +978,7 @@ export function createDatasetBrowser(services) {
             } else {
                 lines.push(`This view was saved on ${was}${counts}` + (fp ? '.' : '; it records no fingerprint, so stores are matched by name only.'));
             }
-        } else if (me.restricted && S.mode === 'change' && S.unavailableName) {
+        } else if (S.mode === 'change' && S.unavailableName) {
             lines.push(`${S.unavailableName} is not available to you, or no longer exists.`);
             if (me.admin_contact) lines.push(`Ask ${me.admin_contact} for access.`);
         }

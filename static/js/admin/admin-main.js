@@ -15,6 +15,7 @@ import { createAdminApi } from './admin-api.js';
 import { createReauthModal } from './reauth-modal.js';
 import { h, setChildren } from './dom.js';
 import { mountThemeToggle } from '../utils/theme-toggle.js';
+import { mayReplace, noticeDuration } from '../utils/notice-rules.js';
 import users from './users.js';
 import dataRoots from './data-roots.js';
 import health from './health.js';
@@ -36,19 +37,52 @@ export function sectionFromHash(hash, sections = SECTIONS) {
 }
 
 /**
- * Show a message as a dismissing Bootstrap alert.
+ * Show a message as a dismissing Bootstrap alert, by the rules of the main
+ * page's toasts (utils/notice-rules.js): a new message replaces those of
+ * equal or lower severity and stacks below a more severe one; an error stays
+ * until closed, the others for a time that scales with their length; the
+ * clock is held while the pointer or focus is on a message.
  * @param {HTMLElement} host
  * @param {string} message
- * @param {string} [level] - Bootstrap colour
- * @param {number} [ms] - 0 keeps it until dismissed
+ * @param {string} [level] - Bootstrap colour ('danger' is an error)
+ * @param {number} [ms] - how long (0 keeps it until dismissed); default by level and length
  */
-export function showToast(host, message, level = 'info', ms = 6000) {
+export function showToast(host, message, level = 'info', ms = undefined) {
+    const type = level === 'danger' ? 'error' : level;
+    for (const shown of [...host.children]) {
+        if (mayReplace(shown.noticeType, type)) host.removeChild(shown);
+    }
     const node = h('div', { class: `alert alert-${level} alert-dismissible shadow-sm py-2`, role: 'alert' },
         h('span', { text: message }),
         h('button', { type: 'button', class: 'btn-close', 'aria-label': 'Close', onclick: () => host.removeChild(node) }));
+    node.noticeType = type;
     host.appendChild(node);
-    if (ms > 0) {
-        setTimeout(() => { if (node.parentNode === host) host.removeChild(node); }, ms);
+    const total = noticeDuration(type, '', message, ms);
+    if (total > 0) {
+        let left = total;
+        let since = 0;
+        let timer = null;
+        let held = 0;      // the pointer and the focus: 0 when neither is on the message
+        const start = () => {
+            since = Date.now();
+            timer = setTimeout(() => { if (node.parentNode === host) host.removeChild(node); }, left);
+        };
+        const hold = (on) => {
+            held = Math.max(0, held + (on ? 1 : -1));
+            if (on && held === 1 && timer !== null) {
+                clearTimeout(timer);
+                timer = null;
+                left = Math.max(0, left - (Date.now() - since));
+            } else if (!on && held === 0 && timer === null) {
+                left = Math.max(2000, left);
+                start();
+            }
+        };
+        for (const [begin, end] of [['mouseenter', 'mouseleave'], ['focusin', 'focusout']]) {
+            node.addEventListener(begin, () => hold(true));
+            node.addEventListener(end, () => hold(false));
+        }
+        start();
     }
     return node;
 }

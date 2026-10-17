@@ -8,7 +8,59 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.5.5 (2026-10-17)
+
+Fewer pop-ups, with messages shown where you are looking; automatic point size and opacity that
+follow the panel's size; a subset size that follows you from dataset to dataset; and Plot Options
+for the focused cell's marker.
+
+### Added
+- Plot Options has a **Focused cell** group (**Focused gene** in gene plots) that sets the size
+  (a multiple of the point size), opacity, fill colour, edge colour and edge width of the marker on
+  the focused cell, in 2D, 3D and large plots. The colours follow the app theme until you set them
+  (the edge is black on a light plot and white on a dark one); the values are kept in panel sets
+  and share links, and a link without them draws the usual red dot.
+
+### Changed
+- Automatic point size and opacity follow the plot area as well as the number of points: a large
+  plot (a full window, a big export) draws larger, more opaque points and a small split pane
+  smaller, fainter ones, so points look about as dense at any panel size. They update when the
+  window is resized, a split is dragged, the controls are shown or hidden, or a panel is
+  maximised; a size or opacity you set stays as set.
+- The cell subset size you choose follows you to other datasets. A dataset you switch to opens
+  on that many cells when it has more, and with every cell when it has as many or fewer; its badge
+  then reads, for example, "All cells (≤ 10,000)", and the next larger dataset is subsampled to the
+  size again. The size is kept per browser and user, so a reload keeps it, and the dataset AnnZarro
+  opens when it starts uses it too. "Close all" with the tick box for clearing everything forgets
+  it. Share links, panel sets and the restored session still open on the subset they saved.
+- A plot or table whose data the browser ran out of memory for says so in plain words ("the
+  browser ran out of memory -- Close a plot, or show fewer cells (a smaller subset), and try
+  again") instead of "failed to read -- Array buffer allocation failed", and offers **Half the
+  cells** and **Subset…** where it says it.
+- Fewer pop-ups: AnnZarro now pops a notice up only for what you did not cause or cannot see (an
+  error, data that changed under you, a partial outcome). Messages about what you just did appear
+  where you are looking. A panel set that cannot be saved, loaded, imported or deleted says why
+  on its card or under the name box in the dialog, and saving over an existing name turns Save into
+  Overwrite and deleting asks on the card, in place of the browser's own confirmation windows
+  (also for Clear closed panels). A plot export or copy that the memory check refuses, or that
+  fails, says so in the plot's status line, with the advice, until the next one succeeds. What the Log
+  colour scale does to a Min or Max you typed is shown under the boxes. Share Link is off, with a
+  tooltip, until a dataset is open. No notice any more for a restored autosave, an imported panel
+  set, a plot source missing from the dataset (the menu and the plot already say it), or a
+  dataset that became unavailable (the dataset browser says it). Several columns removed from
+  tables in one restore, or two notes about one store, come as one notice, and notices that stay
+  up are held while the pointer or keyboard focus is on them and last longer when they are longer.
+
 ### Fixes
+- The Save Panel Set dialog now closes when a save finishes while it is still fading in (a quick
+  save, or Overwrite pressed at once); it used to stay open.
+- A plot coloured by nothing, or by a column the dataset does not have (after switching datasets),
+  no longer shows a grey "trace 0" in a legend after an axis change; such a plot has no legend.
+- An error notice is no longer wiped by the notices that follow it from the same action (a shared
+  link that could not be read, a cell subset that could not be applied): a notice is replaced only
+  by one at least as severe, and a lower one waits below it.
+- The first notice after the page loads is announced by screen readers, and a dataset that fails to
+  open is announced once, not twice.
 - A release build no longer fails when Apple's ticket service drops the connection while the
   notarization ticket of the macOS app or its dmg is being checked (`stapler validate`); the check
   is retried up to five times, and a missing ticket still fails at once.

@@ -31,19 +31,23 @@ import { currentTheme } from './theme.js';
 export const COLOUR_MODEL = 2;
 
 /** The colours that follow the app theme, by their settings key. */
-export const THEMED_COLOURS = Object.freeze(['bgColor', 'gridColor', 'axisColor', 'textColor', 'zeroLineColor', 'backdropColor', 'notInTableColor']);
+export const THEMED_COLOURS = Object.freeze(['bgColor', 'gridColor', 'axisColor', 'textColor', 'zeroLineColor', 'backdropColor', 'notInTableColor',
+    'focusedColor', 'focusedEdgeColor']);
 
-/** The colours the plot theme buttons set (the grey of points not in the table has its own control). */
+/** The colours the plot theme buttons set (the grey of points not in the table and the focused marker have their own controls). */
 export const BUTTON_COLOURS = Object.freeze(['bgColor', 'gridColor', 'axisColor', 'textColor', 'zeroLineColor', 'backdropColor']);
 
 export const PLOT_PALETTES = Object.freeze({
     light: Object.freeze({
         bgColor: '#ffffff', gridColor: '#e6e6e6', axisColor: '#000000', textColor: '#000000',
-        zeroLineColor: '#cccccc', backdropColor: '#f0f0f0', notInTableColor: '#b4b4b4'
+        zeroLineColor: '#cccccc', backdropColor: '#f0f0f0', notInTableColor: '#b4b4b4',
+        focusedColor: '#ff0000', focusedEdgeColor: '#000000'
     }),
     dark: Object.freeze({
         bgColor: '#1e1e1e', gridColor: '#444444', axisColor: '#ffffff', textColor: '#ffffff',
-        zeroLineColor: '#666666', backdropColor: '#121212', notInTableColor: '#6b7178'
+        zeroLineColor: '#666666', backdropColor: '#121212', notInTableColor: '#6b7178',
+        // the same red dot in both themes; its edge is white on the dark plot, black on the light one
+        focusedColor: '#ff0000', focusedEdgeColor: '#ffffff'
     })
 });
 

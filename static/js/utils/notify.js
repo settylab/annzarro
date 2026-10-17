@@ -6,12 +6,14 @@
  * @param {string} title
  * @param {string} message
  * @param {'info'|'warning'|'error'|'success'} [type]
+ * @param {number} [duration] - ms; omitted: the rules of the toast (an error until
+ *   closed, otherwise by the words); 0: until closed
  */
 export const NOTIFY_EVENT = 'annzarro:notify';
 
-export function notify(title, message, type = 'warning') {
+export function notify(title, message, type = 'warning', duration = undefined) {
     if (typeof document === 'undefined' || typeof document.dispatchEvent !== 'function') return;
     const Ctor = typeof CustomEvent === 'function' ? CustomEvent : null;
     if (!Ctor) return;
-    document.dispatchEvent(new Ctor(NOTIFY_EVENT, { detail: { title, message, type } }));
+    document.dispatchEvent(new Ctor(NOTIFY_EVENT, { detail: duration === undefined ? { title, message, type } : { title, message, type, duration } }));
 }

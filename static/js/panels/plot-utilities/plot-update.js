@@ -19,7 +19,7 @@ import {
   followDrawnPoints
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
-import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE } from './plot-make-helper.js';
+import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
 import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
@@ -30,8 +30,10 @@ import { withPlotlyBatch } from '../../utils/plotly-batch.js';
 import { setGlMarkers } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
+import { MEMORY_ADVICE } from '../../utils/memory-guard.js';
 import { colourTitle } from '../../utils/plot-titles.js';
-import { highlightLargeFocus, clearLargeFocus } from './large-interact.js';
+import { highlightLargeFocus, clearLargeFocus, restyleLargeFocus } from './large-interact.js';
+import { focusMarker, focusRestyle, focusSize, focusParams } from '../../utils/focus-style.js';
 
 
 
@@ -378,6 +380,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 const newTrace = {
                     type: settings.z ? 'scatter3d' : 'scattergl',
                     mode: 'markers',
+                    name: POINTS,
                     x: data.x.values,
                     y: data.y.values,
                     text: DataManager.cellLabels(data[entityType]),
@@ -833,9 +836,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             
             const highlightIndex = plotContainer.data.findIndex(trace => trace && trace.name === `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
             if (highlightIndex >= 0) {
-                Plotly.restyle(plotContainer, {
-                    'marker.size': settings.pointSize * 2  // Always 2x the normal point size.
-                }, [highlightIndex]);
+                // the focused marker's own style (utils/focus-style.js)
+                Plotly.restyle(plotContainer, focusRestyle(settings, isRingTrace(plotContainer.data[highlightIndex])), [highlightIndex]);
             }
         }
         
@@ -942,7 +944,7 @@ export async function loadColorDataAndUpdatePlot(
     // the new colour series and the restyle need memory next to the old ones
     const memory = recolourCheck(plotContainer);
     if (memory.verdict === 'block') {
-        const why = refusalText(memory, 'Close a plot, or show fewer cells (a smaller subset).');
+        const why = refusalText(memory, MEMORY_ADVICE);
         setStatusTag(plotContainer, 'memory', { text: 'Colour not changed: browser memory', severity: 'warning',
             title: why, pop: { text: why, actions: [['subset', 'Subset\u2026']] } });
         return;
@@ -1204,16 +1206,8 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     y: [yValue],
     mode: 'markers',
     type: is3D ? 'scatter3d' : 'scattergl',
-    marker: {
-      size: settings.pointSize * 2, // Emphasize by doubling the size.
-      color: 'rgba(255, 0, 0, 1)',   // Red highlight.
-      opacity: 1,
-      line: {
-        color: 'rgba(0, 0, 0, 1)',
-        width: 2
-      },
-      showscale: false  // Do not create a new colorbar.
-    },
+    // the panel's Focused style (utils/focus-style.js); by default a red dot twice the point size
+    marker: focusMarker(settings),
     hoverinfo: 'skip',
     name: `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`,
     showlegend: false  // Prevent the trace from appearing in the legend.
@@ -1333,13 +1327,7 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
     y: [coords[1]],
     mode: 'markers',
     type: is3D ? 'scatter3d' : 'scattergl',
-    marker: {
-      size: settings.pointSize * 2,
-      symbol: 'circle-open',
-      color: 'rgba(255, 0, 0, 1)',
-      line: { color: 'rgba(255, 0, 0, 1)', width: 2 },
-      showscale: false
-    },
+    marker: focusMarker(settings, true),
     // like the filled dot: a ring on top must not take the clicks and hover
     // of the shown points under it (the plot's note names the cell)
     hoverinfo: 'skip',
@@ -1368,16 +1356,17 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
  * removes and re-adds the focus highlight trace and re-applies every
  * aesthetic setting: ~38 Plotly calls and ~320 ms per slider step on
  * bm_aging. Size and opacity need none of that: they are marker properties
- * of the data traces, plus the highlight's size (always twice the points).
+ * of the data traces, plus the highlight's own style (utils/focus-style.js).
  *
  * @param {HTMLElement} plotContainer - The Plotly plot.
  * @param {Object} settings - Plot settings (pointSize, pointOpacity).
  * @returns {Promise<void>} Resolves once Plotly has applied both restyles.
  */
 export async function restyleMarkers(plotContainer, settings) {
+    // a large plot's highlight is a shape: its size follows the points, its colours the theme
+    if (plotContainer && plotContainer.__isLarge) await restyleLargeFocus(plotContainer, settings);
     if (!plotContainer || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) return;
-    const isHighlight = (trace) => trace && typeof trace.name === 'string'
-        && /^focused (cell|gene)$/i.test(trace.name.trim());
+    const isHighlight = isFocusTrace;
     const dataIdx = [];
     const highlightIdx = [];
     // 2D: straight to the regl scene. A restyle reruns Plotly's calc for
@@ -1392,7 +1381,7 @@ export async function restyleMarkers(plotContainer, settings) {
     if (!is3D && setGlMarkers(plotContainer, (trace) => {
         if (isGrey(trace)) { const m = greyOf(trace); return { size: m.size, opacity: m.opacity }; }
         return keepsOwnMarker(trace) ? null
-            : isHighlight(trace) ? { size: settings.pointSize * 2 }
+            : isHighlight(trace) ? { size: focusSize(settings), opacity: focusParams(settings).opacity }
             : { size: settings.pointSize, opacity: settings.pointOpacity };
     })) {
         // the regl scene takes size and opacity; the colour goes through Plotly
@@ -1400,6 +1389,7 @@ export async function restyleMarkers(plotContainer, settings) {
             const color = greyOf(plotContainer.data[i]).color;
             if (plotContainer.data[i].marker.color !== color) await Plotly.restyle(plotContainer, { 'marker.color': color }, [i]);
         }
+        await restyleFocusColours(plotContainer, settings);
         return;
     }
     plotContainer.data.forEach((trace, i) => {
@@ -1411,12 +1401,74 @@ export async function restyleMarkers(plotContainer, settings) {
         await Plotly.restyle(plotContainer,
             { 'marker.size': settings.pointSize, 'marker.opacity': settings.pointOpacity }, dataIdx);
     }
-    if (highlightIdx.length) {
-        await Plotly.restyle(plotContainer, { 'marker.size': settings.pointSize * 2 }, highlightIdx);
+    for (const i of highlightIdx) {
+        await Plotly.restyle(plotContainer, focusRestyle(settings, isRingTrace(plotContainer.data[i])), [i]);
     }
     for (const i of greyIdx) {
         const m = greyOf(plotContainer.data[i]);
         await Plotly.restyle(plotContainer, { 'marker.size': m.size, 'marker.opacity': m.opacity, 'marker.color': m.color }, [i]);
+    }
+}
+
+
+/** The trace that marks the focused cell or gene (a filled dot, or the ring of a cell outside the subset). */
+function isFocusTrace(trace) {
+    return !!trace && typeof trace.name === 'string' && /^focused (cell|gene)$/i.test(trace.name.trim());
+}
+
+/** The ring drawn for a focused cell the subset does not show (drawOutsideRing). */
+function isRingTrace(trace) {
+    return !!(trace && trace.marker && trace.marker.symbol === 'circle-open');
+}
+
+/** The keys of `focusRestyle` whose value differs from what the highlight `trace` draws (all but `skip`). */
+function focusChanges(trace, settings, skip = []) {
+    const want = focusRestyle(settings, isRingTrace(trace));
+    const m = trace.marker || {};
+    const line = m.line || {};
+    const have = { 'marker.size': m.size, 'marker.color': m.color, 'marker.opacity': m.opacity,
+                   'marker.line.color': line.color, 'marker.line.width': line.width };
+    const update = {};
+    for (const k of Object.keys(want)) if (!skip.includes(k) && have[k] !== want[k]) update[k] = want[k];
+    return update;
+}
+
+/** Restyle the highlight's colours and edge where they differ from what it draws; its size and opacity are set already. */
+async function restyleFocusColours(plotContainer, settings) {
+    for (let i = 0; i < plotContainer.data.length; i++) {
+        const trace = plotContainer.data[i];
+        if (!isFocusTrace(trace)) continue;
+        const update = focusChanges(trace, settings, ['marker.size', 'marker.opacity']);
+        if (Object.keys(update).length) await Plotly.restyle(plotContainer, update, [i]);
+    }
+}
+
+/**
+ * Apply the panel's Focused style (utils/focus-style.js) to the highlight
+ * only: no other trace is touched and nothing is drawn again. In 2D the size
+ * and opacity go to the regl scene (utils/gl-markers.js) and one restyle
+ * takes the colours and edge width; in 3D one restyle takes what changed;
+ * nothing that is already drawn is sent again. A large plot's shape is
+ * replaced (a relayout of its shapes).
+ * @param {HTMLElement} plotContainer - The Plotly plot.
+ * @param {Object} settings - Plot settings.
+ * @returns {Promise<void>}
+ */
+export async function restyleFocus(plotContainer, settings) {
+    if (!plotContainer) return;
+    if (plotContainer.__isLarge) { await restyleLargeFocus(plotContainer, settings); return; }
+    if (!Array.isArray(plotContainer.data) || !plotContainer.data.some(isFocusTrace)) return;
+    const is3D = plotContainer.data.some(t => t && t.type === 'scatter3d');
+    if (!is3D && setGlMarkers(plotContainer, (trace) => (isFocusTrace(trace)
+        ? { size: focusSize(settings), opacity: focusParams(settings).opacity } : null))) {
+        await restyleFocusColours(plotContainer, settings);
+        return;
+    }
+    for (let i = 0; i < plotContainer.data.length; i++) {
+        const trace = plotContainer.data[i];
+        if (!isFocusTrace(trace)) continue;
+        const update = focusChanges(trace, settings);
+        if (Object.keys(update).length) await Plotly.restyle(plotContainer, update, [i]);
     }
 }
 

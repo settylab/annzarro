@@ -29,6 +29,7 @@ const OVER_CEILING = `<span class="sp-warn" title="Above ${fmt(BROWSER_POINT_CEI
 
 const SubsetControl = (function() {
     let _onApply = null;
+    let _keptSize = () => undefined;   // the subset size the user chose last (utils/subset-carry.js)
     let _modal = null;
     let _el = null;            // modal root
     let _columns = [];         // [{name, type}] obs columns of the open dataset
@@ -40,9 +41,13 @@ const SubsetControl = (function() {
     let _previewBlocked = false;   // the preview says the spec cannot be applied
     let _memoryBlocked = false;    // the browser memory guard says it does not fit
 
-    /** Bind the header badge. `onApply(spec|null)` reloads the view. */
-    function init({ onApply }) {
+    /**
+     * Bind the header badge. `onApply(spec|null)` reloads the view;
+     * `keptSize()` is the subset size the user chose last.
+     */
+    function init({ onApply, keptSize = null }) {
         _onApply = onApply;
+        if (keptSize) _keptSize = keptSize;
         const button = document.getElementById('subset-button');
         if (button) button.addEventListener('click', () => open());
         // other modules open the dialog without importing it (OPEN_EVENT)
@@ -110,7 +115,7 @@ const SubsetControl = (function() {
         const button = document.getElementById('subset-button');
         const reply = DataManager.getSubsetReply();
         const text = describeSubset(DataManager.getSubset() || reply,
-            reply ? reply.n_total : (DataManager.getCells() || []).length);
+            reply ? reply.n_total : (DataManager.getCells() || []).length, _keptSize());
         if (count) {
             count.textContent = text.count;
             count.title = text.title;
@@ -296,7 +301,9 @@ const SubsetControl = (function() {
         _nTotal = nTotal;
         _eligible = (current && current.n_eligible) || nTotal;
         q('subset-enabled').checked = !!spec;
-        q('subset-n').value = String(spec && spec.n !== null ? spec.n : initialSize(defaults.size, nTotal));
+        const kept = _keptSize();
+        q('subset-n').value = String(spec && spec.n !== null ? spec.n
+            : initialSize(Number.isInteger(kept) ? kept : defaults.size, nTotal));
         q('subset-n').max = String(nTotal);
         q('subset-n-all').checked = !!spec && spec.n === null;
         q('subset-n').disabled = q('subset-n-all').checked;

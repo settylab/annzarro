@@ -11,10 +11,11 @@ import {
     parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
-import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan, partialRefreshNotice, signOut } from './utils/session-permissions.js';
+import { escapeHtml, canModify, lockReason, failureLine, authIndicator, refreshPlan, partialRefreshNotice, signOut } from './utils/session-permissions.js';
 import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
+import { noticeDuration, planReplacement, joinNotices, focusOutsideSubsetNotice, fingerprintPendingNotice } from './utils/notice-rules.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
 import { clearSiteStorage, clearSiteStorageNow, bareUrl } from './utils/site-storage.js';
@@ -22,10 +23,12 @@ import { sameSubset, describeParts, partSpec } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
 import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/subset-loading.js';
-import { registerStatusActions } from './utils/panel-surface.js';
+import { registerStatusActions, setStatusTag } from './utils/panel-surface.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
-import { overrideOnce } from './utils/memory-guard-ui.js';
+import { overrideOnce, maxSubsetCells } from './utils/memory-guard-ui.js';
+import { DEFAULT_LARGE_PLOT_POINTS } from './utils/subset-presets.js';
+import { carriedRequest, sizeAfterChoice, loadSubsetSize, saveSubsetSize, halfSubset } from './utils/subset-carry.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
 import {
@@ -55,6 +58,18 @@ const App = (function() {
     let _isInitialized = false;
     let _closeAllAsking = false; // the Close all question is open
     let _sessionModal = null;
+    let _sessionModalMoving = false;
+
+    /** Close the panel-set dialog; a close asked while it is still fading in waits for it to finish. @private */
+    function _hideSessionModal() {
+        if (!_sessionModal) return;
+        const el = document.getElementById('session-modal');
+        if (_sessionModalMoving && el && el.classList.contains('show')) {
+            el.addEventListener('shown.bs.modal', () => _sessionModal.hide(), { once: true });
+            return;
+        }
+        _sessionModal.hide();
+    }
     
     /**
      * Initialize the application
@@ -142,8 +157,8 @@ const App = (function() {
 
             // Notices raised by modules that cannot import main.js (utils/notify.js)
             document.addEventListener(NOTIFY_EVENT, (e) => {
-                const { title, message, type } = e.detail || {};
-                _showNotification(title || 'Notice', message || '', type || 'warning');
+                const { title, message, type, duration } = e.detail || {};
+                _showNotification(title || '', message || '', type || 'warning', duration);
             });
 
             // Load available datasets
@@ -162,7 +177,7 @@ const App = (function() {
                     await _applyDeepLink(deepLink);
                 } catch (error) {
                     console.error('Deep-link application failed:', error);
-                    _showNotification('Deep-link failed', error.message || 'Could not open the shared view.', 'error');
+                    _showNotification('Shared link not opened', error.message || 'Could not open the shared view.', 'error');
                 }
                 PanelManager.ensureWelcomeFallback();
             } else if (!hasAutosave) {
@@ -207,7 +222,7 @@ const App = (function() {
             _isInitialized = true;
         } catch (error) {
             console.error('Error initializing application:', error);
-            _showNotification('Initialization failed', error.message, 'error');
+            _showNotification('AnnZarro did not start', error.message, 'error');
         } finally {
             _bootDone();
         }
@@ -245,10 +260,10 @@ const App = (function() {
             // the dataset browser, for the desktop app's menu and the welcome screen
             openBrowser: (options = {}) => _showChangeDataset({ browse: true, ...options }),
             // a message of the page for the desktop app (a refused drop, say); true when shown
-            notify: (message, { level = 'info' } = {}) => {
+            notify: (message, { level = 'info', title = '' } = {}) => {
                 if (!message) return false;
                 const type = level === 'danger' ? 'error' : level === 'warning' ? 'warning' : 'info';
-                _showNotification(type === 'error' ? 'Error' : type === 'warning' ? 'Notice' : 'AnnZarro', String(message), type);
+                _showNotification(String(title || ''), String(message), type);
                 return true;
             },
             recentDatasets: (limit = 5) => _recentEntries().then(list => list.slice(0, limit)),
@@ -273,6 +288,7 @@ const App = (function() {
         if (_datasetButton) _datasetButton.update(state, previous);
         _showFormatOf(state);
         _focusInputsFollow(state);
+        _shareFollows(state);
         document.dispatchEvent(new CustomEvent('datasetState', { detail: state }));
         // the desktop app follows the dataset (proxy icon, recent documents), whoever opened it
         if (window.api && typeof window.api.datasetOpened === 'function'
@@ -282,6 +298,17 @@ const App = (function() {
         }
         // an open that something else started (the desktop app's menu or a drop) ends the browser
         if (_browser.isOpen() && state.status === 'opening' && !(previous && previous.path === state.path && previous.status === 'opening')) _browser.close();
+    }
+
+    /** Share Link needs a dataset: without one the button is off and says why, instead of a notice after the click. @private */
+    let _shareTitle = null;
+    function _shareFollows(state) {
+        const button = document.getElementById('btn-share-link');
+        if (!button) return;
+        if (_shareTitle === null) _shareTitle = button.title;
+        const none = !state.path;
+        button.disabled = none;
+        button.title = none ? 'Open a dataset first' : _shareTitle;
     }
 
     /** The format of the dataset bar ("zarr v2") for the dataset that opened, from the details the browser reads too. @private */
@@ -350,8 +377,8 @@ const App = (function() {
                 // A mangled view (truncated by a mail client, say) should still
                 // open the dataset the link names rather than nothing at all.
                 console.error('Failed to decode deep-link view:', error);
-                _showNotification('Invalid deep-link',
-                    'The shared view could not be decoded; opening the dataset only.', 'error');
+                _showNotification('Shared view not readable',
+                    'The shared view could not be decoded; opening the dataset only.', 'warning');
             }
         }
         return { datasetPath: parts.datasetPath, view };
@@ -389,17 +416,14 @@ const App = (function() {
         const fallback = document.getElementById('share-link-fallback');
         const field = document.getElementById('share-link-field');
         const datasetPath = (_noDataView && _noDataView.missing) || _lastLoadedDatasetPath || DataManager.getCurrentDataset();
-        if (!datasetPath) {
-            _showNotification('Nothing to share', 'Open a dataset first.', 'warning', 3000);
-            return;
-        }
+        if (!datasetPath) return;   // the button is off without a dataset (_shareFollows)
 
         let link;
         try {
             // A large store's names may still be being fingerprinted: wait
             // briefly, then share with what is known and say so
             const settled = _noDataView ? { complete: true } : await SessionManager.settleStoreOfView(3000);
-            if (!settled.complete) _noticeFingerprintPending();
+            if (!settled.complete) _noticeFingerprintPending('link');
             link = await _buildShareView(datasetPath);
         } catch (error) {
             console.error('Building share link failed:', error);
@@ -425,17 +449,16 @@ const App = (function() {
     let _shareLabelTimer = null;
 
     /**
-     * Said when a view is saved before the open store's cell and gene names
-     * are fingerprinted (a large store, just opened). The view records the
-     * counts and the fields; only the names are not checked when it opens.
+     * Said when a view is saved, or a link made, before the open store's cell
+     * and gene names are fingerprinted (a large store, just opened). The view
+     * records the counts and the fields; only the names are not checked when
+     * it opens.
+     * @param {'saved'|'link'} [what]
      * @private
      */
-    function _noticeFingerprintPending() {
-        _showNotification('Saved without the cell and gene check',
-            'This store is still being fingerprinted (a large store takes a few seconds once). ' +
-            'The view records its size and fields, but not yet its cell and gene names, so a store ' +
-            'with other names of the same size is not detected when it opens. Save again in a moment to include them.',
-            'info', 10000);
+    function _noticeFingerprintPending(what = 'saved') {
+        const { title, message } = fingerprintPendingNotice(what);
+        _showNotification(title, message, 'info');
     }
 
     /**
@@ -537,7 +560,7 @@ const App = (function() {
         if (said && said.strong && !trust) {
             // Open the layout without data while the user decides
             await _applyViewWithoutData(view, { ...located, differs: true, missing: located.path });
-            if (_sessionModal) _sessionModal.hide();
+            if (_sessionModal) _hideSessionModal();
             const choice = await _askNotification(said.title, said.message, [
                 { key: 'open', label: 'Open anyway', primary: true },
                 { key: 'change', label: 'Change dataset' },
@@ -592,9 +615,8 @@ const App = (function() {
                 if (cell && cell.unreadable) {
                     // Said once: loading the dataset may already have said it
                     if (_focusOutsideSubsetNoticed !== constants.focusedCell) {
-                        _showNotification('Focused cell not in the subset',
-                            `${constants.focusedCell} is not among the cells shown, so it is not focused. ` +
-                            'This server cannot read a cell outside the subset.', 'warning', 8000);
+                        const said = focusOutsideSubsetNotice(constants.focusedCell);
+                        _showNotification(said.title, said.message, 'warning');
                     }
                 } else {
                     DataManager.setFocusedCell(constants.focusedCell);
@@ -646,15 +668,6 @@ const App = (function() {
 
     /** A view open without data: {view, saved, missing}; null otherwise. */
     let _noDataView = null;
-    /** When the last notice about an opened view was shown (a later toast would hide it). */
-    let _viewNoticeAt = 0;
-    // what that notice said, so a notice that replaces it can carry it on
-    let _viewNotice = null;
-
-    /** The last view notice, if it is from this load, to begin a notice that replaces it. @private */
-    function _carriedViewNotice() {
-        return _viewNotice && Date.now() - _viewNoticeAt < 3000 ? `${_viewNotice}\n\n` : '';
-    }
 
     /**
      * Find the store a view names on this server.
@@ -866,7 +879,7 @@ const App = (function() {
     function _chooseDatasetForSet(plan) {
         return new Promise(resolve => {
             let picked = false;
-            if (_sessionModal) _sessionModal.hide();
+            if (_sessionModal) _hideSessionModal();
             const modalEl = document.getElementById('dataset-browser');
             if (modalEl) {
                 modalEl.addEventListener('hidden.bs.modal', () => { if (!picked) resolve(null); }, { once: true });
@@ -882,14 +895,13 @@ const App = (function() {
     /** A dataset is open again: the view is no longer without data. @private */
     /**
      * The open dataset answered 404 (DataManager.setDatasetGoneHandler): its
-     * grant was revoked, or the store is gone. Say so once and return to the
-     * picker; what is already in the browser cannot be recalled.
+     * grant was revoked, or the store is gone. Return to the picker, whose
+     * banner says so (as does the dataset button); what is already in the browser cannot be recalled.
      * @private
      */
     function _datasetGone(path) {
         DatasetState.set({ path, label: _labelOf(path), status: 'unavailable', error: notAvailableText(path) });
         markDatasetUnavailable(path);
-        _showNotification(UNAVAILABLE_TITLE, notAvailableText(path), 'warning');
         _showChangeDataset({ browse: true, unavailableName: path });
     }
 
@@ -927,7 +939,7 @@ const App = (function() {
      */
     function _afterViewOpened(view, located, cmp, said) {
         if (!located) return;
-        // One notice (a toast replaces the one before it), every point in it
+        // One notice, every point in it
         const parts = [];
         let title = null;
         if (located.repointed) {
@@ -949,9 +961,8 @@ const App = (function() {
             parts.push(version);
         }
         if (parts.length) {
-            _viewNoticeAt = Date.now();
-            _viewNotice = `${title}: ${parts.join('\n\n')}`;
-            _showNotification(title, parts.join('\n\n'), 'info', 12000);
+            // it lists fields when the store differs: stays until closed
+            _showNotification(title, parts.join('\n\n'), 'info', said && !said.strong ? 0 : undefined);
         }
         const savedFp = located.saved && located.saved.fp;
         if (cmp && hasDataTier(savedFp) && !cmp.dataKnown && cmp.level !== 'different') {
@@ -1120,12 +1131,10 @@ const App = (function() {
         PanelManager.updateSourcePanelSelection();
         PanelManager.ensureWelcomeFallback();
         const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
-        // A toast replaces the one before it: these keep what the view's
-        // notice said (opened on another path, another version)
         if (!(plan.view && plan.view.layout && collectTileIds(plan.view.layout.hierarchy).length)) {
             // a set saved with no panel open
-            _showNotification(`Loaded "${name}"`, _carriedViewNotice() + `No panel was open when the set was saved, so none ` +
-                `opened; its ${listed} under Duplicate or Reopen Panel.`, 'success', 8000);
+            _showNotification(`Loaded "${name}": no panels open`,
+                `Its ${listed} under Duplicate or Reopen Panel.`, 'success');
         }
         if (applied && applied.status === 'no-data') {
             return { status: 'no-data', message: `Loaded "${name}" without data: ${applied.message}` };
@@ -1172,9 +1181,9 @@ const App = (function() {
         PanelManager.updateSourcePanelSelection();
         const panels = `${n} panel${n === 1 ? '' : 's'}`;
         _showNotification(`Added "${name}"`,
-            `${panels} added to the closed panels under Duplicate or Reopen Panel; the open view is unchanged.` +
+            `${panels} added to the closed panels under Duplicate or Reopen Panel.` +
             (other ? ` The set was saved on ${other}: its panels are marked "other dataset".` : ''),
-            'success', 8000);
+            'success');
         return { status: 'success', message: `Added ${panels} of "${name}" to the closed panels` };
     }
 
@@ -1214,6 +1223,12 @@ const App = (function() {
             if (request <= _subsetCancelledSeq) return;                   // Cancel, while this waited
             if (!(await _swapSubset(spec))) {
                 return;     // a later request took over
+            }
+            // a size chosen by hand is the one the next datasets open on (a part step is not)
+            if (!step) {
+                const reply = DataManager.getSubsetReply();
+                if (reply) _keepSubsetSize(spec, reply.n_total);
+                SubsetControl.update();
             }
             // No toast: the header and every plot's status strip say what is shown
         } catch (error) {
@@ -1378,6 +1393,7 @@ const App = (function() {
         switch (action) {
             case 'next-part': return !!(subset && subset.parts > 1 && subset.part < subset.parts - 1);
             case 'subset': case 'subset-regular': return !!DataManager.getCurrentDataset();
+            case 'subset-half': return !!halfSubset(DataManager.getSubset(), DataManager.getSubsetReply(), DataManager.getSubsetDefaults());
             case 'focus-part': return DataManager.hasSubsetFeature('locate_parts');
             case 'stop-table': return !!document.getElementById(`remove-non-table-entries-${id}`);
             case 'show-nan': return !!document.getElementById(`hide-nan-${id}`);
@@ -1417,13 +1433,27 @@ const App = (function() {
         switch (action) {
             case 'next-part': SubsetControl.step(1); break;
             case 'subset': SubsetControl.open(); break;
+            case 'subset-half': {
+                // the browser ran out of memory: half the cells, chosen as by hand (the size is kept)
+                const spec = halfSubset(DataManager.getSubset(), DataManager.getSubsetReply(), DataManager.getSubsetDefaults());
+                if (spec) await _changeSubset(spec);
+                break;
+            }
             case 'subset-regular':
                 document.dispatchEvent(new CustomEvent('annzarro:open-subset', { detail: { preset: 'largest-regular' } }));
                 break;
             case 'focus-part': {
-                const part = await DataManager.partOfCell(DataManager.getFocusedCell());
+                const cell = DataManager.getFocusedCell();
+                const part = await DataManager.partOfCell(cell);
                 if (part !== null) SubsetControl.goTo(part);
-                else _showNotification('Part not found', 'The subset\'s filter leaves the focused cell out.', 'warning');
+                else if (host) {
+                    // answered where it was asked: in the tag's own popover, which stays open without the action
+                    setStatusTag(host, 'focus', {
+                        text: `${cell} not shown`,
+                        title: `The focused cell ${cell} is not in any part of this subset`,
+                        pop: { text: `The focused cell ${cell} is in no part: the subset's filter leaves it out.` }
+                    });
+                }
                 break;
             }
             case 'stop-table': click(`remove-non-table-entries-${id}`); break;
@@ -1673,11 +1703,18 @@ const App = (function() {
      */
     function _initUI() {
         // Setup bootstrap modals
-        _sessionModal = new bootstrap.Modal(document.getElementById('session-modal'));
+        const sessionModalEl = document.getElementById('session-modal');
+        _sessionModal = new bootstrap.Modal(sessionModalEl);
+        // Bootstrap ignores hide() while the modal is still fading in or out
+        sessionModalEl.addEventListener('show.bs.modal', () => { _sessionModalMoving = true; });
+        sessionModalEl.addEventListener('shown.bs.modal', () => { _sessionModalMoving = false; });
+        sessionModalEl.addEventListener('hidden.bs.modal', () => { _sessionModalMoving = false; });
 
         // Cell count and subset badge in the stats bar; its dialog reloads
         // the open view on the chosen cells
-        SubsetControl.init({ onApply: _changeSubset });
+        SubsetControl.init({ onApply: _changeSubset, keptSize: _keptSubsetSize });
+        // the size is kept per user: name the user, then say it in the badge
+        _recentsUser().then(() => { if (DataManager.getCurrentDataset()) SubsetControl.update(); }).catch(() => {});
         registerStatusActions({ available: _statusActionAvailable, run: _runStatusAction });
         
         // Setup keyboard shortcuts
@@ -1751,7 +1788,7 @@ const App = (function() {
                 // A store too large to check within the budget: say what a
                 // chunk-only write needs (once per press, not per poll)
                 const partial = partialRefreshNotice(refreshed, { cleared });
-                if (partial) _showNotification(partial.title, partial.message, 'info', 12000);
+                if (partial) _showNotification(partial.title, partial.message, 'info');
                 
                 // Reload available datasets
                 await _loadDatasets();
@@ -2047,7 +2084,37 @@ const App = (function() {
             return _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
                 .then(() => PanelManager.ensureWelcomeFallback());
         }
+        // the user's own switch, and the app's own startup open (nothing asked
+        // for: no link, no autosave), open on the subset size they chose last
+        // (utils/subset-carry.js); a link, a panel set or a restored session
+        // asked for its own subset already
+        if ((chosen || source === 'default') && !(datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset)) {
+            const size = _keptSubsetSize();
+            const defaults = DataManager.getSubsetDefaults();
+            const seed = defaults && Number.isInteger(defaults.seed) ? defaults.seed : 0;
+            if (size !== undefined) {
+                DataManager.setSubsetRequest(nTotal => carriedRequest(size, nTotal,
+                    { seed, maxCells: maxSubsetCells(nTotal, _largePlotPoints()) }));
+            }
+        }
         return _loadDataset(datasetPath);
+    }
+
+    /** The subset size the user chose last (utils/subset-carry.js), kept per user. @private */
+    function _keptSubsetSize() {
+        try { return loadSubsetSize(window.localStorage, window.location.origin, _recentsUserKey || 'local'); } catch { return undefined; }
+    }
+
+    /** Keep the size of a subset the user applied by hand on a dataset of `nTotal` cells. @private */
+    function _keepSubsetSize(spec, nTotal) {
+        const size = sizeAfterChoice(spec, nTotal, _keptSubsetSize(), DataManager.getSubsetDefaults());
+        try { saveSubsetSize(window.localStorage, window.location.origin, _recentsUserKey || 'local', size); } catch { /* storage blocked */ }
+    }
+
+    /** Points above which a Cell Plot uses large-plot mode (as the subset dialog reads it). @private */
+    function _largePlotPoints() {
+        const v = Config.DEFAULTS && Config.DEFAULTS.LARGE_PLOT_POINTS;
+        return typeof v === 'number' && v >= 0 ? v : DEFAULT_LARGE_PLOT_POINTS;
     }
 
     /** Read the dataset listing the labels derive from (one read at a time: a second call joins it). */
@@ -2137,13 +2204,15 @@ const App = (function() {
             document.getElementById('gene-count').textContent = datasetStructure.n_vars || 0;
             // A refresh found the store's consolidated metadata out of date:
             // it is read without it now, and the fix is the user's to run
-            if (datasetStructure.consolidated_metadata && datasetStructure.consolidated_metadata.stale) {
-                _showNotification('Consolidated metadata out of date', datasetStructure.consolidated_metadata.message, 'warning');
-            }
             // dense obsp/varp chunked so that one row read is more than the server allows
-            if (datasetStructure.pairwise_chunking) {
-                _showNotification('Pairwise matrix chunking', datasetStructure.pairwise_chunking.message, 'warning');
-            }
+            // (the two can come together: one toast, so the second does not replace the first)
+            const storeNotice = joinNotices([
+                datasetStructure.consolidated_metadata && datasetStructure.consolidated_metadata.stale
+                    ? { title: 'Consolidated metadata out of date', message: datasetStructure.consolidated_metadata.message } : null,
+                datasetStructure.pairwise_chunking
+                    ? { title: 'Pairwise matrices read in part', message: datasetStructure.pairwise_chunking.message } : null
+            ]);
+            if (storeNotice) _showNotification(storeNotice.title, storeNotice.message, 'warning');
             
             if (signal.aborted) {
                 console.log(`Dataset load aborted before populating selectors: ${datasetPath}`);
@@ -2213,8 +2282,8 @@ const App = (function() {
                 if (currentDataset) {
                     // We have a current dataset loaded, so show a non-blocking notification
                     _showNotification(
-                        'Dataset Loading Error',
-                        `Could not load dataset:\n${datasetPath}\n\n${userMsg}\n\nThe previous dataset is still loaded.`,
+                        'Dataset not opened',
+                        `${datasetPath}\n${userMsg}\n${_labelOf(currentDataset)} is still open.`,
                         'error'
                     );
 
@@ -2229,7 +2298,7 @@ const App = (function() {
                         countNoun(genes.length, 'genes');
                 } else {
                     // No current dataset, so show an error notification
-                    _showNotification('Failed to load dataset', userMsg, 'error');
+                    _showNotification('Dataset not opened', userMsg, 'error');
 
                     // Reset UI elements
                     document.getElementById('cell-count').textContent = 'No dataset loaded';
@@ -2375,9 +2444,8 @@ const App = (function() {
                 if (cell && cell.unreadable) {
                     // An older server: say why the focus moves
                     _focusOutsideSubsetNoticed = current;
-                    _showNotification('Focused cell not in the subset',
-                        `${current} is not among the cells shown, so another cell is focused. ` +
-                        'This server cannot read a cell outside the subset.', 'warning', 8000);
+                    const said = focusOutsideSubsetNotice(current);
+                    _showNotification(said.title, said.message, 'warning');
                 }
             } else if (current) {
                 const hit = await fetchNameMatches(Config.API.NAMES, {
@@ -2438,6 +2506,9 @@ const App = (function() {
         // Clear previous input value and suggestions
         sessionNameInput.value = '';
         sessionSuggestions.innerHTML = '';
+        delete sessionNameInput.dataset.overwrite;
+        const saveNote = document.getElementById('session-save-note');
+        if (saveNote) { saveNote.hidden = true; saveNote.textContent = ''; }
         
         // Function to update the suggestions based on input
         function updateSuggestions(query = '') {
@@ -2836,11 +2907,12 @@ const App = (function() {
                         const sessionName = card.dataset.sessionName;
                         const isAutosave = card.dataset.isAutosave === 'true';
                         
-                        const confirmMsg = isAutosave ? 
-                            `Delete autosaved session? This will remove it from browser storage.` : 
-                            `Delete panel set "${sessionName}"?`;
+                        if (card.querySelector('.session-card-ask')) return;
+                        const question = isAutosave
+                            ? 'Delete the autosave? It is removed from this browser.'
+                            : `Delete panel set "${sessionName}"?`;
                         
-                        if (confirm(confirmMsg)) {
+                        if (await _askInCard(card, question, 'Delete')) {
                             if (isAutosave) {
                                 // Delete from localStorage
                                 SessionManager.clearAutosave();
@@ -2865,8 +2937,7 @@ const App = (function() {
                                         `;
                                     }
                                 } else {
-                                    const { title, type } = describeFailure(result, 'Failed to delete panel set');
-                                    _showNotification(title, result.message, type);
+                                    _dialogNote(card, failureLine(result, 'Deleting this panel set'));
                                 }
                             }
                         }
@@ -2894,10 +2965,9 @@ const App = (function() {
                         const result = await SessionManager.loadSession(sessionName);
                         
                         if (result.status === 'success') {
-                            _sessionModal.hide();
-                            _showSuccess('Autosave Restored', 'Your autosaved panel configuration has been restored');
+                            _hideSessionModal();
                         } else {
-                            _showNotification('Failed to restore autosave', result.message, 'error');
+                            _dialogNote(card, failureLine(result, 'Restoring the autosave'));
                         }
                     });
                 });
@@ -2946,7 +3016,7 @@ const App = (function() {
             onLoad: async (mode) => {
                 actions.setBusy(true);
                 try {
-                    await _runLoad(() => SessionManager.loadSession(name, { mode }));
+                    await _runLoad(() => SessionManager.loadSession(name, { mode }), card);
                 } finally {
                     actions.setBusy(false);
                 }
@@ -2964,20 +3034,19 @@ const App = (function() {
     /**
      * Run a load started from the Load dialog and say how it went: the dialog
      * closes on success (or when the set opened without data, which has its
-     * own notice); a refusal is a notice.
+     * own notice); a refusal is a line in `host`, the card the user pressed.
+     * @param {Function} load
+     * @param {HTMLElement} [host]
      * @private
      */
-    async function _runLoad(load) {
+    async function _runLoad(load, host = null) {
+        _dialogNote(host, '');
         const result = await load();
         if (result.status === 'success' || result.status === 'no-data') {
-            _sessionModal.hide();
-        } else if (result.status === 'cancelled') {
-            // the user closed the dataset picker: nothing to report
-            if (!/No dataset chosen/.test(result.message || '')) {
-                _showNotification('Panel set not loaded', result.message, 'info', 5000);
-            }
-        } else {
-            _showNotification('Failed to load panel set', result.message, 'error');
+            _hideSessionModal();
+        } else if (result.status !== 'cancelled') {
+            // (a cancelled load is the user closing the dataset picker: nothing to report)
+            _dialogNote(host, failureLine(result, 'Loading this panel set'));
         }
         return result;
     }
@@ -3073,19 +3142,16 @@ const App = (function() {
             getCurrent: SessionManager.getCurrentDatasetInfo,
             onLoad: async (mode) => {
                 actions.setBusy(true);
+                _dialogNote(host, '');
                 try {
                     const imported = await SessionManager.importSession(file);
                     if (imported.status !== 'success') {
-                        const { title: t, type } = describeFailure(imported, 'Failed to import panel set');
-                        _showNotification(t, imported.message, type);
+                        _dialogNote(host, failureLine(imported, 'Importing this file'));
                         return;
                     }
-                    const result = await _runLoad(() => SessionManager.loadSession(imported.name, { mode }));
-                    if (result.status === 'success' && Date.now() - _viewNoticeAt > 5000 && mode !== 'add') {
-                        _showSuccess('Session Loaded', 'Panel set was imported and loaded successfully.');
-                    }
+                    await _runLoad(() => SessionManager.loadSession(imported.name, { mode }), host);
                 } catch (error) {
-                    _showNotification('Error', error.message, 'error');
+                    _dialogNote(host, `Importing this file failed: ${error.message}`);
                 } finally {
                     actions.setBusy(false);
                 }
@@ -3245,6 +3311,63 @@ const App = (function() {
     }
     
     /**
+     * Say how a panel-set dialog action went wrong where it was asked: a line
+     * in `host` (a card, or the save dialog), which stays until the next try.
+     * A toast would sit outside the dialog's focus trap, away from the eyes.
+     * @param {HTMLElement} host
+     * @param {string} text - empty clears the line
+     * @private
+     */
+    function _dialogNote(host, text) {
+        if (!host) return;
+        let note = host.querySelector('.dialog-note');
+        if (!text) { if (note) note.remove(); return; }
+        if (!note) {
+            note = document.createElement('div');
+            note.className = 'dialog-note small text-danger mt-2';
+            note.setAttribute('role', 'alert');
+            host.appendChild(note);
+        }
+        note.textContent = text;
+    }
+
+    /**
+     * Ask in a card, before something that cannot be undone: the card's
+     * footer is replaced by the question and two buttons until answered.
+     * (A notice would sit outside the dialog's focus trap.)
+     * @param {HTMLElement} card
+     * @param {string} question
+     * @param {string} yes - label of the confirming button
+     * @returns {Promise<boolean>}
+     * @private
+     */
+    function _askInCard(card, question, yes) {
+        return new Promise(resolve => {
+            _dialogNote(card, '');
+            const bar = document.createElement('div');
+            bar.className = 'session-card-ask d-flex align-items-center gap-2 flex-wrap mt-2 small';
+            bar.setAttribute('role', 'group');
+            bar.setAttribute('aria-label', question);
+            const text = document.createElement('span');
+            text.textContent = question;
+            const answer = (value) => { bar.remove(); resolve(value); };
+            const confirmBtn = document.createElement('button');
+            confirmBtn.type = 'button';
+            confirmBtn.className = 'btn btn-sm btn-danger';
+            confirmBtn.textContent = yes;
+            confirmBtn.addEventListener('click', (e) => { e.stopPropagation(); answer(true); });
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'btn btn-sm btn-outline-secondary';
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); answer(false); });
+            bar.append(text, confirmBtn, cancelBtn);
+            card.appendChild(bar);
+            cancelBtn.focus();
+        });
+    }
+
+    /**
      * Handle session modal confirm button click
      * @private
      */
@@ -3272,26 +3395,40 @@ const App = (function() {
             if (existing && !canModify(existing)) {
                 // The server would refuse the overwrite; say so before asking
                 // anything, and leave the dialog open so a new name can be typed.
-                _showNotification('Choose another name', `"${sanitizedName}": ${lockReason(existing)}`, 'warning');
+                _invalid(sessionNameInput, `"${sanitizedName}": ${lockReason(existing)}`);
                 return;
             }
             
-            if (existingNames.has(sanitizedName.toLowerCase())) {
-                // If name collision, ask for confirmation
-                if (!confirm(`A panel set with the name "${sanitizedName}" already exists. Do you want to overwrite it?`)) {
-                    return;
-                }
+            const note = document.getElementById('session-save-note');
+            const confirmBtn = document.getElementById('btn-confirm-session');
+            const disarm = () => {
+                delete sessionNameInput.dataset.overwrite;
+                confirmBtn.textContent = 'Save';
+                note.hidden = true;
+                note.textContent = '';
+            };
+            if (existingNames.has(sanitizedName.toLowerCase())
+                && sessionNameInput.dataset.overwrite !== sanitizedName.toLowerCase()) {
+                // A name collision: the button becomes Overwrite, in the dialog; another name disarms it
+                sessionNameInput.dataset.overwrite = sanitizedName.toLowerCase();
+                confirmBtn.textContent = 'Overwrite';
+                note.hidden = false;
+                note.className = 'small mt-2 text-warning-emphasis';
+                note.textContent = `A panel set named "${sanitizedName}" already exists. Overwrite replaces it; or type another name.`;
+                sessionNameInput.addEventListener('input', disarm, { once: true });
+                return;
             }
+            disarm();
             
             const result = await SessionManager.saveSession(sanitizedName);
             
             if (result.status === 'success') {
-                _sessionModal.hide();
+                _hideSessionModal();
                 if (result.fingerprintPending) _noticeFingerprintPending();
-                //_showSuccess('Panel Set saved', `Panel Set "${sanitizedName}" saved successfully`);
             } else {
-                const { title, type } = describeFailure(result, 'Failed to save panel set');
-                _showNotification(title, result.message, type);
+                note.hidden = false;
+                note.className = 'small mt-2 text-danger';
+                note.textContent = failureLine(result, 'Saving this panel set');
             }
         }
         // (the Load dialog has no confirm button: each card's own buttons load)
@@ -3346,30 +3483,6 @@ const App = (function() {
         }
     }
     
-    /**
-     * Show success message
-     * @param {string} title - Success message title
-     * @param {string} message - Success message
-     * @private
-     */
-    function _showSuccess(title, message) {
-        // Use the notification system instead of alert
-        console.log(`Success: ${title} - ${message}`);
-        _showNotification(title, message, 'success');
-    }
-    
-    /**
-     * Show error message
-     * @param {string} title - Error message title
-     * @param {string} message - Error message
-     * @private
-     */
-    function _showError(title, message) {
-        // Use the notification system instead of alert
-        console.error(`Error: ${title} - ${message}`);
-        _showNotification(title, message, 'error');
-    }
-    
     // Map to track active notification timers by ID
     const _notificationTimers = new Map();
     
@@ -3377,25 +3490,31 @@ const App = (function() {
     let _notificationCounter = 0;
     
     /**
-     * Show a toast: the outcome of something the user did (a link copied, a
-     * panel set saved, an export that failed). Persistent state -- what a
-     * panel does not show, a mode it is in -- belongs in the panel's status
-     * strip (utils/panel-surface.js), never here.
+     * Show a toast: something the user did not cause or cannot see (an
+     * error, data that changed under them, a partial outcome, something not
+     * done as asked). A confirmation of what is already on screen is no
+     * toast; persistent state -- what a panel does not show, a mode it is
+     * in -- belongs in the panel's status strip (utils/panel-surface.js).
      *
-     * One at a time: a new toast replaces the one shown, and the same toast
-     * again only restarts its timer. Errors stay until closed.
-     * @param {string} title - Notification title
+     * A new toast replaces those shown of equal or lower severity
+     * (utils/notice-rules.js) and stacks below a more severe one, so an
+     * error is never wiped by the info notice that follows it. The same
+     * toast again only restarts its timer. Errors stay until closed; the
+     * others for a time that scales with their length, paused while the
+     * pointer or focus is on them.
+     * @param {string} title - Notification title (sentence case, never generic)
      * @param {string} message - Notification message
      * @param {string} type - Notification type ('error', 'warning', 'info', 'success')
-     * @param {number} [duration] - How long to show it (ms); default 4 s for
-     *   success, 8 s for info and warning, until closed for an error
+     * @param {number} [duration] - How long to show it (ms; 0 until closed);
+     *   default by type and length (noticeDuration)
      * @private
      */
     function _showNotification(title, message, type = 'info', duration = undefined) {
-        console.log(`Notification (${type}): ${title} - ${message}`);
-        if (duration === undefined) duration = type === 'error' ? 0 : type === 'success' ? 4000 : 8000;
+        console.debug(`Notification (${type}): ${title} - ${message}`);
+        duration = noticeDuration(type, title, message, duration);
 
-        // Create container if it doesn't exist (thread-safe)
+        // The container is in the page from the start (templates/index.html), so its
+        // live region is known to assistive technology before the first toast
         let container = document.getElementById('notification-container');
         if (!container) {
             container = document.createElement('div');
@@ -3405,15 +3524,18 @@ const App = (function() {
             document.body.appendChild(container);
         }
 
-        // The toast shown now (a question asked by _askNotification waits for
+        // The toasts shown now (a question asked by _askNotification waits for
         // its answer and is not replaced)
-        const current = [...container.children].find(el =>
+        const shown = [...container.children].filter(el =>
             el.classList.contains('notification') && !el.classList.contains('notification-ask'));
-        if (current && current.dataset.key === JSON.stringify([title, message, type])) {
-            _armNotification(current.id, duration);
-            return current.id;
+        const key = JSON.stringify([title, message, type]);
+        const same = shown.find(el => el.dataset.key === key);
+        if (same) {
+            _armNotification(same.id, duration);
+            return same.id;
         }
-        if (current) _dropNotification(current.id);
+        const { replace } = planReplacement(shown.map(el => ({ id: el.id, type: el.dataset.type })), type);
+        replace.forEach(_dropNotification);
 
         // Generate a unique ID for this notification
         const notificationId = `notification-${Date.now()}-${_notificationCounter++}`;
@@ -3422,13 +3544,15 @@ const App = (function() {
         const notification = document.createElement('div');
         notification.id = notificationId;
         notification.className = `notification notification-${type}`;
-        notification.dataset.key = JSON.stringify([title, message, type]);
+        notification.dataset.key = key;
+        notification.dataset.type = type;
         if (type === 'error') notification.setAttribute('role', 'alert');
         
         // Add close button
         const closeBtn = document.createElement('button');
         closeBtn.innerHTML = '&times;';
         closeBtn.className = 'notification-close';
+        closeBtn.setAttribute('aria-label', 'Close');
         closeBtn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -3446,8 +3570,14 @@ const App = (function() {
         
         // Assemble the notification
         notification.appendChild(closeBtn);
-        notification.appendChild(titleEl);
+        if (title) notification.appendChild(titleEl);
         notification.appendChild(messageEl);
+
+        // Reading it takes time the clock must not run out of: hold it while the pointer or focus is on it
+        notification.addEventListener('mouseenter', () => _holdNotification(notificationId, true));
+        notification.addEventListener('mouseleave', () => _holdNotification(notificationId, false));
+        notification.addEventListener('focusin', () => _holdNotification(notificationId, true));
+        notification.addEventListener('focusout', () => _holdNotification(notificationId, false));
         
         // Add to container
         container.appendChild(notification);
@@ -3463,19 +3593,51 @@ const App = (function() {
         return notificationId;
     }
 
+    // what is left of each timed toast: id -> {left (ms), since (ms epoch, 0 while held)}
+    const _notificationClocks = new Map();
+    /** The least a toast gets after the pointer leaves it. */
+    const _NOTIFICATION_GRACE_MS = 2000;
+
     /** (Re)start the timer that removes a toast; 0 keeps it until closed. */
     function _armNotification(notificationId, duration) {
         if (_notificationTimers.has(notificationId)) {
             clearTimeout(_notificationTimers.get(notificationId));
             _notificationTimers.delete(notificationId);
         }
+        _notificationClocks.delete(notificationId);
         if (duration > 0) {
+            _notificationClocks.set(notificationId, { left: duration, since: Date.now() });
             _notificationTimers.set(notificationId, setTimeout(() => _removeNotification(notificationId), duration));
+            // restarted under the pointer (the same toast again): hold it
+            const el = document.getElementById(notificationId);
+            if (el && (el.matches(':hover') || el.contains(document.activeElement))) _holdNotification(notificationId, true);
+        }
+    }
+
+    /** Stop (hold) or restart the clock of a toast the pointer or focus is on. */
+    function _holdNotification(notificationId, hold) {
+        const clock = _notificationClocks.get(notificationId);
+        const el = document.getElementById(notificationId);
+        if (!clock || !el) return;
+        if (hold) {
+            if (!clock.since) return;
+            clearTimeout(_notificationTimers.get(notificationId));
+            _notificationTimers.delete(notificationId);
+            clock.left = Math.max(0, clock.left - (Date.now() - clock.since));
+            clock.since = 0;
+        } else {
+            // leaving one part while still on another (pointer out, focus in) does not restart it
+            if (clock.since || el.matches(':hover') || el.contains(document.activeElement)) return;
+            const left = Math.max(_NOTIFICATION_GRACE_MS, clock.left);
+            clock.left = left;
+            clock.since = Date.now();
+            _notificationTimers.set(notificationId, setTimeout(() => _removeNotification(notificationId), left));
         }
     }
 
     /** Take a toast away at once, without its fade: the next one replaces it. */
     function _dropNotification(notificationId) {
+        _notificationClocks.delete(notificationId);
         if (_notificationTimers.has(notificationId)) {
             clearTimeout(_notificationTimers.get(notificationId));
             _notificationTimers.delete(notificationId);
@@ -3494,6 +3656,7 @@ const App = (function() {
         if (!notification) return;
         
         // Clear any existing timer
+        _notificationClocks.delete(notificationId);
         if (_notificationTimers.has(notificationId)) {
             clearTimeout(_notificationTimers.get(notificationId));
             _notificationTimers.delete(notificationId);

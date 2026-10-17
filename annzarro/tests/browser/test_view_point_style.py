@@ -131,8 +131,10 @@ def page(server):
 
 
 def _auto(page, n):
+    """The automatic style for n points in the graph's plot area."""
     return page.evaluate("""async (n) => (await import('/static/js/utils/point-style.js'))
-        .autoPointStyle(n, (await import('/static/js/panels/plot-utilities/plot-make.js')).pointStyleBase())""", n)
+        .autoPointStyle(n, (await import('/static/js/panels/plot-utilities/plot-make.js')).pointStyleBase(), false,
+          (await import('/static/js/utils/view-point-style.js')).plotArea(%s))""" % GRAPH, n)
 
 
 ZOOM = """async (frac) => {

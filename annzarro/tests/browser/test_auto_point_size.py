@@ -7,7 +7,8 @@ of all 200 points). The shipped curve does not move
 below a few thousand points, so the page gets a steep one (a route replaces
 AUTO_CURVE's size constants): then 200, 100 and 60 points draw at different
 sizes. The size of each plot must equal the curve's value for the points
-that plot draws, after every way of changing them:
+that plot draws in its own plot area (the two plots differ in width),
+after every way of changing them:
 
 1. the table's search narrows its rows (the table path: plots filtered by a
    table, rows removed): both plots follow it;
@@ -33,7 +34,11 @@ from annzarro.tests.browser.test_memory_guard import STORE, _serve  # noqa: E402
 
 PLOTS = ("cell-plot-A", "cell-plot-B")
 TABLE = "cell-table-T"
-STEEP = ("nHalf: 6000, exponent: 0.3", "nHalf: 10, exponent: 0.5")   # size constants of AUTO_CURVE
+# size constants of AUTO_CURVE, and a steep curve in their place. Its nHalf
+# is 100, not 10: these plots are small panes, whose plot area counts their
+# points up to 8 times over (point-style.js AREA_RANGE), and with 10 the
+# sizes for 200 and 100 points both fell to the same scattergl step.
+STEEP = ("nHalf: 6000, exponent: 0.3", "nHalf: 100, exponent: 0.5")
 
 
 @pytest.fixture(scope="module")
@@ -95,8 +100,14 @@ STATE = """() => Object.fromEntries(%s.map(id => {
                   opacities: [...new Set(pts.map(t => t.marker && t.marker.opacity))] }];
 }))""" % json.dumps(list(PLOTS))
 
-AUTO = """async (n) => (await import('/static/js/utils/point-style.js'))
-    .autoPointStyle(n, (await import('/static/js/panels/plot-utilities/plot-make.js')).pointStyleBase())"""
+# the automatic style for n points in each plot's own plot area
+AUTO = """async ([n, ids]) => {
+    const { autoPointStyle } = await import('/static/js/utils/point-style.js');
+    const { plotArea } = await import('/static/js/utils/view-point-style.js');
+    const { pointStyleBase } = await import('/static/js/panels/plot-utilities/plot-make.js');
+    return Object.fromEntries(ids.map(id => [id, autoPointStyle(n, pointStyleBase(), false,
+        plotArea(document.querySelector(`.tile[data-tile-id="${id}"] .js-plotly-plot`)))]));
+}"""
 
 
 def _settled(page, n):
@@ -119,11 +130,12 @@ def _settled(page, n):
 
 def _check(page, n):
     s = _settled(page, n)
-    want = page.evaluate(AUTO, n)
+    wants = page.evaluate(AUTO, [n, list(PLOTS)])
     for pid, v in s.items():
+        want = wants[pid]
         assert v["sizes"] == [want["size"]], (pid, n, v, want)
         assert v["opacities"] == [want["opacity"]], (pid, n, v, want)
-    return want
+    return wants
 
 
 def test_automatic_size_follows_table_filter_and_subset_in_every_plot(page, server):
@@ -134,7 +146,7 @@ def test_automatic_size_follows_table_filter_and_subset_in_every_plot(page, serv
     # 1. the table's search: its 100 rows are all the plots keep
     page.fill(f'.tile[data-tile-id="{TABLE}"] input[type="search"]', "cell_01")
     narrowed = _check(page, 100)
-    assert narrowed["size"] != full["size"]
+    assert all(narrowed[p]["size"] != full[p]["size"] for p in PLOTS), (narrowed, full)
 
     # 2. a smaller subset, on top of the table's search
     page.click("#subset-button")
@@ -148,7 +160,8 @@ def test_automatic_size_follows_table_filter_and_subset_in_every_plot(page, serv
     n = {v["n"] for v in drawn.values()}
     assert len(n) == 1 and 0 < n.pop() < 100, drawn         # both plots hold the same fewer points
     n = drawn[PLOTS[0]]["n"]
-    assert _check(page, n)["size"] != narrowed["size"]
+    fewer = _check(page, n)
+    assert all(fewer[p]["size"] != narrowed[p]["size"] for p in PLOTS)
 
     # 3. everything back
     page.click("#subset-button")
@@ -169,11 +182,11 @@ def test_greyed_out_points_do_not_count_and_stay_behind(page, server):
     # the table's search greys 100 rows out: 100 points in full, 100 grey
     page.fill(f'.tile[data-tile-id="{TABLE}"] input[type="search"]', "cell_01")
     narrowed = _check(page, 100)
-    assert narrowed["size"] != full["size"]
+    assert all(narrowed[p]["size"] != full[p]["size"] for p in PLOTS), (narrowed, full)
     for pid, v in page.evaluate(STATE).items():
         assert v["grey"] == 100, (pid, v)
         # the grey ones follow the curve for their own 100 points, behind the others
-        assert v["greySizes"] == [narrowed["size"]], (pid, v, narrowed)
+        assert v["greySizes"] == [narrowed[pid]["size"]], (pid, v, narrowed)
 
     page.fill(f'.tile[data-tile-id="{TABLE}"] input[type="search"]', "")
     assert _check(page, 200) == full
