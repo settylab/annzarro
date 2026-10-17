@@ -12,18 +12,23 @@ focused. Checked by what the plot draws:
    theme's colour for one that was not; Reset follows the theme again;
 4. the values travel with the panel (saved layout, a link made from it),
    and the other panels keep the defaults;
-5. the full export (PNG) draws the styled highlight.
+5. the full export (PNG) draws the styled highlight;
+6. No fill draws an open circle (transparent fill, visible edge) on screen, in
+   2D, 3D and gene plots, through a focus move, a link and the PNG and SVG exports.
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
 """
 import base64
+import io
 import json
 import os
 import urllib.parse
 
+from PIL import Image
+
 from annzarro.tests.browser.test_memory_guard import STORE
-from annzarro.tests.browser.test_plot_options import _menu, page, server  # noqa: F401  (fixtures)
+from annzarro.tests.browser.test_plot_options import _close_menu, _menu, page, server  # noqa: F401  (fixtures)
 
 A, B, G = "cell-plot-A", "cell-plot-B", "gene-plot-G"
 SHOTS = os.environ.get("ANNZARRO_SHOTS")       # a directory: screenshots for review
@@ -34,9 +39,9 @@ FOCUS = """(id) => { const gd = (%s)(id); if (!gd || !gd.data) return null;
     const f = gd._fullData && gd._fullData.find(t => /^Focused (Cell|Gene)$/.test(t.name || ''));
     const panel = window.PanelManager && window.PanelManager.getActivePanels().find(p => p.getId() === id);
     const cfg = panel ? panel.getConfig() : {};
-    return t && panel ? { type: t.type, size: t.marker.size, color: t.marker.color, opacity: t.marker.opacity,
+    return t && panel ? { type: t.type, size: t.marker.size, color: String(t.marker.color).replace(/ /g, ''), opacity: t.marker.opacity,
                  lineColor: t.marker.line.color, lineWidth: t.marker.line.width, pointSize: cfg.pointSize,
-                 fullColor: f && f.marker.color, fullLineWidth: f && f.marker.line.width } : null; }""" % GD
+                 fullColor: f && String(f.marker.color).replace(/ /g, ''), fullLineWidth: f && f.marker.line.width } : null; }""" % GD
 SPY = """() => { if (!window.__spy) { window.__spy = {};
       for (const k of ['newPlot', 'react', 'restyle', 'relayout', 'update', 'addTraces', 'deleteTraces']) {
         const f = Plotly[k]; window.__spy[k] = 0;
@@ -281,3 +286,207 @@ def test_the_export_draws_the_styled_highlight(page, server):
     _set(page, f"#focused-color-{A}", "#00ff00")
     _wait(page, A, "color", "#00ff00")
     assert page.evaluate(GREEN, [A]) > 20
+
+
+# ---- No fill: an open circle ----
+
+NO_FILL = "rgba(0,0,0,0)"
+RING = {"focusedNoFill": True, "focusedScale": 6, "focusedEdgeWidth": 3, "focusedEdgeColor": "#0000ff", "focusedColor": "#ff0000"}
+SYMBOL = "(id) => (%s)(id)._fullData.find(t => /^Focused (Cell|Gene)$/.test(t.name || '')).marker.symbol" % GD
+LAYOUT_CFG = "(id) => window.PanelManager.saveLayout().panelConfigs[id]"
+
+# where the highlight trace of a 2D plot is on the page, and its radius in px
+AT = """(id) => { const gd = (%s)(id); const t = gd.data.find(t => /^Focused (Cell|Gene)$/.test(t.name || ''));
+    const fl = gd._fullLayout, r = gd.querySelector('.nsewdrag').getBoundingClientRect();
+    return { x: r.left + fl.xaxis.l2p(t.x[0]), y: r.top + fl.yaxis.l2p(t.y[0]), r: t.marker.size / 2, ux: t.x[0] }; }""" % GD
+
+
+def _is_blue(p):
+    return p[2] > 200 and p[0] < 60 and p[1] < 60
+
+
+def _is_red(p):
+    return p[0] > 220 and p[1] < 50 and p[2] < 50
+
+
+def _screen(page):
+    return Image.open(io.BytesIO(page.screenshot())).convert("RGB")
+
+
+def _count(img, test, box=None):
+    w, h = img.size
+    x0, y0, x1, y1 = box or (0, 0, w, h)
+    px = img.load()
+    return sum(1 for x in range(max(0, int(x0)), min(w, int(x1))) for y in range(max(0, int(y0)), min(h, int(y1))) if test(px[x, y]))
+
+
+def _open_circle_at(page, pid):
+    """The highlight of a 2D plot on screen: blue edge pixels around the radius, red nowhere, the centre not the marker's."""
+    page.mouse.move(2, 2)                      # no hover label over the points
+    page.wait_for_timeout(400)
+    at = page.evaluate(AT, pid)
+    img = _screen(page)
+    r = at["r"]
+    around = (at["x"] - r - 3, at["y"] - r - 3, at["x"] + r + 3, at["y"] + r + 3)
+    edge = _count(img, _is_blue, around)
+    reds = _count(img, _is_red, around)
+    inner = _count(img, lambda p: _is_blue(p) or _is_red(p), (at["x"] - r / 2, at["y"] - r / 2, at["x"] + r / 2, at["y"] + r / 2))
+    assert edge > 2 * 3.14 * r * 0.5, ("the edge is not drawn", pid, edge, at)
+    assert reds == 0, ("the marker is filled", pid, reds)
+    assert inner == 0, ("the centre shows the marker, not the plot behind it", pid, inner)
+    return at
+
+
+def _state(f):
+    assert f["color"] == NO_FILL and f["fullColor"] == NO_FILL, f
+    assert (f["lineColor"], f["lineWidth"], f["fullLineWidth"]) == ("#0000ff", 3, 3), f
+
+
+def test_no_fill_draws_an_open_circle_in_2d_and_gene_plots(page, server):
+    page.set_viewport_size({"width": 1400, "height": 1200})       # all three tiles on screen
+    _open(page, _link(server, {A: dict(RING, focusedNoFill=False), G: dict(RING, focusedNoFill=False)}))
+    for pid in (A, G):                                  # filled to begin with: red inside the ring
+        page.mouse.move(2, 2)
+        page.wait_for_timeout(300)
+        at = page.evaluate(AT, pid)
+        assert _is_red(_screen(page).getpixel((int(at["x"]), int(at["y"])))), pid
+        _menu(page, pid, "focused")
+        page.evaluate(SPY)
+        page.set_checked(f"#focused-no-fill-{pid}", True)
+        _wait(page, pid, "color", NO_FILL)
+        spy = _spied(page)
+        assert spy["newPlot"] == spy["react"] == spy["addTraces"] == spy["deleteTraces"] == spy["update"] == 0, (pid, spy)
+        _state(_focus(page, pid))
+        _close_menu(page, pid)                          # the menu would cover a plot
+        _open_circle_at(page, pid)
+        _shot(page, f"no-fill-{pid}", pid)
+        # it follows the cell: the regl scene moves the marker, the pixels follow
+        before = page.evaluate(AT, pid)["ux"]
+        page.evaluate("async () => (await import('/static/js/data-manager.js')).DataManager.setFocusedCell('cell_0042', false)")
+        page.wait_for_function("([id, x]) => { const f = (%s); const gd = f(id);"
+                               " const t = gd.data.find(t => /^Focused (Cell|Gene)$/.test(t.name || '')); return t && t.x[0] !== x; }" % GD,
+                               arg=[pid, before], timeout=10000)
+        page.wait_for_timeout(500)
+        _state(_focus(page, pid))
+        _open_circle_at(page, pid)
+        _menu(page, pid, "focused")
+        # No fill off: the chosen colour is back, filled
+        page.set_checked(f"#focused-no-fill-{pid}", False)
+        _wait(page, pid, "color", "#ff0000")
+        assert _focus(page, pid)["lineWidth"] == 3
+        page.evaluate("async () => (await import('/static/js/data-manager.js')).DataManager.setFocusedCell('cell_0000', false)")
+        page.wait_for_timeout(500)
+        page.set_checked(f"#focused-no-fill-{pid}", True)
+        _wait(page, pid, "color", NO_FILL)
+        _close_menu(page, pid)
+
+
+def test_no_fill_draws_an_open_circle_in_3d(page, server):
+    page.set_viewport_size({"width": 1400, "height": 1200})
+    _open(page, _link(server, {B: dict(RING, focusedNoFill=False)}))
+    tile = page.locator(f'.tile[data-tile-id="{B}"] .js-plotly-plot')
+
+    def counts():
+        page.mouse.move(2, 2)
+        page.wait_for_timeout(600)
+        img = Image.open(io.BytesIO(tile.screenshot())).convert("RGB")
+        return _count(img, _is_red), _count(img, _is_blue)
+    red, blue = counts()
+    assert red > 5, "the filled marker is not drawn red in 3D"
+    _menu(page, B, "focused")
+    page.set_checked(f"#focused-no-fill-{B}", True)
+    _wait(page, B, "color", "#0000ff")                  # 3D draws no marker edge: the open-circle symbol, in the edge colour
+    assert page.evaluate(SYMBOL, B) == "circle-open"
+    assert (_focus(page, B)["lineColor"], _focus(page, B)["lineWidth"]) == ("#0000ff", 3)
+    _close_menu(page, B)
+    red, blue = counts()
+    assert red == 0 and blue > 2, ("3D open circle", red, blue)
+    _menu(page, B, "focused")                          # back to filled: the symbol and the fill return
+    page.set_checked(f"#focused-no-fill-{B}", False)
+    _wait(page, B, "color", "#ff0000")
+    assert page.evaluate(SYMBOL, B) == "circle"
+
+
+def test_no_fill_with_a_zero_edge_keeps_one_pixel(page, server):
+    _open(page, _link(server, {A: {"focusedEdgeWidth": 0}}))
+    assert _focus(page, A)["lineWidth"] == 0
+    _menu(page, A, "focused")
+    page.set_checked(f"#focused-no-fill-{A}", True)
+    _wait(page, A, "lineWidth", 1)                     # raised, not invisible
+    assert page.input_value(f"#focused-edge-width-{A}") == "1"
+    assert page.evaluate(LAYOUT_CFG, A)["focusedEdgeWidth"] == 1
+    _set(page, f"#focused-edge-width-{A}", 0)          # entered below 1 while open: back to 1
+    page.wait_for_timeout(300)
+    assert page.input_value(f"#focused-edge-width-{A}") == "1" and _focus(page, A)["lineWidth"] == 1
+    _set(page, f"#focused-edge-width-{A}", 4)
+    _wait(page, A, "lineWidth", 4)
+    page.set_checked(f"#focused-no-fill-{A}", False)   # the width stays what it is
+    _wait(page, A, "color", "#ff0000")
+    assert _focus(page, A)["lineWidth"] == 4
+    _set(page, f"#focused-edge-width-{A}", 0)          # filled: 0 is allowed again
+    _wait(page, A, "lineWidth", 0)
+
+
+def test_no_fill_travels_with_the_panel_and_apply_to_others_copies_it(page, server):
+    _open(page, _link(server))
+    assert "focusedNoFill" not in page.evaluate(LAYOUT_CFG, A)
+    _menu(page, A, "focused")
+    _set(page, f"#focused-edge-color-{A}", "#0000ff")
+    page.set_checked(f"#focused-no-fill-{A}", True)
+    _wait(page, A, "color", NO_FILL)
+    layout = page.evaluate("() => window.PanelManager.saveLayout()")
+    assert layout["panelConfigs"][A]["focusedNoFill"] is True
+    assert "focusedNoFill" not in layout["panelConfigs"][G]
+    page.goto(_view(server, layout))                   # a link, an autosave and a duplicate all restore this layout
+    page.reload()
+    for pid in (A, B, G):
+        page.wait_for_function("(id) => { const f = (%s)(id); return f && f.size > 0; }" % FOCUS, arg=pid, timeout=60000)
+    page.wait_for_timeout(800)
+    assert _focus(page, A)["color"] == NO_FILL
+    assert _focus(page, G)["color"] == "#ff0000"
+    # the theme switch keeps the choice and the colour behind it
+    _theme(page, "dark")
+    assert _focus(page, A)["color"] == NO_FILL
+    _menu(page, A, "focused")
+    assert page.is_checked(f"#focused-no-fill-{A}")
+    _set(page, f"#focused-color-{A}", "#00ff00")
+    page.click(f"#reset-focused-color-{A}")            # Reset is the colour's: it follows the theme, the fill stays off
+    page.wait_for_timeout(300)
+    assert _focus(page, A)["color"] == NO_FILL
+    # Apply to other panels: the other cell plot (B, in 3D: its open circle takes the edge colour) gets it, a gene plot is not of this kind
+    _menu(page, A, "apply")
+    page.click(f"#apply-others-{A}")
+    page.click(f"#apply-others-yes-{A}")
+    _wait(page, B, "color", "#0000ff")
+    assert page.evaluate(SYMBOL, B) == "circle-open"
+    assert page.evaluate(LAYOUT_CFG, B)["focusedNoFill"] is True
+    assert "focusedNoFill" not in page.evaluate(LAYOUT_CFG, G)
+
+
+PNG_COUNTS = """async ([id, format]) => {
+    const { fullImage } = await import('/static/js/utils/plot-export.js');
+    const out = await fullImage((%s)(id), { format, width: 600, height: 400, scale: 1 });
+    const url = format === 'svg' ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(out) : out;
+    const img = new Image(); img.src = url; await img.decode();
+    const c = document.createElement('canvas'); c.width = img.width || 600; c.height = img.height || 400;
+    const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, c.width, c.height);
+    const px = ctx.getImageData(0, 0, c.width, c.height).data;
+    let red = 0, blue = 0;
+    for (let i = 0; i < px.length; i += 4) {
+        if (px[i] > 220 && px[i + 1] < 50 && px[i + 2] < 50) red++;
+        if (px[i + 2] > 200 && px[i] < 60 && px[i + 1] < 60) blue++;
+    }
+    return { red, blue }; }""" % GD
+
+
+def test_no_fill_in_the_png_and_svg_exports(page, server):
+    _open(page, _link(server, {A: RING, B: RING}))
+    for pid in (A, B):
+        for fmt in ("png", "svg"):
+            c = page.evaluate(PNG_COUNTS, [pid, fmt])
+            assert c["red"] == 0 and c["blue"] > (5 if pid == A else 2), (pid, fmt, c)    # a 3D edge is thin
+    # control: the filled marker is red in the same export
+    _menu(page, A, "focused")
+    page.set_checked(f"#focused-no-fill-{A}", False)
+    _wait(page, A, "color", "#ff0000")
+    assert page.evaluate(PNG_COUNTS, [A, "png"])["red"] > 5
