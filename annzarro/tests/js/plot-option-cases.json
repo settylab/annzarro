@@ -1,0 +1,390 @@
+{
+ "comment": "Every plotting option a panel keeps, with a value that is not the default. Read by tests/js/plot-options-roundtrip.test.mjs and tests/browser/test_plot_options_roundtrip.py. panel: 'a' = the cell plot with a legend and Equal aspect, 'b' = the colour bar plot, 'a3d' = a 3D plot. render: whether the option changes what Plotly draws (then the first draw must equal the live-changed plot). auto: the option stays automatic, only its automatic state is compared.",
+ "cases": [
+  {
+   "key": "bgColor",
+   "value": "#102030",
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "gridColor",
+   "value": "#334455",
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "axisColor",
+   "value": "#aa0000",
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "textColor",
+   "value": "#00aa00",
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "zeroLineColor",
+   "value": "#0000aa",
+   "panel": "a",
+   "extra": {
+    "showZeroLines": true
+   },
+   "render": true
+  },
+  {
+   "key": "backdropColor",
+   "value": "#223344",
+   "panel": "a3d",
+   "extra": {
+    "showBackdrop": true
+   },
+   "render": true
+  },
+  {
+   "key": "notInTableColor",
+   "value": "#778899",
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "showGrid",
+   "value": false,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "showAxisTitles",
+   "value": false,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "showAxisLabels",
+   "value": false,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "showAxisLines",
+   "value": false,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "showZeroLines",
+   "value": true,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "showBackdrop",
+   "value": true,
+   "panel": "a3d",
+   "render": true
+  },
+  {
+   "key": "showTickMarks",
+   "value": false,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "tickCount",
+   "value": 7,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "axisLineWidth",
+   "value": 3,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "gridLineWidth",
+   "value": 2,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "zeroLineWidth",
+   "value": 2.5,
+   "panel": "a",
+   "extra": {
+    "showZeroLines": true
+   },
+   "render": true
+  },
+  {
+   "key": "fontSize",
+   "value": 18,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "fontFamily",
+   "value": "Georgia, serif",
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "margins",
+   "value": {
+    "l": 50,
+    "r": 60,
+    "t": 70,
+    "b": 90,
+    "pad": 4
+   },
+   "panel": "a",
+   "extra": {
+    "marginsUnlinked": true
+   },
+   "render": true
+  },
+  {
+   "key": "marginsUnlinked",
+   "value": true,
+   "panel": "a",
+   "render": false
+  },
+  {
+   "key": "legendPosition",
+   "value": "bottom",
+   "panel": "a",
+   "render": true,
+   "tolerance": 0.03,
+   "note": "a legend below the plot is placed from the measured axis text and the plot height it leaves, which settle in a few steps; the position is the same to within a few pixels"
+  },
+  {
+   "key": "showLegend",
+   "value": false,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "showLegend",
+   "name": "showLegend-colourbar",
+   "value": false,
+   "panel": "b",
+   "render": true
+  },
+  {
+   "key": "colorbarPosition",
+   "value": "left",
+   "panel": "b",
+   "render": true
+  },
+  {
+   "key": "colorbarLength",
+   "value": 0.5,
+   "panel": "b",
+   "render": true
+  },
+  {
+   "key": "colorbarTicks",
+   "value": 4,
+   "panel": "b",
+   "render": true
+  },
+  {
+   "key": "showScaleBar",
+   "value": true,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "scaleBarCorner",
+   "value": "top-left",
+   "panel": "a",
+   "extra": {
+    "showScaleBar": true
+   },
+   "render": true
+  },
+  {
+   "key": "scaleBarSize",
+   "value": 2,
+   "panel": "a",
+   "extra": {
+    "showScaleBar": true
+   },
+   "render": true
+  },
+  {
+   "key": "scaleBarUnit",
+   "value": "um",
+   "panel": "a",
+   "extra": {
+    "showScaleBar": true
+   },
+   "render": true
+  },
+  {
+   "key": "equalAspect",
+   "value": true,
+   "panel": "b",
+   "render": true
+  },
+  {
+   "key": "notInTableScale",
+   "value": 0.5,
+   "panel": "a",
+   "render": false
+  },
+  {
+   "key": "notInTableOpacity",
+   "value": 0.3,
+   "panel": "a",
+   "render": false
+  },
+  {
+   "key": "focusedScale",
+   "value": 3,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "focusedOpacity",
+   "value": 0.5,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "focusedColor",
+   "value": "#00ff00",
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "focusedEdgeColor",
+   "value": "#ff00ff",
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "focusedEdgeWidth",
+   "value": 3,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "highlightFocusedCell",
+   "value": false,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "pointSize",
+   "value": 9,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "pointOpacity",
+   "value": 0.4,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "autoPointSize",
+   "value": true,
+   "panel": "b",
+   "auto": true,
+   "render": false
+  },
+  {
+   "key": "autoPointOpacity",
+   "value": true,
+   "panel": "b",
+   "auto": true,
+   "render": false
+  },
+  {
+   "key": "colorScale",
+   "value": "Viridis",
+   "panel": "b",
+   "render": true
+  },
+  {
+   "key": "colorReversed",
+   "value": true,
+   "panel": "b",
+   "render": true
+  },
+  {
+   "key": "colorMin",
+   "value": 2000,
+   "panel": "b",
+   "extra": {
+    "colorMax": 9000,
+    "colorRangeUnits": "data"
+   },
+   "render": true
+  },
+  {
+   "key": "lockColorRange",
+   "value": true,
+   "panel": "b",
+   "render": false
+  },
+  {
+   "key": "categoryPalette",
+   "value": "Set1",
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "hideNaN",
+   "value": true,
+   "panel": "b",
+   "render": true
+  },
+  {
+   "key": "showHoverInfo",
+   "value": false,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "enableZoom",
+   "value": false,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "enablePan",
+   "value": false,
+   "panel": "a",
+   "render": false,
+   "note": "kept and restored, but nothing draws it differently in 2D (no control) so there is no rendering to compare"
+  },
+  {
+   "key": "exportWidth",
+   "value": 800,
+   "panel": "a",
+   "render": false
+  },
+  {
+   "key": "exportHeight",
+   "value": 600,
+   "panel": "a",
+   "render": false
+  },
+  {
+   "key": "scaleExport",
+   "value": true,
+   "panel": "a",
+   "render": false
+  },
+  {
+   "key": "title",
+   "value": "My own title",
+   "panel": "a",
+   "render": false
+  }
+ ]
+}

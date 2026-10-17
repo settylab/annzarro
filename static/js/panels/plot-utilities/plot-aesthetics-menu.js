@@ -1381,7 +1381,8 @@ function updateFontFamily(plotContainer, settings) {
     
     const is3D = settings.z !== null;
     const update = {
-        'font.family': settings.fontFamily
+        'font.family': settings.fontFamily,
+        'legend.title.font.family': settings.fontFamily
     };
     
     if (is3D) {
@@ -1520,20 +1521,7 @@ function updateLineWidths(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updatePlotBackground(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {
-        'paper_bgcolor': plotColour(settings, 'bgColor'),
-        'plot_bgcolor': plotColour(settings, 'bgColor')
-    };
-    
-    // For 3D plots, also update the scene background color
-    if (is3D) {
-        update['scene.bgcolor'] = plotColour(settings, 'bgColor');
-    }
-    
-    Plotly.relayout(plotContainer, update);
+    applyThemeColors(plotContainer, settings);      // one set of colour keys: a colour changed by hand and one drawn from a link are the same plot
 }
 
 /**
@@ -1562,28 +1550,7 @@ function update3DBackdrop(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateTextColor(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {
-        'font.color': plotColour(settings, 'textColor')
-    };
-    
-    if (is3D) {
-        update['scene.xaxis.title.font.color'] = plotColour(settings, 'textColor');
-        update['scene.yaxis.title.font.color'] = plotColour(settings, 'textColor');
-        update['scene.zaxis.title.font.color'] = plotColour(settings, 'textColor');
-        update['scene.xaxis.tickfont.color'] = plotColour(settings, 'textColor');
-        update['scene.yaxis.tickfont.color'] = plotColour(settings, 'textColor');
-        update['scene.zaxis.tickfont.color'] = plotColour(settings, 'textColor');
-    } else {
-        update['xaxis.title.font.color'] = plotColour(settings, 'textColor');
-        update['yaxis.title.font.color'] = plotColour(settings, 'textColor');
-        update['xaxis.tickfont.color'] = plotColour(settings, 'textColor');
-        update['yaxis.tickfont.color'] = plotColour(settings, 'textColor');
-    }
-    
-    Plotly.relayout(plotContainer, update);
+    applyThemeColors(plotContainer, settings);      // one set of colour keys: a colour changed by hand and one drawn from a link are the same plot
 }
 
 /**
@@ -1592,21 +1559,7 @@ function updateTextColor(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateGridColor(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {};
-    
-    if (is3D) {
-        update['scene.xaxis.gridcolor'] = plotColour(settings, 'gridColor');
-        update['scene.yaxis.gridcolor'] = plotColour(settings, 'gridColor');
-        update['scene.zaxis.gridcolor'] = plotColour(settings, 'gridColor');
-    } else {
-        update['xaxis.gridcolor'] = plotColour(settings, 'gridColor');
-        update['yaxis.gridcolor'] = plotColour(settings, 'gridColor');
-    }
-    
-    Plotly.relayout(plotContainer, update);
+    applyThemeColors(plotContainer, settings);      // one set of colour keys: a colour changed by hand and one drawn from a link are the same plot
 }
 
 /**
@@ -1615,26 +1568,7 @@ function updateGridColor(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateAxisColor(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {};
-    
-    if (is3D) {
-        update['scene.xaxis.color'] = plotColour(settings, 'axisColor');
-        update['scene.yaxis.color'] = plotColour(settings, 'axisColor');
-        update['scene.zaxis.color'] = plotColour(settings, 'axisColor');
-        update['scene.xaxis.linecolor'] = plotColour(settings, 'axisColor');
-        update['scene.yaxis.linecolor'] = plotColour(settings, 'axisColor');
-        update['scene.zaxis.linecolor'] = plotColour(settings, 'axisColor');
-    } else {
-        update['xaxis.color'] = plotColour(settings, 'axisColor');
-        update['yaxis.color'] = plotColour(settings, 'axisColor');
-        update['xaxis.linecolor'] = plotColour(settings, 'axisColor');
-        update['yaxis.linecolor'] = plotColour(settings, 'axisColor');
-    }
-    
-    Plotly.relayout(plotContainer, update);
+    applyThemeColors(plotContainer, settings);      // one set of colour keys: a colour changed by hand and one drawn from a link are the same plot
 }
 
 /**
@@ -1643,21 +1577,7 @@ function updateAxisColor(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateZeroLineColor(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {};
-    
-    if (is3D) {
-        update['scene.xaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
-        update['scene.yaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
-        update['scene.zaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
-    } else {
-        update['xaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
-        update['yaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
-    }
-    
-    Plotly.relayout(plotContainer, update);
+    applyThemeColors(plotContainer, settings);      // one set of colour keys: a colour changed by hand and one drawn from a link are the same plot
 }
 
 /**

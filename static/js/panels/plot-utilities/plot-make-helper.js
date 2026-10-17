@@ -175,8 +175,9 @@ export function createLayout(settings) {
   // Base axis settings for both 2D and 3D axes.
   const baseAxis = {
     showgrid: settings.showGrid,
-    showline: settings.showGrid,
-    zeroline: settings.showGrid,
+    // the axis line and the zero line have their own switches (Plot Options); the grid switch is not theirs
+    showline: settings.showAxisLines !== false,
+    zeroline: !!settings.showZeroLines,
     ticks: settings.showGrid ? '' : 'none',
     showticklabels: settings.showGrid
   };
