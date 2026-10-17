@@ -129,8 +129,9 @@ After **Apply**: the UMAP and the cell table show the same 3,000 cells. View bef
 
 The number of cells you apply is remembered, in this browser (or the desktop app) and per user, and
 every dataset you switch to opens on it: from the dataset browser, the back button, a typed path
-or the desktop app's File menu. A dataset with more cells than that size opens on a subset of that
-many cells, with the server's default seed; one with as many or fewer opens with every cell, and its
+or the desktop app's File menu, and so does the dataset AnnZarro opens by itself when you start it
+(the one you opened last), unless a link or the restored session asks for its own. A dataset with
+more cells than that size opens on a subset of that many cells, with the server's default seed; one with as many or fewer opens with every cell, and its
 badge reads, for example, **All cells (≤ 10,000)**: the size is kept, and the next larger dataset
 is subsampled to it again. Choosing **every cell** on a dataset larger than the size makes every
 cell the size you carry. Only the size travels: a filter, a balance column, a seed and a part
@@ -141,7 +142,8 @@ default instead.
 
 Until you choose a size, the server's default applies ([The default](#the-default)). A share
 link, a panel set and the restored session open on the subset they saved, and do not change the
-size you carry.
+size you carry. **Close all** with the box ticked to clear everything the site stored in this
+browser forgets the size as well, so the next start is on the server's default.
 
 ## Stepping through every cell
 

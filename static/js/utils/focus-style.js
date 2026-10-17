@@ -4,7 +4,8 @@
  * Plot Options set it per panel, as plain values on the settings, so a link,
  * a panel set and the autosave keep them; a config without them draws the
  * defaults below, which are the highlight every plot had before the options:
- * a red dot twice the point size, opaque, with a 2 px black edge.
+ * a red dot twice the point size, opaque, with a 2 px edge (black in the light
+ * theme, white in the dark one).
  *
  *   focusedScale      size, times the point size (2)
  *   focusedOpacity    0 to 1 (1)

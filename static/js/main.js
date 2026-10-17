@@ -2084,10 +2084,11 @@ const App = (function() {
             return _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
                 .then(() => PanelManager.ensureWelcomeFallback());
         }
-        // the user's own switch opens on the subset size they chose last
+        // the user's own switch, and the app's own startup open (nothing asked
+        // for: no link, no autosave), open on the subset size they chose last
         // (utils/subset-carry.js); a link, a panel set or a restored session
         // asked for its own subset already
-        if (chosen && !(datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset)) {
+        if ((chosen || source === 'default') && !(datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset)) {
             const size = _keptSubsetSize();
             const defaults = DataManager.getSubsetDefaults();
             const seed = defaults && Number.isInteger(defaults.seed) ? defaults.seed : 0;

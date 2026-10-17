@@ -203,6 +203,38 @@ def test_theme_switch_keeps_a_set_colour_and_follows_for_the_rest(page, server):
     assert (f["color"], f["lineColor"]) == ("#00ff00", palettes["light"]["focusedEdgeColor"]), f
 
 
+def _theme(page, mode):
+    page.click(f'#theme-toggle button[data-theme-mode="{mode}"]')
+    page.wait_for_function("(m) => document.documentElement.getAttribute('data-theme') === m", arg=mode)
+    page.wait_for_timeout(800)
+
+
+def test_the_default_edge_is_white_in_dark_and_black_in_light(page, server):
+    """Left at the default the edge follows the theme; a colour chosen by hand (also black or white) is kept."""
+    _open(page, _link(server))
+    for pid in (A, B, G):
+        assert _focus(page, pid)["lineColor"] == "#000000"
+    _theme(page, "dark")
+    for pid in (A, B, G):
+        assert _focus(page, pid)["lineColor"] == "#ffffff", pid
+    _theme(page, "light")
+    for pid in (A, B, G):
+        assert _focus(page, pid)["lineColor"] == "#000000", pid
+    # chosen by hand: blue on A, black (the light default) on B; both survive both switches
+    _menu(page, A, "focused")
+    _set(page, f"#focused-edge-color-{A}", "#0000ff")
+    _wait(page, A, "lineColor", "#0000ff")
+    _menu(page, B, "focused")
+    _set(page, f"#focused-edge-color-{B}", "#000000")
+    cfg = page.evaluate("(id) => window.PanelManager.saveLayout().panelConfigs[id]", B)
+    assert cfg["focusedEdgeColor"] == "#000000"
+    for mode in ("dark", "light", "dark"):
+        _theme(page, mode)
+        assert _focus(page, A)["lineColor"] == "#0000ff", mode
+        assert _focus(page, B)["lineColor"] == "#000000", mode
+        assert _focus(page, G)["lineColor"] == ("#ffffff" if mode == "dark" else "#000000"), mode
+
+
 def test_the_values_travel_with_the_panel(page, server):
     _open(page, _link(server, {B: {"focusedScale": 4, "focusedOpacity": 0.6, "focusedEdgeWidth": 0,
                                    "focusedColor": "#00ffff", "focusedEdgeColor": "#ffffff"}}))

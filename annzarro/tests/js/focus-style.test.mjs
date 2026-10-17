@@ -5,7 +5,8 @@
  * The defaults must draw exactly the highlight every plot had before the
  * Focused group existed: size twice the point size, opaque, red fill, a 2 px
  * black edge (and the ring of a cell outside the subset: red, 2 px). A link
- * or panel config without the keys gets them, in either app theme.
+ * or panel config without the keys gets them in the light theme; in the dark
+ * theme the edge is white.
  *
  * Run:  node --test annzarro/tests/js/focus-style.test.mjs
  */
@@ -31,8 +32,9 @@ const rgb = (c) => {
 };
 
 // The marker plot-update.js built before this module, for a point size `p`
-const TODAY = (p) => ({ size: p * 2, color: 'rgba(255, 0, 0, 1)', opacity: 1,
-                        line: { color: 'rgba(0, 0, 0, 1)', width: 2 }, showscale: false });
+const EDGE = { light: 'rgba(0, 0, 0, 1)', dark: 'rgba(255, 255, 255, 1)' };
+const TODAY = (p, name = 'light') => ({ size: p * 2, color: 'rgba(255, 0, 0, 1)', opacity: 1,
+                                        line: { color: EDGE[name], width: 2 }, showscale: false });
 const TODAY_RING = (p) => ({ size: p * 2, symbol: 'circle-open', color: 'rgba(255, 0, 0, 1)',
                              line: { color: 'rgba(255, 0, 0, 1)', width: 2 }, showscale: false });
 
@@ -50,11 +52,11 @@ for (const name of ['light', 'dark']) {
     test(`a config without the keys draws today's highlight, ${name} theme`, () => {
         theme = name;
         for (const p of [0.392, 3, 5, 12]) {
-            sameMarker(focusMarker({ pointSize: p }), TODAY(p));
+            sameMarker(focusMarker({ pointSize: p }), TODAY(p, name));
             sameMarker(focusMarker({ pointSize: p }, true), TODAY_RING(p));
         }
         assert.equal(PLOT_PALETTES[name].focusedColor, '#ff0000');
-        assert.equal(PLOT_PALETTES[name].focusedEdgeColor, '#000000');
+        assert.equal(PLOT_PALETTES[name].focusedEdgeColor, name === 'dark' ? '#ffffff' : '#000000');
         theme = 'light';
     });
 }
@@ -126,4 +128,43 @@ test('Apply to other panels copies the Focused group; presets leave it', () => {
     applyPreset(kept, 'default');
     applyPreset(kept, 'publication');
     assert.deepEqual([kept.focusedScale, kept.focusedColor], [3, '#00ff00']);
+});
+
+test('an edge left at the default follows the theme; an edge set by hand is kept in both', () => {
+    const edge = (s) => focusMarker(s).line.color;
+    const auto = { pointSize: 4 };
+    theme = 'light';
+    assert.equal(edge(auto), '#000000');
+    theme = 'dark';
+    assert.equal(edge(auto), '#ffffff');
+    // a hand-set colour, also black (the light default) or white (the dark default), is pinned
+    for (const colour of ['#0000ff', '#000000', '#ffffff']) {
+        const set = { pointSize: 4, focusedEdgeColor: colour };
+        for (const name of ['light', 'dark', 'light']) {
+            theme = name;
+            assert.equal(edge(set), colour);
+            assert.equal(focusShapeStyle(set).line.color, colour);
+        }
+    }
+    // Reset makes it follow again
+    const set = { pointSize: 4, focusedEdgeColor: '#0000ff' };
+    followTheme(set, ['focusedEdgeColor']);
+    theme = 'dark';
+    assert.equal(edge(set), '#ffffff');
+    theme = 'light';
+    assert.equal(edge(set), '#000000');
+});
+
+test('a setting saved before the white dark edge keeps the colour it saved', () => {
+    // a link or panel set made in the dark theme saved no edge when it was left at the default
+    // (follows the theme: white now) and the colour itself when it was set (black stays black)
+    theme = 'dark';
+    const saved = { colourModel: 2, focusedEdgeColor: '#000000' };
+    adoptColourModel(saved);
+    assert.equal(saved.focusedEdgeColor, '#000000');
+    assert.equal(focusMarker({ pointSize: 4, ...saved }).line.color, '#000000');
+    const unset = { colourModel: 2 };
+    adoptColourModel(unset);
+    assert.equal(focusMarker({ pointSize: 4, ...unset }).line.color, '#ffffff');
+    theme = 'light';
 });

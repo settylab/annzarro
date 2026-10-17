@@ -171,6 +171,64 @@ def test_the_size_chosen_follows_the_user_across_datasets(stores):
         s.close()
 
 
+NO_AUTOSAVE = "localStorage.removeItem('annzarro_autosave')"
+
+
+def test_startup_opens_on_the_size_and_close_all_forgets_it(stores):
+    """The app's own startup open (bare URL, no autosave, no link) uses the size kept; a link keeps its
+    own subset; Close all with the tick box forgets the size, and the next open is on the server default."""
+    base, data = stores
+    large_a, large_b = (os.path.join(data, n) for n in ("large_a.zarr", "large_b.zarr"))
+    # the autosave is dropped before every load: each load is the startup open, not a restore
+    s = Session(base, width=1280, height=800, init_script=NO_AUTOSAVE)
+    page = s.page
+    try:
+        open_dataset(page, large_a)
+        _wait_count(page, "30,000")
+        _choose_size(page, SIZE)
+        _wait_count(page, "10,000 of 30,000")
+        assert _kept(page) == SIZE
+
+        # (a) the bare URL opens the dataset opened last on the size kept
+        page.goto(base)
+        wait_for_open(page, large_a)
+        _wait_count(page, "10,000 of 30,000")
+        assert _kept(page) == SIZE
+
+        # (c) a link without a subset takes the server's default, one with a subset its own; neither
+        # changes the size
+        for view, count in (({"v": 1}, "30,000"), ({"v": 1, "subset": {"n": 5000, "seed": 2}}, "5,000 of 30,000")):
+            enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+            page.goto(f"{base}/?dataset_path={large_b}#view={enc}")
+            wait_for_open(page, large_b)
+            _wait_count(page, count)
+            assert _kept(page) == SIZE
+        page.goto(base)
+        wait_for_open(page, large_a)
+        _wait_count(page, "10,000 of 30,000")
+
+        # (b) Close all, with the tick box: the size is forgotten and nothing writes it back
+        page.click("#btn-close-all")
+        ask = page.locator(".notification-ask").filter(has_text="Close all panels?")
+        ask.locator("input[type=checkbox]").check()
+        with page.expect_navigation(timeout=30_000):
+            ask.get_by_role("button", name="Close all", exact=True).click()
+        page.wait_for_function("() => !!(window.annzarro && window.annzarro.openDataset)", timeout=60_000)
+        assert _kept(page) is None
+        assert page.evaluate("() => Object.keys(localStorage).filter(k => k.includes('subsetSize'))") == []
+        open_dataset(page, large_a)
+        _wait_count(page, "30,000")
+        assert _badge(page) == "All cells"
+        assert _kept(page) is None
+        # and a reload still starts on the default
+        page.reload()
+        page.wait_for_function("() => !!(window.annzarro && window.annzarro.openDataset)", timeout=60_000)
+        assert _kept(page) is None
+        assert not s.errors, s.errors
+    finally:
+        s.close()
+
+
 def test_the_badge_with_the_size_in_effect_light_and_dark(stores):
     """The screenshots of the dataset bar on the small store with the size in effect (DATASET_SHOTS)."""
     base, data = stores

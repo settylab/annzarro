@@ -11,9 +11,9 @@ with the release after it. Older releases are listed on
 ### Added
 - Plot Options has a **Focused cell** group (**Focused gene** in gene plots) that sets the size
   (a multiple of the point size), opacity, fill colour, edge colour and edge width of the marker on
-  the focused cell, in 2D, 3D and large plots. The colours follow the app theme until you set them;
-  the values are kept in panel sets and share links, and a link without them draws the usual red
-  dot.
+  the focused cell, in 2D, 3D and large plots. The colours follow the app theme until you set them
+  (the edge is black on a light plot and white on a dark one); the values are kept in panel sets
+  and share links, and a link without them draws the usual red dot.
 
 ### Changed
 - Automatic point size and opacity follow the plot area as well as the number of points: a large
@@ -24,8 +24,9 @@ with the release after it. Older releases are listed on
 - The cell subset size you choose follows you to other datasets. A dataset you switch to opens
   on that many cells when it has more, and with every cell when it has as many or fewer; its badge
   then reads, for example, "All cells (≤ 10,000)", and the next larger dataset is subsampled to the
-  size again. The size is kept per browser and user, so a reload keeps it. Share links, panel sets
-  and the restored session still open on the subset they saved.
+  size again. The size is kept per browser and user, so a reload keeps it, and the dataset AnnZarro
+  opens when it starts uses it too. "Close all" with the tick box for clearing everything forgets
+  it. Share links, panel sets and the restored session still open on the subset they saved.
 - A plot or table whose data the browser ran out of memory for says so in plain words ("the
   browser ran out of memory -- Close a plot, or show fewer cells (a smaller subset), and try
   again") instead of "failed to read -- Array buffer allocation failed", and offers **Half the
