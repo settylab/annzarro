@@ -41,6 +41,7 @@ import { DatasetState, documentTitle, isUserSource } from './utils/dataset-state
 import { loadRecents, recordRecent, userKey, lookupPaths, recentEntries } from './utils/dataset-recents.js';
 import { formatLabel } from './utils/dataset-browser-model.js';
 import { createDatasetBrowser } from './utils/dataset-browser.js';
+import { initAboutDialog } from './utils/about-dialog.js';
 import { firstDatasetChoice, keysUsedByPanels, isRemote } from './utils/dataset-browser-model.js';
 import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
@@ -105,6 +106,7 @@ const App = (function() {
             
             // Initialize UI components
             _initUI();
+            initAboutDialog();
             
             // Setup custom event listeners for error handling
             _setupErrorHandlers();

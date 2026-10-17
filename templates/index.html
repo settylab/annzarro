@@ -76,7 +76,7 @@
         <div class="container-fluid">
             <div class="row align-items-center">
                 <div class="col-auto">
-                    <h1 class="app-title">{{ app_name|default('AnnZarro') }}</h1>
+                    <h1 class="app-title"><button type="button" id="about-open" class="app-title-btn" data-bs-toggle="modal" data-bs-target="#about-modal" aria-haspopup="dialog">{{ app_name|default('AnnZarro') }}</button></h1>
                     <a id="auth-indicator" class="auth-indicator" hidden></a>
                     <span id="account-links" class="account-links"></span>
                 </div>
@@ -238,6 +238,40 @@
                 <div class="modal-footer">
                     <span id="dsb-status" class="dsb-status" role="status" aria-live="polite"></span>
                     <span class="dsb-hints" aria-hidden="true"><kbd>Enter</kbd> open <kbd>Esc</kbd> close <kbd id="dsb-hint-path">Ctrl+L</kbd> path</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- About AnnZarro (utils/about-dialog.js fills in the version) -->
+    <div class="modal fade" id="about-modal" tabindex="-1" aria-hidden="true" aria-labelledby="about-title">
+        <div class="modal-dialog modal-dialog-centered about-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="about-title">About AnnZarro</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="about-version"><strong id="about-name">AnnZarro</strong> <span id="about-version" class="about-muted"></span></p>
+                    <p class="about-site" id="about-site" hidden></p>
+                    <p>Interactive exploration of cell-by-cell and gene-by-gene relationships in single-cell data, straight from Zarr.</p>
+                    <p class="about-links">
+                        <a href="https://annzarro.readthedocs.io" target="_blank" rel="noopener noreferrer">Documentation</a>
+                        <a href="https://github.com/settylab/annzarro" target="_blank" rel="noopener noreferrer">GitHub</a>
+                        <a href="https://github.com/settylab/annzarro/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog</a>
+                    </p>
+                    <p class="about-cite"><strong>Citing AnnZarro.</strong> The paper:
+                        <a href="https://doi.org/10.64898/2026.10.10.758158" target="_blank" rel="noopener noreferrer">doi:10.64898/2026.10.10.758158</a>.
+                        The software, all versions:
+                        <a href="https://doi.org/10.5281/zenodo.23222216" target="_blank" rel="noopener noreferrer">doi:10.5281/zenodo.23222216</a>.</p>
+                    <hr>
+                    <p class="about-dev">Developed by the Setty Lab at Fred Hutch Cancer Center</p>
+                    <div class="about-logos">
+                        <a href="https://research.fredhutch.org/setty" target="_blank" rel="noopener noreferrer" title="Setty Lab"><img class="about-logo about-logo-lab" src="{{ url_for('static', filename='img/settylab-logo.svg') }}" alt="Setty Lab"></a>
+                        <a href="https://www.fredhutch.org" target="_blank" rel="noopener noreferrer" title="Fred Hutch Cancer Center"><img class="about-logo about-logo-fh about-logo-light" src="{{ url_for('static', filename='img/fredhutch-navy.png') }}" alt="Fred Hutch Cancer Center"><img class="about-logo about-logo-fh about-logo-dark" src="{{ url_for('static', filename='img/fredhutch-white.png') }}" alt="Fred Hutch Cancer Center"></a>
+                    </div>
+                    <p class="about-funding">Supported by the National Institute of General Medical Sciences of the National Institutes of Health under award numbers R35GM147125 and K99GM159044.</p>
+                    <p class="about-fine">The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health. Released under the MIT licence.</p>
                 </div>
             </div>
         </div>
