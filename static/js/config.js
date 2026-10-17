@@ -267,8 +267,10 @@ const Config = (function() {
         INTERVAL: 10000, // 10 seconds autosave interval (in milliseconds)
         STORAGE_KEY: 'annzarro_autosave', // Local Storage key for autosaved session
         SESSION_NAME: 'Autosave', // Default name for autosaved sessions
-        SHOW_IN_LIST: false, // Whether to show autosave in session lists
-        AUTO_RESTORE: true // Automatically restore autosave on startup
+        SHOW_IN_LIST: true, // List the last sessions first, on the welcome screen and in Load Panel Set
+        // When a page restores the autosave by itself: 'reload' (a reload of the tab), 'always', 'never'
+        // (utils/last-sessions.js autoRestoreMode; true and false are 'always' and 'never')
+        AUTO_RESTORE: 'reload'
     };
     
     // For StringDB API: a versioned host, so a result can be reproduced

@@ -213,8 +213,9 @@ def test_config_reaches_the_browser_and_blocks_the_draw(tiny_server, page):
     page.goto(_link(tiny_server))
     page.wait_for_selector('.tile[data-tile-id="cell-plot-a"] .coverage-placeholder', timeout=30000)
     text = page.inner_text('.tile[data-tile-id="cell-plot-a"] .coverage-placeholder')
-    assert "Needs ~" in text and "of browser JS memory" in text and "free" in text, text
-    assert "Close a plot, or show fewer cells" in text, text
+    # one line of numbers (the JS heap is the ceiling that binds); the ways out are the buttons
+    assert "Needs ~" in text and "of JS memory" in text and "free" in text, text
+    assert "Not drawn: not enough browser memory" in text, text
     # the way out, offered where the plot would be
     assert page.locator('.tile[data-tile-id="cell-plot-a"] .coverage-placeholder [data-ps-action="subset"]').count() == 1
     assert page.locator('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot').count() == 0

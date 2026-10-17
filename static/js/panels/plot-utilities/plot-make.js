@@ -23,7 +23,7 @@ import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
 import { RemoteNames } from '../../utils/remote-names.js';
-import { colourKind, MEMORY_ADVICE } from '../../utils/memory-guard.js';
+import { colourKind, isOutOfMemory, MEMORY_ADVICE, DRAW_ANYWAY_RISK } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
@@ -33,7 +33,8 @@ import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
 import { cancelLoads } from '../../utils/load-scope.js';
 import {
-  drawCheck, reserve, commit, cancel, refusalText, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck
+  drawCheck, reserve, commit, cancel, refusalText, shortRefusalText, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck,
+  takeTurn, bindTurn, releaseTurn, noteOutOfMemory
 } from '../../utils/memory-guard-ui.js';
 
 // the loads of a panel that the Cancel button can stop (utils/load-scope.js)
@@ -1018,6 +1019,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         setStatusTag(plotContainer, 'refused', null);
         await createLargePlot(plotContainer, settings, data, container, id, signal);
         drawn = true;
+        plotContainer.__azDrawnDataset = DataManager.getCurrentDataset();
         recordLoad({ n: nCells, seconds: (performance.now() - started) / 1000, large: true });
         // no marker in large-plot mode, but the line that the focus is not shown
         noteFocusOutside(plotContainer, data, settings, 'cells');
@@ -1234,6 +1236,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       }
       await createPlot(container, plotContainer, settings, data, id, isFirstLoad);
       drawn = true;
+      plotContainer.__azDrawnDataset = DataManager.getCurrentDataset();
       await applyHoverInfo(plotContainer, data, settings);
       await applyLogColorbar(plotContainer, data, settings);
       await sortTracesByColor(plotContainer, settings);
@@ -1324,6 +1327,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       const coverage = error.coverage || Coverage.missing(GAP.FAILED, error.message || 'unknown error',
         { source: 'plot data', unit });
       drawPlaceholder(plotContainer, coverage, unit);
+      // a reload must not draw this again by itself (session-manager.js, the restore marker)
+      if (isOutOfMemory(error) || coverage.gaps.some(g => g.kind === 'memory')) noteOutOfMemory(id);
       // out of memory: the data is there, and the placeholder says what helps
       if (errorDetails && !coverage.gaps.some(g => g.kind === 'memory')) {
         const extra = document.createElement('div');
@@ -1353,10 +1358,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
 /**
  * The browser memory check before a plot is drawn: every way a plot is
  * drawn passes here (a new, duplicated, reopened or restored panel, a subset
- * change, a full redraw). A plot that would not fit next to what the other
- * panels hold is not drawn, and its status strip says why and what helps;
- * a plot that was being drawn when the previous page died waits for "Draw
- * anyway". With ui.memory.enforce warn it is drawn, with a warning tag.
+ * change, a full redraw). A heavy draw first waits for its turn (one heavy
+ * draw at a time, in the order asked: memory-guard.js DrawTurns), so that it
+ * is checked against what the plots drawn before it hold. A plot that would
+ * not fit next to them is not drawn, and the panel says why and what helps:
+ * fewer cells, closing the other plots, or drawing it anyway; a plot that
+ * was being drawn when the previous page died waits for "Draw anyway". With
+ * ui.memory.enforce warn it is drawn, with a warning tag.
  * @returns {Promise<number|null>} null when refused; else the draw's ledger
  *   token (0: the check failed and nothing was reserved)
  */
@@ -1370,6 +1378,10 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
     threeD: !!settings.z,
     livePlot: !!(plotContainer._fullLayout && Array.isArray(plotContainer.data) && plotContainer.data.length)
   };
+  const ticket = await takeTurn(id, p);
+  // closed while it waited
+  if (!plotContainer.isConnected) { releaseTurn(ticket); return null; }
+  p.livePlot = !!(plotContainer._fullLayout && Array.isArray(plotContainer.data) && plotContainer.data.length);
   const override = takeOverride(id);
   const crashed = override ? null : crashedDrawing(id);
   let result;
@@ -1378,39 +1390,61 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
   } catch (error) {
     // the guard must never be why a plot is not drawn
     console.warn('Browser memory check failed; drawing without it', error);
+    releaseTurn(ticket);
     return 0;
   }
   let refusal = null;
   if (crashed) {
-    refusal = { text: 'Not drawn: the tab ended last time',
+    refusal = { text: 'Not drawn: the tab ended last time', headline: 'Not drawn: the tab ended last time',
       why: `The browser tab ended (most likely out of memory) while it drew this plot of ${Number(crashed.n || n).toLocaleString('en-US')} points. `
-        + 'Draw it anyway, or show fewer cells first.',
-      actions: [['draw-anyway', 'Draw anyway'], ['subset', 'Subset\u2026']] };
+        + 'Draw it anyway, or show fewer cells first.' };
   } else if (result.verdict === 'block' && !override) {
-    refusal = { text: 'Not drawn: browser memory',
-      why: refusalText(result, MEMORY_ADVICE),
-      actions: [['subset', 'Subset\u2026']] };
+    // in the panel one line of numbers (the buttons are the advice); the whole sentence in the tooltip
+    refusal = { text: 'Not drawn: browser memory', headline: 'Not drawn: not enough browser memory',
+      why: shortRefusalText(result), full: refusalText(result, MEMORY_ADVICE) };
   }
   if (refusal) {
-    // no plot yet: the placeholder says it (with the way out); a plot drawn
-    // before stays, and its strip says this one was not drawn
-    if (!p.livePlot) {
-      drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, refusal.why,
-        { source: 'browser memory', unit, total: n }), unit, { actions: refusal.actions });
+    releaseTurn(ticket);
+    refusal.actions = refusalActions(isGenePlot);
+    // no plot of this dataset yet: the placeholder says it (with the ways
+    // out); a plot of it drawn before stays, and its strip says this one was not drawn
+    if (!showsThisDataset(plotContainer)) {
+      drawPlaceholder(plotContainer, null, unit, { actions: refusal.actions,
+        say: { severity: 'warning', headline: refusal.headline, lines: [refusal.why, DRAW_ANYWAY_RISK] } });
     } else {
-      setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.why,
-        pop: { text: refusal.why, actions: refusal.actions } });
+      setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.full || refusal.why,
+        pop: { text: `${refusal.why} ${DRAW_ANYWAY_RISK}`, actions: refusal.actions } });
     }
     return null;
   }
   setStatusTag(plotContainer, 'memory', result.verdict === 'warn'
     ? { text: 'Over the memory budget', severity: 'warning', title: result.why,
         pop: { text: refusalText(result, 'It is drawn anyway (ui.memory.enforce: warn); the tab may run out of memory.'),
-          actions: [['subset', 'Subset\u2026']] } }
+          actions: refusalActions(isGenePlot).filter(([a]) => a !== 'draw-anyway') } }
     : null);
   const token = reserve(id, p);
+  bindTurn(token, ticket);
   markIfRisky(result, { panel: id, n, action: 'draw' });
   return token;
+}
+
+/**
+ * Whether the plot on screen is of the open dataset: after a switch, the
+ * previous dataset's plot must not stay under the new dataset's name.
+ */
+export function showsThisDataset(plotContainer) {
+  return !!(plotContainer._fullLayout && Array.isArray(plotContainer.data) && plotContainer.data.length
+    && plotContainer.__azDrawnDataset === DataManager.getCurrentDataset());
+}
+
+/**
+ * The ways out of a plot the guard did not draw, as [action, label]: fewer
+ * cells (a Cell Plot), the other plots closed, or the draw at the user's risk.
+ * The strip offers each only where it applies (main.js _statusActionAvailable).
+ */
+export function refusalActions(isGenePlot = false) {
+  const fewer = isGenePlot ? [] : [['subset-half', 'Half the cells'], ['subset', 'Subset\u2026']];
+  return [...fewer, ['close-others', 'Close other plots'], ['draw-anyway', 'Draw anyway']];
 }
 
 

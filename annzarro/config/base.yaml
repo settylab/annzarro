@@ -369,8 +369,14 @@ ui:
     interval_ms: 10000
     storage_key: "annzarro_autosave"
     session_name: "Autosave"
-    show_in_list: false
-    auto_restore: true
+    # List the last sessions (up to 3) first, on the welcome screen and in
+    # Load Panel Set.
+    show_in_list: true
+    # When a page restores the autosave by itself: reload (a reload of the
+    # tab; a fresh visit lists it first and waits for Restore), always (every
+    # visit) or never. A session that did not finish loading is never
+    # restored by itself.
+    auto_restore: reload
 
 # External API integrations
 integrations:

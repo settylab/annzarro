@@ -19,6 +19,8 @@ import { noticeDuration, planReplacement, joinNotices, focusOutsideSubsetNotice,
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
 import { clearSiteStorage, clearSiteStorageNow, bareUrl } from './utils/site-storage.js';
+import { shouldAutoRestore, navigationType } from './utils/last-sessions.js';
+import { lastSessionElement } from './utils/last-session-card.js';
 import { sameSubset, describeParts, partSpec } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
@@ -142,9 +144,25 @@ const App = (function() {
 
             // the site's storage setting (site.storage) decides where the autosave is read from
             await Config.ready;
+            // A page that ended while it drew a session (out of memory, most
+            // likely) left a marker: that session is not drawn by itself again
+            SessionManager.initLastSessions();
             const autosave = SessionManager.getAutosaveSession();
-            const deepLink = await _parseDeepLink();
-            const hasAutosave = autosave && Config.AUTOSAVE.AUTO_RESTORE && !deepLink;
+            let deepLink = await _parseDeepLink();
+            // nothing is opened by itself after a session that did not finish: the welcome screen offers it
+            let holdBack = !!autosave && SessionManager.didNotFinish(autosave);
+            if (deepLink && deepLink.view && SessionManager.linkDidNotFinishHere()) {
+                holdBack = true;
+                // the reload of a tab that ended while it drew this view: it is
+                // offered first on the welcome screen instead (Restore)
+                console.warn('The view in the address did not finish loading last time; it is not drawn by itself.');
+                deepLink = null;
+                try { history.replaceState(history.state, '', bareUrl(window.location)); } catch { /* sandboxed frame */ }
+            }
+            // ui.autosave.auto_restore (utils/last-sessions.js): by default only a
+            // reload of the tab restores the autosave; a fresh visit lists it first
+            const hasAutosave = !!autosave && !deepLink && !holdBack
+                && shouldAutoRestore({ mode: Config.AUTOSAVE.AUTO_RESTORE, navigation: navigationType(window.performance) });
 
             // Initialize panel manager with autosave information
             PanelManager.init('tile-container', { hasAutosave });
@@ -186,7 +204,7 @@ const App = (function() {
                     _showNotification('Shared link not opened', error.message || 'Could not open the shared view.', 'error');
                 }
                 PanelManager.ensureWelcomeFallback();
-            } else if (!hasAutosave) {
+            } else if (!hasAutosave && !holdBack) {
                 // Nothing was asked for: the dataset this user opened last (if the server says they may
                 // still read it), else the only dataset there is, else none (the welcome screen). Never
                 // an arbitrary store of several: on a shared server that can be a billion-cell one.
@@ -552,7 +570,16 @@ const App = (function() {
      *   are said in a notice, not asked about first
      * @private
      */
-    async function _applyView({ datasetPath, view }, { exact = false, located = null, trust = false } = {}) {
+    async function _applyView(target, options = {}) {
+        // the restore marker stands until every panel is drawn (session-manager.js)
+        SessionManager.beginRestore('view');
+        try {
+            return await _applyViewNow(target, options);
+        } finally {
+            SessionManager.endRestore();
+        }
+    }
+    async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false } = {}) {
         // Where the view's store is here: its path, the path relative to the
         // data directory, or a store in the data directory with the same
         // cells and genes (or, for a view without a fingerprint, the same
@@ -1209,6 +1236,17 @@ const App = (function() {
     async function _changeSubset(spec, { step = false } = {}) {
         const datasetPath = DataManager.getCurrentDataset();
         if (!datasetPath) return;
+        // every Cell Plot redraws: the restore marker stands until they are drawn
+        SessionManager.beginRestore('subset');
+        try {
+            return await _changeSubsetNow(spec, { step, datasetPath });
+        } finally {
+            SessionManager.endRestore();
+        }
+    }
+
+    /** _changeSubset, past the restore marker. @private */
+    async function _changeSubsetNow(spec, { step, datasetPath }) {
         // Say at once that other cells are coming: every tile is marked while
         // the cells are read (that takes long on a very large dataset)
         const request = ++_subsetRequestSeq;
@@ -1411,10 +1449,18 @@ const App = (function() {
                 return !!(panel && (panel.refreshPlot || panel.refreshTable));
             }
             case 'export-shown': return canSnapshot(host);
+            case 'close-others': return _otherPlots(id).length > 0;
             case 'reopen-table': return !!document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
             case 'table-filter-off': return !!_tableFilterSelect(id);
             default: return false;
         }
+    }
+
+    /** The ids of the open Cell and Gene Plots other than `id`. */
+    function _otherPlots(id) {
+        return PanelManager.getActivePanels()
+            .filter(p => p.getId() !== id && /^(cell|gene)-plot$/.test(p.getType()))
+            .map(p => p.getId());
     }
 
     /** The table a plot panel is filtered by (its tableFilter setting), or null. */
@@ -1470,6 +1516,14 @@ const App = (function() {
             case 'draw-anyway': case 'redraw': {
                 // draw-anyway: past the memory guard (or the crash marker), once
                 if (action === 'draw-anyway') overrideOnce(id);
+                const panel = PanelManager.getPanel(id);
+                const reload = panel && (panel.refreshPlot || panel.refreshTable);
+                if (typeof reload === 'function') reload().catch(() => {});
+                break;
+            }
+            case 'close-others': {
+                // the other plots go to the closed list (reopened from there); this one is drawn again
+                _otherPlots(id).forEach(other => PanelManager.closePanel(other));
                 const panel = PanelManager.getPanel(id);
                 const reload = panel && (panel.refreshPlot || panel.refreshTable);
                 if (typeof reload === 'function') reload().catch(() => {});
@@ -2095,6 +2149,18 @@ const App = (function() {
             return _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
                 .then(() => PanelManager.ensureWelcomeFallback());
         }
+        // a switch under open panels redraws them all: the restore marker stands until they are drawn
+        if (PanelManager.getActivePanels().length) {
+            SessionManager.beginRestore('switch');
+            const end = () => SessionManager.endRestore();
+            return _openDatasetNow(datasetPath, chosen, source)
+                .then(value => { end(); return value; }, (error) => { end(); throw error; });
+        }
+        return _openDatasetNow(datasetPath, chosen, source);
+    }
+
+    /** _openDataset, past the restore marker. @private */
+    function _openDatasetNow(datasetPath, chosen, source) {
         // the user's own switch, and the app's own startup open (nothing asked
         // for: no link, no autosave), open on the subset size they chose last
         // (utils/subset-carry.js); a link, a panel set or a restored session
@@ -2623,8 +2689,11 @@ const App = (function() {
             let visibleCount = 0;
             
             cards.forEach(card => {
-                const sessionName = card.dataset.sessionName.toLowerCase();
-                const datasetName = card.querySelector('.session-card-subtitle').textContent.toLowerCase();
+                // a last session is found by its label and dataset
+                const sessionName = (card.classList.contains('last-session')
+                    ? card.querySelector('.last-session__title').textContent : card.dataset.sessionName).toLowerCase();
+                const subtitle = card.querySelector('.session-card-subtitle, .last-session__summary');
+                const datasetName = (subtitle ? subtitle.textContent : '').toLowerCase();
                 const isMatch = sessionName.includes(searchTerm) || datasetName.includes(searchTerm);
                 
                 card.style.display = isMatch ? 'block' : 'none';
@@ -2818,6 +2887,16 @@ const App = (function() {
                 
                 // Create cards for each session
                 sessions.forEach(session => {
+                    if (session.isLastSession) {
+                        // a last session, listed first; drawn only when Restore is pressed
+                        sessionGrid.appendChild(lastSessionElement(session, session.lastIndex || 0, {
+                            className: 'session-card',
+                            restore: (opts) => SessionManager.restoreLastSession(session.entry.key, opts),
+                            forget: () => SessionManager.deleteLastSession(session.entry.key),
+                            done: _hideSessionModal
+                        }));
+                        return;
+                    }
                     const card = document.createElement('div');
                     // We no longer include autosave in the session list, but keep logic for backward compatibility
                     const isAutosave = session.isAutosave === true;

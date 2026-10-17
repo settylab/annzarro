@@ -325,10 +325,12 @@ def test_wheel_zoom_survives_focus_recolour_refresh_and_reload(server):
             s = _settle(page)
             _assert_kept(page, zoomed, "plot refresh", s)
 
-            # 4. a page reload restores the panels from the autosave
+            # 4. a reload of the tab on the bare address restores the panels from the
+            # autosave (a fresh visit only lists it: ui.autosave.auto_restore reload)
             page.evaluate("() => window.dispatchEvent(new Event('beforeunload'))")
             page.wait_for_timeout(500)
-            page.goto(root + "/")
+            page.evaluate("() => history.replaceState(history.state, '', location.pathname)")
+            page.reload()
             _settle(page, lambda s: s["mark"] is not None)
             _assert_kept(page, zoomed, "page reload")
             assert not errors, errors

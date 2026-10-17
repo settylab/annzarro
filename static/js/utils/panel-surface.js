@@ -71,7 +71,7 @@ const KIND_ACTIONS = Object.freeze({
     table: [['stop-table', 'Stop filtering']],
     nan: [['show-nan', 'Show NaN']],
     outliers: [['show-outliers', 'Show outliers']],
-    memory: [['subset-half', 'Half the cells'], ['subset', 'Subset\u2026']]
+    memory: [['subset-half', 'Half the cells'], ['subset', 'Subset\u2026'], ['close-others', 'Close other plots']]
 });
 
 function coerce(coverage, unit) {

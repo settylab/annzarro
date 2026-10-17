@@ -35,7 +35,7 @@ import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { plotColour } from '../../utils/plot-theme.js';
 import { Config } from '../../config.js';
-import { buildPlotLayout, knownMissingSource, seriesSource, withSubsetCoverage } from './plot-make.js';
+import { buildPlotLayout, knownMissingSource, seriesSource, withSubsetCoverage, showsThisDataset } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { colourBar } from './colour-bar.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
@@ -44,6 +44,7 @@ import { LEGEND_PROXY, LEGEND_POINTS, COLOUR_BAR, attachViewportTracking } from 
 import { drawPlot, drawPlaceholder, clearForDraw, fitToContainer, setStatusTag, resolveColorscale, Coverage, GAP } from '../../utils/panel-surface.js';
 import { colourKind, DEFAULT_MODEL } from '../../utils/memory-guard.js';
 import { probeForDraw, niceFloor, probeMessage } from '../../utils/alloc-probe.js';
+import { ledger } from '../../utils/memory-guard-ui.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyError, classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { columnsParam } from '../../utils/column-param.js';
@@ -307,7 +308,11 @@ function probeDraw(settings, structure, suggest = true, bytesPerPoint = DEFAULT_
  * above the edge, in the graceful placeholder.
  */
 function probeOrRelease(plotContainer, settings, structure) {
-  const live = !!plotContainer._fullLayout;
+  // only a drawn LARGE plot holds the buffers a redraw replaces step by step;
+  // a regular plot (a switch from a smaller dataset or subset) holds none of
+  // them, and the draw needs its own in full while the other plots hold theirs
+  const old = ledger.get(plotContainer.__azPanelId);
+  const live = !!(plotContainer._fullLayout && old && old.large);
   return probeDraw(settings, structure, true, live ? DEFAULT_MODEL.large.redrawBeside : DEFAULT_MODEL.large.arrayBuffers, live);
 }
 
@@ -321,16 +326,17 @@ function probeOrRelease(plotContainer, settings, structure) {
  * @param {string} [source] - what ran out: 'browser memory' or 'WebGL'
  */
 export function showProbeFailure(plotContainer, error, source = 'browser memory') {
-  const live = Array.isArray(plotContainer.data) && plotContainer.data.length && plotContainer._fullLayout;
-  const actions = [['subset', 'Subset…']];
+  // a plot of the open dataset stays; one of the dataset before a switch does not
+  const live = showsThisDataset(plotContainer);
+  const actions = [['subset-half', 'Half the cells'], ['subset', 'Subset…'], ['close-others', 'Close other plots']];
   if (live) {
     setStatusTag(plotContainer, 'memory', { text: 'Not drawn: browser memory', severity: 'warning',
       title: error.message, pop: { text: error.message, actions } });
     return;
   }
   setStatusTag(plotContainer, 'memory', null);
-  drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, error.message,
-    { source, unit: 'cells', total: error.n ?? null }), 'cells', { actions });
+  drawPlaceholder(plotContainer, null, 'cells', { actions,
+    say: { severity: 'warning', headline: `Not drawn: not enough ${source}`, lines: [error.message] } });
 }
 
 /**

@@ -148,6 +148,8 @@ Defaults sent to the browser through `/api/v1/config`.
 | `memory.margin` | `0.2` | Predictions are multiplied by 1 + margin before they are compared. |
 | `cache.max_entries`, `cache.max_size_mb` | `1000`, `1024` | Browser-side cache. |
 | `autosave.*` | enabled, every 10,000 ms | Autosave of the current layout to the browser's local storage. |
+| `autosave.auto_restore` | `reload` | When a page restores the autosave by itself: `reload` (a reload of the tab, Back or Forward; a new visit lists it first and waits for **Restore**), `always` (every visit) or `never`. `true` and `false` mean `always` and `never`. A session that did not finish loading (the tab ended, or a plot ran out of memory) is never restored by itself. See {ref}`last-sessions`. |
+| `autosave.show_in_list` | `true` | List the last sessions (up to three) first, on the welcome screen and in Load Panel Set. |
 
 (browser-memory-uimemory)=
 ### Browser memory (`ui.memory`)

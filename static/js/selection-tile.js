@@ -4,6 +4,7 @@ import { panelTypeFromTileId } from './utils/deeplink.js';
 import { DataManager } from './data-manager.js';
 import { colourKind } from './utils/memory-guard.js';
 import { newPanelCheck, refusalText, MEMORY_EVENT } from './utils/memory-guard-ui.js';
+import { lastSessionElement } from './utils/last-session-card.js';
 import { createLoadActions, createDatasetBadge } from './panelset-load-ui.js';
 import { notify } from './utils/notify.js';
 
@@ -779,6 +780,16 @@ export class SelectionTile {
     }
   
     _createSessionItem(session) {
+      if (session.isLastSession) {
+        // a last session (utils/last-session-card.js): drawn only when Restore is pressed
+        const sm = this.sessionManager || window.sessionManager;
+        return lastSessionElement(session, session.lastIndex || 0, {
+          className: 'session-item',
+          restore: (opts) => sm.restoreLastSession(session.entry.key, opts),
+          forget: () => sm.deleteLastSession(session.entry.key),
+          done: () => { if (this.variant != "welcome") this.remove(); }
+        });
+      }
       const item = document.createElement('div');
       item.className = 'session-item';
       

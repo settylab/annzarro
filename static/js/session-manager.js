@@ -20,6 +20,12 @@ import { storeRecord, storeName } from './utils/view-store.js';
 import { modeOptions } from './utils/panelset-load.js';
 import { knownStore, settleStore, appVersion } from './utils/store-identity.js';
 import { convenienceStorage, dropPersistentConvenience } from './utils/convenience-storage.js';
+import {
+    HISTORY_KEY, RESTORING_KEY, pushHistory, lastSessionList, deadMarker, linkDidNotFinish,
+    hashString, sessionKey, withDefaultSubset, unfinishedReason, openPanelIds
+} from './utils/last-sessions.js';
+import { PAGE_ID } from './utils/page-id.js';
+import { ledger, drawsInFlight, outOfMemoryPanels, crashedLastTime } from './utils/memory-guard-ui.js';
 
 const SessionManager = (function() {
     // Private variables
@@ -210,46 +216,39 @@ const SessionManager = (function() {
     }
     
     /**
-     * Load list of available panel sets including the autosave if available
-     * @param {boolean} includeAutosave - Whether to include the autosave session
-     * @returns {Promise<Array>} - List of panel sets
+     * The saved panel sets, after the last sessions (lastSessions) when
+     * `includeLast`: each of those has `isLastSession` and `entry`.
+     * @param {boolean} [includeLast] - ui.autosave.show_in_list by default
+     * @returns {Promise<Array>}
      */
-    async function listSessions(includeAutosave = Config.AUTOSAVE.SHOW_IN_LIST) {
+    async function listSessions(includeLast = Config.AUTOSAVE.SHOW_IN_LIST && Config.AUTOSAVE.ENABLED) {
+        const last = includeLast ? lastSessions().map((entry, lastIndex) => ({
+            name: `${LAST_PREFIX}${entry.key}`, isLastSession: true, isLocalOnly: true, entry, lastIndex,
+            timestamp: entry.session.timestamp, dataset: entry.session.dataset, datasetName: entry.dataset,
+            panelConfigs: _openConfigs(entry.session)
+        })) : [];
         try {
             const response = await fetch(Config.API.SESSIONS_LIST);
             if (!response.ok) {
                 throw new Error(`API error: ${response.statusText}`);
             }
-            
-            let sessions = await response.json();
-            
-            // Check if we should include the autosave and if it exists
-            if (includeAutosave) {
-                const autosave = loadFromLocalStorage();
-                if (autosave) {
-                    // Add special properties for visualization and sorting
-                    autosave.isAutosave = true;
-                    autosave.isLocalOnly = true;
-                    
-                    // Put autosave at the beginning of the list
-                    sessions = [autosave, ...sessions];
-                }
-            }
-            
-            return sessions;
+            return [...last, ...(await response.json())];
         } catch (error) {
             console.error('Error listing sessions:', error);
-            
-            // Even if the server request fails, try to return the autosave if available
-            if (includeAutosave) {
-                const autosave = loadFromLocalStorage();
-                return autosave ? [autosave] : [];
-            }
-            
-            return [];
+            // the last sessions are in this browser: listed even when the server is not reached
+            return last;
         }
     }
-    
+
+    /** The prefix of a last session's name in the panel set lists. */
+    const LAST_PREFIX = 'last-session:';
+
+    /** A session's open panels, as the list previews read them. @private */
+    function _openConfigs(session) {
+        const open = new Set(openPanelIds(session));
+        return Object.fromEntries(Object.entries(session.panelConfigs || {}).filter(([id]) => open.has(id)));
+    }
+
     /**
      * Save current panel set
      * @param {string} name - Panel set name
@@ -378,6 +377,7 @@ const SessionManager = (function() {
             return { status: 'error', message: 'Panel set name is required' };
         }
         const options = modeOptions(mode);
+        if (String(name).startsWith(LAST_PREFIX)) return restoreLastSession(String(name).slice(LAST_PREFIX.length));
         
         try {
             // Check if this is the autosave session
@@ -387,29 +387,13 @@ const SessionManager = (function() {
                 if (!autosaveData) {
                     throw new Error('Autosave data not found');
                 }
-
-                if (autosaveData.view && _viewApplier) {
-                    // The autosave restores what was open when the page was
-                    // left. At start nothing is open, so it opens its own
-                    // dataset; with a dataset open it never switches: its
-                    // panels open on the one that is (a changed dataset is
-                    // marked per panel, as for a view on another store)
-                    const applied = await _applyPanelSet(autosaveData,
-                        { keepDataset: !!DataManager.getCurrentDataset() });
-                    return applied && applied.status
-                        ? applied
-                        : { status: 'success', message: 'Autosave loaded' };
+                // a page that ends before every panel is drawn leaves this session unfinished
+                beginRestore('autosave', { session: sessionKey(autosaveData) });
+                try {
+                    return await _restoreAutosave(autosaveData);
+                } finally {
+                    endRestore();
                 }
-                
-                await _applySessionPanels(autosaveData);
-
-
-                // open its dataset as the user would, through the one entry point (no control is asked)
-                if (autosaveData.dataset) {
-                    await DatasetState.open(autosaveData.dataset, { source: 'autosave' });
-                }
-
-                return { status: 'success', message: 'Autosave loaded' };
             }
             
             // Regular server-side session
@@ -441,6 +425,32 @@ const SessionManager = (function() {
         }
     }
     
+    /**
+     * Restore the autosave as it was left. At start nothing is open, so it
+     * opens its own dataset; with a dataset open it never switches: its
+     * panels open on the one that is (a changed dataset is marked per panel,
+     * as for a view on another store).
+     * @private
+     */
+    async function _restoreAutosave(autosaveData) {
+        if (autosaveData.view && _viewApplier) {
+            const applied = await _applyPanelSet(autosaveData,
+                { keepDataset: !!DataManager.getCurrentDataset() });
+            return applied && applied.status
+                ? applied
+                : { status: 'success', message: 'Autosave loaded' };
+        }
+
+        await _applySessionPanels(autosaveData);
+
+        // open its dataset as the user would, through the one entry point (no control is asked)
+        if (autosaveData.dataset) {
+            await DatasetState.open(autosaveData.dataset, { source: 'autosave' });
+        }
+
+        return { status: 'success', message: 'Autosave loaded' };
+    }
+
     /**
      * Delete a panel set by name
      * @param {string} name - Panel set name
@@ -657,7 +667,8 @@ const SessionManager = (function() {
             // Only autosave if we have panels to save
             const allPanels = PanelManager.getAllPanels ? PanelManager.getAllPanels() : PanelManager.getActivePanels();
             if (!allPanels || allPanels.length === 0) {
-                // No panels to save, remove any existing autosave
+                // No panels to save: this page's autosave becomes a last
+                // session; another page's (an earlier visit's) stays as it is
                 clearAutosave();
                 return { status: 'skipped', message: 'No panels to autosave' };
             }
@@ -667,6 +678,8 @@ const SessionManager = (function() {
             autosaveData.name = Config.AUTOSAVE.SESSION_NAME;
             autosaveData.timestamp = new Date().toISOString();
             autosaveData.isAutosave = true;
+            // the page that wrote it: the next page lists it as a last session
+            autosaveData.page = PAGE_ID;
             
             // Save dataset information
             const store = storeOfView();
@@ -717,9 +730,11 @@ const SessionManager = (function() {
             autosaveData.panelConfigs = panelConfigs;
             autosaveData.view = captureView();
             
-            // Save to localStorage
+            // Save to localStorage; an earlier page's autosave it replaces is kept as a last session
             try {
-                convenienceStorage(Config.SERVER_CONFIG).setItem(Config.AUTOSAVE.STORAGE_KEY, JSON.stringify(autosaveData));
+                const existing = loadFromLocalStorage();
+                if (existing && existing.page !== PAGE_ID) _retire(existing);
+                _writeAutosave(JSON.stringify(autosaveData));
                 return { status: 'success', message: 'Autosaved to browser storage' };
             } catch (e) {
                 // Handle localStorage errors (quota exceeded, etc.)
@@ -810,10 +825,267 @@ const SessionManager = (function() {
     }
     
     /**
-     * Clear autosaved session
+     * This page has no panels any more: its autosave becomes a last session
+     * (restorable from the lists). An autosave another page wrote is left
+     * alone: a page that opens on the welcome screen must not lose the last
+     * session it offers. `{all: true}` removes the autosave and every last
+     * session, whoever wrote them.
      */
-    function clearAutosave() {
-        try { convenienceStorage(Config.SERVER_CONFIG).removeItem(Config.AUTOSAVE.STORAGE_KEY); } catch { /* storage blocked */ }
+    function clearAutosave({ all = false } = {}) {
+        const store = convenienceStorage(Config.SERVER_CONFIG);
+        if (!store) return;
+        try {
+            if (all) {
+                store.removeItem(Config.AUTOSAVE.STORAGE_KEY);
+                store.removeItem(HISTORY_KEY);
+                store.removeItem(RESTORING_KEY);
+                return;
+            }
+            const existing = loadFromLocalStorage();
+            if (!existing || existing.page !== PAGE_ID) return;
+            _retire(existing);
+            store.removeItem(Config.AUTOSAVE.STORAGE_KEY);
+        } catch { /* storage blocked */ }
+    }
+
+    // -- the last sessions (utils/last-sessions.js) --------------------------
+
+    function _readJson(key) {
+        try {
+            const raw = convenienceStorage(Config.SERVER_CONFIG).getItem(key);
+            return raw ? JSON.parse(raw) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    function _readHistory() {
+        dropPersistentConvenience(Config.SERVER_CONFIG, Config.AUTOSAVE.STORAGE_KEY);
+        const h = _readJson(HISTORY_KEY);
+        return Array.isArray(h) ? h : [];
+    }
+
+    /** Write the history; when the browser's storage is full, with fewer sessions. @private */
+    function _writeHistory(history) {
+        const store = convenienceStorage(Config.SERVER_CONFIG);
+        if (!store) return;
+        let list = history;
+        for (;;) {
+            try {
+                if (list.length) store.setItem(HISTORY_KEY, JSON.stringify(list));
+                else store.removeItem(HISTORY_KEY);
+                return;
+            } catch {
+                if (!list.length) return;
+                list = list.slice(0, -1);
+            }
+        }
+    }
+
+    /** The autosave; when the storage is full, the last sessions make room. @private */
+    function _writeAutosave(json) {
+        const store = convenienceStorage(Config.SERVER_CONFIG);
+        for (;;) {
+            try {
+                store.setItem(Config.AUTOSAVE.STORAGE_KEY, json);
+                return;
+            } catch (e) {
+                const h = _readHistory();
+                if (!h.length) throw e;
+                _writeHistory(h.slice(0, -1));
+            }
+        }
+    }
+
+    /** Keep `session` (an autosave being replaced) as a last session. @private */
+    function _retire(session) {
+        _writeHistory(pushHistory(_readHistory(), session));
+    }
+
+    /** The marker a page that is gone left (read at start, see initLastSessions), and this tab's previous page. */
+    let _deadMarker = null;
+    let _previousPage = null;
+    let _initialised = false;
+
+    /**
+     * At start, before anything is restored: which page of this tab came
+     * before (a reload keeps it in the tab's history entry), and whether a
+     * page that is gone left a restore marker. Its session (and the one the
+     * memory guard's crash marker names) is marked "did not finish loading"
+     * for good, and the marker is removed.
+     */
+    function initLastSessions() {
+        if (_initialised) return;
+        _initialised = true;
+        try {
+            _previousPage = (window.history.state && window.history.state.azPage) || null;
+            window.history.replaceState({ ...(window.history.state || {}), azPage: PAGE_ID }, '');
+        } catch { /* a sandboxed frame */ }
+        const raw = _readJson(RESTORING_KEY);
+        _deadMarker = deadMarker(raw, { page: PAGE_ID, previousPage: _previousPage });
+        const crashed = crashedLastTime();
+        const keys = new Set();
+        if (_deadMarker) {
+            keys.add(_deadMarker.page);
+            if (_deadMarker.session) keys.add(_deadMarker.session);
+        }
+        if (crashed && crashed.page) keys.add(crashed.page);
+        if (keys.size) {
+            const reason = { reason: _deadMarker && _deadMarker.failed && _deadMarker.failed.length ? 'memory' : 'ended',
+                at: Date.now() };
+            _markUnfinished(keys, reason);
+        }
+        if (_deadMarker) {
+            try { convenienceStorage(Config.SERVER_CONFIG).removeItem(RESTORING_KEY); } catch { /* storage blocked */ }
+        }
+    }
+
+    /** Mark the sessions with these keys as not finished, where they are kept. @private */
+    function _markUnfinished(keys, reason) {
+        const autosave = loadFromLocalStorage();
+        if (autosave && keys.has(sessionKey(autosave)) && !autosave.unfinished) {
+            autosave.unfinished = reason;
+            try { _writeAutosave(JSON.stringify(autosave)); } catch { /* storage full */ }
+        }
+        const history = _readHistory();
+        let changed = false;
+        history.forEach(e => {
+            if (keys.has(sessionKey(e)) && !e.unfinished) { e.unfinished = reason; changed = true; }
+        });
+        if (changed) _writeHistory(history);
+    }
+
+    /** Whether `session` did not finish loading last time (it is then never restored by itself). */
+    function didNotFinish(session) {
+        return !!unfinishedReason(session, _deadMarker, crashedLastTime());
+    }
+
+    /**
+     * Whether the link this page was opened with (its #view) must not be
+     * drawn by itself: this tab's previous page, or a page restoring the
+     * same link, did not finish drawing it.
+     */
+    function linkDidNotFinishHere(locationHash = window.location.hash) {
+        return linkDidNotFinish(_deadMarker, { previousPage: _previousPage, linkHash: hashString(locationHash) });
+    }
+
+    /** The last sessions to offer, newest first (utils/last-sessions.js lastSessionList). */
+    function lastSessions() {
+        if (!Config.AUTOSAVE.ENABLED) return [];
+        return lastSessionList({ autosave: loadFromLocalStorage(), history: _readHistory(), page: PAGE_ID,
+            marker: _deadMarker, crashed: crashedLastTime() });
+    }
+
+    /**
+     * Restore the last session `key` as it was saved, or with the dataset's
+     * default subset (`defaultSubset`: a session that did not finish
+     * loading, opened on fewer cells). Its own dataset opens.
+     * @returns {Promise<{status: string, message: string}>}
+     */
+    async function restoreLastSession(key, { defaultSubset = false } = {}) {
+        const entry = lastSessions().find(e => e.key === key);
+        if (!entry) return { status: 'error', message: 'That session is no longer kept in this browser.' };
+        const session = defaultSubset ? withDefaultSubset(entry.session) : entry.session;
+        beginRestore('last-session', { session: key });
+        try {
+            const applied = await _applyPanelSet(session, {});
+            return applied && applied.status ? applied : { status: 'success', message: 'Session restored' };
+        } catch (error) {
+            console.error('Restoring the last session failed:', error);
+            return { status: 'error', message: error.message };
+        } finally {
+            endRestore();
+        }
+    }
+
+    /** Forget the last session `key` (the autosave, if it is that one). */
+    function deleteLastSession(key) {
+        const store = convenienceStorage(Config.SERVER_CONFIG);
+        try {
+            const autosave = loadFromLocalStorage();
+            if (autosave && sessionKey(autosave) === key && store) store.removeItem(Config.AUTOSAVE.STORAGE_KEY);
+        } catch { /* storage blocked */ }
+        _writeHistory(_readHistory().filter(e => sessionKey(e) !== key));
+    }
+
+    // -- the restore marker ------------------------------------------------------
+
+    let _hold = 0;           // restores running now (beginRestore .. endRestore)
+    let _marker = null;      // this page's marker, as written
+    let _beatTimer = null;
+    let _settleTimer = null;
+    const SETTLE_MS = 1000;
+    const BEAT_MS = 5000;
+
+    function _writeMarker() {
+        try {
+            const store = convenienceStorage(Config.SERVER_CONFIG);
+            if (_marker) store.setItem(RESTORING_KEY, JSON.stringify(_marker));
+            else store.removeItem(RESTORING_KEY);
+        } catch { /* private window, quota: no marker */ }
+        if (_marker && !_beatTimer) {
+            // refreshed while it stands, so other tabs see a page that is still at it
+            _beatTimer = setInterval(() => { if (_marker) { _marker.beat = Date.now(); _writeMarker(); } }, BEAT_MS);
+        } else if (!_marker && _beatTimer) {
+            clearInterval(_beatTimer);
+            _beatTimer = null;
+        }
+    }
+
+    /**
+     * A restore starts (a panel set or last session, a link, a dataset
+     * switch or subset change that redraws the open panels): the marker says
+     * so until every panel is drawn. `session`: the key of the last session
+     * being restored, which a page that ends now leaves unfinished.
+     */
+    function beginRestore(source, { session = null } = {}) {
+        _hold++;
+        if (!_marker) _marker = { page: PAGE_ID, at: Date.now(), source, link: hashString(window.location.hash) };
+        if (session) _marker.session = session;
+        _marker.beat = Date.now();
+        delete _marker.failed;
+        _writeMarker();
+    }
+
+    /** The restore begun last ended (its panels may still be drawing). */
+    function endRestore() {
+        _hold = Math.max(0, _hold - 1);
+        _scheduleSettle();
+    }
+
+    function _scheduleSettle() {
+        clearTimeout(_settleTimer);
+        _settleTimer = setTimeout(_settle, SETTLE_MS);
+    }
+
+    /**
+     * Nothing restoring and nothing drawing: the marker goes, unless a draw
+     * ran out of memory (that panel shows it): then it stays, so a reload
+     * does not draw the same again by itself.
+     */
+    function _settle() {
+        if (_hold > 0 || drawsInFlight() > 0) return;
+        const failed = outOfMemoryPanels();
+        if (failed.length) {
+            _marker = { ...(_marker || { page: PAGE_ID, at: Date.now(), source: 'draw', link: hashString(window.location.hash) }),
+                failed, beat: Date.now() };
+            _writeMarker();
+        } else if (_marker) {
+            // a last session restored whole lives on in this page (its autosave): no longer listed apart
+            const restored = _marker.session;
+            _marker = null;
+            _writeMarker();
+            // (this page's autosave is written first: the session is never in neither place)
+            if (restored && restored !== PAGE_ID && Config.AUTOSAVE.ENABLED) {
+                saveToLocalStorage().then(r => { if (r && r.status === 'success') deleteLastSession(restored); });
+            }
+        }
+    }
+    ledger.onChange(_scheduleSettle);
+
+    /** Whether a restore is running or this page's marker stands (for tests). */
+    function restoreMarker() {
+        return _marker ? { ..._marker, hold: _hold } : null;
     }
     
     /**
@@ -858,6 +1130,15 @@ const SessionManager = (function() {
         holdAutosave,
         getAutosaveSession,
         clearAutosave,
+        initLastSessions,
+        lastSessions,
+        restoreLastSession,
+        deleteLastSession,
+        didNotFinish,
+        linkDidNotFinishHere,
+        beginRestore,
+        endRestore,
+        restoreMarker,
         notifyPanelUpdate,
         onViewMayHaveChanged,
         setViewApplier,

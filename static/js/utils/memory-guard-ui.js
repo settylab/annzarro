@@ -17,10 +17,11 @@ import { CacheManager } from '../cache-manager.js';
 import {
     Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, labelCost, check, addCost, predictSubsetChange, drawNeed,
     largestFitting, headroomLine, markPending, clearPending, takeCrashed, learnedMargin, learnFromCrash,
-    formatGB, CONTEXTS_PER_PLOT
+    formatGB, CONTEXTS_PER_PLOT, DrawTurns, isHeavyDraw, shortWhy
 } from './memory-guard.js';
 import { liveWebglContexts } from './release-plot.js';
 import { probe, blockParts, largePlotParts, PROBE_MIN_BYTES } from './alloc-probe.js';
+import { PAGE_ID } from './page-id.js';
 
 export const MEMORY_EVENT = 'annzarro:memory-changed';
 
@@ -43,6 +44,12 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
     // a page that is closed or reloaded on purpose did not crash
     window.addEventListener('pagehide', () => clearPending(storage()));
 }
+
+/** What the previous page was drawing when it died ({panel, n, action, at, page}), or null. */
+export function crashedLastTime() {
+    return _crashedAtLoad;
+}
+const _crashedAtLoad = _crashed;
 
 /**
  * The action the previous page died in, if it was drawing panel `id`. It
@@ -148,6 +155,61 @@ export function drawCheck({ id, kind, n, large = false, colour = 'numeric', thre
 }
 
 /**
+ * Before a table panel loads its rows: whether `n` rows fit next to what the
+ * other panels hold (its previous rows are replaced). Tables of millions of
+ * rows hold hundreds of bytes a row on the JS heap.
+ * @param {{id: string, kind: string, n: number}} p
+ */
+export function tableCheck({ id, kind, n }) {
+    const need = panelCost({ kind, n }).peak;
+    return _check(need, held([id]), ledger.plotCount());
+}
+
+// -- heavy draws take turns ------------------------------------------------------
+
+const turns = new DrawTurns();
+const _turnOf = new Map();    // ledger token -> ticket
+
+/**
+ * Before the draw of panel `p` ({kind, n, large, colour, threeD}) is
+ * checked: a heavy draw (memory-guard.js isHeavyDraw) waits until the heavy
+ * draw before it is done, so that its check and its allocation probe see
+ * what that one holds. Resolves to a ticket (null for a light draw, which
+ * does not wait); bindTurn() hands it to the ledger token, or release it
+ * with releaseTurn() when nothing is reserved.
+ */
+export async function takeTurn(id, p) {
+    let heavy = false;
+    try {
+        heavy = isHeavyDraw(panelCost(p).peak, limits(), !!p.large);
+    } catch { /* the guard must never be why a plot is not drawn */ }
+    return heavy ? turns.take(id) : null;
+}
+/** The draw with ledger `token` holds `ticket` until it is committed or cancelled. */
+export function bindTurn(token, ticket) { if (token && ticket) _turnOf.set(token, ticket); }
+export function releaseTurn(ticket) { turns.release(ticket); }
+function _releaseToken(token) {
+    const ticket = token ? _turnOf.get(token) : null;
+    if (ticket) { _turnOf.delete(token); turns.release(ticket); }
+}
+/** Heavy draws drawing or waiting for their turn (for tests and the restore marker). */
+export function turnsInUse() { return (turns.holder() ? 1 : 0) + turns.waiting().length; }
+
+// -- out of memory: panels whose draw or read ran out ----------------------------
+
+const _outOfMemory = new Set();
+/** Panel `id`'s draw or read failed because the browser ran out of memory. */
+export function noteOutOfMemory(id) {
+    if (id === null || id === undefined) return;
+    _outOfMemory.add(String(id));
+    ledger._changed();
+}
+/** Panels whose last draw ran out of memory and that are still open. */
+export function outOfMemoryPanels() { return [..._outOfMemory]; }
+/** Draws in flight (reserved, not yet committed or cancelled). */
+export function drawsInFlight() { return ledger._drawing.size + turns.waiting().length; }
+
+/**
  * Before a plot reads the hover labels of a categorical column: `labels`
  * distinct labels of about `chars` characters over `points` points
  * (memory-guard.js labelCost). A refusal leaves the plot coloured, its
@@ -233,9 +295,14 @@ export function refusalText(result, advice) {
     return `${result.why ? result.why.charAt(0).toUpperCase() + result.why.slice(1) : 'Not enough browser memory'}. ${advice}`;
 }
 
+/** The short form for a refused panel: one line of numbers (memory-guard.js shortWhy); its ways out are buttons. */
+export function shortRefusalText(result) {
+    return shortWhy(result && result.why);
+}
+
 /** Leave a crash marker when `result` says the action comes close to the ceiling. */
 export function markIfRisky(result, action) {
-    if (result && result.risky) markPending(storage(), action);
+    if (result && result.risky) markPending(storage(), { ...action, page: PAGE_ID });
 }
 
 /** The marked action finished (or was never marked). */
@@ -249,7 +316,7 @@ export function unmark() {
  */
 export async function guarded(result, action, fn) {
     if (!result || !result.risky) return fn();
-    markPending(storage(), action);
+    markPending(storage(), { ...action, page: PAGE_ID });
     try {
         return await fn();
     } finally {
@@ -285,10 +352,20 @@ ledger.onChange(() => {
 /** A panel's draw starts; returns its token (Ledger.reserve). */
 export function reserve(id, p) { return ledger.reserve(id, p); }
 /** A panel's draw finished (that draw's token, or a cost `p`, e.g. a table's rows). */
-export function commit(id, p = null, token = null) { ledger.commit(id, p, token); _scheduleMeasure(); }
+export function commit(id, p = null, token = null) {
+    _outOfMemory.delete(String(id));
+    ledger.commit(id, p, token);
+    _releaseToken(token);
+    _scheduleMeasure();
+}
 /** A panel's draw did not happen. */
-export function cancel(id, token = null) { ledger.cancel(id, token); }
+export function cancel(id, token = null) { ledger.cancel(id, token); _releaseToken(token); }
 /** A panel was closed or cleared. */
-export function forget(id) { ledger.remove(id); _scheduleMeasure(); }
+export function forget(id) {
+    const was = _outOfMemory.delete(String(id));
+    ledger.remove(id);
+    if (was) ledger._changed();
+    _scheduleMeasure();
+}
 
 export { formatGB, CONTEXTS_PER_PLOT };

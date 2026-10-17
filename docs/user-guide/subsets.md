@@ -362,13 +362,25 @@ The numbers are estimates from measurements on a laptop ("estimated" in the dial
 line); the server's administrator can loosen or tighten them (`ui.memory`,
 {doc}`../reference/configuration`).
 
-If the tab does close while drawing a plot, the next visit restores the panel set but leaves that
-plot undrawn, with **Draw anyway** and **Subset…**, so the same plot does not close the tab
-again; the browser also becomes a little more careful in its estimates from then on.
+Several plots drawn at once (a restored session, a switch to another dataset or a larger subset
+with plots open) are drawn one after the other, each checked against what the plots before it
+hold. The first ones that fit are drawn; each later one shows **Not drawn: not enough browser
+memory**, what it needs and what is free, and the ways out: **Half the cells**, **Subset…**,
+**Close other plots** (they go to the closed list, and this plot is drawn) and **Draw anyway**.
+Draw anyway draws it past the estimate, at your risk: if the tab runs out of memory, the browser
+closes it with every panel. A table counts too: a Cell Table of millions of rows holds a few
+hundred bytes a row, and one that does not fit says **Not loaded** with the same choices.
+
+If the tab does close while drawing, nothing is drawn again by itself: the next visit (and a
+reload of that tab) shows the session on the welcome screen as **did not finish loading**, with
+**Restore with the default subset** beside **Restore** ({ref}`last-sessions`). A plot whose draw
+the guard had marked as risky also waits for **Draw anyway** when that session is restored. The
+browser becomes a little more careful in its estimates from then on.
 
 When a read runs out of memory anyway (the estimate was short, or another tab took the memory),
 the panel says so in place of the engine's error: "the browser ran out of memory -- Close a plot,
-or show fewer cells (a smaller subset), and try again", with **Half the cells** and **Subset…**.
+or show fewer cells (a smaller subset), and try again", with **Half the cells**, **Subset…** and
+**Close other plots**. A reload then does not draw the same panels again by itself.
 **Half the cells** keeps the subset's seed, balance and filter with half its cells, and that size
 is then the one that [follows you to other datasets](#subset-size-carried).
 

@@ -530,6 +530,94 @@ export class Ledger {
     }
 }
 
+// -- heavy draws, one at a time ------------------------------------------------------
+
+/**
+ * A draw that needs at least this share of a ceiling at its peak is HEAVY,
+ * and so is every large-plot draw: heavy draws take turns (DrawTurns).
+ */
+export const HEAVY_SHARE = 0.05;
+/** A turn held longer than this lets the next draw go (a stalled read must not hold every other panel). */
+export const TURN_MAX_MS = 180000;
+
+/**
+ * Whether a draw of `peak` is heavy against `limits` (readLimits).
+ * @param {Object} peak - {heap, off}: what the draw needs at its peak
+ * @param {Object} limits
+ * @param {boolean} [large] - large-plot mode
+ */
+export function isHeavyDraw(peak, limits, large = false) {
+    if (large) return true;
+    if (!peak || !limits) return false;
+    if (peak.heap >= HEAVY_SHARE * limits.heap.bytes) return true;
+    return limits.total.bytes !== null && peak.heap + peak.off >= HEAVY_SHARE * limits.total.bytes;
+}
+
+/**
+ * Heavy draws, one at a time and in the order they asked. Panels drawn at
+ * once (a restored panel set, a dataset switch, a subset change) were each
+ * checked before any of them held its buffers: every check passed, the
+ * allocation probe of each found the memory free, and together they ran the
+ * tab out of memory (four 95.6M-cell plots: two drawn, two failed in
+ * Float64Array.from, and a smaller browser loses the tab). Drawn in turn,
+ * each check and probe sees what the plots before it hold, so the later
+ * ones are refused before they start.
+ */
+export class DrawTurns {
+    constructor({ now = () => Date.now(), maxMs = TURN_MAX_MS } = {}) {
+        this._now = now;
+        this._maxMs = maxMs;
+        this._queue = [];      // waiting: {ticket, grant}
+        this._holder = null;   // {ticket, since}
+        this._seq = 0;
+    }
+
+    /** The ticket holding the turn, or null (an expired one counts as none). */
+    holder() {
+        if (this._holder && this._now() - this._holder.since > this._maxMs) this._holder = null;
+        return this._holder ? this._holder.ticket : null;
+    }
+
+    /** Tickets waiting, in order. */
+    waiting() { return this._queue.map(w => w.ticket); }
+
+    /**
+     * Wait for the turn. Resolves to a ticket; pass it to release() once the
+     * draw is done (drawn, refused, failed or aborted).
+     * @param {*} [label] - what the ticket is for (a panel id), kept on it
+     */
+    take(label = null) {
+        const ticket = { n: ++this._seq, label };
+        return new Promise(resolve => {
+            this._queue.push({ ticket, grant: () => resolve(ticket) });
+            this._next();
+        });
+    }
+
+    /** The draw holding `ticket` is done, or a waiting one is no longer wanted; the next one goes. */
+    release(ticket) {
+        if (!ticket) return;
+        if (this._holder && this._holder.ticket === ticket) this._holder = null;
+        else this._queue = this._queue.filter(w => w.ticket !== ticket);
+        this._next();
+    }
+
+    _next() {
+        if (this.holder() || !this._queue.length) {
+            // an expired holder is noticed when the next draw asks; check again when it would expire
+            if (this._holder && this._queue.length && !this._timer) {
+                this._timer = setTimeout(() => { this._timer = null; this._next(); },
+                    Math.max(0, this._maxMs - (this._now() - this._holder.since)) + 1);
+                if (this._timer && typeof this._timer.unref === 'function') this._timer.unref();
+            }
+            return;
+        }
+        const w = this._queue.shift();
+        this._holder = { ticket: w.ticket, since: this._now() };
+        w.grant();
+    }
+}
+
 // -- the check ---------------------------------------------------------------------
 
 /**
@@ -647,6 +735,25 @@ export function predictSubsetChange(n, panels, threshold, model = DEFAULT_MODEL,
 
 /** What the guard advises when an action needs more memory than the browser has. */
 export const MEMORY_ADVICE = 'Close a plot, or show fewer cells (a smaller subset).';
+
+/**
+ * The one line of numbers a refused panel shows, from check()'s `why`:
+ * "Needs ~7 MB; 4 MB free with 3 plots open." The ceiling and whether it
+ * was measured are left to the tooltip, and the advice to the panel's
+ * action buttons. A JS-heap refusal keeps "of JS memory": that ceiling is
+ * not the computer's memory.
+ */
+export function shortWhy(why) {
+    const s = String(why || 'not enough browser memory')
+        .replace(/ of browser JS memory/, ' of JS memory')
+        .replace(/ of browser memory/, '')
+        .replace(/ \(of [^)]*\)\s*$/, '')
+        .replace(/\.$/, '');
+    return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
+}
+
+/** What "Draw anyway" risks, said beside it. */
+export const DRAW_ANYWAY_RISK = 'Draw anyway may run the tab out of memory; the browser then closes it, with every panel.';
 
 /** The same, after a read or a draw already ran out: the action is worth trying again. */
 export const OUT_OF_MEMORY_ADVICE = 'Close a plot, or show fewer cells (a smaller subset), and try again.';

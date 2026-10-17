@@ -664,12 +664,13 @@ ui:
           default: Autosave
         show_in_list:
           type: boolean
-          description: Whether to show autosave in session lists
-          default: false
-        auto_restore:
-          type: boolean
-          description: Whether to automatically restore autosave on startup
+          description: List the last sessions (up to 3) first, on the welcome screen and in Load Panel Set
           default: true
+        auto_restore:
+          type: [string, boolean]
+          enum: [reload, always, never]
+          description: "When a page restores the autosave by itself: reload (a reload of the tab; a fresh visit lists it first), always (every visit) or never; true and false mean always and never. A session that did not finish loading is never restored by itself"
+          default: reload
   required:
     - defaults
 
