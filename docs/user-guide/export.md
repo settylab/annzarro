@@ -8,7 +8,7 @@ recomputed from the store in Python.
 
 ## Quick PNG from the camera button
 
-1. Move the pointer over the plot. Its toolbar appears at the top left (the top right when the legend or colour bar is on the left).
+1. Move the pointer over the plot. Its toolbar appears at the top right of the plotting area.
 2. Click the camera, **Download plot as a png** (1).
 
 ```{figure} ../_static/screens/user-guide/export-modebar.png

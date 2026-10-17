@@ -45,7 +45,7 @@ import { forget } from './memory-guard-ui.js';
 import { withShownCamera } from './scene-camera.js';
 import { installGlColors } from './scattergl-calc.js';
 import { withLegendInvariant } from './legend-entries.js';
-import { watchModebarSide } from './modebar-side.js';
+import { watchModebarAnchor } from './modebar-anchor.js';
 
 /** Class of the status strip; styled in static/css/styles.css. */
 const STRIP_CLASS = 'plot-status';
@@ -659,7 +659,7 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
         withCoverageExportButton(config)
     );
     watchContextLoss(plotContainer);
-    watchModebarSide(plotContainer);
+    watchModebarAnchor(plotContainer);
     // long axis / colour-bar titles: shortened to fit, full text on hover
     keepTitlesFitted(plotContainer);
     fitToContainer(plotContainer);

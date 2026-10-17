@@ -291,11 +291,11 @@ hover label with two obs columns.
 
 ## Zoom, pan and click
 
-The toolbar at the top left of a plot (it appears when the pointer is over the plot) has, from
-left to right: zoom, pan, zoom in, zoom out, reset axes and download as PNG ({doc}`export`). 3D
-plots have orbit and turntable rotation instead of pan. The toolbar sits on the side away from the
-legend and colour bar, so it moves to the top right when either is placed on the left
-(**Legend Position** and the colour bar's position in {doc}`plot-options`). Drag in a 2D plot to zoom into a rectangle;
+The toolbar in the top right corner of a plot's axes (it appears when the pointer is over the plot)
+has, from left to right: zoom, pan, zoom in, zoom out, reset axes and download as PNG
+({doc}`export`). 3D plots have orbit and turntable rotation instead of pan. It sits inside the
+plotting area, so a legend placed beside the plot never covers it. Drag in a 2D plot to zoom into a
+rectangle;
 double-click to zoom out to all points. The current zoom range (or 3D camera) is stored in
 the panel's settings.
 
