@@ -11,9 +11,9 @@ time.
 ```{figure} ../_static/screens/user-guide/plot-options-menu.png
 :class: screenshot
 :width: 35%
-:alt: The Plot Options menu with nine groups: Presets, Appearance, Axes and ticks, Points, Legend and colour bar, Text, Margins, Export (open, with the format buttons and size), Apply to other panels.
+:alt: The Plot Options menu with ten groups: Presets, Appearance, Axes and ticks, Points, Focused cell, Legend and colour bar, Text, Margins, Export (open, with the format buttons and size), Apply to other panels.
 
-Plot Options as it opens: every group starts folded except Export.
+Plot Options with its ten groups. Every group starts folded except Export.
 ```
 
 ## Recipes
