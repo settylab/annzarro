@@ -106,10 +106,11 @@ def _shot(page, name, pid=None):
     if not SHOTS:
         return
     os.makedirs(SHOTS, exist_ok=True)
-    if pid:
-        page.locator(f'.tile[data-tile-id="{pid}"]').screenshot(path=os.path.join(SHOTS, name + ".png"))
-    else:
-        page.screenshot(path=os.path.join(SHOTS, name + ".png"))
+    page.wait_for_timeout(500)                  # the menu's fade-in
+    where = page.locator(f'.tile[data-tile-id="{pid}"]') if pid else page
+    where.screenshot(path=os.path.join(SHOTS, name + ".png"))
+    if not pid and page.query_selector(".aesthetics-popover"):
+        page.locator(".aesthetics-popover").screenshot(path=os.path.join(SHOTS, name + "-crop.png"))
 
 
 def test_a_link_without_the_keys_draws_todays_highlight(page, server):
