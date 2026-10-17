@@ -51,7 +51,8 @@ button (not numbered in the picture). It opens a dialog with the dataset's attri
 licence, authors, citation with a copy button, DOI, source, contact) under **About**, its README
 under **README** and its AnnData structure (cells and genes, the obs and var columns with their types,
 the keys of obsm, layers and the rest with their shapes, the `uns` tree) under **Structure**. Each tab
-is read when you first open it. What the dataset's owner writes there is described in
+is read when you first open it. A search box at the top of **Structure** filters it as you type, with a
+regular-expression switch (`.*`) and a case switch (`Aa`). What the dataset's owner writes there is described in
 {doc}`../deployment/dataset-attribution`; a dataset that records nothing says so.
 
 A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).

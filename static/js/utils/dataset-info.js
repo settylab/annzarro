@@ -12,6 +12,7 @@
  * made when its address is http(s) or mailto, whatever the server said.
  */
 import { renderSafeMarkdown } from './safe-markdown.js';
+import { mountStructureSearch } from './structure-search.js';
 
 export const PARTS = ['about', 'readme', 'structure'];
 
@@ -320,7 +321,8 @@ function swatch(doc, colour) {
     return node;
 }
 
-function table(doc, headers, rows) {
+/** A table of `rows`; when `items` is given, each row is added to it as a searchable item (see structure-search.js). */
+function table(doc, headers, rows, items = null) {
     const t = el(doc, 'table', 'table table-sm dsi-table');
     const head = el(doc, 'thead');
     const tr = el(doc, 'tr');
@@ -330,19 +332,25 @@ function table(doc, headers, rows) {
     const body = el(doc, 'tbody');
     for (const row of rows) {
         const r = el(doc, 'tr');
+        const fields = [];
         row.cells.forEach((cell, i) => {
             const c = el(doc, i === 0 ? 'th' : 'td');
             if (i === 0) c.appendChild(name(doc, cell)); else c.textContent = cell;
+            fields.push({ el: i === 0 ? c.firstChild.firstChild : c, text: String(cell) });
             r.appendChild(c);
         });
         body.appendChild(r);
+        const item = { rows: [r], fields };
+        if (items) items.push(item);
         if (row.extra) {
+            for (const bdi of row.extra.querySelectorAll('.dsi-label bdi')) fields.push({ el: bdi, text: bdi.textContent });
             const more = el(doc, 'tr', 'dsi-extra');
             const td = el(doc, 'td');
             td.colSpan = headers.length;
             td.appendChild(row.extra);
             more.appendChild(td);
             body.appendChild(more);
+            item.rows.push(more);
         }
     }
     t.appendChild(body);
@@ -386,15 +394,23 @@ function more(doc, shown, total) {
     return total > shown ? el(doc, 'p', 'dsi-note', `Showing ${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}.`) : null;
 }
 
-function unsTree(doc, node) {
+function unsTree(doc, node, items = null, parent = null, trail = []) {
     const ul = el(doc, 'ul', 'dsi-tree');
     for (const child of node.children || []) {
         const li = el(doc, 'li');
-        li.appendChild(name(doc, child.name));
-        const muted = (text) => li.appendChild(el(doc, 'span', 'dsi-muted', text));
+        const label = name(doc, child.name);
+        li.appendChild(label);
+        const path = [...trail, child.name];
+        const item = { rows: [li], fields: [{ el: label.firstChild, text: String(child.name) }], path: path.join('/'), parent };
+        if (items) items.push(item);
+        const muted = (text) => {
+            const span = li.appendChild(el(doc, 'span', 'dsi-muted', text));
+            item.fields.push({ el: span, text });
+            return span;
+        };
         if (child.type === 'group') {
             muted(` group, ${plural(child.total, 'key', 'keys')}`);
-            if (child.children && child.children.length) li.appendChild(unsTree(doc, child));
+            if (child.children && child.children.length) li.appendChild(unsTree(doc, child, items, item, path));
             else if (child.total) muted(' …');
         } else if (child.type === 'encoded') {
             const shape = shapeLabel(child.shape);
@@ -404,7 +420,8 @@ function unsTree(doc, node) {
             muted(` ${[child.dtype, shape ? `(${shape})` : 'scalar'].filter(Boolean).join(' ')}`);
             if (child.value !== undefined) {
                 li.appendChild(doc.createTextNode(' = '));
-                li.appendChild(el(doc, 'span', 'dsi-value', child.value));
+                const value = li.appendChild(el(doc, 'span', 'dsi-value', child.value));
+                item.fields.push({ el: value, text: String(child.value) });
             }
             if (child.colors) {
                 const holder = el(doc, 'span', 'dsi-labels');
@@ -433,6 +450,13 @@ function capsLine(s) {
 export function drawStructure(container, structure, { compact = false } = {}) {
     const doc = container.ownerDocument;
     const s = structure || {};
+    const index = [];                    // what the search box filters (structure-search.js)
+    let partial = false;
+    const track = (details, open) => {
+        const entry = { details, open, items: [] };
+        index.push(entry);
+        return entry.items;
+    };
     const count = (n) => (n === null || n === undefined ? '?' : Number(n).toLocaleString('en-US'));
     container.appendChild(el(doc, 'p', 'dsi-summary', `${count(s.n_obs)} observations (cells) × ${count(s.n_vars)} variables (genes)`));
     const x = el(doc, 'p', 'dsi-x');
@@ -449,10 +473,11 @@ export function drawStructure(container, structure, { compact = false } = {}) {
         const d = section(doc, label, t.total, !compact && t.total <= 40);
         d.dataset.section = key;
         if (t.index) d.appendChild(el(doc, 'p', 'dsi-note', `Index: ${t.index}${t.index_dtype ? `, ${t.index_dtype}` : ''}`));
-        if (t.columns.length) d.appendChild(table(doc, ['Column', 'Type'], t.columns.map((c) => ({ cells: [c.name, columnType(c)], extra: categoryDetail(doc, c) }))));
+        const items = track(d, d.open);
+        if (t.columns.length) d.appendChild(table(doc, ['Column', 'Type'], t.columns.map((c) => ({ cells: [c.name, columnType(c)], extra: categoryDetail(doc, c) })), items));
         else d.appendChild(el(doc, 'p', 'dsi-muted', 'No columns.'));
         const note = more(doc, t.columns.length, t.total);
-        if (note) d.appendChild(note);
+        if (note) { d.appendChild(note); partial = true; }
         container.appendChild(d);
     }
     for (const [slot, label] of [['obsm', 'obsm: cell embeddings'], ['varm', 'varm: gene matrices'], ['obsp', 'obsp: cell-cell graphs'],
@@ -461,9 +486,9 @@ export function drawStructure(container, structure, { compact = false } = {}) {
         if (!t || !t.total) continue;
         const d = section(doc, label, t.total, !compact);
         d.dataset.section = slot;
-        d.appendChild(table(doc, ['Key', 'Shape', 'Type'], t.items.map((i) => ({ cells: [i.name, shapeLabel(i.shape), memberType(i)] }))));
+        d.appendChild(table(doc, ['Key', 'Shape', 'Type'], t.items.map((i) => ({ cells: [i.name, shapeLabel(i.shape), memberType(i)] })), track(d, d.open)));
         const note = more(doc, t.items.length, t.total);
-        if (note) d.appendChild(note);
+        if (note) { d.appendChild(note); partial = true; }
         container.appendChild(d);
     }
     if (s.raw) {
@@ -473,23 +498,26 @@ export function drawStructure(container, structure, { compact = false } = {}) {
         if (s.raw.X) bits.push(`X ${[shapeLabel(s.raw.X.shape), memberType(s.raw.X)].filter(Boolean).join(', ')}`);
         bits.push(plural(s.raw.var_columns || 0, 'var column', 'var columns'));
         if (s.raw.varm_keys && s.raw.varm_keys.length) bits.push(`varm: ${s.raw.varm_keys.join(', ')}`);
-        d.appendChild(el(doc, 'p', null, bits.join('; ')));
+        const line = d.appendChild(el(doc, 'p', null, bits.join('; ')));
+        track(d, d.open).push({ rows: [], fields: [{ el: line, text: bits.join('; ') }] });
         d.appendChild(el(doc, 'p', 'dsi-note', 'AnnZarro plots the genes of X, not of raw.'));
         container.appendChild(d);
     }
     const uns = s.uns || { children: [], total: 0 };
     const d = section(doc, 'uns: unstructured', uns.total, !compact && uns.total <= 40);
     d.dataset.section = 'uns';
-    if (uns.children && uns.children.length) d.appendChild(unsTree(doc, uns));
+    const unsItems = track(d, d.open);
+    if (uns.children && uns.children.length) d.appendChild(unsTree(doc, uns, unsItems));
     else d.appendChild(el(doc, 'p', 'dsi-muted', 'Empty.'));
-    if (uns.capped) d.appendChild(el(doc, 'p', 'dsi-note', 'The tree is cut here; the dataset has more.'));
+    if (uns.capped) { d.appendChild(el(doc, 'p', 'dsi-note', 'The tree is cut here; the dataset has more.')); partial = true; }
     container.appendChild(d);
     if (s.other && s.other.length) {
         const o = section(doc, 'other groups', s.other.length, true);
         o.dataset.section = 'other';
-        o.appendChild(table(doc, ['Name', 'Type'], s.other.map((g) => ({ cells: [g.name, g.encoding] }))));
+        o.appendChild(table(doc, ['Name', 'Type'], s.other.map((g) => ({ cells: [g.name, g.encoding] })), track(o, o.open)));
         container.appendChild(o);
     }
     const caps = capsLine(s);
     if (caps) container.appendChild(el(doc, 'p', 'dsi-note dsi-caps', caps));
+    if (!compact) mountStructureSearch(container, index, { partial });
 }

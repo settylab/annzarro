@@ -476,3 +476,174 @@ def test_structure_shows_each_element_and_the_hostile_names_stay_text(opened):
     _shot(page, "dialog-structure-rich-1440-light.png")
     assert page.evaluate(PWN)
     assert not s.errors, s.errors
+
+
+# ---- Structure: search ---------------------------------------------------------------------------------------
+
+def _structure(opened, name, **kwargs):
+    go, _data = opened
+    s = go(name, **kwargs)
+    _open_dialog(s.page)
+    _tab(s.page, "structure")
+    s.page.wait_for_function("() => document.querySelector('#dsi-pane-structure .dsi-search-input')")
+    return s
+
+
+def _search(page, text):
+    page.fill("#dsi-pane-structure .dsi-search-input", text)
+    page.wait_for_timeout(300)               # the filter waits for the typing to pause
+
+
+def _visible_rows(page, section):
+    return page.evaluate(
+        "(k) => [...document.querySelectorAll(`#dsi-pane-structure details[data-section=${k}] tbody tr:not([hidden]):not(.dsi-extra)`)]"
+        ".map(r => r.querySelector('th').innerText)", section)
+
+
+def test_search_finds_a_column_a_category_label_and_a_nested_uns_key(opened):
+    s = _structure(opened, "liver.zarr")
+    page = s.page
+    pane = page.locator("#dsi-pane-structure")
+    status = pane.locator(".dsi-search-status")
+    assert status.get_attribute("aria-live") == "polite"
+    assert pane.locator("label.visually-hidden").inner_text() == "Search the structure"
+    # a column name
+    _search(page, "total_")
+    assert _visible_rows(page, "obs") == ["total_counts"]
+    assert pane.locator("details[data-section=obs] mark").first.inner_text() == "total_"
+    assert status.inner_text() == "1 match"
+    assert pane.locator("details[data-section=uns]").is_hidden(), "sections without a match are hidden"
+    # a category label, found in a column whose name does not match
+    _search(page, "kupffer")
+    assert _visible_rows(page, "obs") == ["cell_type"]
+    assert pane.locator("details[data-section=obs] .dsi-label mark").inner_text() == "Kupffer"
+    # a nested uns key keeps the path to it and hides its siblings
+    _search(page, "license")
+    uns = pane.locator("details[data-section=uns]")
+    assert uns.evaluate("e => e.open")
+    names = uns.evaluate("e => [...e.querySelectorAll('li:not([hidden]) > .dsi-name')].map(n => n.innerText)")
+    assert names[0] == "annzarro" and "license" in names and "title" not in names, names
+    assert uns.locator("mark").first.inner_text() == "license"
+    assert "match" in status.inner_text()
+    _shot(page, "structure-search-1440-light.png")
+    assert not s.errors, s.errors
+
+
+def test_search_opens_collapsed_sections_counts_per_section_and_says_no_matches(opened):
+    s = _structure(opened, "rich.zarr")
+    page = s.page
+    pane = page.locator("#dsi-pane-structure")
+    assert not pane.locator("details[data-section=raw]").evaluate("e => e.open")
+    _search(page, "var column")
+    assert pane.locator("details[data-section=raw]").evaluate("e => e.open"), "a section that holds a match opens"
+    assert pane.locator("details[data-section=raw] .dsi-hits").inner_text().strip(" ·") == "1 match"
+    _search(page, "")
+    assert not pane.locator("details[data-section=raw]").evaluate("e => e.open"), "and closes again when the search is cleared"
+    _search(page, "x")
+    total = pane.locator(".dsi-search-status").inner_text()
+    assert total.endswith("matches")
+    for section in pane.locator("details.dsi-section:not([hidden])").all():
+        assert section.locator("summary .dsi-hits").inner_text().strip(" ·").endswith(("match", "matches"))
+        assert section.evaluate("e => e.open")
+    _search(page, "zzzzqqq")
+    assert pane.locator(".dsi-search-status").inner_text() == "No matches"
+    assert pane.locator("details.dsi-section:not([hidden])").count() == 0
+    assert not s.errors, s.errors
+
+
+def test_search_regex_and_case_switches_persist(opened):
+    s = _structure(opened, "liver.zarr")
+    page = s.page
+    pane = page.locator("#dsi-pane-structure")
+    regex = pane.locator("[data-toggle=regex]")
+    assert regex.get_attribute("aria-pressed") == "false"
+    _search(page, "^cell_.*e$")
+    assert pane.locator(".dsi-search-status").inner_text() == "No matches", "a regex is literal while the switch is off"
+    regex.click()
+    assert regex.get_attribute("aria-pressed") == "true"
+    assert _visible_rows(page, "obs") == ["cell_type"]
+    case = pane.locator("[data-toggle=case]")
+    _search(page, "^CELL_")
+    assert _visible_rows(page, "obs") == ["cell_type"]
+    case.click()
+    assert pane.locator(".dsi-search-status").inner_text() == "No matches"
+    # the switches are remembered by this browser
+    page.reload()
+    page.wait_for_function("() => !!document.getElementById('dataset-info')")
+    assert page.evaluate("() => JSON.parse(localStorage.getItem('annzarro.structure-search'))") == {"regex": True, "matchCase": True}
+    assert not s.errors, s.errors
+
+
+def test_search_with_an_invalid_regex_shows_the_error_and_keeps_the_last_result(opened):
+    s = _structure(opened, "liver.zarr")
+    page = s.page
+    pane = page.locator("#dsi-pane-structure")
+    pane.locator("[data-toggle=regex]").click()
+    _search(page, "^cell_")
+    assert _visible_rows(page, "obs") == ["cell_type"]
+    _search(page, "^cell_(")
+    error = pane.locator(".dsi-search-error")
+    assert error.is_visible() and error.inner_text().startswith("Invalid pattern")
+    assert pane.locator(".dsi-search-input").get_attribute("aria-invalid") == "true"
+    assert _visible_rows(page, "obs") == ["cell_type"], "the last valid result stays"
+    _search(page, "(a+)+$")
+    assert "too slow" in error.inner_text()
+    _search(page, "^cell_")
+    assert error.is_hidden()
+    assert not s.errors, s.errors
+
+
+def test_search_escape_clears_and_the_keys_focus_the_box(opened):
+    s = _structure(opened, "liver.zarr")
+    page = s.page
+    pane = page.locator("#dsi-pane-structure")
+    before = pane.locator("details.dsi-section:not([hidden])").count()
+    obs_open = pane.locator("details[data-section=obs]").evaluate("e => e.open")
+    box = pane.locator(".dsi-search-input")
+    _search(page, "kupffer")
+    assert pane.locator("details.dsi-section:not([hidden])").count() < before
+    box.press("Escape")
+    assert box.input_value() == ""
+    assert page.locator("#dataset-info-modal").is_visible(), "the first Escape clears, it does not close"
+    assert pane.locator("details.dsi-section:not([hidden])").count() == before
+    assert pane.locator("mark").count() == 0
+    assert pane.locator(".dsi-hits").count() == 0
+    assert pane.locator("details[data-section=obs]").evaluate("e => e.open") == obs_open
+    assert pane.locator(".dsi-search-status").inner_text() == ""
+    page.locator("#dsi-pane-structure .dsi-summary").click()
+    page.keyboard.press("/")
+    assert page.evaluate("() => document.activeElement.classList.contains('dsi-search-input')")
+    page.locator("#dsi-pane-structure .dsi-summary").click()
+    page.keyboard.press("Control+f")
+    assert page.evaluate("() => document.activeElement.classList.contains('dsi-search-input')")
+    box.press("Escape")
+    page.keyboard.press("Escape")
+    page.locator("#dataset-info-modal").wait_for(state="hidden")
+    assert not s.errors, s.errors
+
+
+def test_search_marks_a_hostile_name_as_text(opened):
+    s = _structure(opened, "rich.zarr")
+    page = s.page
+    pane = page.locator("#dsi-pane-structure")
+    _search(page, "onerror=alert")
+    assert pane.locator("img, b, i, script, svg, iframe").count() == 0
+    marks = pane.locator("mark")
+    assert marks.count() >= 2
+    assert all(t == "onerror=alert" for t in marks.all_inner_texts())
+    assert MARKER in pane.locator("details[data-section=obs]").inner_text()
+    assert page.evaluate("() => window.pwned === undefined && !document.querySelector('#dsi-pane-structure img')")
+    assert not s.errors, s.errors
+
+
+@pytest.mark.parametrize("width,scheme", [(1440, "dark"), (390, "light"), (390, "dark")])
+def test_search_fits_a_phone_and_both_themes(opened, width, scheme):
+    s = _structure(opened, "liver.zarr", width=width, height=900 if width > 400 else 800, scheme=scheme)
+    page = s.page
+    _search(page, "e")
+    overflow = page.evaluate("() => { const b = document.querySelector('#dataset-info-modal .modal-body'); return b.scrollWidth - b.clientWidth; }")
+    assert overflow <= 1, overflow
+    box = page.locator("#dsi-pane-structure .dsi-search").bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= width
+    _shot(page, f"structure-search-{width}-{scheme}.png")
+    assert not s.errors, s.errors
