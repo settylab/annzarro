@@ -9,10 +9,12 @@
  * services). Strict readings of the ePrivacy rules ask for that on public sites
  * (docs/deployment/public-site.md, "Storage in the browser").
  *
- * The keys: `Config.AUTOSAVE.STORAGE_KEY` (annzarro_autosave) and the recents
- * (annzarro.recents:<origin>|<user>, utils/dataset-recents.js).
+ * The keys: `Config.AUTOSAVE.STORAGE_KEY` (annzarro_autosave), the earlier sessions and the
+ * restore marker (utils/last-sessions.js) and the recents (annzarro.recents:<origin>|<user>,
+ * utils/dataset-recents.js).
  */
 import { RECENTS_KEY_PREFIX, LEGACY_KEY_PREFIX } from './dataset-recents.js';
+import { HISTORY_KEY, RESTORING_KEY } from './last-sessions.js';
 
 /** Whether the site lets convenience storage persist between visits (the default). */
 export function persistentConvenience(serverConfig) {
@@ -38,7 +40,8 @@ export function dropPersistentConvenience(serverConfig, autosaveKey, win = globa
         const keys = [];
         for (let i = 0; i < storage.length; i++) keys.push(storage.key(i));
         for (const key of keys) {
-            if (key === autosaveKey || key.startsWith(RECENTS_KEY_PREFIX) || key.startsWith(LEGACY_KEY_PREFIX)) {
+            if (key === autosaveKey || key === HISTORY_KEY || key === RESTORING_KEY
+                || key.startsWith(RECENTS_KEY_PREFIX) || key.startsWith(LEGACY_KEY_PREFIX)) {
                 storage.removeItem(key);
                 removed.push(key);
             }

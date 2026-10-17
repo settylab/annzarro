@@ -350,12 +350,13 @@ plot.
 ## The browser remembers your last layout
 
 AnnZarro autosaves the view (dataset, focus, layout and every panel's settings) to the browser's
-local storage every 10 seconds and when the page is closed. On your next visit to the same server
-it reopens that view as it was. This copy lives only in
-your browser. To keep a layout or give it to someone else, use {doc}`panel-sets` or
-{doc}`share-links`. Opening a share link always wins over the autosaved layout. The interval
-and the restore behaviour are set under `ui.autosave` in the configuration
-({doc}`../reference/configuration`).
+local storage every 10 seconds and when the page is closed. A reload of the tab reopens that view
+as it was. A new visit (the server's address typed or bookmarked, a new tab, the desktop app's
+start) draws nothing by itself: the welcome screen lists the last session first, with
+**Restore** ({ref}`last-sessions`). This copy lives only in your browser. To keep a layout or give
+it to someone else, use {doc}`panel-sets` or {doc}`share-links`. Opening a share link always wins
+over the autosaved layout. The interval and the restore behaviour are set under `ui.autosave` in
+the configuration ({doc}`../reference/configuration`).
 
 ```{admonition} What happens on the server
 :class: note

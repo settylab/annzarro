@@ -173,10 +173,47 @@ case ({doc}`../deployment/hosting-checklist`).
 | Panels and settings | yes | yes | yes |
 | Split layout and sizes | yes, opened by **Load** | yes | yes |
 | Focused cell and gene, cell subset | yes | yes | yes |
-| Reopens as | the full layout, panels open (**Load**) | the full layout, panels open | the full layout, panels open, on your next visit |
+| Reopens as | the full layout, panels open (**Load**) | the full layout, panels open | the full layout, panels open, by a reload of the tab or **Restore** |
 
-The autosave opens the dataset it was saved on when the page starts. When a dataset is open
+The autosave opens the dataset it was saved on when a reload restores it. When a dataset is open
 already it never switches it: its panels open on the dataset that is open.
+
+(last-sessions)=
+
+## Last sessions
+
+A new visit does not redraw the last session by itself: a panel set kept on "All cells" and moved
+to a very large dataset could run the browser out of memory, and a page that redrew it at every
+start could never be opened again. The welcome screen's **Load Saved Panel Set** and the **Load
+Panel Set** dialog list the last sessions first, before the saved panel sets:
+
+- **Last session (autosaved 14:32)**, then up to two **Earlier session** entries: the sessions of
+  earlier visits and other tabs, newest first, each view once. The date is added when it was not
+  today.
+- Under the label: the dataset and the number of panels, and the panels' icons.
+- **Restore** opens it as it was saved, on its own dataset. The trash icon forgets it.
+- A session that **did not finish loading** says so: the tab ended while it was drawn (most likely
+  out of memory), or a plot ran out of browser memory. It offers **Restore with the default
+  subset**, which opens it on the dataset's default subset instead of the cells it was saved with
+  ("All cells", say), so fewer cells are drawn.
+
+Nothing is drawn until you press one of them. Once restored, the session continues as the open
+view and is no longer listed apart.
+
+When a page restores the autosave by itself is set by `ui.autosave.auto_restore`
+({doc}`../reference/configuration`):
+
+| `auto_restore` | A reload of the tab, Back or Forward | A new visit (address typed, bookmark, new tab, the desktop app's start) |
+|---|---|---|
+| `reload` (the default) | restores the autosave | lists it first, waits for **Restore** |
+| `always` | restores it | restores it |
+| `never` | lists it | lists it |
+
+Whatever the setting, a session that did not finish loading is never restored by itself, and a
+reload of the tab that ended does not redraw the view in its address either. A link with a view
+(`?dataset_path=...#view=...`) opens what it names; the in-app refresh button (next to the
+dataset) reads the dataset again and keeps the panels open, as before. AnnZarro tells a reload
+from a new visit by the tab's own history entry, which holds a random id of the page.
 
 ```{admonition} What happens on the server
 :class: note
@@ -189,7 +226,8 @@ server never writes to the dataset itself.
 
 ## Close all panels and start over
 
-Because the browser autosaves the layout, the next visit brings it back. **Close all** in the
+Because the browser autosaves the layout, a reload brings it back and the next visit offers it.
+**Close all** in the
 header (next to Share Link; icon only on narrower windows, tooltip "Close all panels") starts over.
 It asks "Close all panels?" and offers **Close all** or **Cancel**. Close all closes every open
 panel; each goes to the closed list under Duplicate or Reopen Panel, exactly as with the panel's
@@ -199,7 +237,8 @@ The dialog has one tick box, off by default: **Also clear everything this site s
 browser and reload as a first visit**. Ticked, Close all also clears this site's local storage
 (which holds the autosave), session storage, IndexedDB databases, Cache Storage and service-worker
 registrations, then reloads the bare address, without `#view` or `?dataset_path`. The app starts
-as on a first visit: nothing is restored from the autosave, and the closed list is gone too.
+as on a first visit: nothing is restored from the autosave, no last session is listed, and the
+closed list is gone too.
 
 The tick box is a safe way to get a full refresh. Under it the dialog says so: it is a fresh start
 for this browser only, it forgets the remembered layout and settings, and nothing is deleted. Saved

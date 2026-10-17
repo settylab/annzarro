@@ -16,6 +16,7 @@ import { setupTableEventListeners } from './table-utilities/listeners.js';
 import { syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { assignKnownSettings, configOf } from '../utils/panel-settings.js';
 import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-guard-ui.js';
+import { tableMayLoad } from './table-utilities/table-memory.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -155,6 +156,13 @@ const GeneTablePanel = (function() {
             // the one of the update that asks for it.
             signal = beginLoad(_tableContainer, 'table', signal);
             try {
+                // will its rows fit next to the other panels? (utils/memory-guard-ui.js)
+                if (!tableMayLoad(_tableContainer, _id, 'gene-table', () => {
+                    if (!_dataTable) return;
+                    freezeTableState(_settings);
+                    _dataTable.destroy();
+                    _dataTable = null;
+                })) return;
                 // Other cells of the same table: the rows are swapped into
                 // the table shown, so it does not blank and keeps its state
                 let preloaded = null;

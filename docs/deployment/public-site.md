@@ -78,13 +78,17 @@ unasked and can be set to session-only (`site.storage.persistent_convenience: fa
 | `annzarro.subsetSize:<origin>\|<user>` | The chosen subset size | Choice |
 | `annzarro.structure-search` | The regex and case switches of the Dataset information search | Choice |
 | `annzarro:external-ok` | The visitor's "Always" or "Never" for each external service of the Gene Set panel | Choice (it stores a consent decision) |
-| `annzarro_autosave` (`ui.autosave.storage_key`) | The panel layout, dataset and focus, restored at the next visit | Convenience |
+| `annzarro_autosave` (`ui.autosave.storage_key`) | The panel layout, dataset and focus, offered (or restored) at the next visit | Convenience |
+| `annzarro_last_sessions` | Earlier autosaved sessions (up to three), offered as last sessions | Convenience |
+| `annzarro_restoring` | A marker that a session was being restored, so one that did not finish (the tab ran out of memory) is not restored by itself again | Technical |
 | `annzarro.recents:<origin>\|<user>` | Recently opened dataset paths | Convenience |
 | `annzarro.recentDatasets:<origin>` | The older, per-origin form of the recents list, moved to the key above at first use | Convenience |
 | `annzarro_memory_pending`, `annzarro_memory_margin` | A marker that a heavy action was under way and the memory margin learned from it, so a tab that ran out of memory is not repeated | Technical |
 
 "Close all panels" with its checkbox clears all of it, and the browser's own settings do too.
-Nothing is written to session storage, IndexedDB, Cache Storage or a service worker.
+Nothing is written to session storage, IndexedDB, Cache Storage or a service worker. The tab's
+own history entry holds a random id of the page that is not kept anywhere else, so that a reload of
+the tab is told apart from a fresh visit.
 A test lists these keys and fails when one is added without being described here.
 
 Under the reading of the ePrivacy rules that most authorities share, choices the visitor made and
@@ -99,6 +103,16 @@ site:
 ```
 
 An earlier visit's autosave and recents are then forgotten at the next load.
+
+A new visit lists the last session and draws it only on **Restore**; a reload of the tab restores
+it (`ui.autosave.auto_restore: reload`, the default). `never` only lists it, for a reload too;
+`always` restores it at every visit:
+
+```yaml
+ui:
+  autosave:
+    auto_restore: never   # reload (default), always or never
+```
 
 (no-banner)=
 ### No analytics, no cookie banner

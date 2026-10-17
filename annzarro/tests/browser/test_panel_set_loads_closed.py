@@ -944,6 +944,9 @@ def test_the_autosave_restores_its_own_dataset_at_start(server, browser):
             f"if (!localStorage.getItem('{AUTOSAVE_KEY}')) "
             f"localStorage.setItem('{AUTOSAVE_KEY}', {json.dumps(json.dumps(_autosave_doc('other_small.zarr')))});")
         page.goto(DATA["root"] + "/")
+        # a fresh visit lists it first (ui.autosave.auto_restore: reload); the reload of the tab restores it
+        page.locator(".sessions-list .last-session").first.wait_for(timeout=30000)
+        page.reload()
         _wait_tiles(page, 2)
         assert sorted(_tile_ids(page)) == ["cell-plot-P1", "cell-table-T1"]
         assert page.evaluate(SHOWN).endswith("other_small.zarr")

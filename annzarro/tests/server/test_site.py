@@ -405,6 +405,8 @@ STORAGE_KEYS = {
     "annzarro.structure-search": "static/js/utils/structure-search.js",
     "annzarro-theme": "static/js/utils/theme.js",
     "annzarro_autosave": "static/js/config.js",
+    "annzarro_last_sessions": "static/js/utils/last-sessions.js",
+    "annzarro_restoring": "static/js/utils/last-sessions.js",
     "annzarro.recents:": "static/js/utils/dataset-recents.js",
     "annzarro.recentDatasets:": "static/js/utils/dataset-recents.js",
     "annzarro.pins:": "static/js/utils/dataset-pins.js",
