@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { safeHref, shapeLabel, memberType, columnType, citationText, createInfoLoader } =
+const { safeHref, safeColour, densityLabel, shapeLabel, memberType, columnType, citationText, createInfoLoader } =
   await import("../../../static/js/utils/dataset-info.js");
 
 test("only http, https and mailto addresses become links", () => {
@@ -71,4 +71,25 @@ test("forget drops one dataset or all", async () => {
   loader.forget();
   assert.equal(loader.peek("b", "about"), undefined);
   assert.equal(calls.length, 3);
+});
+
+test("a colour is only ever a plain colour", () => {
+  for (const ok of ["#fff", "#FF00ffcc", "rgb(1, 2, 3)", "rgba(1,2,3,0.5)", "red", "rebeccapurple"]) assert.equal(safeColour(ok), ok, ok);
+  for (const bad of ["red; background:url(x)", "url(http://x)", "var(--x)", "expression(alert(1))", "rgb(1,2,3);", "#ggg", "#12345",
+    "calc(1px)", "x".repeat(60), "", null, undefined, "red blue", "\\\"onload=1"]) assert.equal(safeColour(bad), null, String(bad));
+});
+
+test("density and the richer types", () => {
+  assert.equal(densityLabel(0.25), "25%");
+  assert.equal(densityLabel(0.0001234), "0.012%");
+  assert.equal(densityLabel(0.00004), "<0.01%");
+  assert.equal(densityLabel(0), "0%");
+  assert.equal(densityLabel(null), "");
+  assert.equal(memberType({ encoding: "csr_matrix", dtype: "float32", nnz: 4, density: 0.25 }), "csr_matrix, float32, 4 stored values (25% dense)");
+  assert.equal(memberType({ encoding: "csr_matrix", dtype: "float32", nnz: 1, density: null }), "csr_matrix, float32, 1 stored value");
+  assert.equal(memberType({ encoding: "dataframe", columns: 2, column_names: ["u", "v"] }), "dataframe, 2 columns: u, v");
+  assert.equal(memberType({ encoding: "dataframe", columns: 60, column_names: ["u"] }), "dataframe, 60 columns: u, …");
+  assert.equal(memberType({ encoding: "awkward-array", length: 1200 }), "awkward-array, length 1,200");
+  assert.equal(columnType({ kind: "categorical", categories: 3, ordered: true, codes_dtype: "int8" }), "categorical, 3 categories, ordered, codes int8");
+  assert.equal(columnType({ kind: "integer", dtype: "int64", nullable: true }), "integer, int64, nullable");
 });

@@ -18,7 +18,7 @@ It opens a dialog with three tabs.
 |---|---|
 | **About** | Title, description, licence (linked), authors, attribution, citation with a **Copy citation** button, DOI, source and contact. |
 | **README** | The dataset's `uns["README"]`, rendered as Markdown (see "The README" below). |
-| **Structure** | The AnnData layout: number of cells and genes, the `obs` and `var` columns with their types, the keys of `obsm`, `varm`, `obsp`, `varp` and `layers` with their shapes, and the tree of `uns`. |
+| **Structure** | The AnnData layout: number of cells and genes, the `obs` and `var` columns with their types, the keys of `obsm`, `varm`, `obsp`, `varp` and `layers` with their shapes, encodings and, for sparse matrices, the number of stored values and density, `raw` (marked as not shown in plots), the tree of `uns` (a dataframe or categorical there is one line, not its parts), groups AnnZarro does not know, and the limits applied. Categoricals show their first ten labels with the colours from `uns["<column>_colors"]` and warn when the colour count differs from the category count. |
 
 Each tab is read from the server when it is first shown, with a loading indication; a failure is
 said in words and offers **Try again**. Nothing is read before someone opens the dialog. The
