@@ -1380,55 +1380,34 @@ export function toggleGrid(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateFontFamily(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {
-        'font.family': settings.fontFamily,
-        'legend.title.font.family': settings.fontFamily
-    };
-    
-    if (is3D) {
-        update['scene.xaxis.title.font.family'] = settings.fontFamily;
-        update['scene.yaxis.title.font.family'] = settings.fontFamily;
-        update['scene.zaxis.title.font.family'] = settings.fontFamily;
-        update['scene.xaxis.tickfont.family'] = settings.fontFamily;
-        update['scene.yaxis.tickfont.family'] = settings.fontFamily;
-        update['scene.zaxis.tickfont.family'] = settings.fontFamily;
-    } else {
-        update['xaxis.title.font.family'] = settings.fontFamily;
-        update['yaxis.title.font.family'] = settings.fontFamily;
-        update['xaxis.tickfont.family'] = settings.fontFamily;
-        update['yaxis.tickfont.family'] = settings.fontFamily;
-    }
-
-    Plotly.relayout(plotContainer, update);
-    applyLegendAndBarText(plotContainer, settings);
+    applyTextFont(plotContainer, settings);
 }
 
 /**
- * The panel's text font on the legend (title and items) and the colour bar
- * (title and tick labels), whether shared or the traces' own: family, size
- * and colour, set explicitly so a change shows at once.
+ * The panel's text on the plot, in one place: font family, size and colour of
+ * the axes (titles and tick labels), the legend (title and items) and the
+ * colour bar (title and tick labels, shared or the traces' own). A live change
+ * of the font, size or text colour, a preset, a theme change and a plot drawn
+ * from a link all come here. Set explicitly, so a change shows at once.
  */
-function applyLegendAndBarText(plotContainer, settings) {
+function applyTextFont(plotContainer, settings) {
     if (!plotContainer) return;
     const family = settings.fontFamily || 'Arial, Helvetica, sans-serif';
     const size = settings.fontSize || 12;
     const colour = plotColour(settings, 'textColor');
-    Plotly.relayout(plotContainer, {
-        'legend.font.family': family, 'legend.font.size': size, 'legend.font.color': colour,
-        'legend.title.font.family': family, 'legend.title.font.size': size + 2, 'legend.title.font.color': colour,
-        'coloraxis.colorbar.title.font.family': family, 'coloraxis.colorbar.title.font.size': size + 2,
-        'coloraxis.colorbar.title.font.color': colour,
-        'coloraxis.colorbar.tickfont.family': family, 'coloraxis.colorbar.tickfont.size': size,
-        'coloraxis.colorbar.tickfont.color': colour
+    const text = (prefix, extra) => ({
+        [`${prefix}.family`]: family, [`${prefix}.size`]: size + extra, [`${prefix}.color`]: colour
     });
-    const bar = (prefix) => ({
-        [`${prefix}.title.font.family`]: family, [`${prefix}.title.font.size`]: size + 2, [`${prefix}.title.font.color`]: colour,
-        [`${prefix}.tickfont.family`]: family, [`${prefix}.tickfont.size`]: size, [`${prefix}.tickfont.color`]: colour
-    });
-    restyleColourBars(plotContainer, bar('marker.colorbar'), bar('colorbar'));
+    const update = {
+        ...text('font', 0),
+        ...text('legend.font', 0), ...text('legend.title.font', 2),
+        ...text('coloraxis.colorbar.tickfont', 0), ...text('coloraxis.colorbar.title.font', 2)
+    };
+    for (const axis of axisPaths(settings)) Object.assign(update, text(`${axis}.tickfont`, 0), text(`${axis}.title.font`, 2));
+    Plotly.relayout(plotContainer, update);
+    restyleColourBars(plotContainer,
+        { ...text('marker.colorbar.tickfont', 0), ...text('marker.colorbar.title.font', 2) },
+        { ...text('colorbar.tickfont', 0), ...text('colorbar.title.font', 2) });
 }
 
 /**
@@ -1712,7 +1691,6 @@ export function applyThemeColors(plotContainer, settings) {
     const update = {
         'paper_bgcolor': plotColour(settings, 'bgColor'),
         'plot_bgcolor': plotColour(settings, 'bgColor'),
-        'font.color': plotColour(settings, 'textColor'),
         'xaxis.gridcolor': plotColour(settings, 'gridColor'),
         'yaxis.gridcolor': plotColour(settings, 'gridColor'),
         'xaxis.color': plotColour(settings, 'axisColor'),
@@ -1723,12 +1701,6 @@ export function applyThemeColors(plotContainer, settings) {
         'yaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
         'xaxis.tickcolor': plotColour(settings, 'axisColor'),
         'yaxis.tickcolor': plotColour(settings, 'axisColor'),
-        'xaxis.tickfont.color': plotColour(settings, 'textColor'),
-        'yaxis.tickfont.color': plotColour(settings, 'textColor'),
-        'xaxis.title.font.color': plotColour(settings, 'textColor'),
-        'yaxis.title.font.color': plotColour(settings, 'textColor'),
-        'legend.font.color': plotColour(settings, 'textColor'),
-        'legend.title.font.color': plotColour(settings, 'textColor'),
         'modebar.color': modebarColours(settings).color,
         'modebar.activecolor': modebarColours(settings).activecolor
     };
@@ -1755,25 +1727,12 @@ export function applyThemeColors(plotContainer, settings) {
             'scene.xaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
             'scene.yaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
             'scene.zaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
-            'scene.xaxis.tickfont.color': plotColour(settings, 'textColor'),
-            'scene.yaxis.tickfont.color': plotColour(settings, 'textColor'),
-            'scene.zaxis.tickfont.color': plotColour(settings, 'textColor'),
-            'scene.xaxis.title.font.color': plotColour(settings, 'textColor'),
-            'scene.yaxis.title.font.color': plotColour(settings, 'textColor'),
-            'scene.zaxis.title.font.color': plotColour(settings, 'textColor')
         });
     }
     
     Plotly.relayout(plotContainer, update);
 
-    // the colour bar's title and ticks are the traces' own
-    const bars = (plotContainer.data || []).map((t, i) => (t && t.marker && t.marker.colorbar ? i : -1)).filter(i => i >= 0);
-    if (bars.length) {
-        Plotly.restyle(plotContainer, {
-            'marker.colorbar.title.font.color': plotColour(settings, 'textColor'),
-            'marker.colorbar.tickfont.color': plotColour(settings, 'textColor')
-        }, bars);
-    }
+    applyTextFont(plotContainer, settings);      // the text colour: axes, legend, colour bar
 }
 
 /**
@@ -1796,68 +1755,7 @@ function notifyMultipleSettingsChanged(id, changes) {
  * @param {Object} settings - Plot settings object
  */
 function updateFontSize(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    
-    // Basic layout updates for axes
-    const update = {
-        'font.size': settings.fontSize,
-        'xaxis.title.font.size': settings.fontSize + 2,
-        'yaxis.title.font.size': settings.fontSize + 2,
-        'xaxis.tickfont.size': settings.fontSize,
-        'yaxis.tickfont.size': settings.fontSize,
-        
-        // Legend font settings
-        'legend.title.font.size': settings.fontSize + 2,
-        'legend.font.size': settings.fontSize,
-        
-        // Global colorbar font settings (if any)
-        'coloraxis.colorbar.title.font.size': settings.fontSize + 2,
-        'coloraxis.colorbar.tickfont.size': settings.fontSize
-    };
-    
-    // For 3D plots
-    if (is3D) {
-        Object.assign(update, {
-            'scene.xaxis.title.font.size': settings.fontSize + 2,
-            'scene.yaxis.title.font.size': settings.fontSize + 2,
-            'scene.zaxis.title.font.size': settings.fontSize + 2,
-            'scene.xaxis.tickfont.size': settings.fontSize,
-            'scene.yaxis.tickfont.size': settings.fontSize,
-            'scene.zaxis.tickfont.size': settings.fontSize
-        });
-    }
-    
-    // Apply the layout updates
-    Plotly.relayout(plotContainer, update);
-    
-    // Update trace-specific colorbar settings
-    if (plotContainer.data) {
-        plotContainer.data.forEach((trace, i) => {
-            // Skip focused entity trace
-            if (trace.name && trace.name.includes('Focused')) return;
-            
-            const traceUpdate = {};
-            
-            // Update marker.colorbar (for scatter plots with continuous color)
-            if (trace.marker && trace.marker.colorbar) {
-                traceUpdate['marker.colorbar.title.font.size'] = settings.fontSize + 2;
-                traceUpdate['marker.colorbar.tickfont.size'] = settings.fontSize;
-            }
-            
-            // Update colorbar directly (for heatmaps, contour plots)
-            if (trace.colorbar) {
-                traceUpdate['colorbar.title.font.size'] = settings.fontSize + 2;
-                traceUpdate['colorbar.tickfont.size'] = settings.fontSize;
-            }
-            
-            // Apply trace updates if we have any
-            if (Object.keys(traceUpdate).length > 0) {
-                Plotly.restyle(plotContainer, traceUpdate, [i]);
-            }
-        });
-    }
+    applyTextFont(plotContainer, settings);
 }
 
 /**
@@ -2294,9 +2192,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'margin': settings.margins,
         'paper_bgcolor': bgColor,
         'plot_bgcolor': bgColor,
-        'font.color': textColor,
-        'font.size': settings.fontSize,
-        'font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
         'hovermode': settings.showHoverInfo ? 'closest' : false,
         
         // Legend position settings (actual visibility will be handled separately)
@@ -2338,18 +2233,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'yaxis.color': axisColor,
         'xaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'x') : '',
         'yaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'y') : '',
-        'xaxis.title.font.size': settings.fontSize + 2,
-        'yaxis.title.font.size': settings.fontSize + 2,
-        'xaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'yaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'xaxis.title.font.color': textColor,
-        'yaxis.title.font.color': textColor,
-        'xaxis.tickfont.size': settings.fontSize,
-        'yaxis.tickfont.size': settings.fontSize,
-        'xaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'yaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'xaxis.tickfont.color': textColor,
-        'yaxis.tickfont.color': textColor,
         
     };
     
@@ -2400,24 +2283,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
             'scene.xaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'x') : '',
             'scene.yaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'y') : '',
             'scene.zaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'z') : '',
-            'scene.xaxis.title.font.size': settings.fontSize + 2,
-            'scene.yaxis.title.font.size': settings.fontSize + 2,
-            'scene.zaxis.title.font.size': settings.fontSize + 2,
-            'scene.xaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.yaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.zaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.xaxis.title.font.color': textColor,
-            'scene.yaxis.title.font.color': textColor,
-            'scene.zaxis.title.font.color': textColor,
-            'scene.xaxis.tickfont.size': settings.fontSize,
-            'scene.yaxis.tickfont.size': settings.fontSize,
-            'scene.zaxis.tickfont.size': settings.fontSize,
-            'scene.xaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.yaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.zaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.xaxis.tickfont.color': textColor,
-            'scene.yaxis.tickfont.color': textColor,
-            'scene.zaxis.tickfont.color': textColor,
             
         });
         
@@ -2440,6 +2305,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
     // Then handle legend and colorbar visibility specifically based on trace type
     updateLegendVisibility(plotContainer, settings);
     updateLegendPosition(plotContainer, settings);
-    applyLegendAndBarText(plotContainer, settings);
+    applyTextFont(plotContainer, settings);
     refreshScaleBar(plotContainer, settings);
 }

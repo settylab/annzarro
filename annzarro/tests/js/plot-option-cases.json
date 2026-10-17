@@ -376,7 +376,7 @@
   },
   {
    "key": "scaleExport",
-   "value": true,
+   "value": false,
    "panel": "a",
    "render": false
   },
