@@ -4372,7 +4372,7 @@ details.aesthetics-section > .aesthetics-body {
     text-align: center;
 }
 .dsi-swatch-bad { color: var(--az-muted); }
-.dsi-extra td { padding-top: 0; border-top: 0; }
+.dsi-extra td { padding-top: 0.3rem; padding-bottom: 0.3rem; border-top: 0; }   /* the labels under a column: as much space above as below */
 .dsi-labels { display: flex; flex-wrap: wrap; gap: 0.15rem 0.7rem; align-items: center; font-size: 0.78rem; }
 .dsi-label { white-space: nowrap; }
 .dsi-warn { color: var(--az-warn-text); background: var(--az-warn-bg); border: 1px solid var(--az-warn-border); border-radius: 3px; padding: 0 0.35rem; }
