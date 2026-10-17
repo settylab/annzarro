@@ -125,7 +125,7 @@ def test_structure_in_every_store_kind(client, data, name):
     assert s["X"]["shape"] == [200, 20]
     assert s["layers"] == {"items": [], "total": 0}
     uns = {c["name"]: c for c in s["uns"]["children"]}
-    assert uns["annzarro"]["type"] == "group" and uns["annzarro"]["total"] == len(FIELDS)
+    assert uns["annzarro"]["type"] == "group" and uns["annzarro"]["total"] == len(FIELDS) + 2
     assert uns["README"]["type"] == "array"
 
 
@@ -137,7 +137,8 @@ def test_all_parts_by_default_and_only_the_asked_ones(client, data):
 def test_a_dataset_without_the_fields_says_so(client, data):
     body = info(client, data / "plain.zarr").get_json()
     assert body["about"]["present"] is False and body["about"]["source"] is None
-    assert set(body["about"]) == {"present", "source", "fallbacks", "ignored", "has_readme"}
+    assert set(body["about"]) == {"present", "source", "fallbacks", "ignored", "has_readme", "unknown", "schema"}
+    assert body["about"]["schema"]["declared"] is False and body["about"]["schema"]["version"] == "1.0"
     assert body["about"]["has_readme"] is False
     assert body["readme"] == {"present": False, "text": None, "truncated": False, "bytes": 0, "problem": None}
     assert body["structure"]["n_obs"] == 200

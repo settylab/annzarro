@@ -74,7 +74,12 @@ def info_server(tmp_path_factory):
     data.mkdir()
     _store(data, "liver.zarr", ATTRIBUTION, README)
     _store(data, "plain.zarr")
-    _store(data, "hostile.zarr", HOSTILE_FIELDS, HOSTILE)
+    # the writer refuses a javascript: address, so the two hostile ones are written below it, as a hostile dataset would have them
+    hostile = _store(data, "hostile.zarr", {k: v for k, v in HOSTILE_FIELDS.items() if k not in ("license_url", "source_url")}, HOSTILE)
+    group = zarr_compat.open_group(hostile, mode="r+")["uns"]["annzarro"]
+    for key in ("license_url", "source_url"):
+        dataset_annotate._put_text(group, key, HOSTILE_FIELDS[key])
+    zarr_compat.consolidate(hostile)
     big = _store(data, "big.zarr", {"title": "Big"})
     node = zarr_compat.open_group(big, mode="r+")["uns"].create_array("README", shape=(), dtype=str)
     node[()] = "paragraph of text\n\n" * 20_000       # 380 KB: more than the annotate command accepts
@@ -85,6 +90,17 @@ def info_server(tmp_path_factory):
     node[()] = 7
     zarr_compat.consolidate(odd)
     build_rich_store(data / "rich.zarr", FIXTURE)
+    _store(data, "richattr.zarr", {
+        "title": "Rich attribution", "license": {"id": "CC-BY-4.0", "url": "https://example.org/terms"},
+        "authors": [{"name": "Jane Doe", "orcid": "0000-0002-1825-0097"}, {"name": "John Roe"}],
+        "contacts": [{"name": "Jane", "email": "jane@example.org", "role": "curator"}, {"name": "Lab", "url": "https://example.org"}],
+        "funding": [{"funder": "NIH", "award": "R35GM147125", "url": "https://reporter.nih.gov/x"}],
+        "provenance": {"source": "GEO", "software": "<b>x</b>"}})
+    newer = _store(data, "newer.zarr", {"title": "Written for a newer AnnZarro"})
+    group = zarr_compat.open_group(newer, mode="r+")["uns"]["annzarro"]
+    dataset_annotate._put_text(group, "schema_version", "2.0")
+    dataset_annotate._put_text(group, "licence_terms", "renamed in 2.0")
+    zarr_compat.consolidate(newer)
     base, proc = start(tmp, data)
     yield base, str(data)
     proc.terminate()
@@ -475,6 +491,36 @@ def test_structure_shows_each_element_and_the_hostile_names_stay_text(opened):
     assert "Limits:" in pane.locator(".dsi-caps").inner_text()
     _shot(page, "dialog-structure-rich-1440-light.png")
     assert page.evaluate(PWN)
+    assert not s.errors, s.errors
+
+
+# ---- the richer forms and a newer schema -------------------------------------------------------------
+
+def test_richer_forms_are_shown_and_stay_text(opened):
+    go, _data = opened
+    s = go("richattr.zarr")
+    _open_dialog(s.page)
+    pane = s.page.locator("#dsi-pane-about")
+    assert pane.locator(".dsi-license a").get_attribute("href") == "https://example.org/terms"
+    assert pane.locator("a[href='https://orcid.org/0000-0002-1825-0097']").count() == 1
+    contacts = pane.locator(".dsi-contacts").inner_text()
+    assert "Jane (curator)" in contacts and "jane@example.org" in contacts and "https://example.org" in contacts
+    assert pane.locator("a[href='mailto:jane@example.org']").count() == 1
+    funding = pane.locator(".dsi-funding")
+    assert "NIH, R35GM147125" in funding.inner_text() and funding.locator("a").get_attribute("href") == "https://reporter.nih.gov/x"
+    assert "software: <b>x</b>" in pane.locator(".dsi-provenance").inner_text() and pane.locator("b").count() == 0
+    _shot(s.page, "dialog-about-rich-1440-light.png")
+    assert not s.errors, s.errors
+
+
+def test_a_dataset_written_for_a_newer_schema_says_so_and_shows_what_it_can(opened):
+    go, _data = opened
+    s = go("newer.zarr")
+    _open_dialog(s.page)
+    pane = s.page.locator("#dsi-pane-about")
+    assert "newer AnnZarro" in pane.locator(".dsi-schema-note").inner_text() and "2.0" in pane.inner_text()
+    assert pane.locator(".dsi-title").inner_text() == "Written for a newer AnnZarro"
+    _shot(s.page, "dialog-about-newer-schema-1440-light.png")
     assert not s.errors, s.errors
 
 

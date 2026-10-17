@@ -219,7 +219,7 @@ AnnZarro shows them behind the dataset's information button and in the dataset b
 ```text
 annzarro store annotate STORE [--title T] [--description D] [--license L] [--license-url U]
                         [--citation C] [--doi DOI] [--author NAME]... [--source-url U]
-                        [--contact C] [--attribution A] [--readme FILE]
+                        [--contact C] [--attribution A] [--from-json FILE] [--readme FILE]
 ```
 
 | Option | Meaning |
@@ -227,6 +227,7 @@ annzarro store annotate STORE [--title T] [--description D] [--license L] [--lic
 | `STORE` | A local zarr store (format 2 or 3). A remote store is refused; an `.h5ad` file is annotated with anndata (`adata.uns["annzarro"] = {...}`). |
 | `--title`, `--description`, `--license`, `--license-url`, `--citation`, `--doi`, `--source-url`, `--contact`, `--attribution` | The fields of `uns["annzarro"]`. `--license` takes an SPDX identifier (`CC-BY-4.0`) or text. |
 | `--author NAME` | An author; repeat for several. |
+| `--from-json FILE` | A JSON object of fields with the richer forms (`funding`, `contacts`, an object for `license` ...); the options above override it. The command writes the schema marker (`schema_version` 1.0) and refuses a value the reader would not use ({ref}`dataset-info-schema`). |
 | `--readme FILE` | A Markdown file (UTF-8, at most 256 KB), stored as `uns["README"]`. |
 
 Only the fields you give are written, and the other `uns` entries stay; run it again to change

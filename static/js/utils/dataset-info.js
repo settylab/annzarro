@@ -212,9 +212,14 @@ export async function showPart(container, { loader, path, part, draw, current = 
 /** About: title, description, licence, authors, citation (with a copy button), DOI, source, contact. */
 export function drawAbout(container, about, { compact = false, copy = null } = {}) {
     const doc = container.ownerDocument;
+    const versionNote = () => {
+        const note = about && about.schema && about.schema.newer === 'major' ? about.schema.note : null;
+        if (note) container.appendChild(el(doc, 'p', 'dsi-note dsi-schema-note', note));
+    };
     if (!about || !about.present) {
         const empty = el(doc, 'p', 'dsi-empty', 'This dataset records no attribution.');
         container.appendChild(empty);
+        versionNote();
         if (!compact) {
             const how = el(doc, 'p', 'dsi-hint dsi-muted', 'Its owner can add a licence, a citation and a DOI to uns["annzarro"] (');
             const a = link(doc, DOCS_URL, 'how');
@@ -224,6 +229,7 @@ export function drawAbout(container, about, { compact = false, copy = null } = {
         }
         return;
     }
+    if (!compact) versionNote();
     if (about.title && !compact) container.appendChild(el(doc, 'h3', 'dsi-title', about.title));
     if (about.description) container.appendChild(el(doc, 'p', 'dsi-description', about.description));
     const list = el(doc, 'dl', compact ? 'dsi-fields dsi-fields-compact' : 'dsi-fields');
@@ -241,7 +247,17 @@ export function drawAbout(container, about, { compact = false, copy = null } = {
         holder.appendChild(link(doc, about.license_url, about.license));
         add('Licence', holder, 'dsi-license');
     }
-    if (Array.isArray(about.authors) && about.authors.length) add('Authors', about.authors.join(', '));
+    if (Array.isArray(about.authors) && about.authors.length) {
+        const holder = doc.createDocumentFragment();
+        const details = about.author_details || [];
+        about.authors.forEach((author, i) => {
+            if (i) holder.appendChild(doc.createTextNode(', '));
+            holder.appendChild(doc.createTextNode(author));
+            const orcid = details[i] && details[i].orcid_url;
+            if (orcid && safeHref(orcid)) { holder.appendChild(doc.createTextNode(' ')); holder.appendChild(link(doc, orcid, '(ORCID)')); }
+        });
+        add('Authors', holder);
+    }
     add('Attribution', about.attribution, 'dsi-multiline');
     add('Citation', about.citation, 'dsi-multiline dsi-citation');
     if (about.doi) {
@@ -254,10 +270,38 @@ export function drawAbout(container, about, { compact = false, copy = null } = {
         holder.appendChild(link(doc, about.source_url, about.source_url));
         add('Source', holder, 'dsi-source');
     }
-    if (about.contact) {
+    const contacts = Array.isArray(about.contacts) && about.contacts.length ? about.contacts : null;
+    if (contacts) {
+        const holder = doc.createDocumentFragment();
+        contacts.forEach((c, i) => {
+            if (i) holder.appendChild(doc.createElement('br'));
+            const label = [c.name, c.role ? `(${c.role})` : ''].filter(Boolean).join(' ');
+            if (label) holder.appendChild(doc.createTextNode(label + (c.email || c.url ? ' ' : '')));
+            const where = c.email || c.url;
+            if (where) holder.appendChild(link(doc, c.url, where));
+        });
+        add('Contact', holder, 'dsi-contacts');
+    } else if (about.contact) {
         const holder = doc.createDocumentFragment();
         holder.appendChild(link(doc, about.contact_url, about.contact));
         add('Contact', holder);
+    }
+    if (Array.isArray(about.funding) && about.funding.length) {
+        const holder = doc.createDocumentFragment();
+        about.funding.forEach((g, i) => {
+            if (i) holder.appendChild(doc.createElement('br'));
+            const label = [g.funder, g.award].filter(Boolean).join(', ');
+            holder.appendChild(g.url ? link(doc, g.url, label) : doc.createTextNode(label));
+        });
+        add('Funding', holder, 'dsi-funding');
+    }
+    if (about.provenance && typeof about.provenance === 'object') {
+        const holder = doc.createDocumentFragment();
+        Object.entries(about.provenance).forEach(([key, value], i) => {
+            if (i) holder.appendChild(doc.createElement('br'));
+            holder.appendChild(doc.createTextNode(`${key}: ${value}`));
+        });
+        add('Provenance', holder, 'dsi-multiline dsi-provenance');
     }
     container.appendChild(list);
     const text = citationText(about);

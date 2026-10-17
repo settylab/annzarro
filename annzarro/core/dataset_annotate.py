@@ -1,8 +1,11 @@
 """Write a dataset's attribution and README into a local zarr store (``annzarro store annotate``).
 
 The fields go to ``uns["annzarro"]`` and the README to ``uns["README"]``, as anndata writes uns
-strings, so ``anndata.read_zarr`` reads them back and ``core/dataset_info.py`` shows them. Only
-what is given is written; the other fields of the group stay as they are. A consolidated store is
+values, so ``anndata.read_zarr`` reads them back and ``core/dataset_info.py`` shows them. The group
+always carries the schema marker (``schema`` and ``schema_version``, ``core/dataset_schema.py``) at
+the current version. Only what is given is written; the other fields of the group stay as they are.
+A field may be its simple form (text) or a richer one (an object, a list of objects): the writer
+refuses what the reader would not use. A consolidated store is
 consolidated again, so a reader does not see a stale listing.
 """
 from __future__ import annotations
@@ -13,7 +16,9 @@ from typing import Dict, List, Optional
 
 import zarr
 
-from .dataset_info import FIELDS, MAX_README_BYTES
+from . import dataset_schema
+from .dataset_info import MAX_README_BYTES
+from .dataset_schema import FIELDS
 
 __all__ = ["annotate_store", "AnnotateError", "FIELDS"]
 
@@ -47,6 +52,46 @@ def _dict_group(parent, name: str):
     group.attrs["encoding-type"] = "dict"
     group.attrs["encoding-version"] = "0.1.0"
     return group
+
+
+def _put_value(group, name: str, value) -> None:
+    """``value`` (text, number, bool, list of those, or an object) as the member ``name`` of ``group``, replacing it.
+
+    A list of objects is written as an object keyed ``"0"``, ``"1"``, ... (anndata cannot write a list of dicts;
+    the reader takes both as one list).
+    """
+    if name in group:
+        del group[name]
+    if isinstance(value, dict) or (isinstance(value, (list, tuple)) and value and all(isinstance(v, dict) for v in value)):
+        items = value if isinstance(value, dict) else {str(i): v for i, v in enumerate(value)}
+        child = _dict_group(group, name)
+        for key, item in items.items():
+            _put_value(child, str(key), item)
+        return
+    values = list(value) if isinstance(value, (list, tuple)) else None
+    if values is not None and not values:
+        return
+    sample = values[0] if values is not None else value
+    if isinstance(sample, str):
+        if values is not None and not all(isinstance(v, str) for v in values):
+            raise AnnotateError(f"{name}: a list mixes text with other values")
+        _put_text(group, name, values if values is not None else value)
+    elif isinstance(sample, (bool, int, float)):
+        _put_number(group, name, values if values is not None else value)
+    else:
+        raise AnnotateError(f"{name}: {type(sample).__name__} cannot be stored")
+
+
+def _put_number(group, name: str, value) -> None:
+    import numpy as np
+    arr = np.asarray(value)
+    if _ZARR3:
+        node = group.create_array(name, shape=arr.shape, dtype=arr.dtype)
+        node[...] = arr
+    else:
+        node = group.create_dataset(name, data=arr)
+    node.attrs["encoding-type"] = "numeric-scalar" if arr.ndim == 0 else "array"
+    node.attrs["encoding-version"] = "0.2.0" if arr.ndim == 0 else "0.2.0"
 
 
 def _put_text(group, name: str, value) -> None:
@@ -88,10 +133,14 @@ def annotate_store(path: str, fields: Optional[Dict[str, object]] = None,
     if not os.path.isdir(path):
         raise AnnotateError(f"{path} is not a zarr store directory (an .h5ad file is annotated with anndata: "
                             "adata.uns['annzarro'] = {...})")
-    fields = {k: v for k, v in (fields or {}).items() if v not in (None, "", [])}
-    unknown = [k for k in fields if k not in FIELDS]
+    fields = {k: v for k, v in (fields or {}).items() if v not in (None, "", [], {})}
+    known = {spelling for spellings in FIELDS.values() for spelling in spellings}
+    unknown = [k for k in fields if k not in known]
     if unknown:
         raise AnnotateError(f"unknown field(s) {', '.join(unknown)}; use {', '.join(FIELDS)}")
+    unusable = dataset_schema.normalise(fields)["ignored"]
+    if unusable:
+        raise AnnotateError(f"{', '.join(unusable)}: not a form AnnZarro reads (see the field table in the deployment guide)")
     if readme is not None and len(readme.encode("utf-8")) > MAX_README_BYTES:
         raise AnnotateError(f"the README is {len(readme.encode('utf-8')) / 1024:,.0f} KB; AnnZarro shows "
                             f"{MAX_README_BYTES // 1024} KB, so shorten it")
@@ -107,8 +156,11 @@ def annotate_store(path: str, fields: Optional[Dict[str, object]] = None,
     uns = _dict_group(root, "uns")
     if fields:
         group = _dict_group(uns, "annzarro")
+        _put_text(group, "schema", dataset_schema.SCHEMA_NAME)
+        _put_text(group, "schema_version", dataset_schema.format_version(dataset_schema.CURRENT_VERSION))
+        written.append("uns/annzarro/schema_version")
         for name, value in fields.items():
-            _put_text(group, name, value if name == "authors" and isinstance(value, (list, tuple)) else str(value))
+            _put_value(group, name, value)
             written.append(f"uns/annzarro/{name}")
     if readme is not None:
         _put_text(uns, "README", readme)
