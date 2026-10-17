@@ -262,9 +262,6 @@ body {
 @media (max-width: 440px) { .about-logo { height: 3rem; } .about-logos { gap: 1.25rem; } }
 /* the lab's tree has dark outlines: on a light tile in the dark theme */
 [data-theme="dark"] .about-logo-lab { background: #fff; border-radius: 0.4rem; padding: 0.3rem 0.45rem; box-sizing: content-box; }
-.about-logo-dark { display: none; }
-[data-theme="dark"] .about-logo-light { display: none; }
-[data-theme="dark"] .about-logo-dark { display: block; }
 .about-funding { margin-bottom: 0.4rem !important; }
 .about-fine { font-size: 0.75rem; color: var(--az-muted); margin-bottom: 0 !important; }
 

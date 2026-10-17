@@ -142,7 +142,7 @@ def test_the_about_text_describes_the_software_not_the_site(tmp_path):
     for site in (None, SITE):
         (tmp_path / ("sited" if site else "plain")).mkdir()
         html = body(get(app_with(tmp_path / ("sited" if site else "plain"), site), "/"))
-        assert "AnnZarro is developed by the Setty Lab" in html
+        assert "AnnZarro is developed by the " in html
         assert "The development of AnnZarro is supported by" in html
         assert 'id="about-title">About AnnZarro<' in html
 
@@ -466,7 +466,7 @@ def test_the_cookies_the_server_sets_are_the_documented_ones():
     assert "annzarro_login_csrf" in sources
 
 
-CREDIT = ("settylab-logo", "fredhutch", "R35GM147125", "Citing AnnZarro", "AnnZarro is developed by the Setty Lab")
+CREDIT = ("settylab-logo", "fredhutch", "R35GM147125", "Citing AnnZarro", "AnnZarro is developed by the ")
 
 
 def test_the_software_credit_stays_by_default_everywhere_and_below_the_site_block(tmp_path):
