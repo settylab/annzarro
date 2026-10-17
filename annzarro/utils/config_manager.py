@@ -482,7 +482,7 @@ class ConfigManager:
         # entry point (annzarro start and the WSGI factory) goes through.
 
     #: Top-level sections of the hierarchical configuration.
-    SECTIONS = ("server", "auth", "branding", "ui")
+    SECTIONS = ("server", "auth", "branding", "ui", "site")
     #: Flat (Flask-style) keys that belong outside the ``server`` section.
     FLAT_KEY_MAP = {
         "auth_enabled": ("auth", "enabled"),
@@ -772,6 +772,9 @@ class ConfigManager:
                     flask_config[key] = auth_config[key]
         
         flask_config.update(self.client_keys(self.config))
+        # the site's identity and texts (server/site.py reads them whole)
+        if "site" in self.config:
+            flask_config["site"] = deepcopy(self.config["site"])
         
         return flask_config
 

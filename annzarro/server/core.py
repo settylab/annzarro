@@ -384,6 +384,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     if problems:
         raise ValueError("; ".join(problems))
 
+    # site.*: the legal texts, contact, robots and security.txt (site.py); a wrong value stops the start
+    from annzarro.server import site as site_module
+    site_module.install(app)
+
     # Login cookie: not sent on cross-site subrequests or form posts (Lax),
     # Secure per cookie_secure, never readable from JavaScript.
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -794,7 +798,7 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
     
     # Apply the require_auth decorator to all appropriate routes
     for endpoint in [rule.endpoint for rule in app.url_map.iter_rules()]:
-        if not endpoint.startswith("login") and not endpoint.startswith("logout") and not endpoint.startswith("static"):
+        if not endpoint.startswith(("login", "logout", "static", "site_")):
             view_func = app.view_functions[endpoint]
             app.view_functions[endpoint] = require_auth(view_func)
     

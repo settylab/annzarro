@@ -39,8 +39,10 @@ import { probeStore, prewarmStore, appVersion, knownStore } from './utils/store-
 import { RECENT_LIMIT } from './utils/dataset-picker.js';
 import { DatasetState, documentTitle, isUserSource } from './utils/dataset-state.js';
 import { loadRecents, recordRecent, userKey, lookupPaths, recentEntries } from './utils/dataset-recents.js';
+import { convenienceStorage } from './utils/convenience-storage.js';
 import { formatLabel } from './utils/dataset-browser-model.js';
 import { createDatasetBrowser } from './utils/dataset-browser.js';
+import { initAboutDialog } from './utils/about-dialog.js';
 import { firstDatasetChoice, keysUsedByPanels, isRemote } from './utils/dataset-browser-model.js';
 import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
@@ -105,6 +107,7 @@ const App = (function() {
             
             // Initialize UI components
             _initUI();
+            initAboutDialog();
             
             // Setup custom event listeners for error handling
             _setupErrorHandlers();
@@ -136,6 +139,8 @@ const App = (function() {
             Policy.installFetchObserver();
             await Policy.load();
 
+            // the site's storage setting (site.storage) decides where the autosave is read from
+            await Config.ready;
             const autosave = SessionManager.getAutosaveSession();
             const deepLink = await _parseDeepLink();
             const hasAutosave = autosave && Config.AUTOSAVE.AUTO_RESTORE && !deepLink;
@@ -1967,7 +1972,7 @@ const App = (function() {
         _userChoice = null;
         const label = _labelOf(datasetPath);
         _recentsUser().then(user => {
-            try { recordRecent(window.localStorage, window.location.origin, user, { path: datasetPath, label }); } catch { /* storage blocked */ }
+            try { recordRecent(convenienceStorage(Config.SERVER_CONFIG, window), window.location.origin, user, { path: datasetPath, label }); } catch { /* storage blocked */ }
         });
     }
 
@@ -1986,7 +1991,7 @@ const App = (function() {
 
     /** The stored recents (newest first, at most RECENT_LIMIT) of the user `_recentsUser` named. @private */
     function _storedRecents() {
-        try { return loadRecents(window.localStorage, window.location.origin, _recentsUserKey || 'local').slice(0, RECENT_LIMIT); } catch { return []; }
+        try { return loadRecents(convenienceStorage(Config.SERVER_CONFIG, window), window.location.origin, _recentsUserKey || 'local').slice(0, RECENT_LIMIT); } catch { return []; }
     }
 
     /**
@@ -2036,7 +2041,7 @@ const App = (function() {
             me: _authMe,
             stored: () => {
                 try {
-                    return { recents: loadRecents(window.localStorage, origin(), user()), pins: loadPins(window.localStorage, origin(), user()) };
+                    return { recents: loadRecents(convenienceStorage(Config.SERVER_CONFIG, window), origin(), user()), pins: loadPins(window.localStorage, origin(), user()) };
                 } catch { return { recents: [], pins: [] }; }
             },
             lookup: (paths) => lookupPaths(Config.API.DATASET_LOOKUP, paths),

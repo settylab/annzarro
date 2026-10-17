@@ -22,7 +22,7 @@ import { attribution, longTable, geneButton, noneKnown } from './common.js';
 // Enrichr
 
 const ENRICHR = Object.freeze({
-    name: 'Enrichr', host: 'maayanlab.cloud', home: 'https://maayanlab.cloud/Enrichr/', licence: '', maxConcurrent: 1
+    name: 'Enrichr', host: 'maayanlab.cloud', home: 'https://maayanlab.cloud/Enrichr/', privacyUrl: 'https://maayanlab.cloud/Enrichr/', licence: '', maxConcurrent: 1
 });
 
 /** Library names as Enrichr's datasetStatistics listed them on 2026-10-05. */
@@ -99,7 +99,7 @@ export const enrichr = {
 // Reactome
 
 const REACTOME = Object.freeze({
-    name: 'Reactome', host: 'reactome.org', home: 'https://reactome.org', licence: 'CC BY 4.0', maxConcurrent: 1
+    name: 'Reactome', host: 'reactome.org', home: 'https://reactome.org', privacyUrl: 'https://reactome.org/about/privacy-notice', licence: 'CC BY 4.0', maxConcurrent: 1
 });
 
 /** Species Reactome infers pathways for, by the names it uses. */
@@ -197,7 +197,7 @@ export const reactome = {
 // Human Protein Atlas
 
 const HPA = Object.freeze({
-    name: 'Human Protein Atlas', host: 'www.proteinatlas.org', home: 'https://www.proteinatlas.org', licence: 'CC BY 4.0', maxConcurrent: 1
+    name: 'Human Protein Atlas', host: 'www.proteinatlas.org', home: 'https://www.proteinatlas.org', privacyUrl: 'https://www.proteinatlas.org/about/privacy', licence: 'CC BY 4.0', maxConcurrent: 1
 });
 
 const HPA_COLUMNS = 'g,gs,eg,up,rnats,rnatd,rnascs,rnascd,scl';

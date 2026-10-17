@@ -14,13 +14,13 @@
         button { background: var(--az-page-btn); color: #ffffff; border: none; padding: 12px 20px; border-radius: 4px; font-size: 16px; cursor: pointer; }
     </style>
 </head>
-<body>
+<body{# site:begin #}{% if site.footer %} class="has-site-footer site-centered"{% endif %}{# site:end #}>
     <main>
         <p>Signing out takes a button press, not a link.</p>
         <form method="post" action="{{ url_for('logout') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit">Sign out</button>
         </form>
-    </main>
+    </main>{# site:begin #}{% include "_site_footer.html" %}{# site:end #}
 </body>
 </html>

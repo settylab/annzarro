@@ -5,6 +5,7 @@ import { recordCameraOnRelease } from '../../utils/scene-camera.js';
 import { greyMarker, styleArea } from '../../utils/point-style.js';
 import { plotArea } from '../../utils/view-point-style.js';
 import { scaleBar, replaceScaleBar, SCALE_BAR } from './plot-options.js';
+import { usableUnsPalette } from '../../utils/uns-palette.js';
 import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName } from '../../utils/categories.js';
 
 /**
@@ -735,10 +736,9 @@ export function keptViewRanges(settings) {
       }
     } else if (
       settings?.categoryPalette === "uns" &&
-      customColors &&
-      customColors.length > 0
+      (selectedPalette = usableUnsPalette(customColors, categories.length))
     ) {
-      selectedPalette = customColors;
+      // the stored colours, one for each category
     } else {
         try {
           if (settings.categoryPalette === "uns") {
@@ -871,7 +871,9 @@ export function keptViewRanges(settings) {
       traces.push(makeTrace(bySlot[i], category, selectedPalette[i % selectedPalette.length], category));
     });
 
-    return withLegendProxies(traces, settings);
+    const out = withLegendProxies(traces, settings);
+    out.categoryCount = categories.length;   // for the note when the stored colours were not used
+    return out;
   }
 
   /** Trace `meta` of a legend proxy, and of the point traces whose legend entry it carries. */

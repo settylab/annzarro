@@ -8,6 +8,15 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- Click the app name at the top left to see which version you are running, how to cite AnnZarro, and who develops and funds it (the Setty Lab at Fred Hutch Cancer Center, with the NIH award numbers), with links to the documentation, the repository and the changelog.
+- A server can show who runs it and what it owes its visitors. Under `site:` in the configuration, set an imprint, privacy notice, accessibility statement and terms of use, each as a link, a Markdown text or a Markdown file, plus an operator, a contact and the link labels (`Impressum`, `Datenschutz` for German sites). A small footer line on every page, including the sign-in, account and admin pages, links them; the About dialog gets a "This site" block, and a click on the imprint opens it in place. The texts are also served at `/site/imprint`, `/site/privacy`, `/site/accessibility` and `/site/terms`, which need no sign-in. Nothing appears until you configure it.
+- `site.robots` tells search engines to stay away (by default on a server with login), `site.security_contact` serves `/.well-known/security.txt`, and `site.storage.persistent_convenience: false` keeps the layout autosave and recent datasets only until the tab closes.
+- The Gene Set panel's question before it sends gene lists now says that each service also receives your IP address, and links the service's privacy policy.
+- `site.software_credits: false` reduces the About dialog's credit for AnnZarro (lab logo, funding, citation) to its name, version, licence and links; it stays by default everywhere, below the site's own block.
+- The About dialog of the desktop app states what the app sends and where.
+- The server warns at start when `integrations.external_requests` is `"on"` on a shared server, and when `branding.contact_info.custom_html` contains a script, an iframe or an address on another server.
+
 ### Changed
 - A plot's toolbar (zoom, pan, reset, camera) sits in the top right corner of the plotting area
   instead of the figure's, so a legend or colour bar placed on the right, the default, no longer
@@ -16,8 +25,13 @@ with the release after it. Older releases are listed on
   made for it, instead of over the top or bottom of the plot. It sits below the x-axis title at the
   bottom. A legend above or below a plot does the same, clear of the axes and the x-axis title, in short
   panels too.
+- The About dialog says that the Setty Lab develops and funds AnnZarro (the software), so that a site that runs it is not mistaken for the lab's own.
+
+### Fixes
+- A categorical colour whose `uns["<column>_colors"]` has fewer colours than the column has categories no longer repeats them, which gave different categories the same colour. As in scanpy, the stored colours are then set aside and the default palette is used, in regular and large plots, and the panel's status strip says so ("Default colours: see why").
 
 ### Docs
+- New page [Running a public site](https://annzarro.readthedocs.io/en/latest/deployment/public-site.html): who is responsible, what a public site owes its visitors (imprint, privacy notice, accessibility), what AnnZarro stores and sends, the `site` settings, and privacy-notice templates in English and German.
 - The README and the licence page cite v0.5.5 by its DOI,
   [10.5281/zenodo.23440020](https://doi.org/10.5281/zenodo.23440020).
 

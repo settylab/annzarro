@@ -1294,11 +1294,14 @@ const GeneSetPanel = (function() {
                 const a = rs[0].adapter;
                 const what = typeof a.describeRequest === 'function' ? a.describeRequest(rs[0].input) : 'gene ids';
                 return el('li', {}, el('b', { text: host }), ` (${a.provider.name}): ${what}`,
+                    a.provider.privacyUrl ? el('span', {}, ' \u00b7 ', D.link(a.provider.privacyUrl, 'its privacy policy',
+                        { label: `Privacy policy of ${a.provider.name}` })) : '',
                     a.privacy ? el('div', { class: 'gs-consent__warn', text: `⚠ ${a.privacy.text} Asked every time.` }) : '');
             });
             const persistable = _pending.requests.some(r => r.persistable);
             box.append(el('div', { class: 'gs-consent__text', text: 'Send these to the services below? Nothing else leaves this browser '
-                + '(no dataset name, no cell data, no address of this page).' }),
+                + '(no dataset name, no cell data, no address of this page), but each service also receives your IP address, '
+                + 'as any website you visit does. They are run by others, some outside your country, under their own privacy policies.' }),
             el('ul', { class: 'gs-consent__list' }, lines),
             // fetch-policy.js hostAnswers: the one request beyond those listed
             el('div', { class: 'gs-consent__note', text: 'If a request fails without an answer, the panel asks that service '
