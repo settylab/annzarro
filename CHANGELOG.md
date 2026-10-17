@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Docs
+- The README and the licence page cite v0.5.5 by its DOI,
+  [10.5281/zenodo.23440020](https://doi.org/10.5281/zenodo.23440020).
+
 ## 0.5.5 (2026-10-17)
 
 Fewer pop-ups, with messages shown where you are looking; automatic point size and opacity that
