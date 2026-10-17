@@ -11,7 +11,7 @@ import {
     parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
-import { escapeHtml, canModify, lockReason, describeFailure, authIndicator, refreshPlan, partialRefreshNotice, signOut } from './utils/session-permissions.js';
+import { escapeHtml, canModify, lockReason, failureLine, authIndicator, refreshPlan, partialRefreshNotice, signOut } from './utils/session-permissions.js';
 import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
@@ -23,7 +23,7 @@ import { sameSubset, describeParts, partSpec } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
 import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/subset-loading.js';
-import { registerStatusActions } from './utils/panel-surface.js';
+import { registerStatusActions, setStatusTag } from './utils/panel-surface.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
 import { overrideOnce, maxSubsetCells } from './utils/memory-guard-ui.js';
@@ -276,6 +276,7 @@ const App = (function() {
         if (_datasetButton) _datasetButton.update(state, previous);
         _showFormatOf(state);
         _focusInputsFollow(state);
+        _shareFollows(state);
         document.dispatchEvent(new CustomEvent('datasetState', { detail: state }));
         // the desktop app follows the dataset (proxy icon, recent documents), whoever opened it
         if (window.api && typeof window.api.datasetOpened === 'function'
@@ -285,6 +286,17 @@ const App = (function() {
         }
         // an open that something else started (the desktop app's menu or a drop) ends the browser
         if (_browser.isOpen() && state.status === 'opening' && !(previous && previous.path === state.path && previous.status === 'opening')) _browser.close();
+    }
+
+    /** Share Link needs a dataset: without one the button is off and says why, instead of a notice after the click. @private */
+    let _shareTitle = null;
+    function _shareFollows(state) {
+        const button = document.getElementById('btn-share-link');
+        if (!button) return;
+        if (_shareTitle === null) _shareTitle = button.title;
+        const none = !state.path;
+        button.disabled = none;
+        button.title = none ? 'Open a dataset first' : _shareTitle;
     }
 
     /** The format of the dataset bar ("zarr v2") for the dataset that opened, from the details the browser reads too. @private */
@@ -392,10 +404,7 @@ const App = (function() {
         const fallback = document.getElementById('share-link-fallback');
         const field = document.getElementById('share-link-field');
         const datasetPath = (_noDataView && _noDataView.missing) || _lastLoadedDatasetPath || DataManager.getCurrentDataset();
-        if (!datasetPath) {
-            _showNotification('Nothing to share', 'Open a dataset first.', 'warning', 3000);
-            return;
-        }
+        if (!datasetPath) return;   // the button is off without a dataset (_shareFollows)
 
         let link;
         try {
@@ -885,14 +894,13 @@ const App = (function() {
     /** A dataset is open again: the view is no longer without data. @private */
     /**
      * The open dataset answered 404 (DataManager.setDatasetGoneHandler): its
-     * grant was revoked, or the store is gone. Say so once and return to the
-     * picker; what is already in the browser cannot be recalled.
+     * grant was revoked, or the store is gone. Return to the picker, whose
+     * banner says so (as does the dataset button); what is already in the browser cannot be recalled.
      * @private
      */
     function _datasetGone(path) {
         DatasetState.set({ path, label: _labelOf(path), status: 'unavailable', error: notAvailableText(path) });
         markDatasetUnavailable(path);
-        _showNotification(UNAVAILABLE_TITLE, notAvailableText(path), 'warning');
         _showChangeDataset({ browse: true, unavailableName: path });
     }
 
@@ -1437,9 +1445,17 @@ const App = (function() {
                 document.dispatchEvent(new CustomEvent('annzarro:open-subset', { detail: { preset: 'largest-regular' } }));
                 break;
             case 'focus-part': {
-                const part = await DataManager.partOfCell(DataManager.getFocusedCell());
+                const cell = DataManager.getFocusedCell();
+                const part = await DataManager.partOfCell(cell);
                 if (part !== null) SubsetControl.goTo(part);
-                else _showNotification('Part not found', 'The subset\'s filter leaves the focused cell out.', 'warning');
+                else if (host) {
+                    // answered where it was asked: in the tag's own popover, which stays open without the action
+                    setStatusTag(host, 'focus', {
+                        text: `${cell} not shown`,
+                        title: `The focused cell ${cell} is not in any part of this subset`,
+                        pop: { text: `The focused cell ${cell} is in no part: the subset's filter leaves it out.` }
+                    });
+                }
                 break;
             }
             case 'stop-table': click(`remove-non-table-entries-${id}`); break;
@@ -2485,6 +2501,9 @@ const App = (function() {
         // Clear previous input value and suggestions
         sessionNameInput.value = '';
         sessionSuggestions.innerHTML = '';
+        delete sessionNameInput.dataset.overwrite;
+        const saveNote = document.getElementById('session-save-note');
+        if (saveNote) { saveNote.hidden = true; saveNote.textContent = ''; }
         
         // Function to update the suggestions based on input
         function updateSuggestions(query = '') {
@@ -2883,11 +2902,12 @@ const App = (function() {
                         const sessionName = card.dataset.sessionName;
                         const isAutosave = card.dataset.isAutosave === 'true';
                         
-                        const confirmMsg = isAutosave ? 
-                            `Delete autosaved session? This will remove it from browser storage.` : 
-                            `Delete panel set "${sessionName}"?`;
+                        if (card.querySelector('.session-card-ask')) return;
+                        const question = isAutosave
+                            ? 'Delete the autosave? It is removed from this browser.'
+                            : `Delete panel set "${sessionName}"?`;
                         
-                        if (confirm(confirmMsg)) {
+                        if (await _askInCard(card, question, 'Delete')) {
                             if (isAutosave) {
                                 // Delete from localStorage
                                 SessionManager.clearAutosave();
@@ -2912,8 +2932,7 @@ const App = (function() {
                                         `;
                                     }
                                 } else {
-                                    const { title, type } = describeFailure(result, 'Failed to delete panel set');
-                                    _showNotification(title, result.message, type);
+                                    _dialogNote(card, failureLine(result, 'Deleting this panel set'));
                                 }
                             }
                         }
@@ -2942,9 +2961,8 @@ const App = (function() {
                         
                         if (result.status === 'success') {
                             _sessionModal.hide();
-                            _showSuccess('Autosave Restored', 'Your autosaved panel configuration has been restored');
                         } else {
-                            _showNotification('Failed to restore autosave', result.message, 'error');
+                            _dialogNote(card, failureLine(result, 'Restoring the autosave'));
                         }
                     });
                 });
@@ -2993,7 +3011,7 @@ const App = (function() {
             onLoad: async (mode) => {
                 actions.setBusy(true);
                 try {
-                    await _runLoad(() => SessionManager.loadSession(name, { mode }));
+                    await _runLoad(() => SessionManager.loadSession(name, { mode }), card);
                 } finally {
                     actions.setBusy(false);
                 }
@@ -3011,20 +3029,19 @@ const App = (function() {
     /**
      * Run a load started from the Load dialog and say how it went: the dialog
      * closes on success (or when the set opened without data, which has its
-     * own notice); a refusal is a notice.
+     * own notice); a refusal is a line in `host`, the card the user pressed.
+     * @param {Function} load
+     * @param {HTMLElement} [host]
      * @private
      */
-    async function _runLoad(load) {
+    async function _runLoad(load, host = null) {
+        _dialogNote(host, '');
         const result = await load();
         if (result.status === 'success' || result.status === 'no-data') {
             _sessionModal.hide();
-        } else if (result.status === 'cancelled') {
-            // the user closed the dataset picker: nothing to report
-            if (!/No dataset chosen/.test(result.message || '')) {
-                _showNotification('Panel set not loaded', result.message, 'info', 5000);
-            }
-        } else {
-            _showNotification('Failed to load panel set', result.message, 'error');
+        } else if (result.status !== 'cancelled') {
+            // (a cancelled load is the user closing the dataset picker: nothing to report)
+            _dialogNote(host, failureLine(result, 'Loading this panel set'));
         }
         return result;
     }
@@ -3120,19 +3137,16 @@ const App = (function() {
             getCurrent: SessionManager.getCurrentDatasetInfo,
             onLoad: async (mode) => {
                 actions.setBusy(true);
+                _dialogNote(host, '');
                 try {
                     const imported = await SessionManager.importSession(file);
                     if (imported.status !== 'success') {
-                        const { title: t, type } = describeFailure(imported, 'Failed to import panel set');
-                        _showNotification(t, imported.message, type);
+                        _dialogNote(host, failureLine(imported, 'Importing this file'));
                         return;
                     }
-                    const result = await _runLoad(() => SessionManager.loadSession(imported.name, { mode }));
-                    if (result.status === 'success' && Date.now() - _viewNoticeAt > 5000 && mode !== 'add') {
-                        _showSuccess('Session Loaded', 'Panel set was imported and loaded successfully.');
-                    }
+                    await _runLoad(() => SessionManager.loadSession(imported.name, { mode }), host);
                 } catch (error) {
-                    _showNotification('Error', error.message, 'error');
+                    _dialogNote(host, `Importing this file failed: ${error.message}`);
                 } finally {
                     actions.setBusy(false);
                 }
@@ -3292,6 +3306,63 @@ const App = (function() {
     }
     
     /**
+     * Say how a panel-set dialog action went wrong where it was asked: a line
+     * in `host` (a card, or the save dialog), which stays until the next try.
+     * A toast would sit outside the dialog's focus trap, away from the eyes.
+     * @param {HTMLElement} host
+     * @param {string} text - empty clears the line
+     * @private
+     */
+    function _dialogNote(host, text) {
+        if (!host) return;
+        let note = host.querySelector('.dialog-note');
+        if (!text) { if (note) note.remove(); return; }
+        if (!note) {
+            note = document.createElement('div');
+            note.className = 'dialog-note small text-danger mt-2';
+            note.setAttribute('role', 'alert');
+            host.appendChild(note);
+        }
+        note.textContent = text;
+    }
+
+    /**
+     * Ask in a card, before something that cannot be undone: the card's
+     * footer is replaced by the question and two buttons until answered.
+     * (A notice would sit outside the dialog's focus trap.)
+     * @param {HTMLElement} card
+     * @param {string} question
+     * @param {string} yes - label of the confirming button
+     * @returns {Promise<boolean>}
+     * @private
+     */
+    function _askInCard(card, question, yes) {
+        return new Promise(resolve => {
+            _dialogNote(card, '');
+            const bar = document.createElement('div');
+            bar.className = 'session-card-ask d-flex align-items-center gap-2 flex-wrap mt-2 small';
+            bar.setAttribute('role', 'group');
+            bar.setAttribute('aria-label', question);
+            const text = document.createElement('span');
+            text.textContent = question;
+            const answer = (value) => { bar.remove(); resolve(value); };
+            const confirmBtn = document.createElement('button');
+            confirmBtn.type = 'button';
+            confirmBtn.className = 'btn btn-sm btn-danger';
+            confirmBtn.textContent = yes;
+            confirmBtn.addEventListener('click', (e) => { e.stopPropagation(); answer(true); });
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'btn btn-sm btn-outline-secondary';
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); answer(false); });
+            bar.append(text, confirmBtn, cancelBtn);
+            card.appendChild(bar);
+            cancelBtn.focus();
+        });
+    }
+
+    /**
      * Handle session modal confirm button click
      * @private
      */
@@ -3319,26 +3390,40 @@ const App = (function() {
             if (existing && !canModify(existing)) {
                 // The server would refuse the overwrite; say so before asking
                 // anything, and leave the dialog open so a new name can be typed.
-                _showNotification('Choose another name', `"${sanitizedName}": ${lockReason(existing)}`, 'warning');
+                _invalid(sessionNameInput, `"${sanitizedName}": ${lockReason(existing)}`);
                 return;
             }
             
-            if (existingNames.has(sanitizedName.toLowerCase())) {
-                // If name collision, ask for confirmation
-                if (!confirm(`A panel set with the name "${sanitizedName}" already exists. Do you want to overwrite it?`)) {
-                    return;
-                }
+            const note = document.getElementById('session-save-note');
+            const confirmBtn = document.getElementById('btn-confirm-session');
+            const disarm = () => {
+                delete sessionNameInput.dataset.overwrite;
+                confirmBtn.textContent = 'Save';
+                note.hidden = true;
+                note.textContent = '';
+            };
+            if (existingNames.has(sanitizedName.toLowerCase())
+                && sessionNameInput.dataset.overwrite !== sanitizedName.toLowerCase()) {
+                // A name collision: the button becomes Overwrite, in the dialog; another name disarms it
+                sessionNameInput.dataset.overwrite = sanitizedName.toLowerCase();
+                confirmBtn.textContent = 'Overwrite';
+                note.hidden = false;
+                note.className = 'small mt-2 text-warning-emphasis';
+                note.textContent = `A panel set named "${sanitizedName}" already exists. Overwrite replaces it; or type another name.`;
+                sessionNameInput.addEventListener('input', disarm, { once: true });
+                return;
             }
+            disarm();
             
             const result = await SessionManager.saveSession(sanitizedName);
             
             if (result.status === 'success') {
                 _sessionModal.hide();
                 if (result.fingerprintPending) _noticeFingerprintPending();
-                //_showSuccess('Panel Set saved', `Panel Set "${sanitizedName}" saved successfully`);
             } else {
-                const { title, type } = describeFailure(result, 'Failed to save panel set');
-                _showNotification(title, result.message, type);
+                note.hidden = false;
+                note.className = 'small mt-2 text-danger';
+                note.textContent = failureLine(result, 'Saving this panel set');
             }
         }
         // (the Load dialog has no confirm button: each card's own buttons load)
@@ -3391,30 +3476,6 @@ const App = (function() {
         } catch (error) {
             console.warn('Could not load sign-in status:', error);
         }
-    }
-    
-    /**
-     * Show success message
-     * @param {string} title - Success message title
-     * @param {string} message - Success message
-     * @private
-     */
-    function _showSuccess(title, message) {
-        // Use the notification system instead of alert
-        console.log(`Success: ${title} - ${message}`);
-        _showNotification(title, message, 'success');
-    }
-    
-    /**
-     * Show error message
-     * @param {string} title - Error message title
-     * @param {string} message - Error message
-     * @private
-     */
-    function _showError(title, message) {
-        // Use the notification system instead of alert
-        console.error(`Error: ${title} - ${message}`);
-        _showNotification(title, message, 'error');
     }
     
     // Map to track active notification timers by ID

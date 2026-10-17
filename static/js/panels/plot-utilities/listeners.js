@@ -587,6 +587,15 @@ export function setupColorControls(
         });
     }
 
+    // What the Log scale says about a limit, under the Min/Max boxes where the
+    // user is looking: a limit with no log10 is refused (red), one that is
+    // floored is explained (muted). Empty clears it.
+    const $logHint = $container.find(`#color-log-hint-${id}`);
+    function _logHint(text, refused = false) {
+        $logHint.text(text || '').prop('hidden', !text)
+            .toggleClass('text-danger', !!text && refused).toggleClass('text-muted', !!text && !refused);
+    }
+
     // The boxes take data values, also under Log (settings then hold log10):
     // typing 82 means 82, not 10^82. A value with no log10 is explained.
     function _typedBound(which, text) {
@@ -594,7 +603,7 @@ export function setupColorControls(
         if (typed === null || !Number.isFinite(typed)) return typed;
         const log = !!(settings.color && settings.color.log);
         const { value, note, refused } = colorBoundFromData(typed, log, which, data.colorLog ? data.colorLog.floor : null);
-        if (refused || note) notify('Log colour scale', refused || note, 'warning');
+        _logHint(refused || note, !!refused);
         if (refused) return undefined;
         return value;
     }
@@ -721,6 +730,7 @@ export function setupColorControls(
     };
     $logColorButton.on('click', () => {
         if (!settings.color) return;
+        _logHint('');
         if (settings.lockColorRange) {
             // a locked range stays the same data values in the new units; the
             // limits are kept as typed (panel-ui-update.js drawLockedRange),
@@ -734,7 +744,7 @@ export function setupColorControls(
                 const lo = colorBoundFromData(min, true, 'min', settings.color.logFloor ?? null);
                 const hi = colorBoundFromData(max, true, 'max');
                 const said = [hi.refused, lo.note].filter(Boolean);
-                if (said.length) notify('Log colour scale', `${said.join(' ')} The locked limits come back when Log is off.`, 'warning');
+                if (said.length) _logHint(`${said.join(' ')} The locked limits come back when Log is off.`, true);
             }
         }
         settings.color.log = !settings.color.log;

@@ -30,7 +30,7 @@ const {
   canModify,
   lockReason,
   errorFromResponse,
-  describeFailure,
+  failureLine,
   authIndicator,
   partialRefreshNotice,
 } = await import(pathToFileURL(MODULE_PATH).href);
@@ -73,10 +73,10 @@ test("a 409 body's `message` is used when there is no `error`", async () => {
   assert.equal(result.message, "exists");
 });
 
-test("a refusal is a warning, anything else stays an error", () => {
-  assert.deepEqual(describeFailure({ httpStatus: 403 }, "Failed"), { title: "Not allowed", type: "warning" });
-  assert.deepEqual(describeFailure({ httpStatus: 500 }, "Failed"), { title: "Failed", type: "error" });
-  assert.deepEqual(describeFailure({ status: "error" }, "Failed"), { title: "Failed", type: "error" });
+test("a failed action reads as a line in place: a refusal as 'Not allowed', anything else by what failed", () => {
+  assert.equal(failureLine({ httpStatus: 403, message: "Owned by ann" }, "Saving this panel set"), "Not allowed: Owned by ann");
+  assert.equal(failureLine({ httpStatus: 500, message: "Disk full" }, "Saving this panel set"), "Saving this panel set failed: Disk full");
+  assert.equal(failureLine({ status: "error" }, "Deleting"), "Deleting failed: The server gave no reason.");
 });
 
 test("only an explicit can_modify === false locks a set", () => {

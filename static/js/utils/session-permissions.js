@@ -129,17 +129,17 @@ export async function signOut(fetchImpl = globalThis.fetch, navigate = (u) => { 
 }
 
 /**
- * Notification title for a failed panel-set action. A permission refusal is
- * not a malfunction, so it gets a calmer title than "Failed to ...".
- * @param {Object} result - What SessionManager returned.
- * @param {string} fallback - Title to use for any other failure.
- * @returns {{title: string, type: string}}
+ * The line a dialog shows beside the action that failed (in place, where the
+ * eyes are), for a failed server answer: the server's refusal as "Not allowed:
+ * ...", anything else as "<what> failed: ...".
+ * @param {{httpStatus?: number, message?: string}} result
+ * @param {string} what - The action, e.g. "Saving this panel set".
+ * @returns {string}
  */
-export function describeFailure(result, fallback) {
-    if (result && result.httpStatus === 403) {
-        return { title: 'Not allowed', type: 'warning' };
-    }
-    return { title: fallback, type: 'error' };
+export function failureLine(result, what) {
+    const message = (result && result.message) || 'The server gave no reason.';
+    if (result && result.httpStatus === 403) return `Not allowed: ${message}`;
+    return `${what} failed: ${message}`;
 }
 
 /**

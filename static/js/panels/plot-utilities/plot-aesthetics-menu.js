@@ -2170,51 +2170,74 @@ export async function exportPlot(plotContainer, format, settings, how = 'full') 
     .toISOString()
     .replace(/[:.]/g, '-');
 
-  const showNotification = (message, autoHide = true, type = 'success') => {
-      if (!downloadButton) return null;
-      // Remove any existing notification
-      const existingPopover = bootstrap.Popover.getInstance(downloadButton);
-      if (existingPopover) existingPopover.dispose();
-      
-      // Create new notification popover
-      const popover = new bootstrap.Popover(downloadButton, {
-        content: message,
-        placement: 'top',
-        customClass: `notification-popover ${type}-notification`,
-        trigger: 'manual',
-        delay: { hide: 1500 }
-      });
-      
-      // Show and auto-hide after 2 seconds
-      popover.show();
-      if (autoHide) {
-        setTimeout(() => {
-            if (popover) popover.dispose();
-        }, 2000);
-      }
-      return popover;
-      
-    };
-
   // checked again at the click: the panels open may have changed since the menu was drawn
   const check = how === 'full' ? exportCheck(plotContainer, opts) : null;
   if (check && check.verdict === 'block') {
-    showNotification(`Not exported: ${refusalText(check, EXPORT_ADVICE)}`, true, 'error');
+    refuseInStatus(plotContainer, 'exported', check);
     return;
   }
   _exportInProgress = true;
-  const popoverContainer = showNotification("Preparing Image", false);
+  const done = markBusy(downloadButton, 'Preparing image\u2026');
   try {
     await guarded(check, { panel: panelId, action: 'export', format }, () =>
       exportImage(plotContainer, how, { format, ...opts, filename }));
+    setStatusTag(plotContainer, 'export', null);
   } catch (err) {
     console.error('Error exporting plot:', err);
-    // beside the button, as the other export outcomes are; not a blocking alert
-    showNotification('Export failed; please try again', true, 'error');
+    failInStatus(plotContainer, 'Export failed', 'The image could not be made; try again, or at a smaller size.');
   } finally {
     _exportInProgress = false;
-    if (popoverContainer) popoverContainer.dispose();
+    done();
   }
+}
+
+/**
+ * An export or copy the memory check refused: the panel's status strip says so,
+ * with the advice and (for an export) "Export as shown", as for the modebar camera.
+ * @param {HTMLElement} gd - the plot
+ * @param {'exported'|'copied'} verb
+ * @param {Object} check - exportCheck's answer, with verdict 'block'
+ */
+function refuseInStatus(gd, verb, check) {
+  const why = refusalText(check, EXPORT_ADVICE);
+  setStatusTag(gd, 'memory', { text: `Not ${verb}: browser memory`, severity: 'warning', title: why,
+    pop: { text: why, actions: verb === 'exported' && canSnapshot(gd) ? [['export-shown', 'Export as shown']] : [] } });
+  nudgeStatusTag(gd, 'memory');
+}
+
+/**
+ * An export or copy that failed: a tag in the panel's status strip that stays
+ * until the next export succeeds, not a message that vanishes in seconds.
+ * @param {HTMLElement} gd - the plot
+ * @param {string} text - the tag
+ * @param {string} why - the sentence under it
+ */
+function failInStatus(gd, text, why) {
+  setStatusTag(gd, 'export', { text, severity: 'error', title: why, pop: { text: why } });
+  nudgeStatusTag(gd, 'export');
+}
+
+/**
+ * Show on a button that its action is running (its label, and aria-busy for
+ * assistive technology); the returned function puts the button back.
+ * @param {HTMLElement|null} button
+ * @param {string} label
+ * @returns {Function}
+ */
+function markBusy(button, label) {
+  if (!button) return () => {};
+  const before = button.innerHTML;
+  button.setAttribute('aria-busy', 'true');
+  button.textContent = label;
+  return () => { button.removeAttribute('aria-busy'); button.innerHTML = before; };
+}
+
+/** Say "Copied" on a button for a moment, then put its label back. */
+function flashLabel(button, text, ms = 2000) {
+  if (!button) return;
+  const before = button.innerHTML;
+  button.textContent = text;
+  setTimeout(() => { button.innerHTML = before; }, ms);
 }
 
 /**
@@ -2225,10 +2248,7 @@ registerCameraExport(async (gd, opts) => {
   const o = { width: opts.width || 1200, height: opts.height || 800, scale: opts.scale || 1 };
   const check = exportCheck(gd, o);
   if (check.verdict === 'block') {
-    const why = refusalText(check, EXPORT_ADVICE);
-    setStatusTag(gd, 'memory', { text: 'Not exported: browser memory', severity: 'warning', title: why,
-      pop: { text: why, actions: canSnapshot(gd) ? [['export-shown', 'Export as shown']] : [] } });
-    nudgeStatusTag(gd, 'memory');
+    refuseInStatus(gd, 'exported', check);
     return;
   }
   await guarded(check, { panel: getPanelId(gd), action: 'export', format: 'png' }, () =>
@@ -2245,25 +2265,9 @@ async function copyPlotToClipboard(plotContainer, settings) {
     if (!plotContainer) return;
     const opts = { ...exportOptions(settings), scale: 1 };
     const copyBtn = document.getElementById(`copy-to-clipboard-${getPanelId(plotContainer)}`);
-    const showNotification = (message, type = 'success') => {
-      if (!copyBtn) return;
-      const existingPopover = bootstrap.Popover.getInstance(copyBtn);
-      if (existingPopover) existingPopover.dispose();
-      const popover = new bootstrap.Popover(copyBtn, {
-        content: message,
-        placement: 'top',
-        customClass: `notification-popover ${type}-notification`,
-        trigger: 'manual',
-        delay: { hide: 1500 }
-      });
-      popover.show();
-      setTimeout(() => {
-        if (popover) popover.dispose();
-      }, 2000);
-    };
     const check = exportCheck(plotContainer, opts);
     if (check.verdict === 'block') {
-      showNotification(`Not copied: ${refusalText(check, EXPORT_ADVICE)}`, 'error');
+      refuseInStatus(plotContainer, 'copied', check);
       return;
     }
     try {
@@ -2272,10 +2276,14 @@ async function copyPlotToClipboard(plotContainer, settings) {
       const blob = await fetch(dataUrl).then(res => res.blob());
       if (!navigator.clipboard || !window.ClipboardItem) throw new Error('Clipboard API not supported');
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      showNotification('Plot image copied to clipboard', 'success');
+      setStatusTag(plotContainer, 'export', null);
+      flashLabel(copyBtn, 'Copied');
     } catch (err) {
       console.error('Copy to clipboard failed:', err);
-      showNotification('Could not copy image', 'error');
+      failInStatus(plotContainer, 'Not copied',
+        navigator.clipboard && window.ClipboardItem
+          ? 'The image could not be copied; use Download instead.'
+          : 'The browser copies images only on https or localhost; use Download instead.');
     }
   }
 

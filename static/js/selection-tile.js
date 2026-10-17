@@ -609,7 +609,7 @@ export class SelectionTile {
         welcomeClearButton.addEventListener('click', (e) => {
           e.stopPropagation();
           e.preventDefault();
-          this._clearClosedPanels();
+          this._clearClosedPanels(e.currentTarget);
         });
         welcomeClearButton._hasClickHandler = true;
       }
@@ -618,7 +618,7 @@ export class SelectionTile {
         paneClearButton.addEventListener('click', (e) => {
           e.stopPropagation();
           e.preventDefault();
-          this._clearClosedPanels();
+          this._clearClosedPanels(e.currentTarget);
         });
         paneClearButton._hasClickHandler = true;
       }
@@ -634,10 +634,13 @@ export class SelectionTile {
     }
     
     /**
-     * Clear all closed panels after confirmation
+     * Clear all closed panels after confirmation: the first press turns the
+     * button into the question, the second (within a few seconds) deletes.
+     * In place, with no dialog.
+     * @param {HTMLElement} [button] - the Clear button that was pressed
      * @private
      */
-    _clearClosedPanels() {
+    _clearClosedPanels(button = null) {
       const closedPanels = [];
       
       // Collect all closed panels
@@ -651,9 +654,26 @@ export class SelectionTile {
         return;
       }
       
-      // Ask for confirmation
-      const confirmMessage = `Are you sure you want to delete all ${closedPanels.length} closed panels?`;
-      if (confirm(confirmMessage)) {
+      if (button && button.dataset.armed !== '1') {
+        const label = button.innerHTML;
+        button.dataset.armed = '1';
+        button.textContent = `Delete all ${closedPanels.length} closed panels?`;
+        const disarm = () => {
+          clearTimeout(timer);
+          button.removeEventListener('blur', disarm);
+          if (button.dataset.armed !== '1') return;
+          delete button.dataset.armed;
+          button.innerHTML = label;
+        };
+        const timer = setTimeout(disarm, 6000);
+        button.addEventListener('blur', disarm);
+        return;
+      }
+      if (button) {
+        delete button.dataset.armed;
+        button.innerHTML = '<i class="fas fa-trash-alt"></i> Clear closed panels';
+      }
+
         // Delete all closed panels
         closedPanels.forEach(({ panel, id }) => {
           const type = panel.getType();
@@ -673,7 +693,6 @@ export class SelectionTile {
         if (window.PanelManager && typeof window.PanelManager.updateSourcePanelSelection === 'function') {
           window.PanelManager.updateSourcePanelSelection();
         }
-      }
     }
   
     // --- Sessions Section (Only for "welcome") ---
