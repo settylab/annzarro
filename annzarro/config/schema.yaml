@@ -668,7 +668,7 @@ ui:
           default: true
         auto_restore:
           type: [string, boolean]
-          enum: [reload, always, never]
+          enum: [reload, always, never, true, false]
           description: "When a page restores the autosave by itself: reload (a reload of the tab; a fresh visit lists it first), always (every visit) or never; true and false mean always and never. A session that did not finish loading is never restored by itself"
           default: reload
   required:
