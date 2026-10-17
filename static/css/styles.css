@@ -3836,6 +3836,25 @@ details.aesthetics-section > .aesthetics-body {
     color: var(--az-text);
 }
 .dataset-back[hidden] { display: none; }
+.dataset-info-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    margin-left: -0.5rem;      /* flush with the dataset button, which it describes */
+    border-color: var(--az-control-border);
+    background: var(--az-surface);
+    color: var(--az-text);
+    -webkit-app-region: no-drag;
+}
+.dataset-info-button:hover {
+    background: var(--az-accent-bg);
+    color: var(--az-text);
+}
+.dataset-info-button[hidden] { display: none; }
+.dataset-bar .dataset-info-button { flex: 0 0 auto; }
 .dataset-bar .dataset-fact,
 .dataset-bar .theme-toggle,
 .dataset-bar .dataset-back,
@@ -4254,3 +4273,92 @@ details.aesthetics-section > .aesthetics-body {
 .about-text-body p, .about-text-body ul, .about-text-body ol { margin-bottom: 0.45rem; }
 .about-text-body ul, .about-text-body ol { padding-left: 1.2rem; }
 .about-privacy { font-size: 0.78rem; color: var(--az-muted); margin: 0.6rem 0 0 !important; }
+
+
+/* ---- Dataset information: the dialog (utils/dataset-info-dialog.js) and the browser's details pane (utils/dataset-info.js) ---- */
+.dataset-info-dialog .modal-body { font-size: 0.9rem; min-height: 16rem; }
+.dataset-info-heading { min-width: 0; }
+.dataset-info-name {
+    margin: 0;
+    color: var(--az-muted);
+    font-size: 0.8rem;
+    overflow-wrap: anywhere;
+}
+.dsi-tabs { margin-bottom: 0.9rem; }
+.dsi-tabs .nav-link { color: var(--az-text); }
+.dsi-tabs .nav-link.active { font-weight: 600; }
+.dsi-muted { color: var(--az-muted); }
+.dsi-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1.2rem 0;
+    color: var(--az-muted);
+}
+.dsi-spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--az-border-strong);
+    border-top-color: var(--az-link);
+    border-radius: 50%;
+    animation: dataset-spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .dsi-spinner { animation-duration: 3s; }
+}
+.dsi-error {
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--az-danger-border);
+    border-radius: 4px;
+    background: var(--az-danger-bg);
+    color: var(--az-danger-text);
+}
+.dsi-error p { margin: 0 0 0.5rem; }
+.dsi-title { font-size: 1.1rem; margin: 0 0 0.5rem; }
+.dsi-description, .dsi-multiline, .dsi-readme { overflow-wrap: anywhere; }
+.dsi-description, .dsi-multiline { white-space: pre-wrap; }
+.dsi-fields {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.35rem 1rem;
+    margin: 0 0 0.75rem;
+}
+.dsi-fields dt { font-weight: 400; color: var(--az-muted); }
+.dsi-fields dd { margin: 0; overflow-wrap: anywhere; }
+.dsi-fields-compact { gap: 0.15rem 0.75rem; font-size: 0.85rem; }
+.dsi-hint, .dsi-note { font-size: 0.8rem; margin: 0.6rem 0 0; }
+.dsi-empty { margin: 0.4rem 0; }
+.dsi-readme { max-width: 70ch; }
+.dsi-readme :is(h4, h5, h6) { margin: 1rem 0 0.4rem; font-weight: 600; }
+.dsi-readme h4 { font-size: 1.1rem; }
+.dsi-readme h5 { font-size: 1rem; }
+.dsi-readme h6 { font-size: 0.9rem; }
+.dsi-readme p { margin: 0 0 0.7rem; }
+.dsi-readme code {
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    background: var(--az-surface-3);
+    color: var(--az-text);
+    font-size: 0.85em;
+}
+.dsi-readme-compact { font-size: 0.85rem; }
+.dsi-summary { font-weight: 600; margin: 0 0 0.3rem; }
+.dsi-x { margin: 0 0 0.6rem; }
+.dsi-section { margin: 0 0 0.5rem; border-top: 1px solid var(--az-border-soft); padding-top: 0.35rem; }
+.dsi-section > summary { cursor: pointer; font-weight: 600; padding: 0.15rem 0; }
+.dsi-count { color: var(--az-muted); font-weight: 400; }
+.dsi-table { margin: 0.3rem 0 0; font-size: 0.82rem; --bs-table-bg: transparent; --bs-table-color: var(--az-text); }
+.dsi-table { table-layout: fixed; width: 100%; }
+.dsi-table th:first-child { width: 40%; }
+.dsi-table th, .dsi-table td { padding: 0.15rem 0.5rem 0.15rem 0; overflow-wrap: anywhere; }
+.dsi-table thead th { color: var(--az-muted); font-weight: 400; }
+.dsi-name { font-weight: 500; font-family: var(--bs-font-monospace, monospace); font-size: 0.95em; }
+.dsi-tree { list-style: none; margin: 0.2rem 0 0; padding-left: 1rem; font-size: 0.85rem; }
+.dsi-tree .dsi-tree { border-left: 1px solid var(--az-border-soft); }
+.dsi-tree li { padding: 0.05rem 0; overflow-wrap: anywhere; }
+/* the browser's details pane: the same parts, smaller, under the facts of the store */
+.dsb-about { margin: 0.5rem 0; }
+.dsb-about > .dsi-fields { margin-bottom: 0.4rem; }
+.dsb-about details.dsb-about-more { margin: 0.25rem 0; border-top: 1px solid var(--az-border-soft); padding-top: 0.25rem; }
+.dsb-about details.dsb-about-more > summary { cursor: pointer; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--az-muted); }
+.dsb-about .dsi-loading { padding: 0.5rem 0; }

@@ -153,6 +153,11 @@
                 <button id="refresh-dataset" type="button" class="btn btn-sm btn-outline-secondary dataset-refresh" title="Refresh dataset" aria-label="Refresh dataset">
                     <i class="fas fa-sync-alt" aria-hidden="true"></i>
                 </button>
+                <button id="dataset-info" type="button" class="btn btn-sm btn-outline-secondary dataset-info-button" hidden
+                        data-bs-toggle="modal" data-bs-target="#dataset-info-modal" aria-haspopup="dialog"
+                        aria-label="Dataset information" title="Dataset information">
+                    <i class="fas fa-circle-info" aria-hidden="true"></i>
+                </button>
                 <span class="dataset-fact">
                     <span>Cells: <span id="cell-count">-</span></span>
                     <button id="subset-button" type="button" class="btn btn-sm subset-badge" hidden>All cells</button>
@@ -284,6 +289,33 @@
                     <p class="about-fine">The content of AnnZarro is solely the responsibility of its authors and does not necessarily represent the official views of the National Institutes of Health. AnnZarro is released under the MIT licence.</p>{# site:begin #}{% else %}<p class="about-links"><a href="https://annzarro.readthedocs.io" target="_blank" rel="noopener noreferrer">Documentation</a> <a href="https://github.com/settylab/annzarro" target="_blank" rel="noopener noreferrer">GitHub</a></p>
                     <p class="about-fine">AnnZarro is released under the MIT licence.</p>{% endif %}{# site:end #}
                     <p id="about-desktop-privacy" class="about-privacy" hidden><strong>Privacy.</strong> This desktop app keeps everything on your computer and has no analytics or accounts. It contacts github.com for the newest release at launch and then daily (GitHub sees your IP address; turn this off under &ldquo;Check for Updates Automatically&rdquo;). The Gene Set panel sends gene lists and your IP address to the service you choose, only after you agree. A dataset opened from a web address is read from that address. <a href="https://annzarro.readthedocs.io/en/latest/deployment/public-site.html#desktop-privacy" target="_blank" rel="noopener noreferrer">Details</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dataset information: attribution, README and structure of the open dataset (utils/dataset-info-dialog.js) -->
+    <div class="modal fade" id="dataset-info-modal" tabindex="-1" aria-hidden="true" aria-labelledby="dataset-info-title">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg dataset-info-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="dataset-info-heading">
+                        <h5 class="modal-title" id="dataset-info-title">Dataset information</h5>
+                        <p id="dataset-info-name" class="dataset-info-name"></p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs dsi-tabs" role="tablist" aria-label="Dataset information">
+                        <li class="nav-item" role="presentation"><button type="button" class="nav-link active" id="dsi-tab-about" data-bs-toggle="tab" data-bs-target="#dsi-pane-about" data-dsi-part="about" role="tab" aria-controls="dsi-pane-about" aria-selected="true">About</button></li>
+                        <li class="nav-item" role="presentation"><button type="button" class="nav-link" id="dsi-tab-readme" data-bs-toggle="tab" data-bs-target="#dsi-pane-readme" data-dsi-part="readme" role="tab" aria-controls="dsi-pane-readme" aria-selected="false" tabindex="-1">README</button></li>
+                        <li class="nav-item" role="presentation"><button type="button" class="nav-link" id="dsi-tab-structure" data-bs-toggle="tab" data-bs-target="#dsi-pane-structure" data-dsi-part="structure" role="tab" aria-controls="dsi-pane-structure" aria-selected="false" tabindex="-1">Structure</button></li>
+                    </ul>
+                    <div class="tab-content dsi-panes">
+                        <div class="tab-pane fade show active" id="dsi-pane-about" role="tabpanel" aria-labelledby="dsi-tab-about" tabindex="0"><div class="dsi-body"></div></div>
+                        <div class="tab-pane fade" id="dsi-pane-readme" role="tabpanel" aria-labelledby="dsi-tab-readme" tabindex="0"><div class="dsi-body"></div></div>
+                        <div class="tab-pane fade" id="dsi-pane-structure" role="tabpanel" aria-labelledby="dsi-tab-structure" tabindex="0"><div class="dsi-body"></div></div>
+                    </div>
                 </div>
             </div>
         </div>

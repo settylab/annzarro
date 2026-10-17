@@ -18,6 +18,7 @@
  *
  * services (everything the dialog reads from the application):
  *   urls            {folder, search, details, lookup}
+ *   infoLoader      the loader of utils/dataset-info.js (attribution, README, structure of a dataset), or null
  *   me()            Promise of auth/me (null when it cannot be read)
  *   stored()        {recents, pins}: [{path, label, openedAt|pinnedAt}], newest first (the user is known)
  *   lookup(paths)   Promise of the server's answer for those paths (POST /datasets/lookup)
@@ -38,6 +39,7 @@ import {
     pathFieldWording, splitByRanges, basename
 } from './dataset-picker.js';
 import { recentEntries } from './dataset-recents.js';
+import { drawAbout, drawReadme, drawStructure, showError, showLoading, showPart } from './dataset-info.js';
 import {
     COLUMNS, SERVER_SORTS, FORMAT_CHIPS, CELL_BANDS, MODIFIED_BANDS,
     applyFilters, emptyFilters, filtersActive, searchRows, sortRows, ariaSort, nextSort, typeAheadIndex,
@@ -820,9 +822,55 @@ export function createDatasetBrowser(services) {
             return;
         }
         pane.appendChild(el('dl', 'dsb-fields'));
+        const info = el('div', 'dsb-about');
+        pane.appendChild(info);
         pane.appendChild(el('div', 'dsb-details-body'));
         repaintDetails(row, known || listingMeta(row));
-        if (!row.error) detailsTimer = setTimeout(() => loadDetails(row), known ? 0 : DETAILS_DELAY_MS);
+        if (!row.error) detailsTimer = setTimeout(() => { loadDetails(row); loadAbout(row, info); }, known ? 0 : DETAILS_DELAY_MS);
+    }
+
+    /**
+     * What the dataset says about itself, under the facts of the store: the attribution when it has any, and
+     * the README and the structure as disclosures that read their part when opened. A dataset that says
+     * nothing adds nothing here.
+     */
+    async function loadAbout(row, holder) {
+        const loader = services.infoLoader;
+        if (!loader || !holder) return;
+        const current = () => !!S && S.selected === row.path && holder.isConnected;
+        if (!current()) return;
+        holder.dataset.state = 'loading';
+        const slow = setTimeout(() => { if (current() && holder.dataset.state === 'loading') showLoading(holder, 'Loading the attribution…'); }, 250);
+        try {
+            const about = await loader.load(row.path, 'about');
+            if (!current()) return;
+            holder.textContent = '';
+            holder.removeAttribute('aria-busy');
+            if (!about.present && !about.has_readme) { holder.dataset.state = 'empty'; return; }
+            holder.dataset.state = 'ready';
+            if (about.present) drawAbout(holder, about, { compact: true, copy: services.copy });
+            for (const [part, title, draw, show] of [['readme', 'README', drawReadme, about.has_readme], ['structure', 'Structure', drawStructure, true]]) {
+                if (!show) continue;
+                const more = el('details', 'dsb-about-more');
+                more.dataset.part = part;
+                more.appendChild(el('summary', null, title));
+                const body = el('div', 'dsi-body');
+                more.appendChild(body);
+                let asked = false;
+                more.addEventListener('toggle', () => {
+                    if (!more.open || asked) return;
+                    asked = true;
+                    showPart(body, { loader, path: row.path, part, draw, current, compact: true }).then((ok) => { if (!ok) asked = false; });
+                });
+                holder.appendChild(more);
+            }
+        } catch (e) {
+            if (!current()) return;
+            holder.dataset.state = 'error';
+            showError(holder, `The attribution could not be read: ${(e && e.message) || 'unknown error'}`, () => loadAbout(row, holder));
+        } finally {
+            clearTimeout(slow);
+        }
     }
 
     async function loadDetails(row) {

@@ -54,7 +54,7 @@ DIRECTORY_PATH_ENDPOINTS = ("list_directory",)
 
 #: Endpoints whose ``path`` argument names a store, like ``dataset_path`` elsewhere
 #: (a relative one is in the data directory).
-STORE_PATH_ENDPOINTS = ("dataset_details",)
+STORE_PATH_ENDPOINTS = ("dataset_details", "dataset_info")
 
 
 ARBITRARY_PATH_MODES = ("admins", "local-only", "none")

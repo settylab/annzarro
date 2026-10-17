@@ -46,6 +46,7 @@ import { initAboutDialog } from './utils/about-dialog.js';
 import { firstDatasetChoice, keysUsedByPanels, isRemote } from './utils/dataset-browser-model.js';
 import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
+import { mountDatasetInfo } from './utils/dataset-info-dialog.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
@@ -236,6 +237,7 @@ const App = (function() {
     // ── The current dataset (utils/dataset-state.js) ──────────────────────
 
     let _datasetButton = null;
+    let _datasetInfo = null;
     let _browser = { open: async () => null, close() {}, isOpen: () => false };
 
     let _bootDone = () => {};
@@ -291,6 +293,7 @@ const App = (function() {
         const app = document.querySelector('.app-title');
         document.title = documentTitle(state, (app && app.textContent.trim()) || 'AnnZarro');
         if (_datasetButton) _datasetButton.update(state, previous);
+        if (_datasetInfo) _datasetInfo.update(state);
         _showFormatOf(state);
         _focusInputsFollow(state);
         _shareFollows(state);
@@ -1735,6 +1738,8 @@ const App = (function() {
             onBack: _goBack
         });
         _datasetButton.update(DatasetState.get());
+        _datasetInfo = mountDatasetInfo({ url: Config.API.DATASET_ABOUT, state: () => DatasetState.get() });
+        _datasetInfo.update(DatasetState.get());
         DatasetState.onSwitch(_offerBack);
         _focusInputsFollow(DatasetState.get());
         // the desktop app's Open Dataset... menu item; a plain folder it was handed is shown as a place
@@ -2038,6 +2043,7 @@ const App = (function() {
         const user = () => _recentsUserKey || 'local';
         return {
             urls: { folder: Config.API.DATASET_FOLDER, search: Config.API.DATASET_SEARCH, details: Config.API.DATASET_DETAILS, lookup: Config.API.DATASET_LOOKUP },
+            get infoLoader() { return _datasetInfo ? _datasetInfo.loader : null; },      // mounted after the browser is made
             me: _authMe,
             stored: () => {
                 try {
