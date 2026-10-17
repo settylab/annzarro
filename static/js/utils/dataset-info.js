@@ -28,22 +28,64 @@ export function shapeLabel(shape) {
     return Array.isArray(shape) && shape.length ? shape.map((n) => Number(n).toLocaleString('en-US')).join(' × ') : '';
 }
 
-/** The type of a matrix-like member in a few words: "float32", "csr_matrix, float32", "dataframe, 3 columns". */
+/** A fraction as a percentage to two significant digits: 0.25 is "25%", 0.00004 is "<0.01%". */
+export function densityLabel(density) {
+    if (density === null || density === undefined) return '';
+    if (density === 0) return '0%';
+    const pct = density * 100;
+    return pct < 0.01 ? '<0.01%' : `${Number(pct.toPrecision(2))}%`;
+}
+
+const plural = (n, one, many) => `${Number(n).toLocaleString('en-US')} ${n === 1 ? one : many}`;
+
+/**
+ * The type of an obsm, varm, obsp, varp, layers or X entry in a few words: "float32", "csr_matrix, float32, 4 stored
+ * values (25% dense)", "dataframe, 2 columns: u, v", "awkward-array, length 200".
+ */
 export function memberType(item) {
     const bits = [];
     if (item.encoding && item.encoding !== 'array') bits.push(item.encoding);
-    if (item.columns !== undefined) bits.push(`${item.columns} column${item.columns === 1 ? '' : 's'}`);
     if (item.dtype) bits.push(item.dtype);
+    if (item.nnz !== undefined) {
+        const dense = densityLabel(item.density);
+        bits.push(`${plural(item.nnz, 'stored value', 'stored values')}${dense ? ` (${dense} dense)` : ''}`);
+    }
+    if (item.columns !== undefined) {
+        const names = (item.column_names || []).join(', ');
+        bits.push(`${plural(item.columns, 'column', 'columns')}${names ? `: ${names}${item.columns > item.column_names.length ? ', …' : ''}` : ''}`);
+    }
+    if (item.encoding === 'categorical' && item.categories !== undefined) bits.push(plural(item.categories, 'category', 'categories'));
+    if (item.length !== undefined && item.length !== null) bits.push(`length ${item.length.toLocaleString('en-US')}`);
     return bits.join(', ');
 }
 
-/** The type of an obs or var column: "categorical, 8 categories", "float64", "string". */
+/** The type of an obs or var column: "categorical, 8 categories, ordered", "integer, int64, nullable", "string". */
 export function columnType(column) {
     if (column.kind === 'categorical') {
-        const n = column.categories;
-        return n === undefined ? 'categorical' : `categorical, ${n.toLocaleString('en-US')} categor${n === 1 ? 'y' : 'ies'}`;
+        const bits = ['categorical'];
+        if (column.categories !== undefined) bits.push(plural(column.categories, 'category', 'categories'));
+        if (column.ordered) bits.push('ordered');
+        if (column.codes_dtype) bits.push(`codes ${column.codes_dtype}`);
+        return bits.join(', ');
     }
-    return column.dtype && column.dtype !== column.kind ? `${column.kind}, ${column.dtype}` : (column.kind || column.dtype || '');
+    const base = column.dtype && column.dtype !== column.kind ? `${column.kind}, ${column.dtype}` : (column.kind || column.dtype || '');
+    return column.nullable ? `${base}, nullable` : base;
+}
+
+const HEX_COLOUR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const RGB_COLOUR = /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(?:,\s*(?:0|1|0?\.\d{1,3})\s*)?\)$/i;
+const NAMED_COLOUR = /^[a-z]{3,20}$/i;
+
+/**
+ * `text` when it is a plain CSS colour (hex, strict rgb or rgba, or a colour name) and short, else null. Anything with
+ * url(), var(), a semicolon or a space is refused, so a colour is only ever set through `style.backgroundColor`.
+ */
+export function safeColour(text) {
+    const value = String(text === undefined || text === null ? '' : text).trim();
+    if (!value || value.length > 50) return null;
+    if (!HEX_COLOUR.test(value) && !RGB_COLOUR.test(value) && !NAMED_COLOUR.test(value)) return null;
+    if (NAMED_COLOUR.test(value) && typeof CSS !== 'undefined' && CSS.supports && !CSS.supports('color', value)) return null;
+    return value;
 }
 
 /** Text to copy for "Copy citation": the citation as given, with the DOI link when it does not name it. */
@@ -260,6 +302,24 @@ export function drawReadme(container, readme, { compact = false } = {}) {
     }
 }
 
+function name(doc, text) {
+    const bdi = el(doc, 'bdi', null, text);     // a right-to-left name cannot reorder what is around it
+    const span = el(doc, 'span', 'dsi-name');
+    span.appendChild(bdi);
+    return span;
+}
+
+/** A colour as a bordered square with its text as the accessible name; a colour that is not plain is "?". */
+function swatch(doc, colour) {
+    const safe = safeColour(colour);
+    const node = el(doc, 'span', safe ? 'dsi-swatch' : 'dsi-swatch dsi-swatch-bad');
+    node.setAttribute('role', 'img');
+    node.setAttribute('aria-label', String(colour).slice(0, 100));
+    node.title = String(colour).slice(0, 100);
+    if (safe) node.style.backgroundColor = safe; else node.textContent = '?';
+    return node;
+}
+
 function table(doc, headers, rows) {
     const t = el(doc, 'table', 'table table-sm dsi-table');
     const head = el(doc, 'thead');
@@ -270,11 +330,47 @@ function table(doc, headers, rows) {
     const body = el(doc, 'tbody');
     for (const row of rows) {
         const r = el(doc, 'tr');
-        row.forEach((cell, i) => r.appendChild(el(doc, i === 0 ? 'th' : 'td', i === 0 ? 'dsi-name' : null, cell)));
+        row.cells.forEach((cell, i) => {
+            const c = el(doc, i === 0 ? 'th' : 'td');
+            if (i === 0) c.appendChild(name(doc, cell)); else c.textContent = cell;
+            r.appendChild(c);
+        });
         body.appendChild(r);
+        if (row.extra) {
+            const more = el(doc, 'tr', 'dsi-extra');
+            const td = el(doc, 'td');
+            td.colSpan = headers.length;
+            td.appendChild(row.extra);
+            more.appendChild(td);
+            body.appendChild(more);
+        }
     }
     t.appendChild(body);
     return t;
+}
+
+/** The head of a categorical's labels, each with its colour when the dataset has one, and the colour count against the categories. */
+function categoryDetail(doc, column) {
+    if (column.kind !== 'categorical') return null;
+    const box = el(doc, 'div', 'dsi-labels');
+    const labels = column.labels || [];
+    labels.forEach((label, i) => {
+        const chip = el(doc, 'span', 'dsi-label');
+        if (column.label_colors && column.label_colors[i] !== undefined) chip.appendChild(swatch(doc, column.label_colors[i]));
+        chip.appendChild(name(doc, label));
+        box.appendChild(chip);
+    });
+    if (labels.length && column.categories > labels.length) box.appendChild(el(doc, 'span', 'dsi-muted', `+${(column.categories - labels.length).toLocaleString('en-US')}`));
+    if (column.colors !== undefined && column.colors !== null) {
+        if (column.colors_mismatch) {
+            const warn = el(doc, 'span', 'dsi-warn', `Mismatch: ${plural(column.colors, 'colour', 'colours')} for ${plural(column.categories, 'category', 'categories')}`);
+            warn.setAttribute('role', 'note');
+            box.appendChild(warn);
+        } else {
+            box.appendChild(el(doc, 'span', 'dsi-muted', plural(column.colors, 'colour', 'colours')));
+        }
+    }
+    return box.childNodes.length ? box : null;
 }
 
 function section(doc, title, count, open) {
@@ -294,16 +390,29 @@ function unsTree(doc, node) {
     const ul = el(doc, 'ul', 'dsi-tree');
     for (const child of node.children || []) {
         const li = el(doc, 'li');
-        li.appendChild(el(doc, 'span', 'dsi-name', child.name));
+        li.appendChild(name(doc, child.name));
+        const muted = (text) => li.appendChild(el(doc, 'span', 'dsi-muted', text));
         if (child.type === 'group') {
-            li.appendChild(el(doc, 'span', 'dsi-muted', ` group, ${child.total} ${child.total === 1 ? 'key' : 'keys'}`));
+            muted(` group, ${plural(child.total, 'key', 'keys')}`);
             if (child.children && child.children.length) li.appendChild(unsTree(doc, child));
-            else if (child.total) li.appendChild(el(doc, 'span', 'dsi-muted', ' …'));
+            else if (child.total) muted(' …');
+        } else if (child.type === 'encoded') {
+            const shape = shapeLabel(child.shape);
+            muted(` ${[memberType(child), shape ? `(${shape})` : ''].filter(Boolean).join(' ')}`);
         } else if (child.type === 'array') {
             const shape = shapeLabel(child.shape);
-            li.appendChild(el(doc, 'span', 'dsi-muted', ` ${[child.dtype, shape ? `(${shape})` : 'scalar'].filter(Boolean).join(' ')}`));
+            muted(` ${[child.dtype, shape ? `(${shape})` : 'scalar'].filter(Boolean).join(' ')}`);
+            if (child.value !== undefined) {
+                li.appendChild(doc.createTextNode(' = '));
+                li.appendChild(el(doc, 'span', 'dsi-value', child.value));
+            }
+            if (child.colors) {
+                const holder = el(doc, 'span', 'dsi-labels');
+                for (const c of child.colors) holder.appendChild(swatch(doc, c));
+                li.appendChild(holder);
+            }
         } else {
-            li.appendChild(el(doc, 'span', 'dsi-muted', ' unreadable'));
+            muted(' unreadable');
         }
         ul.appendChild(li);
     }
@@ -312,22 +421,35 @@ function unsTree(doc, node) {
     return ul;
 }
 
-/** Structure: counts, X, obs and var columns, the matrix slots with shapes, the uns tree. */
+function capsLine(s) {
+    const c = s.caps;
+    if (!c) return null;
+    const bits = [`${c.columns} columns per table`, `${c.items} keys per slot`, `uns to depth ${c.uns_depth} and ${c.uns_nodes} nodes`,
+        `${c.category_labels} labels for the first ${c.label_columns} categorical columns`, `names cut at ${c.label_chars} characters`];
+    return `Limits: ${bits.join('; ')}.`;
+}
+
+/** Structure: counts, X, obs and var columns, the matrix slots with shapes, raw, the uns tree, unknown groups, and the limits applied. */
 export function drawStructure(container, structure, { compact = false } = {}) {
     const doc = container.ownerDocument;
     const s = structure || {};
     const count = (n) => (n === null || n === undefined ? '?' : Number(n).toLocaleString('en-US'));
     container.appendChild(el(doc, 'p', 'dsi-summary', `${count(s.n_obs)} observations (cells) × ${count(s.n_vars)} variables (genes)`));
-    if (s.X) {
-        const x = el(doc, 'p', 'dsi-x');
-        x.append(el(doc, 'strong', null, 'X '), doc.createTextNode([shapeLabel(s.X.shape), memberType(s.X)].filter(Boolean).join(', ')));
-        container.appendChild(x);
+    const x = el(doc, 'p', 'dsi-x');
+    x.append(el(doc, 'strong', null, 'X '));
+    x.append(doc.createTextNode(s.X ? [shapeLabel(s.X.shape), memberType(s.X)].filter(Boolean).join(', ') : 'none'));
+    container.appendChild(x);
+    if (s.capped === 'deadline') {
+        const cut = el(doc, 'p', 'dsi-warn dsi-cut', `Reading was cut off after ${(s.caps && s.caps.remote_budget_s) || 'a few'} s because the store is slow to answer; items below are missing.`);
+        cut.setAttribute('role', 'note');
+        container.appendChild(cut);
     }
     for (const [key, label] of [['obs', 'obs: cell annotations'], ['var', 'var: gene annotations']]) {
         const t = s[key] || { columns: [], total: 0 };
         const d = section(doc, label, t.total, !compact && t.total <= 40);
         d.dataset.section = key;
-        if (t.columns.length) d.appendChild(table(doc, ['Column', 'Type'], t.columns.map((c) => [c.name, columnType(c)])));
+        if (t.index) d.appendChild(el(doc, 'p', 'dsi-note', `Index: ${t.index}${t.index_dtype ? `, ${t.index_dtype}` : ''}`));
+        if (t.columns.length) d.appendChild(table(doc, ['Column', 'Type'], t.columns.map((c) => ({ cells: [c.name, columnType(c)], extra: categoryDetail(doc, c) }))));
         else d.appendChild(el(doc, 'p', 'dsi-muted', 'No columns.'));
         const note = more(doc, t.columns.length, t.total);
         if (note) d.appendChild(note);
@@ -339,9 +461,20 @@ export function drawStructure(container, structure, { compact = false } = {}) {
         if (!t || !t.total) continue;
         const d = section(doc, label, t.total, !compact);
         d.dataset.section = slot;
-        d.appendChild(table(doc, ['Key', 'Shape', 'Type'], t.items.map((i) => [i.name, shapeLabel(i.shape), memberType(i)])));
+        d.appendChild(table(doc, ['Key', 'Shape', 'Type'], t.items.map((i) => ({ cells: [i.name, shapeLabel(i.shape), memberType(i)] }))));
         const note = more(doc, t.items.length, t.total);
         if (note) d.appendChild(note);
+        container.appendChild(d);
+    }
+    if (s.raw) {
+        const d = section(doc, 'raw: not shown in plots', undefined, false);
+        d.dataset.section = 'raw';
+        const bits = [];
+        if (s.raw.X) bits.push(`X ${[shapeLabel(s.raw.X.shape), memberType(s.raw.X)].filter(Boolean).join(', ')}`);
+        bits.push(plural(s.raw.var_columns || 0, 'var column', 'var columns'));
+        if (s.raw.varm_keys && s.raw.varm_keys.length) bits.push(`varm: ${s.raw.varm_keys.join(', ')}`);
+        d.appendChild(el(doc, 'p', null, bits.join('; ')));
+        d.appendChild(el(doc, 'p', 'dsi-note', 'AnnZarro plots the genes of X, not of raw.'));
         container.appendChild(d);
     }
     const uns = s.uns || { children: [], total: 0 };
@@ -351,4 +484,12 @@ export function drawStructure(container, structure, { compact = false } = {}) {
     else d.appendChild(el(doc, 'p', 'dsi-muted', 'Empty.'));
     if (uns.capped) d.appendChild(el(doc, 'p', 'dsi-note', 'The tree is cut here; the dataset has more.'));
     container.appendChild(d);
+    if (s.other && s.other.length) {
+        const o = section(doc, 'other groups', s.other.length, true);
+        o.dataset.section = 'other';
+        o.appendChild(table(doc, ['Name', 'Type'], s.other.map((g) => ({ cells: [g.name, g.encoding] }))));
+        container.appendChild(o);
+    }
+    const caps = capsLine(s);
+    if (caps) container.appendChild(el(doc, 'p', 'dsi-note dsi-caps', caps));
 }

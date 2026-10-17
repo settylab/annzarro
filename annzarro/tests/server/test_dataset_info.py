@@ -17,6 +17,7 @@ from annzarro.server.core import create_app
 from annzarro.server.routes import data_routes, dataset_info as info_routes
 from annzarro.tests import zarr_compat
 from annzarro.tests.core.h5ad_twin import h5ad_twin
+from annzarro.tests.rich_info_store import MARKER, build_rich_store, sparse
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 FIXTURE = os.path.join(DATA, "fixture_small.zarr")
@@ -293,7 +294,7 @@ def test_obs_columns_and_matrix_keys_are_capped(client, data, monkeypatch):
     assert s["obsm"] == {"items": [], "total": 1}
 
 
-def test_the_structure_reads_no_array_and_the_text_parts_read_only_uns(client, data, monkeypatch):
+def test_the_structure_reads_only_heads_of_categories_and_small_uns_values(client, data, monkeypatch):
     read = []
     real = zarr.Array.__getitem__
 
@@ -302,7 +303,8 @@ def test_the_structure_reads_no_array_and_the_text_parts_read_only_uns(client, d
         return real(self, selection)
     monkeypatch.setattr(zarr.Array, "__getitem__", watch)
     assert info(client, data / "v2.zarr", parts="structure").status_code == 200
-    assert read == []
+    assert all(not p.startswith(("X", "obsm", "layers", "raw")) and (p.startswith("uns/") or p.endswith("categories")) for p in read), read
+    read.clear()
     assert info(client, data / "v2.zarr", parts="about,readme").status_code == 200
     assert read and all(p.startswith("uns/") for p in read), read
 
@@ -364,6 +366,7 @@ def test_a_remote_store_is_read_through_the_remote_opener(client, data, monkeypa
     opened = []
     monkeypatch.setattr(remote, "check_remote_access", lambda url: None)
     monkeypatch.setattr(zarr_reader, "_get_root", lambda path: opened.append(path) or zarr_compat.open_group(data / "v2.zarr", mode="r"))
+    monkeypatch.setattr(info_routes.time, "time", lambda: 1_000_000.0)     # one TTL window, whatever the clock says
     body = info(client, REMOTE).get_json()
     assert opened == [REMOTE] and body["name"] == "atlas.zarr"
     assert body["about"]["title"] == "Liver atlas" and body["structure"]["n_obs"] == 200
@@ -427,3 +430,135 @@ def test_a_hosted_server_refuses_a_path_outside_its_roots(tmp_path, data):
     app = create_app(_config(tmp_path, host="0.0.0.0"))
     reply = info(app.test_client(), outside / "secret.zarr")
     assert reply.status_code == 403 and reply.get_json()["reason"] == "outside_data_dir"
+
+
+# --- the structure, element by element -------------------------------------------------------------------
+
+
+@pytest.fixture
+def rich(tmp_path):
+    return build_rich_store(tmp_path / "rich.zarr", FIXTURE)
+
+
+def structure(client, store):
+    return info(client, store, parts="structure").get_json()["structure"]
+
+
+def test_an_encoded_uns_member_is_one_element_not_a_group(client, rich):
+    uns = {c["name"]: c for c in structure(client, rich)["uns"]["children"]}
+    assert (uns["df"]["type"], uns["df"]["encoding"], uns["df"]["columns"]) == ("encoded", "dataframe", 3)
+    assert uns["df"]["column_names"] == ["a", "b", "c"]
+    assert (uns["cat"]["encoding"], uns["cat"]["categories"], uns["cat"]["ordered"]) == ("categorical", 2, False)
+    assert (uns["mat"]["encoding"], uns["mat"]["shape"], uns["mat"]["nnz"]) == ("csr_matrix", [4, 4], 4)
+    for entry in uns.values():
+        assert "children" not in entry or entry["name"] == "annzarro"
+
+
+def test_a_dataframe_in_obsm_follows_column_order_and_sparse_has_nnz_and_density(client, rich):
+    s = structure(client, rich)
+    items = {i["name"]: i for i in s["obsm"]["items"]}
+    assert items["frame"]["columns"] == 2 and items["frame"]["column_names"] == ["u", "v"] and items["frame"]["shape"] == [4, 2]
+    sparse = items["X_sparse"]
+    assert (sparse["encoding"], sparse["nnz"], sparse["density"]) == ("csr_matrix", 4, 0.25)
+    assert (items["awk"]["encoding"], items["awk"]["length"]) == ("awkward-array", 200) and "children" not in items["awk"]
+    x = s["X"]
+    assert x["encoding"] in ("csc_matrix", "csr_matrix") and x["nnz"] > 0 and 0 < x["density"] <= 1
+
+
+def test_density_of_an_empty_matrix_does_not_divide_by_zero(client, rich):
+    root = zarr_compat.open_group(rich, mode="r+")
+    node = sparse(root["layers"], "empty", np.zeros((0, 5)))
+    zarr_compat.consolidate(rich)
+    item = [i for i in structure(client, rich)["layers"]["items"] if i["name"] == "empty"][0]
+    assert item["nnz"] == 0 and item["density"] is None and node is not None
+
+
+def test_colours_are_counted_against_categories_and_flags_are_kept(client, rich):
+    cols = {c["name"]: c for c in structure(client, rich)["obs"]["columns"]}
+    ct, leiden = cols["cell_type"], cols["leiden"]
+    assert (ct["categories"], ct["colors"], ct["colors_mismatch"], ct["ordered"]) == (3, 2, True, True)
+    assert (leiden["categories"], leiden["colors"], leiden["colors_mismatch"], leiden["ordered"]) == (5, 5, False, False)
+    assert leiden["label_colors"] == ["#111111", "#222222", "#333333", "#444444", "#555555"] and len(leiden["labels"]) == 5
+    assert ct["codes_dtype"].startswith("int")
+    assert "colors" not in cols["total_counts"] and cols["age"]["nullable"] is True and cols["age"]["kind"] == "integer"
+
+
+def test_the_index_name_and_dtype_are_reported(client, rich):
+    obs = structure(client, rich)["obs"]
+    assert obs["index"] == "_index" and obs["index_dtype"] == "string"
+
+
+def test_labels_are_the_head_of_the_categories_under_a_budget(client, rich, monkeypatch):
+    monkeypatch.setattr(dataset_info, "CATEGORY_LABELS", 2)
+    cols = {c["name"]: c for c in structure(client, rich)["obs"]["columns"]}
+    assert len(cols["leiden"]["labels"]) == 2 and len(cols["leiden"]["label_colors"]) == 2
+    info_routes.clear_cache()
+    monkeypatch.setattr(dataset_info, "MAX_LABEL_COLUMNS", 1)
+    cols = structure(client, rich)["obs"]["columns"]
+    assert sum("labels" in c for c in cols) == 1, "labels are read for the first columns only"
+
+
+def test_remote_structure_reads_no_labels_and_stops_at_its_deadline(client, rich, monkeypatch):
+    from annzarro.core import remote, zarr_reader
+    monkeypatch.setattr(remote, "check_remote_access", lambda url: None)
+    monkeypatch.setattr(zarr_reader, "_get_root", lambda path: zarr_compat.open_group(rich, mode="r"))
+    body = info(client, REMOTE, parts="structure").get_json()["structure"]
+    assert body["capped"] is None and all("labels" not in c for c in body["obs"]["columns"])
+    assert body["caps"]["remote_budget_s"] == dataset_info.REMOTE_BUDGET_S
+    info_routes.clear_cache()
+    monkeypatch.setattr(dataset_info, "REMOTE_BUDGET_S", -1.0)
+    cut = info(client, REMOTE, parts="structure").get_json()["structure"]
+    assert cut["capped"] == "deadline" and cut["obs"]["total"] == 5 and len(cut["obs"]["columns"]) < 5
+
+
+def test_raw_and_unknown_groups_are_listed(client, rich):
+    s = structure(client, rich)
+    assert s["raw"]["shown_in_plots"] is False and s["raw"]["X"]["shape"] == [200, 30]
+    assert s["raw"]["var_columns"] == 2 and s["raw"]["varm_keys"] == []
+    assert s["other"] == [{"name": "obst", "encoding": "dict"}]
+
+
+def test_a_store_without_raw_or_extras_says_nothing(client, data):
+    s = structure(client, data / "plain.zarr")
+    assert s["raw"] is None and s["other"] == [] and s["caps"]["label_chars"] == 100 and s["capped"] is None
+
+
+def test_uns_previews_are_short_and_capped(client, rich, monkeypatch):
+    uns = {c["name"]: c for c in structure(client, rich)["uns"]["children"]}
+    assert uns["n"]["value"] == "7" and uns["note"]["value"] == MARKER and "value" not in uns["big"]
+    assert uns["cell_type_colors"]["colors"] == ["#ff0000", "red; background:url(x)"]
+    info_routes.clear_cache()
+    monkeypatch.setattr(dataset_info, "MAX_UNS_PREVIEWS", 0)
+    assert "value" not in {c["name"]: c for c in structure(client, rich)["uns"]["children"]}["n"]
+
+
+def test_a_long_string_value_and_names_are_cut(client, rich):
+    put(str(rich), "long", "z" * 5000)
+    put(str(rich), "k" * 250, "v")
+    uns = {c["name"]: c for c in structure(client, rich)["uns"]["children"]}
+    assert len(uns["long"]["value"]) == dataset_info.LABEL_CHARS
+    assert [n for n in uns if n.startswith("kkk")] and max(len(n) for n in uns) <= 200
+
+
+def test_a_record_dtype_has_a_short_label(client, rich):
+    dtype = np.dtype([(f"f{i}", "U5") for i in range(30)])
+    assert dataset_info._dtype_label(dtype) == "record, 30 fields"
+    assert len(dataset_info._dtype_label(np.dtype("U" + "5"))) <= 100
+    assert len(dataset_info._short("x" * 10_000)) == 100
+
+
+def test_the_marker_in_every_name_stays_text(client, rich):
+    """Every place the structure carries dataset text: it is data, and the client sets it as text."""
+    body = info(client, rich, parts="structure").get_data(as_text=True)
+    assert "MARKER" in body
+    s = structure(client, rich)
+    names = [c["name"] for c in s["obs"]["columns"]] + [c["name"] for c in s["uns"]["children"]]
+    assert names.count(MARKER) == 2
+
+
+def test_the_rich_store_reads_the_same_from_an_h5ad_twin(client, rich, tmp_path):
+    h5ad_twin(rich, rich.parent / "twin.h5ad")
+    s = structure(client, rich.parent / "twin.h5ad")
+    uns = {c["name"]: c for c in s["uns"]["children"]}
+    assert uns["df"]["encoding"] == "dataframe" and uns["mat"]["nnz"] == 4
+    assert s["raw"]["X"]["shape"] == [200, 30] and s["other"][0]["name"] == "obst"
