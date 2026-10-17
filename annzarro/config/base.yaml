@@ -239,6 +239,58 @@ branding:
     email: null
     custom_html: null
 
+# The site this server is: who runs it and the texts a public site owes its visitors
+# (docs/deployment/public-site.md). Nothing here shows until it is set; a local or desktop
+# AnnZarro looks the same as before. Each text (imprint, privacy, accessibility, terms) is
+# a link to a page you already have (url), a Markdown text written here (markdown), or a
+# Markdown file read at start (file). With url set, markdown and file are ignored. A text
+# is shown in the About dialog and at /site/<name> (no sign-in needed); the links appear
+# in a small footer line of every page.
+site:
+  imprint:
+    url: null          # an http://, https:// or mailto: address
+    markdown: null     # the text itself, in Markdown (paragraphs, headings, lists, bold, italic, links)
+    file: null         # path of a Markdown file with the text (read at start, 256 KB at most)
+    label: "Imprint"   # the link text; German sites: "Impressum"
+  privacy:
+    url: null
+    markdown: null
+    file: null
+    label: "Privacy"   # German sites: "Datenschutz"
+  accessibility:
+    url: null
+    markdown: null
+    file: null
+    label: "Accessibility"   # German sites: "Barrierefreiheit"
+  terms:
+    url: null
+    markdown: null
+    file: null
+    label: "Terms of use"
+  # Who runs this site, as one line: "Example Institute, University of X". Shown in About.
+  operator: null
+  # A contact for the site: an e-mail address or an http(s) address. Falls back to
+  # branding.contact_info.email in About. A German imprint needs a second, fast way to reach you.
+  contact: null
+  # The link text for the contact in the footer and About; German sites: "Kontakt"
+  contact_label: "Contact"
+  # auto: a small footer line on every page links the texts above (and the contact);
+  # about-only: only the About dialog does (for internal sites; German and EU guidance
+  # want imprint and privacy links visible on every page of a public one)
+  footer_links: auto
+  # Whether search engines may index the site: auto (not when login is on), index, noindex.
+  # noindex adds X-Robots-Tag and a robots.txt that disallows everything.
+  robots: auto
+  # An address (mailto: or https) for vulnerability reports: serves /.well-known/security.txt
+  security_contact: null
+  # The language of the texts above (for security.txt and the text pages)
+  languages: "en"
+  storage:
+    # false: the layout autosave and the recent datasets last only until the tab closes
+    # (sessionStorage), so the browser keeps nothing between visits except choices the
+    # user made (theme, pins, subset size, export settings, answers about external services)
+    persistent_convenience: true
+
 # UI configuration
 ui:
   # Panel type settings

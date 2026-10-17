@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - {{ app_name }}</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+</head>
+<body class="has-site-footer site-text-page">
+    {# No script: this page is the same text as the About dialog's, readable without JavaScript. #}
+    <main class="site-text">
+        <p class="site-text-back"><a href="{{ request.script_root }}/">&larr; {{ app_name }}</a></p>
+        <h1>{{ title }}</h1>
+        {{ body|safe }}
+    </main>
+    {% include "_site_footer.html" %}
+</body>
+</html>

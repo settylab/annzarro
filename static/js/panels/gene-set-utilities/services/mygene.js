@@ -17,7 +17,7 @@ import { parseError } from '../fetch-policy.js';
 import { attribution, geneButton, longTable, mappedCoverage, noneKnown } from './common.js';
 
 const PROVIDER = Object.freeze({
-    name: 'MyGene.info', host: 'mygene.info', home: 'https://mygene.info', licence: '', maxConcurrent: 2
+    name: 'MyGene.info', host: 'mygene.info', home: 'https://mygene.info', privacyUrl: 'https://mygene.info/terms', licence: '', maxConcurrent: 2
 });
 
 const BASE = 'https://mygene.info/v3';

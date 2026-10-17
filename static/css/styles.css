@@ -4238,3 +4238,19 @@ details.aesthetics-section > .aesthetics-body {
 .welcome-recents-table { margin: 0 auto 0.5rem; width: auto; }
 .welcome-recents-table td { border: 0; padding: 0 0.5rem; vertical-align: baseline; }
 .welcome-open-actions { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+
+/* ---- About: "This site" (the operator's texts) ---- */
+.about-dialog .modal-content { max-height: calc(100vh - 1.5rem); }
+.about-dialog .modal-body { overflow-y: auto; }
+.about-section-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--az-muted); margin-bottom: 0.4rem; }
+.about-this-site p { margin-bottom: 0.35rem; }
+.about-text { border-top: 1px solid var(--az-border); padding: 0.3rem 0; }
+.about-text:last-child { border-bottom: 1px solid var(--az-border); }
+.about-text > summary { cursor: pointer; font-weight: 500; }
+.about-text > summary:focus-visible { outline: 2px solid var(--az-link); outline-offset: 2px; border-radius: 0.2rem; }
+.about-text-link { padding: 0.35rem 0; }
+.about-text-body { padding: 0.4rem 0 0.2rem; font-size: 0.85rem; }
+.about-text-body h4, .about-text-body h5, .about-text-body h6 { font-size: 0.9rem; margin: 0.6rem 0 0.25rem; }
+.about-text-body p, .about-text-body ul, .about-text-body ol { margin-bottom: 0.45rem; }
+.about-text-body ul, .about-text-body ol { padding-left: 1.2rem; }
+.about-privacy { font-size: 0.78rem; color: var(--az-muted); margin: 0.6rem 0 0 !important; }

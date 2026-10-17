@@ -22,7 +22,7 @@ import { MAX_URL_LENGTH } from '../links.js';
 export const STRING_DEFAULT_API = 'https://version-12-5.string-db.org/api';
 
 const PROVIDER = Object.freeze({
-    name: 'STRING', host: 'string-db.org', home: 'https://string-db.org',
+    name: 'STRING', host: 'string-db.org', home: 'https://string-db.org', privacyUrl: 'https://string-db.org/cgi/privacy',
     licence: 'CC BY 4.0', minIntervalMs: 1000, maxConcurrent: 1
 });
 

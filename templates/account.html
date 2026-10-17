@@ -16,7 +16,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
 </head>
-<body class="admin-page">
+<body class="admin-page{# site:begin #}{% if site.footer %} has-site-footer{% endif %}{# site:end #}">
     {# No inline script: the page's Content-Security-Policy allows script-src 'self' only. #}
     <main class="container py-4 account-card">
         <h1 class="h4">Change password</h1>
@@ -40,7 +40,7 @@
             <button class="btn btn-primary" type="submit" id="account-submit">Change password</button>
             <a class="btn btn-outline-secondary" href="{{ request.script_root }}/">Back to {{ app_name|default('AnnZarro') }}</a>
         </form>
-    </main>
+    </main>{# site:begin #}{% include "_site_footer.html" %}{# site:end #}
     <script type="module" src="{{ url_for('static', filename='js/account.js') }}"></script>
 </body>
 </html>

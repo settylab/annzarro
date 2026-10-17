@@ -96,7 +96,7 @@
         }
     </style>
 </head>
-<body>
+<body{# site:begin #}{% if site.footer %} class="has-site-footer site-centered"{% endif %}{# site:end #}>
     <div class="login-container">
         <div class="logo">
             <h2>{{ app_name|default('AnnZarro') }}</h2>
@@ -155,7 +155,7 @@
             {% endif %}
         </div>
         {% endif %}
-    </div>
+    </div>{# site:begin #}{% include "_site_footer.html" %}{# site:end #}
     <script>
         if (window.location.hash) {
             document.getElementById('login-fragment').value = window.location.hash;

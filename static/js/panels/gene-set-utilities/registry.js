@@ -9,6 +9,7 @@
  * @property {{name: string, host: string, home: string, version?: string,
  *   licence?: string, minIntervalMs?: number, maxConcurrent?: number}} provider
  *   `host` is what the consent bar and the errors name ('string-db.org')
+ * @property {string} [provider.privacyUrl]  the provider's own privacy policy (https), linked from the consent bar
  * @property {string[]} [hosts]       every host the adapter calls (default [provider.host])
  * @property {(input: Object) => string[]} [hostsFor]  the hosts for this input (a configured base URL)
  * @property {'set'|'gene'} kind      the snapshot's genes, or the focused gene
@@ -43,6 +44,7 @@ export function adapterProblems(adapter) {
     const pr = adapter.provider;
     if (!pr || typeof pr.name !== 'string' || typeof pr.host !== 'string' || typeof pr.home !== 'string'
         || !pr.home.startsWith('https://')) p.push('provider {name, host, home}');
+    if (pr && pr.privacyUrl !== undefined && !(typeof pr.privacyUrl === 'string' && pr.privacyUrl.startsWith('https://'))) p.push('provider.privacyUrl');
     if (adapter.hosts !== undefined && (!Array.isArray(adapter.hosts) || !adapter.hosts.every(h => typeof h === 'string'))) p.push('hosts');
     if (adapter.hostsFor !== undefined && typeof adapter.hostsFor !== 'function') p.push('hostsFor');
     if (adapter.kind !== 'set' && adapter.kind !== 'gene') p.push('kind');
