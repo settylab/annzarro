@@ -14,6 +14,7 @@ import zarr
 
 from annzarro.core import dataset_annotate
 from annzarro.tests import zarr_compat
+from annzarro.tests.rich_info_store import MARKER, build_rich_store
 from annzarro.tests.ui_helpers import BROWSER, browser_row, close_browser, open_browser, open_dataset
 
 from .dsb_servers import FIXTURE, SHOTS, Session, _require, start
@@ -83,6 +84,7 @@ def info_server(tmp_path_factory):
     node = root["uns"].create_array("README", shape=(), dtype="int64")
     node[()] = 7
     zarr_compat.consolidate(odd)
+    build_rich_store(data / "rich.zarr", FIXTURE)
     base, proc = start(tmp, data)
     yield base, str(data)
     proc.terminate()
@@ -429,4 +431,48 @@ def test_the_details_pane_in_the_dark_theme_and_as_a_phone_sheet(opened, width, 
     overflow = page.evaluate("() => { const d = document.querySelector('#dsb-details'); return d.scrollWidth - d.clientWidth; }")
     assert overflow <= 1, overflow
     _shot(page, f"browser-pane-{width}-{scheme}.png")
+    assert not s.errors, s.errors
+
+
+# ---- Structure: every element, and a hostile name in each place ------------------------------------------
+
+def test_structure_shows_each_element_and_the_hostile_names_stay_text(opened):
+    go, _data = opened
+    s = go("rich.zarr")
+    page = s.page
+    _open_dialog(page)
+    _tab(page, "structure")
+    page.wait_for_function("() => document.querySelector('#dsi-pane-structure .dsi-summary')")
+    pane = page.locator("#dsi-pane-structure")
+    # nothing the dataset wrote became an element
+    assert pane.locator("img, b, i, script, svg, iframe").count() == 0
+    assert "MARKER" in pane.inner_text() and MARKER in pane.inner_text()
+    assert pane.locator("bdi").count() > 5, "names are isolated for bidirectional text"
+    # colours: a plain one is a bordered swatch with its text as the name, a hostile one is "?" and sets no style
+    good = pane.locator(".dsi-swatch[aria-label='#ff0000']").first
+    assert good.evaluate("e => getComputedStyle(e).backgroundColor") == "rgb(255, 0, 0)"
+    bad = pane.locator(".dsi-swatch-bad").first
+    assert bad.inner_text() == "?" and "url(x)" in bad.get_attribute("aria-label")
+    assert bad.get_attribute("style") is None
+    assert page.evaluate("() => [...document.querySelectorAll('#dsi-pane-structure [style]')].every(e => !/url|var\\(/.test(e.getAttribute('style')))")
+    # colour count against categories, ordered and nullable
+    obs = pane.locator("details[data-section=obs]").inner_text()
+    assert "Mismatch: 2 colours for 3 categories" in obs and "5 colours" in obs
+    assert "ordered" in obs and "nullable" in obs and "Index: _index, string" in obs
+    # sparse, dataframe and awkward entries
+    obsm = pane.locator("details[data-section=obsm]").inner_text()
+    assert "4 stored values (25% dense)" in obsm and "2 columns: u, v" in obsm and "awkward-array" in obsm and "length 200" in obsm
+    # an encoded uns member is one line, never a group with its parts
+    uns = pane.locator("details[data-section=uns]").inner_text()
+    assert "dataframe" in uns and "csr_matrix" in uns and "categorical, 2 categories" in uns
+    for part in ("codes", "indptr", "indices"):
+        assert part not in uns, part
+    assert "= 7" in uns and pane.locator("details[data-section=uns] .dsi-value").count() >= 2
+    # raw and unknown groups
+    page.click("details[data-section=raw] summary")
+    assert "not shown in plots" in pane.locator("details[data-section=raw]").inner_text()
+    assert "obst" in pane.locator("details[data-section=other]").inner_text()
+    assert "Limits:" in pane.locator(".dsi-caps").inner_text()
+    _shot(page, "dialog-structure-rich-1440-light.png")
+    assert page.evaluate(PWN)
     assert not s.errors, s.errors

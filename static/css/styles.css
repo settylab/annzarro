@@ -4359,3 +4359,22 @@ details.aesthetics-section > .aesthetics-body {
 .dsb-about details.dsb-about-more { margin: 0.25rem 0; border-top: 1px solid var(--az-border-soft); padding-top: 0.25rem; }
 .dsb-about details.dsb-about-more > summary { cursor: pointer; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--az-muted); }
 .dsb-about .dsi-loading { padding: 0.5rem 0; }
+.dsi-swatch {
+    display: inline-block;
+    width: 0.9rem;
+    height: 0.9rem;
+    margin-right: 0.3rem;
+    vertical-align: -0.12rem;
+    border: 1px solid var(--az-control-border);
+    border-radius: 3px;
+    font-size: 0.7rem;
+    line-height: 0.8rem;
+    text-align: center;
+}
+.dsi-swatch-bad { color: var(--az-muted); }
+.dsi-extra td { padding-top: 0; border-top: 0; }
+.dsi-labels { display: flex; flex-wrap: wrap; gap: 0.15rem 0.7rem; align-items: center; font-size: 0.78rem; }
+.dsi-label { white-space: nowrap; }
+.dsi-warn { color: var(--az-warn-text); background: var(--az-warn-bg); border: 1px solid var(--az-warn-border); border-radius: 3px; padding: 0 0.35rem; }
+.dsi-cut { display: block; margin: 0.4rem 0; padding: 0.3rem 0.5rem; }
+.dsi-value { font-family: var(--bs-font-monospace, monospace); font-size: 0.95em; }
