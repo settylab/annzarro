@@ -124,6 +124,25 @@ After **Apply**: the UMAP and the cell table show the same 3,000 cells. View bef
 {download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`.
 ```
 
+(subset-size-carried)=
+### The size follows you to other datasets
+
+The number of cells you apply is remembered, in this browser (or the desktop app) and per user, and
+every dataset you switch to opens on it: from the dataset browser, the back button, a typed path
+or the desktop app's File menu. A dataset with more cells than that size opens on a subset of that
+many cells, with the server's default seed; one with as many or fewer opens with every cell, and its
+badge reads, for example, **All cells (≤ 10,000)**: the size is kept, and the next larger dataset
+is subsampled to it again. Choosing **every cell** on a dataset larger than the size makes every
+cell the size you carry. Only the size travels: a filter, a balance column, a seed and a part
+belong to the dataset they were chosen on. Stepping through parts does not change the size.
+A size the
+[browser memory](#browser-memory) guard would refuse on the new dataset opens on the server's
+default instead.
+
+Until you choose a size, the server's default applies ([The default](#the-default)). A share
+link, a panel set and the restored session open on the subset they saved, and do not change the
+size you carry.
+
 ## Stepping through every cell
 
 A subset is the first of several **parts** that split the cells into disjoint groups of the

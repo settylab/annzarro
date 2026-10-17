@@ -31,6 +31,8 @@
  * or absent for "the server's default for this dataset".
  */
 
+import { carryNote } from './subset-carry.js';
+
 /** Ops the server accepts, with the label the dialog shows. */
 export const SUBSET_OPS = [
     { op: 'in', label: 'is one of', kind: 'text' },
@@ -193,16 +195,21 @@ export function describeCondition(c) {
 
 /**
  * What the header says. `info` is the /data/subset reply (or null for every
- * cell of a dataset with `total` cells).
+ * cell of a dataset with `total` cells). `size` is the subset size the user
+ * chose (utils/subset-carry.js): every cell of a dataset no larger than it
+ * says so, since a larger dataset opens on that size.
  * @returns {{count: string, badge: string, title: string, active: boolean}}
  */
-export function describeSubset(info, total = null) {
+export function describeSubset(info, total = null, size = undefined) {
     if (!info || !info.subset) {
         const n = info ? info.n_total : total;
+        const note = n === null || n === undefined ? null : carryNote(size, n);
         return {
             count: n === null || n === undefined ? '-' : fmt(n),
-            badge: 'All cells',
-            title: 'Every cell is shown. Click to show a reproducible subset instead.',
+            badge: note ? `All cells (${note.badge})` : 'All cells',
+            title: note
+                ? `Every cell is shown. ${note.title}\nClick to show a reproducible subset instead.`
+                : 'Every cell is shown. Click to show a reproducible subset instead.',
             active: false
         };
     }
