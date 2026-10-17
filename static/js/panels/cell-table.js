@@ -13,7 +13,7 @@ import { beginLoad, endLoad, cancelLoads, wasCancelled } from '../utils/load-sco
 import { loadingIndicator } from './plot-utilities/plot-make.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
 import { syncControlsWithDataset } from '../utils/controls-visibility.js';
-import { assignKnownSettings } from '../utils/panel-settings.js';
+import { assignKnownSettings, configOf } from '../utils/panel-settings.js';
 import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-guard-ui.js';
 
 const CellTablePanel = (function() {
@@ -399,10 +399,8 @@ const CellTablePanel = (function() {
          * @returns {Object} - Panel configuration
          */
         function getConfig() {
-            return {
-                title: _title,
-                ..._settings
-            };
+            // the DataTable's live views (the rows passing the filter) are read when read
+            return configOf(_settings, { title: _title });
         }
         
         /**

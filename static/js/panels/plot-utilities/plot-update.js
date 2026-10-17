@@ -29,7 +29,7 @@ import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
 import { renderCoverageNotice, setStatusTag, withCoverageAnnotation, showCancelled } from '../../utils/panel-surface.js';
 import { beginLoad, endLoad, wasCancelled } from '../../utils/load-scope.js';
 import { withPlotlyBatch } from '../../utils/plotly-batch.js';
-import { setGlMarkers } from '../../utils/gl-markers.js';
+import { setGlMarkers, setGlPoint } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
 import { MEMORY_ADVICE } from '../../utils/memory-guard.js';
@@ -1225,9 +1225,12 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     .catch(error => console.warn(`Focused-${entityType === 'cells' ? 'cell' : 'gene'} highlight ${what} skipped:`, error && error.message ? error.message : error));
 
   if (existingIdx >= 0) {
-    // Move the existing highlight marker. restyle touches only that trace;
+    // Move the existing highlight marker. 2D: straight to the regl scene
+    // (utils/gl-markers.js): a restyle reruns calc and the scene of every
+    // trace, 450 ms at 1M points. Otherwise restyle touches only that trace;
     // the layout is unchanged, so it is not re-sent (re-sending a deep copy
     // of it is what made Plotly redo the axis scaling here).
+    if (!is3D && setGlPoint(plotContainer, existingIdx, xValue, yValue)) return Promise.resolve();
     const update = { x: [highlightTrace.x], y: [highlightTrace.y] };
     if (is3D) update.z = [highlightTrace.z];
     return settle('update', () => Plotly.restyle(plotContainer, update, [existingIdx]));
@@ -1322,6 +1325,10 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
     showlegend: false
   };
   if (is3D) ring.z = [coords[2]];
+  // a ring already drawn moves to the new cell, in 2D straight in the regl scene (as the dot does)
+  const drawn = plotContainer.__focusRing && Array.isArray(plotContainer.data)
+    ? plotContainer.data.findIndex(t => isFocusTrace(t) && isRingTrace(t)) : -1;
+  if (!is3D && drawn >= 0 && setGlPoint(plotContainer, drawn, coords[0], coords[1])) return undefined;
   const currentLayout = plotContainer.layout ? JSON.parse(JSON.stringify(plotContainer.layout)) : null;
   clear();
   plotContainer.__focusRing = true;

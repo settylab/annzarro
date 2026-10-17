@@ -27,3 +27,29 @@ export function assignKnownSettings(settings, config, skip = ['title']) {
     });
     return settings;
 }
+
+/**
+ * A table panel's getConfig(): `head` (its title), then its settings, with
+ * the live views of the DataTable left as getters. Read only when a caller
+ * reads them: `currentEntries` lists every row passing the filter, about
+ * 50 ms at 1M rows, and the spread `{...settings}` read it on every
+ * getConfig(), which the column chooser does on each focus change and the
+ * autosave and the address bar on every save (the most of 0.5 s per focus
+ * change at 1M cells, for a list nothing there used).
+ * @param {Object} settings - the panel's settings
+ * @param {Object} [head] - keys put first (settings of the same name win, as in a spread)
+ * @returns {Object}
+ */
+export function configOf(settings, head = {}) {
+    const out = { ...head };
+    for (const [key, desc] of Object.entries(Object.getOwnPropertyDescriptors(settings))) {
+        if (!desc.enumerable) continue;
+        if (desc.get) {
+            // a copy, as the spread made: writing to it sets its own value, never the panel's
+            Object.defineProperty(out, key, { enumerable: true, configurable: true, get: () => settings[key],
+                set: (value) => { Object.defineProperty(out, key, { value, writable: true, enumerable: true, configurable: true }); } });
+        }
+        else out[key] = desc.value;
+    }
+    return out;
+}

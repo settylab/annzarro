@@ -749,6 +749,17 @@ const SessionManager = (function() {
         }
     }
     
+    // the autosave waiting for idle time, if one is
+    let _autosaveIdle = null;
+    const AUTOSAVE_IDLE_MS = 2000;
+    /** Run `fn` when the page is idle, within AUTOSAVE_IDLE_MS (a timer where requestIdleCallback is missing). */
+    function whenIdle(fn) {
+        if (typeof window.requestIdleCallback === 'function') {
+            return window.requestIdleCallback(fn, { timeout: AUTOSAVE_IDLE_MS });
+        }
+        return setTimeout(fn, 0);
+    }
+
     /**
      * Start autosave timer
      */
@@ -758,10 +769,17 @@ const SessionManager = (function() {
             clearInterval(_autosaveTimer);
         }
         
-        // Set up new timer
-        _autosaveTimer = setInterval(async () => {
-            await saveToLocalStorage();
-            _announceChange();
+        // Set up new timer. Each save waits for idle time (at most AUTOSAVE_IDLE_MS), so
+        // it does not land between a click and what the click shows; the save on unload
+        // (main.js) is made at once.
+        _autosaveTimer = setInterval(() => {
+            if (_autosaveIdle) return;
+            _autosaveIdle = whenIdle(async () => {
+                _autosaveIdle = null;
+                if (!_autosaveTimer) return;
+                await saveToLocalStorage();
+                _announceChange();
+            });
         }, Config.AUTOSAVE.INTERVAL);
         
         console.log('Autosave enabled, saving every', Config.AUTOSAVE.INTERVAL / 1000, 'seconds');
