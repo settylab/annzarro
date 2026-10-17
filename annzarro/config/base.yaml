@@ -285,6 +285,10 @@ site:
   security_contact: null
   # The language of the texts above (for security.txt and the text pages)
   languages: "en"
+  # Whether the About dialog keeps AnnZarro's credit: the Setty Lab and Fred Hutch logos and links,
+  # the NIH funding statement and how to cite it. Hosters are welcome to keep it; false leaves
+  # only the name, version, MIT licence and links to the documentation and repository.
+  software_credits: true
   storage:
     # false: the layout autosave and the recent datasets last only until the tab closes
     # (sessionStorage), so the browser keeps nothing between visits except choices the

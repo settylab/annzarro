@@ -94,3 +94,23 @@ def test_deep_nesting_is_cut_off():
 def test_non_strings_give_nothing():
     for value in (None, 5, [], {}, b"x"):
         assert render_safe_markdown(value) == ""
+
+
+CAP = MAX_CHARS
+ADVERSARIAL = {
+    "**a": "**a" * (CAP // 3), "*a": "*a" * (CAP // 2), "_a": "_a" * (CAP // 2),
+    "*** and x": "***" + "x " * (CAP // 2), "[": "[" * CAP, "[a](": "[a](" * (CAP // 4),
+    "backtick": "`" + "a" * (CAP - 1), "stars in one paragraph": "*" * 10000,
+    "many short lines": "\n".join(["**a b"] * (CAP // 5)), "bold lines apart": "\n\n".join(["**a b"] * (CAP // 6)),
+    "emphasis then spaces": "**" + " a" * (CAP // 2),
+}
+
+
+@pytest.mark.parametrize("name", list(ADVERSARIAL))
+def test_worst_case_input_at_the_cap_is_fast(name):
+    started = time.perf_counter()
+    html = render_safe_markdown(ADVERSARIAL[name])
+    elapsed = time.perf_counter() - started
+    print(f"safe_markdown {name!r}: {elapsed * 1000:.0f} ms")
+    assert elapsed < 1.0
+    assert_safe(html)
