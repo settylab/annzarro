@@ -8,6 +8,13 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- Plot Options has a **Focused cell** group (**Focused gene** in gene plots) that sets the size
+  (a multiple of the point size), opacity, fill colour, edge colour and edge width of the marker on
+  the focused cell, in 2D, 3D and large plots. The colours follow the app theme until you set them;
+  the values are kept in panel sets and share links, and a link without them draws the usual red
+  dot.
+
 ### Fixes
 - A release build no longer fails when Apple's ticket service drops the connection while the
   notarization ticket of the macOS app or its dmg is being checked (`stapler validate`); the check

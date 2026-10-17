@@ -143,7 +143,9 @@ test('a size/opacity step is two restyles, not a highlight rebuild (#8)', async 
     await restyleMarkers(gd, { pointSize: 4, pointOpacity: 0.3 });
     assert.deepEqual(calls.map(c => c[0]), ['restyle', 'restyle']);
     assert.deepEqual(calls[0][1].slice(1), [{ 'marker.size': 4, 'marker.opacity': 0.3 }, [0, 1, 3]]);
-    assert.deepEqual(calls[1][1].slice(1), [{ 'marker.size': 8 }, [2]]);
+    // the highlight's whole style (utils/focus-style.js), its defaults here: a preset or a copied look ends here too
+    assert.deepEqual(calls[1][1].slice(1), [{ 'marker.size': 8, 'marker.color': '#ff0000', 'marker.opacity': 1,
+                                              'marker.line.color': '#000000', 'marker.line.width': 2 }, [2]]);
 });
 
 // --- a focused cell the subset does not show: the hollow ring (PR D) -------

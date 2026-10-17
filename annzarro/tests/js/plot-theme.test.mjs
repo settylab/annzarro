@@ -65,7 +65,9 @@ test('the dark palette is readable: text, axis and grey against the dark backgro
 
 test('old link, never touched: every stored colour equals the light default and becomes auto', () => {
     const s = { ...LIGHT, showGrid: true };
-    delete s.notInTableColor;
+    delete s.notInTableColor;           // the palette colours no link from before the colour model stored
+    delete s.focusedColor;
+    delete s.focusedEdgeColor;
     const freed = adoptColourModel(s);
     assert.deepEqual(freed.sort(), BUTTON_COLOURS.slice().sort());
     for (const k of THEMED_COLOURS) assert.equal(k in s, false);

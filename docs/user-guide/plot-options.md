@@ -4,7 +4,7 @@
 export. It never changes what the plot shows. Its settings belong to the panel: they are kept in
 panel sets and share links, and a link that lacks an option draws that option's default.
 
-The menu has nine groups, described below in the order the menu shows them. A group opens and
+The menu has ten groups, described below in the order the menu shows them. A group opens and
 folds with a click, and the menu opens again as you left it. Only **Export** is open the first
 time.
 
@@ -13,7 +13,7 @@ time.
 :width: 35%
 :alt: The Plot Options menu with nine groups: Presets, Appearance, Axes and ticks, Points, Legend and colour bar, Text, Margins, Export (open, with the format buttons and size), Apply to other panels.
 
-Plot Options with its nine groups. Every group starts folded except Export.
+Plot Options as it opens: every group starts folded except Export.
 ```
 
 ## Recipes
@@ -42,19 +42,19 @@ The plot follows the app's light or dark theme by itself. To keep one look in ei
   ticks per axis, text of 16 px, axis lines of 1.5 px, margins of 70 px left and right, 40 px
   top and 60 px bottom, and a colour bar 60 % long with five ticks. It also resets the
   legend position and the other look settings to those of a new plot. It does not
-  touch the scale bar, the font, the **Points** group or the export size.
+  touch the scale bar, the font, the **Points** and **Focused cell** groups or the export size.
 - **Default** returns the look settings to what a new plot has, with every colour following the app theme again: grid, axes, tick count,
   text size, line widths, margins, legend, colour bar, and the scale bar's switch and corner
-  (the scale bar goes off). The font, the scale bar's size and unit, the **Points** group, the
-  export size, and what the plot shows stay.
+  (the scale bar goes off). The font, the scale bar's size and unit, the **Points** and
+  **Focused cell** groups, the export size, and what the plot shows stay.
 
 A preset is a starting point: change anything afterwards.
 
 (plot-colours-theme)=
 ## Plot colours and the app theme
 
-The plot's background, grid, axis lines, zero lines, text, 3D backdrop and the grey of the Not in
-table points follow the app's light or dark theme ({ref}`colour-theme`), **for every colour you
+The plot's background, grid, axis lines, zero lines, text, 3D backdrop, the grey of the Not in
+table points and the fill and edge of the focused marker follow the app's light or dark theme ({ref}`colour-theme`), **for every colour you
 have not set**. This is the rule:
 
 - A colour you choose (a colour box in Plot Options), or a plot theme button you press, is
@@ -124,6 +124,22 @@ no legend entry. See {doc}`tables-and-filters`.
 - **Opacity** (0.01 to 1). Empty is automatic.
 - **Color**, grey by default, with **Reset**.
 
+## Focused cell
+
+The **Focused cell** group (**Focused gene** in a gene plot) sets how the marker on the focused
+cell looks while **Highlight Focused Cell** is on ({doc}`focus-and-lock`). Without changes it is a
+red dot twice the point size with a 2 px black edge, in either app theme.
+
+- **Size** is a multiple of the point size (0.1 to 50, `x points`; 2 by default), so the marker
+  keeps its proportion when the point size changes, by hand or automatically.
+- **Opacity** (0.01 to 1). Empty is opaque.
+- **Edge width** in pixels (0 to 20; 2 by default). 0 draws no edge.
+- **Fill** colour, red by default, and **Edge** colour, black by default, each with **Reset**.
+
+The hollow ring of a focused cell the subset does not show ({ref}`focus-outside-subset`) takes the
+size, the opacity and the fill colour as its line colour, with the edge width as its line width
+(at least 1 px). The marker is part of an export.
+
 ## Legend and colour bar
 
 - **Show Legend** and **Legend Position** (right, left, top or bottom).
@@ -154,7 +170,8 @@ to 5000; 1200 by 800 by default), as in {doc}`export`.
 
 **Apply to other panels** copies this plot's look to every other plot of the same kind: cell
 plots to cell plots, gene plots to gene plots. The look is the colours, axes, ticks, text, line
-widths, margins, legend, colour bar, scale bar, **Points** group and export size. The menu asks
+widths, margins, legend, colour bar, scale bar, **Points** and **Focused cell** groups and
+export size. The menu asks
 first (**Apply** or **Cancel**) and then says how many plots it changed; with no other plot of
 the kind it says so instead.
 
@@ -164,6 +181,7 @@ are not copied. A plot without Equal aspect does not take the scale bar: it stay
 ## Large plots
 
 A plot with more than about a million cells is drawn in large-plot mode ({ref}`large-plot-mode`).
-Presets, **Apply to other panels**, tick marks and count, margins, the scale bar and the colour
-bar options (position, length, ticks) work there as usual. The **Points** group has nothing to
+Presets, **Apply to other panels**, tick marks and count, margins, the scale bar, the colour
+bar options (position, length, ticks) and the **Focused cell** group work there as usual (the
+focused marker is a circle of the same size, opacity, colours and edge). The **Points** group has nothing to
 style there: a large plot cannot be filtered by a table.
