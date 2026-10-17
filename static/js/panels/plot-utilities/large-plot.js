@@ -51,6 +51,7 @@ import { buildPointIndexSliced } from '../../utils/point-index.js';
 import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { usableUnsPalette, unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
 import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount } from '../../utils/categories.js';
 
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
@@ -550,17 +551,21 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     }
     // The regular path's palette rule (processCategories): the colours stored
     // in uns.<key>_colors when the palette is 'uns' and they exist
-    let palette = null;
+    let palette = null, stored = null;
     if (!many && settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
       try {
         const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors`, signal });
-        if (r && r.data) palette = Array.isArray(r.data) ? r.data : [r.data];
+        if (r && r.data) stored = Array.isArray(r.data) ? r.data : [r.data];
       } catch {
         stopped();
-        palette = null;
+        stored = null;
       }
+      palette = usableUnsPalette(stored, nc);
+      setStatusTag(plotContainer, UNS_PALETTE_TAG, unsPaletteTag(settings.color.key, stored, nc));
+    } else {
+      setStatusTag(plotContainer, UNS_PALETTE_TAG, null);
     }
-    if (!palette || !palette.length) {
+    if (!palette) {
       // colour groups use the same 64-colour palette in every path
       const name = settings.categoryPalette && settings.categoryPalette !== 'uns' ? settings.categoryPalette : undefined;
       palette = many ? groupColours(GROUP_COLOURS, name) : generateDiscreteColors(nc, name);

@@ -15,6 +15,7 @@ import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
+import { unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
 import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag } from '../../utils/panel-surface.js';
 import { largePlotPoints, largePlotRefusal, createLargePlot, cancelIndexBuild, showProbeFailure } from './large-plot.js';
 import { recordLoad } from '../../utils/subset-presets.js';
@@ -1034,6 +1035,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
     setStatusTag(plotContainer, 'refused', null);
     setStatusTag(plotContainer, 'large', null);
     setStatusTag(plotContainer, 'focus', null);
+    setStatusTag(plotContainer, UNS_PALETTE_TAG, null);
 
     // Reset cached data without changing its reference. Until this load
     // finishes, `data.generation` is null: the series are half-built, and
@@ -2788,6 +2790,10 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         panelCoverage,
         unit
       );
+      if (settings.categoryPalette === 'uns') {
+        setStatusTag(plotContainer, UNS_PALETTE_TAG,
+          unsPaletteTag(settings.color.key, customColors, categoricalTraces.categoryCount));
+      }
       
       // Attach click handler and highlight focused entity if needed
       attachClickHandler(plotContainer, categoricalTraces, filteredData, settings);

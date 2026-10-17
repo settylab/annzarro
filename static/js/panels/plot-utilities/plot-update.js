@@ -19,6 +19,7 @@ import {
   followDrawnPoints
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
+import { unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
 import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
 import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
@@ -457,6 +458,10 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 
                 // Add new categorical traces
                 Plotly.addTraces(plotContainer, categoricalTraces);
+                if (settings.categoryPalette === "uns") {
+                    setStatusTag(plotContainer, UNS_PALETTE_TAG,
+                        unsPaletteTag(settings.color.key, customColors, categoricalTraces.categoryCount));
+                }
                 
                 // Update the legend title for categorical data
                 Plotly.relayout(plotContainer, {
@@ -950,6 +955,7 @@ export async function loadColorDataAndUpdatePlot(
         return;
     }
     setStatusTag(plotContainer, 'memory', null);
+    setStatusTag(plotContainer, UNS_PALETTE_TAG, null);
     const started = performance.now();
     // Busy until the new colours are drawn, not only while the column loads:
     // on a remote store the category colours (uns.<key>_colors) took seconds

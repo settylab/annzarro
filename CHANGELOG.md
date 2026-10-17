@@ -11,6 +11,9 @@ with the release after it. Older releases are listed on
 ### Added
 - Click the app name at the top left to see which version you are running, how to cite AnnZarro, and who develops and funds it (the Setty Lab at Fred Hutch Cancer Center, with the NIH award numbers), with links to the documentation, the repository and the changelog.
 
+### Fixes
+- A categorical colour whose `uns["<column>_colors"]` has fewer colours than the column has categories no longer repeats them, which gave different categories the same colour. As in scanpy, the stored colours are then set aside and the default palette is used, in regular and large plots, and the panel's status strip says so ("Default colours: see why").
+
 ### Docs
 - The README and the licence page cite v0.5.5 by its DOI,
   [10.5281/zenodo.23440020](https://doi.org/10.5281/zenodo.23440020).
