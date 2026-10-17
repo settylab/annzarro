@@ -9,13 +9,13 @@ import { modebarAnchor, syncModebarAnchor, watchModebarAnchor } from '../../../s
 
 const layout = (extra = {}) => ({ width: 800, height: 500, _size: { l: 60, t: 40, w: 600, h: 380 }, ...extra });
 
-test('2D: the corner of the axes, as offsets from the figure\'s top and right', () => {
-    assert.deepEqual(modebarAnchor(layout()), { top: 40, right: 140 });
+test('2D: the corner of the axes, as offsets from the figure\'s top and width', () => {
+    assert.deepEqual(modebarAnchor(layout()), { top: 40, width: 660 });
 });
 
 test('3D: the corner of the scene domain', () => {
     const scene = { domain: { x: [0, 0.5], y: [0.25, 0.75] } };
-    assert.deepEqual(modebarAnchor(layout({ scene })), { top: 40 + 95, right: 800 - (60 + 300) });
+    assert.deepEqual(modebarAnchor(layout({ scene })), { top: 40 + 95, width: 60 + 300 });
 });
 
 test('no plot area yet, or a non-finite one: no anchor', () => {
@@ -24,8 +24,8 @@ test('no plot area yet, or a non-finite one: no anchor', () => {
     assert.equal(modebarAnchor(layout({ _size: { l: NaN, t: 0, w: 1, h: 1 } })), null);
 });
 
-test('a plot area wider than the figure does not give a negative offset', () => {
-    assert.deepEqual(modebarAnchor({ width: 100, _size: { l: 0, t: -5, w: 120, h: 50 } }), { top: 0, right: 0 });
+test('a plot area starting above or left of the figure gives no negative offset', () => {
+    assert.deepEqual(modebarAnchor({ width: 100, _size: { l: -130, t: -5, w: 120, h: 50 } }), { top: 0, width: 0 });
 });
 
 function fakeGd(fullLayout) {
@@ -42,10 +42,10 @@ function fakeGd(fullLayout) {
 test('sync writes the container\'s top and right; watch redoes it after a redraw', () => {
     const gd = fakeGd(layout());
     watchModebarAnchor(gd);
-    assert.deepEqual(gd.box.style, { top: '40px', right: '140px' });
-    gd._fullLayout = layout({ width: 500 });
+    assert.deepEqual(gd.box.style, { top: '40px', left: '0px', right: 'auto', width: '660px' });
+    gd._fullLayout = layout({ _size: { l: 60, t: 40, w: 300, h: 380 } });
     gd.handlers.plotly_afterplot();
-    assert.equal(gd.box.style.right, '0px');
+    assert.equal(gd.box.style.width, '360px');
 });
 
 test('a graph with no container or no layout is left alone; watching twice leaves one listener', () => {

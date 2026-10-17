@@ -2885,6 +2885,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       colorbarSettings.xanchor = posConfig.xanchor;
       colorbarSettings.y = posConfig.y;
       colorbarSettings.yanchor = posConfig.yanchor;
+      colorbarSettings.ypad = posConfig.ypad;
+      colorbarSettings.ticklabelposition = posConfig.ticklabelposition;
       colorbarSettings.titleside = posConfig.titleside;
       colorbarSettings.orientation = posConfig.orientation;
       
@@ -3040,6 +3042,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       baseTrace.marker.colorbar.xanchor = posConfig.xanchor;
       baseTrace.marker.colorbar.y = posConfig.y;
       baseTrace.marker.colorbar.yanchor = posConfig.yanchor;
+      baseTrace.marker.colorbar.ypad = posConfig.ypad;
+      baseTrace.marker.colorbar.ticklabelposition = posConfig.ticklabelposition;
       baseTrace.marker.colorbar.titleside = posConfig.titleside;
       baseTrace.marker.colorbar.orientation = posConfig.orientation;
   

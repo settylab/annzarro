@@ -76,13 +76,22 @@ def _open(page, root, cfgs):
 
 
 def _boxes(page, pid, what):
-    return page.evaluate(BOXES, [pid, what])
+    """The boxes once they stop moving (a placement change redraws a moment later, longer under load)."""
+    prev = None
+    for _ in range(40):
+        got = page.evaluate(BOXES, [pid, what])
+        if got == prev:
+            return got
+        prev = got
+        page.wait_for_timeout(250)
+    return got
 
 
 def _in_corner(got):
     """Inside the plot area, against its top right corner (the toolbar's own 2 px inset and group padding)."""
     bar, area = got["bar"], got["area"]
-    return (bar["r"] <= area["r"] + 1 and bar["t"] >= area["t"] - 1 and bar["l"] >= area["l"]
+    return (bar["b"] - bar["t"] < 40                      # one row of buttons, not wrapped
+            and bar["r"] <= area["r"] + 1 and bar["t"] >= area["t"] - 1 and bar["l"] >= area["l"]
             and abs(bar["r"] - area["r"]) <= 6 and abs(bar["t"] - area["t"]) <= 6)
 
 
@@ -112,22 +121,50 @@ def test_legend_anywhere_leaves_the_toolbar_in_the_corner(page, server, side):
     assert got["other"] and _in_corner(got) and not got["hit"], (side, got)
 
 
-# A colour bar above the plot is drawn 80 px tall from y=1.1 down, over the top of the axes (a layout
-# defect of its own, independent of the toolbar), so the toolbar at the axes' corner meets its tick labels.
-TOP_BAR_OVER_AXES = pytest.param("top", marks=pytest.mark.xfail(
-    strict=True, reason="a top colour bar is laid over the axes (getPositioningByLocation)"))
+# the colour bar's, the x-axis tick labels' and title's boxes against the axes' and the figure's
+BAR = """([id, what]) => {
+    const gd = (%s)(id), g = gd.getBoundingClientRect(), L = gd._fullLayout, s = L._size;
+    const box = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - g.left, r: r.right - g.left, t: r.top - g.top, b: r.bottom - g.top }; };
+    const axes = { l: s.l, r: s.l + s.w, t: s.t, b: s.t + s.h };
+    const meets = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+    // what is drawn of the bar (gradient, tick labels, title), not its padding box
+    const parts = [...gd.querySelectorAll('.colorbar .cbfills, .colorbar .cbaxis, .colorbar .cbtitle')].map(box);
+    const bar = { l: Math.min(...parts.map(p => p.l)), r: Math.max(...parts.map(p => p.r)),
+                  t: Math.min(...parts.map(p => p.t)), b: Math.max(...parts.map(p => p.b)) };
+    const xs = [...gd.querySelectorAll('.xtick text, .g-xtitle')].map(box);
+    return { bar, axes, onAxes: meets(bar, axes), onXAxisText: xs.some(x => meets(bar, x)), nXText: xs.length,
+             inFigure: bar.l >= 0 && bar.t >= 0 && bar.r <= g.width && bar.b <= g.height };
+}""" % GD
 
 
-@pytest.mark.parametrize("side", ["right", "left", TOP_BAR_OVER_AXES, "bottom"])
-def test_colour_bar_anywhere_leaves_the_toolbar_in_the_corner(page, server, side):
-    # a bar above or below needs the margin it is drawn in; with 8 px it lies over the axes whatever the toolbar does
-    room = {**THIN, "margins": {"t": 110, "b": 110, "l": 60, "r": 80}}
-    _open(page, server, _cfgs(THIN, room))
+@pytest.mark.parametrize("side", ["right", "left", "top", "bottom"])
+def test_colour_bar_anywhere(page, server, side):
+    # the thin margin (8 px) is what Plotly's auto margin has to make room from
+    _open(page, server, _cfgs(THIN, THIN))
     _open_legend_section(page, B)
     page.select_option(f"#colorbar-position-{B}", side)
-    page.wait_for_timeout(800)
+    page.wait_for_timeout(1000)
     got = _boxes(page, B, ".colorbar")
     assert got["other"] and _in_corner(got) and not got["hit"], (side, got)
+    bar = page.evaluate(BAR, [B, ".colorbar"])
+    assert bar["nXText"] and not bar["onAxes"] and not bar["onXAxisText"] and bar["inFigure"], (side, bar)
+
+
+@pytest.mark.parametrize("side", ["top", "bottom"])
+def test_a_top_or_bottom_colour_bar_is_whole_in_an_export(page, server, side):
+    _open(page, server, _cfgs(THIN, {**THIN, "colorbarPosition": side, "legendPosition": side}))
+    got = page.evaluate("""async (id) => {
+        const gd = (%s)(id);
+        const svg = await Plotly.toImage(gd, { format: 'svg', width: 1200, height: 800 });
+        const host = document.createElement('div');
+        host.style.cssText = 'position:fixed;left:0;top:0;width:1200px;height:800px;opacity:0;pointer-events:none';
+        host.innerHTML = decodeURIComponent(svg.slice(svg.indexOf(',') + 1));
+        document.body.appendChild(host);
+        const root = host.querySelector('svg').getBoundingClientRect(), bar = host.querySelector('.colorbar').getBoundingClientRect();
+        host.remove();
+        return { top: bar.top - root.top, bottom: root.bottom - bar.bottom, left: bar.left - root.left, right: root.right - bar.right };
+    }""" % GD, B)
+    assert min(got.values()) >= 0, (side, got)
 
 
 def test_toolbar_stays_in_the_corner_after_a_resize(page, server):
@@ -158,3 +195,16 @@ def test_large_plot_toolbar_is_in_the_corner(page, large):
     page.wait_for_timeout(1200)
     got = _boxes(page, A, ".legend")
     assert _in_corner(got) and not got["hit"], got
+
+
+@pytest.mark.parametrize("side", ["top", "bottom"])
+def test_large_plot_colour_bar_clears_the_axes_and_the_toolbar(page, large, side):
+    cfg = _cfgs(THIN, {**THIN, "colorbarPosition": side, "legendPosition": side})[B]
+    page.goto(_link(large, {B: cfg}))
+    page.wait_for_function("() => { const g = document.querySelector('.js-plotly-plot'); return !!(g && g.__isLarge && g._fullLayout); }",
+                           timeout=60000)
+    page.wait_for_timeout(1500)
+    got = _boxes(page, B, ".colorbar")
+    assert _in_corner(got) and not got["hit"], (side, got)
+    bar = page.evaluate(BAR, [B, ".colorbar"])
+    assert not bar["onAxes"] and not bar["onXAxisText"] and bar["inFigure"], (side, bar)

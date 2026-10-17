@@ -2010,6 +2010,9 @@ function updateLegendVisibility(plotDiv, settings) {
     }
   }
 
+/** Room, in px, between a bottom colour bar and the axes: the x-axis tick labels and title sit there. */
+const BOTTOM_BAR_PAD = 70;
+
 /**
  * Positioning configuration for legends and colorbars
  * Centralizes positioning logic for use across the application
@@ -2023,25 +2026,27 @@ export function getPositioningByLocation(position) {
         legendOrientation: 'v', legendX: 1.05, legendY: 0.5,
         legendXanchor: 'left', legendYanchor: 'middle',
         // Colorbar
-        x: 1.02, xanchor: 'left', y: 0.5, yanchor: 'middle',
+        x: 1.02, xanchor: 'left', y: 0.5, yanchor: 'middle', ypad: 0, ticklabelposition: 'outside',
         orientation: 'v', titleside: 'right'
       },
       left: {
         legendOrientation: 'v', legendX: -0.05, legendY: 0.5,
         legendXanchor: 'right', legendYanchor: 'middle',
-        x: -0.1, xanchor: 'right', y: 0.5, yanchor: 'middle',
+        x: -0.1, xanchor: 'right', y: 0.5, yanchor: 'middle', ypad: 0, ticklabelposition: 'outside',
         orientation: 'v', titleside: 'right'
       },
       top: {
         legendOrientation: 'h', legendX: 0.5, legendY: 1.15,
         legendXanchor: 'center', legendYanchor: 'top',
-        x: 0.5, xanchor: 'center', y: 1.1, yanchor: 'top',
+        // a horizontal bar lies wholly outside the axes: above them with its tick labels above it, or below
+        // them (and their tick labels and title, hence ypad) with its tick labels below it
+        x: 0.5, xanchor: 'center', y: 1, yanchor: 'bottom', ypad: 6, ticklabelposition: 'outside top',
         orientation: 'h', titleside: 'top'
       },
       bottom: {
         legendOrientation: 'h', legendX: 0.5, legendY: -0.15,
         legendXanchor: 'center', legendYanchor: 'top',
-        x: 0.5, xanchor: 'center', y: -0.1, yanchor: 'bottom',
+        x: 0.5, xanchor: 'center', y: 0, yanchor: 'top', ypad: BOTTOM_BAR_PAD, ticklabelposition: 'outside bottom',
         orientation: 'h', titleside: 'bottom'
       }
     };
@@ -2077,6 +2082,8 @@ export function getPositioningByLocation(position) {
         'coloraxis.colorbar.xanchor':   barPos.xanchor,
         'coloraxis.colorbar.yanchor':   barPos.yanchor,
         'coloraxis.colorbar.orientation': barPos.orientation,
+        'coloraxis.colorbar.ypad':        barPos.ypad,
+        'coloraxis.colorbar.ticklabelposition': barPos.ticklabelposition,
         'coloraxis.colorbar.titleside':   barPos.titleside,
         'coloraxis.colorbar.len':         barExtras.len,
         'coloraxis.colorbar.lenmode':     barExtras.lenmode,
@@ -2107,6 +2114,8 @@ export function getPositioningByLocation(position) {
           'marker.colorbar.xanchor':    barPos.xanchor,
           'marker.colorbar.yanchor':    barPos.yanchor,
           'marker.colorbar.orientation': barPos.orientation,
+          'marker.colorbar.ypad':        barPos.ypad,
+          'marker.colorbar.ticklabelposition': barPos.ticklabelposition,
           'marker.colorbar.titleside':   barPos.titleside,
           'marker.colorbar.len':         barExtras.len,
           'marker.colorbar.lenmode':     barExtras.lenmode,
@@ -2122,6 +2131,8 @@ export function getPositioningByLocation(position) {
           'colorbar.xanchor':    barPos.xanchor,
           'colorbar.yanchor':    barPos.yanchor,
           'colorbar.orientation': barPos.orientation,
+          'colorbar.ypad':        barPos.ypad,
+          'colorbar.ticklabelposition': barPos.ticklabelposition,
           'colorbar.titleside':   barPos.titleside,
           'colorbar.len':         barExtras.len,
           'colorbar.lenmode':     barExtras.lenmode,

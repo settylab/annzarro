@@ -12,6 +12,9 @@ with the release after it. Older releases are listed on
 - A plot's toolbar (zoom, pan, reset, camera) sits in the top right corner of the plotting area
   instead of the figure's, so a legend or colour bar placed on the right, the default, no longer
   runs into it.
+- A colour bar placed on top of or below a plot lies wholly outside the axes, with the margin it needs
+  made for it, instead of over the top or bottom of the plot. It sits below the x-axis title at the
+  bottom.
 
 ### Docs
 - The README and the licence page cite v0.5.5 by its DOI,
