@@ -29,6 +29,7 @@ with the release after it. Older releases are listed on
 - The About dialog says that the Setty Lab develops and funds AnnZarro (the software), so that a site that runs it is not mistaken for the lab's own.
 
 ### Fixes
+- A category hidden with a click on the legend stays hidden when a Cell Plot linked to a filtered Cell Table removes or greys out the cells not in the table. Hiding moved to another category, so other cells disappeared and came back, and a category the table filter emptied came back shown. The hidden entries now follow their category, or colour group, through every redraw, in regular and large plots, until you colour by another column.
 - A categorical colour whose `uns["<column>_colors"]` has fewer colours than the column has categories no longer repeats them, which gave different categories the same colour. As in scanpy, the stored colours are then set aside and the default palette is used, in regular and large plots, and the panel's status strip says so ("Default colours: see why").
 
 ### Docs
