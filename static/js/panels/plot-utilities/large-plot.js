@@ -48,7 +48,7 @@ import { classifyError, classifyFilterStats, compactCount, exactCount } from '..
 import { columnsParam } from '../../utils/column-param.js';
 import { LARGE_TYPES, formatPoints, largeThreshold } from './large-plot-controls.js';
 import { buildPointIndexSliced } from '../../utils/point-index.js';
-import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus } from './large-interact.js';
+import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus, applyPendingClick } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { usableUnsPalette, unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
@@ -698,7 +698,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   const t3 = performance.now();
   // hover, click and the focus highlight: the index over the drawn points, built after the
   // plot is visible and in slices of the main thread, so input stays responsive; until it is
-  // ready hover shows nothing and a click does nothing
+  // ready hover shows nothing and a click waits for it
   // (the probe's buffers may be longer than the points kept)
   const kept = n - filtered;
   const job = { cancelled: false };
@@ -716,14 +716,21 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   const large = { n, traces: traces.length, filtered,
     load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2, index_ms: null };
   data.large = large;
-  buildPointIndexSliced(pts.X.subarray(0, kept), pts.Y.subarray(0, kept), pts.R, job).then((index) => {
+  buildPointIndexSliced(pts.X.subarray(0, kept), pts.Y.subarray(0, kept), pts.R, job).then(async (index) => {
+    // a test holds the index back (a promise), as a build over millions of points does for seconds
+    if (index && typeof window !== 'undefined' && window.__annzarroHoldIndex) await window.__annzarroHoldIndex;
     if (!index || job.cancelled || plotContainer.__largeState !== st) return;
     st.index = index;
     large.index_ms = performance.now() - t3;
     large.index_bytes = index.bytes;
     console.info(`Point index ready ${large.index_ms.toFixed(0)} ms after the draw (hover and click)`);
     highlightLargeFocus(plotContainer, settings);
-  }).catch((err) => console.warn('Point index not built:', err && err.message));
+    applyPendingClick(plotContainer);
+  }).catch((err) => {
+    console.warn('Point index not built:', err && err.message);
+    // a click that waited for it is not left waiting
+    if (plotContainer.__largeState === st) applyPendingClick(plotContainer);
+  });
   data.coverage = coverage;
   data.generation = generation;
   console.info(`Large cell plot: ${n} points in ${traces.length} traces; `

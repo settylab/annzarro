@@ -9,7 +9,10 @@
  *     point within HOVER_PX; a small HTML tooltip shows its coordinates at
  *     once and its name and colour value once the server has answered for
  *     that one row (a few hundred rows are remembered, nothing per point);
- *   - click: the regular path's action, `setFocusedCell(name)`;
+ *   - click: the regular path's action, `setFocusedCell(name)`. A click
+ *     before the index is ready (seconds or more at 95.6M points) is kept, in data
+ *     units: the cursor and the status strip say so ("Preparing click
+ *     selection…"), and it is applied once the index is there;
  *   - highlight: one layout shape (a circle, sized in pixels) at the focused
  *     cell. A shape is redrawn without calculating the traces again, which a
  *     restyle or added trace of a 95M-point plot is not.
@@ -22,6 +25,7 @@ import { nearestPoint, pointOfRow } from '../../utils/point-index.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { CLICK_MAX_MS, CLICK_MAX_MOVE_PX } from './plot-make-helper.js';
 import { focusShapeStyle } from '../../utils/focus-style.js';
+import { setStatusTag } from '../../utils/panel-surface.js';
 
 const HOVER_PX = 10;           // how close the pointer must be to a point
 const HOVER_MS = 16;           // hover lookups are coalesced to one per this long
@@ -70,23 +74,69 @@ function hiddenRanges(gd, st) {
 }
 
 /**
- * The point under a pointer event, or null. `{p, row}`: p is the drawn point,
- * row its cell's position among the cells shown.
+ * Where a pointer event is in data units, with the search radius mapped
+ * through the axes: `{cx, cy, rx, ry}`, or null off the plot area (or on the
+ * modebar, legend or colour bar). Needs no index.
  */
-function pointAt(gd, st, clientX, clientY, target) {
+function queryAt(gd, clientX, clientY, target) {
   if (target && target.closest && target.closest('.modebar, .legend, .colorbar')) return null;
   const area = gd.querySelector('.nsewdrag');
   const fl = gd._fullLayout;
-  if (!area || !fl || !fl.xaxis || !fl.yaxis || !st.index) return null;
+  if (!area || !fl || !fl.xaxis || !fl.yaxis) return null;
   const box = area.getBoundingClientRect();
   const mx = clientX - box.left, my = clientY - box.top;
   if (mx < 0 || my < 0 || mx > box.width || my > box.height) return null;
   const xa = fl.xaxis, ya = fl.yaxis;
-  const cx = xa.p2d(mx), cy = ya.p2d(my);
-  const rx = Math.abs(xa.p2d(mx + HOVER_PX) - xa.p2d(mx - HOVER_PX)) / 2;
-  const ry = Math.abs(ya.p2d(my + HOVER_PX) - ya.p2d(my - HOVER_PX)) / 2;
-  const p = nearestPoint(st.index, cx, cy, rx, ry, hiddenRanges(gd, st));
+  return { cx: xa.p2d(mx), cy: ya.p2d(my),
+    rx: Math.abs(xa.p2d(mx + HOVER_PX) - xa.p2d(mx - HOVER_PX)) / 2,
+    ry: Math.abs(ya.p2d(my + HOVER_PX) - ya.p2d(my - HOVER_PX)) / 2 };
+}
+
+/** The drawn point nearest to a query of queryAt, or null. `{p, row}` as for pointAt. */
+function pointOfQuery(gd, st, q) {
+  if (!q || !st.index) return null;
+  const p = nearestPoint(st.index, q.cx, q.cy, q.rx, q.ry, hiddenRanges(gd, st));
   return p < 0 ? null : { p, row: st.index.rows[p] };
+}
+
+/**
+ * The point under a pointer event, or null. `{p, row}`: p is the drawn point,
+ * row its cell's position among the cells shown.
+ */
+function pointAt(gd, st, clientX, clientY, target) {
+  return st.index ? pointOfQuery(gd, st, queryAt(gd, clientX, clientY, target)) : null;
+}
+
+const PREPARING = { text: 'Preparing click selection…',
+  title: 'The index that finds the point under the pointer is being built; the click is applied when it is ready' };
+
+/** Say that a click waits for the index (cursor and status strip), or stop saying it. */
+function showWaiting(gd, on) {
+  const area = gd.querySelector && gd.querySelector('.nsewdrag');
+  if (area && on && area.dataset.largeBusy === undefined) {
+    area.dataset.largeBusy = area.style.cursor || '';
+    area.style.cursor = 'progress';
+  } else if (area && !on && area.dataset.largeBusy !== undefined) {
+    area.style.cursor = area.dataset.largeBusy;
+    delete area.dataset.largeBusy;
+  }
+  setStatusTag(gd, 'click', on ? PREPARING : null);
+}
+
+/**
+ * Apply the click that waited for the point index, now that it is ready
+ * (large-plot.js calls this when the build ends), or drop it when the build
+ * failed and there is no index. Nothing to do without one.
+ * @param {HTMLElement} gd  the plot
+ */
+export function applyPendingClick(gd) {
+  const st = gd && gd.__largeState;
+  if (!st || !st.pending) return;
+  const q = st.pending;
+  st.pending = null;
+  showWaiting(gd, false);
+  const hit = pointOfQuery(gd, st, q);
+  if (hit) focusRow(gd, st, hit).catch((err) => console.warn('Focus by click failed:', err && err.message));
 }
 
 /** Name and colour value of one row, from the server (remembered). */
@@ -168,16 +218,20 @@ async function focusRow(gd, st, hit) {
 /**
  * Make the graph interactive from `index`, which may be null while it is
  * still being built (`st.index` is set when it is ready; until then hover shows
- * nothing and a click does nothing). Safe to call on every draw: the listeners
- * are added once, the state replaced. Returns the state.
+ * nothing and a click waits for it, see applyPendingClick). Safe to call on
+ * every draw: the listeners are added once, the state replaced; a click still
+ * waiting is kept for a draw of the same axes. Returns the state.
  * @param {HTMLElement} gd  the plot
  * @param {Object} settings  the panel's settings
  * @param {Object|null} index  from buildPointIndex
  */
 export function attachLargeInteraction(gd, settings, index) {
   const old = gd.__largeState;
-  const st = gd.__largeState = { index, settings, hovered: -1, dwell: 0, lastFocus: null, seq: old ? old.seq : 0 };
+  const same = old && old.pending && JSON.stringify([old.settings.x, old.settings.y]) === JSON.stringify([settings.x, settings.y]);
+  const st = gd.__largeState = { index, settings, hovered: -1, dwell: 0, lastFocus: null, seq: old ? old.seq : 0,
+    pending: same ? old.pending : null };
   if (old) clearTimeout(old.dwell);
+  if (old && old.pending && !same) showWaiting(gd, false);
   if (gd.__largeOff) return st;
   const off = [];
   gd.__largeOff = off;
@@ -199,7 +253,7 @@ export function attachLargeInteraction(gd, settings, index) {
       if (!hit) { if (s.hovered !== -1) hideTip(gd, s); return; }
       const area = gd.querySelector('.nsewdrag');
       if (area && !area.dataset.largeCursor) { area.dataset.largeCursor = area.style.cursor || ''; }
-      if (area) area.style.cursor = 'pointer';
+      if (area && area.dataset.largeBusy === undefined) area.style.cursor = 'pointer';
       if (hit.p !== s.hovered) s.hovered = hit.p;
       showTip(gd, s, hit, last.x, last.y);
     }, HOVER_MS);
@@ -218,7 +272,16 @@ export function attachLargeInteraction(gd, settings, index) {
     down = null;
     if (!d || e.pointerId !== d.id || !s || !gd.isConnected) return;
     if (e.timeStamp - d.t > CLICK_MAX_MS || Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_MAX_MOVE_PX) return;
-    const hit = pointAt(gd, s, e.clientX, e.clientY, e.target);
+    const q = queryAt(gd, e.clientX, e.clientY, e.target);
+    if (!q) return;
+    if (!s.index) {
+      // the index is still being built: the click waits for it, and says so
+      s.pending = q;
+      showWaiting(gd, true);
+      return;
+    }
+    if (s.pending) { s.pending = null; showWaiting(gd, false); }
+    const hit = pointOfQuery(gd, s, q);
     if (hit) focusRow(gd, s, hit).catch((err) => console.warn('Focus by click failed:', err && err.message));
   }, true);
   return st;
@@ -236,6 +299,7 @@ export function detachLargeInteraction(gd) {
   if (!gd) return;
   const st = gd.__largeState;
   if (st) { clearTimeout(st.dwell); hideTip(gd, st); st.index = null; st.seq++; }
+  if (st && st.pending) { st.pending = null; showWaiting(gd, false); }
   if (gd.__largeOff) { for (const f of gd.__largeOff) f(); gd.__largeOff = null; }
   gd.__largeState = null;
   const area = gd.querySelector && gd.querySelector('.nsewdrag');
