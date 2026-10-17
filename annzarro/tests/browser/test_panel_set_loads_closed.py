@@ -88,9 +88,16 @@ OPEN_TILES = "() => [...document.querySelectorAll('.tile-container .tile[data-ti
 # registered (selection-tile.js clears it on reopen), not a setting; a key set
 # to null is no setting either (an open plot reports showBackdrop: null once
 # drawn, a closed one leaves it out).
+# The panels' configs as saved. A point size or opacity that is automatic
+# (autoPointSize / autoPointOpacity) is left out: it is not the user's, the
+# panel works it out again for its own plot area when it opens
+# (utils/point-style.js), so a link opened in another window may differ in
+# it. The auto flags, and a value the user set, are compared.
 CONFIGS = """ids => { const all = PanelManager.saveLayout().panelConfigs;
+    const auto = { pointSize: 'autoPointSize', pointOpacity: 'autoPointOpacity' };
     return ids.map(id => { if (!all[id]) return null; const { _closed, ...c } = all[id];
-        return Object.fromEntries(Object.entries(c).filter(([, v]) => v !== null && v !== undefined)); }); }"""
+        return Object.fromEntries(Object.entries(c).filter(([k, v]) => v !== null && v !== undefined
+            && !(auto[k] && c[auto[k]] === true))); }); }"""
 
 
 # The open layout as the user sees it: rows, splits with pane sizes, tiles.
