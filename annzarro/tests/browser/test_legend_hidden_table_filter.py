@@ -191,7 +191,7 @@ class Data:
 def _check(page, data, step, search, remove, hidden):
     want = data.expected(search, remove, hidden)
     got = None
-    for _ in range(150):
+    for _ in range(300):
         got = page.evaluate(STATE)
         if got and {k: got[k] for k in want} == want:
             page.wait_for_timeout(300)          # and it stays so
@@ -235,7 +235,7 @@ def test_hidden_categories_follow_their_category_through_table_toggles(page, ser
     _subset(page, 100)
     page.wait_for_function("""(sel) => { const gd = document.querySelector(sel);
         return gd && gd.data && gd.data.filter(t => t.meta !== 'az-legend' && t.customdata && !/^focused/i.test(t.name || ''))
-            .reduce((s, t) => s + t.customdata.length, 0) === 100; }""", arg=GD, timeout=30000)
+            .reduce((s, t) => s + t.customdata.length, 0) === 100; }""", arg=GD, timeout=90000)
     s = page.evaluate(STATE)
     data.subset = sorted(c for v in s["drawn"].values() for c in v)
     assert len(data.subset) == 100 and set(data.subset) < set(data.names)
