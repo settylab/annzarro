@@ -33,6 +33,19 @@ auth:
   # session_timeout: 28800   # seconds idle before a login expires; 0 = never
   # cookie_secure: auto      # Secure cookie when the request came over HTTPS
 
+# A public site owes its visitors an imprint and a privacy notice (docs/deployment/public-site.md).
+# Each text is a link (url), a Markdown text (markdown) or a Markdown file (file); a small footer
+# line on every page links them.
+# site:
+#   operator: "Example Institute, University of X"
+#   contact: "atlas@example.org"
+#   imprint:
+#     url: "https://www.example.org/imprint"
+#   privacy:
+#     file: /etc/annzarro/privacy.md
+#   robots: auto            # not indexed while login is on
+#   security_contact: "mailto:security@example.org"
+
 # Shown on the login page only when set
 # branding:
 #   contact_info:

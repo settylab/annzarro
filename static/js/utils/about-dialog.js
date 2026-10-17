@@ -67,6 +67,9 @@ export function initAboutDialog(doc = document) {
         const site = doc.getElementById('about-site');
         site.hidden = !text.site;
         site.textContent = text.site ? `This is ${text.site}, a site running AnnZarro.` : '';
+        // The desktop app says what it sends where
+        const privacy = doc.getElementById('about-desktop-privacy');
+        if (privacy) privacy.hidden = !doc.documentElement.hasAttribute('data-desktop');
         return text.version;
     };
     // Fill it now and once the server's config has arrived, not only on
@@ -86,7 +89,5 @@ export function initAboutDialog(doc = document) {
             if (openAboutAt(link.dataset.aboutSection, doc)) event.preventDefault();
         });
     }
-    // The desktop app says what it sends where
-    const privacy = doc.getElementById('about-desktop-privacy');
-    if (privacy) privacy.hidden = !doc.documentElement.hasAttribute('data-desktop');
+
 }

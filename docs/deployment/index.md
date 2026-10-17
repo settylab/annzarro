@@ -10,5 +10,6 @@ analyst-workflow
 authentication
 admin
 hosting-checklist
+public-site
 resource-limits
 ```
