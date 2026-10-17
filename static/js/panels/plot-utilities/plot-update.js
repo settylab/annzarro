@@ -402,7 +402,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                             title: {
                                 text: colourTitle(settings.color),
                                 side: 'right',
-                                font: { size: 12 }
+                                font: {
+                                    size: settings.fontSize ? settings.fontSize + 2 : 14,
+                                    family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+                                    color: plotColour(settings, 'textColor')
+                                }
                             },
                             titleside: 'right'
                         },
@@ -608,7 +612,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         colorbar: {
                           title: {
                             text: colourTitle(settings.color),
-                            side: 'right'
+                            side: 'right',
+                            font: {
+                              size: settings.fontSize ? settings.fontSize + 2 : 14,
+                              family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+                              color: plotColour(settings, 'textColor')
+                            }
                           },
                           titleside: 'right'
                         },

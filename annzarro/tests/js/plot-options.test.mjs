@@ -9,7 +9,8 @@ import assert from 'node:assert/strict';
 import {
     normalizePlotOptions, OPTION_DEFAULTS, DEFAULT_MARGINS, tickMarksOn, tickKeys, axisPaths,
     colorbarPosition, colorbarExtras, linkedMargins, niceLength, formatLength, scaleBar, scaleBarActive,
-    replaceScaleBar, SCALE_BAR, presetChanges, applyPreset, pickStyle, adoptStyle, STYLE_KEYS
+    replaceScaleBar, SCALE_BAR, presetChanges, applyPreset, pickStyle, adoptStyle, STYLE_KEYS,
+    PUBLICATION_FONT, exportOptions, EXPORT_DEFAULTS
 } from '../../../static/js/panels/plot-utilities/plot-options.js';
 
 const roundTrip = (o) => JSON.parse(JSON.stringify(o));
@@ -222,4 +223,31 @@ test('copying styling takes the look and none of the data choices', () => {
     assert.deepEqual(dst.color, { type: 'obs', key: 'other' });
     assert.equal(dst.tableFilter, 't2');
     assert.equal(dst.pointSize, 3);
+});
+
+test('publication: Arial, a colour bar of three ticks and 40% of the height', () => {
+    const c = presetChanges('publication');
+    assert.equal(c.fontFamily, 'Arial, Helvetica, sans-serif');
+    assert.equal(c.fontFamily, PUBLICATION_FONT);
+    assert.equal(c.colorbarTicks, 3);
+    assert.equal(c.colorbarLength, 0.4);
+    const s = normalizePlotOptions({ fontFamily: "Georgia, serif" });
+    applyPreset(s, 'publication');
+    assert.equal(s.fontFamily, PUBLICATION_FONT);
+    assert.deepEqual(colorbarExtras(s), { len: 0.4, lenmode: 'fraction', nticks: 3 });
+    applyPreset(s, 'default');
+    assert.equal('fontFamily' in s, false);       // unset again: the app's own font
+    assert.equal(s.colorbarTicks, null);
+    assert.equal(s.colorbarLength, 1);
+});
+
+test('export: twice the size unless a panel says otherwise', () => {
+    assert.deepEqual(EXPORT_DEFAULTS, { width: 1200, height: 800, scale: 2 });
+    assert.deepEqual(exportOptions({}), { width: 1200, height: 800, scale: 2 });
+    assert.deepEqual(exportOptions(undefined), { width: 1200, height: 800, scale: 2 });
+    assert.deepEqual(exportOptions({ scaleExport: true }), { width: 1200, height: 800, scale: 2 });
+    // saved with it off, a panel keeps its pixel size
+    assert.deepEqual(exportOptions({ scaleExport: false }), { width: 1200, height: 800, scale: 1 });
+    // the size the user set is kept as set
+    assert.deepEqual(exportOptions({ exportWidth: 1000, exportHeight: 1000 }), { width: 1000, height: 1000, scale: 2 });
 });

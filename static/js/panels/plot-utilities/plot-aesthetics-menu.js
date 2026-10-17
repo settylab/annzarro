@@ -9,7 +9,7 @@ import {
 import { THEME_EVENT } from '../../utils/theme.js';
 import {
   normalizePlotOptions, tickMarksOn, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
-  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle
+  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
 import { exportCheck, guarded, refusalText } from '../../utils/memory-guard-ui.js';
@@ -163,7 +163,7 @@ export function createPopoverContent(id, settings) {
 
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-publication-${id}"
-                    title="White background, no grid, five ticks per axis, larger text, scale bar if set up">Publication</button>
+                    title="White background, no grid, five ticks per axis, Arial at a larger size, a short colour bar with three ticks, scale bar if set up">Publication</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
                     title="Back to the look every plot starts with">Default</button>
             </div>
@@ -516,6 +516,11 @@ export function createPopoverContent(id, settings) {
                     <span class="input-group-text">px</span>
                 </div>
             </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="scale-export-${id}" ${exportOptions(settings).scale > 1 ? 'checked' : ''}>
+                <label class="form-check-label" for="scale-export-${id}"
+                    title="Draw the image at twice the width and height, so it stays sharp in print; the PNG, JPEG and WEBP files are then twice the pixels set above">Export at 2x</label>
+            </div>
             
         `)}
         ${details(id, 'apply', 'Apply to other panels', `
@@ -535,10 +540,7 @@ export function createPopoverContent(id, settings) {
     `;
 }
 
-/** The export's pixel size and scale from the panel's settings. */
-export function exportOptions(settings) {
-  return { width: settings.exportWidth || 1200, height: settings.exportHeight || 800, scale: settings.scaleExport ? 2 : 1 };
-}
+export { exportOptions };
 
 const EXPORT_ADVICE = 'Export it as shown instead, close a plot, or show fewer cells.';
 
@@ -628,7 +630,7 @@ export function initializeAestheticsSettings(settings) {
         // Export options
         EXPORT_WIDTH: 1200,
         EXPORT_HEIGHT: 800,
-        SCALE_EXPORT: false,
+        SCALE_EXPORT: true,
         
         // Interaction settings
         ENABLE_ZOOM: true,
@@ -668,7 +670,7 @@ export function initializeAestheticsSettings(settings) {
     // Export options
     settings.exportWidth = settings.exportWidth || defaults.EXPORT_WIDTH;
     settings.exportHeight = settings.exportHeight || defaults.EXPORT_HEIGHT;
-    settings.scaleExport = settings.scaleExport || defaults.SCALE_EXPORT;
+    settings.scaleExport = settings.scaleExport !== undefined ? settings.scaleExport : defaults.SCALE_EXPORT;
     
     // Legend settings
     settings.legendPosition = settings.legendPosition || defaults.LEGEND_POSITION;
@@ -722,6 +724,7 @@ function getPanelId(element) {
 export function setupAestheticsMenuListeners(container, settings, plotContainer, id) {
     // Ensure settings are initialized
     initializeAestheticsSettings(settings);
+    if (plotContainer) plotContainer.__exportOptions = () => exportOptions(settings);
     
     // Create one-time event handlers using delegation for all menu controls
     const menuHandler = function(e) {
@@ -1398,8 +1401,47 @@ function updateFontFamily(plotContainer, settings) {
         update['xaxis.tickfont.family'] = settings.fontFamily;
         update['yaxis.tickfont.family'] = settings.fontFamily;
     }
-    
+
     Plotly.relayout(plotContainer, update);
+    applyLegendAndBarText(plotContainer, settings);
+}
+
+/**
+ * The panel's text font on the legend (title and items) and the colour bar
+ * (title and tick labels), whether shared or the traces' own: family, size
+ * and colour, set explicitly so a change shows at once.
+ */
+function applyLegendAndBarText(plotContainer, settings) {
+    if (!plotContainer) return;
+    const family = settings.fontFamily || 'Arial, Helvetica, sans-serif';
+    const size = settings.fontSize || 12;
+    const colour = plotColour(settings, 'textColor');
+    Plotly.relayout(plotContainer, {
+        'legend.font.family': family, 'legend.font.size': size, 'legend.font.color': colour,
+        'legend.title.font.family': family, 'legend.title.font.size': size + 2, 'legend.title.font.color': colour,
+        'coloraxis.colorbar.title.font.family': family, 'coloraxis.colorbar.title.font.size': size + 2,
+        'coloraxis.colorbar.title.font.color': colour,
+        'coloraxis.colorbar.tickfont.family': family, 'coloraxis.colorbar.tickfont.size': size,
+        'coloraxis.colorbar.tickfont.color': colour
+    });
+    const bar = (prefix) => ({
+        [`${prefix}.title.font.family`]: family, [`${prefix}.title.font.size`]: size + 2, [`${prefix}.title.font.color`]: colour,
+        [`${prefix}.tickfont.family`]: family, [`${prefix}.tickfont.size`]: size, [`${prefix}.tickfont.color`]: colour
+    });
+    restyleColourBars(plotContainer, bar('marker.colorbar'), bar('colorbar'));
+}
+
+/**
+ * Restyle the colour bars of a plot: `markerUpdate` on the traces whose
+ * marker has one (scatter), `traceUpdate` on those with a colorbar of their
+ * own (heatmap, contour, surface). The focused-cell trace is left alone.
+ */
+function restyleColourBars(plotContainer, markerUpdate, traceUpdate) {
+    (plotContainer.data || []).forEach((trace, i) => {
+        if (!trace || (trace.name && String(trace.name).includes('Focused'))) return;
+        if (trace.marker && trace.marker.colorbar) Plotly.restyle(plotContainer, markerUpdate, [i]);
+        else if (trace.colorbar) Plotly.restyle(plotContainer, traceUpdate, [i]);
+    });
 }
 
 /**
@@ -2101,6 +2143,7 @@ export async function exportPlot(plotContainer, format, settings, how = 'full') 
   const panelId = getPanelId(plotContainer);
   const downloadButton = document.getElementById(how === 'shown' ? `download-shown-${format}-${panelId}` : `download-${format}-${panelId}`);
   const opts = exportOptions(settings);
+  if (format === 'svg') opts.scale = 1;      // vector: no pixels to sharpen, and the size stays as set
   const filename = 'plot_' + new Date()
     .toISOString()
     .replace(/[:.]/g, '-');
@@ -2180,7 +2223,9 @@ function flashLabel(button, text, ms = 2000) {
  * status strip says why, with "Export as shown" (a click, never a reroute).
  */
 registerCameraExport(async (gd, opts) => {
-  const o = { width: opts.width || 1200, height: opts.height || 800, scale: opts.scale || 1 };
+  // the panel's own export size and scale (Plot Options), else the toolbar's
+  const o = typeof gd.__exportOptions === 'function' ? gd.__exportOptions()
+    : { width: opts.width || 1200, height: opts.height || 800, scale: opts.scale || 1 };
   const check = exportCheck(gd, o);
   if (check.verdict === 'block') {
     refuseInStatus(gd, 'exported', check);
@@ -2395,5 +2440,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
     // Then handle legend and colorbar visibility specifically based on trace type
     updateLegendVisibility(plotContainer, settings);
     updateLegendPosition(plotContainer, settings);
+    applyLegendAndBarText(plotContainer, settings);
     refreshScaleBar(plotContainer, settings);
 }

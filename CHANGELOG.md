@@ -19,6 +19,9 @@ with the release after it. Older releases are listed on
 - The server warns at start when `integrations.external_requests` is `"on"` on a shared server, and when `branding.contact_info.custom_html` contains a script, an iframe or an address on another server.
 
 ### Changed
+- The **Publication** preset sets the font to Arial and draws a shorter colour bar with fewer ticks (40 % long, three ticks); **Default** puts the font back.
+- The panel's text font now reaches the legend (title and items) and the colour bar (title and tick labels) as well as the axes, when you change it in **Plot Options**, press a preset, and in exports.
+- Plot images are exported at twice the size set in **Plot Options** by default (2400 × 1600 pixels for the default 1200 × 800), so a figure stays sharp in print; the modebar camera follows the panel's export size. Untick **Export at 2x** for files of exactly the pixels set. A panel or link saved with the scale switched off keeps it off; one that never recorded it exports at 2x. SVG files keep the size set.
 - A plot's toolbar (zoom, pan, reset, camera) sits in the top right corner of the plotting area
   instead of the figure's, so a legend or colour bar placed on the right, the default, no longer
   runs into it.

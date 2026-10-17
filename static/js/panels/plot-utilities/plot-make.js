@@ -2300,7 +2300,7 @@ export function buildPlotLayout(settings, data) {
   // Export options
   settings.exportWidth = settings.exportWidth || defaults.EXPORT_WIDTH || 1200;
   settings.exportHeight = settings.exportHeight || defaults.EXPORT_HEIGHT || 800;
-  settings.scaleExport = settings.scaleExport !== undefined ? settings.scaleExport : defaults.SCALE_EXPORT || false;
+  settings.scaleExport = settings.scaleExport !== undefined ? settings.scaleExport : defaults.SCALE_EXPORT ?? true;
   
   // Legend settings
   settings.legendPosition = settings.legendPosition || defaults.LEGEND_POSITION || 'right';
