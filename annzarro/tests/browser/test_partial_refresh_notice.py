@@ -67,7 +67,7 @@ def test_a_user_is_told_a_chunk_only_write_may_not_show(served, how):  # noqa: F
             text = " ".join(_notices(page))
             assert "Refresh may not show every change" in text, text
             assert "inside its data chunks may not show" in text and "admin" in text, text
-            assert "restart" in text, text
+            assert "Refresh dataset" in text, text
             assert len(_notices(page)) == 1
             shot = os.environ.get("ANNZARRO_SHOT")
             if shot and how == "header":

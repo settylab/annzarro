@@ -2,6 +2,7 @@
  * Utilities for loading and processing table data
  */
 import { notify } from '../../utils/notify.js';
+import { removedColumnsNotice } from '../../utils/notice-rules.js';
 import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, TEXT_ONLY_NUM_TYPE, manyValuesType, textOnlyConditions, textOnlyNumConditions, fastSelectConditions, installCriteriaSearch } from '../../utils/search-builder.js';
 import { VALUE_LIST_MAX } from '../../utils/categories.js';
 import { DataManager } from '../../data-manager.js';
@@ -580,6 +581,16 @@ function remapCriteria(config, renames) {
     return { ...config, criteria: walk(config.criteria) };
 }
 
+// what tables removed while one view was restored, said once
+let _removedColumns = [];
+let _removedFlush = null;
+function flushRemovedColumns() {
+    const said = removedColumnsNotice(_removedColumns);
+    _removedColumns = [];
+    _removedFlush = null;
+    if (said) notify(said.title, said.message, 'warning');
+}
+
 /**
  * Pin a table panel's placeholder columns (pinFocusPlaceholders) to the
  * current focus, in its settings, and say what was removed. Called once, when
@@ -597,10 +608,10 @@ export function pinPanelFocusPlaceholders(settings, title = 'Table') {
     settings.columns = r.columns;
     if (plain) settings.searchBuilderConfig = r.searchBuilderConfig;
     if (r.dropped.length) {
-        const what = r.dropped.map(c => `${c.key} (${FOCUSED_CELL_COLUMNS.has(c.column) ? 'focused cell' : 'focused gene'})`);
-        notify('Column removed', `${title}: ${what.join(', ')} followed the focus in an older view, and `
-            + 'nothing was focused when it was restored, so it named no cell or gene. It was removed with '
-            + 'any filter condition on it; add it again from the cell or gene you want.', 'warning');
+        _removedColumns.push({ title, keys: r.dropped.map(c =>
+            `${c.key} (${FOCUSED_CELL_COLUMNS.has(c.column) ? 'focused cell' : 'focused gene'})`) });
+        // the tables of one restore are pinned one after the other: one notice for all
+        if (!_removedFlush) _removedFlush = setTimeout(flushRemovedColumns, 0);
     }
     return r;
 }
@@ -1385,6 +1396,6 @@ export async function exportTableToCsv(dataTable, tableTitle) {
         api.button('.buttons-csv').trigger()
     } catch (error) {
         console.error('Error exporting table to CSV:', error);
-        notify('CSV export failed', error.message || 'See the browser console for details.', 'error');
+        notify('CSV export failed', error.message || 'The table could not be turned into a file.', 'error');
     }
 }

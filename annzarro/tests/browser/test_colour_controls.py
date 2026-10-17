@@ -194,7 +194,9 @@ def _type(page, sel, value):
 
 
 def _notices(page):
-    return page.evaluate("() => [...document.querySelectorAll('.notification')].map(n => n.textContent.replace(/\\s+/g, ' '))")
+    """What the Log scale says about a limit: the hint under the Min/Max boxes (it was a toast)."""
+    assert not page.evaluate("() => document.querySelectorAll('.notification').length"), "a toast, not the hint"
+    return page.evaluate("() => [...document.querySelectorAll('.color-log-hint:not([hidden])')].map(n => n.textContent.replace(/\\s+/g, ' '))")
 
 
 def _saved(page):

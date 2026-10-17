@@ -171,8 +171,8 @@ What a restricted user sees, and how the check works:
   different directory, as on a case-sensitive volume (Linux), where names that differ in case are different
   directories.
 - **Open tabs.** A link or panel set naming a dataset outside the grants opens the layout with a
-  "Dataset not available" notice. A grant revoked while a dataset is open turns the next read into the same notice;
-  what the browser already holds cannot be recalled.
+  "Dataset not available" notice. A grant revoked while a dataset is open turns the next read into the dataset browser, with a banner saying
+  the dataset is not available; what the browser already holds cannot be recalled.
 - **Fail closed.** If `access.json` cannot be read, the server cannot tell who is restricted, so every
   non-admin gets `503 access_unavailable` on the data routes, and their policy falls back to the most
   restrictive values, until an admin repairs or removes the file. Admins keep working, and the

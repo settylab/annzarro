@@ -8,7 +8,8 @@ gets the same view. Nothing is stored on the server; the view travels inside the
 
 1. Arrange the view you want to share.
 2. Click **Share Link** in the header. The label changes to **Copied!** for two seconds and the
-   link is on your clipboard.
+   link is on your clipboard. The button is off, with the tooltip "Open a dataset first", until a
+   dataset is open.
 3. Paste it into a message or a document.
 
 When the browser does not allow clipboard access (pages served over plain `http://` from a cluster
@@ -89,7 +90,7 @@ address is that clean link again. Only an address with no `dataset_path` at all 
 panels autosaved in this browser.
 
 If the view cannot be decoded (for example because a mail client cut the link), AnnZarro says
-"Invalid deep-link" and opens just the dataset.
+"Shared view not readable" and opens just the dataset.
 
 ```{admonition} What happens on the server
 :class: note

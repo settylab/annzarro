@@ -4,7 +4,6 @@ import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
-import { notify } from '../../utils/notify.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
@@ -227,13 +226,10 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       const wanted = settings.key;
       if (wanted && !keyExistsInStructure(datasetStructure, wanted)) {
         // A key the dataset does not have at all (a deep link or panel set
-        // from another dataset) is KEPT, listed as missing, and reported:
-        // the loader then states the gap ('not in this dataset') instead of
-        // the plot silently showing some other column.
+        // from another dataset) is KEPT, listed as missing: the select
+        // and the loader state the gap ('not in this dataset') instead of the
+        // plot silently showing some other column. No notice on top.
         $.createSelect([...keyOptions, { value: wanted, text: `${wanted} (not in this dataset)` }], $keySelect);
-        notify('Plot source not found',
-          `${type} "${wanted}" is not in this dataset; nothing is shown for it. Pick another ${type} key.`,
-          'warning');
       } else if (type === 'obs' || type === 'var') {
         // The user switched the type menu: take a key of the new type,
         // avoiding _index if there are other options

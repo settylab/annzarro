@@ -236,12 +236,15 @@ test('restored with nothing focused: the placeholder is removed, said once, and 
     const listen = (e) => said.push(e.detail);
     document.addEventListener(NOTIFY_EVENT, listen);
     const panel = GeneTablePanel({}, savedGeneTable());
+    // the tables of one restore are collected into one notice, said on the next turn
+    await new Promise(resolve => setTimeout(resolve, 0));
     document.removeEventListener(NOTIFY_EVENT, listen);
     const config = panel.getConfig();
     assert.deepEqual(config.columns, [{ type: 'var', key: 'means', column: '' }]);
     assert.deepEqual(config.searchBuilderConfig.criteria,
         [{ logic: 'OR', criteria: [crit({ type: 'var', key: 'means' }, 2)] }]);
     assert.equal(said.length, 1);
+    assert.equal(said[0].title, '2 columns removed');
     assert.match(said[0].message, /corr \(focused gene\), X \(focused cell\)/);
 
     await changeFocus(config, 'genes', 'c1', 'g1');

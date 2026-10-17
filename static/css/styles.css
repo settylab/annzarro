@@ -3558,6 +3558,7 @@ details.aesthetics-section > .aesthetics-body {
     cursor: pointer;
 }
 .plot-status .ps-tag--warning { background: var(--az-warn-bg); border-color: var(--az-warn-border); color: var(--az-warn-text); }
+.plot-status .ps-tag--error { background: var(--az-danger-bg); border-color: var(--az-danger-border); color: var(--az-danger-text); }
 /* A nudge (a click the mode does not take): an outline, nothing moves */
 .plot-status .ps-tag--pulse { animation: ps-pulse 600ms ease-out; }
 @keyframes ps-pulse {

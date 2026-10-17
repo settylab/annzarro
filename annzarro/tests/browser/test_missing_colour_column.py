@@ -280,11 +280,11 @@ TOASTS = """() => {
 
 
 @pytest.mark.parametrize("which", COLOURS)
-def test_a_known_gap_asks_for_nothing_and_warns_once(server, which):
-    """The structure says the column is missing: no request for it, no console error, one toast per switch.
+def test_a_known_gap_asks_for_nothing_and_raises_no_toast(server, which):
+    """The structure says the column is missing: no request for it, no console error, no toast.
 
-    The toast is about the colour menu, which a switch rebuilds; a subset
-    change or a part step does not rebuild it, so does not say it again.
+    The colour menu lists the key as "(not in this dataset)" and the plot says
+    the same; a toast on top only repeated them, once per switch.
     """
     root, has, lacks, large = server
     colour, label = COLOURS[which]
@@ -311,7 +311,8 @@ def test_a_known_gap_asks_for_nothing_and_warns_once(server, which):
             _grey_with_notice(s, label, large)
             assert asked == [], f"asked for a column the dataset does not have: {asked}"
             assert errors == [], errors
-            toasts = [t for t in page.evaluate("window.__toasts") if t == "Plot source not found"]
-            assert len(toasts) == 1, toasts
+            # the select and the plot state the gap; no toast repeats it
+            toasts = page.evaluate("window.__toasts")
+            assert "Plot source not found" not in toasts, toasts
         finally:
             browser.close()
