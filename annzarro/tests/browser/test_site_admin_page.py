@@ -4,7 +4,10 @@
 2. the Markdown preview renders with the safe renderer in a sandboxed frame: a <script> in the text is
    shown as text and runs nowhere;
 3. a text saved there shows in the footer of the sign-in page at once (no restart), and is listed as set;
-4. a hosted server's footer is "About · Data & privacy" with nothing configured, "About" opens the About
+4. a config file with all three kinds of text (Markdown, a file, a link) is shown as it is, in Chromium
+   and WebKit; looking at other options sends nothing, a save sends only what changed, "Not shown" over
+   a config file's text says it hides it, and Reset to config file brings it back;
+5. a hosted server's footer is "About · Data & privacy" with nothing configured, "About" opens the About
    dialog on the main page; a personal server on loopback (login off) has no footer.
 
 Screenshots (the section in the light and the dark theme, the default footer) go to ANNZARRO_SHOTS when
@@ -12,11 +15,13 @@ it is set.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
+import json
 import os
 import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
 import pytest
@@ -34,11 +39,12 @@ SHOTS = os.environ.get("ANNZARRO_SHOTS")
 
 #: an app of the admin tests' helper (login on or off), served by werkzeug
 SERVE = """
-import sys
+import json, sys
 from pathlib import Path
 from werkzeug.serving import run_simple
 from annzarro.tests.server.admin_helpers import make_app
-app = make_app(Path(sys.argv[1]), auth=sys.argv[3] == "1")
+site = json.loads(sys.argv[4]) if len(sys.argv) > 4 else None
+app = make_app(Path(sys.argv[1]), auth=sys.argv[3] == "1", **({"site": site} if site else {}))
 run_simple("127.0.0.1", int(sys.argv[2]), app, threaded=True)
 """
 
@@ -49,13 +55,14 @@ def _free_port():
         return s.getsockname()[1]
 
 
-def _serve(root, auth):
+def _serve(root, auth, site=None):
     root.mkdir(parents=True, exist_ok=True)
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(root / "home"), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
     env.pop("ANNZARRO_CONFIG", None)
-    proc = subprocess.Popen([sys.executable, "-c", SERVE, str(root), str(port), "1" if auth else "0"], env=env,
+    proc = subprocess.Popen([sys.executable, "-c", SERVE, str(root), str(port), "1" if auth else "0",
+                             *([json.dumps(site)] if site else [])], env=env,
                             cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     url = f"http://127.0.0.1:{port}"
     for _ in range(160):
@@ -79,11 +86,16 @@ def hosted(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def browser():
-    with playwright.sync_playwright() as p:
-        b = p.chromium.launch()
-        yield b
-        b.close()
+def pw():
+    with playwright.sync_playwright() as p:      # one per module: a second would run inside the first's loop
+        yield p
+
+
+@pytest.fixture(scope="module")
+def browser(pw):
+    b = pw.chromium.launch()
+    yield b
+    b.close()
 
 
 def _sign_in(page, url):
@@ -237,3 +249,99 @@ def test_a_personal_server_has_no_footer(browser, tmp_path):
     finally:
         proc.terminate()
         proc.wait(10)
+
+
+# ---- a config file with all three kinds of text (the tab once clobbered them all in one save) --------
+
+@pytest.fixture(scope="module")
+def yaml_site(tmp_path_factory):
+    root = tmp_path_factory.mktemp("site-yaml")
+    path = root / "privacy.md"
+    path.write_text("# Privacy\n\nRead from **the file**.", encoding="utf-8")
+    site = {"imprint": {"markdown": "**Example Institute**"}, "privacy": {"file": str(path)},
+            "accessibility": {"url": "https://example.org/a11y"}, "terms": {"markdown": "Research use only."}}
+    proc, url = _serve(root / "srv", auth=True, site=site)
+    yield url, str(path)
+    proc.terminate()
+    proc.wait(10)
+
+
+@pytest.fixture(scope="module", params=["chromium", "webkit"])
+def any_browser(request, pw):
+    b = getattr(pw, request.param).launch()
+    yield b
+    b.close()
+
+
+def _open_tab(browser, url):
+    context = browser.new_context(viewport={"width": 1300, "height": 2200})
+    page = context.new_page()
+    _sign_in(page, url)
+    page.goto(url + "/admin#site")
+    page.wait_for_selector("#site-checklist")
+    return context, page
+
+
+def _mode(page, kind, mode):
+    page.locator(f'[data-key="site.{kind}"] label[for="site-{kind}-mode-{mode}"]').click()
+
+
+def _served(url):
+    def status(path):
+        try:
+            return urllib.request.urlopen(url + path, timeout=5).status
+        except urllib.error.HTTPError as exc:
+            return exc.code
+    return {kind: status(f"/site/{kind}") for kind in ("imprint", "privacy", "terms")}
+
+
+def test_a_config_files_texts_are_shown_and_survive_looking_and_saving(any_browser, yaml_site):
+    url, path = yaml_site
+    context, page = _open_tab(any_browser, url)
+    puts = []
+    page.on("request", lambda r: puts.append(r.post_data_json) if r.method == "PUT" else None)
+    for kind, mode in (("imprint", "markdown"), ("privacy", "file"), ("accessibility", "url"), ("terms", "markdown")):
+        assert page.locator(f"#site-{kind}-mode-{mode}").is_checked(), kind
+        assert "(config file)" in page.locator(f'[data-effect="{kind}"]').inner_text()
+    assert path in page.locator('[data-key="site.privacy"] .site-file-path').inner_text()
+    page.frame_locator('[data-preview="privacy-file"]').locator("strong", has_text="the file").wait_for()
+    # look at the other options of every card, and leave some there: nothing to save
+    _mode(page, "imprint", "url")
+    _mode(page, "privacy", "markdown")
+    _mode(page, "accessibility", "markdown")
+    _mode(page, "terms", "url")
+    _mode(page, "privacy", "file")
+    assert page.inner_text("#site-status") == "No changes."
+    assert page.locator("#site-save").is_disabled()
+    assert page.locator('[data-key="site.imprint"] .site-incomplete').is_visible()
+    # a save sends the one key that changed
+    page.locator("#site-operator").fill("Example Institute")
+    page.click("#site-save")
+    page.wait_for_selector('[data-key="site.operator"] .badge:has-text("set here")')
+    assert puts == [{"site.operator": "Example Institute"}]
+    assert _served(url) == {"imprint": 200, "privacy": 200, "terms": 200}
+    page.locator('[data-reset="operator"]').click()
+    page.wait_for_selector('[data-key="site.operator"] .badge:has-text("default")')
+    context.close()
+
+
+def test_not_shown_over_a_config_files_text_says_so_and_reset_brings_it_back(any_browser, yaml_site):
+    url, _ = yaml_site
+    context, page = _open_tab(any_browser, url)
+    note = page.locator('[data-hides="terms"]')
+    assert note.is_hidden()
+    _mode(page, "terms", "none")
+    assert note.is_visible() and "Hides the text from the config file" in note.inner_text()
+    page.click("#site-save")
+    page.wait_for_selector('[data-key="site.terms"] [data-reset="terms"]')
+    assert _served(url)["terms"] == 404
+    terms = page.locator('[data-key="site.terms"]')
+    assert "not shown (set here). The config file has a text in Markdown." in terms.locator("[data-effect]").inner_text()
+    assert page.locator('[data-hides="terms"]').is_visible()
+    assert terms.locator("[data-reset]").inner_text() == "Reset to config file"
+    if SHOTS:
+        page.screenshot(path=os.path.join(SHOTS, f"site-tab-hidden-terms-{any_browser.browser_type.name}.png"), full_page=True)
+    terms.locator("[data-reset]").click()
+    page.wait_for_selector('[data-key="site.terms"] .badge:has-text("config file")')
+    assert _served(url) == {"imprint": 200, "privacy": 200, "terms": 200}
+    context.close()

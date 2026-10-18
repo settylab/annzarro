@@ -432,9 +432,10 @@
 /* pages with a footer keep it at the bottom of the window, whatever their height */
 body.has-site-footer { display: flex; flex-direction: column; min-height: 100vh; }
 body.has-site-footer > .site-footer { margin-top: auto; }
-/* the sign-in and sign-out cards stay centred in the space above the footer */
+/* the sign-in and sign-out cards stay centred in the space above the footer. Their width is the
+   page's own (login.html: at most 400px); border-box keeps a width: 100% card inside a narrow window */
 body.site-centered { height: auto; align-items: center; justify-content: flex-start; }
-body.site-centered > :not(.site-footer) { margin-top: auto; margin-bottom: auto; box-sizing: border-box; max-width: 100%; }
+body.site-centered > :not(.site-footer) { margin-top: auto; margin-bottom: auto; box-sizing: border-box; }
 body.site-centered > .site-footer { align-self: stretch; }
 /* the text pages (/site/<kind>) */
 .site-text { box-sizing: border-box; width: 100%; max-width: 46rem; margin: 0 auto; padding: 1.5rem 1rem; line-height: 1.55; }

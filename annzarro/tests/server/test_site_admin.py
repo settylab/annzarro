@@ -363,3 +363,102 @@ def test_the_about_page_needs_no_login_and_carries_the_site_block_and_the_credit
     assert "Operated by Example Institute" in html and 'href="https://example.org/i"' in html
     assert __version__ in html and "AnnZarro is developed by the" in html
     assert "<script>" not in html.split("</head>")[1]
+
+
+# ---- a config file with all three kinds of text: what the tab reads, and that a save leaves them alone ----
+
+def three_kinds(tmp_path):
+    """imprint and terms as Markdown, privacy from a file, accessibility a link (the 0.6.0 test server's)."""
+    path = tmp_path / "privacy.md"
+    path.write_text("# Privacy\n\nRead from **the file**.", encoding="utf-8")
+    return {"imprint": {"markdown": "**Example Institute**"}, "privacy": {"file": str(path)},
+            "accessibility": {"url": "https://example.org/a11y"}, "terms": {"markdown": "Research use only."}}, str(path)
+
+
+def assert_three_kinds_served(app):
+    client = app.test_client()
+    assert "Example Institute" in client.get("/site/imprint").get_data(as_text=True)
+    assert "the file" in client.get("/site/privacy").get_data(as_text=True)
+    assert client.get("/site/accessibility").headers["Location"] == "https://example.org/a11y"
+    assert "Research use only." in client.get("/site/terms").get_data(as_text=True)
+
+
+def test_the_tab_reads_every_kind_from_the_config_file_with_its_source(tmp_path):
+    site, path = three_kinds(tmp_path)
+    admin = login(make_app(tmp_path, site=site), ADMIN)
+    keys = site_keys(admin)
+    for kind in ("imprint", "privacy", "accessibility", "terms"):
+        key = keys[f"site.{kind}"]
+        assert key["source"] == "config" and key["layers"]["config"] == key["value"], kind
+    assert keys["site.privacy"]["value"]["file"] == path
+    assert keys["site.accessibility"]["value"]["url"] == "https://example.org/a11y"
+
+
+def test_the_effective_texts_carry_a_config_files_file_as_read(tmp_path):
+    site, _ = three_kinds(tmp_path)
+    app = make_app(tmp_path, site=site)
+    texts = login(app, ADMIN).get("/api/v1/admin/site/texts").get_json()["texts"]
+    assert texts["privacy"] == {"label": "Privacy", "url": None, "markdown": "# Privacy\n\nRead from **the file**."}
+    assert texts["accessibility"]["url"] == "https://example.org/a11y"
+    assert texts["imprint"]["markdown"] == "**Example Institute**"
+    assert login(app, USER).get("/api/v1/admin/site/texts").status_code == 403
+    assert app.test_client().get("/api/v1/admin/site/texts").status_code == 401
+
+
+def test_the_effective_texts_follow_the_admin(tmp_path):
+    site, _ = three_kinds(tmp_path)
+    app = make_app(tmp_path, site=site)
+    admin = login(app, ADMIN)
+    assert put(admin, {"site.terms": text()}).status_code == 200
+    assert admin.get("/api/v1/admin/site/texts").get_json()["texts"]["terms"] is None
+
+
+def test_a_save_of_one_key_leaves_the_config_files_texts_alone(tmp_path):
+    site, _ = three_kinds(tmp_path)
+    app = make_app(tmp_path, site=site)
+    assert put(login(app, ADMIN), {"site.operator": "Example Institute"}).status_code == 200
+    assert set(overlay(app)) == {"site.operator"}
+    assert_three_kinds_served(app)
+    assert footer_of(app.test_client().get("/login").get_data(as_text=True)) == [
+        "About", "Imprint", "Privacy", "Accessibility", "Terms of use", "Data &amp; privacy"]
+
+
+def test_hiding_a_config_files_text_is_an_override_that_reset_undoes(tmp_path):
+    site, _ = three_kinds(tmp_path)
+    app = make_app(tmp_path, site=site)
+    admin = login(app, ADMIN)
+    assert put(admin, {"site.privacy": text(label="Privacy")}).status_code == 200
+    key = site_keys(admin)["site.privacy"]
+    assert key["source"] == "admin" and key["value"]["file"] is None and key["layers"]["config"]["file"]
+    assert app.test_client().get("/site/privacy").status_code == 404
+    assert put(admin, {"site.privacy": None}).status_code == 200
+    assert_three_kinds_served(app)
+
+
+def test_a_real_config_file_reaches_the_tab(tmp_path):
+    """Through the config manager, as `annzarro start --config` and the WSGI entry read it: the package's
+    own defaults for site.* are not the operator's, the file's fields are."""
+    from annzarro.server.core import create_app
+    from annzarro.tests.conftest import _BrowsesLikeAPage
+    from annzarro.utils.config_manager import ConfigManager
+    from annzarro.server.auth import AuthManager
+    site, path = three_kinds(tmp_path)
+    users = tmp_path / "users" / "users.json"
+    users.parent.mkdir()
+    AuthManager(user_file=str(users)).create_user(ADMIN, "correct horse battery", is_admin=True)
+    (tmp_path / "data").mkdir()
+    import yaml
+    config_file = tmp_path / "site.yaml"
+    config_file.write_text(yaml.safe_dump({
+        "server": {"host": "127.0.0.1", "data_dir": str(tmp_path / "data"), "log_file": str(tmp_path / "app.log")},
+        "auth": {"enabled": True, "user_file": str(users)}, "site": site}), encoding="utf-8")
+    manager = ConfigManager()
+    manager.load_config(env="production", config_path=str(config_file))
+    app = create_app({**manager.to_flask_config(), "TESTING": True})
+    app.test_client_class = _BrowsesLikeAPage
+    keys = site_keys(login(app, ADMIN))
+    assert {k: v["source"] for k, v in keys.items() if k in ("site.imprint", "site.privacy", "site.accessibility",
+                                                              "site.terms", "site.operator")} == {
+        "site.imprint": "config", "site.privacy": "config", "site.accessibility": "config", "site.terms": "config",
+        "site.operator": "default"}
+    assert keys["site.privacy"]["value"]["file"] == path
