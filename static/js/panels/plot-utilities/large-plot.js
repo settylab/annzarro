@@ -53,6 +53,7 @@ import { buildPointIndexSliced } from '../../utils/point-index.js';
 import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus, applyPendingClick } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { proxyMarkerSize, legendOptionsIntoLayout } from '../../utils/legend-options.js';
 import { usableUnsPalette, unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
 import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount, colourGroupKey } from '../../utils/categories.js';
 
@@ -229,7 +230,7 @@ function chunkTraces(X, Y, a, b, name, color, settings, group = name) {
 function legendTrace(name, color, settings, rank, group = name) {
   return { type: 'scattergl', mode: 'markers', name, legendgroup: group, showlegend: true, meta: LEGEND_PROXY,
     legendrank: rank, x: [null], y: [null], hoverinfo: 'skip',
-    marker: { size: settings.pointSize, opacity: 1, color } };
+    marker: { size: proxyMarkerSize(settings), opacity: 1, color } };
 }
 
 /**
@@ -592,6 +593,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     layout.legend = { ...(layout.legend || {}), title: { text: colourTitle(settings.color), font: titleFont(settings) },
       orientation: pos.legendOrientation, x: pos.legendX, y: pos.legendY,
       xanchor: pos.legendXanchor, yanchor: pos.legendYanchor };
+    legendOptionsIntoLayout(layout, settings);
   } else if (cs && cs.values) {
     // numeric: COLOR_BINS steps over [cmin, cmax]
     let v = cs.values;

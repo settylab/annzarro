@@ -13,6 +13,7 @@
  * follow the app theme otherwise (utils/plot-theme.js).
  */
 import { adoptColourModel, plotColour, pinPalette, COLOUR_MODEL } from '../../utils/plot-theme.js';
+import { DOT_SIZE_MIN, DOT_SIZE_MAX, COLUMNS_MAX } from '../../utils/legend-options.js';
 
 export const SCALE_BAR_CORNERS = ['bottom-right', 'bottom-left', 'top-right', 'top-left'];
 export const COLORBAR_POSITIONS = ['legend', 'right', 'left', 'top', 'bottom'];
@@ -24,6 +25,9 @@ export const OPTION_DEFAULTS = Object.freeze({
   colorbarPosition: 'legend',      // 'legend': where the legend goes (settings.legendPosition)
   colorbarLength: 1,               // fraction of the plot's height (width when horizontal)
   colorbarTicks: null,             // null: automatic
+  legendDotSize: null,             // null: the constant legend (12 px); else the legend dots' size in px (utils/legend-options.js)
+  legendColumns: null,             // null: one column; else 2 or more
+  showLegendTitle: true,
   showScaleBar: false,
   scaleBarCorner: 'bottom-right',
   scaleBarSize: 1,                 // scales the bar's target length, line and label together
@@ -48,6 +52,10 @@ export function normalizePlotOptions(settings) {
   s.colorbarLength = isNum(s.colorbarLength) && s.colorbarLength >= 0.1 && s.colorbarLength <= 1
     ? s.colorbarLength : OPTION_DEFAULTS.colorbarLength;
   s.colorbarTicks = isNum(s.colorbarTicks) && s.colorbarTicks >= 2 ? Math.min(Math.round(s.colorbarTicks), 30) : null;
+  s.legendDotSize = isNum(s.legendDotSize) && s.legendDotSize >= DOT_SIZE_MIN
+    ? Math.min(Math.round(s.legendDotSize), DOT_SIZE_MAX) : null;
+  s.legendColumns = isNum(s.legendColumns) && s.legendColumns >= 2 ? Math.min(Math.round(s.legendColumns), COLUMNS_MAX) : null;
+  s.showLegendTitle = s.showLegendTitle !== false;
   s.showScaleBar = s.showScaleBar === true && !!s.equalAspect;     // it needs Equal aspect
   s.scaleBarCorner = SCALE_BAR_CORNERS.includes(s.scaleBarCorner) ? s.scaleBarCorner : OPTION_DEFAULTS.scaleBarCorner;
   s.scaleBarSize = isNum(s.scaleBarSize) && s.scaleBarSize >= 0.25 && s.scaleBarSize <= 4
@@ -190,7 +198,7 @@ export function defaultLook() {
     showGrid: true, showAxisTitles: true, showAxisLabels: true, showAxisLines: true, showZeroLines: false,
     tickCount: null, fontSize: 12, fontFamily: undefined, axisLineWidth: 1, gridLineWidth: 1, zeroLineWidth: 1,
     margins: { ...DEFAULT_MARGINS }, marginsUnlinked: false,
-    legendPosition: 'right', showLegend: true,
+    legendPosition: 'right', showLegend: true, legendDotSize: null, legendColumns: null, showLegendTitle: true,
     colorbarPosition: 'legend', colorbarLength: 1, colorbarTicks: null,
     showScaleBar: false, scaleBarCorner: 'bottom-right'
   };
@@ -246,7 +254,7 @@ export const STYLE_KEYS = Object.freeze([
   'showGrid', 'showAxisTitles', 'showAxisLabels', 'showAxisLines', 'showZeroLines', 'showTickMarks', 'tickCount',
   'bgColor', 'gridColor', 'axisColor', 'textColor', 'zeroLineColor', 'backdropColor', 'showBackdrop',
   'axisLineWidth', 'gridLineWidth', 'zeroLineWidth', 'fontSize', 'fontFamily',
-  'margins', 'marginsUnlinked', 'legendPosition', 'showLegend',
+  'margins', 'marginsUnlinked', 'legendPosition', 'showLegend', 'legendDotSize', 'legendColumns', 'showLegendTitle',
   'colorbarPosition', 'colorbarLength', 'colorbarTicks',
   'showScaleBar', 'scaleBarCorner', 'scaleBarSize', 'scaleBarUnit',
   'notInTableScale', 'notInTableOpacity', 'notInTableColor',

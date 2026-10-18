@@ -31,6 +31,7 @@ import { NO_HOVER } from './hover-columns.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
+import { legendOptionsIntoLayout } from '../../utils/legend-options.js';
 import { cancelLoads } from '../../utils/load-scope.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, refusalPanel, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck,
@@ -2816,6 +2817,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       layout.legend.y = posConfig.legendY;
       layout.legend.xanchor = posConfig.legendXanchor;
       layout.legend.yanchor = posConfig.legendYanchor;
+      legendOptionsIntoLayout(layout, settings);
       
       // Create the plot with categorical traces
       await drawPlot(
