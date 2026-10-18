@@ -23,7 +23,7 @@
 import { DataManager } from '../../data-manager.js';
 import { nearestPoint, pointOfRow } from '../../utils/point-index.js';
 import { colourTitle } from '../../utils/plot-titles.js';
-import { CLICK_MAX_MS, CLICK_MAX_MOVE_PX } from './plot-make-helper.js';
+import { CLICK_MAX_MS, CLICK_MAX_MOVE_PX, noteDoublePress, deferFocus, cancelDeferredFocus } from './plot-make-helper.js';
 import { focusShapeStyle } from '../../utils/focus-style.js';
 import { setStatusTag } from '../../utils/panel-surface.js';
 
@@ -262,9 +262,10 @@ export function attachLargeInteraction(gd, settings, index) {
   // pointer events, not click: Plotly's drag layer takes the mouse between
   // press and release, so no click reaches the graph
   listen(gd, 'pointerdown', (e) => {
-    down = e.isPrimary && (e.pointerType !== 'mouse' || e.button === 0)
-      && e.target.closest && e.target.closest('.draglayer, .nsewdrag')
-      ? { id: e.pointerId, t: e.timeStamp, x: e.clientX, y: e.clientY } : null;
+    const primary = e.isPrimary && (e.pointerType !== 'mouse' || e.button === 0);
+    const seq = primary ? noteDoublePress(gd, e) : 0;
+    down = primary && e.target.closest && e.target.closest('.draglayer, .nsewdrag')
+      ? { id: e.pointerId, t: e.timeStamp, x: e.clientX, y: e.clientY, seq } : null;
   }, true);
   listen(document, 'pointerup', (e) => {
     const s = gd.__largeState;
@@ -282,7 +283,7 @@ export function attachLargeInteraction(gd, settings, index) {
     }
     if (s.pending) { s.pending = null; showWaiting(gd, false); }
     const hit = pointOfQuery(gd, s, q);
-    if (hit) focusRow(gd, s, hit).catch((err) => console.warn('Focus by click failed:', err && err.message));
+    if (hit) deferFocus(gd, e, () => focusRow(gd, s, hit).catch((err) => console.warn('Focus by click failed:', err && err.message)), d.seq);
   }, true);
   return st;
 }
@@ -297,6 +298,7 @@ export function attachLargeInteraction(gd, settings, index) {
  */
 export function detachLargeInteraction(gd) {
   if (!gd) return;
+  cancelDeferredFocus(gd);
   const st = gd.__largeState;
   if (st) { clearTimeout(st.dwell); hideTip(gd, st); st.index = null; st.seq++; }
   if (st && st.pending) { st.pending = null; showWaiting(gd, false); }

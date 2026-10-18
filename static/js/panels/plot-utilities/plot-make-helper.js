@@ -302,6 +302,79 @@ export function nextOverlappingEntity(gd, point, clicked, current, mouse = null,
 export const CLICK_MAX_MS = 300;
 export const CLICK_MAX_MOVE_PX = 5;
 
+// Plotly resets the view on a double click (3D: the camera), and each press of
+// it is a click. A click focuses once the double-click window has passed
+// without a second press near it; a second press is a double click and
+// focuses nothing. Focusing and then undoing it would cost a second at 1M points.
+const DOUBLE_CLICK_MS = 300;
+
+/** How long a click waits for a second one: Plotly's window, none when the plot has no double click. */
+function doubleClickMs(gd) {
+  const c = gd && gd._context;
+  if (c && c.doubleClick === false) return 0;
+  const d = c && c.doubleClickDelay;
+  return Number.isFinite(d) && d >= 0 ? d : DOUBLE_CLICK_MS;
+}
+
+function doubleState(gd) {
+  return gd.__azDouble || (gd.__azDouble = { timer: null, t: -Infinity, x: 0, y: 0, seq: 0, dropUpTo: 0, seconds: new Set() });
+}
+
+/**
+ * A primary press on the graph (call from its pointerdown); returns its
+ * number, which its click carries to deferFocus. A press that follows a click
+ * within the double-click window, close to it, is the second press of a
+ * double click: the click it makes is dropped, and the first click's focus
+ * not made, however the events of the two interleave.
+ */
+export function noteDoublePress(gd, ev) {
+  if (!gd || !ev) return 0;
+  const s = doubleState(gd);
+  const seq = ++s.seq;
+  const ms = doubleClickMs(gd);
+  if (ms > 0 && Date.now() - s.t <= ms && Math.hypot(ev.clientX - s.x, ev.clientY - s.y) <= CLICK_MAX_MOVE_PX * 2) {
+    if (s.seconds.size > 8) s.seconds.clear();
+    s.seconds.add(seq);
+    s.dropUpTo = seq - 1;
+    if (s.timer) { clearTimeout(s.timer); s.timer = null; }
+  }
+  return seq;
+}
+
+/** A click was released at `at` ({clientX, clientY}): a press soon after, near it, is a double click. */
+export function noteClickRelease(gd, at) {
+  const s = doubleState(gd);
+  s.t = Date.now(); s.x = at.clientX; s.y = at.clientY;
+}
+
+/**
+ * Run `run` (a focus by click of press `seq`, released at `at`) after the
+ * double-click window, unless a second press comes (noteDoublePress). The
+ * second click of a double click is dropped; the newest click replaces one
+ * still waiting. Nothing runs for a graph drawn again (cancelDeferredFocus) or
+ * gone.
+ */
+export function deferFocus(gd, at, run, seq) {
+  const ms = doubleClickMs(gd);
+  if (ms === 0) { run(); return; }
+  const s = doubleState(gd);
+  noteClickRelease(gd, at);
+  if (seq <= s.dropUpTo || s.seconds.delete(seq)) return;
+  if (s.timer) { clearTimeout(s.timer); s.timer = null; }
+  s.timer = setTimeout(() => {
+    s.timer = null;
+    if (gd.isConnected === false || !gd._fullLayout) return;
+    run();
+  }, ms);
+}
+
+/** Drop a focus still waiting for the double-click window (the graph is drawn again or leaves). */
+export function cancelDeferredFocus(gd) {
+  const s = gd && gd.__azDouble;
+  if (!s) return;
+  if (s.timer) { clearTimeout(s.timer); s.timer = null; }
+}
+
 /**
  * Track the primary pointer on a graph div. `gd.__azGesture.settle(commit)`
  * runs `commit` once the press ends if it was a click (3D reports
@@ -333,10 +406,11 @@ function trackGesture(gd) {
     const commit = g.pending;
     g.pending = null;
     if (!isClick) return;
-    if (commit) { commit(); return; }
+    if (commit) { deferFocus(gd, ev, commit, d.seq); return; }
     if (!d.onArea) return;
     // Plotly's mouseup (and its plotly_click) follows this pointerup in the same task
-    const click = g.click = { clientX: ev.clientX, clientY: ev.clientY };
+    noteClickRelease(gd, ev);
+    const click = g.click = { clientX: ev.clientX, clientY: ev.clientY, seq: d.seq };
     setTimeout(() => {
       if (g.click !== click) return;
       g.click = null;
@@ -347,15 +421,16 @@ function trackGesture(gd) {
     gd.__lastPointer = { clientX: ev.clientX, clientY: ev.clientY };
     g.click = null;
     if (!ev.isPrimary || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+    const seq = noteDoublePress(gd, ev);
     const onArea = !!(ev.target && ev.target.closest && ev.target.closest('.nsewdrag'));
-    g.down = { id: ev.pointerId, t: ev.timeStamp, x: ev.clientX, y: ev.clientY, onArea };
+    g.down = { id: ev.pointerId, t: ev.timeStamp, x: ev.clientX, y: ev.clientY, onArea, seq };
     g.pending = null;
     window.addEventListener('pointerup', finish, true);
     window.addEventListener('pointercancel', finish, true);
   }, true);
   g.settle = (commit) => {
     if (g.down) { g.pending = commit; return; }           // pressed: decide on release
-    if (g.click) { g.click = null; commit(); }            // the click just released
+    if (g.click) { const at = g.click; g.click = null; deferFocus(gd, at, commit, at.seq); }   // the click just released
   };
   return g;
 }
@@ -444,6 +519,7 @@ function redrawHover(plotContainer) {
 }
 
 export function attachClickHandler(plotContainer, traces, data, settings) {
+    cancelDeferredFocus(plotContainer);
     const gesture = trackGesture(plotContainer);
     if (!plotContainer.__pointerMoveTracked && plotContainer.addEventListener) {
       plotContainer.__pointerMoveTracked = true;
@@ -503,7 +579,7 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
     if (gesture) {
       gesture.fallback = (click) => {
         const commit = pick(click);
-        if (commit) commit().catch(err => console.warn('Focus by click failed:', err && err.message));
+        if (commit) deferFocus(plotContainer, click, () => commit().catch(err => console.warn('Focus by click failed:', err && err.message)), click.seq);
       };
     }
     const onClick = async (e) => {

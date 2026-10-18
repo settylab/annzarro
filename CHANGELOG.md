@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- Double-clicking a plot to reset its zoom (or the 3D camera) no longer changes the focused cell or gene. A single click now focuses after Plotly's double-click window (0.3 s).
+
 ### Docs
 - The README and the licence page cite v0.6.0 by its DOI,
   [10.5281/zenodo.23447624](https://doi.org/10.5281/zenodo.23447624).
