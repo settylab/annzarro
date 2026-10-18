@@ -4454,7 +4454,15 @@ details.aesthetics-section > .aesthetics-body {
 .dsi-tree .dsi-tree { border-left: 1px solid var(--az-border-soft); }
 .dsi-tree li { padding: 0.05rem 0; overflow-wrap: anywhere; }
 /* search in the Structure tab */
-.dsi-search { position: sticky; top: -1px; z-index: 2; margin: 0 0 0.6rem; padding: 0.1rem 0 0.35rem; background: var(--bs-modal-bg, var(--bs-body-bg, transparent)); }
+/* Sticks to the very top of the scrolling dialog body: a sticky box stops at the scroller's padding,
+   so with top: -1px the body's top padding stayed open and the tree showed through it while scrolling.
+   The extra top padding, taken back by the negative margin, covers that strip with the dialog's colour. */
+.dsi-search {
+    position: sticky; top: calc(-1 * var(--bs-modal-padding, 1rem)); z-index: 2;
+    margin: calc(-1 * var(--bs-modal-padding, 1rem) + 0.1rem) 0 0.6rem;
+    padding: calc(var(--bs-modal-padding, 1rem)) 0 0.35rem;
+    background: var(--bs-modal-bg, var(--bs-body-bg, var(--az-surface)));
+}
 .dsi-search-row { display: flex; gap: 0.3rem; align-items: stretch; }
 .dsi-search-input { flex: 1 1 auto; min-width: 0; }
 .dsi-search-toggle { flex: 0 0 auto; font-family: var(--bs-font-monospace, monospace); line-height: 1.2; min-width: 2.2rem; }

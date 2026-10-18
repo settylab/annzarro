@@ -671,6 +671,25 @@ def test_search_escape_clears_and_the_keys_focus_the_box(opened):
     assert not s.errors, s.errors
 
 
+def test_the_stuck_search_covers_the_top_of_the_dialog_body(opened):
+    """Scrolled, the search sits flush with the top of the scrolling body, so nothing shows through above it."""
+    s = _structure(opened, "liver.zarr")
+    page = s.page
+    page.evaluate("document.querySelectorAll('#dsi-pane-structure details').forEach(d => d.open = true)")
+    got = page.evaluate("""() => {
+        const search = document.querySelector('#dsi-pane-structure .dsi-search');
+        const body = search.closest('.modal-body');
+        const input = () => search.querySelector('.dsi-search-input').getBoundingClientRect().top;
+        const before = input();
+        body.scrollTop = Math.min(300, body.scrollHeight - body.clientHeight);
+        return {scrolled: body.scrollTop, gap: search.getBoundingClientRect().top - body.getBoundingClientRect().top,
+                bg: getComputedStyle(search).backgroundColor, moved: before - input()};
+    }""")
+    assert got["scrolled"] > 50, "the structure is long enough to scroll"
+    assert abs(got["gap"]) < 1, "no strip above the stuck search"
+    assert got["bg"] not in ("rgba(0, 0, 0, 0)", "transparent")
+
+
 def test_search_marks_a_hostile_name_as_text(opened):
     s = _structure(opened, "rich.zarr")
     page = s.page
