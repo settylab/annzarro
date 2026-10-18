@@ -86,7 +86,8 @@ dataset is loading.
 A link without `#view=` (`http://<server>/?dataset_path=<path>`) opens the blank dashboard of
 that dataset: no panels, every panel type offered on the welcome screen. It ignores the panels
 autosaved in the browser. Closing every panel also removes `#view=` from the address, so the
-address is that clean link again. Only an address with no `dataset_path` at all restores the
+address is that clean link again. With no panel open the address still follows the dataset: a
+switch to another one replaces `dataset_path` at once. Only an address with no `dataset_path` at all restores the
 panels autosaved in this browser.
 
 If the view cannot be decoded (for example because a mail client cut the link), AnnZarro says

@@ -223,7 +223,7 @@ def test_a_hover_pick_that_does_not_fit_is_refused(server):
             asked = len(requests)
             page.select_option('.tile[data-tile-id="cell-plot-M"] select.hover-columns-select', label="barcode")
             page.wait_for_function("""() => [...document.querySelectorAll('.tile[data-tile-id="cell-plot-M"] .plot-status .ps-tag')]
-                .some(t => /Hover off: browser memory/.test(t.textContent))""", timeout=30000)
+                .some(t => /Hover off: JS memory/.test(t.textContent))""", timeout=30000)
             assert page.evaluate(PICKER) == ["No hover"]
             after = _plot(page, lambda s: True)
             assert after["legend"] == before["legend"] and after["drawn"] == before["drawn"]   # still coloured

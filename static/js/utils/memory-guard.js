@@ -40,6 +40,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     enforce: 'block',
     heapGb: null,      // null: the browser's own limit (Chrome reports it), else FALLBACK_HEAP_GB
     totalGb: null,     // null: no limit, except on small devices (navigator.deviceMemory)
+    buffersGb: null,   // null: this browser engine's own (BUFFER_CEILING_GB)
     margin: 0.2
 });
 
@@ -74,6 +75,46 @@ export const REMOTE_TOTAL_GB = 16;
  * machine's tab ran out of array buffers at 15.4 to 17.4 GB.
  */
 export const LARGEST_TESTED_POINTS = 200000000;
+/**
+ * ArrayBuffer bytes one tab can hold in all, all plots together (GB), per
+ * browser engine where ui.memory.buffers_gb is not set. The RAM budget
+ * (total) protects the computer; this is the tab's own ceiling, which a
+ * computer with 128 GB reaches long before its RAM: six Cell Plots of
+ * 95.6M cells hold 8 to 9 GB each (heldPerPoint), which the RAM budget lets through.
+ * - v8 (Chrome, Edge, the desktop app): 16.6 GB, measured: a fresh tab
+ *   gives 31 blocks of 512 MiB, the 32nd fails with `RangeError: Array
+ *   buffer allocation failed` (Chrome 130 and the Chromium of the tests,
+ *   on an M3 Max with 128 GB; the same with 256 MiB blocks).
+ * - webkit (Safari): no ArrayBuffer ceiling a page can find (64 GB of
+ *   untouched blocks are given; the allocation probe always passes), but the
+ *   system ends the page's process once its memory passes WebKit's limit
+ *   for an active page: 15 GiB on a computer with more than 16 GiB, 7 GiB
+ *   below, plus 1 GiB a tab (WTF/wtf/MemoryPressureHandler.cpp,
+ *   thresholdForMemoryKillOfActiveProcess). That limit counts all the
+ *   process's memory, so 15 and 7 GB of buffers are an upper bound.
+ *   Provisional: not measured. Where the guard cannot see the computer's
+ *   memory, the smaller one.
+ * - other engines (Firefox): v8's, the one measured.
+ */
+export const BUFFER_CEILING_GB = Object.freeze({ v8: 16.6, webkitLarge: 15, webkitSmall: 7, other: 16.6 });
+/** Above this much memory (GB) WebKit gives a page the larger limit. */
+export const WEBKIT_LARGE_RAM_GB = 16;
+
+/**
+ * The JavaScript engine of `navigator` from its user agent: 'v8' (Chrome,
+ * Edge, Electron, Opera), 'webkit' (Safari, every browser on iOS), 'gecko'
+ * (Firefox) or null.
+ */
+export function browserEngine(nav) {
+    const ua = String((nav && nav.userAgent) || '');
+    if (!ua) return null;
+    if (/\bFirefox\//.test(ua) && !/\bSeamonkey\//.test(ua)) return 'gecko';
+    if (/\b(?:CriOS|FxiOS|EdgiOS)\//.test(ua)) return 'webkit';
+    if (/\b(?:Chrome|Chromium|Edg|Electron|HeadlessChrome)\//.test(ua)) return 'v8';
+    if (/AppleWebKit\//.test(ua)) return 'webkit';
+    return null;
+}
+
 /** navigator.deviceMemory at or below this (GB) sets a total budget of half of it. */
 export const SMALL_DEVICE_GB = 4;
 /**
@@ -166,11 +207,23 @@ export const DEFAULT_MODEL = {
          */
         redrawBeside: 14,
         /**
-         * ArrayBuffer bytes per point a drawn plot holds: 61 for the plot
-         * (12.9 GB at 210M, measured) + 8 for its point index; freed when its
-         * replacement draws.
+         * ArrayBuffer bytes per point a drawn plot holds, its point index
+         * included, beside the client cache (Ledger.buffers adds that);
+         * freed when its replacement draws. Measured on tahoe (95,624,334
+         * points, every cell, 0.6.0, M3 Max with 128 GB) as the drop in
+         * what a tab gives in 256 MiB blocks (Chromium) or the rise in the
+         * WebContent process's phys_footprint (WebKit), less the cache:
+         * Chromium 7.29 GB (76 B a point, the default colour), 8.09 GB
+         * (85 B, coloured by total_counts) and 8.13 GB (85 B, a plot moved
+         * from another dataset); WebKit 7.29 GB (76 B, default colour, the
+         * same as Chromium). 85 + 3 for the 256 MiB step of the
+         * measurement: 88, so 95.6M points and the 0.77 to 1.0 GB cache
+         * come to 9.2 to 9.4 GB, at or above the 9.13 GB measured. Earlier
+         * 61 + 8 (12.9 GB at 210M, plot and index) was short at this size.
+         * Also the credit a redraw beside the old plot counts on
+         * (large-plot.js probeDraw).
          */
-        heldPerPoint: 61 + 8
+        heldPerPoint: 88
     },
     /**
      * Transient costs on top of what the panel holds.
@@ -228,10 +281,12 @@ export function memorySettings(memory) {
     const margin = num(m.margin);
     // the server's RAM, which it reports only to a browser on its own computer
     const hostBytes = num(m.host_memory_bytes);
+    const buffersGb = num(m.buffers_gb);
     return {
         enforce,
         heapGb: heapGb !== null && heapGb > 0 ? heapGb : null,
         totalGb: totalGb !== null && totalGb > 0 ? totalGb : null,
+        buffersGb: buffersGb !== null && buffersGb > 0 ? buffersGb : null,
         hostBytes: hostBytes !== null && hostBytes > 0 ? hostBytes : null,
         margin: margin !== null && margin >= 0 && margin <= 5 ? margin : DEFAULT_SETTINGS.margin
     };
@@ -242,8 +297,10 @@ export function memorySettings(memory) {
  * @param {Object} env - { performance, navigator } (window's, or stubs)
  * @param {Object} settings - memorySettings()
  * @returns {{heap: {bytes: number, source: string}, total: {bytes: number|null, source: string},
- *            contexts: number, browserLimit: boolean}}
+ *            buffers: {bytes: number, source: string}, contexts: number, browserLimit: boolean}}
  *   heap.bytes is what may be FILLED (the crash point), not the nominal limit.
+ *   settings.crashedBuffers (bytes, learnedFor()) lowers buffers to
+ *   what a page held when this browser ended it.
  */
 export function readLimits(env = {}, settings = DEFAULT_SETTINGS) {
     const perf = env.performance;
@@ -273,7 +330,28 @@ export function readLimits(env = {}, settings = DEFAULT_SETTINGS) {
     if (device !== null && device <= SMALL_DEVICE_GB && !settings.totalGb && device * GB / 2 < total.bytes) {
         total = { bytes: device * GB / 2, source: `half of this device's ${device} GB` };
     }
-    return { heap, total, contexts: MAX_WEBGL_CONTEXTS, browserLimit: !!reported && !settings.heapGb };
+    let buffers;
+    if (settings.buffersGb) {
+        buffers = { bytes: settings.buffersGb * GB, source: `ui.memory.buffers_gb (${settings.buffersGb} GB)` };
+    } else {
+        const engine = browserEngine(nav);
+        if (engine === 'webkit') {
+            const ram = settings.hostBytes || (device !== null ? device * GB : null);
+            const large = ram !== null && ram > WEBKIT_LARGE_RAM_GB * GB;
+            const gb = large ? BUFFER_CEILING_GB.webkitLarge : BUFFER_CEILING_GB.webkitSmall;
+            buffers = { bytes: gb * GB, source: `Safari's limit for a page (${gb} GB${large ? '' : ', or more on a computer with more than 16 GB'})` };
+        } else {
+            const gb = engine === 'v8' ? BUFFER_CEILING_GB.v8 : BUFFER_CEILING_GB.other;
+            buffers = { bytes: gb * GB, source: engine === 'v8'
+                ? `this browser's limit for a tab's buffers (${gb} GB)`
+                : `Chrome's limit for a tab's buffers (${gb} GB); this browser's is not known` };
+        }
+    }
+    const crashed = Number(settings.crashedBuffers);
+    if (crashed > 0 && crashed < buffers.bytes) {
+        buffers = { bytes: crashed, source: `the ${formatGB(crashed)} of buffers at which this browser ended a page` };
+    }
+    return { heap, total, buffers, contexts: MAX_WEBGL_CONTEXTS, browserLimit: !!reported && !settings.heapGb };
 }
 
 // -- cost models ---------------------------------------------------------------
@@ -374,6 +452,42 @@ export function panelCost({ kind, n, large = false, colour = 'numeric', threeD =
 }
 
 /**
+ * ArrayBuffer bytes a plot panel holds once drawn (`resident`) and at the
+ * peak of its draw (`peak`), against the tab's buffer ceiling
+ * (readLimits().buffers): large-plot mode large.heldPerPoint and
+ * large.arrayBuffers a point; a regular plot its memory outside the heap
+ * (regular.off, an upper bound: not all of it is ArrayBuffers). Tables and
+ * other panels hold rows on the JS heap: 0. The client cache's typed
+ * arrays are buffers too; Ledger.buffers() adds them (at every cell of
+ * 95.6M a drawn plot and the cache held 9.1 GB, 95 B a point, of which the
+ * cache about 1 GB).
+ * @param {{kind: string, n: number, large?: boolean, threeD?: boolean}} p
+ * @returns {{resident: number, peak: number}}
+ */
+export function panelBuffers({ kind, n, large = false, threeD = false }, model = DEFAULT_MODEL) {
+    const pts = Math.max(0, Number(n) || 0);
+    if (kind !== 'cell-plot' && kind !== 'gene-plot') return { resident: 0, peak: 0 };
+    // the peak is at least what the drawn plot then holds
+    if (large) return { resident: model.large.heldPerPoint * pts, peak: Math.max(model.large.arrayBuffers, model.large.heldPerPoint) * pts };
+    const off = model.regular.off * pts * (threeD ? model.regular.threeD : 1);
+    return { resident: off, peak: off };
+}
+
+/**
+ * The buffers a redraw of a drawn plot adds while it runs, when `old` (a
+ * ledger entry, or null for a new plot) is what the panel holds: a large
+ * plot redrawn large frees its old buffers step by step and needs
+ * large.redrawBeside a point beside them, plus any growth (large-plot.js
+ * probeOrRelease); any other draw its whole peak beside the old plot.
+ */
+export function bufferDrawNeed(p, old, model = DEFAULT_MODEL) {
+    const c = panelBuffers(p, model);
+    if (!replacesInPlace(old, !!p.large)) return c.peak;
+    const held = old.buffers ? old.buffers.resident : panelBuffers(old, model).resident;
+    return model.large.redrawBeside * Math.max(0, Number(p.n) || 0) + Math.max(0, c.resident - held);
+}
+
+/**
  * What a full-resolution image export needs while it runs, on top of what
  * the panel holds. Its cost is the points, not the pixels: a smaller or
  * lower-scale image needs nearly as much.
@@ -440,7 +554,7 @@ export class Ledger {
     _entry(id, p) {
         const c = panelCost(p, this.model);
         return { id, kind: p.kind, n: p.n, large: !!p.large, colour: p.colour, threeD: !!p.threeD, title: p.title || id,
-            resident: c.resident, peak: c.peak };
+            resident: c.resident, peak: c.peak, buffers: panelBuffers(p, this.model) };
     }
 
     /**
@@ -524,9 +638,109 @@ export class Ledger {
         return t;
     }
 
+    /**
+     * ArrayBuffer bytes held (panelBuffers) and the client cache's, excluding
+     * `exclude`: as totals(), a drawing panel at its peak beside what it held before.
+     */
+    buffers({ exclude = [] } = {}) {
+        const skip = new Set(exclude);
+        let b = this.cacheBytes;
+        for (const [id, e] of this.entries) if (!skip.has(id)) b += e.buffers ? e.buffers.resident : 0;
+        for (const [id, e] of this.pending) if (!skip.has(id)) b += e.buffers ? e.buffers.peak : 0;
+        return b;
+    }
+
     /** Cell Plots counted (committed or drawing), for "with N panels open". */
     plotCount() {
         return this.panels().filter(e => e.kind === 'cell-plot' || e.kind === 'gene-plot').length;
+    }
+}
+
+// -- heavy draws, one at a time ------------------------------------------------------
+
+/**
+ * A draw that needs at least this share of a ceiling at its peak is HEAVY,
+ * and so is every large-plot draw: heavy draws take turns (DrawTurns).
+ */
+export const HEAVY_SHARE = 0.05;
+/** A turn held longer than this lets the next draw go (a stalled read must not hold every other panel). */
+export const TURN_MAX_MS = 180000;
+
+/**
+ * Whether a draw of `peak` is heavy against `limits` (readLimits).
+ * @param {Object} peak - {heap, off}: what the draw needs at its peak
+ * @param {Object} limits
+ * @param {boolean} [large] - large-plot mode
+ */
+export function isHeavyDraw(peak, limits, large = false) {
+    if (large) return true;
+    if (!peak || !limits) return false;
+    if (peak.heap >= HEAVY_SHARE * limits.heap.bytes) return true;
+    return limits.total.bytes !== null && peak.heap + peak.off >= HEAVY_SHARE * limits.total.bytes;
+}
+
+/**
+ * Heavy draws, one at a time and in the order they asked. Panels drawn at
+ * once (a restored panel set, a dataset switch, a subset change) were each
+ * checked before any of them held its buffers: every check passed, the
+ * allocation probe of each found the memory free, and together they ran the
+ * tab out of memory (four 95.6M-cell plots: two drawn, two failed in
+ * Float64Array.from, and a smaller browser loses the tab). Drawn in turn,
+ * each check and probe sees what the plots before it hold, so the later
+ * ones are refused before they start.
+ */
+export class DrawTurns {
+    constructor({ now = () => Date.now(), maxMs = TURN_MAX_MS } = {}) {
+        this._now = now;
+        this._maxMs = maxMs;
+        this._queue = [];      // waiting: {ticket, grant}
+        this._holder = null;   // {ticket, since}
+        this._seq = 0;
+    }
+
+    /** The ticket holding the turn, or null (an expired one counts as none). */
+    holder() {
+        if (this._holder && this._now() - this._holder.since > this._maxMs) this._holder = null;
+        return this._holder ? this._holder.ticket : null;
+    }
+
+    /** Tickets waiting, in order. */
+    waiting() { return this._queue.map(w => w.ticket); }
+
+    /**
+     * Wait for the turn. Resolves to a ticket; pass it to release() once the
+     * draw is done (drawn, refused, failed or aborted).
+     * @param {*} [label] - what the ticket is for (a panel id), kept on it
+     */
+    take(label = null) {
+        const ticket = { n: ++this._seq, label };
+        return new Promise(resolve => {
+            this._queue.push({ ticket, grant: () => resolve(ticket) });
+            this._next();
+        });
+    }
+
+    /** The draw holding `ticket` is done, or a waiting one is no longer wanted; the next one goes. */
+    release(ticket) {
+        if (!ticket) return;
+        if (this._holder && this._holder.ticket === ticket) this._holder = null;
+        else this._queue = this._queue.filter(w => w.ticket !== ticket);
+        this._next();
+    }
+
+    _next() {
+        if (this.holder() || !this._queue.length) {
+            // an expired holder is noticed when the next draw asks; check again when it would expire
+            if (this._holder && this._queue.length && !this._timer) {
+                this._timer = setTimeout(() => { this._timer = null; this._next(); },
+                    Math.max(0, this._maxMs - (this._now() - this._holder.since)) + 1);
+                if (this._timer && typeof this._timer.unref === 'function') this._timer.unref();
+            }
+            return;
+        }
+        const w = this._queue.shift();
+        this._holder = { ticket: w.ticket, since: this._now() };
+        w.grant();
     }
 }
 
@@ -554,8 +768,12 @@ export function headroom(held, limits) {
  * @param {Object} [opts]
  * @param {number} [opts.observed] - a measured total of held memory (bytes); the larger of it and the estimate counts
  * @param {number} [opts.panels] - plot panels open (for the sentence)
+ * @param {{need: number, held: number}} [opts.buffers] - ArrayBuffer bytes the
+ *   action adds at its peak and those held, against limits.buffers (all plots together)
  * @returns {{verdict: 'ok'|'warn'|'block', fits: boolean, risky: boolean, binding: string|null,
- *            needBytes: number, freeBytes: number, limitBytes: number, measured: boolean, why: string}}
+ *            needBytes: number, freeBytes: number, limitBytes: number, measured: boolean, why: string,
+ *            hopeless: boolean, doomed: boolean}}
+ *   hopeless: the need (with the margin) exceeds a ceiling itself, so closing panels cannot help; doomed: the estimate without the margin does, too (drawing it anyway cannot work)
  */
 export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}) {
     const k = 1 + settings.margin;
@@ -570,18 +788,27 @@ export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}
     const checks = [];
     checks.push({ name: 'heap', need: need.heap * k, free: free.heap, limit: limits.heap.bytes });
     if (free.total !== null) checks.push({ name: 'total', need: (need.heap + need.off) * k, free: free.total, limit: limits.total.bytes });
+    const buf = opts.buffers && limits.buffers ? opts.buffers : null;
+    if (buf) checks.push({ name: 'buffers', need: buf.need * k, free: limits.buffers.bytes - buf.held, limit: limits.buffers.bytes });
     let binding = null;
     for (const c of checks) {
         if (c.need > c.free && (!binding || c.need - c.free > binding.need - binding.free)) binding = c;
     }
+    // against the whole ceiling, as if nothing else were held: a need above it cannot be helped by closing panels
+    let empty = null;
+    for (const c of checks) {
+        if (c.need > c.limit && (!empty || c.need - c.limit > empty.need - empty.limit)) empty = c;
+    }
+    const doomed = !!empty && empty.need / k > empty.limit;
     const contextsShort = need.contexts > 0 && need.contexts > free.contexts;
     const fits = !binding && !contextsShort;
     const main = checks[0];
     const shown = binding || main;
-    const risky = fits && (held2.heap + need.heap * k) > RISKY_SHARE * limits.heap.bytes;
+    const risky = fits && ((held2.heap + need.heap * k) > RISKY_SHARE * limits.heap.bytes
+        || (!!buf && buf.held + buf.need * k > RISKY_SHARE * limits.buffers.bytes));
     let why = '';
     if (binding) {
-        const word = binding.name === 'heap' ? 'JS memory' : 'memory';
+        const word = binding.name === 'heap' ? 'JS memory' : binding.name === 'buffers' ? 'buffers' : 'memory';
         why = `needs ~${formatGB(binding.need)} of browser ${word}; ${formatGB(Math.max(0, binding.free))} free`
             + (opts.panels ? ` with ${opts.panels} plot${opts.panels === 1 ? '' : 's'} open` : '')
             + ` (of ${formatGB(binding.limit)}${measured ? ', measured' : ', estimated'})`;
@@ -592,8 +819,32 @@ export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}
     const verdict = fits || settings.enforce === 'off' ? 'ok' : settings.enforce === 'warn' ? 'warn' : 'block';
     return {
         verdict, fits, risky, binding: binding ? binding.name : (contextsShort ? 'contexts' : null),
-        needBytes: shown.need, freeBytes: Math.max(0, shown.free), limitBytes: shown.limit, measured, why
+        needBytes: shown.need, freeBytes: Math.max(0, shown.free), limitBytes: shown.limit, measured, why,
+        hopeless: !!empty, doomed, emptyName: empty ? empty.name : null,
+        emptyNeedBytes: empty ? empty.need : 0, emptyLimitBytes: empty ? empty.limit : 0,
+        // the buffers held once the action has its peak, without the margin (the crash marker keeps it)
+        buffersPeakBytes: buf ? buf.held + buf.need : 0
     };
+}
+
+/**
+ * The ceiling a refusal names, in two or three words (the panel's headline,
+ * a create tile's note): 'heap' the JS heap, 'total' the RAM budget,
+ * 'buffers' and 'alloc' (the allocation probe) the tab's ArrayBuffers,
+ * 'contexts' the page's WebGL canvases.
+ */
+export function bindingLabel(binding) {
+    switch (binding) {
+        case 'heap': return 'JS memory';
+        case 'buffers': case 'alloc': return 'browser buffers';
+        case 'contexts': return 'WebGL canvases';
+        default: return 'browser memory';
+    }
+}
+
+/** "Not drawn: not enough JS memory", "Not drawn: too many WebGL canvases". */
+export function refusalHeadline(binding, verb = 'Not drawn') {
+    return binding === 'contexts' ? `${verb}: too many WebGL canvases` : `${verb}: not enough ${bindingLabel(binding)}`;
 }
 
 /**
@@ -643,10 +894,83 @@ export function predictSubsetChange(n, panels, threshold, model = DEFAULT_MODEL,
     return { peak, after, changed };
 }
 
+/**
+ * The ArrayBuffers of a subset change to `n` cells, all plots together:
+ * regular redraws run at once (each beside its old plot); large ones take
+ * turns (DrawTurns), so while one draws, the plots before it hold their new
+ * buffers and the plots after it their old ones.
+ * @param {number} n - cells after the change
+ * @param {Array} panels - Ledger.panels()
+ * @param {number} threshold - large-plot mode above this many points
+ * @returns {{peak: number, after: number, before: number}} bytes
+ */
+export function predictSubsetBuffers(n, panels, threshold, model = DEFAULT_MODEL, canLarge = () => true) {
+    const held = (p) => (p.buffers ? p.buffers.resident : panelBuffers(p, model).resident);
+    const before = panels.reduce((a, p) => a + held(p), 0);
+    let cur = before, regular = 0;
+    const turns = [];
+    for (const p of panels) {
+        if (p.kind !== 'cell-plot') continue;
+        const large = n > threshold && canLarge(p);
+        const next = { ...p, n, large };
+        const c = panelBuffers(next, model);
+        if (large) {
+            turns.push({ old: held(p), during: bufferDrawNeed(next, p, model), after: c.resident });
+        } else {
+            regular += c.peak;
+            cur += c.resident - held(p);
+        }
+    }
+    let peak = before + regular;
+    for (const t of turns) {
+        peak = Math.max(peak, cur + t.during);
+        cur += t.after - t.old;
+    }
+    return { peak: Math.max(peak, cur), after: cur, before };
+}
+
 // -- words -----------------------------------------------------------------------
 
 /** What the guard advises when an action needs more memory than the browser has. */
 export const MEMORY_ADVICE = 'Close a plot, or show fewer cells (a smaller subset).';
+
+/**
+ * The one line of numbers a refused panel shows, from check()'s `why`:
+ * "Needs ~7 MB; 4 MB free with 3 plots open." The ceiling and whether it
+ * was measured are left to the tooltip, and the advice to the panel's
+ * action buttons. A JS-heap refusal keeps "of JS memory": that ceiling is
+ * not the computer's memory.
+ */
+export function shortWhy(why) {
+    const s = String(why || 'not enough browser memory')
+        .replace(/ of browser JS memory/, ' of JS memory')
+        .replace(/ of browser memory/, '')
+        .replace(/ \(of [^)]*\)\s*$/, '')
+        .replace(/\.$/, '');
+    return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
+}
+
+/**
+ * The line of a refusal that no closing of panels can help (check()'s `hopeless`):
+ * "95.6M rows need ~34 GB; this browser gives a page at most 4.0 GB of JS memory."
+ * @param {Object} result - from check()
+ * @param {string} count - the size, as it is said ("95.6M rows")
+ */
+export function emptyPageWhy(result, count) {
+    const word = result.emptyName === 'total' ? 'memory' : result.emptyName === 'buffers' ? 'buffers' : 'JS memory';
+    return `${count} need ~${formatGB(result.emptyNeedBytes)}; this browser gives a page at most ${formatGB(result.emptyLimitBytes)} of ${word}.`;
+}
+
+/** The number `n` rounded down to three significant digits (a size to offer: it fits when n does). */
+export function roundDownNice(n) {
+    const v = Math.max(0, Math.floor(Number(n) || 0));
+    if (v < 1000) return v;
+    const step = 10 ** (String(v).length - 3);
+    return Math.floor(v / step) * step;
+}
+
+/** What "Draw anyway" risks, said beside it. */
+export const DRAW_ANYWAY_RISK = 'Draw anyway may run the tab out of memory; the browser then closes it, with every panel.';
 
 /** The same, after a read or a draw already ran out: the action is worth trying again. */
 export const OUT_OF_MEMORY_ADVICE = 'Close a plot, or show fewer cells (a smaller subset), and try again.';
@@ -714,32 +1038,86 @@ export function clearPending(storage) {
 }
 
 /**
+ * What this browser learned from a tab that ended during a marked action
+ * (a crash), kept in localStorage under LEARNED_MARGIN_KEY as
+ * {v: 2, margin, buffers, n, at}:
+ * - margin: extra margin, 0.25 a crash, at most MAX_LEARNED_MARGIN;
+ * - buffers: the ArrayBuffers the page held at its peak (the marker's), a
+ *   lower buffer ceiling, never below MIN_LEARNED_BUFFERS;
+ * - n: the points of the smallest action that crashed.
+ * It is SCOPED: it applies to actions of at least LEARNED_SCOPE x n points
+ * (a 100,000-cell plot is not held to what a 95.6M-cell one taught). It is
+ * FORGOTTEN after LEARNED_DAYS, when an action of n points or more succeeds,
+ * with "Reset" (forgetLearned) and with everything the site stored. A value
+ * of the unscoped form before it (a bare number) is dropped: it held every
+ * plot to the margin of the largest crash, however small the plot.
+ */
+export const LEARNED_MARGIN_KEY = 'annzarro_memory_margin';
+export const MAX_LEARNED_MARGIN = 1;
+export const LEARNED_SCOPE = 0.5;
+export const LEARNED_DAYS = 7;
+/** A learned buffer ceiling is never below this (bytes): one odd crash must not refuse every large plot. */
+export const MIN_LEARNED_BUFFERS = 2 * GB;
+
+/** The learned entry, or null (none, expired, unreadable or of the old unscoped form, which is removed). */
+export function readLearned(storage, now = Date.now()) {
+    let raw;
+    try { raw = storage.getItem(LEARNED_MARGIN_KEY); } catch { return null; }
+    if (raw === null || raw === undefined) return null;
+    let e;
+    try { e = JSON.parse(raw); } catch { e = null; }
+    const ok = e && typeof e === 'object' && e.v === 2 && Number(e.margin) > 0 && Number(e.n) > 0
+        && now - Number(e.at) < LEARNED_DAYS * 24 * 3600 * 1000;
+    if (!ok) { forgetLearned(storage); return null; }
+    return { margin: Math.min(MAX_LEARNED_MARGIN, Number(e.margin)),
+        buffers: Number(e.buffers) > 0 ? Math.max(MIN_LEARNED_BUFFERS, Number(e.buffers)) : null,
+        n: Number(e.n), at: Number(e.at) };
+}
+
+/**
+ * What the learned entry asks of an action of `n` points: {margin, buffers}
+ * (0 and null outside its scope, or without an entry). `n` unknown (null):
+ * not applied.
+ */
+export function learnedFor(entry, n) {
+    if (!entry || !(Number(n) >= LEARNED_SCOPE * entry.n)) return { margin: 0, buffers: null };
+    return { margin: entry.margin, buffers: entry.buffers };
+}
+
+/** The page died during `crashed` (takeCrashed's marker): learn from it. Returns the entry. */
+export function learnFromCrash(storage, crashed = {}, now = Date.now()) {
+    const seen = readLearned(storage, now);
+    const n = Number(crashed.n) > 0 ? Number(crashed.n) : (seen ? seen.n : 1);
+    const b = Number(crashed.buffers) > 0 ? Number(crashed.buffers) : null;
+    const entry = {
+        v: 2,
+        margin: Math.min(MAX_LEARNED_MARGIN, (seen ? seen.margin : 0) + 0.25),
+        buffers: seen && seen.buffers && b ? Math.min(seen.buffers, b) : (b || (seen ? seen.buffers : null)),
+        n: seen ? Math.min(seen.n, n) : n,
+        at: now
+    };
+    if (entry.buffers) entry.buffers = Math.round(Math.max(MIN_LEARNED_BUFFERS, entry.buffers));
+    try { storage.setItem(LEARNED_MARGIN_KEY, JSON.stringify(entry)); } catch { /* not kept */ }
+    return readLearned(storage, now);
+}
+
+/** Forget what was learned (Reset, or an action as large as the crash succeeded). */
+export function forgetLearned(storage) {
+    try { storage.removeItem(LEARNED_MARGIN_KEY); } catch { /* nothing kept */ }
+}
+
+/** An action of `n` points succeeded: an entry it covers (n at least the crash's) is forgotten. True when it was. */
+export function learnedSucceeded(storage, n, now = Date.now()) {
+    const e = readLearned(storage, now);
+    if (!e || !(Number(n) >= e.n)) return false;
+    forgetLearned(storage);
+    return true;
+}
+
+/**
  * The action the previous page was running when it died, or null; reading
  * it clears it. Markers older than a day are ignored (a stale tab).
  */
-export const LEARNED_MARGIN_KEY = 'annzarro_memory_margin';
-const MAX_LEARNED_MARGIN = 1;
-
-/**
- * Extra margin this browser has earned by crashing: each crash during a
- * marked action adds 0.25 (at most 1), kept in localStorage. A model that
- * under-predicted once is trusted less from then on.
- */
-export function learnedMargin(storage) {
-    try {
-        const v = Number(storage.getItem(LEARNED_MARGIN_KEY));
-        return Number.isFinite(v) && v > 0 ? Math.min(MAX_LEARNED_MARGIN, v) : 0;
-    } catch {
-        return 0;
-    }
-}
-
-export function learnFromCrash(storage) {
-    const next = Math.min(MAX_LEARNED_MARGIN, learnedMargin(storage) + 0.25);
-    try { storage.setItem(LEARNED_MARGIN_KEY, String(next)); } catch { /* not kept */ }
-    return next;
-}
-
 export function takeCrashed(storage, now = Date.now()) {
     let raw;
     try { raw = storage.getItem(CRASH_KEY); } catch { return null; }

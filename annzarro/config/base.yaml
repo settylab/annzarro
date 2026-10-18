@@ -239,6 +239,66 @@ branding:
     email: null
     custom_html: null
 
+# The site this server is: who runs it and the texts a public site owes its visitors
+# (docs/deployment/public-site.md). On a local or desktop AnnZarro nothing here shows until it
+# is set; a server other people reach links About and Data & privacy (/site/data) from its
+# footer. With login on, the admin page's Public site section sets all of it without a restart,
+# and its values win over this file unless policy.locked names the key. Each text (imprint, privacy, accessibility, terms) is
+# a link to a page you already have (url), a Markdown text written here (markdown), or a
+# Markdown file read at start (file). With url set, markdown and file are ignored. A text
+# is shown in the About dialog and at /site/<name> (no sign-in needed); the links appear
+# in a small footer line of every page.
+site:
+  imprint:
+    url: null          # an http://, https:// or mailto: address
+    markdown: null     # the text itself, in safe Markdown (paragraphs, headings, lists, bold, italic, links, tables, code, quotes)
+    file: null         # path of a Markdown file with the text (read at start, 256 KB at most)
+    label: "Imprint"   # the link text; German sites: "Impressum"
+  privacy:
+    url: null
+    markdown: null
+    file: null
+    label: "Privacy"   # German sites: "Datenschutz"
+  accessibility:
+    url: null
+    markdown: null
+    file: null
+    label: "Accessibility"   # German sites: "Barrierefreiheit"
+  terms:
+    url: null
+    markdown: null
+    file: null
+    label: "Terms of use"
+  # Who runs this site, as one line: "Example Institute, University of X". Shown in About.
+  operator: null
+  # A contact for the site: an e-mail address or an http(s) address. Falls back to
+  # branding.contact_info.email in About. A German imprint needs a second, fast way to reach you.
+  contact: null
+  # The link text for the contact in the footer and About; German sites: "Kontakt"
+  contact_label: "Contact"
+  # auto: a small footer line on every page links the texts above (and the contact; a server
+  # other people reach also links About and Data & privacy, configured or not);
+  # about-only: only the About dialog does (for internal sites; German and EU guidance
+  # want imprint and privacy links visible on every page of a public one)
+  footer_links: auto
+  # Whether search engines may index the site: auto (not when login is on), index, noindex.
+  # noindex adds X-Robots-Tag and a robots.txt that disallows everything.
+  robots: auto
+  # An address (mailto: or https) for vulnerability reports: serves /.well-known/security.txt
+  security_contact: null
+  # The language of the texts above (for security.txt and the text pages)
+  languages: "en"
+  # Whether the About dialog keeps AnnZarro's credit: the Setty Lab logo, the Setty Lab and Fred Hutch links,
+  # the NIH funding statement and how to cite it. Hosters are welcome to keep it; false leaves
+  # only the name, version, MIT licence and links to the documentation and repository.
+  software_credits: true
+  storage:
+    # false: the layout autosave, the last sessions and the recent datasets last only until
+    # the tab closes (sessionStorage), so the browser keeps nothing between visits except
+    # choices the user made (theme, pins, the search switches of Dataset information,
+    # answers about external services; the subset size is kept for the tab in any case)
+    persistent_convenience: true
+
 # UI configuration
 ui:
   # Panel type settings
@@ -262,7 +322,8 @@ ui:
     # its dialog changes or removes it. Every panel shows the same cells.
     subset_threshold: 200000
     # A Cell Plot with more points than this is drawn in large-plot mode
-    # (typed arrays, no hover, click or table filter); only reachable with
+    # (typed arrays; hover and click work, table filters, 3D and extra hover
+    # columns do not); only reachable with
     # the subset off or larger than this. 1M keeps several regular plots
     # (400-900 B of browser heap per point) open side by side.
     large_plot_points: 1000000
@@ -270,8 +331,8 @@ ui:
     # cells it shows (a part of a 1B-cell store spread over every chunk of its
     # name column took 20-35 s to name at every step). Hover, focus and a
     # table's page ask for the names they show; sorting or searching a table
-    # on the names, or exporting them, loads them once. Smaller datasets name
-    # their cells with the part, as before.
+    # on the names, or exporting them, loads them once. Smaller datasets read
+    # the names of their cells with the part.
     names_on_demand_above: 5000000
     # After a part is shown, read the next part's cells and embedding
     # coordinates in the background (low priority, dropped for any real
@@ -299,6 +360,11 @@ ui:
     # browser (a quarter, at least 4 GB); for a browser on another computer,
     # 16; at most half the device's memory on devices with 4 GB or less.
     total_gb: null
+    # Array buffers one tab may hold, all its plots together, in GB (large-plot
+    # mode keeps its points in them). null: the browser's own limit, 16.6 in
+    # Chrome, Edge and the desktop app (measured); Safari ends a page at about
+    # 15 on a computer with more than 16 GB, 7 below.
+    buffers_gb: null
     # Predictions are multiplied by 1 + margin before they are compared.
     margin: 0.2
 
@@ -313,8 +379,14 @@ ui:
     interval_ms: 10000
     storage_key: "annzarro_autosave"
     session_name: "Autosave"
-    show_in_list: false
-    auto_restore: true
+    # List the last sessions (up to 3) first, on the welcome screen and in
+    # Load Panel Set.
+    show_in_list: true
+    # When a page restores the autosave by itself: reload (a reload of the
+    # tab, Back or Forward; a fresh visit lists it first and waits for
+    # Restore), always (every visit) or never; true and false mean always and
+    # never. A session that did not finish loading is never restored by itself.
+    auto_restore: reload
 
 # External API integrations
 integrations:

@@ -196,7 +196,7 @@ export function createPanelStructure(container, id, settings) {
                   <option value="none">None</option>
                   <!-- Options populated by external logic -->
                 </select>
-                <button class="btn btn-sm btn-outline-secondary" id="remove-non-table-entries-${id}" aria-pressed="false" title="Toggle between coloring non-table entries in gray or completely removing them">
+                <button class="btn btn-sm btn-outline-secondary" id="remove-non-table-entries-${id}" aria-pressed="false" title="Toggle between colouring non-table entries in grey or completely removing them">
                   <i class="fas fa-eye-slash"></i>
                 </button>
               </div>

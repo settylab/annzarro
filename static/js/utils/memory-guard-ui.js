@@ -10,17 +10,22 @@
  *   change, a recolour that redraws;
  * - the create and duplicate tiles (selection-tile.js): newPanelCheck;
  * - the subset dialog (subset-dialog.js): subsetCheck, maxSubsetCells;
+ *   the dataset switch (main.js): maxSubsetCells for the size kept;
  * - image export (plot-aesthetics-menu.js, the modebar camera): exportCheck.
  */
 import { Config } from '../config.js';
 import { CacheManager } from '../cache-manager.js';
 import {
     Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, labelCost, check, addCost, predictSubsetChange, drawNeed,
-    largestFitting, headroomLine, markPending, clearPending, takeCrashed, learnedMargin, learnFromCrash,
-    formatGB, CONTEXTS_PER_PLOT
+    largestFitting, headroomLine, markPending, clearPending, takeCrashed, learnFromCrash,
+    formatGB, CONTEXTS_PER_PLOT, DrawTurns, isHeavyDraw, shortWhy, emptyPageWhy, roundDownNice, DRAW_ANYWAY_RISK,
+    panelBuffers, bufferDrawNeed, predictSubsetBuffers, bindingLabel, refusalHeadline,
+    readLearned, learnedFor, forgetLearned, learnedSucceeded
 } from './memory-guard.js';
+import { compactCount } from './coverage.js';
 import { liveWebglContexts } from './release-plot.js';
-import { probe, blockParts, largePlotParts, PROBE_MIN_BYTES } from './alloc-probe.js';
+import { probe, blockParts, PROBE_MIN_BYTES } from './alloc-probe.js';
+import { PAGE_ID } from './page-id.js';
 
 export const MEMORY_EVENT = 'annzarro:memory-changed';
 
@@ -39,10 +44,17 @@ const storage = () => _storage() || NO_STORAGE;
 let _crashed = null;
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     _crashed = takeCrashed(storage());
-    if (_crashed) learnFromCrash(storage());
+    // an extra margin, and the buffers the page held, for actions of about that size (memory-guard.js readLearned)
+    if (_crashed) learnFromCrash(storage(), _crashed);
     // a page that is closed or reloaded on purpose did not crash
     window.addEventListener('pagehide', () => clearPending(storage()));
 }
+
+/** What the previous page was drawing when it died ({panel, n, action, at, page}), or null. */
+export function crashedLastTime() {
+    return _crashedAtLoad;
+}
+const _crashedAtLoad = _crashed;
 
 /**
  * The action the previous page died in, if it was drawing panel `id`. It
@@ -63,13 +75,28 @@ export function takeOverride(id) { return _overrides.delete(id); }
 
 // -- settings, limits, what is held ------------------------------------------
 
-export function settings() {
+/**
+ * ui.memory, with what this browser learned from a crash for an action of
+ * `n` points (none for n null, or outside the crash's scope: memory-guard.js
+ * learnedFor). `learned: false` gives the settings without it.
+ */
+export function settings(n = null, learned = true) {
     const s = memorySettings(Config.DEFAULTS && Config.DEFAULTS.MEMORY);
-    return { ...s, margin: s.margin + learnedMargin(storage()) };
+    const l = learned ? learnedFor(readLearned(storage()), n) : { margin: 0, buffers: null };
+    return { ...s, margin: s.margin + l.margin, crashedBuffers: l.buffers };
 }
 
-export function limits() {
-    return readLimits({ performance: globalThis.performance, navigator: globalThis.navigator }, settings());
+export function limits(n = null, learned = true) {
+    return readLimits({ performance: globalThis.performance, navigator: globalThis.navigator }, settings(n, learned));
+}
+
+/** What this browser learned from a crash ({margin, buffers, n, at}), or null. */
+export function learned() { return readLearned(storage()); }
+
+/** Forget it ("Reset the margin"): every control asks again. */
+export function resetLearned() {
+    forgetLearned(storage());
+    inputsChanged();
 }
 
 function _cacheBytes() {
@@ -87,13 +114,30 @@ function _observed() {
     return ledger.observed ? ledger.observed.bytes : 0;
 }
 
-function _check(need, heldNow, panels) {
-    return check(need, heldNow, limits(), settings(), { observed: _observed(), panels });
+/**
+ * `buffers`: {need, held} ArrayBuffer bytes, for an action of plots (check()'s
+ * opts.buffers); `n`: the action's points, for what a crash taught. A
+ * refusal that only the learned margin makes carries `learned` (the entry),
+ * so the panel can say so and offer to reset it.
+ */
+function _check(need, heldNow, panels, buffers = null, n = null) {
+    const opts = { observed: _observed(), panels, ...(buffers ? { buffers } : {}) };
+    const r = check(need, heldNow, limits(n), settings(n), opts);
+    if (r.fits || n === null) return r;
+    const entry = readLearned(storage());
+    if (!entry || !learnedFor(entry, n).margin) return r;
+    const plain = check(need, heldNow, limits(n, false), settings(n, false), opts);
+    return plain.fits ? { ...r, learned: entry } : r;
 }
 
 // The create tiles ask on every memory change: one answer per size is kept for a few seconds.
 const PROBE_TTL_MS = 3000;
 const _answers = new Map();
+/**
+ * Forget the probe answers: after a plot is closed its buffers are freed by
+ * the collector some time later, and an answer taken in between says no.
+ */
+export function freshProbes() { _answers.clear(); }
 /** Whether the browser gives `bytes` now (utils/alloc-probe.js); false when it refuses. */
 function _probeAnswer(bytes) {
     const key = Math.ceil(bytes / 1e6), now = Date.now();
@@ -117,7 +161,8 @@ function _probeAnswer(bytes) {
  */
 export function probed(result, bytes, what) {
     if (!result || !result.fits || !(bytes >= PROBE_MIN_BYTES)) return result;
-    if (!_probeAnswer(bytes)) return result;
+    // the browser gives the bytes: the step goes ahead
+    if (_probeAnswer(bytes)) return result;
     const s = settings();
     return { ...result, fits: false, binding: 'alloc', needBytes: bytes,
         verdict: s.enforce === 'off' ? 'ok' : s.enforce === 'warn' ? 'warn' : 'block',
@@ -140,12 +185,132 @@ export function drawCheck({ id, kind, n, large = false, colour = 'numeric', thre
     const cost = panelCost({ kind, n, large, colour, threeD }).peak;
     const old = ledger.get(id);
     // a plot redrawn in place in large-plot mode replaces itself (drawNeed)
-    const add = drawNeed(cost, livePlot ? old : null, large, settings().margin);
+    const add = drawNeed(cost, livePlot ? old : null, large, settings(n).margin);
     const need = { ...add, contexts: livePlot ? 0 : cost.contexts };
     let h = held([id]);
     if (old) h = addCost(h, { ...old.resident, contexts: 0 });
-    return _check(need, h, ledger.plotCount() + (old ? 0 : 1));
+    // the tab's buffers, with every other plot's (and this one's old plot until it is replaced)
+    const buffers = { need: bufferDrawNeed({ kind, n, large, threeD }, livePlot ? old : null),
+        held: ledger.buffers({ exclude: [id] }) + (old && old.buffers ? old.buffers.resident : 0) };
+    return _check(need, h, ledger.plotCount() + (old ? 0 : 1), buffers, n);
 }
+
+/**
+ * Before a table panel loads its rows: whether `n` rows fit next to what the
+ * other panels hold (its previous rows are replaced). Tables of millions of
+ * rows hold hundreds of bytes a row on the JS heap.
+ * @param {{id: string, kind: string, n: number}} p
+ */
+export function tableCheck({ id, kind, n }) {
+    const need = panelCost({ kind, n }).peak;
+    return _check(need, held([id]), ledger.plotCount(), null, n);
+}
+
+/**
+ * What a refused table or plot panel says and offers (the placeholder and the
+ * strip's popover). A refusal that closing the other panels can fix says what
+ * is free; one that even an empty page cannot hold (check()'s `hopeless`)
+ * says so, offers no "Close other plots", offers "Show N cells" for the
+ * largest subset that fits (a Cell Table or Cell Plot) and "Subset…", and
+ * offers "draw anyway" only while the estimate without the margin fits the
+ * ceiling (above it the browser ends the tab).
+ * @param {Object} p
+ * @param {Object} p.result - the refused check
+ * @param {'cell-table'|'gene-table'|'cell-plot'|'gene-plot'} p.kind
+ * @param {number} p.n - rows or points asked for
+ * @param {(n: number) => Object} p.checkAt - the same check at another size
+ * @param {string} p.anyway - the label of the draw-anyway action
+ * @param {number} [p.cap] - most cells "Show N cells" offers (a table that loads slowly past it), whatever fits
+ * @returns {{headline: string, why: string, risk: string|null, actions: Array<[string, string]>, hopeless: boolean}}
+ */
+export function refusalPanel({ result, kind, n, checkAt, anyway, cap = Infinity }) {
+    const p = _refusalPanel({ result, kind, n, checkAt, anyway, cap });
+    // refused only for what a crash taught: say so, and offer to forget it
+    if (result.learned) {
+        p.why = `${p.why} ${learnedNote(result.learned)}`;
+        p.actions = [['memory-reset', 'Reset the margin'], ...p.actions];
+    }
+    return p;
+}
+
+/**
+ * The sentence of a refusal that only the margin learned from a crash makes:
+ * "After this browser's tab ended on Oct 17, AnnZarro keeps an extra margin
+ * for this size."
+ */
+export function learnedNote(entry) {
+    const day = new Date(Number(entry && entry.at) || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `After this browser's tab ended on ${day}, AnnZarro keeps an extra margin for this size.`;
+}
+
+function _refusalPanel({ result, kind, n, checkAt, anyway, cap }) {
+    const isTable = kind.endsWith('table');
+    const cells = kind.startsWith('cell');
+    const noun = isTable ? 'rows' : 'points';
+    const verb = anyway.replace(/ anyway$/, '');
+    const risk = DRAW_ANYWAY_RISK.replace(/^Draw anyway/, `${verb} anyway`);
+    if (!result.hopeless) {
+        const fewer = cells ? [['subset-half', 'Half the cells'], ['subset', 'Subset\u2026']] : [];
+        return { headline: refusalHeadline(result.binding, isTable ? 'Not loaded' : 'Not drawn'),
+            why: shortRefusalText(result), risk, hopeless: false,
+            actions: [...fewer, ['close-others', 'Close other plots'], ['draw-anyway', anyway]] };
+    }
+    let fit = 0;
+    if (cells) {
+        try { fit = roundDownNice(Math.min(cap, largestFitting(m => checkAt(m).fits, 1, n - 1))); } catch { fit = 0; }
+    }
+    const actions = [];
+    if (fit >= 1) actions.push([`subset-n:${fit}`, `Show ${fit.toLocaleString('en-US')} cells`]);
+    if (cells) actions.push(['subset', 'Subset\u2026']);
+    if (!result.doomed) actions.push(['draw-anyway', anyway]);
+    let why = emptyPageWhy(result, `${compactCount(n)} ${noun}`);
+    if (!cells) why += ' Genes cannot be subset; this panel shows every gene of the dataset.';
+    return { headline: `Too many ${noun} for this browser`, why, risk: result.doomed ? null : risk, hopeless: true, actions };
+}
+
+// -- heavy draws take turns ------------------------------------------------------
+
+const turns = new DrawTurns();
+const _turnOf = new Map();    // ledger token -> ticket
+
+/**
+ * Before the draw of panel `p` ({kind, n, large, colour, threeD}) is
+ * checked: a heavy draw (memory-guard.js isHeavyDraw) waits until the heavy
+ * draw before it is done, so that its check and its allocation probe see
+ * what that one holds. Resolves to a ticket (null for a light draw, which
+ * does not wait); bindTurn() hands it to the ledger token, or release it
+ * with releaseTurn() when nothing is reserved.
+ */
+export async function takeTurn(id, p) {
+    let heavy = false;
+    try {
+        heavy = isHeavyDraw(panelCost(p).peak, limits(), !!p.large);
+    } catch { /* the guard must never be why a plot is not drawn */ }
+    return heavy ? turns.take(id) : null;
+}
+/** The draw with ledger `token` holds `ticket` until it is committed or cancelled. */
+export function bindTurn(token, ticket) { if (token && ticket) _turnOf.set(token, ticket); }
+export function releaseTurn(ticket) { turns.release(ticket); }
+function _releaseToken(token) {
+    const ticket = token ? _turnOf.get(token) : null;
+    if (ticket) { _turnOf.delete(token); turns.release(ticket); }
+}
+/** Heavy draws drawing or waiting for their turn (for tests and the restore marker). */
+export function turnsInUse() { return (turns.holder() ? 1 : 0) + turns.waiting().length; }
+
+// -- out of memory: panels whose draw or read ran out ----------------------------
+
+const _outOfMemory = new Set();
+/** Panel `id`'s draw or read failed because the browser ran out of memory. */
+export function noteOutOfMemory(id) {
+    if (id === null || id === undefined) return;
+    _outOfMemory.add(String(id));
+    ledger._changed();
+}
+/** Panels whose last draw ran out of memory and that are still open. */
+export function outOfMemoryPanels() { return [..._outOfMemory]; }
+/** Draws in flight (reserved, not yet committed or cancelled). */
+export function drawsInFlight() { return ledger._drawing.size + turns.waiting().length; }
 
 /**
  * Before a plot reads the hover labels of a categorical column: `labels`
@@ -157,20 +322,24 @@ export function hoverLabelsCheck({ points, labels, chars }) {
     const need = labelCost({ points, labels, chars });
     // labels live on the V8 heap, whose exhaustion cannot be caught: ask for
     // as many bytes as a proxy for what the process can still commit
-    return probed(_check(need, held(), ledger.plotCount()), need.heap + need.off, 'hover labels');
+    return probed(_check(need, held(), ledger.plotCount(), null, points), need.heap + need.off, 'hover labels');
 }
 
 /** Before a recolour of the drawn regular plot `gd` (large-plot mode redraws, and is checked as a draw). */
 export function recolourCheck(gd) {
-    const need = recolourCost({ n: Number(gd && gd._pointCount) || 0, large: !!(gd && gd.__isLarge) });
-    return probed(_check(need, held(), ledger.plotCount()), need.off, 'recolour');
+    const n = Number(gd && gd._pointCount) || 0;
+    const need = recolourCost({ n, large: !!(gd && gd.__isLarge) });
+    return probed(_check(need, held(), ledger.plotCount(), null, n), need.off, 'recolour');
 }
 
 /** Before a new or duplicated panel of `kind` with `config` (its colour and 3D) is created. */
 export function newPanelCheck(kind, { n, large = false, colour = 'numeric', threeD = false } = {}) {
     if (kind !== 'cell-plot' && kind !== 'gene-plot') return _check({ heap: 0, off: 0, gpu: 0, contexts: 0 }, held(), ledger.plotCount());
     const need = panelCost({ kind, n, large, colour, threeD }).peak;
-    return probed(_check(need, held(), ledger.plotCount() + 1), large ? need.off : 0, 'new plot');
+    const now = held();
+    const buffers = { need: panelBuffers({ kind, n, large, threeD }).peak, held: ledger.buffers() };
+    // the probe asks for what the draw's own probe will (large-plot.js): its buffers at their peak
+    return probed(_check(need, now, ledger.plotCount() + 1, buffers, n), large ? buffers.need : 0, 'new plot');
 }
 
 /**
@@ -180,19 +349,22 @@ export function newPanelCheck(kind, { n, large = false, colour = 'numeric', thre
 export function exportCheck(gd, { width = 1200, height = 800, scale = 1 } = {}) {
     const n = Number(gd && gd._pointCount) || ((gd && gd.data) || []).reduce((s, t) => s + ((t && t.x && t.x.length) || 0), 0);
     const need = exportCost({ n, large: !!(gd && gd.__isLarge), width, height, scale });
-    return probed(_check(need, held(), ledger.plotCount()), need.off, 'export');
+    return probed(_check(need, held(), ledger.plotCount(), { need: need.off, held: ledger.buffers() }, n), need.off, 'export');
 }
 
 /**
  * Before the subset changes to `n` cells: every open Cell Plot and cell
  * table redraws at once, each keeping its old points until the new ones
  * replace them. `need` is what the change adds on top of what is held.
+ * The tab's buffers are checked for all plots together (large plots draw in
+ * turns, each beside the ones drawn before it: predictSubsetBuffers).
  * @param {number} n
  * @param {number} threshold - large-plot mode above this many points
  */
 export function subsetCheck(n, threshold) {
     const panels = ledger.panels();
-    const { peak, changed } = predictSubsetChange(n, panels, threshold, ledger.model, p => !p.threeD, settings().margin);
+    const { peak, changed } = predictSubsetChange(n, panels, threshold, ledger.model, p => !p.threeD, settings(n).margin);
+    const b = predictSubsetBuffers(n, panels, threshold, ledger.model, p => !p.threeD);
     const now = held();
     const base = held(panels.map(p => p.id));
     // what the change adds: the peak of all panels less what they hold now
@@ -202,21 +374,31 @@ export function subsetCheck(n, threshold) {
         gpu: Math.max(0, base.gpu + peak.gpu - now.gpu),
         contexts: 0
     };
-    return { ..._check(need, now, ledger.plotCount()), changed };
+    const buffers = { need: Math.max(0, b.peak - b.before), held: ledger.buffers() };
+    return { ..._check(need, now, ledger.plotCount(), buffers, n), changed };
 }
 
 /**
  * The allocation probe of a subset change to `n` cells (not part of
  * subsetCheck, which the size chips ask many times): when Cell Plots will
- * draw large at that size, allocate the buffers one needs, release them.
+ * draw large at that size, allocate the buffers all of them add at the
+ * change's peak (predictSubsetBuffers, beyond what they hold now), release
+ * them. Safari gives untouched blocks of any size, so there it is the
+ * model's ceiling (subsetCheck) that refuses.
  * @returns {{ok: boolean, why: string}}
  */
 export function subsetProbe(n, threshold) {
-    if (!(n > threshold) || !ledger.panels().some(p => p.kind === 'cell-plot' && !p.threeD)) return { ok: true, why: '' };
-    const r = probe(largePlotParts(n, { bytesPerPoint: ledger.model.large.arrayBuffers }));
+    const panels = ledger.panels();
+    const plots = panels.filter(p => p.kind === 'cell-plot' && !p.threeD).length;
+    if (!(n > threshold) || !plots) return { ok: true, why: '' };
+    const b = predictSubsetBuffers(n, panels, threshold, ledger.model, p => !p.threeD);
+    const bytes = Math.max(0, b.peak - b.before);
+    if (!(bytes >= PROBE_MIN_BYTES)) return { ok: true, why: '' };
+    const r = probe(blockParts(bytes));
     r.release();
     if (r.ok) return { ok: true, why: '' };
-    return { ok: false, why: `this browser cannot hold ${Math.round(n).toLocaleString('en-US')} points` };
+    return { ok: false, why: `this browser cannot hold ${Math.round(n).toLocaleString('en-US')} points`
+        + (plots > 1 ? ` in each of ${plots} plots (~${formatGB(bytes)} of browser buffers)` : '') };
 }
 
 /** The largest subset (cells, at most `eligible`) that subsetCheck lets through, or 0. */
@@ -230,12 +412,20 @@ export function maxSubsetCells(eligible, threshold) {
 export function refusalText(result, advice) {
     // a browser that cannot allocate: closing other plots may not help, a smaller step does
     if (result && result.binding === 'alloc') advice = advice.replace(/^Close a plot, or s/, 'S');
-    return `${result.why ? result.why.charAt(0).toUpperCase() + result.why.slice(1) : 'Not enough browser memory'}. ${advice}`;
+    const learnedText = result && result.learned ? ` ${learnedNote(result.learned)} Reset it to check without it.` : '';
+    return `${result.why ? result.why.charAt(0).toUpperCase() + result.why.slice(1) : 'Not enough browser memory'}.${learnedText} ${advice}`;
+}
+
+/** The short form for a refused panel: one line of numbers (memory-guard.js shortWhy); its ways out are buttons. */
+export function shortRefusalText(result) {
+    return shortWhy(result && result.why);
 }
 
 /** Leave a crash marker when `result` says the action comes close to the ceiling. */
 export function markIfRisky(result, action) {
-    if (result && result.risky) markPending(storage(), action);
+    if (result && result.risky) {
+        markPending(storage(), { ...action, page: PAGE_ID, ...(result.buffersPeakBytes > 0 ? { buffers: result.buffersPeakBytes } : {}) });
+    }
 }
 
 /** The marked action finished (or was never marked). */
@@ -249,7 +439,7 @@ export function unmark() {
  */
 export async function guarded(result, action, fn) {
     if (!result || !result.risky) return fn();
-    markPending(storage(), action);
+    markPending(storage(), { ...action, page: PAGE_ID });
     try {
         return await fn();
     } finally {
@@ -285,10 +475,58 @@ ledger.onChange(() => {
 /** A panel's draw starts; returns its token (Ledger.reserve). */
 export function reserve(id, p) { return ledger.reserve(id, p); }
 /** A panel's draw finished (that draw's token, or a cost `p`, e.g. a table's rows). */
-export function commit(id, p = null, token = null) { ledger.commit(id, p, token); _scheduleMeasure(); }
+export function commit(id, p = null, token = null) {
+    _outOfMemory.delete(String(id));
+    ledger.commit(id, p, token);
+    _releaseToken(token);
+    _scheduleMeasure();
+    // a draw as large as the one that crashed went through: the extra margin is forgotten
+    const e = ledger.get(id);
+    if (e && learnedSucceeded(storage(), e.n)) inputsChanged();
+}
 /** A panel's draw did not happen. */
-export function cancel(id, token = null) { ledger.cancel(id, token); }
+export function cancel(id, token = null) { ledger.cancel(id, token); _releaseToken(token); }
 /** A panel was closed or cleared. */
-export function forget(id) { ledger.remove(id); _scheduleMeasure(); }
+export function forget(id) {
+    const was = _outOfMemory.delete(String(id));
+    ledger.remove(id);
+    if (was) ledger._changed();
+    _scheduleMeasure();
+    _recheckSoon();
+}
 
-export { formatGB, CONTEXTS_PER_PLOT };
+/**
+ * Ask every check again once the collector has had time to free what a
+ * closed panel held, and once more after that: a probe right after the
+ * close finds its buffers still taken (a 95.6M-cell plot's 7 GB: the
+ * collector frees them after the failed allocation that made it run), and
+ * nothing else would ask again until another panel changed.
+ */
+const RECHECKS = 2;
+let _recheckTimer = null;
+function _recheckSoon(left = RECHECKS) {
+    freshProbes();
+    if (typeof setTimeout !== 'function') return;
+    clearTimeout(_recheckTimer);
+    _recheckTimer = setTimeout(() => {
+        _recheckTimer = null;
+        inputsChanged();
+        if (left > 1) _recheckSoon(left - 1);
+    }, PROBE_TTL_MS + 500);
+}
+
+/**
+ * What the checks depend on beyond the ledger changed (the cells shown: a
+ * subset change, another dataset): every control that asks the guard asks
+ * again (MEMORY_EVENT). Without it a create tile refused at every cell of a
+ * dataset stayed refused at 100,000 cells, with no panel open to change.
+ */
+export function inputsChanged() {
+    freshProbes();
+    ledger._changed();
+}
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    for (const type of ['datasetChanged', 'datasetCleared', 'cellsChanged']) document.addEventListener(type, () => inputsChanged());
+}
+
+export { formatGB, CONTEXTS_PER_PLOT, bindingLabel };

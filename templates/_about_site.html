@@ -1,0 +1,11 @@
+{# The About dialog's "This site" block (index.html) and the /site/about page: what the operator configured under site:. #}{# site:begin #}{% if site.show_block %}
+                    <section id="about-this-site" class="about-this-site" aria-labelledby="about-this-site-title">
+                        <h6 id="about-this-site-title" class="about-section-title">This site</h6>
+                        {% if site.operator %}<p class="about-operator">Operated by {{ site.operator }}</p>{% endif %}
+                        {% if site.contact %}<p class="about-contact">{{ site.contact.label }}: <a href="{{ site.contact.href }}"{% if site.contact.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ site.contact.text }}</a></p>{% endif %}
+                        {% for t in site.texts %}{% if t.inline %}<details id="about-{{ t.kind }}" class="about-text"><summary>{{ t.label }}</summary><div class="about-text-body">{{ t.html|safe }}</div></details>
+                        {% else %}<div class="about-text about-text-link"><a href="{{ t.url }}"{% if t.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ t.label }}</a></div>
+                        {% endif %}{% endfor %}
+                    </section>
+                    <hr>
+{% endif %}{# site:end #}

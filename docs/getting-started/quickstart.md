@@ -44,9 +44,10 @@ use a server on another machine, see {doc}`../deployment/personal-server`.
 
 ## 3. Open the dataset
 
-The server opens a dataset by itself only when it is the only one in the data directory, or the
-one you opened last time; with several it opens none, and the main area shows the Welcome tile with
-**Open a dataset** on top.
+The server opens a dataset by itself only when it is the only one in the data directory (the
+desktop app also reopens the one opened last time); with several it opens none, and the main area
+shows the Welcome tile with **Open a dataset** on top. Once a dataset is open, the address bar
+names it (`?dataset_path=...`), so a reload opens it again.
 
 ```{figure} ../_static/screens/getting-started/welcome-browser.png
 :class: screenshot
@@ -61,7 +62,7 @@ this server (here the five protocol views of the demonstration data).
 1. Click the dataset button at the left of the bar under the header (it reads "Open a dataset...") and
    click the name `bm_aging_annzarro.zarr`. The bar then shows its size (for the demonstration store,
    "Cells: 8,090" and "Genes: 16,285"). To open a store
-   outside the data directory on your own machine, press **Ctrl+L** in the browser and type its full
+   outside the data directory on your own machine, press **/** in the browser and type its full
    path; a remote URL such as `s3://bucket/atlas.zarr` is entered the same way
    ({doc}`../user-guide/remote-datasets`).
 2. Check the **Focused Gene** and **Focused Cell** boxes in the header. They start at the

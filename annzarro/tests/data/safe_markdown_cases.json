@@ -1,0 +1,600 @@
+[
+ {
+  "name": "plain paragraph",
+  "markdown": "Hello world",
+  "options": {},
+  "html": "<p>Hello world</p>"
+ },
+ {
+  "name": "two paragraphs",
+  "markdown": "One\n\nTwo",
+  "options": {},
+  "html": "<p>One</p>\n<p>Two</p>"
+ },
+ {
+  "name": "soft wrap joins",
+  "markdown": "one\ntwo",
+  "options": {},
+  "html": "<p>one two</p>"
+ },
+ {
+  "name": "hard break two spaces",
+  "markdown": "one  \ntwo",
+  "options": {},
+  "html": "<p>one<br>two</p>"
+ },
+ {
+  "name": "hard break backslash",
+  "markdown": "one\\\ntwo",
+  "options": {},
+  "html": "<p>one<br>two</p>"
+ },
+ {
+  "name": "heading levels",
+  "markdown": "# A\n## B\n###### F\n####### seven",
+  "options": {},
+  "html": "<h1>A</h1>\n<h2>B</h2>\n<h6>F</h6>\n<p>####### seven</p>"
+ },
+ {
+  "name": "heading base 3",
+  "markdown": "# A\n## B\n### C\n#### D",
+  "options": {
+   "heading_base": 3
+  },
+  "html": "<h3>A</h3>\n<h4>B</h4>\n<h5>C</h5>\n<h6>D</h6>"
+ },
+ {
+  "name": "heading trailing hashes",
+  "markdown": "## Title ##",
+  "options": {},
+  "html": "<h2>Title</h2>"
+ },
+ {
+  "name": "bullets",
+  "markdown": "- a\n- b\n* c\n+ d",
+  "options": {},
+  "html": "<ul><li>a</li><li>b</li><li>c</li><li>d</li></ul>"
+ },
+ {
+  "name": "numbers",
+  "markdown": "1. a\n2) b\n10. c",
+  "options": {},
+  "html": "<ol><li>a</li><li>b</li><li>c</li></ol>"
+ },
+ {
+  "name": "list then paragraph",
+  "markdown": "- a\n- b\ntext",
+  "options": {},
+  "html": "<ul><li>a</li><li>b</li></ul>\n<p>text</p>"
+ },
+ {
+  "name": "bullets then numbers",
+  "markdown": "- a\n1. b",
+  "options": {},
+  "html": "<ul><li>a</li></ul>\n<ol><li>b</li></ol>"
+ },
+ {
+  "name": "bold and italic",
+  "markdown": "**b** *i* _u_ ***both***",
+  "options": {},
+  "html": "<p><strong>b</strong> <em>i</em> <em>u</em> <strong><em>both</em></strong></p>"
+ },
+ {
+  "name": "nested emphasis",
+  "markdown": "**bold *and italic* text**",
+  "options": {},
+  "html": "<p><strong>bold <em>and italic</em> text</strong></p>"
+ },
+ {
+  "name": "snake case not emphasis",
+  "markdown": "use snake_case_name here",
+  "options": {},
+  "html": "<p>use snake_case_name here</p>"
+ },
+ {
+  "name": "unclosed markers",
+  "markdown": "**open and *half",
+  "options": {},
+  "html": "<p>**open and *half</p>"
+ },
+ {
+  "name": "inline code",
+  "markdown": "run `a<b>&c` now",
+  "options": {},
+  "html": "<p>run <code>a&lt;b&gt;&amp;c</code> now</p>"
+ },
+ {
+  "name": "code hides emphasis",
+  "markdown": "`**no**`",
+  "options": {},
+  "html": "<p><code>**no**</code></p>"
+ },
+ {
+  "name": "https link",
+  "markdown": "[docs](https://example.org/a?b=1&c=2)",
+  "options": {},
+  "html": "<p><a href=\"https://example.org/a?b=1&amp;c=2\" rel=\"noopener noreferrer\" target=\"_blank\">docs</a></p>"
+ },
+ {
+  "name": "http link",
+  "markdown": "[x](http://example.org)",
+  "options": {},
+  "html": "<p><a href=\"http://example.org\" rel=\"noopener noreferrer\" target=\"_blank\">x</a></p>"
+ },
+ {
+  "name": "mailto link",
+  "markdown": "[mail](mailto:a@example.org)",
+  "options": {},
+  "html": "<p><a href=\"mailto:a@example.org\" rel=\"noopener noreferrer\">mail</a></p>"
+ },
+ {
+  "name": "uppercase scheme",
+  "markdown": "[x](HTTPS://EXAMPLE.ORG)",
+  "options": {},
+  "html": "<p><a href=\"HTTPS://EXAMPLE.ORG\" rel=\"noopener noreferrer\" target=\"_blank\">x</a></p>"
+ },
+ {
+  "name": "javascript url refused",
+  "markdown": "[x](javascript:alert(1))",
+  "options": {},
+  "html": "<p>[x](javascript:alert(1))</p>"
+ },
+ {
+  "name": "javascript url simple",
+  "markdown": "[x](javascript:alert)",
+  "options": {},
+  "html": "<p>[x](javascript:alert)</p>"
+ },
+ {
+  "name": "mixed case javascript",
+  "markdown": "[x](JaVaScRiPt:alert)",
+  "options": {},
+  "html": "<p>[x](JaVaScRiPt:alert)</p>"
+ },
+ {
+  "name": "data url refused",
+  "markdown": "[x](data:text/html;base64,AAAA)",
+  "options": {},
+  "html": "<p>[x](data:text/html;base64,AAAA)</p>"
+ },
+ {
+  "name": "vbscript refused",
+  "markdown": "[x](vbscript:msgbox)",
+  "options": {},
+  "html": "<p>[x](vbscript:msgbox)</p>"
+ },
+ {
+  "name": "relative url refused",
+  "markdown": "[x](/admin)",
+  "options": {},
+  "html": "<p>[x](/admin)</p>"
+ },
+ {
+  "name": "protocol relative refused",
+  "markdown": "[x](//evil.example)",
+  "options": {},
+  "html": "<p>[x](//evil.example)</p>"
+ },
+ {
+  "name": "entity scheme refused",
+  "markdown": "[x](&#106;avascript:alert)",
+  "options": {},
+  "html": "<p>[x](&amp;#106;avascript:alert)</p>"
+ },
+ {
+  "name": "tab in scheme refused",
+  "markdown": "[x](java\tscript:alert)",
+  "options": {},
+  "html": "<p>[x](java\tscript:alert)</p>"
+ },
+ {
+  "name": "newline in scheme refused",
+  "markdown": "[x](java\nscript:alert)",
+  "options": {},
+  "html": "<p>[x](java script:alert)</p>"
+ },
+ {
+  "name": "attribute injection in url",
+  "markdown": "[x](https://e.org/\"onmouseover=\"alert(1))",
+  "options": {},
+  "html": "<p>[x](<a href=\"https://e.org/&quot;onmouseover=&quot;alert(1)\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/&quot;onmouseover=&quot;alert(1)</a>)</p>"
+ },
+ {
+  "name": "quote in url escaped",
+  "markdown": "[x](https://e.org/a'b\"c)",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/a&#39;b&quot;c\" rel=\"noopener noreferrer\" target=\"_blank\">x</a></p>"
+ },
+ {
+  "name": "angle in link text",
+  "markdown": "[<b>x</b>](https://e.org)",
+  "options": {},
+  "html": "<p><a href=\"https://e.org\" rel=\"noopener noreferrer\" target=\"_blank\">&lt;b&gt;x&lt;/b&gt;</a></p>"
+ },
+ {
+  "name": "emphasis in link text",
+  "markdown": "[**x**](https://e.org)",
+  "options": {},
+  "html": "<p><a href=\"https://e.org\" rel=\"noopener noreferrer\" target=\"_blank\"><strong>x</strong></a></p>"
+ },
+ {
+  "name": "link in link text refused",
+  "markdown": "[[a](https://a.org)](https://b.org)",
+  "options": {},
+  "html": "<p>[<a href=\"https://a.org\" rel=\"noopener noreferrer\" target=\"_blank\">a</a>](<a href=\"https://b.org\" rel=\"noopener noreferrer\" target=\"_blank\">https://b.org</a>)</p>"
+ },
+ {
+  "name": "link inside bold",
+  "markdown": "**see [x](https://e.org)**",
+  "options": {},
+  "html": "<p><strong>see <a href=\"https://e.org\" rel=\"noopener noreferrer\" target=\"_blank\">x</a></strong></p>"
+ },
+ {
+  "name": "script tag",
+  "markdown": "<script>alert(1)</script>",
+  "options": {},
+  "html": "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>"
+ },
+ {
+  "name": "img tag",
+  "markdown": "<img src=x onerror=alert(1)>",
+  "options": {},
+  "html": "<p>&lt;img src=x onerror=alert(1)&gt;</p>"
+ },
+ {
+  "name": "image syntax is text",
+  "markdown": "![alt](https://e.org/a.png)",
+  "options": {},
+  "html": "<p>!<a href=\"https://e.org/a.png\" rel=\"noopener noreferrer\" target=\"_blank\">alt</a></p>"
+ },
+ {
+  "name": "html entity text",
+  "markdown": "&lt;b&gt; &#60; &amp;",
+  "options": {},
+  "html": "<p>&amp;lt;b&amp;gt; &amp;#60; &amp;amp;</p>"
+ },
+ {
+  "name": "iframe in heading",
+  "markdown": "# <iframe src=//e.org>",
+  "options": {},
+  "html": "<h1>&lt;iframe src=//e.org&gt;</h1>"
+ },
+ {
+  "name": "tags in list",
+  "markdown": "- <b>x</b>\n- <a href=\"javascript:1\">y</a>",
+  "options": {},
+  "html": "<ul><li>&lt;b&gt;x&lt;/b&gt;</li><li>&lt;a href=&quot;javascript:1&quot;&gt;y&lt;/a&gt;</li></ul>"
+ },
+ {
+  "name": "quotes",
+  "markdown": "it's \"quoted\"",
+  "options": {},
+  "html": "<p>it&#39;s &quot;quoted&quot;</p>"
+ },
+ {
+  "name": "control chars removed",
+  "markdown": "a\u0000b\u0007c d",
+  "options": {},
+  "html": "<p>abcd</p>"
+ },
+ {
+  "name": "crlf",
+  "markdown": "a\r\nb\r\n\r\nc",
+  "options": {},
+  "html": "<p>a b</p>\n<p>c</p>"
+ },
+ {
+  "name": "empty",
+  "markdown": "",
+  "options": {},
+  "html": ""
+ },
+ {
+  "name": "blank only",
+  "markdown": "\n\n  \n",
+  "options": {},
+  "html": ""
+ },
+ {
+  "name": "non string",
+  "markdown": null,
+  "options": {},
+  "html": ""
+ },
+ {
+  "name": "unicode",
+  "markdown": "Impressum: Universität Zürich, Straße 1 – äöü",
+  "options": {},
+  "html": "<p>Impressum: Universität Zürich, Straße 1 – äöü</p>"
+ },
+ {
+  "name": "table basic",
+  "markdown": "| name | what |\n|---|---|\n| a | b |\n| c | d |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>name</th><th>what</th></tr></thead><tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table without outer pipes",
+  "markdown": "name | what\n--- | ---\na | b",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>name</th><th>what</th></tr></thead><tbody><tr><td>a</td><td>b</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table alignment",
+  "markdown": "| l | c | r | n |\n|:---|:---:|---:|---|\n| 1 | 2 | 3 | 4 |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th class=\"md-left\">l</th><th class=\"md-center\">c</th><th class=\"md-right\">r</th><th>n</th></tr></thead><tbody><tr><td class=\"md-left\">1</td><td class=\"md-center\">2</td><td class=\"md-right\">3</td><td>4</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table inline markup",
+  "markdown": "| x |\n|---|\n| **b** `c` [l](https://e.org) *i* |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>x</th></tr></thead><tbody><tr><td><strong>b</strong> <code>c</code> <a href=\"https://e.org\" rel=\"noopener noreferrer\" target=\"_blank\">l</a> <em>i</em></td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table escaped pipe",
+  "markdown": "| x | y |\n|---|---|\n| a\\|b | `c\\|d` |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>x</th><th>y</th></tr></thead><tbody><tr><td>a|b</td><td><code>c|d</code></td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table ragged rows",
+  "markdown": "| a | b | c |\n|---|---|---|\n| 1 |\n| 1 | 2 | 3 | 4 | 5 |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>a</th><th>b</th><th>c</th></tr></thead><tbody><tr><td>1</td><td></td><td></td></tr><tr><td>1</td><td>2</td><td>3</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table after paragraph",
+  "markdown": "text\n| a | b |\n|---|---|\n| 1 | 2 |\nafter",
+  "options": {},
+  "html": "<p>text</p>\n<div class=\"md-table\"><table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table></div>\n<p>after</p>"
+ },
+ {
+  "name": "table ends at blank line",
+  "markdown": "| a |\n|---|\n| 1 |\n\n| not | table |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table></div>\n<p>| not | table |</p>"
+ },
+ {
+  "name": "table needs matching delimiter",
+  "markdown": "| a | b |\n|---|\n| 1 | 2 |",
+  "options": {},
+  "html": "<p>| a | b | |---| | 1 | 2 |</p>"
+ },
+ {
+  "name": "a dash line under a pipe line is a setext heading",
+  "markdown": "| a | b |\n---\n| 1 | 2 |",
+  "options": {},
+  "html": "<h2>| a | b |</h2>\n<p>| 1 | 2 |</p>"
+ },
+ {
+  "name": "table html in cells",
+  "markdown": "| <script>alert(1)</script> | <img src=x onerror=1> |\n|---|---|\n| [x](javascript:1) | \" ' & |",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>&lt;script&gt;alert(1)&lt;/script&gt;</th><th>&lt;img src=x onerror=1&gt;</th></tr></thead><tbody><tr><td>[x](javascript:1)</td><td>&quot; &#39; &amp;</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "table pipes only",
+  "markdown": "|||\n|||",
+  "options": {},
+  "html": "<p>||| |||</p>"
+ },
+ {
+  "name": "table then heading",
+  "markdown": "| a |\n|---|\n| 1 |\n## H",
+  "options": {},
+  "html": "<div class=\"md-table\"><table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table></div>\n<h2>H</h2>"
+ },
+ {
+  "name": "fence backticks",
+  "markdown": "```python\ndef f(x):\n    return <x> & 1\n```\nafter",
+  "options": {},
+  "html": "<pre><code>def f(x):\n    return &lt;x&gt; &amp; 1</code></pre>\n<p>after</p>"
+ },
+ {
+  "name": "fence tildes",
+  "markdown": "~~~\n```\n~~~",
+  "options": {},
+  "html": "<pre><code>```</code></pre>"
+ },
+ {
+  "name": "fence longer closer",
+  "markdown": "````\n```\n````",
+  "options": {},
+  "html": "<pre><code>```</code></pre>"
+ },
+ {
+  "name": "fence unterminated",
+  "markdown": "```\nstill code\n\nmore",
+  "options": {},
+  "html": "<pre><code>still code\n\nmore</code></pre>"
+ },
+ {
+  "name": "fence info with backtick is text",
+  "markdown": "``` a`b\nx",
+  "options": {},
+  "html": "<p>``<code> a</code>b x</p>"
+ },
+ {
+  "name": "fence interrupts paragraph",
+  "markdown": "text\n```\ncode\n```",
+  "options": {},
+  "html": "<p>text</p>\n<pre><code>code</code></pre>"
+ },
+ {
+  "name": "fence keeps markup literal",
+  "markdown": "```\n# no heading\n**no bold** <b>\n```",
+  "options": {},
+  "html": "<pre><code># no heading\n**no bold** &lt;b&gt;</code></pre>"
+ },
+ {
+  "name": "indented code",
+  "markdown": "para\n    def f():\n        return 1\n\n    more\nafter",
+  "options": {},
+  "html": "<p>para</p>\n<pre><code>def f():\n    return 1\n\nmore</code></pre>\n<p>after</p>"
+ },
+ {
+  "name": "indented code tab",
+  "markdown": "\tcode line\n\tsecond",
+  "options": {},
+  "html": "<pre><code>code line\nsecond</code></pre>"
+ },
+ {
+  "name": "indented code after list item continues the item",
+  "markdown": "- item\n    more",
+  "options": {},
+  "html": "<ul><li>item more</li></ul>"
+ },
+ {
+  "name": "indented code after blank is code",
+  "markdown": "- item\n\n    code",
+  "options": {},
+  "html": "<ul><li>item</li></ul>\n<pre><code>code</code></pre>"
+ },
+ {
+  "name": "indented code blank between",
+  "markdown": "    a\n\n\n    b",
+  "options": {},
+  "html": "<pre><code>a\n\n\nb</code></pre>"
+ },
+ {
+  "name": "rule dashes",
+  "markdown": "a\n\n---\n\nb",
+  "options": {},
+  "html": "<p>a</p>\n<hr>\n<p>b</p>"
+ },
+ {
+  "name": "rule stars and underscores",
+  "markdown": "***\n___\n* * *\n- - -",
+  "options": {},
+  "html": "<hr>\n<hr>\n<hr>\n<hr>"
+ },
+ {
+  "name": "rule not a list",
+  "markdown": "- - -",
+  "options": {},
+  "html": "<hr>"
+ },
+ {
+  "name": "setext headings",
+  "markdown": "Title\n=====\n\nSub\n---",
+  "options": {},
+  "html": "<h1>Title</h1>\n<h2>Sub</h2>"
+ },
+ {
+  "name": "setext multi line",
+  "markdown": "one\ntwo\n===",
+  "options": {},
+  "html": "<h1>one two</h1>"
+ },
+ {
+  "name": "setext base 3",
+  "markdown": "T\n=\nS\n-",
+  "options": {
+   "heading_base": 3
+  },
+  "html": "<h3>T</h3>\n<h4>S</h4>"
+ },
+ {
+  "name": "blockquote",
+  "markdown": "> a\n> b\n\n> c",
+  "options": {},
+  "html": "<blockquote><p>a b</p></blockquote>\n<blockquote><p>c</p></blockquote>"
+ },
+ {
+  "name": "blockquote with blocks",
+  "markdown": "> # H\n> - x\n> ```\n> code\n> ```",
+  "options": {},
+  "html": "<blockquote><h1>H</h1>\n<ul><li>x</li></ul>\n<pre><code>code</code></pre></blockquote>"
+ },
+ {
+  "name": "blockquote nested",
+  "markdown": "> a\n> > b\n> > > c\n> > > > d",
+  "options": {},
+  "html": "<blockquote><p>a</p>\n<blockquote><p>b</p>\n<blockquote><p>c &gt; d</p></blockquote></blockquote></blockquote>"
+ },
+ {
+  "name": "blockquote html",
+  "markdown": "> <b>x</b>",
+  "options": {},
+  "html": "<blockquote><p>&lt;b&gt;x&lt;/b&gt;</p></blockquote>"
+ },
+ {
+  "name": "readme sample",
+  "markdown": "# Title\n\nUsing:\ndef log_transform(ad, ps=0.1):\n    ad.X.data = np.log2(ad.X.data + ps)\n    \nHVGs.\n\n| name | what |\n|---|---|\n| `a` | b |",
+  "options": {},
+  "html": "<h1>Title</h1>\n<p>Using: def log_transform(ad, ps=0.1):</p>\n<pre><code>ad.X.data = np.log2(ad.X.data + ps)</code></pre>\n<p>HVGs.</p>\n<div class=\"md-table\"><table><thead><tr><th>name</th><th>what</th></tr></thead><tbody><tr><td><code>a</code></td><td>b</td></tr></tbody></table></div>"
+ },
+ {
+  "name": "autolink bare",
+  "markdown": "see https://github.com/settylab/mds-aging-private/tree/main/02_CITE_aging for more",
+  "options": {},
+  "html": "<p>see <a href=\"https://github.com/settylab/mds-aging-private/tree/main/02_CITE_aging\" rel=\"noopener noreferrer\" target=\"_blank\">https://github.com/settylab/mds-aging-private/tree/main/02_CITE_aging</a> for more</p>"
+ },
+ {
+  "name": "autolink trailing punctuation",
+  "markdown": "(https://e.org/a), https://e.org/b. https://e.org/c! https://e.org/d?",
+  "options": {},
+  "html": "<p>(<a href=\"https://e.org/a\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/a</a>), <a href=\"https://e.org/b\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/b</a>. <a href=\"https://e.org/c\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/c</a>! <a href=\"https://e.org/d\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/d</a>?</p>"
+ },
+ {
+  "name": "autolink balanced parenthesis",
+  "markdown": "https://e.org/w_(x) and (https://e.org/y)",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/w_(x)\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/w_(x)</a> and (<a href=\"https://e.org/y\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/y</a>)</p>"
+ },
+ {
+  "name": "autolink keeps query and ampersand",
+  "markdown": "https://e.org/p?a=1&b=2#frag",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/p?a=1&amp;b=2#frag\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/p?a=1&amp;b=2#frag</a></p>"
+ },
+ {
+  "name": "autolink angle",
+  "markdown": "<https://e.org/a> <mailto:me@e.org> <javascript:alert(1)> <http://x>",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/a\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/a</a> <a href=\"mailto:me@e.org\" rel=\"noopener noreferrer\">mailto:me@e.org</a> &lt;javascript:alert(1)&gt; <a href=\"http://x\" rel=\"noopener noreferrer\" target=\"_blank\">http://x</a></p>"
+ },
+ {
+  "name": "autolink javascript never",
+  "markdown": "javascript:alert(1) <javascript:1> [x](javascript:1) data:text/html,x",
+  "options": {},
+  "html": "<p>javascript:alert(1) &lt;javascript:1&gt; [x](javascript:1) data:text/html,x</p>"
+ },
+ {
+  "name": "autolink needs a boundary",
+  "markdown": "xhttps://e.org and _https://e.org/_u_",
+  "options": {},
+  "html": "<p>xhttps://e.org and _<a href=\"https://e.org/_u\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/_u</a>_</p>"
+ },
+ {
+  "name": "autolink inside code and link text",
+  "markdown": "`https://e.org` [https://e.org](https://other.org) **https://e.org/b**",
+  "options": {},
+  "html": "<p><code>https://e.org</code> <a href=\"https://other.org\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org</a> <strong><a href=\"https://e.org/b\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/b</a></strong></p>"
+ },
+ {
+  "name": "autolink in table and list",
+  "markdown": "- https://e.org/l\n\n| u |\n|---|\n| https://e.org/t |",
+  "options": {},
+  "html": "<ul><li><a href=\"https://e.org/l\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/l</a></li></ul>\n<div class=\"md-table\"><table><thead><tr><th>u</th></tr></thead><tbody><tr><td><a href=\"https://e.org/t\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/t</a></td></tr></tbody></table></div>"
+ },
+ {
+  "name": "autolink hard break",
+  "markdown": "https://e.org/a  \nnext",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/a\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/a</a><br>next</p>"
+ },
+ {
+  "name": "autolink html is text",
+  "markdown": "https://e.org/\"onmouseover=\"x <b>",
+  "options": {},
+  "html": "<p><a href=\"https://e.org/&quot;onmouseover=&quot;x\" rel=\"noopener noreferrer\" target=\"_blank\">https://e.org/&quot;onmouseover=&quot;x</a> &lt;b&gt;</p>"
+ },
+ {
+  "name": "autolink bare scheme only",
+  "markdown": "https:// and http://.",
+  "options": {},
+  "html": "<p>https:// and http://.</p>"
+ }
+]

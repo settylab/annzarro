@@ -163,11 +163,12 @@ test('a redraw beside the plot it replaces asks only for what its first step add
     });
 });
 
-test('the model counts the 8 B point index once per quantity: off 65+8, ArrayBuffers 73+8, held plot 61+8', () => {
+test('the model counts the 8 B point index once per quantity: off 65+8, ArrayBuffers 73+8; a held plot as measured', () => {
     const L = DEFAULT_MODEL.large;
     assert.equal(L.off, 65 + 8);
     assert.equal(L.arrayBuffers, 73 + 8);
-    assert.equal(L.heldPerPoint, 61 + 8);
+    // measured on 95.6M points with the index (memory-guard.js heldPerPoint): 61 + 8 was short at that size
+    assert.equal(L.heldPerPoint, 88);
     // the redraw's first step adds no index: the old plot's is already in heldPerPoint
     assert.equal(L.redrawBeside, 14);
     // the probe sized from the model asks for the full 81 B

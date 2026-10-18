@@ -15,6 +15,8 @@
  * exporting gives the memory back when it says it does.
  */
 
+import { rememberLegendHidden } from './legend-entries.js';
+
 /** The regl (WebGL) contexts of a graph, as Plotly keeps them on its canvases. */
 function reglsOf(gd) {
     const fl = gd && gd._fullLayout;
@@ -70,6 +72,8 @@ export function releaseGl(gd) {
  */
 export function releasePlot(gd) {
     if (!gd) return;
+    // the next draw into this div hides what the legend hides now (a large plot redraws from scratch)
+    try { rememberLegendHidden(gd); } catch { /* not a plot */ }
     try { releaseGl(gd); } catch (e) { console.warn('releasePlot: could not free the WebGL side', e); }
     if (typeof Plotly !== 'undefined' && Plotly.purge && gd._fullLayout) {
         try { Plotly.purge(gd); } catch { /* not a plot container */ }

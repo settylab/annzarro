@@ -41,7 +41,7 @@ URL_VALUES = {"layer_name": "counts", "obsm_key": "X_umap", "varm_key": "x", "ob
 #: The argument that names the folder on the listing routes that take one.
 FOLDER_ARG = {"list_directory": "path", "list_dataset_folder": "folder", "list_legacy_datasets": "dir"}
 #: The argument that names the store where it is not ``dataset_path``.
-STORE_ARG = {"dataset_details": "path"}
+STORE_ARG = {"dataset_details": "path", "dataset_info": "path"}
 CHECKED_KINDS = ("dataset", "remote", "listing")
 #: Routes whose reply carries state of the call (a rate-limited refresh): compare the status only.
 STATEFUL = ("refresh_dataset",)

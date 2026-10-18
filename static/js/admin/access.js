@@ -13,6 +13,7 @@
 import { h, setChildren, badge, table } from './dom.js';
 import { formatTimestamp, formatCount } from './admin-format.js';
 import { mountUserPolicy } from './settings.js';
+import { controlHelp } from './help-catalog.js';
 
 /** The grant forms offered, in order: the label, and the `kind` the server takes. */
 export const GRANT_MODES = [
@@ -309,8 +310,8 @@ export async function mountAccessPanel(target, api, username, ctx = {}) {
             oninput: (ev) => { typed = ev.target.value; },
         });
         input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); grant(); } });
-        return h('div', { class: 'mb-3', id: 'access-grant-form' },
-            h('div', { class: 'small fw-semibold mb-1', text: 'Grant' }),
+        return h('div', { class: 'mb-3', id: 'access-grant-form', data: { setting: 'access.grant' } },
+            h('div', { class: 'small fw-semibold mb-1' }, 'Grant', controlHelp('access.grant', { describes: [input] })),
             h('div', { class: 'mb-1' }, GRANT_MODES.map((m) => h('span', { class: 'form-check form-check-inline' },
                 h('input', {
                     class: 'form-check-input', type: 'radio', name: 'access-mode', id: `access-mode-${m.id}`, checked: m.id === mode,
@@ -350,8 +351,8 @@ export async function mountAccessPanel(target, api, username, ctx = {}) {
             ? h('div', { class: `small mt-1 ${checked.result.allowed ? 'text-success' : 'text-danger'}`, id: 'access-check-result',
                 data: { allowed: checked.result.allowed }, text: checkText(checked.result) })
             : checked && checked.error ? h('div', { class: 'small mt-1 text-danger', id: 'access-check-result', text: checked.error }) : null;
-        return h('div', { class: 'mb-3' },
-            h('div', { class: 'small fw-semibold mb-1', text: 'Check a path' }),
+        return h('div', { class: 'mb-3', data: { setting: 'access.check' } },
+            h('div', { class: 'small fw-semibold mb-1' }, 'Check a path', controlHelp('access.check', { describes: [input] })),
             h('div', { class: 'input-group input-group-sm' }, input,
                 h('button', { type: 'button', class: 'btn btn-outline-secondary', id: 'access-check-button', text: 'Check', onclick: runCheck })),
             result);
@@ -386,8 +387,9 @@ export async function mountAccessPanel(target, api, username, ctx = {}) {
                 ? ((info.grants || []).some((g) => g.active) ? null : 'Restricted with no active grant: this user reads nothing.')
                 : 'Not restricted: this user reads every dataset in the data directories. Grants below apply once you restrict them.';
         setChildren(target, head, failure,
-            h('div', { class: 'form-check mb-2' }, on,
-                h('label', { class: 'form-check-label', for: 'access-restricted', text: 'Restricted to these datasets' })),
+            h('div', { class: 'form-check mb-2', data: { setting: 'access.restricted' } }, on,
+                h('label', { class: 'form-check-label', for: 'access-restricted', text: 'Restricted to these datasets' }),
+                controlHelp('access.restricted', { describes: [on] })),
             confirmBox,
             note ? h('div', { class: `small mb-2 ${info.restricted && !admin ? 'text-danger' : 'text-muted'}`, id: 'access-note', text: note }) : null,
             admin ? null : [grantsTable(), grantForm(), effective()],

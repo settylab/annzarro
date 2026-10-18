@@ -39,13 +39,13 @@ The plot follows the app's light or dark theme by itself. To keep one look in ei
 ## Presets
 
 - **Publication** sets a white background and black text and axes (kept in either app theme), no grid and no zero lines, tick marks with about five
-  ticks per axis, text of 16 px, axis lines of 1.5 px, margins of 70 px left and right, 40 px
-  top and 60 px bottom, and a colour bar 60 % long with five ticks. It also resets the
+  ticks per axis, Arial at 16 px, axis lines of 1.5 px, margins of 70 px left and right, 40 px
+  top and 60 px bottom, and a colour bar 40 % long with three ticks. It also resets the
   legend position and the other look settings to those of a new plot. It does not
-  touch the scale bar, the font, the **Points** and **Focused cell** groups or the export size.
+  touch the scale bar, the **Points** and **Focused cell** groups or the export size.
 - **Default** returns the look settings to what a new plot has, with every colour following the app theme again: grid, axes, tick count,
-  text size, line widths, margins, legend, colour bar, and the scale bar's switch and corner
-  (the scale bar goes off). The font, the scale bar's size and unit, the **Points** and
+  font and text size, line widths, margins, legend, colour bar, and the scale bar's switch and corner
+  (the scale bar goes off). The scale bar's size and unit, the **Points** and
   **Focused cell** groups, the export size, and what the plot shows stay.
 
 A preset is a starting point: change anything afterwards.
@@ -138,18 +138,28 @@ one.
 - **Fill** colour, red by default, and **Edge** colour, black (light theme) or white (dark theme)
   by default, each with **Reset**. A colour you choose stays as chosen in either theme; one you
   leave alone follows the theme.
+- **No fill** draws the marker as an open circle: its edge alone, in the edge colour and width,
+  with the plot showing through the middle. Switching it on raises an edge width under 1 px to
+  1 px, and the width cannot go below 1 px while it is on, so the circle always shows. In a 3D
+  plot the open circle is drawn in the edge colour. The fill colour is kept for when No fill is
+  switched off, and **Reset** still only returns the colour to the theme.
 
 The hollow ring of a focused cell the subset does not show ({ref}`focus-outside-subset`) takes the
 size, the opacity and the fill colour as its line colour, with the edge width as its line width
-(at least 1 px). The marker is part of an export.
+(at least 1 px), with or without **No fill**. The marker is part of an export, PNG and SVG,
+and **Apply to other panels** copies it.
 
 ## Legend and colour bar
 
-- **Show Legend** and **Legend Position** (right, left, top or bottom).
+- **Show Legend** and **Legend Position** (right, left, top or bottom). A legend on top or at the
+  bottom lies outside the axes, below the x-axis title at the bottom, and the margin grows to make room.
 - **Colour bar**, for a numerical colour, has its own **position** (right, left, top, bottom, or
   **with the legend**, the default, which follows **Legend Position**), a **Length** from 10 to
   100 % of the plot's height (or width when horizontal; 100 % by default) and **Ticks**, the
-  tick count (2 to 30; empty is automatic).
+  tick count (2 to 30; empty is automatic). A colour bar on top or at the bottom lies outside the
+  axes (below the x-axis title at the bottom), and the margin grows to make room for it.
+- The plot's toolbar sits in the top right corner of the plotting area, so a legend or colour bar
+  placed beside the plot does not cover it.
 
 ## Text
 
@@ -167,7 +177,10 @@ defaults.
 ## Export
 
 The **JPEG**, **SVG**, **WEBP** and **PNG** buttons, and **Width** and **Height** in pixels (100
-to 5000; 1200 by 800 by default), as in {doc}`export`.
+to 5000; 1200 by 800 by default), as in {doc}`export`. **Export at 2x** is on by default: PNG, JPEG
+and WEBP files are drawn at twice the width and height set, 2400 by 1600 pixels by default, so a
+figure stays sharp in print. Switch it off for files of exactly the pixels set. An SVG is vector
+and keeps the size set either way.
 
 ## Apply to other panels
 

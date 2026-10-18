@@ -233,7 +233,7 @@ class PolicyEngine:
         if layer not in _SCOPE_LAYERS[key.scope]:
             return False, None, Issue(layer, name, value, CONFIG_SCOPE if key.scope == "config" else SERVER_SCOPE)
         try:
-            return True, key.type.validate(value), None
+            return True, key.type.validate_stored(value), None
         except PolicyValueError as exc:
             return False, None, Issue(layer, name, value, exc.reason)
 

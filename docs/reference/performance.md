@@ -96,7 +96,7 @@ A part of 100,000 cells is a random sample of the whole dataset, so one step rea
 what the plot draws. Measured on a store of one billion cells, 477 chunks of 2 MB (compressed) per
 column: choosing the cells (a pass over every row's rank key) 5 to 8 s of CPU; reading the 100,000
 cell names 19 to 27 s and 23.6 GB decompressed; each UMAP axis read as its own request 7 GB
-decompressed. Above `ui.defaults.names_on_demand_above` (5 million cells) the names are no longer
+decompressed. Above `ui.defaults.names_on_demand_above` (5 million cells) the names are not
 read at a step, a plot reads its x and y in one request, a newer step stops the pass of the older
 one, and on a single-user server the next part's coordinates are read ahead; see
 {ref}`names-on-demand`.

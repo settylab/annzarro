@@ -30,7 +30,13 @@ SCOPES = ("config", "server", "user")
 #: and never widen it.
 COMBINES = ("override", "restrict")
 #: The groups the Settings page shows. Add one here when a feature needs it.
-AREAS = ("panels", "outbound", "data", "limits", "features")
+AREAS = ("panels", "outbound", "data", "limits", "features", "site")
+
+def policy_guide(name: str, page: str = "deployment/admin.html") -> str:
+    """The guide location of key ``name`` whose docs anchor is ``policy-<name>`` (dots and underscores
+    become hyphens): the docs mark the key with ``{#policy-panel-cell-plot-enabled}``."""
+    return f"{page}#policy-" + re.sub(r"[._]", "-", name)
+
 
 _NAME = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z0-9][a-z0-9_-]*)+$")
 
@@ -41,7 +47,7 @@ class Key:
     type: PolicyType                # Bool() | Enum(choices) | Int(min, max) | Float(min, max) | Hosts() | Paths() | Subset(choices)
     default: Any                    # or a callable(config) for a default derived from the configuration
     scope: str                      # one of SCOPES
-    description: str
+    description: str                # one or two plain sentences: what it does, its default, what it affects (the admin pages show it as the help)
     area: str                       # one of AREAS
     combine: str = "override"       # one of COMBINES
     #: hosts this key lets the browser contact at a given value: callable(value, config) -> [host]
@@ -58,6 +64,13 @@ class Key:
     config_reader: Optional[Callable[[dict], Tuple[bool, Any, bool]]] = None
     #: a page of the admin interface that owns this key's control (the Settings page leaves it out)
     section: str = ""
+    #: where the docs explain the key, "deployment/admin.html#panels" (a page under the docs root and an
+    #: anchor on it); the admin pages link it as "Guide" next to the description
+    guide: str = ""
+    #: a short human name for the admin pages ("Cell Plot panel"); the key stays beside it for the YAML
+    label: str = ""
+    #: the YAML path of a key whose setting is read through ``config_reader`` ("server.remote_stores")
+    yaml_path: str = ""
     client: bool = True             # included in /api/v1/policy/effective
     restart: bool = False           # takes effect only after a restart; implies scope "config"
 
@@ -80,11 +93,18 @@ class Key:
         value = self.default(config or {}) if callable(self.default) else self.default
         return self.type.validate(value)
 
+    def config_file(self) -> Dict[str, Any]:
+        """Where the config file says anything about this key, for the admin pages' help: the YAML
+        path of its setting, or ``policy.locked`` (which can lock a key that has no setting of its own)."""
+        path = self.config_path or self.yaml_path
+        return {"config_file": path or "policy.locked", "config_file_setting": bool(path)}
+
     def describe(self) -> Dict[str, Any]:
         """What the Settings page needs of the declaration (not the value)."""
         return {"name": self.name, "type": self.type.describe(), "scope": self.scope, "area": self.area,
                 "description": self.description, "combine": self.combine, "restart": self.restart,
-                "routes": list(self.routes), "config_path": self.config_path, "section": self.section}
+                "routes": list(self.routes), "config_path": self.config_path, "section": self.section,
+                "guide": self.guide, "label": self.label, **self.config_file()}
 
 
 @dataclass
@@ -130,7 +150,8 @@ REGISTRY = Registry()
 
 #: Modules that declare keys when imported; ``load_declarations`` imports them,
 #: so a registry is complete wherever it is built. Add yours here.
-DECLARING_MODULES = ("annzarro.server.limits", "annzarro.core.remote", "annzarro.server.policy.panels")
+DECLARING_MODULES = ("annzarro.server.limits", "annzarro.core.remote", "annzarro.server.policy.panels",
+                     "annzarro.server.site")
 
 
 def load_declarations() -> None:

@@ -226,6 +226,45 @@ body {
     width: 100%;
 }
 
+/* The app name opens the About dialog: a button that looks like the heading it replaces */
+.app-title-btn {
+    all: unset;
+    cursor: pointer;
+    border-radius: 0.25rem;
+    transition: opacity 0.15s ease-in-out;
+}
+/* a quiet hint that the name opens About: a slight fade, no underline */
+.app-title-btn:hover { opacity: 0.75; }
+.app-title-btn:focus-visible {
+    outline: 2px solid var(--az-link);
+    outline-offset: 2px;
+}
+
+/* ---- About AnnZarro ---- */
+.about-dialog { max-width: 30rem; }
+.about-dialog .modal-body { font-size: 0.9rem; }
+.about-dialog p { margin-bottom: 0.65rem; }
+.about-version { font-size: 1.15rem; margin-bottom: 0.25rem !important; }
+.about-muted { color: var(--az-muted); }
+.about-links { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; }
+.about-dialog hr { margin: 0.9rem 0; color: var(--az-border); }
+.about-dev { text-align: center; color: var(--az-muted); margin-bottom: 0.6rem !important; }
+.about-logos {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.75rem;
+    margin-bottom: 0.9rem;
+}
+.about-logos a { display: inline-flex; border-radius: 0.25rem; }
+.about-logos a:focus-visible { outline: 2px solid var(--az-link); outline-offset: 4px; }
+.about-logo { height: 3.75rem; width: auto; display: block; }
+@media (max-width: 440px) { .about-logo { height: 3rem; } .about-logos { gap: 1.25rem; } }
+/* the lab's tree has dark outlines: on a light tile in the dark theme */
+[data-theme="dark"] .about-logo-lab { background: #fff; border-radius: 0.4rem; padding: 0.3rem 0.45rem; box-sizing: content-box; }
+.about-funding { margin-bottom: 0.4rem !important; }
+.about-fine { font-size: 0.75rem; color: var(--az-muted); margin-bottom: 0 !important; }
+
 /* The theme toggle at the right end of the statistics bar: small enough not to make the bar taller */
 .dataset-stats .theme-toggle .btn {
     --bs-btn-padding-y: 0;
@@ -482,6 +521,8 @@ body {
     padding: 0.5rem;
     background-color: var(--az-surface-2);
     border-bottom: 1px solid var(--az-border);
+    /* a narrow tile compacts its header (below) */
+    container: tile-header / inline-size;
 }
 
 .tile-title {
@@ -512,6 +553,31 @@ body {
     justify-content: flex-end;
     min-width: 0;
     gap: 0.25rem;
+}
+
+/* A narrow tile (a split of a split): the title and every button stay on
+   one row, smaller, instead of the buttons wrapping under each other and
+   squeezing the title out. */
+@container tile-header (max-width: 300px) {
+    .tile-header > .tile-title {
+        padding: 0.125rem 0.25rem;
+        font-size: 0.85rem;
+    }
+    .tile-header > .tile-controls {
+        flex-wrap: nowrap;
+        flex-shrink: 0;
+        /* apart, so each keeps its own rounded corners */
+        gap: 2px;
+    }
+    .tile-header > .tile-controls > .btn {
+        width: 20px;
+        height: 22px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+    }
 }
 
 .tile-content {
@@ -2825,6 +2891,74 @@ button.dtsb-button.dtsb-clear:hover {
     transform: translateY(-2px);
 }
 
+/* A last session (utils/last-session-card.js), listed first: autosaved in this browser */
+.last-session {
+    background-color: var(--az-surface-2);
+    border-color: var(--az-cyan);
+}
+
+.session-item.last-session:hover,
+.session-card.last-session:hover {
+    border-color: var(--az-cyan);
+    box-shadow: 0 5px 15px rgba(13, 202, 240, 0.2);
+}
+
+.last-session--unfinished {
+    border-color: var(--az-warn-border);
+}
+
+.session-item.last-session--unfinished:hover,
+.session-card.last-session--unfinished:hover {
+    border-color: var(--az-warn-border);
+    box-shadow: 0 5px 15px rgba(224, 168, 0, 0.2);
+}
+
+.last-session__info {
+    flex: 1;
+    min-width: 0;
+}
+
+.last-session__title {
+    display: flex;
+    font-weight: 500;
+    font-size: 1.05rem;
+    margin-bottom: 0.25rem;
+}
+
+.last-session__summary {
+    font-size: 0.85rem;
+    color: var(--az-muted);
+}
+
+.last-session__unfinished {
+    margin-top: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    background-color: var(--az-warn-bg);
+    color: var(--az-warn-text);
+    border: 1px solid var(--az-warn-border);
+}
+
+.last-session__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.last-session__note:empty {
+    display: none;
+}
+
+.last-session__note {
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: var(--az-warn-text);
+}
+
 .session-info {
     flex: 1;
 }
@@ -3794,6 +3928,25 @@ details.aesthetics-section > .aesthetics-body {
     color: var(--az-text);
 }
 .dataset-back[hidden] { display: none; }
+.dataset-info-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    margin-left: -0.5rem;      /* flush with the dataset button, which it describes */
+    border-color: var(--az-control-border);
+    background: var(--az-surface);
+    color: var(--az-text);
+    -webkit-app-region: no-drag;
+}
+.dataset-info-button:hover {
+    background: var(--az-accent-bg);
+    color: var(--az-text);
+}
+.dataset-info-button[hidden] { display: none; }
+.dataset-bar .dataset-info-button { flex: 0 0 auto; }
 .dataset-bar .dataset-fact,
 .dataset-bar .theme-toggle,
 .dataset-bar .dataset-back,
@@ -4196,3 +4349,145 @@ details.aesthetics-section > .aesthetics-body {
 .welcome-recents-table { margin: 0 auto 0.5rem; width: auto; }
 .welcome-recents-table td { border: 0; padding: 0 0.5rem; vertical-align: baseline; }
 .welcome-open-actions { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+
+/* ---- About: "This site" (the operator's texts) ---- */
+.about-dialog .modal-content { max-height: calc(100vh - 1.5rem); }
+.about-dialog .modal-body { overflow-y: auto; }
+.about-section-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--az-muted); margin-bottom: 0.4rem; }
+.about-this-site p { margin-bottom: 0.35rem; }
+.about-text { border-top: 1px solid var(--az-border); padding: 0.3rem 0; }
+.about-text:last-child { border-bottom: 1px solid var(--az-border); }
+.about-text > summary { cursor: pointer; font-weight: 500; }
+.about-text > summary:focus-visible { outline: 2px solid var(--az-link); outline-offset: 2px; border-radius: 0.2rem; }
+.about-text-link { padding: 0.35rem 0; }
+.about-text-body { padding: 0.4rem 0 0.2rem; font-size: 0.85rem; }
+.about-text-body h4, .about-text-body h5, .about-text-body h6 { font-size: 0.9rem; margin: 0.6rem 0 0.25rem; }
+.about-text-body p, .about-text-body ul, .about-text-body ol { margin-bottom: 0.45rem; }
+.about-text-body ul, .about-text-body ol { padding-left: 1.2rem; }
+.about-privacy { font-size: 0.78rem; color: var(--az-muted); margin: 0.6rem 0 0 !important; }
+
+
+/* ---- Dataset information: the dialog (utils/dataset-info-dialog.js) and the browser's details pane (utils/dataset-info.js) ---- */
+.dataset-info-dialog .modal-body { font-size: 0.9rem; min-height: 16rem; }
+.dataset-info-heading { min-width: 0; }
+.dataset-info-name {
+    display: flex;
+    margin: 0;
+    color: var(--az-muted);
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+.dataset-info-name-head { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dataset-info-name-tail { flex: 0 0 auto; }
+.dsi-tabs { margin-bottom: 0.9rem; }
+.dsi-tabs .nav-link { color: var(--az-text); }
+.dsi-tabs .nav-link.active { font-weight: 600; }
+.dsi-muted { color: var(--az-muted); }
+.dsi-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1.2rem 0;
+    color: var(--az-muted);
+}
+.dsi-spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--az-border-strong);
+    border-top-color: var(--az-link);
+    border-radius: 50%;
+    animation: dataset-spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .dsi-spinner { animation-duration: 3s; }
+}
+.dsi-error {
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--az-danger-border);
+    border-radius: 4px;
+    background: var(--az-danger-bg);
+    color: var(--az-danger-text);
+}
+.dsi-error p { margin: 0 0 0.5rem; }
+.dsi-title { font-size: 1.1rem; margin: 0 0 0.5rem; }
+.dsi-description, .dsi-multiline, .dsi-readme { overflow-wrap: anywhere; }
+.dsi-description, .dsi-multiline { white-space: pre-wrap; }
+.dsi-fields {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.35rem 1rem;
+    margin: 0 0 0.75rem;
+}
+.dsi-fields dt { font-weight: 400; color: var(--az-muted); }
+.dsi-fields dd { margin: 0; overflow-wrap: anywhere; }
+.dsi-fields-compact { gap: 0.15rem 0.75rem; font-size: 0.85rem; }
+.dsi-hint, .dsi-note { font-size: 0.8rem; margin: 0.6rem 0 0; }
+.dsi-empty { margin: 0.4rem 0; }
+.dsi-readme { max-width: none; }
+/* prose keeps a readable measure; tables and code use the dialog's full width and scroll inside their box */
+.dsi-readme > :is(p, ul, ol, h4, h5, h6, blockquote) { max-width: 70ch; }
+.dsi-readme :is(h4, h5, h6) { margin: 1rem 0 0.4rem; font-weight: 600; }
+.dsi-readme h4 { font-size: 1.1rem; }
+.dsi-readme h5 { font-size: 1rem; }
+.dsi-readme h6 { font-size: 0.9rem; }
+.dsi-readme p { margin: 0 0 0.7rem; }
+.dsi-readme code {
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    background: var(--az-surface-3);
+    color: var(--az-text);
+    font-size: 0.85em;
+}
+.dsi-readme-compact { font-size: 0.85rem; }
+.dsi-summary { font-weight: 600; margin: 0 0 0.3rem; }
+.dsi-x { margin: 0 0 0.6rem; }
+.dsi-section { margin: 0 0 0.5rem; border-top: 1px solid var(--az-border-soft); padding-top: 0.35rem; }
+.dsi-section > summary { cursor: pointer; font-weight: 600; padding: 0.15rem 0; }
+.dsi-count { color: var(--az-muted); font-weight: 400; }
+.dsi-table { margin: 0.3rem 0 0; font-size: 0.82rem; --bs-table-bg: transparent; --bs-table-color: var(--az-text); }
+.dsi-table { table-layout: fixed; width: 100%; }
+.dsi-table th:first-child { width: 40%; }
+.dsi-table th, .dsi-table td { padding: 0.15rem 0.5rem 0.15rem 0; overflow-wrap: anywhere; }
+.dsi-table thead th { color: var(--az-muted); font-weight: 400; }
+.dsi-name { font-weight: 500; font-family: var(--bs-font-monospace, monospace); font-size: 0.95em; }
+.dsi-tree { list-style: none; margin: 0.2rem 0 0; padding-left: 1rem; font-size: 0.85rem; }
+.dsi-tree .dsi-tree { border-left: 1px solid var(--az-border-soft); }
+.dsi-tree li { padding: 0.05rem 0; overflow-wrap: anywhere; }
+/* search in the Structure tab */
+.dsi-search { position: sticky; top: -1px; z-index: 2; margin: 0 0 0.6rem; padding: 0.1rem 0 0.35rem; background: var(--bs-modal-bg, var(--bs-body-bg, transparent)); }
+.dsi-search-row { display: flex; gap: 0.3rem; align-items: stretch; }
+.dsi-search-input { flex: 1 1 auto; min-width: 0; }
+.dsi-search-toggle { flex: 0 0 auto; font-family: var(--bs-font-monospace, monospace); line-height: 1.2; min-width: 2.2rem; }
+.dsi-search-toggle[aria-pressed="true"] { background: var(--az-link); border-color: var(--az-link); color: var(--bs-modal-bg, #fff); }
+.dsi-search-notes { display: flex; flex-wrap: wrap; gap: 0 0.8rem; min-height: 1.2rem; font-size: 0.8rem; padding-top: 0.15rem; }
+.dsi-search-error { color: var(--az-warn-text); }
+.dsi-hits { color: var(--az-muted); font-weight: 400; }
+mark.dsi-mark { background: rgba(255, 200, 0, 0.5); color: inherit; padding: 0 0.05em; border-radius: 2px; }
+[data-theme="dark"] mark.dsi-mark { background: rgba(255, 200, 0, 0.35); }
+/* the browser's details pane: the same parts, smaller, under the facts of the store */
+.dsb-about { margin: 0.5rem 0; }
+.dsb-about > .dsi-fields { margin-bottom: 0.4rem; }
+.dsb-about details.dsb-about-more { margin: 0.25rem 0; border-top: 1px solid var(--az-border-soft); padding-top: 0.25rem; }
+.dsb-about details.dsb-about-more > summary { cursor: pointer; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--az-muted); }
+.dsb-about .dsi-loading { padding: 0.5rem 0; }
+.dsi-swatch {
+    display: inline-block;
+    width: 0.9rem;
+    height: 0.9rem;
+    margin-right: 0.3rem;
+    vertical-align: -0.12rem;
+    border: 1px solid var(--az-control-border);
+    border-radius: 3px;
+    font-size: 0.7rem;
+    line-height: 0.8rem;
+    text-align: center;
+}
+.dsi-swatch-bad { color: var(--az-muted); }
+/* a column and the labels under it read as one row: no line between them, as much space above the labels as below */
+.dsi-table tr:has(+ .dsi-extra) > * { border-bottom: 0; }
+.dsi-extra td { padding-top: 0.15rem; padding-bottom: 0.3rem; border-top: 0; }
+.dsi-labels { display: flex; flex-wrap: wrap; gap: 0.15rem 0.7rem; align-items: center; font-size: 0.78rem; }
+.dsi-label { white-space: nowrap; }
+.dsi-warn { color: var(--az-warn-text); background: var(--az-warn-bg); border: 1px solid var(--az-warn-border); border-radius: 3px; padding: 0 0.35rem; }
+.dsi-cut { display: block; margin: 0.4rem 0; padding: 0.3rem 0.5rem; }
+.dsi-value { font-family: var(--bs-font-monospace, monospace); font-size: 0.95em; }

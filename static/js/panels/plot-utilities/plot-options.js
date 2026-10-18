@@ -188,13 +188,16 @@ export function defaultLook() {
     bgColor: undefined, textColor: undefined, gridColor: undefined, axisColor: undefined, zeroLineColor: undefined,
     backdropColor: undefined,
     showGrid: true, showAxisTitles: true, showAxisLabels: true, showAxisLines: true, showZeroLines: false,
-    tickCount: null, fontSize: 12, axisLineWidth: 1, gridLineWidth: 1, zeroLineWidth: 1,
+    tickCount: null, fontSize: 12, fontFamily: undefined, axisLineWidth: 1, gridLineWidth: 1, zeroLineWidth: 1,
     margins: { ...DEFAULT_MARGINS }, marginsUnlinked: false,
     legendPosition: 'right', showLegend: true,
     colorbarPosition: 'legend', colorbarLength: 1, colorbarTicks: null,
     showScaleBar: false, scaleBarCorner: 'bottom-right'
   };
 }
+
+/** The font family the Publication preset sets, as the Plot Options font menu names Arial. */
+export const PUBLICATION_FONT = 'Arial, Helvetica, sans-serif';
 
 export const PRESETS = Object.freeze(['default', 'publication']);
 
@@ -203,7 +206,8 @@ export const PRESETS = Object.freeze(['default', 'publication']);
  * choices, the scale bar's unit, the Not in table and Focused groups stay).
  * Publication: white background and black text and lines in any app theme
  * (the colours are pinned light), no grid, minimal ticks (about five per
- * axis, marks on), larger fonts and lines and a tight margin. The scale bar
+ * axis, marks on), Arial at a larger size, thicker lines, a tight margin and
+ * a short colour bar with three ticks. The scale bar
  * is not part of either preset.
  */
 export function presetChanges(name) {
@@ -220,9 +224,9 @@ export function presetChanges(name) {
       bgColor: light.bgColor, textColor: light.textColor, gridColor: light.gridColor,
       axisColor: light.axisColor, zeroLineColor: light.zeroLineColor, backdropColor: light.backdropColor,
       showGrid: false, showZeroLines: false, showTickMarks: true, tickCount: 5,
-      fontSize: 16, axisLineWidth: 1.5,
+      fontSize: 16, fontFamily: PUBLICATION_FONT, axisLineWidth: 1.5,
       margins: { ...DEFAULT_MARGINS, l: 70, r: 70, t: 40, b: 60 },
-      colorbarTicks: 5, colorbarLength: 0.6
+      colorbarTicks: 3, colorbarLength: 0.4
     };
   }
   return {};
@@ -246,7 +250,7 @@ export const STYLE_KEYS = Object.freeze([
   'colorbarPosition', 'colorbarLength', 'colorbarTicks',
   'showScaleBar', 'scaleBarCorner', 'scaleBarSize', 'scaleBarUnit',
   'notInTableScale', 'notInTableOpacity', 'notInTableColor',
-  'focusedScale', 'focusedOpacity', 'focusedColor', 'focusedEdgeColor', 'focusedEdgeWidth',
+  'focusedScale', 'focusedOpacity', 'focusedColor', 'focusedNoFill', 'focusedEdgeColor', 'focusedEdgeWidth',
   'exportWidth', 'exportHeight', 'scaleExport'
 ]);
 
@@ -268,4 +272,23 @@ export function adoptStyle(target, style) {
     else target[k] = JSON.parse(JSON.stringify(style[k]));
   }
   return normalizePlotOptions(target);
+}
+
+// ---- export size ----
+
+/** The export's size in pixels and its scale when the panel sets none: drawn at 1200 x 800, saved at twice that. */
+export const EXPORT_DEFAULTS = Object.freeze({ width: 1200, height: 800, scale: 2 });
+
+/**
+ * The export's pixel size and scale from the panel's settings. An unset
+ * scaleExport is the default (2); only an explicit false keeps scale 1, so a
+ * panel saved with it off exports as before.
+ */
+export function exportOptions(settings) {
+  const s = settings || {};
+  return {
+    width: s.exportWidth || EXPORT_DEFAULTS.width,
+    height: s.exportHeight || EXPORT_DEFAULTS.height,
+    scale: s.scaleExport === false ? 1 : EXPORT_DEFAULTS.scale
+  };
 }

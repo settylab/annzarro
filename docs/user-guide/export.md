@@ -8,7 +8,7 @@ recomputed from the store in Python.
 
 ## Quick PNG from the camera button
 
-1. Move the pointer over the plot. Its toolbar appears at the top right.
+1. Move the pointer over the plot. Its toolbar appears at the top right of the plotting area.
 2. Click the camera, **Download plot as a png** (1).
 
 ```{figure} ../_static/screens/user-guide/export-modebar.png
@@ -19,8 +19,9 @@ recomputed from the store in Python.
 The camera button (1) in a plot's toolbar.
 ```
 
-The browser saves `annzarro_plot.png`, drawn at 1200 × 800 and scaled by 2: the file is
-2400 × 1600 pixels whatever the size of the tile.
+The browser saves `annzarro_plot.png`, drawn at the **Width** and **Height** of the panel's
+**Export** group (1200 × 800 by default) and scaled by 2: the file is 2400 × 1600 pixels by
+default, whatever the size of the tile.
 
 ## Choose format and size in Plot Options
 
@@ -28,10 +29,12 @@ The browser saves `annzarro_plot.png`, drawn at 1200 × 800 and scaled by 2: the
    the button.
 2. The **Export** group is open when the menu first opens (open it if you folded it; {doc}`plot-options`).
 
-3. Set **Width** and **Height** in pixels (defaults 1200 and 800).
+3. Set **Width** and **Height** in pixels (defaults 1200 and 800). **Export at 2x** (on by
+   default) doubles both in a PNG, JPEG or WEBP file, so it stays sharp in print.
 4. Click **JPEG**, **SVG**, **WEBP** or **PNG**. The file is called `plot_<date and time>`
-   with that extension and has exactly the width and height you set (a 1000 × 1000 PNG for
-   1000 and 1000). Automatic point size and opacity are worked out for the export's own plot
+   with that extension. A PNG, JPEG or WEBP has twice the width and height you set (2000 × 2000
+   pixels for 1000 and 1000), or exactly that size with **Export at 2x** off; an SVG keeps the
+   size you set. Automatic point size and opacity are worked out for the export's own plot
    area, so a larger export is as dense as the plot on screen ({doc}`cell-and-gene-plots`); a
    size or opacity you set is exported as set.
 

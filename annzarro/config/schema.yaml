@@ -411,6 +411,139 @@ branding:
   required:
     - app_name
 
+# The site: who runs it and the texts it owes its visitors (docs/deployment/public-site.md)
+site:
+  type: object
+  description: "Site identity and legal texts; nothing shows until it is set"
+  security: public   # the browser shows them
+  properties:
+    imprint:
+      type: object
+      description: "The imprint (Impressum): provider identification"
+      properties:
+        url:
+          type: [string, "null"]
+          description: "A link to the page (http, https or mailto); it wins over markdown and file"
+          default: null
+        markdown:
+          type: [string, "null"]
+          description: "The text itself, in Markdown (rendered safely; no HTML)"
+          default: null
+        file:
+          type: [string, "null"]
+          description: "Path of a Markdown file with the text, read at start (256 KB at most)"
+          default: null
+          security: internal
+        label:
+          type: string
+          description: "The link text"
+          default: "Imprint"
+    privacy:
+      type: object
+      description: "The privacy notice"
+      properties:
+        url:
+          type: [string, "null"]
+          description: "A link to the page (http, https or mailto); it wins over markdown and file"
+          default: null
+        markdown:
+          type: [string, "null"]
+          description: "The text itself, in Markdown (rendered safely; no HTML)"
+          default: null
+        file:
+          type: [string, "null"]
+          description: "Path of a Markdown file with the text, read at start (256 KB at most)"
+          default: null
+          security: internal
+        label:
+          type: string
+          description: "The link text"
+          default: "Privacy"
+    accessibility:
+      type: object
+      description: "The accessibility statement"
+      properties:
+        url:
+          type: [string, "null"]
+          description: "A link to the page (http, https or mailto); it wins over markdown and file"
+          default: null
+        markdown:
+          type: [string, "null"]
+          description: "The text itself, in Markdown (rendered safely; no HTML)"
+          default: null
+        file:
+          type: [string, "null"]
+          description: "Path of a Markdown file with the text, read at start (256 KB at most)"
+          default: null
+          security: internal
+        label:
+          type: string
+          description: "The link text"
+          default: "Accessibility"
+    terms:
+      type: object
+      description: "Terms of use or a disclaimer"
+      properties:
+        url:
+          type: [string, "null"]
+          description: "A link to the page (http, https or mailto); it wins over markdown and file"
+          default: null
+        markdown:
+          type: [string, "null"]
+          description: "The text itself, in Markdown (rendered safely; no HTML)"
+          default: null
+        file:
+          type: [string, "null"]
+          description: "Path of a Markdown file with the text, read at start (256 KB at most)"
+          default: null
+          security: internal
+        label:
+          type: string
+          description: "The link text"
+          default: "Terms of use"
+    operator:
+      type: [string, "null"]
+      description: "Who runs this site, as one line"
+      default: null
+    contact:
+      type: [string, "null"]
+      description: "A contact for the site, an e-mail address or an http(s) address"
+      default: null
+    contact_label:
+      type: string
+      description: "The link text for the contact in the footer and the About dialog"
+      default: Contact
+    footer_links:
+      type: string
+      enum: [auto, about-only]
+      description: "auto puts the links in a small footer line of every page; about-only only in the About dialog"
+      default: auto
+    robots:
+      type: string
+      enum: [auto, index, noindex]
+      description: "Whether search engines may index the site; auto means not when login is on"
+      default: auto
+    security_contact:
+      type: [string, "null"]
+      description: "A mailto or https address for vulnerability reports; serves /.well-known/security.txt"
+      default: null
+    languages:
+      type: string
+      description: "The language of the texts (for security.txt and the text pages)"
+      default: en
+    software_credits:
+      type: boolean
+      description: "false reduces the About dialog's software credit to the name, version, licence and links"
+      default: true
+    storage:
+      type: object
+      description: "What the browser keeps between visits"
+      properties:
+        persistent_convenience:
+          type: boolean
+          description: "false keeps the layout autosave, the last sessions and the recent datasets only until the tab closes"
+          default: true
+
 # UI configuration
 ui:
   type: object
@@ -431,11 +564,11 @@ ui:
         max_cells:
           type: integer
           description: Maximum number of cells to display
-          default: 10000
+          default: 1000000
         max_genes:
           type: integer
           description: Maximum number of genes to display
-          default: 10000
+          default: 1000000
         point_size:
           type: number
           description: Default point size
@@ -446,7 +579,7 @@ ui:
           default: 1.0
         color_scale:
           type: string
-          description: Default color scale
+          description: Default continuous colour scale
           default: Portland
         taxonomy_id:
           type: string
@@ -454,7 +587,7 @@ ui:
           default: "9606"
         large_plot_points:
           type: integer
-          description: A Cell Plot with more points than this is drawn in large-plot mode (no hover, click or table filter)
+          description: A Cell Plot with more points than this is drawn in large-plot mode (hover and click work; no table filter, 3D or extra hover columns)
           default: 1000000
         names_on_demand_above:
           type: integer
@@ -493,6 +626,10 @@ ui:
           type: [number, "null"]
           description: Everything the tab may hold (JS heap and typed arrays), in GB; null = this computer's RAM less a quarter (at least 4 GB) for a browser on the server's computer, 16 for any other, at most half of a device with 4 GB or less
           default: null
+        buffers_gb:
+          type: [number, "null"]
+          description: Array buffers one tab may hold, all its plots together, in GB; null = the browser's own limit (16.6 in Chrome, Edge and the desktop app; 15 in Safari on a computer with more than 16 GB, 7 below)
+          default: null
         margin:
           type: number
           description: Safety margin; predictions are multiplied by 1 + margin
@@ -523,7 +660,7 @@ ui:
           default: 10000
         storage_key:
           type: string
-          description: Local storage key for autosaved session
+          description: Browser storage key of the autosaved session
           default: annzarro_autosave
         session_name:
           type: string
@@ -531,12 +668,13 @@ ui:
           default: Autosave
         show_in_list:
           type: boolean
-          description: Whether to show autosave in session lists
-          default: false
-        auto_restore:
-          type: boolean
-          description: Whether to automatically restore autosave on startup
+          description: List the last sessions (up to 3) first, on the welcome screen and in Load Panel Set
           default: true
+        auto_restore:
+          type: [string, boolean]
+          enum: [reload, always, never, true, false]
+          description: "When a page restores the autosave by itself: reload (a reload of the tab, Back or Forward; a fresh visit lists it first), always (every visit) or never; true and false mean always and never. A session that did not finish loading is never restored by itself"
+          default: reload
   required:
     - defaults
 

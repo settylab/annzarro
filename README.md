@@ -88,6 +88,7 @@ precompute `obsp`/`varp` matrices and how to chunk for speed: [preparing data](h
 - **Desktop app**: one person, data on the same computer. [Set up](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html)
 - **Personal server**: `annzarro start` on a laptop or an HPC node, reached over an SSH tunnel. [Set up](https://annzarro.readthedocs.io/en/latest/deployment/personal-server.html)
 - **Lab server**: gunicorn behind HTTPS, read-only, with login and shared panel sets. [Set up](https://annzarro.readthedocs.io/en/latest/deployment/lab-server.html)
+- **Public site**: a lab server open to strangers, with an imprint, a privacy notice and dataset attribution. [What it owes its visitors](https://annzarro.readthedocs.io/en/latest/deployment/public-site.html)
 
 ## Documentation
 

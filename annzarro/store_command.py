@@ -1,11 +1,15 @@
-"""``annzarro store``: look at a store's layout.
+"""``annzarro store``: look at a store's layout, and record its attribution.
 
     annzarro store check data/atlas.zarr
     annzarro store check https://host/atlas.zarr --json --fail-on warning
+    annzarro store annotate data/atlas.zarr --license CC-BY-4.0 --doi 10.1234/abcd --readme README.md
 
 ``check`` reports what in the layout makes AnnZarro slow (core/store_check.py),
 from metadata only. Exit status: 0 when no finding is at or above ``--fail-on``
 (default ``slow``), 1 when one is, 2 when the store cannot be opened.
+
+``annotate`` writes ``uns["annzarro"]`` and ``uns["README"]`` into a local zarr store (see
+core/dataset_annotate.py).
 """
 from __future__ import annotations
 
@@ -34,6 +38,29 @@ def add_parser(subparsers) -> None:
                        help="The server's read limit for obsp/varp rows; overrides server.max_read_mb "
                             "of --config; default: the server's own default for this machine")
     check.set_defaults(func=store_check_command)
+    annotate = store_subparsers.add_parser(
+        "annotate", help="Record a dataset's attribution and README in the store (uns)",
+        description="Write uns['annzarro'] (title, license, doi, ...) and uns['README'] into a local zarr "
+                    "store. AnnZarro shows them behind the dataset's information button and in the dataset "
+                    "browser. Only the fields given are written.")
+    annotate.add_argument("store", help="A local zarr store (a directory)")
+    for flag, dest, text in (("--title", "title", "A short title"),
+                             ("--description", "description", "One or two sentences about the data"),
+                             ("--license", "license", "An SPDX identifier (CC-BY-4.0) or the licence text"),
+                             ("--license-url", "license_url", "A link to the licence"),
+                             ("--citation", "citation", "How to cite the data"),
+                             ("--doi", "doi", "The DOI of the data or its paper (10.xxxx/...)"),
+                             ("--source-url", "source_url", "Where the data came from"),
+                             ("--contact", "contact", "An email address or a link"),
+                             ("--attribution", "attribution", "Credit the licence asks for")):
+        annotate.add_argument(flag, dest=dest, default=None, help=text)
+    annotate.add_argument("--author", dest="authors", action="append", default=None,
+                          help="An author; repeat for several")
+    annotate.add_argument("--from-json", default=None, metavar="FILE",
+                          help="A JSON object of fields, richer forms included (funding, contacts, an object "
+                               "for license ...); the options above override it")
+    annotate.add_argument("--readme", default=None, metavar="FILE", help="A Markdown file to store as uns['README']")
+    annotate.set_defaults(func=store_annotate_command)
     parser.set_defaults(func=lambda args: (parser.print_help(), 1)[1])
 
 
@@ -61,3 +88,37 @@ def store_check_command(args) -> int:
     else:
         print(store_check.format_report(report))
     return 1 if failed else 0
+
+
+def store_annotate_command(args) -> int:
+    from annzarro.core import dataset_annotate
+    fields = {}
+    if getattr(args, "from_json", None):
+        try:
+            with open(args.from_json, encoding="utf-8") as fh:
+                loaded = json.load(fh)
+        except (OSError, ValueError) as exc:
+            print(f"annzarro store annotate: cannot read {args.from_json}: {exc}", file=sys.stderr)
+            return 2
+        if not isinstance(loaded, dict):
+            print(f"annzarro store annotate: {args.from_json} is not a JSON object", file=sys.stderr)
+            return 2
+        fields.update(loaded)
+    fields.update({name: getattr(args, name, None) for name in dataset_annotate.FIELDS
+                   if getattr(args, name, None) not in (None, [])})
+    readme = None
+    if args.readme:
+        try:
+            with open(args.readme, encoding="utf-8") as fh:
+                readme = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"annzarro store annotate: cannot read {args.readme}: {exc}", file=sys.stderr)
+            return 2
+    try:
+        written = dataset_annotate.annotate_store(args.store, fields, readme)
+    except dataset_annotate.AnnotateError as exc:
+        print(f"annzarro store annotate: {exc}", file=sys.stderr)
+        return 2
+    for item in written:
+        print(f"wrote {item}")
+    return 0

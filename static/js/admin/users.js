@@ -13,6 +13,7 @@
 import { h, setChildren, badge, table } from './dom.js';
 import { formatTimestamp, formatCount, isValidUsername } from './admin-format.js';
 import { accessCell, mountAccessPanel } from './access.js';
+import { controlHelp } from './help-catalog.js';
 
 /** @param {Object} user - one entry of GET /admin/users */
 export function lockedCell(user) {
@@ -170,13 +171,16 @@ function addPanel() {
     const form = h('form', { class: 'card card-body mb-3', novalidate: true, id: 'users-add' },
         h('h3', { class: 'h6', text: 'Add user' }),
         h('div', { class: 'row g-2 align-items-end' },
-            h('div', { class: 'col-md-4' }, h('label', { class: 'form-label', for: 'add-username', text: 'Username' }), name),
-            h('div', { class: 'col-md-4' },
+            h('div', { class: 'col-md-4', data: { setting: 'user.username' } },
+                h('label', { class: 'form-label', for: 'add-username', text: 'Username' }), controlHelp('user.username', { describes: [name] }), name),
+            h('div', { class: 'col-md-4', data: { setting: 'user.password' } },
+                h('div', { class: 'form-label' }, 'Password', controlHelp('user.password', { describes: [generate, manual, pw] })),
                 h('div', { class: 'form-check' }, generate, h('label', { class: 'form-check-label', for: 'add-generate', text: 'Generate a password' })),
                 h('div', { class: 'form-check' }, manual, h('label', { class: 'form-check-label', for: 'add-manual', text: 'Set a password' })),
                 pw),
-            h('div', { class: 'col-md-2' },
-                h('div', { class: 'form-check' }, admin, h('label', { class: 'form-check-label', for: 'add-admin', text: 'Administrator' }))),
+            h('div', { class: 'col-md-2', data: { setting: 'user.admin' } },
+                h('div', { class: 'form-check' }, admin, h('label', { class: 'form-check-label', for: 'add-admin', text: 'Administrator' }),
+                    controlHelp('user.admin', { describes: [admin] }))),
             h('div', { class: 'col-md-2 text-end' }, create,
                 h('button', { type: 'button', class: 'btn btn-outline-secondary btn-sm ms-1', text: 'Cancel', onclick: () => { open = null; draw(); } }))),
         err);
@@ -216,9 +220,12 @@ function resetPanel(user) {
     const form = h('form', { class: 'card card-body mb-3', novalidate: true, id: 'users-reset' },
         h('h3', { class: 'h6', text: `Reset the password of ${user.username}` }),
         h('p', { class: 'small text-muted mb-2', text: 'Their existing logins end.' }),
-        h('div', { class: 'form-check' }, generate, h('label', { class: 'form-check-label', for: 'reset-generate', text: 'Generate a password' })),
-        h('div', { class: 'form-check mb-1' }, manual, h('label', { class: 'form-check-label', for: 'reset-manual', text: 'Set a password' })),
-        pw, err,
+        h('div', { data: { setting: 'user.password' } },
+            h('div', { class: 'form-label' }, 'Password', controlHelp('user.password', { describes: [generate, manual, pw] })),
+            h('div', { class: 'form-check' }, generate, h('label', { class: 'form-check-label', for: 'reset-generate', text: 'Generate a password' })),
+            h('div', { class: 'form-check mb-1' }, manual, h('label', { class: 'form-check-label', for: 'reset-manual', text: 'Set a password' })),
+            pw),
+        err,
         h('div', { class: 'mt-2' }, go,
             h('button', { type: 'button', class: 'btn btn-outline-secondary btn-sm ms-1', text: 'Cancel', onclick: () => { open = null; draw(); } })));
     form.addEventListener('submit', async (event) => {
@@ -247,9 +254,10 @@ function removePanel(user) {
     const go = h('button', { type: 'submit', class: 'btn btn-danger btn-sm', text: 'Remove', id: 'remove-submit' });
     const form = h('form', { class: 'card card-body mb-3 border-danger', novalidate: true, id: 'users-remove' },
         h('h3', { class: 'h6', text: `Remove ${user.username}` }),
-        owns ? h('div', { class: 'mb-2' },
+        owns ? h('div', { class: 'mb-2', data: { setting: 'user.reassign' } },
             h('label', { class: 'form-label small', for: 'remove-reassign',
-                text: `${user.username} owns ${user.panel_sets} panel ${user.panel_sets === 1 ? 'set' : 'sets'}. Hand them to:` }), target) : null,
+                text: `${user.username} owns ${user.panel_sets} panel ${user.panel_sets === 1 ? 'set' : 'sets'}. Hand them to:` }),
+            controlHelp('user.reassign', { describes: [target] }), target) : null,
         err,
         h('div', null, go,
             h('button', { type: 'button', class: 'btn btn-outline-secondary btn-sm ms-1', text: 'Cancel', onclick: () => { open = null; draw(); } })));

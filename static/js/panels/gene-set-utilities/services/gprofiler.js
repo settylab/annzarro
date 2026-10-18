@@ -13,7 +13,7 @@ import { GPROFILER_ORGANISMS, MAX_URL_LENGTH } from '../links.js';
 import { longTable, attribution, mappedCoverage, noneKnown, withinNote } from './common.js';
 
 const PROVIDER = Object.freeze({
-    name: 'g:Profiler', host: 'biit.cs.ut.ee', home: 'https://biit.cs.ut.ee/gprofiler/', licence: '', maxConcurrent: 2
+    name: 'g:Profiler', host: 'biit.cs.ut.ee', home: 'https://biit.cs.ut.ee/gprofiler/', privacyUrl: 'https://biit.cs.ut.ee/gprofiler/page/privacy-policy', licence: '', maxConcurrent: 2
 });
 
 const BASE = 'https://biit.cs.ut.ee/gprofiler';

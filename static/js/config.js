@@ -91,6 +91,7 @@ const Config = (function() {
         DATASET_SEARCH: `${API_BASE}/datasets/search`,
         DATASET_LOOKUP: `${API_BASE}/datasets/lookup`,
         DATASET_DETAILS: `${API_BASE}/datasets/details`,
+        DATASET_ABOUT: `${API_BASE}/datasets/info`,
         DATASET_INFO: `${API_BASE}/data/info`,
         DATASET_STRUCTURE: `${API_BASE}/data/dataset_structure`,
         FINGERPRINT: `${API_BASE}/data/fingerprint`,
@@ -245,7 +246,7 @@ const Config = (function() {
             // Export options
             EXPORT_WIDTH: 1200,
             EXPORT_HEIGHT: 800,
-            SCALE_EXPORT: false,
+            SCALE_EXPORT: true,
             
             // Interaction settings
             ENABLE_ZOOM: true,
@@ -266,8 +267,10 @@ const Config = (function() {
         INTERVAL: 10000, // 10 seconds autosave interval (in milliseconds)
         STORAGE_KEY: 'annzarro_autosave', // Local Storage key for autosaved session
         SESSION_NAME: 'Autosave', // Default name for autosaved sessions
-        SHOW_IN_LIST: false, // Whether to show autosave in session lists
-        AUTO_RESTORE: true // Automatically restore autosave on startup
+        SHOW_IN_LIST: true, // List the last sessions first, on the welcome screen and in Load Panel Set
+        // When a page restores the autosave by itself: 'reload' (a reload of the tab), 'always', 'never'
+        // (utils/last-sessions.js autoRestoreMode; true and false are 'always' and 'never')
+        AUTO_RESTORE: 'reload'
     };
     
     // For StringDB API: a versioned host, so a result can be reproduced

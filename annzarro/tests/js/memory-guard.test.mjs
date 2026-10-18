@@ -12,8 +12,8 @@ import assert from 'node:assert/strict';
 const {
     GB, MB, memorySettings, readLimits, HEAP_USABLE_SHARE, FALLBACK_HEAP_GB, MAX_WEBGL_CONTEXTS, CONTEXTS_PER_PLOT,
     REMOTE_TOTAL_GB, LARGEST_TESTED_POINTS, colourKind, panelCost, exportCost, snapshotCost, recolourCost, Ledger, check, headroom, largestFitting,
-    predictSubsetChange, formatGB, headroomLine, markPending, clearPending, takeCrashed, learnedMargin,
-    learnFromCrash, DEFAULT_MODEL, DEFAULT_SETTINGS, zero
+    predictSubsetChange, formatGB, headroomLine, markPending, clearPending, takeCrashed, readLearned,
+    learnFromCrash, DEFAULT_MODEL, DEFAULT_SETTINGS, zero, emptyPageWhy, roundDownNice
 } = await import('../../../static/js/utils/memory-guard.js');
 
 /** Chrome 153 on the benchmark laptop (heapcap_rerun.jsonl). */
@@ -331,12 +331,12 @@ test('crash marker: what was running when the tab died, read once; a crash earns
     const broken = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); }, removeItem() { throw new Error('denied'); } };
     markPending(broken, { panel: 'x' });
     assert.equal(takeCrashed(broken), null);
-    assert.equal(learnedMargin(broken), 0);
-    // each crash adds 0.25 margin, up to 1
-    assert.equal(learnedMargin(s), 0);
-    assert.equal(learnFromCrash(s), 0.25);
-    for (let i = 0; i < 6; i++) learnFromCrash(s);
-    assert.equal(learnedMargin(s), 1);
+    assert.equal(readLearned(broken), null);
+    // each crash adds 0.25 margin, up to 1 (memory-guard-buffers.test.mjs: its scope and how it is forgotten)
+    assert.equal(readLearned(s), null);
+    assert.equal(learnFromCrash(s, { n: 1000 }).margin, 0.25);
+    for (let i = 0; i < 6; i++) learnFromCrash(s, { n: 1000 });
+    assert.equal(readLearned(s).margin, 1);
 });
 
 test('overlapping draws of one panel: the first one ending does not settle the second', () => {
@@ -465,4 +465,43 @@ test('hover labels: the measured cost, no count cap, the guard decides', async (
     const refused = check(labelCost({ points: 2.5e6, labels: 2.5e6, chars: 22 }), held, small, s, { panels: 1 });
     assert.equal(refused.verdict, 'block');
     assert.match(refused.why, /^needs ~[\d.]+ (GB|MB) of browser JS memory; [\d.]+ (GB|MB) free with 1 plot open/);
+});
+
+test('check: hopeless when even an empty page cannot hold it, doomed when the estimate without the margin cannot either', () => {
+    const s = memorySettings({});
+    const limits = readLimits(CHROME, s);          // 4.0 GB of JS memory
+    const held = { heap: 3 * GB, off: 0, gpu: 0, contexts: 0 };
+    const opts = {};
+    // needs 3 GB (3.6 with the margin): refused beside 3 GB held, but closing the others helps
+    const near = check({ heap: 3 * GB, off: 0, gpu: 0, contexts: 0 }, held, limits, s, opts);
+    assert.equal(near.fits, false);
+    assert.equal(near.hopeless, false);
+    assert.equal(near.doomed, false);
+    // 34 GB: no closing helps, and the estimate itself is above the ceiling
+    const huge = check({ heap: 34 * GB / (1 + s.margin), off: 0, gpu: 0, contexts: 0 }, held, limits, s, opts);
+    assert.equal(huge.hopeless, true);
+    assert.equal(huge.doomed, true);
+    assert.equal(huge.emptyName, 'heap');
+    assert.match(emptyPageWhy(huge, '95.6M rows'), /^95\.6M rows need ~34 GB; this browser gives a page at most 4\.0 GB of JS memory\.$/);
+    // between: with the margin it is above the ceiling, without it, below
+    const edge = check({ heap: 3.9 * GB, off: 0, gpu: 0, contexts: 0 }, held, limits, s, opts);
+    assert.equal(edge.hopeless, true);
+    assert.equal(edge.doomed, false);
+    // the total ceiling can be the hopeless one
+    const tight = readLimits(CHROME, memorySettings({ total_gb: 3 }));
+    const off = check({ heap: 0.1 * GB, off: 5 * GB, gpu: 0, contexts: 0 }, { ...held, heap: 0.2 * GB }, tight, memorySettings({ total_gb: 3 }), opts);
+    assert.equal(off.hopeless, true);
+    assert.equal(off.emptyName, 'total');
+    assert.match(emptyPageWhy(off, '5.0M points'), /of memory\.$/);
+    // a fitting action is not hopeless
+    assert.equal(check({ heap: 0.1 * GB, off: 0, gpu: 0, contexts: 0 }, held, limits, s, opts).hopeless, false);
+});
+
+test('roundDownNice keeps three significant digits and never rounds up', () => {
+    assert.equal(roundDownNice(999), 999);
+    assert.equal(roundDownNice(12345), 12300);
+    assert.equal(roundDownNice(1234567), 1230000);
+    assert.equal(roundDownNice(95624334), 95600000);
+    assert.equal(roundDownNice(0), 0);
+    assert.equal(roundDownNice(-5), 0);
 });

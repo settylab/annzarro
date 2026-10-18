@@ -91,6 +91,15 @@ export function groupOf(rank) {
 }
 
 /**
+ * The legend group of colour group `g`: its identity. The entry's name lists
+ * the categories drawn, which a subset or a table filter changes; a group
+ * hidden with the legend stays hidden by this key (utils/legend-entries.js).
+ */
+export function colourGroupKey(g) {
+    return `az-colour-group-${g}`;
+}
+
+/**
  * The legend entry of a colour group: the names of its categories on the
  * plot, largest (lowest rank) first, then "+N more".
  * @param {Array<*>} names  the group's categories present, in rank order

@@ -71,9 +71,8 @@ show the dialog. On a large dataset the steps are the same.
    Sizes above the large-plot limit (1,000,000 points by default, set by the server) come after a
    dashed line that says so: large-plot mode draws them faster, with hover and click but without
    table filters or 3D ([Very large datasets](#very-large-datasets)). A size above 150 million points says
-   **may exceed browser memory** and is never chosen for you: in the paper's v0.4.0 runs on a
-   laptop, the memory guard allowed every cell up to 150 million and declined 160 million; with
-   the guard off, Chrome drew 175 million points and stopped responding at 200 million. There is no fixed ceiling: a large plot asks the browser for its buffers
+   **may exceed browser memory** and is never chosen for you (the sizes measured are in
+   {ref}`browser-memory-uimemory`). There is no fixed ceiling: a large plot asks the browser for its buffers
    first, and when it cannot hold them the panel offers a subset instead of drawing. For any other size, type it in **Cells**, here `3000`; the
    parts and estimate follow it. **All** keeps every cell that passes the conditions below
    instead of a fixed number.
@@ -127,14 +126,18 @@ After **Apply**: the UMAP and the cell table show the same 3,000 cells. View bef
 (subset-size-carried)=
 ### The size follows you to other datasets
 
-The number of cells you apply is remembered, in this browser (or the desktop app) and per user, and
-every dataset you switch to opens on it: from the dataset browser, the back button, a typed path
-or the desktop app's File menu, and so does the dataset AnnZarro opens by itself when you start it
-(the one you opened last), unless a link or the restored session asks for its own. A dataset with
+The number of cells you apply is remembered in this tab (or window of the desktop app), per user,
+and every dataset you switch to opens on it: from the dataset browser, the back button, a typed
+path or the desktop app's File menu. A reload of the tab keeps it, and so does an address with a
+dataset and no view (`?dataset_path=...`, the address of a tab with no panel open), unless a link
+or the restored session asks for its own subset. A fresh visit to the bare address (a new tab, the
+address typed, a bookmark) starts on the server's default again. A dataset with
 more cells than that size opens on a subset of that many cells, with the server's default seed; one with as many or fewer opens with every cell, and its
 badge reads, for example, **All cells (≤ 10,000)**: the size is kept, and the next larger dataset
-is subsampled to it again. Choosing **every cell** on a dataset larger than the size makes every
-cell the size you carry. Only the size travels: a filter, a balance column, a seed and a part
+is subsampled to it again. Choosing **every cell** on a dataset above the server's threshold
+([The default](#the-default)) makes every cell the size you carry. Choosing it on a dataset the
+server shows in full anyway (up to the threshold) says nothing about large datasets: the carried
+size is forgotten and the next large dataset opens on the server's default subset again. Only the size travels: a filter, a balance column, a seed and a part
 belong to the dataset they were chosen on. Stepping through parts does not change the size.
 A size the
 [browser memory](#browser-memory) guard would refuse on the new dataset opens on the server's
@@ -222,7 +225,7 @@ types earlier parts already showed in full. View:
 - **Cell plots** draw only the subset's cells. The status line under each plot
   ({ref}`plot-status-line`) counts the other cells as not in this part of the cell subset
   ("3,000 of 8,090 cells shown · 5,090 not in part 2 of 3"), so its total always accounts for
-  every cell of the dataset; its **Next part** steps the part. Gene plots draw every gene as before.
+  every cell of the dataset; its **Next part** steps the part. Gene plots draw every gene.
 - **Cell tables** hold the subset's cells (here 3,000 rows), and **Export CSV** writes those
   rows.
 - **The Focused Cell picker** finds every cell of the dataset. The subset's cells are listed
@@ -286,8 +289,8 @@ In large-plot mode:
   nearest to the pointer is taken (the regular plot steps through overlapping points on repeated
   clicks; this mode does not). The focused cell is marked by a red dot when **Highlight Focused
   Cell** is on, and a cell the plot does not show is not marked.
-- **Controls that would need the regular plot are off**, with the tooltip "Not available above
-  1M points (large-plot mode); turn on a subset to use it": the obsp axis and colour types, 3D and
+- **Controls that would need the regular plot are off**, with the tooltip "Not available for more
+  than 1M cells. Make a subset of up to 1M cells to use it.": the obsp axis and colour types, 3D and
   its z axis, the Hover list (extra hover columns) and the table filter. A table filter has
   nothing to filter by here: the cell table cannot list this many cells either.
 - **Still available:** pan and zoom; colour by a category (cell type, cluster, cell line), by a
@@ -320,7 +323,7 @@ The names of the cells of a part are not downloaded when the dataset has more th
 (`ui.defaults.names_on_demand_above`), whatever the size of the part. The cells of a part are spread
 over the whole dataset, so reading their names touches nearly every chunk of the name column: for
 100,000 cells of a store of a billion cells that is 477 chunks, 20 to 35 seconds at every step to
-another part, before the plot could change. A part step now waits for the cell coordinates only, and
+another part, before the plot could change. A part step waits for the cell coordinates only, and
 what needs a name asks for that name:
 
 - **Hover** asks for the name of the point under the pointer (a moment after the label appears,
@@ -353,20 +356,51 @@ the panels already open:
 - **a recolour or a redraw** of a plot.
 
 What does not fit is not started, and the panel or the control says what it needs, what is free
-and what helps: close a plot, or show fewer cells. The limit that matters is the browser's
-JavaScript memory, about 4.4 GB in Chrome on a 64-bit computer whatever its RAM; a Cell Plot
-holds about 20 bytes of it per point in large-plot mode and 400 to 900 bytes in a regular plot.
+and what helps: close a plot, or show fewer cells. Two limits matter, whatever the computer's RAM: the browser's
+JavaScript memory, about 4.4 GB in Chrome on a 64-bit computer, of which a regular plot holds
+400 to 900 bytes per point; and the array buffers one tab may hold, about 16.6 GB in Chrome and
+15 GB in Safari, of which a plot in large-plot mode holds about 88 bytes per point. The buffers
+of every open plot count together: with six Cell Plots open, every cell of a 95.6-million-cell
+dataset is refused (six plots of 8 to 9 GB), and the dialog says up to which size they fit.
+The headline of a refusal names the limit: **JS memory**, **browser buffers**, **browser
+memory** (the share of the computer's memory a tab is given) or **WebGL canvases** (a page keeps
+at most 16).
 The numbers are estimates from measurements on a laptop ("estimated" in the dialog's memory
 line); the server's administrator can loosen or tighten them (`ui.memory`,
 {doc}`../reference/configuration`).
 
-If the tab does close while drawing a plot, the next visit restores the panel set but leaves that
-plot undrawn, with **Draw anyway** and **Subset…**, so the same plot does not close the tab
-again; the browser also becomes a little more careful in its estimates from then on.
+Several plots drawn at once (a restored session, a switch to another dataset or a larger subset
+with plots open) are drawn one after the other, each checked against what the plots before it
+hold. The first ones that fit are drawn; each later one shows **Not drawn: not enough JS
+memory** (or the limit that binds), what it needs and what is free, and the ways out: **Half the cells**, **Subset…**,
+**Close other plots** (they go to the closed list, and this plot is drawn) and **Draw anyway**.
+Draw anyway draws it past the estimate, at your risk: if the tab runs out of memory, the browser
+closes it with every panel. A table counts too: a Cell Table of millions of rows holds a few
+hundred bytes a row, and one that does not fit says **Not loaded** with the same choices.
+
+Some things do not fit however many plots are closed: 95.6 million table rows need about 34 GB,
+and a browser gives a page at most about 4 GB of JavaScript memory. Such a panel says **Too many
+rows for this browser** (**Too many points** for a plot) with one line of numbers, and offers only
+what helps: **Show N cells**, the largest subset that fits beside what is open (a table offers at most the large-plot size, 1,000,000 cells by default, since a table of millions of rows holds the page for a long time), and **Subset…**.
+**Close other plots** and **Half the cells** are not offered there, and neither are **Draw
+anyway** and **Load anyway** once the estimate itself is above the browser's ceiling. A Gene
+Table or Gene Plot has no subset and says so.
+
+If the tab does close while drawing, nothing is drawn again by itself: the next visit (and a
+reload of that tab) shows the session on the welcome screen as **did not finish loading**, with
+**Restore with the default subset** beside **Restore** ({ref}`last-sessions`). A plot whose draw
+the guard had marked as risky also waits for **Draw anyway** when that session is restored. The
+browser then keeps an extra margin for plots of about that size (not for smaller ones), and a
+size whose plots ended the tab is not offered again with as many plots open. A refusal that only
+this margin causes says so ("After this browser's tab ended on Oct 17, AnnZarro keeps an extra
+margin for this size") and offers **Reset the margin**, in the panel and in the subset dialog.
+The margin is forgotten after a week, once a plot that large is drawn, and with **Close all**
+when its box to clear everything is ticked.
 
 When a read runs out of memory anyway (the estimate was short, or another tab took the memory),
 the panel says so in place of the engine's error: "the browser ran out of memory -- Close a plot,
-or show fewer cells (a smaller subset), and try again", with **Half the cells** and **Subset…**.
+or show fewer cells (a smaller subset), and try again", with **Half the cells**, **Subset…** and
+**Close other plots**. A reload then does not draw the same panels again by itself.
 **Half the cells** keeps the subset's seed, balance and filter with half its cells, and that size
 is then the one that [follows you to other datasets](#subset-size-carried).
 

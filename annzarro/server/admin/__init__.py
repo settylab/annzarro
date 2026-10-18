@@ -85,13 +85,13 @@ def warn_about_proxy(config):
 def register_admin_routes(app):
     """Register /admin and /api/v1/admin/* on ``app``."""
     from flask import Blueprint
-    from . import pages, users, data_roots, health, panel_sets, settings, access
+    from . import pages, users, data_roots, health, panel_sets, settings, access, site_texts
 
     problems = validate_config(app.config)
     if problems:
         raise ValueError("; ".join(problems))
     warn_about_proxy(app.config)
     blueprint = Blueprint("admin", __name__)
-    for section in (pages, users, data_roots, health, panel_sets, settings, access):
+    for section in (pages, users, data_roots, health, panel_sets, settings, access, site_texts):
         section.register(blueprint)
     app.register_blueprint(blueprint)

@@ -17,7 +17,7 @@ globalThis.Plotly = new Proxy({}, {
     get: (_, name) => (...args) => { if (name === 'restyle') restyles.push(args.slice(1)); return Promise.resolve(); }
 });
 
-const { setGlMarkers, _resetGlMarkersWarning } = await import('../../../static/js/utils/gl-markers.js');
+const { setGlMarkers, setGlPoint, _resetGlMarkersWarning } = await import('../../../static/js/utils/gl-markers.js');
 const { DataManager } = await import('../../../static/js/data-manager.js');
 void DataManager;
 const { restyleMarkers } = await import('../../../static/js/panels/plot-utilities/plot-update.js');
@@ -131,4 +131,53 @@ test('opacity: refused for Plotly\'s per-point colours, applied to scattergl-cal
     opts[2][OPACITY_IN_SCENE] = true;
     assert.equal(setGlMarkers(gd, style(2, 0.8)), true);
     assert.equal(opts[2].opacity, 0.8);
+});
+
+// the focused-cell marker moves in the scene too: a restyle of its x and y reran calc and the
+// scene of every trace (66 to 90 ms at 1M points on a GPU, 400 ms in software GL)
+function pointGd(type = 'linear') {
+    const { gd, calls } = fakeGd();
+    const axis = { type, d2c: Number, c2l: (v) => (type === 'log' ? Math.log10(v) : v) };
+    gd._fullLayout.xaxis = axis;
+    gd._fullLayout.yaxis = { ...axis };
+    gd.data[3].y = [7];
+    gd._fullData = gd.data.map((t) => ({ ...t, _length: t.x.length }));
+    const scene = gd._fullLayout._plots.xy._scene;
+    scene.markerOptions[3].positions = [3, 7];
+    gd.calcdata = gd.data.map(() => [{ t: {} }]);
+    return { gd, calls, scene };
+}
+
+test('the focused marker moves in the scene: position, Plotly state and calcdata follow, no restyle', () => {
+    const { gd, calls, scene } = pointGd();
+    const before = restyles.length;
+    assert.equal(setGlPoint(gd, 3, 10, 20), true);
+    assert.deepEqual(calls.update, [{}, {}, {}, { positions: [10, 20] }]);
+    assert.equal(calls.clear, 1);
+    assert.equal(calls.draw, 1);
+    assert.deepEqual(scene.markerOptions[3].positions, [10, 20]);
+    assert.deepEqual([gd.data[3].x, gd.data[3].y], [[10], [20]]);
+    assert.deepEqual([gd._fullData[3].x, gd._fullData[3].y], [[10], [20]]);
+    assert.deepEqual(gd.calcdata[3][0].t.positions, [10, 20]);
+    assert.equal(restyles.length, before);
+    // log axes: the scene holds log10, as Plotly's calc makes it
+    const log = pointGd('log');
+    assert.equal(setGlPoint(log.gd, 3, 100, 1000), true);
+    assert.deepEqual(log.scene.markerOptions[3].positions, [2, 3]);
+    assert.deepEqual(log.gd.data[3].x, [100]);
+});
+
+test('the focused marker falls back to a restyle when the trace or the axes are not as expected', () => {
+    let t = pointGd();
+    assert.equal(setGlPoint(t.gd, 0, 1, 1), false, 'a trace of more than one point');
+    assert.deepEqual(t.gd.data[0].x, [1, 2]);
+    t = pointGd('category');
+    assert.equal(setGlPoint(t.gd, 3, 1, 1), false, 'a category axis');
+    t = pointGd();
+    assert.equal(setGlPoint(t.gd, 3, NaN, 1), false, 'no position');
+    assert.deepEqual(t.gd.data[3].x, [3]);
+    t = pointGd();
+    delete t.gd.calcdata;
+    assert.equal(setGlPoint(t.gd, 3, 1, 1), false, 'not calculated yet');
+    assert.equal(t.calls.draw, 0);
 });

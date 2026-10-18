@@ -72,6 +72,8 @@ PACKAGES = find_packages(include=["annzarro", "annzarro.*"],
 STATIC_FILES = [
     "favicon.ico",
     "favicon.png",
+    "img/*.png",
+    "img/*.svg",
     "css/*.css",
     "js/*.js",
     "js/package.json",

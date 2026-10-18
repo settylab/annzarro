@@ -9,10 +9,10 @@ import {
 import { THEME_EVENT } from '../../utils/theme.js';
 import {
   normalizePlotOptions, tickMarksOn, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
-  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle
+  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
-import { exportCheck, guarded, refusalText } from '../../utils/memory-guard-ui.js';
+import { exportCheck, guarded, refusalText, bindingLabel } from '../../utils/memory-guard-ui.js';
 /**
  * Plot Aesthetics Menu
  * 
@@ -163,7 +163,7 @@ export function createPopoverContent(id, settings) {
 
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-publication-${id}"
-                    title="White background, no grid, five ticks per axis, larger text, scale bar if set up">Publication</button>
+                    title="White background, no grid, five ticks per axis, Arial at a larger size, a short colour bar with three ticks, scale bar if set up">Publication</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
                     title="Back to the look every plot starts with">Default</button>
             </div>
@@ -389,8 +389,13 @@ export function createPopoverContent(id, settings) {
             <div class="d-flex align-items-center gap-2 mb-1">
                 <label class="form-label mb-0 me-2">Fill</label>
                 <input type="color" class="form-control form-control-sm form-control-color"
-                    id="focused-color-${id}" value="${plotColour(settings, 'focusedColor')}" title="Choose the fill colour of the focused marker">
+                    id="focused-color-${id}" value="${plotColour(settings, 'focusedColor')}" title="Choose the fill colour of the focused marker (also the ring of a cell outside the subset)">
                 <button class="btn btn-sm btn-outline-secondary" id="reset-focused-color-${id}" ${resetState(settings, 'focusedColor')}>Reset</button>
+                <div class="form-check mb-0 ms-1">
+                    <input class="form-check-input" type="checkbox" id="focused-no-fill-${id}" ${settings.focusedNoFill ? 'checked' : ''}
+                        title="Draw the marker as an open circle: its edge only (at least 1 px wide)">
+                    <label class="form-check-label" for="focused-no-fill-${id}">No fill</label>
+                </div>
             </div>
             <div class="d-flex align-items-center gap-2">
                 <label class="form-label mb-0 me-2">Edge</label>
@@ -516,6 +521,11 @@ export function createPopoverContent(id, settings) {
                     <span class="input-group-text">px</span>
                 </div>
             </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="scale-export-${id}" ${exportOptions(settings).scale > 1 ? 'checked' : ''}>
+                <label class="form-check-label" for="scale-export-${id}"
+                    title="Draw the image at twice the width and height, so it stays sharp in print; the PNG, JPEG and WEBP files are then twice the pixels set above">Export at 2x</label>
+            </div>
             
         `)}
         ${details(id, 'apply', 'Apply to other panels', `
@@ -535,10 +545,7 @@ export function createPopoverContent(id, settings) {
     `;
 }
 
-/** The export's pixel size and scale from the panel's settings. */
-export function exportOptions(settings) {
-  return { width: settings.exportWidth || 1200, height: settings.exportHeight || 800, scale: settings.scaleExport ? 2 : 1 };
-}
+export { exportOptions };
 
 const EXPORT_ADVICE = 'Export it as shown instead, close a plot, or show fewer cells.';
 
@@ -628,7 +635,7 @@ export function initializeAestheticsSettings(settings) {
         // Export options
         EXPORT_WIDTH: 1200,
         EXPORT_HEIGHT: 800,
-        SCALE_EXPORT: false,
+        SCALE_EXPORT: true,
         
         // Interaction settings
         ENABLE_ZOOM: true,
@@ -668,7 +675,7 @@ export function initializeAestheticsSettings(settings) {
     // Export options
     settings.exportWidth = settings.exportWidth || defaults.EXPORT_WIDTH;
     settings.exportHeight = settings.exportHeight || defaults.EXPORT_HEIGHT;
-    settings.scaleExport = settings.scaleExport || defaults.SCALE_EXPORT;
+    settings.scaleExport = settings.scaleExport !== undefined ? settings.scaleExport : defaults.SCALE_EXPORT;
     
     // Legend settings
     settings.legendPosition = settings.legendPosition || defaults.LEGEND_POSITION;
@@ -722,6 +729,7 @@ function getPanelId(element) {
 export function setupAestheticsMenuListeners(container, settings, plotContainer, id) {
     // Ensure settings are initialized
     initializeAestheticsSettings(settings);
+    if (plotContainer) plotContainer.__exportOptions = () => exportOptions(settings);
     
     // Create one-time event handlers using delegation for all menu controls
     const menuHandler = function(e) {
@@ -1136,6 +1144,18 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             [`focused-edge-color-${id}`]: 'focusedEdgeColor',
             [`reset-focused-color-${id}`]: 'focusedColor', [`reset-focused-edge-color-${id}`]: 'focusedEdgeColor'
         }[target.id];
+        if (target.id === `focused-no-fill-${id}`) {
+            if (e.type !== 'change') return;
+            if (target.checked) {
+                settings.focusedNoFill = true;
+                // an open circle is its edge: without one it would vanish
+                if (!((settings.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth) >= 1)) settings.focusedEdgeWidth = 1;
+            } else delete settings.focusedNoFill;
+            syncFocusedFill(id, settings);
+            syncColourControls(id, settings);
+            restyleFocus(plotContainer, settings).catch(err => console.warn('Focused marker style not updated:', err && err.message));
+            return;
+        }
         if (focusKey) {
             const v = parseFloat(target.value);
             if (target.id.startsWith('reset-')) {
@@ -1149,7 +1169,12 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
                 delete settings[focusKey];          // the default
             } else if (focusKey === 'focusedScale' ? v > 0 && v <= FOCUS_SCALE_MAX
                 : focusKey === 'focusedOpacity' ? v > 0 && v <= 1 : v >= 0 && v <= FOCUS_EDGE_MAX) {
-                settings[focusKey] = v;
+                // no fill: the edge is all there is of the marker, so it stays at least 1 px (judged once the entry is done)
+                if (focusKey === 'focusedEdgeWidth' && settings.focusedNoFill && v < 1) {
+                    if (e.type !== 'change') return;
+                    target.value = 1;
+                    settings[focusKey] = 1;
+                } else settings[focusKey] = v;
             } else return;
             syncColourControls(id, settings);
             restyleFocus(plotContainer, settings).catch(err => console.warn('Focused marker style not updated:', err && err.message));
@@ -1377,28 +1402,47 @@ export function toggleGrid(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateFontFamily(plotContainer, settings) {
+    applyTextFont(plotContainer, settings);
+}
+
+/**
+ * The panel's text on the plot, in one place: font family, size and colour of
+ * the axes (titles and tick labels), the legend (title and items) and the
+ * colour bar (title and tick labels, shared or the traces' own). A live change
+ * of the font, size or text colour, a preset, a theme change and a plot drawn
+ * from a link all come here. Set explicitly, so a change shows at once.
+ */
+function applyTextFont(plotContainer, settings) {
     if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
+    const family = settings.fontFamily || 'Arial, Helvetica, sans-serif';
+    const size = settings.fontSize || 12;
+    const colour = plotColour(settings, 'textColor');
+    const text = (prefix, extra) => ({
+        [`${prefix}.family`]: family, [`${prefix}.size`]: size + extra, [`${prefix}.color`]: colour
+    });
     const update = {
-        'font.family': settings.fontFamily
+        ...text('font', 0),
+        ...text('legend.font', 0), ...text('legend.title.font', 2),
+        ...text('coloraxis.colorbar.tickfont', 0), ...text('coloraxis.colorbar.title.font', 2)
     };
-    
-    if (is3D) {
-        update['scene.xaxis.title.font.family'] = settings.fontFamily;
-        update['scene.yaxis.title.font.family'] = settings.fontFamily;
-        update['scene.zaxis.title.font.family'] = settings.fontFamily;
-        update['scene.xaxis.tickfont.family'] = settings.fontFamily;
-        update['scene.yaxis.tickfont.family'] = settings.fontFamily;
-        update['scene.zaxis.tickfont.family'] = settings.fontFamily;
-    } else {
-        update['xaxis.title.font.family'] = settings.fontFamily;
-        update['yaxis.title.font.family'] = settings.fontFamily;
-        update['xaxis.tickfont.family'] = settings.fontFamily;
-        update['yaxis.tickfont.family'] = settings.fontFamily;
-    }
-    
+    for (const axis of axisPaths(settings)) Object.assign(update, text(`${axis}.tickfont`, 0), text(`${axis}.title.font`, 2));
     Plotly.relayout(plotContainer, update);
+    restyleColourBars(plotContainer,
+        { ...text('marker.colorbar.tickfont', 0), ...text('marker.colorbar.title.font', 2) },
+        { ...text('colorbar.tickfont', 0), ...text('colorbar.title.font', 2) });
+}
+
+/**
+ * Restyle the colour bars of a plot: `markerUpdate` on the traces whose
+ * marker has one (scatter), `traceUpdate` on those with a colorbar of their
+ * own (heatmap, contour, surface). The focused-cell trace is left alone.
+ */
+function restyleColourBars(plotContainer, markerUpdate, traceUpdate) {
+    (plotContainer.data || []).forEach((trace, i) => {
+        if (!trace || (trace.name && String(trace.name).includes('Focused'))) return;
+        if (trace.marker && trace.marker.colorbar) Plotly.restyle(plotContainer, markerUpdate, [i]);
+        else if (trace.colorbar) Plotly.restyle(plotContainer, traceUpdate, [i]);
+    });
 }
 
 /**
@@ -1520,20 +1564,7 @@ function updateLineWidths(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updatePlotBackground(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {
-        'paper_bgcolor': plotColour(settings, 'bgColor'),
-        'plot_bgcolor': plotColour(settings, 'bgColor')
-    };
-    
-    // For 3D plots, also update the scene background color
-    if (is3D) {
-        update['scene.bgcolor'] = plotColour(settings, 'bgColor');
-    }
-    
-    Plotly.relayout(plotContainer, update);
+    applyThemeColors(plotContainer, settings);      // one set of colour keys: a colour changed by hand and one drawn from a link are the same plot
 }
 
 /**
@@ -1562,28 +1593,7 @@ function update3DBackdrop(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateTextColor(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {
-        'font.color': plotColour(settings, 'textColor')
-    };
-    
-    if (is3D) {
-        update['scene.xaxis.title.font.color'] = plotColour(settings, 'textColor');
-        update['scene.yaxis.title.font.color'] = plotColour(settings, 'textColor');
-        update['scene.zaxis.title.font.color'] = plotColour(settings, 'textColor');
-        update['scene.xaxis.tickfont.color'] = plotColour(settings, 'textColor');
-        update['scene.yaxis.tickfont.color'] = plotColour(settings, 'textColor');
-        update['scene.zaxis.tickfont.color'] = plotColour(settings, 'textColor');
-    } else {
-        update['xaxis.title.font.color'] = plotColour(settings, 'textColor');
-        update['yaxis.title.font.color'] = plotColour(settings, 'textColor');
-        update['xaxis.tickfont.color'] = plotColour(settings, 'textColor');
-        update['yaxis.tickfont.color'] = plotColour(settings, 'textColor');
-    }
-    
-    Plotly.relayout(plotContainer, update);
+    applyThemeColors(plotContainer, settings);      // one set of colour keys: a colour changed by hand and one drawn from a link are the same plot
 }
 
 /**
@@ -1592,21 +1602,7 @@ function updateTextColor(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateGridColor(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {};
-    
-    if (is3D) {
-        update['scene.xaxis.gridcolor'] = plotColour(settings, 'gridColor');
-        update['scene.yaxis.gridcolor'] = plotColour(settings, 'gridColor');
-        update['scene.zaxis.gridcolor'] = plotColour(settings, 'gridColor');
-    } else {
-        update['xaxis.gridcolor'] = plotColour(settings, 'gridColor');
-        update['yaxis.gridcolor'] = plotColour(settings, 'gridColor');
-    }
-    
-    Plotly.relayout(plotContainer, update);
+    applyThemeColors(plotContainer, settings);      // one set of colour keys: a colour changed by hand and one drawn from a link are the same plot
 }
 
 /**
@@ -1615,26 +1611,7 @@ function updateGridColor(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateAxisColor(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {};
-    
-    if (is3D) {
-        update['scene.xaxis.color'] = plotColour(settings, 'axisColor');
-        update['scene.yaxis.color'] = plotColour(settings, 'axisColor');
-        update['scene.zaxis.color'] = plotColour(settings, 'axisColor');
-        update['scene.xaxis.linecolor'] = plotColour(settings, 'axisColor');
-        update['scene.yaxis.linecolor'] = plotColour(settings, 'axisColor');
-        update['scene.zaxis.linecolor'] = plotColour(settings, 'axisColor');
-    } else {
-        update['xaxis.color'] = plotColour(settings, 'axisColor');
-        update['yaxis.color'] = plotColour(settings, 'axisColor');
-        update['xaxis.linecolor'] = plotColour(settings, 'axisColor');
-        update['yaxis.linecolor'] = plotColour(settings, 'axisColor');
-    }
-    
-    Plotly.relayout(plotContainer, update);
+    applyThemeColors(plotContainer, settings);      // one set of colour keys: a colour changed by hand and one drawn from a link are the same plot
 }
 
 /**
@@ -1643,21 +1620,7 @@ function updateAxisColor(plotContainer, settings) {
  * @param {Object} settings - Plot settings object
  */
 function updateZeroLineColor(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    const update = {};
-    
-    if (is3D) {
-        update['scene.xaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
-        update['scene.yaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
-        update['scene.zaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
-    } else {
-        update['xaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
-        update['yaxis.zerolinecolor'] = plotColour(settings, 'zeroLineColor');
-    }
-    
-    Plotly.relayout(plotContainer, update);
+    applyThemeColors(plotContainer, settings);      // one set of colour keys: a colour changed by hand and one drawn from a link are the same plot
 }
 
 /**
@@ -1694,6 +1657,14 @@ export function updateColorInputs(container, id, settings) {
     if (focusedColorInput) focusedColorInput.value = plotColour(settings, 'focusedColor');
     if (focusedEdgeColorInput) focusedEdgeColorInput.value = plotColour(settings, 'focusedEdgeColor');
     syncColourControls(id, settings);
+}
+
+/** Show the Focused fill controls as the settings have them: the checkbox, and the edge width that is drawn. */
+function syncFocusedFill(id, settings) {
+    const noFill = document.getElementById(`focused-no-fill-${id}`);
+    const width = document.getElementById(`focused-edge-width-${id}`);
+    if (noFill) noFill.checked = !!settings.focusedNoFill;
+    if (width && settings.focusedEdgeWidth !== undefined) width.value = settings.focusedEdgeWidth;
 }
 
 /** A Reset button's state as drawn: disabled while its colour follows the theme (syncColourControls keeps it so). */
@@ -1750,7 +1721,6 @@ export function applyThemeColors(plotContainer, settings) {
     const update = {
         'paper_bgcolor': plotColour(settings, 'bgColor'),
         'plot_bgcolor': plotColour(settings, 'bgColor'),
-        'font.color': plotColour(settings, 'textColor'),
         'xaxis.gridcolor': plotColour(settings, 'gridColor'),
         'yaxis.gridcolor': plotColour(settings, 'gridColor'),
         'xaxis.color': plotColour(settings, 'axisColor'),
@@ -1761,12 +1731,6 @@ export function applyThemeColors(plotContainer, settings) {
         'yaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
         'xaxis.tickcolor': plotColour(settings, 'axisColor'),
         'yaxis.tickcolor': plotColour(settings, 'axisColor'),
-        'xaxis.tickfont.color': plotColour(settings, 'textColor'),
-        'yaxis.tickfont.color': plotColour(settings, 'textColor'),
-        'xaxis.title.font.color': plotColour(settings, 'textColor'),
-        'yaxis.title.font.color': plotColour(settings, 'textColor'),
-        'legend.font.color': plotColour(settings, 'textColor'),
-        'legend.title.font.color': plotColour(settings, 'textColor'),
         'modebar.color': modebarColours(settings).color,
         'modebar.activecolor': modebarColours(settings).activecolor
     };
@@ -1793,25 +1757,12 @@ export function applyThemeColors(plotContainer, settings) {
             'scene.xaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
             'scene.yaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
             'scene.zaxis.zerolinecolor': plotColour(settings, 'zeroLineColor'),
-            'scene.xaxis.tickfont.color': plotColour(settings, 'textColor'),
-            'scene.yaxis.tickfont.color': plotColour(settings, 'textColor'),
-            'scene.zaxis.tickfont.color': plotColour(settings, 'textColor'),
-            'scene.xaxis.title.font.color': plotColour(settings, 'textColor'),
-            'scene.yaxis.title.font.color': plotColour(settings, 'textColor'),
-            'scene.zaxis.title.font.color': plotColour(settings, 'textColor')
         });
     }
     
     Plotly.relayout(plotContainer, update);
 
-    // the colour bar's title and ticks are the traces' own
-    const bars = (plotContainer.data || []).map((t, i) => (t && t.marker && t.marker.colorbar ? i : -1)).filter(i => i >= 0);
-    if (bars.length) {
-        Plotly.restyle(plotContainer, {
-            'marker.colorbar.title.font.color': plotColour(settings, 'textColor'),
-            'marker.colorbar.tickfont.color': plotColour(settings, 'textColor')
-        }, bars);
-    }
+    applyTextFont(plotContainer, settings);      // the text colour: axes, legend, colour bar
 }
 
 /**
@@ -1834,68 +1785,7 @@ function notifyMultipleSettingsChanged(id, changes) {
  * @param {Object} settings - Plot settings object
  */
 function updateFontSize(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const is3D = settings.z !== null;
-    
-    // Basic layout updates for axes
-    const update = {
-        'font.size': settings.fontSize,
-        'xaxis.title.font.size': settings.fontSize + 2,
-        'yaxis.title.font.size': settings.fontSize + 2,
-        'xaxis.tickfont.size': settings.fontSize,
-        'yaxis.tickfont.size': settings.fontSize,
-        
-        // Legend font settings
-        'legend.title.font.size': settings.fontSize + 2,
-        'legend.font.size': settings.fontSize,
-        
-        // Global colorbar font settings (if any)
-        'coloraxis.colorbar.title.font.size': settings.fontSize + 2,
-        'coloraxis.colorbar.tickfont.size': settings.fontSize
-    };
-    
-    // For 3D plots
-    if (is3D) {
-        Object.assign(update, {
-            'scene.xaxis.title.font.size': settings.fontSize + 2,
-            'scene.yaxis.title.font.size': settings.fontSize + 2,
-            'scene.zaxis.title.font.size': settings.fontSize + 2,
-            'scene.xaxis.tickfont.size': settings.fontSize,
-            'scene.yaxis.tickfont.size': settings.fontSize,
-            'scene.zaxis.tickfont.size': settings.fontSize
-        });
-    }
-    
-    // Apply the layout updates
-    Plotly.relayout(plotContainer, update);
-    
-    // Update trace-specific colorbar settings
-    if (plotContainer.data) {
-        plotContainer.data.forEach((trace, i) => {
-            // Skip focused entity trace
-            if (trace.name && trace.name.includes('Focused')) return;
-            
-            const traceUpdate = {};
-            
-            // Update marker.colorbar (for scatter plots with continuous color)
-            if (trace.marker && trace.marker.colorbar) {
-                traceUpdate['marker.colorbar.title.font.size'] = settings.fontSize + 2;
-                traceUpdate['marker.colorbar.tickfont.size'] = settings.fontSize;
-            }
-            
-            // Update colorbar directly (for heatmaps, contour plots)
-            if (trace.colorbar) {
-                traceUpdate['colorbar.title.font.size'] = settings.fontSize + 2;
-                traceUpdate['colorbar.tickfont.size'] = settings.fontSize;
-            }
-            
-            // Apply trace updates if we have any
-            if (Object.keys(traceUpdate).length > 0) {
-                Plotly.restyle(plotContainer, traceUpdate, [i]);
-            }
-        });
-    }
+    applyTextFont(plotContainer, settings);
 }
 
 /**
@@ -2010,6 +1900,9 @@ function updateLegendVisibility(plotDiv, settings) {
     }
   }
 
+/** Room, in px, between a bottom colour bar and the axes: the x-axis tick labels and title sit there. */
+const BOTTOM_BAR_PAD = 70;
+
 /**
  * Positioning configuration for legends and colorbars
  * Centralizes positioning logic for use across the application
@@ -2023,25 +1916,31 @@ export function getPositioningByLocation(position) {
         legendOrientation: 'v', legendX: 1.05, legendY: 0.5,
         legendXanchor: 'left', legendYanchor: 'middle',
         // Colorbar
-        x: 1.02, xanchor: 'left', y: 0.5, yanchor: 'middle',
+        x: 1.02, xanchor: 'left', y: 0.5, yanchor: 'middle', ypad: 0, ticklabelposition: 'outside',
         orientation: 'v', titleside: 'right'
       },
       left: {
         legendOrientation: 'v', legendX: -0.05, legendY: 0.5,
         legendXanchor: 'right', legendYanchor: 'middle',
-        x: -0.1, xanchor: 'right', y: 0.5, yanchor: 'middle',
+        x: -0.1, xanchor: 'right', y: 0.5, yanchor: 'middle', ypad: 0, ticklabelposition: 'outside',
         orientation: 'v', titleside: 'right'
       },
       top: {
-        legendOrientation: 'h', legendX: 0.5, legendY: 1.15,
-        legendXanchor: 'center', legendYanchor: 'top',
-        x: 0.5, xanchor: 'center', y: 1.1, yanchor: 'top',
+        // above the axes, growing upwards: Plotly makes the top margin it needs. (A 15% paper offset with the
+        // legend hanging down from it was less than the legend's own height in a short panel.)
+        legendOrientation: 'h', legendX: 0.5, legendY: 1,
+        legendXanchor: 'center', legendYanchor: 'bottom',
+        // a horizontal bar lies wholly outside the axes: above them with its tick labels above it, or below
+        // them (and their tick labels and title, hence ypad) with its tick labels below it
+        x: 0.5, xanchor: 'center', y: 1, yanchor: 'bottom', ypad: 6, ticklabelposition: 'outside top',
         orientation: 'h', titleside: 'top'
       },
       bottom: {
-        legendOrientation: 'h', legendX: 0.5, legendY: -0.15,
+        // below the axes' tick labels and title, hanging down: legend-below.js sets the offset in px, as a paper
+        // fraction of the plot height, once the plot is drawn
+        legendOrientation: 'h', legendX: 0.5, legendY: 0,
         legendXanchor: 'center', legendYanchor: 'top',
-        x: 0.5, xanchor: 'center', y: -0.1, yanchor: 'bottom',
+        x: 0.5, xanchor: 'center', y: 0, yanchor: 'top', ypad: BOTTOM_BAR_PAD, ticklabelposition: 'outside bottom',
         orientation: 'h', titleside: 'bottom'
       }
     };
@@ -2077,6 +1976,8 @@ export function getPositioningByLocation(position) {
         'coloraxis.colorbar.xanchor':   barPos.xanchor,
         'coloraxis.colorbar.yanchor':   barPos.yanchor,
         'coloraxis.colorbar.orientation': barPos.orientation,
+        'coloraxis.colorbar.ypad':        barPos.ypad,
+        'coloraxis.colorbar.ticklabelposition': barPos.ticklabelposition,
         'coloraxis.colorbar.titleside':   barPos.titleside,
         'coloraxis.colorbar.len':         barExtras.len,
         'coloraxis.colorbar.lenmode':     barExtras.lenmode,
@@ -2107,6 +2008,8 @@ export function getPositioningByLocation(position) {
           'marker.colorbar.xanchor':    barPos.xanchor,
           'marker.colorbar.yanchor':    barPos.yanchor,
           'marker.colorbar.orientation': barPos.orientation,
+          'marker.colorbar.ypad':        barPos.ypad,
+          'marker.colorbar.ticklabelposition': barPos.ticklabelposition,
           'marker.colorbar.titleside':   barPos.titleside,
           'marker.colorbar.len':         barExtras.len,
           'marker.colorbar.lenmode':     barExtras.lenmode,
@@ -2122,6 +2025,8 @@ export function getPositioningByLocation(position) {
           'colorbar.xanchor':    barPos.xanchor,
           'colorbar.yanchor':    barPos.yanchor,
           'colorbar.orientation': barPos.orientation,
+          'colorbar.ypad':        barPos.ypad,
+          'colorbar.ticklabelposition': barPos.ticklabelposition,
           'colorbar.titleside':   barPos.titleside,
           'colorbar.len':         barExtras.len,
           'colorbar.lenmode':     barExtras.lenmode,
@@ -2166,6 +2071,7 @@ export async function exportPlot(plotContainer, format, settings, how = 'full') 
   const panelId = getPanelId(plotContainer);
   const downloadButton = document.getElementById(how === 'shown' ? `download-shown-${format}-${panelId}` : `download-${format}-${panelId}`);
   const opts = exportOptions(settings);
+  if (format === 'svg') opts.scale = 1;      // vector: no pixels to sharpen, and the size stays as set
   const filename = 'plot_' + new Date()
     .toISOString()
     .replace(/[:.]/g, '-');
@@ -2200,7 +2106,7 @@ export async function exportPlot(plotContainer, format, settings, how = 'full') 
  */
 function refuseInStatus(gd, verb, check) {
   const why = refusalText(check, EXPORT_ADVICE);
-  setStatusTag(gd, 'memory', { text: `Not ${verb}: browser memory`, severity: 'warning', title: why,
+  setStatusTag(gd, 'memory', { text: `Not ${verb}: ${bindingLabel(check.binding)}`, severity: 'warning', title: why,
     pop: { text: why, actions: verb === 'exported' && canSnapshot(gd) ? [['export-shown', 'Export as shown']] : [] } });
   nudgeStatusTag(gd, 'memory');
 }
@@ -2245,7 +2151,9 @@ function flashLabel(button, text, ms = 2000) {
  * status strip says why, with "Export as shown" (a click, never a reroute).
  */
 registerCameraExport(async (gd, opts) => {
-  const o = { width: opts.width || 1200, height: opts.height || 800, scale: opts.scale || 1 };
+  // the panel's own export size and scale (Plot Options), else the toolbar's
+  const o = typeof gd.__exportOptions === 'function' ? gd.__exportOptions()
+    : { width: opts.width || 1200, height: opts.height || 800, scale: opts.scale || 1 };
   const check = exportCheck(gd, o);
   if (check.verdict === 'block') {
     refuseInStatus(gd, 'exported', check);
@@ -2314,17 +2222,14 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'margin': settings.margins,
         'paper_bgcolor': bgColor,
         'plot_bgcolor': bgColor,
-        'font.color': textColor,
-        'font.size': settings.fontSize,
-        'font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
         'hovermode': settings.showHoverInfo ? 'closest' : false,
         
         // Legend position settings (actual visibility will be handled separately)
         'legend.orientation': (settings.legendPosition === 'left' || settings.legendPosition === 'right') ? 'v' : 'h',
         'legend.x': settings.legendPosition === 'right' ? 1.05 : settings.legendPosition === 'left' ? -0.05 : 0.5,
-        'legend.y': settings.legendPosition === 'top' ? 1.15 : settings.legendPosition === 'bottom' ? -0.15 : 0.5,
+        'legend.y': settings.legendPosition === 'top' ? 1 : settings.legendPosition === 'bottom' ? 0 : 0.5,
         'legend.xanchor': settings.legendPosition === 'right' ? 'left' : settings.legendPosition === 'left' ? 'right' : 'center',
-        'legend.yanchor': settings.legendPosition === 'top' ? 'top' : settings.legendPosition === 'bottom' ? 'top' : 'middle',
+        'legend.yanchor': settings.legendPosition === 'top' ? 'bottom' : settings.legendPosition === 'bottom' ? 'top' : 'middle',
         
         // Interaction
         'xaxis.fixedrange': !settings.enableZoom,
@@ -2358,18 +2263,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'yaxis.color': axisColor,
         'xaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'x') : '',
         'yaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'y') : '',
-        'xaxis.title.font.size': settings.fontSize + 2,
-        'yaxis.title.font.size': settings.fontSize + 2,
-        'xaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'yaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'xaxis.title.font.color': textColor,
-        'yaxis.title.font.color': textColor,
-        'xaxis.tickfont.size': settings.fontSize,
-        'yaxis.tickfont.size': settings.fontSize,
-        'xaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'yaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-        'xaxis.tickfont.color': textColor,
-        'yaxis.tickfont.color': textColor,
         
     };
     
@@ -2420,24 +2313,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
             'scene.xaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'x') : '',
             'scene.yaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'y') : '',
             'scene.zaxis.title.text': settings.showAxisTitles ? axisTitle(settings, 'z') : '',
-            'scene.xaxis.title.font.size': settings.fontSize + 2,
-            'scene.yaxis.title.font.size': settings.fontSize + 2,
-            'scene.zaxis.title.font.size': settings.fontSize + 2,
-            'scene.xaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.yaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.zaxis.title.font.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.xaxis.title.font.color': textColor,
-            'scene.yaxis.title.font.color': textColor,
-            'scene.zaxis.title.font.color': textColor,
-            'scene.xaxis.tickfont.size': settings.fontSize,
-            'scene.yaxis.tickfont.size': settings.fontSize,
-            'scene.zaxis.tickfont.size': settings.fontSize,
-            'scene.xaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.yaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.zaxis.tickfont.family': settings.fontFamily || 'Arial, Helvetica, sans-serif',
-            'scene.xaxis.tickfont.color': textColor,
-            'scene.yaxis.tickfont.color': textColor,
-            'scene.zaxis.tickfont.color': textColor,
             
         });
         
@@ -2460,5 +2335,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
     // Then handle legend and colorbar visibility specifically based on trace type
     updateLegendVisibility(plotContainer, settings);
     updateLegendPosition(plotContainer, settings);
+    applyTextFont(plotContainer, settings);
     refreshScaleBar(plotContainer, settings);
 }

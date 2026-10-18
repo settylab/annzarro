@@ -210,16 +210,40 @@ Exit status 0 when no finding is at or above `--fail-on`, 1 when one is (so
 `annzarro store check atlas.zarr && deploy` is a gate), 2 when the store cannot be opened.
 `store rewrite` does not exist yet: the fixes are snippets to run yourself.
 
+## `annzarro store annotate`
+
+Record a dataset's attribution and README in a local zarr store, without loading its matrices.
+AnnZarro shows them behind the dataset's information button and in the dataset browser
+({doc}`../deployment/dataset-attribution`).
+
+```text
+annzarro store annotate STORE [--title T] [--description D] [--license L] [--license-url U]
+                        [--citation C] [--doi DOI] [--author NAME]... [--source-url U]
+                        [--contact C] [--attribution A] [--from-json FILE] [--readme FILE]
+```
+
+| Option | Meaning |
+|---|---|
+| `STORE` | A local zarr store (format 2 or 3). A remote store is refused; an `.h5ad` file is annotated with anndata (`adata.uns["annzarro"] = {...}`). |
+| `--title`, `--description`, `--license`, `--license-url`, `--citation`, `--doi`, `--source-url`, `--contact`, `--attribution` | The fields of `uns["annzarro"]`. `--license` takes an SPDX identifier (`CC-BY-4.0`) or text. |
+| `--author NAME` | An author; repeat for several. |
+| `--from-json FILE` | A JSON object of fields with the richer forms (`funding`, `contacts`, an object for `license` ...); the options above override it. The command writes the schema marker (`schema_version` 1.0) and refuses a value the reader would not use ({ref}`dataset-info-schema`). |
+| `--readme FILE` | A Markdown file (UTF-8, at most 256 KB), stored as `uns["README"]`. |
+
+Only the fields you give are written, and the other `uns` entries stay; run it again to change
+one. A consolidated store is consolidated again afterwards. It prints what it wrote; exit status 0
+on success, 2 when the store or the README file cannot be used (the message says why).
+
 ## Environment variables
 
 | Variable | Effect |
 |---|---|
 | `ANNZARRO_<SECTION>_<KEY>` | Sets any configuration key, e.g. `ANNZARRO_SERVER_PORT=9000`, `ANNZARRO_SERVER_CACHE_MEMORY_MB=1000`, `ANNZARRO_AUTH_ENABLED=true`, `ANNZARRO_AUTH_SECRET_KEY=...`, `ANNZARRO_SERVER_HOSTED=true`, `ANNZARRO_SERVER_WORKERS=2`, `ANNZARRO_SERVER_ALLOWED_DIRS=/a,/b` (comma-separated list). Variables that name no key are listed as "ignored" by `config show`. |
-| `ANNZARRO_REMOTE_STORES`, `_ALLOWLIST`, `_CREDENTIALS`, `_CONNECT_TIMEOUT`, `_READ_TIMEOUT`, `_CHUNK_CACHE_MB` | Override the `server.remote_*` keys. |
+| `ANNZARRO_REMOTE_STORES`, `_ALLOWLIST`, `_CREDENTIALS`, `_CONNECT_TIMEOUT`, `_READ_TIMEOUT`, `_REQUEST_TIMEOUT`, `_CHUNK_CACHE_MB` | Override the `server.remote_*` keys ({ref}`config-environment`). |
 | `ANNZARRO_AUTH_DISABLED` | `true`, `yes`, `1` or `on`: login off, as `--auth-disabled`, for `annzarro start` and gunicorn alike. Any other value leaves login as configured. |
 | `ANNZARRO_HOME` | State directory instead of `~/.annzarro` (log, PID file, default users file and login key, and `freshness/`, the datasets' generations behind every ETag). Give each server on a host its own: one server's start invalidates the ETags of every server sharing the directory, so their browsers fetch everything again ({ref}`several services on one host <lab-server-several>`). |
 | `ANNZARRO_HEADLESS` | Any value: never open a browser. |
-| `ANNZARRO_EXTERNAL_REQUESTS` | `off`, `ask` or `on`: overrides `integrations.external_requests`, whether the Gene Set Analysis panel may contact external services. Any other value is ignored. |
+| `ANNZARRO_EXTERNAL_REQUESTS` | `off`, `ask`, `on` or `none`: overrides `integrations.external_requests`, whether the Gene Set Analysis panel may contact external services. Any other value is ignored. |
 | `ANNZARRO_CONFIG` | Configuration file used when `--config` is not given, by every `annzarro` command and by the WSGI entry point (gunicorn). `--config` wins if both are set. |
 | `ANNZARRO_ENV` | `production` (default) or `development`, for the WSGI entry point. |
 | `XDG_CONFIG_HOME` | Moves the user configuration file `~/.config/annzarro/config.yaml`. |

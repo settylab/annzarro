@@ -94,3 +94,50 @@ export function setGlMarkers(gd, styleOf) {
 
 /** For tests: warn again on the next fallback. */
 export function _resetGlMarkersWarning() { warned = false; }
+
+/**
+ * Move the one point of scattergl trace `i` (the focused-cell marker) to
+ * (x, y) in its regl scene, without Plotly.restyle: at 1M points a restyle
+ * of its x and y took 450 ms (calc and scene.update of every trace), this
+ * a redraw of the scene. gd.data, gd._fullData and the trace's calcdata get
+ * the new position, so a zoom, a full redraw or an export draws it there.
+ * The axes are kept as they are (the marker sits on a drawn point). Returns
+ * false, with nothing changed, when the scene or the trace is not as
+ * expected; the caller restyles then.
+ * @param {HTMLElement} gd
+ * @param {number} i  trace index
+ * @param {number} x
+ * @param {number} y
+ */
+export function setGlPoint(gd, i, x, y) {
+  const scene = sceneOf(gd);
+  const fl = gd && gd._fullLayout;
+  const trace = gd && Array.isArray(gd.data) ? gd.data[i] : null;
+  const full = scene && gd._fullData[i];
+  const opts = scene && scene.markerOptions[i];
+  const cd = Array.isArray(gd && gd.calcdata) && gd.calcdata[i] && gd.calcdata[i][0];
+  const stash = cd && cd.t;
+  if (!scene || !trace || !full || !opts || !stash || full._length !== 1 || !opts.positions
+      || opts.positions.length !== 2 || !fl.xaxis || !fl.yaxis) return false;
+  const xa = fl.xaxis, ya = fl.yaxis;
+  if (!['linear', 'log'].includes(xa.type) || !['linear', 'log'].includes(ya.type)) return false;
+  const cx = xa.d2c(x), cy = ya.d2c(y);
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return false;
+  // regl-scatter2d positions are linearized: log axes in log10, as Plotly's calc makes them
+  const positions = [xa.type === 'log' ? xa.c2l(cx) : cx, ya.type === 'log' ? ya.c2l(cy) : cy];
+  if (!positions.every(Number.isFinite)) return false;
+  trace.x = [x];
+  trace.y = [y];
+  full.x = trace.x;
+  full.y = trace.y;
+  full._x = [cx];
+  full._y = [cy];
+  stash.x = full._x;
+  stash.y = full._y;
+  stash.positions = positions;
+  opts.positions = positions;
+  scene.scatter2d.update(scene.markerOptions.map((o, k) => (k === i ? { positions } : {})));
+  fl._glcanvas.each((c) => { if (c && c.regl) c.regl.clear({ color: [0, 0, 0, 0], depth: 1 }); });
+  scene.draw();
+  return true;
+}

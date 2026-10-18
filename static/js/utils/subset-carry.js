@@ -15,10 +15,12 @@
  * column and a part belong to the dataset they were chosen on, and the seed
  * is the server's default, as for a size chosen by hand on a fresh dataset.
  *
- * Kept in the browser's storage per server and user (as the recents are,
- * utils/dataset-recents.js): key `annzarro.subsetSize:<origin>|<user>`,
- * value `{"size": <n>|"all"}`. Nothing here throws: storage may be missing,
- * full or blocked.
+ * Kept in the tab's own storage (main.js passes it) per server and user:
+ * key `annzarro.subsetSize:<origin>|<user>`, value `{"size": <n>|"all"}`.
+ * It lasts while the tab does: a reload of the tab keeps it, and a fresh
+ * visit to the bare address (a new tab, the address typed, a bookmark)
+ * starts on the server's default (dropSubsetSizes). Nothing here throws:
+ * storage may be missing, full or blocked.
  */
 
 export const SUBSET_SIZE_KEY_PREFIX = 'annzarro.subsetSize:';
@@ -57,6 +59,22 @@ export function saveSubsetSize(storage, origin, user, size) {
     } catch { /* storage full or blocked */ }
 }
 
+/** Forget every size kept in `storage` (any origin, any user). Returns how many were removed. */
+export function dropSubsetSizes(storage) {
+    let removed = 0;
+    try {
+        const keys = [];
+        for (let i = 0; i < storage.length; i++) keys.push(storage.key(i));
+        for (const key of keys) {
+            if (typeof key === 'string' && key.startsWith(SUBSET_SIZE_KEY_PREFIX)) {
+                storage.removeItem(key);
+                removed++;
+            }
+        }
+    } catch { /* storage blocked */ }
+    return removed;
+}
+
 /**
  * Does `size` show every cell of a dataset of `nTotal` cells? `defaults` is
  * the server's ({threshold}) for a size never chosen.
@@ -89,14 +107,20 @@ export function carriedRequest(size, nTotal, { seed = 0, maxCells = Infinity } =
 
 /**
  * The size kept after the user applied `spec` (null or `n: null`: every
- * cell) on a dataset of `nTotal` cells. Choosing every cell where the size
- * kept already shows every cell keeps it (the dataset is just small);
- * choosing it on a larger dataset is a new intent: every cell.
+ * cell) on a dataset of `nTotal` cells. A number is kept as chosen. Every
+ * cell where the size kept already shows every cell keeps it (the dataset is
+ * just small). Every cell on a dataset the server would show in full anyway
+ * (no more cells than its threshold, else its default size) says nothing
+ * about large datasets: the kept size is forgotten and the server's default
+ * applies again. Only every cell on a dataset above that is a new intent:
+ * 'all'. Without the server's defaults there is no threshold to compare to.
  */
 export function sizeAfterChoice(spec, nTotal, size, defaults = null) {
     const n = spec ? spec.n : null;
     if (Number.isInteger(n) && n >= 1) return n;
-    return showsAll(size, nTotal, defaults) ? size : 'all';
+    if (showsAll(size, nTotal, defaults)) return size;
+    const limit = defaults ? [defaults.threshold, defaults.size].find(Number.isFinite) : undefined;
+    return limit !== undefined && nTotal <= limit ? undefined : 'all';
 }
 
 /**
@@ -107,10 +131,20 @@ export function sizeAfterChoice(spec, nTotal, size, defaults = null) {
  * Null when there is nothing to halve (one cell, or no dataset).
  */
 export function halfSubset(info, reply, defaults = null) {
-    const spec = info && info.subset;
     const shown = info ? info.n : (reply ? reply.n_total : null);
     if (!knownSize(shown) || shown < 2) return null;
-    const n = Math.ceil(shown / 2);
+    return subsetOfSize(info, reply, defaults, Math.ceil(shown / 2));
+}
+
+/**
+ * The subset with `n` cells (fewer than the one shown), keeping the seed,
+ * balance and filter of the subset in effect; null when `n` is not a whole
+ * number of at least one cell below what is shown. halfSubset's general form.
+ */
+export function subsetOfSize(info, reply, defaults, n) {
+    const spec = info && info.subset;
+    const shown = info ? info.n : (reply ? reply.n_total : null);
+    if (!knownSize(shown) || !Number.isInteger(n) || n < 1 || n >= shown) return null;
     if (!spec) return { n, seed: defaults && Number.isInteger(defaults.seed) ? defaults.seed : 0 };
     const half = { ...spec, n };
     delete half.part;   // part 1 of the new partition

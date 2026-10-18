@@ -46,13 +46,27 @@ The header and the dataset bar under it. Numbers match the list below.
 The **System / Light / Dark** buttons at the right end of the dataset bar set the colour
 theme ({ref}`colour-theme`).
 
+The **Dataset information** button (an "i" icon, shown while a dataset is open) sits beside the dataset
+button (not numbered in the picture). It opens a dialog with the dataset's attribution (title,
+licence, authors, citation with a copy button, DOI, source, contact) under **About**, its README
+under **README** and its AnnData structure (cells and genes, the obs and var columns with their types,
+the keys of obsm, layers and the rest with their shapes, the `uns` tree) under **Structure**. Each tab
+is read when you first open it. A search box at the top of **Structure** filters it as you type, with a
+regular-expression switch (`.*`) and a case switch (`Aa`). What the dataset's owner writes there is described in
+{doc}`../deployment/dataset-attribution`; a dataset that records nothing says so.
+
 A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).
 
 **Which version is this?** Hold the pointer over the app name at the top left: the tooltip reads
-"AnnZarro 0.5.5" (the version the server runs; a custom app name comes first, as "Lab Atlas ·
-AnnZarro 0.5.5"). On a server with login, the tooltip of your user name under the app name ends with the
+"AnnZarro 0.6.0" (the version the server runs; a custom app name comes first, as "Lab Atlas ·
+AnnZarro 0.6.0"). On a server with login, the tooltip of your user name under the app name ends with the
 same line. Say this version in a bug report. The desktop app shows its own, bundled version the
 same way.
+
+**About AnnZarro.** Click the app name at the top left (or focus it and press Enter) to open a
+small dialog with the version, links to the documentation, the repository and the changelog, how
+to cite AnnZarro (the paper and the software's DOI), who develops it (the Setty Lab at Fred
+Hutch Cancer Center), and the funding statement. Escape or the close button closes it and puts focus back on the name.
 
 (colour-theme)=
 ## Light and dark theme
@@ -85,7 +99,7 @@ seed 0** ({doc}`subsets`).
 (dataset-browser)=
 ## Choose a dataset
 
-The dataset button, **Ctrl+O** (**Cmd+O**), and the **Browse datasets...** button of the welcome
+The dataset button, **Ctrl+O** (**Cmd+O**), and the **Browse datasets…** button of the welcome
 screen all open the same dialog, the dataset browser. It is also what opens to choose a dataset for a
 view that has none ({doc}`reproducing`) or for a panel set ({doc}`panel-sets`); its title and a banner
 at the top say which.
@@ -112,7 +126,7 @@ The dataset browser with a dataset selected. Numbers match the list below.
    ({doc}`remote-datasets`). Recent and pinned datasets are kept in your browser, separately for
    each server and each user.
 3. **The path above the table** is the folder shown, each part a link back. Click the empty part
-   of it, or press **Ctrl+L** (**Cmd+L**), to type instead: a path to a dataset opens it, a path to
+   of it, or press **/** or **~** (as in the macOS and GTK file dialogs; **Ctrl+L** or **Cmd+L** also works where the web browser passes it on, which Safari does not), to type instead: a path to a dataset opens it, a path to
    a folder shows it, a URL opens a remote store, and what the server refuses is said under the
    field, with your text kept. What it accepts depends on you: a path in the data directory (on
    your own machine, any path), and a store URL only where remote stores are enabled.
@@ -133,7 +147,9 @@ The dataset browser with a dataset selected. Numbers match the list below.
    default) and says in one line what it found; for a remote store a **Check chunking** button runs
    it. **Open** opens the dataset, **Pin** keeps it under Pinned, **Copy path** copies its path.
    When panels are open, the pane also names the keys they use that the selected dataset lacks
-   ("cell_type: missing"), so that the switch holds no surprise.
+   ("cell_type: missing"), so that the switch holds no surprise. A dataset that records its licence,
+   citation or README ({doc}`../deployment/dataset-attribution`) shows them under these facts; the
+   README and the structure open when you click their headings.
 
 Switching datasets does not ask: the open panels stay and read from the new dataset, and a back button
 beside the dataset name ("Back to *old name*") returns to the dataset you left. It stays until the next
@@ -151,7 +167,7 @@ The browser is made for the keyboard. **Ctrl+O** (**Cmd+O**) opens it with the c
 field, so typing a few letters and pressing **Enter** opens a dataset. **Down** moves into the table, which is one tab stop: **Up**,
 **Down**, **Home**, **End**, **Page Up** and **Page Down** move between rows, **Enter** opens, **Right**
 enters a folder, **Left** or **Backspace** goes up one, typing letters jumps to the name that starts with
-them, **/** returns to the search field, and **Escape** closes the dialog and puts the focus back on
+them, **/** or **~** starts a path, and **Escape** closes the dialog and puts the focus back on
 the dataset button. Rows and column headers are those of an ordinary table, so a screen reader reads
 a row as "short.zarr, 200 cells, 20 genes, zarr v2, modified ..."; counts and the progress of an
 opening are announced politely.
@@ -160,7 +176,7 @@ opening are announced politely.
 |---|---|
 | **Ctrl+O** (**Cmd+O**) | Open the dataset browser |
 | **Ctrl+Shift+L** (**Cmd+Shift+L**) | Load Panel Set |
-| **Ctrl+L** (**Cmd+L**), in the browser | Type a path or URL |
+| **/** or **~**, in the browser | Type a path or URL (the key is the first character of the path; **Ctrl+L** or **Cmd+L** also works where the web browser passes it on) |
 | **F1** | List the keyboard shortcuts |
 
 In the desktop app **Open file or folder...** (also **Ctrl+Shift+O**, **Cmd+Shift+O**) in the browser
@@ -334,12 +350,20 @@ plot.
 ## The browser remembers your last layout
 
 AnnZarro autosaves the view (dataset, focus, layout and every panel's settings) to the browser's
-local storage every 10 seconds and when the page is closed. On your next visit to the same server
-it reopens that view as it was. This copy lives only in
-your browser. To keep a layout or give it to someone else, use {doc}`panel-sets` or
-{doc}`share-links`. Opening a share link always wins over the autosaved layout. The interval
-and the restore behaviour are set under `ui.autosave` in the configuration
-({doc}`../reference/configuration`).
+local storage every 10 seconds and when the page is closed. A reload of the tab reopens that view
+as it was. A new visit (the server's address typed or bookmarked, a new tab, the desktop app's
+start) draws nothing by itself: the welcome screen lists the last session first, with
+**Restore** ({ref}`last-sessions`).
+
+The address bar names the open dataset (`?dataset_path=bm_aging.zarr`, its path in the data
+directory), with or without panels, however it was opened: the dataset browser, the back button
+beside its name, a panel set, **Restore**, the desktop app. A reload therefore opens the same
+dataset. The bare address (no `dataset_path`) opens no dataset, unless the data directory holds
+only one, and the welcome screen offers the last sessions, the recent datasets and **Browse
+datasets…**. The desktop app reopens the dataset opened last when it starts. This copy lives only in your browser. To keep a layout or give
+it to someone else, use {doc}`panel-sets` or {doc}`share-links`. Opening a share link always wins
+over the autosaved layout. The interval and the restore behaviour are set under `ui.autosave` in
+the configuration ({doc}`../reference/configuration`).
 
 ```{admonition} What happens on the server
 :class: note

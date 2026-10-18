@@ -143,13 +143,11 @@ def test_the_table_is_one_tab_stop_with_roving_focus_and_type_ahead(server):
                     "later": after > before or after == total - 1, "earlier": after == before - 1}[expect], (key, before, after)
             # exactly one name button is tabbable, the focused one, and its row is the selected one (details follow)
             assert page.eval_on_selector_all("#dsb-table tbody .dsb-name", "els => els.filter(e => e.tabIndex === 0).length") == 1
-        # Tab leaves the table (one stop), '/' returns to search
+        # Tab leaves the table (one stop); '/' there starts a path instead (test_dataset_browser_path_key.py)
         page.keyboard.press("Home")
         page.keyboard.press("Tab")
         assert not page.evaluate("document.activeElement.classList.contains('dsb-name')")
         page.focus(f"{ROW}[data-kind='store'] .dsb-name")
-        page.keyboard.press("/")
-        assert page.evaluate("document.activeElement.id") == "dsb-search"
         # type-ahead: letters jump to the name that starts with them (Finder style)
         page.keyboard.press("ArrowDown")
         page.keyboard.type("oth")

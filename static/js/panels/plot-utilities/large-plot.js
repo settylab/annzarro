@@ -35,23 +35,26 @@ import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { plotColour } from '../../utils/plot-theme.js';
 import { Config } from '../../config.js';
-import { buildPlotLayout, knownMissingSource, seriesSource, withSubsetCoverage } from './plot-make.js';
+import { buildPlotLayout, knownMissingSource, seriesSource, withSubsetCoverage, showsThisDataset } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
+import { colourBar } from './colour-bar.js';
 import { logColorbarTicks } from '../../utils/array-stats.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { LEGEND_PROXY, LEGEND_POINTS, COLOUR_BAR, attachViewportTracking } from './plot-make-helper.js';
 import { drawPlot, drawPlaceholder, clearForDraw, fitToContainer, setStatusTag, resolveColorscale, Coverage, GAP } from '../../utils/panel-surface.js';
 import { colourKind, DEFAULT_MODEL } from '../../utils/memory-guard.js';
 import { probeForDraw, niceFloor, probeMessage } from '../../utils/alloc-probe.js';
+import { ledger } from '../../utils/memory-guard-ui.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyError, classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { columnsParam } from '../../utils/column-param.js';
 import { LARGE_TYPES, formatPoints, largeThreshold } from './large-plot-controls.js';
 import { buildPointIndexSliced } from '../../utils/point-index.js';
-import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus } from './large-interact.js';
+import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus, applyPendingClick } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
-import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount } from '../../utils/categories.js';
+import { usableUnsPalette, unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
+import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount, colourGroupKey } from '../../utils/categories.js';
 
 /** Points above which a Cell Plot uses this mode (Config, server ui.defaults.large_plot_points). */
 export function largePlotPoints() {
@@ -201,12 +204,12 @@ function pushTraces(traces, X, Y, a, b, name, color, settings) {
 }
 
 /** Single-colour traces for points [a, b), cut below TRACE_POINTS, without legend entries. */
-function chunkTraces(X, Y, a, b, name, color, settings) {
+function chunkTraces(X, Y, a, b, name, color, settings, group = name) {
   const out = [];
   for (let p = a; p < b; p += TRACE_POINTS) {
     const q = Math.min(p + TRACE_POINTS, b);
     out.push({
-      type: 'scattergl', mode: 'markers', name, legendgroup: name, showlegend: false, meta: LEGEND_POINTS,
+      type: 'scattergl', mode: 'markers', name, legendgroup: group, showlegend: false, meta: LEGEND_POINTS,
       x: X.subarray(p, q), y: Y.subarray(p, q),
       hoverinfo: 'skip',
       marker: { size: settings.pointSize, opacity: settings.pointOpacity, color }
@@ -219,10 +222,12 @@ function chunkTraces(X, Y, a, b, name, color, settings) {
  * The legend entry of one category: a trace with no points, at full opacity,
  * in the category's legend group (clicking it toggles all its chunks). The
  * point traces carry the panel's opacity; Plotly would draw their legend
- * symbols just as pale.
+ * symbols just as pale. `group` is the entry's identity (a colour group's
+ * names change with the cells drawn; utils/legend-entries.js keeps hidden
+ * entries by it).
  */
-function legendTrace(name, color, settings, rank) {
-  return { type: 'scattergl', mode: 'markers', name, legendgroup: name, showlegend: true, meta: LEGEND_PROXY,
+function legendTrace(name, color, settings, rank, group = name) {
+  return { type: 'scattergl', mode: 'markers', name, legendgroup: group, showlegend: true, meta: LEGEND_PROXY,
     legendrank: rank, x: [null], y: [null], hoverinfo: 'skip',
     marker: { size: settings.pointSize, opacity: 1, color } };
 }
@@ -245,14 +250,6 @@ function interleave(groups) {
 function titleFont(settings) {
   return { size: settings.fontSize ? settings.fontSize + 2 : 14,
     family: settings.fontFamily || 'Arial, Helvetica, sans-serif', color: plotColour(settings, 'textColor') };
-}
-
-/** The colour bar as the regular path draws it (plot-make.js, numerical branch). */
-function colourBar(settings, title) {
-  const pos = getPositioningByLocation(settings.legendPosition || 'right');
-  return { title: { text: title, side: 'right', font: titleFont(settings) },
-    x: pos.x, xanchor: pos.xanchor, y: pos.y, yanchor: pos.yanchor,
-    titleside: pos.titleside, orientation: pos.orientation };
 }
 
 /**
@@ -311,7 +308,11 @@ function probeDraw(settings, structure, suggest = true, bytesPerPoint = DEFAULT_
  * above the edge, in the graceful placeholder.
  */
 function probeOrRelease(plotContainer, settings, structure) {
-  const live = !!plotContainer._fullLayout;
+  // only a drawn LARGE plot holds the buffers a redraw replaces step by step;
+  // a regular plot (a switch from a smaller dataset or subset) holds none of
+  // them, and the draw needs its own in full while the other plots hold theirs
+  const old = ledger.get(plotContainer.__azPanelId);
+  const live = !!(plotContainer._fullLayout && old && old.large);
   return probeDraw(settings, structure, true, live ? DEFAULT_MODEL.large.redrawBeside : DEFAULT_MODEL.large.arrayBuffers, live);
 }
 
@@ -322,19 +323,20 @@ function probeOrRelease(plotContainer, settings, structure) {
  * message and the way out (a subset).
  * @param {HTMLElement} plotContainer
  * @param {{message: string, n?: number}} error
- * @param {string} [source] - what ran out: 'browser memory' or 'WebGL'
+ * @param {string} [source] - what ran out: 'browser buffers' (the probe) or 'WebGL'
  */
-export function showProbeFailure(plotContainer, error, source = 'browser memory') {
-  const live = Array.isArray(plotContainer.data) && plotContainer.data.length && plotContainer._fullLayout;
-  const actions = [['subset', 'Subset…']];
+export function showProbeFailure(plotContainer, error, source = 'browser buffers') {
+  // a plot of the open dataset stays; one of the dataset before a switch does not
+  const live = showsThisDataset(plotContainer);
+  const actions = [['subset-half', 'Half the cells'], ['subset', 'Subset…'], ['close-others', 'Close other plots']];
   if (live) {
-    setStatusTag(plotContainer, 'memory', { text: 'Not drawn: browser memory', severity: 'warning',
+    setStatusTag(plotContainer, 'memory', { text: `Not drawn: ${source}`, severity: 'warning',
       title: error.message, pop: { text: error.message, actions } });
     return;
   }
   setStatusTag(plotContainer, 'memory', null);
-  drawPlaceholder(plotContainer, Coverage.missing(GAP.UNAVAILABLE, error.message,
-    { source, unit: 'cells', total: error.n ?? null }), 'cells', { actions });
+  drawPlaceholder(plotContainer, null, 'cells', { actions,
+    say: { severity: 'warning', headline: `Not drawn: not enough ${source}`, lines: [error.message] } });
 }
 
 /**
@@ -550,17 +552,21 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     }
     // The regular path's palette rule (processCategories): the colours stored
     // in uns.<key>_colors when the palette is 'uns' and they exist
-    let palette = null;
+    let palette = null, stored = null;
     if (!many && settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
       try {
         const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors`, signal });
-        if (r && r.data) palette = Array.isArray(r.data) ? r.data : [r.data];
+        if (r && r.data) stored = Array.isArray(r.data) ? r.data : [r.data];
       } catch {
         stopped();
-        palette = null;
+        stored = null;
       }
+      palette = usableUnsPalette(stored, nc);
+      setStatusTag(plotContainer, UNS_PALETTE_TAG, unsPaletteTag(settings.color.key, stored, nc));
+    } else {
+      setStatusTag(plotContainer, UNS_PALETTE_TAG, null);
     }
-    if (!palette || !palette.length) {
+    if (!palette) {
       // colour groups use the same 64-colour palette in every path
       const name = settings.categoryPalette && settings.categoryPalette !== 'uns' ? settings.categoryPalette : undefined;
       palette = many ? groupColours(GROUP_COLOURS, name) : generateDiscreteColors(nc, name);
@@ -571,10 +577,11 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     const groups = [];
     for (let k = 0; k < nc; k++) {
       const name = many ? groupNames[k] : String(cs.categories[k]);
+      const group = many ? colourGroupKey(k) : name;
       const color = palette[k % palette.length];
       if (start[k + 1] > start[k]) {
-        groups.push(chunkTraces(X, Y, start[k], start[k + 1], name, color, settings));
-        traces.push(legendTrace(name, color, settings, k + 1));
+        groups.push(chunkTraces(X, Y, start[k], start[k + 1], name, color, settings, group));
+        traces.push(legendTrace(name, color, settings, k + 1, group));
       }
     }
     if (start[NA + 1] > start[NA]) traces.push(legendTrace('NA', NA_COLOR, settings, 1001));
@@ -692,7 +699,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   const t3 = performance.now();
   // hover, click and the focus highlight: the index over the drawn points, built after the
   // plot is visible and in slices of the main thread, so input stays responsive; until it is
-  // ready hover shows nothing and a click does nothing
+  // ready hover shows nothing and a click waits for it
   // (the probe's buffers may be longer than the points kept)
   const kept = n - filtered;
   const job = { cancelled: false };
@@ -710,14 +717,21 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   const large = { n, traces: traces.length, filtered,
     load_ms: t1 - t0, build_ms: t2 - t1, draw_ms: t3 - t2, index_ms: null };
   data.large = large;
-  buildPointIndexSliced(pts.X.subarray(0, kept), pts.Y.subarray(0, kept), pts.R, job).then((index) => {
+  buildPointIndexSliced(pts.X.subarray(0, kept), pts.Y.subarray(0, kept), pts.R, job).then(async (index) => {
+    // a test holds the index back (a promise), as a build over millions of points does for seconds
+    if (index && typeof window !== 'undefined' && window.__annzarroHoldIndex) await window.__annzarroHoldIndex;
     if (!index || job.cancelled || plotContainer.__largeState !== st) return;
     st.index = index;
     large.index_ms = performance.now() - t3;
     large.index_bytes = index.bytes;
     console.info(`Point index ready ${large.index_ms.toFixed(0)} ms after the draw (hover and click)`);
     highlightLargeFocus(plotContainer, settings);
-  }).catch((err) => console.warn('Point index not built:', err && err.message));
+    applyPendingClick(plotContainer);
+  }).catch((err) => {
+    console.warn('Point index not built:', err && err.message);
+    // a click that waited for it is not left waiting
+    if (plotContainer.__largeState === st) applyPendingClick(plotContainer);
+  });
   data.coverage = coverage;
   data.generation = generation;
   console.info(`Large cell plot: ${n} points in ${traces.length} traces; `

@@ -233,7 +233,7 @@ def test_a_refused_export_is_in_the_status_strip_not_a_popover(served):  # noqa:
             }""", PID)
             tag = page.locator(f'.tile[data-tile-id="{PID}"] .ps-tag[data-tag="memory"]')
             tag.wait_for(timeout=5000)
-            assert tag.inner_text() == "Not exported: browser memory"
+            assert tag.inner_text() == "Not exported: JS memory"
             pop = page.locator(f'.tile[data-tile-id="{PID}"] .ps-pop[data-pop="memory"]')
             assert "memory" in pop.inner_text().lower() and pop.is_visible()
             assert page.locator(".popover").count() == 0 and _no_toasts(page)

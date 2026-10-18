@@ -217,12 +217,13 @@ export function buildDeepLinkUrl(base, datasetPath, payload) {
 /**
  * The address-bar URL for the current view, keeping every other query
  * parameter (and any other fragment parameter) as the page was opened with.
- * With a payload: `dataset_path` is set to the store, the legacy `?view=` is
- * dropped and `#view=` carries the payload. Without one (no panel open): the
- * `view` is removed, so the address is the clean link that opens the blank
- * dashboard of that dataset. Pure, so the browser and the tests agree.
+ * `dataset_path` always names the open store, with or without panels, and
+ * goes with no dataset open. The legacy `?view=` is dropped; with a payload
+ * `#view=` carries it, without one (no panel open) the `view` is removed, so
+ * the address is the clean link that opens the blank dashboard of that
+ * dataset. Pure, so the browser and the tests agree.
  * @param {string} href - the current location.href
- * @param {string|null} datasetPath - the store of the view (kept as is when empty)
+ * @param {string|null} datasetPath - the open store; empty with none open
  * @param {string|null} payload - from encodeViewPayload; null for a clean link
  * @returns {string|null} path + query + fragment to replace the URL with, or
  *          null when it already is that
@@ -232,12 +233,10 @@ export function syncedLocation(href, datasetPath, payload) {
     const before = url.pathname + url.search + url.hash;
     url.searchParams.delete('view');
     const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
-    if (payload) {
-        if (datasetPath) url.searchParams.set('dataset_path', datasetPath);
-        fragment.set('view', payload);
-    } else {
-        fragment.delete('view');
-    }
+    if (datasetPath) url.searchParams.set('dataset_path', datasetPath);
+    else if (!payload) url.searchParams.delete('dataset_path');
+    if (payload) fragment.set('view', payload);
+    else fragment.delete('view');
     // base64url (A-Z a-z 0-9 - _ and the prefix's dot) is left alone by URLSearchParams
     url.hash = fragment.toString();
     const after = url.pathname + url.search + url.hash;
@@ -531,8 +530,9 @@ export const DERIVED_CONFIG_KEYS = ['currentEntries', 'filteredCells', 'closedSe
  */
 export function serializableConfig(config) {
     const out = {};
-    for (const [key, value] of Object.entries(config || {})) {
-        if (!DERIVED_CONFIG_KEYS.includes(key)) out[key] = value;
+    // the keys first: a derived value (a table's row list) is not read only to be left out
+    for (const key of Object.keys(config || {})) {
+        if (!DERIVED_CONFIG_KEYS.includes(key)) out[key] = config[key];
     }
     return out;
 }

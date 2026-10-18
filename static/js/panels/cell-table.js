@@ -13,8 +13,9 @@ import { beginLoad, endLoad, cancelLoads, wasCancelled } from '../utils/load-sco
 import { loadingIndicator } from './plot-utilities/plot-make.js';
 import { setupTableEventListeners } from './table-utilities/listeners.js';
 import { syncControlsWithDataset } from '../utils/controls-visibility.js';
-import { assignKnownSettings } from '../utils/panel-settings.js';
+import { assignKnownSettings, configOf } from '../utils/panel-settings.js';
 import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-guard-ui.js';
+import { tableMayLoad } from './table-utilities/table-memory.js';
 
 const CellTablePanel = (function() {
     /**
@@ -154,6 +155,13 @@ const CellTablePanel = (function() {
             // the one of the update that asks for it.
             signal = beginLoad(_tableContainer, 'table', signal);
             try {
+                // will its rows fit next to the other panels? (utils/memory-guard-ui.js)
+                if (!tableMayLoad(_tableContainer, _id, 'cell-table', () => {
+                    if (!_dataTable) return;
+                    freezeTableState(_settings);
+                    _dataTable.destroy();
+                    _dataTable = null;
+                })) return;
                 // Other cells of the same table: the rows are swapped into
                 // the table shown, so it does not blank and keeps its state
                 let preloaded = null;
@@ -399,10 +407,8 @@ const CellTablePanel = (function() {
          * @returns {Object} - Panel configuration
          */
         function getConfig() {
-            return {
-                title: _title,
-                ..._settings
-            };
+            // the DataTable's live views (the rows passing the filter) are read when read
+            return configOf(_settings, { title: _title });
         }
         
         /**

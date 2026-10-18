@@ -19,21 +19,26 @@ import {
   followDrawnPoints
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
+import { unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
 import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
 import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
+import { colourBar } from './colour-bar.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { Coverage, classifyFilterStats } from '../../utils/coverage.js';
 import { renderCoverageNotice, setStatusTag, withCoverageAnnotation, showCancelled } from '../../utils/panel-surface.js';
 import { beginLoad, endLoad, wasCancelled } from '../../utils/load-scope.js';
 import { withPlotlyBatch } from '../../utils/plotly-batch.js';
-import { setGlMarkers } from '../../utils/gl-markers.js';
+import { setGlMarkers, setGlPoint } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
-import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
+import { recolourCheck, refusalText, bindingLabel } from '../../utils/memory-guard-ui.js';
 import { MEMORY_ADVICE } from '../../utils/memory-guard.js';
 import { colourTitle } from '../../utils/plot-titles.js';
+import { legendUirevision } from '../../utils/legend-entries.js';
 import { highlightLargeFocus, clearLargeFocus, restyleLargeFocus } from './large-interact.js';
 import { focusMarker, focusRestyle, focusSize, focusParams } from '../../utils/focus-style.js';
+
+const FOCUS_RING = 'focused-ring';   // trace.meta of the ring of a cell outside the subset: a 3D no-fill dot is open too
 
 
 
@@ -396,14 +401,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         reversescale: settings.colorReversed,
                         cmin: settings.colorMin !== null ? settings.colorMin : arrayMin(data.color.filter(v => !isNaN(v))),
                         cmax: settings.colorMax !== null ? settings.colorMax : arrayMax(data.color.filter(v => !isNaN(v))),
-                        colorbar: {
-                            title: {
-                                text: colourTitle(settings.color),
-                                side: 'right',
-                                font: { size: 12 }
-                            },
-                            titleside: 'right'
-                        },
+                        colorbar: colourBar(settings, colourTitle(settings.color)),
                         showscale: true
                     },
                     showlegend: false
@@ -457,9 +455,16 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 
                 // Add new categorical traces
                 Plotly.addTraces(plotContainer, categoricalTraces);
+                if (settings.categoryPalette === "uns") {
+                    setStatusTag(plotContainer, UNS_PALETTE_TAG,
+                        unsPaletteTag(settings.color.key, customColors, categoricalTraces.categoryCount));
+                }
                 
-                // Update the legend title for categorical data
+                // Update the legend title for categorical data; the entries
+                // hidden with the legend are kept for this colour column only
                 Plotly.relayout(plotContainer, {
+                    'legend.uirevision': legendUirevision(
+                        (plotContainer.layout && plotContainer.layout.uirevision) || 'view', settings.color),
                     'legend.title.text': colourTitle(settings.color),
                     'legend.title.font': { 
                         size: settings.fontSize ? settings.fontSize + 2 : 14,
@@ -596,13 +601,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         reversescale: settings.colorReversed,
                         cmin: settings.colorMin !== null ? settings.colorMin : undefined,
                         cmax: settings.colorMax !== null ? settings.colorMax : undefined,
-                        colorbar: {
-                          title: {
-                            text: colourTitle(settings.color),
-                            side: 'right'
-                          },
-                          titleside: 'right'
-                        },
+                        colorbar: colourBar(settings, colourTitle(settings.color)),
                         showscale: true
                       },
                       showlegend: false
@@ -837,7 +836,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             const highlightIndex = plotContainer.data.findIndex(trace => trace && trace.name === `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`);
             if (highlightIndex >= 0) {
                 // the focused marker's own style (utils/focus-style.js)
-                Plotly.restyle(plotContainer, focusRestyle(settings, isRingTrace(plotContainer.data[highlightIndex])), [highlightIndex]);
+                Plotly.restyle(plotContainer, focusWant(plotContainer.data[highlightIndex], settings), [highlightIndex]);
             }
         }
         
@@ -851,18 +850,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             
             if (settings && settings.color && settings.color.type && settings.color.key) {
                 if (data.colorType === 'numerical') {
-                    const colorbar = {
-                        title: {
-                            text: colourTitle(settings.color),
-                            side: 'right',
-                            font: { 
-                                size: settings.fontSize ? settings.fontSize + 2 : 14,
-                                family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
-                                color: plotColour(settings, 'textColor')
-                            }
-                        },
-                        titleside: 'right'
-                    };
+                    const colorbar = colourBar(settings, colourTitle(settings.color));
                     const restyleUpdate = {
                         'marker.colorbar': colorbar,
                         'marker.showscale': true,
@@ -945,11 +933,12 @@ export async function loadColorDataAndUpdatePlot(
     const memory = recolourCheck(plotContainer);
     if (memory.verdict === 'block') {
         const why = refusalText(memory, MEMORY_ADVICE);
-        setStatusTag(plotContainer, 'memory', { text: 'Colour not changed: browser memory', severity: 'warning',
+        setStatusTag(plotContainer, 'memory', { text: `Colour not changed: ${bindingLabel(memory.binding)}`, severity: 'warning',
             title: why, pop: { text: why, actions: [['subset', 'Subset\u2026']] } });
         return;
     }
     setStatusTag(plotContainer, 'memory', null);
+    setStatusTag(plotContainer, UNS_PALETTE_TAG, null);
     const started = performance.now();
     // Busy until the new colours are drawn, not only while the column loads:
     // on a remote store the category colours (uns.<key>_colors) took seconds
@@ -1207,7 +1196,7 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     mode: 'markers',
     type: is3D ? 'scatter3d' : 'scattergl',
     // the panel's Focused style (utils/focus-style.js); by default a red dot twice the point size
-    marker: focusMarker(settings),
+    marker: focusMarker(settings, false, is3D),
     hoverinfo: 'skip',
     name: `Focused ${entityType === 'cells' ? 'Cell' : 'Gene'}`,
     showlegend: false  // Prevent the trace from appearing in the legend.
@@ -1238,9 +1227,12 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     .catch(error => console.warn(`Focused-${entityType === 'cells' ? 'cell' : 'gene'} highlight ${what} skipped:`, error && error.message ? error.message : error));
 
   if (existingIdx >= 0) {
-    // Move the existing highlight marker. restyle touches only that trace;
+    // Move the existing highlight marker. 2D: straight to the regl scene
+    // (utils/gl-markers.js): a restyle reruns calc and the scene of every
+    // trace, 450 ms at 1M points. Otherwise restyle touches only that trace;
     // the layout is unchanged, so it is not re-sent (re-sending a deep copy
     // of it is what made Plotly redo the axis scaling here).
+    if (!is3D && setGlPoint(plotContainer, existingIdx, xValue, yValue)) return Promise.resolve();
     const update = { x: [highlightTrace.x], y: [highlightTrace.y] };
     if (is3D) update.z = [highlightTrace.z];
     return settle('update', () => Plotly.restyle(plotContainer, update, [existingIdx]));
@@ -1328,6 +1320,7 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
     mode: 'markers',
     type: is3D ? 'scatter3d' : 'scattergl',
     marker: focusMarker(settings, true),
+    meta: FOCUS_RING,
     // like the filled dot: a ring on top must not take the clicks and hover
     // of the shown points under it (the plot's note names the cell)
     hoverinfo: 'skip',
@@ -1335,6 +1328,10 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
     showlegend: false
   };
   if (is3D) ring.z = [coords[2]];
+  // a ring already drawn moves to the new cell, in 2D straight in the regl scene (as the dot does)
+  const drawn = plotContainer.__focusRing && Array.isArray(plotContainer.data)
+    ? plotContainer.data.findIndex(t => isFocusTrace(t) && isRingTrace(t)) : -1;
+  if (!is3D && drawn >= 0 && setGlPoint(plotContainer, drawn, coords[0], coords[1])) return undefined;
   const currentLayout = plotContainer.layout ? JSON.parse(JSON.stringify(plotContainer.layout)) : null;
   clear();
   plotContainer.__focusRing = true;
@@ -1402,7 +1399,7 @@ export async function restyleMarkers(plotContainer, settings) {
             { 'marker.size': settings.pointSize, 'marker.opacity': settings.pointOpacity }, dataIdx);
     }
     for (const i of highlightIdx) {
-        await Plotly.restyle(plotContainer, focusRestyle(settings, isRingTrace(plotContainer.data[i])), [i]);
+        await Plotly.restyle(plotContainer, focusWant(plotContainer.data[i], settings), [i]);
     }
     for (const i of greyIdx) {
         const m = greyOf(plotContainer.data[i]);
@@ -1418,16 +1415,21 @@ function isFocusTrace(trace) {
 
 /** The ring drawn for a focused cell the subset does not show (drawOutsideRing). */
 function isRingTrace(trace) {
-    return !!(trace && trace.marker && trace.marker.symbol === 'circle-open');
+    return !!trace && trace.meta === FOCUS_RING;
+}
+
+/** The restyle keys of the panel's Focused style for the highlight `trace` (a ring, a 3D or a 2D dot). */
+function focusWant(trace, settings) {
+    return focusRestyle(settings, isRingTrace(trace), !!trace && trace.type === 'scatter3d');
 }
 
 /** The keys of `focusRestyle` whose value differs from what the highlight `trace` draws (all but `skip`). */
 function focusChanges(trace, settings, skip = []) {
-    const want = focusRestyle(settings, isRingTrace(trace));
+    const want = focusWant(trace, settings);
     const m = trace.marker || {};
     const line = m.line || {};
     const have = { 'marker.size': m.size, 'marker.color': m.color, 'marker.opacity': m.opacity,
-                   'marker.line.color': line.color, 'marker.line.width': line.width };
+                   'marker.line.color': line.color, 'marker.line.width': line.width, 'marker.symbol': m.symbol || 'circle' };
     const update = {};
     for (const k of Object.keys(want)) if (!skip.includes(k) && have[k] !== want[k]) update[k] = want[k];
     return update;

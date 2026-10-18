@@ -20,7 +20,11 @@ import {
 } from './utils/subset-presets.js';
 import { escapeHtml } from './utils/session-permissions.js';
 import { MAX_BALANCE_GROUPS, VALUE_LIST_MAX } from './utils/categories.js';
-import { subsetCheck, subsetProbe, maxSubsetCells, headroomText, refusalText, ledger, formatGB, MEMORY_EVENT } from './utils/memory-guard-ui.js';
+import { subsetCheck, subsetProbe, maxSubsetCells, headroomText, refusalText, resetLearned, ledger, formatGB, MEMORY_EVENT } from './utils/memory-guard-ui.js';
+import { roundDownNice } from './utils/memory-guard.js';
+
+/** The ceiling a refused size chip names, short (memory-guard.js bindingLabel). */
+const CHIP_BINDING = { heap: 'JS memory', total: 'memory', buffers: 'buffers' };
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
 /** document event that opens the dialog; detail is open()'s options, e.g. { preset: 'largest-regular' } */
@@ -237,6 +241,8 @@ const SubsetControl = (function() {
               </div>
               <div class="modal-footer">
                 <span class="subset-memory" id="subset-memory" role="status" aria-live="polite"></span>
+                <button type="button" class="btn btn-link btn-sm" id="subset-memory-reset" hidden
+                  title="Forget the extra margin this browser keeps since its tab ended, and check again">Reset the margin</button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" id="subset-apply">Apply</button>
               </div>
@@ -266,6 +272,8 @@ const SubsetControl = (function() {
         });
         q('subset-import').addEventListener('click', _importTableFilter);
         q('subset-apply').addEventListener('click', _apply);
+        // the dialog follows MEMORY_EVENT, which the reset raises
+        q('subset-memory-reset').addEventListener('click', () => resetLearned());
         // a panel closed or drawn while the dialog is open changes what fits
         document.addEventListener(MEMORY_EVENT, () => { if (el.classList.contains('show')) _renderPresets(); });
         return el;
@@ -467,7 +475,7 @@ const SubsetControl = (function() {
         const r = subsetCheck(n, threshold);
         return {
             title: refusalText(r, 'Close a panel or pick a smaller size.'),
-            chip: `<span class="sp-mem">needs ~${formatGB(r.needBytes)}</span>`,
+            chip: `<span class="sp-mem">needs ~${formatGB(r.needBytes)}${CHIP_BINDING[r.binding] ? ` of ${CHIP_BINDING[r.binding]}` : ''}</span>`,
             result: r
         };
     }
@@ -488,6 +496,7 @@ const SubsetControl = (function() {
     function _renderMemory(threshold) {
         const line = _el.querySelector('#subset-memory');
         let text = '';
+        let learned = false;
         _memoryBlocked = false;
         try {
             text = headroomText();
@@ -495,7 +504,11 @@ const SubsetControl = (function() {
             const r = n > 0 && ledger.panels().length ? subsetCheck(n, threshold) : null;
             if (r && r.verdict === 'block') {
                 _memoryBlocked = true;
+                learned = !!r.learned;
                 text = `${fmt(n)} cells: ${refusalText(r, 'Close a panel or pick a smaller size.')}`;
+                // the largest size that fits with these panels open
+                const most = roundDownNice(_maxCells(threshold));
+                if (most >= 1 && most < n) text += ` At most ${fmt(most)} cells fit.`;
             } else if (r && r.verdict === 'warn') {
                 text = `${fmt(n)} cells may not fit: ${r.why}. ${text}`;
             }
@@ -506,6 +519,8 @@ const SubsetControl = (function() {
             line.textContent = text;
             line.classList.toggle('subset-memory--short', _memoryBlocked);
         }
+        const reset = _el.querySelector('#subset-memory-reset');
+        if (reset) reset.hidden = !learned;
         _syncApply();
     }
 

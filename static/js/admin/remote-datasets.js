@@ -10,6 +10,7 @@
  */
 
 import { h, setChildren, badge } from './dom.js';
+import { keyHelp } from './help-catalog.js';
 
 export const KEY = 'feature.remote_stores';
 export const SCHEMES = ['s3', 'gs', 'gcs', 'http', 'https'];
@@ -163,7 +164,7 @@ export function renderRemoteDatasets(target, key, { save, reset }) {
         setChildren(target,
             h('div', { class: 'd-flex justify-content-between align-items-start mb-2' },
                 h('div', null,
-                    h('h2', { class: 'h6 mb-1', text: 'Remote datasets' }),
+                    h('h2', { class: 'h6 mb-1' }, 'Remote datasets', keyHelp(key, 'Remote datasets')),
                     h('div', { class: 'small text-muted', text: 'Whether the server may read datasets from s3://, gs://, gcs:// and http(s):// URLs. Does not affect Gene Set Analysis.' })),
                 h('span', { class: 'text-nowrap' },
                     key.locked ? h('i', { class: 'fas fa-lock text-muted me-1', title: 'Locked', 'aria-label': 'locked' }) : null,

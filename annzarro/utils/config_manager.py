@@ -482,7 +482,7 @@ class ConfigManager:
         # entry point (annzarro start and the WSGI factory) goes through.
 
     #: Top-level sections of the hierarchical configuration.
-    SECTIONS = ("server", "auth", "branding", "ui")
+    SECTIONS = ("server", "auth", "branding", "ui", "site")
     #: Flat (Flask-style) keys that belong outside the ``server`` section.
     FLAT_KEY_MAP = {
         "auth_enabled": ("auth", "enabled"),
@@ -726,8 +726,8 @@ class ConfigManager:
             flat["ui_autosave_interval_ms"] = autosave_config.get("interval_ms", 10000)
             flat["ui_autosave_storage_key"] = autosave_config.get("storage_key", "annzarro_autosave")
             flat["ui_autosave_session_name"] = autosave_config.get("session_name", "Autosave")
-            flat["ui_autosave_show_in_list"] = autosave_config.get("show_in_list", False)
-            flat["ui_autosave_auto_restore"] = autosave_config.get("auto_restore", True)
+            flat["ui_autosave_show_in_list"] = autosave_config.get("show_in_list", True)
+            flat["ui_autosave_auto_restore"] = autosave_config.get("auto_restore", "reload")
             
         # External integrations
         if "integrations" in tree:
@@ -772,6 +772,9 @@ class ConfigManager:
                     flask_config[key] = auth_config[key]
         
         flask_config.update(self.client_keys(self.config))
+        # the site's identity and texts (server/site.py reads them whole)
+        if "site" in self.config:
+            flask_config["site"] = deepcopy(self.config["site"])
         
         return flask_config
 

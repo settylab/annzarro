@@ -178,7 +178,7 @@ def _messages(eng, changes, errors):
         if key is None or reason not in ("bad_type", "bad_choice", "out_of_range"):
             continue
         try:
-            key.type.validate(changes.get(name))
+            key.type.validate_stored(changes.get(name))
         except PolicyValueError as exc:
             out[name] = str(exc)
     return out
