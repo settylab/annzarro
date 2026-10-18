@@ -23,7 +23,7 @@ else:
 from annzarro.tests.browser.test_memory_guard import STORE, _serve  # noqa: E402
 
 A, B = "cell-plot-A", "cell-plot-B"
-GROUPS = ["Presets", "Appearance", "Axes and ticks", "Points", "Focused cell", "Legend and colour bar", "Text", "Margins", "Export",
+GROUPS = ["Presets", "Background", "Axes and ticks", "Points", "Focused cell", "Legend and colour bar", "Text", "Margins", "Export",
           "Apply to other panels"]
 
 
@@ -329,7 +329,7 @@ def test_publication_and_default_presets(page, server):
 def test_apply_to_other_panels_asks_in_the_page_and_copies_only_the_look(page, server):
     _open(page, server)
     page.evaluate("""async (id) => { const gd = (%s)(id); await Plotly.relayout(gd, {paper_bgcolor: '#ffffff'}); }""" % GD, B)
-    _menu(page, A, "appearance")
+    _menu(page, A, "background")
     page.eval_on_selector(f"#plot-bg-color-{A}", "e => { e.value = '#223344'; e.dispatchEvent(new Event('input', {bubbles: true})); }")
     page.wait_for_timeout(300)
     _menu(page, A, "text")

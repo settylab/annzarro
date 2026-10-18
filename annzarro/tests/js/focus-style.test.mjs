@@ -2,11 +2,10 @@
  * The focused marker's style (static/js/utils/focus-style.js): settings in,
  * Plotly marker, restyle keys and large-plot shape out.
  *
- * The defaults must draw exactly the highlight every plot had before the
- * Focused group existed: size twice the point size, opaque, red fill, a 2 px
- * black edge (and the ring of a cell outside the subset: red, 2 px). A link
- * or panel config without the keys gets them in the light theme; in the dark
- * theme the edge is white.
+ * The defaults: an open circle (no fill) five times the point size, opaque,
+ * a 2 px black edge (and the ring of a cell outside the subset: red, 2 px).
+ * A link or panel config without the keys gets them in the light theme; in
+ * the dark theme the edge is white. A fill is the explicit focusedNoFill false.
  *
  * Run:  node --test annzarro/tests/js/focus-style.test.mjs
  */
@@ -31,11 +30,11 @@ const rgb = (c) => {
     return m ? m.slice(1, 4).map(Number) : null;
 };
 
-// The marker plot-update.js built before this module, for a point size `p`
+// The default marker for a point size `p`
 const EDGE = { light: 'rgba(0, 0, 0, 1)', dark: 'rgba(255, 255, 255, 1)' };
-const TODAY = (p, name = 'light') => ({ size: p * 2, color: 'rgba(255, 0, 0, 1)', opacity: 1,
+const TODAY = (p, name = 'light') => ({ size: p * 5, color: NO_FILL, opacity: 1,
                                         line: { color: EDGE[name], width: 2 }, showscale: false });
-const TODAY_RING = (p) => ({ size: p * 2, symbol: 'circle-open', color: 'rgba(255, 0, 0, 1)',
+const TODAY_RING = (p) => ({ size: p * 5, symbol: 'circle-open', color: 'rgba(255, 0, 0, 1)',
                              line: { color: 'rgba(255, 0, 0, 1)', width: 2 }, showscale: false });
 
 const sameMarker = (got, want) => {
@@ -49,7 +48,7 @@ const sameMarker = (got, want) => {
 };
 
 for (const name of ['light', 'dark']) {
-    test(`a config without the keys draws today's highlight, ${name} theme`, () => {
+    test(`a config without the keys draws the default highlight, ${name} theme`, () => {
         theme = name;
         for (const p of [0.392, 3, 5, 12]) {
             sameMarker(focusMarker({ pointSize: p }), TODAY(p, name));
@@ -61,12 +60,12 @@ for (const name of ['light', 'dark']) {
     });
 }
 
-test("the large plot's shape keeps today's radius and colours", () => {
-    // before: r = max(2, pointSize || 4), red fill, 2 px black line, opaque
+test("the large plot's shape has the default radius and colours", () => {
+    // r = max(2, half the marker), no fill, 2 px black line, opaque
     for (const p of [0.5, 1, 3, 5, 9]) {
         const s = focusShapeStyle({ pointSize: p });
-        assert.equal(s.r, Math.max(2, p));
-        assert.deepEqual(rgb(s.fillcolor), [255, 0, 0]);
+        assert.equal(s.r, Math.max(2, p * 2.5));
+        assert.equal(s.fillcolor, NO_FILL);
         assert.deepEqual(s.line, { color: '#000000', width: 2 });
         assert.equal(s.opacity, 1);
     }
@@ -75,7 +74,7 @@ test("the large plot's shape keeps today's radius and colours", () => {
 
 test('the panel values replace the defaults', () => {
     const s = { pointSize: 4, focusedScale: 3.5, focusedOpacity: 0.4, focusedEdgeWidth: 0,
-                focusedColor: '#00ff00', focusedEdgeColor: '#ffffff' };
+                focusedColor: '#00ff00', focusedEdgeColor: '#ffffff', focusedNoFill: false };
     assert.deepEqual(focusMarker(s), { size: 14, color: '#00ff00', opacity: 0.4,
                                        line: { color: '#ffffff', width: 0 }, showscale: false });
     assert.deepEqual(focusRestyle(s), { 'marker.size': 14, 'marker.color': '#00ff00', 'marker.opacity': 0.4,
@@ -102,7 +101,7 @@ test('values that cannot be drawn fall back to the defaults', () => {
 
 test('the colours follow the theme until set, and Reset follows it again', () => {
     assert.ok(THEMED_COLOURS.includes('focusedColor') && THEMED_COLOURS.includes('focusedEdgeColor'));
-    const s = { pointSize: 5, focusedColor: '#123456' };
+    const s = { pointSize: 5, focusedColor: '#123456', focusedNoFill: false };
     assert.equal(focusMarker(s).color, '#123456');
     followTheme(s, ['focusedColor']);
     assert.equal('focusedColor' in s, false);
@@ -170,20 +169,24 @@ test('a setting saved before the white dark edge keeps the colour it saved', () 
 });
 
 test('no fill draws an open circle: transparent fill, the edge kept at 1 px at least', () => {
-    const s = { pointSize: 4, focusedColor: '#00ff00', focusedEdgeColor: '#0000ff', focusedEdgeWidth: 3, focusedNoFill: true };
+    const s = { pointSize: 4, focusedScale: 2, focusedColor: '#00ff00', focusedEdgeColor: '#0000ff', focusedEdgeWidth: 3, focusedNoFill: true };
     assert.deepEqual(focusMarker(s), { size: 8, color: NO_FILL, opacity: 1, line: { color: '#0000ff', width: 3 }, showscale: false });
     assert.equal(focusRestyle(s)['marker.color'], NO_FILL);
     assert.deepEqual(focusShapeStyle(s), { r: 4, opacity: 1, fillcolor: NO_FILL, line: { color: '#0000ff', width: 3 } });
-    assert.match(NO_FILL, /^rgba\(\d+,\d+,\d+,0\)$/);   // alpha 0
+    assert.match(NO_FILL, /^rgba\(\d+, \d+, \d+, 0\)$/);   // alpha 0
     // an edge width of 0 would leave nothing to see: drawn 1 px
     const zero = { ...s, focusedEdgeWidth: 0 };
     assert.equal(focusMarker(zero).line.width, 1);
     assert.equal(focusShapeStyle(zero).line.width, 1);
-    // only `true` counts; the flag off (or any other value) is the filled marker
-    for (const v of [false, undefined, 'true', 1, null]) {
-        assert.equal(focusMarker({ ...s, focusedNoFill: v }).color, '#00ff00', String(v));
+    // unset is no fill; only an explicit false is the filled marker
+    for (const v of [undefined, 'true', 1, null]) {
+        assert.equal(focusMarker({ ...s, focusedNoFill: v }).color, NO_FILL, String(v));
     }
+    assert.equal(focusMarker({ ...s, focusedNoFill: false }).color, '#00ff00');
     assert.equal(focusMarker({ ...s, focusedNoFill: false, focusedEdgeWidth: 0 }).line.width, 0);
+    // the explicit false is a value like any other: it is picked and adopted by Apply to other panels
+    assert.equal(pickStyle({ focusedNoFill: false }).focusedNoFill, false);
+    assert.equal(adoptStyle({}, pickStyle({ focusedNoFill: false })).focusedNoFill, false);
 });
 
 test('the ring of a cell outside the subset looks the same with or without a fill', () => {
@@ -192,7 +195,7 @@ test('the ring of a cell outside the subset looks the same with or without a fil
 });
 
 test('a 3D marker draws no edge, so no fill is the open-circle symbol in the edge colour', () => {
-    const s = { pointSize: 4, focusedColor: '#00ff00', focusedEdgeColor: '#0000ff', focusedEdgeWidth: 0, focusedNoFill: true };
+    const s = { pointSize: 4, focusedScale: 2, focusedColor: '#00ff00', focusedEdgeColor: '#0000ff', focusedEdgeWidth: 0, focusedNoFill: true };
     assert.deepEqual(focusMarker(s, false, true), { size: 8, symbol: 'circle-open', color: '#0000ff', opacity: 1,
                                                     line: { color: '#0000ff', width: 1 }, showscale: false });
     assert.equal(focusRestyle(s, false, true)['marker.symbol'], 'circle-open');

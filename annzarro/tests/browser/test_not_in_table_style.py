@@ -120,6 +120,10 @@ def test_controls_style_the_grey_points_and_travel_with_the_panel(page, server):
     page.click(f"#aesthetics-menu-btn-{A}")
     page.click(f"details[data-panel='{A}'][data-section='points'] > summary")     # the Points group, folded at first
     page.wait_for_selector(f"#not-in-table-scale-{A}", state="visible")
+    # automatic opacity: the box shows what is drawn (so the arrows step from it) and stores nothing until changed
+    shown = float(page.input_value(f"#not-in-table-opacity-{A}"))
+    assert shown == round(base["opacities"][0], 2), (shown, base["opacities"])
+    assert "notInTableOpacity" not in page.evaluate("() => window.PanelManager.saveLayout().panelConfigs['%s']" % A)
     page.fill(f"#not-in-table-scale-{A}", "2")
     _grey_is_curve(page, A, scale=2)
     page.fill(f"#not-in-table-opacity-{A}", "0.25")

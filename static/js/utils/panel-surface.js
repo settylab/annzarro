@@ -47,6 +47,7 @@ import { installGlColors } from './scattergl-calc.js';
 import { withLegendInvariant, withLegendState, traceUid } from './legend-entries.js';
 import { watchModebarAnchor } from './modebar-anchor.js';
 import { watchBelowLegend } from './legend-below.js';
+import { watchLegendColumns, withLegendColumns } from './legend-options.js';
 
 /** Class of the status strip; styled in static/css/styles.css. */
 const STRIP_CLASS = 'plot-status';
@@ -655,6 +656,8 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
     // categories hidden with the legend stay hidden by name, and each trace
     // gets a uid from what it is (legend-entries.js withLegendState)
     withLegendState(plotContainer, traces, layout);
+    // a legend in columns: the entries dealt into legend groups, one per column (legend-options.js)
+    withLegendColumns(traces, layout);
     // a graph redrawn in place keeps the camera the user turned it to; the
     // camera saved in the settings is for a new graph
     const result = await Plotly.react(
@@ -664,6 +667,7 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
     );
     watchContextLoss(plotContainer);
     watchBelowLegend(plotContainer);
+    watchLegendColumns(plotContainer);
     watchModebarAnchor(plotContainer);
     // long axis / colour-bar titles: shortened to fit, full text on hover
     keepTitlesFitted(plotContainer);
