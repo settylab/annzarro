@@ -459,6 +459,8 @@ const DataManager = (function() {
             const cells = await loadCells(datasetPath, signal, nShown, structure && structure.n_obs);
             if (signal && signal.aborted) throw new DOMException('Subset change aborted', 'AbortError');
             _cells = cells;
+            // what depends on the number of cells shown asks again (the memory guard's create tiles)
+            if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('cellsChanged', { detail: { n: cells ? cells.length : 0 } }));
             return _subset;
         } catch (error) {
             _datasetGeneration++;

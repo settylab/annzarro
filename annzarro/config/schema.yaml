@@ -626,6 +626,10 @@ ui:
           type: [number, "null"]
           description: Everything the tab may hold (JS heap and typed arrays), in GB; null = this computer's RAM less a quarter (at least 4 GB) for a browser on the server's computer, 16 for any other, at most half of a device with 4 GB or less
           default: null
+        buffers_gb:
+          type: [number, "null"]
+          description: Array buffers one tab may hold, all its plots together, in GB; null = the browser's own limit (16.6 in Chrome, Edge and the desktop app; 15 in Safari on a computer with more than 16 GB, 7 below)
+          default: null
         margin:
           type: number
           description: Safety margin; predictions are multiplied by 1 + margin

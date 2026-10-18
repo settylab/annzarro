@@ -323,14 +323,14 @@ function probeOrRelease(plotContainer, settings, structure) {
  * message and the way out (a subset).
  * @param {HTMLElement} plotContainer
  * @param {{message: string, n?: number}} error
- * @param {string} [source] - what ran out: 'browser memory' or 'WebGL'
+ * @param {string} [source] - what ran out: 'browser buffers' (the probe) or 'WebGL'
  */
-export function showProbeFailure(plotContainer, error, source = 'browser memory') {
+export function showProbeFailure(plotContainer, error, source = 'browser buffers') {
   // a plot of the open dataset stays; one of the dataset before a switch does not
   const live = showsThisDataset(plotContainer);
   const actions = [['subset-half', 'Half the cells'], ['subset', 'Subset…'], ['close-others', 'Close other plots']];
   if (live) {
-    setStatusTag(plotContainer, 'memory', { text: 'Not drawn: browser memory', severity: 'warning',
+    setStatusTag(plotContainer, 'memory', { text: `Not drawn: ${source}`, severity: 'warning',
       title: error.message, pop: { text: error.message, actions } });
     return;
   }

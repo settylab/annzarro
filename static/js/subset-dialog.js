@@ -21,6 +21,10 @@ import {
 import { escapeHtml } from './utils/session-permissions.js';
 import { MAX_BALANCE_GROUPS, VALUE_LIST_MAX } from './utils/categories.js';
 import { subsetCheck, subsetProbe, maxSubsetCells, headroomText, refusalText, ledger, formatGB, MEMORY_EVENT } from './utils/memory-guard-ui.js';
+import { roundDownNice } from './utils/memory-guard.js';
+
+/** The ceiling a refused size chip names, short (memory-guard.js bindingLabel). */
+const CHIP_BINDING = { heap: 'JS memory', total: 'memory', buffers: 'buffers' };
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
 /** document event that opens the dialog; detail is open()'s options, e.g. { preset: 'largest-regular' } */
@@ -467,7 +471,7 @@ const SubsetControl = (function() {
         const r = subsetCheck(n, threshold);
         return {
             title: refusalText(r, 'Close a panel or pick a smaller size.'),
-            chip: `<span class="sp-mem">needs ~${formatGB(r.needBytes)}</span>`,
+            chip: `<span class="sp-mem">needs ~${formatGB(r.needBytes)}${CHIP_BINDING[r.binding] ? ` of ${CHIP_BINDING[r.binding]}` : ''}</span>`,
             result: r
         };
     }
@@ -496,6 +500,9 @@ const SubsetControl = (function() {
             if (r && r.verdict === 'block') {
                 _memoryBlocked = true;
                 text = `${fmt(n)} cells: ${refusalText(r, 'Close a panel or pick a smaller size.')}`;
+                // the largest size that fits with these panels open
+                const most = roundDownNice(_maxCells(threshold));
+                if (most >= 1 && most < n) text += ` At most ${fmt(most)} cells fit.`;
             } else if (r && r.verdict === 'warn') {
                 text = `${fmt(n)} cells may not fit: ${r.why}. ${text}`;
             }

@@ -31,7 +31,7 @@ import { beginLoad, endLoad, wasCancelled } from '../../utils/load-scope.js';
 import { withPlotlyBatch } from '../../utils/plotly-batch.js';
 import { setGlMarkers, setGlPoint } from '../../utils/gl-markers.js';
 import { recordLoad } from '../../utils/subset-presets.js';
-import { recolourCheck, refusalText } from '../../utils/memory-guard-ui.js';
+import { recolourCheck, refusalText, bindingLabel } from '../../utils/memory-guard-ui.js';
 import { MEMORY_ADVICE } from '../../utils/memory-guard.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
@@ -933,7 +933,7 @@ export async function loadColorDataAndUpdatePlot(
     const memory = recolourCheck(plotContainer);
     if (memory.verdict === 'block') {
         const why = refusalText(memory, MEMORY_ADVICE);
-        setStatusTag(plotContainer, 'memory', { text: 'Colour not changed: browser memory', severity: 'warning',
+        setStatusTag(plotContainer, 'memory', { text: `Colour not changed: ${bindingLabel(memory.binding)}`, severity: 'warning',
             title: why, pop: { text: why, actions: [['subset', 'Subset\u2026']] } });
         return;
     }

@@ -12,7 +12,7 @@ import {
   SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
-import { exportCheck, guarded, refusalText } from '../../utils/memory-guard-ui.js';
+import { exportCheck, guarded, refusalText, bindingLabel } from '../../utils/memory-guard-ui.js';
 /**
  * Plot Aesthetics Menu
  * 
@@ -2106,7 +2106,7 @@ export async function exportPlot(plotContainer, format, settings, how = 'full') 
  */
 function refuseInStatus(gd, verb, check) {
   const why = refusalText(check, EXPORT_ADVICE);
-  setStatusTag(gd, 'memory', { text: `Not ${verb}: browser memory`, severity: 'warning', title: why,
+  setStatusTag(gd, 'memory', { text: `Not ${verb}: ${bindingLabel(check.binding)}`, severity: 'warning', title: why,
     pop: { text: why, actions: verb === 'exported' && canSnapshot(gd) ? [['export-shown', 'Export as shown']] : [] } });
   nudgeStatusTag(gd, 'memory');
 }

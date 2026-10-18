@@ -34,7 +34,7 @@ import { legendUirevision } from '../../utils/legend-entries.js';
 import { cancelLoads } from '../../utils/load-scope.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, refusalPanel, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck,
-  takeTurn, bindTurn, releaseTurn, noteOutOfMemory
+  takeTurn, bindTurn, releaseTurn, noteOutOfMemory, bindingLabel
 } from '../../utils/memory-guard-ui.js';
 
 // the loads of a panel that the Cancel button can stop (utils/load-scope.js)
@@ -271,7 +271,7 @@ async function hoverLabelsFit(datasetPath, slot, key, count, points, plotContain
   const refused = result.verdict === 'block';
   if (plotContainer) {
     setStatusTag(plotContainer, `hover-memory-${slot}.${key}`, result.verdict === 'ok' ? null : {
-      text: refused ? 'Hover off: browser memory' : 'Hover over the memory budget', severity: 'warning', title: result.why,
+      text: refused ? `Hover off: ${bindingLabel(result.binding)}` : 'Hover over the memory budget', severity: 'warning', title: result.why,
       pop: { text: `Hover labels of ${slot}.${key} (${labels.toLocaleString('en-US')}) ${refused ? 'not read' : 'read'}: ${result.why}.` }
     });
   }
@@ -1404,7 +1404,7 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
     // in the panel one line of numbers (the buttons are the advice); the whole sentence in the tooltip
     const panel = refusalPanel({ result, kind: p.kind, n, anyway: 'Draw anyway',
       checkAt: m => drawCheck({ ...p, n: m, large: !isGenePlot && m > largePlotPoints() }) });
-    refusal = { text: panel.hopeless ? 'Not drawn: too many points' : 'Not drawn: browser memory', headline: panel.hopeless ? panel.headline : 'Not drawn: not enough browser memory',
+    refusal = { text: panel.hopeless ? 'Not drawn: too many points' : `Not drawn: ${bindingLabel(result.binding)}`, headline: panel.headline,
       why: panel.why, full: panel.hopeless ? panel.why : refusalText(result, MEMORY_ADVICE), actions: panel.actions, risk: panel.risk };
   }
   if (refusal) {

@@ -224,7 +224,8 @@ def test_config_reaches_the_browser_and_blocks_the_draw(tiny_server, page):
     text = page.inner_text('.tile[data-tile-id="cell-plot-a"] .coverage-placeholder')
     # one line of numbers (the JS heap is the ceiling that binds); the ways out are the buttons
     assert "Needs ~" in text and "of JS memory" in text and "free" in text, text
-    assert "Not drawn: not enough browser memory" in text, text
+    # the headline names the ceiling that binds (here the JS heap)
+    assert "Not drawn: not enough JS memory" in text, text
     # the way out, offered where the plot would be
     assert page.locator('.tile[data-tile-id="cell-plot-a"] .coverage-placeholder [data-ps-action="subset"]').count() == 1
     assert page.locator('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot').count() == 0
@@ -255,7 +256,7 @@ def test_tiles_follow_the_headroom_and_close_frees(server, page):
         .every(o => o.classList.contains('memory-blocked'))""", timeout=5000)
     title = create.get_attribute("title")
     assert title.startswith("Needs ~") and "with 2 plots open" in title and "Close a plot" in title, title
-    assert create.locator(".memory-note").inner_text() == "Not enough browser memory"
+    assert create.locator(".memory-note").inner_text() == "Not enough JS memory"
     # the gene plot tile is not a Cell Plot of 200 cells: its own check
     # the duplicate tile of the open plot is refused the same way
     dup = page.locator('.source-panel-option').first
@@ -395,7 +396,7 @@ def test_export_when_it_does_not_fit_offers_the_plot_as_shown(server, page):
     page.click('.tile[data-tile-id="cell-plot-a"] .modebar-btn[data-title="Download plot as a png"]')
     tag = page.locator('.tile[data-tile-id="cell-plot-a"] .ps-tag[data-tag="memory"]')
     tag.wait_for(timeout=5000)
-    assert tag.inner_text() == "Not exported: browser memory"
+    assert tag.inner_text() == "Not exported: JS memory"
     action = page.locator('.tile[data-tile-id="cell-plot-a"] [data-ps-action="export-shown"]')
     action.wait_for(state="visible", timeout=5000)     # the first refusal opens its popover
     with page.expect_download() as dl:
@@ -782,7 +783,7 @@ def test_table_refused_beside_a_plot_still_offers_close_others(server, page):
     page.evaluate(SET_FREE, 1e6)
     page.evaluate("() => window.PanelManager.getPanel('cell-table-t').refreshTable()")
     text, actions = _placeholder(page, "cell-table-t")
-    assert text.startswith("Not loaded: not enough browser memory"), text
+    assert text.startswith("Not loaded: not enough JS memory"), text
     assert "free with 1 plot open" in text, text
     assert "close-others" in actions and "subset-half" in actions and "draw-anyway" in actions, actions
     assert not any(a.startswith("subset-n:") for a in actions)
