@@ -6,9 +6,10 @@
  * panel's settings (auto: it is the theme's colour, light or dark, and changes
  * with the app theme) or a stored colour string (pinned: kept across theme
  * changes). Nothing but pinned colours is saved in a link or a panel set.
- * Choosing a colour, or a plot theme button (Light colours, Dark colours, the
- * Publication preset), pins; Follow app theme, a colour's Reset and the
- * Default preset unpin.
+ * Choosing a colour or the Publication preset pins; a colour's Reset and the
+ * Default preset unpin. A saved link or panel set that pins a whole palette
+ * (made when Plot Options had Light colours and Dark colours buttons) loads and
+ * draws as saved; each colour's Reset frees it.
  *
  * Links saved before this model stored every themed colour, the light
  * defaults included, so "pinned" and "never touched" looked the same. A
@@ -18,7 +19,7 @@
  * in the Light theme nothing changes, and the only difference is in Dark,
  * which no old link was ever viewed in. A person who chose white deliberately
  * and shares an old link sees it follow the dark theme there; picking the
- * colour again (or Light colours) pins it for good. The one case it cannot
+ * colour again pins it for good. The one case it cannot
  * tell apart is cheap to correct, the other way round (treating a light
  * default as pinned) would leave every old link a white sheet in a dark app.
  *
@@ -34,7 +35,7 @@ export const COLOUR_MODEL = 2;
 export const THEMED_COLOURS = Object.freeze(['bgColor', 'gridColor', 'axisColor', 'textColor', 'zeroLineColor', 'backdropColor', 'notInTableColor',
     'focusedColor', 'focusedEdgeColor']);
 
-/** The colours the plot theme buttons set (the grey of points not in the table and the focused marker have their own controls). */
+/** The colours the Publication preset sets (the grey of points not in the table and the focused marker have their own controls). */
 export const BUTTON_COLOURS = Object.freeze(['bgColor', 'gridColor', 'axisColor', 'textColor', 'zeroLineColor', 'backdropColor']);
 
 export const PLOT_PALETTES = Object.freeze({
@@ -64,11 +65,6 @@ export function isFollowing(settings, key) {
     return !hasValue(settings && settings[key]);
 }
 
-/** Whether every themed colour is auto. */
-export function followsTheme(settings) {
-    return THEMED_COLOURS.every(k => isFollowing(settings, k));
-}
-
 /** The colour `key` shows now: the pinned one, else the theme's. */
 export function plotColour(settings, key, theme = currentTheme()) {
     if (settings && hasValue(settings[key])) return settings[key];
@@ -91,7 +87,7 @@ export function adoptColourModel(settings) {
     return freed;
 }
 
-/** Pin the plot theme buttons' colours to a palette ('light' or 'dark'). */
+/** Pin the Publication preset's colours to a palette ('light' or 'dark'). */
 export function pinPalette(settings, theme) {
     const palette = PLOT_PALETTES[theme === 'dark' ? 'dark' : 'light'];
     for (const key of BUTTON_COLOURS) settings[key] = palette[key];

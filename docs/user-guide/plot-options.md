@@ -11,7 +11,7 @@ time.
 ```{figure} ../_static/screens/user-guide/plot-options-menu.png
 :class: screenshot
 :width: 35%
-:alt: The Plot Options menu with ten groups: Presets, Appearance, Axes and ticks, Points, Focused cell, Legend and colour bar, Text, Margins, Export (open, with the format buttons and size), Apply to other panels.
+:alt: The Plot Options menu with ten groups: Presets, Background, Axes and ticks, Points, Focused cell, Legend and colour bar, Text, Margins, Export (open, with the format buttons and size), Apply to other panels.
 
 Plot Options with its ten groups. Every group starts folded except Export.
 ```
@@ -33,8 +33,9 @@ plot of the same kind takes the look. Do this after the look is final: it replac
 
 **A dark plot**
 
-The plot follows the app's light or dark theme by itself. To keep one look in either theme, click
-**Dark colours** (or **Light colours**) in **Appearance**; **Follow app theme** goes back.
+The plot follows the app's light or dark theme by itself. To keep one look in either theme, press
+**Publication** (a white figure), or choose the colours you want: a colour you choose stays as it
+is in either theme, and its **Reset** hands it back to the theme.
 
 ## Presets
 
@@ -57,11 +58,8 @@ The plot's background, grid, axis lines, zero lines, text, 3D backdrop, the grey
 table points and the fill and edge of the focused marker follow the app's light or dark theme ({ref}`colour-theme`), **for every colour you
 have not set**. This is the rule:
 
-- A colour you choose (a colour box in Plot Options), or a plot theme button you press, is
+- A colour you choose (a colour box in Plot Options), or the **Publication** preset, is
   **kept** when the app theme changes. The plot's other colours keep following.
-- **Appearance > Plot colours** has three buttons. **Follow app theme** releases every colour so the
-  plot follows the theme again. **Light colours** and **Dark colours** set the colours of that
-  palette and keep them in either app theme.
 - Each colour's **Reset** releases that one colour (it is greyed out while the colour already
   follows). The colour box always shows the colour on screen.
 - The scale bar takes the text colour, so it follows the theme until you set the text colour.
@@ -69,18 +67,20 @@ have not set**. This is the rule:
   theme of whoever opens it, with your colours where you set them. A link saved by an earlier
   version stored every colour; a colour in it that equals the old light default counts as not set
   (it looks the same in the Light theme and follows the theme in the Dark one), any other colour
-  stays as saved, including what the old **Dark Theme** button set.
+  stays as saved, including a whole dark palette an earlier version pinned.
 - Colours of the data (palettes, colour scales) do not change with the theme.
 
 An export uses the colours on screen. For a figure in a paper, switch to Light (or press
 **Publication**) before exporting.
 
-## Appearance
+## Background
 
-- **Background** colour, with **Reset**.
+What is drawn behind the data.
+
+- **Colour** of the plot background, with **Reset**.
 - **3D Backdrop** (3D plots only): **Show** and the backdrop colour, with **Reset**.
-- **Plot colours**: **Follow app theme**, **Light colours** and **Dark colours**
-  ({ref}`how plots follow the app theme <plot-colours-theme>`). Neither changes anything else.
+
+Both follow the app theme until you set them ({ref}`how plots follow the app theme <plot-colours-theme>`).
 
 ## Axes and ticks
 
@@ -127,19 +127,20 @@ no legend entry. See {doc}`tables-and-filters`.
 ## Focused cell
 
 The **Focused cell** group (**Focused gene** in a gene plot) sets how the marker on the focused
-cell looks while **Highlight Focused Cell** is on ({doc}`focus-and-lock`). Without changes it is a
-red dot twice the point size with a 2 px edge, black in the light app theme and white in the dark
-one.
+cell looks while **Highlight Focused Cell** is on ({doc}`focus-and-lock`). Without changes it is an
+open circle five times the point size, drawn by a 2 px edge that is black in the light app theme
+and white in the dark one.
 
-- **Size** is a multiple of the point size (0.1 to 50, `x points`; 2 by default), so the marker
+- **Size** is a multiple of the point size (0.1 to 50, `x points`; 5 by default), so the marker
   keeps its proportion when the point size changes, by hand or automatically.
 - **Opacity** (0.01 to 1). Empty is opaque.
-- **Edge width** in pixels (0 to 20; 2 by default). 0 draws no edge.
-- **Fill** colour, red by default, and **Edge** colour, black (light theme) or white (dark theme)
+- **Edge width** in pixels (0 to 20; 2 by default). 0 draws no edge. A 3D plot draws only a hairline edge, whatever the
+  width, because its renderer has no wider one.
+- **Fill** colour, red by default (shown once **No fill** is off), and **Edge** colour, black (light theme) or white (dark theme)
   by default, each with **Reset**. A colour you choose stays as chosen in either theme; one you
   leave alone follows the theme.
-- **No fill** draws the marker as an open circle: its edge alone, in the edge colour and width,
-  with the plot showing through the middle. Switching it on raises an edge width under 1 px to
+- **No fill** is on by default: the marker is an open circle, its edge alone, in the edge colour
+  and width, with the plot showing through the middle. Switch it off to fill the marker. Switching it on raises an edge width under 1 px to
   1 px, and the width cannot go below 1 px while it is on, so the circle always shows. In a 3D
   plot the open circle is drawn in the edge colour. The fill colour is kept for when No fill is
   switched off, and **Reset** still only returns the colour to the theme.

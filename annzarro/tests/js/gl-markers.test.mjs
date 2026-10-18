@@ -82,11 +82,11 @@ test('without the scene internals: false, nothing changed, one warning', () => {
     }
 });
 
-// The highlight takes its own style (utils/focus-style.js): by default twice
+// The highlight takes its own style (utils/focus-style.js), here a filled dot twice
 // the size, opaque; its opacity goes with the size, since Apply to other
 // panels and a preset end here too. Its colours restyle only when they change.
 test('restyleMarkers: 2D plots go to the scene (the highlight at twice the size), 3D and fallback restyle', async () => {
-    const settings = { pointSize: 1.96, pointOpacity: 0.39 };
+    const settings = { pointSize: 1.96, pointOpacity: 0.39, focusedNoFill: false, focusedScale: 2 };   // the old filled dot
     const { gd, calls } = fakeGd();
     restyles.length = 0;
     await restyleMarkers(gd, settings);

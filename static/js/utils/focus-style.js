@@ -3,15 +3,15 @@
  *
  * Plot Options set it per panel, as plain values on the settings, so a link,
  * a panel set and the autosave keep them; a config without them draws the
- * defaults below, which are the highlight every plot had before the options:
- * a red dot twice the point size, opaque, with a 2 px edge (black in the light
- * theme, white in the dark one).
+ * defaults below: an open circle five times the point size, opaque, drawn by
+ * a 2 px edge (black in the light theme, white in the dark one).
  *
- *   focusedScale      size, times the point size (2)
+ *   focusedScale      size, times the point size (5)
  *   focusedOpacity    0 to 1 (1)
  *   focusedEdgeWidth  edge width in px, 0 for none (2)
  *   focusedColor      fill colour, a themed colour (utils/plot-theme.js)
- *   focusedNoFill     true: no fill, an open circle drawn by its edge alone (unset)
+ *   focusedNoFill     no fill, an open circle drawn by its edge alone; unset is true,
+ *                     and a fill is the explicit false, which links and sessions keep
  *   focusedEdgeColor  edge colour, a themed colour
  *
  * No fill is a flag of its own, not a colour value: the fill colour is a
@@ -32,10 +32,10 @@
  */
 import { plotColour } from './plot-theme.js';
 
-export const FOCUS_DEFAULTS = Object.freeze({ scale: 2, opacity: 1, edgeWidth: 2 });
+export const FOCUS_DEFAULTS = Object.freeze({ scale: 5, opacity: 1, edgeWidth: 2 });
 export const FOCUS_SCALE_MAX = 50;
 export const FOCUS_EDGE_MAX = 20;
-export const NO_FILL = 'rgba(0,0,0,0)';
+export const NO_FILL = 'rgba(0, 0, 0, 0)';       // as Plotly writes it back, so a plot and its copy compare equal
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -47,7 +47,7 @@ export function focusParams(settings) {
     opacity: isNum(s.focusedOpacity) && s.focusedOpacity > 0 && s.focusedOpacity <= 1 ? s.focusedOpacity : FOCUS_DEFAULTS.opacity,
     edgeWidth: isNum(s.focusedEdgeWidth) && s.focusedEdgeWidth >= 0 && s.focusedEdgeWidth <= FOCUS_EDGE_MAX
       ? s.focusedEdgeWidth : FOCUS_DEFAULTS.edgeWidth,
-    noFill: s.focusedNoFill === true
+    noFill: s.focusedNoFill !== false      // unset is no fill; only an explicit false draws one
   };
 }
 

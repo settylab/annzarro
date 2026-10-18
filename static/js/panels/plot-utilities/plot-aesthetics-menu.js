@@ -4,7 +4,7 @@ import { hasLegendEntries } from '../../utils/legend-entries.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
-  plotColour, isFollowing, followsTheme, followTheme, pinPalette, modebarColours, THEMED_COLOURS
+  plotColour, isFollowing, followTheme, modebarColours, THEMED_COLOURS
 } from '../../utils/plot-theme.js';
 import { THEME_EVENT } from '../../utils/theme.js';
 import {
@@ -84,13 +84,20 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   menuButton.addEventListener('shown.bs.popover', onShown);
   menuButton.addEventListener('hide.bs.popover',  onHide);
 
-  // Click-away handler
-  const clickAway = (e) => {
-    if (!e.target.isConnected) return;   // a control the menu drew again (a preset) is not outside it
-    if (!menuButton.contains(e.target) && !e.target.closest('.popover')) {
-      popover.hide();
-    }
+  // Click-away handler: a press that starts outside the menu and button closes it. A drag that
+  // starts inside (selecting text, a slider, a colour picker) and ends outside is a click on the
+  // common ancestor, so the press target decides, not the click's.
+  let pressedInside = null;     // set by pointerdown; null when a click came without one (synthetic)
+  const onPress = (e) => {
+    pressedInside = !!(e.target.closest && (menuButton.contains(e.target) || e.target.closest('.popover')));
   };
+  const clickAway = (e) => {
+    const inside = pressedInside !== null ? pressedInside : !!(menuButton.contains(e.target) || e.target.closest('.popover'));
+    pressedInside = null;
+    if (!e.target.isConnected) return;   // a control the menu drew again (a preset) is not outside it
+    if (!inside) popover.hide();
+  };
+  document.addEventListener('pointerdown', onPress, true);
   document.addEventListener('click', clickAway);
 
   // Settings-change listener
@@ -107,6 +114,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
     popover.dispose();
     menuButton.removeEventListener('shown.bs.popover', onShown);
     menuButton.removeEventListener('hide.bs.popover',  onHide);
+    document.removeEventListener('pointerdown', onPress, true);
     document.removeEventListener('click', clickAway);
     document.removeEventListener('plotSettingsChanged', onSettingsChange);
     cleanupListeners();
@@ -123,6 +131,18 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
 /** Sections the user opened, per panel; a menu opens again as it was left. */
 const sectionOpen = new Map();
 const OPEN_AT_FIRST = ['export'];      // a panel with no remembered state: only Export is open
+
+/**
+ * The opacity the grey points of a table filter are drawn at now, rounded, as text; '' while
+ * there are none. The box shows it (it is automatic until the user types) so the arrows and
+ * the spinner step from what is on screen.
+ */
+function drawnGreyOpacity(id) {
+    const gd = typeof document !== 'undefined' && document.getElementById(`plot-container-${id}`);
+    const t = gd && gd.data && gd.data.find(tr => tr && tr.name === 'Not in table' && tr.x);
+    const o = t && t.marker && t.marker.opacity;
+    return typeof o === 'number' && o > 0 && o <= 1 ? String(Math.round(o * 100) / 100) : '';
+}
 
 /** A collapsible group of the menu. */
 function details(id, key, title, body) {
@@ -168,11 +188,13 @@ export function createPopoverContent(id, settings) {
                     title="Back to the look every plot starts with">Default</button>
             </div>
         `)}
-        ${details(id, 'appearance', 'Appearance', `
-            
+        ${details(id, 'background', 'Background', `
+            <!-- What is drawn behind the data. Each block is one option; a new one (cell outlines,
+                 a stain image) is another block here, with its own Reset when it has a colour. -->
+
             <!-- Background Color -->
             <div class="mb-2">
-                <label class="form-label mb-1">Background</label>
+                <label class="form-label mb-1">Colour</label>
                 <div class="d-flex align-items-center gap-2">
                     <input type="color" class="form-control form-control-sm form-control-color" 
                         id="plot-bg-color-${id}" value="${plotColour(settings, 'bgColor')}" title="Choose background color">
@@ -195,27 +217,6 @@ export function createPopoverContent(id, settings) {
                         id="backdrop-color-${id}" value="${plotColour(settings, 'backdropColor')}" title="Choose 3D backdrop color">
                     <button class="btn btn-sm btn-outline-secondary" id="reset-backdrop-color-${id}">Reset</button>
                 </div>
-            </div>
-
-            <!-- Color Theme Buttons: follow the app theme, or keep one palette in either -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Plot colours</label>
-                <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-sm btn-outline-secondary ${followsTheme(settings) ? 'active' : ''}" id="follow-theme-${id}"
-                        aria-pressed="${followsTheme(settings)}"
-                        title="Every colour follows the app theme (light or dark) again">
-                        <i class="fas fa-circle-half-stroke"></i> Follow app theme
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="light-theme-${id}"
-                        title="Keep the light colours in either app theme">
-                        <i class="fas fa-sun"></i> Light colours
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="dark-theme-${id}"
-                        title="Keep the dark colours in either app theme">
-                        <i class="fas fa-moon"></i> Dark colours
-                    </button>
-                </div>
-                <div class="form-text" id="colour-follow-note-${id}"></div>
             </div>
         `)}
         ${details(id, 'axes', 'Axes and ticks', `
@@ -355,7 +356,7 @@ export function createPopoverContent(id, settings) {
             <div class="input-group input-group-sm mb-1">
                 <span class="input-group-text">Opacity</span>
                 <input type="number" class="form-control" id="not-in-table-opacity-${id}"
-                    value="${settings.notInTableOpacity ?? ''}" placeholder="auto" min="0.01" max="1" step="0.05">
+                    value="${settings.notInTableOpacity ?? drawnGreyOpacity(id)}" placeholder="auto" min="0.05" max="1" step="0.05" data-step-from="1">
             </div>
             <div class="d-flex align-items-center gap-2">
                 <label class="form-label mb-0 me-2">Color</label>
@@ -370,14 +371,14 @@ export function createPopoverContent(id, settings) {
                 <span class="input-group-text">Size</span>
                 <input type="number" class="form-control" id="focused-scale-${id}"
                     value="${settings.focusedScale ?? FOCUS_DEFAULTS.scale}" min="0.1" max="${FOCUS_SCALE_MAX}" step="0.1"
-                    title="Relative to the point size; ${FOCUS_DEFAULTS.scale} is twice as large">
+                    title="Relative to the point size; ${FOCUS_DEFAULTS.scale} is five times as large">
                 <span class="input-group-text">x points</span>
             </div>
             <div class="input-group input-group-sm mb-1">
                 <span class="input-group-text">Opacity</span>
                 <input type="number" class="form-control" id="focused-opacity-${id}"
-                    value="${settings.focusedOpacity ?? ''}" placeholder="${FOCUS_DEFAULTS.opacity}" min="0.01" max="1" step="0.05"
-                    title="0 to 1; empty: opaque">
+                    value="${settings.focusedOpacity ?? FOCUS_DEFAULTS.opacity}" placeholder="${FOCUS_DEFAULTS.opacity}" min="0.05" max="1" step="0.05"
+                    data-step-from="${FOCUS_DEFAULTS.opacity}" title="0 to 1; 1 is opaque">
             </div>
             <div class="input-group input-group-sm mb-1">
                 <span class="input-group-text">Edge width</span>
@@ -392,7 +393,7 @@ export function createPopoverContent(id, settings) {
                     id="focused-color-${id}" value="${plotColour(settings, 'focusedColor')}" title="Choose the fill colour of the focused marker (also the ring of a cell outside the subset)">
                 <button class="btn btn-sm btn-outline-secondary" id="reset-focused-color-${id}" ${resetState(settings, 'focusedColor')}>Reset</button>
                 <div class="form-check mb-0 ms-1">
-                    <input class="form-check-input" type="checkbox" id="focused-no-fill-${id}" ${settings.focusedNoFill ? 'checked' : ''}
+                    <input class="form-check-input" type="checkbox" id="focused-no-fill-${id}" ${settings.focusedNoFill !== false ? 'checked' : ''}
                         title="Draw the marker as an open circle: its edge only (at least 1 px wide)">
                     <label class="form-check-label" for="focused-no-fill-${id}">No fill</label>
                 </div>
@@ -854,21 +855,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
-        // Light colours / Dark colours: pin this plot's colours to a palette, whatever the app theme
-        if (target.id === `light-theme-${id}` || target.closest(`#light-theme-${id}`)
-            || target.id === `dark-theme-${id}` || target.closest(`#dark-theme-${id}`)) {
-            pinPalette(settings, (target.id === `dark-theme-${id}` || target.closest(`#dark-theme-${id}`)) ? 'dark' : 'light');
-            colourSetChanged(container, id, settings, plotContainer);
-            return;
-        }
-
-        // Follow app theme: every colour auto again
-        if (target.id === `follow-theme-${id}` || target.closest(`#follow-theme-${id}`)) {
-            followTheme(settings);
-            colourSetChanged(container, id, settings, plotContainer);
-            return;
-        }
-        
         // Axis title visibility
         if (target.id === `show-axis-titles-${id}`) {
             settings.showAxisTitles = target.checked;
@@ -1121,7 +1107,7 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
                 if (!(v > 0)) return;
                 settings.notInTableScale = v;
             } else if (target.id === `not-in-table-opacity-${id}`) {
-                if (target.value === '') delete settings.notInTableOpacity;
+                if (target.value === '') delete settings.notInTableOpacity;      // auto
                 else if (v > 0 && v <= 1) settings.notInTableOpacity = v;
                 else return;
             } else if (target.id === `not-in-table-color-${id}`) {
@@ -1147,10 +1133,10 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         if (target.id === `focused-no-fill-${id}`) {
             if (e.type !== 'change') return;
             if (target.checked) {
-                settings.focusedNoFill = true;
+                delete settings.focusedNoFill;      // the default
                 // an open circle is its edge: without one it would vanish
                 if (!((settings.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth) >= 1)) settings.focusedEdgeWidth = 1;
-            } else delete settings.focusedNoFill;
+            } else settings.focusedNoFill = false;      // stored: unset means no fill
             syncFocusedFill(id, settings);
             syncColourControls(id, settings);
             restyleFocus(plotContainer, settings).catch(err => console.warn('Focused marker style not updated:', err && err.message));
@@ -1165,12 +1151,12 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
                 if (input) input.value = plotColour(settings, focusKey);
             } else if (focusKey === 'focusedColor' || focusKey === 'focusedEdgeColor') {
                 settings[focusKey] = target.value;
-            } else if (target.value === '') {
+            } else if (target.value === '' || (focusKey === 'focusedOpacity' && v === FOCUS_DEFAULTS.opacity)) {
                 delete settings[focusKey];          // the default
             } else if (focusKey === 'focusedScale' ? v > 0 && v <= FOCUS_SCALE_MAX
                 : focusKey === 'focusedOpacity' ? v > 0 && v <= 1 : v >= 0 && v <= FOCUS_EDGE_MAX) {
                 // no fill: the edge is all there is of the marker, so it stays at least 1 px (judged once the entry is done)
-                if (focusKey === 'focusedEdgeWidth' && settings.focusedNoFill && v < 1) {
+                if (focusKey === 'focusedEdgeWidth' && settings.focusedNoFill !== false && v < 1) {
                     if (e.type !== 'change') return;
                     target.value = 1;
                     settings[focusKey] = 1;
@@ -1241,7 +1227,20 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
     };
     document.addEventListener('toggle', onToggle, true);   // 'toggle' does not bubble
 
+    // An empty number box shows its default as a placeholder; the arrows step from that, not from the minimum
+    const onStepKey = (e) => {
+        const t = e.target;
+        if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || !t.matches || !t.matches('input[type="number"][data-step-from]')) return;
+        if (t.value !== '' || !t.id.endsWith(`-${id}`)) return;
+        e.preventDefault();
+        t.value = t.dataset.stepFrom;
+        if (e.key === 'ArrowUp') t.stepUp(); else t.stepDown();
+        t.dispatchEvent(new Event('input', { bubbles: true }));
+        t.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
     // Use event delegation on document body for better event handling
+    document.body.addEventListener('keydown', onStepKey);
     document.body.addEventListener('click', menuHandler);
     document.body.addEventListener('change', menuHandler);
     document.body.addEventListener('input', menuHandler);
@@ -1249,20 +1248,11 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
     // Return a cleanup function to remove listeners when needed
     return function cleanup() {
         document.removeEventListener('toggle', onToggle, true);
+        document.body.removeEventListener('keydown', onStepKey);
         document.body.removeEventListener('click', menuHandler);
         document.body.removeEventListener('change', menuHandler);
         document.body.removeEventListener('input', menuHandler);
     };
-}
-
-/** The colours were changed as a set (a plot theme button): inputs, plot and listeners follow. */
-function colourSetChanged(container, id, settings, plotContainer) {
-    updateColorInputs(container, id, settings);
-    relookColours(plotContainer, settings);
-    notifyMultipleSettingsChanged(id, [
-        ...THEMED_COLOURS.map(k => ({ setting: k, value: settings[k] })),
-        { setting: 'showBackdrop', value: settings.showBackdrop }
-    ]);
 }
 
 /**
@@ -1663,7 +1653,7 @@ export function updateColorInputs(container, id, settings) {
 function syncFocusedFill(id, settings) {
     const noFill = document.getElementById(`focused-no-fill-${id}`);
     const width = document.getElementById(`focused-edge-width-${id}`);
-    if (noFill) noFill.checked = !!settings.focusedNoFill;
+    if (noFill) noFill.checked = settings.focusedNoFill !== false;
     if (width && settings.focusedEdgeWidth !== undefined) width.value = settings.focusedEdgeWidth;
 }
 
@@ -1680,11 +1670,7 @@ const RESET_IDS = {
     focusedColor: 'reset-focused-color', focusedEdgeColor: 'reset-focused-edge-color'
 };
 
-/**
- * Show which colours follow the app theme: a following colour's Reset has
- * nothing to do (disabled, with the reason as its tooltip), the Follow app
- * theme button is pressed while every colour follows, and a line says which.
- */
+/** Show which colours follow the app theme: a following colour's Reset has nothing to do (disabled, with the reason as its tooltip). */
 export function syncColourControls(id, settings) {
     for (const key of THEMED_COLOURS) {
         const reset = document.getElementById(`${RESET_IDS[key]}-${id}`);
@@ -1692,19 +1678,6 @@ export function syncColourControls(id, settings) {
         const following = isFollowing(settings, key);
         reset.disabled = following;
         reset.title = following ? 'Following the app theme' : 'Follow the app theme again';
-    }
-    const all = THEMED_COLOURS.every(k => isFollowing(settings, k));
-    const follow = document.getElementById(`follow-theme-${id}`);
-    if (follow) {
-        follow.classList.toggle('active', all);
-        follow.setAttribute('aria-pressed', all ? 'true' : 'false');
-    }
-    const note = document.getElementById(`colour-follow-note-${id}`);
-    if (note) {
-        const set = THEMED_COLOURS.filter(k => !isFollowing(settings, k)).length;
-        note.textContent = all ? 'All colours follow the app theme.'
-            : set === THEMED_COLOURS.length ? 'All colours are set; they stay as they are in either app theme.'
-                : 'Some colours are set; the others follow the app theme.';
     }
 }
 
@@ -1763,20 +1736,6 @@ export function applyThemeColors(plotContainer, settings) {
     Plotly.relayout(plotContainer, update);
 
     applyTextFont(plotContainer, settings);      // the text colour: axes, legend, colour bar
-}
-
-/**
- * Notify that multiple settings have changed
- * @param {string} id - Panel ID
- * @param {Array} changes - Array of {setting, value} objects
- */
-function notifyMultipleSettingsChanged(id, changes) {
-    changes.forEach(change => {
-        const event = new CustomEvent('plotSettingsChanged', { 
-            detail: { id, setting: change.setting, value: change.value } 
-        });
-        document.dispatchEvent(event);
-    });
 }
 
 /**

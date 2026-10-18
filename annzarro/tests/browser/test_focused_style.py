@@ -4,8 +4,8 @@ Three plots on the 200-cell fixture: A in 2D, B in 3D, G a gene plot (its
 group is Focused gene). The dataset opens with its first cell and gene
 focused. Checked by what the plot draws:
 
-1. a link without the keys draws the highlight as before them: twice the
-   point size, opaque, red, a 2 px black edge;
+1. a link without the keys draws the default highlight: an open circle
+   (no fill) five times the point size, opaque, a 2 px black edge;
 2. each control restyles the highlight trace and nothing else: no newPlot,
    react or added/removed trace, at most one restyle per change;
 3. the app theme switching keeps a colour that was set and draws the
@@ -49,6 +49,9 @@ SPY = """() => { if (!window.__spy) { window.__spy = {};
     for (const k in window.__spy) window.__spy[k] = 0; }"""
 
 
+FILLED = {pid: {"focusedNoFill": False} for pid in (A, B, G)}      # the default is no fill; these draw one
+
+
 def _link(root, extra=None):
     umap = lambda c: {"type": "obsm", "key": "X_umap", "column": c}  # noqa: E731
     row = lambda c: {"type": "layer", "key": "X", "column": c}  # noqa: E731
@@ -86,9 +89,11 @@ def _focus(page, pid):
 
 
 def _today(f):
-    """The highlight as drawn before the Focused group existed."""
-    assert f["size"] == 2 * f["pointSize"], f
-    assert (f["color"], f["opacity"], f["lineColor"], f["lineWidth"]) == ("#ff0000", 1, "#000000", 2), f
+    """The default highlight: no fill, five times the point size, a 2 px black edge."""
+    assert f["size"] == 5 * f["pointSize"], f
+    # a 3D marker draws no edge: its open circle is the symbol, in the edge colour
+    want = "#000000" if f["type"] == "scatter3d" else "rgba(0,0,0,0)"
+    assert (f["color"], f["opacity"], f["lineColor"], f["lineWidth"]) == (want, 1, "#000000", 2), f
 
 
 def _set(page, selector, value):
@@ -118,7 +123,7 @@ def _shot(page, name, pid=None):
         page.locator(".aesthetics-popover").screenshot(path=os.path.join(SHOTS, name + "-crop.png"))
 
 
-def test_a_link_without_the_keys_draws_todays_highlight(page, server):
+def test_a_link_without_the_keys_draws_the_default_highlight(page, server):
     _open(page, _link(server))
     for pid in (A, B, G):
         _today(_focus(page, pid))
@@ -126,7 +131,7 @@ def test_a_link_without_the_keys_draws_todays_highlight(page, server):
     _menu(page, A, "focused")
     title = page.eval_on_selector(f"details[data-panel='{A}'][data-section='focused'] > summary", "e => e.textContent.trim()")
     assert title == "Focused cell"
-    assert page.input_value(f"#focused-scale-{A}") == "2" and page.input_value(f"#focused-opacity-{A}") == ""
+    assert page.input_value(f"#focused-scale-{A}") == "5" and page.input_value(f"#focused-opacity-{A}") == "1"
     assert page.input_value(f"#focused-edge-width-{A}") == "2"
     assert page.input_value(f"#focused-color-{A}") == "#ff0000" and page.input_value(f"#focused-edge-color-{A}") == "#000000"
     assert page.is_disabled(f"#reset-focused-color-{A}")                  # following the theme: nothing to reset
@@ -137,7 +142,7 @@ def test_a_link_without_the_keys_draws_todays_highlight(page, server):
 
 
 def test_each_control_restyles_only_the_highlight_in_2d_3d_and_gene_plots(page, server):
-    _open(page, _link(server))
+    _open(page, _link(server, FILLED))
     for pid in (A, B, G):
         _menu(page, pid, "focused")
         page.evaluate(SPY)
@@ -176,7 +181,7 @@ def test_each_control_restyles_only_the_highlight_in_2d_3d_and_gene_plots(page, 
 
 
 def test_theme_switch_keeps_a_set_colour_and_follows_for_the_rest(page, server):
-    _open(page, _link(server))
+    _open(page, _link(server, FILLED))
     _menu(page, A, "focused")
     _set(page, f"#focused-edge-color-{A}", "#0000ff")
     _wait(page, A, "lineColor", "#0000ff")
@@ -241,13 +246,14 @@ def test_the_default_edge_is_white_in_dark_and_black_in_light(page, server):
 
 
 def test_the_values_travel_with_the_panel(page, server):
-    _open(page, _link(server, {B: {"focusedScale": 4, "focusedOpacity": 0.6, "focusedEdgeWidth": 0,
+    _open(page, _link(server, {B: {"focusedScale": 4, "focusedOpacity": 0.6, "focusedEdgeWidth": 0, "focusedNoFill": False,
                                    "focusedColor": "#00ffff", "focusedEdgeColor": "#ffffff"}}))
     f = _focus(page, B)
     assert (f["size"], f["opacity"], f["lineWidth"], f["color"], f["lineColor"]) == (
         4 * f["pointSize"], 0.6, 0, "#00ffff", "#ffffff"), f
     _today(_focus(page, A))
     _menu(page, A, "focused")
+    page.set_checked(f"#focused-no-fill-{A}", False)
     _set(page, f"#focused-scale-{A}", 5)
     _set(page, f"#focused-color-{A}", "#00ff00")
     _wait(page, A, "color", "#00ff00")
@@ -282,6 +288,7 @@ def test_the_export_draws_the_styled_highlight(page, server):
     _open(page, _link(server))
     assert page.evaluate(GREEN, [A]) == 0
     _menu(page, A, "focused")
+    page.set_checked(f"#focused-no-fill-{A}", False)
     _set(page, f"#focused-scale-{A}", 6)
     _set(page, f"#focused-color-{A}", "#00ff00")
     _wait(page, A, "color", "#00ff00")
@@ -408,7 +415,7 @@ def test_no_fill_draws_an_open_circle_in_3d(page, server):
 
 
 def test_no_fill_with_a_zero_edge_keeps_one_pixel(page, server):
-    _open(page, _link(server, {A: {"focusedEdgeWidth": 0}}))
+    _open(page, _link(server, {A: {"focusedEdgeWidth": 0, "focusedNoFill": False}}))
     assert _focus(page, A)["lineWidth"] == 0
     _menu(page, A, "focused")
     page.set_checked(f"#focused-no-fill-{A}", True)
@@ -427,39 +434,43 @@ def test_no_fill_with_a_zero_edge_keeps_one_pixel(page, server):
     _wait(page, A, "lineWidth", 0)
 
 
-def test_no_fill_travels_with_the_panel_and_apply_to_others_copies_it(page, server):
+def test_a_fill_travels_with_the_panel_and_apply_to_others_copies_it(page, server):
+    """No fill is the default, so a fill is stored: focusedNoFill false must survive every route."""
     _open(page, _link(server))
     assert "focusedNoFill" not in page.evaluate(LAYOUT_CFG, A)
+    assert _focus(page, A)["color"] == NO_FILL
     _menu(page, A, "focused")
+    assert page.is_checked(f"#focused-no-fill-{A}")
     _set(page, f"#focused-edge-color-{A}", "#0000ff")
-    page.set_checked(f"#focused-no-fill-{A}", True)
-    _wait(page, A, "color", NO_FILL)
+    page.set_checked(f"#focused-no-fill-{A}", False)
+    _wait(page, A, "color", "#ff0000")
     layout = page.evaluate("() => window.PanelManager.saveLayout()")
-    assert layout["panelConfigs"][A]["focusedNoFill"] is True
+    assert layout["panelConfigs"][A]["focusedNoFill"] is False
     assert "focusedNoFill" not in layout["panelConfigs"][G]
     page.goto(_view(server, layout))                   # a link, an autosave and a duplicate all restore this layout
     page.reload()
     for pid in (A, B, G):
         page.wait_for_function("(id) => { const f = (%s)(id); return f && f.size > 0; }" % FOCUS, arg=pid, timeout=60000)
     page.wait_for_timeout(800)
-    assert _focus(page, A)["color"] == NO_FILL
-    assert _focus(page, G)["color"] == "#ff0000"
+    assert _focus(page, A)["color"] == "#ff0000"
+    assert _focus(page, G)["color"] == NO_FILL
     # the theme switch keeps the choice and the colour behind it
     _theme(page, "dark")
-    assert _focus(page, A)["color"] == NO_FILL
+    assert _focus(page, A)["color"] != NO_FILL
     _menu(page, A, "focused")
-    assert page.is_checked(f"#focused-no-fill-{A}")
+    assert not page.is_checked(f"#focused-no-fill-{A}")
     _set(page, f"#focused-color-{A}", "#00ff00")
-    page.click(f"#reset-focused-color-{A}")            # Reset is the colour's: it follows the theme, the fill stays off
+    page.click(f"#reset-focused-color-{A}")            # Reset is the colour's: it follows the theme, the fill stays on
     page.wait_for_timeout(300)
-    assert _focus(page, A)["color"] == NO_FILL
-    # Apply to other panels: the other cell plot (B, in 3D: its open circle takes the edge colour) gets it, a gene plot is not of this kind
+    assert _focus(page, A)["color"] != NO_FILL
+    # Apply to other panels: the other cell plot (B, in 3D) gets the fill, a gene plot is not of this kind
+    assert page.evaluate(SYMBOL, B) == "circle-open"
     _menu(page, A, "apply")
     page.click(f"#apply-others-{A}")
     page.click(f"#apply-others-yes-{A}")
-    _wait(page, B, "color", "#0000ff")
-    assert page.evaluate(SYMBOL, B) == "circle-open"
-    assert page.evaluate(LAYOUT_CFG, B)["focusedNoFill"] is True
+    page.wait_for_function("(id) => (%s)(id)._fullData.find(t => /^Focused (Cell|Gene)$/.test(t.name || '')).marker.symbol === 'circle'"
+                           % GD, arg=B, timeout=10000)
+    assert page.evaluate(LAYOUT_CFG, B)["focusedNoFill"] is False
     assert "focusedNoFill" not in page.evaluate(LAYOUT_CFG, G)
 
 
