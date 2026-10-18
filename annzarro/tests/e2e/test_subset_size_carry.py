@@ -4,7 +4,9 @@ Three synthetic stores: a small one (3,000 cells) and two large ones (30,000 cel
 chosen is 10,000. The user chooses it by hand on a large store; the small one then shows every cell
 and its badge says the size is still in effect; the other large one opens on 10,000 cells; the back
 button returns to the rule (not to the part the dataset was left on); a reload keeps the size; a
-share link applies its own subset and leaves the size unchanged.
+share link applies its own subset and leaves the size unchanged. The size is the tab's (sessionStorage):
+a fresh visit to the bare address starts on the server's default, and a size an earlier version kept in
+localStorage is dropped, not carried.
 
 A second server (threshold 1,000) shows when every cell chosen is a new intent: see
 test_every_cell_is_carried_only_from_a_dataset_above_the_threshold.
@@ -68,8 +70,11 @@ def _wait_count(page, text, timeout=60_000):
 
 
 def _kept(page):
-    return page.evaluate(f"""() => {{ const k = Object.keys(localStorage).filter(k => k.startsWith('{KEY}'));
-        return k.length === 1 ? JSON.parse(localStorage.getItem(k[0])).size : (k.length ? 'several' : null); }}""")
+    """The size this tab keeps (sessionStorage); none is ever in localStorage."""
+    return page.evaluate(f"""() => {{
+        if (Object.keys(localStorage).some(k => k.startsWith('{KEY}'))) return 'in localStorage';
+        const k = Object.keys(sessionStorage).filter(k => k.startsWith('{KEY}'));
+        return k.length === 1 ? JSON.parse(sessionStorage.getItem(k[0])).size : (k.length ? 'several' : null); }}""")
 
 
 def _choose_size(page, n):
@@ -178,12 +183,15 @@ def test_the_size_chosen_follows_the_user_across_datasets(stores):
 NO_AUTOSAVE = "localStorage.removeItem('annzarro_autosave')"
 
 
-def test_startup_opens_on_the_size_and_close_all_forgets_it(stores):
-    """The app's own startup open (bare URL, no autosave, no link) uses the size kept; a link keeps its
-    own subset; Close all with the tick box forgets the size, and the next open is on the server default."""
+def test_a_reload_keeps_the_size_a_fresh_visit_and_close_all_forget_it(stores):
+    """The size is the tab's: the reload of the tab (whose address names the dataset, no panel open) opens
+    on it; a link keeps its own subset and leaves the size alone; a fresh visit to the bare address opens
+    no dataset and forgets it (the operator: "returning to a blank URL should not retain the dataset or
+    the subsetting"; until 0.6.0 the bare URL reopened the last dataset on the size, from localStorage);
+    Close all with the tick box forgets it too."""
     base, data = stores
     large_a, large_b = (os.path.join(data, n) for n in ("large_a.zarr", "large_b.zarr"))
-    # the autosave is dropped before every load: each load is the startup open, not a restore
+    # the autosave is dropped before every load: no load is a restore
     s = Session(base, width=1280, height=800, init_script=NO_AUTOSAVE)
     page = s.page
     try:
@@ -193,8 +201,10 @@ def test_startup_opens_on_the_size_and_close_all_forgets_it(stores):
         _wait_count(page, "10,000 of 30,000")
         assert _kept(page) == SIZE
 
-        # (a) the bare URL opens the dataset opened last on the size kept
-        page.goto(base)
+        # (a) the reload of the tab: the address names the dataset, which opens on the size kept
+        page.wait_for_function("() => new URLSearchParams(location.search).get('dataset_path') === 'large_a.zarr'",
+                               timeout=10_000)
+        page.reload()
         wait_for_open(page, large_a)
         _wait_count(page, "10,000 of 30,000")
         assert _kept(page) == SIZE
@@ -207,11 +217,21 @@ def test_startup_opens_on_the_size_and_close_all_forgets_it(stores):
             wait_for_open(page, large_b)
             _wait_count(page, count)
             assert _kept(page) == SIZE
-        page.goto(base)
-        wait_for_open(page, large_a)
-        _wait_count(page, "10,000 of 30,000")
+
+        # (d) a fresh visit to the bare address: no dataset, and the next open is on the server's default
+        page.goto(base + "/")
+        page.evaluate("() => window.annzarro.ready")
+        page.wait_for_timeout(1000)
+        assert page.evaluate("() => window.annzarro.getDataset().status") == "none"
+        assert _kept(page) is None
+        open_dataset(page, large_a)
+        _wait_count(page, "30,000")
+        assert _badge(page) == "All cells"
 
         # (b) Close all, with the tick box: the size is forgotten and nothing writes it back
+        _choose_size(page, SIZE)
+        _wait_count(page, "10,000 of 30,000")
+        assert _kept(page) == SIZE
         page.click("#btn-close-all")
         ask = page.locator(".notification-ask").filter(has_text="Close all panels?")
         ask.locator("input[type=checkbox]").check()
@@ -219,7 +239,7 @@ def test_startup_opens_on_the_size_and_close_all_forgets_it(stores):
             ask.get_by_role("button", name="Close all", exact=True).click()
         page.wait_for_function("() => !!(window.annzarro && window.annzarro.openDataset)", timeout=60_000)
         assert _kept(page) is None
-        assert page.evaluate("() => Object.keys(localStorage).filter(k => k.includes('subsetSize'))") == []
+        assert page.evaluate("() => Object.keys(localStorage).concat(Object.keys(sessionStorage)).filter(k => k.includes('subsetSize'))") == []
         open_dataset(page, large_a)
         _wait_count(page, "30,000")
         assert _badge(page) == "All cells"
@@ -233,14 +253,36 @@ def test_startup_opens_on_the_size_and_close_all_forgets_it(stores):
         s.close()
 
 
+def test_a_size_kept_in_local_storage_by_an_earlier_version_is_dropped(stores):
+    """0.5.5 to 0.6.0 kept the size in localStorage, for every later visit: it is removed at the first
+    load and not applied."""
+    base, data = stores
+    s = Session(base, width=1280, height=800,
+                init_script=f"if (!sessionStorage.getItem('seeded')) {{ sessionStorage.setItem('seeded', '1'); "
+                            f"localStorage.setItem('{KEY}' + location.origin + '|local', JSON.stringify({{size: {SIZE}}})); }}")
+    page = s.page
+    try:
+        assert page.evaluate("() => Object.keys(localStorage).filter(k => k.includes('subsetSize'))") == []
+        assert _kept(page) is None
+        open_dataset(page, os.path.join(data, "large_a.zarr"))
+        _wait_count(page, "30,000")
+        assert _badge(page) == "All cells"
+        assert not s.errors, s.errors
+    finally:
+        s.close()
+
+
 def test_the_badge_with_the_size_in_effect_light_and_dark(stores):
     """The screenshots of the dataset bar on the small store with the size in effect (DATASET_SHOTS)."""
     base, data = stores
     for scheme in ("light", "dark"):
-        s = Session(base, width=1280, height=800, scheme=scheme,
-                    init_script=f"localStorage.setItem('{KEY}' + location.origin + '|local', JSON.stringify({{size: {SIZE}}}))")
+        s = Session(base, width=1280, height=800, scheme=scheme)
         page = s.page
         try:
+            # the tab's size, then the reload of the tab (a fresh visit would start on the default)
+            page.evaluate(f"() => sessionStorage.setItem('{KEY}' + location.origin + '|local', JSON.stringify({{size: {SIZE}}}))")
+            page.reload()
+            page.evaluate("() => window.annzarro.ready")
             open_dataset(page, os.path.join(data, "small.zarr"))
             _wait_count(page, "3,000")
             assert _badge(page) == "All cells (≤ 10,000)"

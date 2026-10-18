@@ -309,6 +309,10 @@ def test_close_other_plots_draws_this_one(server, page):
 LAST = ".sessions-list .last-session"
 
 
+NAMED = ("() => new URLSearchParams(location.search).get('dataset_path') === 'fixture_small.zarr'"
+         " && /^#view=/.test(location.hash)")
+
+
 def test_a_clean_link_lists_the_last_session_and_draws_nothing_until_restore(server, page):
     _seed(page, server, {"annzarro_autosave": _autosave("earlier-page", ids=("cell-plot-a", "cell-plot-b"))})
     page.goto(server + "/")
@@ -327,9 +331,12 @@ def test_a_clean_link_lists_the_last_session_and_draws_nothing_until_restore(ser
     assert json.loads(page.evaluate("() => localStorage.getItem('annzarro_autosave')"))["page"] == "earlier-page"
     _shot(page, "welcome-last-session.png", ".selection-section:has(.sessions-list)")
 
+    assert "dataset_path" not in page.url, "nothing is open: the address names no dataset"
     item.locator(".last-session-restore").click()
     _drawn(page, "cell-plot-a")
     _drawn(page, "cell-plot-b")
+    # restored, the address names its dataset and view: a reload is the same
+    page.wait_for_function(NAMED, timeout=15000)
     # it is now this page's: the Load Panel Set dialog does not offer what is open
     page.wait_for_function("() => (JSON.parse(localStorage.getItem('annzarro_autosave') || '{}').page || 'earlier-page') !== 'earlier-page'",
                            timeout=10000)
@@ -370,6 +377,8 @@ def test_a_reload_of_the_tab_restores_it(server, page):
     page.reload()
     _drawn(page, "cell-plot-a")
     until(page, "() => window.sessionManager.restoreMarker() === null")
+    # the address names the dataset and view it restored, so the next reload opens them from there
+    page.wait_for_function(NAMED, timeout=15000)
     # restored whole, it continues in this page: listed no more, and kept once
     until(page, "() => (JSON.parse(localStorage.getItem('annzarro_autosave') || '{}').page || 'earlier-page') !== 'earlier-page'")
     assert page.evaluate("() => window.sessionManager.lastSessions().length") == 0

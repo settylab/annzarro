@@ -353,7 +353,14 @@ AnnZarro autosaves the view (dataset, focus, layout and every panel's settings) 
 local storage every 10 seconds and when the page is closed. A reload of the tab reopens that view
 as it was. A new visit (the server's address typed or bookmarked, a new tab, the desktop app's
 start) draws nothing by itself: the welcome screen lists the last session first, with
-**Restore** ({ref}`last-sessions`). This copy lives only in your browser. To keep a layout or give
+**Restore** ({ref}`last-sessions`).
+
+The address bar names the open dataset (`?dataset_path=bm_aging.zarr`, its path in the data
+directory), with or without panels, however it was opened: the dataset browser, the back button
+beside its name, a panel set, **Restore**, the desktop app. A reload therefore opens the same
+dataset. The bare address (no `dataset_path`) opens no dataset, unless the data directory holds
+only one, and the welcome screen offers the last sessions, the recent datasets and **Browse
+datasets…**. The desktop app reopens the dataset opened last when it starts. This copy lives only in your browser. To keep a layout or give
 it to someone else, use {doc}`panel-sets` or {doc}`share-links`. Opening a share link always wins
 over the autosaved layout. The interval and the restore behaviour are set under `ui.autosave` in
 the configuration ({doc}`../reference/configuration`).

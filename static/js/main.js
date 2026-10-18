@@ -30,7 +30,7 @@ import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
 import { overrideOnce, maxSubsetCells } from './utils/memory-guard-ui.js';
 import { DEFAULT_LARGE_PLOT_POINTS } from './utils/subset-presets.js';
-import { carriedRequest, sizeAfterChoice, loadSubsetSize, saveSubsetSize, halfSubset, subsetOfSize } from './utils/subset-carry.js';
+import { carriedRequest, sizeAfterChoice, loadSubsetSize, saveSubsetSize, dropSubsetSizes, halfSubset, subsetOfSize } from './utils/subset-carry.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
 import {
@@ -144,6 +144,18 @@ const App = (function() {
 
             // the site's storage setting (site.storage) decides where the autosave is read from
             await Config.ready;
+            // A reload of the tab (or Back/Forward to it) carries on where it was; a
+            // fresh visit to the bare address (a new tab, the address typed, a
+            // bookmark) is a clean start: no dataset and the server's default subset
+            const navigation = navigationType(window.performance);
+            const cleanStart = navigation !== 'reload' && navigation !== 'back_forward'
+                && !parseDeepLinkLocation(window.location);
+            // The kept subset size is the tab's (sessionStorage); the one an
+            // earlier version kept between visits (localStorage) is dropped
+            try { dropSubsetSizes(window.localStorage); } catch { /* storage blocked */ }
+            if (cleanStart) {
+                try { dropSubsetSizes(window.sessionStorage); } catch { /* storage blocked */ }
+            }
             // A page that ended while it drew a session (out of memory, most
             // likely) left a marker: that session is not drawn by itself again
             SessionManager.initLastSessions();
@@ -162,7 +174,7 @@ const App = (function() {
             // ui.autosave.auto_restore (utils/last-sessions.js): by default only a
             // reload of the tab restores the autosave; a fresh visit lists it first
             const hasAutosave = !!autosave && !deepLink && !holdBack
-                && shouldAutoRestore({ mode: Config.AUTOSAVE.AUTO_RESTORE, navigation: navigationType(window.performance) });
+                && shouldAutoRestore({ mode: Config.AUTOSAVE.AUTO_RESTORE, navigation });
 
             // Initialize panel manager with autosave information
             PanelManager.init('tile-container', { hasAutosave });
@@ -193,6 +205,8 @@ const App = (function() {
 
             // Set default dataset if available.
             const datasets = await DataManager.loadDatasets();
+            // the kept subset size is the user's: know who that is before a dataset opens on it
+            await _recentsUser().catch(() => {});
             if (deepLink) {
                 // Materialize the shared view. Guard against a throwing or empty
                 // apply: on ANY failure, or a deep-link that opens no panels, fall
@@ -205,10 +219,13 @@ const App = (function() {
                 }
                 PanelManager.ensureWelcomeFallback();
             } else if (!hasAutosave && !holdBack) {
-                // Nothing was asked for: the dataset this user opened last (if the server says they may
-                // still read it), else the only dataset there is, else none (the welcome screen). Never
-                // an arbitrary store of several: on a shared server that can be a billion-cell one.
-                const first = firstDatasetChoice(await _recentLookup(), datasets);
+                // Nothing was asked for: the only dataset there is, else none (the welcome screen, with
+                // the last sessions and the recent datasets). Never an arbitrary store of several: on a
+                // shared server that can be a billion-cell one. A tab that had a dataset open names it
+                // in its address, so its reload does not come here. The desktop app reopens the dataset
+                // opened last (if the server says it may still be read), as a document app does.
+                const desktop = document.documentElement.hasAttribute('data-desktop');
+                const first = firstDatasetChoice(desktop ? await _recentLookup() : [], datasets);
                 if (first) await DatasetState.open(first, { source: 'default' });
             } else if (hasAutosave) {
                 // Genuine autosave restore. If it throws or restores zero panels,
@@ -316,6 +333,14 @@ const App = (function() {
         _focusInputsFollow(state);
         _shareFollows(state);
         document.dispatchEvent(new CustomEvent('datasetState', { detail: state }));
+        // the address names the dataset open (or none) at once, panels or not
+        if (previous === null || state.status !== previous.status || state.path !== previous.path) {
+            if (state.status === 'open' || state.status === 'none') {
+                clearTimeout(_urlSyncTimer);
+                _urlSyncTimer = null;
+                _syncUrlNow();
+            }
+        }
         // the desktop app follows the dataset (proxy icon, recent documents), whoever opened it
         if (window.api && typeof window.api.datasetOpened === 'function'
             && (previous === null || state.status !== previous.status || state.path !== previous.path)) {
@@ -511,6 +536,9 @@ const App = (function() {
      * @private
      */
     async function _applyDeepLink(deepLink) {
+        // a link without a view (the address of a tab with no panel open, say)
+        // opens on the tab's subset size, as the startup open does
+        if (!deepLink.view) _requestKeptSize();
         await _applyView(deepLink);
     }
 
@@ -518,15 +546,24 @@ const App = (function() {
      * Keep the address bar at the current view, as a map does: a refresh
      * restores what is on screen now, and the address copied from the bar is
      * the current state. history.replaceState (no new history entries), after
-     * the view has been quiet for URL_SYNC_DELAY_MS, never during a load, and
-     * only when the encoded view changed. With no panel at all the fragment is
-     * removed: the clean link opens the blank dashboard of the dataset.
+     * the view has been quiet for URL_SYNC_DELAY_MS (at the latest
+     * URL_SYNC_MAX_MS after the first change: a view that keeps changing, or an
+     * autosave every few hundred ms, still reaches it), never during a load or a
+     * restore, and only when the dataset or the encoded view changed.
+     * `?dataset_path=` names the open dataset (as the data directory names it)
+     * from the moment it is open, whoever opened it, and goes with no dataset
+     * open. With no panel at all the fragment is removed: the clean link opens
+     * the blank dashboard of the dataset. Not pushState: Back and Forward stay
+     * the browser's (to the page before AnnZarro), never a dataset without
+     * the view it was seen with.
      * @private
      */
     const URL_SYNC_DELAY_MS = 600;
+    const URL_SYNC_MAX_MS = 3000;
     let _urlSyncTimer = null;
+    let _urlSyncSince = 0;      // when the update pending was first asked for
     let _urlSyncOn = false;
-    let _urlSyncView = null;    // JSON of the view the bar holds
+    let _urlSyncView = null;    // the dataset and JSON of the view the bar holds
     function _startUrlSync() {
         if (_urlSyncOn) return;
         _urlSyncOn = true;
@@ -535,25 +572,34 @@ const App = (function() {
     }
     function _syncUrlSoon() {
         if (!_urlSyncOn) return;
+        const now = Date.now();
+        if (!_urlSyncTimer) _urlSyncSince = now;
         clearTimeout(_urlSyncTimer);
-        _urlSyncTimer = setTimeout(_syncUrlNow, URL_SYNC_DELAY_MS);
+        const wait = Math.max(0, Math.min(URL_SYNC_DELAY_MS, _urlSyncSince + URL_SYNC_MAX_MS - now));
+        _urlSyncTimer = setTimeout(() => { _urlSyncTimer = null; _syncUrlNow(); }, wait);
     }
     async function _syncUrlNow() {
-        // A load in flight, or a layout shown without data, is not a view to keep
+        if (!_urlSyncOn) return;
+        // A load in flight, a restore drawing its panels, or a layout shown
+        // without data is not a view to keep
         if (_noDataView) return;
-        if (_isLoadingDataset) return _syncUrlSoon();
+        const marker = SessionManager.restoreMarker();
+        if (_isLoadingDataset || (marker && marker.hold > 0)) return _syncUrlSoon();
         try {
             const view = SessionManager.captureView();
             const hasPanels = Object.keys((view.layout && view.layout.panelConfigs) || {}).length > 0;
             const json = hasPanels ? JSON.stringify(view) : '';
-            if (json === _urlSyncView) return;
+            const current = DatasetState.get().status === 'none' ? null : (_lastLoadedDatasetPath || DataManager.getCurrentDataset());
+            // as the data directory names it (bm_aging.zarr), the form a link is opened by
+            const path = current ? _labelOf(current) : '';
+            const key = `${path}\n${json}`;
+            if (key === _urlSyncView) return;
             const payload = hasPanels ? await encodeViewPayload(view) : null;
-            const path = (view.store && view.store.path) || _lastLoadedDatasetPath || DataManager.getCurrentDataset() || '';
             const next = syncedLocation(window.location.href, path, payload);
             // Changed while encoding: the next tick takes it
             if (_isLoadingDataset) return _syncUrlSoon();
             if (next) history.replaceState(history.state, '', next);
-            _urlSyncView = json;
+            _urlSyncView = key;
         } catch (e) {
             // replaceState can throw in sandboxed iframes; never fatal
             console.debug('URL sync skipped:', e);
@@ -2175,26 +2221,31 @@ const App = (function() {
         // (utils/subset-carry.js); a link, a panel set or a restored session
         // asked for its own subset already
         if ((chosen || source === 'default') && !(datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset)) {
-            const size = _keptSubsetSize();
-            const defaults = DataManager.getSubsetDefaults();
-            const seed = defaults && Number.isInteger(defaults.seed) ? defaults.seed : 0;
-            if (size !== undefined) {
-                DataManager.setSubsetRequest(nTotal => carriedRequest(size, nTotal,
-                    { seed, maxCells: maxSubsetCells(nTotal, _largePlotPoints()) }));
-            }
+            _requestKeptSize();
         }
         return _loadDataset(datasetPath);
     }
 
-    /** The subset size the user chose last (utils/subset-carry.js), kept per user. @private */
+    /** The next dataset load asks for the kept subset size (if one is kept). @private */
+    function _requestKeptSize() {
+        const size = _keptSubsetSize();
+        const defaults = DataManager.getSubsetDefaults();
+        const seed = defaults && Number.isInteger(defaults.seed) ? defaults.seed : 0;
+        if (size !== undefined) {
+            DataManager.setSubsetRequest(nTotal => carriedRequest(size, nTotal,
+                { seed, maxCells: maxSubsetCells(nTotal, _largePlotPoints()) }));
+        }
+    }
+
+    /** The subset size the user chose last in this tab (utils/subset-carry.js), kept per user. @private */
     function _keptSubsetSize() {
-        try { return loadSubsetSize(window.localStorage, window.location.origin, _recentsUserKey || 'local'); } catch { return undefined; }
+        try { return loadSubsetSize(window.sessionStorage, window.location.origin, _recentsUserKey || 'local'); } catch { return undefined; }
     }
 
     /** Keep the size of a subset the user applied by hand on a dataset of `nTotal` cells. @private */
     function _keepSubsetSize(spec, nTotal) {
         const size = sizeAfterChoice(spec, nTotal, _keptSubsetSize(), DataManager.getSubsetDefaults());
-        try { saveSubsetSize(window.localStorage, window.location.origin, _recentsUserKey || 'local', size); } catch { /* storage blocked */ }
+        try { saveSubsetSize(window.sessionStorage, window.location.origin, _recentsUserKey || 'local', size); } catch { /* storage blocked */ }
     }
 
     /** Points above which a Cell Plot uses large-plot mode (as the subset dialog reads it). @private */

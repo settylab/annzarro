@@ -178,9 +178,10 @@ def _ask(page):
 
 
 def _landed_first_visit(page):
-    page.wait_for_function("() => !location.search && !location.hash && document.readyState === 'complete'",
-                           timeout=30000)
+    page.wait_for_function("() => !location.hash && document.readyState === 'complete'", timeout=30000)
     page.wait_for_timeout(1500)
+    # no view in the address; the only store of the data directory opens by itself, and the address names it
+    assert page.evaluate("() => location.search") in ("", "?dataset_path=fixture_small.zarr"), page.url
     assert page.evaluate(OPEN_TILES) == []
     # the welcome screen: panel choices, none of the earlier panels
     assert page.locator(".tile-selector").first.is_visible()

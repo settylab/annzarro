@@ -1,7 +1,7 @@
 // The subset size carried across dataset switches (static/js/utils/subset-carry.js):
 // the size kept and the dataset's size give the subset a switch asks for; only a
-// size chosen by hand changes it; it is kept per server and user, and storage
-// never throws. The header says when a small dataset shows every cell because of it.
+// size chosen by hand changes it; it is kept per server and user, a fresh visit
+// forgets it, and storage never throws. The header says when a small dataset shows every cell because of it.
 //
 // Run: `node --test annzarro/tests/js/subset-carry.test.mjs`.
 import assert from "node:assert/strict";
@@ -14,7 +14,7 @@ const load = (rel) => import(pathToFileURL(path.resolve(__dirname, "../../../sta
 
 const {
   carriedRequest, sizeAfterChoice, showsAll, carryNote, cleanSize,
-  loadSubsetSize, saveSubsetSize, subsetSizeKey
+  loadSubsetSize, saveSubsetSize, subsetSizeKey, dropSubsetSizes
 } = await load("utils/subset-carry.js");
 const { describeSubset } = await load("utils/subset.js");
 
@@ -133,6 +133,23 @@ test("the size is kept per server and user, and a broken or blocked storage neve
   assert.doesNotThrow(() => saveSubsetSize(blocked, "http://a", "local", undefined));
   assert.equal(cleanSize(0), undefined);
   assert.equal(cleanSize("10000"), undefined);
+});
+
+test("dropSubsetSizes forgets every kept size and nothing else (the start of a fresh visit, the older keys)", () => {
+  const st = memory();
+  st.key = (i) => [...st.m.keys()][i] ?? null;
+  Object.defineProperty(st, "length", { get: () => st.m.size });
+  saveSubsetSize(st, "http://a", "local", 10000);
+  saveSubsetSize(st, "http://b", "user:ada", "all");
+  st.setItem("annzarro.pins:http://a|local", "[]");
+  assert.equal(dropSubsetSizes(st), 2);
+  assert.equal(loadSubsetSize(st, "http://a", "local"), undefined);
+  assert.equal(loadSubsetSize(st, "http://b", "user:ada"), undefined);
+  assert.deepEqual([...st.m.keys()], ["annzarro.pins:http://a|local"]);
+  assert.equal(dropSubsetSizes(st), 0);
+  const blocked = { get length() { throw new Error("blocked"); } };
+  assert.doesNotThrow(() => dropSubsetSizes(blocked));
+  assert.equal(dropSubsetSizes(null), 0);
 });
 
 test("the header says the size is still in effect on a dataset it shows in full", () => {

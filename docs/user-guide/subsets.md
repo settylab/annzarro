@@ -127,10 +127,12 @@ After **Apply**: the UMAP and the cell table show the same 3,000 cells. View bef
 (subset-size-carried)=
 ### The size follows you to other datasets
 
-The number of cells you apply is remembered, in this browser (or the desktop app) and per user, and
-every dataset you switch to opens on it: from the dataset browser, the back button, a typed path
-or the desktop app's File menu, and so does the dataset AnnZarro opens by itself when you start it
-(the one you opened last), unless a link or the restored session asks for its own. A dataset with
+The number of cells you apply is remembered in this tab (or window of the desktop app), per user,
+and every dataset you switch to opens on it: from the dataset browser, the back button, a typed
+path or the desktop app's File menu. A reload of the tab keeps it, and so does an address with a
+dataset and no view (`?dataset_path=...`, the address of a tab with no panel open), unless a link
+or the restored session asks for its own subset. A fresh visit to the bare address (a new tab, the
+address typed, a bookmark) starts on the server's default again. A dataset with
 more cells than that size opens on a subset of that many cells, with the server's default seed; one with as many or fewer opens with every cell, and its
 badge reads, for example, **All cells (≤ 10,000)**: the size is kept, and the next larger dataset
 is subsampled to it again. Choosing **every cell** on a dataset above the server's threshold

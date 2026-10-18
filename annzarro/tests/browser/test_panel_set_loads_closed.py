@@ -592,6 +592,9 @@ def test_load_switches_dataset_and_opens_the_saved_layout(server, browser):
         # the other three panels of the set are listed closed
         assert {"cell-plot-P2", "cell-plot-P3", "cell-table-T2"} <= set(page.evaluate(CLOSED_ALL))
         assert page.locator(".open-saved-layout-btn").count() == 0
+        # the address names the set's dataset and its view, so a reload opens them
+        page.wait_for_function("() => new URLSearchParams(location.search).get('dataset_path') === 'fixture_small.zarr'"
+                               " && /^#view=/.test(location.hash)", timeout=15000)
         _no_prompts(page, seen)
     finally:
         ctx.close()

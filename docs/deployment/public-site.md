@@ -75,7 +75,7 @@ unasked and can be set to session-only (`site.storage.persistent_convenience: fa
 |---|---|---|
 | `annzarro-theme` | Light, dark or system | Choice |
 | `annzarro.pins:<origin>\|<user>` | Datasets the visitor pinned | Choice |
-| `annzarro.subsetSize:<origin>\|<user>` | The chosen subset size | Choice |
+| `annzarro.subsetSize:<origin>\|<user>` | The chosen subset size, in session storage: kept for the tab (a reload keeps it), dropped at a fresh visit to the bare address | Choice |
 | `annzarro.structure-search` | The regex and case switches of the Dataset information search | Choice |
 | `annzarro:external-ok` | The visitor's "Always" or "Never" for each external service of the Gene Set panel | Choice (it stores a consent decision) |
 | `annzarro_autosave` (`ui.autosave.storage_key`) | The panel layout, dataset and focus, offered (or restored) at the next visit | Convenience |
@@ -86,7 +86,8 @@ unasked and can be set to session-only (`site.storage.persistent_convenience: fa
 | `annzarro_memory_pending`, `annzarro_memory_margin` | A marker that a heavy action was under way and the memory margin learned from it, so a tab that ran out of memory is not repeated | Technical |
 
 "Close all panels" with its checkbox clears all of it, and the browser's own settings do too.
-Nothing is written to session storage, IndexedDB, Cache Storage or a service worker. The tab's
+Session storage holds only the chosen subset size (and, on a site set to session-only, the
+convenience items); nothing is written to IndexedDB, Cache Storage or a service worker. The tab's
 own history entry holds a random id of the page that is not kept anywhere else, so that a reload of
 the tab is told apart from a fresh visit.
 A test lists these keys and fails when one is added without being described here.
