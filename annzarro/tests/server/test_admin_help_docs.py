@@ -32,6 +32,8 @@ def test_a_key_explains_itself_and_links_the_docs(name):
     words = key.description.split()
     assert len(words) >= 8, f"{name}: the help is too terse: {key.description!r}"
     assert not key.description.startswith("server."), f"{name}: the help only names the YAML key"
+    assert key.label and len(key.label) <= 45, f"{name}: needs a short human label, got {key.label!r}"
+    assert not re.search(r"[._]", key.label), f"{name}: the label {key.label!r} reads like a key"
     assert key.guide, f"{name} has no guide"
     assert guide_exists(key.guide), f"{name}: {key.guide} is not an anchor of the docs"
 
@@ -39,6 +41,7 @@ def test_a_key_explains_itself_and_links_the_docs(name):
 def test_describe_sends_the_guide_to_the_pages():
     key = REGISTRY.get("panel.cell-plot.enabled")
     assert key.describe()["guide"] == key.guide
+    assert key.describe()["label"] == key.label == "Cell Plot panel"
 
 
 def test_every_control_of_the_catalog_has_an_existing_anchor():

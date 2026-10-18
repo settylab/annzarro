@@ -126,8 +126,13 @@
     text-align: left;
 }
 
-.policy-label {
+.policy-label,
+.policy-key {
     overflow-wrap: anywhere;
+}
+
+.policy-key {
+    flex-basis: 100%;
 }
 
 @media (max-width: 767.98px) {

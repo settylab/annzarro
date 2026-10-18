@@ -59,6 +59,8 @@ AUDIT = """() => {
       const described = document.getElementById(mark.getAttribute('aria-describedby') || '');
       if (!described || !described.textContent.trim()) bad.push(id + ': aria-describedby does not name a text');
     }
+    const title = s.querySelector('.policy-label');
+    if (title && /[._]/.test(title.textContent)) bad.push(id + ': titled with a key, not a label: ' + title.textContent);
     const link = s.querySelector('a[data-guide]');
     if (!link) bad.push(id + ': no Guide link');
     else guides.add(link.getAttribute('href'));

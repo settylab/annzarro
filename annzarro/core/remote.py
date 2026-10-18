@@ -853,7 +853,7 @@ def _declare_policy_keys() -> None:
     declare(Key(
         name=REMOTE_KEY, type=RemoteAccess(), default=_default_remote_access, scope="server", combine="restrict",
         area="data", section="data", config_reader=_read_remote_config, client=False,
-        guide=policy_guide(REMOTE_KEY, "deployment/admin.html"),
+        guide=policy_guide(REMOTE_KEY, "deployment/admin.html"), label="Remote datasets",
         description="Which s3://, gs://, gcs:// and http(s):// locations the server may open datasets from: none, only listed "
                     "locations, or any. Default: none on a shared server, any location on a single-user local one. The config "
                     "file (server.remote_stores, server.remote_allowlist) is an upper limit that an admin can narrow, not widen. "

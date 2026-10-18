@@ -118,13 +118,14 @@ def _declare_panel_keys() -> None:
             name=f"panel.{entry['type']}.enabled", type=Bool(), default=True, scope="user", combine="restrict",
             description=f"Whether users may open the {entry.get('label', entry['type'])} panel. On by default. Off removes it from the "
                         "panel menu; a saved panel set or link that holds one opens a placeholder and keeps the panel's settings.",
-            area="panels", guide=policy_guide(f"panel.{entry['type']}.enabled")))
+            area="panels", guide=policy_guide(f"panel.{entry['type']}.enabled"),
+            label=f"{entry.get('label', entry['type'])} panel"))
 
 
 def _declare_outbound_keys() -> None:
     declare(Key(
         name="outbound.allow_external", type=Bool(), default=True, scope="user", combine="restrict", area="outbound",
-        guide=policy_guide("outbound.allow_external"),
+        guide=policy_guide("outbound.allow_external"), label="Gene Set: no external services",
         description="Whether Gene Set Analysis may contact hosts outside this server. On by default. Off is the \"Gene Set Analysis: "
                     "no external services\" switch: it forces every outbound setting to its no-outbound value. It does not affect "
                     "remote datasets, which are set under Data sources."))
@@ -133,7 +134,7 @@ def _declare_outbound_keys() -> None:
         name="panel.gene-set.external_requests", type=ExternalRequests(list(EXTERNAL_REQUESTS), off=["off", "none"],
                                                                    aliases={True: "on", False: "off"}),
         default="ask", scope="user", combine="restrict", area="outbound", config_path="integrations.external_requests",
-        guide=policy_guide("panel.gene-set.external_requests"),
+        guide=policy_guide("panel.gene-set.external_requests"), label="Gene Set: sending gene ids",
         description="Whether Gene Set Analysis may send the selected gene ids to external services. on: without asking; ask (the "
                     "default): the user is asked first; off: never, its links still work; none: never, and the links are removed. "
                     "The narrowest value of config, admin and user applies."))
@@ -142,18 +143,18 @@ def _declare_outbound_keys() -> None:
         default=_default_services, scope="user", combine="restrict", area="outbound", gated_by=gate,
         config_path="integrations.gene_set.services",
         outbound_hosts=lambda value, config: service_hosts(value, config),
-        guide=policy_guide("panel.gene-set.services"),
+        guide=policy_guide("panel.gene-set.services"), label="Gene Set: outside services",
         description="The external services Gene Set Analysis offers. Each one sends the selected gene ids to its own host, and the "
                     "page may contact only the hosts of the services listed. Default: all of them, except Enrichr and Reactome on a "
                     "hosted server, which keep the gene lists they receive where others can read them."))
     declare(Key(
         name="panel.gene-set.species_search", type=Bool(), default=True, scope="user", combine="restrict",
         area="outbound", gated_by=gate, outbound_hosts=lambda value, config: list(SPECIES_HOSTS) if value else [],
-        guide=policy_guide("panel.gene-set.species_search"),
+        guide=policy_guide("panel.gene-set.species_search"), label="Gene Set: species lookup",
         description="Whether a typed species name may be looked up at NCBI Taxonomy and the ENA. No gene ids are sent. On by default."))
     declare(Key(
         name="panel.gene-set.links", type=Bool(), default=True, scope="user", combine="restrict", area="outbound",
-        guide=policy_guide("panel.gene-set.links"),
+        guide=policy_guide("panel.gene-set.links"), label="Gene Set: links to gene databases",
         description="Whether Gene Set Analysis offers links that open third-party sites by a click. On by default. Off removes the "
                     "links, because the browser cannot be stopped from navigating once one is clicked."))
 

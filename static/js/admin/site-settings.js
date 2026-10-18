@@ -150,10 +150,11 @@ function sourceBadge(key) {
 }
 
 function fieldHead(name, key, extra, describes) {
-    const field = FIELDS[name] || { title: name };
+    const field = { ...(FIELDS[name] || { title: name }), ...(key.label ? { title: key.label } : {}) };
     return h('div', { class: 'd-flex flex-wrap align-items-center gap-1 site-field-head' },
         h('span', { class: 'fw-semibold', id: `site-${css(name)}-title`, text: field.title }),
         keyHelp(key, field.title, { describes }),
+        h('code', { class: 'small text-muted', text: key.name }),
         sourceBadge(key),
         extra || null);
 }

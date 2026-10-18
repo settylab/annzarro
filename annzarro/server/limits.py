@@ -101,6 +101,33 @@ _HELP = {
 }
 
 
+#: the short name of each limit on the admin pages
+_LABEL = {
+    "name_search_max_regex_chars": "Longest name-search pattern (characters)",
+    "name_search_timeout_s": "Name-search time limit (s)",
+    "max_sessions_per_user": "Panel sets per user",
+    "max_sessions": "Panel sets on the server",
+    "max_sessions_mb": "Panel set storage (MB)",
+    "dataset_folder_max_entries": "Folder listing size (entries)",
+    "dataset_search_max_depth": "Dataset search depth (folders)",
+    "dataset_search_max_entries": "Dataset search size (entries)",
+    "dataset_details_check_budget_s": "Store check time (s)",
+    "dataset_scan_max_entries": "Directory scan size (entries)",
+    "read_user_share_percent": "Per-user share of read budgets (%)",
+    "subset_budget_mb": "Cell subset memory (MB)",
+    "subset_wait_s": "Cell subset wait (s)",
+    "max_requests": "Requests per worker",
+    "max_requests_jitter": "Worker restart jitter (requests)",
+    "limit_request_line": "Longest request line (bytes)",
+    "limit_request_fields": "Most header fields",
+    "limit_request_field_size": "Longest header field (bytes)",
+    "max_request_mb": "Largest request body (MB)",
+    "max_read_mb": "Largest read (MB)",
+    "read_budget_mb": "Read budget per worker (MB)",
+    "read_wait_s": "Read wait (s)",
+}
+
+
 def limit_guide(key: str) -> str:
     """The row of ``key`` in docs/deployment/resource-limits.md (it carries ``{#limit-<key>}``)."""
     return "deployment/resource-limits.html#limit-" + key.replace("_", "-")
@@ -116,7 +143,7 @@ def _declare_policy_keys() -> None:
         declare(Key(
             name=f"limits.{key}", type=number(min=limit.minimum), default=limit.default, scope="config",
             description=f"{_HELP[key]} Default {limit.default:,}. Set in the config file as server.{key}.",
-            area="limits", config_path=f"server.{key}", client=False, restart=key in _RESTART, guide=limit_guide(key)))
+            area="limits", config_path=f"server.{key}", client=False, restart=key in _RESTART, guide=limit_guide(key), label=_LABEL[key]))
 
     def derived_max_mb(config):
         from annzarro.core import read_guard
@@ -142,11 +169,13 @@ def _declare_policy_keys() -> None:
              "waits up to read_wait_s. Default twice max_read_mb; 0 uses the default.")):
         declare(Key(name=f"limits.{name}", type=Float(min=0), default=default, scope="config",
                     description=f"{text} Set in the config file as server.{name}.", area="limits",
-                    config_path=f"server.{name}", client=False, guide=limit_guide(name)))
+                    config_path=f"server.{name}", client=False, guide=limit_guide(name),
+                    label=_LABEL[name]))
     declare(Key(name="limits.read_wait_s", type=Float(min=0), default=5, scope="config",
                 description="Seconds a pairwise read waits for the read budget before it is answered 503 read_busy. Default 5. "
                             "Set in the config file as server.read_wait_s.",
-                area="limits", config_path="server.read_wait_s", client=False, guide=limit_guide("read_wait_s")))
+                area="limits", config_path="server.read_wait_s", client=False, guide=limit_guide("read_wait_s"),
+                label=_LABEL["read_wait_s"]))
 
 
 _declare_policy_keys()

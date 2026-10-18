@@ -689,6 +689,23 @@ _HELP = {
 }
 
 
+#: the short name of each key on the admin page
+_LABELS = {
+    "imprint": "Imprint",
+    "privacy": "Privacy notice",
+    "accessibility": "Accessibility statement",
+    "terms": "Terms of use",
+    "operator": "Operator",
+    "contact": "Contact",
+    "contact_label": "Contact link text",
+    "security_contact": "Security contact",
+    "languages": "Language of the texts",
+    "footer_links": "Footer links",
+    "robots": "Search engines",
+    "software_credits": "AnnZarro credit in About",
+    "storage.persistent_convenience": "Keep convenience items between visits",
+}
+
 #: the anchor of each key on the public-site guide (docs/deployment/public-site.md)
 _GUIDE = {
     "imprint": "imprint-checklist-for-germany", "privacy": "privacy-notice-template-english",
@@ -700,7 +717,7 @@ _GUIDE = {
 def _declare_site_keys() -> None:
     def add(path, type_, default, **kw):
         declare(Key(name=f"site.{path}", type=type_, default=default, scope="server", area="site", section="site",
-                    client=False, config_path=f"site.{path}", description=_HELP[path],
+                    client=False, config_path=f"site.{path}", description=_HELP[path], label=_LABELS[path],
                     guide="deployment/public-site.html#" + _GUIDE.get(path, "configuring-the-site"), **kw))
 
     for kind in KINDS:

@@ -73,8 +73,10 @@ test("every control of the catalog has a title, a plain sentence and a guide int
 
 test("a settings row carries the key's description as its help and the key's guide", () => {
   for (const k of FIXTURE.policy.keys.filter((x) => !x.section)) {
-    const row = renderPolicyRow({ ...k, description: `About ${k.name}, with enough words to explain it.` });
+    const row = renderPolicyRow({ ...k, label: `Label of ${k.name}`, description: `About ${k.name}, with enough words to explain it.` });
     assert.equal(attr(row, "data-setting"), k.name);
+    assert.equal(find(row, (n) => n.classes && n.classes().includes("policy-label")).textContent, `Label of ${k.name}`);
+    assert.equal(find(row, (n) => n.classes && n.classes().includes("policy-key")).textContent, k.name, "the key stays beside the label");
     const mark = find(row, (n) => has(n, "data-help"));
     assert.ok(mark, `${k.name} has no help`);
     assert.equal(attr(mark, "title"), `About ${k.name}, with enough words to explain it.`);
