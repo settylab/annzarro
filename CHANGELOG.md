@@ -13,7 +13,7 @@ with the release after it. Older releases are listed on
 - The **Appearance** group of Plot Options is now **Background** (background colour and 3D backdrop). The **Plot colours** buttons (Follow app theme, Light colours, Dark colours) are gone: plot colours follow the app theme until you set one, and each colour's **Reset** hands it back. Saved links, panel sets and autosaves that pinned a palette open and draw as saved.
 
 ### Fixed
-- The arrow keys of the opacity boxes in Plot Options (Focused, Not in table) step from the opaque default (1, 0.95, 0.9) instead of jumping to the minimum when the box is empty.
+- The arrow keys of the opacity boxes in Plot Options (Focused, Not in table) step from the opaque default (1, 0.95, 0.9) instead of jumping to the minimum; the boxes show the opacity in use (the Not in table one shows the automatic value, and stores nothing until you change it).
 
 - The Plot Options menu no longer closes when you press inside it (to select text in a box, drag a slider or a colour) and let go outside it. It closes on a click that starts outside.
 

@@ -1,8 +1,8 @@
 """Plot Options popover: the arrow keys of its number boxes, and closing only on a press that starts outside.
 
-1. A number box that shows its default as a placeholder (the Focused and Not in table
-   opacities) steps from that default with the arrow keys (1, 0.95, 0.9), not from its
-   minimum; boxes that show their value step from it. In Chromium and WebKit.
+1. The Focused opacity box shows its value (1 by default), so the arrow keys and the
+   mouse spinner step from it (1, 0.95, 0.9), not from the minimum; an emptied box with a
+   non-numeric placeholder steps from opaque by the keyboard. In Chromium and WebKit.
 2. A press inside the popover (selecting text, dragging a slider) that ends outside it
    leaves it open; a click outside closes it, and so do Escape and the button.
 
@@ -54,7 +54,7 @@ def test_the_arrows_step_from_the_default_in_chromium_and_webkit(engine_page):
     page = engine_page
     _menu(page, A, "focused")
     op = f"#focused-opacity-{A}"
-    assert page.input_value(op) == ""                      # empty: the default (1) is the placeholder
+    assert page.input_value(op) == "1"                     # the box shows the default, so a spinner steps from it
     assert _arrow(page, op, "ArrowDown") == "0.95"
     assert _arrow(page, op, "ArrowDown") == "0.9"
     assert _arrow(page, op, "ArrowUp") == "0.95"
@@ -66,7 +66,7 @@ def test_the_arrows_step_from_the_default_in_chromium_and_webkit(engine_page):
     assert _arrow(page, f"#focused-scale-{A}", "ArrowDown") == "4.9"
     assert _arrow(page, f"#focused-edge-width-{A}", "ArrowDown") == "1.5"
     assert _arrow(page, f"#focused-edge-width-{A}", "ArrowUp") == "2"
-    # Not in table opacity is automatic when empty: the arrows start from opaque
+    # Not in table opacity is automatic when empty (no table here): the arrows start from opaque
     _menu(page, A, "points")
     nt = f"#not-in-table-opacity-{A}"
     assert page.input_value(nt) == ""

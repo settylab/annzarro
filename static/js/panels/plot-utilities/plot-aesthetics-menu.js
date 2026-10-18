@@ -132,6 +132,18 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
 const sectionOpen = new Map();
 const OPEN_AT_FIRST = ['export'];      // a panel with no remembered state: only Export is open
 
+/**
+ * The opacity the grey points of a table filter are drawn at now, rounded, as text; '' while
+ * there are none. The box shows it (it is automatic until the user types) so the arrows and
+ * the spinner step from what is on screen.
+ */
+function drawnGreyOpacity(id) {
+    const gd = typeof document !== 'undefined' && document.getElementById(`plot-container-${id}`);
+    const t = gd && gd.data && gd.data.find(tr => tr && tr.name === 'Not in table' && tr.x);
+    const o = t && t.marker && t.marker.opacity;
+    return typeof o === 'number' && o > 0 && o <= 1 ? String(Math.round(o * 100) / 100) : '';
+}
+
 /** A collapsible group of the menu. */
 function details(id, key, title, body) {
     const open = (sectionOpen.get(id) || new Set(OPEN_AT_FIRST)).has(key);
@@ -344,7 +356,7 @@ export function createPopoverContent(id, settings) {
             <div class="input-group input-group-sm mb-1">
                 <span class="input-group-text">Opacity</span>
                 <input type="number" class="form-control" id="not-in-table-opacity-${id}"
-                    value="${settings.notInTableOpacity ?? ''}" placeholder="auto" min="0.05" max="1" step="0.05" data-step-from="1">
+                    value="${settings.notInTableOpacity ?? drawnGreyOpacity(id)}" placeholder="auto" min="0.05" max="1" step="0.05" data-step-from="1">
             </div>
             <div class="d-flex align-items-center gap-2">
                 <label class="form-label mb-0 me-2">Color</label>
@@ -365,8 +377,8 @@ export function createPopoverContent(id, settings) {
             <div class="input-group input-group-sm mb-1">
                 <span class="input-group-text">Opacity</span>
                 <input type="number" class="form-control" id="focused-opacity-${id}"
-                    value="${settings.focusedOpacity ?? ''}" placeholder="${FOCUS_DEFAULTS.opacity}" min="0.05" max="1" step="0.05"
-                    data-step-from="${FOCUS_DEFAULTS.opacity}" title="0 to 1; empty: opaque">
+                    value="${settings.focusedOpacity ?? FOCUS_DEFAULTS.opacity}" placeholder="${FOCUS_DEFAULTS.opacity}" min="0.05" max="1" step="0.05"
+                    data-step-from="${FOCUS_DEFAULTS.opacity}" title="0 to 1; 1 is opaque">
             </div>
             <div class="input-group input-group-sm mb-1">
                 <span class="input-group-text">Edge width</span>
@@ -1095,7 +1107,7 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
                 if (!(v > 0)) return;
                 settings.notInTableScale = v;
             } else if (target.id === `not-in-table-opacity-${id}`) {
-                if (target.value === '') delete settings.notInTableOpacity;
+                if (target.value === '') delete settings.notInTableOpacity;      // auto
                 else if (v > 0 && v <= 1) settings.notInTableOpacity = v;
                 else return;
             } else if (target.id === `not-in-table-color-${id}`) {
@@ -1139,7 +1151,7 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
                 if (input) input.value = plotColour(settings, focusKey);
             } else if (focusKey === 'focusedColor' || focusKey === 'focusedEdgeColor') {
                 settings[focusKey] = target.value;
-            } else if (target.value === '') {
+            } else if (target.value === '' || (focusKey === 'focusedOpacity' && v === FOCUS_DEFAULTS.opacity)) {
                 delete settings[focusKey];          // the default
             } else if (focusKey === 'focusedScale' ? v > 0 && v <= FOCUS_SCALE_MAX
                 : focusKey === 'focusedOpacity' ? v > 0 && v <= 1 : v >= 0 && v <= FOCUS_EDGE_MAX) {

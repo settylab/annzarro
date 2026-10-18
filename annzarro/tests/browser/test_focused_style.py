@@ -131,7 +131,7 @@ def test_a_link_without_the_keys_draws_the_default_highlight(page, server):
     _menu(page, A, "focused")
     title = page.eval_on_selector(f"details[data-panel='{A}'][data-section='focused'] > summary", "e => e.textContent.trim()")
     assert title == "Focused cell"
-    assert page.input_value(f"#focused-scale-{A}") == "5" and page.input_value(f"#focused-opacity-{A}") == ""
+    assert page.input_value(f"#focused-scale-{A}") == "5" and page.input_value(f"#focused-opacity-{A}") == "1"
     assert page.input_value(f"#focused-edge-width-{A}") == "2"
     assert page.input_value(f"#focused-color-{A}") == "#ff0000" and page.input_value(f"#focused-edge-color-{A}") == "#000000"
     assert page.is_disabled(f"#reset-focused-color-{A}")                  # following the theme: nothing to reset
