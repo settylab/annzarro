@@ -435,12 +435,16 @@ export function createPopoverContent(id, settings) {
                         placeholder="${DOT_SIZE_AUTO}" min="${DOT_SIZE_MIN}" max="${DOT_SIZE_MAX}" step="1"
                         title="Size of the dots in the legend of a categorical colouring, independent of the points' size; empty: ${DOT_SIZE_AUTO} px">
                     <span class="input-group-text">px</span>
+                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-dot-size-${id}" title="Back to the default dots"
+                        ${settings.legendDotSize == null ? 'disabled' : ''}>Reset</button>
                 </div>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text">Columns</span>
                     <input type="number" class="form-control" id="legend-columns-${id}" value="${settings.legendColumns ?? ''}"
-                        placeholder="1" min="2" max="${COLUMNS_MAX}" step="1"
-                        title="Lay the legend out in this many columns; empty: one column. Labels too long for that many columns give fewer.">
+                        placeholder="1" min="1" max="${COLUMNS_MAX}" step="1"
+                        title="Lay the legend out in this many columns; 1 or empty: one column. Labels too long for that many columns give fewer.">
+                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-columns-${id}" title="Back to one column"
+                        ${settings.legendColumns == null ? 'disabled' : ''}>Reset</button>
                 </div>
             </div>
             <!-- Colour bar -->
@@ -481,6 +485,8 @@ export function createPopoverContent(id, settings) {
                     <input type="number" class="form-control" id="font-size-${id}" 
                         value="${settings.fontSize || 12}" min="8" max="24" step="1">
                     <span class="input-group-text">px</span>
+                    <button class="btn btn-outline-secondary" type="button" id="reset-font-size-${id}" title="Back to the default size"
+                        ${(settings.fontSize || 12) === 12 ? 'disabled' : ''}>Reset</button>
                 </div>
                 
                 <div class="d-flex align-items-center gap-2">
@@ -947,6 +953,15 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             settings.fontSize = parseInt(target.value, 10);
             updateFontSize(plotContainer, settings);
             notifySettingsChanged(id, 'fontSize', settings.fontSize);
+            syncOptionResets(id, settings);
+            return;
+        }
+        if (target.id === `reset-font-size-${id}`) {
+            settings.fontSize = 12;
+            document.getElementById(`font-size-${id}`).value = 12;
+            updateFontSize(plotContainer, settings);
+            notifySettingsChanged(id, 'fontSize', settings.fontSize);
+            syncOptionResets(id, settings);
             return;
         }
         
@@ -1019,12 +1034,24 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         if (target.id === `legend-dot-size-${id}` || target.id === `legend-columns-${id}`) {
             const dots = target.id === `legend-dot-size-${id}`;
             const n = parseInt(target.value, 10);
-            if (target.value !== '' && !(n >= (dots ? DOT_SIZE_MIN : 2))) return;
+            if (target.value !== '' && !(n >= (dots ? DOT_SIZE_MIN : 1))) return;
             const key = dots ? 'legendDotSize' : 'legendColumns';
-            settings[key] = target.value === '' ? null : Math.min(n, dots ? DOT_SIZE_MAX : COLUMNS_MAX);
+            // empty, and one column, are unset
+            settings[key] = target.value === '' || (!dots && n === 1) ? null : Math.min(n, dots ? DOT_SIZE_MAX : COLUMNS_MAX);
             applyLegendOptions(plotContainer, settings,
                 getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
             notifySettingsChanged(id, key, settings[key]);
+            syncOptionResets(id, settings);
+            return;
+        }
+        if (target.id === `reset-legend-dot-size-${id}` || target.id === `reset-legend-columns-${id}`) {
+            const key = target.id === `reset-legend-dot-size-${id}` ? 'legendDotSize' : 'legendColumns';
+            settings[key] = null;
+            document.getElementById(`${key === 'legendDotSize' ? 'legend-dot-size' : 'legend-columns'}-${id}`).value = '';
+            applyLegendOptions(plotContainer, settings,
+                getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
+            notifySettingsChanged(id, key, null);
+            syncOptionResets(id, settings);
             return;
         }
 
@@ -1701,6 +1728,16 @@ function syncFocusedFill(id, settings) {
 /** A Reset button's state as drawn: disabled while its colour follows the theme (syncColourControls keeps it so). */
 function resetState(settings, key) {
     return isFollowing(settings, key) ? 'disabled title="Following the app theme"' : 'title="Follow the app theme again"';
+}
+
+/** The Reset buttons of the number boxes (text size, legend dots and columns): disabled at the default, where there is nothing to reset. */
+function syncOptionResets(id, settings) {
+    const atDefault = { 'font-size': (settings.fontSize || 12) === 12, 'legend-dot-size': settings.legendDotSize == null,
+                        'legend-columns': settings.legendColumns == null };
+    for (const [name, yes] of Object.entries(atDefault)) {
+        const reset = document.getElementById(`reset-${name}-${id}`);
+        if (reset) reset.disabled = yes;
+    }
 }
 
 /** The ids of each colour's Reset button, by settings key. */

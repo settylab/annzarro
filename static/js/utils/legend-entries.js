@@ -87,9 +87,14 @@ export function withLegendInvariant(traces, layout) {
  */
 const HIDDEN = '__legendHidden';
 
-/** The identity of a trace's legend entry: its legend group, else its name (null without one). */
+/**
+ * The identity of a trace's legend entry: the legend group it stands for (a legend in columns moves its
+ * entries to groups of their own and keeps the category's in `azKey`, legend-options.js), else its name
+ * (null without one).
+ */
 export function legendKey(trace) {
     if (!trace) return null;
+    if (typeof trace.azKey === 'string' && trace.azKey !== '') return trace.azKey;
     if (typeof trace.legendgroup === 'string' && trace.legendgroup !== '') return trace.legendgroup;
     return isRealName(trace.name) ? trace.name : null;
 }
