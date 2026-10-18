@@ -880,6 +880,9 @@ def test_an_uploaded_file_load_switches_dataset_and_a_missing_one_falls_back(ser
 def test_a_file_that_is_not_a_panel_set_says_so(server, browser, tmp_path):
     path = tmp_path / "junk.json"
     path.write_text("{not json")
+    # the dialog is open once the list shows a card: one set of its own, so the test
+    # does not depend on another test having saved one first (it failed run alone)
+    _write_set("beside-junk", ["cell-plot-P1"])
     ctx, page, seen = _page(browser, server)
     try:
         card = _choose_file(page, path)
