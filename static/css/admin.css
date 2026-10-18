@@ -121,6 +121,10 @@
     color: var(--bs-link-color, #0d6efd);
 }
 
+.admin-help-path {
+    color: inherit;
+}
+
 .tooltip .tooltip-inner {
     max-width: min(22rem, 85vw);
     text-align: left;

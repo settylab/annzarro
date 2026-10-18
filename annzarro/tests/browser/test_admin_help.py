@@ -46,7 +46,7 @@ run_simple("127.0.0.1", int(sys.argv[2]), app, threaded=True)
 """
 
 #: what one page of the admin interface holds that is a setting, and what is not (see help.js)
-AUDIT = """() => {
+AUDIT = """(registry) => {
   const bad = [], guides = new Set();
   const settings = [...document.querySelectorAll('#admin-main [data-setting]')];
   for (const s of settings) {
@@ -61,6 +61,11 @@ AUDIT = """() => {
     }
     const title = s.querySelector('.policy-label');
     if (title && /[._]/.test(title.textContent)) bad.push(id + ': titled with a key, not a label: ' + title.textContent);
+    if (mark && registry.includes(id)) {
+      const path = mark.getAttribute('data-config-file');
+      if (!path) bad.push(id + ': the tooltip has no config file path');
+      else if (!text.includes('Config file: ' + path)) bad.push(id + ': the tooltip does not end with the config path: ' + text);
+    }
     const link = s.querySelector('a[data-guide]');
     if (!link) bad.push(id + ': no Guide link');
     else guides.add(link.getAttribute('href'));
@@ -137,7 +142,8 @@ def _open(browser, url, section, width=1300, height=1000):
 
 def _audit(page, minimum):
     page.wait_for_function("() => document.querySelectorAll('#admin-main [data-setting], #admin-main table, #admin-main .text-muted').length > 0")
-    got = page.evaluate(AUDIT)
+    registry = page.evaluate("() => fetch('/api/v1/admin/policy').then(r => r.json()).then(p => p.keys.map(k => k.name))")
+    got = page.evaluate(AUDIT, registry)
     assert got["bad"] == [], got["bad"]
     assert got["count"] >= minimum, f"only {got['count']} settings found; the audit would pass for the wrong reason"
     for href in got["guides"]:
@@ -216,6 +222,7 @@ def test_the_mark_is_reachable_by_keyboard_and_closes_on_escape(browser, hosted)
         mark.focus()
         page.wait_for_selector(".tooltip.show")
         assert "Cell Plot" in page.inner_text(".tooltip.show")
+        assert page.inner_text(".tooltip.show code") == "policy.locked"
         page.keyboard.press("Escape")
         page.wait_for_selector(".tooltip", state="detached")
         # the text stays available to a screen reader after the tip is gone

@@ -67,16 +67,21 @@ export function docsUrl(guide) {
  * @param {Object} [opts]
  * @param {HTMLElement[]} [opts.describes] - controls the text also describes (`aria-describedby`); for a
  *        wrapper, the first input, select or textarea inside it
+ * @param {{path: string, setting: boolean}} [opts.configFile] - where the config file has it: the YAML
+ *        path, shown as a last line in monospace; `setting` false means no value to set, only
+ *        `policy.locked` can name it
  * @returns {HTMLElement}
  */
-export function helpMark(title, text, { describes = [] } = {}) {
+export function helpMark(title, text, { describes = [], configFile = null } = {}) {
     counter += 1;
     const id = `admin-help-${counter}`;
+    const note = configFile ? (configFile.setting ? '' : ' (lists the key to lock it; there is no value to set)') : '';
+    const plain = configFile ? `${text}\nConfig file: ${configFile.path}${note}` : text;
     const mark = h('button', {
         type: 'button', class: 'btn btn-link btn-sm p-0 ms-1 admin-help-mark', 'aria-label': `Help: ${title}`,
-        title: text, 'aria-describedby': id, 'data-bs-toggle': 'tooltip', 'data-bs-placement': 'right', 'data-help': '',
+        title: plain, 'aria-describedby': id, 'data-config-file': configFile ? configFile.path : false, 'data-bs-toggle': 'tooltip', 'data-bs-placement': 'right', 'data-help': '',
     }, h('i', { class: 'fas fa-circle-info', 'aria-hidden': 'true' }));
-    const hidden = h('span', { class: 'visually-hidden', id, text });
+    const hidden = h('span', { class: 'visually-hidden', id, text: configFile ? `${text} Config file: ${configFile.path}${note}.` : text });
     for (const wrapper of describes) {
         const control = controlIn(wrapper);
         const before = control.getAttribute('aria-describedby');
@@ -84,7 +89,9 @@ export function helpMark(title, text, { describes = [] } = {}) {
     }
     const bootstrap = globalThis.bootstrap;
     if (bootstrap && bootstrap.Tooltip) {
-        const tip = bootstrap.Tooltip.getOrCreateInstance(mark, { container: 'body' });
+        const body = configFile ? h('div', { class: 'text-start' }, h('div', { text }),
+            h('div', { class: 'mt-1' }, 'Config file: ', h('code', { class: 'admin-help-path', text: configFile.path }), note)) : null;
+        const tip = bootstrap.Tooltip.getOrCreateInstance(mark, { container: 'body', ...(body ? { html: true, title: body } : {}) });
         // Bootstrap swaps aria-describedby for the tip while it shows and drops it after
         live.add(mark);
         mark.addEventListener('show.bs.tooltip', () => closeHelp());

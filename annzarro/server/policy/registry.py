@@ -69,6 +69,8 @@ class Key:
     guide: str = ""
     #: a short human name for the admin pages ("Cell Plot panel"); the key stays beside it for the YAML
     label: str = ""
+    #: the YAML path of a key whose setting is read through ``config_reader`` ("server.remote_stores")
+    yaml_path: str = ""
     client: bool = True             # included in /api/v1/policy/effective
     restart: bool = False           # takes effect only after a restart; implies scope "config"
 
@@ -91,12 +93,18 @@ class Key:
         value = self.default(config or {}) if callable(self.default) else self.default
         return self.type.validate(value)
 
+    def config_file(self) -> Dict[str, Any]:
+        """Where the config file says anything about this key, for the admin pages' help: the YAML
+        path of its setting, or ``policy.locked`` (which can lock a key that has no setting of its own)."""
+        path = self.config_path or self.yaml_path
+        return {"config_file": path or "policy.locked", "config_file_setting": bool(path)}
+
     def describe(self) -> Dict[str, Any]:
         """What the Settings page needs of the declaration (not the value)."""
         return {"name": self.name, "type": self.type.describe(), "scope": self.scope, "area": self.area,
                 "description": self.description, "combine": self.combine, "restart": self.restart,
                 "routes": list(self.routes), "config_path": self.config_path, "section": self.section,
-                "guide": self.guide, "label": self.label}
+                "guide": self.guide, "label": self.label, **self.config_file()}
 
 
 @dataclass

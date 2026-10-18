@@ -6,7 +6,7 @@ import test, { beforeEach, afterEach } from "node:test";
 import { readFileSync } from "node:fs";
 import { find, findAll, installFakeDocument, uninstallFakeDocument } from "./fake-dom.mjs";
 import { DOCS, docsUrl, guideLink, helpMark, settingHelp } from "../../../static/js/admin/help.js";
-import { CONTROLS, controlHelp } from "../../../static/js/admin/help-catalog.js";
+import { CONTROLS, controlHelp, keyHelp } from "../../../static/js/admin/help-catalog.js";
 import { renderPolicy, renderPolicyRow, renderUserPolicy } from "../../../static/js/admin/policy-widgets.js";
 
 const FIXTURE = JSON.parse(readFileSync(new URL("./admin-fixtures.json", import.meta.url), "utf8"));
@@ -34,6 +34,18 @@ test("the mark is a button named for the setting, with its text also in the page
   assert.ok(text, "aria-describedby names an element of the page");
   assert.equal(text.textContent, "Who provides this site.");
   assert.ok(has(button, "data-help"));
+});
+
+test("a registry key's mark ends with its config file path, and a catalog control's has none", () => {
+  const [mark] = keyHelp({ description: "Does a thing, by default off.", config_file: "site.imprint", config_file_setting: true }, "Imprint");
+  const button = find(mark, (n) => n.tagName === "BUTTON");
+  assert.equal(attr(button, "title"), "Does a thing, by default off.\nConfig file: site.imprint");
+  assert.equal(attr(button, "data-config-file"), "site.imprint");
+  assert.match(byId(mark, attr(button, "aria-describedby")).textContent, /Config file: site\.imprint\.$/);
+  const [lock] = keyHelp({ description: "A switch.", config_file: "policy.locked", config_file_setting: false }, "Panel");
+  assert.match(attr(find(lock, (n) => n.tagName === "BUTTON"), "title"), /Config file: policy\.locked \(lists the key to lock it/);
+  const [plain] = controlHelp("user.admin");
+  assert.equal(attr(find(plain, (n) => n.tagName === "BUTTON"), "title").includes("Config file"), false);
 });
 
 test("the mark also describes the control it is for", () => {

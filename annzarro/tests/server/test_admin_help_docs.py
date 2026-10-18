@@ -9,6 +9,7 @@ import os
 import re
 
 import pytest
+import yaml
 
 from annzarro.server.policy.registry import REGISTRY, load_declarations
 from annzarro.tests.server.docs_anchors import ROOT, guide_exists, slug, source_anchors
@@ -36,6 +37,25 @@ def test_a_key_explains_itself_and_links_the_docs(name):
     assert not re.search(r"[._]", key.label), f"{name}: the label {key.label!r} reads like a key"
     assert key.guide, f"{name} has no guide"
     assert guide_exists(key.guide), f"{name}: {key.guide} is not an anchor of the docs"
+
+
+def _resolves(tree, path):
+    for part in path.split("."):
+        if not isinstance(tree, dict) or part not in tree:
+            return False
+        tree = tree[part]
+    return True
+
+
+@pytest.mark.parametrize("name", KEYS)
+def test_the_config_path_a_tooltip_shows_is_in_the_shipped_config(name):
+    described = REGISTRY.get(name).describe()
+    path = described["config_file"]
+    with open(os.path.join(ROOT, "annzarro", "config", "base.yaml"), encoding="utf-8") as fh:
+        base = yaml.safe_load(fh)
+    assert _resolves(base, path), f"{name}: {path} is not in base.yaml"
+    if not described["config_file_setting"]:
+        assert path == "policy.locked", f"{name} has no YAML setting, so only policy.locked can name it"
 
 
 def test_describe_sends_the_guide_to_the_pages():
