@@ -4,7 +4,7 @@ import { hasLegendEntries } from '../../utils/legend-entries.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
-  plotColour, isFollowing, followsTheme, followTheme, pinPalette, modebarColours, THEMED_COLOURS
+  plotColour, isFollowing, followTheme, modebarColours, THEMED_COLOURS
 } from '../../utils/plot-theme.js';
 import { THEME_EVENT } from '../../utils/theme.js';
 import {
@@ -176,11 +176,13 @@ export function createPopoverContent(id, settings) {
                     title="Back to the look every plot starts with">Default</button>
             </div>
         `)}
-        ${details(id, 'appearance', 'Appearance', `
-            
+        ${details(id, 'background', 'Background', `
+            <!-- What is drawn behind the data. Each block is one option; a new one (cell outlines,
+                 a stain image) is another block here, with its own Reset when it has a colour. -->
+
             <!-- Background Color -->
             <div class="mb-2">
-                <label class="form-label mb-1">Background</label>
+                <label class="form-label mb-1">Colour</label>
                 <div class="d-flex align-items-center gap-2">
                     <input type="color" class="form-control form-control-sm form-control-color" 
                         id="plot-bg-color-${id}" value="${plotColour(settings, 'bgColor')}" title="Choose background color">
@@ -203,27 +205,6 @@ export function createPopoverContent(id, settings) {
                         id="backdrop-color-${id}" value="${plotColour(settings, 'backdropColor')}" title="Choose 3D backdrop color">
                     <button class="btn btn-sm btn-outline-secondary" id="reset-backdrop-color-${id}">Reset</button>
                 </div>
-            </div>
-
-            <!-- Color Theme Buttons: follow the app theme, or keep one palette in either -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Plot colours</label>
-                <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-sm btn-outline-secondary ${followsTheme(settings) ? 'active' : ''}" id="follow-theme-${id}"
-                        aria-pressed="${followsTheme(settings)}"
-                        title="Every colour follows the app theme (light or dark) again">
-                        <i class="fas fa-circle-half-stroke"></i> Follow app theme
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="light-theme-${id}"
-                        title="Keep the light colours in either app theme">
-                        <i class="fas fa-sun"></i> Light colours
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="dark-theme-${id}"
-                        title="Keep the dark colours in either app theme">
-                        <i class="fas fa-moon"></i> Dark colours
-                    </button>
-                </div>
-                <div class="form-text" id="colour-follow-note-${id}"></div>
             </div>
         `)}
         ${details(id, 'axes', 'Axes and ticks', `
@@ -862,21 +843,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
-        // Light colours / Dark colours: pin this plot's colours to a palette, whatever the app theme
-        if (target.id === `light-theme-${id}` || target.closest(`#light-theme-${id}`)
-            || target.id === `dark-theme-${id}` || target.closest(`#dark-theme-${id}`)) {
-            pinPalette(settings, (target.id === `dark-theme-${id}` || target.closest(`#dark-theme-${id}`)) ? 'dark' : 'light');
-            colourSetChanged(container, id, settings, plotContainer);
-            return;
-        }
-
-        // Follow app theme: every colour auto again
-        if (target.id === `follow-theme-${id}` || target.closest(`#follow-theme-${id}`)) {
-            followTheme(settings);
-            colourSetChanged(container, id, settings, plotContainer);
-            return;
-        }
-        
         // Axis title visibility
         if (target.id === `show-axis-titles-${id}`) {
             settings.showAxisTitles = target.checked;
@@ -1275,16 +1241,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         document.body.removeEventListener('change', menuHandler);
         document.body.removeEventListener('input', menuHandler);
     };
-}
-
-/** The colours were changed as a set (a plot theme button): inputs, plot and listeners follow. */
-function colourSetChanged(container, id, settings, plotContainer) {
-    updateColorInputs(container, id, settings);
-    relookColours(plotContainer, settings);
-    notifyMultipleSettingsChanged(id, [
-        ...THEMED_COLOURS.map(k => ({ setting: k, value: settings[k] })),
-        { setting: 'showBackdrop', value: settings.showBackdrop }
-    ]);
 }
 
 /**
@@ -1702,11 +1658,7 @@ const RESET_IDS = {
     focusedColor: 'reset-focused-color', focusedEdgeColor: 'reset-focused-edge-color'
 };
 
-/**
- * Show which colours follow the app theme: a following colour's Reset has
- * nothing to do (disabled, with the reason as its tooltip), the Follow app
- * theme button is pressed while every colour follows, and a line says which.
- */
+/** Show which colours follow the app theme: a following colour's Reset has nothing to do (disabled, with the reason as its tooltip). */
 export function syncColourControls(id, settings) {
     for (const key of THEMED_COLOURS) {
         const reset = document.getElementById(`${RESET_IDS[key]}-${id}`);
@@ -1714,19 +1666,6 @@ export function syncColourControls(id, settings) {
         const following = isFollowing(settings, key);
         reset.disabled = following;
         reset.title = following ? 'Following the app theme' : 'Follow the app theme again';
-    }
-    const all = THEMED_COLOURS.every(k => isFollowing(settings, k));
-    const follow = document.getElementById(`follow-theme-${id}`);
-    if (follow) {
-        follow.classList.toggle('active', all);
-        follow.setAttribute('aria-pressed', all ? 'true' : 'false');
-    }
-    const note = document.getElementById(`colour-follow-note-${id}`);
-    if (note) {
-        const set = THEMED_COLOURS.filter(k => !isFollowing(settings, k)).length;
-        note.textContent = all ? 'All colours follow the app theme.'
-            : set === THEMED_COLOURS.length ? 'All colours are set; they stay as they are in either app theme.'
-                : 'Some colours are set; the others follow the app theme.';
     }
 }
 
@@ -1785,20 +1724,6 @@ export function applyThemeColors(plotContainer, settings) {
     Plotly.relayout(plotContainer, update);
 
     applyTextFont(plotContainer, settings);      // the text colour: axes, legend, colour bar
-}
-
-/**
- * Notify that multiple settings have changed
- * @param {string} id - Panel ID
- * @param {Array} changes - Array of {setting, value} objects
- */
-function notifyMultipleSettingsChanged(id, changes) {
-    changes.forEach(change => {
-        const event = new CustomEvent('plotSettingsChanged', { 
-            detail: { id, setting: change.setting, value: change.value } 
-        });
-        document.dispatchEvent(event);
-    });
 }
 
 /**

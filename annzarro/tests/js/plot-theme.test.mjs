@@ -11,13 +11,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    COLOUR_MODEL, THEMED_COLOURS, BUTTON_COLOURS, PLOT_PALETTES, plotColour, isFollowing, followsTheme,
+    COLOUR_MODEL, THEMED_COLOURS, BUTTON_COLOURS, PLOT_PALETTES, plotColour, isFollowing,
     adoptColourModel, pinPalette, followTheme, normalizeHex, withAlpha, modebarColours
 } from '../../../static/js/utils/plot-theme.js';
 import {
     normalizePlotOptions, pickStyle, adoptStyle, applyPreset, scaleBar, defaultLook
 } from '../../../static/js/panels/plot-utilities/plot-options.js';
 import { greyMarker, NOT_IN_TABLE_COLOR } from '../../../static/js/utils/point-style.js';
+
+const followsAll = (s) => THEMED_COLOURS.every(k => isFollowing(s, k));
 
 const LIGHT = PLOT_PALETTES.light;
 const DARK = PLOT_PALETTES.dark;
@@ -34,7 +36,7 @@ test('an unset colour is the theme\'s; a set one is kept in either theme', () =>
     assert.equal(plotColour(s, 'textColor', 'dark'), '#ff0000');
     assert.equal(plotColour(s, 'bgColor', 'dark'), DARK.bgColor);   // the others still follow
     assert.equal(isFollowing(s, 'textColor'), false);
-    assert.equal(followsTheme(s), false);
+    assert.equal(followsAll(s), false);
 });
 
 test('the default theme is the one on the page (light with no document)', () => {
@@ -72,7 +74,7 @@ test('old link, never touched: every stored colour equals the light default and 
     assert.deepEqual(freed.sort(), BUTTON_COLOURS.slice().sort());
     for (const k of THEMED_COLOURS) assert.equal(k in s, false);
     assert.equal(s.colourModel, COLOUR_MODEL);
-    assert.equal(followsTheme(s), true);
+    assert.equal(followsAll(s), true);
     assert.equal(plotColour(s, 'bgColor', 'dark'), DARK.bgColor);
 });
 
@@ -147,7 +149,7 @@ test('Light colours and Dark colours pin; Follow app theme releases every colour
     s.notInTableColor = '#abcdef';
     const changed = followTheme(s);
     assert.ok(changed.includes('bgColor') && changed.includes('notInTableColor'));
-    assert.equal(followsTheme(s), true);
+    assert.equal(followsAll(s), true);
     assert.equal(s.colourModel, COLOUR_MODEL);
 });
 
@@ -166,7 +168,7 @@ test('presets: Default releases the colours, Publication pins them light', () =>
     assert.equal(plotColour(s, 'bgColor', 'dark'), '#ffffff');
     assert.equal(plotColour(s, 'textColor', 'dark'), '#000000');
     applyPreset(s, 'default');
-    assert.equal(followsTheme(s), true);
+    assert.equal(followsAll(s), true);
     const look = defaultLook();
     for (const k of BUTTON_COLOURS) assert.equal(look[k], undefined);
 });
@@ -208,4 +210,19 @@ test('the toolbar takes the plot\'s text colour', () => {
     assert.equal(modebarColours({}, 'light').activecolor, LIGHT.textColor);
     assert.equal(modebarColours({ textColor: '#ff0000' }, 'dark').color, 'rgba(255, 0, 0, 0.55)');
     assert.equal(withAlpha('not a colour', 0.5), 'not a colour');
+});
+
+test('a link saved with a whole palette pinned (the removed theme buttons) loads and draws as saved', () => {
+    for (const [name, pal] of [['dark', DARK], ['light', LIGHT]]) {
+        const saved = { colourModel: COLOUR_MODEL };
+        for (const k of BUTTON_COLOURS) saved[k] = pal[k];
+        const loaded = normalizePlotOptions(JSON.parse(JSON.stringify(saved)));
+        for (const k of BUTTON_COLOURS) {
+            assert.equal(plotColour(loaded, k, 'light'), pal[k], `${name} ${k} in a light app`);
+            assert.equal(plotColour(loaded, k, 'dark'), pal[k], `${name} ${k} in a dark app`);
+        }
+        followTheme(loaded, ['bgColor']);                      // a colour's Reset frees only that colour
+        assert.equal(plotColour(loaded, 'bgColor', 'dark'), DARK.bgColor);
+        assert.equal(plotColour(loaded, 'textColor', 'dark'), pal.textColor);
+    }
 });

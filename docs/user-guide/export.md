@@ -39,7 +39,7 @@ default, whatever the size of the tile.
    size or opacity you set is exported as set.
 
 The rest of **Plot Options** changes how the plot looks on screen and in the export: presets
-(**Publication**), background colour and the plot colours (**Follow app theme**, **Light colours**, **Dark colours**), grid, axis titles, tick labels, marks
+(**Publication**), background and the plot colours, grid, axis titles, tick labels, marks
 and count, axis lines, zero lines, line widths and colours, a scale bar, the font and its size and
 colour, the margins, the legend and the colour bar. {doc}`plot-options` describes each group.
 An image is exported with the colours you see, so in the dark theme it has a dark background; for a

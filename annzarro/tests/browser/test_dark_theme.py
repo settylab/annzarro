@@ -12,9 +12,9 @@ One headless Chromium, a context per test with the OS colour scheme emulated:
    legend, colour bar, toolbar, the grey of points not in the table, the scale
    bar (it takes the text colour);
 5. a colour the user sets is kept across theme changes, the others follow;
-   Follow app theme (and a colour's Reset) bring the plot back; the choice
-   travels in a link, and a link from before the model (explicit light
-   defaults) follows, while one written with the dark button stays dark;
+   a colour's Reset brings it back to the theme; the choice travels in a link,
+   and a link from before the model (explicit light defaults) follows, while a
+   saved palette pinned by the former Dark colours button stays dark;
 6. the login page, the admin pages, the account page and the error pages are
    themed; key text/background pairs meet WCAG AA in both themes.
 
@@ -154,7 +154,7 @@ def _toggle(page, mode):
     page.click(f'#theme-toggle button[data-theme-mode="{mode}"]')
 
 
-def _menu(page, pid, section="appearance"):
+def _menu(page, pid, section="background"):
     if not page.query_selector(f"details[data-panel='{pid}']"):
         page.click(f"#aesthetics-menu-btn-{pid}")
         page.wait_for_selector(f"details[data-panel='{pid}']", state="visible")
@@ -362,7 +362,8 @@ def test_a_set_colour_is_kept_and_follow_restores(tab, server):
     assert _rgb(_snap(page, A)["font"]) == "#ff0000"
 
     _menu(page, A)
-    page.click(f"#follow-theme-{A}")                                            # follow: every colour auto again
+    _menu(page, A, "text")
+    page.click(f"#reset-text-color-{A}")                                        # Reset: the colour follows the theme again
     _wait_plot(page, A, "font", LIGHT["text"])
     cfg = _cfg(page, A)
     assert all(k not in cfg for k in ("textColor", "bgColor", "gridColor", "axisColor"))
@@ -382,23 +383,29 @@ def test_a_colours_reset_follows_the_theme_again(tab, server):
     assert page.is_disabled(f"#reset-bg-color-{A}")
 
 
-def test_the_plot_theme_buttons_pin_and_survive_theme_changes(tab, server):
+def test_the_theme_buttons_are_gone_and_a_pinned_palette_still_loads(tab, server):
+    """Plot colours follow the app theme unless set; a palette pinned by the removed buttons is kept as saved."""
+    dark_pin = {"colourModel": 2, "bgColor": DARK["bg"], "gridColor": DARK["grid"], "axisColor": DARK["axis"],
+                "textColor": DARK["text"], "zeroLineColor": "#666666", "backdropColor": "#121212"}
     t = tab("light")
-    page = _open(t, server)
+    page = _open(t, server, _cfgs(extra_a=dict(dark_pin)))
     _menu(page, A)
-    page.click(f"#dark-theme-{A}")                                              # Dark colours: pinned, in a light app
-    _wait_plot(page, A, "paper", DARK["bg"])
-    cfg = _cfg(page, A)
-    assert cfg["bgColor"] == DARK["bg"] and cfg["textColor"] == DARK["text"]
+    assert page.query_selector(f"#follow-theme-{A}") is None and page.query_selector(f"#dark-theme-{A}") is None
+    assert page.query_selector(f"#light-theme-{A}") is None
+    title = page.eval_on_selector(f"details[data-panel='{A}'][data-section='background'] > summary", "e => e.textContent.trim()")
+    assert title == "Background"
+    assert _rgb(_snap(page, A)["paper"]) == DARK["bg"]                          # drawn as saved, in a light app
     _toggle(page, "dark")
     _toggle(page, "light")
     page.wait_for_timeout(600)
-    assert _rgb(_snap(page, A)["paper"]) == DARK["bg"]                          # still the pinned dark
-    _menu(page, A)
-    page.click(f"#light-theme-{A}")
+    assert _rgb(_snap(page, A)["paper"]) == DARK["bg"]                          # and kept across theme changes
+    _menu(page, A)                                                              # a click on the toggle closed the menu
+    assert page.input_value(f"#plot-bg-color-{A}") == DARK["bg"] and not page.is_disabled(f"#reset-bg-color-{A}")
+    page.click(f"#reset-bg-color-{A}")                                          # each colour's own Reset follows the theme
+    _wait_plot(page, A, "paper", LIGHT["bg"])
+    assert "bgColor" not in _cfg(page, A) and _cfg(page, A)["textColor"] == DARK["text"]
     _toggle(page, "dark")
-    page.wait_for_timeout(800)
-    assert _rgb(_snap(page, A)["paper"]) == LIGHT["bg"]                         # pinned light in a dark app (what a figure wants)
+    _wait_plot(page, A, "paper", DARK["bg"])
     assert _rgb(_snap(page, B)["paper"]) == DARK["bg"]
 
 
