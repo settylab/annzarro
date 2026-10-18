@@ -358,6 +358,11 @@ ui:
     # browser (a quarter, at least 4 GB); for a browser on another computer,
     # 16; at most half the device's memory on devices with 4 GB or less.
     total_gb: null
+    # Array buffers one tab may hold, all its plots together, in GB (large-plot
+    # mode keeps its points in them). null: the browser's own limit, 16.6 in
+    # Chrome, Edge and the desktop app (measured); Safari ends a page at about
+    # 15 on a computer with more than 16 GB, 7 below.
+    buffers_gb: null
     # Predictions are multiplied by 1 + margin before they are compared.
     margin: 0.2
 

@@ -357,17 +357,23 @@ the panels already open:
 - **a recolour or a redraw** of a plot.
 
 What does not fit is not started, and the panel or the control says what it needs, what is free
-and what helps: close a plot, or show fewer cells. The limit that matters is the browser's
-JavaScript memory, about 4.4 GB in Chrome on a 64-bit computer whatever its RAM; a Cell Plot
-holds about 20 bytes of it per point in large-plot mode and 400 to 900 bytes in a regular plot.
+and what helps: close a plot, or show fewer cells. Two limits matter, whatever the computer's RAM: the browser's
+JavaScript memory, about 4.4 GB in Chrome on a 64-bit computer, of which a regular plot holds
+400 to 900 bytes per point; and the array buffers one tab may hold, about 16.6 GB in Chrome and
+15 GB in Safari, of which a plot in large-plot mode holds about 90 bytes per point. The buffers
+of every open plot count together: with six Cell Plots open, every cell of a 95.6-million-cell
+dataset is refused (six plots of 8 to 9 GB), and the dialog says up to which size they fit.
+The headline of a refusal names the limit: **JS memory**, **browser buffers**, **browser
+memory** (the share of the computer's memory a tab is given) or **WebGL canvases** (a page keeps
+at most 16).
 The numbers are estimates from measurements on a laptop ("estimated" in the dialog's memory
 line); the server's administrator can loosen or tighten them (`ui.memory`,
 {doc}`../reference/configuration`).
 
 Several plots drawn at once (a restored session, a switch to another dataset or a larger subset
 with plots open) are drawn one after the other, each checked against what the plots before it
-hold. The first ones that fit are drawn; each later one shows **Not drawn: not enough browser
-memory**, what it needs and what is free, and the ways out: **Half the cells**, **Subset…**,
+hold. The first ones that fit are drawn; each later one shows **Not drawn: not enough JS
+memory** (or the limit that binds), what it needs and what is free, and the ways out: **Half the cells**, **Subset…**,
 **Close other plots** (they go to the closed list, and this plot is drawn) and **Draw anyway**.
 Draw anyway draws it past the estimate, at your risk: if the tab runs out of memory, the browser
 closes it with every panel. A table counts too: a Cell Table of millions of rows holds a few
@@ -385,7 +391,12 @@ If the tab does close while drawing, nothing is drawn again by itself: the next 
 reload of that tab) shows the session on the welcome screen as **did not finish loading**, with
 **Restore with the default subset** beside **Restore** ({ref}`last-sessions`). A plot whose draw
 the guard had marked as risky also waits for **Draw anyway** when that session is restored. The
-browser becomes a little more careful in its estimates from then on.
+browser then keeps an extra margin for plots of about that size (not for smaller ones), and a
+size whose plots ended the tab is not offered again with as many plots open. A refusal that only
+this margin causes says so ("After this browser's tab ended on Oct 17, AnnZarro keeps an extra
+margin for this size") and offers **Reset the margin**, in the panel and in the subset dialog.
+The margin is forgotten after a week, once a plot that large is drawn, and with **Close all**
+when its box to clear everything is ticked.
 
 When a read runs out of memory anyway (the estimate was short, or another tab took the memory),
 the panel says so in place of the engine's error: "the browser ran out of memory -- Close a plot,

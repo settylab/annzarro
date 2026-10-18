@@ -3,7 +3,7 @@ import { Policy } from './policy.js';
 import { panelTypeFromTileId } from './utils/deeplink.js';
 import { DataManager } from './data-manager.js';
 import { colourKind } from './utils/memory-guard.js';
-import { newPanelCheck, refusalText, MEMORY_EVENT } from './utils/memory-guard-ui.js';
+import { newPanelCheck, refusalText, freshProbes, bindingLabel, MEMORY_EVENT } from './utils/memory-guard-ui.js';
 import { lastSessionElement } from './utils/last-session-card.js';
 import { createLoadActions, createDatasetBadge } from './panelset-load-ui.js';
 import { notify } from './utils/notify.js';
@@ -159,10 +159,15 @@ export class SelectionTile {
      * helps; they come back when a panel is closed or the subset shrinks.
      */
     _watchMemory() {
-      // a refused tile takes no click (its delete button still works)
+      // a refused tile takes no click (its delete button still works); it is
+      // asked again first, without the probe's kept answers: what a closed
+      // plot held may have been freed since
       this.tileSelector.addEventListener('click', (e) => {
         const blocked = e.target.closest && e.target.closest('.memory-blocked');
         if (blocked && !e.target.closest('.delete-panel-btn')) {
+          freshProbes();
+          this._applyMemoryState();
+          if (!blocked.classList.contains('memory-blocked')) return;
           e.stopPropagation();
           e.preventDefault();
         }
@@ -202,7 +207,9 @@ export class SelectionTile {
             note.className = 'memory-note';
             option.appendChild(note);
           }
-          note.textContent = 'Not enough browser memory';
+          // the ceiling that binds, so a report names the check
+          note.textContent = (result.binding === 'contexts' ? 'Too many WebGL canvases' : `Not enough ${bindingLabel(result.binding)}`)
+            + (result.learned ? ' (extra margin after a crash)' : '');
         } else {
           if (note) note.remove();
           option.removeAttribute('title');

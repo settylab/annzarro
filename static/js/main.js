@@ -28,7 +28,7 @@ import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/
 import { registerStatusActions, setStatusTag } from './utils/panel-surface.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
-import { overrideOnce, maxSubsetCells } from './utils/memory-guard-ui.js';
+import { overrideOnce, maxSubsetCells, resetLearned } from './utils/memory-guard-ui.js';
 import { DEFAULT_LARGE_PLOT_POINTS } from './utils/subset-presets.js';
 import { carriedRequest, sizeAfterChoice, loadSubsetSize, saveSubsetSize, dropSubsetSizes, halfSubset, subsetOfSize } from './utils/subset-carry.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
@@ -1493,7 +1493,7 @@ const App = (function() {
             case 'stop-table': return !!document.getElementById(`remove-non-table-entries-${id}`);
             case 'show-nan': return !!document.getElementById(`hide-nan-${id}`);
             case 'show-outliers': return !!document.getElementById(`hide-outliers-${id}`);
-            case 'draw-anyway': case 'redraw': {
+            case 'draw-anyway': case 'redraw': case 'memory-reset': {
                 const panel = PanelManager.getPanel(id);
                 return !!(panel && (panel.refreshPlot || panel.refreshTable));
             }
@@ -1568,9 +1568,11 @@ const App = (function() {
             case 'stop-table': click(`remove-non-table-entries-${id}`); break;
             case 'show-nan': click(`hide-nan-${id}`); break;
             case 'show-outliers': click(`hide-outliers-${id}`); break;
-            case 'draw-anyway': case 'redraw': {
-                // draw-anyway: past the memory guard (or the crash marker), once
+            case 'draw-anyway': case 'redraw': case 'memory-reset': {
+                // draw-anyway: past the memory guard (or the crash marker), once;
+                // memory-reset: without the margin a crash taught, from now on
                 if (action === 'draw-anyway') overrideOnce(id);
+                if (action === 'memory-reset') resetLearned();
                 const panel = PanelManager.getPanel(id);
                 const reload = panel && (panel.refreshPlot || panel.refreshTable);
                 if (typeof reload === 'function') reload().catch(() => {});

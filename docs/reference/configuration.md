@@ -145,6 +145,7 @@ Defaults sent to the browser through `/api/v1/config`.
 | `memory.enforce` | `block` | Browser memory guard: what happens when an action would not fit in the browser tab's memory. `block` disables it and says why, `warn` says so and lets it run, `off` never interferes. See [Browser memory](#browser-memory-uimemory). |
 | `memory.heap_gb` | `null` | JavaScript memory the tab may use, in GB. `null`: what the browser reports (Chrome: 4.4 GB on a 64-bit computer), 4.4 where it reports nothing. |
 | `memory.total_gb` | `null` | Everything the tab may hold, JavaScript and typed arrays, in GB. `null`: for a browser on the server's computer (the desktop app, or a browser on localhost), that computer's memory less a quarter, at least 4 GB, for the system and the browser; for a browser on another computer, 16; at most half the device's memory on devices that report 4 GB or less. |
+| `memory.buffers_gb` | `null` | Array buffers one tab may hold, all its plots together, in GB (large-plot mode keeps its points in them). `null`: the browser's own limit, 16.6 in Chrome, Edge and the desktop app; 15 in Safari on a computer with more than 16 GB, 7 below. |
 | `memory.margin` | `0.2` | Predictions are multiplied by 1 + margin before they are compared. |
 | `cache.max_entries`, `cache.max_size_mb` | `1000`, `1024` | Browser-side cache. |
 | `autosave.*` | enabled, every 10,000 ms | Autosave of the current layout to the browser's local storage. |
@@ -163,9 +164,14 @@ needs, what is free and what helps; the user guide shows how it looks ({ref}`bro
 
 **What binds.** Chrome gives a tab's JavaScript heap 4.4 GB on a 64-bit computer (it reports this
 as `performance.memory.jsHeapSizeLimit`), and no flag raises it; a test tab died at 4.03 GB used.
-Typed arrays are outside that heap and are limited only by the computer's memory. So `heap_gb`
-is the setting that matters for regular plots; large-plot mode keeps its points in typed arrays,
-and for it `total_gb` is the limit to set.
+Typed arrays are outside that heap, but a tab cannot hold more of them than the browser allows,
+whatever the computer's memory: a Chrome tab about 16.6 GB of array buffers in all (a fresh tab
+gives 31 blocks of 512 MiB and refuses the 32nd), and Safari ends a page whose memory passes
+15 GB on a computer with more than 16 GB (7 GB below; WebKit's own limit, not measured here).
+So `heap_gb` is the setting that matters for regular plots; large-plot mode keeps its points in
+typed arrays, and for it `buffers_gb` and `total_gb` are the limits. The buffers of every open plot
+count together: six Cell Plots of 95.6 million cells need 8 to 9 GB each, which a 128 GB
+computer's budget holds and no tab does.
 
 **How the estimates were made.** On an Apple M3 Max laptop with Chrome, drawing up to 182 million
 points (the paper's scale benchmark, {ref}`paper-companion`): a Cell Plot in large-plot mode keeps
@@ -177,11 +183,15 @@ and 2 per character per distinct label (measured at a million points: 999,998 ba
 hover whose labels do not fit stays off, and the plot stays coloured. A full-resolution image export draws the plot again and needs
 about the plot's own share again while it runs. Some costs are still estimated from the code
 rather than measured (the export, a recolour, 3D, a table row); the guard multiplies every
-prediction by 1 + `margin` and adds 0.25 to the margin in a browser whose tab closed during a
-marked action. Firefox and Safari report no memory figures; they are held to Chrome's limit.
+prediction by 1 + `margin`. In a browser whose tab closed during a marked action it adds 0.25 to
+the margin (at most 1), and when that action was a large plot it takes the array buffers it held
+as that browser's buffer limit (at least 2 GB), so the same plots at the same size are not offered
+again. Both apply only to actions of at least half the points of the one that crashed (a plot of
+100,000 cells is not held to what one of 95 million taught), and are forgotten after a week, when
+an action that large succeeds, or with **Reset the margin**, which a refusal they cause offers. Firefox and Safari report no memory figures; they are held to Chrome's limit.
 
 **Defaults.** `enforce: block`, `heap_gb: null` (the browser's own limit), `total_gb: null`,
-`margin: 0.2`. With these the heap limits regular plots (a few million points) and the total
+`buffers_gb: null` (the browser's own limit), `margin: 0.2`. With these the heap limits regular plots (a few million points) and the total
 limits large-plot mode, whose points are outside the heap (about 73 bytes per point, 8 of them the hover and click index). A browser
 cannot see the computer's memory, so the server tells a browser on its own computer how much
 there is (a loopback request no proxy forwarded); the budget is that memory less a quarter,
@@ -192,7 +202,8 @@ per-browser setting). There is no cap on the number of points: 200 million is on
 size tested (128 GB, Chrome). The budget is a guard for the computer, not for the browser, which
 can run out of array buffers at a size no table predicts (on that 128 GB computer, at 15 to 17 GB
 of tab memory, with 250 million points and up). So a large plot first asks the browser for the
-buffers it will need, before it requests any data; if the browser refuses, the panel says
+buffers it will need, before it requests any data (Chrome answers; Safari gives any amount
+until it ends the page, so there the buffer limit above is what refuses); if the browser refuses, the panel says
 "This browser cannot hold N points; use a subset (k parts of m)" and offers the subset. The
 same question is asked before applying a larger subset, a full-resolution export, a hover-label
 read, a recolour and a new large panel, and a plot whose WebGL context is lost (the graphics
