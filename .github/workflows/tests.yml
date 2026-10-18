@@ -118,6 +118,7 @@ jobs:
       - name: pytest
         env:
           ANNZARRO_REQUIRE_BROWSER: ${{ matrix.browser && '1' || '' }}
+          ANNZARRO_REQUIRE_LINT: ${{ matrix.lint && '1' || '' }}
         run: python -m pytest -q -rsx ${{ matrix.pytest }}
 
   import:
