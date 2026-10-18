@@ -442,7 +442,9 @@ export function createDatasetBrowser(services) {
         dom.pathForm.hidden = !S.pathOpen;
     }
 
-    function openPathField() {
+    /** Show the path field, empty or (from the `/` and `~` keys) holding the character that opened it. */
+    function openPathField(prefill = '') {
+        if (typeof prefill !== 'string') prefill = '';   // a click handler passes its event
         S.pathOpen = true;
         const words = pathFieldWording(S.me);
         dom.pathLabel.textContent = words.label;
@@ -451,8 +453,9 @@ export function createDatasetBrowser(services) {
         dom.crumbs.hidden = true;
         dom.pathForm.hidden = false;
         dom.pathError.hidden = true;
-        dom.path.value = '';
+        dom.path.value = prefill;
         dom.path.focus();
+        dom.path.setSelectionRange(prefill.length, prefill.length);
     }
 
     function closePathField() {
@@ -1083,7 +1086,6 @@ export function createDatasetBrowser(services) {
             if (row && row.kind === 'folder') { e.preventDefault(); goFolder(row.path); }
             return;
         }
-        if (e.key === '/') { e.preventDefault(); dom.search.focus(); return; }
         if (e.key.length === 1 && !e.shiftKey || (e.key.length === 1 && e.shiftKey)) {
             clearTimeout(typeTimer);
             const rows = currentRows().rows;
@@ -1149,7 +1151,17 @@ export function createDatasetBrowser(services) {
     root.addEventListener('keydown', (e) => {
         if (!S) return;
         if (e.key === 'Escape' && S.pathOpen) { e.preventDefault(); e.stopImmediatePropagation(); closePathField(); (tbodyButtons()[0] || dom.search).focus(); return; }
-        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') { e.preventDefault(); openPathField(); }
+        // Ctrl/Cmd+L also works where the browser delivers it (Safari keeps it for its address bar)
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') { e.preventDefault(); openPathField(); return; }
+        // `/` and `~` start a path, as in the macOS and GTK file dialogs; a text field that already holds text keeps them
+        if ((e.key === '/' || e.key === '~') && !e.ctrlKey && !e.metaKey && !e.altKey && !S.pathOpen) {
+            const t = e.target;
+            const typing = t && (t.isContentEditable || t.tagName === 'TEXTAREA' ||
+                (t.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset|range|color|file|image)$/.test(t.type)));
+            if (typing && (t.isContentEditable ? t.textContent : t.value)) return;
+            e.preventDefault();
+            openPathField(e.key);
+        }
     }, true);
     root.addEventListener('shown.bs.modal', () => {
         shown = true;

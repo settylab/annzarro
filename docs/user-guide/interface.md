@@ -126,7 +126,7 @@ The dataset browser with a dataset selected. Numbers match the list below.
    ({doc}`remote-datasets`). Recent and pinned datasets are kept in your browser, separately for
    each server and each user.
 3. **The path above the table** is the folder shown, each part a link back. Click the empty part
-   of it, or press **Ctrl+L** (**Cmd+L**), to type instead: a path to a dataset opens it, a path to
+   of it, or press **/** or **~** (as in the macOS and GTK file dialogs; **Ctrl+L** or **Cmd+L** also works where the web browser passes it on, which Safari does not), to type instead: a path to a dataset opens it, a path to
    a folder shows it, a URL opens a remote store, and what the server refuses is said under the
    field, with your text kept. What it accepts depends on you: a path in the data directory (on
    your own machine, any path), and a store URL only where remote stores are enabled.
@@ -167,7 +167,7 @@ The browser is made for the keyboard. **Ctrl+O** (**Cmd+O**) opens it with the c
 field, so typing a few letters and pressing **Enter** opens a dataset. **Down** moves into the table, which is one tab stop: **Up**,
 **Down**, **Home**, **End**, **Page Up** and **Page Down** move between rows, **Enter** opens, **Right**
 enters a folder, **Left** or **Backspace** goes up one, typing letters jumps to the name that starts with
-them, **/** returns to the search field, and **Escape** closes the dialog and puts the focus back on
+them, **/** or **~** starts a path, and **Escape** closes the dialog and puts the focus back on
 the dataset button. Rows and column headers are those of an ordinary table, so a screen reader reads
 a row as "short.zarr, 200 cells, 20 genes, zarr v2, modified ..."; counts and the progress of an
 opening are announced politely.
@@ -176,7 +176,7 @@ opening are announced politely.
 |---|---|
 | **Ctrl+O** (**Cmd+O**) | Open the dataset browser |
 | **Ctrl+Shift+L** (**Cmd+Shift+L**) | Load Panel Set |
-| **Ctrl+L** (**Cmd+L**), in the browser | Type a path or URL |
+| **/** or **~**, in the browser | Type a path or URL (the key is the first character of the path; **Ctrl+L** or **Cmd+L** also works where the web browser passes it on) |
 | **F1** | List the keyboard shortcuts |
 
 In the desktop app **Open file or folder...** (also **Ctrl+Shift+O**, **Cmd+Shift+O**) in the browser

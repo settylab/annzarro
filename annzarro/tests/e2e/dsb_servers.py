@@ -179,15 +179,15 @@ def hosted_server(tmp_path_factory):
 
 
 class Session:
-    """A headless Chromium page on a server, started and (when ``login`` is given) signed in; ``page`` is ready when the page has started."""
+    """A headless page (Chromium, or ``engine="webkit"``, Safari's engine) on a server, started and (when ``login`` is given) signed in; ``page`` is ready when the page has started."""
 
-    def __init__(self, base, width=1280, height=900, login=None, scheme=None, init_script=None, **context_args):
+    def __init__(self, base, width=1280, height=900, login=None, scheme=None, init_script=None, engine="chromium", **context_args):
         self.pw = sync_api.sync_playwright().start()
         try:
-            self.browser = self.pw.chromium.launch()
+            self.browser = getattr(self.pw, engine).launch()
         except Exception as exc:  # no browser binary
             self.pw.stop()
-            skip_or_fail(f"Chromium cannot start: {exc}")
+            skip_or_fail(f"{engine} cannot start: {exc}")
         try:
             kwargs = dict(viewport={"width": width, "height": height}, **context_args)
             if scheme:
