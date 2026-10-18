@@ -134,7 +134,8 @@ and white in the dark one.
 - **Size** is a multiple of the point size (0.1 to 50, `x points`; 5 by default), so the marker
   keeps its proportion when the point size changes, by hand or automatically.
 - **Opacity** (0.01 to 1). Empty is opaque.
-- **Edge width** in pixels (0 to 20; 2 by default). 0 draws no edge.
+- **Edge width** in pixels (0 to 20; 2 by default). 0 draws no edge. A 3D plot draws only a hairline edge, whatever the
+  width, because its renderer has no wider one.
 - **Fill** colour, red by default (shown once **No fill** is off), and **Edge** colour, black (light theme) or white (dark theme)
   by default, each with **Reset**. A colour you choose stays as chosen in either theme; one you
   leave alone follows the theme.
