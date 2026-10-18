@@ -15,6 +15,7 @@ import { createAdminApi } from './admin-api.js';
 import { createReauthModal } from './reauth-modal.js';
 import { h, setChildren } from './dom.js';
 import { mountThemeToggle } from '../utils/theme-toggle.js';
+import { closeHelp } from './help.js';
 import { mayReplace, noticeDuration } from '../utils/notice-rules.js';
 import users from './users.js';
 import dataRoots from './data-roots.js';
@@ -130,6 +131,7 @@ export function createRouter({ nav, view, api, ctx = {}, sections = SECTIONS, se
         markActive(section.id);
         const body = h('div', { class: 'admin-section', id: `admin-${section.id}` },
             h('p', { class: 'text-muted', text: 'Loading' }));
+        closeHelp(true);
         setChildren(view, body);
         try {
             await section.mount(body, api, ctx);

@@ -87,7 +87,7 @@ test("the section shows the checklist, a help on every field, the sandboxed prev
   const { el } = await mount({ policy: { get: async () => policy() } });
   assert.match(el.textContent, /Public site/);
   assert.equal(findAll(el, (n) => n.getAttribute && n.getAttribute("data-check") !== null && n.getAttribute("data-check") !== undefined).length, 4);
-  const helps = findAll(el, (n) => n.getAttribute && n.getAttribute("data-site-help") !== null && n.getAttribute("data-site-help") !== undefined);
+  const helps = findAll(el, (n) => n.getAttribute && n.getAttribute("data-help") !== null && n.getAttribute("data-help") !== undefined);
   assert.equal(helps.length, 13);
   assert.ok(helps.every((h) => /^Help for site\./.test(h.getAttribute("title"))));
   const frames = findAll(el, (n) => n.tagName === "IFRAME");

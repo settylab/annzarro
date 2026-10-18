@@ -7,7 +7,17 @@ Users section and its Access panel) who may sign in and which datasets they see.
 written to an audit log. The API behind the page is documented in {ref}`http-admin`.
 
 The page is for people you trust with the server. It never writes the operator's YAML: what it
-stores goes into one small directory, and the YAML always wins where the two disagree.
+stores goes into one small directory. Where the two disagree, the rule depends on the setting:
+
+- For a setting of the policy registry (the Settings, Public site and Remote datasets pages), a
+  value an admin sets **overrides** the YAML, unless the key is listed in `policy.locked`: then
+  only the YAML decides and the page shows the setting read-only with a lock.
+- A **restrict** key (panels, outbound hosts, remote datasets) can only be narrowed: the most
+  restrictive of the YAML, the admin and the user wins, so an admin never widens what the YAML
+  forbids ({ref}`admin-policy`).
+- A setting that only the YAML owns, such as the resource limits, is shown read-only. An
+  environment variable that names a setting beats both the YAML and the admin.
+- Data directories an admin adds are added to the YAML's; the YAML's cannot be removed on the page.
 
 ## Setup
 
@@ -85,6 +95,16 @@ then gone), reset a password, grant or revoke admin, clear a lockout for one add
 a user. Resetting a password or removing a user ends that user's logins, and a running server sees
 every change without a restart.
 
+(admin-user-fields)=
+### Fields
+
+| Field | Meaning |
+|---|---|
+| [**Username**]{#user-field-username} | The name the person signs in with: letters, digits and `. _ @ -`, up to 64 characters. |
+| [**Password**]{#user-field-password} | **Generate a password** makes a random one, shown once; **Set a password** takes one you type, at least 10 characters and different from the username. Resetting a password ends the user's other logins. |
+| [**Administrator**]{#user-field-admin} | Whether the account may open the admin pages. Off by default. The last administrator and your own account cannot lose the right in the browser. |
+| [**Hand the panel sets to**]{#user-field-reassign} | On removal, the user who takes over the removed user's saved panel sets. Default: keep them under the old owner's name, where only an admin can change them. |
+
 - **The last admin stays.** A change that would leave the server without an admin is refused with
   `409 last_admin`, on the web and on the command line alike (`annzarro user remove`, `set-admin
   --no-admin`; `--force` skips this rule only). It is checked on the stored file under its lock, so two
@@ -125,20 +145,20 @@ In the Users section, **Access** on a user's row opens their panel above the tab
 apply), `unknown` while `access.json` cannot be read, and a red **reads nothing** badge for a
 restricted user with no active grant; a blue badge counts the user's own settings.
 
-- **Restricted to these datasets** is a checkbox. Restricting a user who has an active grant takes one
+- [**Restricted to these datasets**]{#access-field-restricted} is a checkbox. Restricting a user who has an active grant takes one
   click. Anything that could cut someone off or open everything asks first, in a box with a second
   button: restricting a user without an active grant says "*carol* has no active grant, so *carol* will lose
   access to everything now, until you add a grant." (**Restrict now**), and un-restricting says "*carol* will be able to read
   every dataset in the data directories." (**Allow everything**). **Cancel** leaves it as it was.
   Un-restricting keeps the grants, so restricting again brings them back.
-- **Grant** adds a grant in one of four modes: *this folder* (the whole subtree), *every store in this
+- [**Grant**]{#access-field-grant} adds a grant in one of four modes: *this folder* (the whole subtree), *every store in this
   folder* (one store grant for each, for a folder of links), *one store*, or *remote prefix*. Type the path, or
   **Browse data directories** (the directories the server reads from, folder by folder). The grants table
   lists each grant with an *inactive* line with the reason (outside every data
   directory, remote stores off, outside the remote allowlist, not a valid URL) when it does not apply, and a **Revoke** button.
 - **Effective** says how many grants are active and how many stores they add up to
   ("at least 5,000 stores" when the count stopped at its limit), and lists the stores a page at a time (**Show more**).
-- **Check a path** asks the server whether this user can read a path or URL and why: covered by
+- [**Check a path**]{#access-field-check} asks the server whether this user can read a path or URL and why: covered by
   which grant, covered only by an inactive one, outside every data directory, or no grant at all.
 - **Settings for the user** are the per-user overrides of the settings ({ref}`admin-policy`) for that user.
 - An admin is never restricted. If a user who was restricted is made an admin, the panel says
@@ -189,7 +209,8 @@ datasets** card, which says whether it may also read stores from URLs.
 ### Local data directories
 
 By default the server reads from `server.data_dir` and `server.allowed_dirs`, set in the YAML.
-With `server.admin_data_roots` an admin can add more in the browser: the section lists the
+With [`server.admin_data_roots`]{#data-field-parents} (the **allowed parents**, default none) an
+admin can [add more in the browser]{#data-field-add-directory}: the section lists the
 directories the server reads from (where each comes from, whether it is active, how many stores
 it holds), and **Add** browses below the allowed parents and adds one.
 
@@ -236,7 +257,7 @@ Duplicates are removed. HTTP redirects are not followed while a list is in force
 
 Without an admin value the default applies: **off** on a shared server (login on, a network
 address or a proxy) and **any location** on a single-user local one. The key is
-`feature.remote_stores`, a restrict key like the others ({ref}`admin-policy`):
+[`feature.remote_stores`]{#policy-feature-remote-stores}, a restrict key like the others ({ref}`admin-policy`):
 
 - `server.remote_stores` and `server.remote_allowlist` in the YAML, or the environment variables
   `ANNZARRO_REMOTE_STORES` and `ANNZARRO_REMOTE_ALLOWLIST` (which beat the YAML in both
@@ -261,6 +282,10 @@ the same password confirmation as other admin changes. A page that is already op
 
 The Settings section is generated from the **policy registry**: one list of keys, each with a
 type, a default and a description, grouped by area (panels, outbound, data, limits, features).
+
+Every setting on the admin pages, here and in the other sections, has an info mark and a **Guide**
+link. Hover over the mark, or tab to it, for what the setting does, its default and what it
+affects (Escape closes the tip); Guide opens the part of these docs that explains it.
 
 (admin-policy)=
 ### The layers
@@ -299,8 +324,17 @@ store_unreadable` until it is repaired.
 
 ### Panels
 
-`panel.<type>.enabled` exists for every panel type: `cell-plot`, `gene-plot`, `cell-table`,
-`gene-table` and `gene-set`. A disabled type is missing from the panel menu. A saved panel set or
+`panel.<type>.enabled` exists for every panel type, on by default:
+
+| Key | Panel |
+|---|---|
+| [`panel.cell-plot.enabled`]{#policy-panel-cell-plot-enabled} | Cell Plot |
+| [`panel.gene-plot.enabled`]{#policy-panel-gene-plot-enabled} | Gene Plot |
+| [`panel.cell-table.enabled`]{#policy-panel-cell-table-enabled} | Cell Table |
+| [`panel.gene-table.enabled`]{#policy-panel-gene-table-enabled} | Gene Table |
+| [`panel.gene-set.enabled`]{#policy-panel-gene-set-enabled} | Gene Set Analysis |
+
+A disabled type is missing from the panel menu. A saved panel set or
 `#view=` link that holds one opens with a placeholder, "Disabled by the administrator", and keeps
 the panel's saved JSON, so saving the layout again loses nothing and enabling the panel restores
 it.
@@ -312,11 +346,11 @@ Its keys:
 
 | Key | Meaning | YAML equivalent |
 |---|---|---|
-| `outbound.allow_external` | "Gene Set Analysis: no external services". Off forces all the keys below to their no-outbound value. It does not govern remote datasets ({ref}`admin-remote-datasets`). | |
-| `panel.gene-set.external_requests` | `on`, `ask`, `off` or `none`. `off` never sends; its Links still work. `none` never sends and removes the Links. | `integrations.external_requests` |
-| `panel.gene-set.services` | The services the panel offers (`string-enrichment`, `string-network`, `string-partners`, `gprofiler-gost`, `mygene-mapping`, `mygene-card`, `hpa`, `enrichr`, `reactome`). | `integrations.gene_set.services` |
-| `panel.gene-set.species_search` | Whether a typed species name is looked up at NCBI Taxonomy and the ENA (no genes are sent). | |
-| `panel.gene-set.links` | Whether the Links section, which opens third-party sites by a click, exists. | |
+| [`outbound.allow_external`]{#policy-outbound-allow-external} | "Gene Set Analysis: no external services". Off forces all the keys below to their no-outbound value. It does not govern remote datasets ({ref}`admin-remote-datasets`). | |
+| [`panel.gene-set.external_requests`]{#policy-panel-gene-set-external-requests} | `on`, `ask`, `off` or `none`. `off` never sends; its Links still work. `none` never sends and removes the Links. | `integrations.external_requests` |
+| [`panel.gene-set.services`]{#policy-panel-gene-set-services} | The services the panel offers (`string-enrichment`, `string-network`, `string-partners`, `gprofiler-gost`, `mygene-mapping`, `mygene-card`, `hpa`, `enrichr`, `reactome`). | `integrations.gene_set.services` |
+| [`panel.gene-set.species_search`]{#policy-panel-gene-set-species-search} | Whether a typed species name is looked up at NCBI Taxonomy and the ENA (no genes are sent). | |
+| [`panel.gene-set.links`]{#policy-panel-gene-set-links} | Whether the Links section, which opens third-party sites by a click, exists. | |
 
 On a hosted server (login on, a network address or a proxy) **Enrichr and Reactome are off by
 default**: they keep the gene lists they are sent where others can read them. An admin or the

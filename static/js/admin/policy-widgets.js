@@ -15,6 +15,7 @@
  */
 
 import { h, setChildren, badge } from './dom.js';
+import { keyHelp } from './help-catalog.js';
 
 /** Order and titles of the registry's `area` values; an unknown area follows, titled from its name. */
 export const AREAS = [
@@ -345,10 +346,11 @@ export function renderPolicyRow(key, { onChange, layer = 'admin', frozen = '' } 
         ? h('div', { class: 'small text-muted policy-inherited', text: `inherited: ${formatValue(key.type, own.inherited)}` }) : null;
     const capped = own.capped
         ? h('div', { class: 'small text-warning-emphasis policy-capped', text: `capped by a wider setting: ${formatValue(key.type, key.value)} applies` }) : null;
-    return h('div', { class: 'policy-row', data: { key: key.name } },
-        h('div', { class: 'policy-name' },
-            h('div', { class: 'fw-semibold', text: keyLabel(key) }),
-            h('div', { class: 'small text-muted', text: key.description || '' })),
+    return h('div', { class: 'policy-row', data: { key: key.name, setting: key.name } },
+        h('div', { class: 'policy-name d-flex flex-wrap align-items-center gap-1' },
+            h('span', { class: 'fw-semibold policy-label', text: key.label || keyLabel(key) }),
+            keyHelp(key, key.label || key.name, { describes: [control] }),
+            h('code', { class: 'small text-muted policy-key', text: key.name })),
         h('div', { class: 'policy-control' }, control, hosts, inherited, capped, message,
             state.note ? h('div', { class: 'small text-muted fst-italic', text: state.note }) : null),
         h('div', { class: 'policy-meta' },
@@ -471,9 +473,13 @@ function renderMasterSwitch(key, onChange) {
             }
         },
     });
-    return h('div', { class: 'policy-master d-flex align-items-center justify-content-between', data: { key: key.name } },
-        h('div', null, h('div', { class: 'fw-semibold', text: 'Gene Set Analysis: no external services' }),
-            h('div', { class: 'small text-muted' }, key.description || 'Stops the browser from contacting any outside service.',
+    return h('div', { class: 'policy-master d-flex align-items-center justify-content-between', data: { key: key.name, setting: key.name } },
+        h('div', null,
+            h('div', { class: 'd-flex flex-wrap align-items-center gap-1' },
+                h('span', { class: 'fw-semibold', text: 'Gene Set Analysis: no external services' }),
+                keyHelp(key, 'Gene Set Analysis: no external services', { describes: [input] }),
+                h('code', { class: 'small text-muted', text: key.name })),
+            h('div', { class: 'small text-muted' }, 'Stops the browser from contacting any outside service.',
                 ' It does not affect remote datasets: the server reading s3://, gs:// and http(s):// stores is set under ',
                 h('a', { href: '#data', text: 'Data sources' }), '.')),
         h('div', { class: 'form-check form-switch m-0' }, input,

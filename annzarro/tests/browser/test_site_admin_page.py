@@ -113,19 +113,19 @@ def _footer(page):
 
 
 def test_every_field_has_a_help_on_hover_and_focus_and_the_guide_is_linked(section):
-    helps = section.locator("[data-site-help]")
+    helps = section.locator("[data-help]")
     assert helps.count() == 13
     for i in range(helps.count()):
         mark = helps.nth(i)
         assert mark.get_attribute("aria-label").startswith("Help: ")
         assert len(mark.get_attribute("data-bs-original-title") or mark.get_attribute("title") or "") > 40
-    imprint = section.locator('[data-key="site.imprint"] [data-site-help]')
+    imprint = section.locator('[data-key="site.imprint"] [data-help]')
     imprint.hover()
     tip = section.locator(".tooltip")
     tip.wait_for(state="visible")
     assert "Impressum" in tip.inner_text()
     section.mouse.move(0, 0)
-    section.locator('[data-key="site.robots"] [data-site-help]').focus()
+    section.locator('[data-key="site.robots"] [data-help]').focus()
     section.wait_for_function("() => [...document.querySelectorAll('.tooltip')].some(t => /search engines/i.test(t.textContent))")
     guides = section.locator('a[href*="public-site.html"]')
     assert guides.count() >= 14
@@ -183,7 +183,7 @@ def test_screenshots_of_the_section(browser, hosted, scheme):
     card.locator("textarea").fill("## Angaben gemäß § 5 DDG\n\n**Example Institute**, University of X  \n"
                                   "Main Street 1, 12345 Town\n\nE-Mail: [office@example.org](mailto:office@example.org)")
     page.frame_locator('[data-preview="imprint"]').locator("strong").wait_for()
-    page.locator('[data-key="site.privacy"] [data-site-help]').hover()
+    page.locator('[data-key="site.privacy"] [data-help]').hover()
     page.locator(".tooltip.show").wait_for(state="visible")
     page.wait_for_function("() => parseFloat(getComputedStyle(document.querySelector('.tooltip.show')).opacity) >= 0.85")
     assert page.evaluate("() => document.documentElement.getAttribute('data-theme')") == scheme
