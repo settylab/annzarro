@@ -341,6 +341,12 @@ export function noteDoublePress(gd, ev) {
   return seq;
 }
 
+/** Is press `seq` the second of a double click (or the click of the first, now known to be one)? */
+export function isDoubleClick(gd, seq) {
+  const s = gd && gd.__azDouble;
+  return !!s && (seq <= s.dropUpTo || s.seconds.has(seq));
+}
+
 /** A click was released at `at` ({clientX, clientY}): a press soon after, near it, is a double click. */
 export function noteClickRelease(gd, at) {
   const s = doubleState(gd);

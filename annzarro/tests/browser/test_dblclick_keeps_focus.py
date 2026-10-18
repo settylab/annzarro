@@ -12,13 +12,21 @@ ANNZARRO_REQUIRE_BROWSER=1 (set in CI).
 import pytest
 
 from .test_click_focus_busy import (  # noqa: F401  (fixtures)
-    DRAWN, FOCUSED, GD, ISOLATED, _link, _open, page, server)
+    DRAWN, FOCUSED, GD, ISOLATED, TILE, _link, _open, page, server)
 
 SETTLE_MS = 900   # the window (300 ms) and the focus change after it
 
 
 def _focused(page):
     return page.input_value("#focused-cell")
+
+
+def _press(page, at, hold=40):
+    """A click as a hand makes it: gl3d picks while the button is held, so a zero-length one reports nothing."""
+    page.mouse.move(*at)
+    page.mouse.down()
+    page.wait_for_timeout(hold)
+    page.mouse.up()
 
 
 def test_a_single_click_focuses_after_the_window(page, server):
@@ -56,32 +64,72 @@ def test_a_double_click_in_3d_keeps_the_focus(page, server):
     page.goto(_link(root, z={"type": "obs", "key": "total_counts", "column": ""}))
     page.wait_for_function(DRAWN, arg=GD, timeout=60000)
     page.wait_for_timeout(1500)
-    # a point under the pointer: sweep the canvas until Plotly reports a hover
-    page.evaluate("""(gd) => { const g = document.querySelector(gd); window.__hovered = null;
-        g.on('plotly_hover', (e) => { window.__hovered = e.points[0].customdata; }); }""", GD)
+    known = "cell_0000"
+    page.evaluate("""async (n) => { (await import('/static/js/data-manager.js')).DataManager.setFocusedCell(n, false); }""", known)
+    page.wait_for_function(FOCUSED, arg=known, timeout=10000)
     box = page.evaluate("gd => { const r = document.querySelector(gd + ' canvas').getBoundingClientRect(); "
                         "return {x: r.left, y: r.top, w: r.width, h: r.height}; }", GD)
+    # gl3d reports a click only for a pick within a few px while the button is held: hover finds
+    # the neighbourhood, a long press (not a click) then finds the spot where a press counts
+    page.evaluate("""(gd) => { const g = document.querySelector(gd); window.__hovered = null; window.__pclicks = [];
+        g.on('plotly_hover', (e) => { window.__hovered = true; });
+        g.on('plotly_click', (e) => { window.__pclicks.push(e.points[0].customdata); }); }""", GD)
     spot = None
     for j in range(4, 17):
         for i in range(4, 17):
-            x, y = box["x"] + box["w"] * i / 20, box["y"] + box["h"] * j / 20
-            page.mouse.move(x, y)
-            page.wait_for_timeout(30)
-            if page.evaluate("() => window.__hovered"):
-                spot = (x, y)
+            gx, gy = box["x"] + box["w"] * i / 20, box["y"] + box["h"] * j / 20
+            page.mouse.move(gx, gy)
+            page.wait_for_timeout(40)
+            if not page.evaluate("() => window.__hovered"):
+                continue
+            for dx in range(-8, 9, 2):
+                for dy in range(-8, 9, 2):
+                    page.mouse.move(gx + dx, gy + dy)
+                    page.wait_for_timeout(40)
+                    page.evaluate("() => { window.__pclicks = []; }")
+                    page.mouse.down()
+                    page.wait_for_timeout(30)
+                    hit = page.evaluate("() => window.__pclicks[0]")
+                    page.wait_for_timeout(350)   # held too long to count as a click
+                    page.mouse.up()
+                    page.wait_for_timeout(100)
+                    if hit and hit != known:
+                        spot, name = (gx + dx, gy + dy), hit
+                        break
+                if spot:
+                    break
+            if spot:
                 break
         if spot:
             break
     assert spot, "no point found under the pointer in 3D"
-    name = page.evaluate("() => window.__hovered")
-    # a known focus other than the point under the pointer
-    known = "cell_0000" if name != "cell_0000" else "cell_0001"
-    page.evaluate("""async (n) => { (await import('/static/js/data-manager.js')).DataManager.setFocusedCell(n, false); }""", known)
-    page.wait_for_function(FOCUSED, arg=known, timeout=10000)
-    page.evaluate("""(gd) => Plotly.relayout(document.querySelector(gd),
-        {'scene.camera': {eye: {x: 0.3, y: 0.3, z: 2.4}, up: {x: 0, y: 0, z: 1}, center: {x: 0, y: 0, z: 0}}})""", GD)
-    page.wait_for_timeout(500)
-    page.mouse.move(*spot)
-    page.mouse.dblclick(*spot)
+    assert _focused(page) == known
+    _press(page, spot)
+    page.wait_for_timeout(60)
+    _press(page, spot)
     page.wait_for_timeout(SETTLE_MS)
     assert _focused(page) == known
+    # and a single click on that point focuses it
+    _press(page, spot)
+    page.wait_for_function(FOCUSED, arg=name, timeout=10000)
+
+
+def test_a_double_click_before_the_point_index_is_ready_focuses_nothing(page, server):
+    """Large-plot mode: the click waiting for the index is dropped by a second press."""
+    mode, root = server
+    if mode != "large":
+        pytest.skip("the point index is large-plot mode's")
+    page.add_init_script("""window.__annzarroHoldIndex = new Promise(r => { window.__releaseIndex = r; });""")
+    page.goto(_link(root))
+    page.wait_for_function("""(gd) => { const g = document.querySelector(gd);
+        return !!(g && g._fullLayout && g.__largeState && g.data && g.data.length); }""", arg=GD, timeout=60000)
+    box = page.evaluate("gd => { const r = document.querySelector(gd + ' .nsewdrag').getBoundingClientRect(); "
+                        "return {x: r.left + r.width / 2, y: r.top + r.height / 2}; }", GD)
+    before = _focused(page)
+    page.mouse.dblclick(box["x"], box["y"])
+    page.wait_for_timeout(SETTLE_MS)
+    page.evaluate("window.__releaseIndex()")
+    page.wait_for_function("gd => !!document.querySelector(gd).__largeState.index", arg=GD, timeout=10000)
+    page.wait_for_timeout(SETTLE_MS)
+    assert _focused(page) == before
+    assert "Preparing click selection" not in page.inner_text(TILE)

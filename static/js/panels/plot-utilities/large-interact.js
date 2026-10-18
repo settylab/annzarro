@@ -23,7 +23,7 @@
 import { DataManager } from '../../data-manager.js';
 import { nearestPoint, pointOfRow } from '../../utils/point-index.js';
 import { colourTitle } from '../../utils/plot-titles.js';
-import { CLICK_MAX_MS, CLICK_MAX_MOVE_PX, noteDoublePress, deferFocus, cancelDeferredFocus } from './plot-make-helper.js';
+import { CLICK_MAX_MS, CLICK_MAX_MOVE_PX, noteDoublePress, noteClickRelease, isDoubleClick, deferFocus, cancelDeferredFocus } from './plot-make-helper.js';
 import { focusShapeStyle } from '../../utils/focus-style.js';
 import { setStatusTag } from '../../utils/panel-surface.js';
 
@@ -276,6 +276,10 @@ export function attachLargeInteraction(gd, settings, index) {
     const q = queryAt(gd, e.clientX, e.clientY, e.target);
     if (!q) return;
     if (!s.index) {
+      // a double click while the index is built: no click waits (the first one's is dropped)
+      const second = isDoubleClick(gd, d.seq);
+      noteClickRelease(gd, e);
+      if (second) { s.pending = null; showWaiting(gd, false); return; }
       // the index is still being built: the click waits for it, and says so
       s.pending = q;
       showWaiting(gd, true);
