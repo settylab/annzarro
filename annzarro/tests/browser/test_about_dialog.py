@@ -227,9 +227,15 @@ def test_about_version_appears_when_opened_before_the_script_loads(server):
             page.route("**/static/js/utils/about-dialog.js", lambda route: held.append(route))
             page.goto(server, wait_until="commit")
             page.wait_for_selector("#about-open")
+            # hold the click until the script is requested and held back (a slow runner
+            # may not have reached it when the name appears)
+            for _ in range(150):
+                if held:
+                    break
+                page.wait_for_timeout(100)
+            assert held, "about-dialog.js was not requested within 15 s"
             page.click("#about-open")
             page.wait_for_selector("#about-modal.show", timeout=5000)
-            assert held, "about-dialog.js was not requested before the click"
             assert page.locator("#about-version").inner_text() == ""
             for route in held:
                 route.continue_()
