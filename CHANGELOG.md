@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Docs
+- The README and the licence page cite v0.6.0 by its DOI,
+  [10.5281/zenodo.23447624](https://doi.org/10.5281/zenodo.23447624).
+
 ## 0.6.0 (2026-10-17)
 
 An About dialog and what a public site needs (imprint, privacy notice, a footer), set from the admin
