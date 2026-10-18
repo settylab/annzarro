@@ -55,6 +55,7 @@ import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
 import { mountThemeToggle } from './utils/theme-toggle.js';
 import { startDesktopFrame } from './utils/desktop-frame.js';
+import { keepLast } from './utils/site-footer.js';
 import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
 import { markDatasetUnavailable, clearDatasetUnavailable, notAvailableText, UNAVAILABLE_TITLE } from './utils/no-dataset-screen.js';
 
@@ -177,6 +178,8 @@ const App = (function() {
                 && shouldAutoRestore({ mode: Config.AUTOSAVE.AUTO_RESTORE, navigation });
 
             // Initialize panel manager with autosave information
+            // The site footer stays the page's last row, under the panels
+            keepLast(document.getElementById('tile-container'), document.getElementById('site-footer'));
             PanelManager.init('tile-container', { hasAutosave });
 
             // The open dataset turning unreadable (a revoked grant, a removed store)

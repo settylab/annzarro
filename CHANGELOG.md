@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- The site's footer line on the main page is at the bottom of the page, under the panels, instead
+  of pinned to the bottom of the window: scroll down to reach it.
+
 ### Docs
 - The README and the licence page cite v0.6.0 by its DOI,
   [10.5281/zenodo.23447624](https://doi.org/10.5281/zenodo.23447624).

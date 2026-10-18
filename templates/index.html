@@ -181,7 +181,8 @@
     <!-- Main Content Area - Tile Container -->
     <main id="tile-container" class="tile-container">
         <!-- Tiles will be dynamically added here -->
-    </main>{# site:begin #}{% set about_dialog = true %}{% include "_site_footer.html" %}{# site:end #}
+        {# site:begin #}{# the footer is the page's last row, kept there by utils/site-footer.js #}{% set about_dialog = true %}{% include "_site_footer.html" %}{# site:end #}
+    </main>
     
     <!-- We're removing the footer as we'll add tile creation in the layout manager -->
     

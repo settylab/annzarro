@@ -186,40 +186,56 @@ def test_the_footer_is_small_centred_and_covers_nothing(browser, sited, scheme, 
     page.goto(sited)
     _wait_app(page)
     assert page.evaluate("document.documentElement.getAttribute('data-theme')") == scheme
+    chooser = "() => document.querySelector('#tile-container > .tile-selector').getBoundingClientRect().bottom"
+    # at the bottom of the page, under the chooser, not pinned to the bottom of the window
+    b = page.evaluate(BOXES)
+    assert b["footer"]["y"] >= page.evaluate(chooser) - 0.5, "under the chooser"
+    if page.evaluate(chooser) > b["vh"]:
+        assert b["footer"]["y"] >= b["vh"] - 0.5, "below the fold while the chooser fills the window"
+    page.evaluate("const c = document.querySelector('#tile-container'); c.scrollTop = c.scrollHeight")
+    page.wait_for_timeout(300)
     b = page.evaluate(BOXES)
     f, t = b["footer"], b["tiles"]
     assert f is not None and f["h"] < 36 and b["fontSize"] <= 13, "small and quiet"
-    assert abs(f["bottom"] - b["vh"]) < 1.5, "at the bottom of the window"
-    assert t["bottom"] <= f["y"] + 0.5, "the panel area ends where the footer begins: no overlap"
+    assert abs(f["bottom"] - b["vh"]) < 1.5 and abs(t["bottom"] - f["bottom"]) < 1.5, "the page's last row"
+    assert page.evaluate(chooser) <= f["y"] + 0.5, "the chooser ends where the footer begins: no overlap"
     assert abs((f["x"] + f["w"] / 2) - width / 2) < 2 and f["w"] >= width - 2
     assert b["overflow"] <= 0, "no sideways scrolling"
     texts = page.locator("#site-footer a").all_inner_texts()
     assert texts == ["Impressum", "Datenschutz", "Barrierefreiheit", "Kontakt"]
     # nothing in the footer lies over the panel area, and the panel area is clickable down to its last pixel
-    hit = page.evaluate("""() => { const t = document.querySelector('#tile-container').getBoundingClientRect();
+    hit = page.evaluate("""() => { const t = document.querySelector('#tile-container > .tile-selector').getBoundingClientRect();
         const e = document.elementFromPoint(innerWidth / 2, t.bottom - 2); return e ? e.closest('#site-footer') === null : false; }""")
     assert hit
     _shot(page, f"footer-main-{width}-{scheme}")
     assert page.errors == []
 
 
-def test_the_footer_does_not_cover_a_panel(browser, sited):
+def test_the_footer_is_under_the_panels_at_the_bottom_of_the_page(browser, sited):
     page = _page(browser, 1440, 900)
     url, ids = _link(sited)
     page.goto(url)
     for i in ids:
         page.wait_for_selector(f".tile[data-tile-id='{i}'] .js-plotly-plot", timeout=60000)
     page.wait_for_timeout(800)
+    # the opened link emptied and refilled the page's scroller; the footer is still its last row
+    assert page.evaluate("document.querySelector('#tile-container').lastElementChild.id") == "site-footer"
+    # at the bottom of the page, not of the window: the panels fill the window and it is below them
+    top = page.evaluate("document.querySelector('#site-footer').getBoundingClientRect().top")
+    assert top >= 900 - 0.5, "below the fold until the page is scrolled"
+    page.evaluate("const c = document.querySelector('#tile-container'); c.scrollTop = c.scrollHeight")
+    page.wait_for_timeout(300)
     covered = page.evaluate("""() => {
         const f = document.querySelector('#site-footer').getBoundingClientRect();
         const c = document.querySelector('#tile-container').getBoundingClientRect();
+        const above = document.querySelector('#site-footer').previousElementSibling.getBoundingClientRect();
         const at = (x, y) => document.elementFromPoint(x, y);
         const mid = innerWidth / 2;
         return {footerOnTop: !!at(mid, f.top + f.height / 2).closest('#site-footer'),
-                panelsOnTop: !!at(mid, c.bottom - 2).closest('#tile-container'),
-                gap: f.top - c.bottom};
+                aboveOnTop: !at(mid, above.bottom - 2).closest('#site-footer'),
+                gap: f.top - above.bottom, end: c.bottom - f.bottom};
     }""")
-    assert covered["footerOnTop"] and covered["panelsOnTop"] and abs(covered["gap"]) < 1.5
+    assert covered["footerOnTop"] and covered["aboveOnTop"] and covered["gap"] >= -0.5 and abs(covered["end"]) < 1.5
     _shot(page, "footer-with-panels-1440-light")
 
 
