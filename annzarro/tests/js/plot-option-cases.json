@@ -261,7 +261,7 @@
   },
   {
    "key": "focusedNoFill",
-   "value": true,
+   "value": false,
    "panel": "a",
    "render": true
   },

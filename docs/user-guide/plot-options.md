@@ -127,19 +127,19 @@ no legend entry. See {doc}`tables-and-filters`.
 ## Focused cell
 
 The **Focused cell** group (**Focused gene** in a gene plot) sets how the marker on the focused
-cell looks while **Highlight Focused Cell** is on ({doc}`focus-and-lock`). Without changes it is a
-red dot twice the point size with a 2 px edge, black in the light app theme and white in the dark
-one.
+cell looks while **Highlight Focused Cell** is on ({doc}`focus-and-lock`). Without changes it is an
+open circle five times the point size, drawn by a 2 px edge that is black in the light app theme
+and white in the dark one.
 
-- **Size** is a multiple of the point size (0.1 to 50, `x points`; 2 by default), so the marker
+- **Size** is a multiple of the point size (0.1 to 50, `x points`; 5 by default), so the marker
   keeps its proportion when the point size changes, by hand or automatically.
 - **Opacity** (0.01 to 1). Empty is opaque.
 - **Edge width** in pixels (0 to 20; 2 by default). 0 draws no edge.
-- **Fill** colour, red by default, and **Edge** colour, black (light theme) or white (dark theme)
+- **Fill** colour, red by default (shown once **No fill** is off), and **Edge** colour, black (light theme) or white (dark theme)
   by default, each with **Reset**. A colour you choose stays as chosen in either theme; one you
   leave alone follows the theme.
-- **No fill** draws the marker as an open circle: its edge alone, in the edge colour and width,
-  with the plot showing through the middle. Switching it on raises an edge width under 1 px to
+- **No fill** is on by default: the marker is an open circle, its edge alone, in the edge colour
+  and width, with the plot showing through the middle. Switch it off to fill the marker. Switching it on raises an edge width under 1 px to
   1 px, and the width cannot go below 1 px while it is on, so the circle always shows. In a 3D
   plot the open circle is drawn in the edge colour. The fill colour is kept for when No fill is
   switched off, and **Reset** still only returns the colour to the theme.

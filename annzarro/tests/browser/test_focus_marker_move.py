@@ -55,6 +55,7 @@ def ring_server(tmp_path_factory):
 
 def _link(root, store, subset=None, focused=None):
     plot = {"id": "cell-plot-a", "title": "A", "pointSize": 8, "pointOpacity": 1,
+            "focusedNoFill": False, "focusedScale": 2,       # a filled red dot: the pixels below look for its red
             "x": {"type": "obsm", "key": "X_umap", "column": "0"},
             "y": {"type": "obsm", "key": "X_umap", "column": "1"},
             "color": {"type": "obs", "key": "leiden", "column": ""}}

@@ -3,7 +3,7 @@
 The fixture's 200 cells are drawn in large-plot mode by a threshold of 100
 points. The shape takes every option: radius half the marker size, opacity
 (a shape's covers fill and edge, as a marker's), fill, edge colour and
-width. Without the keys it is drawn as before them; a change replaces the
+width. Without the keys it is the default open circle, five times the point size; a change replaces the
 shape (one relayout), with no restyle or new plot; a set colour stays
 across a theme switch.
 """
@@ -40,17 +40,27 @@ def _wait(page, key, want):
                            arg=[A, key, want], timeout=10000)
 
 
-def test_the_focused_shape_takes_every_option(page, server):
+def test_the_default_shape_is_an_open_circle(page, server):
     page.goto(_link(server))
     page.wait_for_function("(id) => !!(%s)(id)" % SHAPE, arg=A, timeout=60000)
     page.wait_for_timeout(1000)
     s = _shape(page)
     assert s["large"], "the fixture did not draw in large-plot mode"
-    # as before the options: radius the point size (at least 2 px), opaque, red, 2 px black
-    assert s["r"] == max(2, s["pointSize"]), s
+    assert s["r"] == max(2, s["pointSize"] * 5 / 2), s
+    assert (s["opacity"], s["fill"], s["lineColor"], s["lineWidth"]) == (1, "rgba(0, 0, 0, 0)", "#000000", 2), s
+
+
+def test_the_focused_shape_takes_every_option(page, server):
+    page.goto(_link(server, {A: {"focusedNoFill": False}}))
+    page.wait_for_function("(id) => !!(%s)(id)" % SHAPE, arg=A, timeout=60000)
+    page.wait_for_timeout(1000)
+    s = _shape(page)
+    assert s["large"], "the fixture did not draw in large-plot mode"
+    # filled: radius 2.5 times the point size (at least 2 px), opaque, red, 2 px black
+    assert s["r"] == max(2, s["pointSize"] * 5 / 2), s
     assert (s["opacity"], s["fill"], s["lineColor"], s["lineWidth"]) == (1, "#ff0000", "#000000", 2), s
     _menu(page, A, "focused")
-    steps = [(f"#focused-scale-{A}", 5, "r", max(2, s["pointSize"] * 5 / 2)),
+    steps = [(f"#focused-scale-{A}", 7, "r", max(2, s["pointSize"] * 7 / 2)),
              (f"#focused-opacity-{A}", 0.4, "opacity", 0.4),
              (f"#focused-edge-width-{A}", 3, "lineWidth", 3),
              (f"#focused-color-{A}", "#00ff00", "fill", "#00ff00"),
@@ -70,7 +80,7 @@ def test_the_focused_shape_takes_every_option(page, server):
     before = _shape(page)["pointSize"]
     page.fill(f"#point-size-input-{A}", "8")
     page.press(f"#point-size-input-{A}", "Tab")
-    page.wait_for_function("([id, ps]) => { const s = (%s)(id); return s && s.pointSize !== ps && s.r === Math.max(2, s.pointSize * 5 / 2); }"
+    page.wait_for_function("([id, ps]) => { const s = (%s)(id); return s && s.pointSize !== ps && s.r === Math.max(2, s.pointSize * 7 / 2); }"
                            % SHAPE, arg=[A, before], timeout=10000)
     # a set colour stays across a theme switch; the shape is still drawn
     page.click(f"#reset-focused-color-{A}")
@@ -83,14 +93,14 @@ def test_the_focused_shape_takes_every_option(page, server):
 
 
 def test_no_fill_makes_the_shape_an_open_circle(page, server):
-    page.goto(_link(server, {A: {"focusedScale": 6, "focusedEdgeWidth": 3, "focusedEdgeColor": "#0000ff", "focusedColor": "#ff0000"}}))
+    page.goto(_link(server, {A: {"focusedNoFill": False, "focusedScale": 6, "focusedEdgeWidth": 3, "focusedEdgeColor": "#0000ff", "focusedColor": "#ff0000"}}))
     page.wait_for_function("(id) => !!(%s)(id)" % SHAPE, arg=A, timeout=60000)
     page.wait_for_timeout(1000)
     assert _shape(page)["fill"] == "#ff0000"
     _menu(page, A, "focused")
     page.evaluate(SPY)
     page.set_checked(f"#focused-no-fill-{A}", True)
-    _wait(page, "fill", "rgba(0,0,0,0)")
+    _wait(page, "fill", "rgba(0, 0, 0, 0)")
     spy = _spied(page)
     assert spy["newPlot"] == spy["react"] == spy["restyle"] == spy["addTraces"] == spy["deleteTraces"] == 0 and spy["relayout"] == 1, spy
     assert (_shape(page)["lineColor"], _shape(page)["lineWidth"]) == ("#0000ff", 3)
@@ -112,6 +122,6 @@ def test_no_fill_makes_the_shape_an_open_circle(page, server):
     # it survives a focus move and a link
     page.evaluate("async () => (await import('/static/js/data-manager.js')).DataManager.setFocusedCell('cell_0042', false)")
     page.wait_for_timeout(800)
-    assert _shape(page)["fill"] == "rgba(0,0,0,0)"
+    assert _shape(page)["fill"] == "rgba(0, 0, 0, 0)"
     layout = page.evaluate("() => window.PanelManager.saveLayout()")
-    assert layout["panelConfigs"][A]["focusedNoFill"] is True
+    assert "focusedNoFill" not in layout["panelConfigs"][A]       # no fill is the default

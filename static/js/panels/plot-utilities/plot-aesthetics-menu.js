@@ -370,7 +370,7 @@ export function createPopoverContent(id, settings) {
                 <span class="input-group-text">Size</span>
                 <input type="number" class="form-control" id="focused-scale-${id}"
                     value="${settings.focusedScale ?? FOCUS_DEFAULTS.scale}" min="0.1" max="${FOCUS_SCALE_MAX}" step="0.1"
-                    title="Relative to the point size; ${FOCUS_DEFAULTS.scale} is twice as large">
+                    title="Relative to the point size; ${FOCUS_DEFAULTS.scale} is five times as large">
                 <span class="input-group-text">x points</span>
             </div>
             <div class="input-group input-group-sm mb-1">
@@ -392,7 +392,7 @@ export function createPopoverContent(id, settings) {
                     id="focused-color-${id}" value="${plotColour(settings, 'focusedColor')}" title="Choose the fill colour of the focused marker (also the ring of a cell outside the subset)">
                 <button class="btn btn-sm btn-outline-secondary" id="reset-focused-color-${id}" ${resetState(settings, 'focusedColor')}>Reset</button>
                 <div class="form-check mb-0 ms-1">
-                    <input class="form-check-input" type="checkbox" id="focused-no-fill-${id}" ${settings.focusedNoFill ? 'checked' : ''}
+                    <input class="form-check-input" type="checkbox" id="focused-no-fill-${id}" ${settings.focusedNoFill !== false ? 'checked' : ''}
                         title="Draw the marker as an open circle: its edge only (at least 1 px wide)">
                     <label class="form-check-label" for="focused-no-fill-${id}">No fill</label>
                 </div>
@@ -1147,10 +1147,10 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         if (target.id === `focused-no-fill-${id}`) {
             if (e.type !== 'change') return;
             if (target.checked) {
-                settings.focusedNoFill = true;
+                delete settings.focusedNoFill;      // the default
                 // an open circle is its edge: without one it would vanish
                 if (!((settings.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth) >= 1)) settings.focusedEdgeWidth = 1;
-            } else delete settings.focusedNoFill;
+            } else settings.focusedNoFill = false;      // stored: unset means no fill
             syncFocusedFill(id, settings);
             syncColourControls(id, settings);
             restyleFocus(plotContainer, settings).catch(err => console.warn('Focused marker style not updated:', err && err.message));
@@ -1170,7 +1170,7 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             } else if (focusKey === 'focusedScale' ? v > 0 && v <= FOCUS_SCALE_MAX
                 : focusKey === 'focusedOpacity' ? v > 0 && v <= 1 : v >= 0 && v <= FOCUS_EDGE_MAX) {
                 // no fill: the edge is all there is of the marker, so it stays at least 1 px (judged once the entry is done)
-                if (focusKey === 'focusedEdgeWidth' && settings.focusedNoFill && v < 1) {
+                if (focusKey === 'focusedEdgeWidth' && settings.focusedNoFill !== false && v < 1) {
                     if (e.type !== 'change') return;
                     target.value = 1;
                     settings[focusKey] = 1;
@@ -1663,7 +1663,7 @@ export function updateColorInputs(container, id, settings) {
 function syncFocusedFill(id, settings) {
     const noFill = document.getElementById(`focused-no-fill-${id}`);
     const width = document.getElementById(`focused-edge-width-${id}`);
-    if (noFill) noFill.checked = !!settings.focusedNoFill;
+    if (noFill) noFill.checked = settings.focusedNoFill !== false;
     if (width && settings.focusedEdgeWidth !== undefined) width.value = settings.focusedEdgeWidth;
 }
 

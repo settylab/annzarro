@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- The focused cell or gene is drawn as an open circle five times the point size by default (no fill, a 2 px edge, opaque). Switch **No fill** off in the Focused group of Plot Options to fill it; plots saved before this draw the new default unless they set the fill.
+
 ### Docs
 - The README and the licence page cite v0.6.0 by its DOI,
   [10.5281/zenodo.23447624](https://doi.org/10.5281/zenodo.23447624).
