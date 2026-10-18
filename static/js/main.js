@@ -58,6 +58,7 @@ import { startDesktopFrame } from './utils/desktop-frame.js';
 import { keepLast } from './utils/site-footer.js';
 import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
 import { markDatasetUnavailable, clearDatasetUnavailable, notAvailableText, UNAVAILABLE_TITLE } from './utils/no-dataset-screen.js';
+import { vendorProblem } from './utils/vendor-check.js';
 
 const App = (function() {
     // Private variables
@@ -89,6 +90,14 @@ const App = (function() {
         window._updateErrorPreview = _updateErrorPreview;
         
         try {
+            // The bundled libraries (static/vendor) the server did not send:
+            // say which, and do not start on a page that cannot work
+            const vendor = vendorProblem();
+            if (vendor) {
+                console.error('Bundled libraries missing:', vendor.missing.join(', '), vendor.files);
+                _showNotification(vendor.title, vendor.message, 'error');
+                return;
+            }
 
             // When the login expires mid-session, go to the login page and
             // come back to this dataset and view (utils/session-expiry.js)
