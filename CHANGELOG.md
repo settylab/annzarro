@@ -12,6 +12,12 @@ with the release after it. Older releases are listed on
 - The site's footer line on the main page is at the bottom of the page, under the panels, instead
   of pinned to the bottom of the window: scroll down to reach it.
 
+### Fixed
+- When the server does not send the libraries the page needs (an installation missing files in
+  static/vendor), AnnZarro says which ones and what to do, instead of "Can't find variable: bootstrap".
+- The Structure tab of Dataset information: the tree no longer shows through the strip above the
+  search box while scrolling.
+
 ### Docs
 - The README and the licence page cite v0.6.0 by its DOI,
   [10.5281/zenodo.23447624](https://doi.org/10.5281/zenodo.23447624).
