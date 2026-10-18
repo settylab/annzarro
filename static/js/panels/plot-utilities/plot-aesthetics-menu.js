@@ -84,13 +84,20 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   menuButton.addEventListener('shown.bs.popover', onShown);
   menuButton.addEventListener('hide.bs.popover',  onHide);
 
-  // Click-away handler
-  const clickAway = (e) => {
-    if (!e.target.isConnected) return;   // a control the menu drew again (a preset) is not outside it
-    if (!menuButton.contains(e.target) && !e.target.closest('.popover')) {
-      popover.hide();
-    }
+  // Click-away handler: a press that starts outside the menu and button closes it. A drag that
+  // starts inside (selecting text, a slider, a colour picker) and ends outside is a click on the
+  // common ancestor, so the press target decides, not the click's.
+  let pressedInside = null;     // set by pointerdown; null when a click came without one (synthetic)
+  const onPress = (e) => {
+    pressedInside = !!(e.target.closest && (menuButton.contains(e.target) || e.target.closest('.popover')));
   };
+  const clickAway = (e) => {
+    const inside = pressedInside !== null ? pressedInside : !!(menuButton.contains(e.target) || e.target.closest('.popover'));
+    pressedInside = null;
+    if (!e.target.isConnected) return;   // a control the menu drew again (a preset) is not outside it
+    if (!inside) popover.hide();
+  };
+  document.addEventListener('pointerdown', onPress, true);
   document.addEventListener('click', clickAway);
 
   // Settings-change listener
@@ -107,6 +114,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
     popover.dispose();
     menuButton.removeEventListener('shown.bs.popover', onShown);
     menuButton.removeEventListener('hide.bs.popover',  onHide);
+    document.removeEventListener('pointerdown', onPress, true);
     document.removeEventListener('click', clickAway);
     document.removeEventListener('plotSettingsChanged', onSettingsChange);
     cleanupListeners();

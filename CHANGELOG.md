@@ -14,6 +14,8 @@ with the release after it. Older releases are listed on
 ### Fixed
 - The arrow keys of the opacity boxes in Plot Options (Focused, Not in table) step from the opaque default (1, 0.95, 0.9) instead of jumping to the minimum when the box is empty.
 
+- The Plot Options menu no longer closes when you press inside it (to select text in a box, drag a slider or a colour) and let go outside it. It closes on a click that starts outside.
+
 ### Docs
 - The README and the licence page cite v0.6.0 by its DOI,
   [10.5281/zenodo.23447624](https://doi.org/10.5281/zenodo.23447624).

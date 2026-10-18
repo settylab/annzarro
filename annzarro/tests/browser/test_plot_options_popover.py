@@ -18,7 +18,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
-from annzarro.tests.browser.test_plot_options import A, DRAWN, _link, _menu, server  # noqa: E402,F401  (fixture)
+from annzarro.tests.browser.test_plot_options import A, DRAWN, _link, _menu, page, server  # noqa: E402,F401  (fixtures)
 
 
 @pytest.fixture(params=["chromium", "webkit"])
@@ -72,3 +72,29 @@ def test_the_arrows_step_from_the_default_in_chromium_and_webkit(engine_page):
     assert page.input_value(nt) == ""
     assert _arrow(page, nt, "ArrowDown") == "0.95"
     assert _arrow(page, nt, "ArrowDown") == "0.9"
+
+
+def test_a_drag_that_ends_outside_keeps_the_menu_open(page, server):
+    page.goto(_link(server))
+    page.wait_for_function(DRAWN, arg=A, timeout=60000)
+    page.wait_for_timeout(1000)
+    _menu(page, A, "focused")
+    popover = ".aesthetics-popover"
+    box = page.locator(f"#focused-scale-{A}").bounding_box()
+    outside = (5, 5)
+    assert page.evaluate("([x, y]) => !document.elementFromPoint(x, y).closest('.popover')", list(outside))
+    # a press in a number box, a drag out of the menu, a release over the page: still open
+    page.mouse.move(box["x"] + 10, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(*outside, steps=8)
+    page.mouse.up()
+    page.wait_for_timeout(400)
+    assert page.query_selector(popover), "the menu closed on a drag that started inside it"
+    # a click that starts and ends outside closes it
+    page.mouse.click(*outside)
+    page.wait_for_selector(popover, state="detached", timeout=5000)
+    # the button opens it again and closes it again
+    page.click(f"#aesthetics-menu-btn-{A}")
+    page.wait_for_selector(popover, state="visible")
+    page.click(f"#aesthetics-menu-btn-{A}")
+    page.wait_for_selector(popover, state="detached", timeout=5000)
