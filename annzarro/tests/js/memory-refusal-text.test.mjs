@@ -63,3 +63,15 @@ test('nothing fits at all: only Subset remains for cells; genes say there is no 
     assert.deepEqual(actionNames(g), []);
     assert.match(g.why, /^60M rows need ~34 GB;.* Genes cannot be subset/);
 });
+
+test('a table caps "Show N cells" below the memory fit; a plot keeps the memory fit', () => {
+    const fits = m => ({ fits: m <= 9_080_000 });
+    const t = refusalPanel({ result: hopeless, kind: 'cell-table', n: 95_624_334, checkAt: fits, anyway: 'Load anyway', cap: 1_000_000 });
+    assert.equal(t.actions[0][1], 'Show 1,000,000 cells');
+    assert.equal(t.actions[0][0], 'subset-n:1000000');
+    // the cap above the fit changes nothing
+    const above = refusalPanel({ result: hopeless, kind: 'cell-table', n: 95_624_334, checkAt: fits, anyway: 'Load anyway', cap: 50_000_000 });
+    assert.equal(above.actions[0][1], 'Show 9,080,000 cells');
+    const p = refusalPanel({ result: hopeless, kind: 'cell-plot', n: 95_624_334, checkAt: fits, anyway: 'Draw anyway' });
+    assert.equal(p.actions[0][1], 'Show 9,080,000 cells');
+});

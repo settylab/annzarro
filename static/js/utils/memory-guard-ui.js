@@ -180,9 +180,10 @@ export function tableCheck({ id, kind, n }) {
  * @param {number} p.n - rows or points asked for
  * @param {(n: number) => Object} p.checkAt - the same check at another size
  * @param {string} p.anyway - the label of the draw-anyway action
+ * @param {number} [p.cap] - most cells "Show N cells" offers (a table that loads slowly past it), whatever fits
  * @returns {{headline: string, why: string, risk: string|null, actions: Array<[string, string]>, hopeless: boolean}}
  */
-export function refusalPanel({ result, kind, n, checkAt, anyway }) {
+export function refusalPanel({ result, kind, n, checkAt, anyway, cap = Infinity }) {
     const isTable = kind.endsWith('table');
     const cells = kind.startsWith('cell');
     const noun = isTable ? 'rows' : 'points';
@@ -196,7 +197,7 @@ export function refusalPanel({ result, kind, n, checkAt, anyway }) {
     }
     let fit = 0;
     if (cells) {
-        try { fit = roundDownNice(largestFitting(m => checkAt(m).fits, 1, n - 1)); } catch { fit = 0; }
+        try { fit = roundDownNice(Math.min(cap, largestFitting(m => checkAt(m).fits, 1, n - 1))); } catch { fit = 0; }
     }
     const actions = [];
     if (fit >= 1) actions.push([`subset-n:${fit}`, `Show ${fit.toLocaleString('en-US')} cells`]);

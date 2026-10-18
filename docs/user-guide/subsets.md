@@ -374,7 +374,7 @@ hundred bytes a row, and one that does not fit says **Not loaded** with the same
 Some things do not fit however many plots are closed: 95.6 million table rows need about 34 GB,
 and a browser gives a page at most about 4 GB of JavaScript memory. Such a panel says **Too many
 rows for this browser** (**Too many points** for a plot) with one line of numbers, and offers only
-what helps: **Show N cells**, the largest subset that fits beside what is open, and **Subset…**.
+what helps: **Show N cells**, the largest subset that fits beside what is open (a table offers at most the large-plot size, 1,000,000 cells by default, since a table of millions of rows holds the page for a long time), and **Subset…**.
 **Close other plots** and **Half the cells** are not offered there, and neither are **Draw
 anyway** and **Load anyway** once the estimate itself is above the browser's ceiling. A Gene
 Table or Gene Plot has no subset and says so.

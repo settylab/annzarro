@@ -714,6 +714,7 @@ SET_ROWS_LIMIT = """async ({ rows, cells }) => {
     DataManager.getSubsetReply = () => ({ n_total: cells });
     const raw = m.panelCost({ kind: 'cell-table', n: rows }).peak.heap;
     const held = g.held(g.ledger.panels().map(e => e.id)).heap;
+    Config.DEFAULTS.LARGE_PLOT_POINTS = 5000000;
     Config.DEFAULTS.MEMORY = { ...(Config.DEFAULTS.MEMORY || {}), total_gb: 1e6, margin: 0.2,
         heap_gb: (held + raw * 1.2 + 1) / (m.GB * m.HEAP_USABLE_SHARE) };
     document.dispatchEvent(new CustomEvent(g.MEMORY_EVENT));
@@ -736,6 +737,14 @@ def test_table_too_big_for_an_empty_page_offers_the_subset_that_fits(server, pag
     assert "subset" in actions
     shows = [a for a in actions if a.startswith("subset-n:")]
     assert shows == ["subset-n:2000000"], actions
+    # a table does not offer more than the large-plot line, whatever fits (a table of millions of rows holds the page)
+    page.evaluate("""async () => {
+        const { Config } = await import('/static/js/config.js');
+        Config.DEFAULTS.LARGE_PLOT_POINTS = 1000000;
+        window.PanelManager.getPanel('cell-table-t').refreshTable();
+    }""")
+    _, actions = _placeholder(page, "cell-table-t")
+    assert [a for a in actions if a.startswith("subset-n:")] == ["subset-n:1000000"], actions
     # the offered size fits, one row more does not
     fits = page.evaluate("""async () => {
         const g = await import('/static/js/utils/memory-guard-ui.js');

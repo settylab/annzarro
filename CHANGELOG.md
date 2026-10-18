@@ -8,7 +8,7 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
-- A Cell Table or plot too large for any browser page (95.6 million rows against about 4 GB of JavaScript memory) now says "Too many rows for this browser" with the numbers, and offers "Show N cells" for the largest subset that fits and "Subset…". It no longer offers "Close other plots" when no other plot is open or closing them cannot help, nor "Draw anyway" above the browser's ceiling.
+- A Cell Table or plot too large for any browser page (95.6 million rows against about 4 GB of JavaScript memory) now says "Too many rows for this browser" with the numbers, and offers "Show N cells" for the largest subset that fits (a table at most 1,000,000) and "Subset…". It no longer offers "Close other plots" when no other plot is open or closing them cannot help, nor "Draw anyway" above the browser's ceiling.
 
 ## 0.6.0 (2026-10-17)
 

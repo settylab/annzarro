@@ -6,6 +6,8 @@
  */
 import { DataManager } from '../../data-manager.js';
 import { tableCheck, refusalPanel, takeOverride } from '../../utils/memory-guard-ui.js';
+import { Config } from '../../config.js';
+import { DEFAULT_LARGE_PLOT_POINTS } from '../../utils/subset-presets.js';
 import { drawPlaceholder } from '../../utils/panel-surface.js';
 
 /**
@@ -31,10 +33,19 @@ export function tableMayLoad(container, id, kind, letGo = () => {}) {
     if (result.verdict !== 'block') return true;
     letGo();
     const unit = kind === 'cell-table' ? 'cells' : 'genes';
-    const refusal = refusalPanel({ result, kind, n, checkAt: m => tableCheck({ id, kind, n: m }), anyway: 'Load anyway' });
+    const refusal = refusalPanel({ result, kind, n, checkAt: m => tableCheck({ id, kind, n: m }), anyway: 'Load anyway', cap: tableCellCap() });
     drawPlaceholder(container, null, unit, {
         actions: refusal.actions,
         say: { severity: 'warning', headline: refusal.headline, lines: [refusal.why, refusal.risk].filter(Boolean) }
     });
     return false;
+}
+
+/**
+ * The most cells a table offers to show after a refusal: a client table of millions of rows holds
+ * the page for tens of seconds, so it stops where plots switch to large-plot mode.
+ */
+function tableCellCap() {
+    const v = Config.DEFAULTS && Config.DEFAULTS.LARGE_PLOT_POINTS;
+    return typeof v === 'number' && v >= 1 ? v : DEFAULT_LARGE_PLOT_POINTS;
 }
