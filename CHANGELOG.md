@@ -8,6 +8,13 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.6.1 (2026-10-18)
+
+Legend columns, dot size and title for categorical colours; the focused cell drawn as an open circle by
+default; a Background group in Plot Options in place of the colour theme buttons; a double-click that zooms
+without moving the focus; and fixes to the Plot Options menu, its opacity boxes, the site footer and the
+Structure search.
+
 ### Added
 - Plot Options, Legend and colour bar: the legend of a categorical colour can have its title switched
   off, its dots set to a size of their own (2 to 16 px, independent of the points' size) and be laid
