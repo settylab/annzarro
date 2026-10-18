@@ -115,7 +115,7 @@ headers.
 (categorical-codes)=
 ### Categorical codes
 
-A categorical column used to travel as one JSON string per cell even with `format=f32`: about
+Without it, a categorical column travels as one JSON string per cell even with `format=f32`: about
 12 bytes per cell, 120 MB for the cell line of 10 million Tahoe-100M cells. With
 `format=f32&categorical=codes` on `/data/obs` or `/data/var` (exactly one column, which is
 categorical) the reply is the stored integer codes:
@@ -253,9 +253,9 @@ The browser's `DataManager` (`static/js/data-manager.js`) adds two layers before
 
 1. **In-flight coalescing.** While a request for a URL is running, a second caller for the same
    URL joins it instead of starting another; the request is aborted only when every caller has
-   abandoned it. On a deep-link boot every panel used to ask for the same slices at once (30
+   abandoned it. Without it, on a deep-link boot every panel asked for the same slices at once (30
    requests, 19.5 MB, for 13 unique ones, 6.2 MB). Opening the paper's view C (three Cell Plots
-   on `X_umap`) on this branch issued 9 data requests, all unique: two `X_umap` axes shared by
+   on `X_umap`) with it issued 9 data requests, all unique: two `X_umap` axes shared by
    three panels, three layer columns, plus `datasets`, `dataset_structure`, `cells`, `genes`.
 2. **Decoded-slice cache** (`cache-manager.js`): replies keyed by URL, kept 60 s, at most 1,000
    entries and 1 GB, evicting the oldest first. Binary slices are stored decoded as typed

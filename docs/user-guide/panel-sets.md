@@ -215,7 +215,7 @@ restored, the address names its dataset and view, so the next reload opens them 
 A new visit to the bare address opens no dataset and starts on the server's default subset
 ({ref}`subset-size-carried`). A link with a view
 (`?dataset_path=...#view=...`) opens what it names; the in-app refresh button (next to the
-dataset) reads the dataset again and keeps the panels open, as before. AnnZarro tells a reload
+dataset) reads the dataset again and keeps the panels open. AnnZarro tells a reload
 from a new visit by the tab's own history entry, which holds a random id of the page.
 
 ```{admonition} What happens on the server

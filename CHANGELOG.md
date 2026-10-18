@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Docs
+- The admin guide describes the Public site section, the HTTP API reference lists `/site/*`, `/robots.txt` and `/.well-known/security.txt`, and the configuration reference lists every `ui.autosave` key. Statements about the README's Markdown, the convenience storage and the large-plot controls now match the app.
+
 ## 0.6.0 (2026-10-17)
 
 An About dialog and what a public site needs (imprint, privacy notice, a footer), set from the admin

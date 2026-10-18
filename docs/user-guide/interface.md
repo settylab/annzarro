@@ -99,7 +99,7 @@ seed 0** ({doc}`subsets`).
 (dataset-browser)=
 ## Choose a dataset
 
-The dataset button, **Ctrl+O** (**Cmd+O**), and the **Browse datasets...** button of the welcome
+The dataset button, **Ctrl+O** (**Cmd+O**), and the **Browse datasets…** button of the welcome
 screen all open the same dialog, the dataset browser. It is also what opens to choose a dataset for a
 view that has none ({doc}`reproducing`) or for a panel set ({doc}`panel-sets`); its title and a banner
 at the top say which.

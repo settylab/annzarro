@@ -93,17 +93,18 @@ the tab is told apart from a fresh visit.
 A test lists these keys and fails when one is added without being described here.
 
 Under the reading of the ePrivacy rules that most authorities share, choices the visitor made and
-what is strictly needed for the service they asked for need no consent. The two convenience items
-are grey: they are written automatically and kept between visits. The risk is low (nothing leaves
+what is strictly needed for the service they asked for need no consent. The convenience items
+(the autosave, the last sessions and the recents) are grey: they are written automatically and
+kept between visits. The risk is low (nothing leaves
 the browser, there is no third party, no tracking value), and a cautious operator can remove it:
 
 ```yaml
 site:
   storage:
-    persistent_convenience: false   # the autosave and recents last only until the tab closes
+    persistent_convenience: false   # the autosave, last sessions and recents last only until the tab closes
 ```
 
-An earlier visit's autosave and recents are then forgotten at the next load.
+An earlier visit's autosave, last sessions and recents are then forgotten at the next load.
 
 A new visit lists the last session and draws it only on **Restore**; a reload of the tab restores
 it (`ui.autosave.auto_restore: reload`, the default). `never` only lists it, for a reload too;
@@ -186,7 +187,7 @@ Other keys:
 | `security_contact` | none | A `mailto:` or `https://` address. Serves `/.well-known/security.txt` (RFC 9116). The file must sit at the root of your domain, so a proxy that mounts AnnZarro under a path has to pass this one through |
 | `languages` | `en` | The language of the texts (`de`, `en`): the `lang` of the text pages and `Preferred-Languages` in `security.txt` |
 | `software_credits` | `true` | Whether the About dialog keeps AnnZarro's credit: the Setty Lab logo, the Setty Lab and Fred Hutch links, the NIH funding statement and the citation. `false` leaves the name, the version, the MIT licence and links to the documentation and the repository. The credit is about the software, never about your site, and the authors appreciate hosters keeping it beside their own content |
-| `storage.persistent_convenience` | `true` | `false` keeps the autosave and recents until the tab closes |
+| `storage.persistent_convenience` | `true` | `false` keeps the autosave, the last sessions and the recents only until the tab closes |
 
 A wrong value (a `javascript:` address, a missing file, an unknown option) stops the server at
 start and says what is wrong.
@@ -207,8 +208,9 @@ statement are set.
   (a `javascript:` address, a label with markup, two lines of operator), with the same sentence
   under the field, and stores nothing of a change that has one wrong value.
 * **Precedence.** What the page saves goes into the admin overlay (`annzarro_admin/overlay.json`,
-  beside the users file) and wins over your configuration file. **Reset** removes it, and the file's
-  value applies again. To keep a key in the file's hands, lock it:
+  beside the users file) and wins over your configuration file. **Reset to config file** (**Reset to
+  default** where the file sets nothing) removes it, and the file's value, or the default, applies
+  again. To keep a key in the file's hands, lock it:
 
   ```yaml
   policy:
@@ -388,7 +390,7 @@ you save are stored with your user name and can be seen by the other users of th
 Administrators' changes are recorded with their user name and IP address. Legal basis:
 [Art. 6(1)(b) GDPR / Art. 6(1)(f) GDPR].
 
-**4. Storage in your browser.** The site keeps the following in your browser's local storage. It
+**4. Storage in your browser.** The site keeps the following in your browser's storage. It
 never leaves your device, is not shared and is not used to track you: your choice of light or dark
 theme; the datasets you pinned; your chosen subset size; your answers to the question whether gene
 lists may be sent to outside services (section 5); the layout of your panels, so that you can
@@ -464,14 +466,14 @@ Ihrem Benutzernamen abgelegt und sind für andere Nutzende dieser Seite sichtbar
 Administratoren werden mit Benutzername und IP-Adresse protokolliert. Rechtsgrundlage:
 [Art. 6 Abs. 1 lit. b DSGVO / Art. 6 Abs. 1 lit. f DSGVO].
 
-**4. Speicherung in Ihrem Browser.** Die Seite legt Folgendes im lokalen Speicher Ihres Browsers ab.
+**4. Speicherung in Ihrem Browser.** Die Seite legt Folgendes im Speicher Ihres Browsers ab.
 Es verlässt Ihr Gerät nicht, wird nicht weitergegeben und nicht zur Verfolgung Ihres Verhaltens
 genutzt: Ihre Wahl zwischen hellem und dunklem Erscheinungsbild; die von Ihnen angehefteten
 Datensätze; die gewählte Teilmengengröße; Ihre Antworten auf die Frage, ob Genlisten an externe
 Dienste gesendet werden dürfen (Abschnitt 5); die Anordnung Ihrer Panels, damit Sie dort
 weitermachen können, wo Sie aufgehört haben; die zuletzt geöffneten Datensätze; und eine technische
 Markierung, die verhindert, dass der Browser-Tab den Arbeitsspeicher erschöpft. Sie können alles
-über „Alle schließen“ mit dem Häkchen zum Löschen des Speichers dieser Seite oder in den
+über „Close all“ mit dem Häkchen zum Löschen des Speichers dieser Seite oder in den
 Einstellungen Ihres Browsers löschen. Es ist für den von Ihnen gewünschten Dienst erforderlich oder
 speichert eine von Ihnen getroffene Wahl; eine Einwilligung ist deshalb nicht nötig (§ 25 Abs. 2
 Nr. 2 TDDDG). [Bei `persistent_convenience: false`: Anordnung und zuletzt geöffnete Datensätze
@@ -584,9 +586,10 @@ check that the licence is true, that you may serve the data, or that a citation 
 - Where you cannot rewrite a store (read-only or remote), state the terms in your own pages (the
   site's `terms` text), and say where each dataset came from.
 
-**Write it into the dataset** as `uns["annzarro"]`, a dictionary of text values (all optional:
-`title`, `description`, `license`, `license_url`, `citation`, `doi`, `authors`, `source_url`,
-`contact`, `attribution`), and `uns["README"]`, one Markdown string:
+**Write it into the dataset** as `uns["annzarro"]`, a dictionary (all fields optional: `title`,
+`description`, `license`, `license_url`, `citation`, `doi`, `authors`, `source_url`, `contact`,
+`attribution`, and richer forms with `contacts`, `funding` and `provenance`; see
+{ref}`dataset-info-schema`), and `uns["README"]`, one Markdown string:
 
 ```python
 import anndata as ad
@@ -609,11 +612,12 @@ For a zarr store that is already written, `annzarro store annotate liver.zarr --
 --doi 10.1234/abcd --readme README.md` writes the same fields without loading the matrices. Datasets
 from CZ CELLxGENE Discover show their `uns["title"]` and `uns["citation"]` without any change.
 
-**The README is shown as safe Markdown.** Supported: paragraphs, headings, bullet and numbered
-lists, bold, italic, code, and links with an `http://`, `https://` or `mailto:` address (they open in a
-new tab). Raw HTML is not run: tags appear as the text that was written, as do images, tables and
-links with any other address, so a README cannot execute anything on your site. It is shown
-up to 256 KB, and the dialog says when it was cut. Read each README before you publish it: every
+**The README is shown as safe Markdown**, the same subset as the site's texts above: paragraphs,
+headings, lists, bold, italic, code, links with an `http://`, `https://` or `mailto:` address (they
+open in a new tab), bare web addresses, pipe tables, code blocks, horizontal rules and block quotes
+({doc}`dataset-attribution`). Raw HTML is not run: tags appear as the text that was written, as do
+images and links with any other address, so a README cannot execute anything on your site. It is
+shown up to 256 KB, and the dialog says when it was cut. Read each README before you publish it: every
 visitor sees it, and the renderer can keep it harmless but not judge it.
 
 ## Sources
@@ -623,5 +627,5 @@ GDPR (Regulation (EU) 2016/679) Art. 4, 6, 9, 12, 13, 28, 37, 44 to 49; ePrivacy
 *Breyer*, C-40/17 *Fashion ID*, C-673/17 *Planet49*; Article 29 Working Party WP260 and WP194; EDPB
 Guidelines 2/2023; ADA Title II rule, 28 CFR 35 Subpart H; HHS Section 504 rule, 45 CFR 84.84;
 Directive (EU) 2016/2102; RFC 9116; RFC 9309. Uncertain: how narrowly a given German authority
-reads the exemption for the two convenience items, the exact UK commencement date of the
+reads the exemption for the convenience items, the exact UK commencement date of the
 2025 changes to PECR, and whether HHS changes the substance of its rule during the extension.

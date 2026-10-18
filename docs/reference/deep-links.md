@@ -181,7 +181,7 @@ dataset-wide name index, which takes 6.2 s to build at 50 million cells, and the
 that with a one-row read (0.07 s). On the 50-million-cell Tahoe store, a link to part 2 of
 500 whose focused cell is in part 1 was restored in 13.4 s with the hint and 19.3 s without it,
 from page load to the focused cell's panels drawn on a server that had not built its name index
-yet. Links without the hint, including every link made before it existed, work as before.
+yet. Links without the hint, including every link made before it existed, find the cell by name.
 
 ### Hierarchy nodes
 
@@ -270,7 +270,7 @@ view 4-6× (e.g. 4.5 KB to 1.2 KB), which keeps links pasteable. A runtime witho
 instead, which every build can read.
 
 **Legacy links keep working.** The uncompressed `?view=` query form is what DoLiMap emits and
-what links shared before this change contain; it is decoded as before and is permanently
+what older shared links contain; it is decoded the same way and is permanently
 supported. Producers that build links by hand may keep emitting it (or move the same payload
 into `#view=`); only links with large layouts need the compressed fragment form.
 
@@ -324,7 +324,7 @@ digest per top-level group) and `fields` (the member names of obs, var, obsm, va
 layers, uns) say which fields. `cells`, `genes` and `data` are missing when the view was saved
 before a large store's names were hashed. `annzarro` is the version that saved the view. How a
 view uses them on opening is in {doc}`../user-guide/reproducing`; the comparison is
-`static/js/utils/view-store.js`. Views without them (made before v0.4.1) open as before.
+`static/js/utils/view-store.js`. Views without them (made before v0.4.1) open without that comparison.
 
 ## Versioning and compatibility
 

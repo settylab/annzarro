@@ -71,9 +71,8 @@ show the dialog. On a large dataset the steps are the same.
    Sizes above the large-plot limit (1,000,000 points by default, set by the server) come after a
    dashed line that says so: large-plot mode draws them faster, with hover and click but without
    table filters or 3D ([Very large datasets](#very-large-datasets)). A size above 150 million points says
-   **may exceed browser memory** and is never chosen for you: in the paper's v0.4.0 runs on a
-   laptop, the memory guard allowed every cell up to 150 million and declined 160 million; with
-   the guard off, Chrome drew 175 million points and stopped responding at 200 million. There is no fixed ceiling: a large plot asks the browser for its buffers
+   **may exceed browser memory** and is never chosen for you (the sizes measured are in
+   {ref}`browser-memory-uimemory`). There is no fixed ceiling: a large plot asks the browser for its buffers
    first, and when it cannot hold them the panel offers a subset instead of drawing. For any other size, type it in **Cells**, here `3000`; the
    parts and estimate follow it. **All** keeps every cell that passes the conditions below
    instead of a fixed number.
@@ -226,7 +225,7 @@ types earlier parts already showed in full. View:
 - **Cell plots** draw only the subset's cells. The status line under each plot
   ({ref}`plot-status-line`) counts the other cells as not in this part of the cell subset
   ("3,000 of 8,090 cells shown · 5,090 not in part 2 of 3"), so its total always accounts for
-  every cell of the dataset; its **Next part** steps the part. Gene plots draw every gene as before.
+  every cell of the dataset; its **Next part** steps the part. Gene plots draw every gene.
 - **Cell tables** hold the subset's cells (here 3,000 rows), and **Export CSV** writes those
   rows.
 - **The Focused Cell picker** finds every cell of the dataset. The subset's cells are listed
@@ -290,8 +289,8 @@ In large-plot mode:
   nearest to the pointer is taken (the regular plot steps through overlapping points on repeated
   clicks; this mode does not). The focused cell is marked by a red dot when **Highlight Focused
   Cell** is on, and a cell the plot does not show is not marked.
-- **Controls that would need the regular plot are off**, with the tooltip "Not available above
-  1M points (large-plot mode); turn on a subset to use it": the obsp axis and colour types, 3D and
+- **Controls that would need the regular plot are off**, with the tooltip "Not available for more
+  than 1M cells. Make a subset of up to 1M cells to use it.": the obsp axis and colour types, 3D and
   its z axis, the Hover list (extra hover columns) and the table filter. A table filter has
   nothing to filter by here: the cell table cannot list this many cells either.
 - **Still available:** pan and zoom; colour by a category (cell type, cluster, cell line), by a
@@ -324,7 +323,7 @@ The names of the cells of a part are not downloaded when the dataset has more th
 (`ui.defaults.names_on_demand_above`), whatever the size of the part. The cells of a part are spread
 over the whole dataset, so reading their names touches nearly every chunk of the name column: for
 100,000 cells of a store of a billion cells that is 477 chunks, 20 to 35 seconds at every step to
-another part, before the plot could change. A part step now waits for the cell coordinates only, and
+another part, before the plot could change. A part step waits for the cell coordinates only, and
 what needs a name asks for that name:
 
 - **Hover** asks for the name of the point under the pointer (a moment after the label appears,
@@ -360,7 +359,7 @@ What does not fit is not started, and the panel or the control says what it need
 and what helps: close a plot, or show fewer cells. Two limits matter, whatever the computer's RAM: the browser's
 JavaScript memory, about 4.4 GB in Chrome on a 64-bit computer, of which a regular plot holds
 400 to 900 bytes per point; and the array buffers one tab may hold, about 16.6 GB in Chrome and
-15 GB in Safari, of which a plot in large-plot mode holds about 90 bytes per point. The buffers
+15 GB in Safari, of which a plot in large-plot mode holds about 88 bytes per point. The buffers
 of every open plot count together: with six Cell Plots open, every cell of a 95.6-million-cell
 dataset is refused (six plots of 8 to 9 GB), and the dialog says up to which size they fit.
 The headline of a refusal names the limit: **JS memory**, **browser buffers**, **browser
