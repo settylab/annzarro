@@ -16,6 +16,8 @@
     
     <!-- Theme (System, Light or Dark) before anything paints: sets <html data-theme>; see static/js/theme-init.js -->
     <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
+    <!-- Which bundled libraries fail to load, for the message if they do; see static/js/vendor-watch.js -->
+    <script src="{{ url_for('static', filename='js/vendor-watch.js') }}"></script>
 
     <!-- External Dependencies (local for offline use) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/bootstrap.min.css') }}">
@@ -181,7 +183,8 @@
     <!-- Main Content Area - Tile Container -->
     <main id="tile-container" class="tile-container">
         <!-- Tiles will be dynamically added here -->
-    </main>{# site:begin #}{% set about_dialog = true %}{% include "_site_footer.html" %}{# site:end #}
+        {# site:begin #}{# the footer is the page's last row, kept there by utils/site-footer.js #}{% set about_dialog = true %}{% include "_site_footer.html" %}{# site:end #}
+    </main>
     
     <!-- We're removing the footer as we'll add tile creation in the layout manager -->
     
@@ -414,7 +417,8 @@
     <!-- Make bootstrap globally available for script modules -->
     <script>
         // Ensure bootstrap is globally available for module scripts
-        window.bootstrap = bootstrap;
+        // (absent when the server did not send it: utils/vendor-check.js says so)
+        if (typeof bootstrap !== 'undefined') window.bootstrap = bootstrap;
     </script>
     
     <!-- Application JavaScript -->

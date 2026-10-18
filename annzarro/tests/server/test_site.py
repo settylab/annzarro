@@ -150,7 +150,8 @@ def test_the_footer_links_the_configured_texts_on_the_main_page(tmp_path):
     assert 'href="/site/imprint" data-about-section="imprint"' in footer
     assert 'href="https://example.org/privacy" target="_blank" rel="noopener noreferrer"' in footer
     assert 'href="mailto:office@example.org"' in footer
-    assert html.index("</main>") < html.index('id="site-footer"') < html.index('id="about-modal"')
+    # the last row of the page's scroller (#tile-container), so it is at the bottom of the page
+    assert html.index('id="tile-container"') < html.index('id="site-footer"') < html.index("</main>") < html.index('id="about-modal"')
 
 
 def test_the_about_dialog_carries_the_site_block(tmp_path):
