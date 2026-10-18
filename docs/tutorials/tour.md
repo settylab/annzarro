@@ -344,8 +344,8 @@ needs no new data from the server, because the plot already holds every cell.
 25. Click "Split Horizontally" on the table and add a **Cell Plot**: UMAP axes, **Color**
     `obs` · `kompot_da_Young_to_Old_lfc_zscore`, **Map** `RdBu`, **Center at 0**.
 26. In the plot's controls set **Table** to the table (it is listed by its title).
-    Cells the filter removes turn grey; the eye button beside it ("Toggle between coloring
-    non-table entries in gray or completely removing them") hides them instead.
+    Cells the filter removes turn grey; the eye button beside it ("Toggle between colouring
+    non-table entries in grey or completely removing them") hides them instead.
 
 ```{figure} ../_static/screens/paper/fig2-c-filter.png
 :class: screenshot

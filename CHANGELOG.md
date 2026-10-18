@@ -53,6 +53,7 @@ tab; plot options that survive links and Duplicate; and a Publication preset for
 - Such a server logs a warning at start when it publishes neither an imprint nor a privacy notice, naming the admin page's Public site section and the guide.
 
 ### Fixes
+- A dataset README longer than the 200,000 characters the dialog renders says that it was cut ("Showing the first 200,000 characters of … KB"); its end used to be left out without a note.
 - The dataset browser's path field opens with **/** or **~** (the first character of the path, as in the macOS and GTK file dialogs), from the list or from an empty search box; a search box that holds text keeps the character. The hint reads "Type a path or URL: /" on every platform. It advertised Cmd+L, which Safari keeps for its address bar and never passes to the page; Ctrl+L and Cmd+L still work where the web browser passes them on. In the list, `/` no longer moves to the search box.
 - Choosing "All cells" on a dataset the server shows in full anyway (up to its subsampling
   threshold) no longer carries every cell to the next, larger dataset: the kept size is forgotten

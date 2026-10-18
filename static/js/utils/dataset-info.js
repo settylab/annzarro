@@ -11,7 +11,7 @@
  * links only http, https and mailto; no raw HTML, no images). A link of the attribution is only
  * made when its address is http(s) or mailto, whatever the server said.
  */
-import { renderSafeMarkdown } from './safe-markdown.js';
+import { renderSafeMarkdown, MAX_CHARS } from './safe-markdown.js';
 import { mountStructureSearch } from './structure-search.js';
 
 export const PARTS = ['about', 'readme', 'structure'];
@@ -340,9 +340,12 @@ export function drawReadme(container, readme, { compact = false } = {}) {
     // the one place text becomes markup: the renderer escapes everything first, then allows a small subset
     body.innerHTML = renderSafeMarkdown(readme.text, { headingBase: compact ? 5 : 4 });
     container.appendChild(body);
-    if (readme.truncated) {
+    // the renderer takes MAX_CHARS characters; the server may send more (it cuts at 256 KB of UTF-8)
+    const rendered = Math.min(readme.text.length, MAX_CHARS);
+    if (readme.truncated || rendered < readme.text.length) {
         const kb = (n) => `${Math.round(n / 1024).toLocaleString('en-US')} KB`;
-        const note = el(doc, 'p', 'dsi-note dsi-truncated', `Showing the first ${kb(readme.limit_bytes || readme.text.length)} of ${kb(readme.bytes)}.`);
+        const shown = rendered < readme.text.length ? `${rendered.toLocaleString('en-US')} characters` : kb(readme.limit_bytes || readme.text.length);
+        const note = el(doc, 'p', 'dsi-note dsi-truncated', `Showing the first ${shown} of ${kb(readme.bytes || readme.text.length)}.`);
         container.appendChild(note);
     }
 }

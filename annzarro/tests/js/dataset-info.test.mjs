@@ -109,3 +109,24 @@ test("a short dataset name is plain text; a long one keeps its last characters i
   assert.equal(node.children[0].textContent + node.children[1].textContent, long);
   assert.equal(node.children[1].textContent.length, 28);
 });
+
+const { drawReadme } = await import("../../../static/js/utils/dataset-info.js");
+const { MAX_CHARS } = await import("../../../static/js/utils/safe-markdown.js");
+
+test("a README longer than the renderer takes says that it was cut", () => {
+  const node = () => ({ children: [], className: "", textContent: "", innerHTML: "", appendChild(c) { this.children.push(c); return c; },
+    append(...c) { this.children.push(...c); }, setAttribute() {} });
+  const doc = { createElement: node, createTextNode: (t) => ({ textContent: t }) };
+  const notes = (readme) => {
+    const container = { ...node(), ownerDocument: doc };
+    drawReadme(container, readme);
+    return container.children.filter((c) => /dsi-truncated/.test(c.className)).map((c) => c.textContent);
+  };
+  const short = "# Title\n\nshort";
+  assert.deepEqual(notes({ present: true, text: short, bytes: short.length, truncated: false }), []);
+  const long = "a ".repeat(MAX_CHARS);   // 2 × MAX_CHARS characters, sent whole by the server
+  const [note] = notes({ present: true, text: long, bytes: long.length, truncated: false });
+  assert.match(note, /^Showing the first 200,000 characters of 391 KB\.$/);
+  const [cut] = notes({ present: true, text: "x", bytes: 300 * 1024, limit_bytes: 256 * 1024, truncated: true });
+  assert.equal(cut, "Showing the first 256 KB of 300 KB.");
+});
