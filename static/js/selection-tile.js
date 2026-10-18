@@ -208,7 +208,8 @@ export class SelectionTile {
             option.appendChild(note);
           }
           // the ceiling that binds, so a report names the check
-          note.textContent = result.binding === 'contexts' ? 'Too many WebGL canvases' : `Not enough ${bindingLabel(result.binding)}`;
+          note.textContent = (result.binding === 'contexts' ? 'Too many WebGL canvases' : `Not enough ${bindingLabel(result.binding)}`)
+            + (result.learned ? ' (extra margin after a crash)' : '');
         } else {
           if (note) note.remove();
           option.removeAttribute('title');

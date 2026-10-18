@@ -71,7 +71,8 @@ STORAGE_INVENTORY = (
     ("annzarro.recentDatasets:<origin>", "The older form of the recent datasets, moved to the key above",
      "Convenience"),
     ("annzarro_memory_pending, annzarro_memory_margin", "A marker that a heavy action was under way, and the "
-     "memory margin learned from it, so a tab that ran out of memory does not repeat it", "Technical"),
+     "memory margin learned from it for actions of that size, so a tab that ran out of memory does not repeat it "
+     "(forgotten after a week, when an action that large succeeds, or with Reset)", "Technical"),
 )
 
 _URL_RE = re.compile(r"^(?:https?://[^\s]+|mailto:[^\s]+)$", re.IGNORECASE)

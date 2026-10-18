@@ -17,7 +17,10 @@ import assert from 'node:assert/strict';
 
 const listeners = new Map();
 const dispatched = [];
-globalThis.window = { addEventListener() {}, location: { href: 'http://localhost/', origin: 'http://localhost' }, Config: {} };
+const kept = new Map();
+const localStorage = { getItem: k => (kept.has(k) ? kept.get(k) : null), setItem: (k, v) => kept.set(k, String(v)),
+    removeItem: k => kept.delete(k) };
+globalThis.window = { addEventListener() {}, location: { href: 'http://localhost/', origin: 'http://localhost' }, Config: {}, localStorage };
 globalThis.document = {
     addEventListener(type, fn) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(fn); },
     removeEventListener() {},
@@ -135,11 +138,39 @@ function storage() {
 
 test('a crash teaches the buffers the page held, never below the floor, only ever lower', () => {
     const st = storage();
-    assert.equal(m.learnedBuffers(st), null);
-    assert.equal(m.learnBuffersFromCrash(st, 14 * GB), 14 * GB);
-    assert.equal(m.learnBuffersFromCrash(st, 15 * GB), 14 * GB);
-    assert.equal(m.learnBuffersFromCrash(st, 10 * GB), 10 * GB);
-    assert.equal(m.learnBuffersFromCrash(st, 0.1 * GB), m.MIN_LEARNED_BUFFERS);
+    assert.equal(m.readLearned(st), null);
+    assert.equal(m.learnFromCrash(st, { n: N, buffers: 14 * GB }).buffers, 14 * GB);
+    assert.equal(m.learnFromCrash(st, { n: N, buffers: 15 * GB }).buffers, 14 * GB);
+    assert.equal(m.learnFromCrash(st, { n: N, buffers: 10 * GB }).buffers, 10 * GB);
+    assert.equal(m.learnFromCrash(st, { n: N, buffers: 0.1 * GB }).buffers, m.MIN_LEARNED_BUFFERS);
+    // a crash without buffers (a regular plot) keeps what was learned
+    assert.equal(m.learnFromCrash(st, { n: N }).buffers, m.MIN_LEARNED_BUFFERS);
+});
+
+test('what a crash taught is scoped to its size, bounded, and forgotten', () => {
+    const st = storage();
+    const t0 = Date.UTC(2026, 9, 17);
+    const e = m.learnFromCrash(st, { n: N, buffers: 15 * GB }, t0);
+    assert.deepEqual(m.learnedFor(e, N), { margin: 0.25, buffers: 15 * GB });
+    assert.deepEqual(m.learnedFor(e, N / 2), { margin: 0.25, buffers: 15 * GB });
+    // a plot of 100,000 cells is not held to what a 95.6M-cell one taught
+    assert.deepEqual(m.learnedFor(e, 100000), { margin: 0, buffers: null });
+    assert.deepEqual(m.learnedFor(e, null), { margin: 0, buffers: null });
+    // a smaller crash widens the scope down to it
+    assert.equal(m.learnFromCrash(st, { n: 20e6 }, t0).n, 20e6);
+    // forgotten after LEARNED_DAYS
+    assert.equal(m.readLearned(st, t0 + (m.LEARNED_DAYS + 1) * 24 * 3600 * 1000), null);
+    assert.equal(st.getItem(m.LEARNED_MARGIN_KEY), null);
+    // forgotten when an action as large as the crash succeeds; a smaller one does not
+    m.learnFromCrash(st, { n: N });
+    assert.equal(m.learnedSucceeded(st, 100000), false);
+    assert.ok(m.readLearned(st));
+    assert.equal(m.learnedSucceeded(st, N), true);
+    assert.equal(m.readLearned(st), null);
+    // the unscoped form of 0.6.0 and before (a bare number) is dropped
+    st.setItem(m.LEARNED_MARGIN_KEY, '1');
+    assert.equal(m.readLearned(st), null);
+    assert.equal(st.getItem(m.LEARNED_MARGIN_KEY), null);
 });
 
 // -- the page's checks, with the ledger of the operator's case --------------------
@@ -234,4 +265,40 @@ test('the allocation probe refuses what the browser does not give, and only that
         ui.freshProbes();
         Config.DEFAULTS.MEMORY = {};
     }
+});
+
+test('a refusal only the crash margin makes says so and offers to reset it; a small plot is not held to it', () => {
+    Config.DEFAULTS.MEMORY = { host_memory_bytes: 128 * GB, margin: 0.2 };
+    for (const e of ui.ledger.panels()) ui.ledger.remove(e.id);
+    // four crashes drawing every cell: margin 0.2 + 1
+    for (let i = 0; i < 4; i++) m.learnFromCrash(localStorage, { n: N });
+    try {
+        const r = ui.drawCheck({ id: 'a', kind: 'cell-plot', n: N, large: true });
+        assert.equal(r.fits, false);
+        assert.equal(r.binding, 'buffers');          // 7.7 GB x 2.2 > 16.6 GB
+        assert.ok(r.learned && r.learned.n === N, JSON.stringify(r.learned));
+        assert.match(ui.refusalText(r, 'Close a plot.'), /tab ended on .*, AnnZarro keeps an extra margin for this size\. Reset it/);
+        const panel = ui.refusalPanel({ result: r, kind: 'cell-plot', n: N, checkAt: () => ({ fits: false }), anyway: 'Draw anyway' });
+        assert.deepEqual(panel.actions[0], ['memory-reset', 'Reset the margin']);
+        assert.match(panel.why, /extra margin/);
+        // the operator's case: a fresh page, nothing open, 100,000 cells
+        const small = ui.newPanelCheck('cell-plot', { n: 100000 });
+        assert.equal(small.fits, true);
+        assert.equal(ui.settings(100000).margin, 0.2);
+        // reset: drawn again without it
+        ui.resetLearned();
+        assert.equal(ui.learned(), null);
+        assert.equal(ui.drawCheck({ id: 'a', kind: 'cell-plot', n: N, large: true }).fits, true);
+    } finally {
+        m.forgetLearned(localStorage);
+        Config.DEFAULTS.MEMORY = {};
+    }
+});
+
+test('a draw as large as the crash, drawn, forgets the margin', () => {
+    m.learnFromCrash(localStorage, { n: 2e6 });
+    ui.reserve('big', { kind: 'cell-plot', n: 3e6, large: true, colour: 'numeric' });
+    ui.commit('big');
+    assert.equal(ui.learned(), null);
+    ui.forget('big');
 });

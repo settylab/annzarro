@@ -183,9 +183,12 @@ and 2 per character per distinct label (measured at a million points: 999,998 ba
 hover whose labels do not fit stays off, and the plot stays coloured. A full-resolution image export draws the plot again and needs
 about the plot's own share again while it runs. Some costs are still estimated from the code
 rather than measured (the export, a recolour, 3D, a table row); the guard multiplies every
-prediction by 1 + `margin` and adds 0.25 to the margin in a browser whose tab closed during a
-marked action; when that action was a large plot, the array buffers it held become that
-browser's buffer limit (at least 2 GB), so the same plots at the same size are not offered again. Firefox and Safari report no memory figures; they are held to Chrome's limit.
+prediction by 1 + `margin`. In a browser whose tab closed during a marked action it adds 0.25 to
+the margin (at most 1), and when that action was a large plot it takes the array buffers it held
+as that browser's buffer limit (at least 2 GB), so the same plots at the same size are not offered
+again. Both apply only to actions of at least half the points of the one that crashed (a plot of
+100,000 cells is not held to what one of 95 million taught), and are forgotten after a week, when
+an action that large succeeds, or with **Reset the margin**, which a refusal they cause offers. Firefox and Safari report no memory figures; they are held to Chrome's limit.
 
 **Defaults.** `enforce: block`, `heap_gb: null` (the browser's own limit), `total_gb: null`,
 `buffers_gb: null` (the browser's own limit), `margin: 0.2`. With these the heap limits regular plots (a few million points) and the total

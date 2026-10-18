@@ -287,7 +287,7 @@ export function memorySettings(memory) {
  * @returns {{heap: {bytes: number, source: string}, total: {bytes: number|null, source: string},
  *            buffers: {bytes: number, source: string}, contexts: number, browserLimit: boolean}}
  *   heap.bytes is what may be FILLED (the crash point), not the nominal limit.
- *   settings.crashedBuffers (bytes, learnedBuffers()) lowers buffers to
+ *   settings.crashedBuffers (bytes, learnedFor()) lowers buffers to
  *   what a page held when this browser ended it.
  */
 export function readLimits(env = {}, settings = DEFAULT_SETTINGS) {
@@ -1025,60 +1025,86 @@ export function clearPending(storage) {
 }
 
 /**
+ * What this browser learned from a tab that ended during a marked action
+ * (a crash), kept in localStorage under LEARNED_MARGIN_KEY as
+ * {v: 2, margin, buffers, n, at}:
+ * - margin: extra margin, 0.25 a crash, at most MAX_LEARNED_MARGIN;
+ * - buffers: the ArrayBuffers the page held at its peak (the marker's), a
+ *   lower buffer ceiling, never below MIN_LEARNED_BUFFERS;
+ * - n: the points of the smallest action that crashed.
+ * It is SCOPED: it applies to actions of at least LEARNED_SCOPE x n points
+ * (a 100,000-cell plot is not held to what a 95.6M-cell one taught). It is
+ * FORGOTTEN after LEARNED_DAYS, when an action of n points or more succeeds,
+ * with "Reset" (forgetLearned) and with everything the site stored. A value
+ * of the unscoped form before it (a bare number) is dropped: it held every
+ * plot to the margin of the largest crash, however small the plot.
+ */
+export const LEARNED_MARGIN_KEY = 'annzarro_memory_margin';
+export const MAX_LEARNED_MARGIN = 1;
+export const LEARNED_SCOPE = 0.5;
+export const LEARNED_DAYS = 7;
+/** A learned buffer ceiling is never below this (bytes): one odd crash must not refuse every large plot. */
+export const MIN_LEARNED_BUFFERS = 2 * GB;
+
+/** The learned entry, or null (none, expired, unreadable or of the old unscoped form, which is removed). */
+export function readLearned(storage, now = Date.now()) {
+    let raw;
+    try { raw = storage.getItem(LEARNED_MARGIN_KEY); } catch { return null; }
+    if (raw === null || raw === undefined) return null;
+    let e;
+    try { e = JSON.parse(raw); } catch { e = null; }
+    const ok = e && typeof e === 'object' && e.v === 2 && Number(e.margin) > 0 && Number(e.n) > 0
+        && now - Number(e.at) < LEARNED_DAYS * 24 * 3600 * 1000;
+    if (!ok) { forgetLearned(storage); return null; }
+    return { margin: Math.min(MAX_LEARNED_MARGIN, Number(e.margin)),
+        buffers: Number(e.buffers) > 0 ? Math.max(MIN_LEARNED_BUFFERS, Number(e.buffers)) : null,
+        n: Number(e.n), at: Number(e.at) };
+}
+
+/**
+ * What the learned entry asks of an action of `n` points: {margin, buffers}
+ * (0 and null outside its scope, or without an entry). `n` unknown (null):
+ * not applied.
+ */
+export function learnedFor(entry, n) {
+    if (!entry || !(Number(n) >= LEARNED_SCOPE * entry.n)) return { margin: 0, buffers: null };
+    return { margin: entry.margin, buffers: entry.buffers };
+}
+
+/** The page died during `crashed` (takeCrashed's marker): learn from it. Returns the entry. */
+export function learnFromCrash(storage, crashed = {}, now = Date.now()) {
+    const seen = readLearned(storage, now);
+    const n = Number(crashed.n) > 0 ? Number(crashed.n) : (seen ? seen.n : 1);
+    const b = Number(crashed.buffers) > 0 ? Number(crashed.buffers) : null;
+    const entry = {
+        v: 2,
+        margin: Math.min(MAX_LEARNED_MARGIN, (seen ? seen.margin : 0) + 0.25),
+        buffers: seen && seen.buffers && b ? Math.min(seen.buffers, b) : (b || (seen ? seen.buffers : null)),
+        n: seen ? Math.min(seen.n, n) : n,
+        at: now
+    };
+    if (entry.buffers) entry.buffers = Math.round(Math.max(MIN_LEARNED_BUFFERS, entry.buffers));
+    try { storage.setItem(LEARNED_MARGIN_KEY, JSON.stringify(entry)); } catch { /* not kept */ }
+    return readLearned(storage, now);
+}
+
+/** Forget what was learned (Reset, or an action as large as the crash succeeded). */
+export function forgetLearned(storage) {
+    try { storage.removeItem(LEARNED_MARGIN_KEY); } catch { /* nothing kept */ }
+}
+
+/** An action of `n` points succeeded: an entry it covers (n at least the crash's) is forgotten. True when it was. */
+export function learnedSucceeded(storage, n, now = Date.now()) {
+    const e = readLearned(storage, now);
+    if (!e || !(Number(n) >= e.n)) return false;
+    forgetLearned(storage);
+    return true;
+}
+
+/**
  * The action the previous page was running when it died, or null; reading
  * it clears it. Markers older than a day are ignored (a stale tab).
  */
-export const LEARNED_MARGIN_KEY = 'annzarro_memory_margin';
-const MAX_LEARNED_MARGIN = 1;
-
-/**
- * Extra margin this browser has earned by crashing: each crash during a
- * marked action adds 0.25 (at most 1), kept in localStorage. A model that
- * under-predicted once is trusted less from then on.
- */
-export function learnedMargin(storage) {
-    try {
-        const v = Number(storage.getItem(LEARNED_MARGIN_KEY));
-        return Number.isFinite(v) && v > 0 ? Math.min(MAX_LEARNED_MARGIN, v) : 0;
-    } catch {
-        return 0;
-    }
-}
-
-export function learnFromCrash(storage) {
-    const next = Math.min(MAX_LEARNED_MARGIN, learnedMargin(storage) + 0.25);
-    try { storage.setItem(LEARNED_MARGIN_KEY, String(next)); } catch { /* not kept */ }
-    return next;
-}
-
-/**
- * The ArrayBuffers a page held when this browser ended it (bytes), or null:
- * a crash marker that carries them (markIfRisky: the draw's buffers at its
- * peak) lowers the guard's buffer ceiling to them from then on, so the same
- * choice (the same plots at the same size) is not offered as fitting again.
- */
-export const LEARNED_BUFFERS_KEY = 'annzarro_memory_buffers';
-/** A learned ceiling is never set below this (bytes): one odd crash must not refuse every large plot. */
-export const MIN_LEARNED_BUFFERS = 2 * GB;
-
-export function learnedBuffers(storage) {
-    try {
-        const v = Number(storage.getItem(LEARNED_BUFFERS_KEY));
-        return Number.isFinite(v) && v > 0 ? Math.max(MIN_LEARNED_BUFFERS, v) : null;
-    } catch {
-        return null;
-    }
-}
-
-export function learnBuffersFromCrash(storage, bytes) {
-    const b = Number(bytes);
-    if (!(b > 0)) return learnedBuffers(storage);
-    const seen = learnedBuffers(storage);
-    const next = Math.max(MIN_LEARNED_BUFFERS, seen === null ? b : Math.min(seen, b));
-    try { storage.setItem(LEARNED_BUFFERS_KEY, String(Math.round(next))); } catch { /* not kept */ }
-    return next;
-}
-
 export function takeCrashed(storage, now = Date.now()) {
     let raw;
     try { raw = storage.getItem(CRASH_KEY); } catch { return null; }

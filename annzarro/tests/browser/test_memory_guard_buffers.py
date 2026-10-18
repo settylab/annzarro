@@ -134,10 +134,12 @@ def test_a_crash_with_buffers_lowers_the_ceiling(server, engine_page):
     page = first.context.new_page()
     page.goto(server + "/")
     got = until(page, """async () => { const g = await import('/static/js/utils/memory-guard-ui.js');
-        const l = g.limits(); return l && [l.buffers.bytes, l.buffers.source, localStorage.getItem('annzarro_memory_buffers'),
-            g.settings().margin]; }""")
-    assert got[0] == 3e9 and "ended a page" in got[1] and got[2] == "3000000000", got
+        const l = g.limits(95624334); return l && [l.buffers.bytes, l.buffers.source, JSON.parse(localStorage.getItem('annzarro_memory_margin')),
+            g.settings(95624334).margin, g.settings(100000).margin, g.limits(100000).buffers.bytes]; }""")
+    assert got[0] == 3e9 and "ended a page" in got[1] and got[2]["buffers"] == 3e9, got
     assert abs(got[3] - 0.45) < 1e-9, got        # and the learned margin
+    # scoped: a plot of 100,000 cells is held to neither
+    assert got[4] == 0.2 and got[5] > 3e9, got
 
 
 def test_the_probe_refuses_only_what_the_browser_does_not_give(server, engine_page):
@@ -183,3 +185,30 @@ def test_create_tile_follows_the_subset_with_no_panel_open(server, engine_page):
     page.wait_for_function("""() => [...document.querySelectorAll('.panel-type-option[data-type="cell-plot"]')]
         .every(o => !o.classList.contains('memory-blocked'))""", timeout=15000)
     assert create.locator(".memory-note").count() == 0
+
+
+def test_a_refusal_only_the_crash_margin_makes_offers_reset(server, engine_page):
+    """What a crash taught (an extra margin for plots of that size) is said in
+    the refusal, with Reset the margin, which draws the plot without it."""
+    page = engine_page
+    page.goto(_link(server))
+    _drawn(page, "cell-plot-a")
+    # what four crashes of plots of this size teach (a draw that large going through forgets it,
+    # so it is set once the plot is drawn)
+    page.evaluate("""() => localStorage.setItem('annzarro_memory_margin',
+        JSON.stringify({ v: 2, margin: 1, buffers: null, n: 200, at: Date.now() }))""")
+    # room for the plot's redraw with the configured margin (0.2), not with the learned one (1.2 more)
+    peak = page.evaluate("""async () => { const m = await import('/static/js/utils/memory-guard.js');
+        return m.panelCost({ kind: 'cell-plot', n: 200, colour: 'categorical' }).peak.heap; }""")
+    page.evaluate("() => window.PanelManager.closePanel('cell-plot-a')")
+    page.evaluate(SET_FREE, peak * 1.6)
+    page.evaluate("() => window.PanelManager.createPanelInLayout('cell-plot', { id: 'cell-plot-m', "
+                  "x: { type: 'obsm', key: 'X_umap', column: '0' }, y: { type: 'obsm', key: 'X_umap', column: '1' }, "
+                  "color: { type: 'obs', key: 'cell_type' } })")
+    placeholder = page.locator('.tile[data-tile-id="cell-plot-m"] .coverage-placeholder')
+    placeholder.wait_for(timeout=30000)
+    text = placeholder.inner_text()
+    assert "Not drawn: not enough JS memory" in text and "keeps an extra margin for this size" in text, text
+    page.click('.tile[data-tile-id="cell-plot-m"] .coverage-placeholder [data-ps-action="memory-reset"]')
+    _drawn(page, "cell-plot-m")
+    assert page.evaluate("() => localStorage.getItem('annzarro_memory_margin')") is None

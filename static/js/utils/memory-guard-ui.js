@@ -17,9 +17,10 @@ import { Config } from '../config.js';
 import { CacheManager } from '../cache-manager.js';
 import {
     Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, labelCost, check, addCost, predictSubsetChange, drawNeed,
-    largestFitting, headroomLine, markPending, clearPending, takeCrashed, learnedMargin, learnFromCrash,
+    largestFitting, headroomLine, markPending, clearPending, takeCrashed, learnFromCrash,
     formatGB, CONTEXTS_PER_PLOT, DrawTurns, isHeavyDraw, shortWhy, emptyPageWhy, roundDownNice, DRAW_ANYWAY_RISK,
-    panelBuffers, bufferDrawNeed, predictSubsetBuffers, learnedBuffers, learnBuffersFromCrash, bindingLabel, refusalHeadline
+    panelBuffers, bufferDrawNeed, predictSubsetBuffers, bindingLabel, refusalHeadline,
+    readLearned, learnedFor, forgetLearned, learnedSucceeded
 } from './memory-guard.js';
 import { compactCount } from './coverage.js';
 import { liveWebglContexts } from './release-plot.js';
@@ -43,11 +44,8 @@ const storage = () => _storage() || NO_STORAGE;
 let _crashed = null;
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     _crashed = takeCrashed(storage());
-    if (_crashed) {
-        learnFromCrash(storage());
-        // the buffers the page held when it died: the same plots at the same size do not fit again
-        if (_crashed.buffers > 0) learnBuffersFromCrash(storage(), _crashed.buffers);
-    }
+    // an extra margin, and the buffers the page held, for actions of about that size (memory-guard.js readLearned)
+    if (_crashed) learnFromCrash(storage(), _crashed);
     // a page that is closed or reloaded on purpose did not crash
     window.addEventListener('pagehide', () => clearPending(storage()));
 }
@@ -77,13 +75,28 @@ export function takeOverride(id) { return _overrides.delete(id); }
 
 // -- settings, limits, what is held ------------------------------------------
 
-export function settings() {
+/**
+ * ui.memory, with what this browser learned from a crash for an action of
+ * `n` points (none for n null, or outside the crash's scope: memory-guard.js
+ * learnedFor). `learned: false` gives the settings without it.
+ */
+export function settings(n = null, learned = true) {
     const s = memorySettings(Config.DEFAULTS && Config.DEFAULTS.MEMORY);
-    return { ...s, margin: s.margin + learnedMargin(storage()), crashedBuffers: learnedBuffers(storage()) };
+    const l = learned ? learnedFor(readLearned(storage()), n) : { margin: 0, buffers: null };
+    return { ...s, margin: s.margin + l.margin, crashedBuffers: l.buffers };
 }
 
-export function limits() {
-    return readLimits({ performance: globalThis.performance, navigator: globalThis.navigator }, settings());
+export function limits(n = null, learned = true) {
+    return readLimits({ performance: globalThis.performance, navigator: globalThis.navigator }, settings(n, learned));
+}
+
+/** What this browser learned from a crash ({margin, buffers, n, at}), or null. */
+export function learned() { return readLearned(storage()); }
+
+/** Forget it ("Reset the margin"): every control asks again. */
+export function resetLearned() {
+    forgetLearned(storage());
+    inputsChanged();
 }
 
 function _cacheBytes() {
@@ -101,9 +114,20 @@ function _observed() {
     return ledger.observed ? ledger.observed.bytes : 0;
 }
 
-/** `buffers`: {need, held} ArrayBuffer bytes, for an action of plots (check()'s opts.buffers). */
-function _check(need, heldNow, panels, buffers = null) {
-    return check(need, heldNow, limits(), settings(), { observed: _observed(), panels, ...(buffers ? { buffers } : {}) });
+/**
+ * `buffers`: {need, held} ArrayBuffer bytes, for an action of plots (check()'s
+ * opts.buffers); `n`: the action's points, for what a crash taught. A
+ * refusal that only the learned margin makes carries `learned` (the entry),
+ * so the panel can say so and offer to reset it.
+ */
+function _check(need, heldNow, panels, buffers = null, n = null) {
+    const opts = { observed: _observed(), panels, ...(buffers ? { buffers } : {}) };
+    const r = check(need, heldNow, limits(n), settings(n), opts);
+    if (r.fits || n === null) return r;
+    const entry = readLearned(storage());
+    if (!entry || !learnedFor(entry, n).margin) return r;
+    const plain = check(need, heldNow, limits(n, false), settings(n, false), opts);
+    return plain.fits ? { ...r, learned: entry } : r;
 }
 
 // The create tiles ask on every memory change: one answer per size is kept for a few seconds.
@@ -161,14 +185,14 @@ export function drawCheck({ id, kind, n, large = false, colour = 'numeric', thre
     const cost = panelCost({ kind, n, large, colour, threeD }).peak;
     const old = ledger.get(id);
     // a plot redrawn in place in large-plot mode replaces itself (drawNeed)
-    const add = drawNeed(cost, livePlot ? old : null, large, settings().margin);
+    const add = drawNeed(cost, livePlot ? old : null, large, settings(n).margin);
     const need = { ...add, contexts: livePlot ? 0 : cost.contexts };
     let h = held([id]);
     if (old) h = addCost(h, { ...old.resident, contexts: 0 });
     // the tab's buffers, with every other plot's (and this one's old plot until it is replaced)
     const buffers = { need: bufferDrawNeed({ kind, n, large, threeD }, livePlot ? old : null),
         held: ledger.buffers({ exclude: [id] }) + (old && old.buffers ? old.buffers.resident : 0) };
-    return _check(need, h, ledger.plotCount() + (old ? 0 : 1), buffers);
+    return _check(need, h, ledger.plotCount() + (old ? 0 : 1), buffers, n);
 }
 
 /**
@@ -179,7 +203,7 @@ export function drawCheck({ id, kind, n, large = false, colour = 'numeric', thre
  */
 export function tableCheck({ id, kind, n }) {
     const need = panelCost({ kind, n }).peak;
-    return _check(need, held([id]), ledger.plotCount());
+    return _check(need, held([id]), ledger.plotCount(), null, n);
 }
 
 /**
@@ -200,6 +224,26 @@ export function tableCheck({ id, kind, n }) {
  * @returns {{headline: string, why: string, risk: string|null, actions: Array<[string, string]>, hopeless: boolean}}
  */
 export function refusalPanel({ result, kind, n, checkAt, anyway, cap = Infinity }) {
+    const p = _refusalPanel({ result, kind, n, checkAt, anyway, cap });
+    // refused only for what a crash taught: say so, and offer to forget it
+    if (result.learned) {
+        p.why = `${p.why} ${learnedNote(result.learned)}`;
+        p.actions = [['memory-reset', 'Reset the margin'], ...p.actions];
+    }
+    return p;
+}
+
+/**
+ * The sentence of a refusal that only the margin learned from a crash makes:
+ * "After this browser's tab ended on Oct 17, AnnZarro keeps an extra margin
+ * for this size."
+ */
+export function learnedNote(entry) {
+    const day = new Date(Number(entry && entry.at) || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `After this browser's tab ended on ${day}, AnnZarro keeps an extra margin for this size.`;
+}
+
+function _refusalPanel({ result, kind, n, checkAt, anyway, cap }) {
     const isTable = kind.endsWith('table');
     const cells = kind.startsWith('cell');
     const noun = isTable ? 'rows' : 'points';
@@ -278,13 +322,14 @@ export function hoverLabelsCheck({ points, labels, chars }) {
     const need = labelCost({ points, labels, chars });
     // labels live on the V8 heap, whose exhaustion cannot be caught: ask for
     // as many bytes as a proxy for what the process can still commit
-    return probed(_check(need, held(), ledger.plotCount()), need.heap + need.off, 'hover labels');
+    return probed(_check(need, held(), ledger.plotCount(), null, points), need.heap + need.off, 'hover labels');
 }
 
 /** Before a recolour of the drawn regular plot `gd` (large-plot mode redraws, and is checked as a draw). */
 export function recolourCheck(gd) {
-    const need = recolourCost({ n: Number(gd && gd._pointCount) || 0, large: !!(gd && gd.__isLarge) });
-    return probed(_check(need, held(), ledger.plotCount()), need.off, 'recolour');
+    const n = Number(gd && gd._pointCount) || 0;
+    const need = recolourCost({ n, large: !!(gd && gd.__isLarge) });
+    return probed(_check(need, held(), ledger.plotCount(), null, n), need.off, 'recolour');
 }
 
 /** Before a new or duplicated panel of `kind` with `config` (its colour and 3D) is created. */
@@ -294,7 +339,7 @@ export function newPanelCheck(kind, { n, large = false, colour = 'numeric', thre
     const now = held();
     const buffers = { need: panelBuffers({ kind, n, large, threeD }).peak, held: ledger.buffers() };
     // the probe asks for what the draw's own probe will (large-plot.js): its buffers at their peak
-    return probed(_check(need, now, ledger.plotCount() + 1, buffers), large ? buffers.need : 0, 'new plot');
+    return probed(_check(need, now, ledger.plotCount() + 1, buffers, n), large ? buffers.need : 0, 'new plot');
 }
 
 /**
@@ -304,7 +349,7 @@ export function newPanelCheck(kind, { n, large = false, colour = 'numeric', thre
 export function exportCheck(gd, { width = 1200, height = 800, scale = 1 } = {}) {
     const n = Number(gd && gd._pointCount) || ((gd && gd.data) || []).reduce((s, t) => s + ((t && t.x && t.x.length) || 0), 0);
     const need = exportCost({ n, large: !!(gd && gd.__isLarge), width, height, scale });
-    return probed(_check(need, held(), ledger.plotCount(), { need: need.off, held: ledger.buffers() }), need.off, 'export');
+    return probed(_check(need, held(), ledger.plotCount(), { need: need.off, held: ledger.buffers() }, n), need.off, 'export');
 }
 
 /**
@@ -318,7 +363,7 @@ export function exportCheck(gd, { width = 1200, height = 800, scale = 1 } = {}) 
  */
 export function subsetCheck(n, threshold) {
     const panels = ledger.panels();
-    const { peak, changed } = predictSubsetChange(n, panels, threshold, ledger.model, p => !p.threeD, settings().margin);
+    const { peak, changed } = predictSubsetChange(n, panels, threshold, ledger.model, p => !p.threeD, settings(n).margin);
     const b = predictSubsetBuffers(n, panels, threshold, ledger.model, p => !p.threeD);
     const now = held();
     const base = held(panels.map(p => p.id));
@@ -330,7 +375,7 @@ export function subsetCheck(n, threshold) {
         contexts: 0
     };
     const buffers = { need: Math.max(0, b.peak - b.before), held: ledger.buffers() };
-    return { ..._check(need, now, ledger.plotCount(), buffers), changed };
+    return { ..._check(need, now, ledger.plotCount(), buffers, n), changed };
 }
 
 /**
@@ -367,7 +412,8 @@ export function maxSubsetCells(eligible, threshold) {
 export function refusalText(result, advice) {
     // a browser that cannot allocate: closing other plots may not help, a smaller step does
     if (result && result.binding === 'alloc') advice = advice.replace(/^Close a plot, or s/, 'S');
-    return `${result.why ? result.why.charAt(0).toUpperCase() + result.why.slice(1) : 'Not enough browser memory'}. ${advice}`;
+    const learnedText = result && result.learned ? ` ${learnedNote(result.learned)} Reset it to check without it.` : '';
+    return `${result.why ? result.why.charAt(0).toUpperCase() + result.why.slice(1) : 'Not enough browser memory'}.${learnedText} ${advice}`;
 }
 
 /** The short form for a refused panel: one line of numbers (memory-guard.js shortWhy); its ways out are buttons. */
@@ -434,6 +480,9 @@ export function commit(id, p = null, token = null) {
     ledger.commit(id, p, token);
     _releaseToken(token);
     _scheduleMeasure();
+    // a draw as large as the one that crashed went through: the extra margin is forgotten
+    const e = ledger.get(id);
+    if (e && learnedSucceeded(storage(), e.n)) inputsChanged();
 }
 /** A panel's draw did not happen. */
 export function cancel(id, token = null) { ledger.cancel(id, token); _releaseToken(token); }

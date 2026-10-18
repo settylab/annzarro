@@ -391,8 +391,12 @@ If the tab does close while drawing, nothing is drawn again by itself: the next 
 reload of that tab) shows the session on the welcome screen as **did not finish loading**, with
 **Restore with the default subset** beside **Restore** ({ref}`last-sessions`). A plot whose draw
 the guard had marked as risky also waits for **Draw anyway** when that session is restored. The
-browser becomes a little more careful in its estimates from then on, and a size whose plots
-ended the tab is not offered again with as many plots open.
+browser then keeps an extra margin for plots of about that size (not for smaller ones), and a
+size whose plots ended the tab is not offered again with as many plots open. A refusal that only
+this margin causes says so ("After this browser's tab ended on Oct 17, AnnZarro keeps an extra
+margin for this size") and offers **Reset the margin**, in the panel and in the subset dialog.
+The margin is forgotten after a week, once a plot that large is drawn, and with **Close all**
+when its box to clear everything is ticked.
 
 When a read runs out of memory anyway (the estimate was short, or another tab took the memory),
 the panel says so in place of the engine's error: "the browser ran out of memory -- Close a plot,

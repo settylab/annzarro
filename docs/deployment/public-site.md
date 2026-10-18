@@ -83,7 +83,7 @@ unasked and can be set to session-only (`site.storage.persistent_convenience: fa
 | `annzarro_restoring` | A marker that a session was being restored, so one that did not finish (the tab ran out of memory) is not restored by itself again | Technical |
 | `annzarro.recents:<origin>\|<user>` | Recently opened dataset paths | Convenience |
 | `annzarro.recentDatasets:<origin>` | The older, per-origin form of the recents list, moved to the key above at first use | Convenience |
-| `annzarro_memory_pending`, `annzarro_memory_margin` | A marker that a heavy action was under way and the memory margin learned from it, so a tab that ran out of memory is not repeated | Technical |
+| `annzarro_memory_pending`, `annzarro_memory_margin` | A marker that a heavy action was under way and the memory margin learned from it for actions of about that size, so a tab that ran out of memory is not repeated; forgotten after a week, when an action that large succeeds, or with **Reset the margin** | Technical |
 
 "Close all panels" with its checkbox clears all of it, and the browser's own settings do too.
 Session storage holds only the chosen subset size (and, on a site set to session-only, the

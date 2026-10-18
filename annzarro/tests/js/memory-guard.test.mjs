@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 const {
     GB, MB, memorySettings, readLimits, HEAP_USABLE_SHARE, FALLBACK_HEAP_GB, MAX_WEBGL_CONTEXTS, CONTEXTS_PER_PLOT,
     REMOTE_TOTAL_GB, LARGEST_TESTED_POINTS, colourKind, panelCost, exportCost, snapshotCost, recolourCost, Ledger, check, headroom, largestFitting,
-    predictSubsetChange, formatGB, headroomLine, markPending, clearPending, takeCrashed, learnedMargin,
+    predictSubsetChange, formatGB, headroomLine, markPending, clearPending, takeCrashed, readLearned,
     learnFromCrash, DEFAULT_MODEL, DEFAULT_SETTINGS, zero, emptyPageWhy, roundDownNice
 } = await import('../../../static/js/utils/memory-guard.js');
 
@@ -331,12 +331,12 @@ test('crash marker: what was running when the tab died, read once; a crash earns
     const broken = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); }, removeItem() { throw new Error('denied'); } };
     markPending(broken, { panel: 'x' });
     assert.equal(takeCrashed(broken), null);
-    assert.equal(learnedMargin(broken), 0);
-    // each crash adds 0.25 margin, up to 1
-    assert.equal(learnedMargin(s), 0);
-    assert.equal(learnFromCrash(s), 0.25);
-    for (let i = 0; i < 6; i++) learnFromCrash(s);
-    assert.equal(learnedMargin(s), 1);
+    assert.equal(readLearned(broken), null);
+    // each crash adds 0.25 margin, up to 1 (memory-guard-buffers.test.mjs: its scope and how it is forgotten)
+    assert.equal(readLearned(s), null);
+    assert.equal(learnFromCrash(s, { n: 1000 }).margin, 0.25);
+    for (let i = 0; i < 6; i++) learnFromCrash(s, { n: 1000 });
+    assert.equal(readLearned(s).margin, 1);
 });
 
 test('overlapping draws of one panel: the first one ending does not settle the second', () => {

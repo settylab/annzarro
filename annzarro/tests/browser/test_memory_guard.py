@@ -442,7 +442,9 @@ def test_a_crash_while_drawing_waits_for_draw_anyway(server, page):
     assert "ended (most likely out of memory) while it drew this plot of 95,624,334 points" in placeholder.inner_text()
     assert page.locator('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot').count() == 0
     # the crash made the guard more careful in this browser
-    assert page.evaluate("() => Number(localStorage.getItem('annzarro_memory_margin'))") == 0.25
+    # (scoped to the crash's size: memory-guard.js readLearned)
+    learned = page.evaluate("() => JSON.parse(localStorage.getItem('annzarro_memory_margin'))")
+    assert learned["margin"] == 0.25 and learned["n"] == 95624334, learned
     # read once: the marker is gone
     assert page.evaluate("() => localStorage.getItem('annzarro_memory_pending')") is None
     page.click('.tile[data-tile-id="cell-plot-a"] .coverage-placeholder [data-ps-action="draw-anyway"]')
