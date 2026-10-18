@@ -17,8 +17,9 @@ import { CacheManager } from '../cache-manager.js';
 import {
     Ledger, memorySettings, readLimits, panelCost, exportCost, recolourCost, labelCost, check, addCost, predictSubsetChange, drawNeed,
     largestFitting, headroomLine, markPending, clearPending, takeCrashed, learnedMargin, learnFromCrash,
-    formatGB, CONTEXTS_PER_PLOT, DrawTurns, isHeavyDraw, shortWhy
+    formatGB, CONTEXTS_PER_PLOT, DrawTurns, isHeavyDraw, shortWhy, emptyPageWhy, roundDownNice, DRAW_ANYWAY_RISK
 } from './memory-guard.js';
+import { compactCount } from './coverage.js';
 import { liveWebglContexts } from './release-plot.js';
 import { probe, blockParts, largePlotParts, PROBE_MIN_BYTES } from './alloc-probe.js';
 import { PAGE_ID } from './page-id.js';
@@ -163,6 +164,48 @@ export function drawCheck({ id, kind, n, large = false, colour = 'numeric', thre
 export function tableCheck({ id, kind, n }) {
     const need = panelCost({ kind, n }).peak;
     return _check(need, held([id]), ledger.plotCount());
+}
+
+/**
+ * What a refused table or plot panel says and offers (the placeholder and the
+ * strip's popover). A refusal that closing the other panels can fix says what
+ * is free; one that even an empty page cannot hold (check()'s `hopeless`)
+ * says so, offers no "Close other plots", offers "Show N cells" for the
+ * largest subset that fits (a Cell Table or Cell Plot) and "Subset…", and
+ * offers "draw anyway" only while the estimate without the margin fits the
+ * ceiling (above it the browser ends the tab).
+ * @param {Object} p
+ * @param {Object} p.result - the refused check
+ * @param {'cell-table'|'gene-table'|'cell-plot'|'gene-plot'} p.kind
+ * @param {number} p.n - rows or points asked for
+ * @param {(n: number) => Object} p.checkAt - the same check at another size
+ * @param {string} p.anyway - the label of the draw-anyway action
+ * @param {number} [p.cap] - most cells "Show N cells" offers (a table that loads slowly past it), whatever fits
+ * @returns {{headline: string, why: string, risk: string|null, actions: Array<[string, string]>, hopeless: boolean}}
+ */
+export function refusalPanel({ result, kind, n, checkAt, anyway, cap = Infinity }) {
+    const isTable = kind.endsWith('table');
+    const cells = kind.startsWith('cell');
+    const noun = isTable ? 'rows' : 'points';
+    const verb = anyway.replace(/ anyway$/, '');
+    const risk = DRAW_ANYWAY_RISK.replace(/^Draw anyway/, `${verb} anyway`);
+    if (!result.hopeless) {
+        const fewer = cells ? [['subset-half', 'Half the cells'], ['subset', 'Subset\u2026']] : [];
+        return { headline: isTable ? 'Not loaded: not enough browser memory' : 'Not drawn: not enough browser memory',
+            why: shortRefusalText(result), risk, hopeless: false,
+            actions: [...fewer, ['close-others', 'Close other plots'], ['draw-anyway', anyway]] };
+    }
+    let fit = 0;
+    if (cells) {
+        try { fit = roundDownNice(Math.min(cap, largestFitting(m => checkAt(m).fits, 1, n - 1))); } catch { fit = 0; }
+    }
+    const actions = [];
+    if (fit >= 1) actions.push([`subset-n:${fit}`, `Show ${fit.toLocaleString('en-US')} cells`]);
+    if (cells) actions.push(['subset', 'Subset\u2026']);
+    if (!result.doomed) actions.push(['draw-anyway', anyway]);
+    let why = emptyPageWhy(result, `${compactCount(n)} ${noun}`);
+    if (!cells) why += ' Genes cannot be subset; this panel shows every gene of the dataset.';
+    return { headline: `Too many ${noun} for this browser`, why, risk: result.doomed ? null : risk, hopeless: true, actions };
 }
 
 // -- heavy draws take turns ------------------------------------------------------

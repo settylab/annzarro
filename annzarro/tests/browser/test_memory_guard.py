@@ -113,6 +113,15 @@ def warn_server(tmp_path_factory):
     proc.wait(10)
 
 
+@pytest.fixture(scope="module")
+def empty_server(tmp_path_factory):
+    """A JS heap ceiling of 1 MB: nothing of this dataset fits, however many panels are closed."""
+    root, proc = _serve(tmp_path_factory, "ui:\n  memory:\n    heap_gb: 0.001\n")
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
 def _plot(pid):
     return {"id": pid,
             "x": {"type": "obsm", "key": "X_umap", "column": "0"},
@@ -677,3 +686,124 @@ def test_lost_webgl_context_releases_and_offers_a_subset(large_server, page):
     _drawn(page, "cell-plot-a")
     page.wait_for_function("""() => !document.querySelector('.tile[data-tile-id="cell-plot-a"] .coverage-placeholder')
         && !!document.querySelector('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot')?._fullLayout""", timeout=30000)
+
+
+# -- a refusal no closing of panels can fix says so ----------------------------------
+
+TABLE = {"id": "cell-table-t", "pageLength": 25,
+         "columns": [{"type": "obs", "key": "cell_type", "column": ""}]}
+
+
+def _placeholder(page, pid):
+    page.wait_for_selector(f'.tile[data-tile-id="{pid}"] .coverage-placeholder', timeout=30000)
+    box = page.locator(f'.tile[data-tile-id="{pid}"] .coverage-placeholder')
+    actions = [a.get_attribute("data-ps-action") for a in box.locator("[data-ps-action]").all()]
+    return box.inner_text(), actions
+
+
+# The dataset has 5 million cells (the table counts DataManager.getCells()), and the limit leaves
+# room for the table's rows up to `rows` beside the app itself: 5 million exceed the whole ceiling.
+SET_ROWS_LIMIT = """async ({ rows, cells }) => {
+    const { Config } = await import('/static/js/config.js');
+    const { DataManager } = await import('/static/js/data-manager.js');
+    const g = await import('/static/js/utils/memory-guard-ui.js');
+    const m = await import('/static/js/utils/memory-guard.js');
+    const fake = []; fake.length = cells;
+    DataManager.getCells = () => fake;
+    DataManager.getSubset = () => ({ n: cells, subset: null });
+    DataManager.getSubsetReply = () => ({ n_total: cells });
+    const raw = m.panelCost({ kind: 'cell-table', n: rows }).peak.heap;
+    const held = g.held(g.ledger.panels().map(e => e.id)).heap;
+    Config.DEFAULTS.LARGE_PLOT_POINTS = 5000000;
+    Config.DEFAULTS.MEMORY = { ...(Config.DEFAULTS.MEMORY || {}), total_gb: 1e6, margin: 0.2,
+        heap_gb: (held + raw * 1.2 + 1) / (m.GB * m.HEAP_USABLE_SHARE) };
+    document.dispatchEvent(new CustomEvent(g.MEMORY_EVENT));
+}"""
+
+
+def test_table_too_big_for_an_empty_page_offers_the_subset_that_fits(server, page):
+    page.goto(_link(server, ids=(), extra={"cell-table-t": TABLE}))
+    page.wait_for_selector('.tile[data-tile-id="cell-table-t"] .dataTables_scrollBody table tbody tr', timeout=30000)
+    page.evaluate(SET_ROWS_LIMIT, {"rows": 2_000_000, "cells": 5_000_000})
+    page.evaluate("() => window.PanelManager.getPanel('cell-table-t').refreshTable()")
+    text, actions = _placeholder(page, "cell-table-t")
+    assert text.startswith("Too many rows for this browser"), text
+    assert re.search(r"5M rows need ~1\.8 GB; this browser gives a page at most 900 MB of JS memory\.", text), text
+    assert "free with" not in text, text
+    # nothing else is open and closing would not help; half the cells would not fit either
+    assert "close-others" not in actions and "subset-half" not in actions, actions
+    # the estimate itself is above the ceiling: loading it anyway cannot work
+    assert "draw-anyway" not in actions and "may run the tab out of memory" not in text, (actions, text)
+    assert "subset" in actions
+    shows = [a for a in actions if a.startswith("subset-n:")]
+    assert shows == ["subset-n:2000000"], actions
+    # a table does not offer more than the large-plot line, whatever fits (a table of millions of rows holds the page)
+    page.evaluate("""async () => {
+        const { Config } = await import('/static/js/config.js');
+        Config.DEFAULTS.LARGE_PLOT_POINTS = 1000000;
+        window.PanelManager.getPanel('cell-table-t').refreshTable();
+    }""")
+    _, actions = _placeholder(page, "cell-table-t")
+    assert [a for a in actions if a.startswith("subset-n:")] == ["subset-n:1000000"], actions
+    # the offered size fits, one row more does not
+    fits = page.evaluate("""async () => {
+        const g = await import('/static/js/utils/memory-guard-ui.js');
+        const f = n => g.tableCheck({ id: 'cell-table-t', kind: 'cell-table', n }).fits;
+        return [f(2000000), f(2000001)];
+    }""")
+    assert fits == [True, False], fits
+
+
+def test_show_n_cells_asks_the_server_for_that_subset(server, page):
+    asked = []
+    page.on("request", lambda r: asked.append(r.url + (r.post_data or "")) if "/data/subset" in r.url else None)
+    page.goto(_link(server, ids=(), extra={"cell-table-t": TABLE}))
+    page.wait_for_selector('.tile[data-tile-id="cell-table-t"] .dataTables_scrollBody table tbody tr', timeout=30000)
+    # the action as a refusal offers it
+    page.evaluate("""async () => {
+        const { drawPlaceholder } = await import('/static/js/utils/panel-surface.js');
+        drawPlaceholder(document.getElementById('table-container-cell-table-t'), null, 'cells', {
+            actions: [['subset-n:50', 'Show 50 cells']],
+            say: { severity: 'warning', headline: 'Too many rows for this browser', lines: ['x'] } });
+    }""")
+    asked.clear()
+    page.locator('.tile[data-tile-id="cell-table-t"] [data-ps-action="subset-n:50"]').click()
+    end = time.time() + 20
+    while time.time() < end and not any(re.search(r"(?<!\d)50(?!\d)", u) for u in asked):
+        time.sleep(0.1)
+    assert any(re.search(r"(?<!\d)50(?!\d)", u) for u in asked), asked
+
+
+def test_table_refused_beside_a_plot_still_offers_close_others(server, page):
+    page.goto(_link(server, extra={"cell-table-t": TABLE}))
+    _drawn(page, "cell-plot-a")
+    page.wait_for_selector('.tile[data-tile-id="cell-table-t"] .dataTables_scrollBody table tbody tr', timeout=30000)
+    # room for the plot or the table, not both
+    page.evaluate(SET_FREE, 1e6)
+    page.evaluate("() => window.PanelManager.getPanel('cell-table-t').refreshTable()")
+    text, actions = _placeholder(page, "cell-table-t")
+    assert text.startswith("Not loaded: not enough browser memory"), text
+    assert "free with 1 plot open" in text, text
+    assert "close-others" in actions and "subset-half" in actions and "draw-anyway" in actions, actions
+    assert not any(a.startswith("subset-n:") for a in actions)
+    page.locator('.tile[data-tile-id="cell-table-t"] [data-ps-action="close-others"]').click()
+    page.wait_for_selector('.tile[data-tile-id="cell-table-t"] .dataTables_scrollBody table tbody tr', timeout=30000)
+    assert page.locator('.tile[data-tile-id="cell-table-t"] .coverage-placeholder').count() == 0
+
+
+def test_table_above_the_ceiling_itself_offers_no_load_anyway(empty_server, page):
+    page.goto(_link(empty_server, ids=(), extra={"cell-table-t": TABLE}))
+    text, actions = _placeholder(page, "cell-table-t")
+    assert text.startswith("Too many rows for this browser"), text
+    assert "200 rows need ~6 MB; this browser gives a page at most 1 MB of JS memory." in text, text
+    # not even one row fits an empty page: only the subset dialog remains; and it is no risk worth offering
+    assert actions == ["subset"], actions
+    assert "may run the tab out of memory" not in text
+
+
+def test_plot_above_the_ceiling_itself_says_so(empty_server, page):
+    page.goto(_link(empty_server))
+    text, actions = _placeholder(page, "cell-plot-a")
+    assert text.startswith("Too many points for this browser"), text
+    assert "200 points need ~" in text and "this browser gives a page at most 1 MB of JS memory." in text, text
+    assert actions == ["subset"], actions

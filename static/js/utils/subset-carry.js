@@ -113,10 +113,20 @@ export function sizeAfterChoice(spec, nTotal, size, defaults = null) {
  * Null when there is nothing to halve (one cell, or no dataset).
  */
 export function halfSubset(info, reply, defaults = null) {
-    const spec = info && info.subset;
     const shown = info ? info.n : (reply ? reply.n_total : null);
     if (!knownSize(shown) || shown < 2) return null;
-    const n = Math.ceil(shown / 2);
+    return subsetOfSize(info, reply, defaults, Math.ceil(shown / 2));
+}
+
+/**
+ * The subset with `n` cells (fewer than the one shown), keeping the seed,
+ * balance and filter of the subset in effect; null when `n` is not a whole
+ * number of at least one cell below what is shown. halfSubset's general form.
+ */
+export function subsetOfSize(info, reply, defaults, n) {
+    const spec = info && info.subset;
+    const shown = info ? info.n : (reply ? reply.n_total : null);
+    if (!knownSize(shown) || !Number.isInteger(n) || n < 1 || n >= shown) return null;
     if (!spec) return { n, seed: defaults && Number.isInteger(defaults.seed) ? defaults.seed : 0 };
     const half = { ...spec, n };
     delete half.part;   // part 1 of the new partition

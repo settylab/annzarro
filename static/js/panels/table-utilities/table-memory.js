@@ -5,8 +5,9 @@
  * Refused, the table says why and offers the ways out a plot offers.
  */
 import { DataManager } from '../../data-manager.js';
-import { tableCheck, shortRefusalText, takeOverride } from '../../utils/memory-guard-ui.js';
-import { DRAW_ANYWAY_RISK } from '../../utils/memory-guard.js';
+import { tableCheck, refusalPanel, takeOverride } from '../../utils/memory-guard-ui.js';
+import { Config } from '../../config.js';
+import { DEFAULT_LARGE_PLOT_POINTS } from '../../utils/subset-presets.js';
 import { drawPlaceholder } from '../../utils/panel-surface.js';
 
 /**
@@ -32,11 +33,19 @@ export function tableMayLoad(container, id, kind, letGo = () => {}) {
     if (result.verdict !== 'block') return true;
     letGo();
     const unit = kind === 'cell-table' ? 'cells' : 'genes';
-    const fewer = kind === 'cell-table' ? [['subset-half', 'Half the cells'], ['subset', 'Subset…']] : [];
+    const refusal = refusalPanel({ result, kind, n, checkAt: m => tableCheck({ id, kind, n: m }), anyway: 'Load anyway', cap: tableCellCap() });
     drawPlaceholder(container, null, unit, {
-        actions: [...fewer, ['close-others', 'Close other plots'], ['draw-anyway', 'Load anyway']],
-        say: { severity: 'warning', headline: 'Not loaded: not enough browser memory',
-            lines: [shortRefusalText(result), DRAW_ANYWAY_RISK.replace(/^Draw anyway/, 'Load anyway')] }
+        actions: refusal.actions,
+        say: { severity: 'warning', headline: refusal.headline, lines: [refusal.why, refusal.risk].filter(Boolean) }
     });
     return false;
+}
+
+/**
+ * The most cells a table offers to show after a refusal: a client table of millions of rows holds
+ * the page for tens of seconds, so it stops where plots switch to large-plot mode.
+ */
+function tableCellCap() {
+    const v = Config.DEFAULTS && Config.DEFAULTS.LARGE_PLOT_POINTS;
+    return typeof v === 'number' && v >= 1 ? v : DEFAULT_LARGE_PLOT_POINTS;
 }
