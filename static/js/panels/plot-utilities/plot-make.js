@@ -33,7 +33,7 @@ import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
 import { cancelLoads } from '../../utils/load-scope.js';
 import {
-  drawCheck, reserve, commit, cancel, refusalText, shortRefusalText, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck,
+  drawCheck, reserve, commit, cancel, refusalText, refusalPanel, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck,
   takeTurn, bindTurn, releaseTurn, noteOutOfMemory
 } from '../../utils/memory-guard-ui.js';
 
@@ -1398,22 +1398,25 @@ async function memoryGate(plotContainer, settings, id, isGenePlot, n) {
     refusal = { text: 'Not drawn: the tab ended last time', headline: 'Not drawn: the tab ended last time',
       why: `The browser tab ended (most likely out of memory) while it drew this plot of ${Number(crashed.n || n).toLocaleString('en-US')} points. `
         + 'Draw it anyway, or show fewer cells first.' };
+    refusal.actions = refusalActions(isGenePlot);
+    refusal.risk = DRAW_ANYWAY_RISK;
   } else if (result.verdict === 'block' && !override) {
     // in the panel one line of numbers (the buttons are the advice); the whole sentence in the tooltip
-    refusal = { text: 'Not drawn: browser memory', headline: 'Not drawn: not enough browser memory',
-      why: shortRefusalText(result), full: refusalText(result, MEMORY_ADVICE) };
+    const panel = refusalPanel({ result, kind: p.kind, n, anyway: 'Draw anyway',
+      checkAt: m => drawCheck({ ...p, n: m, large: !isGenePlot && m > largePlotPoints() }) });
+    refusal = { text: panel.hopeless ? 'Not drawn: too many points' : 'Not drawn: browser memory', headline: panel.hopeless ? panel.headline : 'Not drawn: not enough browser memory',
+      why: panel.why, full: panel.hopeless ? panel.why : refusalText(result, MEMORY_ADVICE), actions: panel.actions, risk: panel.risk };
   }
   if (refusal) {
     releaseTurn(ticket);
-    refusal.actions = refusalActions(isGenePlot);
     // no plot of this dataset yet: the placeholder says it (with the ways
     // out); a plot of it drawn before stays, and its strip says this one was not drawn
     if (!showsThisDataset(plotContainer)) {
       drawPlaceholder(plotContainer, null, unit, { actions: refusal.actions,
-        say: { severity: 'warning', headline: refusal.headline, lines: [refusal.why, DRAW_ANYWAY_RISK] } });
+        say: { severity: 'warning', headline: refusal.headline, lines: [refusal.why, refusal.risk].filter(Boolean) } });
     } else {
       setStatusTag(plotContainer, 'memory', { text: refusal.text, severity: 'warning', title: refusal.full || refusal.why,
-        pop: { text: `${refusal.why} ${DRAW_ANYWAY_RISK}`, actions: refusal.actions } });
+        pop: { text: [refusal.why, refusal.risk].filter(Boolean).join(' '), actions: refusal.actions } });
     }
     return null;
   }

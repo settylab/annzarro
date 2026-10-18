@@ -30,7 +30,7 @@ import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
 import { overrideOnce, maxSubsetCells } from './utils/memory-guard-ui.js';
 import { DEFAULT_LARGE_PLOT_POINTS } from './utils/subset-presets.js';
-import { carriedRequest, sizeAfterChoice, loadSubsetSize, saveSubsetSize, halfSubset } from './utils/subset-carry.js';
+import { carriedRequest, sizeAfterChoice, loadSubsetSize, saveSubsetSize, halfSubset, subsetOfSize } from './utils/subset-carry.js';
 import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { NOT_SHOWN } from './panels/plot-utilities/panel-ui-update.js';
 import {
@@ -1436,6 +1436,9 @@ const App = (function() {
     function _statusActionAvailable(action, host) {
         const id = (host && host.id || '').replace(/^(?:plot|table)-container-/, '');
         const subset = DataManager.getSubset();
+        if (action.startsWith('subset-n:')) {
+            return !!subsetOfSize(DataManager.getSubset(), DataManager.getSubsetReply(), DataManager.getSubsetDefaults(), Number(action.slice(9)));
+        }
         switch (action) {
             case 'next-part': return !!(subset && subset.parts > 1 && subset.part < subset.parts - 1);
             case 'subset': case 'subset-regular': return !!DataManager.getCurrentDataset();
@@ -1484,6 +1487,12 @@ const App = (function() {
     async function _runStatusAction(action, host) {
         const id = (host && host.id || '').replace(/^(?:plot|table)-container-/, '');
         const click = (elId) => { const el = document.getElementById(elId); if (el) el.click(); };
+        if (action.startsWith('subset-n:')) {
+            // the most cells the browser holds (the refusal computed it): chosen as by hand
+            const spec = subsetOfSize(DataManager.getSubset(), DataManager.getSubsetReply(), DataManager.getSubsetDefaults(), Number(action.slice(9)));
+            if (spec) await _changeSubset(spec);
+            return;
+        }
         switch (action) {
             case 'next-part': SubsetControl.step(1); break;
             case 'subset': SubsetControl.open(); break;

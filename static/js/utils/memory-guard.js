@@ -643,7 +643,9 @@ export function headroom(held, limits) {
  * @param {number} [opts.observed] - a measured total of held memory (bytes); the larger of it and the estimate counts
  * @param {number} [opts.panels] - plot panels open (for the sentence)
  * @returns {{verdict: 'ok'|'warn'|'block', fits: boolean, risky: boolean, binding: string|null,
- *            needBytes: number, freeBytes: number, limitBytes: number, measured: boolean, why: string}}
+ *            needBytes: number, freeBytes: number, limitBytes: number, measured: boolean, why: string,
+ *            hopeless: boolean, doomed: boolean}}
+ *   hopeless: the need (with the margin) exceeds a ceiling itself, so closing panels cannot help; doomed: the estimate without the margin does, too (drawing it anyway cannot work)
  */
 export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}) {
     const k = 1 + settings.margin;
@@ -662,6 +664,12 @@ export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}
     for (const c of checks) {
         if (c.need > c.free && (!binding || c.need - c.free > binding.need - binding.free)) binding = c;
     }
+    // against the whole ceiling, as if nothing else were held: a need above it cannot be helped by closing panels
+    let empty = null;
+    for (const c of checks) {
+        if (c.need > c.limit && (!empty || c.need - c.limit > empty.need - empty.limit)) empty = c;
+    }
+    const doomed = !!empty && empty.need / k > empty.limit;
     const contextsShort = need.contexts > 0 && need.contexts > free.contexts;
     const fits = !binding && !contextsShort;
     const main = checks[0];
@@ -680,7 +688,9 @@ export function check(need, held, limits, settings = DEFAULT_SETTINGS, opts = {}
     const verdict = fits || settings.enforce === 'off' ? 'ok' : settings.enforce === 'warn' ? 'warn' : 'block';
     return {
         verdict, fits, risky, binding: binding ? binding.name : (contextsShort ? 'contexts' : null),
-        needBytes: shown.need, freeBytes: Math.max(0, shown.free), limitBytes: shown.limit, measured, why
+        needBytes: shown.need, freeBytes: Math.max(0, shown.free), limitBytes: shown.limit, measured, why,
+        hopeless: !!empty, doomed, emptyName: empty ? empty.name : null,
+        emptyNeedBytes: empty ? empty.need : 0, emptyLimitBytes: empty ? empty.limit : 0
     };
 }
 
@@ -750,6 +760,25 @@ export function shortWhy(why) {
         .replace(/ \(of [^)]*\)\s*$/, '')
         .replace(/\.$/, '');
     return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
+}
+
+/**
+ * The line of a refusal that no closing of panels can help (check()'s `hopeless`):
+ * "95.6M rows need ~34 GB; this browser gives a page at most 4.0 GB of JS memory."
+ * @param {Object} result - from check()
+ * @param {string} count - the size, as it is said ("95.6M rows")
+ */
+export function emptyPageWhy(result, count) {
+    const word = result.emptyName === 'total' ? 'memory' : 'JS memory';
+    return `${count} need ~${formatGB(result.emptyNeedBytes)}; this browser gives a page at most ${formatGB(result.emptyLimitBytes)} of ${word}.`;
+}
+
+/** The number `n` rounded down to three significant digits (a size to offer: it fits when n does). */
+export function roundDownNice(n) {
+    const v = Math.max(0, Math.floor(Number(n) || 0));
+    if (v < 1000) return v;
+    const step = 10 ** (String(v).length - 3);
+    return Math.floor(v / step) * step;
 }
 
 /** What "Draw anyway" risks, said beside it. */

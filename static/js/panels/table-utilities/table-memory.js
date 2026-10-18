@@ -5,8 +5,7 @@
  * Refused, the table says why and offers the ways out a plot offers.
  */
 import { DataManager } from '../../data-manager.js';
-import { tableCheck, shortRefusalText, takeOverride } from '../../utils/memory-guard-ui.js';
-import { DRAW_ANYWAY_RISK } from '../../utils/memory-guard.js';
+import { tableCheck, refusalPanel, takeOverride } from '../../utils/memory-guard-ui.js';
 import { drawPlaceholder } from '../../utils/panel-surface.js';
 
 /**
@@ -32,11 +31,10 @@ export function tableMayLoad(container, id, kind, letGo = () => {}) {
     if (result.verdict !== 'block') return true;
     letGo();
     const unit = kind === 'cell-table' ? 'cells' : 'genes';
-    const fewer = kind === 'cell-table' ? [['subset-half', 'Half the cells'], ['subset', 'Subset…']] : [];
+    const refusal = refusalPanel({ result, kind, n, checkAt: m => tableCheck({ id, kind, n: m }), anyway: 'Load anyway' });
     drawPlaceholder(container, null, unit, {
-        actions: [...fewer, ['close-others', 'Close other plots'], ['draw-anyway', 'Load anyway']],
-        say: { severity: 'warning', headline: 'Not loaded: not enough browser memory',
-            lines: [shortRefusalText(result), DRAW_ANYWAY_RISK.replace(/^Draw anyway/, 'Load anyway')] }
+        actions: refusal.actions,
+        say: { severity: 'warning', headline: refusal.headline, lines: [refusal.why, refusal.risk].filter(Boolean) }
     });
     return false;
 }
