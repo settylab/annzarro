@@ -21,7 +21,7 @@ test('unset, the legend is the constant one it always was', () => {
     assert.equal(legendColumns(s), 1);
     assert.equal(legendOrientation('v', s), 'v');
     assert.equal(legendTitleText(s), 'cell_type');
-    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': 'cell_type', 'meta.azLegendColumns': 1 });
+    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': 'cell_type', 'legend.title.side': null, 'meta.azLegendColumns': 1 });
 });
 
 test('a dot size is clamped to what Plotly draws and gives the proxies that size', () => {
@@ -60,7 +60,7 @@ test('the entry width fits N columns and not N + 1, and never cuts a label', () 
     }
     // a label too long for the columns wins: fewer columns
     assert.equal(columnEntryWidth({ columns: 4, maxWidth: 400, textWidth: 200 }), 200);
-    assert.equal(columnEntryWidth({ columns: 2, maxWidth: 500, textWidth: 60, itemwidth: 50 }), Math.ceil(500 / 2.5 - 65));
+    assert.equal(columnEntryWidth({ columns: 2, maxWidth: 500, textWidth: 60, itemwidth: 50 }), Math.ceil(500 / 3 + 2 - 65));
 });
 
 test('a legend beside the plot wraps at half the graph, else at the plot', () => {
@@ -75,6 +75,7 @@ test('a layout carries the options; unset it is the constant legend', () => {
     assert.equal(layout.legend.itemsizing, 'trace');
     assert.equal(layout.legend.orientation, 'h');
     assert.equal(layout.legend.title.text, '');
+    assert.equal(layout.legend.title.side, 'top');
     assert.equal(layout.meta.azLegendColumns, 2);
     const plain = legendOptionsIntoLayout({ legend: { orientation: 'v' } }, { color: colour });
     assert.equal(plain.legend.itemsizing, 'constant');

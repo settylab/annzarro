@@ -156,9 +156,10 @@ and **Apply to other panels** copies it.
   bottom lies outside the axes, below the x-axis title at the bottom, and the margin grows to make room.
 - For the legend of a categorical colour: **Legend title** (on by default), **Dot size** (2 to 16 px;
   empty draws the 12 px dots of the default legend, whatever the points' size) and **Columns** (2 to
-  8; empty is one column). The columns are a legend laid out in rows, filled row by row; labels too
-  long for that many columns in the width the legend has give fewer. They work on 2D, 3D and
-  large plots, and with the legend at any position.
+  8; 1 or empty is one column), each with a **Reset**. The entries fill the columns row by row, with
+  the title above them. The columns are as narrow as will give that many; labels too long for that
+  many columns in the width the legend has give fewer. They work on 2D, 3D and large plots, and with
+  the legend at any position. **Text** size has a **Reset** too.
 - **Colour bar**, for a numerical colour, has its own **position** (right, left, top, bottom, or
   **with the legend**, the default, which follows **Legend Position**), a **Length** from 10 to
   100 % of the plot's height (or width when horizontal; 100 % by default) and **Ticks**, the

@@ -15,7 +15,11 @@
  * plot's width), and `entrywidth` (px) sets the width of an entry's text. So
  * N columns are a horizontal legend whose entries are as wide as N of them
  * fit and N + 1 do not (`columnEntryWidth`), at least as wide as the longest
- * label. Labels too long for N columns give fewer. The width depends on the
+ * label. Labels too long for N columns give fewer. That width is the least
+ * that gives N columns and no more: a horizontal legend fills the width it
+ * wraps at, so narrower entries would give more columns (Plotly 2.20 has no
+ * second legend, no `maxwidth`, and no break between rows that does not
+ * widen the legend). The title is kept above the entries (`title.side`). The width depends on the
  * graph as drawn, so `watchLegendColumns` sets it after every draw (as
  * legend-below.js does for a legend below the plot). The column count is kept
  * in `layout.meta.azLegendColumns`, which Plotly keeps with the layout.
@@ -71,7 +75,7 @@ export function legendTitleText(settings) {
  * an entry advances by this plus the symbol, and N of them fit while N + 1 do not. Never narrower than the longest label.
  */
 export function columnEntryWidth({ columns, maxWidth, textWidth, itemwidth = DEFAULT_ITEMWIDTH }) {
-    const ideal = maxWidth / (columns + 0.5) - (itemwidth + ENTRY_GAPS);
+    const ideal = maxWidth / (columns + 1) + 2 - (itemwidth + ENTRY_GAPS);
     return Math.ceil(Math.max(textWidth || 0, ideal));
 }
 
@@ -87,6 +91,7 @@ export function legendOptionsIntoLayout(layout, settings) {
     const lg = layout.legend = { ...(layout.legend || {}) };
     lg.itemsizing = legendDotSize(settings) === null ? 'constant' : 'trace';
     lg.title = { ...(lg.title || {}), text: legendTitleText(settings) };
+    if (legendColumns(settings) > 1) lg.title.side = 'top';
     if (lg.orientation) lg.orientation = legendOrientation(lg.orientation, settings);
     layout.meta = { ...(layout.meta || {}), azLegendColumns: legendColumns(settings) };
     return layout;
@@ -97,6 +102,7 @@ export function legendOptionKeys(settings) {
     return {
         'legend.itemsizing': legendDotSize(settings) === null ? 'constant' : 'trace',
         'legend.title.text': legendTitleText(settings),
+        'legend.title.side': legendColumns(settings) > 1 ? 'top' : null,
         'meta.azLegendColumns': legendColumns(settings)
     };
 }
