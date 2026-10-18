@@ -67,11 +67,19 @@ declare(Key(
     type=Bool(),
     default=True,
     scope="user",
-    description="Whether the heatmap panel may be used",
+    description="Whether users may open the heatmap panel. On by default. Off removes it from the panel menu.",
     area="panels",
     combine="restrict",
+    guide="deployment/admin.html#policy-panel-heatmap-enabled",
 ))
 ```
+
+`description` is the key's help on the admin pages: one or two plain sentences saying what it does,
+its default and what it affects. `guide` is the page and anchor of the docs that explain it; the
+pages show it as a **Guide** link next to the info mark. Write the anchor in the docs
+(`{#policy-panel-heatmap-enabled}` on the key's name; `policy_guide(name)` builds the string) and
+`tests/server/test_admin_help_docs.py` checks that it exists. A control that is no key (a field of a
+dialog) takes its text from `static/js/admin/help-catalog.js`.
 
 That is all the registry needs. Then:
 

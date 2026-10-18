@@ -77,7 +77,7 @@ function actionBar(data) {
     // a text box with suggestions: a user who owns no set yet is a valid target too, and the server checks the name
     const known = [...new Set([...state.users, ...(data.usage || []).map((u) => u.owner).filter(Boolean)])].sort();
     const users = h('input', {
-        type: 'text', class: 'form-control form-control-sm w-auto', 'aria-label': 'Reassign to', id: 'ps-target',
+        type: 'text', class: 'form-control form-control-sm w-auto', 'aria-label': 'Reassign to', id: 'ps-target', 'data-not-setting': true,
         placeholder: 'Reassign to user', list: 'ps-users', autocomplete: 'off', value: state.target,
         oninput: (e) => { state.target = e.target.value.trim(); syncActions(); },
     });
@@ -124,13 +124,13 @@ function actionBar(data) {
 function toolbar(data) {
     const owners = (data.usage || []).map((u) => u.owner).filter(Boolean);
     const filter = h('select', {
-        class: 'form-select form-select-sm w-auto', 'aria-label': 'Show owner', id: 'ps-owner',
+        class: 'form-select form-select-sm w-auto', 'aria-label': 'Show owner', id: 'ps-owner', 'data-not-setting': true,
         onchange: (e) => { state.owner = e.target.value; state.offset = 0; state.selected = new Set(); state.confirming = false; load(); },
     }, h('option', { value: '', text: 'All owners' }), owners.map((o) => h('option', { value: o, text: o })));
     filter.value = state.owner;
     const search = h('input', {
         type: 'search', class: 'form-control form-control-sm w-auto', id: 'ps-search', placeholder: 'Filter by name',
-        'aria-label': 'Filter by name', value: state.text,
+        'aria-label': 'Filter by name', 'data-not-setting': true, value: state.text,
         oninput: (e) => { state.text = e.target.value; render(data, true); },
     });
     return h('div', { class: 'd-flex flex-wrap gap-2 align-items-center mb-2' }, filter, search);
@@ -156,7 +156,7 @@ function setTable(data) {
     const needle = state.text.trim().toLowerCase();
     const shown = (data.items || []).filter((s) => !needle || s.name.toLowerCase().includes(needle));
     const all = h('input', {
-        type: 'checkbox', class: 'form-check-input', 'aria-label': 'Select all shown', id: 'ps-select-all',
+        type: 'checkbox', class: 'form-check-input', 'aria-label': 'Select all shown', id: 'ps-select-all', 'data-not-setting': true,
         checked: shown.length > 0 && shown.every((s) => state.selected.has(s.name)),
         onchange: (e) => {
             for (const s of shown) { if (e.target.checked) state.selected.add(s.name); else state.selected.delete(s.name); }
@@ -167,7 +167,7 @@ function setTable(data) {
     const rows = shown.length
         ? shown.map((s) => h('tr', { class: state.selected.has(s.name) ? 'table-active' : null, data: { name: s.name } },
             h('td', null, h('input', {
-                type: 'checkbox', class: 'form-check-input ps-row', 'aria-label': `Select ${s.name}`,
+                type: 'checkbox', class: 'form-check-input ps-row', 'aria-label': `Select ${s.name}`, 'data-not-setting': true,
                 checked: state.selected.has(s.name),
                 onchange: (e) => {
                     if (e.target.checked) state.selected.add(s.name); else state.selected.delete(s.name);

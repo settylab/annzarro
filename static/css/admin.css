@@ -110,6 +110,26 @@
     word-break: break-all;
 }
 
+/* The info mark and Guide link of every setting (static/js/admin/help.js) */
+.admin-help-mark {
+    line-height: 1;
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.admin-help-mark:hover,
+.admin-help-mark:focus-visible {
+    color: var(--bs-link-color, #0d6efd);
+}
+
+.tooltip .tooltip-inner {
+    max-width: min(22rem, 85vw);
+    text-align: left;
+}
+
+.policy-label {
+    overflow-wrap: anywhere;
+}
+
 @media (max-width: 767.98px) {
     .policy-row {
         grid-template-columns: 1fr;
@@ -145,10 +165,6 @@
     align-items: start;
 }
 
-.site-help {
-    line-height: 1;
-    color: var(--bs-secondary-color, #6c757d);
-}
 
 .site-editor {
     display: grid;

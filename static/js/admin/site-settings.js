@@ -9,7 +9,7 @@
  * `file` can only be set in the config file; this page shows it read-only.
  *
  * Every field has a help on hover or focus (the key's description, from the server) and a
- * link to the public-site guide. A text written in Markdown is previewed with the renderer the
+ * link to the public-site guide (the key's `guide`), both from the shared help.js. A text written in Markdown is previewed with the renderer the
  * About dialog and the pages use (utils/safe-markdown.js), inside a sandboxed frame: no script
  * runs there and it cannot reach this page, so the preview is as inert as the text's output.
  *
@@ -18,27 +18,28 @@
  */
 
 import { h, setChildren, badge } from './dom.js';
+import { guideLink } from './help.js';
+import { keyHelp } from './help-catalog.js';
 import { renderSafeMarkdown } from '../utils/safe-markdown.js';
 import { appUrl } from '../utils/app-url.js';
 
-export const GUIDE = 'https://annzarro.readthedocs.io/en/latest/deployment/public-site.html';
 export const TEXTS = ['imprint', 'privacy', 'accessibility', 'terms'];
 
-/** Titles and the guide's anchor of each key, by its name without `site.` */
+/** Titles (and placeholders) of each key, by its name without `site.`; the help and guide come from the server */
 export const FIELDS = {
-    imprint: { title: 'Imprint', anchor: '#imprint-checklist-for-germany' },
-    privacy: { title: 'Privacy notice', anchor: '#privacy-notice-template-english' },
-    accessibility: { title: 'Accessibility statement', anchor: '#accessibility' },
-    terms: { title: 'Terms of use', anchor: '#configuring-the-site' },
-    operator: { title: 'Operator', anchor: '#configuring-the-site' },
-    contact: { title: 'Contact', anchor: '#configuring-the-site', placeholder: 'office@example.org or https://...' },
-    contact_label: { title: 'Contact link text', anchor: '#configuring-the-site', placeholder: 'Contact' },
-    security_contact: { title: 'Security contact', anchor: '#configuring-the-site', placeholder: 'mailto:security@example.org' },
-    languages: { title: 'Language of the texts', anchor: '#configuring-the-site', placeholder: 'en' },
-    footer_links: { title: 'Footer links', anchor: '#where-the-texts-appear' },
-    robots: { title: 'Search engines', anchor: '#configuring-the-site' },
-    software_credits: { title: 'AnnZarro credit in About', anchor: '#configuring-the-site' },
-    'storage.persistent_convenience': { title: 'Keep convenience items between visits', anchor: '#browser-storage' },
+    imprint: { title: 'Imprint' },
+    privacy: { title: 'Privacy notice' },
+    accessibility: { title: 'Accessibility statement' },
+    terms: { title: 'Terms of use' },
+    operator: { title: 'Operator' },
+    contact: { title: 'Contact', placeholder: 'office@example.org or https://...' },
+    contact_label: { title: 'Contact link text', placeholder: 'Contact' },
+    security_contact: { title: 'Security contact', placeholder: 'mailto:security@example.org' },
+    languages: { title: 'Language of the texts', placeholder: 'en' },
+    footer_links: { title: 'Footer links' },
+    robots: { title: 'Search engines' },
+    software_credits: { title: 'AnnZarro credit in About' },
+    'storage.persistent_convenience': { title: 'Keep convenience items between visits' },
 };
 
 const GROUPS = [
@@ -142,35 +143,19 @@ function pageColours() {
     };
 }
 
-/** A help mark: its text on hover and focus (a Bootstrap tooltip, the title without one). */
-export function helpMark(title, text) {
-    const mark = h('button', {
-        type: 'button', class: 'btn btn-link btn-sm p-0 ms-1 site-help', 'aria-label': `Help: ${title}`,
-        title: text, 'data-bs-toggle': 'tooltip', 'data-bs-placement': 'right', 'data-site-help': '',
-    }, h('i', { class: 'fas fa-circle-info', 'aria-hidden': 'true' }));
-    const bootstrap = globalThis.bootstrap;
-    if (bootstrap && bootstrap.Tooltip) bootstrap.Tooltip.getOrCreateInstance(mark);
-    return mark;
-}
-
-function guideLink(anchor, text = 'Guide') {
-    return h('a', { class: 'small ms-2', href: GUIDE + (anchor || ''), target: '_blank', rel: 'noopener noreferrer', text });
-}
-
 function sourceBadge(key) {
     if (key.locked) return badge('locked', 'dark', 'policy.locked in the config file names this key: only the config file sets it');
     const source = key.source || 'default';
     return badge(SOURCE_TEXT[source] || source, SOURCE_TONE[source] || 'secondary', `The value in effect comes from: ${SOURCE_TEXT[source] || source}`);
 }
 
-function fieldHead(name, key, extra) {
+function fieldHead(name, key, extra, describes) {
     const field = FIELDS[name] || { title: name };
     return h('div', { class: 'd-flex flex-wrap align-items-center gap-1 site-field-head' },
         h('span', { class: 'fw-semibold', id: `site-${css(name)}-title`, text: field.title }),
-        helpMark(field.title, key.description || ''),
+        keyHelp(key, field.title, { describes }),
         sourceBadge(key),
-        extra || null,
-        guideLink(field.anchor));
+        extra || null);
 }
 
 function css(name) {
@@ -299,7 +284,7 @@ function renderText(kind, key, form, onReset) {
     });
     show();
 
-    return h('section', { class: 'card site-card mb-3', id: `site-card-${kind}`, data: { key: `site.${kind}` } },
+    return h('section', { class: 'card site-card mb-3', id: `site-card-${kind}`, data: { key: `site.${kind}`, setting: `site.${kind}` } },
         h('div', { class: 'card-body' },
             fieldHead(kind, key, resetButton(kind, key, onReset)),
             lockedNote(key),
@@ -342,8 +327,8 @@ function renderScalar(name, key, form, onReset) {
             },
         });
     }
-    return h('div', { class: 'site-row', data: { key: `site.${name}` } },
-        h('div', null, fieldHead(name, key, resetButton(name, key, onReset)), lockedNote(key)),
+    return h('div', { class: 'site-row', data: { key: `site.${name}`, setting: `site.${name}` } },
+        h('div', null, fieldHead(name, key, resetButton(name, key, onReset), [control]), lockedNote(key)),
         h('div', null, control, form.errorNode(name)));
 }
 
@@ -353,7 +338,7 @@ function renderChecklist(keys) {
     return h('section', { class: 'card site-checklist mb-3', id: 'site-checklist' },
         h('div', { class: 'card-body' },
             h('h2', { class: 'h6 card-title' }, 'What a public site owes its visitors',
-                guideLink('#what-a-public-site-owes-its-visitors', 'Why')),
+                guideLink('deployment/public-site.html#what-a-public-site-owes-its-visitors', 'what a public site owes its visitors', 'Why')),
             h('ul', { class: 'list-unstyled mb-2 site-checklist-items' }, items.map((item) => h('li', { data: { check: item.id, set: item.set ? '1' : '0' } },
                 h('i', { class: item.set ? 'fas fa-check text-success me-2' : 'fas fa-xmark text-danger me-2', 'aria-hidden': 'true' }),
                 h('span', { text: item.title }), ' ',
@@ -422,7 +407,7 @@ async function load(errors = {}) {
         h('div', { class: 'd-flex flex-wrap align-items-baseline gap-2 mb-2' },
             h('h1', { class: 'h5 mb-0', text: 'Public site' }),
             h('span', { class: 'small text-muted', text: 'What the footer, the About dialog and the /site/ pages show. Changes apply at once, without a restart.' }),
-            guideLink('', 'Public-site guide')),
+            guideLink('deployment/public-site.html', 'the public site', 'Public-site guide')),
         renderChecklist(keys),
         h('h2', { class: 'h6 site-group-title', text: 'Texts' }),
         textCards,

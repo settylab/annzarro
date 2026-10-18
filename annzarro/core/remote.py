@@ -849,11 +849,15 @@ def _declare_policy_keys() -> None:
     administrator may set under Data sources. The YAML or an environment variable is
     the operator's ceiling: the administrator can narrow it, never widen it."""
     from annzarro.server.policy import Key, RemoteAccess, declare
+    from annzarro.server.policy.registry import policy_guide
     declare(Key(
         name=REMOTE_KEY, type=RemoteAccess(), default=_default_remote_access, scope="server", combine="restrict",
         area="data", section="data", config_reader=_read_remote_config, client=False,
-        description="Which s3://, gs:// and http(s):// locations the server may read datasets from "
-                    "(server.remote_stores, server.remote_allowlist)"))
+        guide=policy_guide(REMOTE_KEY, "deployment/admin.html"),
+        description="Which s3://, gs://, gcs:// and http(s):// locations the server may open datasets from: none, only listed "
+                    "locations, or any. Default: none on a shared server, any location on a single-user local one. The config "
+                    "file (server.remote_stores, server.remote_allowlist) is an upper limit that an admin can narrow, not widen. "
+                    "Gene Set Analysis switches do not affect it."))
 
 
 _declare_policy_keys()

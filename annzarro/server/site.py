@@ -689,10 +689,19 @@ _HELP = {
 }
 
 
+#: the anchor of each key on the public-site guide (docs/deployment/public-site.md)
+_GUIDE = {
+    "imprint": "imprint-checklist-for-germany", "privacy": "privacy-notice-template-english",
+    "accessibility": "accessibility", "footer_links": "where-the-texts-appear",
+    "storage.persistent_convenience": "browser-storage",
+}
+
+
 def _declare_site_keys() -> None:
     def add(path, type_, default, **kw):
         declare(Key(name=f"site.{path}", type=type_, default=default, scope="server", area="site", section="site",
-                    client=False, config_path=f"site.{path}", description=_HELP[path], **kw))
+                    client=False, config_path=f"site.{path}", description=_HELP[path],
+                    guide="deployment/public-site.html#" + _GUIDE.get(path, "configuring-the-site"), **kw))
 
     for kind in KINDS:
         add(kind, TextSetting(kind), {**dict.fromkeys(TEXT_FIELDS), "label": DEFAULT_LABELS[kind]},

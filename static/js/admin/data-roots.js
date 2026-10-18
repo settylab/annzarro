@@ -9,6 +9,7 @@
 import { h, setChildren, badge, table } from './dom.js';
 import { formatTimestamp, formatCount } from './admin-format.js';
 import { grantedToText } from './access.js';
+import { controlHelp } from './help-catalog.js';
 import { KEY as REMOTE_KEY, renderRemoteDatasets } from './remote-datasets.js';
 
 const SOURCE_TEXT = { data_dir: 'data_dir', config: 'config', admin: 'admin' };
@@ -168,9 +169,9 @@ function chooserView(parents) {
             type: 'button', class: 'btn btn-sm btn-outline-primary py-0', data: { action: 'use-dir' },
             text: 'Use', onclick: () => { typed = d.path; load(false); },
         }))) : [];
-    return h('div', { class: 'card mb-3', id: 'data-root-add' },
+    return h('div', { class: 'card mb-3', id: 'data-root-add', data: { setting: 'data.add-directory' } },
         h('div', { class: 'card-body' },
-            h('h2', { class: 'h6', text: 'Add a directory' }),
+            h('h2', { class: 'h6' }, 'Add a directory', controlHelp('data.add-directory', { describes: [input] })),
             h('div', { class: 'input-group input-group-sm mb-2' }, input,
                 h('button', { type: 'button', class: 'btn btn-primary', id: 'data-root-add-button', text: 'Add', onclick: submit })),
             h('div', { class: 'small text-muted mb-1' },
@@ -264,7 +265,7 @@ function remoteCard() {
     } else {
         renderRemoteDatasets(body, remoteKey, { save: saveRemote, reset: resetRemote });
     }
-    return h('div', { class: 'card mb-3', id: 'remote-datasets', data: { source: remoteKey && remoteKey.source || '' } }, body);
+    return h('div', { class: 'card mb-3', id: 'remote-datasets', data: { source: remoteKey && remoteKey.source || '', setting: REMOTE_KEY } }, body);
 }
 
 async function load(fetchRoots = true) {
@@ -294,8 +295,8 @@ async function load(fetchRoots = true) {
             : null,
         notice && !ctxRef.toast ? h('div', { class: `alert alert-${notice.level}`, role: 'status', text: notice.text }) : null,
         h('h2', { class: 'h5', id: 'local-data-heading', text: 'Local data directories' }),
-        h('div', { class: 'mb-3' },
-            h('h2', { class: 'h6', text: 'Allowed parents (server.admin_data_roots)' }),
+        h('div', { class: 'mb-3', data: { setting: 'data.parents' } },
+            h('h2', { class: 'h6' }, 'Allowed parents (server.admin_data_roots)', controlHelp('data.parents')),
             parents.length
                 ? h('div', null, parents.map((p) => h('span', { class: 'me-3' }, h('code', { text: p.path }),
                     p.ok === false ? h('span', { class: 'ms-1' }, badge('missing', 'warning')) : null)))

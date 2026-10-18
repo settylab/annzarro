@@ -78,6 +78,34 @@ _RESTART = {"max_requests", "max_requests_jitter", "limit_request_line", "limit_
             "limit_request_field_size", "max_request_mb"}
 
 
+#: What each limit does, shown as its help on the Settings page; the default is appended
+_HELP = {
+    "name_search_max_regex_chars": "Longest regular expression, in characters, that a name search runs; a longer one is refused. Bounds the CPU one pattern can cost.",
+    "name_search_timeout_s": "Seconds a regular-expression name search scans before it answers with the matches found so far. 0 turns the limit off.",
+    "max_sessions_per_user": "Panel sets one user may keep; saving another is refused. Protects disk. 0 turns it off.",
+    "max_sessions": "Panel sets the whole server keeps; past it saving is refused. Protects disk. 0 turns it off.",
+    "max_sessions_mb": "Megabytes all saved panel sets may take together. Protects disk. 0 turns it off.",
+    "dataset_folder_max_entries": "Entries (folders and stores) one request of the dataset browser's folder listing returns; a larger folder is read in pages.",
+    "dataset_search_max_depth": "How many folders deep the dataset browser's search of the data directory goes.",
+    "dataset_search_max_entries": "Entries the dataset browser's search looks at before it stops and marks the result truncated.",
+    "dataset_details_check_budget_s": "Seconds the dataset browser spends checking one zarr store when it shows its details; it then reports what it found so far. 0 turns the check off there.",
+    "dataset_scan_max_entries": "Directory entries a listing of the data directory, or the store count in the server status, reads before it stops and marks the result truncated.",
+    "read_user_share_percent": "Percentage of the shared read and subset memory budgets that one user may hold while another waits, so one user cannot make everyone else's requests fail with 503 read_busy. 0 gives a user the whole budgets. Applies to a server that other people can reach.",
+    "subset_wait_s": "Seconds a cell subset waits for its memory budget before it is answered 503 read_busy. 0 turns the limit off.",
+    "max_requests": "Requests a gunicorn worker serves before it is replaced, which returns memory that crept and empties its caches. 0 never replaces it. Read when the server starts.",
+    "max_requests_jitter": "Random number of requests, up to this, added to each worker's max_requests so the workers do not restart together. 0 turns it off. Read when the server starts.",
+    "limit_request_line": "Longest request line gunicorn accepts, in bytes; 0 is unlimited, and then the reverse proxy should bound it. Read when the server starts.",
+    "limit_request_fields": "Most header fields gunicorn accepts in one request. 0 turns the limit off. Read when the server starts.",
+    "limit_request_field_size": "Longest header field gunicorn accepts, in bytes; a longer one is answered 400. 0 turns the limit off. Read when the server starts.",
+    "max_request_mb": "Largest request body, in megabytes; a larger one is refused with 413 before it is read. Panel sets are the only uploads. 0 turns the limit off. Read when the server starts.",
+}
+
+
+def limit_guide(key: str) -> str:
+    """The row of ``key`` in docs/deployment/resource-limits.md (it carries ``{#limit-<key>}``)."""
+    return "deployment/resource-limits.html#limit-" + key.replace("_", "-")
+
+
 def _declare_policy_keys() -> None:
     """Show every limit in the policy registry, read-only (the YAML decides)."""
     from annzarro.server.policy import Float, Int, Key, declare
@@ -87,8 +115,8 @@ def _declare_policy_keys() -> None:
         number = Int if limit.integer else Float
         declare(Key(
             name=f"limits.{key}", type=number(min=limit.minimum), default=limit.default, scope="config",
-            description=f"server.{key}" + (" (0 turns it off)" if limit.zero_off else ""),
-            area="limits", config_path=f"server.{key}", client=False, restart=key in _RESTART))
+            description=f"{_HELP[key]} Default {limit.default:,}. Set in the config file as server.{key}.",
+            area="limits", config_path=f"server.{key}", client=False, restart=key in _RESTART, guide=limit_guide(key)))
 
     def derived_max_mb(config):
         from annzarro.core import read_guard
@@ -104,14 +132,21 @@ def _declare_policy_keys() -> None:
 
     for name, default, text in (
             ("subset_budget_mb", derived_subset_mb,
-             "MB the cell subsets one worker computes at once may hold, 55 B a cell (0: 15% of RAM)"),
-            ("max_read_mb", derived_max_mb, "MB one read of an obsp/varp matrix may hold (0: 5% of RAM)"),
-            ("read_budget_mb", derived_budget_mb, "MB all pairwise reads in flight in one worker may hold (0: twice max_read_mb)")):
+             "Megabytes the cell subsets one worker computes at once may hold, charged 55 bytes a cell. A subset that cannot "
+             "start within subset_wait_s is answered 503 read_busy. Default 15% of the machine's RAM per worker; 0 uses the default."),
+            ("max_read_mb", derived_max_mb,
+             "Megabytes one read of an obsp or varp matrix may hold, estimated before any chunk is read; a larger request is "
+             "refused with 413. Default 5% of the machine's RAM, between 256 MB and 4 GB; 0 uses the default."),
+            ("read_budget_mb", derived_budget_mb,
+             "Megabytes all pairwise (obsp and varp) reads in flight in one worker may hold together. A read that does not fit "
+             "waits up to read_wait_s. Default twice max_read_mb; 0 uses the default.")):
         declare(Key(name=f"limits.{name}", type=Float(min=0), default=default, scope="config",
-                    description=f"server.{name}: {text}", area="limits", config_path=f"server.{name}", client=False))
+                    description=f"{text} Set in the config file as server.{name}.", area="limits",
+                    config_path=f"server.{name}", client=False, guide=limit_guide(name)))
     declare(Key(name="limits.read_wait_s", type=Float(min=0), default=5, scope="config",
-                description="server.read_wait_s: seconds a pairwise read waits for the budget before a 503",
-                area="limits", config_path="server.read_wait_s", client=False))
+                description="Seconds a pairwise read waits for the read budget before it is answered 503 read_busy. Default 5. "
+                            "Set in the config file as server.read_wait_s.",
+                area="limits", config_path="server.read_wait_s", client=False, guide=limit_guide("read_wait_s")))
 
 
 _declare_policy_keys()
