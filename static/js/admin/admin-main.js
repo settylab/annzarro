@@ -3,7 +3,7 @@
  *
  * Each section module default-exports {id, title, mount(el, api, ctx),
  * refresh(), autoRefreshMs?}. The tab is the URL fragment (#users, #data,
- * #health, #panel-sets, #settings, #audit). A section that throws while it
+ * #health, #panel-sets, #settings, #site, #audit). A section that throws while it
  * loads shows the message and a Retry button instead of an empty page.
  * `autoRefreshMs` makes the router call refresh() on that period while the
  * section is shown and the document is visible.
@@ -21,9 +21,10 @@ import dataRoots from './data-roots.js';
 import health from './health.js';
 import panelSets from './panel-sets.js';
 import settings from './settings.js';
+import site from './site-settings.js';
 import audit from './audit.js';
 
-export const SECTIONS = [users, dataRoots, health, panelSets, settings, audit];
+export const SECTIONS = [users, dataRoots, health, panelSets, settings, site, audit];
 
 /**
  * The section a URL fragment names.

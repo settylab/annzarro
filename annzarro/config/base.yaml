@@ -240,8 +240,10 @@ branding:
     custom_html: null
 
 # The site this server is: who runs it and the texts a public site owes its visitors
-# (docs/deployment/public-site.md). Nothing here shows until it is set; a local or desktop
-# AnnZarro looks the same as before. Each text (imprint, privacy, accessibility, terms) is
+# (docs/deployment/public-site.md). On a local or desktop AnnZarro nothing here shows until it
+# is set; a server other people reach links About and Data & privacy (/site/data) from its
+# footer. With login on, the admin page's Public site section sets all of it without a restart,
+# and its values win over this file unless policy.locked names the key. Each text (imprint, privacy, accessibility, terms) is
 # a link to a page you already have (url), a Markdown text written here (markdown), or a
 # Markdown file read at start (file). With url set, markdown and file are ignored. A text
 # is shown in the About dialog and at /site/<name> (no sign-in needed); the links appear
@@ -274,7 +276,8 @@ site:
   contact: null
   # The link text for the contact in the footer and About; German sites: "Kontakt"
   contact_label: "Contact"
-  # auto: a small footer line on every page links the texts above (and the contact);
+  # auto: a small footer line on every page links the texts above (and the contact; a server
+  # other people reach also links About and Data & privacy, configured or not);
   # about-only: only the About dialog does (for internal sites; German and EU guidance
   # want imprint and privacy links visible on every page of a public one)
   footer_links: auto

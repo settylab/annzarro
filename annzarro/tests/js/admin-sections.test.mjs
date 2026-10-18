@@ -45,7 +45,7 @@ afterEach(() => { uninstallFakeDocument(); });
 const page = () => ({ nav: doc.createElement("ul"), view: doc.createElement("main") });
 
 test("the fragment picks the section, unknown or empty falls back to the first", () => {
-  assert.deepEqual(SECTIONS.map((s) => s.id), ["users", "data", "health", "panel-sets", "settings", "audit"]);
+  assert.deepEqual(SECTIONS.map((s) => s.id), ["users", "data", "health", "panel-sets", "settings", "site", "audit"]);
   assert.equal(sectionFromHash("#settings"), "settings");
   assert.equal(sectionFromHash("panel-sets"), "panel-sets");
   assert.equal(sectionFromHash("#nope"), "users");
@@ -67,9 +67,9 @@ test("the router builds the tabs, marks the active one and mounts the section", 
   const { api } = mockApi();
   const router = makeRouter({ nav, view, api, ctx: { me: F.me } });
   assert.deepEqual(findAll(nav, (n) => n.tagName === "A").map((a) => a.textContent),
-    ["Users", "Data sources", "Server health", "Panel sets", "Settings", "Audit log"]);
+    ["Users", "Data sources", "Server health", "Panel sets", "Settings", "Public site", "Audit log"]);
   assert.deepEqual(findAll(nav, (n) => n.tagName === "A").map((a) => a.getAttribute("href")),
-    ["#users", "#data", "#health", "#panel-sets", "#settings", "#audit"]);
+    ["#users", "#data", "#health", "#panel-sets", "#settings", "#site", "#audit"]);
   await router.show("health");
   assert.equal(router.current(), "health");
   const active = findAll(nav, (n) => n.classes().includes("active"));

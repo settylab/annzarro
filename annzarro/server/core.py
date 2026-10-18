@@ -688,6 +688,9 @@ def register_routes(app: Flask) -> None:
     install_policy(app, api_version)
     from annzarro.server.admin.settings import wire_sources
     wire_sources(app)
+    # with the admin's overlay readable: a hosted server that publishes no imprint and no privacy notice
+    from annzarro.server.site import warn_if_unpublished
+    warn_if_unpublished(app)
     
     # Register authentication routes if auth is enabled
     if app.config.get("auth_enabled", False):

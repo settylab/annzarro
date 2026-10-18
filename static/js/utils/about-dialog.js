@@ -9,7 +9,9 @@
  * A site that configures texts (site.imprint, site.privacy ... in config/base.yaml) has
  * a footer line of links; the ones for a text written in the configuration carry
  * data-about-section and open this dialog at that text (one click, so the imprint is
- * directly reachable). Without JavaScript they are plain links to /site/<kind>.
+ * directly reachable). Without JavaScript they are plain links to /site/<kind>. A hosted
+ * server's footer starts with "About" (data-about-open), which opens this dialog; elsewhere it
+ * is the /site/about page.
  * The desktop app (<html data-desktop>) also shows its privacy statement.
  */
 import { Config } from '../config.js';
@@ -80,12 +82,19 @@ export function initAboutDialog(doc = document) {
     modal.addEventListener('show.bs.modal', fill);
     // Back to the name, however the dialog closed
     modal.addEventListener('hidden.bs.modal', () => opener.focus());
-    // The footer's links to the site's own texts open the dialog at the text
+    // The footer's links to the site's own texts open the dialog at the text; "About" opens it
     const footer = doc.getElementById('site-footer');
     if (footer) {
         footer.addEventListener('click', (event) => {
-            const link = event.target.closest && event.target.closest('a[data-about-section]');
+            const link = event.target.closest && event.target.closest('a[data-about-section], a[data-about-open]');
             if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) return;
+            if (link.hasAttribute('data-about-open')) {
+                const bootstrap = globalThis.bootstrap;
+                if (!bootstrap) return;
+                event.preventDefault();
+                bootstrap.Modal.getOrCreateInstance(modal).show();
+                return;
+            }
             if (openAboutAt(link.dataset.aboutSection, doc)) event.preventDefault();
         });
     }

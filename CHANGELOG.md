@@ -8,12 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
-- A Cell Table or plot too large for any browser page (95.6 million rows against about 4 GB of JavaScript memory) now says "Too many rows for this browser" with the numbers, and offers "Show N cells" for the largest subset that fits (a table at most 1,000,000) and "Subset…". It no longer offers "Close other plots" when no other plot is open or closing them cannot help, nor "Draw anyway" above the browser's ceiling.
-
 ## 0.6.0 (2026-10-17)
 
-An About dialog and what a public site needs (imprint, privacy notice, a footer); a Dataset
-information dialog with attribution, README and structure; last sessions listed instead of
+An About dialog and what a public site needs (imprint, privacy notice, a footer), set from the admin
+page; a Dataset information dialog with attribution, README and structure; last sessions listed instead of
 redrawn, and plots of a set too large for the browser refused one by one instead of crashing the
 tab; plot options that survive links and Duplicate; and a Publication preset for figures.
 
@@ -30,6 +28,8 @@ tab; plot options that survive links and Duplicate; and a Publication preset for
 - `site.software_credits: false` reduces the About dialog's credit for AnnZarro (lab logo, funding, citation) to its name, version, licence and links; it stays by default everywhere, below the site's own block.
 - The About dialog of the desktop app states what the app sends and where.
 - The server warns at start when `integrations.external_requests` is `"on"` on a shared server, and when `branding.contact_info.custom_html` contains a script, an iframe or an address on another server.
+- **Public site** on the admin page: every `site:` setting (imprint, privacy notice, accessibility statement, terms, operator, contact, labels, footer, search engines, security contact, language, the AnnZarro credit, browser storage) can be set while the server runs, and the footer, About and the `/site/` pages show it at once. Each field explains itself on hover and links the public-site guide, a Markdown text has a live preview, a value the server would refuse at start is refused under its field, and a checklist says which of imprint, privacy notice, contact and accessibility statement are missing. An admin's value wins over the configuration file until reset; `policy.locked: [site.imprint]` keeps a key in the file's hands. A text's `file` can only be set in the configuration file.
+- **Data & privacy** (`/site/data`), generated from the running configuration: what the browser keeps, the cookies, what the Gene Set panel may send to which services and when, and that there are no analytics. Without a configured privacy notice it says plainly that it is not one. `/site/about` shows the About dialog as a page.
 
 ### Changed
 - **A new visit no longer redraws the last session by itself**; a reload of the tab still does. A panel set kept on "All cells" and moved to a very large dataset could run the tab out of memory, and every reload drew it again. `ui.autosave.auto_restore` now takes `reload` (the default), `always` (the old behaviour, also `true`) or `never` (also `false`); `ui.autosave.show_in_list` lists the last sessions and is on by default. Upgrade: set `auto_restore: always` to keep the old behaviour.
@@ -45,6 +45,8 @@ tab; plot options that survive links and Duplicate; and a Publication preset for
   bottom. A legend above or below a plot does the same, clear of the axes and the x-axis title, in short
   panels too.
 - The About dialog says that the Setty Lab develops and funds AnnZarro (the software), so that a site that runs it is not mistaken for the lab's own.
+- A server other people reach (login on, a network address, `server.hosted` or a proxy) shows a footer line even with nothing configured: "About · Data & privacy", plus the configured texts and contact. The desktop app and a personal server show none until you configure something.
+- Such a server logs a warning at start when it publishes neither an imprint nor a privacy notice, naming the admin page's Public site section and the guide.
 
 ### Fixes
 - Choosing "All cells" on a dataset the server shows in full anyway (up to its subsampling
@@ -58,6 +60,7 @@ tab; plot options that survive links and Duplicate; and a Publication preset for
 - A new focus shows sooner in big Cell Plots. At 1M cells a click showed the cell's name after about 0.2 s and its marker after about 0.4 s, and kept the page busy for about 0.2 s; now both show within about 60 ms. Moving the marker no longer redraws every point through Plotly, and an open Cell Table no longer lists all its filtered rows each time the focus changes or the layout is autosaved; the periodic autosave also waits for a quiet moment, and leaving the page still saves at once.
 - A categorical colour whose `uns["<column>_colors"]` has fewer colours than the column has categories no longer repeats them, which gave different categories the same colour. As in scanpy, the stored colours are then set aside and the default palette is used, in regular and large plots, and the panel's status strip says so ("Default colours: see why").
 - Clicking a cell in a Cell Plot focuses it every time. In plots of hundreds of thousands of cells, a click soon after the plot was drawn or resized, or while the previous focus change was still being shown, often did nothing. In large plots, a click made while the plot is still preparing click selection (which can take a while at tens of millions of cells) shows a busy cursor and "Preparing click selection…" in the status strip, and focuses the cell once it is ready, instead of doing nothing.
+- A Cell Table or plot too large for any browser page (95.6 million rows against about 4 GB of JavaScript memory) now says "Too many rows for this browser" with the numbers, and offers "Show N cells" for the largest subset that fits (a table at most 1,000,000) and "Subset…". It no longer offers "Close other plots" when no other plot is open or closing them cannot help, nor "Draw anyway" above the browser's ceiling.
 
 ### Docs
 - New page [Running a public site](https://annzarro.readthedocs.io/en/latest/deployment/public-site.html): who is responsible, what a public site owes its visitors (imprint, privacy notice, accessibility), what AnnZarro stores and sends, the `site` settings, and privacy-notice templates in English and German.

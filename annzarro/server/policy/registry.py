@@ -30,7 +30,7 @@ SCOPES = ("config", "server", "user")
 #: and never widen it.
 COMBINES = ("override", "restrict")
 #: The groups the Settings page shows. Add one here when a feature needs it.
-AREAS = ("panels", "outbound", "data", "limits", "features")
+AREAS = ("panels", "outbound", "data", "limits", "features", "site")
 
 _NAME = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z0-9][a-z0-9_-]*)+$")
 
@@ -130,7 +130,8 @@ REGISTRY = Registry()
 
 #: Modules that declare keys when imported; ``load_declarations`` imports them,
 #: so a registry is complete wherever it is built. Add yours here.
-DECLARING_MODULES = ("annzarro.server.limits", "annzarro.core.remote", "annzarro.server.policy.panels")
+DECLARING_MODULES = ("annzarro.server.limits", "annzarro.core.remote", "annzarro.server.policy.panels",
+                     "annzarro.server.site")
 
 
 def load_declarations() -> None:

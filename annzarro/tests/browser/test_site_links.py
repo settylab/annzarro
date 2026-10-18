@@ -324,8 +324,12 @@ def test_the_sign_in_page_carries_the_footer(browser, login_site, scheme, width,
     card = page.locator(".login-container").bounding_box()
     assert card["y"] + card["height"] <= b["footer"]["y"] + 0.5, "the card is above the footer"
     assert abs((card["x"] + card["width"] / 2) - width / 2) < 2, "still centred"
-    # no About dialog here: the imprint link goes to its page
-    assert page.get_attribute("#site-footer a", "href").endswith("/site/imprint")
+    # no About dialog here: the imprint link goes to its page. A login server is hosted, so its footer
+    # starts with About and has Data & privacy (site.SiteView), both plain links to their pages too
+    links = page.locator("#site-footer a")
+    assert links.all_inner_texts() == ["About", "Impressum", "Datenschutz", "Barrierefreiheit", "Data & privacy", "Kontakt"]
+    assert links.nth(0).get_attribute("href").endswith("/site/about")
+    assert links.nth(1).get_attribute("href").endswith("/site/imprint")
     assert response_ok(page, login_site + "/site/imprint")
     _shot(page, f"footer-login-{width}-{scheme}")
 
@@ -346,7 +350,7 @@ def test_the_account_and_admin_pages_carry_the_footer(browser, login_site):
         page.wait_for_selector(ready, timeout=30000)
         b = page.evaluate(BOXES)
         assert b["footer"] is not None and abs(b["footer"]["bottom"] - 900) < 1.5, path
-        assert page.locator("#site-footer a").all_inner_texts()[0] == "Impressum"
+        assert page.locator("#site-footer a").all_inner_texts()[:2] == ["About", "Impressum"], "a hosted server's footer"
         _shot(page, "footer-" + path.strip("/").replace("/", "-") + "-1440-light")
 
 

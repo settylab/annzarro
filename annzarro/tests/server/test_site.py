@@ -73,18 +73,46 @@ def pages(app):
     return out
 
 
-@pytest.mark.parametrize("auth", [False, True])
-def test_unconfigured_pages_are_byte_identical_to_the_templates_without_the_site(tmp_path, stripped_templates, auth):
+def test_unconfigured_pages_are_byte_identical_to_the_templates_without_the_site(tmp_path, stripped_templates):
+    """A personal server (loopback, login off) and the desktop app: nothing configured, nothing shown."""
     (tmp_path / "a").mkdir()
     (tmp_path / "b").mkdir()
-    with_site_code = app_with(tmp_path / "a", auth=auth)
-    without = app_with(tmp_path / "b", auth=auth)
+    with_site_code = app_with(tmp_path / "a")
+    without = app_with(tmp_path / "b")
     without.jinja_env.loader = FileSystemLoader(stripped_templates)
     got, expected = pages(with_site_code), pages(without)
     assert got.keys() == expected.keys()
     for path in got:
         assert normalise(got[path]) == normalise(expected[path]), f"{path} changed with nothing configured"
         assert "site-footer" not in got[path] and "about-this-site" not in got[path]
+
+
+def without_footer(html):
+    html = re.sub(r'<footer id="site-footer".*?</footer>', "", html, flags=re.S)
+    return html.replace(' class="has-site-footer site-centered"', "").replace(" has-site-footer", "")
+
+
+@pytest.mark.parametrize("config", [{"auth": True}, {"host": "0.0.0.0", "auth": False}, {"hosted": True, "auth": False}],
+                         ids=["login", "network-host", "hosted"])
+def test_a_hosted_server_has_about_and_data_in_its_footer_and_nothing_else_changes(tmp_path, stripped_templates, config):
+    """Other people reach it, so the footer shows About and Data & privacy before anything is configured
+    (the design of the site defaults; the pages are otherwise the templates without the site's markup)."""
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    with_site_code = app_with(tmp_path / "a", **config)
+    without = app_with(tmp_path / "b", **config)
+    without.jinja_env.loader = FileSystemLoader(stripped_templates)
+    got, expected = pages(with_site_code), pages(without)
+    if config["auth"]:      # "/" is the redirect to the sign-in page there; the signed-in main page instead
+        got["/"] = body(login(with_site_code, ADMIN).get("/"))
+        expected["/"] = body(login(without, ADMIN).get("/"))
+    for path in got:
+        footer = re.search(r'<footer id="site-footer".*?</footer>', got[path], re.S).group(0)
+        assert re.findall(r">([^<]+)</a>", footer) == ["About", "Data &amp; privacy"], path
+        assert 'href="/site/about"' in footer and 'href="/site/data"' in footer
+        assert normalise(without_footer(got[path])) == normalise(expected[path]), f"{path} changed beyond the footer"
+        assert "about-this-site" not in got[path]
+    assert "data-about-open" in got["/"], "on the main page About opens the dialog"
 
 
 def test_the_defaults_configure_nothing():
@@ -449,6 +477,13 @@ def test_the_storage_inventory_is_complete():
                          "and the privacy notice in docs/deployment/public-site.md; otherwise to NOT_STORAGE")
     for key, where in STORAGE_KEYS.items():
         assert key in found, f"{key} is no longer in the source: remove it from the inventory and the docs"
+
+
+def test_the_data_page_lists_every_storage_key():
+    from annzarro.server.site import STORAGE_INVENTORY
+    listed = " ".join(key for key, _, _ in STORAGE_INVENTORY)
+    for key in STORAGE_KEYS:
+        assert key in listed, f"/site/data (site.STORAGE_INVENTORY) does not list {key}"
 
 
 def test_the_docs_describe_every_storage_key():
