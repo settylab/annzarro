@@ -6,6 +6,7 @@ import { greyMarker, styleArea } from '../../utils/point-style.js';
 import { plotArea } from '../../utils/view-point-style.js';
 import { scaleBar, replaceScaleBar, SCALE_BAR } from './plot-options.js';
 import { usableUnsPalette } from '../../utils/uns-palette.js';
+import { proxyMarkerSize } from '../../utils/legend-options.js';
 import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName, colourGroupKey } from '../../utils/categories.js';
 
 /**
@@ -997,7 +998,7 @@ export function keptViewRanges(settings) {
       t.meta = LEGEND_POINTS;
       const p = { type: t.type, mode: 'markers', name: t.name, legendgroup: t.legendgroup, showlegend: true,
         meta: LEGEND_PROXY, x: [null], y: [null], hoverinfo: 'skip',
-        marker: { size: settings.pointSize, opacity: 1, color: t.marker && t.marker.color } };
+        marker: { size: proxyMarkerSize(settings), opacity: 1, color: t.marker && t.marker.color } };
       if (t.type === 'scatter3d') p.z = [null];
       if (t.legendrank !== undefined) p.legendrank = t.legendrank;
       proxies.push(p);

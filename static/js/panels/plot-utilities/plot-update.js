@@ -35,6 +35,7 @@ import { recolourCheck, refusalText, bindingLabel } from '../../utils/memory-gua
 import { MEMORY_ADVICE } from '../../utils/memory-guard.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
+import { legendTitleText } from '../../utils/legend-options.js';
 import { highlightLargeFocus, clearLargeFocus, restyleLargeFocus } from './large-interact.js';
 import { focusMarker, focusRestyle, focusSize, focusParams } from '../../utils/focus-style.js';
 
@@ -465,7 +466,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 Plotly.relayout(plotContainer, {
                     'legend.uirevision': legendUirevision(
                         (plotContainer.layout && plotContainer.layout.uirevision) || 'view', settings.color),
-                    'legend.title.text': colourTitle(settings.color),
+                    'legend.title.text': legendTitleText(settings),
                     'legend.title.font': { 
                         size: settings.fontSize ? settings.fontSize + 2 : 14,
                         family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
@@ -860,7 +861,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 } else if (data.colorType === 'categorical') {
                     // Update the legend title for categorical data
                     Plotly.relayout(plotContainer, {
-                        'legend.title.text': colourTitle(settings.color),
+                        'legend.title.text': legendTitleText(settings),
                         'legend.title.font': { 
                             size: settings.fontSize ? settings.fontSize + 2 : 14,
                             family: settings.fontFamily || 'Arial, Helvetica, sans-serif',

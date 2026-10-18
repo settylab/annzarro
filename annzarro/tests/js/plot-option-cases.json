@@ -173,6 +173,26 @@
    "render": true
   },
   {
+   "key": "legendDotSize",
+   "value": 8,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "legendColumns",
+   "value": 2,
+   "panel": "a",
+   "render": true,
+   "tolerance": 0.03,
+   "note": "the entry width that makes the columns is set from the legend as drawn, in a few steps; the same to within a few pixels"
+  },
+  {
+   "key": "showLegendTitle",
+   "value": false,
+   "panel": "a",
+   "render": true
+  },
+  {
    "key": "colorbarPosition",
    "value": "left",
    "panel": "b",

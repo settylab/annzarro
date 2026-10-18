@@ -1,6 +1,7 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, refreshScaleBar } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
+import { applyLegendOptions, legendOrientation, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
@@ -419,6 +420,27 @@ export function createPopoverContent(id, settings) {
                     <option value="top" ${(settings.legendPosition === 'top') ? 'selected' : ''}>Top</option>
                     <option value="bottom" ${(settings.legendPosition === 'bottom') ? 'selected' : ''}>Bottom</option>
                 </select>
+            </div>
+            <!-- Legend of a categorical colouring: title, dots, columns -->
+            <div class="mb-2">
+                <div class="form-check form-switch mb-1">
+                    <input class="form-check-input" type="checkbox" id="show-legend-title-${id}"
+                        ${settings.showLegendTitle !== false ? 'checked' : ''}>
+                    <label class="form-check-label" for="show-legend-title-${id}">Legend title</label>
+                </div>
+                <div class="input-group input-group-sm mb-1">
+                    <span class="input-group-text">Dot size</span>
+                    <input type="number" class="form-control" id="legend-dot-size-${id}" value="${settings.legendDotSize ?? ''}"
+                        placeholder="${DOT_SIZE_AUTO}" min="${DOT_SIZE_MIN}" max="${DOT_SIZE_MAX}" step="1"
+                        title="Size of the dots in the legend of a categorical colouring, independent of the points' size; empty: ${DOT_SIZE_AUTO} px">
+                    <span class="input-group-text">px</span>
+                </div>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">Columns</span>
+                    <input type="number" class="form-control" id="legend-columns-${id}" value="${settings.legendColumns ?? ''}"
+                        placeholder="1" min="2" max="${COLUMNS_MAX}" step="1"
+                        title="Lay the legend out in this many columns; empty: one column. Labels too long for that many columns give fewer.">
+                </div>
             </div>
             <!-- Colour bar -->
             <div class="mb-2">
@@ -1001,6 +1023,25 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
+        // Legend of a categorical colouring: title, dot size, columns
+        if (target.id === `show-legend-title-${id}`) {
+            settings.showLegendTitle = target.checked;
+            applyLegendOptions(plotContainer, settings);
+            notifySettingsChanged(id, 'showLegendTitle', settings.showLegendTitle);
+            return;
+        }
+        if (target.id === `legend-dot-size-${id}` || target.id === `legend-columns-${id}`) {
+            const dots = target.id === `legend-dot-size-${id}`;
+            const n = parseInt(target.value, 10);
+            if (target.value !== '' && !(n >= (dots ? DOT_SIZE_MIN : 2))) return;
+            const key = dots ? 'legendDotSize' : 'legendColumns';
+            settings[key] = target.value === '' ? null : Math.min(n, dots ? DOT_SIZE_MAX : COLUMNS_MAX);
+            applyLegendOptions(plotContainer, settings,
+                getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
+            notifySettingsChanged(id, key, settings[key]);
+            return;
+        }
+
         // Margins: one value for all four sides, or each side
         if (target.id === `margin-all-${id}` || target.id === `margin-all-input-${id}`) {
             const v = parseFloat(target.value);
@@ -1816,7 +1857,7 @@ function updateMargins(plotContainer, settings) {
  * @param {Object} posConfig - getPositioningByLocation(...) for the setting
  * @returns {Object} relayout keys for the legend
  */
-export function legendPlacement(data, posConfig) {
+export function legendPlacement(data, posConfig, settings = {}) {
   const traces = Array.isArray(data) ? data : [];
   const colorbar = traces.some(t => t && t.marker && t.marker.colorscale && t.marker.showscale !== false);
   const legendItems = traces.some(t => t && t.showlegend !== false
@@ -1827,7 +1868,7 @@ export function legendPlacement(data, posConfig) {
              'legend.y': 1.02, 'legend.yanchor': 'bottom' };
   }
   return {
-    'legend.orientation': posConfig.legendOrientation,
+    'legend.orientation': legendOrientation(posConfig.legendOrientation, settings),
     'legend.x':           posConfig.legendX,
     'legend.y':           posConfig.legendY,
     'legend.xanchor':     posConfig.legendXanchor,
@@ -1896,7 +1937,7 @@ function updateLegendVisibility(plotDiv, settings) {
     // Legend entries next to a colour bar: keep them off it
     if (show) {
         Plotly.relayout(plotDiv, legendPlacement(plotDiv.data,
-            getPositioningByLocation(settings.legendPosition || 'right')));
+            getPositioningByLocation(settings.legendPosition || 'right'), settings));
     }
   }
 
@@ -1961,7 +2002,7 @@ export function getPositioningByLocation(position) {
     const nticks = barExtras.nticks || 0;      // 0: Plotly's automatic
   
     // 1) Legend positioning (layout update), off the colour bar if both show
-    Plotly.relayout(plotContainer, legendPlacement(plotContainer.data, posConfig));
+    Plotly.relayout(plotContainer, legendPlacement(plotContainer.data, posConfig, settings));
   
 
     // 2) Shared coloraxis: hide → update → show
@@ -2225,7 +2266,7 @@ export function applyAllAestheticSettings(plotContainer, settings) {
         'hovermode': settings.showHoverInfo ? 'closest' : false,
         
         // Legend position settings (actual visibility will be handled separately)
-        'legend.orientation': (settings.legendPosition === 'left' || settings.legendPosition === 'right') ? 'v' : 'h',
+        'legend.orientation': legendOrientation((settings.legendPosition === 'left' || settings.legendPosition === 'right') ? 'v' : 'h', settings),
         'legend.x': settings.legendPosition === 'right' ? 1.05 : settings.legendPosition === 'left' ? -0.05 : 0.5,
         'legend.y': settings.legendPosition === 'top' ? 1 : settings.legendPosition === 'bottom' ? 0 : 0.5,
         'legend.xanchor': settings.legendPosition === 'right' ? 'left' : settings.legendPosition === 'left' ? 'right' : 'center',
@@ -2336,5 +2377,6 @@ export function applyAllAestheticSettings(plotContainer, settings) {
     updateLegendVisibility(plotContainer, settings);
     updateLegendPosition(plotContainer, settings);
     applyTextFont(plotContainer, settings);
+    applyLegendOptions(plotContainer, settings);
     refreshScaleBar(plotContainer, settings);
 }

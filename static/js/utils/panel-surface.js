@@ -47,6 +47,7 @@ import { installGlColors } from './scattergl-calc.js';
 import { withLegendInvariant, withLegendState, traceUid } from './legend-entries.js';
 import { watchModebarAnchor } from './modebar-anchor.js';
 import { watchBelowLegend } from './legend-below.js';
+import { watchLegendColumns } from './legend-options.js';
 
 /** Class of the status strip; styled in static/css/styles.css. */
 const STRIP_CLASS = 'plot-status';
@@ -664,6 +665,7 @@ export async function drawPlot(plotContainer, traces, layout, config, coverage, 
     );
     watchContextLoss(plotContainer);
     watchBelowLegend(plotContainer);
+    watchLegendColumns(plotContainer);
     watchModebarAnchor(plotContainer);
     // long axis / colour-bar titles: shortened to fit, full text on hover
     keepTitlesFitted(plotContainer);

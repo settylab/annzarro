@@ -8,6 +8,12 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- Plot Options, Legend and colour bar: the legend of a categorical colour can have its title switched
+  off, its dots set to a size of their own (2 to 16 px, independent of the points' size) and be laid
+  out in 2 to 8 columns. Unset, the legend looks as before. The options travel with links, panel sets
+  and Apply to other panels.
+
 ### Docs
 - The README and the licence page cite v0.6.0 by its DOI,
   [10.5281/zenodo.23447624](https://doi.org/10.5281/zenodo.23447624).
