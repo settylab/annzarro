@@ -75,6 +75,6 @@ export function controlHelp(id, opts) {
 
 /** The help of a registry key as the server sends it. */
 export function keyHelp(key, title, opts) {
-    const configFile = key.config_file ? { path: key.config_file, setting: key.config_file_setting !== false } : null;
+    const configFile = key.config_file ? { path: key.config_file, setting: key.config_file_setting !== false, name: key.name } : null;
     return settingHelp({ title, text: key.description || title, guide: key.guide }, { ...opts, configFile });
 }

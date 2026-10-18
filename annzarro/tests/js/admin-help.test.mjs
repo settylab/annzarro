@@ -42,8 +42,9 @@ test("a registry key's mark ends with its config file path, and a catalog contro
   assert.equal(attr(button, "title"), "Does a thing, by default off.\nConfig file: site.imprint");
   assert.equal(attr(button, "data-config-file"), "site.imprint");
   assert.match(byId(mark, attr(button, "aria-describedby")).textContent, /Config file: site\.imprint\.$/);
-  const [lock] = keyHelp({ description: "A switch.", config_file: "policy.locked", config_file_setting: false }, "Panel");
-  assert.match(attr(find(lock, (n) => n.tagName === "BUTTON"), "title"), /Config file: policy\.locked \(lists the key to lock it/);
+  const [lock] = keyHelp({ name: "panel.cell-plot.enabled", description: "A switch.", config_file: "policy.locked", config_file_setting: false }, "Panel");
+  assert.equal(attr(find(lock, (n) => n.tagName === "BUTTON"), "title"),
+    "A switch.\nConfig file: none. Set here or per user; to lock it, list panel.cell-plot.enabled under policy.locked.");
   const [plain] = controlHelp("user.admin");
   assert.equal(attr(find(plain, (n) => n.tagName === "BUTTON"), "title").includes("Config file"), false);
 });

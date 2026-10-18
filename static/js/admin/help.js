@@ -59,6 +59,13 @@ export function docsUrl(guide) {
     return DOCS + String(guide || '').replace(/^\/+/, '');
 }
 
+/** The last line of a tip: nodes with the path or the key in code. */
+function configLine({ setting, path, name }) {
+    const code = (text) => h('code', { class: 'admin-help-path', text });
+    return setting ? ['Config file: ', code(path)]
+        : ['Config file: none. Set here or per user; to lock it, list ', code(name), ' under ', code('policy.locked'), '.'];
+}
+
 /**
  * The info mark. The text shows in a Bootstrap tooltip on hover and focus; without Bootstrap it
  * is the title.
@@ -67,21 +74,22 @@ export function docsUrl(guide) {
  * @param {Object} [opts]
  * @param {HTMLElement[]} [opts.describes] - controls the text also describes (`aria-describedby`); for a
  *        wrapper, the first input, select or textarea inside it
- * @param {{path: string, setting: boolean}} [opts.configFile] - where the config file has it: the YAML
- *        path, shown as a last line in monospace; `setting` false means no value to set, only
- *        `policy.locked` can name it
+ * @param {{path: string, setting: boolean, name: string}} [opts.configFile] - where the config file has it:
+ *        the YAML path, shown as a last line in monospace; `setting` false means the file has no value
+ *        for it (it is set here or per user) and the line says how to lock it, with `name`, the key
  * @returns {HTMLElement}
  */
 export function helpMark(title, text, { describes = [], configFile = null } = {}) {
     counter += 1;
     const id = `admin-help-${counter}`;
-    const note = configFile ? (configFile.setting ? '' : ' (lists the key to lock it; there is no value to set)') : '';
-    const plain = configFile ? `${text}\nConfig file: ${configFile.path}${note}` : text;
+    const line = !configFile ? '' : configFile.setting ? `Config file: ${configFile.path}`
+        : `Config file: none. Set here or per user; to lock it, list ${configFile.name} under policy.locked.`;
+    const plain = configFile ? `${text}\n${line}` : text;
     const mark = h('button', {
         type: 'button', class: 'btn btn-link btn-sm p-0 ms-1 admin-help-mark', 'aria-label': `Help: ${title}`,
-        title: plain, 'aria-describedby': id, 'data-config-file': configFile ? configFile.path : false, 'data-bs-toggle': 'tooltip', 'data-bs-placement': 'right', 'data-help': '',
+        title: plain, 'aria-describedby': id, 'data-config-file': configFile ? (configFile.setting ? configFile.path : 'none') : false, 'data-bs-toggle': 'tooltip', 'data-bs-placement': 'right', 'data-help': '',
     }, h('i', { class: 'fas fa-circle-info', 'aria-hidden': 'true' }));
-    const hidden = h('span', { class: 'visually-hidden', id, text: configFile ? `${text} Config file: ${configFile.path}${note}.` : text });
+    const hidden = h('span', { class: 'visually-hidden', id, text: configFile ? `${text} ${line}` : text });
     for (const wrapper of describes) {
         const control = controlIn(wrapper);
         const before = control.getAttribute('aria-describedby');
@@ -90,7 +98,7 @@ export function helpMark(title, text, { describes = [], configFile = null } = {}
     const bootstrap = globalThis.bootstrap;
     if (bootstrap && bootstrap.Tooltip) {
         const body = configFile ? h('div', { class: 'text-start' }, h('div', { text }),
-            h('div', { class: 'mt-1' }, 'Config file: ', h('code', { class: 'admin-help-path', text: configFile.path }), note)) : null;
+            h('div', { class: 'mt-1' }, ...configLine(configFile))) : null;
         const tip = bootstrap.Tooltip.getOrCreateInstance(mark, { container: 'body', ...(body ? { html: true, title: body } : {}) });
         // Bootstrap swaps aria-describedby for the tip while it shows and drops it after
         live.add(mark);

@@ -63,8 +63,9 @@ AUDIT = """(registry) => {
     if (title && /[._]/.test(title.textContent)) bad.push(id + ': titled with a key, not a label: ' + title.textContent);
     if (mark && registry.includes(id)) {
       const path = mark.getAttribute('data-config-file');
-      if (!path) bad.push(id + ': the tooltip has no config file path');
-      else if (!text.includes('Config file: ' + path)) bad.push(id + ': the tooltip does not end with the config path: ' + text);
+      const own = 'Config file: none. Set here or per user; to lock it, list ' + id + ' under policy.locked.';
+      if (!path) bad.push(id + ': the tooltip has no config file line');
+      else if (path === 'none' ? !text.endsWith(own) : !text.endsWith('Config file: ' + path)) bad.push(id + ': the tooltip does not end with its config file line: ' + text);
     }
     const link = s.querySelector('a[data-guide]');
     if (!link) bad.push(id + ': no Guide link');
@@ -222,7 +223,8 @@ def test_the_mark_is_reachable_by_keyboard_and_closes_on_escape(browser, hosted)
         mark.focus()
         page.wait_for_selector(".tooltip.show")
         assert "Cell Plot" in page.inner_text(".tooltip.show")
-        assert page.inner_text(".tooltip.show code") == "policy.locked"
+        assert page.inner_text(".tooltip.show").endswith("list panel.cell-plot.enabled under policy.locked.")
+        assert page.locator(".tooltip.show code").all_inner_texts() == ["panel.cell-plot.enabled", "policy.locked"]
         page.keyboard.press("Escape")
         page.wait_for_selector(".tooltip", state="detached")
         # the text stays available to a screen reader after the tip is gone
