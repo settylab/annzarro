@@ -8,6 +8,13 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.6.0 (2026-10-17)
+
+An About dialog and what a public site needs (imprint, privacy notice, a footer); a Dataset
+information dialog with attribution, README and structure; last sessions listed instead of
+redrawn, and plots of a set too large for the browser refused one by one instead of crashing the
+tab; plot options that survive links and Duplicate; and a Publication preset for figures.
+
 ### Added
 - **Last sessions.** The welcome screen and the Load Panel Set dialog list up to three last sessions first ("Last session (autosaved 14:32)", the dataset and the panel count), each with **Restore**. A session whose tab ran out of memory while it was drawn is marked "did not finish loading" and offers **Restore with the default subset**; it is never restored by itself again.
 - **No fill** in the Focused cell group (Plot Options) draws the focused marker as an open circle, its edge only, in 2D, 3D, gene and large plots, in exports and in links, panel sets and Apply to other panels. An edge width under 1 px is raised to 1 px when it is switched on, so the circle always shows.
@@ -38,6 +45,10 @@ with the release after it. Older releases are listed on
 - The About dialog says that the Setty Lab develops and funds AnnZarro (the software), so that a site that runs it is not mistaken for the lab's own.
 
 ### Fixes
+- Choosing "All cells" on a dataset the server shows in full anyway (up to its subsampling
+  threshold) no longer carries every cell to the next, larger dataset: the kept size is forgotten
+  and large datasets open on the server's default subset. Every cell chosen on a larger dataset is
+  still carried.
 - The dataset information dialog shows the dataset's name on one line, cutting the start with an ellipsis (the full path is its tooltip), and tables and code in a README use the dialog's full width.
 - A dataset's README, and the texts of a public site, render bare web addresses as links, and pipe tables, fenced and indented code blocks, horizontal rules, underlined headings and block quotes instead of showing their markup. Tables scroll sideways inside their own box when they are wider than the dialog, and show at most 500 rows and 30 columns.
 - A category hidden with a click on the legend stays hidden when a Cell Plot linked to a filtered Cell Table removes or greys out the cells not in the table. Hiding moved to another category, so other cells disappeared and came back, and a category the table filter emptied came back shown. The hidden entries now follow their category, or colour group, through every redraw, in regular and large plots, until you colour by another column.
@@ -74,10 +85,7 @@ for the focused cell's marker.
   on that many cells when it has more, and with every cell when it has as many or fewer; its badge
   then reads, for example, "All cells (≤ 10,000)", and the next larger dataset is subsampled to the
   size again. The size is kept per browser and user, so a reload keeps it, and the dataset AnnZarro
-  opens when it starts uses it too. Choosing "every cell" on a dataset the server shows in full
-  anyway (up to its subsampling threshold) does not carry every cell to large datasets: the size
-  is forgotten and they open on the server's default subset; only every cell chosen on a larger
-  dataset is carried. "Close all" with the tick box for clearing everything forgets
+  opens when it starts uses it too. "Close all" with the tick box for clearing everything forgets
   it. Share links, panel sets and the restored session still open on the subset they saved.
 - A plot or table whose data the browser ran out of memory for says so in plain words ("the
   browser ran out of memory -- Close a plot, or show fewer cells (a smaller subset), and try
