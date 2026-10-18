@@ -89,7 +89,8 @@ Errors
   below); older routes send only `error`.
 
 Authentication
-: With login enabled, every route except `/login` and `/logout` needs the session cookie set
+: With login enabled, every route except `/login`, `/logout` and the public site pages
+  ({ref}`http-site`) needs the session cookie set
   by `POST /login` (form fields `username`, `password`); without it API routes answer `401`
   `{"error": "Authentication required"}` before anything else is checked. Scripts log in through
   the form and reuse the cookie: `curl -c jar -d "username=...&password=..." https://host/login`,
@@ -469,10 +470,25 @@ were exercised in that order: `200`, `200`, `200`, then `404` for the deleted se
 
 Also registered but not used by the web client: `/data/paginated`, `/data/statistics`,
 `/data/by_path`, `/core/datasets`, `/zarr/to_anndata` (a metadata summary: shape, the first ten obs and var names, key lists, column types; it opens no matrix, so a store with a dense 175,000 x 175,000 `obsp` answers it at once), and the path-segment forms
-`/datasets/<path>`, `/datasets/<path>/info`, `/datasets/<path>/uns/...`. In the path-segment
+`/datasets/<path>`, `/datasets/<path>/info`, `/datasets/<path>/uns/...`, and
+`/datasets/uns/<key>?dataset_path=`. In the path-segment
 forms `<path>` is relative to the data directory (`/datasets/bm_aging_annzarro.zarr`,
 `/datasets/bm_aging_annzarro.zarr/uns/neighbors/params`); a path that does not exist is `404 not_found`,
 one that is not a dataset `400 unsupported_type`.
+
+(http-site)=
+## Public site pages
+
+Outside `/api/v1`, under `server.url_prefix`, and open without sign-in, so they can be linked from
+outside. They are configured under `site` ({doc}`../deployment/public-site`).
+
+| Route | Returns |
+|---|---|
+| `GET /site/imprint`, `/site/privacy`, `/site/accessibility`, `/site/terms` | the text as a plain HTML page (no JavaScript); a text configured with a `url` redirects there (`302`); a text that is not configured is a plain-text `404` |
+| `GET /site/about` | the About dialog as a page: the site's block and AnnZarro's credit |
+| `GET /site/data` | Data & privacy, generated from the running configuration: what the browser keeps, the cookies, what the Gene Set panel may send to which services, and the privacy notice if one is configured |
+| `GET /robots.txt` | `User-agent: *` and `Disallow: /` when `site.robots` asks search engines to stay away (`noindex`, or `auto` with login on; every reply then also carries `X-Robots-Tag: noindex, nofollow`); otherwise `404` |
+| `GET /.well-known/security.txt` | `Contact`, `Expires` (a year ahead) and `Preferred-Languages` (RFC 9116) when `site.security_contact` is set; otherwise `404` |
 
 (http-admin)=
 ## Admin API
@@ -591,7 +607,7 @@ The settings are the keys of the policy registry ({doc}`../design/policy-registr
 
 | Route | Body | Returns |
 |---|---|---|
-| `GET /admin/policy` | | `{version, store_problems, keys, unknown, issues}`. A key is its declaration (`name`, `type`, `scope`, `area`, `description`, `combine`, `restart`, `routes`, `config_path`) with `default`, `value`, `source` (`user`, `admin`, `env`, `config`, `default` or `forced`), `locked`, `layers` (the value of each layer that set it), `inherited` (what applies if the admin value is removed) and `outbound_hosts_now`. `unknown` lists stored names no version declares; `issues` the stored values that are ignored |
+| `GET /admin/policy` | | `{version, store_problems, keys, unknown, issues}`. A key is its declaration (`name`, `type`, `scope`, `area`, `description`, `combine`, `restart`, `routes`, `config_path`, `section`, `guide`, `label`, `config_file`, `config_file_setting`) with `default`, `value`, `source` (`user`, `admin`, `env`, `config`, `default` or `forced`), `locked`, `layers` (the value of each layer that set it), `inherited` (what applies if the admin value is removed) and `outbound_hosts_now`. `unknown` lists stored names no version declares; `issues` the stored values that are ignored |
 | `PUT /admin/policy` | `{"<key>": value, ...}`; `null` removes a value. `feature.remote_stores` (Remote datasets, with a `section` of `data`) takes `{"mode": "off" or "allowlist" or "any", "allowlist": [URL prefix]}`; its key also carries `config_value` and `config_origin` (`config` or `env`) when the operator set it; a refused value is `400` with `messages` naming the problem per key | the same document after the change, and `capped` (for values wider than the layer below) |
 | `GET /admin/site/texts` | | `{"texts": {"imprint": ..., "privacy": ..., "accessibility": ..., "terms": ...}}`: each text as the pages show it now, `{label, url, markdown}` or `null` when not shown. A text the config file reads from a `file` carries the file's content as read at start; the Public site section previews it from here |
 | `GET /admin/users/<username>/policy` | | the keys a user may override, with `override` and `has_override`, `values` (what is stored), and `effective`. `404` `unknown_user` |

@@ -2,7 +2,8 @@
 
 A server with login on has an admin page at `/admin`. It changes, while the server runs and
 without editing YAML, what an administrator is responsible for: which directories the server
-reads from, which panels and external services users get, the server's health, and (in the
+reads from, which panels and external services users get, the texts a public site shows its
+visitors, the server's health, and (in the
 Users section and its Access panel) who may sign in and which datasets they see. Every change is
 written to an audit log. The API behind the page is documented in {ref}`http-admin`.
 
@@ -44,8 +45,8 @@ stores goes into one small directory. Where the two disagree, the rule depends o
    in the log.
 4. **Open `/admin`** after signing in (`https://your-host/admin`, or under `server.url_prefix`).
 
-The page has six sections: Users, Data sources, Server health, Panel sets, Settings and
-Audit log.
+The page has seven sections: Users, Data sources, Server health, Panel sets, Settings, Public
+site and Audit log.
 
 ### Where the state lives
 
@@ -373,6 +374,20 @@ equal. Three notes:
   {ref}`config-environment`.
 - A tab opened before an admin switches external hosts off sends nothing at its next Run and
   shows the notice.
+
+(admin-public-site-section)=
+## Public site
+
+The Public site section sets the `site` keys while the server runs: the imprint, privacy notice,
+accessibility statement and terms of use (each a link or a text written there, with a live
+preview), the operator, the contact and its link text, the footer, search engines, the security
+contact, the language of the texts, the AnnZarro credit in About and whether convenience items are
+kept between visits. A checklist at the top says which of imprint, privacy notice, contact and
+accessibility statement are missing. A saved change shows in the footer, About and the `/site/`
+pages at the next request, without a restart. A value set here wins over the configuration file
+until **Reset to config file**, unless `policy.locked` names the key; a text's `file` can only be
+set in the configuration file. Every field, the precedence and what each key shows where are in
+{ref}`admin-public-site`.
 
 ## Panel sets
 
