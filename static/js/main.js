@@ -2182,7 +2182,7 @@ const App = (function() {
             isDesktop: document.documentElement.hasAttribute('data-desktop'),
             get localMode() { return Config.SERVER_CONFIG.local_mode === true || Config.SERVER_CONFIG.single_user === true; },
             copy: (text) => navigator.clipboard.writeText(text),
-            shortcut: { open: _isMac() ? '\u2318O' : 'Ctrl+O', path: _isMac() ? '\u2318L' : 'Ctrl+L' }
+            shortcut: { open: _isMac() ? '\u2318O' : 'Ctrl+O', path: '/' }
         };
     }
 

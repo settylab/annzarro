@@ -11,7 +11,7 @@ stores are switched on and limited in the server's configuration.
 1. Click the dataset button at the left of the dataset bar (or press **Ctrl+O**, **Cmd+O** on a Mac).
 2. Type the store's URL into the search field of the dataset browser, for example
    `https://data.example.org/zarr/atlas.zarr` or `s3://my-lab-bucket/atlases/atlas.zarr`. The table
-   offers **Open** *URL* as its first row. (The path field, **Ctrl+L**, takes a URL too.)
+   offers **Open** *URL* as its first row. (The path field, opened with **/**, takes a URL too.)
 
    ```{figure} ../_static/screens/user-guide/remote-typed.png
    :class: screenshot

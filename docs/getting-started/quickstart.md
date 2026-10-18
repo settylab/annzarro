@@ -62,7 +62,7 @@ this server (here the five protocol views of the demonstration data).
 1. Click the dataset button at the left of the bar under the header (it reads "Open a dataset...") and
    click the name `bm_aging_annzarro.zarr`. The bar then shows its size (for the demonstration store,
    "Cells: 8,090" and "Genes: 16,285"). To open a store
-   outside the data directory on your own machine, press **Ctrl+L** in the browser and type its full
+   outside the data directory on your own machine, press **/** in the browser and type its full
    path; a remote URL such as `s3://bucket/atlas.zarr` is entered the same way
    ({doc}`../user-guide/remote-datasets`).
 2. Check the **Focused Gene** and **Focused Cell** boxes in the header. They start at the
