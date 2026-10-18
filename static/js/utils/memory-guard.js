@@ -80,7 +80,7 @@ export const LARGEST_TESTED_POINTS = 200000000;
  * browser engine where ui.memory.buffers_gb is not set. The RAM budget
  * (total) protects the computer; this is the tab's own ceiling, which a
  * computer with 128 GB reaches long before its RAM: six Cell Plots of
- * 95.6M cells need about 7 GB each, which the RAM budget lets through.
+ * 95.6M cells hold 8 to 9 GB each (heldPerPoint), which the RAM budget lets through.
  * - v8 (Chrome, Edge, the desktop app): 16.6 GB, measured: a fresh tab
  *   gives 31 blocks of 512 MiB, the 32nd fails with `RangeError: Array
  *   buffer allocation failed` (Chrome 130 and the Chromium of the tests,
@@ -207,11 +207,23 @@ export const DEFAULT_MODEL = {
          */
         redrawBeside: 14,
         /**
-         * ArrayBuffer bytes per point a drawn plot holds: 61 for the plot
-         * (12.9 GB at 210M, measured) + 8 for its point index; freed when its
-         * replacement draws.
+         * ArrayBuffer bytes per point a drawn plot holds, its point index
+         * included, beside the client cache (Ledger.buffers adds that);
+         * freed when its replacement draws. Measured on tahoe (95,624,334
+         * points, every cell, 0.6.0, M3 Max with 128 GB) as the drop in
+         * what a tab gives in 256 MiB blocks (Chromium) or the rise in the
+         * WebContent process's phys_footprint (WebKit), less the cache:
+         * Chromium 7.29 GB (76 B a point, the default colour), 8.09 GB
+         * (85 B, coloured by total_counts) and 8.13 GB (85 B, a plot moved
+         * from another dataset); WebKit 7.29 GB (76 B, default colour, the
+         * same as Chromium). 85 + 3 for the 256 MiB step of the
+         * measurement: 88, so 95.6M points and the 0.77 to 1.0 GB cache
+         * come to 9.2 to 9.4 GB, at or above the 9.13 GB measured. Earlier
+         * 61 + 8 (12.9 GB at 210M, plot and index) was short at this size.
+         * Also the credit a redraw beside the old plot counts on
+         * (large-plot.js probeDraw).
          */
-        heldPerPoint: 61 + 8
+        heldPerPoint: 88
     },
     /**
      * Transient costs on top of what the panel holds.
@@ -455,7 +467,8 @@ export function panelCost({ kind, n, large = false, colour = 'numeric', threeD =
 export function panelBuffers({ kind, n, large = false, threeD = false }, model = DEFAULT_MODEL) {
     const pts = Math.max(0, Number(n) || 0);
     if (kind !== 'cell-plot' && kind !== 'gene-plot') return { resident: 0, peak: 0 };
-    if (large) return { resident: model.large.heldPerPoint * pts, peak: model.large.arrayBuffers * pts };
+    // the peak is at least what the drawn plot then holds
+    if (large) return { resident: model.large.heldPerPoint * pts, peak: Math.max(model.large.arrayBuffers, model.large.heldPerPoint) * pts };
     const off = model.regular.off * pts * (threeD ? model.regular.threeD : 1);
     return { resident: off, peak: off };
 }

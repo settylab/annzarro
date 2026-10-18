@@ -360,9 +360,9 @@ What does not fit is not started, and the panel or the control says what it need
 and what helps: close a plot, or show fewer cells. Two limits matter, whatever the computer's RAM: the browser's
 JavaScript memory, about 4.4 GB in Chrome on a 64-bit computer, of which a regular plot holds
 400 to 900 bytes per point; and the array buffers one tab may hold, about 16.6 GB in Chrome and
-15 GB in Safari, of which a plot in large-plot mode holds about 70 bytes per point. The buffers
+15 GB in Safari, of which a plot in large-plot mode holds about 90 bytes per point. The buffers
 of every open plot count together: with six Cell Plots open, every cell of a 95.6-million-cell
-dataset is refused (six plots of about 7 GB), and the dialog says up to which size they fit.
+dataset is refused (six plots of 8 to 9 GB), and the dialog says up to which size they fit.
 The headline of a refusal names the limit: **JS memory**, **browser buffers**, **browser
 memory** (the share of the computer's memory a tab is given) or **WebGL canvases** (a page keeps
 at most 16).

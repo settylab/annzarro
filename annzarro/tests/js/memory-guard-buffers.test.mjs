@@ -5,7 +5,7 @@
  *
  * The case it answers: six Cell Plots of 100,000 cells on a 95.6M-cell
  * dataset, a computer with 128 GB. The RAM budget (the computer's memory
- * less a reserve, ~96 GB) let every cell through (six plots of ~7 GB), but a
+ * less a reserve, ~96 GB) let every cell through (six plots of 8 to 9 GB), but a
  * Chrome tab holds about 16.6 GB of ArrayBuffers in all and Safari ends a
  * page at about 15 GB: the change ran the tab out, and after the crash the
  * dialog offered every cell again.
@@ -75,31 +75,34 @@ test('the buffer ceiling per engine, the setting, and what a crash taught', () =
 
 test('what a plot holds in buffers', () => {
     const L = m.DEFAULT_MODEL.large;
-    assert.deepEqual(m.panelBuffers({ kind: 'cell-plot', n: N, large: true }), { resident: L.heldPerPoint * N, peak: L.arrayBuffers * N });
+    // the peak is at least what the drawn plot then holds
+    const P = Math.max(L.arrayBuffers, L.heldPerPoint);
+    assert.deepEqual(m.panelBuffers({ kind: 'cell-plot', n: N, large: true }), { resident: L.heldPerPoint * N, peak: P * N });
     assert.deepEqual(m.panelBuffers({ kind: 'cell-table', n: N }), { resident: 0, peak: 0 });
     const r = m.panelBuffers({ kind: 'cell-plot', n: 100000 });
     assert.equal(r.resident, m.DEFAULT_MODEL.regular.off * 100000);
     // a large plot redrawn large frees its old buffers step by step
     const old = { kind: 'cell-plot', n: N, large: true };
     assert.equal(m.bufferDrawNeed({ kind: 'cell-plot', n: N, large: true }, old), L.redrawBeside * N);
-    assert.equal(m.bufferDrawNeed({ kind: 'cell-plot', n: N, large: true }, null), L.arrayBuffers * N);
+    assert.equal(m.bufferDrawNeed({ kind: 'cell-plot', n: N, large: true }, null), P * N);
 });
 
 test('a subset change: large plots take turns, each beside the ones drawn before it', () => {
     const L = m.DEFAULT_MODEL.large;
+    const P = Math.max(L.arrayBuffers, L.heldPerPoint);
     const plots = Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, kind: 'cell-plot', n: 100000, large: false }));
     const b = m.predictSubsetBuffers(N, plots, THRESHOLD);
     const old = m.DEFAULT_MODEL.regular.off * 100000;
     assert.equal(b.before, 6 * old);
     // the sixth plot draws while five hold their new buffers, beside its own old plot
-    assert.ok(Math.abs(b.peak - (5 * L.heldPerPoint * N + L.arrayBuffers * N + old)) < 1, b.peak);
+    assert.ok(Math.abs(b.peak - (5 * L.heldPerPoint * N + P * N + old)) < 1, b.peak);
     assert.ok(Math.abs(b.after - 6 * L.heldPerPoint * N) < 1);
     // tables and gene plots hold no buffers that change
     const mixed = m.predictSubsetBuffers(N, [{ id: 't', kind: 'cell-table', n: 100000 }, plots[0]], THRESHOLD);
-    assert.ok(Math.abs(mixed.peak - (L.arrayBuffers * N + old)) < 1);
+    assert.ok(Math.abs(mixed.peak - (P * N + old)) < 1);
     // a 3D plot does not draw large
     const flat = m.predictSubsetBuffers(N, [{ ...plots[0], threeD: true }], THRESHOLD, m.DEFAULT_MODEL, p => !p.threeD);
-    assert.ok(flat.peak > L.arrayBuffers * N);
+    assert.ok(flat.peak > P * N);
 });
 
 test('check() names the buffers when they bind, and a close call leaves a crash marker', () => {
@@ -190,7 +193,7 @@ test('six plots of 100k cells, 128 GB: every cell is refused for the buffers, an
     const L = m.DEFAULT_MODEL.large;
     const lim = ui.limits().buffers.bytes;
     // the sixth plot draws beside five drawn ones, with the margin
-    const expect = lim / ((1 + ui.settings().margin) * (5 * L.heldPerPoint + L.arrayBuffers));
+    const expect = lim / ((1 + ui.settings().margin) * (5 * L.heldPerPoint + Math.max(L.arrayBuffers, L.heldPerPoint)));
     assert.ok(Math.abs(most - expect) / expect < 0.01, `${most} vs ${expect}`);
     assert.ok(ui.subsetCheck(most, THRESHOLD).fits);
     // one plot draws every cell
@@ -257,7 +260,7 @@ test('the allocation probe refuses what the browser does not give, and only that
         const refused = ui.newPanelCheck('cell-plot', { n: N, large: true });
         assert.equal(refused.fits, false);
         assert.equal(refused.binding, 'alloc');
-        assert.match(refused.why, /cannot allocate the ~7\.7 GB the new plot needs/);
+        assert.match(refused.why, /cannot allocate the ~8\.4 GB the new plot needs/);
         // a small plot is not probed
         assert.equal(ui.newPanelCheck('cell-plot', { n: 100000 }).fits, true);
     } finally {

@@ -170,7 +170,7 @@ gives 31 blocks of 512 MiB and refuses the 32nd), and Safari ends a page whose m
 15 GB on a computer with more than 16 GB (7 GB below; WebKit's own limit, not measured here).
 So `heap_gb` is the setting that matters for regular plots; large-plot mode keeps its points in
 typed arrays, and for it `buffers_gb` and `total_gb` are the limits. The buffers of every open plot
-count together: six Cell Plots of 95.6 million cells need about 7 GB each, which a 128 GB
+count together: six Cell Plots of 95.6 million cells need 8 to 9 GB each, which a 128 GB
 computer's budget holds and no tab does.
 
 **How the estimates were made.** On an Apple M3 Max laptop with Chrome, drawing up to 182 million

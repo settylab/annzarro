@@ -20,10 +20,12 @@ what the ledger holds at that moment (Config.DEFAULTS.MEMORY), as in
 test_memory_guard.py. Chromium, and WebKit where the engine matters (it
 gets Safari's ceiling) when Playwright has it.
 """
+import urllib.parse
+
 import pytest
 
 from annzarro.tests.browser.test_memory_guard import (  # noqa: F401  (fixtures)
-    playwright, server, large_server, _link, _drawn, until, SET_FREE, REFUSING_ALLOCATOR,
+    playwright, server, large_server, _link, _drawn, _serve, until, SET_FREE, REFUSING_ALLOCATOR, STORE,
 )
 
 
@@ -212,3 +214,49 @@ def test_a_refusal_only_the_crash_margin_makes_offers_reset(server, engine_page)
     page.click('.tile[data-tile-id="cell-plot-m"] .coverage-placeholder [data-ps-action="memory-reset"]')
     _drawn(page, "cell-plot-m")
     assert page.evaluate("() => localStorage.getItem('annzarro_memory_margin')") is None
+
+
+@pytest.fixture(scope="module")
+def one_plot_server(tmp_path_factory):
+    """Large-plot mode above 100 points, and buffers for one plot of the
+    fixture's 200 cells and not two: about 3.6 KB of cache, 17.6 KB a plot,
+    a draw's need x 1.2 is 21 KB, so 34 KB holds the first one only."""
+    root, proc = _serve(tmp_path_factory, "ui:\n  defaults:\n    large_plot_points: 100\n"
+                                          "  memory:\n    buffers_gb: 0.000034\n")
+    yield root
+    proc.terminate()
+    proc.wait(10)
+
+
+CREATE_TILE = '.panel-type-option[data-type="cell-plot"]'
+TILE_BLOCKED = """() => [...document.querySelectorAll('.panel-type-option[data-type="cell-plot"]')]
+    .map(o => o.classList.contains('memory-blocked'))"""
+
+
+def test_after_a_reload_on_every_cell_one_plot_can_be_made(one_plot_server, engine_page):
+    """The operator's repro, on the fixture: a fresh profile, the dataset
+    opened by its address, every cell chosen, the page reloaded: the create
+    tile offers a Cell Plot when one fits, and refuses the second one,
+    naming the buffers."""
+    page = engine_page
+    page.goto(f"{one_plot_server}/?dataset_path={urllib.parse.quote(STORE, safe='/')}")
+    page.wait_for_function("() => /^200$/.test((document.getElementById('cell-count') || {}).textContent.trim())",
+                           timeout=30000)
+    page.click("#subset-button")
+    page.wait_for_selector("#subset-modal", state="visible")
+    page.uncheck("#subset-enabled")
+    page.click("#subset-apply")
+    page.wait_for_selector("#subset-modal", state="hidden")
+    page.reload()
+    page.wait_for_function("() => /^200$/.test((document.getElementById('cell-count') || {}).textContent.trim())",
+                           timeout=30000)
+    page.locator(CREATE_TILE).last.wait_for(state="attached", timeout=10000)
+    page.wait_for_timeout(500)
+    assert not any(page.evaluate(TILE_BLOCKED)), page.locator(CREATE_TILE).last.get_attribute("title")
+    page.locator(CREATE_TILE).last.click()
+    pid = until(page, """async () => { const t = document.querySelector('.tile[data-tile-id^="cell-plot"]');
+        return t && t.dataset.tileId; }""")
+    _drawn(page, pid)
+    # a second one does not fit beside it, and the tile says which limit
+    page.wait_for_function(f"() => ({TILE_BLOCKED})().every(Boolean)", timeout=15000)
+    assert page.locator(CREATE_TILE).last.locator(".memory-note").inner_text() == "Not enough browser buffers"
