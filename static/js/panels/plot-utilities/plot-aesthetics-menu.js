@@ -355,7 +355,7 @@ export function createPopoverContent(id, settings) {
             <div class="input-group input-group-sm mb-1">
                 <span class="input-group-text">Opacity</span>
                 <input type="number" class="form-control" id="not-in-table-opacity-${id}"
-                    value="${settings.notInTableOpacity ?? ''}" placeholder="auto" min="0.01" max="1" step="0.05">
+                    value="${settings.notInTableOpacity ?? ''}" placeholder="auto" min="0.05" max="1" step="0.05" data-step-from="1">
             </div>
             <div class="d-flex align-items-center gap-2">
                 <label class="form-label mb-0 me-2">Color</label>
@@ -376,8 +376,8 @@ export function createPopoverContent(id, settings) {
             <div class="input-group input-group-sm mb-1">
                 <span class="input-group-text">Opacity</span>
                 <input type="number" class="form-control" id="focused-opacity-${id}"
-                    value="${settings.focusedOpacity ?? ''}" placeholder="${FOCUS_DEFAULTS.opacity}" min="0.01" max="1" step="0.05"
-                    title="0 to 1; empty: opaque">
+                    value="${settings.focusedOpacity ?? ''}" placeholder="${FOCUS_DEFAULTS.opacity}" min="0.05" max="1" step="0.05"
+                    data-step-from="${FOCUS_DEFAULTS.opacity}" title="0 to 1; empty: opaque">
             </div>
             <div class="input-group input-group-sm mb-1">
                 <span class="input-group-text">Edge width</span>
@@ -1241,7 +1241,20 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
     };
     document.addEventListener('toggle', onToggle, true);   // 'toggle' does not bubble
 
+    // An empty number box shows its default as a placeholder; the arrows step from that, not from the minimum
+    const onStepKey = (e) => {
+        const t = e.target;
+        if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || !t.matches || !t.matches('input[type="number"][data-step-from]')) return;
+        if (t.value !== '' || !t.id.endsWith(`-${id}`)) return;
+        e.preventDefault();
+        t.value = t.dataset.stepFrom;
+        if (e.key === 'ArrowUp') t.stepUp(); else t.stepDown();
+        t.dispatchEvent(new Event('input', { bubbles: true }));
+        t.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
     // Use event delegation on document body for better event handling
+    document.body.addEventListener('keydown', onStepKey);
     document.body.addEventListener('click', menuHandler);
     document.body.addEventListener('change', menuHandler);
     document.body.addEventListener('input', menuHandler);
@@ -1249,6 +1262,7 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
     // Return a cleanup function to remove listeners when needed
     return function cleanup() {
         document.removeEventListener('toggle', onToggle, true);
+        document.body.removeEventListener('keydown', onStepKey);
         document.body.removeEventListener('click', menuHandler);
         document.body.removeEventListener('change', menuHandler);
         document.body.removeEventListener('input', menuHandler);
