@@ -6,9 +6,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    legendDotSize, proxyMarkerSize, legendColumns, legendOrientation, legendTitleText, columnEntryWidth, legendMaxWidth,
+    legendDotSize, proxyMarkerSize, legendColumns, legendOrientation, legendTitleText, columnSizes, assignColumns,
     legendOptionsIntoLayout, legendOptionKeys, DOT_SIZE_MAX
 } from '../../../static/js/utils/legend-options.js';
+import { legendKey } from '../../../static/js/utils/legend-entries.js';
 import { normalizePlotOptions, pickStyle, adoptStyle, defaultLook } from '../../../static/js/panels/plot-utilities/plot-options.js';
 import { legendPlacement } from '../../../static/js/panels/plot-utilities/plot-aesthetics-menu.js';
 
@@ -21,7 +22,7 @@ test('unset, the legend is the constant one it always was', () => {
     assert.equal(legendColumns(s), 1);
     assert.equal(legendOrientation('v', s), 'v');
     assert.equal(legendTitleText(s), 'cell_type');
-    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': 'cell_type', 'legend.title.side': null, 'meta.azLegendColumns': 1 });
+    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': 'cell_type', 'legend.title.side': null, 'legend.traceorder': null, 'legend.groupclick': null, 'meta.azLegendColumns': 1 });
 });
 
 test('a dot size is clamped to what Plotly draws and gives the proxies that size', () => {
@@ -50,23 +51,41 @@ test('the title can be switched off', () => {
     assert.equal(legendTitleText({ color: colour, showLegendTitle: true }), 'cell_type');
 });
 
-test('the entry width fits N columns and not N + 1, and never cuts a label', () => {
-    const A = (w, itemwidth = 30) => w + itemwidth + 15;               // what an entry advances by
-    for (const [columns, maxWidth, textWidth] of [[2, 500, 60], [3, 500, 60], [4, 780, 90], [2, 300, 20]]) {
-        const w = columnEntryWidth({ columns, maxWidth, textWidth });
-        assert.ok(columns * A(w) <= maxWidth, `${columns} columns fit in ${maxWidth}`);
-        assert.ok((columns + 1) * A(w) > maxWidth, `${columns + 1} do not`);
-        assert.ok(w >= textWidth);
-    }
-    // a label too long for the columns wins: fewer columns
-    assert.equal(columnEntryWidth({ columns: 4, maxWidth: 400, textWidth: 200 }), 200);
-    assert.equal(columnEntryWidth({ columns: 2, maxWidth: 500, textWidth: 60, itemwidth: 50 }), Math.ceil(500 / 3 + 2 - 65));
+const proxy = (name, rank) => ({ meta: 'az-legend', name, legendgroup: name, showlegend: true, ...(rank === undefined ? {} : { legendrank: rank }) });
+const points = (name) => ({ meta: 'az-points', name, legendgroup: name, showlegend: false });
+
+test('columns deal the entries as evenly as can be, the first columns longer', () => {
+    assert.deepEqual(columnSizes(10, 3), [4, 3, 3]);
+    assert.deepEqual(columnSizes(5, 4), [2, 1, 1, 1]);
+    assert.deepEqual(columnSizes(2, 4), [1, 1]);              // never an empty column
+    assert.deepEqual(columnSizes(6, 2), [3, 3]);
 });
 
-test('a legend beside the plot wraps at half the graph, else at the plot', () => {
-    assert.equal(legendMaxWidth({ legend: { x: 1.05 }, width: 1000, _size: { w: 700 } }), 500);
-    assert.equal(legendMaxWidth({ legend: { x: -0.05 }, width: 1000, _size: { w: 700 } }), 500);
-    assert.equal(legendMaxWidth({ legend: { x: 0.5 }, width: 1000, _size: { w: 700 } }), 700);
+test('entries go to column groups in legend order, and keep their category', () => {
+    const traces = [points('a'), points('b'), points('c'), points('d'), proxy('a'), proxy('b'), proxy('c'), proxy('d')];
+    assert.equal(assignColumns(traces, 2), true);
+    assert.deepEqual(traces.filter(t => t.meta === 'az-legend').map(t => t.legendgroup), ['azcol0', 'azcol0', 'azcol1', 'azcol1']);
+    assert.deepEqual(traces.filter(t => t.meta === 'az-legend').map(legendKey), ['a', 'b', 'c', 'd']);   // the category, not the column
+    assert.deepEqual(traces.filter(t => t.meta === 'az-points').map(t => t.legendgroup), ['a', 'b', 'c', 'd']);   // the points untouched
+    assert.equal(assignColumns(traces, 2), false);            // already there
+    assignColumns(traces, 3);                                 // another count regroups from the same categories
+    assert.deepEqual(traces.filter(t => t.meta === 'az-legend').map(t => t.legendgroup), ['azcol0', 'azcol0', 'azcol1', 'azcol2']);
+    assert.equal(assignColumns(traces, 1), true);             // one column: as it was
+    assert.deepEqual(traces.filter(t => t.meta === 'az-legend').map(t => [t.legendgroup, t.azKey]), [['a'], ['b'], ['c'], ['d']].map(([g]) => [g, undefined]));
+    assert.equal(assignColumns(traces, 1), false);
+});
+
+test('legend rank orders the entries before their position', () => {
+    const traces = [proxy('x', 3), proxy('y', 1), proxy('z', 2)];
+    assignColumns(traces, 3);
+    assert.deepEqual(traces.map(t => t.legendgroup), ['azcol2', 'azcol0', 'azcol1']);
+});
+
+test('one column changes nothing', () => {
+    const traces = [points('a'), proxy('a'), proxy('b')];
+    const before = JSON.stringify(traces);
+    assert.equal(assignColumns(traces, 1), false);
+    assert.equal(JSON.stringify(traces), before);
 });
 
 test('a layout carries the options; unset it is the constant legend', () => {
@@ -76,6 +95,8 @@ test('a layout carries the options; unset it is the constant legend', () => {
     assert.equal(layout.legend.orientation, 'h');
     assert.equal(layout.legend.title.text, '');
     assert.equal(layout.legend.title.side, 'top');
+    assert.equal(layout.legend.traceorder, 'grouped');
+    assert.equal(layout.legend.groupclick, 'toggleitem');
     assert.equal(layout.meta.azLegendColumns, 2);
     const plain = legendOptionsIntoLayout({ legend: { orientation: 'v' } }, { color: colour });
     assert.equal(plain.legend.itemsizing, 'constant');

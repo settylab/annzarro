@@ -37,6 +37,7 @@
 
 import { syncSceneCamera } from './scene-camera.js';
 import { withLegendInvariant, withLegendState } from './legend-entries.js';
+import { withLegendColumns } from './legend-options.js';
 
 const VIRTUAL = new Set(['restyle', 'relayout', 'update', 'addTraces', 'deleteTraces']);
 
@@ -254,6 +255,7 @@ function _draw(gd) {
     withLegendInvariant(b.data, b.layout);
     // hidden legend entries by name, not index, across the traces rebuilt (legend-entries.js)
     withLegendState(gd, b.data, b.layout);
+    withLegendColumns(b.data, b.layout);
     return real.react(gd, b.data, b.layout);
 }
 

@@ -34,6 +34,14 @@ def large_server(tmp_path_factory):
     proc.wait(10)
 
 
+# the widest legend entry: its symbol and its label
+WIDEST = """(id) => Math.max(...[...(%s)(id).querySelectorAll('.legend g.traces')].map(g => g.getBoundingClientRect().width))""" % GD
+# which categories' points are drawn: the visible point traces, by legend group
+SHOWN = """(id) => { const gd = (%s)(id); return gd.data.filter(t => t.meta === 'az-points' || (t.legendgroup && t.showlegend === false && t.meta !== 'az-legend'))
+    .filter(t => t.visible !== 'legendonly').map(t => t.legendgroup).sort(); }""" % GD
+ENTRIES = """(id) => [...(%s)(id).querySelectorAll('.legend g.traces')].map(g => g.getBoundingClientRect())""" % GD
+
+
 def _title_above(page, pid=A):
     """The legend's title lies above its first entry, not beside it."""
     page.wait_for_function("(id) => !!(%s)(id).querySelector('.legend .legendtitletext')" % GD, arg=pid)
@@ -81,7 +89,8 @@ def _exercise(page, root, extra=None, large=False):
     assert two["orientation"] == "h" and two["rows"] == -(-n // 2), two
     # compact: the columns are as far apart as two (not more) need, not stretched over the page
     xs = sorted({i["x"] for i in two["items"]})
-    assert xs[1] - xs[0] <= two["width"] / 2 / 3 + 12, two
+    assert xs[1] - xs[0] <= page.evaluate(WIDEST, A) + 40, (two, page.evaluate(WIDEST, A))
+    assert two["rows"] == -(-n // 2) and two["columns"] == 2, two
     _title_above(page)
     assert {i["dot"] for i in two["items"]} == {16}, two                     # the dot size stays
     _change(page, f"#legend-columns-{A}", 3)
@@ -92,7 +101,20 @@ def _exercise(page, root, extra=None, large=False):
         page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll('.legend g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === %d" % (GD, min(3, n)), arg=A, timeout=15000)
         page.wait_for_timeout(600)
         _title_above(page)
-    # 2 -> 1 with the spinner: the single vertical column again
+    # a click on an entry hides that category's points alone, not its column's; a double click isolates it
+    cats = page.evaluate(SHOWN, A)
+    assert len(cats) >= 3 and not any(c.startswith("azcol") for c in cats), cats
+    r = page.evaluate(ENTRIES, A)[0]
+    page.mouse.click(r["x"] + r["width"] / 2, r["y"] + r["height"] / 2)
+    page.wait_for_function("([id, n]) => (%s)(id).data.filter(t => t.meta === 'az-points' && t.visible !== 'legendonly').length === n" % GD, arg=[A, len(cats) - 1], timeout=15000)
+    page.mouse.click(r["x"] + r["width"] / 2, r["y"] + r["height"] / 2)
+    page.wait_for_function("([id, n]) => (%s)(id).data.filter(t => t.meta === 'az-points' && t.visible !== 'legendonly').length === n" % GD, arg=[A, len(cats)], timeout=15000)
+    page.mouse.dblclick(r["x"] + r["width"] / 2, r["y"] + r["height"] / 2)
+    page.wait_for_function("([id]) => (%s)(id).data.filter(t => t.meta === 'az-points' && t.visible !== 'legendonly').length === 1" % GD, arg=[A], timeout=15000)
+    page.mouse.dblclick(r["x"] + r["width"] / 2, r["y"] + r["height"] / 2)
+    page.wait_for_function("([id, n]) => (%s)(id).data.filter(t => t.meta === 'az-points' && t.visible !== 'legendonly').length === n" % GD, arg=[A, len(cats)], timeout=15000)
+    # 2 -> 1 with the spinner: the single vertical column again (a click on the plot closed the menu)
+    _menu(page, A, "legend")
     _change(page, f"#legend-columns-{A}", 2)
     page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll('.legend g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === 2" % GD, arg=A, timeout=15000)
     page.focus(f"#legend-columns-{A}")
@@ -154,3 +176,31 @@ def test_text_size_has_a_reset(page, server):
     page.wait_for_function("(id) => (%s)(id)._fullLayout.font.size === 12" % GD, arg=A)
     assert page.input_value(f"#font-size-{A}") == "12" and page.is_disabled(f"#reset-font-size-{A}")
     assert _settings(page, A)["fontSize"] == 12
+
+
+from annzarro.tests.browser.test_many_categories import server as many_server  # noqa: E402,F401  (the fixture)
+
+
+def test_64_entries_in_columns(page, many_server):
+    import base64
+    import json
+    from annzarro.tests.browser import test_many_categories as M
+    root, store = many_server
+    for columns in (4, 8):
+        link = M._link(root, store, colour="clone")
+        head, enc = link.split("#view=")
+        view = json.loads(base64.urlsafe_b64decode(enc + "=" * (-len(enc) % 4)))
+        view["layout"]["panelConfigs"]["cell-plot-M"]["legendColumns"] = columns
+        link = head + "#view=" + base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+        page.goto(link)
+        page.wait_for_function("() => document.querySelectorAll('.tile[data-tile-id=\"cell-plot-M\"] .legend g.traces').length === 64", timeout=60000)
+        page.wait_for_timeout(1200)
+        s = page.evaluate("""() => { const gd = document.querySelector('.tile[data-tile-id="cell-plot-M"] .js-plotly-plot');
+            const r = gd.getBoundingClientRect();
+            const items = [...gd.querySelectorAll('.legend g.traces')].map(g => g.getBoundingClientRect());
+            return { n: items.length, left: Math.min(...items.map(i => i.left)) - r.left, right: Math.max(...items.map(i => i.right)) - r.left,
+                     width: r.width, columns: new Set(items.map(i => Math.round(i.x))).size }; }""")
+        assert s["n"] == 64 and s["left"] >= -1 and s["right"] <= s["width"] + 1, s     # all drawn, inside the graph
+        assert s["columns"] <= columns * 2, s                                           # wraps into rows of columns, not into one row
+        if columns == 4:
+            assert s["columns"] == 4, s
