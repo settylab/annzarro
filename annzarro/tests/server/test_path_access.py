@@ -85,6 +85,7 @@ NO_PATH = {
     "admin.access_overview", "admin.access_check", "admin.user_access", "admin.user_access_set",
     "admin.user_grants_add", "admin.user_grants_remove",   # access admin: paths to grant or check, never opened (test_admin_user_access.py)
     "admin.policy", "admin.user_policy",           # test_admin_settings.py
+    "admin.site_texts",                            # test_site_admin.py: takes no argument, reads the site in effect
     "admin.health", "admin.cache_clear",   # the cache clear names a cache key in its body, never opened
     "admin.data_roots", "admin.data_roots_browse", "admin.data_roots_datasets",   # data directories: admin only, they name
     "admin.data_roots_add", "admin.data_roots_remove",   # directories to add, not datasets to read (test_admin_data_roots.py)
