@@ -72,7 +72,7 @@ STORAGE_INVENTORY = (
      "Convenience"),
     ("annzarro_memory_pending, annzarro_memory_margin", "A marker that a heavy action was under way, and the "
      "memory margin learned from it for actions of that size, so a tab that ran out of memory does not repeat it "
-     "(forgotten after a week, when an action that large succeeds, or with Reset)", "Technical"),
+     "(forgotten after a week, when an action that large succeeds, or with Reset the margin)", "Technical"),
 )
 
 _URL_RE = re.compile(r"^(?:https?://[^\s]+|mailto:[^\s]+)$", re.IGNORECASE)
@@ -677,17 +677,17 @@ _HELP = {
     "contact_label": "The link text of the contact in the footer and in About (German sites: Kontakt).",
     "footer_links": "auto: a small footer line on every page links the texts (and, on a hosted server, About "
                     "and Data & privacy). about-only: only the About dialog lists them.",
-    "robots": "Whether search engines may index the site. auto: not when login is on. noindex sends "
-              "X-Robots-Tag and serves a robots.txt that disallows everything.",
+    "robots": "Whether search engines may index the site. auto: not when login is on. index: always. noindex "
+              "sends X-Robots-Tag and serves a robots.txt that disallows everything.",
     "security_contact": "A mailto: or https:// address for vulnerability reports; serves "
                         "/.well-known/security.txt (RFC 9116).",
     "languages": "The language of your texts (en, de ...): the lang of the text pages and Preferred-Languages "
                  "in security.txt.",
     "software_credits": "Keeps AnnZarro's credit in About (the Setty Lab, the NIH funding, how to cite it). "
                         "Off leaves the name, version, licence and links. It credits the software, never your site.",
-    "storage.persistent_convenience": "Off keeps the layout autosave and the recent datasets only until the tab "
-                                      "closes, so the browser keeps nothing between visits but the visitor's own "
-                                      "choices.",
+    "storage.persistent_convenience": "Off keeps the layout autosave, the last sessions and the recent datasets "
+                                      "only until the tab closes, so the browser keeps nothing between visits but "
+                                      "the visitor's own choices.",
 }
 
 

@@ -541,7 +541,7 @@ site:
       properties:
         persistent_convenience:
           type: boolean
-          description: "false keeps the layout autosave and the recent datasets only until the tab closes"
+          description: "false keeps the layout autosave, the last sessions and the recent datasets only until the tab closes"
           default: true
 
 # UI configuration
@@ -564,11 +564,11 @@ ui:
         max_cells:
           type: integer
           description: Maximum number of cells to display
-          default: 10000
+          default: 1000000
         max_genes:
           type: integer
           description: Maximum number of genes to display
-          default: 10000
+          default: 1000000
         point_size:
           type: number
           description: Default point size
@@ -579,7 +579,7 @@ ui:
           default: 1.0
         color_scale:
           type: string
-          description: Default color scale
+          description: Default continuous colour scale
           default: Portland
         taxonomy_id:
           type: string
@@ -587,7 +587,7 @@ ui:
           default: "9606"
         large_plot_points:
           type: integer
-          description: A Cell Plot with more points than this is drawn in large-plot mode (no hover, click or table filter)
+          description: A Cell Plot with more points than this is drawn in large-plot mode (hover and click work; no table filter, 3D or extra hover columns)
           default: 1000000
         names_on_demand_above:
           type: integer
@@ -660,7 +660,7 @@ ui:
           default: 10000
         storage_key:
           type: string
-          description: Local storage key for autosaved session
+          description: Browser storage key of the autosaved session
           default: annzarro_autosave
         session_name:
           type: string
@@ -673,7 +673,7 @@ ui:
         auto_restore:
           type: [string, boolean]
           enum: [reload, always, never, true, false]
-          description: "When a page restores the autosave by itself: reload (a reload of the tab; a fresh visit lists it first), always (every visit) or never; true and false mean always and never. A session that did not finish loading is never restored by itself"
+          description: "When a page restores the autosave by itself: reload (a reload of the tab, Back or Forward; a fresh visit lists it first), always (every visit) or never; true and false mean always and never. A session that did not finish loading is never restored by itself"
           default: reload
   required:
     - defaults

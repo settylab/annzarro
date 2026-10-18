@@ -148,7 +148,10 @@ Defaults sent to the browser through `/api/v1/config`.
 | `memory.buffers_gb` | `null` | Array buffers one tab may hold, all its plots together, in GB (large-plot mode keeps its points in them). `null`: the browser's own limit, 16.6 in Chrome, Edge and the desktop app; 15 in Safari on a computer with more than 16 GB, 7 below. |
 | `memory.margin` | `0.2` | Predictions are multiplied by 1 + margin before they are compared. |
 | `cache.max_entries`, `cache.max_size_mb` | `1000`, `1024` | Browser-side cache. |
-| `autosave.*` | enabled, every 10,000 ms | Autosave of the current layout to the browser's local storage. |
+| `autosave.enabled` | `true` | Autosave of the current layout to the browser's local storage (session storage on a site with `site.storage.persistent_convenience: false`). |
+| `autosave.interval_ms` | `10000` | How often the layout is autosaved, in ms; leaving the page saves at once. |
+| `autosave.storage_key` | `annzarro_autosave` | The browser storage key of the autosave. |
+| `autosave.session_name` | `Autosave` | The name of the autosaved session. |
 | `autosave.auto_restore` | `reload` | When a page restores the autosave by itself: `reload` (a reload of the tab, Back or Forward; a new visit lists it first and waits for **Restore**), `always` (every visit) or `never`. `true` and `false` mean `always` and `never`. A session that did not finish loading (the tab ended, or a plot ran out of memory) is never restored by itself. See {ref}`last-sessions`. |
 | `autosave.show_in_list` | `true` | List the last sessions (up to three) first, on the welcome screen and in Load Panel Set. |
 
@@ -192,7 +195,9 @@ an action that large succeeds, or with **Reset the margin**, which a refusal the
 
 **Defaults.** `enforce: block`, `heap_gb: null` (the browser's own limit), `total_gb: null`,
 `buffers_gb: null` (the browser's own limit), `margin: 0.2`. With these the heap limits regular plots (a few million points) and the total
-limits large-plot mode, whose points are outside the heap (about 73 bytes per point, 8 of them the hover and click index). A browser
+limits large-plot mode, whose points are outside the heap (about 73 bytes per point, 8 of them the hover and click index).
+Against the array-buffer limit (`buffers_gb`) a drawn large plot counts 88 bytes per point, its
+index included, measured on the 95.6-million-cell store. A browser
 cannot see the computer's memory, so the server tells a browser on its own computer how much
 there is (a loopback request no proxy forwarded); the budget is that memory less a quarter,
 at least 4 GB, for the system and the browser. On a 16 GB computer that is 12 GB, and a large

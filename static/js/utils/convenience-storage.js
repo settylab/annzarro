@@ -5,8 +5,8 @@
  * By default that is localStorage, so it lasts between visits. A site that sets
  * `site.storage.persistent_convenience: false` (config/base.yaml) keeps it in sessionStorage,
  * gone when the tab closes, so the browser holds nothing between visits except choices the
- * user made themselves (theme, pins, subset size, export settings, answers about external
- * services). Strict readings of the ePrivacy rules ask for that on public sites
+ * user made themselves (theme, pins, the Dataset information search switches, answers about
+ * external services; the subset size is kept for the tab in any case). Strict readings of the ePrivacy rules ask for that on public sites
  * (docs/deployment/public-site.md, "Storage in the browser").
  *
  * The keys: `Config.AUTOSAVE.STORAGE_KEY` (annzarro_autosave), the earlier sessions and the

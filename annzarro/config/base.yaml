@@ -251,7 +251,7 @@ branding:
 site:
   imprint:
     url: null          # an http://, https:// or mailto: address
-    markdown: null     # the text itself, in Markdown (paragraphs, headings, lists, bold, italic, links)
+    markdown: null     # the text itself, in safe Markdown (paragraphs, headings, lists, bold, italic, links, tables, code, quotes)
     file: null         # path of a Markdown file with the text (read at start, 256 KB at most)
     label: "Imprint"   # the link text; German sites: "Impressum"
   privacy:
@@ -293,9 +293,10 @@ site:
   # only the name, version, MIT licence and links to the documentation and repository.
   software_credits: true
   storage:
-    # false: the layout autosave and the recent datasets last only until the tab closes
-    # (sessionStorage), so the browser keeps nothing between visits except choices the
-    # user made (theme, pins, subset size, export settings, answers about external services)
+    # false: the layout autosave, the last sessions and the recent datasets last only until
+    # the tab closes (sessionStorage), so the browser keeps nothing between visits except
+    # choices the user made (theme, pins, the search switches of Dataset information,
+    # answers about external services; the subset size is kept for the tab in any case)
     persistent_convenience: true
 
 # UI configuration
@@ -321,7 +322,8 @@ ui:
     # its dialog changes or removes it. Every panel shows the same cells.
     subset_threshold: 200000
     # A Cell Plot with more points than this is drawn in large-plot mode
-    # (typed arrays, no hover, click or table filter); only reachable with
+    # (typed arrays; hover and click work, table filters, 3D and extra hover
+    # columns do not); only reachable with
     # the subset off or larger than this. 1M keeps several regular plots
     # (400-900 B of browser heap per point) open side by side.
     large_plot_points: 1000000
@@ -329,8 +331,8 @@ ui:
     # cells it shows (a part of a 1B-cell store spread over every chunk of its
     # name column took 20-35 s to name at every step). Hover, focus and a
     # table's page ask for the names they show; sorting or searching a table
-    # on the names, or exporting them, loads them once. Smaller datasets name
-    # their cells with the part, as before.
+    # on the names, or exporting them, loads them once. Smaller datasets read
+    # the names of their cells with the part.
     names_on_demand_above: 5000000
     # After a part is shown, read the next part's cells and embedding
     # coordinates in the background (low priority, dropped for any real
@@ -381,9 +383,9 @@ ui:
     # Load Panel Set.
     show_in_list: true
     # When a page restores the autosave by itself: reload (a reload of the
-    # tab; a fresh visit lists it first and waits for Restore), always (every
-    # visit) or never. A session that did not finish loading is never
-    # restored by itself.
+    # tab, Back or Forward; a fresh visit lists it first and waits for
+    # Restore), always (every visit) or never; true and false mean always and
+    # never. A session that did not finish loading is never restored by itself.
     auto_restore: reload
 
 # External API integrations
