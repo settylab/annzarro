@@ -8,6 +8,14 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- **Public site** on the admin page: every `site:` setting (imprint, privacy notice, accessibility statement, terms, operator, contact, labels, footer, search engines, security contact, language, the AnnZarro credit, browser storage) can be set while the server runs, and the footer, About and the `/site/` pages show it at once. Each field explains itself on hover and links the public-site guide, a Markdown text has a live preview, a value the server would refuse at start is refused under its field, and a checklist says which of imprint, privacy notice, contact and accessibility statement are missing. An admin's value wins over the configuration file until reset; `policy.locked: [site.imprint]` keeps a key in the file's hands. A text's `file` can only be set in the configuration file.
+- **Data & privacy** (`/site/data`), generated from the running configuration: what the browser keeps, the cookies, what the Gene Set panel may send to which services and when, and that there are no analytics. Without a configured privacy notice it says plainly that it is not one. `/site/about` shows the About dialog as a page.
+
+### Changed
+- A server other people reach (login on, a network address, `server.hosted` or a proxy) shows a footer line even with nothing configured: "About · Data & privacy", plus the configured texts and contact. The desktop app and a personal server show none until you configure something.
+- Such a server logs a warning at start when it publishes neither an imprint nor a privacy notice, naming the admin page's Public site section and the guide.
+
 ## 0.6.0 (2026-10-17)
 
 An About dialog and what a public site needs (imprint, privacy notice, a footer); a Dataset

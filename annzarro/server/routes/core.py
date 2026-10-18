@@ -147,6 +147,13 @@ def register_core_routes(app, api_version):
             integrations = dict(client.get("integrations") or {})
             integrations["external_requests"] = forced
             client["integrations"] = integrations
+        # the site as it is in effect: an admin may have changed it since the start (site.current)
+        from annzarro.server.site import current as current_site
+        live = current_site(app)
+        site = dict(client.get("site") or {})
+        site["storage"] = {**(site.get("storage") or {}), "persistent_convenience": live.persistent_convenience}
+        site["software_credits"] = live.software_credits
+        client["site"] = site
         client["electron_mode"] = os.environ.get("ANNZARRO_ELECTRON_MODE", "0") == "1"
         client["local_mode"] = os.environ.get("ANNZARRO_LOCAL_MODE", "0") == "1"
         # One user on this machine (loopback, login off, no proxy, not

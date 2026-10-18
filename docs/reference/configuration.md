@@ -250,7 +250,21 @@ the operator's.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `locked` | `[]` | Policy keys only this file decides (for example `[outbound.allow_external]`). A locked key ignores the admin settings and the per-user overrides, and the Settings page shows it as read-only. |
+| `locked` | `[]` | Policy keys only this file decides (for example `[outbound.allow_external]`, or `[site.imprint]` for a key of the `site` section). A locked key ignores the admin settings and the per-user overrides, and the Settings or Public site page shows it as read-only. |
+
+## `site`
+
+Who runs the site and the texts it owes its visitors: `imprint`, `privacy`, `accessibility` and
+`terms` (each a `url`, a `markdown` text or a Markdown `file`, and a `label`), `operator`,
+`contact`, `contact_label`, `footer_links`, `robots`, `security_contact`, `languages`,
+`software_credits` and `storage.persistent_convenience`. Public, except a text's `file`. The keys,
+their defaults and what each shows where are in {doc}`../deployment/public-site`.
+
+With login on, an admin can set every one of them on the admin page's Public site section,
+without a restart; that value wins over this file until it is reset, unless `policy.locked` names
+the key (`site.imprint`, `site.storage.persistent_convenience` ...). A text's `file` is this file's
+alone. A server other people reach links About (`/site/about`) and Data & privacy (`/site/data`)
+from its footer even when nothing here is set.
 
 ## Security tiers
 

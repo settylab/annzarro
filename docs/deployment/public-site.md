@@ -161,7 +161,9 @@ Choose a retention period for the logs, write it into the notice, and rotate or 
 ## Configuring the site
 
 Everything is under `site:` in your configuration file (`annzarro config show` prints the merged
-result). Nothing shows until something is set. Each of the four texts (`imprint`, `privacy`,
+result), and a server with login on can also set it on its admin page ([below](#admin-public-site)).
+On the desktop app and a personal server nothing shows until something is set; a server other
+people reach shows two links of its own ([below](#hosted-defaults)). Each of the four texts (`imprint`, `privacy`,
 `accessibility`, `terms`) takes one of:
 
 | Key | Meaning |
@@ -188,18 +190,78 @@ Other keys:
 A wrong value (a `javascript:` address, a missing file, an unknown option) stops the server at
 start and says what is wrong.
 
+(admin-public-site)=
+### On the admin page
+
+With login on, the admin page (`/admin`, {doc}`admin`) has a **Public site** section that edits
+every key above while the server runs. Each field has a help on hover (what it does and where it
+shows) and a link to this guide; a Markdown text has a live preview, drawn by the same safe
+renderer as the footer and About, in a sandboxed frame, so a `<script>` in the text is shown as
+text. A checklist at the top says which of imprint, privacy notice, contact and accessibility
+statement are set.
+
+* **Applies at once.** The footer, About, `/site/*`, `robots.txt` and `security.txt` show a saved
+  change on the next request, in every worker, without a restart.
+* **The same checks as at start.** The page refuses exactly what would stop the server at start
+  (a `javascript:` address, a label with markup, two lines of operator), with the same sentence
+  under the field, and stores nothing of a change that has one wrong value.
+* **Precedence.** What the page saves goes into the admin overlay (`annzarro_admin/overlay.json`,
+  beside the users file) and wins over your configuration file. **Reset** removes it, and the file's
+  value applies again. To keep a key in the file's hands, lock it:
+
+  ```yaml
+  policy:
+    locked: [site.imprint, site.privacy]   # shown read-only on the admin page, with its source
+  ```
+
+* **Files stay in the file.** `file` can only be set in the configuration file: a page anyone can
+  open must not publish a file the browser named on the server. The admin page shows the path
+  read-only; choosing a link or a text there overrides it.
+* Changes are audited as `policy.update`, like the Settings page's.
+
+The keys are `site.imprint`, `site.privacy`, `site.accessibility`, `site.terms`, `site.operator`,
+`site.contact`, `site.contact_label`, `site.footer_links`, `site.robots`, `site.security_contact`,
+`site.languages`, `site.software_credits` and `site.storage.persistent_convenience`.
+
+(hosted-defaults)=
+### What a hosted server shows by default
+
+A server other people reach (login on, `server.hosted: true`, a host other than loopback or a
+proxy in front) differs from a personal one in three ways, configured or not:
+
+* Its **footer** always starts with **About** and has **Data & privacy** before the contact:
+  "About · Impressum · Datenschutz · Data & privacy · Kontakt", and "About · Data & privacy" when
+  nothing is configured. About opens the About dialog on the main page and `/site/about` elsewhere.
+  `footer_links: about-only` removes the line.
+* **`/site/data`, Data & privacy**, is generated from the running configuration and true on any
+  server: what the browser keeps (the table under [Browser storage](#browser-storage), and whether
+  the convenience items last beyond the tab), the two cookies when login is on and none otherwise,
+  what the Gene Set panel may send to which services and when (`integrations.external_requests`
+  and the services the server offers), that there are no analytics and no tracking, and that the
+  server receives each visitor's IP address. When no privacy notice is configured it says plainly
+  that it **is not a privacy notice** and that the operator has not published one here; when one
+  is, it links it. It never names an operator you did not configure. The page exists on every
+  server; only a hosted one links it from the footer.
+* At start, a hosted server with **neither an imprint nor a privacy notice** logs one warning that
+  names the admin page's Public site section and this guide.
+
+The desktop app and a personal server on loopback with login off show no footer until you
+configure something.
+
 ### Where the texts appear
 
 * A small **footer line**, centred at the bottom of every page, including the sign-in, account and
-  admin pages: "Impressum · Datenschutz · Barrierefreiheit · Kontakt". It takes a line of about
-  1.4 rem from the bottom of the window and never covers a panel. Nothing appears when nothing is
-  configured.
+  admin pages: "Impressum · Datenschutz · Barrierefreiheit · Kontakt", with About and Data &
+  privacy on a hosted server. It takes a line of about 1.4 rem from the bottom of the window and
+  never covers a panel. On a personal server nothing appears when nothing is configured.
 * The **About dialog** (the app name at the top left) gets a "This site" block above AnnZarro's own credit: the operator, the
   contact, and each text. A footer link for a text written in the configuration opens About
   straight at that text, so it is one click away; a link to an address opens it in a new tab.
 * **`/site/imprint`, `/site/privacy`, `/site/accessibility`, `/site/terms`** serve the same texts
   as plain pages that need no sign-in and no JavaScript, so you can link them from outside. A text
   configured with a `url` redirects there.
+* **`/site/about`** is the About dialog as a page (the site's block and AnnZarro's credit), and
+  **`/site/data`** the Data & privacy page above. Neither needs a sign-in.
 
 Texts are written in a small, safe subset of Markdown: paragraphs, headings (`#` to `######`),
 lists (`-` or `1.`), `**bold**`, `*italic*`, `` `code` ``, links `[text](https://...)` with

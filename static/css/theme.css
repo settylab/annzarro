@@ -425,7 +425,7 @@
     background: var(--az-surface-2);
     border-top: 1px solid var(--az-border);
 }
-.site-footer a { color: inherit; text-decoration: none; padding: 0.1rem 0.05rem; border-radius: 0.2rem; }
+.site-footer a { color: inherit; text-decoration: none; padding: 0.1rem 0.05rem; border-radius: 0.2rem; white-space: nowrap; }
 .site-footer a:hover { color: var(--az-link); text-decoration: underline; }
 .site-footer a:focus-visible { outline: 2px solid var(--az-link); outline-offset: 1px; }
 .site-footer-sep { margin: 0 0.45rem; opacity: 0.55; }
@@ -444,6 +444,18 @@ body.site-centered > .site-footer { align-self: stretch; }
 .site-text h3 { font-size: 1.05rem; margin-top: 1.25rem; }
 body.site-text-page { background: var(--az-page-bg); color: var(--az-page-text); margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
 .site-text a { color: var(--az-link); }
+.site-data-warning { border-left: 3px solid var(--az-warning, #b7791f); padding: 0.4rem 0.75rem; background: var(--az-surface-2); }
+.site-text .md-table.site-data-table table { width: 100%; }
+.site-text .md-table.site-data-table :is(th, td) { white-space: normal; }
+.site-data-table code { word-break: break-all; }
+.site-data-fine, .site-about .about-fine { font-size: 0.8rem; color: var(--az-muted); }
+.site-about .about-muted { color: var(--az-muted); }
+.site-about .about-links { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; }
+.site-about .about-section-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--az-muted); }
+.site-about .about-dev { text-align: center; color: var(--az-muted); }
+.site-about .about-logos { display: flex; justify-content: center; margin: 0.5rem 0 1rem; }
+.site-about .about-logo { height: 3.75rem; width: auto; display: block; }
+[data-theme="dark"] .site-about .about-logo-lab { background: #fff; border-radius: 0.4rem; padding: 0.3rem 0.45rem; box-sizing: content-box; }
 
 /* ---- Markdown from the safe renderer (safe-markdown.js): tables, code, rules, quotes.
    Used in a dataset's README, the About dialog's site texts and the /site pages. ---- */

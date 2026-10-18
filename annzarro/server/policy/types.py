@@ -35,6 +35,12 @@ class PolicyType:
     def validate(self, value: Any) -> Any:
         raise NotImplementedError
 
+    def validate_stored(self, value: Any) -> Any:
+        """``validate`` for a value an admin stores (the overlay or a per-user override). A type
+        refuses here what only the operator's file may say (a site text's ``file``, a path on
+        the server); the default accepts what ``validate`` does."""
+        return self.validate(value)
+
     def restrict(self, values: Sequence[Any]) -> Any:
         """The most restrictive of ``values`` (at least one, all valid)."""
         raise NotImplementedError
