@@ -15,10 +15,12 @@
  * column and a part belong to the dataset they were chosen on, and the seed
  * is the server's default, as for a size chosen by hand on a fresh dataset.
  *
- * Kept in the browser's storage per server and user (as the recents are,
- * utils/dataset-recents.js): key `annzarro.subsetSize:<origin>|<user>`,
- * value `{"size": <n>|"all"}`. Nothing here throws: storage may be missing,
- * full or blocked.
+ * Kept in the tab's own storage (main.js passes it) per server and user:
+ * key `annzarro.subsetSize:<origin>|<user>`, value `{"size": <n>|"all"}`.
+ * It lasts while the tab does: a reload of the tab keeps it, and a fresh
+ * visit to the bare address (a new tab, the address typed, a bookmark)
+ * starts on the server's default (dropSubsetSizes). Nothing here throws:
+ * storage may be missing, full or blocked.
  */
 
 export const SUBSET_SIZE_KEY_PREFIX = 'annzarro.subsetSize:';
@@ -55,6 +57,22 @@ export function saveSubsetSize(storage, origin, user, size) {
         if (clean === undefined) storage.removeItem(subsetSizeKey(origin, user));
         else storage.setItem(subsetSizeKey(origin, user), JSON.stringify({ size: clean }));
     } catch { /* storage full or blocked */ }
+}
+
+/** Forget every size kept in `storage` (any origin, any user). Returns how many were removed. */
+export function dropSubsetSizes(storage) {
+    let removed = 0;
+    try {
+        const keys = [];
+        for (let i = 0; i < storage.length; i++) keys.push(storage.key(i));
+        for (const key of keys) {
+            if (typeof key === 'string' && key.startsWith(SUBSET_SIZE_KEY_PREFIX)) {
+                storage.removeItem(key);
+                removed++;
+            }
+        }
+    } catch { /* storage blocked */ }
+    return removed;
 }
 
 /**

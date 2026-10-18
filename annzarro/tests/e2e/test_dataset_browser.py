@@ -634,7 +634,7 @@ def test_pins_are_kept_per_user_listed_under_pinned_and_unpinned_again(server):
         s.close()
 
 
-def test_first_load_opens_the_only_dataset_none_of_several_and_the_last_one_opened(server, single_server):
+def test_first_load_opens_the_only_dataset_and_none_of_several_even_with_recents(server, single_server):
     # exactly one store: opened
     s = Session(single_server[0])
     try:
@@ -651,7 +651,9 @@ def test_first_load_opens_the_only_dataset_none_of_several_and_the_last_one_open
         assert s.page.locator(".welcome-open-dataset .welcome-recent").count() == 0
     finally:
         s.close()
-    # the most recent one this user opened, if the server says it may still be read; a gone one is skipped
+    # recents are offered, not opened: the bare address is a clean start (the dataset the last visit had
+    # open is not preselected; a tab that had one open names it in its address). The desktop app does
+    # reopen the last one (e2e/test_address_names_dataset.py).
     s = Session(base)
     try:
         page = s.page
@@ -660,8 +662,10 @@ def test_first_load_opens_the_only_dataset_none_of_several_and_the_last_one_open
             {{path: {os.path.join(data, 'other_small.zarr')!r}, label: 'other_small.zarr', openedAt: 2}},
             {{path: {os.path.join(data, 'short.zarr')!r}, label: 'short.zarr', openedAt: 1}}]))""")
         page.reload()
-        wait_for_open(page, "other_small.zarr")
-        assert page.evaluate("JSON.parse(localStorage.getItem(" + RECENTS_KEY + ")).length") == 3, "opening it at start records nothing"
+        page.wait_for_selector(".welcome-open-dataset[data-recents='ready'] .welcome-recent", timeout=30_000)
+        page.wait_for_timeout(1000)
+        assert dataset_path(page) is None and button_state(page) == "none"
+        assert page.evaluate("JSON.parse(localStorage.getItem(" + RECENTS_KEY + ")).length") == 3
     finally:
         s.close()
 

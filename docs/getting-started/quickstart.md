@@ -44,9 +44,10 @@ use a server on another machine, see {doc}`../deployment/personal-server`.
 
 ## 3. Open the dataset
 
-The server opens a dataset by itself only when it is the only one in the data directory, or the
-one you opened last time; with several it opens none, and the main area shows the Welcome tile with
-**Open a dataset** on top.
+The server opens a dataset by itself only when it is the only one in the data directory (the
+desktop app also reopens the one opened last time); with several it opens none, and the main area
+shows the Welcome tile with **Open a dataset** on top. Once a dataset is open, the address bar
+names it (`?dataset_path=...`), so a reload opens it again.
 
 ```{figure} ../_static/screens/getting-started/welcome-browser.png
 :class: screenshot

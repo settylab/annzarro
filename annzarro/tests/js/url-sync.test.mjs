@@ -4,6 +4,8 @@
 //   * with a payload, #view= carries it and dataset_path names the store;
 //   * other query parameters survive, the legacy ?view= is dropped;
 //   * with no payload (no panel open) the fragment goes: the clean link;
+//   * dataset_path names the open store with or without panels, and goes
+//     with no dataset open;
 //   * an address that already is the result gives null (no replaceState);
 //   * what it writes is read back by parseDeepLinkLocation.
 //
@@ -44,6 +46,18 @@ test("no payload removes the view: the clean link", () => {
     "/explore/?dataset_path=a.zarr&x=1");
   assert.equal(syncedLocation(`${BASE}?dataset_path=a.zarr&view=OLDB64`, "a.zarr", null),
     "/explore/?dataset_path=a.zarr");
+});
+
+test("with no panel open the address still names the dataset, and follows a switch", () => {
+  assert.equal(syncedLocation(BASE, "bm_aging.zarr", null), "/explore/?dataset_path=bm_aging.zarr");
+  assert.equal(syncedLocation(`${BASE}?dataset_path=bm_aging.zarr`, "tahoe_95.6M.zarr", null),
+    "/explore/?dataset_path=tahoe_95.6M.zarr");
+  assert.equal(syncedLocation(`${BASE}?x=1`, "a.zarr", null), "/explore/?x=1&dataset_path=a.zarr");
+});
+
+test("no dataset open: dataset_path goes, other parameters stay", () => {
+  assert.equal(syncedLocation(`${BASE}?dataset_path=a.zarr`, "", null), "/explore/");
+  assert.equal(syncedLocation(`${BASE}?dataset_path=a.zarr&x=1`, null, null), "/explore/?x=1");
 });
 
 test("an address that already is the result is left alone", () => {

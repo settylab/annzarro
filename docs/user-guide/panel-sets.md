@@ -210,7 +210,10 @@ When a page restores the autosave by itself is set by `ui.autosave.auto_restore`
 | `never` | lists it | lists it |
 
 Whatever the setting, a session that did not finish loading is never restored by itself, and a
-reload of the tab that ended does not redraw the view in its address either. A link with a view
+reload of the tab that ended does not redraw the view in its address either. Once a session is
+restored, the address names its dataset and view, so the next reload opens them from the address.
+A new visit to the bare address opens no dataset and starts on the server's default subset
+({ref}`subset-size-carried`). A link with a view
 (`?dataset_path=...#view=...`) opens what it names; the in-app refresh button (next to the
 dataset) reads the dataset again and keeps the panels open, as before. AnnZarro tells a reload
 from a new visit by the tab's own history entry, which holds a random id of the page.
