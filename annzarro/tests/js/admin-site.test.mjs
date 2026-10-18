@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test, { beforeEach, afterEach } from "node:test";
 import { find, findAll, installFakeDocument, uninstallFakeDocument } from "./fake-dom.mjs";
 import { AdminError } from "../../../static/js/admin/admin-api.js";
-import site, { checklist, previewDocument, siteKeys, textMode, textPayload } from "../../../static/js/admin/site-settings.js";
+import site, { canonicalText, checklist, configText, previewDocument, sameValue, siteKeys, textChange, textMode, textPayload } from "../../../static/js/admin/site-settings.js";
 
 const EMPTY = { label: "Imprint", url: null, markdown: null, file: null };
 
@@ -134,7 +134,7 @@ test("a locked key is read-only and says why; an admin value offers a reset", as
   assert.match(card.textContent, /Only the config file sets this/);
   assert.ok(findAll(card, (n) => n.tagName === "TEXTAREA" || n.tagName === "INPUT").every((i) => i.disabled));
   const reset = find(el, (n) => n.getAttribute && n.getAttribute("data-reset") === "operator");
-  assert.match(reset.textContent, /config file's value/);
+  assert.equal(reset.textContent, "Reset to config file");
 });
 
 test("a text from a file in the config file shows its path and is not sent back", async () => {
@@ -143,5 +143,129 @@ test("a text from a file in the config file shows its path and is not sent back"
   }) } });
   const card = find(el, (n) => n.getAttribute && n.getAttribute("data-key") === "site.privacy");
   assert.match(card.textContent, /\/etc\/annzarro\/privacy\.md/);
-  assert.match(card.textContent, /can only be set in the config file/);
+  assert.match(card.textContent, /A file can only be set there/);
+});
+
+
+// ---- a config file with all three kinds of text (the 0.6.0 test server's: the tab clobbered them) ----
+
+const FILE = "/srv/annzarro/privacy.md";
+// as GET /admin/policy serves them: keys sorted (Flask's JSON), the config layer beside the value
+const sorted = (v) => Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]]));
+const FROM_CONFIG = {
+  "site.imprint": sorted({ label: "Imprint", url: null, markdown: "**Example Institute**", file: null }),
+  "site.privacy": sorted({ label: "Privacy", url: null, markdown: null, file: FILE }),
+  "site.accessibility": sorted({ label: "Accessibility", url: "https://example.org/a11y", markdown: null, file: null }),
+  "site.terms": sorted({ label: "Terms of use", url: null, markdown: "Research use only.", file: null }),
+};
+
+function yamlPolicy(extra = {}) {
+  const overrides = {};
+  for (const [name, value] of Object.entries(FROM_CONFIG)) {
+    overrides[name] = { value, source: "config", config_value: value, layers: { config: value, default: EMPTY },
+      type: { kind: "site_text", default_label: value.label } };
+  }
+  return policy({ ...overrides, ...extra });
+}
+
+function yamlApi(sent, extra) {
+  return {
+    policy: { get: async () => yamlPolicy(extra), set: async (changes) => { sent.push(changes); return {}; } },
+    site: { texts: async () => ({ texts: { imprint: { markdown: "**Example Institute**" }, privacy: { markdown: "# Privacy\n\nRead from **the file**." },
+      accessibility: { url: "https://example.org/a11y" }, terms: { markdown: "Research use only." } } }) },
+  };
+}
+
+const byId = (el, id) => find(el, (n) => n.getAttribute && n.getAttribute("id") === id);
+const card = (el, kind) => find(el, (n) => n.getAttribute && n.getAttribute("data-key") === `site.${kind}`);
+async function pick(el, kind, mode) {
+  const radio = byId(el, `site-${kind}-mode-${mode}`);
+  radio.checked = true;
+  await radio.dispatch("change");
+}
+
+test("canonicalText and sameValue ignore the order of the fields", () => {
+  const a = { label: "Imprint", url: null, markdown: "x", file: null };
+  const b = { file: null, label: "Imprint", markdown: "x", url: null };
+  assert.equal(JSON.stringify(a) === JSON.stringify(b), false, "the bug: a plain JSON comparison sees a change");
+  assert.ok(sameValue(a, b));
+  assert.deepEqual(canonicalText({ label: null, markdown: "  " }, "Imprint"), { label: "Imprint", url: null, markdown: null, file: null });
+});
+
+test("textChange: the mode it had is no change, an empty link or text is incomplete, Not shown is a change", () => {
+  const key = yamlPolicy().keys.find((k) => k.name === "site.imprint");
+  assert.deepEqual(textChange(key, "markdown", { label: "Imprint", markdown: "**Example Institute**" }),
+    { change: false, value: undefined, incomplete: null });
+  const url = textChange(key, "url", { label: "Imprint", url: "  " });
+  assert.equal(url.change, false);
+  assert.match(url.incomplete, /Nothing changes until you do/);
+  assert.deepEqual(textChange(key, "none", { label: "Imprint" }),
+    { change: true, value: { label: "Imprint", url: null, markdown: null, file: null }, incomplete: null });
+  assert.deepEqual(configText(key), FROM_CONFIG["site.imprint"]);
+});
+
+test("a config file's texts are shown as they are in effect, a file with its path and its text", async () => {
+  const { el } = await mount(yamlApi([]));
+  const checked = (kind) => findAll(card(el, kind), (n) => n.tagName === "INPUT" && n.getAttribute("type") === "radio" && n.checked)
+    .map((n) => n.value);
+  assert.deepEqual(["imprint", "privacy", "accessibility", "terms"].map(checked), [["markdown"], ["file"], ["url"], ["markdown"]]);
+  for (const kind of ["imprint", "privacy", "accessibility", "terms"]) {
+    assert.match(card(el, kind).textContent, /\(config file\)/, kind);
+  }
+  assert.match(card(el, "privacy").textContent, /In effect: the file \/srv\/annzarro\/privacy\.md \(config file\)/);
+  const frame = find(card(el, "privacy"), (n) => n.getAttribute && n.getAttribute("data-preview") === "privacy-file");
+  assert.match(frame.getAttribute("srcdoc"), /Read from <strong>the file<\/strong>/);
+  assert.equal(byId(el, "site-save").disabled, true);
+});
+
+test("looking at other options of every card sends nothing; an empty link or text says so", async () => {
+  const sent = [];
+  const { el } = await mount(yamlApi(sent));
+  await pick(el, "imprint", "url");
+  await pick(el, "privacy", "markdown");
+  await pick(el, "accessibility", "markdown");
+  await pick(el, "terms", "url");
+  assert.equal(byId(el, "site-status").textContent, "No changes.");
+  assert.equal(byId(el, "site-save").disabled, true);
+  const hint = find(card(el, "imprint"), (n) => n.getAttribute && n.getAttribute("class") === "small text-muted mb-1 site-incomplete");
+  assert.equal(hint.hidden, false);
+  await pick(el, "imprint", "markdown");
+  await pick(el, "privacy", "file");
+  assert.equal(byId(el, "site-status").textContent, "No changes.", "back where they were: still nothing");
+});
+
+test("a save sends only the key that changed", async () => {
+  const sent = [];
+  const { el } = await mount(yamlApi(sent));
+  await pick(el, "accessibility", "markdown");          // looked at, left empty: no change
+  const operator = byId(el, "site-operator");
+  operator.value = "Example Institute";
+  await operator.dispatch("input");
+  await byId(el, "site-save").dispatch("click");
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(sent, [{ "site.operator": "Example Institute" }]);
+});
+
+test("Not shown over a config file's text is an explicit override with a note, and Reset brings it back", async () => {
+  const sent = [];
+  const { el } = await mount(yamlApi(sent));
+  const note = find(card(el, "terms"), (n) => n.getAttribute && n.getAttribute("data-hides") === "terms");
+  assert.equal(note.hidden, true);
+  await pick(el, "terms", "none");
+  assert.equal(note.hidden, false);
+  assert.match(note.textContent, /Hides the text from the config file/);
+  assert.equal(byId(el, "site-status").textContent, "1 unsaved change.");
+  await byId(el, "site-save").dispatch("click");
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(sent, [{ "site.terms": { label: "Terms of use", url: null, markdown: null, file: null } }]);
+
+  // stored: the card says so, what the config file has, and offers the way back
+  const hidden = { label: "Terms of use", url: null, markdown: null, file: null };
+  const { el: again } = await mount(yamlApi([], { "site.terms": { value: hidden, source: "admin",
+    config_value: FROM_CONFIG["site.terms"], layers: { admin: hidden, config: FROM_CONFIG["site.terms"], default: EMPTY },
+    type: { kind: "site_text", default_label: "Terms of use" } } }));
+  const terms = card(again, "terms");
+  assert.match(terms.textContent, /In effect: not shown \(set here\)\. The config file has a text in Markdown\./);
+  assert.equal(find(terms, (n) => n.getAttribute && n.getAttribute("data-hides") === "terms").hidden, false);
+  assert.equal(find(terms, (n) => n.getAttribute && n.getAttribute("data-reset") === "terms").textContent, "Reset to config file");
 });

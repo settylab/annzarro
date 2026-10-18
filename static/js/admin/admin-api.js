@@ -263,6 +263,10 @@ export function createAdminApi({
             reassign: (body) => send('POST', '/panel-sets/reassign', body),
             remove: (names) => send('DELETE', '/panel-sets', { names }),
         },
+        site: {
+            /** The four texts as the pages show them now, a config file's `file` read */
+            texts: () => get('/site/texts'),
+        },
         policy: {
             get: () => get('/policy'),
             set: (changes) => send('PUT', '/policy', changes),

@@ -97,6 +97,7 @@ class SiteText:
         self.kind = kind
         self.label = label
         self.url = url
+        self.markdown = markdown       # as written (or read from the file), for the admin page's preview
         # rendered once, at start: the dialog nests it under its own headings, the page under the label
         self.dialog_html = render_safe_markdown(markdown, heading_base=4) if markdown else None
         self.page_html = render_safe_markdown(markdown, heading_base=2) if markdown else None

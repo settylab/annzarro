@@ -215,6 +215,14 @@ statement are set.
     locked: [site.imprint, site.privacy]   # shown read-only on the admin page, with its source
   ```
 
+* **What is in effect.** Each text says what the pages show and where it comes from (the config
+  file, set here, or the default); a text the config file reads from a `file` shows its path and
+  the text as the pages show it. When a value set here wins over the file, the card says what the
+  file has.
+* **Only what you change is saved.** Save sends the fields you changed and nothing else. Looking at
+  another option of a text, or choosing a link or a text and leaving its field empty, changes
+  nothing. **Not shown** over a text from the config file is a deliberate override: the card says
+  "Hides the text from the config file", and **Reset to config file** shows the file's text again.
 * **Files stay in the file.** `file` can only be set in the configuration file: a page anyone can
   open must not publish a file the browser named on the server. The admin page shows the path
   read-only; choosing a link or a text there overrides it.

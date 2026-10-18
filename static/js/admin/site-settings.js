@@ -93,6 +93,79 @@ export function textPayload(mode, { label = '', url = '', markdown = '' } = {}) 
 }
 
 /**
+ * A text value in one form, whatever order its fields came in: the label filled in with the
+ * default, empty fields null. Two texts that show the same are equal in this form.
+ * @param {Object|null} value
+ * @param {string} [defaultLabel]
+ * @returns {{label: string, url: (string|null), markdown: (string|null), file: (string|null)}}
+ */
+export function canonicalText(value, defaultLabel = '') {
+    const v = value || {};
+    const text = (x) => (typeof x === 'string' && x.trim() ? x : null);
+    return {
+        label: (typeof v.label === 'string' && v.label.trim()) ? v.label.trim() : defaultLabel,
+        url: text(v.url) ? v.url.trim() : null,
+        markdown: text(v.markdown),
+        file: text(v.file) ? v.file.trim() : null,
+    };
+}
+
+/** Whether two values are the same: JSON with the keys of every object sorted. */
+export function sameValue(a, b) {
+    const stable = (x) => (Array.isArray(x) ? x.map(stable)
+        : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, stable(x[k])])) : x);
+    return JSON.stringify(stable(a === undefined ? null : a)) === JSON.stringify(stable(b === undefined ? null : b));
+}
+
+/**
+ * What a text card holds, as a change to send.
+ *
+ * Nothing is sent unless the card shows something else than the value in effect: going back to
+ * the mode it had, or a label typed back, is no change. A link or a text whose field is still
+ * empty is `incomplete` and sends nothing, so looking at another mode never hides a text; only
+ * "Not shown" does, on purpose.
+ * @param {Object} key - the setting as GET /admin/policy serves it
+ * @param {string} mode - 'none' | 'url' | 'markdown' | 'file'
+ * @param {{label: string, url: string, markdown: string}} fields
+ * @returns {{change: boolean, value: (Object|undefined), incomplete: (string|null)}}
+ */
+export function textChange(key, mode, fields) {
+    const defaultLabel = (key.type && key.type.default_label) || '';
+    if (mode === 'file') return { change: false, value: undefined, incomplete: null };
+    if (mode === 'url' && !String(fields.url || '').trim()) {
+        return { change: false, value: undefined, incomplete: 'Enter the address, or choose another option. Nothing changes until you do.' };
+    }
+    if (mode === 'markdown' && !String(fields.markdown || '').trim()) {
+        return { change: false, value: undefined, incomplete: 'Write the text, or choose another option. Nothing changes until you do.' };
+    }
+    const value = textPayload(mode, fields);
+    const change = !sameValue(canonicalText(value, defaultLabel), canonicalText(key.value, defaultLabel));
+    return { change, value: change ? value : undefined, incomplete: null };
+}
+
+/**
+ * The config file's own text of a key, when it sets one with content (a link, a text or a file).
+ * @param {Object} key
+ * @returns {Object|null}
+ */
+export function configText(key) {
+    const own = key && key.layers && Object.prototype.hasOwnProperty.call(key.layers, 'config')
+        ? key.layers.config : (key && Object.prototype.hasOwnProperty.call(key, 'config_value') ? key.config_value : null);
+    return own && textMode(own) !== 'none' ? own : null;
+}
+
+/** One line saying what a text value is: "a link to …", "a text written here", "the file …", "not shown". */
+export function describeText(value) {
+    const v = value || {};
+    switch (textMode(v)) {
+        case 'url': return `a link to ${v.url}`;
+        case 'file': return `the file ${v.file}`;
+        case 'markdown': return 'a text in Markdown';
+        default: return 'not shown';
+    }
+}
+
+/**
  * What a public site owes its visitors, set or missing.
  * @param {Object<string, Object>} keys - siteKeys()
  * @returns {Array<{id: string, title: string, set: boolean}>}
@@ -174,9 +247,10 @@ function createForm(keys, onDirty) {
     return {
         keys,
         pending,
+        /** `value` undefined: the field holds no change (back to what is in effect, or incomplete) */
         set(name, value) {
             const key = keys[name];
-            if (key && JSON.stringify(value) === JSON.stringify(key.value)) delete pending[name];
+            if (value === undefined || (key && sameValue(value, key.value))) delete pending[name];
             else pending[name] = value;
             if (errorNodes[name]) errorNodes[name].hidden = true;
             onDirty(Object.keys(pending).length);
@@ -209,19 +283,33 @@ function lockedNote(key) {
 
 function resetButton(name, key, onReset) {
     if (key.source !== 'admin' || key.locked) return null;
-    const back = Object.prototype.hasOwnProperty.call(key, 'config_value') ? 'the config file\'s value' : 'the default';
+    const back = Object.prototype.hasOwnProperty.call(key, 'config_value') ? 'config file' : 'default';
     return h('button', {
         type: 'button', class: 'btn btn-sm btn-link p-0 ms-1', data: { reset: name },
-        text: `Reset to ${back}`, onclick: () => onReset(`site.${name}`),
+        text: `Reset to ${back}`, title: `Remove the value set here; the ${back === 'default' ? 'default' : 'config file\'s value'} applies again`,
+        onclick: () => onReset(`site.${name}`, back),
     });
 }
 
-function renderText(kind, key, form, onReset) {
+function previewFrame(kind, title) {
+    return h('iframe', {
+        class: 'site-preview', sandbox: '', title, referrerpolicy: 'no-referrer', data: { preview: kind },
+    });
+}
+
+/**
+ * One text's card. `effective` is the text as the pages show it now (GET /admin/site/texts), which
+ * is how a config file's `file` is previewed: the setting itself only carries its path.
+ */
+function renderText(kind, key, form, onReset, effective) {
     const value = key.value || {};
-    const fileFromConfig = textMode(value) === 'file';
-    let mode = fileFromConfig ? 'file' : textMode(value);
+    const current = textMode(value);
+    const fromConfig = configText(key);
+    const fileFromConfig = current === 'file';
+    let mode = current;
     const id = `site-${kind}`;
     const disabled = Boolean(key.locked);
+    const title = (FIELDS[kind] || { title: kind }).title.toLowerCase();
     const label = h('input', {
         type: 'text', class: 'form-control form-control-sm', id: `${id}-label`, maxlength: 60, disabled,
         value: value.label || '', placeholder: (key.type && key.type.default_label) || '',
@@ -235,14 +323,16 @@ function renderText(kind, key, form, onReset) {
         spellcheck: 'true', 'aria-describedby': `${id}-md-help`,
     });
     markdown.value = value.markdown || '';
-    const frame = h('iframe', {
-        class: 'site-preview', sandbox: '', title: `Preview of the ${FIELDS[kind].title.toLowerCase()}`,
-        referrerpolicy: 'no-referrer', data: { preview: kind },
-    });
+    const frame = previewFrame(kind, `Preview of the ${title}`);
     let timer = null;
     const preview = () => frame.setAttribute('srcdoc', previewDocument(markdown.value, pageColours()));
     preview();
 
+    let fileFrame = null;
+    if (fileFromConfig) {
+        fileFrame = previewFrame(`${kind}-file`, `The ${title} from the file, as the pages show it`);
+        fileFrame.setAttribute('srcdoc', previewDocument(effective && effective.markdown ? effective.markdown : '', pageColours()));
+    }
     const panes = {
         url: h('div', { class: 'site-pane', data: { pane: 'url' } },
             h('label', { class: 'form-label small mb-1', for: url.id, text: 'Address (http, https or mailto)' }), url),
@@ -253,9 +343,14 @@ function renderText(kind, key, form, onReset) {
                     h('div', { class: 'form-text', id: `${id}-md-help`, text: 'Headings, lists, bold, italic, links, tables. Raw HTML and images are shown as text.' })),
                 h('div', null, h('div', { class: 'form-label small mb-1', text: 'Preview' }), frame))),
         file: fileFromConfig ? h('div', { class: 'site-pane', data: { pane: 'file' } },
-            h('p', { class: 'small mb-0' }, 'Read at start from the config file\'s ', h('code', { text: value.file }),
-                '. Choose a link or a text to override it here; a file can only be set in the config file.')) : null,
+            h('p', { class: 'small mb-1' }, 'Read at start from ', h('code', { class: 'site-file-path', text: value.file }),
+                ', named in the config file. A file can only be set there; choose a link or a text to override it here.'),
+            h('div', { class: 'form-label small mb-1', text: 'As the pages show it' }), fileFrame) : null,
     };
+    // what "Not shown" does here: hide nothing (nothing is set) or, on purpose, the config file's text
+    const hides = h('p', { class: 'small text-warning-emphasis mb-1 site-hides', data: { hides: kind },
+        text: 'Hides the text from the config file. Reset to config file shows it again.' });
+    const hint = h('p', { class: 'small text-muted mb-1 site-incomplete', hidden: true });
     const choices = [['none', 'Not shown'], ['url', 'Link to a page'], ['markdown', 'Text written here']];
     if (fileFromConfig) choices.push(['file', 'File (config file)']);
     const radios = h('div', { class: 'btn-group btn-group-sm flex-wrap', role: 'radiogroup', 'aria-labelledby': `site-${kind}-title` },
@@ -271,10 +366,13 @@ function renderText(kind, key, form, onReset) {
         }));
     function show() {
         for (const [m, pane] of Object.entries(panes)) if (pane) pane.hidden = m !== mode;
+        hides.hidden = !(mode === 'none' && fromConfig);
     }
     function changed() {
-        if (mode === 'file') form.set(kind, key.value);
-        else form.set(kind, textPayload(mode, { label: label.value, url: url.value, markdown: markdown.value }));
+        const result = textChange(key, mode, { label: label.value, url: url.value, markdown: markdown.value });
+        hint.textContent = result.incomplete || '';
+        hint.hidden = !result.incomplete;
+        form.set(kind, result.value);
     }
     label.addEventListener('input', changed);
     url.addEventListener('input', changed);
@@ -285,14 +383,22 @@ function renderText(kind, key, form, onReset) {
     });
     show();
 
+    // what is in effect and where it comes from, and what the config file says when something else wins
+    const sourceWords = key.locked ? 'locked by the config file' : (SOURCE_TEXT[key.source] || key.source || 'default');
+    const effectLine = h('p', { class: 'small mb-1 site-effect', data: { effect: kind } },
+        'In effect: ', h('strong', { text: describeText(value) }), ` (${sourceWords}).`,
+        key.source === 'admin' && fromConfig ? ` The config file has ${describeText(fromConfig)}.` : '');
+
     return h('section', { class: 'card site-card mb-3', id: `site-card-${kind}`, data: { key: `site.${kind}`, setting: `site.${kind}` } },
         h('div', { class: 'card-body' },
             fieldHead(kind, key, resetButton(kind, key, onReset)),
             lockedNote(key),
+            effectLine,
             h('div', { class: 'row g-2 align-items-end mt-1 mb-2' },
                 h('div', { class: 'col-auto' }, radios),
                 h('div', { class: 'col-sm-4 ms-sm-auto' },
                     h('label', { class: 'form-label small mb-1', for: label.id, text: 'Link text' }), label)),
+            hides, hint,
             panes.url, panes.markdown, panes.file,
             form.errorNode(kind)));
 }
@@ -360,6 +466,13 @@ let ctxRef = {};
 async function load(errors = {}) {
     const policy = await apiRef.policy.get();
     const keys = siteKeys(policy);
+    // the texts as the pages show them (a config file's `file` read); an older server has no such route
+    let effective = {};
+    try {
+        effective = (apiRef.site && apiRef.site.texts ? (await apiRef.site.texts()).texts : null) || {};
+    } catch {
+        effective = {};
+    }
     if (!Object.keys(keys).length) {
         setChildren(el, h('p', { class: 'text-muted', text: 'This server has no site settings.' }));
         return;
@@ -370,10 +483,10 @@ async function load(errors = {}) {
         save.disabled = n === 0;
         status.textContent = n ? `${n} unsaved change${n === 1 ? '' : 's'}.` : 'No changes.';
     });
-    const reset = async (name) => {
+    const reset = async (name, back = 'config file') => {
         try {
             await apiRef.policy.set({ [name]: null });
-            if (ctxRef.toast) ctxRef.toast('Reset. The pages show the config file\'s value now.', 'success');
+            if (ctxRef.toast) ctxRef.toast(`Reset. The pages show the ${back === 'default' ? 'default' : 'config file\'s value'} now.`, 'success');
             await load();
         } catch (e) {
             if (ctxRef.toast) ctxRef.toast(e.message, 'danger');
@@ -400,7 +513,7 @@ async function load(errors = {}) {
         }
     });
 
-    const textCards = TEXTS.filter((k) => keys[k]).map((k) => renderText(k, keys[k], form, reset));
+    const textCards = TEXTS.filter((k) => keys[k]).map((k) => renderText(k, keys[k], form, reset, effective[k]));
     const groups = GROUPS.map(([title, names]) => h('section', { class: 'site-group mb-3' },
         h('h2', { class: 'h6 site-group-title', text: title }),
         names.filter((n) => keys[n]).map((n) => renderScalar(n, keys[n], form, reset))));
