@@ -38,8 +38,10 @@ def anndata_write(root, tree):
                 put(child, k, v)
             return
         if isinstance(value, list):
-            node = zarr_compat.write_array(group, name, np.array(value, dtype=object if value and isinstance(value[0], str) else None))
-            node.attrs.update({"encoding-type": "string-array" if isinstance(value[0], str) else "array", "encoding-version": "0.2.0"})
+            strings = bool(value) and isinstance(value[0], str)
+            # zarr 2 needs a codec for an object array: write strings as anndata does (vlen-utf8)
+            node = zarr_compat.write_strings(group, name, value) if strings else zarr_compat.write_array(group, name, np.array(value))
+            node.attrs.update({"encoding-type": "string-array" if strings else "array", "encoding-version": "0.2.0"})
             return
         node = zarr_compat.write_array(group, name, np.asarray(value))
         node.attrs.update({"encoding-type": "string" if isinstance(value, str) else "numeric-scalar", "encoding-version": "0.2.0"})
