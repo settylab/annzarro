@@ -255,7 +255,8 @@ def test_a_long_readme_is_cut_and_says_so(opened):
     _open_dialog(s.page)
     _tab(s.page, "readme")
     s.page.wait_for_function("() => document.querySelector('#dsi-pane-readme .dsi-truncated')")
-    assert "first 256 KB of" in s.page.inner_text("#dsi-pane-readme .dsi-truncated")
+    # the server cuts at 256 KB (262,144 ASCII characters), the renderer takes 200,000: the note says what shows
+    assert "first 200,000 characters of" in s.page.inner_text("#dsi-pane-readme .dsi-truncated")
 
 
 def test_a_readme_that_is_not_text_is_explained(opened):
