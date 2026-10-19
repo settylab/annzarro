@@ -26,13 +26,15 @@ concurrency:
 jobs:
   test:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: pytest + JS + ESLint (Python 3.9)
             python: "3.9"
+            # ubuntu-latest became Ubuntu 26.04 on 2026-10-19, which has no Python 3.9 build
+            os: ubuntu-24.04
             extras: test,remote   # zarr 2: the remote store tests run here too
             lint: true
             pytest: -n auto annzarro/tests
