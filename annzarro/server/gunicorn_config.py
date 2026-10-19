@@ -14,6 +14,7 @@ import os
 # Read the SAME merged configuration the app will run with (base/env YAML,
 # then $ANNZARRO_CONFIG, then ANNZARRO_* variables), so the bind address and
 # the app's own settings cannot disagree.
+from annzarro.server.jsonlog import log_dict_config, normalise_format
 from annzarro.server.wsgi import load_hosted_config
 
 _config_file = os.environ.get('ANNZARRO_CONFIG', '(none: built-in configs only)')
@@ -65,6 +66,12 @@ daemon = False
 accesslog = '-'
 errorlog = '-'
 loglevel = str(_annzarro.get('log_level', 'info')).lower()
+# server.log_format: json: gunicorn's own messages as JSON lines too, and no
+# gunicorn access log; the app writes the access line itself, with the request
+# id and the route group instead of the client address and the URL.
+if normalise_format(_annzarro.get('log_format')) == 'json':
+    accesslog = None
+    logconfig_dict = log_dict_config(loglevel.upper())
 
 
 # Server hooks

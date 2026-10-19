@@ -107,7 +107,7 @@ class ConfigManager:
     )
 
     # Keys whose environment value is a comma-separated list.
-    LIST_ENV_KEYS = {("server", "allowed_dirs"), ("server", "remote_allowlist")}
+    LIST_ENV_KEYS = {("server", "allowed_dirs"), ("server", "remote_allowlist"), ("server", "metrics_allow")}
 
     # Variables whose names do not follow <SECTION>_<KEY>. The remote-store
     # policy (annzarro.core.remote) reads them itself; mapping them here makes
