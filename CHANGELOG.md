@@ -8,6 +8,15 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- Plot Options, Presets: **Bare** draws only the points (no margins, legend, colour bar, scale bar, axes,
+  grid or zero lines; in 3D no axes or background planes), for figures and overlays. **Default** undoes it.
+
+### Changed
+- The legend title sits above the entries at every legend position, starts where the labels start and has
+  a clear gap below it; before it was flush left, a few pixels off the symbols, 2 px above the first entry
+  (and beside the entries in a legend on top or at the bottom).
+
 ### Fixed
 - Switching Show Legend off or on in Plot Options redrew the graph once per legend entry: about a second
   on a 1M-point plot with 35 categories. It is now a single layout change (about 50 ms).

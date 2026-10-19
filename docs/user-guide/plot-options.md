@@ -44,6 +44,10 @@ is in either theme, and its **Reset** hands it back to the theme.
   top and 60 px bottom, and a colour bar 40 % long with three ticks. It also resets the
   legend position and the other look settings to those of a new plot. It does not
   touch the scale bar, the **Points** and **Focused cell** groups or the export size.
+- **Bare** draws only the points, for figures and overlays: no margins (the plot fills the whole panel),
+  legend, colour bar or scale bar, and no axes (lines, ticks, labels, titles), grid or zero lines; in 3D no
+  axes, grid or background planes either. Background colour, point colours, size and opacity, and what
+  the plot shows stay. **Default** undoes it.
 - **Default** returns the look settings to what a new plot has, with every colour following the app theme again: grid, axes, tick count,
   font and text size, line widths, margins, legend, colour bar, and the scale bar's switch and corner
   (the scale bar goes off). The scale bar's size and unit, the **Points** and

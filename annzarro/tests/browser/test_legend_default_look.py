@@ -1,9 +1,11 @@
-"""The legend with no legend option set looks as it did in v0.6.0, and switching it off and on is quick.
+"""The legend with no legend option set looks as it did in v0.6.0 (but for its title), and switching it off and on is quick.
 
 The expectations below were measured on v0.6.0 (the same fixture, window and browser): the legend's layout
 settings, the room it takes (the plot area's margins), and the geometry of its box and entries. The legend
 options of v0.6.1 (dot size, columns, title) must leave all of it alone while unset. A change of Plotly's
-or the app's layout is a change of these numbers: measure the new look, then change them on purpose.
+or the app's layout is a change of these numbers: measure the new look (LEGEND_MEASURE=1 pytest -s), then change them
+on purpose. The one deliberate change since v0.6.0 is the title: above the entries at every position, starting where
+the labels start, with a line below it (test_legend_title.py); only the box, margins and first entry's place moved.
 
 Switching the legend off and on is a layout change plus nothing per trace: it was one restyle for each of the
 ~70 traces of a plot with ~35 categories, a second at 1M points. The count of Plotly calls guards that.
@@ -11,6 +13,7 @@ Switching the legend off and on is a layout change plus nothing per trace: it wa
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1 (set in CI).
 """
 import json
+import os
 
 import pytest
 
@@ -34,10 +37,10 @@ GEOMETRY = """(id) => { const gd = (%s)(id); const L = gd._fullLayout, lg = L.le
 
 # v0.6.0, the fixture's 200 cells coloured by cell type (3 categories), a 1500 x 1000 window
 EXPECTED = {
-    "right": {"layout": {"orientation": "v", "x": 1.05, "y": 0.5, "xanchor": "left", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 80, "r": 144, "t": 80, "b": 60}, "box": {"w": 106, "h": 106}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 628, "firstY": 223},
-    "left": {"layout": {"orientation": "v", "x": -0.05, "y": 0.5, "xanchor": "right", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 144, "r": 80, "t": 80, "b": 60}, "box": {"w": 106, "h": 106}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 12, "firstY": 223},
-    "top": {"layout": {"orientation": "h", "x": 0.5, "y": 1, "xanchor": "center", "yanchor": "bottom", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "left", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 80, "b": 60}, "box": {"w": 359, "h": 29}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 259, "firstY": 56},
-    "bottom": {"layout": {"orientation": "h", "x": 0.5, "y": -0.208, "xanchor": "center", "yanchor": "top", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "left", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 80, "b": 104}, "box": {"w": 359, "h": 29}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 259, "firstY": 450},
+    "right": {"layout": {"orientation": "v", "x": 1.05, "y": 0.5, "xanchor": "left", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 80, "r": 144, "t": 80, "b": 60}, "box": {"w": 106, "h": 124}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 628, "firstY": 232},
+    "left": {"layout": {"orientation": "v", "x": -0.05, "y": 0.5, "xanchor": "right", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 144, "r": 80, "t": 80, "b": 60}, "box": {"w": 106, "h": 124}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 12, "firstY": 232},
+    "top": {"layout": {"orientation": "h", "x": 0.5, "y": 1, "xanchor": "center", "yanchor": "bottom", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 80, "b": 60}, "box": {"w": 294, "h": 66}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 226, "firstY": 55},
+    "bottom": {"layout": {"orientation": "h", "x": 0.5, "y": -0.236, "xanchor": "center", "yanchor": "top", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 80, "b": 141}, "box": {"w": 294, "h": 66}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 226, "firstY": 449},
 }
 
 
@@ -58,7 +61,7 @@ def server_root(page):
 def test_the_default_legend_looks_as_in_v060(page, server, position):
     page._azroot = server
     got = _geometry(page, position)
-    if not EXPECTED:
+    if not EXPECTED or os.environ.get("LEGEND_MEASURE"):
         print("MEASURED", position, json.dumps(got))
         return
     want = EXPECTED[position]

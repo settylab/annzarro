@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    legendDotSize, proxyMarkerSize, legendColumns, legendOrientation, legendTitleText, columnSizes, assignColumns,
+    legendDotSize, proxyMarkerSize, legendColumns, legendOrientation, legendTitleText, titleIndent, LABEL_INDENT, columnSizes, assignColumns,
     legendOptionsIntoLayout, legendOptionKeys, DOT_SIZE_MAX
 } from '../../../static/js/utils/legend-options.js';
 import { legendKey } from '../../../static/js/utils/legend-entries.js';
@@ -21,8 +21,8 @@ test('unset, the legend is the constant one it always was', () => {
     assert.equal(proxyMarkerSize(s), 12);       // what a constant legend draws, whatever the point size
     assert.equal(legendColumns(s), 1);
     assert.equal(legendOrientation('v', s), 'v');
-    assert.equal(legendTitleText(s), 'cell_type');
-    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': 'cell_type', 'legend.title.side': null, 'legend.traceorder': null, 'legend.groupclick': null, 'meta.azLegendColumns': 1 });
+    assert.equal(legendTitleText(s).replace(/^\u00a0+|<br>\u00a0$/g, ''), 'cell_type');
+    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': legendTitleText(s), 'legend.title.side': 'top', 'legend.traceorder': null, 'legend.groupclick': null, 'meta.azLegendColumns': 1 });
 });
 
 test('a dot size is clamped to what Plotly draws and gives the proxies that size', () => {
@@ -48,7 +48,7 @@ test('several columns make the legend horizontal, one keeps the position\'s orie
 
 test('the title can be switched off', () => {
     assert.equal(legendTitleText({ color: colour, showLegendTitle: false }), '');
-    assert.equal(legendTitleText({ color: colour, showLegendTitle: true }), 'cell_type');
+    assert.equal(legendTitleText({ color: colour, showLegendTitle: true }).replace(/^\u00a0+|<br>\u00a0$/g, ''), 'cell_type');
 });
 
 const proxy = (name, rank) => ({ meta: 'az-legend', name, legendgroup: name, showlegend: true, ...(rank === undefined ? {} : { legendrank: rank }) });
@@ -101,7 +101,7 @@ test('a layout carries the options; unset it is the constant legend', () => {
     const plain = legendOptionsIntoLayout({ legend: { orientation: 'v' } }, { color: colour });
     assert.equal(plain.legend.itemsizing, 'constant');
     assert.equal(plain.legend.orientation, 'v');
-    assert.equal(plain.legend.title.text, 'cell_type');
+    assert.equal(plain.legend.title.text, legendTitleText({ color: colour }));
 });
 
 test('the options are normalised, copied with the look and reset by the default preset', () => {
@@ -113,4 +113,15 @@ test('the options are normalised, copied with the look and reset by the default 
     assert.deepEqual([target.legendDotSize, target.legendColumns, target.showLegendTitle], [7, 3, false]);
     const look = defaultLook();
     assert.deepEqual([look.legendDotSize, look.legendColumns, look.showLegendTitle], [null, null, true]);
+});
+
+test('the title starts where the labels start, in any of the fonts, and leaves a line below it', () => {
+    const px = (family, size) => titleIndent(family, size).length * size * ({ Courier: 0.6, 'Times New Roman': 0.25, Georgia: 0.241, Verdana: 0.352 }[family] ?? 0.278);
+    for (const family of ['Arial', 'Times New Roman', 'Courier', 'Georgia', 'Verdana']) {
+        for (const size of [10, 14, 18, 26]) assert.ok(Math.abs(px(family, size) - LABEL_INDENT) <= size * 0.35, `${family} ${size}: ${px(family, size)}`);
+    }
+    const text = legendTitleText({ color: colour, fontSize: 16, fontFamily: 'Arial, Helvetica, sans-serif' });
+    assert.ok(text.endsWith('cell_type<br>\u00a0'));
+    assert.equal(text.match(/^\u00a0*/)[0].length, titleIndent('Arial', 18).length);
+    assert.equal(legendTitleText({ color: { type: 'none', key: '', column: '' } }), '');       // nothing to title
 });

@@ -59,10 +59,10 @@ test('tick marks follow the tick labels until set on their own', () => {
 
 test('tick keys: marks, labels and count per axis; 2D and 3D axes', () => {
     assert.deepEqual(tickKeys({ showAxisLabels: true, showTickMarks: false, tickCount: 6 }, axisPaths({})), {
-        'xaxis.ticks': '', 'xaxis.showticklabels': true, 'xaxis.nticks': 6,
-        'yaxis.ticks': '', 'yaxis.showticklabels': true, 'yaxis.nticks': 6 });
+        'xaxis.ticks': '', 'xaxis.showticklabels': true, 'xaxis.nticks': 6, 'xaxis.visible': true, 'xaxis.showspikes': null,
+        'yaxis.ticks': '', 'yaxis.showticklabels': true, 'yaxis.nticks': 6, 'yaxis.visible': true, 'yaxis.showspikes': null });
     const keys = tickKeys({ showAxisLabels: false, tickCount: null }, axisPaths({ z: { type: 'obsm' } }));
-    assert.equal(Object.keys(keys).length, 9);
+    assert.equal(Object.keys(keys).length, 15);
     assert.equal(keys['scene.zaxis.nticks'], 0);
     assert.equal(keys['scene.xaxis.showticklabels'], false);
 });
@@ -250,4 +250,27 @@ test('export: twice the size unless a panel says otherwise', () => {
     assert.deepEqual(exportOptions({ scaleExport: false }), { width: 1200, height: 800, scale: 1 });
     // the size the user set is kept as set
     assert.deepEqual(exportOptions({ exportWidth: 1000, exportHeight: 1000 }), { width: 1000, height: 1000, scale: 2 });
+});
+
+test('Bare: only the points; Default undoes it, and the data and colours are not touched', () => {
+    const bare = presetChanges('bare');
+    assert.deepEqual(bare.margins, { l: 0, r: 0, t: 0, b: 0, pad: 0 });
+    assert.equal(bare.showLegend, false);
+    assert.equal(bare.showScaleBar, false);
+    assert.equal(bare.bare, true);
+    for (const k of ['showGrid', 'showZeroLines', 'showAxisTitles', 'showAxisLabels', 'showAxisLines', 'showTickMarks']) assert.equal(bare[k], false, k);
+    for (const k of ['bgColor', 'textColor', 'pointSize', 'pointOpacity', 'color', 'x', 'y', 'fontSize']) assert.equal(k in bare, false, k);   // kept
+    const s = { bgColor: '#123456', pointSize: 3, margins: { l: 80, r: 80, t: 80, b: 60, pad: 4 }, showLegend: true };
+    applyPreset(s, 'bare');
+    assert.equal(s.bgColor, '#123456');
+    assert.equal(s.pointSize, 3);
+    const keys = tickKeys(s, ['xaxis', 'scene.zaxis']);
+    assert.deepEqual([keys['xaxis.visible'], keys['scene.zaxis.visible'], keys['xaxis.showspikes']], [false, false, false]);
+    applyPreset(s, 'default');
+    assert.equal(s.bare, false);
+    assert.equal(s.showLegend, true);
+    assert.deepEqual(s.margins, { l: 80, r: 80, t: 80, b: 60, pad: 4 });
+    assert.equal(tickKeys(s, ['xaxis'])['xaxis.visible'], true);
+    assert.equal(normalizePlotOptions({ bare: 'yes' }).bare, false);
+    assert.ok(STYLE_KEYS.includes('bare'));          // Apply to other panels copies it
 });

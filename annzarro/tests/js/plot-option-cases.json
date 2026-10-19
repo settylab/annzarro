@@ -193,6 +193,12 @@
    "render": true
   },
   {
+   "key": "bare",
+   "value": true,
+   "panel": "a",
+   "render": true
+  },
+  {
    "key": "colorbarPosition",
    "value": "left",
    "panel": "b",

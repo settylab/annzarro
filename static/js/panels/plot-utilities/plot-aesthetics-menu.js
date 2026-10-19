@@ -1,7 +1,7 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, refreshScaleBar } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
-import { applyLegendOptions, legendOrientation, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX } from '../../utils/legend-options.js';
+import { applyLegendOptions, legendOrientation, legendTitleText, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
@@ -185,6 +185,8 @@ export function createPopoverContent(id, settings) {
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-publication-${id}"
                     title="White background, no grid, five ticks per axis, Arial at a larger size, a short colour bar with three ticks, scale bar if set up">Publication</button>
+                <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-bare-${id}"
+                    title="Only the points: no margins, legend, axis labels or grid. For figures and overlays.">Bare</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
                     title="Back to the look every plot starts with">Default</button>
             </div>
@@ -1132,8 +1134,9 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         }
 
         // Presets
-        if ((target.id === `preset-publication-${id}` || target.id === `preset-default-${id}`) && e.type === 'click') {
-            applyPreset(settings, target.id === `preset-publication-${id}` ? 'publication' : 'default');
+        const preset = ['publication', 'bare', 'default'].find(name => target.id === `preset-${name}-${id}`);
+        if (preset && e.type === 'click') {
+            applyPreset(settings, preset);
             relookPlot(plotContainer, settings);
             // the menu shows the new values: drawn again, the open groups as they are
             const body = document.querySelector('.aesthetics-popover .popover-body');
@@ -1484,6 +1487,8 @@ function applyTextFont(plotContainer, settings) {
         ...text('coloraxis.colorbar.tickfont', 0), ...text('coloraxis.colorbar.title.font', 2)
     };
     for (const axis of axisPaths(settings)) Object.assign(update, text(`${axis}.tickfont`, 0), text(`${axis}.title.font`, 2));
+    // the legend title's indent is spaces of the title's font (utils/legend-options.js)
+    if (hasLegendEntries(plotContainer.data)) update['legend.title.text'] = legendTitleText(settings);
     Plotly.relayout(plotContainer, update);
     restyleColourBars(plotContainer,
         { ...text('marker.colorbar.tickfont', 0), ...text('marker.colorbar.title.font', 2) },
