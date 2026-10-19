@@ -13,6 +13,7 @@ with the release after it. Older releases are listed on
 - `annzarro serve` starts the production server in one command: gunicorn with the bundled configuration, reading the same site file and `ANNZARRO_*` variables as `annzarro start`, with `--config`, `--host`, `--port`, `--workers`, `--threads` and extra gunicorn options after `--`. It prints the URL, workers, threads, whether login is on and the configuration file, and login stays on unless the configuration turns it off. The new `server` extra installs gunicorn: `pip install 'annzarro[server]'`. The explicit gunicorn command still works.
 - An optional Prometheus `/metrics` endpoint (`server.metrics_enabled`, off by default): requests and latency by route group, requests in flight, response bytes, dataset cache hits, misses and size, open datasets, memory and the worker's process id, merged across gunicorn workers. Only addresses in `server.metrics_allow` (loopback unless you list others) can read it; everyone else gets the reply of a URL that does not exist.
 - `server.log_format: json` (or `ANNZARRO_SERVER_LOG_FORMAT=json`) writes log lines on standard error as JSON, with a request id (also sent as `X-Request-Id`), method, route group, status and duration on each request's access line. The default text format is unchanged. New page: Deployment, Monitoring a server.
+- With JSON logs or metrics on, an admin change's audit record carries the `request_id` of its request, the id on its log lines; the Audit log section shows it as the time's tooltip. Older records verify as before.
 - Plot Options, Presets: **Bare** draws only the points (no margins, legend, colour bar, scale bar, axes,
   grid or zero lines; in 3D no axes or background planes), for figures and overlays. **Default** undoes it.
 
@@ -23,6 +24,7 @@ with the release after it. Older releases are listed on
 - The legend title sits above the entries at every legend position, starts where the labels start and has
   a clear gap below it; before it was flush left, a few pixels off the symbols, 2 px above the first entry
   (and beside the entries in a legend on top or at the bottom).
+- Admin page, Server health: each worker's memory, and the total. Every worker now reports every 2 seconds whether or not it is serving, so a quiet worker is no longer shown as idle, and one that has not reported for a minute (not ten) is shown as stale: it is stuck. Server health and `/metrics` share one snapshot file and one writer per worker.
 - `annzarro start` serves through waitress (a new dependency, pure Python, also on Windows) instead of Flask's development server. Debug mode and HTTPS still use the development server. A request line and headers over 262,144 bytes are refused with 431. It serves 32 request threads; `server.threads` (`ANNZARRO_SERVER_THREADS`) sets the number.
 
 ### Fixed

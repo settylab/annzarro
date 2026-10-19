@@ -1,16 +1,19 @@
 # Monitoring a server
 
-Three things tell you how a server is doing: a health check for the process manager and the load
-balancer, an opt-in `/metrics` endpoint for Prometheus, and, if you ship logs, JSON log lines.
-Metrics and JSON logs are off by default; a server that never sets them behaves as before.
+Each way of looking at a running server answers a different person. Point each at the right one:
 
-## Health check
+| What | Who can see it | Point at it |
+|---|---|---|
+| `GET /api/v1/status` | everybody: `{"server": {"status": "running", "version": ...}}`; an admin also the host, process, memory and data directory | a load balancer's probe or a `systemd` watchdog: a `200` means the process is serving |
+| [`GET /metrics`](#metrics) | the addresses in `server.metrics_allow` only; off by default | Prometheus, for graphs and alerts |
+| The admin page's Server health section ({ref}`admin-health`) | admins | a person: each worker's read budget, caches, memory, refusals by reason and the users active now |
+| The audit log ({ref}`admin-audit`) | admins, and `annzarro admin audit verify` | who changed what in the admin interface, with a hash chain that shows tampering |
+| The logs ({ref}`lab-server-logs`), as text or [JSON](#json-logs) | whoever reads the journal or the log file | what happened, request by request |
 
-`GET /api/v1/status` answers without login. Anybody gets `{"server": {"status": "running", "version": ...}}`;
-an admin also gets the host, the process, memory and the data directory. Use it for a load balancer's
-probe or a `systemd` watchdog: a `200` means the process is serving. The admin page's Health section
-({doc}`admin`) shows each worker's caches, read budget and refusals, and {doc}`lab-server` shows where
-the server's logs go.
+`/metrics` and Server health read the same per-worker numbers ([below](#several-gunicorn-workers)): the
+first for a machine, over time; the second for a person, now, with the user names and the refusal
+reasons that `/metrics` leaves out. Metrics and JSON logs are off by default; a server that never
+sets them behaves as before.
 
 ## Metrics
 
@@ -63,9 +66,10 @@ behind a firewall; the server logs a warning at startup when you do.
 Every gunicorn worker is its own process and counts its own requests, and a scrape reaches one of them
 at random. Prometheus' multiprocess mode would need an environment variable set before the server
 imports, a gunicorn hook that retires dead workers and a client library. AnnZarro instead has each worker
-write a small snapshot file every two seconds (under `annzarro_admin/metrics`, beside the
-users file; the same mechanism as the admin Health section) and whichever worker is scraped answers with
-all of them. No library is needed: the exposition is written by AnnZarro itself.
+write one small snapshot file every two seconds, `annzarro_admin/health/<host>-<pid>.json` beside the
+users file, and whichever worker is scraped answers with all of them. It is the same file the admin
+Server health section reads: one file and one writer per worker, whichever of the two is on. No
+library is needed: the exposition is written by AnnZarro itself.
 
 Each series carries a `worker` label with the process id. Sum over it in the query
 (`sum by (group) (rate(annzarro_http_requests_total[5m]))`). A worker that is recycled
@@ -126,6 +130,12 @@ as one JSON object, which journald, Loki or Elasticsearch ingest without a parse
   datasets people open. In this mode gunicorn's access log is off and its own messages are JSON too.
 - The request id is the caller's `X-Request-Id` when it is up to 64 letters, digits, `.`, `_` or `-`
   (a proxy can set one), else a fresh one. It is sent back in the `X-Request-Id` response header, so a user can quote it.
+- An admin change also writes its audit record as a line of logger `annzarro.audit`, as in the text
+  format: the `message` is the record itself, the copy that shows a cut-off audit log. The record in
+  `audit.jsonl` carries the same `request_id` ({ref}`admin-audit`), so the change, its access line and
+  anything logged while it ran share one id. Like the text log, this line and a few warnings (a
+  refused path, a failed login with its username) say more than the access line; passwords, tokens
+  and cookie values are never logged.
 - `server.log_file` stays in the text format. `log_level` applies as before.
 
 The default is `text`, the format the server has always written.
@@ -141,4 +151,4 @@ The default is `text`, the format the server has always written.
 | Memory | `max(annzarro_process_resident_memory_bytes) / <machine RAM> > 0.7` | before the kernel kills a worker |
 | Cache churn | `rate(annzarro_cache_misses_total[15m]) / (rate(annzarro_cache_hits_total[15m]) + rate(annzarro_cache_misses_total[15m])) > 0.8` | the cache is too small for what people open (`server.cache_memory_mb`) |
 | Worker hung | `annzarro_worker_snapshot_age_seconds > 60` | a worker stopped writing its numbers |
-| Down | the health check, or `up == 0` | the process is gone |
+| Down | `GET /api/v1/status` fails, or `up == 0` | the process is gone |
