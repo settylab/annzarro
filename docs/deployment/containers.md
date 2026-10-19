@@ -43,8 +43,8 @@ dataset browser as the folder `data`. The container runs as uid and gid 10001; a
 `/state` must be writable for that account (`chown -R 10001:10001 state`). A named volume needs
 nothing.
 
-The health check asks `/api/v1/status` every 30 seconds. With login on an anonymous client gets
-`401`, which counts as healthy: the server is up and answering. Only no answer or a `5xx` is unhealthy.
+The health check asks `/api/v1/health` every 30 seconds ({ref}`lab-server-health`). It answers `200`
+without login, login on or off; any other answer, or none, is unhealthy.
 
 ## Docker
 

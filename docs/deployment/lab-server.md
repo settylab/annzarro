@@ -113,7 +113,7 @@ The command is shorthand for the explicit gunicorn command, which you can run in
 ```bash
 sudo -u annzarro env ANNZARRO_HOME=/var/lib/annzarro ANNZARRO_CONFIG=/etc/annzarro/site.yaml \
   /opt/annzarro/venv/bin/gunicorn -c python:annzarro.server.gunicorn_config \
-  --limit-request-line 8190 "annzarro.server.wsgi:create_wsgi_app()"
+  "annzarro.server.wsgi:create_wsgi_app()"
 ```
 
 The bundled gunicorn configuration `annzarro.server.gunicorn_config` reads the same AnnZarro
@@ -122,9 +122,9 @@ workers (default: twice the CPUs plus one, at most 4) of the `gthread` class wit
 threads each (default 4), so a slow request (a large read, a remote store) does not hold a whole
 worker, sets a 60 s worker timeout and sends
 gunicorn's own logs, including the access log, to standard error. Options given on the
-command line, such as `--limit-request-line` here, override it. In a source checkout,
-`annzarro/server/run_gunicorn.sh` runs this command without `--limit-request-line`, with `ANNZARRO_CONFIG` defaulting to
-`/etc/annzarro/site.yaml` and stops if that file is missing.
+command line override it. In a source checkout, `annzarro/server/run_gunicorn.sh` runs this
+command with `ANNZARRO_CONFIG` defaulting to `/etc/annzarro/site.yaml` and stops if that file is
+missing.
 
 `create_wsgi_app()` loads the same layered configuration as `annzarro start` (built-in
 defaults, `/etc/annzarro/config.yaml`, the user and project files, then the file named by
@@ -162,7 +162,10 @@ User=annzarro
 Group=annzarro
 Environment=ANNZARRO_HOME=/var/lib/annzarro
 Environment=ANNZARRO_CONFIG=/etc/annzarro/site.yaml
-ExecStart=/opt/annzarro/venv/bin/annzarro serve -- --limit-request-line 8190
+ExecStart=/opt/annzarro/venv/bin/annzarro serve
+# the start counts as failed unless the server answers (see "Health check")
+ExecStartPost=/usr/bin/curl --silent --fail --retry 15 --retry-connrefused --retry-delay 1 --max-time 5 \
+    --output /dev/null http://127.0.0.1:8000/api/v1/health
 Restart=on-failure
 RestartSec=5
 
@@ -193,18 +196,27 @@ TLS belongs in the proxy. Without it, passwords and session cookies cross the ne
 text.
 
 ```nginx
+# nginx keeps these connections to gunicorn open and reuses them
+upstream annzarro {
+    server 127.0.0.1:8000;
+    keepalive 128;            # idle connections kept per nginx worker process
+    keepalive_timeout 4s;     # shorter than gunicorn's 5 s (nginx 1.15.3 and later)
+}
+
 server {
     listen 443 ssl;
+    http2 on;                 # nginx 1.25.1 and later; before that: listen 443 ssl http2;
     server_name annzarro.example.org;
 
     ssl_certificate     /etc/letsencrypt/live/annzarro.example.org/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/annzarro.example.org/privkey.pem;
 
-    # Long legacy deep links carry the view in the query string (see below).
+    # The web client puts the cells or genes it asks for in the URL: 12 KB for 2,000 genes,
+    # over the default 8 KB (see below).
     large_client_header_buffers 4 32k;
 
     location / {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://annzarro;
         proxy_set_header Host              $host;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -215,6 +227,8 @@ server {
         # nginx speaks HTTP/1.0 to an upstream unless told otherwise, and then
         # cannot tell a reply that failed half way from one that ended
         proxy_http_version 1.1;
+        # no "Connection: close" to gunicorn, so that nginx may keep the connection
+        proxy_set_header Connection "";
     }
 }
 
@@ -225,35 +239,82 @@ server {
 }
 ```
 
-`proxy_count: 1` in the configuration tells AnnZarro to trust exactly one `X-Forwarded-*` hop.
-It is required: the built-in default is 0, because a plain `annzarro start` has no proxy in front
-and trusting the headers there would let any client set its own address. Set it in the
-configuration file as above or with `ANNZARRO_SERVER_PROXY_COUNT=1` in the service environment.
-The trusted hop count applies to `X-Forwarded-For` (client address), `X-Forwarded-Proto` (whether
-the login cookie is marked `Secure`, see {doc}`authentication`) and `X-Forwarded-Host`.
-With two proxies in a row (say a load balancer and nginx) set it to 2; never set it higher than
-the number of proxies you run, or clients can forge their address. AnnZarro already compresses
-JSON replies on a shared server; if nginx compresses `application/json` too, set
-`server.compress_responses: false`.
+**Connections to gunicorn.** A plot loads through many small requests, and the page's scripts and
+styles come with them: the 4-panel view we loaded for this page made 185. Before nginx 1.29.7, a
+`proxy_pass` to an address sends `Connection: close` and opens a new connection to gunicorn for every
+one of them: 184 for that page load, and about 360 sockets left in TIME_WAIT on the nginx host after
+each load, every one holding a port for a minute. The `upstream` block with `keepalive`, `proxy_http_version
+1.1` and the empty `Connection` header make nginx keep its connections to gunicorn and reuse them; nginx 1.29.7 and later do so by default, and the lines
+still set the sizes below.
 
-Three things about the replies that list every cell or gene name of a store (`/data/cells`,
-`/data/genes`; a 95.6 million cell store is a 2.1 GB reply, 0.4 GB gzipped). They are written as
-they are read, with no `Content-Length`, and carry `X-Accel-Buffering: no`, so nginx passes them on
-instead of spooling them to disk (up to `proxy_max_temp_file_size`, 1 GB). That trades nginx's
-protection against slow readers for memory: a client that stops reading holds one server thread
-until it hangs up, gunicorn's `gthread` workers do not time out a
-send, and `annzarro start` (waitress) closes a connection that has made no progress for 300 s. `server.names_stream_max_concurrent` (default 2 per worker, for lists of more than `names_stream_slot_above`, a million names, so that opening any dataset never waits) bounds this; a third concurrent
-request is answered `503` with `Retry-After` before any byte, and the web client retries once.
-`proxy_http_version 1.1` (above) lets a failure after the first byte end the reply without its
-final chunk, which the browser reports as a failed read. Over HTTP/1.0 the close would look like
-a normal end, so a failed stream also writes `<names stream aborted>` before closing, which is not
-JSON, and the web client checks that the array closed and holds the number of names the reply
-announced. `proxy_read_timeout` counts the time between two reads, not the whole reply, so 120 s is
-fine.
+- `keepalive` is the number of idle connections each nginx worker process keeps. A browser on
+  HTTP/2 sends all of a view's requests at once (up to `http2_max_concurrent_streams`, 128), and
+  each one in flight needs a connection to gunicorn; connections beyond the idle ones kept are closed
+  after the burst and opened again for the next. The 4-panel view opened 78 new connections to
+  gunicorn per load with `keepalive 16`, 53 with 32, 21 with 64 and none with 128 or 256. An idle
+  connection holds no gunicorn thread; keep nginx's worker processes times `keepalive` well below
+  gunicorn's workers times 1,000 (its `worker_connections`).
+- `keepalive_timeout` is how long nginx keeps an idle connection, and it must be shorter than
+  gunicorn's `keepalive`, which the bundled configuration sets to 5 s. gunicorn closes a connection that
+  has been idle that long; if nginx still thought it open, a request sent at that moment is lost
+  to `upstream prematurely closed connection`, and nginx's own default of 60 s makes that possible.
+  The block sets 4 s. If you raise gunicorn's `keepalive` in your own configuration, raise
+  `keepalive_timeout` but keep it below.
 
-Any other proxy (Apache, Caddy, Traefik, an institutional gateway) works the same way: forward
-to `127.0.0.1:8000`, pass the `X-Forwarded-For`, `-Proto` and `-Host` headers, and allow long
-request lines.
+**HTTP/2 to the browsers.** Over HTTP/1.1 a tab opens about six connections to the server and
+queues every other request behind them, which a view of several panels soon fills. Over HTTP/2 the
+tab sends all of them on one connection. `http2 on;` (or `http2` on the `listen` line before nginx
+1.25.1; it still works afterwards but is deprecated) is all it takes. gunicorn still sees HTTP/1.1
+from nginx. The 4-panel view loaded in headless Chromium against nginx 1.30 with a latency of 50 ms
+added to every request took 3.7 s to draw over HTTP/1.1 and 2.5 s over HTTP/2 (median of 15 loads
+each); with no added latency, on one machine, both took 1.9 s.
+
+The streamed name lists (below) behave the same over HTTP/2: a 1.5 million cell list (22.5 MB) came
+back byte for byte the same over both protocols, and read at 2 MB/s nginx held the upstream
+connection for the whole 7.5 s that the client took, so `X-Accel-Buffering: no` is honoured and
+`proxy_buffering off` is not needed. A request line of 20 KB passed with `large_client_header_buffers
+4 32k;` over HTTP/2 as over HTTP/1.1.
+
+(lab-server-health)=
+## Health check
+
+`GET /api/v1/health` answers `200` with `{"status": "ok"}` and `Cache-Control: no-store`. Use it
+for every probe: a service manager's start check, a container health check, a load balancer or
+a monitor.
+
+```bash
+curl -fsS --max-time 5 http://127.0.0.1:8000/api/v1/health
+```
+
+- It needs no login, also on a server with login on: a probe has no account. It reads no
+  dataset, no user file and no directory and names nothing of the server (no version, path or
+  host), so a slow disk or a busy dataset cannot fail it, and it costs a few microseconds.
+- `/api/v1/status` is not a probe. With login on it answers `401` to anyone not signed in,
+  signed-in users get only `running` and the version, and an admin gets the host, the process and the
+  data directory.
+- The reply comes from a gunicorn worker that has loaded the application, so `200` means the
+  server is up and can answer, and it is the readiness check too. While gunicorn starts its
+  workers a connection waits and is not refused: give every probe a timeout (the `--max-time 5`
+  above).
+- `200` says nothing about a dataset. To see that a store opens, check the datasets themselves
+  after a change ({doc}`hosting-checklist`).
+- With `server.url_prefix` set, the path is `<prefix>/api/v1/health`.
+
+```nginx
+location = /healthz {
+    access_log off;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_pass http://annzarro/api/v1/health;
+}
+```
+
+| Probe | How |
+|---|---|
+| systemd | `ExecStartPost=` with `curl --fail --retry 15 --retry-connrefused`, as in the unit above: the start counts as failed when the server does not answer |
+| Container health check | call `http://127.0.0.1:8000/api/v1/health` and expect `200` |
+| nginx | open source nginx makes no active checks. A `location = /healthz` that passes on to the health route (the block above) lets a load balancer in front of nginx check nginx and gunicorn together |
+| Kubernetes | `readinessProbe` and `livenessProbe` of `httpGet` on `/api/v1/health`, port 8000, with `timeoutSeconds: 5` and a `failureThreshold` of 3 or more for liveness |
 
 ## Serving under a path
 
@@ -271,10 +332,14 @@ server:
   proxy_count: 1
 ```
 
+These locations go in the `server` block above and use its `upstream annzarro`.
+
 ```nginx
 location = /explore { return 301 /explore/; }
 location /explore/ {
-    proxy_pass http://127.0.0.1:8000;           # no trailing slash: path passed as is
+    proxy_pass http://annzarro;                 # no trailing slash: path passed as is
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
     proxy_set_header Host               $host;
     proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto  $scheme;
@@ -288,7 +353,9 @@ beyond `proxy_count: 1`.
 ```nginx
 location = /explore { return 301 /explore/; }
 location /explore/ {
-    proxy_pass http://127.0.0.1:8000/;          # trailing slash: /explore/x -> /x
+    proxy_pass http://annzarro/;                # trailing slash: /explore/x -> /x
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
     proxy_set_header Host               $host;
     proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto  $scheme;
@@ -321,22 +388,31 @@ the same. `url_prefix: /a/../b` stops the server with "server.url_prefix must be
 Browsers never send the fragment to the server, so the request is short whatever the layout,
 and only `dataset_path` appears in access logs.
 
-Older links, and links built by other tools such as DoLiMap, carry an uncompressed view in the
+The web client's own requests are long too: it sends the cells or genes it asks for in the URL,
+about 12 KB for 2,000 genes. Older links, and links built by other tools such as DoLiMap, carry an uncompressed view in the
 *query string* (`?dataset_path=…&view=…`). That whole URL is part of the HTTP request line,
 and two fully configured panels are already about 4.7 KB ({doc}`../reference/deep-links`). The
 limits on the way:
 
 | Component | Default limit on the request line | Over the limit | Raise with |
 |---|---|---|---|
-| gunicorn | 4,094 bytes | 400 "Request Line is too large" | `--limit-request-line 8190` (its maximum), or `0` for no limit |
+| gunicorn, bundled configuration | none (`server.limit_request_line: 0`) | | set a number there to cap it; gunicorn accepts at most 8,190 |
+| gunicorn without the bundled configuration | 4,094 bytes | 400 "Request Line is too large" | `--limit-request-line 0`, or up to 8190 |
 | nginx | one buffer of `large_client_header_buffers` (8 KB) | 414 Request-URI Too Large | `large_client_header_buffers 4 32k;` |
 | `annzarro start` (waitress) | 262,144 bytes of request line and headers together | 431 | not needed |
 
-We measured the gunicorn and waitress rows against gunicorn 26.2 and waitress 3.0: a 4.5 KB
-request line returned 400 under the gunicorn default and 200 with `--limit-request-line 8190`;
+The bundled gunicorn configuration sets no limit on the request line, because the line is
+what bounds a long link and the reverse proxy in front is the place to bound it: with the nginx
+block above (`large_client_header_buffers 4 32k;`) a line over 32 KB never reaches gunicorn. The
+web client sends the cells or genes it asks for in the URL (12 KB for 2,000 genes), so a gunicorn
+cap of 4,094 or 8,190 would refuse ordinary requests, not only legacy links. The other limits of
+the bundled configuration stay: 100 header fields, each up to 8,190 bytes.
+
+We measured gunicorn and waitress against gunicorn 26.2 and waitress 3.0: a 4.5 KB
+request line returned 400 under the gunicorn default and 200 with `0` or with 8190;
 9 KB returned 400 with 8190; 60 KB returned 200 with `0`. waitress answered 200 at 262,000
-bytes and 431 at 300,000. If people bring legacy links, raise both
-limits; otherwise ask them to re-share with the current **Share Link**.
+bytes and 431 at 300,000. nginx always needs the larger buffers, for the web client's own requests;
+legacy links need them as well, or people must re-share with the current **Share Link**.
 
 (lab-server-updating)=
 ## Updating datasets

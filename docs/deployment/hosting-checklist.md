@@ -58,11 +58,22 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
   privacy notice, a log retention period, `site.robots: noindex` unless you want search engines,
   and a licence for every dataset you show. Set `site.imprint`, `site.privacy` and
   `site.accessibility` so the links appear on every page, and read {doc}`public-site` first.
+- **Proxy keeps connections and speaks HTTP/2.** nginx has `upstream { server 127.0.0.1:8000;
+  keepalive 32; keepalive_timeout 4s; }` (4 s: shorter than gunicorn's 5 s idle close),
+  `proxy_http_version 1.1;` and `proxy_set_header Connection "";`, and the `listen` line has HTTP/2
+  (`http2 on;`, or `listen 443 ssl http2;` before nginx 1.25.1). `curl -sI --http2 https://<host>/login`
+  starts with `HTTP/2 200`. Without the first, every request opens a new connection to gunicorn
+  on nginx before 1.29.7 ({doc}`lab-server`).
+- **Health check.** `curl -fsS https://<host>/api/v1/health` returns `{"status": "ok"}` without
+  logging in. Point the service manager, container and load balancer probes at it, not at
+  `/api/v1/status`, which asks for a login ({doc}`lab-server`).
 - **Memory.** `gunicorn workers x cache_memory_mb` fits the host, with room for the chunks
   being read.
-- **Long URLs.** gunicorn `--limit-request-line 8190` and nginx
-  `large_client_header_buffers 4 32k;` if users bring legacy query-string deep links
-  ({doc}`lab-server`).
+- **Long URLs.** nginx `large_client_header_buffers 4 32k;` is always needed: the web client
+  sends about 12 KB request lines for 2,000 genes, over the default 8 KB (414). It bounds the line (414 above
+  32 KB). The bundled gunicorn configuration sets no limit of its own (`server.limit_request_line:
+  0`); do not add `--limit-request-line` to the command, as a value of 8190 or less refuses the
+  long URLs the web client builds ({doc}`lab-server`).
 
 ## What users can and cannot do
 
