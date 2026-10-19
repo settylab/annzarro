@@ -88,6 +88,10 @@ A condition (1), a nested OR group (3) with the button that moves a condition ou
 and the resulting count (4).
 ```
 
+To select an area of a plot rather than type numbers, draw lines on the plot: each becomes a
+condition, and the AND/OR bar then decides whether the lines keep the area or cut it out
+({doc}`../tutorials/line-select`, {ref}`tut-ls-area`).
+
 Groups nest further: the **>** of a condition inside a group makes a group inside that group.
 **<** moves a condition one level out, **Delete** removes it, the **×** at the lower left of a group
 removes that group and **Clear All** removes every condition. Numeric columns offer Equals, Not,
@@ -109,6 +113,37 @@ m = g["var/kompot_de_Young_to_Old_mahalanobis"][:]
 l = g["var/kompot_de_Young_to_Old_mean_lfc"][:]
 print(((m > 5) & ((l > 0.05) | (l < -0.05))).sum())   # 159
 ```
+
+## Filter with a line drawn on a plot
+
+The **Line filter** button before the table's search box (icon only on a narrow table) lets you draw a line on a
+plot of its own rows (a cell table: plots of cells; a gene table: plots of genes). The side to the
+**right** of the line, looking from where you press the mouse towards where you release it, is
+filtered out of the table. The tutorial {doc}`../tutorials/line-select` shows it on a UMAP.
+
+- While the tool is on, the table has a red frame and a red badge **Line filter on: *table*** shows in the dataset bar; hover over it for the help, click it to stop. Closing the table, Close all, loading a panel set or link and opening another dataset also stop the tool.
+- While you drag, the line and the shaded side that will be filtered out are drawn. **Shift** snaps
+  the line to multiples of 45°. **Esc** stops: a line being drawn is dropped, and the tool is left.
+  The tool stays armed after a line, so several lines make an area. Click the button again to leave it.
+- On release the table gets the columns of the plot's x and y axes (if it has none of them yet), a
+  derived column `y − m·x` named after them, such as `X_umap:1 − 0.1875·X_umap:0`, and one
+  condition on that column, joined to the filter by an outer AND. The slope and the intercept are rounded
+  to six significant digits, before the preview is drawn and the condition made, so the condition is
+  the line you saw. A condition keeps the points on the line.
+- A horizontal or vertical line needs no derived column: the condition is on the y or the x column.
+- A plot that is not yet linked to a table is linked to this one.
+- The side is the one you see on the screen, also when an axis is reversed.
+- The columns and conditions are fixed expressions of the original variables: changing the plot's axes
+  afterwards changes nothing in the table, and a new line on the plot adds the columns of its new axes.
+  A derived column appears in **Selected Columns** and can be removed there. An identical one is
+  reused. Delete a line by deleting its condition: a derived column that no condition uses any more is removed from the table with it (the axis columns stay).
+- The tool leaves 3D plots, plots in large-plot mode (a table cannot list so many cells) and plots of
+  the other kind alone: they get no layer and the mouse works as usual. A plot with a text, date or
+  logarithmic axis, or one whose axis is not something the table has columns of, shows a small tooltip
+  near the cursor that says why, and still takes the mouse.
+
+Lines drawn counter-clockwise around an area keep it. Drawn clockwise, and with the outer AND switched
+to OR, they filter it out.
 
 ## Link a plot to a table
 

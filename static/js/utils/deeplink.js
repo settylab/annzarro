@@ -50,6 +50,10 @@
  *     subset: { n, seed, balance?, where? }  // the cells shown (utils/subset.js);
  *             | null                         //   null: every cell; absent: the
  *                                            //   server's default for the dataset
+ *     sessionStyles: {                       // the session's default plot style, only the keys that
+ *       'cell-plot': {…}, 'gene-plot': {…}   //   differ from built-in (utils/session-style.js); absent: none.
+ *     },                                     //   Opening the link makes it the opener's default, so plots
+ *                                            //   saved on Default (`styleDefault: true`) look as they did
  *     // ── preferred: a full layout tree ────────────────────────────────────
  *     layout: {                              // exactly what saveLayout() returns
  *       v: 1,
@@ -311,6 +315,11 @@ export function normalizeView(view) {
         out.store = view.store;
     }
     if (typeof view.annzarro === 'string') out.annzarro = view.annzarro;
+
+    // The session's default plot style (utils/session-style.js): kept as it is, cleaned where it is applied
+    if (view.sessionStyles && typeof view.sessionStyles === 'object' && !Array.isArray(view.sessionStyles)) {
+        out.sessionStyles = view.sessionStyles;
+    }
 
     // Absent stays absent (the dataset's default); a malformed subset is
     // dropped rather than failing the whole link.

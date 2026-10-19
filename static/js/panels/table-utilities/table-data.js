@@ -5,10 +5,12 @@ import { notify } from '../../utils/notify.js';
 import { removedColumnsNotice } from '../../utils/notice-rules.js';
 import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, TEXT_ONLY_NUM_TYPE, manyValuesType, textOnlyConditions, textOnlyNumConditions, fastSelectConditions, installCriteriaSearch } from '../../utils/search-builder.js';
 import { VALUE_LIST_MAX } from '../../utils/categories.js';
+import { isDerived, derivedValues, derivedColumn, sameExpr, sameColumn, numberCriterion, addCriterion, configDepth, referencedKeys, orphanedDerived } from '../../utils/line-select.js';
 import { DataManager } from '../../data-manager.js';
 import { RemoteNames } from '../../utils/remote-names.js';
-import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents} from './table-ui-make.js'
+import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents, syncSelectedColumns } from './table-ui-make.js'
 import { freezeSelection } from '../../utils/closed-table.js';
+import { lineSelectButton } from './line-select-ui.js';
 import {
     Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
     classifyError, missingEntity, unreadableCell, classifyFocusRow
@@ -222,6 +224,7 @@ export async function loadTableData(settings, entityType, signal = null) {
  * @returns {Promise<Array>} - The column data
  */
 async function loadColumnData(column, entityType, signal = null) {
+    if (isDerived(column)) return loadDerivedColumn(column, entityType, signal);
     const { type, key, column: columnName } = column;
     const source = `${type}.${key}` + (columnName ? `.${columnName}` : '');
     const expected = entityType === 'cells'
@@ -327,6 +330,41 @@ async function loadColumnData(column, entityType, signal = null) {
                 || classifyError(error, { ...opts, total: expected })
         };
     }
+}
+
+/**
+ * A derived column of the line-selection tool: y - m*x of two columns of this
+ * table's rows (utils/line-select.js). Its sources are read like any column,
+ * so a source that is missing or unreadable says so in the coverage, and the
+ * derived values are null where a source value is.
+ * @param {Object} column - {type: 'derived', key, expr: {y, x, m}}
+ * @param {string} entityType - 'cells' or 'genes'
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{values: Array, coverage: Object}>}
+ */
+async function loadDerivedColumn(column, entityType, signal = null) {
+    const { y, x, m } = column.expr;
+    const ly = await loadColumnData(y, entityType, signal);
+    const lx = await loadColumnData(x, entityType, signal);
+    const expected = entityType === 'cells'
+        ? (DataManager.getCells() || []).length
+        : (DataManager.getGenes() || []).length;
+    const source = column.key;
+    const readable = (l) => Array.isArray(l.values) && l.values.length === expected;
+    if (!readable(ly) || !readable(lx)) {
+        return {
+            values: Array(expected).fill(null),
+            coverage: Coverage.merge([ly.coverage, lx.coverage], entityType)
+        };
+    }
+    const values = derivedValues(ly.values, lx.values, m);
+    const sources = [ly.coverage, lx.coverage];
+    return {
+        values,
+        coverage: sources.every(c => c.isComplete)
+            ? classifyValues({ values, expected, unit: entityType, source, role: ROLE.DESCRIBES })
+            : Coverage.merge(sources, entityType)
+    };
 }
 
 /**
@@ -647,7 +685,9 @@ export function getColumnKey(column) {
  * @returns {string} - The display name
  */
 export function getColumnDisplayName(column) {
-    if (column.type === 'obs' || column.type === 'var') {
+    if (isDerived(column)) {
+        return column.key;
+    } else if (column.type === 'obs' || column.type === 'var') {
         return `${column.key}`;
     } else if (column.type === 'obsm' || column.type === 'varm') {
         return `${column.key}:${column.column}`;
@@ -714,6 +754,43 @@ export function freezeTableState(settings, { rowNames = null, rows = 0 } = {}) {
         const selection = freezeSelection(settings.currentEntries, rowNames, rows);
         settings.closedSelection = selection ? { ...selection, toJSON: () => undefined } : null;
     }
+}
+
+/**
+ * Keep a table free of derived columns (the line filter's `y - m*x`, utils/line-select.js) that no
+ * condition uses any more. SearchBuilder says every change of its conditions (a condition deleted
+ * or its column changed, a group deleted, Clear All) on its container; each time, the derived
+ * columns still named by the filter are worked out, and any other is removed from the table's
+ * columns and from the column chooser's list, with ONE rebuild of the table (the same event the
+ * Apply Changes button sends). Nothing else changes: a table with no derived column, or none
+ * orphaned, does nothing here. Ordinary columns, the axes a line added included, always stay.
+ * @param {HTMLElement} tableContainer
+ * @param {Object} dataTable - DataTables API instance
+ * @param {Object} settings - the panel's settings (columns, id)
+ */
+function watchDerivedColumns(tableContainer, dataTable, settings) {
+    const $box = $(tableContainer);
+    $box.off('.azDerived');
+    const check = () => {
+        if (!Array.isArray(settings.columns) || !settings.columns.some(isDerived)) return;
+        let details;
+        try {
+            details = dataTable.searchBuilder.getDetails();
+        } catch {
+            return;
+        }
+        const gone = orphanedDerived(settings.columns, referencedKeys(details), getColumnKey);
+        if (!gone.length) return;
+        settings.columns = settings.columns.filter(c => !gone.includes(c));
+        syncSelectedColumns(settings.id, settings);
+        document.dispatchEvent(new CustomEvent('columnsUpdated', { detail: { id: settings.id, columns: settings.columns } }));
+    };
+    // a deleted condition or group, a column changed (SearchBuilder's events on its box)
+    $box.on('dtsb-redrawContents.azDerived dtsb-dropCriteria.azDerived dtsb-clearContents.azDerived change.azDerived', (e) => {
+        if (e.target && e.target.closest && e.target.closest('.dtsb-searchBuilder')) check();
+    });
+    // Clear All says nothing on the box; the filter it empties redraws the table
+    dataTable.off('draw.dt.azDerived').on('draw.dt.azDerived', check);
 }
 
 /**
@@ -827,7 +904,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     [TEXT_ONLY_TYPE]: textOnlyConditions($.fn.dataTable.Criteria),
                     [TEXT_ONLY_NUM_TYPE]: textOnlyNumConditions($.fn.dataTable.Criteria)
                 } : {},
-                depthLimit: 2, // Limit depth to prevent overly complex queries
+                // Limit depth to prevent overly complex queries; a line selection
+                // can wrap a filter that has groups in one more
+                depthLimit: Math.max(2, configDepth(settings.searchBuilderConfig)),
                 layout: 'columns-2', // Modern layout with columns
                 filterChanged: true, // Update table in real-time with changes
                 greyscale: false, // Use full colors for better visibility
@@ -920,6 +999,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     </button>
                 `);
                 
+                // the line-selection tool (line-select-ui.js), before the search box
+                const lineButton = settings.id ? lineSelectButton(settings.id, entityType) : null;
+
                 // For Bootstrap 5 integration, we need to create a container
                 // that works with the Bootstrap layout
                 const $container = $('<div class="dt-search-container d-flex align-items-center mb-2"></div>');
@@ -942,6 +1024,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     const $inputGroup = $('<div class="input-group input-group-sm flex-grow-1"></div>');
                     $inputGroup.append($searchInput);
                     $searchOptions.attr('aria-label', 'Search options');
+                    if (lineButton) $container.append(lineButton);
                     $container.append($newLabel, $inputGroup, $searchOptions);
                     
                     // Add the container to the search parent
@@ -949,6 +1032,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 } else {
                     // Just append the search options after the input
                     $searchOptions.insertAfter($searchInput);
+                    if (lineButton) $(lineButton).insertBefore($searchInput);
                 }
                 
                 // 5) A small helper to re-draw with current flags. Smart
@@ -1027,6 +1111,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         // search over every row a second time (6 s at 484,125 rows).
         installCriteriaSearch($.fn.dataTable.Criteria);
         dataTable = $(table).DataTable(tableOptions);
+        // From here on, edits of the filter drop a line filter's derived column that nothing uses any
+        // more. Attached after the table was built, so the conditions it was built from never purge.
+        watchDerivedColumns(tableContainer, dataTable, settings);
         
         setTimeout(() => {
             // Make logic buttons more visible by adding custom classes
@@ -1283,6 +1370,78 @@ export function replaceRowsInPlace(dataTable, tableData) {
     dataTable.rows.add(tableData.data);
     dataTable.draw(false);
     return true;
+}
+
+/**
+ * Put a drawn line into a table's settings (the line-selection tool,
+ * utils/line-select.js): the columns it needs, and its condition on the
+ * filter, joined to the conditions already there by an outer AND. The table
+ * is rebuilt from the settings by the caller (refreshTable).
+ *
+ * A slanted line adds its two axes' columns and the derived column y - m*x
+ * (an identical one already in the table is reused); a horizontal line only
+ * the y column, a vertical one only the x column, with the condition on
+ * that column itself.
+ *
+ * @param {Object} settings - the table panel's settings
+ * @param {{x: Object, y: Object, cond: Object}} line - the axes' columns
+ *     ({type, key, column}) and lineCondition() of the line
+ * @returns {{columns: Object[], column: Object}} the columns added or found, and the one
+ *     the condition is on
+ */
+export function applyLineToSettings(settings, { x, y, cond }) {
+    // the filter as values (the DataTable's live view goes with the rebuild)
+    freezeTableState(settings);
+    const columns = Array.isArray(settings.columns) ? settings.columns.slice() : [];
+    const found = [];
+    const ensure = (ref) => {
+        const have = columns.find(c => sameColumn(c, ref));
+        if (have) { found.push(have); return have; }
+        const added = { type: ref.type, key: ref.key, column: ref.column };
+        columns.push(added);
+        found.push(added);
+        return added;
+    };
+    let target;
+    if (cond.kind === 'horizontal') {
+        target = ensure(y);
+    } else if (cond.kind === 'vertical') {
+        target = ensure(x);
+    } else {
+        ensure(x);
+        ensure(y);
+        let derived = derivedColumn(y, x, cond.m, getColumnDisplayName);
+        const same = columns.find(c => sameExpr(c, derived));
+        if (same) {
+            derived = same;
+        } else {
+            // another expression under the same name: told apart by a number
+            const base = derived.key;
+            for (let n = 2; columns.some(c => c.type === 'derived' && c.key === derived.key); n++) {
+                derived = { ...derived, key: `${base} (${n})` };
+            }
+            columns.push(derived);
+        }
+        found.push(derived);
+        target = derived;
+    }
+    const value = cond.kind === 'slope' ? cond.b : cond.value;
+    settings.columns = columns;
+    settings.searchBuilderConfig = addCriterion(settings.searchBuilderConfig,
+        numberCriterion(getColumnDisplayName(target), getColumnKey(target), cond.op, value));
+    return { columns: found, column: target };
+}
+
+/**
+ * The column chooser after columns were added from outside it: it lists them
+ * and ticks them, so the next tick in the chooser keeps them (the chooser
+ * rebuilds the table's columns from its ticks).
+ * @param {Object} settings - the table panel's settings
+ * @param {string} tableRows - 'cells' or 'genes'
+ */
+export async function settleColumnChooser(settings, tableRows) {
+    await refreshColumnChooser(settings, tableRows);
+    syncSelectedColumns(settings.id, settings);
 }
 
 /**

@@ -26,7 +26,9 @@ concurrency:
 jobs:
   test:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    # Ubuntu 24.04, not ubuntu-latest: ubuntu-latest became 26.04 on 2026-10-19, which has no
+    # Python 3.9 build, and Playwright's WebKit there misses libicudata.so.74
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

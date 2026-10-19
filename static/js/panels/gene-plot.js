@@ -3,6 +3,7 @@ import { focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { createPanelStructure, initializeUIState, checkDatasetLoadingStatus } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
 import { highlightFocusedEntity, updatePlotOnTableChange, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
+import { followSessionDefault } from './plot-utilities/plot-aesthetics-menu.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -65,6 +66,9 @@ const GenePlotPanel = (function() {
         // Override with provided options, if any (colour bounds stored in
         // data units go back to drawn units: array-stats.js restoreColorRange)
         Object.assign(_settings, restoreColorRange(options));
+        // On Default (made from the chooser, or saved on Default): the look is the session's default, whichever
+        // session this opens in (utils/session-style.js)
+        if (_settings.styleDefault === true) followSessionDefault(_settings, 'gene-plot');
         initAutoPointStyle(_settings, options);
         
         // Cached data

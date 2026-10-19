@@ -26,6 +26,28 @@ export const MODE_ICONS = {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+const KIND_NAMES = { cell: 'cell plots', gene: 'gene plots' };
+const kindList = (style) => (style && style.kinds || []).map(k => KIND_NAMES[k] || k).join(' and ');
+
+/** What a set that is only a style says on its badge. */
+function styleOnlyTitle(status) {
+    const kinds = kindList(status.style);
+    return `Style only: this set holds a default style${kinds ? ` for new ${kinds}` : ''}, and no panel or dataset. ` +
+           'Loading it makes that the session default, so plots on Default take it.';
+}
+
+/**
+ * The badge of a set that brings a default style along with its panels, or null for one that does not.
+ * @returns {{text: string, title: string}|null}
+ */
+export function describeStyle(status) {
+    if (!status || !status.style || status.styleOnly) return null;
+    const kinds = kindList(status.style);
+    return { text: 'Style',
+        title: `Brings a style for ${kinds || 'plots'} on Default. It applies only when the set is loaded with its panels open ` +
+               '(not with Add panels closed).' };
+}
+
 /**
  * The status badge of a card: where the set's dataset is.
  * @param {{named?: string|null, found?: boolean|null, foundPath?: string|null,
@@ -34,6 +56,8 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
  */
 export function describeStatus(status) {
     if (!status) return { state: 'pending', text: '', title: 'Checking whether the dataset is here...' };
+    // a style is not bound to a dataset: nothing to find, nothing to warn about
+    if (status.styleOnly) return { state: 'style', text: 'Style only', title: styleOnlyTitle(status) };
     const named = status.named || null;
     if (!named) {
         return { state: 'unnamed', text: '',
@@ -72,6 +96,18 @@ export function describeStatus(status) {
  */
 export function loadChoices(status = {}) {
     const { found = null, hasCurrent = false, currentName = '', open = null, total = null } = status;
+    if (status.styleOnly) {
+        // no panels, so no open or closed, and no dataset: one button
+        const hidden = (mode, icon, label) => ({ mode, icon, label, visible: false, enabled: false, title: label });
+        return {
+            primary: { mode: 'full', label: 'Apply style',
+                title: 'Apply style: make this the session default style, so plots on Default take it. ' +
+                       'It opens no panel and changes no dataset.' },
+            actions: [hidden('current', MODE_ICONS.current, 'Load on the current dataset'),
+                      hidden('add', MODE_ICONS.add, 'Add panels closed'),
+                      hidden('choose', MODE_ICONS.choose, 'Choose dataset\u2026')]
+        };
+    }
     const missing = found === false;
     // "switch to the set's dataset" is possible: it is here, or the set
     // names none and the open one is used

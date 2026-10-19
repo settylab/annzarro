@@ -8,6 +8,22 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.7.0 (2026-10-19)
+
+### Added
+- Plot Options, Apply to other panels: **Make this the session default** makes a plot's look what **Default** means for the session, per plot kind (cell or gene). Plots on Default (made from the chooser, or put back with the Default preset) take it now and follow it when you change or reset it (**Reset to built-in default**); plots with a look of their own, and plots saved before this, keep theirs. A plot saved on Default opens on Default in whatever session it opens in. The default travels with the session: a reload of the tab, the autosave, share links and saved panel sets carry it, and opening a link or a panel set with its panels open makes it yours (Add panels closed does not); Close all with the cache-clearing tick ends it.
+- Panel sets: a set with a default style says so on its card (**Style**). A set with no panels can be saved when a session default is set, and is only a style (**Style only**, one **Apply style** button, no dataset): a way to share a house style.
+- Line selection in the table panel: the **Line filter** button before a table's search box lets you draw a line on a plot of cells (a cell table) or of genes (a gene table). The side to the right of the line (from the mouse press to the release) is filtered out: the table gets the plot's axis columns, a derived column `y − m·x` and one condition on it, joined to the filter by an outer AND. The line and the shaded side are previewed while you drag, Shift snaps to 45°, Esc stops, 3D and large plots are left alone, and a 2D plot with a text axis shows a small tooltip saying why. While the tool is on, the table has a red frame and a badge in the dataset bar (click it, or press Esc, to stop); closing the table, Close all, loading a panel set or switching dataset also stop it. A derived column leaves the table when no condition uses it any more. Several lines make an area. New tutorial: Cut away part of a plot with a line.
+
+### Changed
+- A plot with a table filter set no longer refuses to draw when it goes into large-plot mode: it is drawn whole and the filter is ignored, and the **Large plot** tag says so. The plot keeps its table setting, so the filter applies again when a subset takes it out of large-plot mode.
+- Plot Options, Presets: **Default** now resets the whole look that Apply to other panels copies, including Not in table, Focused cell and the export size. It used to leave those three as they were.
+
+### Fixed
+- A cell table that showed "not available in large-plot mode" and was then given a subset to list (all cells, then a subset, then all cells, then a subset again) kept the note until you pressed Apply Changes: its previous DataTable, detached from the page by the note, received the new rows. The table now lets that table go when the note replaces it, so it lists the subset's cells by itself.
+- In a table's search row, the help of **Regex**, **Smart** and **Case Sensitive** shows just above its own button; it was drawn above the Advanced Search box, out of sight. The row's buttons no longer touch the panel's edges.
+- A plot coloured by a number and linked to a table drew the wrong points when the table's filter matched nothing: the cells that had just left the table vanished instead of turning grey, and only a reload corrected it. Every cell now turns grey, and removing the condition brings the colours back.
+
 ## 0.6.2 (2026-10-19)
 
 ### Added

@@ -47,8 +47,16 @@ test("the threshold follows Config (server ui.defaults.large_plot_points)", () =
 test("settings the mode cannot draw keep the regular path", () => {
   const n = 9e7;
   assert.match(largePlotReason(settings({ z: { type: "obsm", key: "X_umap", column: "2" } }), n), /^3D/);
-  assert.match(largePlotReason(settings({ tableFilter: "cell-table-1" }), n), /table filter/);
+  assert.equal(largePlotReason(settings({ tableFilter: "cell-table-1" }), n), null, "a table filter does not stop the mode drawing");
   assert.match(largePlotReason(settings({ x: { type: "obsp", key: "c", column: "a" } }), n), /x axis from obsp/);
+});
+
+test("the strip tag says a table filter set for the plot is not applied there", () => {
+  const plain = largePlotTag(95624334, { tableFilter: "none" });
+  assert.doesNotMatch(plain.pop.text, /not applied/);
+  const tag = largePlotTag(95624334, { tableFilter: "cell-table-1" });
+  assert.match(tag.pop.text, /The table filter set for this plot is not applied in large-plot mode; it applies again when the plot is no longer in this mode\.$/);
+  assert.equal(tag.title, tag.pop.text);
 });
 
 test("the strip tag names the mode; its popover the point count, the limit and the way out", () => {
@@ -158,8 +166,8 @@ test("unsupported settings above the threshold are refused with the ways out, no
   const { largePlotRefusal } = await import(js("panels/plot-utilities/large-plot.js"));
   assert.equal(largePlotRefusal(settings({ color: { type: "obsp", key: "d", column: "c1" } }), 95624334),
     "Colour by an obsp column is not available for 95.6M points: turn on a subset, or choose an obs column or a gene");
-  assert.equal(largePlotRefusal(settings({ tableFilter: "cell-table-1" }), 95624334),
-    "A table filter is not available for 95.6M points: turn on a subset, or set the table filter to None");
+  // a table filter is ignored in this mode, not refused
+  assert.equal(largePlotRefusal(settings({ tableFilter: "cell-table-1" }), 95624334), null);
   assert.equal(largePlotRefusal(settings({ z: { type: "obsm", key: "X_umap", column: "2" } }), 6e6),
     "3D is not available for 6M points: turn on a subset, or turn 3D off");
   assert.equal(largePlotRefusal(settings({ x: { type: "obsp", key: "d", column: "c" } }), 6e6),

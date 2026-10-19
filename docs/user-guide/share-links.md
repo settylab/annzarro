@@ -42,12 +42,19 @@ http://<server>/?dataset_path=<path on the server>#view=z1.<compressed view>
   controls open, and each panel's full settings, including locks, colour ranges and table
   filters). Panels created from the Welcome tile are included like any other. It also records
   the store's fingerprint and the AnnZarro version, so a link opened on another store or version
-  says so ({doc}`reproducing`). The `z1.` prefix marks it as deflate-compressed JSON in base64url.
+  says so ({doc}`reproducing`). If a session default plot style is set
+  ({ref}`the session default <session-default-style>`), it holds that too, with only the options that
+  differ from the built-in look, and the plots that are on Default stay on Default. The `z1.` prefix marks
+  it as deflate-compressed JSON in base64url.
 
 The fragment is never sent to the server, so a link does not appear in server logs and has no
 server-side length limit. The grammar, and how to build a link by hand from a JSON `view`, are in
 {doc}`../reference/deep-links`; every view file offered for download in this guide (for example
 {download}`userguide-focus.json <../_tools/views/userguide-focus.json>`) is such a `view`.
+
+Opening a link makes its session default style the opener's, so a plot on Default looks as it did for
+the sender. A link made with no session default, whose plots are on Default, ends the opener's default
+for the same reason; a link with no plot on Default leaves it alone.
 
 A link does **not** contain data. It opens on any server whose data directory holds the same
 store; if the store is not there, the link opens its layout without data and lets you choose a

@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { loadChoices, describeStatus, modeOptions, MODES } =
+const { loadChoices, describeStatus, describeStyle, modeOptions, MODES } =
     await import('../../../static/js/utils/panelset-load.js');
 
 const by = (choices, mode) => choices.actions.find(a => a.mode === mode);
@@ -88,4 +88,30 @@ test('the badge: available, missing (with the reason) or none', () => {
     assert.match(describeStatus({ named: 'a.zarr', found: false, failed: { error: 'boom' } }).title, /boom/);
     assert.equal(describeStatus({ named: null, found: null }).text, '');
     assert.equal(describeStatus(null).state, 'pending');
+});
+
+test('a set that is only a style has one Apply style button, no dataset badge and no dataset choices', () => {
+    const only = { styleOnly: true, style: { kinds: ['cell'], only: true }, named: null, found: null, open: 0, total: 0,
+                   hasCurrent: false };
+    const c = loadChoices(only);
+    assert.equal(c.primary.label, 'Apply style');
+    assert.equal(c.primary.mode, 'full');
+    assert.ok(c.actions.every(a => !a.visible));
+    const d = describeStatus(only);
+    assert.equal(d.state, 'style');
+    assert.equal(d.text, 'Style only');
+    assert.match(d.title, /new cell plots/);
+    // a dataset that is not here changes nothing for it
+    assert.equal(describeStatus({ ...only, named: 'x.zarr', found: false }).text, 'Style only');
+    assert.equal(loadChoices({ ...only, found: false, hasCurrent: true }).primary.label, 'Apply style');
+});
+
+test('a set with panels and a style says it brings one, only for panels open', () => {
+    const d = describeStyle({ style: { kinds: ['cell', 'gene'], only: false } });
+    assert.equal(d.text, 'Style');
+    assert.match(d.title, /cell plots and gene plots/);
+    assert.match(d.title, /only when the set is loaded with its panels open/);
+    assert.equal(describeStyle({ style: { kinds: ['cell'], only: true }, styleOnly: true }), null);
+    assert.equal(describeStyle({}), null);
+    assert.equal(describeStyle(null), null);
 });

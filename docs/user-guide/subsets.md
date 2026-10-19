@@ -259,7 +259,7 @@ Large-plot mode keeps the points out of that memory and can draw the 95.6 millio
 Tahoe-100M on a laptop ({doc}`../reference/performance`). In exchange it leaves out what needs
 per-point bookkeeping, and the plot's status line says so with a tag, **Large plot**. Click the
 tag for why and for **Subset to ≤1M for table filters**, which opens the subset dialog with the
-largest size that is drawn the regular way already chosen:
+largest size that is drawn the regular way already chosen. A plot that has a table selected in its **Table** control is drawn whole, and the tag says that the filter is not applied; the selection is kept, so the filter applies again as soon as a subset takes the plot out of large-plot mode:
 
 ```{figure} ../_static/screens/user-guide/large-plot-all.png
 :class: screenshot

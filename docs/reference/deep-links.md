@@ -129,6 +129,9 @@ docs from its panel set file, and opens each one in a headless browser.
   // the cells every panel shows, optional (see "Cell subset" below)
   "subset": { "n": 100000, "seed": 0 },  // null: every cell; absent: server default; optional "part"
 
+  // the session's default plot style, optional: only the keys that differ from the built-in look
+  "sessionStyles": { "cell-plot": { "fontSize": 16, "showGrid": false } },   // and/or "gene-plot"
+
   // PREFERRED: a full layout tree
   "layout": {                      // exactly what PanelManager.saveLayout() emits
     "v": 1,
@@ -163,6 +166,13 @@ as "Part 3 of …". A link records the part it was made on; part 0 is written wi
 so a link without `part`, including every link made before parts existed, opens on part 0 with
 the same cells as before. A part past the last one is refused by the server (`400
 part_out_of_range`) and the link opens on the dataset's default, with a notice.
+
+`sessionStyles` is the session's default plot style ({ref}`the session default <session-default-style>`),
+one entry per plot kind, with only the options whose value is not the built-in one. A panel config with
+`"styleDefault": true` is a plot on Default: it takes the look of the session it opens in, and the
+link's `sessionStyles` are made that session's default when the link opens, so it looks as the sender
+saw it. A link with plots on Default and no `sessionStyles` ends the opener's default for the same
+reason; a link with no plot on Default (every link made before this existed) leaves it alone.
 
 `focusedCell` and `focusedGene` are names (`obs_names`, `var_names`), not indices. Cell names
 may contain `#` (the demonstration data's do); inside the base64 payload that is harmless.
