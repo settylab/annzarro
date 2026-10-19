@@ -167,13 +167,33 @@ def binary_response(arr: np.ndarray) -> Response:
     }
     if flat.size and flat.size < 2 ** 32 and nnz * (itemsize + 4) < flat.size * itemsize:
         pos = np.flatnonzero(flat)
-        body = flat[pos].tobytes() + pos.astype("<u4").tobytes()
+        parts = [flat[pos], pos.astype("<u4")]
         headers[HEADER_ENCODING] = "sparse"
         headers[HEADER_NNZ] = str(nnz)
     else:
-        body = flat.tobytes()
+        parts = [flat]
         headers[HEADER_ENCODING] = "dense"
-    return Response(body, mimetype=BINARY_MIMETYPE, headers=headers)
+    size = sum(part.nbytes for part in parts)
+    if size < STREAM_BODY_ABOVE:
+        return Response(b"".join(part.tobytes() for part in parts), mimetype=BINARY_MIMETYPE, headers=headers)
+    # A column of 95.6M cells is 382 MB. Sent from the array itself, in pieces, it is not copied into
+    # a second bytes object first (and a server never holds the whole body in its output buffer).
+    # The Content-Length a bytes body gets by itself is set here.
+    headers["Content-Length"] = str(size)
+    return Response(_array_pieces(parts), mimetype=BINARY_MIMETYPE, headers=headers)
+
+
+#: Bodies of at least this many bytes are sent from the array in pieces instead of as one bytes object.
+STREAM_BODY_ABOVE = 8 << 20
+BODY_PIECE_BYTES = 1 << 20
+
+
+def _array_pieces(parts):
+    """The bytes of the arrays, one after the other, BODY_PIECE_BYTES at a time."""
+    for part in parts:
+        view = memoryview(part.view(np.uint8))
+        for at in range(0, len(view), BODY_PIECE_BYTES):
+            yield view[at:at + BODY_PIECE_BYTES].tobytes()
 
 
 def code_dtype(n_categories: int) -> np.dtype:

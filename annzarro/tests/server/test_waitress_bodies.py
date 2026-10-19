@@ -12,6 +12,10 @@ from annzarro.server.core import create_app
 from annzarro.server.server import _SliceLargeBodies, WAITRESS_SLICE_BYTES
 
 
+# closing the test server while its loop runs ends that thread with an error; nothing depends on it
+pytestmark = pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+
+
 class _Body:
     def __init__(self, chunks):
         self.chunks, self.closed = chunks, False
@@ -89,7 +93,10 @@ def _get(port, path, **headers):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
     conn.request("GET", path, headers=headers)
     reply = conn.getresponse()
-    return reply.status, dict(reply.getheaders()), reply.read()
+    try:
+        return reply.status, dict(reply.getheaders()), reply.read()
+    finally:
+        conn.close()
 
 
 def test_a_binary_column_through_waitress_has_the_same_bytes_and_length(served):
@@ -111,3 +118,24 @@ def test_gzip_of_a_large_json_reply_still_works_through_waitress(served):
 
 def test_the_default_slice_is_far_below_the_output_buffers_watermark():
     assert WAITRESS_SLICE_BYTES <= 1 << 20
+
+
+@pytest.mark.parametrize("kind", ["dense", "sparse", "float64", "empty"])
+def test_a_binary_body_sent_in_pieces_is_the_bytes_of_the_body_sent_whole(monkeypatch, kind, tmp_path):
+    import numpy as np
+    from annzarro.core import array_response as ar
+    rng = np.random.default_rng(3)
+    arr = {"dense": rng.random(300_000, dtype=np.float32) + 1,
+           "sparse": np.where(rng.random(300_000) < 0.05, 1.5, 0).astype(np.float32),
+           "float64": rng.random(100_000) * 1e300,
+           "empty": np.zeros(0, dtype=np.float32)}[kind]
+    monkeypatch.setattr(ar, "BODY_PIECE_BYTES", 10_000)
+    monkeypatch.setattr(ar, "STREAM_BODY_ABOVE", 1 << 60)
+    whole = ar.binary_response(arr)
+    monkeypatch.setattr(ar, "STREAM_BODY_ABOVE", 0)
+    pieces = ar.binary_response(arr)
+    assert pieces.is_streamed
+    assert b"".join(pieces.response) == whole.get_data()
+    assert int(pieces.headers["Content-Length"]) == len(whole.get_data())
+    for name in ("X-Annzarro-Encoding", "X-Annzarro-Dtype", "X-Annzarro-Shape", "Content-Type"):
+        assert pieces.headers.get(name) == whole.headers.get(name)
