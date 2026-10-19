@@ -11,6 +11,7 @@ import {
 } from './panel-tracker.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { getColumnDisplayName } from './table-data.js';
+import { isDerived } from '../../utils/line-select.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -719,12 +720,10 @@ function updateSelectedColumnsList(id, settings) {
     // Clear current list
     selectedColumnsList.innerHTML = '';
     
-    // Initialize columns array if not exists
-    if (!settings.columns) {
-        settings.columns = [];
-    } else {
-        settings.columns = [];
-    }
+    // The columns the line-selection tool derived are not in the chooser: they
+    // stay, after the ticked ones
+    const derived = (settings.columns || []).filter(isDerived);
+    settings.columns = [];
     
     // Add each selected column
     checkboxes.forEach(checkbox => {
@@ -774,6 +773,27 @@ function updateSelectedColumnsList(id, settings) {
         selectedColumnsList.appendChild(listItem);
     });
     
+    for (const column of derived) {
+        settings.columns.push(column);
+        const listItem = document.createElement('li');
+        listItem.className = 'list-group-item derived-column';
+        const textSpan = document.createElement('span');
+        textSpan.textContent = shortColumnName(column.key);
+        textSpan.title = `${column.key} (derived by a drawn line)`;
+        textSpan.className = 'text-truncate';
+        listItem.appendChild(textSpan);
+        const removeButton = document.createElement('button');
+        removeButton.className = 'btn btn-outline-danger btn-xs';
+        removeButton.innerHTML = '<i class="fas fa-times"></i>';
+        removeButton.title = 'Remove from selection';
+        removeButton.addEventListener('click', () => {
+            settings.columns = settings.columns.filter(c => c !== column);
+            updateSelectedColumnsList(id, settings);
+        });
+        listItem.appendChild(removeButton);
+        selectedColumnsList.appendChild(listItem);
+    }
+
     // Show "no columns selected" message if no columns are selected
     if (settings.columns.length === 0) {
         const emptyItem = document.createElement('li');
@@ -781,6 +801,16 @@ function updateSelectedColumnsList(id, settings) {
         emptyItem.textContent = 'No columns selected';
         selectedColumnsList.appendChild(emptyItem);
     }
+}
+
+/**
+ * Tick the chooser's boxes for the columns in settings and list them as
+ * selected (after columns were added from outside the chooser).
+ * @param {string} id - The panel ID
+ * @param {Object} settings - The panel settings
+ */
+export function syncSelectedColumns(id, settings) {
+    restoreSelectedColumns(id, settings);
 }
 
 /**

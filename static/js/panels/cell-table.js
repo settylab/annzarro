@@ -6,7 +6,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
-import { loadTableData, initializeDataTable, freezeTableState, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
+import { loadTableData, initializeDataTable, freezeTableState, applyLineToSettings, settleColumnChooser, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
 import { Coverage, GAP, classifyError } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder, showCancelled } from '../utils/panel-surface.js';
 import { beginLoad, endLoad, cancelLoads, wasCancelled } from '../utils/load-scope.js';
@@ -428,10 +428,25 @@ const CellTablePanel = (function() {
             assignKnownSettings(_settings, config);
         }
         
+        /**
+         * Filter by a line drawn on a plot (the line-selection tool,
+         * utils/line-select.js): its columns and its condition go into the
+         * settings, and the table is built again from them.
+         * @param {{x: Object, y: Object, cond: Object}} line
+         * @returns {Promise<{columns: Object[], column: Object}>}
+         */
+        async function applyLine(line) {
+            const added = applyLineToSettings(_settings, line);
+            await refreshTable();
+            await settleColumnChooser(_settings, _plotType);
+            return added;
+        }
+
         // Public API
         return {
             init,
             refreshTable,
+            applyLine,
             cleanup,
             destroy,
             onDataUpdate,

@@ -110,6 +110,35 @@ l = g["var/kompot_de_Young_to_Old_mean_lfc"][:]
 print(((m > 5) & ((l > 0.05) | (l < -0.05))).sum())   # 159
 ```
 
+## Filter with a line drawn on a plot
+
+The slanted-line button next to the table's search box (**Line selection**) lets you draw a line on a
+plot of the same kind (a cell table uses cell plots, a gene table gene plots). The side to the
+**right** of the line, looking from where you press the mouse towards where you release it, is
+filtered out of the table. The tutorial {doc}`../tutorials/line-select` shows it on a UMAP.
+
+- While you drag, the line and the shaded side that will be filtered out are drawn. **Shift** snaps
+  the line to multiples of 45°. **Esc** stops: a line being drawn is dropped, and the tool is left.
+  The tool stays armed after a line, so several lines make an area. Click the button again to leave it.
+- On release the table gets the columns of the plot's x and y axes (if it has none of them yet), a
+  derived column `y − m·x` named after them, such as `X_umap:1 − 0.1875·X_umap:0`, and one
+  condition on that column, joined to the filter by an outer AND. The slope and the intercept are rounded
+  to six significant digits, before the preview is drawn and the condition made, so the condition is
+  the line you saw. A condition keeps the points on the line.
+- A horizontal or vertical line needs no derived column: the condition is on the y or the x column.
+- A plot that is not yet linked to a table is linked to this one.
+- The side is the one you see on the screen, also when an axis is reversed.
+- The columns and conditions are fixed expressions of the original variables: changing the plot's axes
+  afterwards changes nothing in the table, and a new line on the plot adds the columns of its new axes.
+  A derived column appears in **Selected Columns** and can be removed there. An identical one is
+  reused. Delete a line by deleting its condition.
+- The tool refuses a plot with a text, date or logarithmic axis, a 3D plot, a plot whose axis is not
+  something the table has columns of, and a plot in large-plot mode (a table cannot list so many cells).
+  Hover over the plot: the layer says why.
+
+Lines drawn counter-clockwise around an area keep it. Drawn clockwise, and with the outer AND switched
+to OR, they filter it out.
+
 ## Link a plot to a table
 
 1. Open the volcano plot's controls.
