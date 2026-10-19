@@ -77,7 +77,7 @@ Two lines: 4,968 of the 8,090 cells are left. The Line filter button (1) is no l
 
 Press **Esc** to leave the tool (clicking **Line filter** again does the same). Each line is an
 ordinary condition: change its number, or remove it with its **Delete** button, and the table and
-the plot follow.
+the plot follow. When no condition uses a computed column any more (you deleted its line, or used **Clear All**), the table drops that column too; the two axis columns stay.
 
 ```{figure} ../_static/screens/tutorials/line-select-conditions.png
 :class: screenshot

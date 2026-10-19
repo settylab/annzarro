@@ -794,3 +794,139 @@ def test_the_badge_follows_the_tables_title(server):
             assert not errors, errors
         finally:
             browser.close()
+
+
+# --- derived columns that no condition uses any more are removed -------------------------------
+
+def _apply(page, m, b, op=">="):
+    """Add a slanted line (y - m*x, op b) to the table the way a drawn one does."""
+    page.evaluate(f"""async () => {{ await PanelManager.getPanel('{TABLE}').applyLine({{
+        x: {json.dumps(UMAP("0"))}, y: {json.dumps(UMAP("1"))},
+        cond: {{kind: 'slope', m: {m}, b: {b}, op: '{op}'}} }}); }}""")
+    page.wait_for_timeout(800)
+
+
+def _columns(page):
+    cols = page.evaluate(f"PanelManager.getPanel('{TABLE}').getConfig().columns")
+    return [c["key"] for c in cols if c["type"] == "derived"], [c for c in cols if c["type"] == "obsm"]
+
+
+def _listed(page):
+    return page.locator(f'.tile[data-tile-id="{TABLE}"] .derived-column').count()
+
+
+def _count_rebuilds(page):
+    page.evaluate("""() => { window.__rebuilds = 0;
+        document.addEventListener('columnsUpdated', () => { window.__rebuilds++; }, true); }""")
+
+
+def _settled(page, n_derived):
+    page.wait_for_function(
+        f"() => PanelManager.getPanel('{TABLE}').getConfig().columns.filter(c => c.type === 'derived').length === {n_derived}",
+        timeout=20_000)
+    page.wait_for_timeout(1200)       # the one rebuild
+
+
+def _delete_condition(page, n=0):
+    page.click(f'.tile[data-tile-id="{TABLE}"] .dtsb-criteria .dtsb-delete >> nth={n}')
+
+
+def test_deleting_one_of_two_line_conditions_drops_only_its_derived_column(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _apply(page, 0.5, -1)
+            _apply(page, -0.25, 2, "<=")
+            derived, axes = _columns(page)
+            assert len(derived) == 2 and len(axes) == 2, (derived, axes)
+            assert _listed(page) == 2
+            _count_rebuilds(page)
+            _delete_condition(page, 0)                        # the first line's condition
+            _settled(page, 1)
+            left, axes = _columns(page)
+            assert left == [derived[1]], (left, derived)      # the second line's column stays
+            assert len(axes) == 2, axes                       # the axis columns always stay
+            assert _listed(page) == 1
+            assert page.evaluate("window.__rebuilds") == 1    # one rebuild for one change
+            assert len(_details(page)["criteria"]) == 1
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_a_derived_column_stays_while_any_condition_uses_it(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _apply(page, 0.5, -1)
+            _apply(page, 0.5, 1, "<=")                        # the same expression: the column is reused
+            derived, _ = _columns(page)
+            assert len(derived) == 1 and len(_details(page)["criteria"]) == 2, derived
+            _count_rebuilds(page)
+            _delete_condition(page, 0)
+            page.wait_for_timeout(1500)
+            assert _columns(page)[0] == derived and _listed(page) == 1
+            assert page.evaluate("window.__rebuilds") == 0    # nothing removed: nothing rebuilt
+            _delete_condition(page, 0)
+            _settled(page, 0)
+            assert _listed(page) == 0 and len(_columns(page)[1]) == 2
+            assert page.evaluate("window.__rebuilds") == 1
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_clear_all_drops_every_derived_column_and_keeps_the_axes(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _apply(page, 0.5, -1)
+            _apply(page, -0.25, 2, "<=")
+            _apply(page, 3, 0)
+            assert len(_columns(page)[0]) == 3
+            _count_rebuilds(page)
+            page.click(f'.tile[data-tile-id="{TABLE}"] .dtsb-clearAll')
+            _settled(page, 0)
+            derived, axes = _columns(page)
+            assert derived == [] and len(axes) == 2, (derived, axes)
+            assert _listed(page) == 0
+            assert page.evaluate("window.__rebuilds") == 1
+            assert _rows(page) == N_CELLS
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_changing_a_conditions_column_drops_the_derived_column_it_left(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _apply(page, 0.5, -1)
+            _apply(page, -0.25, 2, "<=")
+            derived, _ = _columns(page)
+            page.select_option(f'.tile[data-tile-id="{TABLE}"] .dtsb-criteria .dtsb-data >> nth=0', label="cell_type")
+            _settled(page, 1)
+            assert _columns(page)[0] == [derived[1]]
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_a_derived_column_with_no_condition_is_kept_when_a_view_loads(server):
+    root, store = server
+    derived = {"type": "derived", "key": "X_umap:1 − 0.5·X_umap:0", "column": "",
+               "expr": {"y": UMAP("1"), "x": UMAP("0"), "m": 0.5}}
+    cfg = {"columns": [OBS("cell_type"), UMAP("0"), UMAP("1"), derived]}
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, table_cfg=cfg)
+        try:
+            page.wait_for_timeout(1500)
+            assert _columns(page)[0] == [derived["key"]]       # old links keep loading as before
+            assert _listed(page) == 1
+            assert not errors, errors
+        finally:
+            browser.close()

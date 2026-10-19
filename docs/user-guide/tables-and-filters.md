@@ -136,7 +136,7 @@ filtered out of the table. The tutorial {doc}`../tutorials/line-select` shows it
 - The columns and conditions are fixed expressions of the original variables: changing the plot's axes
   afterwards changes nothing in the table, and a new line on the plot adds the columns of its new axes.
   A derived column appears in **Selected Columns** and can be removed there. An identical one is
-  reused. Delete a line by deleting its condition.
+  reused. Delete a line by deleting its condition: a derived column that no condition uses any more is removed from the table with it (the axis columns stay).
 - The tool leaves 3D plots, plots in large-plot mode (a table cannot list so many cells) and plots of
   the other kind alone: they get no layer and the mouse works as usual. A plot with a text, date or
   logarithmic axis, or one whose axis is not something the table has columns of, shows a small tooltip

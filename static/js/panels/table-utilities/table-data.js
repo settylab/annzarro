@@ -5,7 +5,7 @@ import { notify } from '../../utils/notify.js';
 import { removedColumnsNotice } from '../../utils/notice-rules.js';
 import { isBooleanColumn, renderBoolean, searchBuilderPreDefined, TEXT_ONLY_TYPE, TEXT_ONLY_NUM_TYPE, manyValuesType, textOnlyConditions, textOnlyNumConditions, fastSelectConditions, installCriteriaSearch } from '../../utils/search-builder.js';
 import { VALUE_LIST_MAX } from '../../utils/categories.js';
-import { isDerived, derivedValues, derivedColumn, sameExpr, sameColumn, numberCriterion, addCriterion, configDepth } from '../../utils/line-select.js';
+import { isDerived, derivedValues, derivedColumn, sameExpr, sameColumn, numberCriterion, addCriterion, configDepth, referencedKeys, orphanedDerived } from '../../utils/line-select.js';
 import { DataManager } from '../../data-manager.js';
 import { RemoteNames } from '../../utils/remote-names.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents, syncSelectedColumns } from './table-ui-make.js'
@@ -757,6 +757,43 @@ export function freezeTableState(settings, { rowNames = null, rows = 0 } = {}) {
 }
 
 /**
+ * Keep a table free of derived columns (the line filter's `y - m*x`, utils/line-select.js) that no
+ * condition uses any more. SearchBuilder says every change of its conditions (a condition deleted
+ * or its column changed, a group deleted, Clear All) on its container; each time, the derived
+ * columns still named by the filter are worked out, and any other is removed from the table's
+ * columns and from the column chooser's list, with ONE rebuild of the table (the same event the
+ * Apply Changes button sends). Nothing else changes: a table with no derived column, or none
+ * orphaned, does nothing here. Ordinary columns, the axes a line added included, always stay.
+ * @param {HTMLElement} tableContainer
+ * @param {Object} dataTable - DataTables API instance
+ * @param {Object} settings - the panel's settings (columns, id)
+ */
+function watchDerivedColumns(tableContainer, dataTable, settings) {
+    const $box = $(tableContainer);
+    $box.off('.azDerived');
+    const check = () => {
+        if (!Array.isArray(settings.columns) || !settings.columns.some(isDerived)) return;
+        let details;
+        try {
+            details = dataTable.searchBuilder.getDetails();
+        } catch {
+            return;
+        }
+        const gone = orphanedDerived(settings.columns, referencedKeys(details), getColumnKey);
+        if (!gone.length) return;
+        settings.columns = settings.columns.filter(c => !gone.includes(c));
+        syncSelectedColumns(settings.id, settings);
+        document.dispatchEvent(new CustomEvent('columnsUpdated', { detail: { id: settings.id, columns: settings.columns } }));
+    };
+    // a deleted condition or group, a column changed (SearchBuilder's events on its box)
+    $box.on('dtsb-redrawContents.azDerived dtsb-dropCriteria.azDerived dtsb-clearContents.azDerived change.azDerived', (e) => {
+        if (e.target && e.target.closest && e.target.closest('.dtsb-searchBuilder')) check();
+    });
+    // Clear All says nothing on the box; the filter it empties redraws the table
+    dataTable.off('draw.dt.azDerived').on('draw.dt.azDerived', check);
+}
+
+/**
  * The `smart` flag DataTables is given: smart search splits the term at
  * spaces and wraps each word as ^(?=.*?WORD).*$, which breaks a regular
  * expression (`Mid|Old` became (?=.*?Mid|Old), so Old matched only at the
@@ -1074,6 +1111,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         // search over every row a second time (6 s at 484,125 rows).
         installCriteriaSearch($.fn.dataTable.Criteria);
         dataTable = $(table).DataTable(tableOptions);
+        // From here on, edits of the filter drop a line filter's derived column that nothing uses any
+        // more. Attached after the table was built, so the conditions it was built from never purge.
+        watchDerivedColumns(tableContainer, dataTable, settings);
         
         setTimeout(() => {
             // Make logic buttons more visible by adding custom classes

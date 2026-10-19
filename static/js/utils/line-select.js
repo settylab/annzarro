@@ -352,3 +352,31 @@ export function plotRefusal({ drawn, is3d, isLarge, xType, yType, xSource, ySour
     }
     return null;
 }
+
+/**
+ * The data keys of every column a SearchBuilder configuration has a condition on (groups included).
+ * @param {{criteria?: Array}|null|undefined} config  getDetails()
+ * @returns {Set<string>}
+ */
+export function referencedKeys(config) {
+    const keys = new Set();
+    const walk = (node) => {
+        if (!node || typeof node !== 'object') return;
+        if (Array.isArray(node.criteria)) node.criteria.forEach(walk);
+        else if (node.origData !== undefined) keys.add(node.origData);
+    };
+    walk(config);
+    return keys;
+}
+
+/**
+ * The derived columns of a table that no condition uses: the ones to remove. Ordinary columns are
+ * never in it.
+ * @param {Array<Object>} columns  the table's columns
+ * @param {Set<string>} referenced  referencedKeys of its filter
+ * @param {function(Object): string} keyOf  a column's data key (getColumnKey)
+ * @returns {Array<Object>}
+ */
+export function orphanedDerived(columns, referenced, keyOf) {
+    return (columns || []).filter(c => isDerived(c) && !referenced.has(keyOf(c)));
+}

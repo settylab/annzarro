@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  addCriterion, axisMap, clipLine, configDepth, crossRight, derivedColumn, derivedName, derivedValues, fitInside, plotMode,
+  addCriterion, axisMap, clipLine, configDepth, crossRight, derivedColumn, derivedName, derivedValues, fitInside, plotMode, referencedKeys, orphanedDerived,
   lineCondition, lineOnScreen, numberCriterion, numberText, plotRefusal, rightPolygon, round, sameExpr, snap45,
 } from "../../../static/js/utils/line-select.js";
 
@@ -268,4 +268,18 @@ test("what the tool does over a plot: apply, say nothing, or warn", () => {
   const w = plotMode({ ...ok, xType: "category", xLabel: "cell_type" });
   assert.equal(w.mode, "warn");
   assert.match(w.why, /^This plot's x axis \(cell_type\) is not numeric/);
+});
+
+test("the derived columns no condition uses are the ones to drop", () => {
+  const a = numberCriterion("A", "k_a", ">=", 1), b = numberCriterion("B", "k_b", "<=", 2);
+  const nameOf = (c) => c.key;
+  const y = { type: "obsm", key: "Y", column: "" }, x = { type: "obsm", key: "X", column: "" };
+  const d1 = derivedColumn(y, x, 0.5, nameOf), d2 = derivedColumn(y, x, 2, nameOf);
+  const cols = [y, x, d1, d2];
+  const keyOf = (c) => (c === d1 ? "k_a" : c === d2 ? "k_b" : "plain");
+  assert.deepEqual([...referencedKeys({ criteria: [a, { criteria: [b], logic: "OR" }], logic: "AND" })].sort(), ["k_a", "k_b"]);
+  assert.deepEqual(referencedKeys({}), new Set());
+  assert.deepEqual(orphanedDerived(cols, referencedKeys({ criteria: [a] }), keyOf), [d2]);
+  assert.deepEqual(orphanedDerived(cols, referencedKeys({ criteria: [a, a, b] }), keyOf), []);
+  assert.deepEqual(orphanedDerived(cols, referencedKeys({}), keyOf), [d1, d2], "never the plain columns");
 });
