@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixed
+- Switching Show Legend off or on in Plot Options redrew the graph once per legend entry: about a second
+  on a 1M-point plot with 35 categories. It is now a single layout change (about 50 ms).
+
 ## 0.6.1 (2026-10-18)
 
 Legend columns, dot size and title for categorical colours; the focused cell drawn as an open circle by

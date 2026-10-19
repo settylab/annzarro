@@ -1901,34 +1901,39 @@ function updateLegendVisibility(plotDiv, settings) {
     } else {
         Plotly.relayout(plotDiv, { showlegend: show && hasLegendEntries(plotDiv.data), showscale: false });
     }
-    // 3) Per-trace colour bars
+    // 3) Per-trace colour bars: what differs from the trace as drawn, one restyle per attribute
+    // (a restyle redraws the graph: one per trace took a second at 1M points with ~70 legend entries)
+    const changes = new Map();     // attribute -> { idx: [], vals: [] }
+    const want = (i, key, value, now) => {
+        if ((now ?? false) === value) return;
+        if (!changes.has(key)) changes.set(key, { idx: [], vals: [] });
+        const c = changes.get(key);
+        c.idx.push(i);
+        c.vals.push(value);
+    };
     plotDiv.data.forEach((trace, i) => {
         if (typeof trace.name === 'string' && (trace.name.includes('Focused'))) return;
-        const update = {};
         const hasMarkerCB = trace.marker && trace.marker.colorscale;
         const hasTraceCB  = ['heatmap','contour','surface'].includes(trace.type);
-    
+        const marker = trace.marker || {};
+
         if (hasMarkerCB) {
             // continuous scatter: hide from legend, toggle marker colorbar
-            update.showlegend             = false;
-            update['marker.showscale']    = show;
+            want(i, 'showlegend', false, trace.showlegend === undefined ? true : trace.showlegend);
+            want(i, 'marker.showscale', show, marker.showscale);
         }
         else if (hasTraceCB) {
             // heatmap/contour/surface: hide from legend, toggle trace colorbar
-            update.showlegend = false;
-            update.showscale   = show;
+            want(i, 'showlegend', false, trace.showlegend === undefined ? true : trace.showlegend);
+            want(i, 'showscale', show, trace.showscale);
         }
         else {
             // categorical / other traces: no leftover colour bars
-            if (trace.marker) update['marker.showscale'] = false;
-            if (trace.showscale !== undefined) update.showscale = false;
-        }
-    
-        // apply if anything changed
-        if (Object.keys(update).length) {
-            Plotly.restyle(plotDiv, update, [i]);
+            if (trace.marker) want(i, 'marker.showscale', false, marker.showscale);
+            if (trace.showscale !== undefined) want(i, 'showscale', false, trace.showscale);
         }
     });
+    for (const [key, c] of changes) Plotly.restyle(plotDiv, { [key]: c.vals }, c.idx);
 
     // Legend entries next to a colour bar: keep them off it
     if (show) {
