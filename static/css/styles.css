@@ -4633,3 +4633,35 @@ mark.dsi-mark { background: rgba(255, 200, 0, 0.5); color: inherit; padding: 0 0
     color: #fff;
     box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.3);
 }
+
+/* the table the lines go to (line-select-ui.js): a red frame, and a red badge in the dataset bar */
+.tile.az-line-armed {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 2px #dc3545;
+}
+
+.az-line-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    max-width: 22rem;
+    padding: 0 0.6rem;
+    height: 26px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    color: #fff;
+    background-color: #dc3545;
+    border: 1px solid #b02a37;
+}
+
+.az-line-badge:hover {
+    color: #fff;
+    background-color: #b02a37;
+}
+
+.az-line-badge-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

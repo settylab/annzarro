@@ -619,3 +619,82 @@ def test_a_line_that_leaves_no_cell_greys_every_cell_and_deleting_it_restores_th
             assert not errors, errors
         finally:
             browser.close()
+
+
+def _armed_chrome(page):
+    return page.evaluate(f"""() => {{ const b = document.getElementById('line-select-badge');
+        const t = document.querySelector('.tile[data-tile-id="{TABLE}"]');
+        return {{badge: !!b, text: b ? b.innerText.replace(/\\s+/g, ' ') : '', title: b ? b.title : '',
+                 inBar: !!(b && b.closest('#dataset-stats')),
+                 frame: !!(t && t.classList.contains('az-line-armed')),
+                 frames: document.querySelectorAll('.az-line-armed').length,
+                 overlays: document.querySelectorAll('.az-line-overlay').length,
+                 btn: !!document.querySelector('.az-line-select-btn.active')}}; }}""")
+
+
+def _is_off(page):
+    page.wait_for_function("() => !document.getElementById('line-select-badge') && "
+                           "!document.querySelector('.az-line-armed') && "
+                           "!document.querySelector('.az-line-overlay')", timeout=10_000)
+
+
+def test_armed_shows_a_badge_and_a_frame_and_a_click_on_the_badge_stops(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            assert _armed_chrome(page)["badge"] is False
+            _arm(page)
+            a = _armed_chrome(page)
+            assert a["badge"] and a["inBar"] and a["frame"] and a["frames"] == 1 and a["btn"], a
+            assert a["text"].startswith("Line filter on: cells"), a
+            assert "right" in a["title"] and "Esc" in a["title"] and "draw a line" in a["title"], a
+            page.click("#line-select-badge")
+            _is_off(page)
+            assert not page.evaluate("!!document.querySelector('.az-line-select-btn.active')")
+            # the hint on a plot is short
+            _arm(page)
+            hint = page.evaluate(f"document.querySelector('.az-line-overlay[data-plot=\"{PLOT_A}\"] .az-line-msg').textContent")
+            assert len(hint) < 80, hint
+            page.keyboard.press("Escape")
+            _is_off(page)
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_the_tool_stops_when_its_table_goes_away(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        # the table is closed
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            _drag(page, (0.1, 0.8), (0.9, 0.3), release=False)         # even in the middle of a line
+            page.evaluate(f"PanelManager.closePanel('{TABLE}')")
+            _is_off(page)
+            page.mouse.up()
+            page.wait_for_timeout(500)
+            assert not errors, errors
+        finally:
+            browser.close()
+        # Close all (through its own confirmation)
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            page.evaluate("document.getElementById('btn-close-all').click()")
+            page.locator("#notification-container button", has_text="Close all").first.click()
+            _is_off(page)
+            assert not errors, errors
+        finally:
+            browser.close()
+        # a panel set or a link rebuilds every panel
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            page.evaluate("""async () => { const layout = PanelManager.saveLayout();
+                await PanelManager.restoreLayout(typeof layout === 'string' ? JSON.parse(layout) : layout); }""")
+            _is_off(page)
+            assert not errors, errors
+        finally:
+            browser.close()

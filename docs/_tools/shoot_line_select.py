@@ -16,6 +16,7 @@ Data: bm_aging_annzarro.zarr in ANNZARRO_DOCS_DATA (default ~/annzarro-data).
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -132,6 +133,18 @@ def shoot(sh):
     arm(page)
     page.mouse.move(*at(a, 4, 10))
     mark(page, "line-select-armed")
+
+    page.context.close()
+    if os.environ.get("LINE_SELECT_DARK_DIR"):         # a look at the dark theme, not part of the docs
+        page = sh.open(view(), dataset=STORE, viewport={"width": 1700, "height": 1000}, scheme="dark")
+        arm(page)
+        page.mouse.move(*at(area(page), 4, 10))
+        su.OUT = Path(os.environ["LINE_SELECT_DARK_DIR"])
+        su.capture(SH, page, "line-select-armed-dark", None, marks=[(1, f"{T(TBL)} .az-line-select-btn")])
+        page.context.close()
+    page = sh.open(view(), dataset=STORE, viewport={"width": 1700, "height": 1000})
+    a = area(page)
+    arm(page)
 
     # the first line, mid-drag: the line and the shaded side that will be filtered out
     p, q = (at(area(page), *c) for c in CUT_BOTTOM)
