@@ -93,7 +93,9 @@ BANNED_LINKS = (b"libreadline.so", b"libreadline.", b"libhistory.so", b"libtinfo
 
 PERMISSIVE = ("mit", "bsd", "apache", "isc", "zlib", "psf", "python software foundation",
               "0bsd", "public domain", "unlicense", "cc0", "bzip2", "microsoft redistributable",
-              "ncsa", "blueoak", "hpnd")
+              "ncsa", "blueoak", "hpnd",
+              # Zope Public License 2.1 (waitress): OSI-approved, BSD-style, GPL-compatible
+              "zpl", "zope public")
 
 
 def classify(licence):

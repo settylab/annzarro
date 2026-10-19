@@ -431,3 +431,10 @@ def test_dataset_types_are_declared_and_wired_into_the_app():
         preload = f.read()
     for needle in ("webUtils.getPathForFile", "openDatasetDialog", "onMenuOpenDataset", "app:dropPaths", "datasetOpened"):
         assert needle in preload, needle
+
+
+def test_licence_check_knows_the_zope_public_licence():
+    """waitress (the server since 0.6.2) is ZPL 2.1: permissive, as its wheel metadata spells it."""
+    lc = _licence_check()
+    for spelling in ("ZPL 2.1", "ZPL-2.1", "Zope Public License (ZPL) Version 2.1"):
+        assert lc.classify(spelling) == "ok", spelling
