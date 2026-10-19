@@ -53,6 +53,13 @@ limit_request_line = int(_annzarro.get('limit_request_line', 0))
 limit_request_fields = int(_annzarro.get('limit_request_fields', 100))
 limit_request_field_size = int(_annzarro.get('limit_request_field_size', 8190))
 
+# gunicorn 26 opens a control socket (for `gunicornc`) at ./.gunicorn/gunicorn.ctl
+# or the like. It is not used here, and a long working directory (AF_UNIX paths
+# hold about 100 bytes) or a bind mount made every start log an ERROR. Gunicorn
+# before 26 has no such setting and ignores this name: only names that match a
+# setting are read from this file.
+control_socket_disable = True
+
 # Process naming
 proc_name = 'annzarro'
 

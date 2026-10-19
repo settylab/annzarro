@@ -101,3 +101,16 @@ def test_the_recycling_and_header_limits_come_from_the_configuration(site_yaml):
     import annzarro.server.gunicorn_config as module
     module = importlib.reload(module)
     assert module.max_requests == 0 and module.limit_request_line == 4094
+
+
+def test_control_socket_is_disabled_where_gunicorn_has_one(site_yaml):
+    """gunicorn 26 creates a control socket by default; under a deep working
+    directory that logged 'Control server error: AF_UNIX path too long'."""
+    import annzarro.server.gunicorn_config as module
+    module = importlib.reload(module)
+    if "control_socket_disable" not in gunicorn_config_mod.Config().settings:
+        pytest.skip("this gunicorn has no control socket")
+    cfg = gunicorn_config_mod.Config()
+    for name, value in _settings(module).items():
+        cfg.set(name, value)
+    assert cfg.control_socket_disable is True
