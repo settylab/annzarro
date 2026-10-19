@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- Tables no longer print a note under the Advanced Search box listing every column with more than 10,000 distinct values. Equals and Not on such a column still take a typed value instead of a list.
+
 ## 0.7.0 (2026-10-19)
 
 ### Added

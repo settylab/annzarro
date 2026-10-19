@@ -181,14 +181,10 @@ export async function loadTableData(settings, entityType, signal = null) {
         // ID, a barcode, a float column of a gene table) is filtered by
         // typing: SearchBuilder's "Equals" dropdown would hold one option per
         // row. A numeric one keeps the number conditions (manyValuesType).
-        const textOnlyColumns = [];
         columnDefinitions.forEach(def => {
             const values = def.data === '_index' ? entityIndex : data.map(row => row[def.data]);
             const type = manyValuesType(values, VALUE_LIST_MAX);
-            if (type) {
-                def.searchBuilderType = type;
-                textOnlyColumns.push(def.title);
-            }
+            if (type) def.searchBuilderType = type;
         });
 
         return {
@@ -199,7 +195,6 @@ export async function loadTableData(settings, entityType, signal = null) {
             data: data,
             columns: columnDefinitions,
             booleanColumns: booleanColumns,
-            textOnlyColumns: textOnlyColumns,
             entityIndex: entityIndex
         };
         
@@ -955,14 +950,6 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             // Access the search container - find it relative to the table container
             const tableContainer = this.api().table().container();
 
-            // Say which columns are filtered by typing rather than from a list
-            const textOnly = tableData.textOnlyColumns || [];
-            if (textOnly.length) {
-                const $note = $('<div class="small text-muted sb-text-only-note"></div>').text(
-                    `${textOnly.join(', ')}: more than ${VALUE_LIST_MAX.toLocaleString('en-US')} distinct values, `
-                    + 'so Equals and Not take a typed value instead of a list.');
-                $(tableContainer).find('.dtsb-searchBuilder').first().after($note);
-            }
             // For Bootstrap 5 integration, the search input is in a different location
             const $searchInput = $(tableContainer).find('div.dataTables_filter input');
             
