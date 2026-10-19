@@ -184,7 +184,7 @@ export function createPopoverContent(id, settings) {
 
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-publication-${id}"
-                    title="White background, no grid, five ticks per axis, Arial at a larger size, a short colour bar with three ticks, scale bar if set up">Publication</button>
+                    title="White background, no grid, five ticks per axis, Arial at a larger size, a short colour bar with three ticks. The scale bar stays as it is">Publication</button>
                 <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-bare-${id}"
                     title="Only the points: no margins, legend, axis labels or grid. For figures and overlays.">Bare</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"

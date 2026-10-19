@@ -35,8 +35,8 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
   (`server.arbitrary_paths: admins`) an admin may open any path the service account can read,
   and each such open is logged with the admin's name; other users stay confined to the trees
   above. Keep the admin list short, or lock admins in too with `server.arbitrary_paths: none`.
-- **Threaded workers.** The bundled gunicorn configuration uses `gthread` (`server.threads`,
-  default 4); keep it if you start gunicorn with your own options.
+- **Threaded workers.** The bundled gunicorn configuration, which `annzarro serve` runs, uses
+  `gthread` (`server.threads`, default 4); keep it if you start gunicorn with your own options.
 - **Stores read-only for the service account;** only `<data_dir>/sessions/` writable.
 - **Remote stores.** Either `remote_stores: deny`, or a `remote_allowlist` of the exact
   bucket or URL prefixes you serve. Never `allow` without an allowlist on a shared server (the
@@ -60,7 +60,8 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
   `site.accessibility` so the links appear on every page, and read {doc}`public-site` first.
 - **Memory.** `gunicorn workers x cache_memory_mb` fits the host, with room for the chunks
   being read.
-- **Long URLs.** gunicorn `--limit-request-line 8190` and nginx
+- **Long URLs.** gunicorn's request line stays unlimited (`server.limit_request_line: 0`, the
+  bundled default; do not pass `--limit-request-line`), and nginx has
   `large_client_header_buffers 4 32k;` if users bring legacy query-string deep links
   ({doc}`lab-server`).
 

@@ -2,7 +2,7 @@
 
 Three things tell you how a server is doing: a health check for the process manager and the load
 balancer, an opt-in `/metrics` endpoint for Prometheus, and, if you ship logs, JSON log lines.
-Metrics and JSON logs are off by default; a server that never sets them behaves as before.
+Metrics and JSON logs are off by default.
 
 ## Health check
 
@@ -126,9 +126,9 @@ as one JSON object, which journald, Loki or Elasticsearch ingest without a parse
   datasets people open. In this mode gunicorn's access log is off and its own messages are JSON too.
 - The request id is the caller's `X-Request-Id` when it is up to 64 letters, digits, `.`, `_` or `-`
   (a proxy can set one), else a fresh one. It is sent back in the `X-Request-Id` response header, so a user can quote it.
-- `server.log_file` stays in the text format. `log_level` applies as before.
+- `server.log_file` stays in the text format. `log_level` applies to both.
 
-The default is `text`, the format the server has always written.
+The default is `text`.
 
 ## What to alert on
 

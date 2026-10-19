@@ -43,7 +43,8 @@ Only step 6 touches the data, and only one chunk column of it.
 | Module | Role |
 |---|---|
 | `annzarro/cli.py` | `annzarro start/stop/user/config/desktop`; merges the configuration: built-in `base.yaml` and `<env>.yaml` (`production` unless `--development`), `/etc/annzarro/config.yaml`, `~/.config/annzarro/config.yaml`, `./config.yaml`, `--config`, `ANNZARRO_<SECTION>_<KEY>` variables, flags ({doc}`configuration`) |
-| `server/core.py`, `server/server.py`, `server/wsgi.py` | Flask app factory and route registration; the built-in threaded server for `annzarro start`, a WSGI factory for gunicorn |
+| `server/core.py`, `server/server.py`, `server/wsgi.py` | Flask app factory and route registration; `annzarro start` served through waitress (Flask's development server for debug mode and TLS); a WSGI factory for gunicorn |
+| `server/serve.py`, `server/gunicorn_config.py` | `annzarro serve`: gunicorn with the bundled configuration, read from the same AnnZarro configuration as the app |
 | `server/routes/data_routes.py` | slice routes, dataset listing, size guard, error mapping, panel-set routes |
 | `server/routes/core.py`, `zarr_routes.py`, `static_routes.py` | config, status, auth/me, cache info/reset, remote-URL check, the single-page app |
 | `server/http_cache.py` | ETag/304 and gzip |
@@ -71,7 +72,7 @@ which is what makes several gunicorn workers behind one proxy work
 | remote chunk cache | server, per remote store (zarr 3) | chunk key | `remote_chunk_cache_mb` (256) | restart |
 | page cache | operating system | file | free RAM | the OS |
 
-The result cache is safe under concurrent threads (the threaded `annzarro start` server serves
+The result cache is safe under concurrent threads (`annzarro start`, threaded under waitress, serves
 every request thread from one cache; each gunicorn worker process has its own); each entry's size is recorded when it is
 added and exactly that is freed on eviction, so `memory_usage_mb` in `GET /api/v1/cache/info` is
 what the cache holds. `cache_memory_mb`, `cache_enabled` and `cache_dataset_limit` take effect
