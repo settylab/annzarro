@@ -11,7 +11,7 @@ browser ──HTTPS──▶ nginx :443 ──HTTP──▶ gunicorn 127.0.0.1:8
                                                                      writes /srv/annzarro/data/sessions
 ```
 
-The rest of this page sets that up on a Linux host. Read {doc}`authentication` for users and
+The rest of this page sets that up on a Linux host; {doc}`containers` runs the same arrangement from a Docker image or an Apptainer image. Read {doc}`authentication` for users and
 admins, and go through the {doc}`hosting-checklist` before you give out the address.
 
 ## 1. Install

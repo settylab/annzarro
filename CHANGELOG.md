@@ -9,6 +9,7 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Added
+- Container recipes for hosting a lab server, in `packaging/container/`: a `Dockerfile` (multi-stage, non-root, gunicorn, health check, `remote` extra by build argument), a Compose example with nginx and TLS, and an `annzarro.def` for Apptainer on a cluster. The new page Deployment, Containers gives the commands. A CI job builds the image on pull requests that touch these files.
 - Plot Options, Presets: **Bare** draws only the points (no margins, legend, colour bar, scale bar, axes,
   grid or zero lines; in 3D no axes or background planes), for figures and overlays. **Default** undoes it.
 
