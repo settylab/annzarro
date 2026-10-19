@@ -812,7 +812,7 @@ def register_auth_routes(app: Flask, api_version: str) -> None:
     
     # Apply the require_auth decorator to all appropriate routes
     for endpoint in [rule.endpoint for rule in app.url_map.iter_rules()]:
-        if not endpoint.startswith(("login", "logout", "static", "site_")):
+        if not endpoint.startswith(("login", "logout", "static", "site_")) and endpoint != "health":
             view_func = app.view_functions[endpoint]
             app.view_functions[endpoint] = require_auth(view_func)
     

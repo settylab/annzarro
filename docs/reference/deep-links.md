@@ -272,7 +272,7 @@ not a panel field: it is `constants.taxonomyId`.
 ## Why the fragment, and why compressed
 
 In the query string the view is part of the HTTP request line, which gunicorn caps at 4,094
-bytes; a link with two fully configured panels (about 4.7 KB) failed with "Request Line is too
+bytes by default; a link with two fully configured panels (about 4.7 KB) failed with "Request Line is too
 large". The fragment is never sent to the server, so there is no size limit and the view does not
 land in access logs; the server only needs `dataset_path`. Deflate shrinks a typical two-panel
 view 4-6× (e.g. 4.5 KB to 1.2 KB), which keeps links pasteable. A runtime without

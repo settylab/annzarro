@@ -9,7 +9,7 @@ chunks it needs, so the data never have to be copied to the viewer's machine.
 |---|---|---|---|
 | Who uses it | one person | one person | a lab or institute |
 | Where the server runs | your laptop | a workstation or HPC node next to the data | an institutional server |
-| How you start it | open the app | `annzarro start` | gunicorn with the hosted WSGI factory, as a service |
+| How you start it | open the app | `annzarro start` | `annzarro serve` (gunicorn with the hosted WSGI factory), as a service or a {doc}`container <containers>` |
 | How the browser reaches it | inside the app | SSH tunnel to `127.0.0.1` | HTTPS through a reverse proxy |
 | Login | off | off (the server is bound to loopback) | on |
 | Which paths can be opened | any on your disk | any the server process can read | only the data directory and `allowed_dirs`; admins any path (unless `server.arbitrary_paths: none` or `local-only`) |
@@ -32,7 +32,7 @@ The server treats itself as *shared* (or *hosted*) when any of these is true:
 
 - login is enabled (`auth.enabled`),
 - it is bound to an address other than `127.0.0.1`, `localhost` or `::1`,
-- `server.hosted: true` is set, which the WSGI entry point used by gunicorn does by default.
+- `server.hosted: true` is set, which the WSGI entry point used by `annzarro serve` and gunicorn does by default.
 
 A shared server confines every dataset and directory path to the data directory plus
 `server.allowed_dirs`, compresses JSON replies, and applies the stricter remote-store policy.
