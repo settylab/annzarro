@@ -278,3 +278,41 @@ def test_3d_is_still_refused(page, server):
     page.goto(_link(server, z=True))
     page.wait_for_function("""t => { const p = document.querySelector(t + ' .coverage-placeholder');
         return p && /3D is not available for 200 points/.test(p.textContent); }""", arg=P1, timeout=60000)
+
+
+def _subset(page, preset):
+    """Apply a subset from the dialog: a size preset ("100"), or "all"."""
+    page.click("#subset-button")
+    page.wait_for_selector("#subset-apply", state="visible")
+    page.click("#subset-preset-all" if preset == "all" else f'#subset-presets button[data-n="{preset}"]')
+    page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
+    page.click("#subset-apply")
+    page.wait_for_selector("#subset-modal", state="hidden")
+
+
+def test_the_cell_table_follows_the_subset_in_and_out_of_large_plot_mode(page, server):
+    """Starting on all cells (the table cannot list them: a note says so), a subset lists them with no
+    click on Apply Changes, and going back to all cells shows the note again."""
+    page.goto(_link(server))
+    _wait(page, READY, P1)
+    page.wait_for_function("""t => /not available in large-plot mode/.test(document.querySelector(t).innerText)""",
+                           arg=T, timeout=30000)
+    _subset(page, "100")
+    page.wait_for_function("""t => { const el = document.querySelector(t);
+        return el.querySelectorAll('.dataTables_scrollBody tbody tr').length > 0
+            && !/not available in large-plot mode/.test(el.innerText); }""", arg=T, timeout=60000)
+    # the same search, and the table's rows are those of the subset that match it
+    assert page.evaluate("() => PanelManager.getPanel('cell-table-L').getConfig().currentEntries.length") > 0
+    if os.environ.get("AZ_SHOT_DIR"):
+        page.screenshot(path=os.path.join(os.environ["AZ_SHOT_DIR"], "table-after-subset.png"))
+    _subset(page, "all")
+    page.wait_for_function("""t => /not available in large-plot mode/.test(document.querySelector(t).innerText)
+        && document.querySelectorAll(t + ' .dataTables_scrollBody tbody tr').length === 0""", arg=T, timeout=60000)
+    if os.environ.get("AZ_SHOT_DIR"):
+        page.screenshot(path=os.path.join(os.environ["AZ_SHOT_DIR"], "table-after-all.png"))
+    # and once more to a subset: the table that showed the note comes back
+    _subset(page, "100")
+    page.wait_for_function("""t => { const el = document.querySelector(t);
+        return el.querySelectorAll('.dataTables_scrollBody tbody tr').length > 0
+            && !/not available in large-plot mode/.test(el.innerText); }""", arg=T, timeout=60000)
+    assert page.evaluate("() => PanelManager.getPanel('cell-table-L').getConfig().currentEntries.length") > 0

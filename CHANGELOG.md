@@ -20,6 +20,7 @@ with the release after it. Older releases are listed on
 - Plot Options, Presets: **Default** now resets the whole look that Apply to other panels copies, including Not in table, Focused cell and the export size. It used to leave those three as they were.
 
 ### Fixed
+- A cell table that showed "not available in large-plot mode" and was then given a subset to list (all cells, then a subset, then all cells, then a subset again) kept the note until you pressed Apply Changes: its previous DataTable, detached from the page by the note, received the new rows. The table now lets that table go when the note replaces it, so it lists the subset's cells by itself.
 - In a table's search row, the help of **Regex**, **Smart** and **Case Sensitive** shows just above its own button; it was drawn above the Advanced Search box, out of sight. The row's buttons no longer touch the panel's edges.
 - A plot coloured by a number and linked to a table drew the wrong points when the table's filter matched nothing: the cells that had just left the table vanished instead of turning grey, and only a reload corrected it. Every cell now turns grey, and removing the condition brings the colours back.
 

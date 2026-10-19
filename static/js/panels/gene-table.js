@@ -259,6 +259,14 @@ const GeneTablePanel = (function() {
                             error.message || 'unknown error',
                             { source: 'table data', unit: 'genes' }),
                         'genes');
+                    // The placeholder replaced the table's DOM: the DataTable is gone from the page. Let it go, so
+                    // the next update (a subset that makes the rows listable again) builds a table instead of
+                    // swapping rows into this detached one and leaving the placeholder up.
+                    if (_dataTable) {
+                        freezeTableState(_settings);
+                        _dataTable.destroy();
+                        _dataTable = null;
+                    }
                 }
                 
                 // Rethrow abort errors to signal upstream that operation was
