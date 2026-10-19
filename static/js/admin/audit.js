@@ -14,11 +14,11 @@ export function detailText(detail) {
     return JSON.stringify(detail);
 }
 
-/** @param {Object} r - one audit record */
+/** @param {Object} r - one audit record; its `request_id` (when there is one) is the time's tooltip */
 export function recordRow(r) {
     const refused = typeof r.outcome === 'string' && r.outcome.startsWith('refused');
     return h('tr', { class: refused ? 'table-warning' : '' },
-        h('td', { class: 'text-nowrap', text: formatTimestamp(r.ts) }),
+        h('td', { class: 'text-nowrap', text: formatTimestamp(r.ts), title: r.request_id ? `Request ${r.request_id}` : null }),
         h('td', null, r.actor || '-', h('span', { class: 'text-muted', text: r.addr ? ` @${r.addr}` : '' }),
             r.via && r.via !== 'web' ? h('span', { class: 'ms-1' }, badge(r.via, 'secondary')) : null),
         h('td', null, h('code', { text: r.action })),

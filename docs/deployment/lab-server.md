@@ -427,6 +427,7 @@ directory behind the same link), restart the service (`sudo systemctl restart an
 sure no worker keeps the old one open. Adding a new dataset (a new link in the data directory)
 needs no restart; it appears after the dataset bar's refresh button is clicked.
 
+(lab-server-logs)=
 ## Logs
 
 - The AnnZarro log goes to `server.log_file` (and to standard error, which systemd collects).
@@ -436,5 +437,7 @@ needs no restart; it appears after the dataset bar's refresh button is clicked.
   never reaches it.
 - A refused path is logged as `Refused path outside the data directory`. Failed logins and
   account lockouts are logged with the username.
+- Every admin change is also written to the audit log ({ref}`admin-audit`), and a copy of each record
+  to the `annzarro.audit` logger.
 - `server.log_format: json` writes the lines as JSON for a log shipper, and `server.metrics_enabled` serves
-  Prometheus metrics; see {doc}`monitoring`.
+  Prometheus metrics; {doc}`monitoring` says which endpoint, log or admin page to use for what.

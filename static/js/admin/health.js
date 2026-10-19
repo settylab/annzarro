@@ -1,5 +1,5 @@
 /**
- * Server health section (design 5, 2.5): workers, caches, refusals and active
+ * Server health section (design 5, 2.5): workers, caches, memory, refusals and active
  * users from GET /admin/health. Refreshes every 10 s while the tab is visible
  * (the router reads `autoRefreshMs`). "Clear cache" asks once, then empties the caches of every
  * worker (POST /admin/cache/clear, audited).
@@ -42,12 +42,12 @@ export function cacheText(cache) {
 export function workerRows(workers) {
     return workers.map((w) => [
         String(w.pid),
-        w.stale ? badge('stale', 'warning', 'No report for a long time, and its process cannot be checked from here')
-            : w.idle ? badge(`idle since ${formatTimestamp(w.idle_since).slice(11)}`, 'secondary', 'Alive, with no requests lately')
-                : formatAge(w.age_s),
+        w.stale ? badge('stale', 'warning', 'No report for over a minute: the worker is stuck, or it ran on another host and is gone')
+            : formatAge(w.age_s),
         formatCount(w.requests),
         w.read_guard ? meter(w.read_guard.in_flight_mb, w.read_guard.budget_mb) : 'idle',
         cacheText(w.cache),
+        formatMb(w.rss_mb),
         refusalText(w.refusals),
     ]);
 }
@@ -93,8 +93,10 @@ async function load() {
             h('div', null, h('div', { class: 'text-muted small', text: data.window_s ? `Active users (last ${formatAge(data.window_s)})` : 'Active users' }),
                 h('div', { class: 'fs-5', text: String(active.length) })),
             h('div', null, h('div', { class: 'text-muted small', text: 'Cache' }),
-                h('div', { class: 'fs-5', text: `${formatMb(totals.cache_mb)} / ${formatMb(cacheMax)}` }))),
-        table(['pid', 'Age', 'Requests', 'Read budget', 'Cache', 'Refusals'], workerRows(workers), 'No workers reported.'),
+                h('div', { class: 'fs-5', text: `${formatMb(totals.cache_mb)} / ${formatMb(cacheMax)}` })),
+            typeof totals.rss_mb === 'number' ? h('div', null, h('div', { class: 'text-muted small', text: 'Memory' }),
+                h('div', { class: 'fs-5', text: formatMb(totals.rss_mb) })) : null),
+        table(['pid', 'Age', 'Requests', 'Read budget', 'Cache', 'Memory', 'Refusals'], workerRows(workers), 'No workers reported.'),
         h('p', { class: 'small' }, h('strong', { text: 'Refusals by reason: ' }), refusalText(sumRefusals(workers))),
         h('p', { class: 'small' }, h('strong', { text: 'Top readers now: ' }), readersText(workers)),
         h('p', { class: 'small' }, h('strong', { text: 'Active users: ' }),

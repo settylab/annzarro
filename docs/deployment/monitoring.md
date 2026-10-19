@@ -1,7 +1,19 @@
 # Monitoring a server
 
-Three things tell you how a server is doing: a health check for the process manager and the load
-balancer, an opt-in `/metrics` endpoint for Prometheus, and, if you ship logs, JSON log lines.
+Each way of looking at a running server answers a different person. Point each at the right one:
+
+| What | Who can see it | Point at it |
+|---|---|---|
+| `GET /api/v1/health` ([below](#health-check)) | anybody, without login | a load balancer's probe, a container health check or a `systemd` start check |
+| `GET /api/v1/status` | signed-in users (anybody when login is off): the version; an admin also the host, process, memory and data directory | the web page, and a person checking which version runs |
+| [`GET /metrics`](#metrics) | the addresses in `server.metrics_allow` only; off by default | Prometheus, for graphs and alerts |
+| The admin page's Server health section ({ref}`admin-health`) | admins | a person: each worker's read budget, caches, memory, refusals by reason and the users active now |
+| The audit log ({ref}`admin-audit`) | admins, and `annzarro admin audit verify` | who changed what in the admin interface, with a hash chain that shows tampering |
+| The logs ({ref}`lab-server-logs`), as text or [JSON](#json-logs) | whoever reads the journal or the log file | what happened, request by request |
+
+`/metrics` and Server health read the same per-worker numbers ([below](#several-gunicorn-workers)): the
+first for a machine, over time; the second for a person, now, with the user names and the refusal
+reasons that `/metrics` leaves out.
 Metrics and JSON logs are off by default.
 
 ## Health check
@@ -65,9 +77,10 @@ behind a firewall; the server logs a warning at startup when you do.
 Every gunicorn worker is its own process and counts its own requests, and a scrape reaches one of them
 at random. Prometheus' multiprocess mode would need an environment variable set before the server
 imports, a gunicorn hook that retires dead workers and a client library. AnnZarro instead has each worker
-write a small snapshot file every two seconds (under `annzarro_admin/metrics`, beside the
-users file; the same mechanism as the admin Health section) and whichever worker is scraped answers with
-all of them. No library is needed: the exposition is written by AnnZarro itself.
+write one small snapshot file every two seconds, `annzarro_admin/health/<host>-<pid>.json` beside the
+users file, and whichever worker is scraped answers with all of them. It is the same file the admin
+Server health section reads: one file and one writer per worker, whichever of the two is on. No
+library is needed: the exposition is written by AnnZarro itself.
 
 Each series carries a `worker` label with the process id. Sum over it in the query
 (`sum by (group) (rate(annzarro_http_requests_total[5m]))`). A worker that is recycled
@@ -128,7 +141,13 @@ as one JSON object, which journald, Loki or Elasticsearch ingest without a parse
   datasets people open. In this mode gunicorn's access log is off and its own messages are JSON too.
 - The request id is the caller's `X-Request-Id` when it is up to 64 letters, digits, `.`, `_` or `-`
   (a proxy can set one), else a fresh one. It is sent back in the `X-Request-Id` response header, so a user can quote it.
-- `server.log_file` stays in the text format. `log_level` applies to both.
+- An admin change also writes its audit record as a line of logger `annzarro.audit`, as in the text
+  format: the `message` is the record itself, the copy that shows a cut-off audit log. The record in
+  `audit.jsonl` carries the same `request_id` ({ref}`admin-audit`), so the change, its access line and
+  anything logged while it ran share one id. Like the text log, this line and a few warnings (a
+  refused path, a failed login with its username) say more than the access line; passwords, tokens
+  and cookie values are never logged.
+- `server.log_file` stays in the text format. `log_level` applies as before.
 
 The default is `text`.
 

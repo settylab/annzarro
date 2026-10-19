@@ -241,3 +241,17 @@ def test_verify_cached_follows_changes(tmp_path):
     lines[1] = lines[1].replace(b"alice", b"mallo")
     _write_lines(d, lines)
     assert audit.verify_cached(d)["first_bad_seq"] == 2
+
+
+def test_a_request_id_is_part_of_the_chain_and_old_records_still_verify(tmp_path):
+    d = str(tmp_path)
+    _append(d, 2)                                       # a log written before request ids
+    rec = _append(d, request_id="3f1c9a0b5d2e4a67")
+    _append(d, request_id=None)
+    assert audit.verify(d)["ok"]
+    assert rec["request_id"] == "3f1c9a0b5d2e4a67"
+    assert ["request_id" in r for r in audit.read(d)] == [False, True, False, False]
+    lines = _lines(d)
+    lines[2] = lines[2].replace(b"3f1c9a0b5d2e4a67", b"0000000000000000")
+    _write_lines(d, lines)
+    assert audit.verify(d)["first_bad_seq"] == 3, "the id is covered by the hash"
