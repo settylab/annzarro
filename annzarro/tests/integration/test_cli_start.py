@@ -16,6 +16,7 @@ and ANNZARRO_HOME all point into tmp), waits for the port, and checks:
 The server binds 127.0.0.1 on a free port and is killed (whole process group,
 in case a debug configuration runs the Werkzeug reloader, which forks) at the end.
 """
+import http.client
 import json
 import os
 import re
@@ -68,6 +69,7 @@ def started_server(tmp_path):
         XDG_CONFIG_HOME=str(home / ".config"),
         ANNZARRO_HOME=str(home / ".annzarro"),
         ANNZARRO_HEADLESS="1",
+        ANNZARRO_EXIT_WITH_PARENT=str(os.getpid()),
         # Import this checkout's annzarro from the unrelated CWD (a pip install
         # would have it on sys.path already).
         PYTHONPATH=REPO_ROOT + os.pathsep + env.get("PYTHONPATH", ""),
@@ -128,3 +130,50 @@ def test_start_with_flags_only_from_an_unrelated_cwd(started_server):
 
     assert (started_server["home"] / ".annzarro" / "logs" / "annzarro_server.log").is_file()
     assert list(started_server["cwd"].iterdir()) == [], "the server wrote into its CWD"
+
+
+def test_connections_are_kept_open(started_server):
+    """A plot makes many requests; each on a new connection leaves a closed socket in
+    TIME_WAIT, and a few servers at once ran the machine out of ephemeral ports. Werkzeug's
+    dev server sends "Connection: close" on every response; `annzarro start` serves with
+    waitress, which keeps the connection."""
+    host, port = started_server["base"].removeprefix("http://").split(":")
+    conn = http.client.HTTPConnection(host, int(port), timeout=10)
+    try:
+        sockets = set()
+        for path in ("/api/v1/status", "/", "/api/v1/status"):
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            resp.read()
+            assert resp.status == 200, path
+            assert resp.getheader("Connection", "").lower() != "close", path
+            assert not resp.will_close, path
+            sockets.add(id(conn.sock))
+            assert conn.sock is not None, "the server closed the connection"
+        assert len(sockets) == 1
+    finally:
+        conn.close()
+
+
+def test_the_server_exits_with_the_process_named_in_exit_with_parent(tmp_path):
+    """ANNZARRO_EXIT_WITH_PARENT=<pid>: the server is gone soon after that process is."""
+    code = (
+        "import os, sys, time\n"
+        "from annzarro.server.server import _exit_with_parent_from_env\n"
+        "_exit_with_parent_from_env()\n"
+        "time.sleep(60)\n"
+    )
+    parent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    env = dict(os.environ, ANNZARRO_EXIT_WITH_PARENT=str(parent.pid), PYTHONPATH=REPO_ROOT)
+    child = subprocess.Popen([sys.executable, "-c", code], env=env, cwd=tmp_path)
+    try:
+        time.sleep(2)
+        assert child.poll() is None, "exited while its parent was alive"
+        parent.kill()
+        parent.wait(10)
+        assert child.wait(timeout=15) == 0
+    finally:
+        for proc in (parent, child):
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(10)

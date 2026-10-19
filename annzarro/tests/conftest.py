@@ -59,8 +59,44 @@ def _test_this_checkout():
         os.environ["PYTHONPATH"] = _REPO + (os.pathsep + old if old else "")
 
 
+def _servers_end_with_this_run():
+    """Servers the tests spawn exit once this process is gone (ANNZARRO_EXIT_WITH_PARENT).
+
+    A killed pytest (or xdist worker) runs no fixture teardown; without this its servers
+    stay behind, each with its listening port and open connections. Every xdist worker
+    names itself, so its own servers end with it.
+    """
+    os.environ["ANNZARRO_EXIT_WITH_PARENT"] = str(os.getpid())
+
+
+def _end_leftover_children():
+    """Terminate, wait, then kill the processes a fixture left running (a failed setup, a
+    fixture without a finally)."""
+    try:
+        import psutil
+        children = psutil.Process().children(recursive=True)
+    except Exception:
+        return
+    for child in children:
+        try:
+            child.terminate()
+        except psutil.Error:
+            pass
+    _, alive = psutil.wait_procs(children, timeout=5)
+    for child in alive:
+        try:
+            child.kill()
+        except psutil.Error:
+            pass
+
+
+def pytest_sessionfinish(session, exitstatus):
+    _end_leftover_children()
+
+
 def pytest_configure(config):
     _test_this_checkout()
+    _servers_end_with_this_run()
     if hasattr(config, "workerinput"):      # an xdist worker: the controller swaps
         return
     other = _swapped_by_another_run()

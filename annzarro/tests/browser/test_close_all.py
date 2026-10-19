@@ -95,7 +95,7 @@ def _start(tmp_path, extra, ready):
             urllib.request.urlopen(root + ready, timeout=1)
             break
         except OSError:
-            time.sleep(0.25)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     else:
         proc.kill()
         pytest.fail("server did not start")
@@ -133,7 +133,7 @@ def login_server(tmp_path):
             urllib.request.urlopen(root + "/login", timeout=1)
             break
         except OSError:
-            time.sleep(0.25)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     else:
         proc.kill()
         pytest.fail("server did not start")

@@ -10,6 +10,7 @@ The spec takes its file lists from here so that a test can check them
 without running PyInstaller. Nothing in this module imports PyInstaller.
 """
 
+import importlib
 import os
 from pathlib import Path
 
@@ -125,6 +126,17 @@ def datas():
     return out
 
 
+def _third_party_modules(name):
+    """Every module of an installed package: the server imports waitress inside a
+    function (annzarro/server/server.py), where the bundler may not look."""
+    import pkgutil
+    try:
+        package = importlib.import_module(name)
+    except ImportError:
+        return []
+    return [name] + [m.name for m in pkgutil.walk_packages(package.__path__, name + ".")]
+
+
 def hiddenimports():
     """Every annzarro module the server may import, by name.
 
@@ -145,4 +157,4 @@ def hiddenimports():
         out.append(package)
         out += [f"{package}.{f[:-3]}" for f in filenames
                 if f.endswith(".py") and f != "__init__.py"]
-    return sorted(out)
+    return sorted(out + _third_party_modules("waitress"))

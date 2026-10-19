@@ -70,7 +70,7 @@ def _start(tmp, extra):
         except urllib.error.HTTPError:  # 401: the server is up and wants a login
             break
         except OSError:
-            time.sleep(0.1)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     else:
         proc.kill()
         pytest.fail("server did not start")

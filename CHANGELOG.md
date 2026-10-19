@@ -19,6 +19,7 @@ with the release after it. Older releases are listed on
 - The legend title sits above the entries at every legend position, starts where the labels start and has
   a clear gap below it; before it was flush left, a few pixels off the symbols, 2 px above the first entry
   (and beside the entries in a legend on top or at the bottom).
+- `annzarro start` serves through waitress (a new dependency, pure Python, also on Windows) instead of Flask's development server. Debug mode and HTTPS still use the development server. A request line and headers over 262,144 bytes are refused with 431.
 
 ### Fixed
 - Changing the subset while an earlier change is still loading shows the new choice at once: the header
@@ -26,6 +27,7 @@ with the release after it. Older releases are listed on
 - Close all writes the autosave and the address at once, so a reload right after it no longer finds the panels just closed.
 - Switching Show Legend off or on in Plot Options redrew the graph once per legend entry: about a second
   on a 1M-point plot with 35 categories. It is now a single layout change (about 50 ms).
+- Every request a plot made opened a new TCP connection that the server closed after the reply, so a few servers loading plots side by side used up the machine's ephemeral ports ("Can't assign requested address" for other programs). Connections are kept open now.
 
 ### Docs
 - The README and the licence page cite v0.6.1 by its DOI,

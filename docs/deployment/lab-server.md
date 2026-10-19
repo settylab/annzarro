@@ -225,8 +225,8 @@ Three things about the replies that list every cell or gene name of a store (`/d
 they are read, with no `Content-Length`, and carry `X-Accel-Buffering: no`, so nginx passes them on
 instead of spooling them to disk (up to `proxy_max_temp_file_size`, 1 GB). That trades nginx's
 protection against slow readers for memory: a client that stops reading holds one server thread
-until it hangs up, neither gunicorn's `gthread` workers nor the development server time out a
-send. `server.names_stream_max_concurrent` (default 2 per worker, for lists of more than `names_stream_slot_above`, a million names, so that opening any dataset never waits) bounds this; a third concurrent
+until it hangs up, gunicorn's `gthread` workers do not time out a
+send, and `annzarro start` (waitress) closes a connection that has made no progress for 300 s. `server.names_stream_max_concurrent` (default 2 per worker, for lists of more than `names_stream_slot_above`, a million names, so that opening any dataset never waits) bounds this; a third concurrent
 request is answered `503` with `Retry-After` before any byte, and the web client retries once.
 `proxy_http_version 1.1` (above) lets a failure after the first byte end the reply without its
 final chunk, which the browser reports as a failed read. Over HTTP/1.0 the close would look like
@@ -314,12 +314,12 @@ limits on the way:
 |---|---|---|---|
 | gunicorn | 4,094 bytes | 400 "Request Line is too large" | `--limit-request-line 8190` (its maximum), or `0` for no limit |
 | nginx | one buffer of `large_client_header_buffers` (8 KB) | 414 Request-URI Too Large | `large_client_header_buffers 4 32k;` |
-| `annzarro start` (Werkzeug) | 65,536 bytes | 414 | not needed |
+| `annzarro start` (waitress) | 262,144 bytes of request line and headers together | 431 | not needed |
 
-We measured the gunicorn and Werkzeug rows against gunicorn 26.2 and Werkzeug 3.1: a 4.5 KB
+We measured the gunicorn and waitress rows against gunicorn 26.2 and waitress 3.0: a 4.5 KB
 request line returned 400 under the gunicorn default and 200 with `--limit-request-line 8190`;
-9 KB returned 400 with 8190; 60 KB returned 200 with `0`. Werkzeug answered 200 at 20 KB and
-414 at 70 KB. If people bring legacy links, raise both
+9 KB returned 400 with 8190; 60 KB returned 200 with `0`. waitress answered 200 at 262,000
+bytes and 431 at 300,000. If people bring legacy links, raise both
 limits; otherwise ask them to re-share with the current **Share Link**.
 
 (lab-server-updating)=

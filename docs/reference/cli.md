@@ -13,7 +13,7 @@ annzarro [-h] [--config CONFIG] [--debug] {start,stop,user,admin,install,config,
 
 ## `annzarro start`
 
-Start the server in the foreground (Flask's threaded server, Werkzeug).
+Start the server in the foreground, served by waitress with HTTP keep-alive (a plot's many requests share a few connections). Debug mode (`server.debug`) and HTTPS use Flask's development server (Werkzeug).
 
 ```text
 annzarro start [--config CONFIG] [--host HOST] [--port PORT] [--data-dir DATA_DIR]

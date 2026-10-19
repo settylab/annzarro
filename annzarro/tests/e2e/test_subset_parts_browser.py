@@ -69,7 +69,7 @@ def server(tmp_path_factory):
             urllib.request.urlopen(base + "/api/v1/config", timeout=1)
             break
         except OSError:
-            time.sleep(0.1)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     else:
         proc.kill()
         pytest.fail("server did not start")
