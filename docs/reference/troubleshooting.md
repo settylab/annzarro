@@ -62,8 +62,8 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Shared link returns "Request Line is too large" (Step 39) | A legacy `?view=` link longer than gunicorn's 4,094-byte request line | Use Share Link on this release: it puts the view in the `#view=` fragment, compressed, which never reaches the server ({doc}`deep-links`) |
-| Remote users see no login (Step 43) | Server bound to localhost, or started with `--auth-disabled` or `ANNZARRO_AUTH_DISABLED=true` | Run behind a proxy with gunicorn, or start with `--host 0.0.0.0` and without `--auth-disabled` ({doc}`../deployment/lab-server`) |
+| Shared link returns "Request Line is too large" (Step 39) | A legacy `?view=` link longer than the request line gunicorn allows when it runs without the bundled configuration (4,094 bytes by default), or with `--limit-request-line` | Use Share Link on this release: it puts the view in the `#view=` fragment, compressed, which never reaches the server ({doc}`deep-links`) |
+| Remote users see no login (Step 43) | Server bound to localhost, or started with `--auth-disabled` or `ANNZARRO_AUTH_DISABLED=true` | Run `annzarro serve` behind a proxy, or start with `--host 0.0.0.0` and without `--auth-disabled` ({doc}`../deployment/lab-server`) |
 | Login works over `http://` but not over `https://`, or the reverse | `auth.cookie_secure: true` sends the cookie only over HTTPS; behind a TLS proxy with `proxy_count: 0` the server does not see that the request was HTTPS | Leave `cookie_secure: auto` and set `proxy_count` to the number of proxies ({doc}`../deployment/authentication`) |
 | Everyone is locked out after a few failed logins | Lockout is per username and client address; with `proxy_count` too low all users appear to come from the proxy's address | Set `server.proxy_count: 1` behind nginx |
 | `403` with `"reason": "outside_data_dir"`. Reproduced | Hosted server (login on, or network host) and a `dataset_path` outside the data directory | Put the store under the data directory, or add its folder to `server.allowed_dirs` |
