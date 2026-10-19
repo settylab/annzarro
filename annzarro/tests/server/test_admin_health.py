@@ -3,13 +3,14 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 import numpy as np
 import pytest
 
 from annzarro.core import read_guard, zarr_reader
-from annzarro.server import health
+from annzarro.server import health, snapshots
 from annzarro.server.admin import audit
 from annzarro.tests.server.admin_helpers import ADMIN, USER, login, make_app, unsafe_headers
 
@@ -29,9 +30,9 @@ def _get(app, user=ADMIN, path=HEALTH):
 
 
 def _other_worker(app, pid, host="other-host"):
-    """A second worker's monitor, writing into the same health directory."""
+    """A second worker's monitor, writing into the same snapshot directory."""
     mon = health.monitor(app)
-    return health.Monitor(mon.directory, window_s=mon.window_s, pid=pid, host=host)
+    return health.Monitor(snapshots.Snapshots(mon.snapshots.directory, pid=pid, host=host), window_s=mon.window_s)
 
 
 class _Reply:
@@ -49,6 +50,7 @@ def test_the_endpoint_reports_this_worker(app):
     assert worker["stale"] is False and worker["age_s"] < 5
     assert set(worker["read_guard"]) >= {"in_flight_mb", "budget_mb", "share_mb", "by_requester"}
     assert set(worker["cache"]) >= {"memory_mb", "max_mb", "datasets", "name_index_mb"}
+    assert worker["rss_mb"] > 1 and body["totals"]["rss_mb"] == worker["rss_mb"]
     assert body["totals"]["refusals"] == 0
 
 
@@ -72,7 +74,7 @@ def test_a_reply_without_a_reason_counts_as_its_status(app):
     with app.test_request_context("/x"):
         mon.count(_Reply(500).response)
         mon.count(_Reply(400, {"reason": "a" * 100}).response)
-    refusals = mon.snapshot()["refusals"]
+    refusals = mon.section()["refusals"]
     assert refusals["http_500"] == 1 and refusals["a" * 40] == 1
 
 
@@ -80,7 +82,7 @@ def test_distinct_reasons_are_bounded(app):
     mon = health.monitor(app)
     for n in range(health.MAX_REASONS + 20):
         mon.count(_Reply(400, {"reason": f"r{n}"}).response)
-    refusals = mon.snapshot()["refusals"]
+    refusals = mon.section()["refusals"]
     assert len(refusals) == health.MAX_REASONS + 1 and refusals["other"] == 20
 
 
@@ -88,7 +90,7 @@ def test_snapshots_merge_across_two_workers(app):
     other = _other_worker(app, pid=os.getpid() + 1)
     other.count(_Reply(503, {"reason": "read_busy"}).response, "carol")
     other.count(_Reply(200).response)
-    other.write()
+    other.snapshots.write()
     login(app, USER).get(HEALTH)                                     # one admin_only here
     body = _get(app).get_json()
     by_pid = {w["pid"]: w for w in body["workers"]}
@@ -103,7 +105,7 @@ def test_active_users_take_the_latest_sighting_across_workers(app):
     other = _other_worker(app, pid=os.getpid() + 1)
     other._last_seen["alice"] = time.time() - 100
     other._last_seen["old"] = time.time() - app.config.get("session_timeout", 8 * 3600) - 100
-    other.write()
+    other.snapshots.write()
     login(app, USER)
     _get(app)
     active = {a["username"]: a["last_seen"] for a in _get(app).get_json()["active"]}
@@ -113,12 +115,12 @@ def test_active_users_take_the_latest_sighting_across_workers(app):
 def test_last_seen_by_user_merges_workers_without_writing(app):
     other = _other_worker(app, pid=os.getpid() + 1)
     other._last_seen["alice"] = time.time() - 50
-    other.write()
+    other.snapshots.write()
     login(app, USER)
-    before = sorted(os.listdir(other.directory))
+    before = sorted(os.listdir(other.snapshots.directory))
     seen = health.last_seen(app)
     assert set(seen) == {"alice", USER} and seen["alice"].endswith("+00:00")
-    assert sorted(os.listdir(other.directory)) == before
+    assert sorted(os.listdir(other.snapshots.directory)) == before
     assert "nobody" not in seen
 
 
@@ -137,7 +139,7 @@ def test_an_expired_session_is_not_seen(app):
 def test_a_dead_process_on_this_host_is_dropped_and_its_file_removed(app):
     gone = subprocess.Popen([sys.executable, "-c", "pass"])
     gone.wait()
-    dead = _other_worker(app, pid=gone.pid, host=health.monitor(app).host)
+    dead = _other_worker(app, pid=gone.pid, host=health.monitor(app).snapshots.host).snapshots
     dead.write()
     assert os.path.exists(dead.path)
     pids = [w["pid"] for w in _get(app).get_json()["workers"]]
@@ -147,62 +149,68 @@ def test_a_dead_process_on_this_host_is_dropped_and_its_file_removed(app):
 def _old_snapshot(app, pid, host):
     other = _other_worker(app, pid=pid, host=host)
     other.count(_Reply(503, {"reason": "read_busy"}).response)
-    snap = other.snapshot()
+    snap = other.snapshots.snapshot()
     snap["written"] -= health.STALE_S + 60
-    snap["read_guard"]["in_flight_mb"] = 99
-    os.makedirs(other.directory, exist_ok=True)
-    health.atomic_store.write_json(other.path, snap)
+    os.makedirs(other.snapshots.directory, exist_ok=True)
+    snapshots.atomic_store.write_json(other.snapshots.path, snap)
     return other
 
 
-def test_an_old_snapshot_of_a_live_process_is_idle_and_still_counted(app):
-    _old_snapshot(app, os.getppid(), health.monitor(app).host)       # alive: the parent process
-    body = _get(app).get_json()
-    idle = [w for w in body["workers"] if w["pid"] == os.getppid()][0]
-    assert idle["idle"] is True and idle["stale"] is False and idle["idle_since"]
-    assert idle["read_guard"]["in_flight_mb"] == 0                   # an idle worker holds no reads
-    assert body["totals"]["refusals"] == 1 and body["totals"]["read_in_flight_mb"] == 0
-
-
-def test_an_old_snapshot_from_another_host_is_stale_and_left_out_of_the_totals(app):
-    _old_snapshot(app, os.getpid() + 1, "other-host")
+@pytest.mark.parametrize("host", ["this", "other-host"])
+def test_an_old_snapshot_is_stale_and_left_out_of_the_totals(app, host):
+    # its writer thread has not run for a minute: stuck, or (on another host) gone
+    pid = os.getppid() if host == "this" else os.getpid() + 1      # this host: a live process
+    _old_snapshot(app, pid, health.monitor(app).snapshots.host if host == "this" else host)
     body = _get(app).get_json()
     stale = [w for w in body["workers"] if w["stale"]]
-    assert [w["pid"] for w in stale] == [os.getpid() + 1] and stale[0]["idle"] is False
+    assert [w["pid"] for w in stale] == [pid] and "idle" not in stale[0]
     assert body["totals"]["refusals"] == 0
     assert stale[0]["refusals"] == {"read_busy": 1}                  # still shown, never silently summed
 
 
 def test_a_garbled_snapshot_is_ignored(app):
-    mon = health.monitor(app)
-    os.makedirs(mon.directory, exist_ok=True)
+    directory = health.monitor(app).snapshots.directory
+    os.makedirs(directory, exist_ok=True)
     for name, text in (("a-1.json", "{not json"), ("b-2.json", "[]"), ("c-3.json", '{"pid": "x"}')):
-        with open(os.path.join(mon.directory, name), "w") as f:
+        with open(os.path.join(directory, name), "w") as f:
             f.write(text)
     assert [w["pid"] for w in _get(app).get_json()["workers"]] == [os.getpid()]
 
 
-def test_snapshots_are_written_at_most_once_per_interval(app, monkeypatch):
-    mon = health.monitor(app)
-    writes = []
-    real = health.atomic_store.write_json
-    monkeypatch.setattr(health.atomic_store, "write_json", lambda *a, **k: (writes.append(1), real(*a, **k))[1])
+def test_one_writer_thread_per_process_starts_on_the_first_request(app):
+    snaps = health.monitor(app).snapshots
+    def writers():
+        return [t for t in threading.enumerate() if t.name == "worker-snapshot"]
+    before = len(writers())
     client = login(app, ADMIN)
-    writes.clear()
-    mon._next_write = 0
-    for _ in range(20):
+    for _ in range(5):
         client.get("/api/v1/config")
-    assert len(writes) == 1
-    mon._next_write = 0
-    client.get("/api/v1/config")
-    assert len(writes) == 2
+    assert len(writers()) == before + 1
+    assert snaps._writer_pid == os.getpid()
+    deadline = time.time() + 5
+    while not os.path.exists(snaps.path) and time.time() < deadline:
+        time.sleep(0.05)
+    assert snapshots.atomic_store.read_json(snaps.path)["health"]["requests"] >= 1
+
+
+def test_the_writer_stops_when_the_state_directory_is_gone(tmp_path):
+    snaps = snapshots.Snapshots(str(tmp_path / "state" / "health"), interval_s=0.01)
+    (tmp_path / "state").mkdir()
+    assert snaps.write() is not None
+    import shutil
+    shutil.rmtree(tmp_path / "state")
+    assert snaps.write() is None and not (tmp_path / "state").exists()     # never recreated
+    thread = threading.Thread(target=snapshots._write_forever, args=(__import__("weakref").ref(snaps),))
+    thread.start()
+    thread.join(2)
+    assert not thread.is_alive()
 
 
 def test_the_snapshot_file_is_private_and_holds_no_paths(app):
     _get(app)
-    mon = health.monitor(app)
-    assert oct(os.stat(mon.path).st_mode & 0o777) == "0o600"
-    assert app.config["data_dir"] not in open(mon.path).read()
+    path = health.monitor(app).snapshots.path
+    assert oct(os.stat(path).st_mode & 0o777) == "0o600"
+    assert app.config["data_dir"] not in open(path).read()
 
 
 def test_no_hook_without_login(tmp_path):
@@ -342,7 +350,7 @@ def test_non_admins_get_no_paths_from_any_status_route(app, tmp_path, path):
     _fill()
     for client in (login(app, USER), app.test_client()):
         text = client.get(path).get_data(as_text=True)
-        for secret in (str(tmp_path), app.config["data_dir"], "/d/one.zarr", health.monitor(app).host or "-",
+        for secret in (str(tmp_path), app.config["data_dir"], "/d/one.zarr", health.monitor(app).snapshots.host or "-",
                        *PATH_WORDS):
             assert secret not in text, (path, secret)
 

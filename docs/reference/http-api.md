@@ -569,7 +569,7 @@ Adding needs `server.admin_data_roots` ({ref}`admin data directories <admin-data
 
 | Route | Body | Returns |
 |---|---|---|
-| `GET /admin/health` | | `{workers, totals, active, window_s}`. A worker is `{pid, host, started, age_s, stale, idle, idle_since, requests, refusals, read_guard, cache}`: `refusals` counts replies by their `reason`, `read_guard` is `{budget_mb, share_mb, in_flight_mb, by_requester}`, `cache` is `{datasets, memory_mb, max_mb, name_index_mb}`. `totals` sums the workers that are not stale. `active` lists the users seen within `window_s` (the session timeout). Each worker's snapshot is at most 2 s old |
+| `GET /admin/health` | | `{workers, totals, active, window_s}`. A worker is `{pid, host, started, age_s, stale, requests, refusals, read_guard, cache, rss_mb}`: `refusals` counts replies by their `reason`, `read_guard` is `{budget_mb, share_mb, in_flight_mb, by_requester}`, `cache` is `{datasets, memory_mb, max_mb, name_index_mb}`. `rss_mb` is the worker's resident memory. A worker is `stale` when its snapshot is over a minute old; `totals` (`refusals`, `cache_mb`, `read_in_flight_mb`, `rss_mb`) sums the workers that are not. `active` lists the users seen within `window_s` (the session timeout). Each worker's snapshot is at most 2 s old |
 | `POST /admin/cache/clear` | `{"dataset_path"?}` | the result of the clear, as `POST /cache/reset`, in every worker. `400` `bad_request`. Audited as `cache.clear` |
 
 ### Panel sets

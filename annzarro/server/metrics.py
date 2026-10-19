@@ -14,41 +14,32 @@ Several gunicorn workers
 ------------------------
 
 Each worker counts its own requests. A scrape reaches one worker at random, so
-every worker writes a small snapshot file every ``INTERVAL_S`` seconds (from a
-daemon thread it starts on its first request) into ``<admin state>/metrics``,
-and whichever worker is scraped answers with all of them. Every series carries
+every worker puts its counters in the ``metrics`` section of its snapshot file
+(snapshots.py, the file the admin Health section reads too), and whichever
+worker is scraped answers with all of them. Every series carries
 a ``worker`` label (the process id); a worker that is recycled leaves the
 series, a new one appears, and Prometheus' ``rate()`` and ``sum by`` handle both.
 Series are never summed here, so a recycled worker cannot make a total go back.
-
-The files are ephemeral. A snapshot whose process is gone is deleted by the
-next scrape.
 """
 
 import ipaddress
 import logging
-import os
-import platform
 import threading
 import time
 
-import psutil
 from flask import abort, request
 
-from . import atomic_store
+from . import snapshots
 
 logger = logging.getLogger(__name__)
 
 EXTENSION = "annzarro_metrics"
-#: Seconds between a worker's snapshot writes.
-INTERVAL_S = 2.0
+SECTION = "metrics"
+FIELDS = (("requests", dict), ("latency", dict), ("bytes", dict), ("in_flight", int))
 #: Upper bounds (seconds) of the latency histogram buckets.
 BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300)
 #: Route groups one worker tells apart; further ones count as "other".
 MAX_GROUPS = 128
-#: Snapshot files read per scrape.
-MAX_FILES = 256
-MB = 2 ** 20
 LOOPBACK = ["127.0.0.0/8", "::1/128"]
 #: Headers a reverse proxy adds. Without a trusted proxy (server.proxy_count) a request
 #: carrying one came through a proxy, and the address that reached us is the proxy's.
@@ -56,30 +47,22 @@ _PROXY_HEADERS = ("X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X
 
 
 class Collector:
-    """One worker's counters, its snapshot file, and the merged exposition."""
+    """One worker's request counters, as the ``metrics`` section of its snapshot, and the merged exposition."""
 
-    def __init__(self, directory, *, interval_s=INTERVAL_S, pid=None):
-        self.directory = directory
-        self.interval_s = interval_s
-        self.pid = os.getpid() if pid is None else pid
-        self.started = time.time()
+    def __init__(self, snaps):
+        self.snapshots = snaps
         self._lock = threading.Lock()
-        self._writing = threading.Lock()
         self._requests = {}    # "group|method|code" -> n
         self._latency = {}     # group -> [per-bucket counts..., +Inf count, sum]
         self._bytes = {}       # group -> n
         self._groups = set()
         self._inflight = 0
-        self._writer_pid = None
-
-    @property
-    def path(self):
-        return os.path.join(self.directory, f"{platform.node()}-{self.pid}.json")
+        snaps.add(SECTION, self.section, FIELDS)
 
     def begin(self):
         with self._lock:
             self._inflight += 1
-        self.ensure_writer()
+        self.snapshots.ensure_writer()
 
     def end(self, group, method, status, seconds, nbytes):
         with self._lock:
@@ -95,88 +78,17 @@ class Collector:
             slots[-1] += seconds
             self._bytes[group] = self._bytes.get(group, 0) + nbytes
 
-    def ensure_writer(self):
-        """Start this process' snapshot thread (once per process: a forked worker starts its own)."""
-        if self._writer_pid == os.getpid():
-            return
-        self._writer_pid = os.getpid()
-        self.pid = os.getpid()
-        threading.Thread(target=self._write_forever, daemon=True, name="metrics-snapshot").start()
-
-    def _write_forever(self):
-        while True:
-            try:
-                self.write()
-            except Exception:
-                logger.exception("Metrics snapshot failed")
-            time.sleep(self.interval_s)
-
-    def snapshot(self):
+    def section(self):
         with self._lock:
-            counted = {"requests": dict(self._requests), "latency": {g: list(v) for g, v in self._latency.items()},
-                       "bytes": dict(self._bytes), "in_flight": self._inflight}
-        return {"pid": self.pid, "host": platform.node(), "started": self.started, "written": time.time(),
-                **counted, **_process_and_caches()}
-
-    def write(self):
-        if not self._writing.acquire(blocking=False):
-            return
-        try:
-            os.makedirs(self.directory, mode=0o700, exist_ok=True)
-            atomic_store.write_json(self.path, self.snapshot(), indent=None)
-        finally:
-            self._writing.release()
+            return {"requests": dict(self._requests), "latency": {g: list(v) for g, v in self._latency.items()},
+                    "bytes": dict(self._bytes), "in_flight": self._inflight}
 
     def collect(self):
-        """This worker's live snapshot and every other worker's file (dead ones deleted)."""
-        own = self.snapshot()
-        snaps = [own]
-        try:
-            names = sorted(n for n in os.listdir(self.directory) if n.endswith(".json"))[:MAX_FILES]
-        except OSError:
-            names = []
-        for name in names:
-            path = os.path.join(self.directory, name)
-            if path == self.path:
-                continue
-            snap = _read(path)
-            if snap is None:
-                continue
-            if snap["host"] == own["host"] and not psutil.pid_exists(snap["pid"]):
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
-                continue
-            snaps.append(snap)
-        return sorted(snaps, key=lambda s: (s["host"], s["pid"]))
+        """This worker's live snapshot and every other worker's (dead ones' files deleted)."""
+        return self.snapshots.collect(SECTION)
 
     def render(self):
         return render(self.collect())
-
-
-def _process_and_caches():
-    from ..core import zarr_reader, h5ad_reader_obj, name_index
-    caches = {}
-    for label, reader in (("zarr", zarr_reader), ("h5ad", h5ad_reader_obj)):
-        info = reader.get_cache_info()
-        caches[label] = {"hits": info.get("hits", 0), "misses": info.get("misses", 0),
-                         "bytes": info["memory_usage_mb"] * MB, "max_bytes": info["max_memory_mb"] * MB,
-                         "datasets": info["dataset_count"]}
-    return {"rss": psutil.Process().memory_info().rss, "caches": caches, "name_index_bytes": name_index.cached_bytes()}
-
-
-def _read(path):
-    try:
-        snap = atomic_store.read_json(path)
-        for key, kind in (("pid", int), ("host", str), ("started", (int, float)), ("written", (int, float)),
-                          ("requests", dict), ("latency", dict), ("bytes", dict), ("in_flight", int),
-                          ("rss", int), ("caches", dict), ("name_index_bytes", (int, float))):
-            if not isinstance(snap[key], kind):
-                return None
-        return snap
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
 
 
 def _label(**labels):
@@ -206,11 +118,11 @@ def render(snaps, now=None):
     ws = lambda s: str(s["pid"])  # noqa: E731
     family("annzarro_http_requests_total", "counter", "Requests answered, by route group, method and status code.",
            ((_label(worker=ws(s), group=g, method=m, code=c), n)
-            for s in snaps for key, n in sorted(s["requests"].items()) for g, m, c in [key.split("|")]))
+            for s in snaps for key, n in sorted(s[SECTION]["requests"].items()) for g, m, c in [key.split("|")]))
     out.append("# HELP annzarro_http_request_duration_seconds Seconds from request to the last byte sent, by route group.")
     out.append("# TYPE annzarro_http_request_duration_seconds histogram")
     for s in snaps:
-        for group, slots in sorted(s["latency"].items()):
+        for group, slots in sorted(s[SECTION]["latency"].items()):
             total = 0
             for bound, count in zip(BUCKETS, slots):
                 total += count
@@ -222,9 +134,9 @@ def render(snaps, now=None):
             out.append(f"annzarro_http_request_duration_seconds_sum{_label(worker=ws(s), group=group)} {slots[-1]!r}")
             out.append(f"annzarro_http_request_duration_seconds_count{_label(worker=ws(s), group=group)} {total}")
     family("annzarro_http_requests_in_flight", "gauge", "Requests being answered now (a streamed reply counts until sent).",
-           ((_label(worker=ws(s)), s["in_flight"]) for s in snaps))
+           ((_label(worker=ws(s)), s[SECTION]["in_flight"]) for s in snaps))
     family("annzarro_http_response_bytes_total", "counter", "Response body bytes, before compression, by route group.",
-           ((_label(worker=ws(s), group=g), n) for s in snaps for g, n in sorted(s["bytes"].items())))
+           ((_label(worker=ws(s), group=g), n) for s in snaps for g, n in sorted(s[SECTION]["bytes"].items())))
     for field, name, kind, help_text in (
             ("hits", "annzarro_cache_hits_total", "counter", "Lookups answered from the dataset cache."),
             ("misses", "annzarro_cache_misses_total", "counter", "Lookups the dataset cache could not answer."),
@@ -293,12 +205,11 @@ def install(app):
         return None
     from flask import Response
     from . import access
-    from .admin import state_dir
     nets = networks(app.config)
     if any(net.prefixlen == 0 for net in nets):
         logger.warning("SECURITY: server.metrics_allow includes every address; /metrics is open to anyone who can "
                        "reach the server. Restrict it to your monitoring host.")
-    collector = Collector(os.path.join(state_dir(app.config, create=True), "metrics"))
+    collector = Collector(snapshots.of(app))
     app.extensions[EXTENSION] = collector
 
     @app.route("/metrics", methods=["GET"])

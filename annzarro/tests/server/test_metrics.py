@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from annzarro.server import metrics
+from annzarro.server import metrics, snapshots
 from annzarro.server.core import create_app
 
 
@@ -145,33 +145,30 @@ def test_a_streamed_reply_is_in_flight_until_it_has_been_read(app):
     access.gate("public")(app.view_functions["_slow"])
     client = app.test_client()
     response = client.get("/_slow", buffered=False)
-    mid = app.extensions[metrics.EXTENSION].snapshot()
+    mid = app.extensions[metrics.EXTENSION].section()
     assert mid["in_flight"] == 1
     assert len(response.get_data()) == 3000
     response.close()
-    after = app.extensions[metrics.EXTENSION].snapshot()
+    after = app.extensions[metrics.EXTENSION].section()
     assert after["in_flight"] == 0
     assert after["bytes"]["_slow"] == 3000
 
 
 def test_workers_are_merged_and_a_dead_one_is_forgotten(app):
     collector = app.extensions[metrics.EXTENSION]
-    other = metrics.Collector(collector.directory, pid=999991)
+    directory = collector.snapshots.directory
+    other = metrics.Collector(snapshots.Snapshots(directory, pid=999991, host="elsewhere"))
     other.end("data/obs", "GET", 200, 0.2, 500)
-    other.begin = None
-    snapshot = other.snapshot()
-    snapshot["host"] = "elsewhere"
-    path = os.path.join(collector.directory, "elsewhere-999991.json")
-    os.makedirs(collector.directory, exist_ok=True)
-    with open(path, "w") as fh:
-        json.dump(snapshot, fh)
+    other.snapshots.write()
+    assert os.path.exists(os.path.join(directory, "elsewhere-999991.json"))
+    snapshot = other.snapshots.snapshot()
     text = collector.render()
     assert 'worker="999991",group="data/obs",method="GET",code="200"} 1' in text
     assert f'worker="{os.getpid()}"' in text
     # a snapshot of a process of this host that is gone is deleted, not shown
     gone = dict(snapshot, host=snapshot["host"], pid=2 ** 22 + 12345)
-    gone["host"] = collector.snapshot()["host"]
-    gone_path = os.path.join(collector.directory, "gone.json")
+    gone["host"] = collector.snapshots.host
+    gone_path = os.path.join(directory, "gone.json")
     with open(gone_path, "w") as fh:
         json.dump(gone, fh)
     assert f'worker="{gone["pid"]}"' not in collector.render()
@@ -180,8 +177,8 @@ def test_workers_are_merged_and_a_dead_one_is_forgotten(app):
 
 def test_a_damaged_snapshot_file_is_ignored(app):
     collector = app.extensions[metrics.EXTENSION]
-    os.makedirs(collector.directory, exist_ok=True)
-    with open(os.path.join(collector.directory, "junk.json"), "w") as fh:
+    os.makedirs(collector.snapshots.directory, exist_ok=True)
+    with open(os.path.join(collector.snapshots.directory, "junk.json"), "w") as fh:
         fh.write("{not json")
     assert "annzarro_build_info" in collector.render()
 
@@ -197,3 +194,37 @@ def test_route_group_is_bounded_and_has_no_parameters(app):
         assert "<" not in group and not group.startswith("/") and group.count("/") <= 1
     assert len(seen) < 80
     assert {"admin", "page", "static", "data/obs", "status"} <= seen
+
+
+def test_metrics_and_health_share_one_snapshot_file_per_worker(tmp_path):
+    from annzarro.server import health
+    from annzarro.tests.server.admin_helpers import ADMIN, login, make_app
+    app = make_app(tmp_path, metrics_enabled=True)
+    collector, monitor = app.extensions[metrics.EXTENSION], health.monitor(app)
+    assert collector.snapshots is monitor.snapshots
+    login(app, ADMIN).get("/api/v1/admin/health")
+    _get(app.test_client(), "/metrics", environ_base={"REMOTE_ADDR": "127.0.0.1"})
+    directory = collector.snapshots.directory
+    assert os.listdir(directory) == [os.path.basename(collector.snapshots.path)]
+    assert not os.path.exists(os.path.join(os.path.dirname(directory), "metrics"))
+    snap = json.load(open(collector.snapshots.path))
+    assert {"health", "metrics", "rss", "caches"} <= set(snap)
+
+
+def test_a_snapshot_without_a_metrics_section_is_left_out_of_the_scrape(app):
+    collector = app.extensions[metrics.EXTENSION]
+    directory = collector.snapshots.directory
+    os.makedirs(directory, exist_ok=True)
+    snap = collector.snapshots.snapshot()
+    del snap["metrics"]
+    snap.update(pid=999992, host="elsewhere")
+    with open(os.path.join(directory, "elsewhere-999992.json"), "w") as fh:
+        json.dump(snap, fh)
+    text = collector.render()
+    assert 'worker="999992"' not in text and f'worker="{os.getpid()}"' in text
+
+
+def test_metrics_without_login_has_no_health_section(app):
+    _get(app.test_client(), "/api/v1/status")
+    snap = app.extensions[metrics.EXTENSION].snapshots.snapshot()
+    assert "metrics" in snap and "health" not in snap
