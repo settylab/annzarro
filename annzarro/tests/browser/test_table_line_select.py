@@ -766,3 +766,31 @@ def test_the_tool_stops_when_its_table_goes_away(server):
             assert not errors, errors
         finally:
             browser.close()
+
+
+def test_the_badge_follows_the_tables_title(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            assert _armed_chrome(page)["text"].startswith("Line filter on: cells")
+            field = page.locator(f'.tile[data-tile-id="{TABLE}"] .tile-title')
+            field.fill("Kupffer cells")                 # while typing
+            page.wait_for_function("() => /Line filter on: Kupffer cells/.test(document.getElementById('line-select-badge').innerText.replace(/\\s+/g, ' '))")
+            field.press("Enter")
+            field.blur()
+            page.wait_for_timeout(300)
+            assert page.evaluate(f"PanelManager.getPanel('{TABLE}').getTitle()") == "Kupffer cells"
+            a = _armed_chrome(page)
+            assert a["text"].startswith("Line filter on: Kupffer cells"), a
+            # leaving the mode ends the listening: a new arm names the table as it is now
+            page.keyboard.press("Escape")
+            _is_off(page)
+            field.fill("Again")
+            field.blur()
+            _arm(page)
+            assert _armed_chrome(page)["text"].startswith("Line filter on: Again")
+            assert not errors, errors
+        finally:
+            browser.close()

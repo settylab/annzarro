@@ -129,6 +129,7 @@ export function leaveLineSelect() {
     document.removeEventListener('keydown', was.onKey, true);
     document.removeEventListener('keyup', was.onKeyUp, true);
     document.removeEventListener('mousemove', showTip, true);
+    was.listeners.abort();
     document.getElementById('line-select-tip')?.remove();
     for (const o of was.overlays.values()) o.el.remove();
     was.overlays.clear();
@@ -164,12 +165,23 @@ function showArmed(state) {
     if (host) host.insertBefore(badge, anchor && anchor.parentNode === host ? anchor : null);
     const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(state.tableId)}"]`);
     if (tile) tile.classList.add('az-line-armed');
+    // the badge names the table as its tile's title field does, while it is typed and once it is set
+    const field = tile && tile.querySelector('.tile-title');
+    if (field) {
+        const follow = () => {
+            const name = field.value || panel.getTitle();
+            badge.querySelector('.az-line-badge-name').textContent = name;
+            badge.setAttribute('aria-label', `Line filter on: ${name}. Click to stop.`);
+        };
+        field.addEventListener('input', follow, { signal: state.listeners.signal });
+        field.addEventListener('change', follow, { signal: state.listeners.signal });
+    }
 }
 
 function arm(tableId, rows) {
     const state = {
         panel: PanelManager.getPanel(tableId), dataset: DataManager.getCurrentDataset(),
-        tableId, rows, overlays: new Map(), modes: new Map(), warn: new Map(), frame: 0, drag: null, busy: false,
+        listeners: new AbortController(), tableId, rows, overlays: new Map(), modes: new Map(), warn: new Map(), frame: 0, drag: null, busy: false,
         onKey: null, onKeyUp: null
     };
     state.onKey = (e) => {
