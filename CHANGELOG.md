@@ -9,6 +9,7 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Added
+- `annzarro serve` starts the production server in one command: gunicorn with the bundled configuration, reading the same site file and `ANNZARRO_*` variables as `annzarro start`, with `--config`, `--host`, `--port`, `--workers`, `--threads` and extra gunicorn options after `--`. It prints the URL, workers, threads, whether login is on and the configuration file, and login stays on unless the configuration turns it off. The new `server` extra installs gunicorn: `pip install 'annzarro[server]'`. The explicit gunicorn command still works.
 - Plot Options, Presets: **Bare** draws only the points (no margins, legend, colour bar, scale bar, axes,
   grid or zero lines; in 3D no axes or background planes), for figures and overlays. **Default** undoes it.
 

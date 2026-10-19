@@ -41,7 +41,41 @@ annzarro start --no-browser --port 8765 --data-dir /data/stores  # behind an SSH
 annzarro start --config site.yaml --detach
 ```
 
-For a lab server use gunicorn instead ({doc}`../deployment/lab-server`).
+For a lab server use `annzarro serve` instead.
+
+## `annzarro serve`
+
+Start the production server: gunicorn with the bundled configuration
+(`annzarro.server.gunicorn_config`) on the hosted WSGI factory, for a {doc}`lab server
+<../deployment/lab-server>`. It needs the `server` extra (`pip install 'annzarro[server]'`) and
+does not run on Windows; use `annzarro start` there.
+
+```text
+annzarro serve [--config CONFIG] [--host HOST] [--port PORT] [--workers N] [--threads N]
+               [-- GUNICORN_ARGS]
+```
+
+| Option | Meaning |
+|---|---|
+| `--config FILE` | Site configuration file; default `$ANNZARRO_CONFIG`. Must exist. |
+| `--host HOST`, `--port PORT` | Address to bind (`server.host`, default `127.0.0.1`; `server.port`, default 8000). |
+| `--workers N` | Worker processes (`server.workers`; default twice the CPUs plus one, at most 4). |
+| `--threads N` | Threads per worker (`server.threads`, default 4). |
+| `-- ARGS` | Everything after `--` is passed to gunicorn, e.g. `-- --timeout 120`. |
+
+The flags override the configuration files and `ANNZARRO_*` variables. Unlike `annzarro start`,
+the server is hosted whatever the host: login is on unless the configuration says
+`auth.enabled: false` (or `ANNZARRO_AUTH_DISABLED` is true), and dataset paths are confined to
+the data directory. Before it starts, the command prints the URL, workers and threads, whether
+login is on and the configuration file in use, then replaces itself with gunicorn, so the process
+you started is gunicorn's master: SIGTERM stops it, SIGHUP reloads it, and systemd or a pid file
+see the right process. It is shorthand for
+
+```bash
+gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_wsgi_app()"
+```
+
+which keeps working.
 
 ## `annzarro stop`
 
