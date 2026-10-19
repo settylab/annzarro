@@ -138,7 +138,7 @@ def _make_default_from_a(page):
     assert not page.is_visible(f"#session-style-reset-{A}")
     page.click(f"#session-style-set-{A}")
     page.wait_for_selector(f"#session-style-reset-{A}", state="visible")
-    assert page.inner_text(f"#session-style-done-{A}") == "Set."
+    assert page.inner_text(f"#session-style-state-{A}") == "On Default"
     _close_menu(page, A)
 
 
