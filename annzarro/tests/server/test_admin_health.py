@@ -177,15 +177,16 @@ def test_a_garbled_snapshot_is_ignored(app):
     assert [w["pid"] for w in _get(app).get_json()["workers"]] == [os.getpid()]
 
 
-def test_one_writer_thread_per_process_starts_on_the_first_request(app):
+def test_one_writer_thread_per_process_starts_on_the_first_request(app, monkeypatch):
     snaps = health.monitor(app).snapshots
-    def writers():
-        return [t for t in threading.enumerate() if t.name == "worker-snapshot"]
-    before = len(writers())
+    started = []
+    real = snapshots.threading.Thread
+    monkeypatch.setattr(snapshots.threading, "Thread",
+                        lambda *a, **k: (started.append(k.get("args")), real(*a, **k))[1])
     client = login(app, ADMIN)
     for _ in range(5):
         client.get("/api/v1/config")
-    assert len(writers()) == before + 1
+    assert len(started) == 1 and started[0][0]() is snaps          # one thread, holding a weak reference
     assert snaps._writer_pid == os.getpid()
     deadline = time.time() + 5
     while not os.path.exists(snaps.path) and time.time() < deadline:
