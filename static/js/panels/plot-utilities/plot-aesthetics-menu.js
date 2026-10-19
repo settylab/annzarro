@@ -583,7 +583,6 @@ export function createPopoverContent(id, settings) {
                 title="Make this the session default: every ${plotKind} plot on Default takes this look, now and when you change it. Plots with a look of their own keep it. It lasts for the session and travels with links, the autosave and panel sets.">Make this the session default</button>
             <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1 ${hasSessionStyle(`${plotKind}-plot`) ? '' : 'd-none'}" id="session-style-reset-${id}"
                 title="End the session default: ${plotKind} plots on Default are in the built-in style again">Reset to built-in default</button>
-            <div class="small mt-1" id="session-style-done-${id}" role="status"></div>
         `)}
     </div>
     `;
@@ -1198,9 +1197,7 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             }
             document.getElementById(`session-style-reset-${id}`)?.classList.toggle('d-none', !hasSessionStyle(type));
             const state = document.getElementById(`session-style-state-${id}`);
-            if (state && !reset) state.textContent = 'On Default';
-            const done = document.getElementById(`session-style-done-${id}`);
-            if (done) done.textContent = reset ? 'Built-in again.' : isSet ? 'Set.' : 'Same as built-in: no default.';
+            if (state) state.textContent = settings.styleDefault === true ? 'On Default' : 'Own style';
             return;
         }
 
