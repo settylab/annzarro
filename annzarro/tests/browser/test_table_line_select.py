@@ -185,9 +185,21 @@ def _seen(page):
     return tuple(seen["pointerdown"]), tuple(seen["pointerup"])
 
 
+def _still(page):
+    """Wait until plot A has stopped moving (a table above it growing or shrinking)."""
+    last = None
+    for _ in range(40):
+        now = page.evaluate(f"JSON.stringify(document.getElementById('plot-container-{PLOT_A}').getBoundingClientRect())")
+        if now == last:
+            return
+        last = now
+        page.wait_for_timeout(300)
+
+
 def _drag(page, a, b, shift=False, steps=8, release=True):
     """Drag across plot A from fractions `a` to `b` of its area. Returns the points the page
     saw (the browser rounds mouse positions): mouse down, mouse release."""
+    _still(page)
     area = _area(page)
     ax, ay = area["left"] + area["w"] * a[0], area["top"] + area["h"] * a[1]
     bx, by = area["left"] + area["w"] * b[0], area["top"] + area["h"] * b[1]
@@ -476,6 +488,28 @@ def test_in_large_plot_mode_there_is_no_table_to_arm_from(large_server):
                 f"() => /large-plot mode/.test(document.querySelector('.tile[data-tile-id=\"{TABLE}\"]').innerText)",
                 timeout=30_000)
             assert page.locator(f'.tile[data-tile-id="{TABLE}"] .az-line-select-btn').count() == 0
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_a_relayout_during_a_drag_drops_the_line(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            _drag(page, (0.1, 0.8), (0.9, 0.3), release=False)
+            # the axes move under the line (a zoom made elsewhere, a redraw)
+            page.evaluate(f"""() => {{ const g = document.getElementById('plot-container-{PLOT_A}');
+                const r = g._fullLayout.xaxis.range; return Plotly.relayout(g, {{'xaxis.range': [r[0] + 1, r[1]]}}); }}""")
+            page.mouse.up()
+            page.wait_for_timeout(1000)
+            assert _rows(page) == N_CELLS
+            assert _details(page) == {}
+            # the tool is still armed and takes the next line
+            _drag(page, (0.1, 0.8), (0.9, 0.3))
+            _wait_filtered(page, N_CELLS)
             assert not errors, errors
         finally:
             browser.close()

@@ -239,6 +239,8 @@ function place(o, gd) {
     o.el.style.display = visible ? '' : 'none';
     const key = `${box.left}|${box.top}|${w}|${h}|${r.left}|${r.top}|${r.width}|${r.height}`;
     if (key === o.key) return;
+    // the plot moved or changed size under a line being drawn (a resize, the table above growing)
+    if (o.drag && o.key) cancelDrag(o);
     o.key = key;
     Object.assign(o.el.style, {
         left: `${box.left}px`, top: `${box.top}px`, width: `${Math.max(w, 0)}px`, height: `${Math.max(h, 0)}px`
@@ -309,6 +311,7 @@ function geometry(o) {
     return {
         left: r.left + xa._offset, top: r.top + ya._offset, w: xa._length, h: ya._length,
         ox: xa._offset, oy: ya._offset,
+        xr: xa.range.slice(), yr: ya.range.slice(),
         xm: axisMap(xa.range, xa._length, false), ym: axisMap(ya.range, ya._length, true)
     };
 }
@@ -368,6 +371,11 @@ async function onUp(o, e) {
     if (!d) return;
     if (o.el.hasPointerCapture(e.pointerId)) o.el.releasePointerCapture(e.pointerId);
     if (d.cancelled) { cancelDrag(o); return; }
+    // the axes were zoomed or the plot redrawn since the line began: the points mean something else now
+    const now = geometry(o);
+    const same = (a, b) => a[0] === b[0] && a[1] === b[1];
+    if (now.left !== d.geo.left || now.top !== d.geo.top || now.w !== d.geo.w || now.h !== d.geo.h
+        || !same(now.xr, d.geo.xr) || !same(now.yr, d.geo.yr)) { cancelDrag(o); return; }
     d.raw = { x: e.clientX - d.geo.left, y: e.clientY - d.geo.top };
     d.shift = e.shiftKey;
     d.p2 = endOf(d);
