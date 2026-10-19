@@ -107,6 +107,18 @@ def arm(page):
     page.wait_for_timeout(500)
 
 
+_annotate = su.annotate
+
+
+def _padded(path, marks, pad=6):
+    """The helper's box, a few pixels wider all round, so the red of an armed button stays visible inside it."""
+    g = pad * su.DSF
+    _annotate(path, [(label, (x0 - g, y0 - g, x1 + g, y1 + g)) for label, (x0, y0, x1, y1) in marks])
+
+
+su.annotate = _padded
+
+
 def mark(page, name, region=None):
     """A screenshot with the Line filter button in a red box (the highlight helper of the other
     guides: shoot_userguide.capture, outline and number disc in the one accent colour)."""
