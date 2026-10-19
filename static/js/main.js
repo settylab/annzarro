@@ -1325,6 +1325,7 @@ const App = (function() {
             while (_isLoadingDataset && _datasetLoadDone) await _datasetLoadDone;
             if (DataManager.getCurrentDataset() !== datasetPath) return;   // another dataset took over
             if (request <= _subsetCancelledSeq) return;                   // Cancel, while this waited
+            if (request !== _subsetRequestSeq) return;                    // a later request asked meanwhile and is the one to show
             if (!(await _swapSubset(spec))) {
                 return;     // a later request took over
             }

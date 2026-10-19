@@ -42,11 +42,13 @@ export const PLOT_PALETTES = Object.freeze({
     light: Object.freeze({
         bgColor: '#ffffff', gridColor: '#e6e6e6', axisColor: '#000000', textColor: '#000000',
         zeroLineColor: '#cccccc', backdropColor: '#f0f0f0', notInTableColor: '#b4b4b4',
+        noneColor: '#1f77b4',
         focusedColor: '#ff0000', focusedEdgeColor: '#000000'
     }),
     dark: Object.freeze({
         bgColor: '#1e1e1e', gridColor: '#444444', axisColor: '#ffffff', textColor: '#ffffff',
         zeroLineColor: '#666666', backdropColor: '#121212', notInTableColor: '#6b7178',
+        noneColor: '#4e9fe0',
         // the same red dot in both themes; its edge is white on the dark plot, black on the light one
         focusedColor: '#ff0000', focusedEdgeColor: '#ffffff'
     })
@@ -63,6 +65,28 @@ export function normalizeHex(value) {
 /** Whether the colour `key` is auto (no stored colour): it follows the app theme. */
 export function isFollowing(settings, key) {
     return !hasValue(settings && settings[key]);
+}
+
+/**
+ * The colour of points with no colour data: Colour set to None, in both plot
+ * modes. Blue, since grey already says "not in the table". It follows the app
+ * theme; a `pointColor` in the settings (a plot made before this) pins it.
+ */
+export function noneColour(settings, theme = currentTheme()) {
+    if (settings && hasValue(settings.pointColor)) return settings.pointColor;
+    return PLOT_PALETTES[theme === 'dark' ? 'dark' : 'light'].noneColor;
+}
+
+/** The grey of points whose colour could not be read (a missing column): a gap, which the panel says. */
+export const GAP_COLOUR = 'rgba(150, 150, 150, 1.)';
+
+/**
+ * The one colour of a plot drawn without a colour series: None's blue, or
+ * the gap's grey when a colour was asked for and could not be read.
+ */
+export function constantColour(settings, theme = currentTheme()) {
+    const type = settings && settings.color && settings.color.type;
+    return !type || type === 'none' ? noneColour(settings, theme) : GAP_COLOUR;
 }
 
 /** The colour `key` shows now: the pinned one, else the theme's. */

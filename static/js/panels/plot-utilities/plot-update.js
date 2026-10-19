@@ -1,6 +1,6 @@
 import { plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
-import { plotColour } from '../../utils/plot-theme.js';
+import { plotColour, constantColour } from '../../utils/plot-theme.js';
 import { RemoteNames } from '../../utils/remote-names.js';
 import { 
   loadAxisData, 
@@ -674,7 +674,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     if (tableIndices.length === 0 || (nonTableIndices.length === 0 && !settings.removeNonTableEntries)) {
                         // Fall back to standard constant color update
                         const update = {};
-                        update['marker.color'] = 'rgba(150, 150, 150, 1.0)';
+                        update['marker.color'] = constantColour(settings);
                         update['marker.showscale'] = false;
                         update['showlegend'] = false;
                         
@@ -730,7 +730,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                                 marker: {
                                     size: settings.pointSize,
                                     opacity: settings.pointOpacity,
-                                    color: 'rgba(100, 100, 100, 0.7)', // Standard gray for table entities
+                                    color: constantColour(settings),
                                     showscale: false
                                 },
                                 showlegend: false
@@ -755,7 +755,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 } else {
                     // Standard constant color update (no table filter or removing non-table entries)
                     const update = {};
-                    update['marker.color'] = 'rgba(150, 150, 150, 1.0)';
+                    update['marker.color'] = constantColour(settings);
                     update['marker.showscale'] = false;
                     update['showlegend'] = false;
                     
@@ -1387,6 +1387,7 @@ export async function restyleMarkers(plotContainer, settings) {
             const color = greyOf(plotContainer.data[i]).color;
             if (plotContainer.data[i].marker.color !== color) await Plotly.restyle(plotContainer, { 'marker.color': color }, [i]);
         }
+        await restyleNoneColour(plotContainer, settings);
         await restyleFocusColours(plotContainer, settings);
         return;
     }
@@ -1406,6 +1407,25 @@ export async function restyleMarkers(plotContainer, settings) {
         const m = greyOf(plotContainer.data[i]);
         await Plotly.restyle(plotContainer, { 'marker.size': m.size, 'marker.opacity': m.opacity, 'marker.color': m.color }, [i]);
     }
+    await restyleNoneColour(plotContainer, settings);
+}
+
+/**
+ * The points of a plot coloured by None take the colour None has now (the app
+ * theme's, or the pinned one). Not in large-plot mode: a colour restyle reruns
+ * calc for each of its traces (utils/gl-markers.js), so a large plot takes it
+ * when it is drawn next.
+ */
+async function restyleNoneColour(plotContainer, settings) {
+    if (plotContainer.__isLarge || (settings.color && settings.color.type && settings.color.type !== 'none')) return;
+    const want = constantColour(settings);
+    const idx = [];
+    plotContainer.data.forEach((trace, i) => {
+        const color = trace && trace.marker && trace.marker.color;
+        if (typeof color === 'string' && color !== want && trace.name !== NOT_IN_TABLE
+                && !keepsOwnMarker(trace) && !isFocusTrace(trace)) idx.push(i);
+    });
+    if (idx.length) await Plotly.restyle(plotContainer, { 'marker.color': want }, idx);
 }
 
 

@@ -72,6 +72,12 @@ const SubsetControl = (function() {
     // the part to step from, the number in the box and the arrows follow this.
     let _pending = null;
 
+    // The dialog's choice, until its cells are shown: {info}, what the header
+    // says meanwhile. The header names the cells asked for at once, also when
+    // an earlier request is still reading its cells and this one waits behind
+    // it; the last request is the one it follows.
+    let _requested = null;
+
     /** The 0-based part the view is on, or going to. */
     function _partNow(info) {
         const parts = describeParts(info);
@@ -118,7 +124,7 @@ const SubsetControl = (function() {
         const count = document.getElementById('cell-count');
         const button = document.getElementById('subset-button');
         const reply = DataManager.getSubsetReply();
-        const text = describeSubset(DataManager.getSubset() || reply,
+        const text = describeSubset(_requested ? _requested.info : (DataManager.getSubset() || reply),
             reply ? reply.n_total : (DataManager.getCells() || []).length, _keptSize());
         if (count) {
             count.textContent = text.count;
@@ -139,6 +145,7 @@ const SubsetControl = (function() {
             button.setAttribute('aria-label', text.badge);
             button.title = text.title;
             button.classList.toggle('subset-active', text.active);
+            button.setAttribute('aria-busy', _requested ? 'true' : 'false');
         }
         const box = document.getElementById('subset-parts');
         const parts = describeParts(DataManager.getSubset());
@@ -768,7 +775,28 @@ const SubsetControl = (function() {
             return;
         }
         _modal.hide();
-        if (_onApply) await _onApply(spec);
+        await _request(spec, cells);
+    }
+
+    /** Apply `spec` (its `cells` cells), the header following it from now until the cells are shown. */
+    async function _request(spec, cells) {
+        if (!_onApply) return;
+        const reply = DataManager.getSubsetReply();
+        const nTotal = reply ? reply.n_total : _nTotal;
+        const mine = _requested = {
+            info: spec ? { subset: spec, n: cells, n_total: nTotal, n_eligible: _eligible || nTotal }
+                : { subset: null, n_total: nTotal }
+        };
+        update();
+        try {
+            await _onApply(spec);
+        } finally {
+            // a later request leaves the header to itself; this one's end (shown, cancelled or failed) shows the cells in effect
+            if (_requested === mine) {
+                _requested = null;
+                update();
+            }
+        }
     }
 
     return { init, update, open, step, goTo };

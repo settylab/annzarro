@@ -33,7 +33,7 @@
  */
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
-import { plotColour } from '../../utils/plot-theme.js';
+import { plotColour, noneColour, GAP_COLOUR } from '../../utils/plot-theme.js';
 import { Config } from '../../config.js';
 import { buildPlotLayout, knownMissingSource, seriesSource, withSubsetCoverage, showsThisDataset } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
@@ -65,7 +65,7 @@ const TRACE_POINTS = 99999;      // < Plotly's TOO_MANY_POINTS (1e5)
 const COLOR_BINS = 64;
 const NA_COLOR = 'rgba(200, 200, 200, 1)';
 /** The grey of a colour that could not be read (plot-make.js draws the same). */
-const FALLBACK_COLOR = 'rgba(150, 150, 150, 1.)';
+const FALLBACK_COLOR = GAP_COLOUR;
 
 const _an = (w) => (/^[aeiou]/i.test(w) ? 'an' : 'a');
 
@@ -665,7 +665,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     filtered = n - kept;
     only.coords = filtered;
     pushTraces(traces, X, Y, start[0], start[1], 'cells',
-      colourGap ? FALLBACK_COLOR : settings.pointColor || '#1f77b4', settings);
+      colourGap ? FALLBACK_COLOR : noneColour(settings), settings);
     layout.showlegend = false;
   }
   const t2 = performance.now();
