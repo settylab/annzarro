@@ -21,6 +21,7 @@ with the release after it. Older releases are listed on
   grid or zero lines; in 3D no axes or background planes), for figures and overlays. **Default** undoes it.
 
 ### Changed
+- A numeric column of 8 MB or more is sent from its array in 1 MiB pieces instead of being copied into one bytes object first, so the server holds less while it sends: at 95.6 million cells the server's peak memory in the first plot is 4.4 GB (v0.6.1: 4.8 GB). `annzarro start` also hands any large reply to its server in pieces. The bytes sent are the same.
 - A plot with the colour None draws its points blue (a lighter blue on the dark theme) in the regular
   mode too, as large-plot mode already did. Grey now means only "not in the table" (or a colour that
   could not be read, which the status line says).
