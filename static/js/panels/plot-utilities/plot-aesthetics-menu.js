@@ -1188,10 +1188,9 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             const kind = plotKindOf(settings);
             const type = `${kind}-plot`;
             const reset = target.id === `session-style-reset-${id}`;
-            let isSet = false;
             if (reset) clearSessionStyle(type);
             else {
-                isSet = setSessionStyle(type, settings, builtinStyle());
+                const isSet = setSessionStyle(type, settings, builtinStyle());
                 settings.styleDefault = true;       // its look is the default now
                 if (!isSet) clearSessionStyle(type);
             }
