@@ -61,6 +61,7 @@ export function refusalOf(panel, rows) {
     const axis = (a) => (cfg[a] && cfg[a].type) || 'none';
     return plotRefusal({
         drawn: !!(fl && fl.xaxis && fl.yaxis && fl.xaxis._length > 0 && fl.yaxis._length > 0),
+        isLarge: !!(gd && gd.__isLarge),
         is3d: !!(fl && fl.scene) || !!(gd && gd._fullData && gd._fullData.some(t => /3d/.test(t.type || ''))),
         xType: fl && fl.xaxis ? fl.xaxis.type : '',
         yType: fl && fl.yaxis ? fl.yaxis.type : '',
@@ -398,9 +399,7 @@ async function commit(state, plot, cond) {
     if (!table || !table.applyLine) return;
     const cfg = plot.getConfig();
     const added = await table.applyLine({ x: columnRef(cfg.x), y: columnRef(cfg.y), cond });
-    const gd = plotDiv(plot);
-    const linked = cfg.tableFilter && cfg.tableFilter !== 'none';
-    if (!linked && !(gd && gd.__isLarge)) linkPlot(plot, state.tableId);
+    if (!cfg.tableFilter || cfg.tableFilter === 'none') linkPlot(plot, state.tableId);
     notify('Line added to ' + table.getTitle(), `Kept: ${describe(cond, added.column)}`, 'info');
 }
 

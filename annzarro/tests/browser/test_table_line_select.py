@@ -51,17 +51,18 @@ def _free_port():
         return s.getsockname()[1]
 
 
-@pytest.fixture(scope="module")
-def server(tmp_path_factory):
+def _serve(tmp_path_factory, config=""):
     data = tmp_path_factory.mktemp("data")
     store = str(data / "fixture_small.zarr")
     shutil.copytree(os.path.join(DATA_DIR, "fixture_small.zarr"), store)
     home = tmp_path_factory.mktemp("home")
+    (home / "c.yaml").write_text(config or "ui: {}\n")
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
-    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
-                             "--port", str(port), "--data-dir", str(data), "--no-browser", "--auth-disabled"],
+    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--config", str(home / "c.yaml"),
+                             "--host", "127.0.0.1", "--port", str(port), "--data-dir", str(data),
+                             "--no-browser", "--auth-disabled"],
                             env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     root = f"http://127.0.0.1:{port}"
     for _ in range(120):
@@ -73,6 +74,21 @@ def server(tmp_path_factory):
     else:
         proc.kill()
         pytest.fail("server did not start")
+    return root, store, proc
+
+
+@pytest.fixture(scope="module")
+def server(tmp_path_factory):
+    root, store, proc = _serve(tmp_path_factory)
+    yield root, store
+    proc.terminate()
+    proc.wait(10)
+
+
+@pytest.fixture(scope="module")
+def large_server(tmp_path_factory):
+    """The same store with every plot of more than 100 cells drawn in large-plot mode."""
+    root, store, proc = _serve(tmp_path_factory, "ui:\n  defaults:\n    large_plot_points: 100\n")
     yield root, store
     proc.terminate()
     proc.wait(10)
@@ -439,6 +455,27 @@ def test_the_derived_column_and_filter_come_back_from_a_link(server):
             assert _details(page) == cfg["searchBuilderConfig"]
             heads = page.evaluate(f"() => {_DT}.columns().header().toArray().map(h => h.textContent)")
             assert any("−" in h or "+" in h for h in heads), heads
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_in_large_plot_mode_there_is_no_table_to_arm_from(large_server):
+    """A plot of this size has no table: a cell table cannot list the cells, and says so."""
+    root, store = large_server
+    with playwright.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page(viewport={"width": 1800, "height": 1500})
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        try:
+            page.goto(_link(root, store))
+            page.wait_for_function(
+                f"() => document.getElementById('plot-container-{PLOT_A}')?.__isLarge === true", timeout=60_000)
+            page.wait_for_function(
+                f"() => /large-plot mode/.test(document.querySelector('.tile[data-tile-id=\"{TABLE}\"]').innerText)",
+                timeout=30_000)
+            assert page.locator(f'.tile[data-tile-id="{TABLE}"] .az-line-select-btn').count() == 0
             assert not errors, errors
         finally:
             browser.close()

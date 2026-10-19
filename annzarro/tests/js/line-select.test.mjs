@@ -231,7 +231,7 @@ test("the group depth of a filter", () => {
 });
 
 test("plots that cannot take a line say why", () => {
-  const ok = { drawn: true, is3d: false, xType: "linear", yType: "linear", xSource: "obsm", ySource: "obsm",
+  const ok = { drawn: true, is3d: false, isLarge: false, xType: "linear", yType: "linear", xSource: "obsm", ySource: "obsm",
     tableSources: ["obs", "obsm", "obsp", "layer"], xLabel: "UMAP_1", yLabel: "UMAP_2" };
   assert.equal(plotRefusal(ok), null);
   assert.match(plotRefusal({ ...ok, yType: "category", yLabel: "cell_type" }), /y axis \(cell_type\) is not numerical/);
@@ -239,6 +239,7 @@ test("plots that cannot take a line say why", () => {
   assert.match(plotRefusal({ ...ok, xType: "date" }), /not numerical/);
   assert.match(plotRefusal({ ...ok, is3d: true }), /3D/);
   assert.match(plotRefusal({ ...ok, drawn: false }), /not drawn/);
+  assert.match(plotRefusal({ ...ok, isLarge: true }), /large-plot mode/);
   assert.match(plotRefusal({ ...ok, ySource: "var" }), /not something this table has columns of/);
 });
 

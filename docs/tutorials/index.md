@@ -11,6 +11,7 @@ cell-similarity
 gene-similarity
 cells-and-genes
 gene-groups
+line-select
 gene-set-analysis
 millions
 ```

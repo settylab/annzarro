@@ -310,6 +310,7 @@ export function configDepth(config) {
  * @param {Object} p
  * @param {boolean} p.drawn  the plot has been drawn
  * @param {boolean} p.is3d
+ * @param {boolean} p.isLarge  drawn in large-plot mode
  * @param {string} p.xType  Plotly axis type
  * @param {string} p.yType
  * @param {string} p.xSource  the x axis's data source type (obs, obsm, ...)
@@ -319,9 +320,11 @@ export function configDepth(config) {
  * @param {string} p.yLabel
  * @returns {string|null}
  */
-export function plotRefusal({ drawn, is3d, xType, yType, xSource, ySource, tableSources, xLabel, yLabel }) {
+export function plotRefusal({ drawn, is3d, isLarge, xType, yType, xSource, ySource, tableSources, xLabel, yLabel }) {
     if (!drawn) return 'This plot is not drawn yet.';
     if (is3d) return 'Line selection needs a 2D plot: this plot is 3D.';
+    // a plot this size has no table: a cell table cannot list so many cells
+    if (isLarge) return 'This plot is in large-plot mode: a table cannot list this many cells, so there is nothing to filter. Turn on a subset to use line selection.';
     const bad = (type, label, axis) => {
         if (type === 'log') {
             return `The ${axis} axis (${label}) is logarithmic: a straight line on the screen is not a straight line in the values.`;
