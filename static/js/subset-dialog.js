@@ -129,6 +129,9 @@ const SubsetControl = (function() {
         if (count) {
             count.textContent = text.count;
             count.title = text.title;
+            // the cells asked for, not yet shown: marked, so that it can be told from the cells loaded
+            count.classList.toggle('subset-pending', !!_requested);
+            count.setAttribute('data-pending', _requested ? 'true' : 'false');
         }
         if (button) {
             button.hidden = !DataManager.getCurrentDataset();
@@ -146,6 +149,7 @@ const SubsetControl = (function() {
             button.title = text.title;
             button.classList.toggle('subset-active', text.active);
             button.setAttribute('aria-busy', _requested ? 'true' : 'false');
+            button.classList.toggle('subset-pending', !!_requested);
         }
         const box = document.getElementById('subset-parts');
         const parts = describeParts(DataManager.getSubset());

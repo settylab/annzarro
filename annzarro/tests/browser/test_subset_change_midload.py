@@ -165,6 +165,9 @@ def test_a_later_subset_shows_at_once_and_replaces_the_earlier(page, server):
     _apply(page, 100)
     # the 100 cells are asked for, none is read yet: the header names them already
     assert _header(page)["count"] == "100 of 200", _header(page)
+    # asked for, not shown: marked as pending, and still pending while the cells load
+    assert page.get_attribute("#subset-button", "aria-busy") == "true"
+    assert page.get_attribute("#cell-count", "data-pending") == "true"
     page.wait_for_timeout(800)
     assert page.evaluate("() => document.querySelector('.subset-loading-pill')") is not None   # still loading
 
@@ -176,6 +179,8 @@ def test_a_later_subset_shows_at_once_and_replaces_the_earlier(page, server):
     page.wait_for_function("() => { const g = document.querySelector('%s'); return !!(g && g._fullLayout && g._pointCount === 50); }" % GD,
                            timeout=40000)
     page.wait_for_function("() => !document.querySelector('.subset-loading-pill, .subset-loading')", timeout=20000)
+    assert page.get_attribute("#subset-button", "aria-busy") == "false"
+    assert page.get_attribute("#cell-count", "data-pending") == "false"
     page.wait_for_timeout(SLOW_MS + 1500)       # the earlier request's own time passes: its cells must not come
     assert page.evaluate(POINTS) == 50
     assert _header(page)["count"] == "50 of 200", _header(page)
