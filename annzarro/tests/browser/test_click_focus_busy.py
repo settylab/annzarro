@@ -67,7 +67,7 @@ def _start(home, config):
             urllib.request.urlopen(root + "/api/v1/config", timeout=1)
             return proc, root
         except OSError:
-            time.sleep(0.25)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     proc.kill()
     pytest.fail("server did not start")
 

@@ -136,7 +136,7 @@ def main(checkout, version, out_dir=None):
                 urllib.request.urlopen(root + "/api/v1/config", timeout=1)
                 break
             except OSError:
-                time.sleep(0.25)
+                time.sleep(min(0.5, 0.1 * (_ + 1)))
         else:
             raise SystemExit("server did not start")
         manifest = {"version": version, "made_with": f"git tag {version}",
@@ -169,7 +169,7 @@ def main(checkout, version, out_dir=None):
                             f"{root}/api/v1/sessions/export?name={urllib.parse.quote(name)}").read())
                         break
                     except urllib.error.HTTPError:
-                        time.sleep(0.25)
+                        time.sleep(min(0.5, 0.1 * (_ + 1)))
                 if panel_set is None:
                     raise SystemExit(f"{name}: the panel set was not saved")
                 state = page.evaluate(STATE_JS)

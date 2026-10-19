@@ -90,7 +90,7 @@ def _serve(tmp_path, extra_server=""):
         except OSError:
             if proc.poll() is not None:
                 pytest.fail("gunicorn exited: " + (tmp_path / "gunicorn.log").read_text()[-2000:])
-            time.sleep(0.25)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     proc.terminate()
     pytest.fail("gunicorn did not start")
 

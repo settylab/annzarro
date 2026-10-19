@@ -8,6 +8,12 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- `annzarro start` serves through waitress (a new dependency, pure Python, also on Windows) instead of Flask's development server. Debug mode and HTTPS still use the development server. A request line and headers over 262,144 bytes are refused with 431.
+
+### Fixed
+- Every request a plot made opened a new TCP connection that the server closed after the reply, so a few servers loading plots side by side used up the machine's ephemeral ports ("Can't assign requested address" for other programs). Connections are kept open now.
+
 ## 0.6.1 (2026-10-18)
 
 Legend columns, dot size and title for categorical colours; the focused cell drawn as an open circle by

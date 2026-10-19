@@ -272,17 +272,78 @@ def run_server(
                 # Start browser in a separate thread to not block server startup
                 threading.Thread(target=open_browser).start()
             
-            app.run(
-                host=use_host,
-                port=use_port,
-                debug=final_config.get("debug", False),
-                threaded=True,
-                ssl_context=ssl_context
-            )
+            _exit_with_parent_from_env()
+            if not final_config.get("debug", False) and ssl_context is None:
+                _serve_with_waitress(app, use_host, use_port, app.config.get("MAX_CONTENT_LENGTH"))
+            else:
+                app.run(
+                    host=use_host,
+                    port=use_port,
+                    debug=final_config.get("debug", False),
+                    threaded=True,
+                    ssl_context=ssl_context
+                )
         finally:
             # Pop the context when server stops
             ctx.pop()
         
+# Request threads. A plot makes several requests at once, and a full cell or gene
+# name list holds its thread until the browser has read it (names_stream_max_concurrent
+# caps those per worker), so this is well above waitress' default of 4.
+WAITRESS_THREADS = 32
+# Seconds a connection may sit idle before waitress closes it. Only idle time
+# counts: a response still being sent (a read of a 1B-cell store can take a
+# minute) is never cut by it.
+WAITRESS_CHANNEL_TIMEOUT = 300
+
+
+def _serve_with_waitress(app, host, port, max_body_bytes=None):
+    """Serve with waitress, which keeps a browser's connections open (HTTP/1.1 keep-alive).
+
+    Werkzeug's development server sends "Connection: close" on every response, so each of
+    the many requests a plot makes opened a new TCP connection, and every closed one waits
+    in TIME_WAIT for 30 s on macOS. A few servers loading plots side by side filled the
+    machine's ephemeral ports. Werkzeug still serves --debug (its reloader) and TLS.
+
+    X-Forwarded-* and the mount point (server.url_prefix) are handled by the app's own
+    WSGI middleware, so waitress is left at its defaults (it trusts no proxy). It
+    logs the "Serving on http://host:port" line itself.
+    """
+    from waitress import serve
+    # waitress reads a whole request body before the app sees it; the app refuses
+    # a body over its limit with a JSON 413, so waitress' own limit sits above it.
+    body_limit = max(int(max_body_bytes or 0) * 2, 1 << 30)
+    serve(app, host=host, port=port, threads=WAITRESS_THREADS,
+          channel_timeout=WAITRESS_CHANNEL_TIMEOUT, max_request_body_size=body_limit,
+          ident="AnnZarro")
+
+
+def _exit_with_parent_from_env():
+    """With ANNZARRO_EXIT_WITH_PARENT=<pid>, exit once that process is gone.
+
+    For test runs: a killed pytest cannot leave its servers behind. Off by default.
+    """
+    value = os.environ.get("ANNZARRO_EXIT_WITH_PARENT")
+    if not value:
+        return
+    try:
+        parent = int(value)
+    except ValueError:
+        logger.warning(f"Ignoring ANNZARRO_EXIT_WITH_PARENT={value!r}: not a process id")
+        return
+    import threading
+    import time
+
+    def watch():
+        import psutil
+        while True:
+            time.sleep(1)
+            if not psutil.pid_exists(parent):
+                os._exit(0)
+
+    threading.Thread(target=watch, daemon=True, name="exit-with-parent").start()
+
+
 # Helper function to get the current app instance
 def get_app_instance():
     """Get the current Flask application instance."""

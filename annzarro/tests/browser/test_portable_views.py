@@ -87,7 +87,7 @@ def _start(data_dir, home):
             urllib.request.urlopen(root + "/api/v1/config", timeout=1)
             return proc, root
         except OSError:
-            time.sleep(0.25)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     proc.kill()
     pytest.fail("server did not start")
 
@@ -402,7 +402,7 @@ def test_a_panel_set_from_A_opens_on_B_and_C_with_the_same_view_and_svg(browser,
                 saved = json.loads(urllib.request.urlopen(f"{roots['A']}/api/v1/sessions/export?name=portable").read())
                 break
             except urllib.error.HTTPError:
-                time.sleep(0.25)
+                time.sleep(min(0.5, 0.1 * (_ + 1)))
         on_a = _state(page)
         svg_a = _svg(page)
         assert not errors, errors
@@ -472,7 +472,7 @@ def test_load_on_the_current_dataset_says_what_differs_and_does_not_ask(browser,
                 urllib.request.urlopen(f"{roots['A']}/api/v1/sessions/export?name={name}").read()
                 break
             except urllib.error.HTTPError:
-                time.sleep(0.25)
+                time.sleep(min(0.5, 0.1 * (_ + 1)))
     finally:
         ctx.close()
     ctx, page, errors = _page(browser)

@@ -72,7 +72,7 @@ def _serve(root, auth, site=None):
         except OSError:
             if proc.poll() is not None:
                 break
-            time.sleep(0.25)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     proc.kill()
     pytest.fail("server did not start")
 

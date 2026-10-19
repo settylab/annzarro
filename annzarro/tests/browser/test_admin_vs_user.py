@@ -150,7 +150,7 @@ auth:
                 except OSError:
                     if proc.poll() is not None:
                         pytest.fail("gunicorn exited: " + log.read_text()[-2000:])
-                    time.sleep(0.25)
+                    time.sleep(min(0.5, 0.1 * (_ + 1)))
             else:
                 pytest.fail("gunicorn did not start")
         yield srv

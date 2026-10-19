@@ -56,6 +56,12 @@ def test_hidden_imports_cover_the_server_but_not_tests_or_desktop():
     assert not [n for n in names if n.startswith(freeze.EXCLUDED_SUBPACKAGES)]
 
 
+def test_hidden_imports_include_waitress():
+    """`annzarro start` serves through waitress, imported inside a function."""
+    names = freeze.hiddenimports()
+    assert "waitress" in names and "waitress.server" in names
+
+
 def test_server_does_not_import_the_excluded_packages():
     """EXCLUDES drops numba, cryptography, most of scipy ... from the bundle;
     that only works while the server never imports them, also lazily while
