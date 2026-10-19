@@ -191,7 +191,7 @@ export class SelectionTile {
       const n = ((type === 'gene-plot' ? DataManager.getGenes() : DataManager.getCells()) || []).length;
       if (!n) return null;
       const threshold = Config.DEFAULTS.LARGE_PLOT_POINTS;
-      const large = type === 'cell-plot' && n > threshold && !(config && (config.z || (config.tableFilter && config.tableFilter !== 'none')));
+      const large = type === 'cell-plot' && n > threshold && !(config && config.z);
       return newPanelCheck(type, { n, large, colour: config ? colourKind(config, null) : 'numeric', threeD: !!(config && config.z) });
     }
 

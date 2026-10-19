@@ -16,6 +16,7 @@ with the release after it. Older releases are listed on
 - Line selection in the table panel: the **Line filter** button before a table's search box lets you draw a line on a plot of cells (a cell table) or of genes (a gene table). The side to the right of the line (from the mouse press to the release) is filtered out: the table gets the plot's axis columns, a derived column `y − m·x` and one condition on it, joined to the filter by an outer AND. The line and the shaded side are previewed while you drag, Shift snaps to 45°, Esc stops, 3D and large plots are left alone, and a 2D plot with a text axis shows a small tooltip saying why. While the tool is on, the table has a red frame and a badge in the dataset bar (click it, or press Esc, to stop); closing the table, Close all, loading a panel set or switching dataset also stop it. A derived column leaves the table when no condition uses it any more. Several lines make an area. New tutorial: Cut away part of a plot with a line.
 
 ### Changed
+- A plot with a table filter set no longer refuses to draw when it goes into large-plot mode: it is drawn whole and the filter is ignored, and the **Large plot** tag says so. The plot keeps its table setting, so the filter applies again when a subset takes it out of large-plot mode.
 - Plot Options, Presets: **Default** now resets the whole look that Apply to other panels copies, including Not in table, Focused cell and the export size. It used to leave those three as they were.
 
 ### Fixed

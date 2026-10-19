@@ -22,7 +22,7 @@
  * Plotly's own hover is off (hovermode false; there are no per-point names on
  * the traces). Hover, click and the focused-cell highlight come from a point
  * index over the drawn positions (utils/point-index.js, 8 B per point in typed
- * arrays; large-interact.js). What it gives up: 3D, table filters (a cell
+ * arrays; large-interact.js). What it gives up: 3D, table filters (not applied, not refused: a cell
  * table cannot list this many cells, so there is nothing to filter by), the
  * Hover picker's extra columns, and incremental updates (any change redraws). It is
  * used above largePlotPoints() (default 1M, so several regular plots fit side
@@ -79,9 +79,8 @@ const _an = (w) => (/^[aeiou]/i.test(w) ? 'an' : 'a');
 export function largePlotRefusal(settings, n) {
   const at = `is not available for ${formatPoints(n)} points: turn on a subset`;
   if (settings.z) return `3D ${at}, or turn 3D off`;
-  if (settings.tableFilter && settings.tableFilter !== 'none') {
-    return `A table filter ${at}, or set the table filter to None`;
-  }
+  // a table filter is not refused: the plot is drawn whole and the setting is kept, so the filter applies
+  // again once the plot leaves this mode (largePlotTag says so)
   for (const axis of ['x', 'y', 'color']) {
     const t = settings[axis] && settings[axis].type;
     if (LARGE_TYPES[axis].includes(t)) continue;
@@ -259,15 +258,18 @@ function titleFont(settings) {
  * offers the subset that lifts it.
  * @param {number} n - points drawn
  */
-export function largePlotTag(n) {
+export function largePlotTag(n, settings = null) {
   const limit = largePlotPoints();
+  const filtered = !!(settings && settings.tableFilter && settings.tableFilter !== 'none');
+  const text = `This plot shows ${compactCount(n)} cells, more than the ${compactCount(limit)} that table filters, 3D and `
+    + `extra hover columns can handle. Make a subset of up to ${compactCount(limit)} cells to use them.`
+    + (filtered ? ' The table filter set for this plot is not applied in large-plot mode; it applies again '
+      + 'when the plot is no longer in this mode.' : '');
   return {
     text: 'Large plot',
-    title: `This plot shows ${compactCount(n)} cells, more than the ${compactCount(limit)} that table filters, 3D and `
-      + `extra hover columns can handle. Make a subset of up to ${compactCount(limit)} cells to use them.`,
+    title: text,
     pop: {
-      text: `This plot shows ${compactCount(n)} cells, more than the ${compactCount(limit)} that table filters, 3D and `
-        + `extra hover columns can handle. Make a subset of up to ${compactCount(limit)} cells to use them.`,
+      text,
       actions: [['subset-regular', `Subset to \u2264${compactCount(limit)} for table filters`]]
     }
   };
@@ -687,7 +689,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     { responsive: true, displayModeBar: true, displaylogo: false,
       modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] },
     coverage, 'cells');
-  setStatusTag(plotContainer, 'large', largePlotTag(n));
+  setStatusTag(plotContainer, 'large', largePlotTag(n, settings));
   plotContainer.__isLarge = true;
   watchGpu(plotContainer, n);
   fitToContainer(plotContainer);

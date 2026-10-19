@@ -76,7 +76,7 @@ def server(tmp_path_factory):
     proc.wait(10)
 
 
-def _link(root, remove=True, table_filter=False, z=False):
+def _link(root, remove=True, table_filter=False, z=False, search=None):
     x = {"type": "obsm", "key": "X_umap", "column": "0"}
     y = {"type": "obsm", "key": "X_umap", "column": "1"}
     plot = {"x": x, "y": y, "z": {"type": "obsm", "key": "X_umap", "column": "2"} if z else None,
@@ -88,7 +88,8 @@ def _link(root, remove=True, table_filter=False, z=False):
         "cell-plot-M": {"id": "cell-plot-M", "title": "M", **plot,
                         "color": {"type": "obs", "key": "cell_type", "column": ""}},
         "cell-table-L": {"id": "cell-table-L", "title": "Table 1",
-                         "columns": [{"type": "obs", "key": "cell_type", "column": ""}]}}
+                         "columns": [{"type": "obs", "key": "cell_type", "column": ""}],
+                         **({"searchText": search} if search else {})}}
     tiles = [{"type": "tile", "id": i, "controlsVisible": True} for i in cfgs]
     view = {"v": 1, "subset": None,
             "layout": {"v": 1, "hierarchy": [{"type": "split", "direction": "horizontal",
@@ -243,14 +244,34 @@ def test_a_drag_or_a_long_press_that_starts_on_a_point_does_not_focus(page, serv
     assert page.input_value("#focused-cell") == before
 
 
-def test_table_filter_is_still_refused(page, server):
-    """A cell table cannot list this many cells (their names stay on the server), so a
-    table filter has nothing to filter by: refused, as before."""
-    page.goto(_link(server, table_filter=True))
-    page.wait_for_function("""t => { const p = document.querySelector(t + ' .coverage-placeholder');
-        return p && /A table filter is not available for 200 points/.test(p.textContent); }""", arg=P1, timeout=60000)
-    page.wait_for_function("""t => /not available in large-plot mode/.test(document.querySelector(t).innerText)""",
-                           arg=T, timeout=30000)
+def test_a_table_filter_is_ignored_in_large_plot_mode_and_applies_again_with_a_subset(page, server):
+    """The plot with a table filter set is drawn whole in large-plot mode (no refusal), its Large plot
+    info says the filter is not applied, and the setting is kept: a subset that ends the mode brings the
+    filtered look back by itself."""
+    page.goto(_link(server, table_filter=True, search="5"))
+    _wait(page, READY, P1)
+    assert page.query_selector(f"{P1} .coverage-placeholder") is None
+    assert page.evaluate("t => document.querySelector(t + ' .js-plotly-plot').__largeState.index.X.length", P1) == 200
+    page.click(f'{P1} .plot-status .ps-tag[data-tag="large"]')
+    text = page.text_content(f'{P1} .plot-status .ps-pop[data-pop="large"]')
+    assert "table filter set for this plot is not applied in large-plot mode" in text, text
+    if os.environ.get("AZ_SHOT_DIR"):
+        page.screenshot(path=os.path.join(os.environ["AZ_SHOT_DIR"], "large-plot-filter-info.png"))
+    assert page.evaluate("() => PanelManager.getPanel('cell-plot-L').getConfig().tableFilter") == "cell-table-L"
+    # a subset of 100 cells ends the mode: the filter applies again, without any action on the plot
+    page.click("#subset-button")
+    page.wait_for_selector("#subset-apply", state="visible")
+    page.click('#subset-presets button[data-n="100"]')
+    page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
+    page.click("#subset-apply")
+    page.wait_for_selector("#subset-modal", state="hidden")
+    # the plot removes the cells the table filters out (removeNonTableEntries is on in this view): it draws
+    # exactly the table's rows, fewer than the subset's cells
+    page.wait_for_function("""t => { const g = document.querySelector(t + ' .js-plotly-plot');
+        const rows = PanelManager.getPanel('cell-table-L').getConfig().currentEntries.length;
+        const n = g && g.data ? g.data.filter(tr => tr.name !== 'Focused Cell').reduce((a, tr) => a + (tr.x ? tr.x.length : 0), 0) : 0;
+        return g && !g.__isLarge && rows > 0 && rows < 54 && n === rows; }""", arg=P1, timeout=60000)
+    assert page.evaluate("() => PanelManager.getPanel('cell-plot-L').getConfig().tableFilter") == "cell-table-L"
 
 
 def test_3d_is_still_refused(page, server):
