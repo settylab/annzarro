@@ -962,8 +962,8 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     </button>
                 `);
                 
-                // the line-selection tool (line-select-ui.js)
-                if (settings.id) $searchOptions.append(lineSelectButton(settings.id, entityType));
+                // the line-selection tool (line-select-ui.js), before the search box
+                const lineButton = settings.id ? lineSelectButton(settings.id, entityType) : null;
 
                 // For Bootstrap 5 integration, we need to create a container
                 // that works with the Bootstrap layout
@@ -987,6 +987,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     const $inputGroup = $('<div class="input-group input-group-sm flex-grow-1"></div>');
                     $inputGroup.append($searchInput);
                     $searchOptions.attr('aria-label', 'Search options');
+                    if (lineButton) $container.append(lineButton);
                     $container.append($newLabel, $inputGroup, $searchOptions);
                     
                     // Add the container to the search parent
@@ -994,6 +995,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 } else {
                     // Just append the search options after the input
                     $searchOptions.insertAfter($searchInput);
+                    if (lineButton) $(lineButton).insertBefore($searchInput);
                 }
                 
                 // 5) A small helper to re-draw with current flags. Smart

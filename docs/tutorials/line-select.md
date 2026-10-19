@@ -19,14 +19,14 @@ uses cell plots, a gene table gene plots ({doc}`../user-guide/tables-and-filters
 
 ## 1. Arm the tool
 
-Click the slanted-line button at the right of the table's search box. It turns red, and every
+Click **Line filter**, the button before the table's search box (on a narrow table only its slanted-line icon shows; hover for the name). It turns red, and every
 cell plot is covered by a transparent layer. Hover over the UMAP: the hint says what a drag does.
 
 ```{figure} ../_static/screens/tutorials/line-select-armed.png
 :class: screenshot
-:alt: The cell table with its red Line button armed and the UMAP showing the hint "Drag to draw a line: the side to its right is filtered out. Shift snaps to 45 degrees, Esc stops."
+:alt: The cell table with its red Line filter button armed and the UMAP showing the hint "Drag to draw a line: the side to its right is filtered out. Shift snaps to 45 degrees, Esc stops."
 
-The Line button is armed (red). The hint appears over the plot.
+The Line filter button is armed (red). The hint appears over the plot.
 ```
 
 ## 2. Draw the first line

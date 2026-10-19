@@ -513,3 +513,30 @@ def test_a_relayout_during_a_drag_drops_the_line(server):
             assert not errors, errors
         finally:
             browser.close()
+
+
+def test_the_line_button_comes_before_the_search_box_and_is_labelled(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            g = page.evaluate(f"""() => {{ const t = document.querySelector('.tile[data-tile-id="{TABLE}"]');
+                const b = t.querySelector('.az-line-select-btn').getBoundingClientRect();
+                const i = t.querySelector('.dataTables_filter input').getBoundingClientRect();
+                return {{bRight: b.right, iLeft: i.left, text: t.querySelector('.az-line-select-text').innerText,
+                         shown: t.querySelector('.az-line-select-text').offsetParent !== null}}; }}""")
+            assert g["bRight"] <= g["iLeft"] and g["text"] == "Line filter" and g["shown"], g
+            # a narrow tile drops the label but keeps the button
+            page.set_viewport_size({"width": 520, "height": 1500})
+            page.wait_for_timeout(1500)
+            n = page.evaluate(f"""() => {{ const t = document.querySelector('.tile[data-tile-id="{TABLE}"]');
+                const c = t.querySelector('.dt-search-container').getBoundingClientRect().width;
+                const b = t.querySelector('.az-line-select-btn');
+                return {{c, label: t.querySelector('.az-line-select-text').offsetParent !== null,
+                         btn: b.offsetParent !== null, title: b.title}}; }}""")
+            assert n["btn"] and "Line filter" in n["title"], n
+            if n["c"] <= 380:
+                assert not n["label"], n
+            assert not errors, errors
+        finally:
+            browser.close()

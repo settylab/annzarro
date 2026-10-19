@@ -112,7 +112,7 @@ print(((m > 5) & ((l > 0.05) | (l < -0.05))).sum())   # 159
 
 ## Filter with a line drawn on a plot
 
-The slanted-line button next to the table's search box (**Line selection**) lets you draw a line on a
+The **Line filter** button before the table's search box (icon only on a narrow table) lets you draw a line on a
 plot of the same kind (a cell table uses cell plots, a gene table gene plots). The side to the
 **right** of the line, looking from where you press the mouse towards where you release it, is
 filtered out of the table. The tutorial {doc}`../tutorials/line-select` shows it on a UMAP.

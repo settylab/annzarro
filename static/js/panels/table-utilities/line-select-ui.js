@@ -91,11 +91,11 @@ function syncButtons() {
 export function lineSelectButton(tableId, rows) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'dt-search-option btn btn-sm az-line-select-btn';
+    btn.className = 'btn btn-sm az-line-select-btn';
     btn.setAttribute('data-table', tableId);
     btn.setAttribute('aria-label', 'Line selection');
-    btn.title = 'Line selection: draw a line on a plot to filter this table';
-    btn.innerHTML = '<i class="fas fa-slash" aria-hidden="true"></i>';
+    btn.title = 'Line filter: draw a line on a plot of the same cells or genes. The side to the right of the line is filtered out of this table.';
+    btn.innerHTML = '<i class="fas fa-slash" aria-hidden="true"></i><span class="az-line-select-text">Line filter</span>';
     btn.addEventListener('click', () => toggleLineSelect(tableId, rows));
     btn.classList.toggle('active', isLineSelectArmed(tableId));
     btn.setAttribute('aria-pressed', String(isLineSelectArmed(tableId)));
