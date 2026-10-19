@@ -36,7 +36,8 @@ From: annzarro:local
     The server listens on 127.0.0.1:8000 of the node. Another port, or another address:
       APPTAINERENV_ANNZARRO_SERVER_PORT=8765 apptainer run ...
       APPTAINERENV_ANNZARRO_SERVER_HOST=0.0.0.0 apptainer run ...      (login stays on)
-    Reach it from your laptop with:  ssh -L 8765:<node>:8765 <login host>
+    Reach it from your laptop with:  ssh -N -J <login host> -L 8765:127.0.0.1:8765 <node>
+    (with HOST=0.0.0.0, through the login host instead:  ssh -N -L 8765:<node>:8765 <login host>)
     Any ANNZARRO_<SECTION>_<KEY> variable passed with the APPTAINERENV_ prefix overrides the
     configuration; ANNZARRO_CONFIG=/state/site.yaml points at a file of your own.
 
