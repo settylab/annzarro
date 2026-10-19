@@ -13,6 +13,7 @@ import {
   SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
+import { hasSessionStyle, setSessionStyle, clearSessionStyle } from '../../utils/session-style.js';
 import { exportCheck, guarded, refusalText, bindingLabel } from '../../utils/memory-guard-ui.js';
 /**
  * Plot Aesthetics Menu
@@ -188,7 +189,7 @@ export function createPopoverContent(id, settings) {
                 <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-bare-${id}"
                     title="Only the points: no margins, legend, axis labels or grid. For figures and overlays.">Bare</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
-                    title="Back to the look every plot starts with">Default</button>
+                    title="Back to the built-in look, not the session default">Built-in default</button>
             </div>
         `)}
         ${details(id, 'background', 'Background', `
@@ -571,6 +572,18 @@ export function createPopoverContent(id, settings) {
             </div>
             <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="apply-others-${id}">Apply to other panels</button>
             <div class="small mt-1" id="apply-others-done-${id}" role="status"></div>
+            <hr class="my-2">
+            <div class="form-text mt-0 mb-2">New ${plotKind} plots start from this look, until Close all with the cache cleared or a reset. Plots already open and plots restored from a link, a panel set or a reload keep theirs.
+                <span class="badge rounded-pill text-bg-secondary" style="cursor: help" tabindex="0" aria-label="Help: session default"
+                    title="The default lasts for this session: it is saved with the autosave and with panel sets you save, and a panel set loaded with its panels open brings its own. A plot you duplicate keeps the look it was copied from. The Built-in default preset is still the built-in look.">?</span></div>
+            <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="session-style-set-${id}"
+                title="Make this ${plotKind} plot's look the default for new ${plotKind} plots in this session">Use as default for new ${plotKind} plots</button>
+            <div class="${hasSessionStyle(`${plotKind}-plot`) ? '' : 'd-none'}" id="session-style-active-${id}">
+                <div class="small mt-1 mb-1">A session default is set for new ${plotKind} plots.</div>
+                <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="session-style-reset-${id}"
+                    title="New ${plotKind} plots start from the built-in look again">Reset to built-in default</button>
+            </div>
+            <div class="small mt-1" id="session-style-done-${id}" role="status"></div>
         `)}
     </div>
     `;
@@ -1167,6 +1180,18 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
                 const done = document.getElementById(`apply-others-done-${id}`);
                 if (done) done.textContent = `Applied to ${n} plot${n === 1 ? '' : 's'}.`;
             }
+            return;
+        }
+
+        // The session default look for new plots of this kind
+        if ((target.id === `session-style-set-${id}` || target.id === `session-style-reset-${id}`) && e.type === 'click') {
+            const kind = settings.highlightFocusedGene !== undefined ? 'gene' : 'cell';
+            const reset = target.id === `session-style-reset-${id}`;
+            if (reset) clearSessionStyle(`${kind}-plot`); else setSessionStyle(`${kind}-plot`, settings);
+            document.getElementById(`session-style-active-${id}`)?.classList.toggle('d-none', !hasSessionStyle(`${kind}-plot`));
+            const done = document.getElementById(`session-style-done-${id}`);
+            if (done) done.textContent = reset ? `New ${kind} plots start from the built-in look.`
+                : `New ${kind} plots will start from this look.`;
             return;
         }
 

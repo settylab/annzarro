@@ -7,6 +7,7 @@ import { newPanelCheck, refusalText, freshProbes, bindingLabel, MEMORY_EVENT } f
 import { lastSessionElement } from './utils/last-session-card.js';
 import { createLoadActions, createDatasetBadge } from './panelset-load-ui.js';
 import { notify } from './utils/notify.js';
+import { withSessionStyle } from './utils/session-style.js';
 
 export class SelectionTile {
     /**
@@ -385,14 +386,16 @@ export class SelectionTile {
             this.container,
             this.tileSelector,
             this.createPanel,
-            panelType
+            panelType,
+            withSessionStyle(panelType, {})
           );
         } else {
           this.layoutManager.createPanelWithSelectionTile(
             parentContainer,
             this.tileSelector,
             this.createPanel,
-            panelType
+            panelType,
+            withSessionStyle(panelType, {})
           );
         }
         // After creating the first panel, always hide the header and sessions,
@@ -405,10 +408,11 @@ export class SelectionTile {
         }
       } else if (this.variant === "pane") {
         const newId = `${panelType}-${Date.now()}`;
-        const config = {
+        // a new plot starts from the session's default look, when one is set (utils/session-style.js)
+        const config = withSessionStyle(panelType, {
           id: newId,
           title: this.generateUniqueName(`${this._formatPanelType(panelType)} 1`)
-        };
+        });
         const parentPane = this.tileSelector.closest('.split-pane') || this.container;
         this.createPanel(panelType, config, parentPane);
         this.remove();

@@ -125,6 +125,16 @@ A store you chose yourself (the open one, or one from the browser) is used as as
 genes differ from the saved ones, a notice says so instead of asking first.
 
 (panelsets-add)=
+(panelsets-session-style)=
+### The session's default plot style
+
+If you made a look the default for new plots ({ref}`the session default <session-default-style>`), the panel set saves it.
+**Load**, **Load on the current dataset** and **Choose dataset** open the set's panels, and with them
+the set's default replaces the one you have. **Add panels closed** leaves your default alone. A set
+saved without a default (including every set saved by an earlier version) loads as before and does not
+change yours. The panels in the set always keep the look they were saved with; the default only
+shapes plots you make afterwards. A share link does not carry it.
+
 ## Add a panel set to the closed panels
 
 **Add panels closed** (folder with a plus; on every card, in the dialog and the welcome list) keeps
@@ -240,8 +250,9 @@ The dialog has one tick box, off by default: **Also clear everything this site s
 browser and reload as a first visit**. Ticked, Close all also clears this site's local storage
 (which holds the autosave), session storage, IndexedDB databases, Cache Storage and service-worker
 registrations, then reloads the bare address, without `#view` or `?dataset_path`. The app starts
-as on a first visit: nothing is restored from the autosave, no last session is listed, and the
-closed list is gone too.
+as on a first visit: nothing is restored from the autosave, no last session is listed, the
+closed list is gone too, and so is the session's default plot style ({ref}`the session default <session-default-style>`).
+Without the tick, the default stays.
 
 The tick box is a safe way to get a full refresh. Under it the dialog says so: it is a fresh start
 for this browser only, it forgets the remembered layout and settings, and nothing is deleted. Saved

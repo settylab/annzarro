@@ -15,6 +15,7 @@ import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { errorFromResponse } from './utils/session-permissions.js';
 import { csrfFetch } from './utils/csrf.js';
 import { DatasetState } from './utils/dataset-state.js';
+import { storableSessionStyles, replaceSessionStyles, onSessionStyleChange, saveSessionStylesTo } from './utils/session-style.js';
 import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
 import { storeRecord, storeName } from './utils/view-store.js';
 import { modeOptions } from './utils/panelset-load.js';
@@ -209,6 +210,11 @@ const SessionManager = (function() {
         const plan = panelSetToView(sessionData);
         if (!plan) throw new Error('Not a panel set');
         if (_viewApplier) {
+            // panels opened: the set's session default plot style comes with them (closed, it stays out)
+            if (!options.add && sessionData.sessionStyles) {
+                replaceSessionStyles(sessionData.sessionStyles);
+                saveSessionStylesTo(window.sessionStorage);
+            }
             return await _viewApplier(plan, sessionData, options);
         }
         await _applySessionPanels(sessionData);
@@ -334,6 +340,8 @@ const SessionManager = (function() {
             // The full view (focus + split layout + every panel's config), the
             // same object a share link encodes; what loading restores.
             sessionData.view = captureView();
+            const sessionStyles = storableSessionStyles();
+            if (sessionStyles) sessionData.sessionStyles = sessionStyles;
             
             // Save to server
             console.log('Saving panel set:', sessionData);
@@ -729,6 +737,8 @@ const SessionManager = (function() {
             // Store only the panel configurations in the autosave data
             autosaveData.panelConfigs = panelConfigs;
             autosaveData.view = captureView();
+            const sessionStyles = storableSessionStyles();
+            if (sessionStyles) autosaveData.sessionStyles = sessionStyles;
             
             // Save to localStorage; an earlier page's autosave it replaces is kept as a last session
             try {
@@ -1113,6 +1123,12 @@ const SessionManager = (function() {
         _changeListener = fn;
     }
     
+    // A new or a reset session default is part of the autosave, though no panel changed
+    onSessionStyleChange(() => {
+        saveSessionStylesTo(window.sessionStorage);       // the tab's copy, read back when the tab reloads
+        if (Config.AUTOSAVE.ENABLED) saveToLocalStorage();
+    });
+
     // Public API
     return {
         listSessions,

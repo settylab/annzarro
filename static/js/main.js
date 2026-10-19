@@ -59,6 +59,7 @@ import { keepLast } from './utils/site-footer.js';
 import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
 import { markDatasetUnavailable, clearDatasetUnavailable, notAvailableText, UNAVAILABLE_TITLE } from './utils/no-dataset-screen.js';
 import { vendorProblem } from './utils/vendor-check.js';
+import { loadSessionStylesFrom } from './utils/session-style.js';
 
 const App = (function() {
     // Private variables
@@ -165,6 +166,10 @@ const App = (function() {
             try { dropSubsetSizes(window.localStorage); } catch { /* storage blocked */ }
             if (cleanStart) {
                 try { dropSubsetSizes(window.sessionStorage); } catch { /* storage blocked */ }
+            }
+            // The session's default plot style carries on in a reload of the tab, not in a new one
+            if (!cleanStart) {
+                try { loadSessionStylesFrom(window.sessionStorage); } catch { /* storage blocked */ }
             }
             // A page that ended while it drew a session (out of memory, most
             // likely) left a marker: that session is not drawn by itself again
