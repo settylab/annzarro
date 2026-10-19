@@ -21,13 +21,13 @@ cell plots, a gene table gene plots ({doc}`../user-guide/tables-and-filters`).
 ## 1. Arm the tool
 
 Click **Line filter**, the button before the table's search box (marked 1 below; on a narrow
-table only its icon shows, and its tooltip gives the name). It turns red, and the UMAP shows a hint.
+table only its icon shows, and its tooltip gives the name). The tool is on while three things are red: the button, a frame round the table the lines will go to, and a badge **Line filter on: Cells** in the bar under the header. Hover over the badge for what to do. Click it, press **Esc** or click the button again to stop. The UMAP shows a short hint.
 
 ```{figure} ../_static/screens/tutorials/line-select-armed.png
 :class: screenshot
-:alt: A cell table and a UMAP. The Line filter button before the search box is boxed in red and numbered 1; the UMAP shows the hint "Drag to draw a line: the side to its right is filtered out. Shift snaps to 45 degrees, Esc stops."
+:alt: A cell table with a red frame and a UMAP. The Line filter button before the search box is boxed in red and numbered 1; a red badge "Line filter on: Cells" sits in the dataset bar; the UMAP shows the hint "Drag to draw a line. The right side is filtered out. Shift: 45 degrees. Esc: stop."
 
-The Line filter button (1), armed. The hint appears over the plot.
+The Line filter button (1), armed: the table has a red frame, the badge in the dataset bar says which table the lines go to, and the plot shows a hint.
 ```
 
 ## 2. Draw the cut

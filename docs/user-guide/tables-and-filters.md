@@ -121,6 +121,7 @@ plot of the same kind (a cell table uses cell plots, a gene table gene plots). T
 **right** of the line, looking from where you press the mouse towards where you release it, is
 filtered out of the table. The tutorial {doc}`../tutorials/line-select` shows it on a UMAP.
 
+- While the tool is on, the table has a red frame and a red badge **Line filter on: *table*** shows in the dataset bar; hover over it for the help, click it to stop. Closing the table, Close all, loading a panel set or link and opening another dataset also stop the tool.
 - While you drag, the line and the shaded side that will be filtered out are drawn. **Shift** snaps
   the line to multiples of 45°. **Esc** stops: a line being drawn is dropped, and the tool is left.
   The tool stays armed after a line, so several lines make an area. Click the button again to leave it.

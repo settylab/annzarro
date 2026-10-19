@@ -21,6 +21,7 @@
  * The arithmetic is utils/line-select.js; this file is the browser side.
  */
 import { PanelManager } from '../../panel-manager.js';
+import { DataManager } from '../../data-manager.js';
 import { notify } from '../../utils/notify.js';
 import {
     axisMap, lineCondition, rightPolygon, clipLine, snap45, fitInside, columnRef, plotRefusal
@@ -33,7 +34,10 @@ const TABLE_SOURCES = {
     genes: ['var', 'varm', 'varp', 'layer']
 };
 const PLOT_TYPE = { cells: 'cell-plot', genes: 'gene-plot' };
-const HINT = 'Drag to draw a line: the side to its right is filtered out. Shift snaps to 45°, Esc stops.';
+const HINT = 'Drag to draw a line. The right side is filtered out. Shift: 45\u00b0. Esc: stop.';
+const BADGE_HELP = 'Drag on a plot of the same cells to draw a line. The side to the right of the line, '
+    + 'looking from where you press to where you release, is filtered out of this table. '
+    + 'Esc or a click here stops.';
 
 /** @type {null|{tableId: string, rows: string, overlays: Map<string, Object>, frame: number,
  *                drag: Object|null, busy: boolean, onKey: Function, onKeyUp: Function}} */
@@ -122,11 +126,43 @@ export function leaveLineSelect() {
     document.removeEventListener('keyup', was.onKeyUp, true);
     for (const o of was.overlays.values()) o.el.remove();
     was.overlays.clear();
+    document.getElementById('line-select-badge')?.remove();
+    for (const el of document.querySelectorAll('.az-line-armed')) el.classList.remove('az-line-armed');
     syncButtons();
+}
+
+/** Why the tool must stop: its table was closed, rebuilt (a panel set, a link, Close all) or the dataset changed. */
+function targetGone(state) {
+    const panel = PanelManager.getPanel(state.tableId);
+    if (!panel || panel !== state.panel) return true;
+    if (!PanelManager.getAllActivePanels().includes(panel)) return true;
+    const box = document.getElementById(`table-container-${state.tableId}`);
+    if (!box || !box.isConnected) return true;
+    return DataManager.getCurrentDataset() !== state.dataset;
+}
+
+/** The red badge in the dataset bar, and the red frame round the target table's tile. */
+function showArmed(state) {
+    const panel = state.panel;
+    const badge = document.createElement('button');
+    badge.type = 'button';
+    badge.id = 'line-select-badge';
+    badge.className = 'btn btn-sm az-line-badge';
+    badge.title = BADGE_HELP;
+    badge.setAttribute('aria-label', `Line filter on: ${panel.getTitle()}. Click to stop.`);
+    badge.innerHTML = '<i class="fas fa-slash" aria-hidden="true"></i> Line filter on: <span class="az-line-badge-name"></span> <i class="fas fa-xmark" aria-hidden="true"></i>';
+    badge.querySelector('.az-line-badge-name').textContent = panel.getTitle();
+    badge.addEventListener('click', () => leaveLineSelect());
+    const host = document.querySelector('#dataset-stats .dataset-bar');
+    const anchor = document.getElementById('theme-toggle');
+    if (host) host.insertBefore(badge, anchor && anchor.parentNode === host ? anchor : null);
+    const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(state.tableId)}"]`);
+    if (tile) tile.classList.add('az-line-armed');
 }
 
 function arm(tableId, rows) {
     const state = {
+        panel: PanelManager.getPanel(tableId), dataset: DataManager.getCurrentDataset(),
         tableId, rows, overlays: new Map(), frame: 0, drag: null, busy: false,
         onKey: null, onKeyUp: null
     };
@@ -146,13 +182,15 @@ function arm(tableId, rows) {
             movePreview();
         }
     };
+    if (!state.panel) return;
     active = state;
+    showArmed(state);
     document.addEventListener('keydown', state.onKey, true);
     document.addEventListener('keyup', state.onKeyUp, true);
     syncButtons();
     const tick = () => {
         if (active !== state) return;
-        if (!PanelManager.getPanel(tableId)) { leaveLineSelect(); return; }
+        if (targetGone(state)) { leaveLineSelect(); return; }
         reconcile();
         state.frame = requestAnimationFrame(tick);
     };
