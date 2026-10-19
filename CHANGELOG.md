@@ -30,6 +30,7 @@ with the release after it. Older releases are listed on
 
 ### Fixed
 - The search box in Load Panel Set had no right edge and a darker left edge, which showed most in Safari. The box now has one even border, and its focus ring follows the same outline.
+- A stream of every cell or gene name built the JSON of a whole stored chunk at once, which held about 35 MB more per reader than the chunk itself needs (a store with 2-million-name chunks). It is built 65,536 names at a time now; the bytes sent are unchanged.
 - Changing the subset while an earlier change is still loading shows the new choice at once: the header
   names the cells asked for, and only the last request's cells are drawn.
 - The tooltip of Plot Options, Presets, **Publication** no longer says it sets the scale bar: it leaves the scale bar as it is.
