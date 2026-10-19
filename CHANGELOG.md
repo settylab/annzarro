@@ -18,6 +18,10 @@ with the release after it. Older releases are listed on
   names the cells asked for, and only the last request's cells are drawn.
 - Close all writes the autosave and the address at once, so a reload right after it no longer finds the panels just closed.
 
+### Docs
+- The README and the licence page cite v0.6.1 by its DOI,
+  [10.5281/zenodo.23461950](https://doi.org/10.5281/zenodo.23461950).
+
 ## 0.6.1 (2026-10-18)
 
 Legend columns, dot size and title for categorical colours; the focused cell drawn as an open circle by
