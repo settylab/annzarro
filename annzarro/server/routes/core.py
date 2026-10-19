@@ -266,6 +266,21 @@ def register_core_routes(app, api_version):
         _count_cache[data_dir] = (now, result)
         return result
 
+    @app.route(f"/api/{api_version}/health", methods=["GET"])
+    @access.gate("public")
+    def health():
+        """
+        Liveness and readiness probe for a service manager, a container
+        runtime or a load balancer.
+
+        Open without login (a probe has no account) and answers from memory:
+        it reads no dataset, no user file and no directory, so a slow disk or a
+        busy dataset cannot fail it, and it names nothing about the server.
+        """
+        response = jsonify({"status": "ok"})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.route(f"/api/{api_version}/status", methods=["GET"])
     @access.gate("admin")
     def get_status():

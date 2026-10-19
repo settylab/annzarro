@@ -6,9 +6,11 @@ Metrics and JSON logs are off by default.
 
 ## Health check
 
-`GET /api/v1/status` answers without login. Anybody gets `{"server": {"status": "running", "version": ...}}`;
-an admin also gets the host, the process, memory and the data directory. Use it for a load balancer's
-probe or a `systemd` watchdog: a `200` means the process is serving. The admin page's Health section
+`GET /api/v1/health` answers `200` with `{"status": "ok"}` without login, login on or off, and reads
+no data ({ref}`lab-server-health`). Use it for a load balancer's probe, a container health check or a
+`systemd` start check: a `200` means the process is serving. `GET /api/v1/status` needs a login when
+login is on: a signed-in user gets `{"server": {"status": "running", "version": ...}}` and an admin also
+gets the host, the process, memory and the data directory. The admin page's Health section
 ({doc}`admin`) shows each worker's caches, read budget and refusals, and {doc}`lab-server` shows where
 the server's logs go.
 

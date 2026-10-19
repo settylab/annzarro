@@ -13,6 +13,7 @@ with the release after it. Older releases are listed on
 - `annzarro serve` starts the production server in one command: gunicorn with the bundled configuration, reading the same site file and `ANNZARRO_*` variables as `annzarro start`, with `--config`, `--host`, `--port`, `--workers`, `--threads` and extra gunicorn options after `--`. It prints the URL, workers, threads, whether login is on and the configuration file, and login stays on unless the configuration turns it off. The new `server` extra installs gunicorn: `pip install 'annzarro[server]'`. The explicit gunicorn command still works.
 - An optional Prometheus `/metrics` endpoint (`server.metrics_enabled`, off by default): requests and latency by route group, requests in flight, response bytes, dataset cache hits, misses and size, open datasets, memory and the worker's process id, merged across gunicorn workers. Only addresses in `server.metrics_allow` (loopback unless you list others) can read it; everyone else gets the reply of a URL that does not exist.
 - `server.log_format: json` (or `ANNZARRO_SERVER_LOG_FORMAT=json`) writes log lines on standard error as JSON, with a request id (also sent as `X-Request-Id`), method, route group, status and duration on each request's access line. The default text format is unchanged. New page: Deployment, Monitoring a server.
+- `GET /api/v1/health` answers `{"status": "ok"}` without a login, for a service manager's, container's or load balancer's probe; `/api/v1/status` still asks for one.
 - Plot Options, Presets: **Bare** draws only the points (no margins, legend, colour bar, scale bar, axes,
   grid or zero lines; in 3D no axes or background planes), for figures and overlays. **Default** undoes it.
 
@@ -24,6 +25,8 @@ with the release after it. Older releases are listed on
   a clear gap below it; before it was flush left, a few pixels off the symbols, 2 px above the first entry
   (and beside the entries in a legend on top or at the bottom).
 - `annzarro start` serves through waitress (a new dependency, pure Python, also on Windows) instead of Flask's development server. Debug mode and HTTPS still use the development server. A request line and headers over 262,144 bytes are refused with 431. It serves 32 request threads; `server.threads` (`ANNZARRO_SERVER_THREADS`) sets the number.
+- The lab-server guide's nginx block keeps its connections to gunicorn open (`upstream` with `keepalive`, an empty `Connection` header) and speaks HTTP/2 to browsers. A plot loads through many small requests: a 4-panel view opened 184 connections to gunicorn per load on nginx before 1.29.7 and none with the block. With HTTP/2 and 150 ms of added latency the view drew in 4.1 s instead of 7.7 s. Its `keepalive_timeout` is set below gunicorn's 5 s so nginx never sends into a closed connection.
+- The guide and the hosting checklist no longer tell you to start gunicorn with `--limit-request-line 8190`: it overrode the bundled configuration's unlimited request line and refused the long URLs the web client builds. nginx's `large_client_header_buffers` bounds the line.
 
 ### Fixed
 - Changing the subset while an earlier change is still loading shows the new choice at once: the header
