@@ -75,8 +75,12 @@ def test_the_default_legend_looks_as_in_v060(page, server, position):
         assert got["margins"][side] == pytest.approx(want["margins"][side], abs=2), (side, got["margins"], want["margins"])
     for key in ("symbol", "entries"):
         assert got[key] == want[key], (key, got[key], want[key])        # constant legend symbol, the entries drawn
-    for key in ("entryH", "pitch", "firstX", "firstY"):
+    for key in ("entryH", "pitch"):
         assert got[key] == pytest.approx(want[key], abs=2), (key, got[key], want[key])
+    # the first entry's place adds the margin's and the box's font differences (each up to 2 px):
+    # CI's Linux fonts put a bottom legend's first entry 3 px lower than this Mac
+    for key in ("firstX", "firstY"):
+        assert got[key] == pytest.approx(want[key], abs=4), (key, got[key], want[key])
     for key in ("w", "h"):
         assert got["box"][key] == pytest.approx(want["box"][key], abs=2), ("box", got["box"], want["box"])
 
