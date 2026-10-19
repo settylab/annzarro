@@ -31,6 +31,34 @@ Plot Options with its ten groups. Every group starts folded except Export.
 Set one plot up, then open **Apply to other panels** and click it, then **Apply**. Every other
 plot of the same kind takes the look. Do this after the look is final: it replaces theirs.
 
+**Every plot looks the same, and stays so**
+
+(session-default-style)=
+Set one plot up, open **Apply to other panels** and click **Make this the session default** (the
+section says whether the plot is on Default). That look is now what **Default** means for this
+session, for plots of the same kind (cell plots and gene plots each have one).
+
+- **A plot is on Default** when it was made from the chooser (a new plot, a split, the bottom of the
+  page, a duplicate of a plot on Default) or when you pressed the **Default** preset on it. A plot on
+  Default follows the session default: those open now take it when you set it, and take the new look
+  whenever you change it. A plot whose look you changed in Plot Options, copied with **Apply to other
+  panels**, or set with another preset has a look of its own and does not move. Pressing **Default**
+  on it puts it back on Default. The section says which one a plot is.
+- **Default** is the built-in look when there is no session default, and the session default when
+  there is one; the tooltip of the preset says which.
+- **Reset to built-in default**, under the button, ends the session default: plots on Default go back to the
+  built-in look. So does **Close all** with **Also clear everything this site stored in this browser**
+  ticked; without the tick the default stays.
+- The default is the same look **Apply to other panels** copies (colours, axes, ticks, text, margins,
+  legend, colour bar, scale bar, Not in table, the focused marker and the export size), never what
+  the plot shows. A colour you left on the app theme stays on it. The scale bar still needs Equal
+  aspect, so it shows only on a plot that has it. A look that is the built-in one is no default. A default set while no panel is open is not kept over a reload in a fresh tab.
+- A plot saved on Default (in a panel set, the autosave or a share link) opens on Default, and
+  follows the default of the session it opens in. The session carries the default with it: a reload of
+  the tab keeps it (the tab's session storage; a new tab starts without one), and the autosave, a
+  share link and a saved panel set hold it ({ref}`panelsets-session-style`,
+  {doc}`share-links`). A plot saved before this existed has a look of its own.
+
 **A dark plot**
 
 The plot follows the app's light or dark theme by itself. To keep one look in either theme, press
@@ -48,10 +76,11 @@ is in either theme, and its **Reset** hands it back to the theme.
   legend, colour bar or scale bar, and no axes (lines, ticks, labels, titles), grid or zero lines; in 3D no
   axes, grid or background planes either. Background colour, point colours, size and opacity, and what
   the plot shows stay. **Default** undoes it.
-- **Default** returns the look settings to what a new plot has, with every colour following the app theme again: grid, axes, tick count,
-  font and text size, line widths, margins, legend, colour bar, and the scale bar's switch and corner
-  (the scale bar goes off). The scale bar's size and unit, the **Points** and
-  **Focused cell** groups, the export size, and what the plot shows stay.
+- **Default** puts the plot on Default ({ref}`the session default <session-default-style>`): the built-in look, or the
+  session default when one is set, with every colour following the app theme again. It resets the whole look
+  that **Apply to other panels** copies: grid, axes, tick count, font and text size, line widths, margins,
+  legend, colour bar, the scale bar, **Not in table**, **Focused cell** and the export size. What the plot
+  shows, and the **Points** size and opacity, stay.
 
 A preset is a starting point: change anything afterwards.
 

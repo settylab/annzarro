@@ -56,9 +56,13 @@ import { datasetLabel } from './utils/dataset-label.js';
 import { mountThemeToggle } from './utils/theme-toggle.js';
 import { startDesktopFrame } from './utils/desktop-frame.js';
 import { keepLast } from './utils/site-footer.js';
-import { createLoadActions, createDatasetBadge, helpContent, clearTips } from './panelset-load-ui.js';
+import { createLoadActions, createDatasetBadge, createStyleBadge, helpContent, clearTips } from './panelset-load-ui.js';
 import { markDatasetUnavailable, clearDatasetUnavailable, notAvailableText, UNAVAILABLE_TITLE } from './utils/no-dataset-screen.js';
 import { vendorProblem } from './utils/vendor-check.js';
+import {
+    loadSessionStylesFrom, replaceSessionStyles, saveSessionStylesTo, viewStyleChange, styleSummary, onSessionStyleChange
+} from './utils/session-style.js';
+import { restyleDefaultPlots } from './panels/plot-utilities/plot-aesthetics-menu.js';
 
 const App = (function() {
     // Private variables
@@ -165,6 +169,10 @@ const App = (function() {
             try { dropSubsetSizes(window.localStorage); } catch { /* storage blocked */ }
             if (cleanStart) {
                 try { dropSubsetSizes(window.sessionStorage); } catch { /* storage blocked */ }
+            }
+            // The session's default plot style carries on in a reload of the tab, not in a new one
+            if (!cleanStart) {
+                try { loadSessionStylesFrom(window.sessionStorage); } catch { /* storage blocked */ }
             }
             // A page that ended while it drew a session (out of memory, most
             // likely) left a marker: that session is not drawn by itself again
@@ -580,6 +588,8 @@ const App = (function() {
         if (_urlSyncOn) return;
         _urlSyncOn = true;
         SessionManager.onViewMayHaveChanged(_syncUrlSoon);
+        // a new or reset session default is in the address at once: a reload before the delay must not read the old one
+        onSessionStyleChange(() => _syncUrlNow());
         _syncUrlSoon();
     }
     function _syncUrlSoon() {
@@ -637,7 +647,20 @@ const App = (function() {
             SessionManager.endRestore();
         }
     }
+    /**
+     * A view opened with its panels sets the session's default plot style (utils/session-style.js
+     * viewStyleChange): its own, or none when it has plots on Default, so they look as they did for the sender.
+     * @private
+     */
+    function _adoptViewStyle(view) {
+        const change = viewStyleChange(view);
+        if (!change) return;
+        replaceSessionStyles(change.styles);
+        saveSessionStylesTo(window.sessionStorage);
+        restyleDefaultPlots();
+    }
     async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false } = {}) {
+        _adoptViewStyle(view);
         // Where the view's store is here: its path, the path relative to the
         // data directory, or a store in the data directory with the same
         // cells and genes (or, for a view without a fingerprint, the same
@@ -953,6 +976,8 @@ const App = (function() {
             named: plan.datasetPath || null, found: null,
             open: closed.savedCount, total: closed.closedPanels.length
         };
+        const style = styleSummary(data);
+        if (style) { status.style = style; status.styleOnly = style.only; }
         if (plan.datasetPath) {
             const located = await _locateForCard(plan);
             status.found = !!located.path;
@@ -1178,6 +1203,12 @@ const App = (function() {
     async function _applyPanelSet(plan, panelSet, { add = false, keepDataset = false, onDataset = null } = {}) {
         const name = (panelSet && panelSet.name) || 'panel set';
         const current = DataManager.getCurrentDataset();
+        if (panelSet && panelSet.styleOnly) {
+            // a set that is only a style: no dataset, no panel, so no open or closed; Add leaves the style out
+            if (add) return { status: 'success', message: `"${name}" holds only a style: nothing to add` };
+            _adoptViewStyle(plan.view);
+            return { status: 'success', message: `Applied the style of "${name}"` };
+        }
         if (add) return _addPanelSet(plan, name);
         // A store the user chose (the open one, or one picked) is opened
         // as asked; otherwise the set's own, found by its name in the data
@@ -2999,7 +3030,8 @@ const App = (function() {
                     
                     // Determine dataset display
                     const datasetDisplay = escapeHtml(session.datasetName || 
-                                           (session.dataset ? session.dataset.split('/').pop() : 'Unknown dataset'));
+                                           (session.dataset ? session.dataset.split('/').pop()
+                                               : session.styleOnly ? 'No dataset' : 'Unknown dataset'));
                     
                     // Prepare title with autosave badge if needed
                     const titleHTML = isAutosave ? 
@@ -3181,7 +3213,8 @@ const App = (function() {
      */
     function _addLoadButtons(card, name) {
         const badge = createDatasetBadge();
-        card.querySelector('.session-card-dataset').appendChild(badge.el);
+        const styleBadge = createStyleBadge();
+        card.querySelector('.session-card-dataset').append(badge.el, styleBadge.el);
         const actions = createLoadActions({
             getCurrent: SessionManager.getCurrentDatasetInfo,
             onLoad: async (mode) => {
@@ -3198,6 +3231,7 @@ const App = (function() {
             if (!card.isConnected) return;
             actions.update(st);
             badge.update(st);
+            styleBadge.update(st);
         });
         actions.setReady(status);
     }
@@ -3307,7 +3341,8 @@ const App = (function() {
         label.className = 'session-card-subtitle';
         label.textContent = (data.datasetName || (data.dataset ? String(data.dataset).split('/').pop() : '')) || 'no dataset named';
         const badge = createDatasetBadge();
-        dataset.append(label, badge.el);
+        const styleBadge = createStyleBadge();
+        dataset.append(label, badge.el, styleBadge.el);
         host.appendChild(dataset);
         const actions = createLoadActions({
             getCurrent: SessionManager.getCurrentDatasetInfo,
@@ -3331,6 +3366,7 @@ const App = (function() {
         host.appendChild(actions.el);
         actions.update(st);
         badge.update(st);
+        styleBadge.update(st);
     }
 
     function _resetUploadCard() {
@@ -3442,7 +3478,7 @@ const App = (function() {
             } else {
                 // No panels in config
                 previewContainers.forEach(container => {
-                    container.innerHTML = `<div class="panel-preview-empty">No panels</div>`;
+                    container.innerHTML = `<div class="panel-preview-empty">${session.styleOnly ? 'A style, no panels' : 'No panels'}</div>`;
                 });
             }
         } else {

@@ -137,7 +137,8 @@ const NOT_A_PLOT_OPTION = {
     hideOutliers: 'data filter button, the same route as Hide NaN', sortByColor: 'data button', highlightFocusedGene: 'gene plots: same route as highlightFocusedCell',
     hoverOff: 'derived', tickDensity: 'default only, no control', controlsVisible: 'layout state',
     margins: 'listed', pointColor: 'colour of a plot without colour data', autoPointColor: 'derived', logColor: 'colour scale button',
-    focusedEdgeWidth: 'listed', scaleBarSize: 'listed'
+    focusedEdgeWidth: 'listed', scaleBarSize: 'listed',
+    styleDefault: 'whether the plot is on Default or has its own look; session-style.test.mjs and test_session_default_style.py'
 };
 
 test('every option the menu writes is in plot-option-cases.json (or is not a plot option, with the reason)', () => {

@@ -4,7 +4,7 @@
  * The Load dialog's cards, an uploaded file's card and the welcome list's
  * items all draw them here, so they look and behave the same.
  */
-import { loadChoices, describeStatus, MODE_ICONS } from './utils/panelset-load.js';
+import { loadChoices, describeStatus, describeStyle, MODE_ICONS } from './utils/panelset-load.js';
 
 const TIP = { trigger: 'hover focus', container: 'body', placement: 'top', customClass: 'load-tip',
     delay: { show: 250, hide: 0 } };
@@ -74,6 +74,24 @@ export function createDatasetBadge() {
         el.textContent = d.text;
         el.dataset.state = d.state;
         if (d.text) setTip(el, d.title);
+    };
+    return { el, update };
+}
+
+/**
+ * The badge of a set that brings a default style with its panels (hidden for any other).
+ * @returns {{el: HTMLElement, update: (status: Object|null) => void}}
+ */
+export function createStyleBadge() {
+    const el = document.createElement('span');
+    el.className = 'session-style-badge';
+    el.dataset.state = 'style';
+    el.hidden = true;
+    const update = (status) => {
+        const d = describeStyle(status);
+        el.hidden = !d;
+        el.textContent = d ? d.text : '';
+        if (d) setTip(el, d.title);
     };
     return { el, update };
 }
@@ -208,6 +226,11 @@ export function helpContent() {
                 <span><b>Add panels closed</b> only adds the set's panels to the closed list; the dataset
                 and the open panels stay.</span></li>
         </ul>
+        <p><span class="session-style-badge" data-state="style">Default style</span> means the set
+        brings a default style for new plots. It applies only when the set is loaded with its panels open
+        (<b>Load</b> or <b>Load on the current dataset</b>), not with <b>Add panels closed</b>.
+        <span class="session-dataset-badge" data-state="style">Style only</span> is a set with no panels and no
+        dataset: its single <b>Apply style</b> button makes the style the session default.</p>
         <p><span class="session-dataset-badge" data-state="missing">not found here</span> means the set's dataset
         is not on this server: Load then uses the open dataset, and <i class="fas ${MODE_ICONS.choose}"></i>
         <b>Choose dataset</b> picks another.</p>`;

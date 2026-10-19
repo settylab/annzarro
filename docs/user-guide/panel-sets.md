@@ -124,6 +124,27 @@ changes:
 A store you chose yourself (the open one, or one from the browser) is used as asked: if its cells or
 genes differ from the saved ones, a notice says so instead of asking first.
 
+(panelsets-session-style)=
+## The session's default plot style
+
+If you made a look the session default ({ref}`the session default <session-default-style>`), the panel
+set saves it, with only the options that differ from the built-in look, and its card says so with a
+**Default style** badge (hover for which plot kinds). The panels of the set keep the look they were
+saved with, and a plot saved on Default stays on Default.
+
+- **Load**, **Load on the current dataset** and **Choose dataset** open the set's panels, and with
+  them the set's default replaces the one you have. The plots on Default, the set's and yours, take
+  it. **Add panels closed** leaves your default alone: nothing is opened, so nothing follows it.
+- A set with plots on Default and no default of its own ends yours when it opens, so they look as
+  they did when it was saved. A set with no plot on Default, including every set saved before this
+  existed, loads as before and does not change your default.
+- A set with **no panels at all** can still be saved, when there is a session default: it is **only a
+  style**. It names no dataset and opens no panel; its card says **Style only**, shows no dataset
+  badge, and has one button, **Apply style**, which makes it your session default. It is a way to
+  share a house style: save it once, and everyone who loads it makes the same plots. Without a
+  default, saving a set with no panels is refused.
+- A share link carries the default too ({doc}`share-links`).
+
 (panelsets-add)=
 ## Add a panel set to the closed panels
 
@@ -240,8 +261,9 @@ The dialog has one tick box, off by default: **Also clear everything this site s
 browser and reload as a first visit**. Ticked, Close all also clears this site's local storage
 (which holds the autosave), session storage, IndexedDB databases, Cache Storage and service-worker
 registrations, then reloads the bare address, without `#view` or `?dataset_path`. The app starts
-as on a first visit: nothing is restored from the autosave, no last session is listed, and the
-closed list is gone too.
+as on a first visit: nothing is restored from the autosave, no last session is listed, the
+closed list is gone too, and so is the session's default plot style ({ref}`the session default <session-default-style>`).
+Without the tick, the default stays.
 
 The tick box is a safe way to get a full refresh. Under it the dialog says so: it is a fresh start
 for this browser only, it forgets the remembered layout and settings, and nothing is deleted. Saved

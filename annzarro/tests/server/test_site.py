@@ -434,6 +434,7 @@ STORAGE_KEYS = {
     "annzarro.structure-search": "static/js/utils/structure-search.js",
     "annzarro-theme": "static/js/utils/theme.js",
     "annzarro_autosave": "static/js/config.js",
+    "annzarro_session_style": "static/js/utils/session-style.js",
     "annzarro_last_sessions": "static/js/utils/last-sessions.js",
     "annzarro_restoring": "static/js/utils/last-sessions.js",
     "annzarro.recents:": "static/js/utils/dataset-recents.js",
@@ -452,7 +453,7 @@ STORAGE_USERS = {"static/js/theme-init.js", "static/js/session-manager.js", "sta
                  "static/js/panels/gene-set.js", "static/js/utils/memory-guard-ui.js", "static/js/utils/theme.js",
                  "static/js/utils/site-storage.js", "static/js/utils/convenience-storage.js",
                  "static/js/utils/memory-guard.js", "static/js/panels/gene-set-utilities/consent.js",
-                 "static/js/utils/structure-search.js"}
+                 "static/js/utils/structure-search.js", "static/js/utils/session-style.js"}
 
 
 def js_files():

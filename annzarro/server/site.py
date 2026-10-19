@@ -60,6 +60,8 @@ STORAGE_INVENTORY = (
     ("annzarro.pins:<origin>|<user>", "Datasets you pinned", "Your choice"),
     ("annzarro.subsetSize:<origin>|<user>", "The subset size you chose, for this tab only (session storage)",
      "Your choice"),
+    ("annzarro_session_style", "The plot look you made the session default, for this tab only (session storage)",
+     "Your choice"),
     ("annzarro.structure-search", "The regex and case switches of the Dataset information search", "Your choice"),
     ("annzarro:external-ok", "Your \u201cAlways\u201d or \u201cNever\u201d for each outside service of the Gene Set panel",
      "Your choice"),

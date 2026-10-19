@@ -1889,7 +1889,8 @@ button.dtsb-button.dtsb-clear:hover {
     margin-top: 0;
 }
 
-.session-dataset-badge {
+.session-dataset-badge,
+.session-style-badge {
     display: inline-block;
     font-size: 0.68rem;
     font-weight: 600;
@@ -1907,7 +1908,14 @@ button.dtsb-button.dtsb-clear:hover {
     color: var(--az-warn-text);
 }
 
-.session-dataset-badge[hidden] {
+.session-dataset-badge[data-state="style"],
+.session-style-badge {
+    background: var(--az-info-bg);
+    color: var(--az-info-text);
+}
+
+.session-dataset-badge[hidden],
+.session-style-badge[hidden] {
     display: none;
 }
 

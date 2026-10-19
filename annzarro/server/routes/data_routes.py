@@ -2488,6 +2488,7 @@ def register_data_routes(app, api_version):
                         "dataset": session_data.get("dataset", ""),
                         "timestamp": session_data.get("timestamp", ""),
                         "datasetName": session_data.get("datasetName", ""),
+                        "styleOnly": session_data.get("styleOnly") is True,
                         "file": session_path,
                         "owner": session_data.get("owner"),
                         "created_at": session_data.get("created_at"),
