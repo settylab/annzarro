@@ -8,7 +8,7 @@ import { find, findAll, installFakeDocument, uninstallFakeDocument } from "./fak
 import { AdminError, createAdminApi } from "../../../static/js/admin/admin-api.js";
 import { createReauthModal } from "../../../static/js/admin/reauth-modal.js";
 import { SECTIONS, createRouter, sectionFromHash, showToast } from "../../../static/js/admin/admin-main.js";
-import { chainText, detailText } from "../../../static/js/admin/audit.js";
+import { chainText, detailText, recordRow } from "../../../static/js/admin/audit.js";
 import { cacheText, readersText, refusalText, sumRefusals } from "../../../static/js/admin/health.js";
 import { deleteMessage, reassignMessage } from "../../../static/js/admin/panel-sets.js";
 
@@ -185,9 +185,10 @@ test("health: workers, a stale badge, refusals summed over workers", async () =>
   await router.show("health");
   const rows = findAll(view, (n) => n.tagName === "TR").slice(1);
   assert.equal(rows.length, 2);
-  assert.match(rows[0].textContent, /4121.*2 s.*12,031.*410\/1024 MB.*480 MB.*read_busy 3, session_quota_user 1/);
+  assert.match(rows[0].textContent, /4121.*2 s.*12,031.*410\/1024 MB.*480 MB.*1\.5 GB.*read_busy 3, session_quota_user 1/);
   assert.match(rows[1].textContent, /4122.*stale.*9,870.*idle/);
   assert.match(view.textContent, /Refusals by reason: read_busy 3, outside_data_dir 2, session_quota_user 1/);
+  assert.match(view.textContent, /Memory1\.5 GB/);
   assert.match(view.textContent, /alice \d\d:\d\d \| bob/);
   assert.match(view.textContent, /Top readers now: bob 410 MB \(share 512 MB\)/);
   assert.ok(find(view, (n) => n.id === "admin-cache-clear"), "the Clear cache button is offered");
@@ -487,4 +488,10 @@ test("admin toasts follow the rules of the page's: errors stay, a lower one stac
     globalThis.setTimeout = real;
     globalThis.clearTimeout = realClear;
   }
+});
+
+test("audit: a record's request id is the tooltip of its time, and absent without one", () => {
+  const base = { seq: 1, ts: "2026-10-19T08:15:02+00:00", actor: "root", action: "cache.clear", outcome: "ok" };
+  assert.equal(recordRow({ ...base, request_id: "3f1c9a0b5d2e4a67" }).children[0].getAttribute("title"), "Request 3f1c9a0b5d2e4a67");
+  assert.equal(recordRow(base).children[0].getAttribute("title"), null);
 });

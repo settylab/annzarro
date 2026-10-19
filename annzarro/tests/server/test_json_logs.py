@@ -172,3 +172,43 @@ def test_the_environment_switches_both(tmp_path, monkeypatch):
     assert server["log_format"] == "json" and server["metrics_enabled"] is True
     assert server["metrics_allow"] == ["10.0.0.0/8", "192.168.1.5"]
     assert manager.validate_config()[0]
+
+
+def test_an_admin_change_is_one_audit_record_and_one_audit_line_with_the_same_request_id(tmp_path, capsys):
+    from annzarro.server.admin import audit
+    from annzarro.tests.server.admin_helpers import ADMIN, login, make_app, unsafe_headers
+    app = make_app(tmp_path, log_format="json")
+    client = login(app, ADMIN)
+    capsys.readouterr()
+    reply = client.post("/api/v1/admin/cache/clear", data="{}", headers=unsafe_headers(client))
+    reply.get_data()
+    reply.close()                                                 # the access line is written at the last byte
+    assert reply.status_code == 200
+    rid = reply.headers["X-Request-Id"]
+    record = audit.read(app.admin_dir, limit=1)[0]
+    assert record["action"] == "cache.clear" and record["request_id"] == rid
+    assert audit.verify(app.admin_dir)["ok"]
+    lines = _json_lines(capsys)
+    mirrored = [l for l in lines if l["logger"] == "annzarro.audit"]
+    assert len(mirrored) == 1 and mirrored[0]["request_id"] == rid
+    assert json.loads(mirrored[0]["message"]) == record          # the exact record, for the chain's tail
+    assert [l["request_id"] for l in lines if l["logger"] == jsonlog.ACCESS_LOGGER] == [rid]
+
+
+def test_a_login_and_a_password_change_put_no_secret_on_a_json_line(tmp_path, capsys):
+    from annzarro.tests.server.admin_helpers import ADMIN, PASSWORD, USER, login, make_app, unsafe_headers
+    app = make_app(tmp_path, log_format="json")
+    capsys.readouterr()
+    app.test_client().post("/login", data={"username": USER, "password": "wrong password here"})
+    client = login(app, ADMIN)
+    new = "a brand new secret phrase"
+    changed = client.post(f"/api/v1/admin/users/{USER}/password", data=json.dumps({"password": new}),
+                          headers=unsafe_headers(client))
+    assert changed.status_code == 200
+    out = capsys.readouterr().err
+    assert 'user.password' in out                               # the audit line is there, the password is not
+    with client.session_transaction() as sess:
+        cookie_values = [str(v) for v in sess.values()]
+    for secret in (PASSWORD, "wrong password here", new, app.secret_key if isinstance(app.secret_key, str) else "\0",
+                   *[v for v in cookie_values if len(v) >= 16]):
+        assert secret not in out

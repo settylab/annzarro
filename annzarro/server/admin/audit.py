@@ -7,7 +7,12 @@ carrying the hash of the one before it::
 
     {"seq": 42, "ts": "...", "actor": "alice", "addr": "10.0.0.5", "via": "web",
      "action": "user.set_admin", "target": "bob", "detail": {...},
-     "outcome": "ok", "prev": "<hash of seq 41>", "hash": "<sha256(prev + record)>"}
+     "outcome": "ok", "request_id": "3f1c9a0b5d2e4a67",
+     "prev": "<hash of seq 41>", "hash": "<sha256(prev + record)>"}
+
+``request_id`` is the request's ``X-Request-Id``, the one on its JSON log lines
+(jsonlog.py); it is there only when that id exists (``server.log_format: json``
+or ``server.metrics_enabled``), and never on a command-line record.
 
 ``hash`` is the SHA-256 of ``prev`` followed by the canonical JSON of the
 record without its ``hash``. Editing or deleting a line in the middle breaks
@@ -113,7 +118,7 @@ def _rotate(directory):
 
 
 def append(directory, *, actor, addr, via, action, target=None, detail=None,
-           outcome="ok", max_mb=0):
+           outcome="ok", max_mb=0, request_id=None):
     """Append one record and return it. The directory must exist."""
     path = _path(directory)
     detail = detail or {}
@@ -131,8 +136,10 @@ def append(directory, *, actor, addr, via, action, target=None, detail=None,
             "ts": datetime.now(timezone.utc).isoformat(),
             "actor": actor, "addr": addr, "via": via,
             "action": action, "target": target, "detail": detail, "outcome": outcome,
-            "prev": prev,
         }
+        if request_id:
+            record["request_id"] = request_id
+        record["prev"] = prev
         record["hash"] = _hash(prev, record)
         line = _canonical(record)
         data = ("" if ends_in_newline else "\n") + line + "\n"
@@ -155,12 +162,14 @@ def record(action, target=None, detail=None, outcome="ok"):
     configured directory come from Flask."""
     from flask import current_app, request
     from .. import permissions
+    from ..jsonlog import REQUEST_ID_KEY
     from . import audit_max_mb, state_dir
 
     actor, _ = permissions.current_user()
     return append(state_dir(current_app.config, create=True), actor=actor,
                   addr=request.remote_addr, via="web", action=action, target=target,
-                  detail=detail, outcome=outcome, max_mb=audit_max_mb(current_app.config))
+                  detail=detail, outcome=outcome, max_mb=audit_max_mb(current_app.config),
+                  request_id=request.environ.get(REQUEST_ID_KEY))
 
 
 def _files(directory):
