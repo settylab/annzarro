@@ -226,8 +226,8 @@ export function helpContent() {
                 <span><b>Add panels closed</b> only adds the set's panels to the closed list; the dataset
                 and the open panels stay.</span></li>
         </ul>
-        <p><span class="session-style-badge" data-state="style">Default style</span> means the set
-        brings a default style for new plots. It applies only when the set is loaded with its panels open
+        <p><span class="session-style-badge" data-state="style">Style</span> means the set
+        brings a style for plots on Default. It applies only when the set is loaded with its panels open
         (<b>Load</b> or <b>Load on the current dataset</b>), not with <b>Add panels closed</b>.
         <span class="session-dataset-badge" data-state="style">Style only</span> is a set with no panels and no
         dataset: its single <b>Apply style</b> button makes the style the session default.</p>

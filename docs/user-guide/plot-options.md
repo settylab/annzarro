@@ -35,7 +35,7 @@ plot of the same kind takes the look. Do this after the look is final: it replac
 
 (session-default-style)=
 Set one plot up, open **Apply to other panels** and click **Make this the session default** (the
-section says whether the plot is on Default). That look is now what **Default** means for this
+section shows **On Default** or **Own style**). That look is now what **Default** means for this
 session, for plots of the same kind (cell plots and gene plots each have one).
 
 - **A plot is on Default** when it was made from the chooser (a new plot, a split, the bottom of the
@@ -43,7 +43,7 @@ session, for plots of the same kind (cell plots and gene plots each have one).
   Default follows the session default: those open now take it when you set it, and take the new look
   whenever you change it. A plot whose look you changed in Plot Options, copied with **Apply to other
   panels**, or set with another preset has a look of its own and does not move. Pressing **Default**
-  on it puts it back on Default. The section says which one a plot is.
+  on it puts it back on Default. The section says which one a plot is, in those two words.
 - **Default** is the built-in look when there is no session default, and the session default when
   there is one; the tooltip of the preset says which.
 - **Reset to built-in default**, under the button, ends the session default: plots on Default go back to the

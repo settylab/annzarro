@@ -129,7 +129,7 @@ genes differ from the saved ones, a notice says so instead of asking first.
 
 If you made a look the session default ({ref}`the session default <session-default-style>`), the panel
 set saves it, with only the options that differ from the built-in look, and its card says so with a
-**Default style** badge (hover for which plot kinds). The panels of the set keep the look they were
+**Style** badge (hover for which plot kinds). The panels of the set keep the look they were
 saved with, and a plot saved on Default stays on Default.
 
 - **Load**, **Load on the current dataset** and **Choose dataset** open the set's panels, and with

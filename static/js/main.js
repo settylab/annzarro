@@ -60,7 +60,7 @@ import { createLoadActions, createDatasetBadge, createStyleBadge, helpContent, c
 import { markDatasetUnavailable, clearDatasetUnavailable, notAvailableText, UNAVAILABLE_TITLE } from './utils/no-dataset-screen.js';
 import { vendorProblem } from './utils/vendor-check.js';
 import {
-    loadSessionStylesFrom, replaceSessionStyles, saveSessionStylesTo, viewStyleChange, styleSummary, onSessionStyleChange
+    loadSessionStylesFrom, replaceSessionStyles, saveSessionStylesTo, viewStyleChange, styleSummary, onSessionStyleChange, isStyleOnly
 } from './utils/session-style.js';
 import { restyleDefaultPlots } from './panels/plot-utilities/plot-aesthetics-menu.js';
 
@@ -1203,7 +1203,7 @@ const App = (function() {
     async function _applyPanelSet(plan, panelSet, { add = false, keepDataset = false, onDataset = null } = {}) {
         const name = (panelSet && panelSet.name) || 'panel set';
         const current = DataManager.getCurrentDataset();
-        if (panelSet && panelSet.styleOnly) {
+        if (isStyleOnly(panelSet) && !(add && plan.closedPanels.length)) {
             // a set that is only a style: no dataset, no panel, so no open or closed; Add leaves the style out
             if (add) return { status: 'success', message: `"${name}" holds only a style: nothing to add` };
             _adoptViewStyle(plan.view);

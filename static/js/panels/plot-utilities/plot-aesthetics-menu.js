@@ -564,7 +564,6 @@ export function createPopoverContent(id, settings) {
         `)}
         ${details(id, 'apply', 'Apply to other panels', `
 
-            <div class="form-text mt-0 mb-2">Copy this plot's look (colours, axes, ticks, text, margins, legend, colour bar, scale bar, Not in table) to the other ${plotKind} plots. What they show is not touched.</div>
             <div id="apply-others-ask-${id}" class="d-none">
                 <div class="small mb-1" id="apply-others-text-${id}"></div>
                 <div class="d-flex gap-2">
@@ -572,15 +571,16 @@ export function createPopoverContent(id, settings) {
                     <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="apply-others-no-${id}">Cancel</button>
                 </div>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="apply-others-${id}">Apply to other panels</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="apply-others-${id}"
+                title="Copy this plot's look (colours, axes, ticks, text, margins, legend, colour bar, scale bar, Not in table) to the other ${plotKind} plots. What they show is not touched.">Apply to other panels</button>
             <div class="small mt-1" id="apply-others-done-${id}" role="status"></div>
-            <hr class="my-2">
-            <div class="form-text mt-0 mb-2">The session default is the look of every ${plotKind} plot on Default: new plots, and plots you put back with the Default preset. A plot with a look of its own keeps it.
-                <span class="badge rounded-pill text-bg-secondary" style="cursor: help" tabindex="0" aria-label="Help: session default"
-                    title="Plots on Default follow the session default when you set, change or reset it, and open on Default in a link, a panel set or a reload. The default lasts for the session (Close all with the cache cleared ends it), is saved with links, the autosave and panel sets, and is not part of any plot's own look.">?</span></div>
-            <div class="small mb-1" id="session-style-state-${id}">${settings.styleDefault === true ? 'This plot is on Default.' : 'This plot has a look of its own.'}</div>
+            <div class="d-flex align-items-center gap-2 small text-muted mt-2 mb-1">
+                <span id="session-style-state-${id}">${settings.styleDefault === true ? 'On Default' : 'Own style'}</span>
+                <a href="https://annzarro.readthedocs.io/en/latest/user-guide/plot-options.html#session-default-style" target="_blank" rel="noopener"
+                    class="ms-auto" title="Guide: the session default style">Guide</a>
+            </div>
             <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="session-style-set-${id}"
-                title="Make this ${plotKind} plot's look the session default: every ${plotKind} plot on Default takes it">Make this the session default</button>
+                title="Make this the session default: every ${plotKind} plot on Default takes this look, now and when you change it. Plots with a look of their own keep it. It lasts for the session and travels with links, the autosave and panel sets.">Make this the session default</button>
             <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1 ${hasSessionStyle(`${plotKind}-plot`) ? '' : 'd-none'}" id="session-style-reset-${id}"
                 title="End the session default: ${plotKind} plots on Default are in the built-in style again">Reset to built-in default</button>
             <div class="small mt-1" id="session-style-done-${id}" role="status"></div>
@@ -1198,11 +1198,9 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             }
             document.getElementById(`session-style-reset-${id}`)?.classList.toggle('d-none', !hasSessionStyle(type));
             const state = document.getElementById(`session-style-state-${id}`);
-            if (state && !reset) state.textContent = 'This plot is on Default.';
+            if (state && !reset) state.textContent = 'On Default';
             const done = document.getElementById(`session-style-done-${id}`);
-            if (done) done.textContent = reset ? `Plots on Default are in the built-in style again.`
-                : isSet ? `Plots on Default now follow this style.`
-                    : `This is the built-in style, so there is no session default.`;
+            if (done) done.textContent = reset ? 'Built-in again.' : isSet ? 'Set.' : 'Same as built-in: no default.';
             return;
         }
 

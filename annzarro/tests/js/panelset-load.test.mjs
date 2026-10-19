@@ -108,8 +108,8 @@ test('a set that is only a style has one Apply style button, no dataset badge an
 
 test('a set with panels and a style says it brings one, only for panels open', () => {
     const d = describeStyle({ style: { kinds: ['cell', 'gene'], only: false } });
-    assert.equal(d.text, 'Default style');
-    assert.match(d.title, /new cell plots and gene plots/);
+    assert.equal(d.text, 'Style');
+    assert.match(d.title, /cell plots and gene plots/);
     assert.match(d.title, /only when the set is loaded with its panels open/);
     assert.equal(describeStyle({ style: { kinds: ['cell'], only: true }, styleOnly: true }), null);
     assert.equal(describeStyle({}), null);

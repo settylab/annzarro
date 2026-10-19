@@ -138,7 +138,7 @@ def _make_default_from_a(page):
     assert not page.is_visible(f"#session-style-reset-{A}")
     page.click(f"#session-style-set-{A}")
     page.wait_for_selector(f"#session-style-reset-{A}", state="visible")
-    assert "follow this style" in page.inner_text(f"#session-style-done-{A}")
+    assert page.inner_text(f"#session-style-done-{A}") == "Set."
     _close_menu(page, A)
 
 
@@ -424,6 +424,7 @@ def test_a_set_with_no_panel_can_be_only_a_style(page, served):
     card.locator(".session-load").click()
     other.wait_for_selector("#session-modal", state="hidden", timeout=30000)
     _wait_look(other, n2, 18, 4)                                         # its plots on Default took it
+    assert n2 in other.evaluate(TILES) and B in other.evaluate(TILES)    # the open panels stay open, as they were
     assert _settings(other, _new_plot(other))["fontSize"] == 18
 
 
@@ -439,11 +440,71 @@ def test_a_set_with_panels_and_a_style_says_so_on_its_card(page, served):
     saved = page.evaluate("(n) => window.sessionManager.saveSession(n)", "card-plain")
     assert saved["status"] == "success", saved
     page.click("#btn-load-session")
-    for name, texts in (("card-style", ["Default style"]), ("card-plain", [])):
+    for name, texts in (("card-style", ["Style"]), ("card-plain", [])):
         card = page.locator(f".session-card[data-session-name='{name}']")
         card.wait_for(timeout=30000)
         card.locator(".load-actions[data-status='ready']").wait_for(timeout=30000)
         assert card.locator(".session-style-badge:visible").all_inner_texts() == texts, name
     tip = page.locator(".session-card[data-session-name='card-style'] .session-style-badge")
-    assert "new cell plots" in tip.get_attribute("data-tip")
+    assert "cell plots" in tip.get_attribute("data-tip")
     assert "only when the set is loaded with its panels open" in tip.get_attribute("data-tip")
+
+
+BOXES = """(card) => {
+    const r = (e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; };
+    const icons = [...card.querySelectorAll('.session-card-actions > *')].map(r);
+    const badges = [...card.querySelectorAll('.session-card-dataset > *')].filter(e => e.offsetParent !== null);
+    return { icons, badges: badges.map(r), names: badges.map(e => e.textContent.trim()) };
+}"""
+
+
+def _meets(a, b):
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+@pytest.mark.parametrize("width", [1400, 560])
+def test_badges_never_overlap_the_card_icons(page, served, width):
+    """A long name, a dataset badge and the Style badge, in a wide and a narrow dialog."""
+    page.set_viewport_size({"width": width, "height": 900})
+    _open(page, served)
+    _new_plot(page)
+    _make_default_from_a(page)
+    name = "a_really_long_house_style_panel_set_name_that_goes_on_and_on_and_on"
+    saved = page.evaluate("(n) => window.sessionManager.saveSession(n)", name)
+    assert saved["status"] == "success", saved
+    page.click("#btn-load-session")
+    card = page.locator(f".session-card[data-session-name='{name}']")
+    card.wait_for(timeout=30000)
+    card.locator(".load-actions[data-status='ready']").wait_for(timeout=30000)
+    shot = os.environ.get("ANNZARRO_SHOTS")
+    if shot:
+        os.makedirs(shot, exist_ok=True)
+        card.screenshot(path=os.path.join(shot, f"card-{width}.png"))
+    boxes = card.evaluate(BOXES)
+    assert len(boxes["icons"]) == 2 and len(boxes["badges"]) >= 3, boxes["names"]    # name, dataset badge, Style badge
+    for badge in boxes["badges"]:
+        for icon in boxes["icons"]:
+            assert not _meets(badge, icon), (boxes["names"], badge, icon)
+
+
+def test_a_set_with_only_closed_panels_and_a_style_applies_the_style_and_keeps_the_page(page, served):
+    _open(page, served)
+    n1 = _new_plot(page)
+    _make_default_from_a(page)
+    page.evaluate("""() => { const pm = window.PanelManager;
+        pm.getActivePanels().map(p => p.getId()).forEach(id => pm.closePanel(id)); }""")
+    saved = page.evaluate("(n) => window.sessionManager.saveSession(n)", "closed-only")
+    assert saved["status"] == "success", saved
+    other = page.context.new_page()
+    _open(other, served)
+    n2 = _new_plot(other)
+    url = other.url
+    other.click("#btn-load-session")
+    card = other.locator(".session-card[data-session-name='closed-only']")
+    card.wait_for(timeout=30000)
+    card.locator(".load-actions[data-status='ready']").wait_for(timeout=30000)
+    card.locator(".session-load").click()
+    other.wait_for_selector("#session-modal", state="hidden", timeout=30000)
+    _wait_look(other, n2, 18, 4)
+    assert sorted(other.evaluate(TILES)) == sorted([A, B, n2])           # nothing closed, nothing added
+    assert other.url.split("#")[0] == url.split("#")[0]
