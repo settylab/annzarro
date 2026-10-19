@@ -26,6 +26,7 @@ with the release after it. Older releases are listed on
 - `annzarro start` serves through waitress (a new dependency, pure Python, also on Windows) instead of Flask's development server. Debug mode and HTTPS still use the development server. A request line and headers over 262,144 bytes are refused with 431. It serves 32 request threads; `server.threads` (`ANNZARRO_SERVER_THREADS`) sets the number.
 
 ### Fixed
+- A stream of every cell or gene name built the JSON of a whole stored chunk at once, which held about 35 MB more per reader than the chunk itself needs (a store with 2-million-name chunks). It is built 65,536 names at a time now; the bytes sent are unchanged.
 - Changing the subset while an earlier change is still loading shows the new choice at once: the header
   names the cells asked for, and only the last request's cells are drawn.
 - The tooltip of Plot Options, Presets, **Publication** no longer says it sets the scale bar: it leaves the scale bar as it is.
