@@ -1,5 +1,5 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
-import { axisTitle, refreshScaleBar } from './plot-make-helper.js';
+import { axisTitle, refreshScaleBar, flipRelayout } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
 import { applyLegendOptions, legendOrientation, legendTitleText, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
@@ -265,6 +265,17 @@ export function createPopoverContent(id, settings) {
                     <input class="form-check-input" type="checkbox" id="zero-lines-${id}" 
                         ${settings.showZeroLines ? 'checked' : ''}>
                     <label class="form-check-label" for="zero-lines-${id}">Show Zero Lines</label>
+                </div>
+                <!-- Direction: a view setting of this plot, never copied as a style -->
+                <div class="form-check form-switch" title="${settings.z ? 'Axis directions can be flipped in 2D plots only.' : 'Run the y axis the other way, so y grows downwards (spatial coordinates are often read like that).'}">
+                    <input class="form-check-input" type="checkbox" id="flip-y-${id}"
+                        ${settings.flipY ? 'checked' : ''} ${settings.z ? 'disabled' : ''}>
+                    <label class="form-check-label" for="flip-y-${id}">Flip y (grows downwards)</label>
+                </div>
+                <div class="form-check form-switch" title="${settings.z ? 'Axis directions can be flipped in 2D plots only.' : 'Run the x axis the other way, so x grows to the left.'}">
+                    <input class="form-check-input" type="checkbox" id="flip-x-${id}"
+                        ${settings.flipX ? 'checked' : ''} ${settings.z ? 'disabled' : ''}>
+                    <label class="form-check-label" for="flip-x-${id}">Flip x (grows to the left)</label>
                 </div>
                 
                 <!-- Line Width Settings -->
@@ -929,6 +940,20 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
+        // Axis direction (a view setting: not in STYLE_KEYS, so no copy and no preset touches it)
+        if (target.id === `flip-x-${id}` || target.id === `flip-y-${id}`) {
+            const key = target.id === `flip-x-${id}` ? 'flipX' : 'flipY';
+            settings[key] = target.checked;
+            const fl = plotContainer._fullLayout;
+            if (fl && !settings.z) {
+                Promise.resolve(Plotly.relayout(plotContainer, flipRelayout(settings, fl)))
+                    .then(() => refreshScaleBar(plotContainer, settings))
+                    .catch(err => console.warn('Axis direction not changed:', err && err.message));
+            }
+            notifySettingsChanged(id, key, settings[key]);
+            return;
+        }
+
         // Axis line width
         if (target.id === `axis-line-width-${id}`) {
             settings.axisLineWidth = parseFloat(target.value);

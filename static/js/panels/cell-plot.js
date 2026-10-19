@@ -56,6 +56,8 @@ const CellPlotPanel = (function() {
             subsettedCells: null,
             hideNonSubset: false,
             showGrid: true,    // Show grid lines by default
+            flipX: false,      // axis directions (Plot Options, Axes): a view setting, not a style
+            flipY: false,
             lockColorRange: false,  // Don't lock color range by default
             highlightFocusedCell: true, // Highlight focused cell by default
             exportWidth: 1200,      // Default export width in pixels

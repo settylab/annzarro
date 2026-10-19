@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- Plot Options, Axes and ticks: **Flip y** and **Flip x** run an axis the other way, for example so y grows downwards as it does in the image of spatial data. The flip is per plot, stays through zoom, Reset axes and double click, works with Equal aspect, the scale bar, large-plot mode and exports, and is kept in sessions, links and panel sets. Apply to other panels, presets and the session default leave it alone. 2D plots only.
+
 ### Changed
 - Tables no longer print a note under the Advanced Search box listing every column with more than 10,000 distinct values. Equals and Not on such a column still take a typed value instead of a list.
 

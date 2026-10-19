@@ -94,13 +94,14 @@ def large_server(tmp_path_factory):
     proc.wait(10)
 
 
-def _link(root, store, table_cfg=None, color=None, extra=None):
+def _link(root, store, table_cfg=None, color=None, extra=None, plot_cfg=None):
     plot = {"title": "plot", "z": None, "pointSize": 8, "pointOpacity": 1, "color": {"type": "none"},
             "tableFilter": "none"}
     configs = {
         TABLE: {"id": TABLE, "title": "cells",
                 "columns": [OBS("cell_type")], **(table_cfg or {})},
-        PLOT_A: {**plot, "id": PLOT_A, "x": UMAP("0"), "y": UMAP("1"), **({"color": color} if color else {})},
+        PLOT_A: {**plot, "id": PLOT_A, "x": UMAP("0"), "y": UMAP("1"), **({"color": color} if color else {}),
+                 **(plot_cfg or {})},
         PLOT_B: {**plot, "id": PLOT_B, "x": OBS("cell_type"), "y": OBS("total_counts")},
     }
     configs.update(extra or {})
@@ -121,12 +122,12 @@ def _link(root, store, table_cfg=None, color=None, extra=None):
     return f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}"
 
 
-def _open(pw, root, store, table_cfg=None, width=1800, color=None, extra=None, height=1500):
+def _open(pw, root, store, table_cfg=None, width=1800, color=None, extra=None, height=1500, plot_cfg=None):
     browser = pw.chromium.launch()
     page = browser.new_page(viewport={"width": width, "height": height})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(_link(root, store, table_cfg, color, extra))
+    page.goto(_link(root, store, table_cfg, color, extra, plot_cfg))
     _settle(page)
     return browser, page, errors
 
@@ -979,6 +980,26 @@ def test_the_search_row_keeps_the_advanced_search_boxs_inset(server, width):
             # not against the panel's edge: inset by at least the box's border and 0.5rem padding
             assert g["lineL"] - g["boxL"] >= 8, g
             assert g["boxR"] - g["lastR"] >= 8, g
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("flips", [{"flipY": True}, {"flipX": True}, {"flipX": True, "flipY": True}],
+                         ids=["y-flipped", "x-flipped", "both"])
+def test_a_line_on_a_flipped_plot_drops_the_rows_on_the_screen_right(server, flips):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, plot_cfg=flips)
+        try:
+            ranges = page.evaluate(f"""() => {{ const fl = document.getElementById('plot-container-{PLOT_A}')._fullLayout;
+                return [fl.xaxis.range, fl.yaxis.range]; }}""")
+            assert (ranges[0][0] > ranges[0][1]) == bool(flips.get("flipX")), ranges
+            assert (ranges[1][0] > ranges[1][1]) == bool(flips.get("flipY")), ranges
+            _arm(page)
+            a, b = _drag(page, (0.15, 0.3), (0.85, 0.75))
+            _wait_filtered(page, N_CELLS)
+            _assert_right_is_dropped(_sides(page, a, b))
             assert not errors, errors
         finally:
             browser.close()
