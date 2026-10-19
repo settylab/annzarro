@@ -46,13 +46,13 @@ session, for plots of the same kind (cell plots and gene plots each have one).
   on it puts it back on Default. The section says which one a plot is.
 - **Default** is the built-in look when there is no session default, and the session default when
   there is one; the tooltip of the preset says which.
-- **Built-in style**, beside the button, ends the session default: plots on Default go back to the
+- **Reset to built-in default**, under the button, ends the session default: plots on Default go back to the
   built-in look. So does **Close all** with **Also clear everything this site stored in this browser**
   ticked; without the tick the default stays.
 - The default is the same look **Apply to other panels** copies (colours, axes, ticks, text, margins,
   legend, colour bar, scale bar, Not in table, the focused marker and the export size), never what
   the plot shows. A colour you left on the app theme stays on it. The scale bar still needs Equal
-  aspect, so it shows only on a plot that has it. A look that is the built-in one is no default.
+  aspect, so it shows only on a plot that has it. A look that is the built-in one is no default. A default set while no panel is open is not kept over a reload in a fresh tab.
 - A plot saved on Default (in a panel set, the autosave or a share link) opens on Default, and
   follows the default of the session it opens in. The session carries the default with it: a reload of
   the tab keeps it (the tab's session storage; a new tab starts without one), and the autosave, a

@@ -579,12 +579,10 @@ export function createPopoverContent(id, settings) {
                 <span class="badge rounded-pill text-bg-secondary" style="cursor: help" tabindex="0" aria-label="Help: session default"
                     title="Plots on Default follow the session default when you set, change or reset it, and open on Default in a link, a panel set or a reload. The default lasts for the session (Close all with the cache cleared ends it), is saved with links, the autosave and panel sets, and is not part of any plot's own look.">?</span></div>
             <div class="small mb-1" id="session-style-state-${id}">${settings.styleDefault === true ? 'This plot is on Default.' : 'This plot has a look of its own.'}</div>
-            <div class="d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1" id="session-style-set-${id}"
-                    title="Make this ${plotKind} plot's look the session default: every ${plotKind} plot on Default takes it">Make this the session default</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary ${hasSessionStyle(`${plotKind}-plot`) ? '' : 'd-none'}" id="session-style-reset-${id}"
-                    title="End the session default: ${plotKind} plots on Default are in the built-in style again">Built-in style</button>
-            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="session-style-set-${id}"
+                title="Make this ${plotKind} plot's look the session default: every ${plotKind} plot on Default takes it">Make this the session default</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1 ${hasSessionStyle(`${plotKind}-plot`) ? '' : 'd-none'}" id="session-style-reset-${id}"
+                title="End the session default: ${plotKind} plots on Default are in the built-in style again">Reset to built-in default</button>
             <div class="small mt-1" id="session-style-done-${id}" role="status"></div>
         `)}
     </div>
