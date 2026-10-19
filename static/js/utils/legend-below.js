@@ -47,14 +47,24 @@ function axisTextDepth(gd, size) {
 
 let _setting = new WeakSet();
 
-/** Put a bottom legend below the axis text, as drawn. Relayouts only when the fraction changes. */
-export function syncBelowLegend(gd) {
+/** Passes after one relayout until the legend stops moving (each pass moves the axes, which moves the fraction). */
+const MAX_PASSES = 6;
+
+/**
+ * Put a bottom legend below the axis text, as drawn. Relayouts only when the fraction changes, and looks
+ * again once the relayout is done: its own draw ends before it resolves, while the flag below still holds,
+ * so that draw's check was skipped and the legend stayed where the axes were before they moved.
+ */
+export function syncBelowLegend(gd, pass = 0) {
     const L = gd && gd._fullLayout;
     if (!L || !L._size || !isBelowLegend(gd.layout) || _setting.has(gd) || typeof Plotly === 'undefined') return;
     const want = belowLegendY(axisTextDepth(gd, L._size) + GAP, L._size.h);
     if (want === null || Math.abs(want - gd.layout.legend.y) < 0.002) return;
     _setting.add(gd);
-    Promise.resolve(Plotly.relayout(gd, { 'legend.y': want })).catch(() => {}).finally(() => _setting.delete(gd));
+    Promise.resolve(Plotly.relayout(gd, { 'legend.y': want })).catch(() => {}).finally(() => {
+        _setting.delete(gd);
+        if (pass + 1 < MAX_PASSES) syncBelowLegend(gd, pass + 1);
+    });
 }
 
 /** Per graph, its redraw listener (Plotly.purge drops listeners, so each draw sets it afresh). */

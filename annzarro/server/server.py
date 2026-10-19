@@ -272,17 +272,129 @@ def run_server(
                 # Start browser in a separate thread to not block server startup
                 threading.Thread(target=open_browser).start()
             
-            app.run(
-                host=use_host,
-                port=use_port,
-                debug=final_config.get("debug", False),
-                threaded=True,
-                ssl_context=ssl_context
-            )
+            _exit_with_parent_from_env()
+            if not final_config.get("debug", False) and ssl_context is None:
+                _serve_with_waitress(app, use_host, use_port, app.config.get("MAX_CONTENT_LENGTH"),
+                                     threads=final_config.get("threads"))
+            else:
+                app.run(
+                    host=use_host,
+                    port=use_port,
+                    debug=final_config.get("debug", False),
+                    threaded=True,
+                    ssl_context=ssl_context
+                )
         finally:
             # Pop the context when server stops
             ctx.pop()
         
+# Request threads. A plot makes several requests at once, and a full cell or gene
+# name list holds its thread until the browser has read it (names_stream_max_concurrent
+# caps those per worker), so this is well above waitress' default of 4.
+WAITRESS_THREADS = 32
+# Seconds a connection may sit idle before waitress closes it. Only idle time
+# counts: a response still being sent (a read of a 1B-cell store can take a
+# minute) is never cut by it.
+WAITRESS_CHANNEL_TIMEOUT = 300
+
+
+#: Largest piece of a reply body handed to waitress at once.
+WAITRESS_SLICE_BYTES = 1 << 20
+
+
+class _SliceLargeBodies:
+    """WSGI middleware: hand a large reply body to waitress in pieces of WAITRESS_SLICE_BYTES.
+
+    A reply built whole (a 95.6M-cell column is a 382 MB bytes object) reaches the server as one
+    chunk. waitress copies a chunk into its output buffer before it sends it, which held the body
+    twice and then wrote it to a temporary file: +0.8 GB at the server's peak when three such
+    columns were requested at once. In pieces, waitress holds at most outbuf_high_watermark (16 MB)
+    and makes the app wait for the client; the bytes, headers and Content-Length are unchanged.
+    Werkzeug and gunicorn write the chunk straight to the socket and do not need this.
+    """
+
+    def __init__(self, app, size=None):
+        self.app = app
+        self.size = size or WAITRESS_SLICE_BYTES
+
+    def __call__(self, environ, start_response):
+        body = self.app(environ, start_response)
+        if hasattr(body, "filelike"):   # wsgi.file_wrapper (send_file): waitress sends the file itself
+            return body
+        return _Sliced(body, self.size)
+
+
+class _Sliced:
+    def __init__(self, body, size):
+        self._body, self._size = body, size
+
+    def __iter__(self):
+        size = self._size
+        for chunk in self._body:
+            if len(chunk) <= size:
+                yield chunk
+                continue
+            view = memoryview(chunk)
+            for at in range(0, len(chunk), size):
+                yield view[at:at + size].tobytes()
+            del view
+
+    def close(self):
+        close = getattr(self._body, "close", None)
+        if close is not None:
+            close()
+
+
+def _serve_with_waitress(app, host, port, max_body_bytes=None, threads=None):
+    """Serve with waitress, which keeps a browser's connections open (HTTP/1.1 keep-alive).
+
+    Werkzeug's development server sends "Connection: close" on every response, so each of
+    the many requests a plot makes opened a new TCP connection, and every closed one waits
+    in TIME_WAIT for 30 s on macOS. A few servers loading plots side by side filled the
+    machine's ephemeral ports. Werkzeug still serves --debug (its reloader) and TLS.
+
+    X-Forwarded-* and the mount point (server.url_prefix) are handled by the app's own
+    WSGI middleware, so waitress is left at its defaults (it trusts no proxy). It
+    logs the "Serving on http://host:port" line itself.
+
+    ``threads`` is ``server.threads`` when the operator sets it (the same key sets
+    gunicorn's threads per worker); unset, WAITRESS_THREADS.
+    """
+    from waitress import serve
+    # waitress reads a whole request body before the app sees it; the app refuses
+    # a body over its limit with a JSON 413, so waitress' own limit sits above it.
+    body_limit = max(int(max_body_bytes or 0) * 2, 1 << 30)
+    serve(_SliceLargeBodies(app), host=host, port=port, threads=int(threads or WAITRESS_THREADS),
+          channel_timeout=WAITRESS_CHANNEL_TIMEOUT, max_request_body_size=body_limit,
+          ident="AnnZarro")
+
+
+def _exit_with_parent_from_env():
+    """With ANNZARRO_EXIT_WITH_PARENT=<pid>, exit once that process is gone.
+
+    For test runs: a killed pytest cannot leave its servers behind. Off by default.
+    """
+    value = os.environ.get("ANNZARRO_EXIT_WITH_PARENT")
+    if not value:
+        return
+    try:
+        parent = int(value)
+    except ValueError:
+        logger.warning(f"Ignoring ANNZARRO_EXIT_WITH_PARENT={value!r}: not a process id")
+        return
+    import threading
+    import time
+
+    def watch():
+        import psutil
+        while True:
+            time.sleep(1)
+            if not psutil.pid_exists(parent):
+                os._exit(0)
+
+    threading.Thread(target=watch, daemon=True, name="exit-with-parent").start()
+
+
 # Helper function to get the current app instance
 def get_app_instance():
     """Get the current Flask application instance."""

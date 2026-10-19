@@ -10,7 +10,7 @@ export { pointStyleBase };
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { colorbarPosition, tickKeys, axisPaths } from './plot-options.js';
 import { colourBar } from './colour-bar.js';
-import { plotColour, modebarColours } from '../../utils/plot-theme.js';
+import { plotColour, modebarColours, constantColour } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
@@ -3153,7 +3153,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           marker: {
             size: settings.pointSize,
             opacity: settings.pointOpacity,
-            color: 'rgba(150, 150, 150, 1.)'
+            color: constantColour(settings)
           },
           showlegend: true
         };
@@ -3185,7 +3185,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     // Standard constant coloring (no table filtering or entries being removed)
     else {
       // Constant coloring branch.
-      baseTrace.marker.color = 'rgba(150, 150, 150, 1.)';
+      baseTrace.marker.color = constantColour(settings);
       delete baseTrace.marker.colorscale;
       console.log('Using constant color for all points');
       

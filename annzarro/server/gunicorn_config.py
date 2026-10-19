@@ -14,6 +14,7 @@ import os
 # Read the SAME merged configuration the app will run with (base/env YAML,
 # then $ANNZARRO_CONFIG, then ANNZARRO_* variables), so the bind address and
 # the app's own settings cannot disagree.
+from annzarro.server.jsonlog import log_dict_config, normalise_format
 from annzarro.server.wsgi import load_hosted_config
 
 _config_file = os.environ.get('ANNZARRO_CONFIG', '(none: built-in configs only)')
@@ -52,6 +53,13 @@ limit_request_line = int(_annzarro.get('limit_request_line', 0))
 limit_request_fields = int(_annzarro.get('limit_request_fields', 100))
 limit_request_field_size = int(_annzarro.get('limit_request_field_size', 8190))
 
+# gunicorn 26 opens a control socket (for `gunicornc`) at ./.gunicorn/gunicorn.ctl
+# or the like. It is not used here, and a long working directory (AF_UNIX paths
+# hold about 100 bytes) or a bind mount made every start log an ERROR. Gunicorn
+# before 26 has no such setting and ignores this name: only names that match a
+# setting are read from this file.
+control_socket_disable = True
+
 # Process naming
 proc_name = 'annzarro'
 
@@ -65,6 +73,12 @@ daemon = False
 accesslog = '-'
 errorlog = '-'
 loglevel = str(_annzarro.get('log_level', 'info')).lower()
+# server.log_format: json: gunicorn's own messages as JSON lines too, and no
+# gunicorn access log; the app writes the access line itself, with the request
+# id and the route group instead of the client address and the URL.
+if normalise_format(_annzarro.get('log_format')) == 'json':
+    accesslog = None
+    logconfig_dict = log_dict_config(loglevel.upper())
 
 
 # Server hooks

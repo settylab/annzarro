@@ -59,7 +59,7 @@ two servers apart.
 | `overlay.json` | Data directories an admin added, and the admin layer of the policy ({ref}`admin-policy`). |
 | `access.json` | Per-user dataset access and per-user policy overrides. |
 | `audit.jsonl`, `audit.head`, `audit.jsonl.1` to `.5` | The audit log ({ref}`admin-audit`). |
-| `health/<host>-<pid>.json` | One snapshot per server process, rewritten every 2 seconds. Ephemeral. |
+| `health/<host>-<pid>.json` | One snapshot per server process, rewritten every 2 seconds, read by Server health and by `/metrics` ({doc}`monitoring`). Ephemeral. |
 
 Every file is replaced atomically (a temporary file renamed over the old one) and changed under
 a lock, so two admins and the command line never overwrite each other. A request waits for the
@@ -400,18 +400,20 @@ all-or-nothing for the sets named, and are audited as `panel_sets.reassign` and
 past their quota; the page says so. Removing a user can hand their sets over in the same step
 ({ref}`admin-users`).
 
+(admin-health)=
 ## Server health
 
 The Server health section merges what each worker reports: the read budget in use, the size of
-the result cache, the requests and the refusals counted by their `reason` (`read_busy`,
+the result cache, the worker's memory, the requests and the refusals counted by their `reason` (`read_busy`,
 `session_quota_user`, `csrf_failed`, and so on), and the users seen within the session timeout (`auth.session_timeout`). It is
 the place to look when users report `503 read_busy` or `409 session_quota_*`, and to see
-whether the limits of {doc}`resource-limits` are set right.
+whether the limits of {doc}`resource-limits` are set right. For the same numbers over time, and
+for alerts, use `/metrics` ({doc}`monitoring`, which also says what to point a load balancer at).
 
-Each worker writes its own snapshot, so the numbers are per process and start again when a
-worker is replaced (`max_requests`); a worker that has been quiet for 10 minutes is shown as
-idle, and one whose process cannot be checked and has not written for that long as stale and
-left out of the totals. **Clear cache** empties the result caches of every worker (all datasets,
+Each worker writes its own snapshot every 2 seconds, so the numbers are per process and start again when a
+worker is replaced (`max_requests`). A worker that has not written for a minute is shown as stale
+and left out of the totals: it is stuck, or it ran on another host and is gone (a process of this
+host that is gone is dropped). **Clear cache** empties the result caches of every worker (all datasets,
 or one) and is audited; it does what `POST /cache/reset` does for an admin.
 
 `GET /status` and `GET /cache/info` answer admins only on a shared server.
@@ -422,7 +424,9 @@ or one) and is audited; it does what `POST /cache/reset` does for an admin.
 Every change, and every refused change or re-authentication attempt, is one line of `audit.jsonl` with the
 time, the actor and address, `via` (`web` or `cli:<user>`), the action (`data_roots.add`,
 `policy.update`, `cache.clear`, `admin.reauth`, ...), the target, the details and the outcome.
-Passwords, hashes, tokens and cookie values are never stored. The Audit log section shows the
+With JSON logs or metrics on, a change made in the browser also has the `request_id` of its
+request, the one on its log lines ({doc}`monitoring`); the Audit log section shows it as the
+time's tooltip. Passwords, hashes, tokens and cookie values are never stored. The Audit log section shows the
 newest first and the result of the check below.
 
 Each line holds the SHA-256 of the line before it, so editing or deleting a line in the middle

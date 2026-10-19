@@ -6,14 +6,18 @@ After=network.target
 Type=simple
 User=www-data
 WorkingDirectory=/opt/annzarro
-# Hosted WSGI factory: same merged config as `annzarro start`, login ON and
-# dataset paths confined to the data directory unless the config says otherwise.
+# `annzarro serve` is gunicorn with the bundled configuration and the hosted WSGI
+# factory: same merged config as `annzarro start`, login ON and dataset paths
+# confined to the data directory unless the config says otherwise. It replaces
+# itself with gunicorn, so systemd signals gunicorn's master directly. Needs
+# `pip install 'annzarro[server]'`. The explicit form is
+#   gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_wsgi_app()"
 # Binds where the config says (default 127.0.0.1:8000); put a TLS reverse
 # proxy in front. (This unit used to run /opt/annzarro/run_annzarro.py,
 # which does not exist in the repository.)
 # Site settings (start from annzarro/server/site.example.yaml)
 Environment=ANNZARRO_CONFIG=/etc/annzarro/site.yaml
-ExecStart=/opt/annzarro/venv/bin/gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_wsgi_app()"
+ExecStart=/opt/annzarro/venv/bin/annzarro serve
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

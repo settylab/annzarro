@@ -80,7 +80,8 @@ def _apply_subset(page, n):
     page.click(f'#subset-presets button[data-n="{n}"]')
     page.wait_for_function("() => !document.getElementById('subset-apply').disabled", timeout=10000)
     page.click("#subset-apply")
-    page.wait_for_function("(n) => new RegExp('^' + n + ' of 200').test((document.getElementById('cell-count') || {}).textContent || '')",
+    page.wait_for_function("(n) => new RegExp('^' + n + ' of 200').test((document.getElementById('cell-count') || {}).textContent || '')"
+                           " && !document.querySelector('#subset-button[aria-busy=\"true\"]')",
                            arg=n, timeout=30000)
     until(page, """async (n) => { const g = await import('/static/js/utils/memory-guard-ui.js');
         return g.ledger.panels().every(e => e.n === n) && !g.ledger.pending.size; }""", n)

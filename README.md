@@ -87,7 +87,7 @@ precompute `obsp`/`varp` matrices and how to chunk for speed: [preparing data](h
 
 - **Desktop app**: one person, data on the same computer. [Set up](https://annzarro.readthedocs.io/en/latest/getting-started/desktop-app.html)
 - **Personal server**: `annzarro start` on a laptop or an HPC node, reached over an SSH tunnel. [Set up](https://annzarro.readthedocs.io/en/latest/deployment/personal-server.html)
-- **Lab server**: gunicorn behind HTTPS, read-only, with login and shared panel sets. [Set up](https://annzarro.readthedocs.io/en/latest/deployment/lab-server.html)
+- **Lab server**: `annzarro serve` (gunicorn) behind HTTPS, on a host or in a container, read-only, with login and shared panel sets. [Set up](https://annzarro.readthedocs.io/en/latest/deployment/lab-server.html)
 - **Public site**: a lab server open to strangers, with an imprint, a privacy notice and dataset attribution. [What it owes its visitors](https://annzarro.readthedocs.io/en/latest/deployment/public-site.html)
 
 ## Documentation
@@ -115,8 +115,8 @@ gene-by-gene relationships in single-cell data. bioRxiv (2026).
 ```
 
 To cite the software itself, for example the exact release you ran, use its Zenodo DOI. Each release
-is archived on Zenodo with its own version DOI (v0.6.0:
-[10.5281/zenodo.23447624](https://doi.org/10.5281/zenodo.23447624)); the concept DOI below always
+is archived on Zenodo with its own version DOI (v0.6.1:
+[10.5281/zenodo.23461950](https://doi.org/10.5281/zenodo.23461950)); the concept DOI below always
 resolves to the latest release.
 
 ```bibtex

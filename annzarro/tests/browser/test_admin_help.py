@@ -109,7 +109,7 @@ def hosted(tmp_path_factory):
         except OSError:
             if proc.poll() is not None:
                 pytest.fail("server exited")
-            time.sleep(0.25)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     else:
         proc.kill()
         pytest.fail("server did not start")

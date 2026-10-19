@@ -94,7 +94,7 @@ def _launch(tmp_path, yaml_text, auth=False, ready="/api/v1/config"):
             urllib.request.urlopen(root + ready, timeout=1)
             return root, proc
         except OSError:
-            time.sleep(0.25)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     proc.kill()
     pytest.fail("server did not start")
 

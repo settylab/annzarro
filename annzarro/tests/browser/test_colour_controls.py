@@ -65,7 +65,7 @@ def _serve(home, *extra, data_dir=DATA_DIR):
             urllib.request.urlopen(root + "/api/v1/config", timeout=1)
             break
         except OSError:
-            time.sleep(0.25)
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
     else:
         proc.kill()
         pytest.fail("server did not start")
@@ -284,7 +284,8 @@ def test_log_limits_in_old_and_new_links(request, mode):
 LEGEND = f"""() => {{
     const gd = document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot');
     const busy = [...gd.querySelectorAll('.loading-overlay')].filter(e => e.offsetParent !== null).length;
-    return {{ title: (gd.layout.legend && gd.layout.legend.title && gd.layout.legend.title.text) || null,
+    // the title as named: Plotly's text is indented and followed by a blank line (utils/legend-options.js)
+    return {{ title: (gd.layout.legend && gd.layout.legend.title && gd.layout.legend.title.text.replace(/^\\u00a0+|<br>\\u00a0$/g, '')) || null,
               // the colour traces; the focused-cell highlight comes and goes on its own
               names: gd.data.map(t => t.name || '').filter(n => !n.startsWith('Focused')).join('|'), busy }};
 }}"""
@@ -334,7 +335,7 @@ def test_slow_recolour_shows_busy(server, slow):
 
             page.wait_for_function(f"""() => {{
                 const gd = document.querySelector('.tile[data-tile-id="{PID}"] .js-plotly-plot');
-                return gd.layout.legend && gd.layout.legend.title && gd.layout.legend.title.text === 'leiden'
+                return gd.layout.legend && gd.layout.legend.title && gd.layout.legend.title.text.replace(/^\\u00a0+|<br>\\u00a0$/g, '') === 'leiden'
                     && !gd.querySelector('.loading-overlay');
             }}""", timeout=15000)
             after = page.evaluate(LEGEND)

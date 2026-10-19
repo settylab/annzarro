@@ -1,0 +1,12 @@
+# AnnZarro configuration baked into the container image (ANNZARRO_CONFIG points here).
+# Mount your own file over it, or override single values with ANNZARRO_<SECTION>_<KEY>
+# environment variables (ANNZARRO_SERVER_PROXY_COUNT=1, ANNZARRO_SERVER_WORKERS=4, ...).
+server:
+  host: 0.0.0.0              # the container's own network namespace; publish the port as you need
+  port: 8000
+  data_dir: /state/data      # panel sets are written to /state/data/sessions
+  allowed_dirs:
+    - /data                  # the datasets, mounted read-only
+  log_file: /state/logs/annzarro_server.log
+auth:
+  user_file: /state/auth/users.json   # the login key and the admin state are kept beside it

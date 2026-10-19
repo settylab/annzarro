@@ -107,7 +107,7 @@ auth:
             except OSError:
                 if proc.poll() is not None:
                     pytest.fail("gunicorn exited: " + (tmp_path / f"gunicorn{port}.log").read_text()[-2000:])
-                time.sleep(0.25)
+                time.sleep(min(0.5, 0.1 * (_ + 1)))
         pytest.fail("gunicorn did not start")
 
     config = {"user_file": str(users), "data_dir": str(data)}

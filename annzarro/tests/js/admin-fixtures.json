@@ -16,10 +16,10 @@
   },
   "health": {
     "workers": [
-      {"pid": 4121, "host": "node1", "started": "2026-10-11T08:00:00+00:00", "age_s": 2, "stale": false, "requests": 12031, "refusals": {"read_busy": 3, "session_quota_user": 1}, "read_guard": {"in_flight_mb": 410, "budget_mb": 1024, "share_mb": 512, "by_requester": [{"who": "bob", "mb": 410}]}, "cache": {"memory_mb": 480, "max_mb": 1024, "datasets": 6}},
+      {"pid": 4121, "host": "node1", "started": "2026-10-11T08:00:00+00:00", "age_s": 2, "stale": false, "requests": 12031, "refusals": {"read_busy": 3, "session_quota_user": 1}, "read_guard": {"in_flight_mb": 410, "budget_mb": 1024, "share_mb": 512, "by_requester": [{"who": "bob", "mb": 410}]}, "cache": {"memory_mb": 480, "max_mb": 1024, "datasets": 6}, "rss_mb": 1536},
       {"pid": 4122, "host": "node1", "started": "2026-10-11T08:00:00+00:00", "age_s": 700, "stale": true, "requests": 9870, "refusals": {"outside_data_dir": 2}, "read_guard": {"in_flight_mb": null, "budget_mb": 1024}, "cache": {"memory_mb": 512, "max_mb": 1024, "datasets": 4}}
     ],
-    "totals": {"refusals": 6, "cache_mb": 992, "read_in_flight_mb": 410},
+    "totals": {"refusals": 6, "cache_mb": 992, "read_in_flight_mb": 410, "rss_mb": 1536},
     "active": [{"username": "alice", "last_seen": "2026-10-11T09:12:00+00:00"}, {"username": "bob", "last_seen": "2026-10-11T09:10:00+00:00"}]
   },
   "panelSets": {

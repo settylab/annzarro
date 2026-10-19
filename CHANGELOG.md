@@ -8,6 +8,49 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.6.2 (2026-10-19)
+
+### Added
+- Container recipes for hosting a lab server, in `packaging/container/`: a `Dockerfile` (multi-stage, non-root, gunicorn, health check, `remote` extra by build argument), a Compose example with nginx and TLS, and an `annzarro.def` for Apptainer on a cluster. The new page Deployment, Containers gives the commands. A CI job builds the image on pull requests that touch these files.
+- `annzarro serve` starts the production server in one command: gunicorn with the bundled configuration, reading the same site file and `ANNZARRO_*` variables as `annzarro start`, with `--config`, `--host`, `--port`, `--workers`, `--threads` and extra gunicorn options after `--`. It prints the URL, workers, threads, whether login is on and the configuration file, and login stays on unless the configuration turns it off. The new `server` extra installs gunicorn: `pip install 'annzarro[server]'`. The explicit gunicorn command still works.
+- An optional Prometheus `/metrics` endpoint (`server.metrics_enabled`, off by default): requests and latency by route group, requests in flight, response bytes, dataset cache hits, misses and size, open datasets, memory and the worker's process id, merged across gunicorn workers. Only addresses in `server.metrics_allow` (loopback unless you list others) can read it; everyone else gets the reply of a URL that does not exist.
+- `server.log_format: json` (or `ANNZARRO_SERVER_LOG_FORMAT=json`) writes log lines on standard error as JSON, with a request id (also sent as `X-Request-Id`), method, route group, status and duration on each request's access line. The default text format is unchanged. New page: Deployment, Monitoring a server.
+- `GET /api/v1/health` answers `{"status": "ok"}` without a login, for a service manager's, container's or load balancer's probe; `/api/v1/status` still asks for one.
+- With JSON logs or metrics on, an admin change's audit record carries the `request_id` of its request, the id on its log lines; the Audit log section shows it as the time's tooltip. Older records verify as before.
+- Plot Options, Presets: **Bare** draws only the points (no margins, legend, colour bar, scale bar, axes,
+  grid or zero lines; in 3D no axes or background planes), for figures and overlays. **Default** undoes it.
+
+### Changed
+- A numeric column of 8 MB or more is sent from its array in 1 MiB pieces instead of being copied into one bytes object first, so the server holds less while it sends: at 95.6 million cells the server's peak memory in the first plot is 4.4 GB (v0.6.1: 4.8 GB). `annzarro start` also hands any large reply to its server in pieces. The bytes sent are the same.
+- A plot with the colour None draws its points blue (a lighter blue on the dark theme) in the regular
+  mode too, as large-plot mode already did. Grey now means only "not in the table" (or a colour that
+  could not be read, which the status line says).
+- The legend title sits above the entries at every legend position, starts where the labels start and has
+  a clear gap below it; before it was flush left, a few pixels off the symbols, 2 px above the first entry
+  (and beside the entries in a legend on top or at the bottom).
+- Admin page, Server health: each worker's memory, and the total. Every worker now reports every 2 seconds whether or not it is serving, so a quiet worker is no longer shown as idle, and one that has not reported for a minute (not ten) is shown as stale: it is stuck. Server health and `/metrics` share one snapshot file and one writer per worker.
+- `annzarro start` serves through waitress (a new dependency, pure Python, also on Windows) instead of Flask's development server. Debug mode and HTTPS still use the development server. A request line and headers over 262,144 bytes are refused with 431. It serves 32 request threads; `server.threads` (`ANNZARRO_SERVER_THREADS`) sets the number.
+- The lab-server guide's nginx block keeps its connections to gunicorn open (`upstream` with `keepalive`, an empty `Connection` header) and speaks HTTP/2 to browsers. A plot loads through many small requests: a 4-panel view opened 184 connections to gunicorn per load on nginx before 1.29.7 and none with the block. With HTTP/2 and 150 ms of added latency the view drew in 4.1 s instead of 7.7 s. Its `keepalive_timeout` is set below gunicorn's 5 s so nginx never sends into a closed connection.
+- The guide and the hosting checklist no longer tell you to start gunicorn with `--limit-request-line 8190`: it overrode the bundled configuration's unlimited request line and refused the long URLs the web client builds. nginx's `large_client_header_buffers` bounds the line.
+
+### Fixed
+- The search box in Load Panel Set had no right edge and a darker left edge, which showed most in Safari. The box now has one even border, and its focus ring follows the same outline.
+- A stream of every cell or gene name built the JSON of a whole stored chunk at once, which held about 35 MB more per reader than the chunk itself needs (a store with 2-million-name chunks). It is built 65,536 names at a time now; the bytes sent are unchanged.
+- Changing the subset while an earlier change is still loading shows the new choice at once: the header
+  names the cells asked for, and only the last request's cells are drawn.
+- The tooltip of Plot Options, Presets, **Publication** no longer says it sets the scale bar: it leaves the scale bar as it is.
+- Close all writes the autosave and the address at once, so a reload right after it no longer finds the panels just closed.
+- Switching Show Legend off or on in Plot Options redrew the graph once per legend entry: about a second
+  on a 1M-point plot with 35 categories. It is now a single layout change (about 50 ms).
+- Every request a plot made opened a new TCP connection that the server closed after the reply, so a few servers loading plots side by side used up the machine's ephemeral ports ("Can't assign requested address" for other programs). Connections are kept open now.
+
+### Docs
+- The lab server page and the hosting checklist no longer tell you to pass `--limit-request-line 8190` to
+  gunicorn: it capped the request line that the bundled configuration leaves unlimited, so a plot that
+  names many genes in its URL (about 12 KB for 2,000) is refused with 400 under it.
+- The README and the licence page cite v0.6.1 by its DOI,
+  [10.5281/zenodo.23461950](https://doi.org/10.5281/zenodo.23461950).
+
 ## 0.6.1 (2026-10-18)
 
 Legend columns, dot size and title for categorical colours; the focused cell drawn as an open circle by

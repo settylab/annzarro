@@ -54,6 +54,16 @@ server:
   # A relative path is taken relative to the directory annzarro is started from.
   log_file: null
   log_level: "INFO"
+  # text = the usual lines. json = one JSON object per line on stderr (time, level,
+  # logger, message, request id, method, route group, status, duration), for a log
+  # shipper; the log file stays text. docs/deployment/monitoring.md
+  log_format: text
+
+  # Prometheus metrics at /metrics: off unless true. Only these addresses or
+  # networks may read it (loopback when unset); a request that came through a
+  # reverse proxy is refused unless proxy_count trusts the proxy.
+  metrics_enabled: false
+  # metrics_allow: [127.0.0.0/8, "::1/128"]
   
   # Response size protection
   max_response_elements: 10000000

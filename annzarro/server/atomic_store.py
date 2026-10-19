@@ -151,12 +151,13 @@ def _fsync_dir(directory):
         os.close(fd)
 
 
-def write_json(path, data, mode=0o600, indent=2):
+def write_json(path, data, mode=0o600, indent=2, durable=True):
     """Replace ``path`` with ``data`` in one step.
 
     The caller holds :func:`locked` when the write follows a read. A symlink
     stays a symlink: the file it points to is replaced. The file ends up with
-    ``mode`` (default 0600) whatever it had before."""
+    ``mode`` (default 0600) whatever it had before. ``durable=False`` skips the
+    fsyncs, for a file rewritten every few seconds that a crash may lose."""
     path = os.path.realpath(path)
     directory = os.path.dirname(path)
     fd, tmp = tempfile.mkstemp(prefix=f".{os.path.basename(path)}_", suffix=".tmp", dir=directory)
@@ -164,14 +165,16 @@ def write_json(path, data, mode=0o600, indent=2):
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=indent)
             f.flush()
-            os.fsync(f.fileno())
+            if durable:
+                os.fsync(f.fileno())
         os.chmod(tmp, mode)
         os.replace(tmp, path)
     except BaseException:
         if os.path.exists(tmp):
             os.unlink(tmp)
         raise
-    _fsync_dir(directory)
+    if durable:
+        _fsync_dir(directory)
 
 
 def update_json(path, mutate, default=None):

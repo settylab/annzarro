@@ -606,3 +606,27 @@ def test_a_stream_holds_a_chunk_not_the_names(tmp_path):
     # the same reply; the list path holds ~100 B a name (150 MB here), the stream one chunk
     assert grown["stream"] < 60, grown
     assert grown["list"] > 2 * grown["stream"], grown
+
+
+@pytest.mark.parametrize("piece", [1, 2, 7, 1000])
+@pytest.mark.parametrize("ensure_ascii", [True, False])
+def test_a_chunk_built_in_pieces_is_the_bytes_of_the_chunk_built_whole(piece, ensure_ascii):
+    from annzarro.core import array_response as ar
+    encoded = [n.encode("utf-8") for n in AWKWARD * 3 + [f"cell_{i}" for i in range(20)]]
+    # the shape string_chunks hands over: the names joined by newlines (a newline inside a name
+    # is not told from a separator) and each name's length in bytes
+    chunk = (b"\n".join(encoded), np.array([len(e) for e in encoded], dtype=np.int64))
+    pieces = list(ar._chunk_json_pieces(chunk, ensure_ascii, piece))
+    assert b",".join(pieces) == ar._chunk_json(chunk, ensure_ascii)
+    assert all(pieces)
+
+
+def test_streaming_in_small_pieces_is_the_whole_list_bytes(store, monkeypatch):
+    from annzarro.core import array_response as ar
+    monkeypatch.setattr(ar, "PIECE_NAMES", 4)
+    data_dir, path = store
+    client = make_app(data_dir).test_client()
+    streamed = get(client, path)
+    assert streamed.data == whole_list_reply(client, path).data
+    gz = get(client, path, headers={"Accept-Encoding": "gzip"})
+    assert gzip.decompress(gz.data) == streamed.data if gz.headers.get("Content-Encoding") == "gzip" else gz.data == streamed.data

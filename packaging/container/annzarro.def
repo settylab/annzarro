@@ -1,0 +1,60 @@
+# AnnZarro for an HPC cluster (Apptainer / SingularityCE), built from the Docker image.
+#
+#   docker build -f packaging/container/Dockerfile -t annzarro:local .     # in a checkout
+#   apptainer build annzarro.sif packaging/container/annzarro.def          # needs the Docker daemon
+#
+# No Docker daemon on the machine that builds the SIF? Save the image where Docker is and build there:
+#   docker save annzarro:local -o annzarro.tar
+#   apptainer build annzarro.sif docker-archive://annzarro.tar
+#
+# Run (no root; see the page "Containers" in the deployment guide):
+#   mkdir -p state
+#   apptainer run --bind /path/to/datasets:/data:ro --bind $PWD/state:/state annzarro.sif
+
+Bootstrap: docker-daemon
+From: annzarro:local
+
+%labels
+    Author Dominik J. Otto
+    Org.opencontainers.image.title AnnZarro
+    Org.opencontainers.image.source https://github.com/settylab/annzarro
+    Org.opencontainers.image.licenses MIT
+
+%help
+    AnnZarro, a read-only browser viewer for AnnData (zarr, h5ad), as a gunicorn server (annzarro serve).
+
+    Bind two directories:
+      /data   the datasets, read-only    --bind /path/to/datasets:/data:ro
+      /state  users, panel sets, admin settings and logs, writable (a directory of your own)
+
+    Run the server:
+      apptainer run --bind /path/to/datasets:/data:ro --bind $PWD/state:/state annzarro.sif
+
+    Manage users (same state directory, same container):
+      apptainer exec --bind $PWD/state:/state annzarro.sif annzarro user add --username alice --admin
+
+    The server listens on 127.0.0.1:8000 of the node. Another port, or another address:
+      APPTAINERENV_ANNZARRO_SERVER_PORT=8765 apptainer run ...
+      APPTAINERENV_ANNZARRO_SERVER_HOST=0.0.0.0 apptainer run ...      (login stays on)
+    Reach it from your laptop with:  ssh -N -J <login host> -L 8765:127.0.0.1:8765 <node>
+    (with HOST=0.0.0.0, through the login host instead:  ssh -N -L 8765:<node>:8765 <login host>)
+    Any ANNZARRO_<SECTION>_<KEY> variable passed with the APPTAINERENV_ prefix overrides the
+    configuration; ANNZARRO_CONFIG=/state/site.yaml points at a file of your own.
+
+%environment
+    # An HPC node is shared: listen on loopback by default and let the user choose a free port.
+    # The Docker image listens on 0.0.0.0 (a private network namespace); here the host's network is used.
+    export ANNZARRO_SERVER_HOST=${ANNZARRO_SERVER_HOST:-127.0.0.1}
+    export ANNZARRO_SERVER_PORT=${ANNZARRO_SERVER_PORT:-8000}
+
+%runscript
+    if [ ! -w /state ]; then
+        echo "annzarro.sif: /state is not writable. Bind a directory of yours: --bind \$PWD/state:/state" >&2
+        exit 1
+    fi
+    exec /opt/entrypoint.sh annzarro serve
+
+%test
+    python -c "import annzarro; print(annzarro.__version__)"
+    python -c "import annzarro, gunicorn"
+    test -f /etc/annzarro/container.yaml

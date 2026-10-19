@@ -93,6 +93,11 @@ class DatasetCache:
         self.enable_caching = enable_caching
         self.cache_limit = cache_limit
         self.memory_usage_mb = 0
+
+        # Lookups answered from the cache and not, since the process started
+        # (the server's /metrics reports them)
+        self.hits = 0
+        self.misses = 0
         
         # Caches for different data types
         self._matrix_cache = {}  # Cache for X, layers, obsm, varm matrices
@@ -293,6 +298,9 @@ class DatasetCache:
             cached_data = dict(self._buckets()).get(cache_type, self._matrix_cache).get(key)
             if cached_data is not None:
                 self._cache_access_times[key] = time.time()
+                self.hits += 1
+            else:
+                self.misses += 1
             return cached_data
 
     def _estimate_memory_usage(self, data: Any) -> float:
@@ -391,6 +399,8 @@ class DatasetCache:
             "dataset_limit": self.cache_limit,
             "dataset_count": len(self._dataset_caches),
             "datasets": dataset_counts,
+            "hits": self.hits,
+            "misses": self.misses,
             "item_counts": {
                 "matrix": matrix_count,
                 "dataframe": dataframe_count,

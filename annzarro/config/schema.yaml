@@ -86,7 +86,7 @@ server:
       security: internal
     threads:
       type: integer
-      description: gunicorn threads per worker (gthread worker class)
+      description: gunicorn threads per worker (gthread worker class); annzarro start serves with this many request threads when set, else 32
       default: 4
       security: internal
     arbitrary_paths:
@@ -109,6 +109,24 @@ server:
       description: Log level
       enum: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
       default: INFO
+    log_format:
+      type: string
+      description: "text = the usual log lines; json = one JSON object per line on stderr (time, level, logger, message, request id, method, route group, status, duration), for a log shipper. The log file stays text"
+      enum: [text, json]
+      default: text
+      security: internal
+    metrics_enabled:
+      type: boolean
+      description: Serve Prometheus metrics at /metrics (request counts and latency by route group, in-flight requests, caches, memory). Off by default; only metrics_allow networks can read it
+      default: false
+      security: internal
+    metrics_allow:
+      type: array
+      items:
+        type: string
+      description: Addresses or networks (10.0.0.0/8) that may read /metrics; loopback only when unset. A request that came through a reverse proxy is refused unless proxy_count trusts it
+      default: [127.0.0.0/8, "::1/128"]
+      security: internal
     max_response_elements:
       type: integer
       description: Maximum number of elements in an array response

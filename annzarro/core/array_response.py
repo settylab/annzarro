@@ -167,13 +167,33 @@ def binary_response(arr: np.ndarray) -> Response:
     }
     if flat.size and flat.size < 2 ** 32 and nnz * (itemsize + 4) < flat.size * itemsize:
         pos = np.flatnonzero(flat)
-        body = flat[pos].tobytes() + pos.astype("<u4").tobytes()
+        parts = [flat[pos], pos.astype("<u4")]
         headers[HEADER_ENCODING] = "sparse"
         headers[HEADER_NNZ] = str(nnz)
     else:
-        body = flat.tobytes()
+        parts = [flat]
         headers[HEADER_ENCODING] = "dense"
-    return Response(body, mimetype=BINARY_MIMETYPE, headers=headers)
+    size = sum(part.nbytes for part in parts)
+    if size < STREAM_BODY_ABOVE:
+        return Response(b"".join(part.tobytes() for part in parts), mimetype=BINARY_MIMETYPE, headers=headers)
+    # A column of 95.6M cells is 382 MB. Sent from the array itself, in pieces, it is not copied into
+    # a second bytes object first (and a server never holds the whole body in its output buffer).
+    # The Content-Length a bytes body gets by itself is set here.
+    headers["Content-Length"] = str(size)
+    return Response(_array_pieces(parts), mimetype=BINARY_MIMETYPE, headers=headers)
+
+
+#: Bodies of at least this many bytes are sent from the array in pieces instead of as one bytes object.
+STREAM_BODY_ABOVE = 8 << 20
+BODY_PIECE_BYTES = 1 << 20
+
+
+def _array_pieces(parts):
+    """The bytes of the arrays, one after the other, BODY_PIECE_BYTES at a time."""
+    for part in parts:
+        view = memoryview(part.view(np.uint8))
+        for at in range(0, len(view), BODY_PIECE_BYTES):
+            yield view[at:at + BODY_PIECE_BYTES].tobytes()
 
 
 def code_dtype(n_categories: int) -> np.dtype:
@@ -380,6 +400,34 @@ def _chunk_json(chunk, ensure_ascii: bool) -> bytes:
                       separators=(",", ":"))[1:-1].encode("utf-8")
 
 
+#: Names whose JSON is built at a time. A zarr chunk of names can hold millions (the default
+#: store chunk is 2**21), and building the JSON of all of them at once held the chunk, a
+#: filtered copy and the JSON together: ~95 bytes a name for every stream in flight.
+PIECE_NAMES = 65536
+
+
+def _chunk_json_pieces(chunk, ensure_ascii: bool, piece_names: int = None):
+    """The same bytes as ``_chunk_json(chunk)``, as a series of pieces of at most ``piece_names``
+    names (the comma between two pieces is the caller's). Only the pieces being written are in memory
+    besides the chunk."""
+    piece_names = piece_names or PIECE_NAMES
+    if isinstance(chunk, tuple) and int(chunk[1].size) > piece_names:
+        joined, lengths = chunk
+        k = int(lengths.size)
+        ends = np.cumsum(lengths.astype(np.int64) + 1)
+        for i in range(0, k, piece_names):
+            j = min(i + piece_names, k)
+            a = int(ends[i - 1]) if i else 0
+            b = int(ends[j - 1]) - 1
+            piece = _chunk_json((joined[a:b], lengths[i:j]), ensure_ascii)
+            if piece:
+                yield piece
+        return
+    piece = _chunk_json(chunk, ensure_ascii)
+    if piece:
+        yield piece
+
+
 def _chunk_name_count(chunk) -> int:
     return int(chunk[1].size) if isinstance(chunk, tuple) else len(chunk)
 
@@ -490,26 +538,34 @@ def stream_names(key: str, dataset_path: str, first, chunks, total=None, compres
     mark = "S" * (len(dataset_path) + 1)
     shell = current_app.json.response({key: [mark], "dataset_path": dataset_path}).get_data(as_text=True)
     head, tail = shell.split(f'"{mark}"', 1)
-    held = [_chunk_json(first, ensure_ascii)]
     packer = zlib.compressobj(1, zlib.DEFLATED, 31) if compress else None
     release = release or (lambda: None)
+    # the first piece is built here, before the status line, so a first chunk that cannot be
+    # written is an error reply
+    pieces = _chunk_json_pieces(first, ensure_ascii)
+    held = [next(pieces, b"")]
 
     def pack(piece: bytes) -> bytes:
         return packer.compress(piece) if packer else piece
 
     def body():
+        nonlocal pieces
         text, lead = held.pop(), head.encode("utf-8")
         try:
             while True:
-                if text:
+                while text:
                     piece = pack(lead + text)
                     lead = b","
                     if piece:
                         yield piece
+                    text = next(pieces, b"")
+                text = b""
                 chunk = next(chunks, None)
                 if chunk is None:
                     break
-                text = _chunk_json(chunk, ensure_ascii)
+                pieces = _chunk_json_pieces(chunk, ensure_ascii)
+                chunk = None
+                text = next(pieces, b"")
             last = pack((b"" if lead == b"," else lead) + tail.encode("utf-8"))
             if packer:
                 last += packer.flush()

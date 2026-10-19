@@ -65,7 +65,8 @@ def _badge(page):
 
 
 def _wait_count(page, text, timeout=60_000):
-    page.wait_for_function("(t) => document.getElementById('cell-count').textContent.trim() === t",
+    page.wait_for_function("(t) => document.getElementById('cell-count').textContent.trim() === t"
+                           " && !document.querySelector('#subset-button[aria-busy=\"true\"]')",
                            arg=text, timeout=timeout)
 
 
