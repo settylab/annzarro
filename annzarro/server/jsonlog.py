@@ -62,10 +62,10 @@ class RequestContextFilter(logging.Filter):
             environ = request.environ
             rid = environ.get(REQUEST_ID_KEY)
             if rid:
-                from .telemetry import route_group
+                from .telemetry import request_group
                 record.request_id = rid
                 record.method = request.method
-                record.route_group = route_group(request)
+                record.route_group = request_group(request)
         return True
 
 

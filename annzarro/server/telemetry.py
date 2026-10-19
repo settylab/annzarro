@@ -20,7 +20,7 @@ from flask import request
 
 from . import jsonlog
 
-__all__ = ["install", "route_group", "METHODS"]
+__all__ = ["install", "route_group", "request_group", "METHODS"]
 
 logger = logging.getLogger(__name__)
 access_logger = logging.getLogger(jsonlog.ACCESS_LOGGER)
@@ -51,6 +51,14 @@ def route_group(req):
     if not parts or parts[0].startswith("<"):
         return "page"
     return "admin" if parts[0] == "admin" else parts[0].lstrip(".")
+
+
+def request_group(req):
+    """:func:`route_group` of the running request, worked out once and kept in its environ."""
+    group = req.environ.get(jsonlog.ROUTE_GROUP_KEY)
+    if group is None:
+        group = req.environ[jsonlog.ROUTE_GROUP_KEY] = route_group(req)
+    return group
 
 
 def _method(name):
@@ -151,7 +159,7 @@ def install(app):
 
     @app.after_request
     def _tag(response):
-        request.environ[jsonlog.ROUTE_GROUP_KEY] = route_group(request)
+        request_group(request)
         rid = request.environ.get(jsonlog.REQUEST_ID_KEY)
         if rid:
             response.headers["X-Request-Id"] = rid
