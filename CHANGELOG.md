@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Docs
+- The README and the licence page cite v0.6.1 by its DOI,
+  [10.5281/zenodo.23461950](https://doi.org/10.5281/zenodo.23461950).
+
 ## 0.6.1 (2026-10-18)
 
 Legend columns, dot size and title for categorical colours; the focused cell drawn as an open circle by
