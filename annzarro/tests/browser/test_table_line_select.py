@@ -1,0 +1,444 @@
+"""The table's line-selection tool, end to end (static/js/panels/table-utilities/line-select-ui.js).
+
+A cell table and two cell plots: A draws the UMAP (two numerical axes), B has a
+categorical x axis. Armed from the table's Line button:
+
+  - B says why it cannot take a line when the mouse is over it, before any click;
+  - a line dragged on A previews the side to be filtered out, and on release adds
+    the two axes' columns, a derived column and ONE condition on it to the table,
+    and selects the table in A's table filter; every row the table drops is on the
+    right of the line AS DRAWN (checked on the screen, also with a reversed axis);
+  - Shift snaps to 45 degrees: a horizontal line puts the condition on the y column
+    itself, with no derived column;
+  - Escape stops it: the release after Escape changes nothing;
+  - a second line joins the first by an outer AND; under an outer OR the filter is
+    wrapped in a group;
+  - the table's settings (columns with the derived one, the filter) survive being
+    written to a link and opened again.
+
+Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
+"""
+import base64
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+import pytest
+
+if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
+    import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
+else:
+    playwright = pytest.importorskip("playwright.sync_api")
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(HERE, "..", "data")
+REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+N_CELLS = 200
+TABLE, PLOT_A, PLOT_B = "cell-table-T", "cell-plot-A", "cell-plot-B"
+UMAP = lambda column: {"type": "obsm", "key": "X_umap", "column": column}   # noqa: E731
+OBS = lambda key: {"type": "obs", "key": key, "column": ""}   # noqa: E731
+
+
+def _free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.fixture(scope="module")
+def server(tmp_path_factory):
+    data = tmp_path_factory.mktemp("data")
+    store = str(data / "fixture_small.zarr")
+    shutil.copytree(os.path.join(DATA_DIR, "fixture_small.zarr"), store)
+    home = tmp_path_factory.mktemp("home")
+    port = _free_port()
+    env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
+               PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
+                             "--port", str(port), "--data-dir", str(data), "--no-browser", "--auth-disabled"],
+                            env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    root = f"http://127.0.0.1:{port}"
+    for _ in range(120):
+        try:
+            urllib.request.urlopen(root + "/api/v1/config", timeout=1)
+            break
+        except OSError:
+            time.sleep(min(0.5, 0.1 * (_ + 1)))
+    else:
+        proc.kill()
+        pytest.fail("server did not start")
+    yield root, store
+    proc.terminate()
+    proc.wait(10)
+
+
+def _link(root, store, table_cfg=None):
+    plot = {"title": "plot", "z": None, "pointSize": 8, "pointOpacity": 1, "color": {"type": "none"},
+            "tableFilter": "none"}
+    configs = {
+        TABLE: {"id": TABLE, "title": "cells",
+                "columns": [OBS("cell_type")], **(table_cfg or {})},
+        PLOT_A: {**plot, "id": PLOT_A, "x": UMAP("0"), "y": UMAP("1")},
+        PLOT_B: {**plot, "id": PLOT_B, "x": OBS("cell_type"), "y": OBS("total_counts")},
+    }
+    tiles = {t: {"type": "tile", "id": t, "controlsVisible": False} for t in configs}
+    hierarchy = [{"type": "split", "direction": "horizontal", "panes": [{"percentage": 40}, {"percentage": 60}],
+                  "children": [tiles[TABLE],
+                               {"type": "split", "direction": "vertical",
+                                "panes": [{"percentage": 55}, {"percentage": 45}],
+                                "children": [tiles[PLOT_A], tiles[PLOT_B]]}]}]
+    view = {"v": 1, "constants": {}, "layout": {"v": 1, "hierarchy": hierarchy,
+                                                "controlState": {t["id"]: t["controlsVisible"] for t in tiles.values()},
+                                                "panelConfigs": configs}}
+    enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+    return f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}"
+
+
+def _open(pw, root, store, table_cfg=None, width=1800):
+    browser = pw.chromium.launch()
+    page = browser.new_page(viewport={"width": width, "height": 1500})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(_link(root, store, table_cfg))
+    _settle(page)
+    return browser, page, errors
+
+
+def _settle(page, rows=None):
+    page.wait_for_selector(f'.tile[data-tile-id="{TABLE}"] .dataTables_scrollBody tbody tr', timeout=60_000)
+    for plot in (PLOT_A, PLOT_B):
+        page.wait_for_function(
+            "id => { const g = document.getElementById('plot-container-' + id);"
+            " return g && g._fullLayout && g._fullLayout.xaxis && g.data && g.data.length; }",
+            arg=plot, timeout=60_000)
+    if rows is not None:
+        page.wait_for_function(f"() => {_ROWS_JS}() === {rows}", timeout=30_000)
+    page.wait_for_timeout(800)
+
+
+_DT = "jQuery(document.querySelector('.tile[data-tile-id=\"%s\"] table[id^=DataTables_Table]')).DataTable()" % TABLE
+_ROWS_JS = "(() => %s.rows({search: 'applied'}).count())" % _DT
+
+
+def _rows(page):
+    return page.evaluate(f"{_ROWS_JS}()")
+
+
+def _details(page):
+    return page.evaluate(f"() => {_DT}.searchBuilder.getDetails()")
+
+
+def _arm(page):
+    page.click(f'.tile[data-tile-id="{TABLE}"] .az-line-select-btn')
+    page.wait_for_selector(f'.az-line-overlay[data-plot="{PLOT_A}"]')
+
+
+def _area(page, plot=PLOT_A):
+    """The plot area of a plot in page pixels."""
+    return page.evaluate("""id => { const g = document.getElementById('plot-container-' + id);
+        const r = g.getBoundingClientRect(), fl = g._fullLayout;
+        return {left: r.left + fl.xaxis._offset, top: r.top + fl.yaxis._offset,
+                w: fl.xaxis._length, h: fl.yaxis._length}; }""", plot)
+
+
+_RECORD_JS = """id => { window.__azPts = {};
+    window.addEventListener('pointerdown', e => {
+        const g = document.getElementById('plot-container-' + id), r = g.getBoundingClientRect(), fl = g._fullLayout;
+        window.__azPts.geo = {left: r.left, top: r.top, xo: fl.xaxis._offset, yo: fl.yaxis._offset,
+                              xr: fl.xaxis.range.slice(), yr: fl.yaxis.range.slice(),
+                              xl: fl.xaxis._length, yl: fl.yaxis._length};
+    }, true);
+    for (const t of ['pointerdown', 'pointerup']) window.addEventListener(t,
+        e => { window.__azPts[t] = [e.clientX, e.clientY]; }, true); }"""
+
+
+def _record(page):
+    """Note the mouse down and release as the page sees them (the browser rounds the positions),
+    and plot A's axes when the line starts: the plot is redrawn once the table filters it."""
+    page.evaluate(_RECORD_JS, PLOT_A)
+
+
+def _seen(page):
+    seen = page.evaluate("window.__azPts")
+    return tuple(seen["pointerdown"]), tuple(seen["pointerup"])
+
+
+def _drag(page, a, b, shift=False, steps=8, release=True):
+    """Drag across plot A from fractions `a` to `b` of its area. Returns the points the page
+    saw (the browser rounds mouse positions): mouse down, mouse release."""
+    area = _area(page)
+    ax, ay = area["left"] + area["w"] * a[0], area["top"] + area["h"] * a[1]
+    bx, by = area["left"] + area["w"] * b[0], area["top"] + area["h"] * b[1]
+    _record(page)
+    page.mouse.move(ax, ay)
+    page.mouse.down()
+    if shift:
+        page.keyboard.down("Shift")
+    page.mouse.move(bx, by, steps=steps)
+    if release:
+        page.mouse.up()
+        if shift:
+            page.keyboard.up("Shift")
+        return _seen(page)
+    return (ax, ay), (bx, by)
+
+
+def _wait_filtered(page, before):
+    page.wait_for_function(f"b => {_ROWS_JS}() !== b", arg=before, timeout=30_000)
+    page.wait_for_timeout(800)
+
+
+# Every row of the table (the filter is not applied to `data()`), put on the screen of plot A,
+# and which side of the mouse line it is on; with whether the table keeps it.
+SIDES = """([p1, p2]) => {
+  const dt = %s, geo = window.__azPts.geo;
+  const px = (v, range, length, vertical) => { const [r0, r1] = range; return vertical
+      ? (1 - (v - r0) / (r1 - r0)) * length : ((v - r0) / (r1 - r0)) * length; };
+  const kept = new Set(dt.rows({search: 'applied'}).indexes().toArray());
+  const out = {rightKept: 0, rightDropped: 0, leftKept: 0, leftDropped: 0, near: 0};
+  dt.rows().every(function () {
+    const d = this.data(), i = this.index();
+    const sx = geo.left + geo.xo + px(d['obsm_X_umap_0'], geo.xr, geo.xl, false);
+    const sy = geo.top + geo.yo + px(d['obsm_X_umap_1'], geo.yr, geo.yl, true);
+    const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    const cross = ((p2[0] - p1[0]) * (sy - p1[1]) - (p2[1] - p1[1]) * (sx - p1[0])) / len;
+    if (Math.abs(cross) < 0.05) { out.near++; return; }
+    const right = cross > 0, isKept = kept.has(i);
+    out[(right ? 'right' : 'left') + (isKept ? 'Kept' : 'Dropped')]++;
+  });
+  return out;
+}""" % _DT
+
+
+def _sides(page, p1, p2):
+    return page.evaluate(SIDES, [list(p1), list(p2)])
+
+
+def _assert_right_is_dropped(s):
+    assert s["rightKept"] == 0, s
+    assert s["leftDropped"] == 0, s
+    assert s["rightDropped"] > 0 and s["leftKept"] > 0, ("the line splits the cells", s)
+
+
+def test_line_drawn_on_a_plot_filters_the_right_side(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            assert _rows(page) == N_CELLS
+            _arm(page)
+            # a slanted line from the left to the upper right of the plot
+            area = _area(page)
+            a = (area["left"] + area["w"] * 0.1, area["top"] + area["h"] * 0.85)
+            _record(page)
+            page.mouse.move(*a)
+            page.mouse.down()
+            page.mouse.move(area["left"] + area["w"] * 0.9, area["top"] + area["h"] * 0.2, steps=6)
+            # while drawing: the line and the shaded side are there
+            shade = page.evaluate(f"""() => {{ const s = document.querySelector(
+                '.az-line-overlay[data-plot="{PLOT_A}"] .az-line-shade');
+                return {{shown: s.style.display !== 'none', points: s.getAttribute('points')}}; }}""")
+            assert shade["shown"] and len(shade["points"].split()) >= 3, shade
+            page.mouse.up()
+            a, b = _seen(page)
+            _wait_filtered(page, N_CELLS)
+
+            details = _details(page)
+            assert details["logic"] == "AND" and len(details["criteria"]) == 1, details
+            crit = details["criteria"][0]
+            assert crit["condition"] in ("<=", ">="), crit
+            assert "X_umap:1" in crit["data"] and "X_umap:0" in crit["data"], crit
+            # the columns: both axes and the derived one
+            cols = page.evaluate(f"""() => PanelManager.getPanel('{TABLE}').getConfig().columns""")
+            assert {"type": "obsm", "key": "X_umap", "column": "0"} in cols
+            assert {"type": "obsm", "key": "X_umap", "column": "1"} in cols
+            derived = [c for c in cols if c["type"] == "derived"]
+            assert len(derived) == 1 and derived[0]["key"] == crit["data"], (cols, crit)
+            # the right of the line (as drawn) is gone, the left is kept
+            _assert_right_is_dropped(_sides(page, a, b))
+            # the plot is filtered by the table now
+            assert page.evaluate(f"document.querySelector('#table-filter-{PLOT_A}').value") == TABLE
+            # the tool stays armed for the next line; the chooser lists the derived column
+            assert page.evaluate("document.querySelector('.az-line-select-btn').classList.contains('active')")
+            assert page.locator(f'.tile[data-tile-id="{TABLE}"] .derived-column').count() == 1
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_a_reversed_axis_still_filters_the_side_the_user_sees(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            # reverse x and y, as a user does with the axis range
+            page.evaluate(f"""async () => {{ const g = document.getElementById('plot-container-{PLOT_A}');
+                const fl = g._fullLayout, x = fl.xaxis.range, y = fl.yaxis.range;
+                await Plotly.relayout(g, {{'xaxis.range': [x[1], x[0]], 'yaxis.range': [y[1], y[0]]}}); }}""")
+            page.wait_for_timeout(500)
+            _arm(page)
+            a, b = _drag(page, (0.15, 0.3), (0.85, 0.75))
+            _wait_filtered(page, N_CELLS)
+            _assert_right_is_dropped(_sides(page, a, b))
+            # and the other way round: the other side goes (a second table state)
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_the_other_direction_filters_the_other_side(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            a, b = _drag(page, (0.85, 0.8), (0.15, 0.2))
+            _wait_filtered(page, N_CELLS)
+            _assert_right_is_dropped(_sides(page, a, b))
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_shift_snaps_and_an_axis_parallel_line_needs_no_derived_column(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            # nearly horizontal, snapped by Shift
+            a, b = _drag(page, (0.1, 0.5), (0.9, 0.56), shift=True)
+            _wait_filtered(page, N_CELLS)
+            details = _details(page)
+            crit = details["criteria"][0]
+            assert crit["data"] == "X_umap:1", crit
+            cols = page.evaluate(f"""() => PanelManager.getPanel('{TABLE}').getConfig().columns""")
+            assert not [c for c in cols if c["type"] == "derived"], cols
+            # horizontal, left to right: the right (below on the screen) is dropped
+            value = float(crit["value"][0])
+            assert crit["condition"] == ">="
+            ys = page.evaluate(f"""() => {{ const dt = {_DT}, kept = new Set(dt.rows({{search: 'applied'}}).indexes().toArray());
+                return dt.rows().indexes().toArray().map(i => [dt.row(i).data()['obsm_X_umap_1'], kept.has(i)]); }}""")
+            assert all(k == (y >= value) for y, k in ys), "rows below the line are dropped, the rest kept"
+            assert any(k for _, k in ys) and not all(k for _, k in ys)
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_escape_stops_the_tool_and_the_release_does_nothing(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            _drag(page, (0.1, 0.8), (0.9, 0.3), release=False)
+            page.keyboard.press("Escape")
+            page.mouse.up()
+            page.wait_for_timeout(1000)
+            assert _rows(page) == N_CELLS
+            assert _details(page) == {}
+            assert page.locator(".az-line-overlay").count() == 0
+            assert not page.evaluate("document.querySelector('.az-line-select-btn').classList.contains('active')")
+            cols = page.evaluate(f"""() => PanelManager.getPanel('{TABLE}').getConfig().columns""")
+            assert cols == [OBS("cell_type")], cols
+            # the same with Escape while only armed
+            _arm(page)
+            page.keyboard.press("Escape")
+            assert page.locator(".az-line-overlay").count() == 0
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_a_plot_with_a_text_axis_says_why_before_any_click(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            overlay = page.locator(f'.az-line-overlay[data-plot="{PLOT_B}"]')
+            assert "az-line-refused" in overlay.get_attribute("class")
+            overlay.hover()
+            msg = overlay.locator(".az-line-msg")
+            assert msg.is_visible()
+            assert "not numerical" in msg.inner_text() and "cell_type" in msg.inner_text(), msg.inner_text()
+            # a click does nothing
+            before = _rows(page)
+            box = overlay.bounding_box()
+            page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.wait_for_timeout(500)
+            assert _rows(page) == before
+            assert page.evaluate(f"document.querySelector('#table-filter-{PLOT_B}').value") == "none"
+            assert not errors, errors
+            if os.environ.get("AZ_SHOT_DIR"):
+                page.screenshot(path=os.path.join(os.environ["AZ_SHOT_DIR"], "line-select-warning.png"))
+        finally:
+            browser.close()
+
+
+def test_second_line_joins_by_an_outer_and_or_wraps_an_or(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            _drag(page, (0.1, 0.8), (0.9, 0.3))
+            _wait_filtered(page, N_CELLS)
+            first = _rows(page)
+            # a vertical line (Shift): a second condition under the same outer AND
+            _drag(page, (0.3, 0.9), (0.3, 0.1), shift=True)
+            _wait_filtered(page, first)
+            d = _details(page)
+            assert d["logic"] == "AND" and len(d["criteria"]) == 2, d
+            assert d["criteria"][1]["data"] == "X_umap:0", d
+            # switch the outer AND to OR in the builder: the table shows more
+            second = _rows(page)
+            page.click(f'.tile[data-tile-id="{TABLE}"] .dtsb-group > .dtsb-logicContainer button')
+            page.wait_for_function(f"s => {_ROWS_JS}() > s", arg=second, timeout=30_000)
+            assert _details(page)["logic"] == "OR"
+            or_rows = _rows(page)
+            # a third line wraps the OR in a group and joins by an outer AND
+            _arm_again = page.evaluate("document.querySelector('.az-line-select-btn').classList.contains('active')")
+            if not _arm_again:
+                _arm(page)
+            _drag(page, (0.9, 0.1), (0.1, 0.1), shift=True)
+            _wait_filtered(page, or_rows)
+            d = _details(page)
+            assert d["logic"] == "AND" and len(d["criteria"]) == 2, d
+            group = d["criteria"][0]
+            assert group["logic"] == "OR" and len(group["criteria"]) == 2, d
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+def test_the_derived_column_and_filter_come_back_from_a_link(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store)
+        try:
+            _arm(page)
+            _drag(page, (0.1, 0.8), (0.9, 0.3))
+            _wait_filtered(page, N_CELLS)
+            kept = _rows(page)
+            cfg = page.evaluate(f"""() => {{ const c = PanelManager.getPanel('{TABLE}').getConfig();
+                return {{columns: c.columns, searchBuilderConfig: c.searchBuilderConfig}}; }}""")
+        finally:
+            browser.close()
+        # the same, written to a link and opened in a new page
+        browser, page, errors = _open(pw, root, store, table_cfg=cfg)
+        try:
+            page.wait_for_function(f"() => {_ROWS_JS}() === {kept}", timeout=30_000)
+            assert _details(page) == cfg["searchBuilderConfig"]
+            heads = page.evaluate(f"() => {_DT}.columns().header().toArray().map(h => h.textContent)")
+            assert any("−" in h or "+" in h for h in heads), heads
+            assert not errors, errors
+        finally:
+            browser.close()
