@@ -495,8 +495,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                   }
                 });
                 
-                // If one of the groups is empty, handle with standard approach
-                if (tableIndices.length === 0 || (nonTableIndices.length === 0 && !settings.removeNonTableEntries)) {
+                // Every point in the table, and a plot still drawn as one trace: recolour that trace. Anything
+                // else is rebuilt, an empty group included: restyling trace 0 handed the "Not in table" trace
+                // the colours of every point (and left the points that had just left the table out of the
+                // plot), and a filter that matches nothing must grey every point, not only the old rest
+                const drawnAsGroups = plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t.name === 'In table'));
+                if (nonTableIndices.length === 0 && !settings.removeNonTableEntries && !drawnAsGroups) {
                   // Fall back to standard numerical update
                   const update = {};
                   const applyMask = idx => !indexMask || indexMask[idx];

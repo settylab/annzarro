@@ -22,6 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from shots import DATA_DIR, Session, split, tile  # noqa: E402
+import shoot_userguide as su  # noqa: E402  (its capture() draws the red box: outline and number disc)
 
 OUT = HERE.parent / "_static" / "screens" / "tutorials"
 STORE = "bm_aging_annzarro.zarr"
@@ -105,45 +106,80 @@ def arm(page):
     page.wait_for_timeout(500)
 
 
+def mark(page, name, region=None):
+    """A screenshot with the Line filter button in a red box (the highlight helper of the other
+    guides: shoot_userguide.capture, outline and number disc in the one accent colour)."""
+    su.OUT = OUT
+    su.capture(SH, page, name, region, marks=[(1, f"{T(TBL)} .az-line-select-btn")])
+
+
+SH = None
+# two lines that cut away part of the UMAP, in data units: the group at the bottom, then the arm at the left
+CUT_BOTTOM = ((-8.0, -2.6), (21.0, -0.9))      # drawn left to right: what is below goes
+CUT_LEFT = ((1.5, 17.0), (1.5, -9.0))          # drawn downwards: what is left of it goes
+
+
 def shoot(sh):
+    global SH
+    SH = sh
     log = sh.log.append
     page = sh.open(view(), dataset=STORE, viewport={"width": 1700, "height": 1000})
     total = rows(page)
     log(f"cells: {total}")
     a = area(page)
 
-    # armed: the Line button, and the hint on the plot
+    # armed: the Line filter button, and the hint on the plot
     arm(page)
     page.mouse.move(*at(a, 4, 10))
-    clean(page)
-    page.screenshot(path=str(OUT / "line-select-armed.png"))
+    mark(page, "line-select-armed")
 
     # the first line, mid-drag: the line and the shaded side that will be filtered out
-    line(page, 0, 1, hold=True)
-    clean(page)
-    page.screenshot(path=str(OUT / "line-select-preview.png"))
+    p, q = (at(area(page), *c) for c in CUT_BOTTOM)
+    page.mouse.move(*p)
+    page.mouse.down()
+    page.mouse.move(*q, steps=10)
+    mark(page, "line-select-preview")
     page.mouse.up()
     wait_rows(page, total)
     n1 = rows(page)
-    log(f"after line 1 (bottom edge, left to right): {n1} of {total}")
+    log(f"after the first line (bottom): {n1} of {total}")
+    page.mouse.move(*at(area(page), 4, 10))
+    mark(page, "line-select-one")
 
-    # the other three sides, counter-clockwise: the lobe is on the left of every line
-    for name, i, j in (("right edge", 1, 2), ("top edge", 2, 3), ("left edge", 3, 0)):
+    # the second line
+    p, q = (at(area(page), *c) for c in CUT_LEFT)
+    page.mouse.move(*p)
+    page.mouse.down()
+    page.mouse.move(*q, steps=10)
+    page.mouse.up()
+    wait_rows(page, n1)
+    n2 = rows(page)
+    log(f"after the second line (left): {n2} of {total}")
+    log("headers: " + str(page.evaluate(f"[...document.querySelectorAll('{T(TBL)} .dataTables_scrollHead th')].map(t => t.textContent.trim())")))
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(500)
+    page.mouse.move(2, 2)
+    mark(page, "line-select-two")
+    page.locator(f"{T(TBL)} .dtsb-searchBuilder").screenshot(path=str(OUT / "line-select-conditions.png"))
+    page.context.close()
+
+    # an area: four lines, counter-clockwise on the screen from the bottom left, the area on the left of each
+    page = sh.open(view(), dataset=STORE, viewport={"width": 1700, "height": 1000})
+    arm(page)
+    for name, i, j in (("bottom", 0, 1), ("right", 1, 2), ("top", 2, 3), ("left", 3, 0)):
         before = rows(page)
         line(page, i, j)
         wait_rows(page, before)
-        log(f"after {name}: {rows(page)} of {total}")
+        log(f"area, {name}: {rows(page)} of {total}")
     n_area = rows(page)
     page.keyboard.press("Escape")
     page.wait_for_timeout(500)
-    log(f"area kept: {n_area}; conditions: {page.evaluate(f'PanelManager.getPanel(\"{TBL}\").getConfig().searchBuilderConfig.criteria.length')}")
-    log("headers: " + str(page.evaluate(f"[...document.querySelectorAll('{T(TBL)} .dataTables_scrollHead th')].map(t => t.textContent.trim())")))
-    clean(page)
-    page.screenshot(path=str(OUT / "line-select-area.png"))
-    page.locator(f"{T(TBL)} .tile-content").screenshot(path=str(OUT / "line-select-table.png"))
+    page.mouse.move(2, 2)
+    mark(page, "line-select-area")
+    page.locator(f"{T(TBL)} .dtsb-searchBuilder").screenshot(path=str(OUT / "line-select-table.png"))
     page.context.close()
 
-    # the other way round: lines drawn clockwise, outer AND switched to OR, filters the lobe out
+    # the other way round: lines drawn clockwise, outer AND switched to OR, filters the area out
     page = sh.open(view(), dataset=STORE, viewport={"width": 1700, "height": 1000})
     arm(page)
     for i, j in ((0, 3), (3, 2), (2, 1), (1, 0)):
@@ -160,8 +196,9 @@ def shoot(sh):
     page.wait_for_timeout(3000)
     n_out = rows(page)
     log(f"clockwise lines, outer OR: {n_out} of {total} (area {n_area}; sum {n_out + n_area})")
-    clean(page)
-    page.screenshot(path=str(OUT / "line-select-or.png"))
+    page.mouse.move(2, 2)
+    mark(page, "line-select-or")
+    page.locator(f"{T(TBL)} .dtsb-searchBuilder").screenshot(path=str(OUT / "line-select-or-conditions.png"))
     page.context.close()
 
     # a plot with a text axis says why
@@ -170,8 +207,7 @@ def shoot(sh):
     box = page.locator(f'.az-line-overlay[data-plot="{TEXT}"]').bounding_box()
     page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
     page.wait_for_timeout(400)
-    clean(page)
-    page.screenshot(path=str(OUT / "line-select-warning.png"))
+    mark(page, "line-select-warning")
     page.context.close()
 
 

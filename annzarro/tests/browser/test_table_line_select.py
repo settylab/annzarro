@@ -94,13 +94,13 @@ def large_server(tmp_path_factory):
     proc.wait(10)
 
 
-def _link(root, store, table_cfg=None):
+def _link(root, store, table_cfg=None, color=None):
     plot = {"title": "plot", "z": None, "pointSize": 8, "pointOpacity": 1, "color": {"type": "none"},
             "tableFilter": "none"}
     configs = {
         TABLE: {"id": TABLE, "title": "cells",
                 "columns": [OBS("cell_type")], **(table_cfg or {})},
-        PLOT_A: {**plot, "id": PLOT_A, "x": UMAP("0"), "y": UMAP("1")},
+        PLOT_A: {**plot, "id": PLOT_A, "x": UMAP("0"), "y": UMAP("1"), **({"color": color} if color else {})},
         PLOT_B: {**plot, "id": PLOT_B, "x": OBS("cell_type"), "y": OBS("total_counts")},
     }
     tiles = {t: {"type": "tile", "id": t, "controlsVisible": False} for t in configs}
@@ -116,12 +116,12 @@ def _link(root, store, table_cfg=None):
     return f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}"
 
 
-def _open(pw, root, store, table_cfg=None, width=1800):
+def _open(pw, root, store, table_cfg=None, width=1800, color=None):
     browser = pw.chromium.launch()
     page = browser.new_page(viewport={"width": width, "height": 1500})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(_link(root, store, table_cfg))
+    page.goto(_link(root, store, table_cfg, color))
     _settle(page)
     return browser, page, errors
 
@@ -537,6 +537,85 @@ def test_the_line_button_comes_before_the_search_box_and_is_labelled(server):
             assert n["btn"] and "Line filter" in n["title"], n
             if n["c"] <= 380:
                 assert not n["label"], n
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+# Plot A coloured by a category and by a number: a table filter that matches nothing was drawn wrong
+# in the numeric case (the cells that had just left the table vanished instead of turning grey)
+COLOURS = [OBS("cell_type"), OBS("total_counts")]
+
+# What plot A draws: the points of the "Not in table" trace are grey, the others in colour.
+_DRAWN_JS = """() => { const g = document.getElementById('plot-container-%s'); let n = 0, grey = 0, color = 0;
+  for (const t of g._fullData) { if (!t.x || t.hoverinfo === 'skip' || t.name === 'Focused Cell') continue;
+    n += t.x.length; if (t.name === 'Not in table') grey += t.x.length; else color += t.x.length; }
+  return {n, grey, color}; }""" % PLOT_A
+
+
+def _plot_state(page):
+    return page.evaluate(_DRAWN_JS)
+
+
+def _wait_plot(page, pred, what):
+    for _ in range(80):
+        s = _plot_state(page)
+        if pred(s):
+            return s
+        page.wait_for_timeout(250)
+    pytest.fail(f"plot never showed {what}; last state {_plot_state(page)}")
+
+
+def _link_plot(page):
+    page.evaluate(f"""() => {{ const s = document.querySelector('#table-filter-{PLOT_A}');
+        s.value = '{TABLE}'; jQuery(s).trigger('change'); }}""")
+    page.wait_for_timeout(1500)
+
+
+@pytest.mark.parametrize("color", COLOURS, ids=["categorical", "numeric"])
+def test_an_empty_hand_made_filter_greys_every_cell_and_removing_it_restores_them(server, color):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, color=color)
+        try:
+            _link_plot(page)
+            full = _plot_state(page)
+            assert full["color"] > 0 and full["grey"] == 0, full
+            page.evaluate(f"""() => {{ const dt = {_DT}; const sb = dt.searchBuilder;
+                sb.rebuild({{logic: 'AND', criteria: [{{condition: 'starts', data: 'cell_type', origData: 'obs_cell_type_main',
+                type: 'string', value: ['zzz']}}]}}); }}""")
+            page.wait_for_function(f"() => {_ROWS_JS}() === 0", timeout=20_000)
+            s = _wait_plot(page, lambda s: s["color"] == 0 and s["n"] > 0, "every cell grey")
+            assert s["grey"] == s["n"], s
+            page.evaluate(f"() => {_DT}.searchBuilder.rebuild({{}})")
+            page.wait_for_function(f"() => {_ROWS_JS}() === {N_CELLS}", timeout=20_000)
+            s = _wait_plot(page, lambda s: s["grey"] == 0 and s["color"] > 0, "the colours back")
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("color", COLOURS, ids=["categorical", "numeric"])
+def test_a_line_that_leaves_no_cell_greys_every_cell_and_deleting_it_restores_them(server, color):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, color=color)
+        try:
+            _arm(page)
+            _drag(page, (0.1, 0.3), (0.9, 0.3), shift=True)       # keep what is above the line
+            _wait_filtered(page, N_CELLS)
+            page.wait_for_function(f"() => {_ROWS_JS}() > 0")
+            some = _wait_plot(page, lambda s: s["grey"] > 0 and s["color"] > 0, "a part in colour")
+            n = _rows(page)
+            _drag(page, (0.9, 0.7), (0.1, 0.7), shift=True)       # keep what is below a lower line: nothing
+            _wait_filtered(page, n)
+            assert _rows(page) == 0
+            s = _wait_plot(page, lambda s: s["color"] == 0 and s["n"] > 0, "every cell grey")
+            assert s["grey"] == s["n"] == some["n"], (s, some)
+            # delete the last condition in the builder: the cells come back in colour
+            page.click(f'.tile[data-tile-id="{TABLE}"] .dtsb-criteria .dtsb-delete >> nth=-1')
+            page.wait_for_function(f"() => {_ROWS_JS}() > 0", timeout=20_000)
+            _wait_plot(page, lambda s: s["color"] > 0 and s["grey"] > 0, "the colours back")
             assert not errors, errors
         finally:
             browser.close()

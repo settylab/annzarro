@@ -88,6 +88,10 @@ A condition (1), a nested OR group (3) with the button that moves a condition ou
 and the resulting count (4).
 ```
 
+To select an area of a plot rather than type numbers, draw lines on the plot: each becomes a
+condition, and the AND/OR bar then decides whether the lines keep the area or cut it out
+({doc}`../tutorials/line-select`, {ref}`tut-ls-area`).
+
 Groups nest further: the **>** of a condition inside a group makes a group inside that group.
 **<** moves a condition one level out, **Delete** removes it, the **×** at the lower left of a group
 removes that group and **Clear All** removes every condition. Numeric columns offer Equals, Not,
