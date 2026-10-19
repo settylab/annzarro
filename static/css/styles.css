@@ -282,6 +282,9 @@ body {
 }
 
 /* Cell subset: badge next to the cell count, and its dialog */
+/* the cells asked for and not shown yet (subset-dialog.js): italic until they are */
+#cell-count.subset-pending, .subset-badge.subset-pending { font-style: italic; opacity: 0.8; }
+
 .subset-badge {
     padding: 0 0.4rem;
     margin-left: 0.35rem;

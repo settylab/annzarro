@@ -590,13 +590,13 @@ const App = (function() {
         const wait = Math.max(0, Math.min(URL_SYNC_DELAY_MS, _urlSyncSince + URL_SYNC_MAX_MS - now));
         _urlSyncTimer = setTimeout(() => { _urlSyncTimer = null; _syncUrlNow(); }, wait);
     }
-    async function _syncUrlNow() {
+    async function _syncUrlNow({ force = false } = {}) {
         if (!_urlSyncOn) return;
         // A load in flight, a restore drawing its panels, or a layout shown
-        // without data is not a view to keep
+        // without data is not a view to keep (`force`: Close all, whose empty view is settled)
         if (_noDataView) return;
         const marker = SessionManager.restoreMarker();
-        if (_isLoadingDataset || (marker && marker.hold > 0)) return _syncUrlSoon();
+        if (!force && (_isLoadingDataset || (marker && marker.hold > 0))) return _syncUrlSoon();
         try {
             const view = SessionManager.captureView();
             const hasPanels = Object.keys((view.layout && view.layout.panelConfigs) || {}).length > 0;
@@ -1325,6 +1325,7 @@ const App = (function() {
             while (_isLoadingDataset && _datasetLoadDone) await _datasetLoadDone;
             if (DataManager.getCurrentDataset() !== datasetPath) return;   // another dataset took over
             if (request <= _subsetCancelledSeq) return;                   // Cancel, while this waited
+            if (request !== _subsetRequestSeq) return;                    // a later request asked meanwhile and is the one to show
             if (!(await _swapSubset(spec))) {
                 return;     // a later request took over
             }
@@ -1781,7 +1782,13 @@ const App = (function() {
             PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
             PanelManager.updateSourcePanelSelection();
             PanelManager.ensureWelcomeFallback();
-            if (!handle.checked) return;
+            if (!handle.checked) {
+                // A reload or a crash before the next autosave tick, or the address's delay, would
+                // restore the panels just closed: write both now.
+                await SessionManager.saveToLocalStorage();
+                await _syncUrlNow({ force: true });
+                return;
+            }
 
             const result = await clearSiteStorage(window);
             if (result.failed.length) console.warn('Could not clear:', result.failed.join(', '));

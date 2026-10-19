@@ -12,7 +12,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     COLOUR_MODEL, THEMED_COLOURS, BUTTON_COLOURS, PLOT_PALETTES, plotColour, isFollowing,
-    adoptColourModel, pinPalette, followTheme, normalizeHex, withAlpha, modebarColours
+    adoptColourModel, pinPalette, followTheme, normalizeHex, withAlpha, modebarColours,
+    noneColour, constantColour, GAP_COLOUR
 } from '../../../static/js/utils/plot-theme.js';
 import {
     normalizePlotOptions, pickStyle, adoptStyle, applyPreset, scaleBar, defaultLook
@@ -225,4 +226,18 @@ test('a link saved with a whole palette pinned (the removed theme buttons) loads
         assert.equal(plotColour(loaded, 'bgColor', 'dark'), DARK.bgColor);
         assert.equal(plotColour(loaded, 'textColor', 'dark'), pal.textColor);
     }
+});
+
+test('the colour None is one blue in both plot modes, themed, and never the grey of points not in the table', () => {
+    assert.equal(noneColour({}, 'light'), '#1f77b4');
+    assert.notEqual(noneColour({}, 'dark'), noneColour({}, 'light'));
+    for (const theme of ['light', 'dark']) {
+        assert.notEqual(noneColour({}, theme), PLOT_PALETTES[theme].notInTableColor);
+        assert.notEqual(noneColour({}, theme), GAP_COLOUR);
+    }
+    assert.equal(noneColour({ pointColor: '#123456' }, 'dark'), '#123456');    // a pinned colour is kept
+    // a plot drawn without a colour series: None's blue; a colour that could not be read stays the gap's grey
+    assert.equal(constantColour({ color: { type: 'none' } }, 'light'), '#1f77b4');
+    assert.equal(constantColour({}, 'dark'), noneColour({}, 'dark'));
+    assert.equal(constantColour({ color: { type: 'obs', key: 'gone' } }, 'light'), GAP_COLOUR);
 });

@@ -43,6 +43,8 @@ else:
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(os.path.dirname(HERE), "data")
 N = 200
+# the header names the cells asked for at once: wait until they are the ones shown
+NOT_PENDING = "!document.querySelector('#subset-button[aria-busy=\"true\"]')"
 DRUGS = ["Cisplatin", "carboplatin", "Nivolumab", "PEMBROLIZUMAB", "Paclitaxel", "taxol-X", ""]
 ROWS = [DRUGS[(i * 7 + i // 3) % len(DRUGS)] for i in range(N)]
 
@@ -184,7 +186,7 @@ def test_contains_filter_is_copied_and_keeps_the_tables_cells(server, column, te
             page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
             page.click("#subset-apply")
             page.wait_for_selector("#subset-modal", state="hidden")
-            page.wait_for_function(f"() => document.getElementById('cell-count').textContent.includes('{want}')",
+            page.wait_for_function(f"() => document.getElementById('cell-count').textContent.includes('{want}') && {NOT_PENDING}",
                                    timeout=30000)
             body = page.evaluate("""async () => {
                 const s = new URLSearchParams(location.search).get('dataset_path');

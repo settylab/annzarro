@@ -8,6 +8,16 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- A plot with the colour None draws its points blue (a lighter blue on the dark theme) in the regular
+  mode too, as large-plot mode already did. Grey now means only "not in the table" (or a colour that
+  could not be read, which the status line says).
+
+### Fixed
+- Changing the subset while an earlier change is still loading shows the new choice at once: the header
+  names the cells asked for, and only the last request's cells are drawn.
+- Close all writes the autosave and the address at once, so a reload right after it no longer finds the panels just closed.
+
 ## 0.6.1 (2026-10-18)
 
 Legend columns, dot size and title for categorical colours; the focused cell drawn as an open circle by

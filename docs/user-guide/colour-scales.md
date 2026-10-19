@@ -173,7 +173,8 @@ Several things can make a point grey, and they mean different things:
 | Light grey at the bottom of a reversed Blues (or Greys) map | the value is at or below Min, for example a cell the diffusion walk does not reach (5,675 of 8,090 cells in the HSC's row of `diffusion_walk_t5` are exactly 0) |
 | Grey in the middle of RdBu | the value is near 0 |
 | Flat grey `rgb(180, 180, 180)`, no colour bar entry | the point is not in the linked table ({doc}`tables-and-filters`) |
-| Uniform grey `rgb(150, 150, 150)` | the colour is **None (constant)** |
+| Uniform grey `rgb(150, 150, 150)` | the colour could not be read (a column the dataset lacks); the status line says so |
+| Uniform blue | the colour is **None (constant)**, in the regular and the large-plot mode alike (a lighter blue on the dark theme) |
 | Dark grey `#444` in a numerical colour | the value is missing (NaN); Plotly draws missing colour values in this grey |
 | Light grey under an **NA** legend entry | a missing value in a categorical colour ({doc}`cell-and-gene-plots`) |
 
