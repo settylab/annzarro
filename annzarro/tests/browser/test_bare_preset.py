@@ -76,7 +76,7 @@ def test_bare_leaves_only_the_points_in_2d_and_default_restores_it(page, server,
     assert s["bare"] is True and s["margins"]["l"] == 0 and s["showLegend"] is False, s
     _preset(page, panel, "default")
     after = page.evaluate(DRAWN_THINGS, panel)
-    assert after["ticks"] > 0 and after["size"]["l"] == before["size"]["l"] and (after["legend"] or after["colourBar"]), after
+    assert after["ticks"] > 0 and abs(after["size"]["l"] - before["size"]["l"]) <= 1 and (after["legend"] or after["colourBar"]), after
     assert _settings(page, panel)["bare"] is False
 
 

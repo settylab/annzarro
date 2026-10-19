@@ -65,12 +65,20 @@ def test_the_default_legend_looks_as_in_v060(page, server, position):
         print("MEASURED", position, json.dumps(got))
         return
     want = EXPECTED[position]
-    assert got["layout"] == want["layout"], got["layout"]
-    assert got["margins"] == want["margins"], got["margins"]
-    for key in ("symbol", "entries", "entryH", "pitch"):
-        assert got[key] == want[key], (key, got[key], want[key])
-    for key in ("box", "firstX", "firstY"):
+    # the layout keys are the app's and exact; a bottom legend's y is a fraction of a plot height that the
+    # font decides (about a pixel between this Mac and CI's Linux fonts), so it gets a small tolerance
+    layout = {k: v for k, v in got["layout"].items() if k != "y"}
+    assert layout == {k: v for k, v in want["layout"].items() if k != "y"}, got["layout"]
+    assert got["layout"]["y"] == pytest.approx(want["layout"]["y"], abs=0.01), got["layout"]
+    # pixel values depend on the font's metrics: within 2 px (a changed gap is 10, a title line 20 or more)
+    for side in "lrtb":
+        assert got["margins"][side] == pytest.approx(want["margins"][side], abs=2), (side, got["margins"], want["margins"])
+    for key in ("symbol", "entries"):
+        assert got[key] == want[key], (key, got[key], want[key])        # constant legend symbol, the entries drawn
+    for key in ("entryH", "pitch", "firstX", "firstY"):
         assert got[key] == pytest.approx(want[key], abs=2), (key, got[key], want[key])
+    for key in ("w", "h"):
+        assert got["box"][key] == pytest.approx(want["box"][key], abs=2), ("box", got["box"], want["box"])
 
 
 PLOT_M = """document.querySelector('.tile[data-tile-id="cell-plot-M"] .js-plotly-plot')"""
