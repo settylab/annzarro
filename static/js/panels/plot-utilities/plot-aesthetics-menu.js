@@ -1,7 +1,7 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, refreshScaleBar } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
-import { applyLegendOptions, legendOrientation, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX } from '../../utils/legend-options.js';
+import { applyLegendOptions, legendOrientation, legendTitleText, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
@@ -185,6 +185,8 @@ export function createPopoverContent(id, settings) {
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-publication-${id}"
                     title="White background, no grid, five ticks per axis, Arial at a larger size, a short colour bar with three ticks, scale bar if set up">Publication</button>
+                <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-bare-${id}"
+                    title="Only the points: no margins, legend, axis labels or grid. For figures and overlays.">Bare</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
                     title="Back to the look every plot starts with">Default</button>
             </div>
@@ -1132,8 +1134,9 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         }
 
         // Presets
-        if ((target.id === `preset-publication-${id}` || target.id === `preset-default-${id}`) && e.type === 'click') {
-            applyPreset(settings, target.id === `preset-publication-${id}` ? 'publication' : 'default');
+        const preset = ['publication', 'bare', 'default'].find(name => target.id === `preset-${name}-${id}`);
+        if (preset && e.type === 'click') {
+            applyPreset(settings, preset);
             relookPlot(plotContainer, settings);
             // the menu shows the new values: drawn again, the open groups as they are
             const body = document.querySelector('.aesthetics-popover .popover-body');
@@ -1484,6 +1487,8 @@ function applyTextFont(plotContainer, settings) {
         ...text('coloraxis.colorbar.tickfont', 0), ...text('coloraxis.colorbar.title.font', 2)
     };
     for (const axis of axisPaths(settings)) Object.assign(update, text(`${axis}.tickfont`, 0), text(`${axis}.title.font`, 2));
+    // the legend title's indent is spaces of the title's font (utils/legend-options.js)
+    if (hasLegendEntries(plotContainer.data)) update['legend.title.text'] = legendTitleText(settings);
     Plotly.relayout(plotContainer, update);
     restyleColourBars(plotContainer,
         { ...text('marker.colorbar.tickfont', 0), ...text('marker.colorbar.title.font', 2) },
@@ -1901,34 +1906,39 @@ function updateLegendVisibility(plotDiv, settings) {
     } else {
         Plotly.relayout(plotDiv, { showlegend: show && hasLegendEntries(plotDiv.data), showscale: false });
     }
-    // 3) Per-trace colour bars
+    // 3) Per-trace colour bars: what differs from the trace as drawn, one restyle per attribute
+    // (a restyle redraws the graph: one per trace took a second at 1M points with ~70 legend entries)
+    const changes = new Map();     // attribute -> { idx: [], vals: [] }
+    const want = (i, key, value, now) => {
+        if ((now ?? false) === value) return;
+        if (!changes.has(key)) changes.set(key, { idx: [], vals: [] });
+        const c = changes.get(key);
+        c.idx.push(i);
+        c.vals.push(value);
+    };
     plotDiv.data.forEach((trace, i) => {
         if (typeof trace.name === 'string' && (trace.name.includes('Focused'))) return;
-        const update = {};
         const hasMarkerCB = trace.marker && trace.marker.colorscale;
         const hasTraceCB  = ['heatmap','contour','surface'].includes(trace.type);
-    
+        const marker = trace.marker || {};
+
         if (hasMarkerCB) {
             // continuous scatter: hide from legend, toggle marker colorbar
-            update.showlegend             = false;
-            update['marker.showscale']    = show;
+            want(i, 'showlegend', false, trace.showlegend === undefined ? true : trace.showlegend);
+            want(i, 'marker.showscale', show, marker.showscale);
         }
         else if (hasTraceCB) {
             // heatmap/contour/surface: hide from legend, toggle trace colorbar
-            update.showlegend = false;
-            update.showscale   = show;
+            want(i, 'showlegend', false, trace.showlegend === undefined ? true : trace.showlegend);
+            want(i, 'showscale', show, trace.showscale);
         }
         else {
             // categorical / other traces: no leftover colour bars
-            if (trace.marker) update['marker.showscale'] = false;
-            if (trace.showscale !== undefined) update.showscale = false;
-        }
-    
-        // apply if anything changed
-        if (Object.keys(update).length) {
-            Plotly.restyle(plotDiv, update, [i]);
+            if (trace.marker) want(i, 'marker.showscale', false, marker.showscale);
+            if (trace.showscale !== undefined) want(i, 'showscale', false, trace.showscale);
         }
     });
+    for (const [key, c] of changes) Plotly.restyle(plotDiv, { [key]: c.vals }, c.idx);
 
     // Legend entries next to a colour bar: keep them off it
     if (show) {

@@ -28,6 +28,7 @@ export const OPTION_DEFAULTS = Object.freeze({
   legendDotSize: null,             // null: the constant legend (12 px); else the legend dots' size in px (utils/legend-options.js)
   legendColumns: null,             // null: one column; else 2 or more
   showLegendTitle: true,
+  bare: false,                     // the Bare preset: no axis at all (set with it; the Default preset clears it)
   showScaleBar: false,
   scaleBarCorner: 'bottom-right',
   scaleBarSize: 1,                 // scales the bar's target length, line and label together
@@ -56,6 +57,7 @@ export function normalizePlotOptions(settings) {
     ? Math.min(Math.round(s.legendDotSize), DOT_SIZE_MAX) : null;
   s.legendColumns = isNum(s.legendColumns) && s.legendColumns >= 2 ? Math.min(Math.round(s.legendColumns), COLUMNS_MAX) : null;
   s.showLegendTitle = s.showLegendTitle !== false;
+  s.bare = s.bare === true;
   s.showScaleBar = s.showScaleBar === true && !!s.equalAspect;     // it needs Equal aspect
   s.scaleBarCorner = SCALE_BAR_CORNERS.includes(s.scaleBarCorner) ? s.scaleBarCorner : OPTION_DEFAULTS.scaleBarCorner;
   s.scaleBarSize = isNum(s.scaleBarSize) && s.scaleBarSize >= 0.25 && s.scaleBarSize <= 4
@@ -81,6 +83,9 @@ export function tickKeys(settings, axes) {
     keys[`${axis}.ticks`] = tickMarksOn(settings) ? 'outside' : '';
     keys[`${axis}.showticklabels`] = settings.showAxisLabels !== false;
     keys[`${axis}.nticks`] = settings.tickCount || 0;
+    // the Bare preset: no axis drawn at all (a hidden axis has no line, ticks, labels, title, grid, zero line or mirror)
+    keys[`${axis}.visible`] = !settings.bare;
+    keys[`${axis}.showspikes`] = settings.bare ? false : null;
   }
   return keys;
 }
@@ -199,6 +204,7 @@ export function defaultLook() {
     tickCount: null, fontSize: 12, fontFamily: undefined, axisLineWidth: 1, gridLineWidth: 1, zeroLineWidth: 1,
     margins: { ...DEFAULT_MARGINS }, marginsUnlinked: false,
     legendPosition: 'right', showLegend: true, legendDotSize: null, legendColumns: null, showLegendTitle: true,
+    bare: false,
     colorbarPosition: 'legend', colorbarLength: 1, colorbarTicks: null,
     showScaleBar: false, scaleBarCorner: 'bottom-right'
   };
@@ -207,7 +213,7 @@ export function defaultLook() {
 /** The font family the Publication preset sets, as the Plot Options font menu names Arial. */
 export const PUBLICATION_FONT = 'Arial, Helvetica, sans-serif';
 
-export const PRESETS = Object.freeze(['default', 'publication']);
+export const PRESETS = Object.freeze(['default', 'publication', 'bare']);
 
 /**
  * Settings changes of a preset. Default restores the look above (data
@@ -237,6 +243,15 @@ export function presetChanges(name) {
       colorbarTicks: 3, colorbarLength: 0.4
     };
   }
+  if (name === 'bare') {
+    // only the points: no margins, legend, colour bar, scale bar, axes (titles, labels, lines, ticks), grid or
+    // zero lines. The data, colours, point size and opacity, and the background colour stay.
+    return {
+      showGrid: false, showZeroLines: false, showAxisTitles: false, showAxisLabels: false, showAxisLines: false,
+      showTickMarks: false, tickCount: null, margins: { l: 0, r: 0, t: 0, b: 0, pad: 0 }, marginsUnlinked: false,
+      showLegend: false, showScaleBar: false, bare: true
+    };
+  }
   return {};
 }
 
@@ -254,7 +269,7 @@ export const STYLE_KEYS = Object.freeze([
   'showGrid', 'showAxisTitles', 'showAxisLabels', 'showAxisLines', 'showZeroLines', 'showTickMarks', 'tickCount',
   'bgColor', 'gridColor', 'axisColor', 'textColor', 'zeroLineColor', 'backdropColor', 'showBackdrop',
   'axisLineWidth', 'gridLineWidth', 'zeroLineWidth', 'fontSize', 'fontFamily',
-  'margins', 'marginsUnlinked', 'legendPosition', 'showLegend', 'legendDotSize', 'legendColumns', 'showLegendTitle',
+  'margins', 'marginsUnlinked', 'legendPosition', 'showLegend', 'legendDotSize', 'legendColumns', 'showLegendTitle', 'bare',
   'colorbarPosition', 'colorbarLength', 'colorbarTicks',
   'showScaleBar', 'scaleBarCorner', 'scaleBarSize', 'scaleBarUnit',
   'notInTableScale', 'notInTableOpacity', 'notInTableColor',

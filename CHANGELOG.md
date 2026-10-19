@@ -8,15 +8,24 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- Plot Options, Presets: **Bare** draws only the points (no margins, legend, colour bar, scale bar, axes,
+  grid or zero lines; in 3D no axes or background planes), for figures and overlays. **Default** undoes it.
+
 ### Changed
 - A plot with the colour None draws its points blue (a lighter blue on the dark theme) in the regular
   mode too, as large-plot mode already did. Grey now means only "not in the table" (or a colour that
   could not be read, which the status line says).
+- The legend title sits above the entries at every legend position, starts where the labels start and has
+  a clear gap below it; before it was flush left, a few pixels off the symbols, 2 px above the first entry
+  (and beside the entries in a legend on top or at the bottom).
 
 ### Fixed
 - Changing the subset while an earlier change is still loading shows the new choice at once: the header
   names the cells asked for, and only the last request's cells are drawn.
 - Close all writes the autosave and the address at once, so a reload right after it no longer finds the panels just closed.
+- Switching Show Legend off or on in Plot Options redrew the graph once per legend entry: about a second
+  on a 1M-point plot with 35 categories. It is now a single layout change (about 50 ms).
 
 ### Docs
 - The README and the licence page cite v0.6.1 by its DOI,

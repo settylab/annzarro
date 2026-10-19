@@ -25,7 +25,7 @@
  * Plotly toggle the clicked proxy alone, so after every draw the points of a
  * category are shown or hidden to match their entry (`mirrorEntries`), and a
  * double click isolates the category (`legendDoubleClick`), as Plotly does
- * for groups. The title is kept above the entries (`title.side`). One column
+ * for groups. The title is kept above the entries (`title.side`, always). One column
  * changes no group: the legend is as it always was.
  *
  * `assignColumns` and the settings readers are pure;
@@ -66,9 +66,29 @@ export function legendOrientation(base, settings) {
     return legendColumns(settings) > 1 ? 'h' : base;
 }
 
-/** The legend title: the colouring's name, empty when the title is switched off. */
+/** Width of a space, in em, by font family (the families Plot Options offers); Arial's for any other. */
+const SPACE_EM = [[/courier|mono/i, 0.6], [/times/i, 0.25], [/georgia/i, 0.241], [/trebuchet/i, 0.301], [/verdana/i, 0.352]];
+
+/** Px from the legend's left edge to where an entry's label starts: the symbol (`itemwidth`, 30) and its padding. */
+export const LABEL_INDENT = 38;
+
+/** The spaces that put the first letter of a title in the title's font at `indent` px from its left edge. */
+export function titleIndent(fontFamily, titleSize, indent = LABEL_INDENT) {
+    const hit = SPACE_EM.find(([re]) => re.test(fontFamily || ''));
+    const space = (hit ? hit[1] : 0.278) * titleSize;
+    return '\u00a0'.repeat(Math.max(0, Math.round(indent / space)));
+}
+
+/**
+ * The legend title: the colouring's name, empty when the title is switched off. Plotly sets a title flush
+ * left, a little left of the symbols and with no room below it, so it is indented (non-breaking spaces) to
+ * start where the labels start and followed by a blank line, a gap that grows with the font.
+ */
 export function legendTitleText(settings) {
-    return settings.showLegendTitle === false ? '' : colourTitle(settings.color);
+    if (settings.showLegendTitle === false) return '';
+    const text = colourTitle(settings.color);
+    if (!text) return '';
+    return `${titleIndent(settings.fontFamily, (settings.fontSize || 12) + 2)}${text}<br>\u00a0`;
 }
 
 /** The legend options a figure's layout carries (the builders' nested `layout`; edits it in place). */
@@ -76,7 +96,8 @@ export function legendOptionsIntoLayout(layout, settings) {
     const lg = layout.legend = { ...(layout.legend || {}) };
     lg.itemsizing = legendDotSize(settings) === null ? 'constant' : 'trace';
     lg.title = { ...(lg.title || {}), text: legendTitleText(settings) };
-    if (legendColumns(settings) > 1) Object.assign(lg, COLUMN_LAYOUT, { title: { ...lg.title, side: 'top' } });
+    lg.title.side = 'top';
+    if (legendColumns(settings) > 1) Object.assign(lg, COLUMN_LAYOUT);
     if (lg.orientation) lg.orientation = legendOrientation(lg.orientation, settings);
     layout.meta = { ...(layout.meta || {}), azLegendColumns: legendColumns(settings) };
     return layout;
@@ -87,7 +108,7 @@ export function legendOptionKeys(settings) {
     return {
         'legend.itemsizing': legendDotSize(settings) === null ? 'constant' : 'trace',
         'legend.title.text': legendTitleText(settings),
-        'legend.title.side': legendColumns(settings) > 1 ? 'top' : null,
+        'legend.title.side': 'top',
         'legend.traceorder': legendColumns(settings) > 1 ? COLUMN_LAYOUT.traceorder : null,
         'legend.groupclick': legendColumns(settings) > 1 ? COLUMN_LAYOUT.groupclick : null,
         'meta.azLegendColumns': legendColumns(settings)
