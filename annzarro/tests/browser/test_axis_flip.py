@@ -150,3 +150,43 @@ def test_flip_is_not_offered_in_3d(page, server):
     page.wait_for_timeout(2000)
     _menu(page, A, "axes")
     assert page.is_disabled(f"#flip-y-{A}") and page.is_disabled(f"#flip-x-{A}")
+
+
+def _switch(page, pid, axis):
+    """The state of the flip switch: its checked property and the colour of its knob's track."""
+    return page.evaluate("""([id, a]) => { const e = document.getElementById('flip-' + a + '-' + id);
+        const cs = getComputedStyle(e); return {checked: e.checked, bg: cs.backgroundColor, pos: cs.backgroundPosition}; }""", [pid, axis])
+
+
+def test_the_switch_shows_the_flip_after_a_toggle_a_reopen_and_a_link(page, server):
+    _open(page, server)
+    _menu(page, A, "axes")
+    off = _switch(page, A, "y")
+    assert off["checked"] is False
+    page.check(f"#flip-y-{A}")
+    _wait_reversed(page, A)
+    page.wait_for_timeout(500)
+    on = _switch(page, A, "y")
+    assert on["checked"] is True
+    assert on["bg"] != off["bg"] or on["pos"] != off["pos"], (on, off)      # drawn as on, not only a focus ring
+    # the menu closed and opened again
+    page.click(f"#aesthetics-menu-btn-{A}")
+    page.wait_for_timeout(300)
+    page.evaluate("() => document.activeElement && document.activeElement.blur()")
+    _menu(page, A, "axes")
+    assert _switch(page, A, "y")["checked"] is True and _switch(page, A, "x")["checked"] is False
+    # a link with flipY: the switch is on when the menu opens
+    _open(page, server, _cfgs(extra_a={"flipY": True}))
+    _menu(page, A, "axes")
+    page.evaluate("() => document.activeElement && document.activeElement.blur()")
+    assert _switch(page, A, "y")["checked"] is True and _reversed(_range(page, A))
+    # right after the click, with the switch still focused: checked and drawn as on once its 0.15 s slide ends
+    _menu(page, A, "axes")
+    page.uncheck(f"#flip-y-{A}")
+    page.check(f"#flip-y-{A}")
+    page.wait_for_timeout(700)
+    assert page.evaluate("() => document.activeElement.id") == f"flip-y-{A}"
+    assert _switch(page, A, "y")["checked"] is True and _switch(page, A, "y")["bg"] == on["bg"]
+    assert _switch(page, A, "y")["pos"] == on["pos"]
+    if os.environ.get("AZ_SHOT_DIR"):
+        page.screenshot(path=os.path.join(os.environ["AZ_SHOT_DIR"], "axis-flip-switch-on.png"))
