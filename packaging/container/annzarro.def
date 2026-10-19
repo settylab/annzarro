@@ -21,7 +21,7 @@ From: annzarro:local
     Org.opencontainers.image.licenses MIT
 
 %help
-    AnnZarro, a read-only browser viewer for AnnData (zarr, h5ad), as a gunicorn server.
+    AnnZarro, a read-only browser viewer for AnnData (zarr, h5ad), as a gunicorn server (annzarro serve).
 
     Bind two directories:
       /data   the datasets, read-only    --bind /path/to/datasets:/data:ro
@@ -51,7 +51,7 @@ From: annzarro:local
         echo "annzarro.sif: /state is not writable. Bind a directory of yours: --bind \$PWD/state:/state" >&2
         exit 1
     fi
-    exec /opt/entrypoint.sh gunicorn -c python:annzarro.server.gunicorn_config 'annzarro.server.wsgi:create_wsgi_app()'
+    exec /opt/entrypoint.sh annzarro serve
 
 %test
     python -c "import annzarro; print(annzarro.__version__)"

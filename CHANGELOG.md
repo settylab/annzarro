@@ -10,6 +10,7 @@ with the release after it. Older releases are listed on
 
 ### Added
 - Container recipes for hosting a lab server, in `packaging/container/`: a `Dockerfile` (multi-stage, non-root, gunicorn, health check, `remote` extra by build argument), a Compose example with nginx and TLS, and an `annzarro.def` for Apptainer on a cluster. The new page Deployment, Containers gives the commands. A CI job builds the image on pull requests that touch these files.
+- `annzarro serve` starts the production server in one command: gunicorn with the bundled configuration, reading the same site file and `ANNZARRO_*` variables as `annzarro start`, with `--config`, `--host`, `--port`, `--workers`, `--threads` and extra gunicorn options after `--`. It prints the URL, workers, threads, whether login is on and the configuration file, and login stays on unless the configuration turns it off. The new `server` extra installs gunicorn: `pip install 'annzarro[server]'`. The explicit gunicorn command still works.
 - Plot Options, Presets: **Bare** draws only the points (no margins, legend, colour bar, scale bar, axes,
   grid or zero lines; in 3D no axes or background planes), for figures and overlays. **Default** undoes it.
 

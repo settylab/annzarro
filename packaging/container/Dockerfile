@@ -21,10 +21,11 @@ COPY annzarro annzarro
 COPY static static
 COPY templates templates
 # static/vendor was filled above (the .dockerignore keeps a local copy out of the context).
+# Extra extras beyond `server`, comma separated: --build-arg EXTRAS=remote
 ARG EXTRAS=
 RUN python -m venv /opt/venv \
  && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
- && /opt/venv/bin/pip install --no-cache-dir ".${EXTRAS:+[$EXTRAS]}" "gunicorn>=22" \
+ && /opt/venv/bin/pip install --no-cache-dir ".[server${EXTRAS:+,$EXTRAS}]" \
  && /opt/venv/bin/python -c "import annzarro; print('annzarro', annzarro.__version__)"
 
 FROM ${PYTHON_IMAGE}
@@ -62,5 +63,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["python", "/opt/healthcheck.py"]
 
 ENTRYPOINT ["/opt/entrypoint.sh"]
-# Once `annzarro serve` ships, this becomes: CMD ["annzarro", "serve"]
-CMD ["gunicorn", "-c", "python:annzarro.server.gunicorn_config", "annzarro.server.wsgi:create_wsgi_app()"]
+# gunicorn with the bundled configuration; `annzarro serve` replaces itself with it
+CMD ["annzarro", "serve"]

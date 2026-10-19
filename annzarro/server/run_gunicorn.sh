@@ -20,7 +20,7 @@ export PYTHONPATH=$(pwd):$PYTHONPATH
 
 # Check if Gunicorn is installed
 if ! command -v gunicorn &> /dev/null; then
-    echo "Error: gunicorn is not installed. Please install it with: pip install gunicorn"
+    echo "Error: gunicorn is not installed. Please install it with: pip install 'annzarro[server]'"
     exit 1
 fi
 
@@ -30,4 +30,5 @@ echo "Using config file: $CONFIG_FILE"
 # Run Gunicorn with config
 # (The old target "annzarro.server:create_app()" did not exist, and create_app()
 # without a config ran with login off; use the hosted WSGI factory.)
+# (`annzarro serve` runs exactly this command and prints a startup summary.)
 gunicorn -c python:annzarro.server.gunicorn_config "annzarro.server.wsgi:create_wsgi_app()"

@@ -69,6 +69,11 @@ desktop = [
     "pyinstaller>=5.0.0",
     "Pillow>=9.0.0",
 ]
+# `annzarro serve`: the production server. gunicorn >= 21.2 for the gthread worker class and
+# the `python:` config-module syntax the bundled gunicorn_config is loaded with. POSIX only.
+server = [
+    "gunicorn>=21.2; sys_platform != 'win32'",
+]
 # Remote datasets: s3:// (s3fs), gs:// (gcsfs), http(s):// (aiohttp), all via fsspec.
 # Opening one without these fails with an error naming this extra.
 remote = [

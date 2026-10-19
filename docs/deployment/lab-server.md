@@ -16,13 +16,13 @@ admins, and go through the {doc}`hosting-checklist` before you give out the addr
 
 ## 1. Install
 
-Use a dedicated service account and virtual environment. gunicorn is not a dependency of
-AnnZarro; install it alongside.
+Use a dedicated service account and virtual environment. gunicorn is not a core dependency of
+AnnZarro; the `server` extra installs it (it does not run on Windows).
 
 ```bash
 sudo useradd --system --home /var/lib/annzarro --create-home annzarro
 sudo python3 -m venv /opt/annzarro/venv
-sudo /opt/annzarro/venv/bin/pip install annzarro gunicorn     # 'annzarro[remote]' for remote stores
+sudo /opt/annzarro/venv/bin/pip install 'annzarro[server]'     # 'annzarro[server,remote]' for remote stores
 ```
 
 (lab-server-data-dir)=
@@ -94,7 +94,21 @@ sudo -u annzarro env ANNZARRO_HOME=/var/lib/annzarro ANNZARRO_CONFIG=/etc/annzar
 The command prompts for the password twice. `user passwd` and `user set-admin` change a user
 later. Details, including admins and what they may do, are in {doc}`authentication`.
 
-## 5. Run gunicorn
+## 5. Run the server
+
+```bash
+sudo -u annzarro env ANNZARRO_HOME=/var/lib/annzarro ANNZARRO_CONFIG=/etc/annzarro/site.yaml \
+  /opt/annzarro/venv/bin/annzarro serve
+```
+
+`annzarro serve` prints what it will run (URL, workers and threads, whether login is on, the
+configuration file) and then becomes gunicorn. Host, port, workers and threads come from the
+configuration; `--host`, `--port`, `--workers` and `--threads` override them, `--config FILE`
+names the site file (default `$ANNZARRO_CONFIG`) and everything after `--` goes to gunicorn
+({doc}`../reference/cli`). It is the hosted mode: login is on unless the configuration says
+`auth.enabled: false`.
+
+The command is shorthand for the explicit gunicorn command, which you can run instead:
 
 ```bash
 sudo -u annzarro env ANNZARRO_HOME=/var/lib/annzarro ANNZARRO_CONFIG=/etc/annzarro/site.yaml \
@@ -148,14 +162,16 @@ User=annzarro
 Group=annzarro
 Environment=ANNZARRO_HOME=/var/lib/annzarro
 Environment=ANNZARRO_CONFIG=/etc/annzarro/site.yaml
-ExecStart=/opt/annzarro/venv/bin/gunicorn -c python:annzarro.server.gunicorn_config \
-    --limit-request-line 8190 "annzarro.server.wsgi:create_wsgi_app()"
+ExecStart=/opt/annzarro/venv/bin/annzarro serve -- --limit-request-line 8190
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+`annzarro serve` replaces itself with gunicorn, so systemd's signals (stop, reload) reach
+gunicorn's master directly and `MainPID` is gunicorn's.
 
 ```bash
 sudo systemctl daemon-reload

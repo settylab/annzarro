@@ -2,8 +2,8 @@
 
 AnnZarro ships recipes for running the lab server (see {doc}`lab-server`) as a container: a
 `Dockerfile`, a Compose example with nginx and TLS, and an Apptainer definition for clusters. They
-live in `packaging/container/` of the repository. The image runs gunicorn with the bundled
-configuration, as a non-root user, with login on.
+live in `packaging/container/` of the repository. The image runs `annzarro serve` (gunicorn with the bundled
+configuration), as a non-root user, with login on.
 
 ```{note}
 AnnZarro does not publish images. Build one from a checkout of the version you want, as below.
@@ -21,12 +21,12 @@ docker build -f packaging/container/Dockerfile \
 
 The build is multi-stage. The first stage downloads the pinned frontend files (jQuery, Plotly, ...)
 and checks every one against the SHA-256 in `scripts/vendor-assets.json`, builds the wheel and installs
-it with gunicorn into a virtual environment; the final stage copies only that environment onto
+it with the `server` extra (gunicorn) into a virtual environment; the final stage copies only that environment onto
 `python:3.12-slim` (pinned by digest). The image is about 590 MB on disk, 127 MB compressed.
 
 | Build argument | Default | Meaning |
 |---|---|---|
-| `EXTRAS` | empty | `remote` adds the `annzarro[remote]` extra: `s3://`, `gs://` and `http(s)://` stores |
+| `EXTRAS` | empty | `remote` adds the `annzarro[remote]` extra to `annzarro[server]`: `s3://`, `gs://` and `http(s)://` stores |
 | `VERSION`, `REVISION` | `unknown` | written to the `org.opencontainers.image.version` and `.revision` labels |
 
 The image also carries the labels `title`, `description`, `source`, `url`, `documentation` and

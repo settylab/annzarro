@@ -40,6 +40,15 @@ pip install 'annzarro[remote]'
 Without it, opening an `s3://`, `gs://` or `https://` dataset fails with a message naming this
 extra. See {doc}`../user-guide/remote-datasets`.
 
+To run a shared server for many users with `annzarro serve`, install the `server` extra, which
+adds gunicorn (not available on Windows). The extras combine: `pip install 'annzarro[server,remote]'`.
+
+```bash
+pip install 'annzarro[server]'
+```
+
+See {doc}`../deployment/lab-server`.
+
 ```{note}
 `pip install annzarro` is the published path. If PyPI does not have a release yet when you read
 this, install from a source checkout as described below.

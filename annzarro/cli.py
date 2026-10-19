@@ -1193,6 +1193,10 @@ def main(argv: List[str] = None) -> int:
     # Store command: what in a store's layout makes AnnZarro slow (annzarro/store_command.py)
     from annzarro.store_command import add_parser as add_store_parser
     add_store_parser(subparsers)
+
+    # Serve command (production server, gunicorn)
+    from annzarro.server.serve import add_parser as add_serve_parser
+    add_serve_parser(subparsers)
     
     # Parse arguments
     args = parser.parse_args(argv)

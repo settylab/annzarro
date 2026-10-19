@@ -85,7 +85,7 @@ systemctl enable "$SERVICE_NAME"
 # Install AnnZarro and gunicorn into the venv the systemd unit runs from
 echo -e "${GREEN}Installing Python dependencies...${NC}"
 python3 -m venv "$INSTALL_DIR/venv"
-"$INSTALL_DIR/venv/bin/pip" install "$INSTALL_DIR" gunicorn
+"$INSTALL_DIR/venv/bin/pip" install "$INSTALL_DIR[server]"
 
 # Create admin user
 echo -e "${GREEN}Creating admin user...${NC}"
