@@ -4,7 +4,8 @@ Each way of looking at a running server answers a different person. Point each a
 
 | What | Who can see it | Point at it |
 |---|---|---|
-| `GET /api/v1/status` | everybody: `{"server": {"status": "running", "version": ...}}`; an admin also the host, process, memory and data directory | a load balancer's probe or a `systemd` watchdog: a `200` means the process is serving |
+| `GET /api/v1/health` ([below](#health-check)) | anybody, without login | a load balancer's probe, a container health check or a `systemd` start check |
+| `GET /api/v1/status` | signed-in users (anybody when login is off): the version; an admin also the host, process, memory and data directory | the web page, and a person checking which version runs |
 | [`GET /metrics`](#metrics) | the addresses in `server.metrics_allow` only; off by default | Prometheus, for graphs and alerts |
 | The admin page's Server health section ({ref}`admin-health`) | admins | a person: each worker's read budget, caches, memory, refusals by reason and the users active now |
 | The audit log ({ref}`admin-audit`) | admins, and `annzarro admin audit verify` | who changed what in the admin interface, with a hash chain that shows tampering |
@@ -12,8 +13,16 @@ Each way of looking at a running server answers a different person. Point each a
 
 `/metrics` and Server health read the same per-worker numbers ([below](#several-gunicorn-workers)): the
 first for a machine, over time; the second for a person, now, with the user names and the refusal
-reasons that `/metrics` leaves out. Metrics and JSON logs are off by default; a server that never
-sets them behaves as before.
+reasons that `/metrics` leaves out.
+Metrics and JSON logs are off by default.
+
+## Health check
+
+`GET /api/v1/status` answers without login. Anybody gets `{"server": {"status": "running", "version": ...}}`;
+an admin also gets the host, the process, memory and the data directory. Use it for a load balancer's
+probe or a `systemd` watchdog: a `200` means the process is serving. The admin page's Health section
+({doc}`admin`) shows each worker's caches, read budget and refusals, and {doc}`lab-server` shows where
+the server's logs go.
 
 ## Metrics
 
@@ -151,4 +160,4 @@ The default is `text`, the format the server has always written.
 | Memory | `max(annzarro_process_resident_memory_bytes) / <machine RAM> > 0.7` | before the kernel kills a worker |
 | Cache churn | `rate(annzarro_cache_misses_total[15m]) / (rate(annzarro_cache_hits_total[15m]) + rate(annzarro_cache_misses_total[15m])) > 0.8` | the cache is too small for what people open (`server.cache_memory_mb`) |
 | Worker hung | `annzarro_worker_snapshot_age_seconds > 60` | a worker stopped writing its numbers |
-| Down | `GET /api/v1/status` fails, or `up == 0` | the process is gone |
+| Down | the health check, or `up == 0` | the process is gone |

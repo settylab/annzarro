@@ -362,4 +362,4 @@ needs no restart; it appears after the dataset bar's refresh button is clicked.
 - Every admin change is also written to the audit log ({ref}`admin-audit`), and a copy of each record
   to the `annzarro.audit` logger.
 - `server.log_format: json` writes the lines as JSON for a log shipper, and `server.metrics_enabled` serves
-  Prometheus metrics; {doc}`monitoring` says which of these, `/api/v1/status` and the admin page to use for what.
+  Prometheus metrics; {doc}`monitoring` says which endpoint, log or admin page to use for what.
