@@ -16,6 +16,7 @@ with the release after it. Older releases are listed on
 ### Fixed
 - Changing the subset while an earlier change is still loading shows the new choice at once: the header
   names the cells asked for, and only the last request's cells are drawn.
+- Close all writes the autosave and the address at once, so a reload right after it no longer finds the panels just closed.
 
 ## 0.6.1 (2026-10-18)
 

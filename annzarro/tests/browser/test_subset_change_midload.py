@@ -238,3 +238,20 @@ def test_colour_none_is_one_colour_in_both_modes(page, server):
     page.wait_for_function("() => { const g = document.querySelector('%s'); return !!(g && g.data && g.data[0] && g.data[0].type === 'scatter3d'); }" % GD,
                            timeout=30000)
     assert page.evaluate(NONE_COLOUR) == "#1f77b4"
+
+
+def test_a_reload_after_close_all_mid_load_restores_nothing(page, server):
+    """A reload while the subset the panel was drawing is still loading (a crash looks the same) restores no closed panel."""
+    _open(page, server)
+    _slow(page, True)
+    _apply(page, 100)
+    page.wait_for_timeout(800)
+    page.click("#btn-close-all")
+    page.wait_for_selector(".notification-ask", timeout=5000)
+    page.locator(".notification-ask button", has_text="Close all").last.click()
+    page.wait_for_function("() => document.querySelectorAll('.tile-container .tile[data-tile-id]').length === 0", timeout=5000)
+    page.wait_for_timeout(1500)
+    page.reload()
+    page.wait_for_selector(".panel-type-option", timeout=30000)
+    page.wait_for_timeout(5000)
+    assert page.evaluate(TILES) == [], "a reload after Close all brought back a closed panel"
