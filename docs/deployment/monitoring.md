@@ -147,7 +147,7 @@ as one JSON object, which journald, Loki or Elasticsearch ingest without a parse
   and cookie values are never logged.
 - `server.log_file` stays in the text format. `log_level` applies as before.
 
-The default is `text`, the format the server has always written.
+The default is `text`.
 
 ## What to alert on
 

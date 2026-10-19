@@ -113,7 +113,7 @@ The command is shorthand for the explicit gunicorn command, which you can run in
 ```bash
 sudo -u annzarro env ANNZARRO_HOME=/var/lib/annzarro ANNZARRO_CONFIG=/etc/annzarro/site.yaml \
   /opt/annzarro/venv/bin/gunicorn -c python:annzarro.server.gunicorn_config \
-  --limit-request-line 8190 "annzarro.server.wsgi:create_wsgi_app()"
+  "annzarro.server.wsgi:create_wsgi_app()"
 ```
 
 The bundled gunicorn configuration `annzarro.server.gunicorn_config` reads the same AnnZarro
@@ -121,10 +121,12 @@ configuration as the app: it binds to `server.host:server.port`, starts `server.
 workers (default: twice the CPUs plus one, at most 4) of the `gthread` class with `server.threads`
 threads each (default 4), so a slow request (a large read, a remote store) does not hold a whole
 worker, sets a 60 s worker timeout and sends
-gunicorn's own logs, including the access log, to standard error. Options given on the
-command line, such as `--limit-request-line` here, override it. In a source checkout,
-`annzarro/server/run_gunicorn.sh` runs this command without `--limit-request-line`, with `ANNZARRO_CONFIG` defaulting to
-`/etc/annzarro/site.yaml` and stops if that file is missing.
+gunicorn's own logs, including the access log, to standard error. It leaves the request line
+unlimited (`server.limit_request_line: 0`), because the web client names the cells and genes it
+asks for in the URL. Options given on the command line (after `--` for `annzarro serve`)
+override it; do not pass `--limit-request-line`, which caps the line at 8,190 bytes at most. In a
+source checkout, `annzarro/server/run_gunicorn.sh` runs this command, with `ANNZARRO_CONFIG`
+defaulting to `/etc/annzarro/site.yaml`, and stops if that file is missing.
 
 `create_wsgi_app()` loads the same layered configuration as `annzarro start` (built-in
 defaults, `/etc/annzarro/config.yaml`, the user and project files, then the file named by
@@ -162,7 +164,7 @@ User=annzarro
 Group=annzarro
 Environment=ANNZARRO_HOME=/var/lib/annzarro
 Environment=ANNZARRO_CONFIG=/etc/annzarro/site.yaml
-ExecStart=/opt/annzarro/venv/bin/annzarro serve -- --limit-request-line 8190
+ExecStart=/opt/annzarro/venv/bin/annzarro serve
 Restart=on-failure
 RestartSec=5
 
@@ -328,15 +330,17 @@ limits on the way:
 
 | Component | Default limit on the request line | Over the limit | Raise with |
 |---|---|---|---|
-| gunicorn | 4,094 bytes | 400 "Request Line is too large" | `--limit-request-line 8190` (its maximum), or `0` for no limit |
+| gunicorn with the bundled configuration | none (`server.limit_request_line: 0`) | (no limit) | not needed |
+| gunicorn with its own defaults | 4,094 bytes | 400 "Request Line is too large" | `--limit-request-line 0` for no limit (8,190 is the most it allows otherwise) |
 | nginx | one buffer of `large_client_header_buffers` (8 KB) | 414 Request-URI Too Large | `large_client_header_buffers 4 32k;` |
 | `annzarro start` (waitress) | 262,144 bytes of request line and headers together | 431 | not needed |
 
 We measured the gunicorn and waitress rows against gunicorn 26.2 and waitress 3.0: a 4.5 KB
 request line returned 400 under the gunicorn default and 200 with `--limit-request-line 8190`;
 9 KB returned 400 with 8190; 60 KB returned 200 with `0`. waitress answered 200 at 262,000
-bytes and 431 at 300,000. If people bring legacy links, raise both
-limits; otherwise ask them to re-share with the current **Share Link**.
+bytes and 431 at 300,000. If people bring legacy links, raise the nginx buffers (and gunicorn's
+limit, if you run it without the bundled configuration); otherwise ask them to re-share with the
+current **Share Link**.
 
 (lab-server-updating)=
 ## Updating datasets
