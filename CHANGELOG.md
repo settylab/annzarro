@@ -28,6 +28,7 @@ with the release after it. Older releases are listed on
 ### Fixed
 - Changing the subset while an earlier change is still loading shows the new choice at once: the header
   names the cells asked for, and only the last request's cells are drawn.
+- The tooltip of Plot Options, Presets, **Publication** no longer says it sets the scale bar: it leaves the scale bar as it is.
 - Close all writes the autosave and the address at once, so a reload right after it no longer finds the panels just closed.
 - Switching Show Legend off or on in Plot Options redrew the graph once per legend entry: about a second
   on a 1M-point plot with 35 categories. It is now a single layout change (about 50 ms).
