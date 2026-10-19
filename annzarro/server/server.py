@@ -298,6 +298,53 @@ WAITRESS_THREADS = 32
 WAITRESS_CHANNEL_TIMEOUT = 300
 
 
+#: Largest piece of a reply body handed to waitress at once.
+WAITRESS_SLICE_BYTES = 1 << 20
+
+
+class _SliceLargeBodies:
+    """WSGI middleware: hand a large reply body to waitress in pieces of WAITRESS_SLICE_BYTES.
+
+    A reply built whole (a 95.6M-cell column is a 382 MB bytes object) reaches the server as one
+    chunk. waitress copies a chunk into its output buffer before it sends it, which held the body
+    twice and then wrote it to a temporary file: +0.8 GB at the server's peak when three such
+    columns were requested at once. In pieces, waitress holds at most outbuf_high_watermark (16 MB)
+    and makes the app wait for the client; the bytes, headers and Content-Length are unchanged.
+    Werkzeug and gunicorn write the chunk straight to the socket and do not need this.
+    """
+
+    def __init__(self, app, size=None):
+        self.app = app
+        self.size = size or WAITRESS_SLICE_BYTES
+
+    def __call__(self, environ, start_response):
+        body = self.app(environ, start_response)
+        if hasattr(body, "filelike"):   # wsgi.file_wrapper (send_file): waitress sends the file itself
+            return body
+        return _Sliced(body, self.size)
+
+
+class _Sliced:
+    def __init__(self, body, size):
+        self._body, self._size = body, size
+
+    def __iter__(self):
+        size = self._size
+        for chunk in self._body:
+            if len(chunk) <= size:
+                yield chunk
+                continue
+            view = memoryview(chunk)
+            for at in range(0, len(chunk), size):
+                yield view[at:at + size].tobytes()
+            del view
+
+    def close(self):
+        close = getattr(self._body, "close", None)
+        if close is not None:
+            close()
+
+
 def _serve_with_waitress(app, host, port, max_body_bytes=None, threads=None):
     """Serve with waitress, which keeps a browser's connections open (HTTP/1.1 keep-alive).
 
@@ -317,7 +364,7 @@ def _serve_with_waitress(app, host, port, max_body_bytes=None, threads=None):
     # waitress reads a whole request body before the app sees it; the app refuses
     # a body over its limit with a JSON 413, so waitress' own limit sits above it.
     body_limit = max(int(max_body_bytes or 0) * 2, 1 << 30)
-    serve(app, host=host, port=port, threads=int(threads or WAITRESS_THREADS),
+    serve(_SliceLargeBodies(app), host=host, port=port, threads=int(threads or WAITRESS_THREADS),
           channel_timeout=WAITRESS_CHANNEL_TIMEOUT, max_request_body_size=body_limit,
           ident="AnnZarro")
 
