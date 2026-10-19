@@ -930,3 +930,55 @@ def test_a_derived_column_with_no_condition_is_kept_when_a_view_loads(server):
             assert not errors, errors
         finally:
             browser.close()
+
+
+# --- the search row: spacing at the edges, and each option's help next to its own button --------
+
+_TIP_JS = """(sel) => { const t = document.querySelector('.tile[data-tile-id="%s"]');
+  const b = t.querySelector(sel), r = b.getBoundingClientRect(), cs = getComputedStyle(b, '::after');
+  const m = new DOMMatrix(cs.transform === 'none' ? undefined : cs.transform);
+  // ::after is absolutely placed against the button (the button is its containing block)
+  const left = r.left + parseFloat(cs.left) + m.e, top = r.top + parseFloat(cs.top) + m.f;
+  const w = parseFloat(cs.width), h = parseFloat(cs.height), tile = t.getBoundingClientRect();
+  return {btn: [r.left, r.top, r.right, r.bottom], box: [left, top, left + w, top + h], tile: [tile.left, tile.right],
+          vw: window.innerWidth, position: getComputedStyle(b).position, visible: cs.visibility}; }""" % TABLE
+
+
+@pytest.mark.parametrize("width", [1800, 700], ids=["wide", "narrow"])
+def test_each_search_option_help_sits_just_above_its_own_button(server, width):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, width=width)
+        try:
+            for sel in ("[id^=btnRegex]", "[id^=btnSmart]", "[id^=btnCase]"):
+                page.hover(f'.tile[data-tile-id="{TABLE}"] {sel}')
+                page.wait_for_timeout(450)
+                g = page.evaluate(_TIP_JS, sel)
+                bl, bt, br, bb = g["btn"]
+                l, t, r, b = g["box"]
+                assert g["position"] == "relative" and g["visible"] == "visible", g
+                assert 0 <= bt - b <= 16, ("the help is just above its button, not far above", sel, g)
+                assert l <= br and r >= bl, ("the help is over its own button, horizontally", sel, g)
+                assert l >= g["tile"][0] - 1 and r <= g["tile"][1] + 1 and r <= g["vw"], ("inside the panel and the window", sel, g)
+            assert not errors, errors
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("width", [1800, 700], ids=["wide", "narrow"])
+def test_the_search_row_keeps_the_advanced_search_boxs_inset(server, width):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, width=width)
+        try:
+            g = page.evaluate(f"""() => {{ const t = document.querySelector('.tile[data-tile-id="{TABLE}"]');
+                const box = t.querySelector('.dtsb-searchBuilder').getBoundingClientRect();
+                const line = t.querySelector('.az-line-select-btn').getBoundingClientRect();
+                const last = [...t.querySelectorAll('.dt-search-option')].pop().getBoundingClientRect();
+                return {{boxL: box.left, boxR: box.right, lineL: line.left, lastR: last.right}}; }}""")
+            # not against the panel's edge: inset by at least the box's border and 0.5rem padding
+            assert g["lineL"] - g["boxL"] >= 8, g
+            assert g["boxR"] - g["lastR"] >= 8, g
+            assert not errors, errors
+        finally:
+            browser.close()

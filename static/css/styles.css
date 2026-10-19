@@ -1131,6 +1131,9 @@ button.dtsb-button.dtsb-clear:hover {
     flex-wrap: nowrap;
     gap: 6px;
     margin-bottom: 4px;
+    /* the Advanced Search box's own inset (its border and 0.5rem padding), so the Line filter button and the
+       last search option do not sit against the panel's edge */
+    padding-inline: calc(0.5rem + 1px);
 }
 
 .az-search-row .dataTables_filter input.form-control {
@@ -1157,6 +1160,9 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 .dt-search-option {
+    /* the help (::after, ::before) is placed against the button: without this it was placed against the
+       table's wrapper, and showed above the Advanced Search box */
+    position: relative;
     width: 36px; 
     height: 30px;
     display: flex;
@@ -1227,6 +1233,14 @@ button.dtsb-button.dtsb-clear:hover {
 .dt-search-option:hover::before {
     opacity: 1;
     visibility: visible;
+}
+
+/* the help of the last two buttons is anchored to the button's right edge (their help is wider than the
+   room left to the right), so the panel's edge does not cut it off */
+.dt-search-options > .dt-search-option:nth-last-child(-n+2)::after {
+    left: auto;
+    right: 0;
+    transform: none;
 }
 
 /* Column Selector (Left Side) */
