@@ -117,7 +117,7 @@ print(((m > 5) & ((l > 0.05) | (l < -0.05))).sum())   # 159
 ## Filter with a line drawn on a plot
 
 The **Line filter** button before the table's search box (icon only on a narrow table) lets you draw a line on a
-plot of the same kind (a cell table uses cell plots, a gene table gene plots). The side to the
+plot of its own rows (a cell table: plots of cells; a gene table: plots of genes). The side to the
 **right** of the line, looking from where you press the mouse towards where you release it, is
 filtered out of the table. The tutorial {doc}`../tutorials/line-select` shows it on a UMAP.
 
@@ -137,9 +137,10 @@ filtered out of the table. The tutorial {doc}`../tutorials/line-select` shows it
   afterwards changes nothing in the table, and a new line on the plot adds the columns of its new axes.
   A derived column appears in **Selected Columns** and can be removed there. An identical one is
   reused. Delete a line by deleting its condition.
-- The tool refuses a plot with a text, date or logarithmic axis, a 3D plot, a plot whose axis is not
-  something the table has columns of, and a plot in large-plot mode (a table cannot list so many cells).
-  Hover over the plot: the layer says why.
+- The tool leaves 3D plots, plots in large-plot mode (a table cannot list so many cells) and plots of
+  the other kind alone: they get no layer and the mouse works as usual. A plot with a text, date or
+  logarithmic axis, or one whose axis is not something the table has columns of, shows a small tooltip
+  near the cursor that says why, and still takes the mouse.
 
 Lines drawn counter-clockwise around an area keep it. Drawn clockwise, and with the outer AND switched
 to OR, they filter it out.

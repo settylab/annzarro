@@ -94,7 +94,7 @@ def large_server(tmp_path_factory):
     proc.wait(10)
 
 
-def _link(root, store, table_cfg=None, color=None):
+def _link(root, store, table_cfg=None, color=None, extra=None):
     plot = {"title": "plot", "z": None, "pointSize": 8, "pointOpacity": 1, "color": {"type": "none"},
             "tableFilter": "none"}
     configs = {
@@ -103,12 +103,17 @@ def _link(root, store, table_cfg=None, color=None):
         PLOT_A: {**plot, "id": PLOT_A, "x": UMAP("0"), "y": UMAP("1"), **({"color": color} if color else {})},
         PLOT_B: {**plot, "id": PLOT_B, "x": OBS("cell_type"), "y": OBS("total_counts")},
     }
+    configs.update(extra or {})
     tiles = {t: {"type": "tile", "id": t, "controlsVisible": False} for t in configs}
+    def pair(a, b):      # a split holds two children
+        return {"type": "split", "direction": "vertical", "panes": [{"percentage": 50}, {"percentage": 50}],
+                "children": [a, b]}
+    right = pair(tiles[PLOT_A], tiles[PLOT_B])
+    if extra:
+        more = [tiles[t] for t in extra]
+        right = pair(right, pair(more[0], more[1]) if len(more) > 1 else more[0])
     hierarchy = [{"type": "split", "direction": "horizontal", "panes": [{"percentage": 40}, {"percentage": 60}],
-                  "children": [tiles[TABLE],
-                               {"type": "split", "direction": "vertical",
-                                "panes": [{"percentage": 55}, {"percentage": 45}],
-                                "children": [tiles[PLOT_A], tiles[PLOT_B]]}]}]
+                  "children": [tiles[TABLE], right]}]
     view = {"v": 1, "constants": {}, "layout": {"v": 1, "hierarchy": hierarchy,
                                                 "controlState": {t["id"]: t["controlsVisible"] for t in tiles.values()},
                                                 "panelConfigs": configs}}
@@ -116,12 +121,12 @@ def _link(root, store, table_cfg=None, color=None):
     return f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}"
 
 
-def _open(pw, root, store, table_cfg=None, width=1800, color=None):
+def _open(pw, root, store, table_cfg=None, width=1800, color=None, extra=None, height=1500):
     browser = pw.chromium.launch()
-    page = browser.new_page(viewport={"width": width, "height": 1500})
+    page = browser.new_page(viewport={"width": width, "height": height})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(_link(root, store, table_cfg, color))
+    page.goto(_link(root, store, table_cfg, color, extra))
     _settle(page)
     return browser, page, errors
 
@@ -385,28 +390,91 @@ def test_escape_stops_the_tool_and_the_release_does_nothing(server):
             browser.close()
 
 
-def test_a_plot_with_a_text_axis_says_why_before_any_click(server):
+def test_a_plot_with_a_text_axis_gets_a_light_tooltip_and_no_layer(server):
     root, store = server
     with playwright.sync_playwright() as pw:
         browser, page, errors = _open(pw, root, store)
         try:
             _arm(page)
-            overlay = page.locator(f'.az-line-overlay[data-plot="{PLOT_B}"]')
-            assert "az-line-refused" in overlay.get_attribute("class")
-            overlay.hover()
-            msg = overlay.locator(".az-line-msg")
-            assert msg.is_visible()
-            assert "not numerical" in msg.inner_text() and "cell_type" in msg.inner_text(), msg.inner_text()
-            # a click does nothing
+            # no layer over it: the mouse is its own there
+            assert page.locator(f'.az-line-overlay[data-plot="{PLOT_B}"]').count() == 0
+            assert page.locator(".az-line-overlay").count() == 1
+            box = page.evaluate(f"(() => {{ const r = document.getElementById('plot-container-{PLOT_B}').getBoundingClientRect();"
+                                " return {x: r.left + r.width / 2, y: r.top + r.height / 2}; })()")
+            page.mouse.move(box["x"], box["y"])
+            page.wait_for_selector("#line-select-tip", timeout=5000)
+            tip = page.inner_text("#line-select-tip")
+            assert tip.startswith("This plot's x axis (cell_type) is not numeric"), tip
+            t = page.evaluate("(() => { const r = document.getElementById('line-select-tip').getBoundingClientRect();"
+                              " return {l: r.left, t: r.top}; })()")
+            assert abs(t["l"] - box["x"]) < 60 and 0 < t["t"] - box["y"] < 60, (t, box)
+            # it blocks nothing: the plot under it gets the pointer (hover shows its own label)
+            hit = page.evaluate(f"document.elementFromPoint({box['x']}, {box['y']}).closest('#plot-container-{PLOT_B}') !== null")
+            assert hit
             before = _rows(page)
-            box = overlay.bounding_box()
-            page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.mouse.click(box["x"], box["y"])
             page.wait_for_timeout(500)
             assert _rows(page) == before
-            assert page.evaluate(f"document.querySelector('#table-filter-{PLOT_B}').value") == "none"
+            # off the plot: the tip goes
+            page.mouse.move(5, 5)
+            page.wait_for_function("() => !document.getElementById('line-select-tip')", timeout=5000)
+            page.keyboard.press("Escape")
+            assert page.locator("#line-select-tip").count() == 0
             assert not errors, errors
             if os.environ.get("AZ_SHOT_DIR"):
-                page.screenshot(path=os.path.join(os.environ["AZ_SHOT_DIR"], "line-select-warning.png"))
+                _arm(page)
+                page.mouse.move(box["x"], box["y"])
+                page.wait_for_selector("#line-select-tip")
+                page.screenshot(path=os.path.join(os.environ["AZ_SHOT_DIR"], "line-select-tip.png"))
+        finally:
+            browser.close()
+
+
+PLOT_3D, PLOT_GENE = "cell-plot-3D", "gene-plot-G"
+_PLOT = {"title": "plot", "pointSize": 8, "pointOpacity": 1, "color": {"type": "none"}, "tableFilter": "none"}
+EXTRA_PLOTS = {
+    PLOT_3D: {**_PLOT, "id": PLOT_3D, "x": UMAP("0"), "y": UMAP("1"), "z": OBS("total_counts")},
+    PLOT_GENE: {**_PLOT, "id": PLOT_GENE, "z": None, "x": {"type": "layer", "key": "X", "column": "GENE001"},
+                "y": {"type": "layer", "key": "X", "column": "GENE002"}},
+}
+
+
+def test_armed_leaves_a_3d_plot_and_a_gene_plot_alone(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, errors = _open(pw, root, store, extra=EXTRA_PLOTS, height=2200)
+        try:
+            for pid in (PLOT_3D, PLOT_GENE):
+                page.wait_for_function(f"id => document.getElementById('plot-container-' + id)?.data?.length", arg=pid, timeout=60_000)
+            page.wait_for_timeout(1500)
+            _arm(page)
+            page.wait_for_timeout(800)
+            # a layer over the cell plot that takes a line, none over the 3D plot, none over the gene plot
+            assert page.locator(f'.az-line-overlay[data-plot="{PLOT_A}"]').count() == 1
+            assert page.locator(f'.az-line-overlay[data-plot="{PLOT_3D}"]').count() == 0
+            assert page.locator(f'.az-line-overlay[data-plot="{PLOT_GENE}"]').count() == 0
+            assert page.locator("#line-select-tip").count() == 0
+            before = _rows(page)
+            for pid in (PLOT_3D, PLOT_GENE):
+                box = page.evaluate(f"(() => {{ const r = document.getElementById('plot-container-{pid}').getBoundingClientRect();"
+                                    " return {x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height}; })()")
+                # the pointer reaches the plot itself, not a layer
+                assert page.evaluate(f"document.elementFromPoint({box['x']}, {box['y']}).closest('#plot-container-{pid}') !== null")
+                page.mouse.move(box["x"], box["y"])
+                page.wait_for_timeout(300)
+                assert page.locator("#line-select-tip").count() == 0
+                page.mouse.down()
+                page.mouse.move(box["x"] + box["w"] * 0.3, box["y"] + box["h"] * 0.2, steps=8)      # a rotate / a zoom box
+                page.mouse.up()
+                page.wait_for_timeout(500)
+                assert _rows(page) == before
+                assert _details(page) == {}
+            if os.environ.get("AZ_SHOT_DIR"):
+                page.screenshot(path=os.path.join(os.environ["AZ_SHOT_DIR"], "line-select-3d.png"))
+            # the 3D plot really rotated: its camera moved under that drag
+            cam = page.evaluate(f"JSON.stringify(document.getElementById('plot-container-{PLOT_3D}')._fullLayout.scene.camera.eye)")
+            assert cam != '{"x":1.25,"y":1.25,"z":1.25}', cam
+            assert not errors, errors
         finally:
             browser.close()
 
@@ -648,7 +716,7 @@ def test_armed_shows_a_badge_and_a_frame_and_a_click_on_the_badge_stops(server):
             a = _armed_chrome(page)
             assert a["badge"] and a["inBar"] and a["frame"] and a["frames"] == 1 and a["btn"], a
             assert a["text"].startswith("Line filter on: cells"), a
-            assert "right" in a["title"] and "Esc" in a["title"] and "draw a line" in a["title"], a
+            assert "right" in a["title"] and "Esc" in a["title"] and "Drag on a plot of cells to draw a line" in a["title"], a
             page.click("#line-select-badge")
             _is_off(page)
             assert not page.evaluate("!!document.querySelector('.az-line-select-btn.active')")

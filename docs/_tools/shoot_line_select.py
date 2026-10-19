@@ -229,9 +229,9 @@ def shoot(sh):
     # a plot with a text axis says why
     page = sh.open(view(True), dataset=STORE, viewport={"width": 1700, "height": 1000})
     arm(page)
-    box = page.locator(f'.az-line-overlay[data-plot="{TEXT}"]').bounding_box()
-    page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
-    page.wait_for_timeout(400)
+    box = page.locator(f"#plot-container-{TEXT}").bounding_box()
+    page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.3)
+    page.wait_for_selector("#line-select-tip")
     mark(page, "line-select-warning")
     page.context.close()
 

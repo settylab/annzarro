@@ -304,9 +304,21 @@ export function configDepth(config) {
 }
 
 /**
- * Why a plot cannot take a line, or null when it can. Everything the tool
- * needs of a plot is in this one place, so the warning on hover and the
- * drawing agree.
+ * What the tool does over a plot: `ok` (it takes a line), `none` (it does not apply: a 3D plot, a
+ * plot in large-plot mode, a plot not drawn yet; nothing is shown and the plot is left to the
+ * mouse) or `warn` (a 2D plot it cannot use: `why` says why, in a light tooltip).
+ * @param {Object} p  see plotRefusal
+ * @returns {{mode: 'ok'|'none'|'warn', why: string|null}}
+ */
+export function plotMode(p) {
+    if (p.is3d || p.isLarge || !p.drawn) return { mode: 'none', why: null };
+    const why = plotRefusal(p);
+    return why ? { mode: 'warn', why } : { mode: 'ok', why: null };
+}
+
+/**
+ * Why a 2D plot cannot take a line, or null when it can. The tooltip over the plot and the drawing
+ * agree because both come from here. (3D and large plots are `none` in plotMode, not refused here.)
  * @param {Object} p
  * @param {boolean} p.drawn  the plot has been drawn
  * @param {boolean} p.is3d
@@ -321,21 +333,22 @@ export function configDepth(config) {
  * @returns {string|null}
  */
 export function plotRefusal({ drawn, is3d, isLarge, xType, yType, xSource, ySource, tableSources, xLabel, yLabel }) {
-    if (!drawn) return 'This plot is not drawn yet.';
+    // a 3D plot has no x and y axis in the layout: that is "3D", never "not drawn"
     if (is3d) return 'Line selection needs a 2D plot: this plot is 3D.';
+    if (!drawn) return 'This plot is not drawn yet.';
     // a plot this size has no table: a cell table cannot list so many cells
     if (isLarge) return 'This plot is in large-plot mode: a table cannot list this many cells, so there is nothing to filter. Turn on a subset to use line selection.';
     const bad = (type, label, axis) => {
         if (type === 'log') {
-            return `The ${axis} axis (${label}) is logarithmic: a straight line on the screen is not a straight line in the values.`;
+            return `This plot's ${axis} axis (${label}) is logarithmic: a straight line on the screen is not a straight line in the values.`;
         }
-        if (type !== 'linear') return `The ${axis} axis (${label}) is not numerical.`;
+        if (type !== 'linear') return `This plot's ${axis} axis (${label}) is not numeric.`;
         return null;
     };
     const why = bad(xType, xLabel, 'x') || bad(yType, yLabel, 'y');
-    if (why) return `${why} Line selection needs a numerical x and y axis.`;
+    if (why) return why;
     for (const [src, label, axis] of [[xSource, xLabel, 'x'], [ySource, yLabel, 'y']]) {
-        if (!tableSources.includes(src)) return `The ${axis} axis (${label}) is not something this table has columns of.`;
+        if (!tableSources.includes(src)) return `This plot's ${axis} axis (${label}) is not something this table has columns of.`;
     }
     return null;
 }

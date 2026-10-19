@@ -4540,12 +4540,6 @@ mark.dsi-mark { background: rgba(255, 200, 0, 0.5); color: inherit; padding: 0 0
     user-select: none;
 }
 
-.az-line-overlay.az-line-refused {
-    cursor: not-allowed;
-    background: var(--az-surface-3, rgba(128, 128, 128, 0.25));
-    opacity: 0.85;
-}
-
 .az-line-svg {
     position: absolute;
     left: 0;
@@ -4588,8 +4582,16 @@ mark.dsi-mark { background: rgba(255, 200, 0, 0.5); color: inherit; padding: 0 0
     display: block;
 }
 
-.az-line-overlay.az-line-refused .az-line-msg {
-    background: #842029;
+.az-line-tip {
+    position: fixed;
+    z-index: 1100;
+    max-width: 22rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: #343a40;
+    color: #fff;
+    font-size: 12px;
+    pointer-events: none;
 }
 
 .az-line-select-btn {

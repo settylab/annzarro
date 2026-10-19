@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  addCriterion, axisMap, clipLine, configDepth, crossRight, derivedColumn, derivedName, derivedValues, fitInside,
+  addCriterion, axisMap, clipLine, configDepth, crossRight, derivedColumn, derivedName, derivedValues, fitInside, plotMode,
   lineCondition, lineOnScreen, numberCriterion, numberText, plotRefusal, rightPolygon, round, sameExpr, snap45,
 } from "../../../static/js/utils/line-select.js";
 
@@ -234,9 +234,9 @@ test("plots that cannot take a line say why", () => {
   const ok = { drawn: true, is3d: false, isLarge: false, xType: "linear", yType: "linear", xSource: "obsm", ySource: "obsm",
     tableSources: ["obs", "obsm", "obsp", "layer"], xLabel: "UMAP_1", yLabel: "UMAP_2" };
   assert.equal(plotRefusal(ok), null);
-  assert.match(plotRefusal({ ...ok, yType: "category", yLabel: "cell_type" }), /y axis \(cell_type\) is not numerical/);
+  assert.match(plotRefusal({ ...ok, yType: "category", yLabel: "cell_type" }), /y axis \(cell_type\) is not numeric/);
   assert.match(plotRefusal({ ...ok, xType: "log" }), /logarithmic/);
-  assert.match(plotRefusal({ ...ok, xType: "date" }), /not numerical/);
+  assert.match(plotRefusal({ ...ok, xType: "date" }), /not numeric/);
   assert.match(plotRefusal({ ...ok, is3d: true }), /3D/);
   assert.match(plotRefusal({ ...ok, drawn: false }), /not drawn/);
   assert.match(plotRefusal({ ...ok, isLarge: true }), /large-plot mode/);
@@ -254,4 +254,18 @@ test("a snapped end is pulled back inside the plot area, keeping its direction",
   assert.equal(diag.x, 400);
   assert.equal(diag.y, 300);
   assert.deepEqual(fitInside(p1, { x: 300, y: 100 }, W, H), { x: 300, y: 100 }, "inside stays");
+});
+
+test("what the tool does over a plot: apply, say nothing, or warn", () => {
+  const ok = { drawn: true, is3d: false, isLarge: false, xType: "linear", yType: "linear", xSource: "obsm", ySource: "obsm",
+    tableSources: ["obs", "obsm", "obsp", "layer"], xLabel: "UMAP_1", yLabel: "UMAP_2" };
+  assert.deepEqual(plotMode(ok), { mode: "ok", why: null });
+  // 3D has no x/y axis in the layout (drawn is false there): still "none", and never "not drawn"
+  assert.deepEqual(plotMode({ ...ok, is3d: true, drawn: false }), { mode: "none", why: null });
+  assert.match(plotRefusal({ ...ok, is3d: true, drawn: false }), /3D/);
+  assert.equal(plotMode({ ...ok, isLarge: true }).mode, "none");
+  assert.equal(plotMode({ ...ok, drawn: false }).mode, "none");
+  const w = plotMode({ ...ok, xType: "category", xLabel: "cell_type" });
+  assert.equal(w.mode, "warn");
+  assert.match(w.why, /^This plot's x axis \(cell_type\) is not numeric/);
 });

@@ -3,7 +3,7 @@
  *
  * The table's Line button arms it. While it is armed every plot of the same
  * kind of entity (cell plots for a cell table, gene plots for a gene table)
- * is covered by a transparent layer:
+ * that takes a line is covered by a transparent layer:
  *
  *   - a plot the tool can work on takes a drag, mouse down to release; the
  *     line and the side that will be filtered out (right of the way from the
@@ -11,9 +11,9 @@
  *     snaps the line to multiples of 45 degrees, and the release hands the
  *     line to the table (applyLine of the table panel: columns, a condition
  *     joined to the filter by an outer AND);
- *   - a plot it cannot work on (an axis that is not numerical, a 3D plot, ...)
- *     says why when the mouse is over it.
- *
+ *   - a plot it does not apply to (3D, large-plot mode) gets nothing, and the
+ *     mouse is its own there; a 2D plot it cannot use (a text or date axis)
+ *     gets a light tooltip near the cursor that says why, and blocks nothing.
  * Escape stops it: a line being drawn is dropped (the release then does
  * nothing) and the tool is left. Plotly's own zoom and pan are the model: the
  * tool stays armed after a line, so that several lines make an area.
@@ -24,7 +24,7 @@ import { PanelManager } from '../../panel-manager.js';
 import { DataManager } from '../../data-manager.js';
 import { notify } from '../../utils/notify.js';
 import {
-    axisMap, lineCondition, rightPolygon, clipLine, snap45, fitInside, columnRef, plotRefusal
+    axisMap, lineCondition, rightPolygon, clipLine, snap45, fitInside, columnRef, plotMode
 } from '../../utils/line-select.js';
 import { getColumnDisplayName } from './table-data.js';
 
@@ -35,7 +35,8 @@ const TABLE_SOURCES = {
 };
 const PLOT_TYPE = { cells: 'cell-plot', genes: 'gene-plot' };
 const HINT = 'Drag to draw a line. The right side is filtered out. Shift: 45\u00b0. Esc: stop.';
-const BADGE_HELP = 'Drag on a plot of the same cells to draw a line. The side to the right of the line, '
+/** The badge's help: drag on a plot of the table's own rows ('cells' or 'genes'). */
+const badgeHelp = (rows) => `Drag on a plot of ${rows} to draw a line. The side to the right of the line, `
     + 'looking from where you press to where you release, is filtered out of this table. '
     + 'Esc or a click here stops.';
 
@@ -54,19 +55,22 @@ function axisLabel(axis) {
 }
 
 /**
- * Why this plot cannot take a line (null: it can), from what is drawn.
+ * What the tool does over this plot (plotMode in utils/line-select.js), from what is drawn.
  * @param {Object} panel  a plot panel
  * @param {string} rows  'cells' or 'genes', the table's rows
+ * @returns {{mode: 'ok'|'none'|'warn', why: string|null}}
  */
-export function refusalOf(panel, rows) {
+export function modeOf(panel, rows) {
     const gd = plotDiv(panel);
     const fl = gd && gd._fullLayout;
     const cfg = (panel.getConfig && panel.getConfig()) || {};
     const axis = (a) => (cfg[a] && cfg[a].type) || 'none';
-    return plotRefusal({
+    return plotMode({
         drawn: !!(fl && fl.xaxis && fl.yaxis && fl.xaxis._length > 0 && fl.yaxis._length > 0),
         isLarge: !!(gd && gd.__isLarge),
-        is3d: !!(fl && fl.scene) || !!(gd && gd._fullData && gd._fullData.some(t => /3d/.test(t.type || ''))),
+        // a 3D plot has a scene, not an x and y axis: say so before anything about "drawn"
+        is3d: !!(cfg.z && cfg.z.type && cfg.z.type !== 'none') || !!(fl && fl.scene)
+            || !!(gd && gd._fullData && gd._fullData.some(t => /3d/.test(t.type || ''))),
         xType: fl && fl.xaxis ? fl.xaxis.type : '',
         yType: fl && fl.yaxis ? fl.yaxis.type : '',
         xSource: axis('x'),
@@ -98,7 +102,7 @@ export function lineSelectButton(tableId, rows) {
     btn.className = 'btn btn-sm az-line-select-btn';
     btn.setAttribute('data-table', tableId);
     btn.setAttribute('aria-label', 'Line selection');
-    btn.title = 'Line filter: draw a line on a plot of the same cells or genes. The side to the right of the line is filtered out of this table.';
+    btn.title = `Line filter: draw a line on a plot of ${rows}. The side to the right of the line is filtered out of this table.`;
     btn.innerHTML = '<i class="fas fa-slash" aria-hidden="true"></i><span class="az-line-select-text">Line filter</span>';
     btn.addEventListener('click', () => toggleLineSelect(tableId, rows));
     btn.classList.toggle('active', isLineSelectArmed(tableId));
@@ -124,6 +128,8 @@ export function leaveLineSelect() {
     cancelAnimationFrame(was.frame);
     document.removeEventListener('keydown', was.onKey, true);
     document.removeEventListener('keyup', was.onKeyUp, true);
+    document.removeEventListener('mousemove', showTip, true);
+    document.getElementById('line-select-tip')?.remove();
     for (const o of was.overlays.values()) o.el.remove();
     was.overlays.clear();
     document.getElementById('line-select-badge')?.remove();
@@ -148,7 +154,7 @@ function showArmed(state) {
     badge.type = 'button';
     badge.id = 'line-select-badge';
     badge.className = 'btn btn-sm az-line-badge';
-    badge.title = BADGE_HELP;
+    badge.title = badgeHelp(state.rows);
     badge.setAttribute('aria-label', `Line filter on: ${panel.getTitle()}. Click to stop.`);
     badge.innerHTML = '<i class="fas fa-slash" aria-hidden="true"></i> Line filter on: <span class="az-line-badge-name"></span> <i class="fas fa-xmark" aria-hidden="true"></i>';
     badge.querySelector('.az-line-badge-name').textContent = panel.getTitle();
@@ -163,7 +169,7 @@ function showArmed(state) {
 function arm(tableId, rows) {
     const state = {
         panel: PanelManager.getPanel(tableId), dataset: DataManager.getCurrentDataset(),
-        tableId, rows, overlays: new Map(), frame: 0, drag: null, busy: false,
+        tableId, rows, overlays: new Map(), modes: new Map(), warn: new Map(), frame: 0, drag: null, busy: false,
         onKey: null, onKeyUp: null
     };
     state.onKey = (e) => {
@@ -187,6 +193,7 @@ function arm(tableId, rows) {
     showArmed(state);
     document.addEventListener('keydown', state.onKey, true);
     document.addEventListener('keyup', state.onKeyUp, true);
+    document.addEventListener('mousemove', showTip, true);
     syncButtons();
     const tick = () => {
         if (active !== state) return;
@@ -217,17 +224,33 @@ function stopFromEscape() {
     leaveLineSelect();
 }
 
-/** One layer per plot of the table's kind; each sits over its plot. */
+/**
+ * One layer over each plot of the table's kind that takes a line. A plot the tool does not apply to
+ * (3D, large, not drawn yet) gets nothing: no layer, no message, and the mouse is its own. A 2D plot
+ * it cannot use (a text, date or log axis) gets no layer either, only a light tooltip (showTip).
+ */
 function reconcile() {
-    const { rows, overlays } = active;
+    const { rows, overlays, warn } = active;
     const panels = PanelManager.getPanelsByType(PLOT_TYPE[rows]) || [];
     const seen = new Set();
+    const now = performance.now();
     for (const panel of panels) {
         const gd = plotDiv(panel);
         if (!gd || !gd.isConnected) continue;
         const id = panel.getId();
         seen.add(id);
         let o = overlays.get(id);
+        // the plot may be redrawn with other axes: looked at a few times a second, and not under a drag
+        let m = active.modes.get(id);
+        if (!m || (now - m.checked > 250 && !(o && o.drag))) {
+            m = { ...modeOf(panel, rows), checked: now };
+            active.modes.set(id, m);
+        }
+        if (m.mode === 'warn') warn.set(id, { gd, why: m.why }); else warn.delete(id);
+        if (m.mode !== 'ok') {
+            if (o && !o.drag) { o.el.remove(); overlays.delete(id); }
+            continue;
+        }
         if (!o) {
             o = makeOverlay(panel);
             overlays.set(id, o);
@@ -237,6 +260,32 @@ function reconcile() {
     for (const [id, o] of overlays) {
         if (!seen.has(id)) { o.el.remove(); overlays.delete(id); }
     }
+    for (const id of [...warn.keys()]) if (!seen.has(id)) warn.delete(id);
+}
+
+/** A light tooltip near the mouse over a plot the tool cannot use; it blocks nothing. */
+function showTip(e) {
+    if (!active) return;
+    let hit = null;
+    for (const { gd, why } of active.warn.values()) {
+        const r = gd.getBoundingClientRect();
+        if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+            && gd.contains(e.target)) { hit = why; break; }
+    }
+    let tip = document.getElementById('line-select-tip');
+    if (!hit) { if (tip) tip.remove(); return; }
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.id = 'line-select-tip';
+        tip.className = 'az-line-tip';
+        tip.setAttribute('role', 'tooltip');
+        document.body.appendChild(tip);
+    }
+    if (tip.textContent !== hit) tip.textContent = hit;
+    const w = tip.offsetWidth;
+    tip.style.left = `${Math.max(4, Math.min(e.clientX + 14, window.innerWidth - w - 4))}px`;
+    const h = tip.offsetHeight;
+    tip.style.top = `${e.clientY + 18 + h > window.innerHeight ? e.clientY - 12 - h : e.clientY + 18}px`;
 }
 
 /** The ancestors of a plot that clip it (a scrolled tile, a pane). */
@@ -268,7 +317,6 @@ function place(o, gd) {
     const now = performance.now();
     if (!o.clips || now - (o.checked || 0) > 250) {
         o.clips = clippers(gd);
-        if (!o.drag) updateRefusal(o);
         o.checked = now;
     }
     const { box, r } = visibleBox(gd, o.clips);
@@ -287,16 +335,6 @@ function place(o, gd) {
     Object.assign(o.svg.style, { left: `${r.left - box.left}px`, top: `${r.top - box.top}px` });
     o.svg.setAttribute('width', r.width);
     o.svg.setAttribute('height', r.height);
-}
-
-/** The reason a plot cannot take a line, kept on its layer (the plot may be redrawn with other axes). */
-function updateRefusal(o) {
-    const why = refusalOf(o.panel, active.rows);
-    if (why === o.why) return;
-    o.why = why;
-    o.el.classList.toggle('az-line-refused', !!why);
-    o.msg.textContent = why || HINT;
-    o.el.setAttribute('aria-label', why || HINT);
 }
 
 function svgEl(name, attrs = {}) {
@@ -320,9 +358,10 @@ function makeOverlay(panel) {
     msg.className = 'az-line-msg';
     el.append(svg, msg);
     document.body.appendChild(el);
-    const o = { panel, el, svg, shade, line, a, b, msg, key: '', why: undefined, drag: null };
+    const o = { panel, el, svg, shade, line, a, b, msg, key: '', drag: null };
+    msg.textContent = HINT;
+    el.setAttribute('aria-label', HINT);
     hidePreview(o);
-    updateRefusal(o);
     el.addEventListener('pointerdown', (e) => onDown(o, e));
     el.addEventListener('pointermove', (e) => onMove(o, e));
     el.addEventListener('pointerup', (e) => onUp(o, e));
@@ -355,7 +394,7 @@ function geometry(o) {
 }
 
 function onDown(o, e) {
-    if (e.button !== 0 || !active || active.busy || o.why) return;
+    if (e.button !== 0 || !active || active.busy) return;
     e.preventDefault();
     const geo = geometry(o);
     const p = { x: e.clientX - geo.left, y: e.clientY - geo.top };

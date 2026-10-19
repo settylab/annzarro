@@ -15,8 +15,7 @@ are usually enough. Many lines make an area ({ref}`further down <tut-ls-area>`).
   `obsm` `X_umap` 0 against 1, coloured by `highres_celltype`. Open the table's controls to tick
   the columns, then close them again.
 
-The tool works from the table and draws on a plot of the same kind of entity: a cell table uses
-cell plots, a gene table gene plots ({doc}`../user-guide/tables-and-filters`).
+The tool works from the table and draws on plots of its own rows: a cell table on plots of cells, a gene table on plots of genes ({doc}`../user-guide/tables-and-filters`).
 
 ## 1. Arm the tool
 
@@ -139,16 +138,15 @@ The same four lines drawn the other way, with the outer AND switched to OR: the 
 The conditions of the clockwise lines, with the outer logic on OR.
 ```
 
-## When the tool says no
+## Plots the tool does not use
 
-A plot can take a line only if both of its axes are numerical, it is 2D, and the axes are columns
-the table can hold. Over any other plot the layer shows why, before you click:
+The tool works on 2D plots with numeric axes. Over a 3D plot, a plot in large-plot mode or a plot of the other kind (a gene plot beside a cell table) it does nothing at all: there is no layer, and rotating, zooming, hovering and clicking work as usual. Over a 2D plot with a text or date axis a small tooltip follows the cursor and says why; the plot still takes the mouse.
 
 ```{figure} ../_static/screens/tutorials/line-select-warning.png
 :class: screenshot
-:alt: A second plot with cell types on its x axis, dimmed, showing "The x axis (highres_celltype) is not numerical. Line selection needs a numerical x and y axis."
+:alt: A second plot with cell types on its x axis; a small dark tooltip near the cursor reads "This plot's x axis (highres_celltype) is not numeric."
 
-A plot with a text axis refuses the tool, and says why.
+The tooltip over a plot with a text axis.
 ```
 
 The screenshots are made by `docs/_tools/shoot_line_select.py`, which draws the lines with the
