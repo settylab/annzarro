@@ -15,7 +15,7 @@ import { getFixedCells } from './panels/table-utilities/panel-tracker.js';
 import { errorFromResponse } from './utils/session-permissions.js';
 import { csrfFetch } from './utils/csrf.js';
 import { DatasetState } from './utils/dataset-state.js';
-import { storableSessionStyles, replaceSessionStyles, onSessionStyleChange, saveSessionStylesTo } from './utils/session-style.js';
+import { storableSessionStyles, replaceSessionStyles, onSessionStyleChange, saveSessionStylesTo, cleanSessionStyles } from './utils/session-style.js';
 import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
 import { storeRecord, storeName } from './utils/view-store.js';
 import { modeOptions } from './utils/panelset-load.js';
@@ -184,6 +184,8 @@ const SessionManager = (function() {
             // no data: the saved view, in the layout as it is now
             const view = { ..._detachedView, v: VIEW_SCHEMA_VERSION, layout: PanelManager.saveLayout() };
             view.store = _detachedStore;
+            const detachedStyles = storableSessionStyles();
+            if (detachedStyles) view.sessionStyles = detachedStyles;
             return view;
         }
         const view = {
@@ -191,6 +193,9 @@ const SessionManager = (function() {
             constants: _constants(),
             layout: PanelManager.saveLayout()
         };
+        // The session's default plot style, so a link, a panel set and the autosave bring it along
+        const styles = storableSessionStyles();
+        if (styles) view.sessionStyles = styles;
         // The cells shown, so the link reopens on the same cells
         const subset = DataManager.getSubsetForView();
         if (subset !== undefined) view.subset = subset;
@@ -210,11 +215,6 @@ const SessionManager = (function() {
         const plan = panelSetToView(sessionData);
         if (!plan) throw new Error('Not a panel set');
         if (_viewApplier) {
-            // panels opened: the set's session default plot style comes with them (closed, it stays out)
-            if (!options.add && sessionData.sessionStyles) {
-                replaceSessionStyles(sessionData.sessionStyles);
-                saveSessionStylesTo(window.sessionStorage);
-            }
             return await _viewApplier(plan, sessionData, options);
         }
         await _applySessionPanels(sessionData);
@@ -272,6 +272,22 @@ const SessionManager = (function() {
             const sessionData = {};
             sessionData.name = name;
             sessionData.timestamp = new Date().toISOString();
+
+            // No panel at all: only a set that is the session's default style can be saved (it names no
+            // dataset and opens no panel; loading it sets the style)
+            const held = PanelManager.getAllPanels ? PanelManager.getAllPanels() : PanelManager.getActivePanels();
+            if (!held.length) {
+                const styles = storableSessionStyles();
+                if (!styles) {
+                    return { status: 'error', message: 'There is nothing to save: open a panel, or make a plot\'s look ' +
+                        'the session default (Plot Options, Apply to other panels) to save the style alone.' };
+                }
+                Object.assign(sessionData, {
+                    dataset: '', datasetName: '', constants: {}, panelConfigs: {}, styleOnly: true,
+                    view: { v: VIEW_SCHEMA_VERSION, sessionStyles: styles }
+                });
+                return await _storePanelSet(name, sessionData, { complete: true });
+            }
             
             // 1. Save dataset information: relative to the data directory
             //    when the store is inside it, so the set opens on another
@@ -340,31 +356,37 @@ const SessionManager = (function() {
             // The full view (focus + split layout + every panel's config), the
             // same object a share link encodes; what loading restores.
             sessionData.view = captureView();
-            const sessionStyles = storableSessionStyles();
-            if (sessionStyles) sessionData.sessionStyles = sessionStyles;
             
-            // Save to server
-            console.log('Saving panel set:', sessionData);
-            const response = await csrfFetch(Config.API.SESSIONS_SAVE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(sessionData)
-            });
-            
-            if (!response.ok) {
-                // Keep the server's sentence (e.g. who owns the set) instead of "FORBIDDEN"
-                return await errorFromResponse(response);
-            }
-            
-            const result = await response.json();
-            _currentSession = { name, ...sessionData };
-            if (!settled.complete) result.fingerprintPending = true;
-            
-            return result;
+            return await _storePanelSet(name, sessionData, settled);
         } catch (error) {
             console.error('Error saving panel set:', error);
             return { status: 'error', message: error.message };
         }
+    }
+
+    /**
+     * Post a panel set to the server; it is the current one when stored.
+     * @param {{complete?: boolean}} settled - false when the store's fingerprint was still being read
+     * @private
+     */
+    async function _storePanelSet(name, sessionData, settled) {
+        console.log('Saving panel set:', sessionData);
+        const response = await csrfFetch(Config.API.SESSIONS_SAVE, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sessionData)
+        });
+
+        if (!response.ok) {
+            // Keep the server's sentence (e.g. who owns the set) instead of "FORBIDDEN"
+            return await errorFromResponse(response);
+        }
+
+        const result = await response.json();
+        _currentSession = { name, ...sessionData };
+        if (!settled.complete) result.fingerprintPending = true;
+
+        return result;
     }
     
     /**
@@ -737,8 +759,6 @@ const SessionManager = (function() {
             // Store only the panel configurations in the autosave data
             autosaveData.panelConfigs = panelConfigs;
             autosaveData.view = captureView();
-            const sessionStyles = storableSessionStyles();
-            if (sessionStyles) autosaveData.sessionStyles = sessionStyles;
             
             // Save to localStorage; an earlier page's autosave it replaces is kept as a last session
             try {

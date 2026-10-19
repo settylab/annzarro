@@ -1,32 +1,36 @@
 /**
- * The session's default plot style: "Use as default for new plots" in Plot
- * Options (Apply to other panels) keeps the look of a plot here, and a plot
- * created afterwards without a look of its own starts from it instead of the
- * built-in one.
+ * The session's default plot style: "Make this the session default" in Plot
+ * Options (Apply to other panels) keeps the look of a plot here, and it
+ * redefines "Default" for the session: every plot that is on Default (made
+ * from the chooser, or put back by the Default preset) follows it, now and
+ * when it changes, and a plot with a look of its own does not.
  *
  * "Look" is exactly what Apply to other panels copies (STYLE_KEYS in
  * panels/plot-utilities/plot-options.js): colours, axes, ticks, text, margins,
  * legend, colour bar, scale bar, Not in table, the focused marker and the
  * export size; never what a plot shows (axes, colour-by, subset).
  *
- * One default per plot kind, as Apply to other panels copies within a kind:
- * a cell plot's look is not a gene plot's.
+ * The default is kept as the keys that differ from the built-in look, so it
+ * is small in a link; a key it does not list is the built-in value. One default
+ * per plot kind, as Apply to other panels copies within a kind: a cell plot's
+ * look is not a gene plot's.
  *
- * It lives in this page's memory and travels with the session: the autosave
- * and a saved panel set carry it (session-manager.js), so a reload or
- * a panel set opened with its panels restores it. A plot that has its own look
- * (restored from a link, a panel set or the autosave, or a Duplicate) never
- * takes it: only a plot a person just made from the chooser does, and only
- * for the options the plot leaves unset. No DOM here, so
- * annzarro/tests/js/session-style.test.mjs runs it in Node.
+ * A plot says it is on Default with `styleDefault: true` in its settings; any
+ * change to its look in Plot Options clears it (plot-aesthetics-menu.js), and
+ * a plot saved on Default opens on Default in whatever session it opens in.
+ *
+ * It lives in this page's memory and travels with the session: the tab's
+ * session storage keeps it over a reload (gone with the tab), and a link, the
+ * autosave and a saved panel set carry it in their view (`sessionStyles`).
+ * No DOM here, so annzarro/tests/js/session-style.test.mjs runs it in Node.
  */
 import { STYLE_KEYS, pickStyle } from '../panels/plot-utilities/plot-options.js';
-import { COLOUR_MODEL } from './plot-theme.js';
 
 /** The panel types that have a session default, and how the menu names them. */
 export const STYLE_TYPES = Object.freeze({ 'cell-plot': 'cell', 'gene-plot': 'gene' });
 
 const copy = (v) => JSON.parse(JSON.stringify(v));
+const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
 
 let _styles = {};
 const _listeners = new Set();
@@ -60,7 +64,7 @@ export function cleanSessionStyles(raw) {
     return out;
 }
 
-/** The default of `type` as a copy, or null. */
+/** The default of `type` as a copy (only its keys that differ from built-in), or null. */
 export function sessionStyle(type) {
     return _styles[type] ? copy(_styles[type]) : null;
 }
@@ -69,12 +73,27 @@ export function hasSessionStyle(type) {
     return !!_styles[type];
 }
 
-/** Make the look of `settings` the default for new plots of `type`. */
-export function setSessionStyle(type, settings) {
+/** The style keys of `picked` whose value differs from `base` (both pickStyle results). */
+export function diffStyle(picked, base) {
+    const out = {};
+    for (const k of STYLE_KEYS) {
+        if (!same(picked[k], base[k])) out[k] = picked[k] === undefined ? null : copy(picked[k]);
+    }
+    return out;
+}
+
+/**
+ * Make the look of `settings` the default for plots of `type`. Only what differs from
+ * `base` (the built-in look, as pickStyle gives it) is kept; a look that is the built-in
+ * one is no default at all and clears it. Returns whether a default is set now.
+ */
+export function setSessionStyle(type, settings, base = {}) {
     if (!(type in STYLE_TYPES)) return false;
-    _styles = { ..._styles, [type]: pickStyle(settings) };
+    const diff = diffStyle(pickStyle(settings), base);
+    const rest = Object.fromEntries(Object.entries(_styles).filter(([t]) => t !== type));
+    _styles = Object.keys(diff).length ? { ...rest, [type]: diff } : rest;
     changed();
-    return true;
+    return hasSessionStyle(type);
 }
 
 /** Back to the built-in look: for `type`, or for every type. */
@@ -86,37 +105,58 @@ export function clearSessionStyle(type = null) {
 }
 
 /**
- * Replace the whole default with a stored one (a panel set, the autosave). Silent: it is
+ * Replace the whole default with a stored one (a link, a panel set, the autosave). Silent: it is
  * a load, and the autosave a change would trigger must not run before the panels are back.
  */
 export function replaceSessionStyles(raw) {
     _styles = cleanSessionStyles(raw);
 }
 
-/** What a panel set or the autosave stores: the default, or undefined when none is set. */
+/** What a link, a panel set or the autosave stores: the default, or undefined when none is set. */
 export function storableSessionStyles() {
     return Object.keys(_styles).length ? copy(_styles) : undefined;
 }
 
 /**
- * The config of a new plot with the session default filled in: every option the
- * default sets and `config` leaves undefined. Set options stay as they are.
- * A default's unset option (null: follows the theme, or the built-in) fills nothing.
- * The config is not changed; without a default it is returned as it is.
+ * The look plots of `type` that are on Default have: `base` (the built-in look, as pickStyle gives it)
+ * with the session default's keys on top. A key the default sets to null is unset.
  */
-export function withSessionStyle(type, config = {}) {
+export function effectiveStyle(type, base) {
+    const out = { ...base };
     const style = _styles[type];
-    if (!style) return config;
-    const out = { ...config };
-    let filled = false;
-    for (const k of STYLE_KEYS) {
-        if (out[k] !== undefined || style[k] === undefined || style[k] === null) continue;
-        out[k] = copy(style[k]);
-        filled = true;
-    }
-    // the colours set are the person's; the ones left unset follow the app theme, not an old light default
-    if (filled && out.colourModel === undefined) out.colourModel = COLOUR_MODEL;
+    if (style) for (const k of Object.keys(style)) out[k] = copy(style[k]);
     return out;
+}
+
+/** The config of a plot of `type` made from the chooser: on Default, so it follows the session default. */
+export function onDefault(type, config = {}) {
+    return type in STYLE_TYPES ? { ...config, styleDefault: true } : config;
+}
+
+/**
+ * What a view (a link, a panel set, the autosave) does to the session default when it opens with
+ * its panels: its own `sessionStyles` replace the current default; with none, a view that has
+ * plots on Default clears it, so they look built-in as they did for the sender; a view with no
+ * plot on Default (every view from before this existed) leaves it alone.
+ * @returns {{styles: Object}|null} the default to set ({} for none), or null to leave it
+ */
+export function viewStyleChange(view) {
+    if (!view || typeof view !== 'object') return null;
+    const styles = cleanSessionStyles(view.sessionStyles);
+    if (Object.keys(styles).length) return { styles };
+    const configs = [
+        ...Object.values((view.layout && view.layout.panelConfigs) || {}),
+        ...(Array.isArray(view.panels) ? view.panels.map(p => p && p.config) : [])
+    ];
+    return configs.some(c => c && c.styleDefault === true) ? { styles: {} } : null;
+}
+
+/** What a panel set's card says about its style: the kinds it brings and whether it is only a style; null for none. */
+export function styleSummary(set) {
+    const styles = cleanSessionStyles(set && set.view && set.view.sessionStyles);
+    const kinds = Object.keys(styles).map(t => STYLE_TYPES[t]);
+    if (!kinds.length) return null;
+    return { kinds, only: !!(set && set.styleOnly) };
 }
 
 /** The tab's own copy, which a reload of the tab reads back (the autosave is shared by every tab). */

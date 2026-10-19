@@ -10,10 +10,12 @@ import {
 import { THEME_EVENT } from '../../utils/theme.js';
 import {
   normalizePlotOptions, tickMarksOn, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
-  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions
+  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions, STYLE_KEYS
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
-import { hasSessionStyle, setSessionStyle, clearSessionStyle } from '../../utils/session-style.js';
+import {
+  hasSessionStyle, setSessionStyle, clearSessionStyle, effectiveStyle, onSessionStyleChange, STYLE_TYPES
+} from '../../utils/session-style.js';
 import { exportCheck, guarded, refusalText, bindingLabel } from '../../utils/memory-guard-ui.js';
 /**
  * Plot Aesthetics Menu
@@ -189,7 +191,7 @@ export function createPopoverContent(id, settings) {
                 <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-bare-${id}"
                     title="Only the points: no margins, legend, axis labels or grid. For figures and overlays.">Bare</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
-                    title="Back to the built-in look, not the session default">Built-in default</button>
+                    title="${hasSessionStyle(`${plotKind}-plot`) ? 'Session default style: the look every plot on Default has' : 'Built-in style'}">Default</button>
             </div>
         `)}
         ${details(id, 'background', 'Background', `
@@ -573,15 +575,15 @@ export function createPopoverContent(id, settings) {
             <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="apply-others-${id}">Apply to other panels</button>
             <div class="small mt-1" id="apply-others-done-${id}" role="status"></div>
             <hr class="my-2">
-            <div class="form-text mt-0 mb-2">New ${plotKind} plots start from this look, until Close all with the cache cleared or a reset. Plots already open and plots restored from a link, a panel set or a reload keep theirs.
+            <div class="form-text mt-0 mb-2">The session default is the look of every ${plotKind} plot on Default: new plots, and plots you put back with the Default preset. A plot with a look of its own keeps it.
                 <span class="badge rounded-pill text-bg-secondary" style="cursor: help" tabindex="0" aria-label="Help: session default"
-                    title="The default lasts for this session: it is saved with the autosave and with panel sets you save, and a panel set loaded with its panels open brings its own. A plot you duplicate keeps the look it was copied from. The Built-in default preset is still the built-in look.">?</span></div>
-            <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="session-style-set-${id}"
-                title="Make this ${plotKind} plot's look the default for new ${plotKind} plots in this session">Use as default for new ${plotKind} plots</button>
-            <div class="${hasSessionStyle(`${plotKind}-plot`) ? '' : 'd-none'}" id="session-style-active-${id}">
-                <div class="small mt-1 mb-1">A session default is set for new ${plotKind} plots.</div>
-                <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="session-style-reset-${id}"
-                    title="New ${plotKind} plots start from the built-in look again">Reset to built-in default</button>
+                    title="Plots on Default follow the session default when you set, change or reset it, and open on Default in a link, a panel set or a reload. The default lasts for the session (Close all with the cache cleared ends it), is saved with links, the autosave and panel sets, and is not part of any plot's own look.">?</span></div>
+            <div class="small mb-1" id="session-style-state-${id}">${settings.styleDefault === true ? 'This plot is on Default.' : 'This plot has a look of its own.'}</div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1" id="session-style-set-${id}"
+                    title="Make this ${plotKind} plot's look the session default: every ${plotKind} plot on Default takes it">Make this the session default</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary ${hasSessionStyle(`${plotKind}-plot`) ? '' : 'd-none'}" id="session-style-reset-${id}"
+                    title="End the session default: ${plotKind} plots on Default are in the built-in style again">Built-in style</button>
             </div>
             <div class="small mt-1" id="session-style-done-${id}" role="status"></div>
         `)}
@@ -776,7 +778,7 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
     if (plotContainer) plotContainer.__exportOptions = () => exportOptions(settings);
     
     // Create one-time event handlers using delegation for all menu controls
-    const menuHandler = function(e) {
+    const handleMenuEvent = function(e) {
         // Find the element that triggered the event
         const target = e.target;
         
@@ -1149,7 +1151,8 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         // Presets
         const preset = ['publication', 'bare', 'default'].find(name => target.id === `preset-${name}-${id}`);
         if (preset && e.type === 'click') {
-            applyPreset(settings, preset);
+            if (preset === 'default') followSessionDefault(settings, `${plotKindOf(settings)}-plot`);
+            else applyPreset(settings, preset);
             relookPlot(plotContainer, settings);
             // the menu shows the new values: drawn again, the open groups as they are
             const body = document.querySelector('.aesthetics-popover .popover-body');
@@ -1183,15 +1186,25 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
 
-        // The session default look for new plots of this kind
+        // The session default look: make this plot's the default, or go back to the built-in one
         if ((target.id === `session-style-set-${id}` || target.id === `session-style-reset-${id}`) && e.type === 'click') {
-            const kind = settings.highlightFocusedGene !== undefined ? 'gene' : 'cell';
+            const kind = plotKindOf(settings);
+            const type = `${kind}-plot`;
             const reset = target.id === `session-style-reset-${id}`;
-            if (reset) clearSessionStyle(`${kind}-plot`); else setSessionStyle(`${kind}-plot`, settings);
-            document.getElementById(`session-style-active-${id}`)?.classList.toggle('d-none', !hasSessionStyle(`${kind}-plot`));
+            let isSet = false;
+            if (reset) clearSessionStyle(type);
+            else {
+                isSet = setSessionStyle(type, settings, builtinStyle());
+                settings.styleDefault = true;       // its look is the default now
+                if (!isSet) clearSessionStyle(type);
+            }
+            document.getElementById(`session-style-reset-${id}`)?.classList.toggle('d-none', !hasSessionStyle(type));
+            const state = document.getElementById(`session-style-state-${id}`);
+            if (state && !reset) state.textContent = 'This plot is on Default.';
             const done = document.getElementById(`session-style-done-${id}`);
-            if (done) done.textContent = reset ? `New ${kind} plots start from the built-in look.`
-                : `New ${kind} plots will start from this look.`;
+            if (done) done.textContent = reset ? `Plots on Default are in the built-in style again.`
+                : isSet ? `Plots on Default now follow this style.`
+                    : `This is the built-in style, so there is no session default.`;
             return;
         }
 
@@ -1312,6 +1325,15 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
     };
+
+    // A change to the look made here is a look of the plot's own: it is no longer on Default
+    // (the buttons that put it on Default or set the default say so themselves)
+    const menuHandler = function(e) {
+        if (settings.styleDefault !== true) return handleMenuEvent(e);
+        const look = JSON.stringify(pickStyle(settings));
+        handleMenuEvent(e);
+        if (settings.styleDefault === true && JSON.stringify(pickStyle(settings)) !== look) settings.styleDefault = false;
+    };
     
     // which sections are open: the menu opens again as it was left
     const onToggle = (e) => {
@@ -1427,6 +1449,51 @@ function relookPlot(plotContainer, settings) {
     restyleMarkers(plotContainer, settings).catch(() => {});
 }
 
+/** The kind a plot's settings are of: 'cell' or 'gene'. */
+function plotKindOf(settings) {
+    return settings.highlightFocusedGene !== undefined ? 'gene' : 'cell';
+}
+
+/** The built-in look as pickStyle gives it: what a plot starts with before any session default. */
+export function builtinStyle() {
+    const fresh = {};
+    initializeAestheticsSettings(fresh);
+    return pickStyle(fresh);
+}
+
+/** Put `settings` on Default: the built-in look with the session default of `type` on top. */
+export function followSessionDefault(settings, type) {
+    adoptStyle(settings, effectiveStyle(type, builtinStyle()));
+    settings.styleDefault = true;
+    return settings;
+}
+
+/**
+ * Draw every open plot that is on Default (of `kind`, or all) in the session's default look, or the
+ * built-in one when there is none: after the default is set, changed, reset or loaded.
+ */
+export function restyleDefaultPlots(kind = null) {
+    const pm = typeof window !== 'undefined' ? window.PanelManager : null;
+    if (!pm || typeof pm.getActivePanels !== 'function') return 0;
+    let n = 0;
+    for (const panel of pm.getActivePanels()) {
+        const type = panel.getType && panel.getType();
+        if (!(type in STYLE_TYPES) || (kind && type !== kind)) continue;
+        const cfg = panel.getConfig();
+        if (cfg.styleDefault !== true) continue;
+        followSessionDefault(cfg, type);
+        const next = { styleDefault: true };
+        for (const k of STYLE_KEYS) next[k] = cfg[k];            // an unset option stays unset
+        panel.setConfig(next);
+        relookPlot(document.getElementById(`plot-container-${panel.getId()}`), panel.getConfig());
+        n++;
+    }
+    return n;
+}
+
+// The person set or reset the default: the plots on Default follow it at once
+onSessionStyleChange(() => restyleDefaultPlots());
+
 /** Copy the look of panel `id` onto the other plots of its kind; returns how many. */
 function applyLookToOthers(id, settings) {
     const style = pickStyle(settings);
@@ -1434,7 +1501,7 @@ function applyLookToOthers(id, settings) {
     for (const panel of others) {
         const cfg = panel.getConfig();
         adoptStyle(cfg, style);
-        const next = {};
+        const next = { styleDefault: false };                      // a look of its own, whatever the default is
         for (const k of Object.keys(style)) next[k] = cfg[k];      // an unset option stays unset
         panel.setConfig(next);
         relookPlot(document.getElementById(`plot-container-${panel.getId()}`), panel.getConfig());

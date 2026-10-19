@@ -124,17 +124,28 @@ changes:
 A store you chose yourself (the open one, or one from the browser) is used as asked: if its cells or
 genes differ from the saved ones, a notice says so instead of asking first.
 
-(panelsets-add)=
 (panelsets-session-style)=
-### The session's default plot style
+## The session's default plot style
 
-If you made a look the default for new plots ({ref}`the session default <session-default-style>`), the panel set saves it.
-**Load**, **Load on the current dataset** and **Choose dataset** open the set's panels, and with them
-the set's default replaces the one you have. **Add panels closed** leaves your default alone. A set
-saved without a default (including every set saved by an earlier version) loads as before and does not
-change yours. The panels in the set always keep the look they were saved with; the default only
-shapes plots you make afterwards. A share link does not carry it.
+If you made a look the session default ({ref}`the session default <session-default-style>`), the panel
+set saves it, with only the options that differ from the built-in look, and its card says so with a
+**Default style** badge (hover for which plot kinds). The panels of the set keep the look they were
+saved with, and a plot saved on Default stays on Default.
 
+- **Load**, **Load on the current dataset** and **Choose dataset** open the set's panels, and with
+  them the set's default replaces the one you have. The plots on Default, the set's and yours, take
+  it. **Add panels closed** leaves your default alone: nothing is opened, so nothing follows it.
+- A set with plots on Default and no default of its own ends yours when it opens, so they look as
+  they did when it was saved. A set with no plot on Default, including every set saved before this
+  existed, loads as before and does not change your default.
+- A set with **no panels at all** can still be saved, when there is a session default: it is **only a
+  style**. It names no dataset and opens no panel; its card says **Style only**, shows no dataset
+  badge, and has one button, **Apply style**, which makes it your session default. It is a way to
+  share a house style: save it once, and everyone who loads it makes the same plots. Without a
+  default, saving a set with no panels is refused.
+- A share link carries the default too ({doc}`share-links`).
+
+(panelsets-add)=
 ## Add a panel set to the closed panels
 
 **Add panels closed** (folder with a plus; on every card, in the dialog and the welcome list) keeps

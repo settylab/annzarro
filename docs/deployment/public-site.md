@@ -76,7 +76,7 @@ unasked and can be set to session-only (`site.storage.persistent_convenience: fa
 | `annzarro-theme` | Light, dark or system | Choice |
 | `annzarro.pins:<origin>\|<user>` | Datasets the visitor pinned | Choice |
 | `annzarro.subsetSize:<origin>\|<user>` | The chosen subset size, in session storage: kept for the tab (a reload keeps it), dropped at a fresh visit to the bare address | Choice |
-| `annzarro_session_style` | The plot look the visitor made the default for new plots, in session storage: kept for the tab (a reload keeps it), dropped at a fresh visit | Choice |
+| `annzarro_session_style` | The plot look the visitor made the session default (the look of plots on Default), in session storage: kept for the tab (a reload keeps it), dropped at a fresh visit | Choice |
 | `annzarro.structure-search` | The regex and case switches of the Dataset information search | Choice |
 | `annzarro:external-ok` | The visitor's "Always" or "Never" for each external service of the Gene Set panel | Choice (it stores a consent decision) |
 | `annzarro_autosave` (`ui.autosave.storage_key`) | The panel layout, dataset and focus, offered (or restored) at the next visit | Convenience |

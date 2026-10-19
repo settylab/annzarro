@@ -5,9 +5,9 @@ import { DataManager } from './data-manager.js';
 import { colourKind } from './utils/memory-guard.js';
 import { newPanelCheck, refusalText, freshProbes, bindingLabel, MEMORY_EVENT } from './utils/memory-guard-ui.js';
 import { lastSessionElement } from './utils/last-session-card.js';
-import { createLoadActions, createDatasetBadge } from './panelset-load-ui.js';
+import { createLoadActions, createDatasetBadge, createStyleBadge } from './panelset-load-ui.js';
 import { notify } from './utils/notify.js';
-import { withSessionStyle } from './utils/session-style.js';
+import { onDefault } from './utils/session-style.js';
 
 export class SelectionTile {
     /**
@@ -387,7 +387,7 @@ export class SelectionTile {
             this.tileSelector,
             this.createPanel,
             panelType,
-            withSessionStyle(panelType, {})
+            onDefault(panelType, {})
           );
         } else {
           this.layoutManager.createPanelWithSelectionTile(
@@ -395,7 +395,7 @@ export class SelectionTile {
             this.tileSelector,
             this.createPanel,
             panelType,
-            withSessionStyle(panelType, {})
+            onDefault(panelType, {})
           );
         }
         // After creating the first panel, always hide the header and sessions,
@@ -408,8 +408,8 @@ export class SelectionTile {
         }
       } else if (this.variant === "pane") {
         const newId = `${panelType}-${Date.now()}`;
-        // a new plot starts from the session's default look, when one is set (utils/session-style.js)
-        const config = withSessionStyle(panelType, {
+        // a new plot is on Default: it follows the session's default look (utils/session-style.js)
+        const config = onDefault(panelType, {
           id: newId,
           title: this.generateUniqueName(`${this._formatPanelType(panelType)} 1`)
         });
@@ -839,7 +839,8 @@ export class SelectionTile {
         // The same Load buttons as the Load dialog, compact: one highlighted
         // Load and small icons for its ablations (panelset-load-ui.js)
         const badge = createDatasetBadge();
-        item.querySelector('.session-dataset-row').appendChild(badge.el);
+        const styleBadge = createStyleBadge();
+        item.querySelector('.session-dataset-row').append(badge.el, styleBadge.el);
         const actions = createLoadActions({
           compact: true,
           getCurrent: () => (sessionManager && sessionManager.getCurrentDatasetInfo
@@ -862,6 +863,7 @@ export class SelectionTile {
             if (!item.isConnected) return;
             actions.update(st);
             badge.update(st);
+            styleBadge.update(st);
           }));
         }
       } else {
