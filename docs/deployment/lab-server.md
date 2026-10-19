@@ -342,3 +342,5 @@ needs no restart; it appears after the dataset bar's refresh button is clicked.
   never reaches it.
 - A refused path is logged as `Refused path outside the data directory`. Failed logins and
   account lockouts are logged with the username.
+- `server.log_format: json` writes the lines as JSON for a log shipper, and `server.metrics_enabled` serves
+  Prometheus metrics; see {doc}`monitoring`.

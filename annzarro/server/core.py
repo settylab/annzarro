@@ -48,6 +48,8 @@ DEFAULT_CONFIG = {
     "static_dir": None,  # None = the frontend static directory (paths.frontend_dir)
     "log_file": None,  # None = ~/.annzarro/logs/annzarro_server.log
     "log_level": "INFO",
+    "log_format": "text",  # "json" = one JSON object per line on stderr (jsonlog.py)
+    "metrics_enabled": False,  # True = Prometheus /metrics for the networks in metrics_allow (metrics.py)
     "auth_enabled": False,
     "user_file": "users.json",
     "unified_server": True,  # New flag to indicate we're using the unified server approach
@@ -475,6 +477,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     from annzarro.server import health
     health.install(app)
 
+    # outermost layer: times every request for /metrics and the JSON access line (telemetry.py)
+    from annzarro.server import telemetry
+    telemetry.install(app)
+
     # The desktop app names its server with a per-launch token and only
     # trusts the answer that carries it: two launches that pick the same free
     # port at once must not take each other's server for their own.
@@ -646,6 +652,11 @@ def setup_logging(config: Dict[str, Any]) -> None:
     console_handler = logging.StreamHandler()
     console_handler.setLevel(log_level)
     console_handler.setFormatter(formatter)
+    # JSON lines on stderr for a log shipper; the file keeps the text format
+    from annzarro.server import jsonlog
+    if jsonlog.normalise_format(config.get("log_format")) == "json":
+        console_handler.setFormatter(jsonlog.JsonFormatter())
+        console_handler.addFilter(jsonlog.RequestContextFilter())
     
     # Configure root logger
     root_logger.setLevel(log_level)

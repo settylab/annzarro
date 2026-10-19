@@ -274,7 +274,8 @@ def run_server(
             
             _exit_with_parent_from_env()
             if not final_config.get("debug", False) and ssl_context is None:
-                _serve_with_waitress(app, use_host, use_port, app.config.get("MAX_CONTENT_LENGTH"))
+                _serve_with_waitress(app, use_host, use_port, app.config.get("MAX_CONTENT_LENGTH"),
+                                     threads=final_config.get("threads"))
             else:
                 app.run(
                     host=use_host,
@@ -297,7 +298,7 @@ WAITRESS_THREADS = 32
 WAITRESS_CHANNEL_TIMEOUT = 300
 
 
-def _serve_with_waitress(app, host, port, max_body_bytes=None):
+def _serve_with_waitress(app, host, port, max_body_bytes=None, threads=None):
     """Serve with waitress, which keeps a browser's connections open (HTTP/1.1 keep-alive).
 
     Werkzeug's development server sends "Connection: close" on every response, so each of
@@ -308,12 +309,15 @@ def _serve_with_waitress(app, host, port, max_body_bytes=None):
     X-Forwarded-* and the mount point (server.url_prefix) are handled by the app's own
     WSGI middleware, so waitress is left at its defaults (it trusts no proxy). It
     logs the "Serving on http://host:port" line itself.
+
+    ``threads`` is ``server.threads`` when the operator sets it (the same key sets
+    gunicorn's threads per worker); unset, WAITRESS_THREADS.
     """
     from waitress import serve
     # waitress reads a whole request body before the app sees it; the app refuses
     # a body over its limit with a JSON 413, so waitress' own limit sits above it.
     body_limit = max(int(max_body_bytes or 0) * 2, 1 << 30)
-    serve(app, host=host, port=port, threads=WAITRESS_THREADS,
+    serve(app, host=host, port=port, threads=int(threads or WAITRESS_THREADS),
           channel_timeout=WAITRESS_CHANNEL_TIMEOUT, max_request_body_size=body_limit,
           ident="AnnZarro")
 

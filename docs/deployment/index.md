@@ -9,6 +9,7 @@ lab-server
 analyst-workflow
 authentication
 admin
+monitoring
 hosting-checklist
 public-site
 resource-limits

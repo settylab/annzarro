@@ -9,6 +9,8 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Added
+- An optional Prometheus `/metrics` endpoint (`server.metrics_enabled`, off by default): requests and latency by route group, requests in flight, response bytes, dataset cache hits, misses and size, open datasets, memory and the worker's process id, merged across gunicorn workers. Only addresses in `server.metrics_allow` (loopback unless you list others) can read it; everyone else gets the reply of a URL that does not exist.
+- `server.log_format: json` (or `ANNZARRO_SERVER_LOG_FORMAT=json`) writes log lines on standard error as JSON, with a request id (also sent as `X-Request-Id`), method, route group, status and duration on each request's access line. The default text format is unchanged. New page: Deployment, Monitoring a server.
 - Plot Options, Presets: **Bare** draws only the points (no margins, legend, colour bar, scale bar, axes,
   grid or zero lines; in 3D no axes or background planes), for figures and overlays. **Default** undoes it.
 
@@ -19,7 +21,7 @@ with the release after it. Older releases are listed on
 - The legend title sits above the entries at every legend position, starts where the labels start and has
   a clear gap below it; before it was flush left, a few pixels off the symbols, 2 px above the first entry
   (and beside the entries in a legend on top or at the bottom).
-- `annzarro start` serves through waitress (a new dependency, pure Python, also on Windows) instead of Flask's development server. Debug mode and HTTPS still use the development server. A request line and headers over 262,144 bytes are refused with 431.
+- `annzarro start` serves through waitress (a new dependency, pure Python, also on Windows) instead of Flask's development server. Debug mode and HTTPS still use the development server. A request line and headers over 262,144 bytes are refused with 431. It serves 32 request threads; `server.threads` (`ANNZARRO_SERVER_THREADS`) sets the number.
 
 ### Fixed
 - Changing the subset while an earlier change is still loading shows the new choice at once: the header
