@@ -29,6 +29,7 @@ with the release after it. Older releases are listed on
 - The guide and the hosting checklist no longer tell you to start gunicorn with `--limit-request-line 8190`: it overrode the bundled configuration's unlimited request line and refused the long URLs the web client builds. nginx's `large_client_header_buffers` bounds the line.
 
 ### Fixed
+- The search box in Load Panel Set had no right edge and a darker left edge, which showed most in Safari. The box now has one even border, and its focus ring follows the same outline.
 - Changing the subset while an earlier change is still loading shows the new choice at once: the header
   names the cells asked for, and only the last request's cells are drawn.
 - The tooltip of Plot Options, Presets, **Publication** no longer says it sets the scale bar: it leaves the scale bar as it is.
