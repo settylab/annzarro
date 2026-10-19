@@ -10,7 +10,7 @@ who can reach the server at all and who may change which panel set.
 |---|---|
 | `annzarro start` on `127.0.0.1`, `localhost` or `::1` | off, unless `auth.enabled: true` is configured |
 | `annzarro start --host <anything else>` | **on**, unless `--auth-disabled` or `ANNZARRO_AUTH_DISABLED=true` (only `true`, `yes`, `1` or `on` count) |
-| gunicorn with `annzarro.server.wsgi:create_wsgi_app()` | **on**, unless `auth.enabled: false` or `ANNZARRO_AUTH_DISABLED=true` |
+| `annzarro serve`, or gunicorn with `annzarro.server.wsgi:create_wsgi_app()` | **on**, unless `auth.enabled: false` or `ANNZARRO_AUTH_DISABLED=true` |
 | desktop app | off |
 
 With login on, every page and API route except `/login`, `/logout` and static files requires a

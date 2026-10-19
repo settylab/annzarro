@@ -43,8 +43,8 @@ dataset browser as the folder `data`. The container runs as uid and gid 10001; a
 `/state` must be writable for that account (`chown -R 10001:10001 state`). A named volume needs
 nothing.
 
-The health check asks `/api/v1/status` every 30 seconds. With login on an anonymous client gets
-`401`, which counts as healthy: the server is up and answering. Only no answer or a `5xx` is unhealthy.
+The health check asks `/api/v1/health` every 30 seconds ({ref}`lab-server-health`). It answers `200`
+without login, login on or off; any other answer, or none, is unhealthy.
 
 ## Docker
 
@@ -119,10 +119,14 @@ apptainer run --bind /path/to/datasets:/data:ro --bind "$HOME/annzarro-state:/st
 
 Notes for a shared node:
 
-- **Address.** The SIF listens on `127.0.0.1` only, so nobody else on the node can reach it. From
-  your laptop: `ssh -L 8765:<node>:8765 <login host>` (with your port), then open
-  `http://localhost:8765`. To listen on the node's network set
-  `APPTAINERENV_ANNZARRO_SERVER_HOST=0.0.0.0`; login stays on, but the traffic is not encrypted.
+- **Address.** The SIF listens on `127.0.0.1` only, so it is not reachable from the network; other
+  users logged in to the same node can still connect, and login keeps them out. From your laptop,
+  tunnel through the login host to the node's loopback:
+  `ssh -N -J <login host> -L 8765:127.0.0.1:8765 <node>` (with your port), then open
+  `http://localhost:8765` ({doc}`personal-server`). If the cluster allows no SSH to compute nodes,
+  set `APPTAINERENV_ANNZARRO_SERVER_HOST=0.0.0.0` to listen on the node's network and tunnel to
+  the node from the login host instead (`ssh -N -L 8765:<node>:8765 <login host>`); login stays
+  on, but the traffic between the nodes is not encrypted.
 - **Port.** Apptainer shares the host's network, so a port taken by another user's server makes
   gunicorn fail with "Address already in use". Pick one per user as above.
 - **State.** `/state` must be a directory you can write; the run script refuses to start without one.

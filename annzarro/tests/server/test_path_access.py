@@ -71,6 +71,7 @@ ROUTES = [
 #: confined by its own rule, like panel-set files in the sessions directory).
 NO_PATH = {
     "serve_static", "static", "get_current_user", "policy_effective", "get_cache_info", "get_config", "get_status",
+    "health",             # the probe answers from memory and takes no argument
     "list_all_datasets", "list_dataset_folder", "list_dataset_search",  # the folder listing confines itself (test_dataset_folders.py)
     "lookup_datasets",    # names its paths in the body, not the URL: swept below (test_lookup_*)
     "get_home_directory", "validate_zarr_url",  # remote policy, below

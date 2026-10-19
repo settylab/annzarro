@@ -2,13 +2,15 @@
 
 Three things tell you how a server is doing: a health check for the process manager and the load
 balancer, an opt-in `/metrics` endpoint for Prometheus, and, if you ship logs, JSON log lines.
-Metrics and JSON logs are off by default; a server that never sets them behaves as before.
+Metrics and JSON logs are off by default.
 
 ## Health check
 
-`GET /api/v1/status` answers without login. Anybody gets `{"server": {"status": "running", "version": ...}}`;
-an admin also gets the host, the process, memory and the data directory. Use it for a load balancer's
-probe or a `systemd` watchdog: a `200` means the process is serving. The admin page's Health section
+`GET /api/v1/health` answers `200` with `{"status": "ok"}` without login, login on or off, and reads
+no data ({ref}`lab-server-health`). Use it for a load balancer's probe, a container health check or a
+`systemd` start check: a `200` means the process is serving. `GET /api/v1/status` needs a login when
+login is on: a signed-in user gets `{"server": {"status": "running", "version": ...}}` and an admin also
+gets the host, the process, memory and the data directory. The admin page's Health section
 ({doc}`admin`) shows each worker's caches, read budget and refusals, and {doc}`lab-server` shows where
 the server's logs go.
 
@@ -126,9 +128,9 @@ as one JSON object, which journald, Loki or Elasticsearch ingest without a parse
   datasets people open. In this mode gunicorn's access log is off and its own messages are JSON too.
 - The request id is the caller's `X-Request-Id` when it is up to 64 letters, digits, `.`, `_` or `-`
   (a proxy can set one), else a fresh one. It is sent back in the `X-Request-Id` response header, so a user can quote it.
-- `server.log_file` stays in the text format. `log_level` applies as before.
+- `server.log_file` stays in the text format. `log_level` applies to both.
 
-The default is `text`, the format the server has always written.
+The default is `text`.
 
 ## What to alert on
 
