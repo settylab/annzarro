@@ -12,7 +12,7 @@ import { COLOUR_MODEL } from '../../../static/js/utils/plot-theme.js';
 import {
     STYLE_TYPES, sessionStyle, hasSessionStyle, setSessionStyle, clearSessionStyle, replaceSessionStyles,
     cleanSessionStyles, storableSessionStyles, effectiveStyle, onDefault, onSessionStyleChange, diffStyle,
-    viewStyleChange, styleSummary, saveSessionStylesTo, loadSessionStylesFrom, STORAGE_KEY
+    viewStyleChange, styleSummary, isStyleOnly, saveSessionStylesTo, loadSessionStylesFrom, STORAGE_KEY
 } from '../../../static/js/utils/session-style.js';
 import { normalizeView, encodeViewPayload, decodeViewPayload } from '../../../static/js/utils/deeplink.js';
 
@@ -191,11 +191,21 @@ test('a link with no default carries no field, and old links open as before', as
 // ---- panel set cards ----
 
 test('a set card says which kinds of default it brings, and whether it is only a style', () => {
-    const view = { sessionStyles: { 'cell-plot': { fontSize: 9 }, 'gene-plot': { fontSize: 8 } } };
-    assert.deepEqual(styleSummary({ view }), { kinds: ['cell', 'gene'], only: false });
-    assert.deepEqual(styleSummary({ view, styleOnly: true }), { kinds: ['cell', 'gene'], only: true });
+    const sessionStyles = { 'cell-plot': { fontSize: 9 }, 'gene-plot': { fontSize: 8 } };
+    const tile = { hierarchy: [{ type: 'tile', id: 'cell-plot-1' }] };
+    assert.deepEqual(styleSummary({ view: { sessionStyles, layout: tile } }), { kinds: ['cell', 'gene'], only: false });
+    assert.deepEqual(styleSummary({ view: { sessionStyles }, styleOnly: true }), { kinds: ['cell', 'gene'], only: true });
     assert.equal(styleSummary({ view: { layout: {} } }), null);
     assert.equal(styleSummary(null), null);
+});
+
+test('a set with a style and no open panel is only a style, closed panels or not', () => {
+    const sessionStyles = { 'cell-plot': { fontSize: 9 } };
+    assert.equal(isStyleOnly({ view: { sessionStyles } }), true);
+    assert.equal(isStyleOnly({ view: { sessionStyles, layout: { hierarchy: [], panelConfigs: { a: {} } } } }), true);
+    assert.equal(isStyleOnly({ view: { sessionStyles, layout: { hierarchy: [{ type: 'split', children: [{ type: 'tile', id: 'a' }] }] } } }), false);
+    assert.equal(isStyleOnly({ view: { layout: { hierarchy: [] } } }), false);       // no style: an empty panel set
+    assert.equal(isStyleOnly(null), false);
 });
 
 // ---- the tab's copy ----
