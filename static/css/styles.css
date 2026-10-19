@@ -1883,6 +1883,7 @@ button.dtsb-button.dtsb-clear:hover {
     align-items: center;
     gap: 4px 8px;
     margin-top: 2px;
+    padding-right: 64px;     /* the card's icons sit at the top right, over this row's right end */
 }
 
 .session-card-dataset .session-card-subtitle {

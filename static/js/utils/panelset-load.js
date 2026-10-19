@@ -43,9 +43,9 @@ function styleOnlyTitle(status) {
 export function describeStyle(status) {
     if (!status || !status.style || status.styleOnly) return null;
     const kinds = kindList(status.style);
-    return { text: 'Default style',
-        title: `Brings a default style for new ${kinds || 'plots'}. It applies only when the set is loaded with its panels open ` +
-               '(not with Add panels closed), and plots on Default take it.' };
+    return { text: 'Style',
+        title: `Brings a style for ${kinds || 'plots'} on Default. It applies only when the set is loaded with its panels open ` +
+               '(not with Add panels closed).' };
 }
 
 /**

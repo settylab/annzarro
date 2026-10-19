@@ -151,12 +151,24 @@ export function viewStyleChange(view) {
     return configs.some(c => c && c.styleDefault === true) ? { styles: {} } : null;
 }
 
+/**
+ * Whether a panel set is only a style: it brings a default style and opens no panel (saved with none, or with
+ * none open). Loading it applies the style and leaves everything open as it is.
+ */
+export function isStyleOnly(set) {
+    if (!set || typeof set !== 'object') return false;
+    if (!Object.keys(cleanSessionStyles(set.view && set.view.sessionStyles)).length) return false;
+    const layout = set.view && set.view.layout;
+    const tiles = JSON.stringify((layout && layout.hierarchy) || []).includes('"type":"tile"');
+    return set.styleOnly === true || !tiles;
+}
+
 /** What a panel set's card says about its style: the kinds it brings and whether it is only a style; null for none. */
 export function styleSummary(set) {
     const styles = cleanSessionStyles(set && set.view && set.view.sessionStyles);
     const kinds = Object.keys(styles).map(t => STYLE_TYPES[t]);
     if (!kinds.length) return null;
-    return { kinds, only: !!(set && set.styleOnly) };
+    return { kinds, only: isStyleOnly(set) };
 }
 
 /** The tab's own copy, which a reload of the tab reads back (the autosave is shared by every tab). */
