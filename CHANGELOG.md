@@ -26,6 +26,7 @@ with the release after it. Older releases are listed on
 - `annzarro start` serves through waitress (a new dependency, pure Python, also on Windows) instead of Flask's development server. Debug mode and HTTPS still use the development server. A request line and headers over 262,144 bytes are refused with 431. It serves 32 request threads; `server.threads` (`ANNZARRO_SERVER_THREADS`) sets the number.
 
 ### Fixed
+- The search box in Load Panel Set had no right edge and a darker left edge, which showed most in Safari. The box now has one even border, and its focus ring follows the same outline.
 - Changing the subset while an earlier change is still loading shows the new choice at once: the header
   names the cells asked for, and only the last request's cells are drawn.
 - Close all writes the autosave and the address at once, so a reload right after it no longer finds the panels just closed.

@@ -2164,29 +2164,46 @@ button.dtsb-button.dtsb-clear:hover {
     padding: 0 8px;
 }
 
+/* One border, drawn by the group: the joined borders of the icon, the input and the clear button left the
+   right edge open while the clear button is hidden, and clipped unevenly at the rounded corners in WebKit. */
 .session-search-container .input-group {
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    flex-wrap: nowrap;
+    border: 1px solid var(--az-control-border);
     border-radius: 8px;
+    background-color: var(--az-input-bg, #fff);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     overflow: hidden;
+}
+
+.session-search-container .input-group:focus-within {
+    border-color: var(--az-focus-border);
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+[data-theme="dark"] .session-search-container .input-group:focus-within {
+    box-shadow: 0 0 0 0.25rem rgba(110, 168, 254, 0.3);
+}
+
+.session-search-container .input-group > .form-control,
+.session-search-container .input-group > .input-group-text,
+.session-search-container .input-group > .btn {
+    border: 0;
+    border-radius: 0;
 }
 
 .session-search-container .input-group-text {
     background-color: var(--az-surface-2);
-    border-right: none;
 }
 
 .session-search-container .form-control {
-    border-left: none;
-    border-right: none;
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: transparent;
 }
 
 .session-search-container .form-control:focus {
     box-shadow: none;
-    border-color: var(--az-border-strong);
-}
-
-.session-search-container .btn-outline-secondary {
-    border-left: none;
+    background-color: transparent;
 }
 
 .session-search-container .btn-outline-secondary:hover {
