@@ -1,0 +1,47 @@
+# AnnZarro behind nginx with TLS.
+#
+#   mkdir -p certs && cp fullchain.pem certs/fullchain.pem && cp privkey.pem certs/privkey.pem
+#   ANNZARRO_DATA=/srv/atlases docker compose up -d
+#   docker compose exec annzarro annzarro user add --username alice --admin
+#
+# Then open https://<this host>/. Only nginx publishes a port; annzarro is reachable on the
+# compose network alone.
+services:
+  annzarro:
+    # Build from a checkout, or replace with an image you have built and tagged yourself.
+    build:
+      context: ../..
+      dockerfile: packaging/container/Dockerfile
+      # args: {EXTRAS: remote}      # s3://, gs:// and http(s):// stores
+    image: annzarro:local
+    restart: unless-stopped
+    read_only: true               # the root filesystem; the server writes to /state and /tmp only
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      ANNZARRO_SERVER_PROXY_COUNT: "1"      # exactly one proxy (nginx) in front
+      ANNZARRO_SERVER_WORKERS: "4"
+      ANNZARRO_SERVER_CACHE_MEMORY_MB: "1000"   # per worker
+    volumes:
+      - ${ANNZARRO_DATA:-./data}:/data:ro   # the datasets, read-only
+      - annzarro-state:/state               # users, panel sets, admin settings, logs
+      # - ./site.yaml:/etc/annzarro/container.yaml:ro   # your own configuration
+    expose: ["8000"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      annzarro:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro        # fullchain.pem and privkey.pem
+
+volumes:
+  annzarro-state:

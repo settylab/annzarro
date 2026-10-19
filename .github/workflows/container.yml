@@ -1,0 +1,52 @@
+name: Container
+
+# Builds the server image (packaging/container/Dockerfile) when a PR touches the container files or
+# the packaging inputs, and checks that it starts healthy as a non-root user with a read-only data
+# mount. Nothing is pushed anywhere.
+
+on:
+  pull_request:
+    paths:
+      - "packaging/container/**"
+      - ".dockerignore"
+      - ".github/workflows/container.yml"
+      - "setup.py"
+      - "pyproject.toml"
+      - "scripts/vendor-assets.json"
+      - "scripts/vendor_assets.py"
+  workflow_dispatch:
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -f packaging/container/Dockerfile -t annzarro:ci .
+      - name: Image size
+        run: docker image ls annzarro:ci
+      - name: Start it and wait for the health check
+        run: |
+          mkdir -p /tmp/ci-data
+          docker run -d --name annzarro-ci -v /tmp/ci-data:/data:ro annzarro:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' annzarro-ci)
+            echo "health: $status"
+            [ "$status" = healthy ] && break
+            sleep 5
+          done
+          [ "$status" = healthy ] || { docker logs annzarro-ci; exit 1; }
+      - name: Runs as a non-root user, data is read-only, users can be added
+        run: |
+          [ "$(docker exec annzarro-ci id -u)" != 0 ]
+          ! docker exec annzarro-ci touch /data/x
+          docker exec annzarro-ci annzarro user add --username ci --password 'ci-password-0000'
+          docker exec annzarro-ci annzarro user list
+      - name: Clean up
+        if: always()
+        run: docker rm -f annzarro-ci

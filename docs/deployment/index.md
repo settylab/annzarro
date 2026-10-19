@@ -6,6 +6,7 @@
 modes
 personal-server
 lab-server
+containers
 analyst-workflow
 authentication
 admin

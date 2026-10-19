@@ -1,0 +1,21 @@
+# The image build context is the repository root (docker build -f packaging/container/Dockerfile .).
+# Only what the wheel needs goes in; the pinned frontend bundles are fetched and checksummed in the build.
+.git
+.github
+.claude
+node_modules
+venv
+.venv
+**/__pycache__
+**/*.pyc
+*.egg-info
+build
+dist
+static/vendor
+served-data
+logs
+tests
+docs
+packaging
+!packaging/container
+**/*.log
