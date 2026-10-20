@@ -146,6 +146,15 @@ In the order of the menu:
   panel's button) and a 2D plot; otherwise its controls are greyed out and say why. Turning Equal
   aspect off switches the scale bar off, and turning it back on does not bring the bar back. The
   bar is part of an export. See {doc}`spatial-coordinates`.
+- **Flip y (grows downwards)** and **Flip x (grows to the left)** run an axis the other way.
+  Spatial coordinates are often read with y growing downwards, as in the image the cells were
+  taken from: switch **Flip y** on and the plot matches it. The flip belongs to this plot. It
+  stays through zoom, pan, **Reset axes** and a double click, works with Equal aspect and the
+  scale bar and in large-plot mode, is part of an export, and is kept in sessions, share links
+  and panel sets. A link made before this option opens unflipped. It is a view setting, not a
+  look: **Apply to other panels**, the presets and the session default do not copy or reset it.
+  The switches are greyed out in a 3D plot. A line drawn with the table's Line filter
+  ({doc}`tables-and-filters`) filters the side you see, so it works on a flipped plot.
 
 ## Points
 
@@ -231,8 +240,8 @@ export size. The menu asks
 first (**Apply** or **Cancel**) and then says how many plots it changed; with no other plot of
 the kind it says so instead.
 
-Axes, colour columns, table filters, subsets, point size and opacity, Equal aspect and the title
-are not copied. A plot without Equal aspect does not take the scale bar: it stays off there.
+Axes, their direction (Flip x, Flip y), colour columns, table filters, subsets, point size and
+opacity, Equal aspect and the title are not copied. A plot without Equal aspect does not take the scale bar: it stays off there.
 
 ## Large plots
 

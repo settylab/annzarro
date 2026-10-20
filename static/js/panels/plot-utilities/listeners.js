@@ -17,7 +17,7 @@ import {
   createPopoverContent
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
-import { aspectUpdate, keepsOwnMarker, refreshScaleBar } from './plot-make-helper.js';
+import { aspectUpdate, autorangeValue, keepsOwnMarker, refreshScaleBar } from './plot-make-helper.js';
 import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
 import { notify } from '../../utils/notify.js';
 import { partialRefreshNotice } from '../../utils/session-permissions.js';
@@ -770,7 +770,7 @@ export function setupColorControls(
           refreshScaleBar(plotContainer, settings);
         }
         // refit both axes for the new constraint (unless hiding pins them)
-        const refit = (settings.hideNaN || settings.hideOutliers) ? {} : { 'xaxis.autorange': true, 'yaxis.autorange': true };
+        const refit = (settings.hideNaN || settings.hideOutliers) ? {} : { 'xaxis.autorange': autorangeValue(settings, 'x'), 'yaxis.autorange': autorangeValue(settings, 'y') };
         Promise.resolve().then(() => Plotly.relayout(plotContainer, { ...aspectUpdate(settings), ...refit }))
             .catch(err => console.warn('Aspect not changed:', err && err.message));
     });

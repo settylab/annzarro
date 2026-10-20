@@ -84,6 +84,17 @@ def _open(page, url):
     page.wait_for_timeout(1000)
 
 
+def _reload_view(page, root, layout):
+    """Open the link, let the restore END, then reload: the reload of a page that is still restoring
+    is taken for the end of a page that crashed while it drew (session-manager.js, the restore
+    marker), and the view is then deliberately not drawn by itself."""
+    page.goto(_view(root, layout))
+    for pid in (A, B, G):
+        page.wait_for_function("(id) => { const f = (%s)(id); return f && f.size > 0; }" % FOCUS, arg=pid, timeout=60000)
+    page.wait_for_function("() => !localStorage.getItem('annzarro_restoring')", timeout=30000)
+    page.reload()
+
+
 def _focus(page, pid):
     return page.evaluate(FOCUS, pid)
 
@@ -260,8 +271,7 @@ def test_the_values_travel_with_the_panel(page, server):
     layout = page.evaluate("() => window.PanelManager.saveLayout()")
     assert (layout["panelConfigs"][A]["focusedScale"], layout["panelConfigs"][A]["focusedColor"]) == (5, "#00ff00")
     assert not any(k.startswith("focused") for k in layout["panelConfigs"][G])    # G keeps the defaults
-    page.goto(_view(server, layout))
-    page.reload()
+    _reload_view(page, server, layout)
     for pid in (A, B, G):
         page.wait_for_function("(id) => { const f = (%s)(id); return f && f.size > 0; }" % FOCUS, arg=pid, timeout=60000)
     page.wait_for_timeout(800)
@@ -447,8 +457,7 @@ def test_a_fill_travels_with_the_panel_and_apply_to_others_copies_it(page, serve
     layout = page.evaluate("() => window.PanelManager.saveLayout()")
     assert layout["panelConfigs"][A]["focusedNoFill"] is False
     assert "focusedNoFill" not in layout["panelConfigs"][G]
-    page.goto(_view(server, layout))                   # a link, an autosave and a duplicate all restore this layout
-    page.reload()
+    _reload_view(page, server, layout)                 # a link, an autosave and a duplicate all restore this layout
     for pid in (A, B, G):
         page.wait_for_function("(id) => { const f = (%s)(id); return f && f.size > 0; }" % FOCUS, arg=pid, timeout=60000)
     page.wait_for_timeout(800)

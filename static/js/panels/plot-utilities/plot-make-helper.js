@@ -38,6 +38,62 @@ export function aspectUpdate(settings) {
 }
 
 /**
+ * Flipped axes (settings.flipX, settings.flipY; a view setting, per plot, kept in panel configs
+ * and links): an axis that runs the other way, for spatial data that is read with y growing
+ * downwards. 2D only.
+ * @param {Object} settings
+ * @param {'x'|'y'} axis
+ * @returns {boolean}
+ */
+export function isFlipped(settings, axis) {
+  return !!settings && !settings.z && settings[axis === 'x' ? 'flipX' : 'flipY'] === true;
+}
+
+/** Plotly's autorange for an axis: 'reversed' fits the data and runs the axis backwards. */
+export function autorangeValue(settings, axis) {
+  return isFlipped(settings, axis) ? 'reversed' : true;
+}
+
+/**
+ * A numeric axis range, ordered the way the axis runs: low to high, or high to low when flipped.
+ * Anything else (text or date ranges, a missing range) is returned as it is.
+ */
+export function orientRange(range, flipped) {
+  if (!Array.isArray(range) || range.length !== 2 || !range.every(v => typeof v === 'number' && Number.isFinite(v))) return range;
+  const lo = Math.min(range[0], range[1]), hi = Math.max(range[0], range[1]);
+  return flipped ? [hi, lo] : [lo, hi];
+}
+
+/** Whether an event's or a layout's autorange value means "fitted" (true, or 'reversed'). */
+export function isAutorange(v) {
+  return v === true || v === 'reversed';
+}
+
+/**
+ * The relayout that makes a drawn 2D graph run the way the settings say, after a flip was switched:
+ * a fitted axis is fitted again (reversed or not), a zoomed one keeps its zoom with its ends swapped.
+ * @param {Object} settings
+ * @param {Object} fl - the graph's _fullLayout
+ * @returns {Object} relayout keys
+ */
+export function flipRelayout(settings, fl) {
+  const update = {};
+  for (const axis of ['x', 'y']) {
+    const ax = fl && fl[`${axis}axis`];
+    if (!ax) continue;
+    const oriented = orientRange(ax.range, isFlipped(settings, axis));
+    if (isAutorange(ax.autorange) || !Array.isArray(ax.range)) {
+      update[`${axis}axis.autorange`] = autorangeValue(settings, axis);
+      // Plotly keeps the direction a range already has when it fits with `true`: turn it first
+      if (Array.isArray(ax.range)) update[`${axis}axis.range`] = oriented;
+    } else {
+      update[`${axis}axis.range`] = oriented;
+    }
+  }
+  return update;
+}
+
+/**
  * An axis title: the user's own (Plot Options, or a view link's
  * xaxisTitle / yaxisTitle / zaxisTitle), else type.key.column.
  */
@@ -167,7 +223,7 @@ export function axisChangeRelayout(settings, data, axes, revision) {
     const kind = axisKind(data[axis]);
     update[`${prefix}.type`] = kind;
     update[`${prefix}.uirevision`] = axisRevision(settings, axis, kind, revision);
-    update[`${prefix}.autorange`] = true;
+    update[`${prefix}.autorange`] = settings.z ? true : autorangeValue(settings, axis);
   }
   return update;
 }
@@ -208,6 +264,9 @@ export function createLayout(settings) {
       ...(settings.equalAspect && !settings.z ? { scaleanchor: 'x', scaleratio: 1 } : {})
     }
   };
+  // a flipped axis is fitted to the data and runs backwards (a zoom kept below overrides the fit)
+  if (isFlipped(settings, 'x')) layout.xaxis.autorange = 'reversed';
+  if (isFlipped(settings, 'y')) layout.yaxis.autorange = 'reversed';
 
   // If a z-axis is provided, assume a 3D plot and configure a scene.
   if (settings.z) {
@@ -244,10 +303,10 @@ export function createLayout(settings) {
   } else if (viewportFitsAxes(settings)) {
     // Restore 2D axis ranges if available (only for the fields they were made on)
     if (settings.viewport2D.xrange) {
-      layout.xaxis.range = settings.viewport2D.xrange;
+      layout.xaxis.range = orientRange(settings.viewport2D.xrange, isFlipped(settings, 'x'));
     }
     if (settings.viewport2D.yrange) {
-      layout.yaxis.range = settings.viewport2D.yrange;
+      layout.yaxis.range = orientRange(settings.viewport2D.yrange, isFlipped(settings, 'y'));
     }
   }
 
@@ -714,7 +773,7 @@ export function attachViewportTracking(plotContainer, settings) {
       return !!camera;
     }
     // Reset axes / double click: back to the axes Plotly fits
-    if (eventData['xaxis.autorange'] === true || eventData['yaxis.autorange'] === true) {
+    if (isAutorange(eventData['xaxis.autorange']) || isAutorange(eventData['yaxis.autorange'])) {
       settings.viewport2D = null;
       return true;
     }
@@ -782,6 +841,7 @@ export function rangesForSize(zoom, fl) {
   const x = fl && fl.xaxis, y = fl && fl.yaxis;
   if (!zoom || !x || !y || y.scaleanchor !== 'x' || !x._length || !y._length) return null;
   if (Math.abs(x._length - zoom.size[0]) < 1 && Math.abs(y._length - zoom.size[1]) < 1) return null;
+  // perPixel is negative on a flipped axis, so the span keeps running the same way
   const span = (i, length) => [zoom.centre[i] - zoom.perPixel[i] * length / 2, zoom.centre[i] + zoom.perPixel[i] * length / 2];
   return { 'xaxis.range': span(0, x._length), 'yaxis.range': span(1, y._length) };
 }
@@ -812,8 +872,8 @@ export function keptViewRanges(settings) {
   const v = !settings.z && viewportFitsAxes(settings) && settings.viewport2D;
   if (!v) return null;
   const out = {};
-  if (Array.isArray(v.xrange)) out['xaxis.range'] = [...v.xrange];
-  if (Array.isArray(v.yrange)) out['yaxis.range'] = [...v.yrange];
+  if (Array.isArray(v.xrange)) out['xaxis.range'] = orientRange(v.xrange, isFlipped(settings, 'x'));
+  if (Array.isArray(v.yrange)) out['yaxis.range'] = orientRange(v.yrange, isFlipped(settings, 'y'));
   return Object.keys(out).length ? out : null;
 }
   

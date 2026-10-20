@@ -1,7 +1,7 @@
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
-import { createLayout, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
+import { createLayout, autorangeValue, orientRange, isFlipped, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
 import { autoPointCount, debounced, plotArea } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
@@ -1578,7 +1578,7 @@ export function stableAxisRanges(data, settings) {
   const kept = keptViewRanges(settings);
   if (kept) return kept;
   if (!(settings.hideNaN || settings.hideOutliers)) {
-    return { 'xaxis.autorange': true, 'yaxis.autorange': true };
+    return { 'xaxis.autorange': autorangeValue(settings, 'x'), 'yaxis.autorange': autorangeValue(settings, 'y') };
   }
   const extent = (values) => {
     let lo = Infinity, hi = -Infinity;
@@ -1592,8 +1592,8 @@ export function stableAxisRanges(data, settings) {
   const out = {};
   const x = extent(data.x && data.x.values);
   const y = extent(data.y && data.y.values);
-  if (x) out['xaxis.range'] = x;
-  if (y) out['yaxis.range'] = y;
+  if (x) out['xaxis.range'] = orientRange(x, isFlipped(settings, 'x'));
+  if (y) out['yaxis.range'] = orientRange(y, isFlipped(settings, 'y'));
   return Object.keys(out).length ? out : null;
 }
 
