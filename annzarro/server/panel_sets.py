@@ -102,9 +102,10 @@ def is_legacy(config) -> bool:
 
 
 def top_level_skip(config) -> tuple:
-    """Folder names a listing of the data directory's top level leaves out: ``sessions`` while
-    panel sets still live there."""
-    return (LEGACY_NAME,) if is_legacy(config) else ()
+    """Folder names a listing of the data directory's top level leaves out: ``sessions`` while it
+    holds panel-set files, whether they are still in use (legacy) or a copy left after
+    ``annzarro panel-sets migrate``. Empty, or without ``*.json``, it lists like any folder."""
+    return (LEGACY_NAME,) if holds_sets(legacy_dir(config)) else ()
 
 
 def ensure(config) -> str:

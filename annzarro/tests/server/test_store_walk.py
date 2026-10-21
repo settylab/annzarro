@@ -120,3 +120,9 @@ def test_a_restricted_user_gets_granted_stores_then_the_walk_of_granted_folders_
     assert got[0] == "top.zarr"
     assert sorted(got[1:]) == ["deep.zarr", "mid.zarr", "yes.zarr"]      # the link out of the grant is not listed
     assert "secret.zarr" not in got and "leak.zarr" not in got
+
+
+def test_an_emptied_top_sessions_folder_is_walked_like_any_folder(world):
+    config, data = world
+    (data / "sessions" / "set.json").unlink()
+    assert "sessions/no.zarr" in _names(store_walk.iter_stores(config))

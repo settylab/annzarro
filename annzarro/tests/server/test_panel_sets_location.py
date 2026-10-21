@@ -94,10 +94,15 @@ def test_without_origins_a_value_other_than_the_default_is_explicit(tmp_path):
     assert panel_sets.resolve(_config(tmp_path, panel_sets_dir=str(tmp_path / "elsewhere"))).mode == panel_sets.EXPLICIT
 
 
-def test_top_level_skip_follows_the_mode(tmp_path):
-    assert panel_sets.top_level_skip(_config(tmp_path)) == ()
-    _put(tmp_path / "data" / "sessions", "old")
-    assert panel_sets.top_level_skip(_config(tmp_path)) == ("sessions",)
+def test_top_level_skip_covers_legacy_and_a_migrated_leftover_but_not_an_empty_folder(tmp_path):
+    config = _config(tmp_path)
+    assert panel_sets.top_level_skip(config) == ()                                 # no folder
+    old = _put(tmp_path / "data" / "sessions", "old")
+    assert panel_sets.is_legacy(config) and panel_sets.top_level_skip(config) == ("sessions",)
+    _put(tmp_path / "state" / "panel-sets", "old")                                 # migrated: not legacy now
+    assert not panel_sets.is_legacy(config) and panel_sets.top_level_skip(config) == ("sessions",)
+    os.unlink(old)                                                                 # emptied by hand
+    assert panel_sets.top_level_skip(config) == ()
 
 
 def test_ensure_creates_the_state_folder_private(tmp_path):
@@ -165,11 +170,23 @@ def test_the_health_page_names_the_location(world):
     assert (body["note"] is not None) is (mode == "legacy")
 
 
-def test_the_data_directory_listing_hides_sessions_only_in_legacy_mode(world):
+def test_the_listing_hides_a_sessions_folder_that_holds_sets_and_shows_an_empty_one(world):
     app, _, mode = world
-    os.makedirs(os.path.join(app.config["data_dir"], "sessions"), exist_ok=True)
-    folders = [e["name"] for e in login(app, USER).get("/api/v1/datasets/folder").get_json()["entries"]]
-    assert ("sessions" in folders) is (mode == "state")
+    old = os.path.join(app.config["data_dir"], "sessions")
+    client = login(app, USER)
+
+    def folders():
+        return [e["name"] for e in client.get("/api/v1/datasets/folder").get_json()["entries"]]
+    os.makedirs(old, exist_ok=True)
+    if mode == "state":
+        assert "sessions" in folders()                       # empty: a folder like any other
+        _put(old, "leftover")                                # a copy left after migrating
+    assert "sessions" not in folders()
+    for name in os.listdir(old):
+        if name.endswith(".json"):
+            os.unlink(os.path.join(old, name))
+    if mode == "state":
+        assert "sessions" in folders()                       # emptied: listed again
 
 
 # --- annzarro panel-sets migrate ----------------------------------------------------------------
