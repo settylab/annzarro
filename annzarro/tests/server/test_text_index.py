@@ -99,12 +99,12 @@ def test_the_crawl_reads_attribution_and_readme_of_every_local_store(world):
     assert liver["about"]["funding"] == "NIH R01 grant" and liver["about"]["contacts"] == "jane@example.org"
     assert "license" in liver["about"] and "doi_url" not in liver["about"]
     assert found["heart.zarr"]["rel_path"] == os.path.join("sub", "heart.zarr")
-    assert found["plain.zarr"]["about"] == {} and found["plain.zarr"]["readme"] == "" and found["plain.zarr"]["error"] is None
+    assert found["plain.zarr"]["about"] == {} and text_index.readme_of(found["plain.zarr"]) == "" and found["plain.zarr"]["error"] is None
 
 
 def test_the_readme_is_stored_as_prose_without_link_targets_or_markup(world):
     crawl(world)
-    readme = entries(world)["liver.zarr"]["readme"]
+    readme = text_index.readme_of(entries(world)["liver.zarr"])
     assert readme == "Liver atlas See the paper and hepatocytes."
     assert "secret-target" not in readme and readme_cut(world, "liver.zarr") is False
 
@@ -119,14 +119,15 @@ def test_the_readme_is_cut_at_the_configured_size(tmp_path):
     app = create_app(config_for(tmp_path, text_index_readme_kb=1))
     crawl(app)
     found = entries(app)["plain.zarr"]
-    assert len(found["readme"].encode()) <= 1024 and found["readme_cut"] is True
-    assert "tail" not in found["readme"]
+    readme = text_index.readme_of(found)
+    assert len(readme.encode()) <= 1024 and found["readme_cut"] is True
+    assert "tail" not in readme
 
 
 def test_a_store_that_cannot_be_read_is_listed_by_name_with_an_error(world):
     crawl(world)
     broken = entries(world)["broken.zarr"]
-    assert broken["error"] == "unreadable" and broken["about"] == {} and broken["readme"] == ""
+    assert broken["error"] == "unreadable" and broken["about"] == {} and text_index.readme_of(broken) == ""
 
 
 def test_remote_stores_are_not_enumerated(world, monkeypatch):
@@ -161,7 +162,7 @@ def test_an_unchanged_store_is_not_read_again_and_a_changed_one_is(world, monkey
     status = crawl(world)
     assert reads == ["liver.zarr"] and status["read"] == 1
     assert entries(world)["liver.zarr"]["about"]["title"] == "Liver atlas v2"
-    assert entries(world)["liver.zarr"]["readme"] == "new readme"
+    assert text_index.readme_of(entries(world)["liver.zarr"]) == "new readme"
 
 
 def test_a_vanished_store_is_dropped(world):
@@ -237,7 +238,7 @@ def test_the_size_cap_is_a_flag_never_an_error(world):
     assert status["state"] == "done" and status["capped"] is True and status["errors"] == 1      # only the broken store
     loaded = text_index.load(world.config)
     assert loaded.capped is True and loaded.stores_capped is False and len(loaded) == 5
-    assert all(e["readme"] == "" for e in loaded.entries)
+    assert all(text_index.readme_of(e) == "" for e in loaded.entries)
     assert find(loaded, "liver")[0] == ["liver.zarr"]               # attribution is still searched
 
 
@@ -274,7 +275,7 @@ def test_the_index_size_cap_drops_the_largest_readmes(tmp_path):
     status = crawl(app)
     assert status["capped"] is True
     found = entries(app)
-    assert found["plain.zarr"]["readme"] == "" and found["plain.zarr"]["readme_cut"] is True
+    assert text_index.readme_of(found["plain.zarr"]) == "" and found["plain.zarr"]["readme_cut"] is True
     assert found["plain.zarr"]["about"]["title"] == "Big"
     assert text_index.load(app.config).capped is True
 
@@ -350,12 +351,39 @@ def test_a_crawl_starts_at_most_once_per_interval(tmp_path):
 def test_the_index_file_is_gzipped_json_and_leaves_no_temporary_file(world):
     crawl(world)
     directory = text_index.index_dir(world.config)
-    with gzip.open(directory / "index.json.gz", "rb") as fh:
-        body = json.loads(fh.read())
-    assert body["version"] == 1 and body["complete"] is True and len(body["entries"]) == 5
+    with gzip.open(directory / "index.json.gz", "rt", encoding="utf-8") as fh:
+        lines = [json.loads(line) for line in fh]
+    header, records = lines[0], lines[1:]
+    assert header["version"] == 3 and header["complete"] is True and header["count"] == len(records) == 5
+    assert any(r["readme"] for r in records) and all(r.get("real", r["path"]) == r["path"] for r in records)
     assert sorted(p.name for p in directory.iterdir() if p.name.endswith(".tmp")) == []
     from annzarro.utils import paths
     assert str(directory).startswith(str(paths.cache_dir()))
+
+
+def test_a_loaded_entry_shares_its_path_and_folds_only_text_that_is_not_ascii(world):
+    annotate(f"{world.data}/plain.zarr", {"title": "Caf\u00e9 \u00dfeta"}, "Ordinary ASCII text")
+    crawl(world)
+    loaded = text_index.load(world.config)
+    by_name = {e["name"]: (e, extra) for e, extra in zip(loaded.entries, loaded.folded)}
+    heart, extra = by_name["heart.zarr"]
+    assert heart["real"] is heart["path"] and extra == text_index._NOTHING
+    assert text_index.readme_of(by_name["liver.zarr"][0]) == "Liver atlas See the paper and hepatocytes."
+    assert by_name["liver.zarr"][1] == {"authors": "jane doe; zoe muller"}
+    plain, extra = by_name["plain.zarr"]
+    assert list(extra) == ["title"] and extra["title"].startswith("cafe ")
+    assert text_index.fold("Caf\u00e9") == "cafe"
+
+
+def test_a_file_cut_short_is_no_index(world):
+    crawl(world)
+    path = text_index.index_dir(world.config) / "index.json.gz"
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        lines = fh.readlines()
+    with gzip.open(path, "wt", encoding="utf-8") as fh:
+        fh.writelines(lines[:-2])
+    text_index._loaded.clear()
+    assert text_index.load(world.config) is None
 
 
 def test_a_worker_loads_the_new_file_when_its_stamp_moves(world):
@@ -468,8 +496,8 @@ def test_a_title_outweighs_a_readme_and_a_word_start_outweighs_the_middle(loaded
     assert names[0] == "heart.zarr"                     # name, title, description and README
     names, hits, _ = find(loaded, "cardio")
     assert names == ["heart.zarr"] and hits[0]["matched"] == ["description", "readme"]
-    start = text_index._score({"title": "heart rate"}, ["heart"])[0]
-    middle = text_index._score({"title": "the apheartic"}, ["heart"])[0]
+    start = text_index._score({"about": {"title": "heart rate"}}, {}, ["heart"])[0]
+    middle = text_index._score({"about": {"title": "the apheartic"}}, {}, ["heart"])[0]
     assert start == 12 and middle == 8
 
 

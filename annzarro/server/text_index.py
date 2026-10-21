@@ -43,7 +43,7 @@ except ImportError:  # Windows: the desktop app is a single process
 
 logger = logging.getLogger(__name__)
 
-INDEX_VERSION = 1
+INDEX_VERSION = 3
 HEARTBEAT_STALE_S = 30
 HEARTBEAT_EVERY_S = 0.5
 CHECKPOINT_EVERY = 500
@@ -141,6 +141,17 @@ def read_text(path, readme_bytes):
 
 
 # -- the index file ----------------------------------------------------------------------------------
+#
+# In memory an entry keeps its README once, as it is. The matcher folds a field when it looks at it
+# (``str.lower`` for ASCII, which is what almost all text is); only a field with other characters is
+# folded once at load and kept beside the original. On disk the file is gzipped JSON lines (a header, then
+# one entry per line), so it is written and read one entry at a time and the whole text is never held twice,
+# not even while loading.
+
+def readme_of(entry):
+    """The README text of an entry."""
+    return entry.get("readme") or ""
+
 
 def _entry_chars(entry):
     return len(entry.get("readme") or "") + sum(len(v) for v in (entry.get("about") or {}).values())
@@ -160,18 +171,28 @@ def _cap_size(entries, max_mb):
     return True
 
 
+def _record(entry):
+    """An entry as a line of the file: ``real`` is left out when it is the path."""
+    if entry.get("real") == entry.get("path"):
+        return {k: v for k, v in entry.items() if k != "real"}
+    return entry
+
+
 def write_index(config, entries, built_at, complete, capped=False, partial=False, stores_capped=False):
-    """Write ``index.json.gz`` atomically: a reader sees the old file or the new one, never half."""
+    """Write ``index.json.gz`` atomically, entry by entry: a reader sees the old file or the new one, never half."""
     directory = index_dir(config)
     directory.mkdir(parents=True, exist_ok=True)
     target = str(directory / "index.json.gz")
-    body = {"version": INDEX_VERSION, "built_at": built_at, "written_at": _now(), "complete": complete,
-            "partial": partial, "capped": capped, "stores_capped": stores_capped, "entries": entries}
+    header = {"version": INDEX_VERSION, "built_at": built_at, "written_at": _now(), "complete": complete,
+              "partial": partial, "capped": capped, "stores_capped": stores_capped, "count": len(entries)}
     tmp = f"{target}.{os.getpid()}.{threading.get_ident()}.tmp"
+    dump = json.JSONEncoder(ensure_ascii=False, separators=(",", ":")).encode
     try:
         with open(tmp, "wb") as raw:
             with gzip.GzipFile(fileobj=raw, mode="wb", compresslevel=6, mtime=0) as gz:
-                gz.write(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+                gz.write((dump(header) + "\n").encode("utf-8"))
+                for entry in entries:
+                    gz.write((dump(_record(entry)) + "\n").encode("utf-8"))
             raw.flush()
             os.fsync(raw.fileno())
         os.replace(tmp, target)
@@ -183,31 +204,75 @@ def write_index(config, entries, built_at, complete, capped=False, partial=False
 
 def fold(text):
     """``text`` as a search compares it: Unicode compatibility form, accents dropped, case folded."""
+    if text.isascii():
+        return text.lower()
     decomposed = unicodedata.normalize("NFKD", text)
     return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
 
 
+_NOTHING = {}
+
+
 class Loaded:
-    """The index as a worker holds it: entries plus each field's folded text, for the matcher."""
+    """The index as a worker holds it: the entries, and for a field with non-ASCII text its folded form."""
 
-    def __init__(self, body):
-        self.built_at = body.get("built_at")
-        self.complete = bool(body.get("complete"))
-        self.capped = bool(body.get("capped"))
-        self.partial = bool(body.get("partial"))
-        self.stores_capped = bool(body.get("stores_capped"))
-        self.entries = body.get("entries") or []
-        self.folded = [self._fold_entry(e) for e in self.entries]
+    def __init__(self, header):
+        self.built_at = header.get("built_at")
+        self.complete = bool(header.get("complete"))
+        self.capped = bool(header.get("capped"))
+        self.partial = bool(header.get("partial"))
+        self.stores_capped = bool(header.get("stores_capped"))
+        self.entries = []
+        self.folded = []              # per entry: {field: folded text} for fields that are not ASCII, else a shared {}
 
-    @staticmethod
-    def _fold_entry(entry):
-        fields = {"name": entry.get("name") or "", "rel_path": entry.get("rel_path") or ""}
-        fields.update(entry.get("about") or {})
-        fields["readme"] = entry.get("readme") or ""
-        return {name: fold(text) for name, text in fields.items() if text}
+    def add(self, record):
+        """Take one line of the file."""
+        record.setdefault("real", record["path"])        # the same string object: no memory
+        extra = _NOTHING
+        for name, text in fields_of(record).items():
+            if text and not text.isascii():
+                if extra is _NOTHING:
+                    extra = {}
+                extra[name] = fold(text)
+        self.entries.append(record)
+        self.folded.append(extra)
 
     def __len__(self):
         return len(self.entries)
+
+
+def fields_of(entry):
+    """``{field: text}`` of an entry, the fields the matcher reads."""
+    fields = {"name": entry.get("name") or "", "rel_path": entry.get("rel_path") or ""}
+    fields.update(entry.get("about") or {})
+    fields["readme"] = entry.get("readme") or ""
+    return fields
+
+
+def folded_field(entry, extra, field):
+    """The text of ``field`` as the matcher compares it."""
+    text = fields_of(entry).get(field) or ""
+    return extra.get(field) or text.lower()
+
+
+def _read_file(path):
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        header = json.loads(fh.readline())
+        if not isinstance(header, dict) or header.get("version") != INDEX_VERSION:
+            raise ValueError("not a text index of this version")
+        loaded = Loaded(header)
+        shared = {}                   # short attribution values repeat across stores (licence, authors, funder): keep one string
+        for line in fh:
+            record = json.loads(line)
+            about = record.get("about")
+            if about:
+                for key, value in about.items():
+                    if len(value) <= 120:
+                        about[key] = shared.setdefault(value, value)
+            loaded.add(record)
+    if len(loaded) != header.get("count"):
+        raise ValueError("the index file is cut short")
+    return loaded
 
 
 _loaded = {}                      # index file: (stamp, Loaded)
@@ -231,11 +296,7 @@ def load(config):
         if hit is not None and hit[0] == stamp:
             return hit[1]
         try:
-            with gzip.open(path, "rb") as fh:
-                body = json.loads(fh.read().decode("utf-8"))
-            if not isinstance(body, dict) or body.get("version") != INDEX_VERSION:
-                raise ValueError("not a text index of this version")
-            loaded = Loaded(body)
+            loaded = _read_file(path)
         except (OSError, ValueError, EOFError) as exc:
             logger.warning(f"Text index {path} cannot be read ({exc}); it is rebuilt by the next crawl")
             _loaded.pop(path, None)
@@ -410,7 +471,8 @@ def _enumerate(config, deadline, max_stores):
 def _signature(entry):
     from ..server.routes import dataset_info as info_routes
     try:
-        return repr(info_routes._signature(entry["real"], False))
+        digest = hashlib.blake2b(repr(info_routes._signature(entry["real"], False)).encode("utf-8", "surrogateescape"), digest_size=8)
+        return digest.hexdigest()
     except OSError:
         return None
 
@@ -571,22 +633,24 @@ def _weight(field):
     return WEIGHTS.get("name" if field == "rel_path" else field, 0)
 
 
-def _score(folded, terms):
+def _score(entry, extra, terms):
     """``(score, matched fields)`` of one entry, or None when a term is in none of its fields."""
-    total, matched = 0.0, set()
-    for term in terms:
-        best = 0.0
-        for field, text in folded.items():
-            pos = text.find(term)
+    best = [0.0] * len(terms)
+    matched = set()
+    for field, text in fields_of(entry).items():
+        if not text:
+            continue
+        low = extra.get(field) or text.lower()
+        weight = _weight(field)
+        for n, term in enumerate(terms):
+            pos = low.find(term)
             if pos < 0:
                 continue
-            weight = _weight(field) * (1.5 if pos == 0 or not text[pos - 1].isalnum() else 1.0)
             matched.add("name" if field == "rel_path" else field)
-            best = max(best, weight)
-        if not best:
-            return None
-        total += best
-    return total, [name for name, _ in FIELDS if name in matched]
+            best[n] = max(best[n], weight * (1.5 if pos == 0 or not low[pos - 1].isalnum() else 1.0))
+    if not all(best):
+        return None
+    return sum(best), [name for name, _ in FIELDS if name in matched]
 
 
 def _fold_map(text):
@@ -680,18 +744,18 @@ def search(loaded, terms, readable, folder=None, limit=50, seconds=SEARCH_SECOND
     partial = False
     scored = []
     prefix = folder.rstrip(os.sep) + os.sep if folder else None
-    for i, (entry, folded) in enumerate(zip(loaded.entries, loaded.folded)):
+    for i, (entry, extra) in enumerate(zip(loaded.entries, loaded.folded)):
         if i % 256 == 0 and time.monotonic() > deadline:
             partial = True
             break
         if prefix is not None and not entry["real"].startswith(prefix):
             continue
-        result = _score(folded, terms)
+        result = _score(entry, extra, terms)
         if result is not None:
-            scored.append((result[0], entry, folded, result[1]))
+            scored.append((result[0], entry, extra, result[1]))
     scored.sort(key=lambda item: (-item[0], df.name_key(item[1])))
     hits = []
-    for score, entry, folded, matched in scored:
+    for score, entry, extra, matched in scored:
         if len(hits) >= limit:
             break
         if time.monotonic() > deadline:
@@ -702,10 +766,10 @@ def search(loaded, terms, readable, folder=None, limit=50, seconds=SEARCH_SECOND
         # the snippet comes from the best matching field that is text about the store, the name only if nothing else matched
         texty = [f for f in matched if f != "name"]
         field = max(texty or matched, key=_weight)
-        if field == "name" and not any(t in folded.get("name", "") for t in terms):
+        if field == "name" and not any(t in folded_field(entry, extra, "name") for t in terms):
             field = "rel_path"
         hits.append({"entry": entry, "score": score, "matched": matched,
-                     "snippet": _snippet(_field_text(entry, field), folded.get(field, ""), terms, field)})
+                     "snippet": _snippet(_field_text(entry, field), folded_field(entry, extra, field), terms, field)})
     return hits, partial
 
 
