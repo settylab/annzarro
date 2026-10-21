@@ -47,6 +47,7 @@
       "window-chrome.js",
       "dataset-open.js",
       "dataset-open-logic.js",
+      "state-logic.js",
       "preload.js",
       "loading.html",
       "error.html",

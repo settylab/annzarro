@@ -18,6 +18,15 @@ WorkingDirectory=/opt/annzarro
 # Site settings (start from annzarro/server/site.example.yaml)
 Environment=ANNZARRO_CONFIG=/etc/annzarro/site.yaml
 ExecStart=/opt/annzarro/venv/bin/annzarro serve
+# systemd creates these for User= and passes them as $STATE_DIRECTORY, $CACHE_DIRECTORY and
+# $LOGS_DIRECTORY: panel sets, users and admin settings in /var/lib/annzarro, disposable caches in
+# /var/cache/annzarro, the log in /var/log/annzarro. server.state_dir / server.cache_dir in the
+# site file (or ANNZARRO_SERVER_STATE_DIR, --state-dir) override them. The data directory is
+# only read.
+StateDirectory=annzarro
+StateDirectoryMode=0700
+CacheDirectory=annzarro
+LogsDirectory=annzarro
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

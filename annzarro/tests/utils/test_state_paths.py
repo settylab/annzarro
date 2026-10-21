@@ -237,3 +237,52 @@ def test_no_deprecation_warning_without_a_project_file(isolated, caplog):
     with caplog.at_level(logging.WARNING):
         _load()
     assert "stops working in 0.8" not in caplog.text
+
+
+def test_systemd_directories_replace_only_the_defaults(isolated, monkeypatch):
+    monkeypatch.setenv("STATE_DIRECTORY", "/var/lib/annzarro")
+    monkeypatch.setenv("CACHE_DIRECTORY", "/var/cache/annzarro")
+    manager = _load()
+    server = manager.config["server"]
+    assert server["state_dir"] == "/var/lib/annzarro"
+    assert server["cache_dir"] == "/var/cache/annzarro"
+    assert server["panel_sets_dir"] == "/var/lib/annzarro/panel-sets"
+    assert manager.origins["server.state_dir"] == "derived:$STATE_DIRECTORY"
+    assert paths.user_state_dir() == paths.Path("/var/lib/annzarro")
+    assert paths.cache_dir() == paths.Path("/var/cache/annzarro")
+
+
+def test_systemd_directories_lose_to_config_env_and_flag(isolated, monkeypatch):
+    monkeypatch.setenv("STATE_DIRECTORY", "/var/lib/annzarro")
+    monkeypatch.setenv("CACHE_DIRECTORY", "/var/cache/annzarro")
+    cfg = _write(isolated / "site.yaml", {"server": {"state_dir": str(isolated / "cfg"),
+                                                     "cache_dir": str(isolated / "cfgcache")}})
+    manager = _load(cfg)
+    assert _state(manager) == str(isolated / "cfg")
+    assert manager.config["server"]["cache_dir"] == str(isolated / "cfgcache")
+
+    monkeypatch.setenv("ANNZARRO_SERVER_STATE_DIR", str(isolated / "env"))
+    assert _state(_load()) == str(isolated / "env")
+    monkeypatch.delenv("ANNZARRO_SERVER_STATE_DIR")
+
+    monkeypatch.setenv("ANNZARRO_HOME", str(isolated / "home-alias"))
+    assert _state(_load()) == str(isolated / "home-alias")
+    monkeypatch.delenv("ANNZARRO_HOME")
+
+    manager = _load(state_dir=str(isolated / "flag"))
+    assert _state(manager) == str(isolated / "flag")
+    # the cache directory is not named by the flag, so systemd's still applies
+    assert manager.config["server"]["cache_dir"] == "/var/cache/annzarro"
+
+
+def test_systemd_directory_takes_the_first_of_several_and_ignores_relative(monkeypatch):
+    monkeypatch.setenv("STATE_DIRECTORY", "/var/lib/annzarro:/var/lib/other")
+    assert paths.systemd_dir("STATE_DIRECTORY") == "/var/lib/annzarro"
+    monkeypatch.setenv("STATE_DIRECTORY", "relative/dir")
+    assert paths.systemd_dir("STATE_DIRECTORY") is None
+    monkeypatch.delenv("STATE_DIRECTORY")
+    assert paths.systemd_dir("STATE_DIRECTORY") is None
+
+
+def test_without_systemd_the_default_stands(isolated):
+    assert _load().origins["server.state_dir"].startswith("defaults:")

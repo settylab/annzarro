@@ -11,9 +11,20 @@ server:
   # gunicorn binds here; keep it on loopback behind a TLS reverse proxy
   host: 127.0.0.1
   port: 8000
-  # Every dataset opened must resolve inside data_dir or allowed_dirs
+  # The datasets. AnnZarro only reads here (it can be mounted read-only); every dataset
+  # opened must resolve inside data_dir or allowed_dirs
   data_dir: /srv/annzarro/data
   # allowed_dirs: [/srv/shared/atlases]
+  # Everything AnnZarro writes: panel sets, users, admin settings, logs, caches. It must lie
+  # outside the data directories. The systemd unit's StateDirectory=annzarro makes it
+  # /var/lib/annzarro and sets $STATE_DIRECTORY, which is used when this key is not set.
+  state_dir: /var/lib/annzarro
+  # Panel sets (default <state_dir>/panel-sets). An install whose panel sets are still in
+  # <data_dir>/sessions keeps using that folder until `annzarro panel-sets migrate` copies them.
+  # panel_sets_dir: /var/lib/annzarro/panel-sets
+  # Disposable caches, safe to delete and to leave out of backups (default <state_dir>/cache;
+  # $CACHE_DIRECTORY under systemd's CacheDirectory=).
+  # cache_dir: /var/cache/annzarro
   # Reverse proxies in front whose X-Forwarded-* headers are trusted
   # (client address, and https for the Secure login cookie). 0 without one.
   proxy_count: 1
@@ -29,7 +40,7 @@ server:
 auth:
   # Login is on by default under gunicorn. Users: `annzarro user add --admin`.
   # The login cookie key is generated beside this file on first start.
-  user_file: /srv/annzarro/users.json
+  user_file: /var/lib/annzarro/auth/users.json
   # session_timeout: 28800   # seconds idle before a login expires; 0 = never
   # cookie_secure: auto      # Secure cookie when the request came over HTTPS
 

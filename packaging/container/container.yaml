@@ -4,9 +4,8 @@
 server:
   host: 0.0.0.0              # the container's own network namespace; publish the port as you need
   port: 8000
-  data_dir: /state/data      # panel sets are written to /state/data/sessions
-  allowed_dirs:
-    - /data                  # the datasets, mounted read-only
+  data_dir: /data            # the datasets, mounted read-only; AnnZarro never writes here
+  state_dir: /state          # panel sets (/state/panel-sets), users, admin settings, caches
   log_file: /state/logs/annzarro_server.log
 auth:
   user_file: /state/auth/users.json   # the login key and the admin state are kept beside it

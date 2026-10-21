@@ -91,8 +91,8 @@ brew install --cask settylab/annzarro/annzarro
 
 This installs the same notarized app as the download below, for your chip, on macOS 13 or later, and
 skips the manual steps. The app then updates itself (`brew upgrade --cask --greedy annzarro` also does). `brew uninstall --cask annzarro`
-removes the app; add `--zap` to also delete its settings, logs and caches. Your datasets and saved
-panel sets in `~/annzarro-data` are kept.
+removes the app; add `--zap` to also delete its settings, logs and caches, which include the panel sets you saved since 0.7.2 (they are kept in the app's
+own state folder). Your datasets in `~/annzarro-data` are kept.
 
 ### Download
 
@@ -203,18 +203,33 @@ The first lines name the files that were read (the built-in `base.yaml` and `pro
 inside the package, then `/etc/annzarro/config.yaml`, `~/.config/annzarro/config.yaml` and
 `./config.yaml` if they exist). Every option is described in {doc}`../reference/configuration`.
 
-## Where AnnZarro writes
+(where-annzarro-keeps-things)=
+## Where AnnZarro keeps things
 
-AnnZarro never writes to datasets. It writes only:
+Three kinds of place, kept apart. The **data directory** (`--data-dir`, by default
+`~/annzarro-data`) holds your datasets, and AnnZarro only reads there: it can be mounted read-only,
+and nothing it writes lands under it. The **configuration** is read from the files in
+{doc}`../reference/configuration`. Everything AnnZarro **writes** goes to the state directory
+(`--state-dir`, `server.state_dir`; `~/.annzarro` by default):
 
 | What | Where |
 |---|---|
-| Server log | `~/.annzarro/logs/annzarro_server.log` |
-| PID file of `annzarro start --detach` | `~/.annzarro/server.pid` |
-| Users file and login key (only when login is enabled) | `~/.annzarro/auth/users.json`, `~/.annzarro/auth/annzarro_secret_key` |
-| Saved panel sets | `~/.annzarro/panel-sets/` ({ref}`panel-sets-location`) |
+| Saved panel sets | `<state_dir>/panel-sets/` (`server.panel_sets_dir`; {ref}`panel-sets-location`) |
+| Server log | `<state_dir>/logs/annzarro_server.log` (`server.log_file`) |
+| PID file of `annzarro start --detach` | `<state_dir>/server.pid` |
+| Users file and login key (only when login is enabled) | `<state_dir>/auth/users.json`, `<state_dir>/auth/annzarro_secret_key` (`auth.user_file`) |
+| Admin settings, audit log and health snapshots | `annzarro_admin/` beside the users file |
+| Caches (safe to delete, leave out of backups) | `<state_dir>/cache/` (`server.cache_dir`), plus `fingerprints/` and `freshness/` in the state directory |
 
-Set `ANNZARRO_HOME` to move `~/.annzarro` elsewhere, for example to a project directory on a
-cluster where the home directory is small.
+`annzarro paths` prints every one of these for the configuration you give it, and says where each
+value came from (a flag, an environment variable, a configuration file or the default). The
+state directory can also be set with `ANNZARRO_SERVER_STATE_DIR` or its older name
+`ANNZARRO_HOME`, for example to a project directory on a cluster where the home directory is
+small. Under systemd, `StateDirectory=` and `CacheDirectory=` set `$STATE_DIRECTORY` and
+`$CACHE_DIRECTORY`, which are used when nothing else names the directory ({doc}`../deployment/lab-server`).
+The server refuses to start when one of these directories lies inside a data directory.
+
+Panel sets saved by a version before 0.7.2 are in `<data_dir>/sessions`, and are used from there
+until you copy them with `annzarro panel-sets migrate`, which never deletes anything.
 
 Next: {doc}`quickstart`.

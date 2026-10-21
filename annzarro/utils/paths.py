@@ -44,6 +44,14 @@ def default_data_dir() -> str:
 STATE_DIR_ENV = "ANNZARRO_HOME"
 STATE_DIR_ENVS = ("ANNZARRO_SERVER_STATE_DIR", STATE_DIR_ENV)
 
+def systemd_dir(name: str):
+    """The directory systemd hands a service in ``$STATE_DIRECTORY`` / ``$CACHE_DIRECTORY``
+    (``StateDirectory=`` / ``CacheDirectory=``), or None. Several directories arrive colon
+    separated; the first is the service's own."""
+    first = os.environ.get(name, "").split(":")[0].strip()
+    return first if first.startswith("/") else None
+
+
 # Set once configuration is loaded (or by ``--state-dir`` for commands that
 # load none, like ``annzarro stop``); None = decide from the environment.
 _state_dir = None

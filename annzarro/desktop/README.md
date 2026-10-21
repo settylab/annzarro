@@ -51,10 +51,10 @@ not need Python.
 
 | What | Where |
 |---|---|
-| Datasets (listed in the Dataset picker) | `~/annzarro-data/datasets` (copy or symlink stores here) |
-| Saved panel sets | `~/annzarro-data/sessions` |
+| Datasets (listed in the Dataset picker, read only) | `~/annzarro-data` itself (copy or symlink stores here); nothing is created inside it |
+| Saved panel sets | `<userData>/state/panel-sets`; an older `~/annzarro-data/sessions` is used until the app's one-time "copy panel sets" dialog (or `annzarro panel-sets migrate`) copies it |
 | App log, including the server's output (`server:` lines) | macOS `~/Library/Logs/AnnZarro/main.log`, Windows `%APPDATA%\AnnZarro\logs\main.log`, Linux `~/.config/AnnZarro/logs/main.log` |
-| Server state (PID file, server log) | `~/.annzarro` (as for `annzarro start`) |
+| Server state (PID file, server log, caches) | `<userData>/state`, passed to the server as `--state-dir` (`<userData>` is `~/Library/Application Support/AnnZarro`, `%APPDATA%\AnnZarro` or `~/.config/AnnZarro`) |
 | Optional settings | `~/.config/annzarro/config.yaml`, read as by `annzarro start`; host, port, data directory and login are fixed by the app |
 
 The error page (shown if the server does not start) names the log file.
