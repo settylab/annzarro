@@ -3989,17 +3989,6 @@ details.aesthetics-section > .aesthetics-body {
     color: var(--az-text);
 }
 .dataset-info-button[hidden] { display: none; }
-.dataset-info-button { position: relative; }
-.dataset-info-button.has-info::after {           /* the dataset has an attribution or a README */
-    content: "";
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--az-link);
-}
 .dataset-bar .dataset-info-button { flex: 0 0 auto; }
 .dataset-bar .dataset-fact,
 .dataset-bar .theme-toggle,

@@ -22,8 +22,7 @@ It opens a dialog with three tabs.
 
 A moment after a dataset opens, once its first plot has been asked for, the browser reads the three
 tabs in one request while it is idle, so they show at once when you open the dialog; for a remote
-store the Structure tab is left until you open it. A dot on the button says the dataset has an
-attribution or a README. A tab not yet read is read when first shown, with a loading indication; a
+store the Structure tab is left until you open it. A tab not yet read is read when first shown, with a loading indication; a
 failure is said in words and offers **Try again**. The browser keeps what it read for the open
 dataset and the eight used last. The dataset browser's details pane shows the same attribution under the facts of a store, with the
 README and the structure as sections that load when you open them. A dataset that records no

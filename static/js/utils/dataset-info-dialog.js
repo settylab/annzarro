@@ -7,8 +7,7 @@
  * its part from the server when it is first shown (utils/dataset-info.js draws it, with a
  * loading state and an error state that offers "Try again"). Shortly after a dataset opens, once
  * the first plot has had its turn, the parts are fetched in one request in idle time, so the tabs
- * show at once; a remote store's structure is left to the tab. The button carries a dot
- * (`has-info`) when the dataset has an attribution or a README.
+ * show at once; a remote store's structure is left to the tab.
  */
 
 /** How long after a dataset opens the parts are fetched, so the first plot's requests go first. */
@@ -59,13 +58,6 @@ export function mountDatasetInfo({ url, state, doc = document, loader = createIn
     const title = doc.getElementById('dataset-info-name');
     const tabs = [...modal.querySelectorAll('[data-dsi-part]')];
     const panes = Object.fromEntries(tabs.map((tab) => [tab.dataset.dsiPart, doc.querySelector(tab.dataset.bsTarget)]));
-    const hint = doc.getElementById('dataset-info-hint');
-    function setDot(on) {                // the dot for the eye, the same words for a screen reader
-        button.classList.toggle('has-info', on);
-        if (hint) hint.textContent = on ? 'This dataset has a description' : '';
-        if (on && hint) button.setAttribute('aria-describedby', hint.id);
-        else button.removeAttribute('aria-describedby');
-    }
     let prefetched = null;             // the path the parts were scheduled for
     let shownFor = null;               // the path the panes were drawn for
     const loaded = new Set();
@@ -118,11 +110,7 @@ export function mountDatasetInfo({ url, state, doc = document, loader = createIn
         cancelPrefetch = schedule(() => {
             cancelPrefetch = null;
             if (path() !== at) return;
-            loader.loadAll(at, parts).then(() => {
-                if (path() !== at) return;
-                const about = loader.peek(at, 'about');
-                setDot(!!(about && (about.present || about.has_readme)));
-            });
+            loader.loadAll(at, parts);
         });
     }
 
@@ -138,13 +126,11 @@ export function mountDatasetInfo({ url, state, doc = document, loader = createIn
         if (!open) {
             reset(); shownFor = null;
             stopPrefetch(); prefetched = null;
-            setDot(false);
             loader.pin(null);
             return;
         }
         if (prefetched !== next.path) {
             prefetched = next.path;
-            setDot(false);
             loader.pin(next.path);
             prefetch(next.path);
         }
