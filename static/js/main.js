@@ -15,6 +15,7 @@ import { escapeHtml, canModify, lockReason, failureLine, authIndicator, refreshP
 import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
+import { installHoverCopy } from './utils/hover-copy.js';
 import { noticeDuration, planReplacement, joinNotices, focusOutsideSubsetNotice, fingerprintPendingNotice } from './utils/notice-rules.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
@@ -102,6 +103,8 @@ const App = (function() {
                 _showNotification(vendor.title, vendor.message, 'error');
                 return;
             }
+
+            installHoverCopy();
 
             // When the login expires mid-session, go to the login page and
             // come back to this dataset and view (utils/session-expiry.js)
@@ -3949,7 +3952,8 @@ const App = (function() {
                 'CLOSE_PANEL': 'Close current panel',
                 'SPLIT_HORIZONTAL': 'Split current panel horizontally',
                 'SPLIT_VERTICAL': 'Split current panel vertically',
-                'TOGGLE_CONTROLS': 'Toggle current panel controls',
+                'TOGGLE_CONTROLS': 'Toggle current panel controls (not while a hover label shows: then C copies it)',
+                'COPY_HOVER': 'Copy the hover label of the point under the pointer',
                 'SHOW_HELP': 'Show this help',
                 'CLOSE_MODAL': 'Close modal dialogs'
             };

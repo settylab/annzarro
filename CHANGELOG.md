@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- Press **C** while a point's hover label shows to copy it as plain text: the name and each `label: value` line, including the Hover columns. Works in 2D, 3D and large-plot plots; with no label showing, **C** still toggles the panel controls.
+
 ## 0.7.1 (2026-10-19)
 
 ### Added
