@@ -454,8 +454,14 @@ class ConfigManager:
         if isinstance(server.get("data_dir"), str):
             server["data_dir"] = os.path.expanduser(server["data_dir"])
 
-        # Where annzarro keeps what it writes. The panel-set and cache
+        # Where annzarro keeps what it writes. Under systemd, StateDirectory= and
+        # CacheDirectory= replace the built-in defaults only: a flag, an environment
+        # variable or a configuration file still wins. The panel-set and cache
         # directories follow the state directory unless named.
+        for key, var in (("state_dir", "STATE_DIRECTORY"), ("cache_dir", "CACHE_DIRECTORY")):
+            given = paths.systemd_dir(var)
+            if given and self.origins.get(f"server.{key}", "defaults:").startswith("defaults:"):
+                self._set_override(["server", key], given, f"derived:${var}")
         server["state_dir"] = os.path.abspath(os.path.expanduser(
             str(server.get("state_dir") or paths.DEFAULT_STATE_DIR)))
         for key, leaf in (("panel_sets_dir", "panel-sets"), ("cache_dir", "cache")):

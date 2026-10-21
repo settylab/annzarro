@@ -6,7 +6,7 @@
  * resources, so the user needs no Python. This process starts it as
  *
  *   annzarro-server start --host 127.0.0.1 --port <free port>
- *       --data-dir ~/annzarro-data --auth-disabled --no-browser
+ *       --data-dir ~/annzarro-data --state-dir <userData>/state --auth-disabled --no-browser
  *
  * i.e. bound to the loopback interface only and with login off, which is the
  * server's local single-user mode: free browsing of the user's own disk,
@@ -42,6 +42,7 @@ const { createUpdater } = require('./updates');
 const chrome = require('./window-chrome');
 const logic = require('./dataset-open-logic');
 const { createDatasetOpener } = require('./dataset-open');
+const stateLogic = require('./state-logic');
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'info';
@@ -80,14 +81,19 @@ let opener = null;
 const externalRequests = [];
 
 /**
- * The directory datasets are browsed from by default, created on first run.
+ * The directory datasets are browsed from by default, created on first run. It is the datasets
+ * folder itself: nothing is created inside it (an older install's datasets/ and sessions/ stay
+ * as they are).
  */
 function initDataDir() {
     appDataPath = process.env.ANNZARRO_DESKTOP_DATA_DIR || path.join(os.homedir(), 'annzarro-data');
-    for (const dir of [appDataPath, path.join(appDataPath, 'datasets'), path.join(appDataPath, 'sessions')]) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
+    fs.mkdirSync(appDataPath, { recursive: true });
     return appDataPath;
+}
+
+/** Where the server writes (logs, caches, panel sets): inside the app's own profile. */
+function stateDir() {
+    return stateLogic.stateDirFor(app.getPath('userData'));
 }
 
 /**
@@ -195,14 +201,7 @@ async function startServer() {
 
 async function startServerOn(port, dataDir) {
     const { command, args, cwd } = serverCommand();
-    const fullArgs = args.concat([
-        'start',
-        '--host', HOST,
-        '--port', String(port),
-        '--data-dir', dataDir,
-        '--auth-disabled',
-        '--no-browser',
-    ]);
+    const fullArgs = args.concat(stateLogic.serverArgs({ port, host: HOST, dataDir, stateDir: stateDir() }));
     log.info(`Starting server: ${command} ${fullArgs.join(' ')}`);
     fs.mkdirSync(app.getPath('userData'), { recursive: true });
     if (path.isAbsolute(command) && !fs.existsSync(command)) {
@@ -326,6 +325,85 @@ function loadUi() {
     });
 }
 
+/**
+ * Run a CLI command of the bundled server (`paths`, `panel-sets migrate`) against the same data
+ * and state folders as the running server. Resolves {code, stdout, stderr}.
+ */
+function runCli(command, extra = []) {
+    const { command: exe, args, cwd } = serverCommand();
+    const fullArgs = args.concat(stateLogic.cliArgs(command, { dataDir: appDataPath, stateDir: stateDir() }, extra));
+    return new Promise((resolve) => {
+        const proc = spawn(exe, fullArgs, {
+            cwd: cwd || app.getPath('userData'),
+            env: { ...process.env, ANNZARRO_HEADLESS: '1' },
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true,
+        });
+        let stdout = '';
+        let stderr = '';
+        proc.stdout.on('data', (d) => { stdout += d; });
+        proc.stderr.on('data', (d) => { stderr += d; });
+        proc.on('error', (err) => resolve({ code: 1, stdout, stderr: err.message }));
+        proc.on('close', (code) => resolve({ code, stdout, stderr }));
+    });
+}
+
+const panelSetsSettingsFile = () => path.join(app.getPath('userData'), stateLogic.SETTINGS_FILE);
+let askedAboutPanelSets = false;
+
+function readPanelSetsSettings() {
+    try {
+        return stateLogic.normalizeSettings(JSON.parse(fs.readFileSync(panelSetsSettingsFile(), 'utf8')));
+    } catch (err) {
+        return stateLogic.normalizeSettings(null);
+    }
+}
+
+/**
+ * An install from before panel sets had a folder of their own keeps them in <data folder>/sessions
+ * and the server goes on using that. Offer, once per launch, to copy them to the app's state
+ * folder; the copy never deletes anything. "Don't ask again" is remembered in the app's settings.
+ */
+async function offerPanelSetsCopy() {
+    const settings = readPanelSetsSettings();
+    if (settings.panelSetsOffer === 'never' || askedAboutPanelSets) return;
+    const paths = await runCli(['paths'], ['--format', 'json']);
+    if (!stateLogic.shouldOffer({ legacy: stateLogic.isLegacy(paths.stdout), settings, askedThisLaunch: askedAboutPanelSets })) return;
+    askedAboutPanelSets = true;
+    if (!mainWindow) return;
+    const { response } = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        noLink: true,
+        buttons: ['Copy now', 'Not now', "Don't ask again"],
+        defaultId: 0,
+        cancelId: 1,
+        message: 'Copy your panel sets to the app\'s own folder?',
+        detail: `Your panel sets are saved in ${path.join(appDataPath, 'sessions')}, inside your data folder. `
+            + 'AnnZarro can copy them to its own state folder, so the data folder holds only data. '
+            + 'The originals stay where they are; nothing is deleted.',
+    });
+    const next = stateLogic.afterAnswer(settings, response);
+    if (next.panelSetsOffer !== settings.panelSetsOffer) {
+        try {
+            fs.writeFileSync(panelSetsSettingsFile(), JSON.stringify(next, null, 2));
+        } catch (err) {
+            log.warn(`Could not save the panel-set settings: ${err.message}`);
+        }
+    }
+    if (stateLogic.CHOICES[response] !== 'copy') return;
+    const result = await runCli(['panel-sets', 'migrate']);
+    const summary = stateLogic.migrationSummary(result.code, result.stdout, result.stderr);
+    log.info(`Panel-set copy ${summary.ok ? 'finished' : 'failed'}: ${summary.detail}`);
+    if (mainWindow) {
+        await dialog.showMessageBox(mainWindow, {
+            type: summary.ok ? 'info' : 'warning',
+            noLink: true,
+            message: summary.ok ? 'Panel sets copied' : 'Could not copy all panel sets',
+            detail: summary.detail,
+        });
+    }
+}
+
 async function launch() {
     const stopProgress = showStartupProgress();
     try {
@@ -334,6 +412,7 @@ async function launch() {
         await loadUi();
         log.info(`Interface loaded from ${serverUrl}`);
         if (SMOKE) await smokeCheck();
+        else offerPanelSetsCopy().catch((err) => log.warn(`Panel-set offer failed: ${err.message}`));
     } catch (err) {
         stopProgress();
         log.error(`Failed to start: ${err.message}`);

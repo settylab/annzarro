@@ -165,7 +165,9 @@ After=network.target
 [Service]
 User=annzarro
 Group=annzarro
-Environment=ANNZARRO_HOME=/var/lib/annzarro
+StateDirectory=annzarro
+CacheDirectory=annzarro
+LogsDirectory=annzarro
 Environment=ANNZARRO_CONFIG=/etc/annzarro/site.yaml
 ExecStart=/opt/annzarro/venv/bin/annzarro serve
 # the start counts as failed unless the server answers (see "Health check")
@@ -177,6 +179,13 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 ```
+
+`StateDirectory=`, `CacheDirectory=` and `LogsDirectory=` make systemd create `/var/lib/annzarro`,
+`/var/cache/annzarro` and `/var/log/annzarro` for the `annzarro` account and pass them as
+`$STATE_DIRECTORY` and `$CACHE_DIRECTORY`. AnnZarro uses them when `server.state_dir` and
+`server.cache_dir` are not set by a flag, an environment variable or the site file, so the unit
+needs no `ANNZARRO_HOME`. The commands in this guide that run outside the unit set
+`ANNZARRO_HOME` instead, to reach the same state.
 
 `annzarro serve` replaces itself with gunicorn, so systemd's signals (stop, reload) reach
 gunicorn's master directly and `MainPID` is gunicorn's.

@@ -70,9 +70,16 @@ add `-e ANNZARRO_SERVER_PROXY_COUNT=1`. Further settings (`ANNZARRO_SERVER_WORKE
 docker run -d ... -v "$PWD/site.yaml:/etc/annzarro/container.yaml:ro" annzarro:local
 ```
 
-Keep `data_dir: /state/data` and `/data` in `allowed_dirs` in that file, as in
-`packaging/container/container.yaml`. Users, grants and panel sets survive `docker restart` and
-`docker rm` as long as `/state` does.
+Keep `data_dir: /data` and `state_dir: /state` in that file, as in
+`packaging/container/container.yaml`. `/data` is only read; users, grants and panel sets
+(`/state/panel-sets`) survive `docker restart` and `docker rm` as long as `/state` does.
+
+A `/state` volume from before 0.7.2 keeps working as it did: the container finds the old layout
+(panel sets in `/state/data/sessions`, or the `data` link in `/state/data`) and goes on serving
+`/state/data`, so dataset paths and panel sets do not change. It says so at start-up and
+`annzarro paths` marks the panel sets as a legacy location. Nothing is moved or deleted. To move to
+the new layout, copy the sets with `docker exec annzarro annzarro panel-sets migrate`; once
+`/state/panel-sets` holds them they are used from there, and a new volume starts with the new layout.
 
 ## Compose with nginx and TLS
 

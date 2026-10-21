@@ -17,7 +17,9 @@ SERVICE_NAME="annzarro"
 CONFIG_DIR="/etc/annzarro"
 CONFIG_FILE="$CONFIG_DIR/site.yaml"
 DATA_DIR="/srv/annzarro/data"
-USER_FILE="/srv/annzarro/users.json"
+STATE_DIR="/var/lib/annzarro"
+CACHE_DIR="/var/cache/annzarro"
+USER_FILE="$STATE_DIR/auth/users.json"
 USERNAME="www-data"
 
 # Colors for output
@@ -51,14 +53,15 @@ mkdir -p "$INSTALL_DIR"
 mkdir -p "$LOG_DIR"
 mkdir -p "$CONFIG_DIR"
 mkdir -p "$DATA_DIR"
+mkdir -p "$STATE_DIR/auth" "$CACHE_DIR"
 
 # Set permissions
 echo -e "${GREEN}Setting permissions...${NC}"
-# The service account writes panel sets (data_dir/sessions), the users file
-# and the login key under /srv/annzarro, and its log; it never needs to
-# write the code in $INSTALL_DIR.
-chown -R "$USERNAME:$USERNAME" "/srv/annzarro"
-chown -R "$USERNAME:$USERNAME" "$LOG_DIR"
+# The service account writes panel sets, the users file, the login key and its caches and
+# log under its state, cache and log directories (the systemd unit also creates them);
+# it never writes the data directory or the code in $INSTALL_DIR.
+chown -R "$USERNAME:$USERNAME" "$STATE_DIR" "$CACHE_DIR" "$LOG_DIR"
+chmod 700 "$STATE_DIR"
 chmod -R 755 "$INSTALL_DIR"
 chmod -R 755 "$LOG_DIR"
 
@@ -108,7 +111,8 @@ ANNZARRO_CONFIG="$CONFIG_FILE" "$INSTALL_DIR/venv/bin/python" -m annzarro.cli --
     user add --admin --username "$ADMIN_USER" --password "$ADMIN_PASS"
 
 # Set correct permissions for user file
-chown "$USERNAME:$USERNAME" "$USER_FILE"
+# (the command above ran as root, so hand everything it wrote to the service account)
+chown -R "$USERNAME:$USERNAME" "$STATE_DIR"
 chmod 600 "$USER_FILE"
 
 echo -e "${GREEN}Admin user '$ADMIN_USER' created successfully.${NC}"
@@ -122,7 +126,8 @@ echo ""
 echo -e "${GREEN}Annzarro has been installed to: $INSTALL_DIR${NC}"
 echo -e "${GREEN}Configuration file: $CONFIG_FILE${NC}"
 echo -e "${GREEN}Log directory: $LOG_DIR${NC}"
-echo -e "${GREEN}Data directory: $DATA_DIR${NC}"
+echo -e "${GREEN}Data directory: $DATA_DIR (read only for AnnZarro)${NC}"
+echo -e "${GREEN}State directory: $STATE_DIR (panel sets, users, admin settings)${NC}"
 echo ""
 echo -e "${YELLOW}Start the service with:${NC} sudo systemctl start $SERVICE_NAME"
 echo -e "${YELLOW}Check status with:${NC} sudo systemctl status $SERVICE_NAME"

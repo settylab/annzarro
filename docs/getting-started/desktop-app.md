@@ -66,11 +66,12 @@ The app then behaves like `annzarro start` on your own computer:
 
 - The server listens on `127.0.0.1` only, starting at port 39487 and taking the next free port
   if that one is busy, also when another program takes it while the server starts. Login is off.
-- The data directory is `~/annzarro-data` (in your home folder). Put or link datasets into
-  `~/annzarro-data/datasets`; the dataset browser lists stores both there and directly in
-  `~/annzarro-data`. Saved panel sets go to `~/annzarro-data/sessions`. This is also the default
-  data directory of `annzarro start`, so the app and a command-line server on the same computer
-  see the same datasets and panel sets.
+- The data folder is `~/annzarro-data` (in your home folder), created if it is missing. Put or link
+  datasets directly into it; the app only reads there and creates nothing inside it. A
+  `datasets` folder from an earlier version stays as it is and is listed as before. Saved panel
+  sets and everything else the app writes go to its own state folder ({ref}`desktop-files`), not
+  into your data. The data folder is also the default of `annzarro start`, so the app and a
+  command-line server on the same computer see the same datasets.
 - **Open file or folder...** in the dataset browser and on the Welcome screen opens your system's
   dialog; choosing a `.zarr` folder or an `.h5ad` file anywhere on disk opens it directly.
 - Remote stores (`s3://`, `gs://`, `http(s)://`) are not supported in the desktop app; use
@@ -155,15 +156,23 @@ updates need the notarized builds, so a build you made yourself ({ref}`building 
 does not update.
 ```
 
+(desktop-files)=
 ## Where the app keeps its files
 
 | What | Where |
 |---|---|
-| Datasets | `~/annzarro-data/datasets` (copy or symlink stores here) |
-| Saved panel sets | `~/annzarro-data/sessions` |
+| Datasets (read only) | `~/annzarro-data` (copy or symlink stores here) |
 | App log, including the server's output (`server:` lines) | macOS `~/Library/Logs/AnnZarro/main.log`, Windows `%APPDATA%\AnnZarro\logs\main.log`, Linux `~/.config/AnnZarro/logs/main.log` |
-| Server state (PID file, server log) | `~/.annzarro`, as for `annzarro start` |
+| State: saved panel sets (`panel-sets/`), server log, PID file, caches | the `state` folder of the app's profile: macOS `~/Library/Application Support/AnnZarro/state`, Windows `%APPDATA%\AnnZarro\state`, Linux `~/.config/AnnZarro/state` |
 | Optional settings | `~/.config/annzarro/config.yaml`, read as by `annzarro start` ({doc}`../reference/configuration`); host, port, data directory and login are fixed by the app |
+
+**Panel sets from an earlier version.** Versions before 0.7.2 saved panel sets in
+`~/annzarro-data/sessions`. If that folder holds panel sets, the app keeps using it, and once per
+launch asks whether to copy them to the state folder: **Copy now** copies them and reports the
+result, **Not now** asks again at the next launch, **Don't ask again** stops the question (the
+choice is kept in the app's settings). The copy never deletes anything; once you have checked
+the new location you can delete `~/annzarro-data/sessions` yourself. The same copy runs
+from a terminal as `annzarro panel-sets migrate` ({ref}`panel-sets-location`).
 
 If the server does not start, the app shows an error page that names the log file and offers
 **Retry**.
