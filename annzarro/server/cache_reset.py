@@ -24,6 +24,11 @@ def reset_all(dataset_path=None):
     # process, each gunicorn worker, drops its cached reads of the dataset on
     # its next request.
     freshness.bump(dataset_path, reason="cache_reset")
+    if dataset_path is None:
+        from flask import current_app, has_app_context
+        if has_app_context():
+            from . import text_index
+            text_index.invalidate(current_app.config)      # the next text search revalidates; the index stays
     result["cache_config"] = {
         "cache_enabled": zarr_reader.enable_caching,
         "cache_memory_mb": zarr_reader.max_memory_mb,

@@ -92,6 +92,15 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `dataset_search_max_depth` | `6` | Folders deep the dataset browser's search of the data directory (`GET /api/v1/datasets/search`) goes. |
 | `dataset_search_max_entries` | `20000` | Entries that search looks at before it stops and answers `"truncated": true`. It also stops after 3 s (not a setting). With `mode=regex` the pattern goes through the same guard as the name search (`name_search_max_regex_chars`, `regex_too_complex`). |
 | `dataset_details_check_budget_s` | `1.5` | Seconds the dataset browser's details request (`GET /api/v1/datasets/details`) spends on the store check of one zarr store. When it runs out the request answers with the findings so far and `budget_reached: true`. `0` turns the check off there (the command `annzarro store check` is not affected). |
+| `text_index_enabled` | `true` | Whether the description search (`GET /api/v1/datasets/text-search`) is on and the server builds the index it reads. It is the config layer of the policy key `datasets.text-search.enabled` ({doc}`../deployment/admin`): `false` here turns it off for everyone and stops the crawl. |
+| `text_index_workers` | `4` | Threads the index crawl reads stores with. Only one crawl runs at a time on the server. |
+| `text_index_store_timeout_s` | `5` | Seconds the crawl waits for one store; a store that takes longer is marked timed out and left out of the search until it is read again. |
+| `text_index_crawl_timeout_s` | `300` | Seconds one crawl may take; then it saves what it has and the index is `partial`. |
+| `text_index_max_stores` | `20000` | Stores one crawl covers; past it the index is `partial`. |
+| `text_index_readme_kb` | `64` | Kilobytes of each README the index keeps. |
+| `text_index_max_mb` | `64` | Megabytes of text the index may hold; each worker holds it in memory. Past it READMEs are dropped from the largest down (`capped: true`). |
+| `text_index_ttl_s` | `600` | Seconds after which a description search is answered from the index and also starts a crawl to refresh it (`stale: true` meanwhile). |
+| `text_index_min_interval_s` | `60` | Seconds between two crawls, whoever asks (a search or `POST /api/v1/datasets/text-index/refresh`). `0` turns the limit off. |
 | `lock_timeout_s` | `10` | Seconds a request waits for the lock on the users file (every login writes it), the admin state or the panel sets before it answers `503 busy` with `Retry-After`. |
 | `admin_data_roots` | `[]` | Directories inside which an admin may add data directories in the browser ({doc}`../deployment/admin`). Empty: adding is off and the list is read-only. Keep them writable by trusted accounts only. |
 | `admin_reauth_minutes` | `30` | Minutes the admin's password entry lets them change things in the admin interface. `0`: never asked. |
