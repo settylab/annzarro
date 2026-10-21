@@ -303,7 +303,7 @@ site:
   # only the name, version, MIT licence and links to the documentation and repository.
   software_credits: true
   storage:
-    # false: the layout autosave, the last sessions and the recent datasets last only until
+    # false: the layout autosave, the last sessions, the recent datasets and the dataset listings last only until
     # the tab closes (sessionStorage), so the browser keeps nothing between visits except
     # choices the user made (theme, pins, the search switches of Dataset information,
     # answers about external services; the subset size is kept for the tab in any case)

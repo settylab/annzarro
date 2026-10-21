@@ -9,8 +9,8 @@
 <thead><tr><th>Key</th><th>Holds</th><th>Kind</th></tr></thead>
 <tbody>{% for key, holds, kind in facts.storage %}<tr><td><code>{{ key }}</code></td><td>{{ holds }}</td><td>{{ kind }}</td></tr>{% endfor %}</tbody>
 </table></div>
-{% if facts.convenience %}<p>The convenience items (the layout autosave, the last sessions and the recent datasets) are kept between visits.</p>
-{% else %}<p>On this site the convenience items (the layout autosave, the last sessions and the recent datasets) are kept only until the tab closes.</p>
+{% if facts.convenience %}<p>The convenience items (the layout autosave, the last sessions, the recent datasets and the dataset listings) are kept between visits.</p>
+{% else %}<p>On this site the convenience items (the layout autosave, the last sessions, the recent datasets and the dataset listings) are kept only until the tab closes.</p>
 {% endif %}<p>&ldquo;Close all panels&rdquo; with its checkbox deletes all of them, and so do your browser's settings. Nothing is kept in IndexedDB, in Cache Storage or by a service worker.</p>
 
 <h2>Cookies</h2>

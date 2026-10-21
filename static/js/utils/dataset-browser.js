@@ -21,6 +21,7 @@
  *   infoLoader      the loader of utils/dataset-info.js (attribution, README, structure of a dataset), or null
  *   me()            Promise of auth/me (null when it cannot be read)
  *   stored()        {recents, pins}: [{path, label, openedAt|pinnedAt}], newest first (the user is known)
+ *   listings        the cache of utils/dataset-listing-cache.js (listings read before, shown at once while fresh ones are read), or null
  *   lookup(paths)   Promise of the server's answer for those paths (POST /datasets/lookup)
  *   togglePin(item) true when the item is now pinned
  *   probe(path)     Promise of probeStore(path)
@@ -38,7 +39,8 @@
 import {
     pathFieldWording, splitByRanges, basename
 } from './dataset-picker.js';
-import { recentEntries } from './dataset-recents.js';
+import { recentEntries, userKey } from './dataset-recents.js';
+import { listingId } from './dataset-listing-cache.js';
 import { drawAbout, drawReadme, drawStructure, showError, showLoading, showPart } from './dataset-info.js';
 import {
     COLUMNS, SERVER_SORTS, FORMAT_CHIPS, CELL_BANDS, MODIFIED_BANDS,
@@ -109,7 +111,7 @@ export function createDatasetBrowser(services) {
         title: $('dataset-browser-title'), banner: $('dataset-browser-banner'), search: $('dsb-search'), regex: $('dsb-regex'),
         searchError: $('dsb-search-error'), chips: $('dsb-chips'), places: $('dsb-places'), placesSelect: $('dsb-places-select'),
         crumbs: $('dsb-crumbs'), pathForm: $('dsb-pathform'), path: $('dsb-path'), pathOpen: $('dsb-path-open'),
-        pathLabel: $('dsb-path-label'), pathError: $('dsb-path-error'), tableWrap: $('dsb-table-wrap'), details: $('dsb-details'),
+        pathLabel: $('dsb-path-label'), refresh: $('dsb-refresh'), refreshText: $('dsb-refresh-text'), refreshNote: $('dsb-refresh-note'), pathError: $('dsb-path-error'), tableWrap: $('dsb-table-wrap'), details: $('dsb-details'),
         status: $('dsb-status'), native: $('dsb-open-native'), pathbar: $('dsb-pathbar'), hintPath: $('dsb-hint-path')
     };
     if (!root) return { open: async () => null, close() {}, isOpen: () => false };
@@ -141,7 +143,7 @@ export function createDatasetBrowser(services) {
             placeId: 'root',
             folderRoot: '',                // the folder the place starts at
             folder: '',                    // the folder shown ('' = the place's root listing)
-            listing: { entries: [], total: 0, more: false, offset: 0, loading: false, error: null, parent: null, rel: '', folder: '' },
+            listing: { entries: [], total: 0, more: false, offset: 0, loading: false, error: null, parent: null, rel: '', folder: '', stale: false },
             rootEntries: [],
             recents: [], pinsList: [],
             matchOf: new Map(),            // path -> entry with `match` (the stores like the view's)
@@ -155,6 +157,9 @@ export function createDatasetBrowser(services) {
             focus: null,
             used: [],
             loadToken: 0,
+            refreshing: 0,                 // reads running in the background (the refresh button is busy)
+            notice: '',                    // said in the status line until the user goes elsewhere
+            refreshError: false,           // the last background read failed: what is shown may be old
             pathOpen: false,
             ready: false,
             searching: null
@@ -181,40 +186,157 @@ export function createDatasetBrowser(services) {
         return hit && !entry.match ? { ...entry, match: hit.match, cmp: hit.cmp } : entry;
     }
 
-    async function loadFolder({ reset = true } = {}) {
+    const cacheUser = () => userKey(S.me);
+
+    /** Put a cached or fetched first page into the listing shown. */
+    function applyListing(L, page) {
+        L.entries = page.entries.slice();
+        L.offset = L.entries.length;
+        L.total = page.total;
+        L.more = !!page.more;
+        L.parent = page.parent || null;
+        L.rel = page.rel || '';
+        L.folder = page.folder || S.folder;
+    }
+
+    /** Rebuild the places from the data directory's entries, staying where the user is. */
+    function syncPlaces(entries) {
+        S.rootEntries = entries.slice();
+        S.places = buildPlaces({ me: S.me, rootEntries: S.rootEntries });
+        if (!S.places.some(p => p.id === S.placeId)) S.placeId = 'root';
+    }
+
+    /** Count a read in the background: the refresh button is busy while any runs. */
+    async function whileRefreshing(job) {
+        const mine = S;
+        mine.refreshing++;
+        render();
+        try { return await job(); } finally {
+            if (S === mine) { mine.refreshing--; render(); }
+        }
+    }
+
+    /**
+     * Read the folder shown. A navigation shows the listing kept from an earlier read at once (`L.stale`) and
+     * reads a fresh one behind it; `refresh` reads again keeping what is shown (pages already loaded included)
+     * until the fresh listing replaces it in one step. A failed background read keeps the list and says so.
+     */
+    async function loadFolder({ reset = true, refresh = false } = {}) {
         const token = ++S.loadToken;
         const L = S.listing;
-        if (reset) Object.assign(L, { entries: [], offset: 0, total: 0, more: false, error: null });
-        L.loading = true;
-        render();
         const sort = effectiveSort();
-        const params = new URLSearchParams({ folder: S.folder, offset: String(L.offset) });
-        if (sort.server) { params.set('sort', sort.key); params.set('order', sort.dir); }
+        const id = listingId(S.folder, sort.server ? sort : null);
+        const reach = refresh ? L.offset : 0;
+        let background = false;
+        if (reset && !refresh) {
+            Object.assign(L, { entries: [], offset: 0, total: 0, more: false, error: null, stale: false });
+            const kept = services.listings ? services.listings.get(cacheUser(), id) : null;
+            if (kept) { applyListing(L, kept); L.stale = true; background = true; }
+        } else if (refresh) background = L.entries.length > 0;
+        if (!background && reset) L.error = null;
+        S.refreshError = false;
+        const owner = S;
+        let released = false;
+        const release = () => {
+            if (released) return;
+            released = true;
+            if (background) owner.refreshing--;
+        };
+        if (background) S.refreshing++; else L.loading = true;
+        render();
+        const make = offset => {
+            const params = new URLSearchParams({ folder: S.folder, offset: String(offset) });
+            if (sort.server) { params.set('sort', sort.key); params.set('order', sort.dir); }
+            return getJson(`${services.urls.folder}?${params}`);
+        };
         try {
-            const { ok, body } = await getJson(`${services.urls.folder}?${params}`);
-            if (token !== S.loadToken) return;
-            if (!ok) throw new Error(body.error || 'The folder could not be listed');
-            L.entries.push(...body.entries);
-            L.offset += body.entries.length;
-            L.total = body.total;
-            L.more = !!body.more;
-            L.parent = body.parent || null;
-            L.rel = body.rel_path || '';
-            L.folder = body.folder || S.folder;
-            if (!S.folder && !S.rootEntries.length) S.rootEntries = body.entries.slice();
+            const pages = [];
+            let first = null;
+            let last = null;
+            let offset = reset ? 0 : L.offset;
+            for (;;) {
+                const { ok, status, body } = await make(offset);
+                if (token !== S.loadToken) return release();
+                if (!ok) {
+                    const e = new Error(body.error || 'The folder could not be listed');
+                    e.refused = status >= 400 && status < 500;       // the server answered: what was kept is out of date
+                    throw e;
+                }
+                first = first || body;
+                last = body;
+                pages.push(...body.entries);
+                offset += body.entries.length;
+                if (!(refresh && body.more && body.entries.length && offset < reach)) break;
+            }
+            if (reset) L.entries = [];
+            L.entries.push(...pages);
+            L.offset = L.entries.length;
+            L.total = last.total;
+            L.more = !!last.more;
+            L.parent = first.parent || null;
+            L.rel = first.rel_path || '';
+            L.folder = first.folder || S.folder;
+            L.stale = false;
+            if (reset && services.listings) {
+                services.listings.put(cacheUser(), id, { entries: first.entries, total: first.total, parent: L.parent, rel: L.rel, folder: L.folder });
+            }
+            if (!S.folder) {
+                if (S.ready && refresh) syncPlaces(pages);
+                else if (!S.rootEntries.length) S.rootEntries = pages.slice();
+            }
         } catch (e) {
-            if (token !== S.loadToken) return;
-            L.error = (e && e.message) || 'The folder could not be listed';
+            if (token !== S.loadToken) return release();
+            const refused = e && e.refused;
+            if (background && !refused) S.refreshError = true;     // keep what is shown, say it is not fresh
+            else {
+                if (refused && services.listings) services.listings.drop(cacheUser(), id);
+                Object.assign(L, { entries: [], offset: 0, total: 0, more: false, stale: false });
+                L.error = (e && e.message) || 'The folder could not be listed';
+            }
         }
-        L.loading = false;
+        release();
+        if (!background) L.loading = false;
         render();
     }
 
-    async function loadQuick() {
+    /** Read the data directory's listing for the places, when the folder shown is not it. */
+    async function refreshRoot() {
+        const id = listingId('', { key: 'name', dir: 'asc' });
+        try {
+            const { ok, body } = await getJson(`${services.urls.folder}?${new URLSearchParams({ folder: '', offset: '0', sort: 'name', order: 'asc' })}`);
+            if (!ok) throw new Error(body.error || 'The folder could not be listed');
+            if (!S) return;
+            if (services.listings) services.listings.put(cacheUser(), id, { entries: body.entries, total: body.total, parent: body.parent, rel: body.rel_path, folder: body.folder });
+            syncPlaces(body.entries);
+        } catch { if (S) S.refreshError = true; }
+    }
+
+    /** Read everything the browser shows again (the button): the folder, the places, Recent and Pinned. */
+    async function refresh() {
+        if (!S || !S.ready || S.refreshing || S.listing.loading) return;
+        const mine = S;
+        const hadFocus = document.activeElement === dom.refresh;
+        detailsCache.clear();
+        S.refreshError = false;
+        const atRoot = inFolderPlace() && !S.folder;
+        await whileRefreshing(() => Promise.all([
+            loadQuick({ keep: true }),
+            inFolderPlace() ? loadFolder({ refresh: true }) : null,
+            atRoot ? null : refreshRoot()
+        ]));
+        if (S === mine) {
+            render();
+            if (hadFocus) dom.refresh.focus();      // a disabled button drops the focus
+        }
+    }
+
+    async function loadQuick({ keep = false } = {}) {
         const { recents, pins } = services.stored();
         const names = [...new Set([...recents.map(r => r.path), ...pins.map(p => p.path)])];
         let results = [];
-        try { results = await services.lookup(names); } catch { /* shown by label */ }
+        try { results = await services.lookup(names); } catch {
+            if (keep) { if (S) S.refreshError = true; return; }     // a refresh keeps what the last read said
+        }
         const byPath = new Map(names.map((p, i) => [p, results[i]]));
         const mk = (items, key) => {
             const entries = recentEntries(items, items.map(i => byPath.get(i.path)));
@@ -227,6 +349,7 @@ export function createDatasetBrowser(services) {
     function goPlace(id, { keepQuery = true } = {}) {
         const p = S.places.find(x => x.id === id);
         if (!p) return;
+        S.notice = '';
         S.placeId = p.id;
         S.limit = PAGE;
         S.selected = null;
@@ -249,6 +372,7 @@ export function createDatasetBrowser(services) {
     }
 
     function goFolder(path) {
+        S.notice = '';
         S.folder = path;
         S.limit = PAGE;
         S.selected = null;
@@ -322,8 +446,20 @@ export function createDatasetBrowser(services) {
 
     // ---- rendering -----------------------------------------------------------------------
 
+    /** The refresh button: busy and not clickable while anything is being read; the note says a background read failed. */
+    function renderRefresh() {
+        if (!dom.refresh) return;
+        const busy = S.refreshing > 0 || S.listing.loading;
+        dom.refresh.disabled = busy || !S.ready;
+        dom.refresh.setAttribute('aria-busy', String(busy));
+        dom.refresh.querySelector('i').classList.toggle('fa-spin', busy);
+        dom.refreshText.textContent = busy ? 'Refreshing\u2026' : 'Refresh';
+        dom.refreshNote.hidden = busy || !S.refreshError;
+    }
+
     function render() {
         if (!S) return;
+        renderRefresh();
         renderPlaces();
         renderChips();
         renderPathbar();
@@ -741,6 +877,20 @@ export function createDatasetBrowser(services) {
 
     async function choose(path) {
         if (!path || !S) return null;
+        // a row of a listing kept from earlier may name a dataset that is gone: ask before the dialog closes
+        if (S.listing.stale && !isRemote(path)) {
+            const mine = S;
+            const found = await services.lookup([path]).catch(() => []);
+            if (S !== mine) return null;
+            if (found[0] && found[0].status === 'unavailable') {
+                S.listing.entries = S.listing.entries.filter(e => e.path !== path);
+                S.listing.offset = S.listing.entries.length;
+                if (S.selected === path) S.selected = null;
+                S.notice = 'That dataset is no longer available.';
+                render();
+                return null;
+            }
+        }
         const onChoose = S.onChoose;
         hide();
         if (onChoose) await onChoose(path);
@@ -1051,6 +1201,7 @@ export function createDatasetBrowser(services) {
             const among = inFolderPlace() && !searching() && sort.key && !sort.server && S.listing.more ? S.listing.offset : null;
             let text = S.listing.loading && inFolderPlace() ? 'Loading…' : countSummary({ stores, folders, query: S.query, truncated: !!(S.remote && S.remote.truncated), sortedAmong: among });
             if (S.mode !== 'change' && S.me && S.me.restricted) text += '. Only datasets shared with you are listed.';
+            if (S.notice) text = `${S.notice} ${text}`;
             dom.status.textContent = text;
         }, 200);
     }
@@ -1122,6 +1273,7 @@ export function createDatasetBrowser(services) {
         render();
     });
     dom.search.addEventListener('keydown', onSearchKey);
+    if (dom.refresh) dom.refresh.addEventListener('click', () => refresh());
     dom.regex.addEventListener('click', () => {
         if (!S) return;
         S.regex = !S.regex;
@@ -1256,6 +1408,7 @@ export function createDatasetBrowser(services) {
         dom.pathError.hidden = true;
         closePathField();
         S.places = buildPlaces({ me: null, rootEntries: [] });
+        renderRefresh();
         modal.show();
         const mine = S;
         const [me] = await Promise.all([services.me().catch(() => null)]);
@@ -1266,11 +1419,51 @@ export function createDatasetBrowser(services) {
         setBanner();
         // the first page of the root listing: the admin roots and the grants are places
         const saved = (S.pending && S.pending.saved) || null;
-        const [, candidates, used] = await Promise.all([
+        // a root listing read before is shown at once, and read again behind it
+        const rootSort = { key: 'name', dir: 'asc' };
+        const kept = services.listings ? services.listings.get(cacheUser(), listingId('', rootSort)) : null;
+        const landing = () => {
+            S.ready = true;
+            scheduleSearch();
+            if (options.startFolder) {
+                // a folder the desktop app was handed: the place that holds it, then the folder itself
+                const holder = S.places.find(p => p.kind === 'folder' && p.folder && options.startFolder.startsWith(p.folder.replace(/\/+$/, '') + '/'));
+                if (holder) { S.placeId = holder.id; S.folderRoot = holder.folder; }
+                goFolder(options.startFolder);
+            } else if (!S.query && S.mode === 'change' && S.recents.length > 0) goPlace('recent');
+            else render();
+        };
+        const quick = Promise.all([
             loadQuick(),
             services.candidates(saved).catch(() => []),
             S.mode === 'change' ? services.usedKeys().catch(() => []) : Promise.resolve([])
         ]);
+        let candidates; let used;
+        if (kept) {
+            // the places and Recent come from what is kept; Recent's rows are named by their stored labels until the lookup answers
+            S.folder = '';
+            S.placeId = 'root';
+            applyListing(S.listing, kept);
+            S.listing.stale = true;
+            syncPlaces(kept.entries);
+            S.recents = recentEntries(stored.recents, []).map((entry, i) => ({ ...entry, kind: 'store', openedAt: stored.recents[i].openedAt }));
+            S.pinsList = recentEntries(stored.pins, []).map((entry, i) => ({ ...entry, kind: 'store', pinnedAt: stored.pins[i].pinnedAt }));
+            S.viewMatches = !!saved;
+            landing();
+            const atRoot = inFolderPlace() && !S.folder;
+            const rootRead = atRoot ? loadFolder({ refresh: true }) : whileRefreshing(refreshRoot);
+            quick.then(() => { if (S === mine) render(); });
+            [, candidates, used] = await quick;
+            await rootRead;
+            if (S !== mine) return closed;
+            S.used = used || [];
+            for (const c of candidates || []) if (c.match && c.match !== 'other') S.matchOf.set(c.path, c);
+            // the stores that match a view without data, unless the user has started on something else
+            if (S.mode !== 'change' && !S.query && !filtersActive(S.filters) && [...S.matchOf.values()].some(c => matchesView(c))) S.filters.matches = true;
+            render();
+            return closed;
+        }
+        [, candidates, used] = await quick;
         if (S !== mine) return closed;
         S.used = used || [];
         for (const c of candidates || []) if (c.match && c.match !== 'other') S.matchOf.set(c.path, c);
@@ -1284,16 +1477,7 @@ export function createDatasetBrowser(services) {
         const anyMatch = [...S.matchOf.values()].some(c => matchesView(c));
         // where to land: the stores that match a view without data, else Recent when there is any, else the data directory
         if (S.mode !== 'change' && anyMatch) S.filters.matches = true;
-        const landOnRecent = !S.query && S.mode === 'change' && S.recents.length > 0;
-        S.ready = true;
-        scheduleSearch();
-        if (options.startFolder) {
-            // a folder the desktop app was handed: the place that holds it, then the folder itself
-            const holder = S.places.find(p => p.kind === 'folder' && p.folder && options.startFolder.startsWith(p.folder.replace(/\/+$/, '') + '/'));
-            if (holder) { S.placeId = holder.id; S.folderRoot = holder.folder; }
-            goFolder(options.startFolder);
-        } else if (landOnRecent) goPlace('recent');
-        else render();
+        landing();
         return closed;
     }
 

@@ -40,11 +40,11 @@ test("blocked storage gives null, not an exception", () => {
 test("a session-only site forgets what an earlier visit left, and nothing else", () => {
   const w = win({
     annzarro_autosave: "{}", "annzarro.recents:http://x|local": "[]", "annzarro.recentDatasets:http://x": "[]",
-    "annzarro.pins:http://x|local": "[]", "annzarro-theme": "dark", "annzarro:external-ok": "{}", other: "1",
+    "annzarro.pins:http://x|local": "[]", "annzarro.listings:http://x|local": "{}", "annzarro-theme": "dark", "annzarro:external-ok": "{}", other: "1",
   });
   const off = { site: { storage: { persistent_convenience: false } } };
   const removed = dropPersistentConvenience(off, "annzarro_autosave", w);
-  assert.deepEqual(removed.sort(), ["annzarro.recentDatasets:http://x", "annzarro.recents:http://x|local", "annzarro_autosave"]);
+  assert.deepEqual(removed.sort(), ["annzarro.listings:http://x|local", "annzarro.recentDatasets:http://x", "annzarro.recents:http://x|local", "annzarro_autosave"]);
   assert.deepEqual([...w.localStorage.items.keys()].sort(),
     ["annzarro-theme", "annzarro.pins:http://x|local", "annzarro:external-ok", "other"]);
 });

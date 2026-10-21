@@ -45,6 +45,7 @@ import { loadRecents, recordRecent, userKey, lookupPaths, recentEntries } from '
 import { convenienceStorage } from './utils/convenience-storage.js';
 import { formatLabel } from './utils/dataset-browser-model.js';
 import { createDatasetBrowser } from './utils/dataset-browser.js';
+import { createListingCache } from './utils/dataset-listing-cache.js';
 import { initAboutDialog } from './utils/about-dialog.js';
 import { firstDatasetChoice, keysUsedByPanels, isRemote } from './utils/dataset-browser-model.js';
 import { loadPins, togglePin } from './utils/dataset-pins.js';
@@ -2201,6 +2202,17 @@ const App = (function() {
         return keysUsedByPanels(layout && layout.panelConfigs, structure);
     }
 
+    /** The dataset listings kept for the browser (utils/dataset-listing-cache.js), per server (origin and URL prefix) and user. @private */
+    let _listings = null;
+    function _listingCache() {
+        if (!_listings) {
+            let storage = null;
+            try { storage = convenienceStorage(Config.SERVER_CONFIG, window); } catch { /* storage blocked */ }
+            _listings = createListingCache({ storage, scope: window.location.origin + appRoot() });
+        }
+        return _listings;
+    }
+
     /** What the dataset browser reads from the application (the contract is in utils/dataset-browser.js). @private */
     function _browserServices() {
         const origin = () => window.location.origin;
@@ -2214,6 +2226,7 @@ const App = (function() {
                     return { recents: loadRecents(convenienceStorage(Config.SERVER_CONFIG, window), origin(), user()), pins: loadPins(window.localStorage, origin(), user()) };
                 } catch { return { recents: [], pins: [] }; }
             },
+            get listings() { return _listingCache(); },      // made when the browser first opens: the site's storage setting is known by then
             lookup: (paths) => lookupPaths(Config.API.DATASET_LOOKUP, paths),
             togglePin: (item) => {
                 try { return togglePin(window.localStorage, origin(), user(), item).pinned; } catch { return false; }
