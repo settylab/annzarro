@@ -5,8 +5,8 @@
 
 Lists the configuration files in effect, the data directory, and the places annzarro writes
 (state, users and admin state, log, PID file, panel sets, cache). Each line names its origin:
-a flag, an environment variable, a configuration key (with its file), or the default. Exit 1
-when a location is refused at start-up, for example a state directory inside a data root.
+a flag, an environment variable, a configuration key (with its file), or the default. Locations
+inside a data root are listed as warnings; they do not change the exit status.
 """
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ def collect(manager) -> dict:
     ]
     for extra in server.get("allowed_dirs") or []:
         locations.insert(1, entry("extra data directory", extra, describe_origin(manager, "server.allowed_dirs")))
-    return {"config_files": files, "locations": locations, "problems": paths.state_dir_problems(server)}
+    return {"config_files": files, "locations": locations, "warnings": paths.state_dir_warnings(server)}
 
 
 def render(report: dict) -> str:
@@ -98,8 +98,8 @@ def render(report: dict) -> str:
     for loc in report["locations"]:
         lines.append(f"  {loc['label']:<{width}}  {loc['path']}")
         lines.append(f"  {'':<{width}}    {loc['why']}")
-    if report["problems"]:
-        lines += ["", "Problems (the server refuses to start):"] + [f"  {p}" for p in report["problems"]]
+    if report["warnings"]:
+        lines += ["", "Warnings:"] + [f"  {w}" for w in report["warnings"]]
     return "\n".join(lines)
 
 
@@ -112,4 +112,4 @@ def paths_command(args: argparse.Namespace) -> int:
         return 1
     report = collect(manager)
     print(json.dumps(report, indent=2) if args.format == "json" else render(report))
-    return 1 if report["problems"] else 0
+    return 0

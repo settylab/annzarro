@@ -149,18 +149,13 @@ def locations_inside_data_roots(server: dict):
     return found
 
 
-def state_dir_problems(server: dict):
-    """Start-up refusals about where state is kept, as readable messages."""
-    problems = [f"{name}={value!r}" for name, value in state_env_conflict()]
-    out = []
-    if problems:
-        out.append("ANNZARRO_HOME and ANNZARRO_SERVER_STATE_DIR are both set and differ ("
-                   + ", ".join(problems) + "); set only one")
-    for key, path, root in locations_inside_data_roots(server):
-        out.append(f"{key} ({path}) lies inside the data root {root}. AnnZarro writes users, "
-                   "logs, panel sets and caches there, and a data root should be read-only. "
-                   "Point it elsewhere with --state-dir or the config key.")
-    return out
+def state_dir_warnings(server: dict):
+    """Readable warnings about state kept inside a data root. Not refusals: a data directory
+    that holds ``~/.annzarro`` (``--data-dir ~``) has always worked."""
+    return [f"{key} ({path}) lies inside the data root {root}. AnnZarro writes users, logs, "
+            "panel sets and caches there, and a data root is better read-only and shared without "
+            "that state. Move it with --state-dir or the config key; the folder is left out of "
+            "dataset listings." for key, path, root in locations_inside_data_roots(server)]
 
 
 def user_config_path() -> Path:

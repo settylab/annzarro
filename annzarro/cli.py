@@ -105,11 +105,8 @@ def start_server(args: argparse.Namespace) -> int:
     if not config.get('auth', {}).get('enabled'):
         logger.info("Authentication disabled")
     
-    problems = paths.state_dir_problems(config.get("server", {}))
-    if problems:
-        for problem in problems:
-            logger.error(problem)
-        sys.exit(1)
+    for warning in paths.state_dir_warnings(config.get("server", {})):
+        logger.warning(warning)
 
     # Convert to flat structure for the server
     flask_config = config_manager.to_flask_config()

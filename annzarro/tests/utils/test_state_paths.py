@@ -120,51 +120,69 @@ def test_env_state_dir_without_config_load(isolated, monkeypatch):
     assert paths.pid_file() == isolated / "x" / "server.pid"
 
 
-# the guard
+# the warning
 
 @pytest.mark.parametrize("key", ["state_dir", "cache_dir", "panel_sets_dir"])
-def test_location_inside_the_data_dir_is_refused(isolated, key):
+def test_location_inside_the_data_dir_warns(isolated, key):
     data = isolated / "data"
     data.mkdir()
     cfg = _write(isolated / "site.yaml", {"server": {"data_dir": str(data), key: str(data / "state")}})
-    problems = paths.state_dir_problems(_load(cfg).config["server"])
-    assert len(problems) == 1
-    assert f"server.{key}" in problems[0] and "inside the data root" in problems[0]
+    warnings = paths.state_dir_warnings(_load(cfg).config["server"])
+    assert len(warnings) == 1
+    assert f"server.{key}" in warnings[0] and "inside the data root" in warnings[0] and "--state-dir" in warnings[0]
 
 
-def test_equal_to_the_data_dir_and_inside_allowed_dirs_are_refused(isolated):
+def test_equal_to_the_data_dir_and_inside_allowed_dirs_warn(isolated):
     data, extra = isolated / "data", isolated / "extra"
     data.mkdir(), extra.mkdir()
     cfg = _write(isolated / "site.yaml", {"server": {
         "data_dir": str(data), "allowed_dirs": [str(extra)], "state_dir": str(data),
         "cache_dir": str(extra / "c")}})
-    assert len(paths.state_dir_problems(_load(cfg).config["server"])) == 2
+    assert len(paths.state_dir_warnings(_load(cfg).config["server"])) == 2
 
 
-def test_symlinked_state_dir_into_a_data_root_is_refused(isolated):
+def test_symlinked_state_dir_into_a_data_root_warns(isolated):
     data = isolated / "data"
     data.mkdir()
     (isolated / "link").symlink_to(data)
     cfg = _write(isolated / "site.yaml", {"server": {"data_dir": str(data), "state_dir": str(isolated / "link")}})
-    assert paths.state_dir_problems(_load(cfg).config["server"])
+    assert paths.state_dir_warnings(_load(cfg).config["server"])
 
 
 def test_siblings_and_data_inside_state_are_fine(isolated):
     cfg = _write(isolated / "site.yaml", {"server": {
         "data_dir": str(isolated / "data"), "state_dir": str(isolated / "data-state")}})
-    assert paths.state_dir_problems(_load(cfg).config["server"]) == []
+    assert paths.state_dir_warnings(_load(cfg).config["server"]) == []
 
 
-def test_start_refuses_and_says_why(isolated, caplog):
+def test_data_dir_equal_to_home_with_the_default_state_warns_and_starts(isolated):
+    warnings = paths.state_dir_warnings(_load(None, data_dir=str(isolated / "home")).config["server"])
+    assert len(warnings) == 1 and ".annzarro" in warnings[0]
+
+
+def test_start_warns_and_goes_on(isolated, caplog, monkeypatch):
     data = isolated / "data"
     data.mkdir()
     cfg = _write(isolated / "site.yaml", {"server": {"data_dir": str(data), "state_dir": str(data / "s")}})
+    started = []
+    monkeypatch.setattr(cli, "run_server", lambda **kw: started.append(kw))
     args = argparse.Namespace(host=None, port=None, data_dir=None, state_dir=None, auth_disabled=False,
                               detach=False, no_browser=True, development=False, venv_path=None, config=cfg)
-    with caplog.at_level(logging.ERROR), pytest.raises(SystemExit) as exit_:
-        cli.start_server(args)
-    assert exit_.value.code == 1
+    with caplog.at_level(logging.WARNING):
+        assert cli.start_server(args) == 0
+    assert started
     assert "inside the data root" in caplog.text and "--state-dir" in caplog.text
+
+
+def test_listings_leave_out_state_folders_inside_a_data_root(isolated):
+    from annzarro.server import panel_sets
+    data = isolated / "data"
+    (data / "state" / "cache").mkdir(parents=True)
+    (data / "keep").mkdir()
+    config = {"data_dir": str(data), "state_dir": str(data / "state"),
+              "panel_sets_dir": str(isolated / "elsewhere"), "cache_dir": str(data / "state" / "cache")}
+    assert panel_sets.state_folders_in(config, str(data)) == ("state",)
+    assert panel_sets.state_folders_in(config, str(data / "state")) == ("cache",)
 
 
 # annzarro paths
@@ -202,10 +220,10 @@ def test_paths_names_the_flag_and_the_default(isolated, capsys):
     assert "default" in out and "(not found)" in out
 
 
-def test_paths_exits_1_on_a_refused_location(isolated, capsys):
+def test_paths_lists_warnings_and_exits_0(isolated, capsys):
     code, out = _run_paths(capsys, "--data-dir", str(isolated / "d"), "--state-dir", str(isolated / "d" / "s"))
-    assert code == 1
-    assert "refuses to start" in out
+    assert code == 0
+    assert "Warnings:" in out and "inside the data root" in out
 
 
 def test_paths_reports_a_missing_config_file(isolated, capsys):

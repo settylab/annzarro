@@ -108,6 +108,21 @@ def top_level_skip(config) -> tuple:
     return (LEGACY_NAME,) if holds_sets(legacy_dir(config)) else ()
 
 
+def state_folders_in(config, folder) -> tuple:
+    """Names in ``folder`` that are the state, panel-sets or cache directory, for a listing to
+    leave out when one of them lies inside a data root and is not hidden by its name."""
+    wanted = {os.path.realpath(p) for p in (
+        config.get("state_dir") or paths.user_state_dir(),
+        config.get("panel_sets_dir") or paths.panel_sets_dir(),
+        config.get("cache_dir") or paths.cache_dir())}
+    base = {os.path.basename(p) for p in wanted}
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return ()
+    return tuple(n for n in names if n in base and os.path.realpath(os.path.join(folder, n)) in wanted)
+
+
 def ensure(config) -> str:
     """:func:`directory`, created when absent (0700 in the state directory)."""
     location = resolve(config)

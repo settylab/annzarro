@@ -3,6 +3,7 @@
 from flask import current_app, jsonify, request
 
 from .. import cache_reset, health, panel_sets
+from annzarro.utils import paths
 from . import audit
 from .guard import require_admin
 
@@ -17,6 +18,7 @@ def get_health():
         return jsonify(error="Health needs login.", reason="admin_requires_login"), 404
     report = monitor.collect()
     report["panel_sets"] = panel_sets.describe(current_app.config)
+    report["warnings"] = paths.state_dir_warnings(current_app.config)
     return jsonify(report)
 
 

@@ -46,7 +46,7 @@ def iter_stores(config, scope=None, user=None, deadline=None, max_depth=6, max_v
         if not os.path.isdir(scope):
             raise FileNotFoundError(scope)
         if df.is_store_dir(scope, os.path.basename(scope.rstrip(os.sep))):
-            return _walk(data_dir, [], [], set(), None, user, deadline, max_depth, max_visited, stats, data_routes, df, top_skip)
+            return _walk(config, data_dir, [], [], set(), None, user, deadline, max_depth, max_visited, stats, data_routes, df, top_skip)
         queue, seen = [(scope, 0)], {os.path.realpath(scope)}
     elif user:
         queue, seen = [], set()
@@ -65,14 +65,15 @@ def iter_stores(config, scope=None, user=None, deadline=None, max_depth=6, max_v
             if real not in seen:
                 seen.add(real)
                 queue.append((root["path"], 1))
-    return _walk(data_dir, stores, queue, seen, scope, user, deadline, max_depth, max_visited, stats, data_routes, df, top_skip)
+    return _walk(config, data_dir, stores, queue, seen, scope, user, deadline, max_depth, max_visited, stats, data_routes, df, top_skip)
 
 
-def _walk(data_dir, stores, queue, seen, scope, user, deadline, max_depth, max_visited, stats, data_routes, df, top_skip):
+def _walk(config, data_dir, stores, queue, seen, scope, user, deadline, max_depth, max_visited, stats, data_routes, df, top_skip):
     yield from stores
     while queue and not stats.truncated:
         folder, depth = queue.pop(0)
         skip = top_skip if os.path.realpath(folder) == os.path.realpath(data_dir) else ()
+        skip = skip + panel_sets.state_folders_in(config, folder)
         for name in data_routes._listdir(folder):
             if name in skip or name.startswith("."):
                 continue

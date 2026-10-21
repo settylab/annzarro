@@ -2142,8 +2142,9 @@ def register_data_routes(app, api_version):
                 # the first level of each granted folder, and each granted store: never the data directory
                 search = dataset_folders.granted_sources(restricted)
             else:
+                skipped = panel_sets.top_level_skip(app.config) + panel_sets.state_folders_in(app.config, data_dir)
                 search = [(data_dir, entry) for entry in _listdir(data_dir)
-                          if entry != "datasets" and entry not in panel_sets.top_level_skip(app.config)]
+                          if entry != "datasets" and entry not in skipped]
                 if os.path.isdir(datasets_dir):
                     search += [(datasets_dir, entry) for entry in _listdir(datasets_dir)]
             

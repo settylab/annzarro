@@ -26,7 +26,7 @@ annzarro start [--config CONFIG] [--host HOST] [--port PORT] [--data-dir DATA_DI
 | `--host HOST` | Address to bind (`server.host`, default `127.0.0.1`). Any address other than `127.0.0.1`, `localhost` or `::1` turns login on and confines paths to the data directory. |
 | `--port PORT` | Port (`server.port`, default 8000). |
 | `--data-dir DIR` | Data directory (`server.data_dir`, default `~/annzarro-data`, created if missing). `~` is expanded; a relative path is taken from the current directory. |
-| `--state-dir DIR` | State directory (`server.state_dir`, default `~/.annzarro`): where the log, PID file, users file and caches go. Must not lie inside a data directory; the server refuses to start otherwise. |
+| `--state-dir DIR` | State directory (`server.state_dir`, default `~/.annzarro`): where the log, PID file, users file and caches go. Better kept outside the data directories: inside one, the server logs a warning at start-up and leaves the folder out of dataset listings. |
 | `--auth-disabled` | Login off, even on a network address. There a `SECURITY` warning is logged and the header shows "No login". |
 | `--no-browser` | Do not open a browser. Also implied by the environment variable `ANNZARRO_HEADLESS`. |
 | `--detach` | Start the server in the background and write its PID to `<state dir>/server.pid` (`~/.annzarro/server.pid` by default), mode 0600. |
@@ -105,8 +105,8 @@ state directory, users file, admin state, log file, PID file, panel sets directo
 location is followed by its origin: a flag (`flag --state-dir`), an environment variable
 (`environment variable ANNZARRO_HOME`), a configuration key with its file, or the default. It takes
 the same flags as `annzarro start`, so `annzarro paths --config site.yaml` shows what that server
-would use. Exit status 1, with the reason printed, when a location would stop the server from
-starting, for example a state directory inside a data directory.
+would use. A state, panel-sets or cache directory inside a data directory is listed under "Warnings"; the
+exit status stays 0.
 
 ## `annzarro panel-sets migrate`
 

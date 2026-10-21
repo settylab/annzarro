@@ -98,10 +98,18 @@ async function load() {
                 h('div', { class: 'fs-5', text: formatMb(totals.rss_mb) })) : null),
         table(['pid', 'Age', 'Requests', 'Read budget', 'Cache', 'Memory', 'Refusals'], workerRows(workers), 'No workers reported.'),
         panelSetsLine(data.panel_sets),
+        warningsBlock(data.warnings),
         h('p', { class: 'small' }, h('strong', { text: 'Refusals by reason: ' }), refusalText(sumRefusals(workers))),
         h('p', { class: 'small' }, h('strong', { text: 'Top readers now: ' }), readersText(workers)),
         h('p', { class: 'small' }, h('strong', { text: 'Active users: ' }),
             active.length ? active.map((a) => `${a.username} ${formatTimestamp(a.last_seen).slice(11)}`).join(' | ') : 'none'));
+}
+
+/** Server warnings (state kept inside a data root); nothing when there are none. */
+export function warningsBlock(warnings) {
+    if (!warnings || !warnings.length) return null;
+    return h('div', { class: 'small text-break', id: 'admin-health-warnings' },
+        ...warnings.map((w) => h('p', { class: 'mb-1' }, badge('warning', 'warning', 'Server warning'), h('span', { class: 'ms-2', text: w }))));
 }
 
 /** The "Panel sets:" paragraph: where they are kept; a legacy location says so, with the server's note

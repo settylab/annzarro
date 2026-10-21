@@ -227,7 +227,7 @@ state directory can also be set with `ANNZARRO_SERVER_STATE_DIR` or its older na
 `ANNZARRO_HOME`, for example to a project directory on a cluster where the home directory is
 small. Under systemd, `StateDirectory=` and `CacheDirectory=` set `$STATE_DIRECTORY` and
 `$CACHE_DIRECTORY`, which are used when nothing else names the directory ({doc}`../deployment/lab-server`).
-The server refuses to start when one of these directories lies inside a data directory.
+When one of these directories lies inside a data directory, for example with `--data-dir ~`, the server still starts, logs a warning, shows it on the admin Health page and in `annzarro paths`, and leaves that folder out of dataset listings. Move it with `--state-dir` to silence the warning.
 
 Panel sets saved by a version before 0.7.2 are in `<data_dir>/sessions`, and are used from there
 until you copy them with `annzarro panel-sets migrate`, which never deletes anything.
