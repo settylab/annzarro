@@ -97,10 +97,21 @@ async function load() {
             typeof totals.rss_mb === 'number' ? h('div', null, h('div', { class: 'text-muted small', text: 'Memory' }),
                 h('div', { class: 'fs-5', text: formatMb(totals.rss_mb) })) : null),
         table(['pid', 'Age', 'Requests', 'Read budget', 'Cache', 'Memory', 'Refusals'], workerRows(workers), 'No workers reported.'),
+        panelSetsLine(data.panel_sets),
         h('p', { class: 'small' }, h('strong', { text: 'Refusals by reason: ' }), refusalText(sumRefusals(workers))),
         h('p', { class: 'small' }, h('strong', { text: 'Top readers now: ' }), readersText(workers)),
         h('p', { class: 'small' }, h('strong', { text: 'Active users: ' }),
             active.length ? active.map((a) => `${a.username} ${formatTimestamp(a.last_seen).slice(11)}`).join(' | ') : 'none'));
+}
+
+/** The "Panel sets:" paragraph: where they are kept; a legacy location says so, with the server's note
+ *  (which names `annzarro panel-sets migrate`). Nothing when the server did not report it. */
+export function panelSetsLine(info) {
+    if (!info || !info.path) return null;
+    return h('p', { class: 'small text-break', id: 'admin-health-panel-sets' },
+        h('strong', { text: 'Panel sets: ' }), h('code', { text: info.path }),
+        info.legacy ? h('span', { class: 'ms-2' }, badge('legacy', 'warning', 'Panel sets are still in the data directory')) : null,
+        info.note ? h('span', { class: `ms-2 ${info.legacy ? '' : 'text-muted'}`, id: 'admin-health-panel-sets-note', text: info.note }) : null);
 }
 
 /** "bob 410 MB (share 512 MB)" for the largest holders of the read budget, over all workers. */

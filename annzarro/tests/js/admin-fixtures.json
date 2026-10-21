@@ -20,6 +20,7 @@
       {"pid": 4122, "host": "node1", "started": "2026-10-11T08:00:00+00:00", "age_s": 700, "stale": true, "requests": 9870, "refusals": {"outside_data_dir": 2}, "read_guard": {"in_flight_mb": null, "budget_mb": 1024}, "cache": {"memory_mb": 512, "max_mb": 1024, "datasets": 4}}
     ],
     "totals": {"refusals": 6, "cache_mb": 992, "read_in_flight_mb": 410, "rss_mb": 1536},
+    "panel_sets": {"path": "/srv/annzarro/data/sessions", "mode": "legacy", "legacy": true, "note": "panel sets are read from and saved to /srv/annzarro/data/sessions (legacy location); run `annzarro panel-sets migrate` to copy them to /var/lib/annzarro/panel-sets"},
     "active": [{"username": "alice", "last_seen": "2026-10-11T09:12:00+00:00"}, {"username": "bob", "last_seen": "2026-10-11T09:10:00+00:00"}]
   },
   "panelSets": {
