@@ -64,9 +64,11 @@ class ConfigManager:
     2. system file ``/etc/annzarro/config.yaml``
     3. user file ``~/.config/annzarro/config.yaml`` (``$XDG_CONFIG_HOME`` honoured)
     4. project file ``./config.yaml`` in the directory annzarro is started from
+       (deprecated: use ``--config`` or ``ANNZARRO_CONFIG``; removed in 0.8)
     5. the file passed with ``--config`` (must exist)
     6. ``ANNZARRO_<SECTION>_<KEY>`` environment variables
-    7. command-line flags (``--host``, ``--port``, ``--data-dir``, ``--auth-disabled``)
+    7. command-line flags (``--host``, ``--port``, ``--data-dir``, ``--state-dir``,
+       ``--auth-disabled``)
 
     Validation runs on the fully merged result. Every value's origin is
     recorded so ``annzarro config show`` can say where it came from.
@@ -86,7 +88,7 @@ class ConfigManager:
 
     # ANNZARRO_* variables that are switches, not configuration keys.
     NON_CONFIG_ENV_VARS = {
-        "ANNZARRO_HOME", "ANNZARRO_HEADLESS", "ANNZARRO_AUTH_DISABLED",
+        "ANNZARRO_HEADLESS", "ANNZARRO_AUTH_DISABLED",
         "ANNZARRO_ELECTRON_APP", "ANNZARRO_ELECTRON_MODE", "ANNZARRO_LOCAL_MODE",
         "ANNZARRO_ENV", "ANNZARRO_CONFIG",
         # read by GET /api/v1/config (routes/core.py), over integrations.external_requests
@@ -123,6 +125,9 @@ class ConfigManager:
         "ANNZARRO_REMOTE_CHUNK_CACHE_MB": ("server", "remote_chunk_cache_mb"),
     }
 
+    # The older name of ANNZARRO_SERVER_STATE_DIR.
+    STATE_DIR_ALIAS = {"ANNZARRO_HOME": ("server", "state_dir")}
+
     # Command-line flag (argparse dest) -> configuration key path. Only these
     # flags touch the configuration; everything else on the command line
     # (--detach, --no-browser, --format, ...) is an instruction to the CLI.
@@ -130,6 +135,7 @@ class ConfigManager:
         "host": ("server", "host"),
         "port": ("server", "port"),
         "data_dir": ("server", "data_dir"),
+        "state_dir": ("server", "state_dir"),
     }
 
     # Security levels
@@ -197,6 +203,11 @@ class ConfigManager:
         self._load_yaml_config(self.SYSTEM_CONFIG_PATH, "system")
         self._load_yaml_config(self.USER_CONFIG_PATH, "user")
         self._load_yaml_config(os.path.abspath(self.PROJECT_CONFIG_PATH), "project")
+        if "project" in self.sources:
+            logger.warning(
+                f"Reading {self.sources['project']} because it is in the directory annzarro was "
+                "started from. This stops working in 0.8; name it with --config or ANNZARRO_CONFIG "
+                "instead.")
 
         # Step 6: the file named with --config is not optional
         if config_path:
@@ -351,6 +362,10 @@ class ConfigManager:
         than inventing a key nobody reads.
         """
         applied = []
+        conflict = paths.state_env_conflict()
+        if conflict:
+            raise ValueError("ANNZARRO_HOME and ANNZARRO_SERVER_STATE_DIR are both set to different "
+                             "folders (" + ", ".join(f"{n}={v}" for n, v in conflict) + "); set only one")
         known = deepcopy(self.config)
         for path in list(self.OPTIONAL_ENV_KEYS) + self._schema_key_paths():
             node = known
@@ -361,8 +376,8 @@ class ConfigManager:
         for env_var in sorted(os.environ):
             if not env_var.startswith(self.ENV_PREFIX) or env_var in self.NON_CONFIG_ENV_VARS:
                 continue
-            if env_var in self.ENV_ALIASES:
-                key_path = list(self.ENV_ALIASES[env_var])
+            if env_var in self.ENV_ALIASES or env_var in self.STATE_DIR_ALIAS:
+                key_path = list({**self.ENV_ALIASES, **self.STATE_DIR_ALIAS}[env_var])
             else:
                 tokens = env_var[len(self.ENV_PREFIX):].lower().split('_')
                 key_path = self._match_key_path(tokens, known)
@@ -438,6 +453,18 @@ class ConfigManager:
 
         if isinstance(server.get("data_dir"), str):
             server["data_dir"] = os.path.expanduser(server["data_dir"])
+
+        # Where annzarro keeps what it writes. The panel-set and cache
+        # directories follow the state directory unless named.
+        server["state_dir"] = os.path.abspath(os.path.expanduser(
+            str(server.get("state_dir") or paths.DEFAULT_STATE_DIR)))
+        for key, leaf in (("panel_sets_dir", "panel-sets"), ("cache_dir", "cache")):
+            if server.get(key):
+                server[key] = os.path.abspath(os.path.expanduser(str(server[key])))
+            else:
+                self._set_override(["server", key], os.path.join(server["state_dir"], leaf),
+                                   "derived:state dir")
+        paths.set_state_dir(server["state_dir"], server["panel_sets_dir"], server["cache_dir"])
 
         # Runtime state never lands in the package directory, and only lands in
         # the working directory when a relative path is configured explicitly.

@@ -9,9 +9,11 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Added
+- Where annzarro keeps its state is now one setting. `server.state_dir` (`--state-dir`, `ANNZARRO_SERVER_STATE_DIR`, or the older `ANNZARRO_HOME`) holds the log, PID file, users file and caches; `server.cache_dir` and `server.panel_sets_dir` default to folders inside it. `annzarro stop` also takes `--state-dir` and `--config`. The server refuses to start when one of these folders lies inside a data directory, and says which. The new `annzarro paths` command prints every location and why it is there (flag, environment variable, configuration key or default). The default stays `~/.annzarro`; panel sets still live in `<data_dir>/sessions`.
 - Press **C** while a point's hover label shows to copy it as plain text: the name and each `label: value` line, including the Hover columns. Works in 2D, 3D and large-plot plots; with no label showing, **C** still toggles the panel controls.
 
 ### Changed
+- A `config.yaml` picked up from the directory annzarro is started from is still read, but now logs a warning naming the file: this stops working in 0.8. Name the file with `--config` or `ANNZARRO_CONFIG` instead.
 - The dataset browser opens at once on the listings it read before (the data directory and each folder you opened) and reads fresh ones behind them, updating the list in place without losing your search, selection or scroll. A new **Refresh** button reads the folder, the places and Recent again; it shows that it is busy and cannot be clicked meanwhile, and a failed refresh keeps the list with a note. The listings are kept in the browser per server and user (a convenience item, forgotten with the tab on a session-only site).
 
 ## 0.7.1 (2026-10-19)

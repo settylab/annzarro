@@ -11,7 +11,9 @@ from a source checkout, from a home directory or from ``/``.
   fallback.
 * Writable runtime state (logs, PID file, generated secrets, the default user
   database) goes to a per-user state directory, ``~/.annzarro`` by default,
-  overridable with ``ANNZARRO_HOME``. It is never the package directory.
+  overridable with ``server.state_dir`` (``--state-dir``,
+  ``ANNZARRO_SERVER_STATE_DIR``, or the older alias ``ANNZARRO_HOME``). It is
+  never the package directory.
 """
 
 import os
@@ -28,13 +30,25 @@ DEFAULTS_DIR = PACKAGE_DIR / "config"
 DEFAULT_DATA_DIR = "~/annzarro-data"
 
 
+#: The state directory when none is configured.
+DEFAULT_STATE_DIR = "~/.annzarro"
+
+
 def default_data_dir() -> str:
     """The unconfigured data directory, expanded (``~/annzarro-data``)."""
     return os.path.expanduser(DEFAULT_DATA_DIR)
 
 
-#: Environment variable that relocates the per-user state directory.
+#: Environment variable that relocates the per-user state directory (the
+#: older name; ``ANNZARRO_SERVER_STATE_DIR`` is the configuration key's own).
 STATE_DIR_ENV = "ANNZARRO_HOME"
+STATE_DIR_ENVS = ("ANNZARRO_SERVER_STATE_DIR", STATE_DIR_ENV)
+
+# Set once configuration is loaded (or by ``--state-dir`` for commands that
+# load none, like ``annzarro stop``); None = decide from the environment.
+_state_dir = None
+_panel_sets_dir = None
+_cache_dir = None
 
 
 def frontend_dir(name: str) -> Path:
@@ -59,12 +73,86 @@ def source_checkout_root():
     return None
 
 
+def state_env_conflict():
+    """``(name, value)`` pairs when ``ANNZARRO_HOME`` and ``ANNZARRO_SERVER_STATE_DIR``
+    are both set and name different folders, else an empty list."""
+    found = [(name, os.environ[name]) for name in STATE_DIR_ENVS if os.environ.get(name)]
+    if len(found) == 2 and (os.path.abspath(os.path.expanduser(found[0][1]))
+                            != os.path.abspath(os.path.expanduser(found[1][1]))):
+        return found
+    return []
+
+
+def set_state_dir(path, panel_sets_dir=None, cache_dir=None) -> None:
+    """Fix the state directory (and, if given, panel-set and cache directories)
+    from the loaded configuration or ``--state-dir``. ``None`` goes back to the
+    environment and the default."""
+    global _state_dir, _panel_sets_dir, _cache_dir
+    _state_dir = Path(path).expanduser() if path else None
+    _panel_sets_dir = Path(panel_sets_dir).expanduser() if panel_sets_dir else None
+    _cache_dir = Path(cache_dir).expanduser() if cache_dir else None
+
+
 def user_state_dir() -> Path:
-    """Per-user directory for logs, the PID file and other runtime state."""
-    override = os.environ.get(STATE_DIR_ENV)
-    if override:
-        return Path(override).expanduser()
+    """Directory for logs, the PID file and other runtime state."""
+    if _state_dir is not None:
+        return _state_dir
+    for name in STATE_DIR_ENVS:
+        override = os.environ.get(name)
+        if override:
+            return Path(override).expanduser()
     return Path.home() / ".annzarro"
+
+
+def panel_sets_dir() -> Path:
+    """Where panel sets live: ``server.panel_sets_dir``, else ``<state dir>/panel-sets``."""
+    return _panel_sets_dir if _panel_sets_dir is not None else user_state_dir() / "panel-sets"
+
+
+def cache_dir() -> Path:
+    """Disposable caches: ``server.cache_dir``, else ``<state dir>/cache``."""
+    return _cache_dir if _cache_dir is not None else user_state_dir() / "cache"
+
+
+def locations_inside_data_roots(server: dict):
+    """State, panel-set and cache directories that lie inside a data root, as
+    ``(label, path, root)``. Symlinks are followed; a directory equal to a root
+    counts as inside. ``server`` is the merged ``server`` section."""
+    def real(p):
+        return os.path.realpath(os.path.expanduser(str(p)))
+
+    roots = [server.get("data_dir")] + list(server.get("allowed_dirs") or []) \
+        + list(server.get("admin_data_roots") or [])
+    roots = [real(r) for r in roots if isinstance(r, str) and r]
+    found = []
+    for label, key in (("state directory", "state_dir"), ("panel-sets directory", "panel_sets_dir"),
+                       ("cache directory", "cache_dir")):
+        value = server.get(key)
+        if not value:
+            continue
+        path = real(value)
+        # a cache or panel-sets directory under a refused state directory adds nothing
+        if any(path.startswith(f[1].rstrip(os.sep) + os.sep) for f in found):
+            continue
+        for root in roots:
+            if path == root or path.startswith(root.rstrip(os.sep) + os.sep):
+                found.append((f"server.{key}", path, root))
+                break
+    return found
+
+
+def state_dir_problems(server: dict):
+    """Start-up refusals about where state is kept, as readable messages."""
+    problems = [f"{name}={value!r}" for name, value in state_env_conflict()]
+    out = []
+    if problems:
+        out.append("ANNZARRO_HOME and ANNZARRO_SERVER_STATE_DIR are both set and differ ("
+                   + ", ".join(problems) + "); set only one")
+    for key, path, root in locations_inside_data_roots(server):
+        out.append(f"{key} ({path}) lies inside the data root {root}. AnnZarro writes users, "
+                   "logs, panel sets and caches there, and a data root should be read-only. "
+                   "Point it elsewhere with --state-dir or the config key.")
+    return out
 
 
 def user_config_path() -> Path:
