@@ -1423,7 +1423,10 @@ export function createDatasetBrowser(services) {
             const among = inFolderPlace() && !searching() && sort.key && !sort.server && S.listing.more ? S.listing.offset : null;
             let text = S.listing.loading && inFolderPlace() ? 'Loading…' : countSummary({ stores, folders, query: S.query, truncated: !!(S.remote && S.remote.truncated), sortedAmong: among });
             const described = rows.filter(r => r.textHit).length;
-            if (described) text += `; ${described} found in titles, attribution and READMEs`;
+            if (described && !(S.listing.loading && inFolderPlace())) {
+                const names = rows.filter(r => r.kind === 'store' && !r.textHit).length;
+                text = `${names} name match${names === 1 ? '' : 'es'}, ${described} in descriptions`;
+            }
             if (S.mode !== 'change' && S.me && S.me.restricted) text += '. Only datasets shared with you are listed.';
             if (S.notice) text = `${S.notice} ${text}`;
             dom.status.textContent = text;

@@ -99,8 +99,10 @@ def world(tmp_path):
     _stop(server, thread)
 
 
-def _shot(page, name):
+def _shot(page, name, settled=True):
     if SHOTS:
+        if settled:
+            page.wait_for_function("() => /in descriptions/.test(document.getElementById('dsb-status').innerText)", timeout=5_000)
         os.makedirs(SHOTS, exist_ok=True)
         page.screenshot(path=os.path.join(SHOTS, name))
 
@@ -146,6 +148,37 @@ def test_a_word_only_a_readme_holds_finds_the_store_under_the_name_matches(world
         assert row.locator(".dsb-snippet-field").inner_text() == "README"
         assert "Bone marrow ageing" in row.locator(".dsb-title").inner_text()
         _shot(page, "text-search-light.png")
+    finally:
+        s.close()
+
+
+def _footer(page):
+    return page.inner_text("#dsb-status").strip()
+
+
+def test_the_footer_counts_names_and_descriptions_once_both_answers_are_in(world):
+    s = _open(world, query="preprocessing")
+    try:
+        page = s.page
+        _wait_hits(page, 3)
+        page.wait_for_function("() => /in descriptions/.test(document.getElementById('dsb-status').innerText)", timeout=5_000)
+        assert _footer(page) == "1 name match, 4 in descriptions"
+        # the text answer last: hold it while the name answer lands
+        page.fill("#dsb-search", "")
+        page.wait_for_timeout(400)
+        held = []
+        page.route("**/api/v1/datasets/text-search*", lambda route: held.append(route))
+        page.fill("#dsb-search", "clustering")
+        for _ in range(50):
+            if held:
+                break
+            page.wait_for_timeout(100)
+        page.wait_for_timeout(500)
+        assert "in descriptions" not in _footer(page)
+        for route in held:
+            route.continue_()
+        page.unroute("**/api/v1/datasets/text-search*")
+        page.wait_for_function("() => document.getElementById('dsb-status').innerText === '0 name matches, 1 in descriptions'", timeout=5_000)
     finally:
         s.close()
 
@@ -281,7 +314,7 @@ def test_the_progress_line_shows_while_the_index_is_built_and_the_hits_arrive_wh
         page.wait_for_function("() => /^Indexing descriptions/.test(document.getElementById('dsb-text-state-text').textContent)", timeout=20_000)
         assert page.is_visible("#dsb-text-progress")
         assert page.locator(TEXT_ROW).count() == 0
-        _shot(page, "text-search-indexing.png")
+        _shot(page, "text-search-indexing.png", settled=False)
         page.wait_for_timeout(2000)
         assert len(polls) >= 2, "the status is read while the crawl runs"
         gate.set()
@@ -466,8 +499,14 @@ def test_dark_mode_and_a_phone_width_do_not_scroll_sideways(world, scheme, width
         }""")
         assert wide == []
         assert page.is_visible("#dsb-text")
+        look = page.evaluate("""() => ['dsb-regex', 'dsb-text'].map(id => { const e = document.getElementById(id), c = getComputedStyle(e);
+            return [Math.round(e.getBoundingClientRect().height), c.borderTopWidth, c.borderTopColor, c.paddingTop]; })""")
+        assert look[0][0] == look[1][0] and look[0][1] == look[1][1] and look[0][3] == look[1][3], look     # a matching pair
         page.locator(SECTION).scroll_into_view_if_needed()
         _shot(page, shot)
+        if SHOTS:
+            page.evaluate("() => document.activeElement.blur()")
+            page.locator(".dsb-toolbar").screenshot(path=os.path.join(SHOTS, shot.replace(".png", "-toolbar.png")))
         if scheme == "dark":
             # text on the highlight keeps a readable contrast: the mark is dark-on-light or light-on-dark, never equal
             colours = page.evaluate("() => { const m = document.querySelector('.dsb-snippet mark'); const c = getComputedStyle(m); return [c.color, c.backgroundColor]; }")

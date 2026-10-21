@@ -4150,7 +4150,14 @@ details.aesthetics-section > .aesthetics-body {
     min-width: 0;
 }
 .dsb-search .form-control { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.dsb-regex { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
+.dsb-regex { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 0; }
+/* the two toggles are a pair: same height and padding, the field's focus ring does not cover them */
+.dsb-regex, .dsb-text { display: inline-flex; align-items: center; justify-content: center; padding: 0.25rem 0.6rem; line-height: 1.5; flex: 0 0 auto; }
+.dsb-regex { min-width: 2.25rem; font-weight: 600; }
+.dsb-text { gap: 0.35rem; }
+.dsb-regex:not(.active), .dsb-text:not(.active) { border-color: var(--az-muted); }
+.dsb-search .form-control:focus { z-index: 1; }
+.dsb-search .btn { position: relative; z-index: 2; }
 .dsb-search .dsb-regex:has(+ .dsb-text:not([hidden])) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .dsb-text { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; white-space: nowrap; }
 .dsb-text.active, .dsb-regex.active { color: var(--az-link); border-color: var(--az-link); background: var(--az-accent-bg); position: relative; }
