@@ -59,6 +59,13 @@ export function mountDatasetInfo({ url, state, doc = document, loader = createIn
     const title = doc.getElementById('dataset-info-name');
     const tabs = [...modal.querySelectorAll('[data-dsi-part]')];
     const panes = Object.fromEntries(tabs.map((tab) => [tab.dataset.dsiPart, doc.querySelector(tab.dataset.bsTarget)]));
+    const hint = doc.getElementById('dataset-info-hint');
+    function setDot(on) {                // the dot for the eye, the same words for a screen reader
+        button.classList.toggle('has-info', on);
+        if (hint) hint.textContent = on ? 'This dataset has a description' : '';
+        if (on && hint) button.setAttribute('aria-describedby', hint.id);
+        else button.removeAttribute('aria-describedby');
+    }
     let prefetched = null;             // the path the parts were scheduled for
     let shownFor = null;               // the path the panes were drawn for
     const loaded = new Set();
@@ -114,7 +121,7 @@ export function mountDatasetInfo({ url, state, doc = document, loader = createIn
             loader.loadAll(at, parts).then(() => {
                 if (path() !== at) return;
                 const about = loader.peek(at, 'about');
-                button.classList.toggle('has-info', !!(about && (about.present || about.has_readme)));
+                setDot(!!(about && (about.present || about.has_readme)));
             });
         });
     }
@@ -131,13 +138,13 @@ export function mountDatasetInfo({ url, state, doc = document, loader = createIn
         if (!open) {
             reset(); shownFor = null;
             stopPrefetch(); prefetched = null;
-            button.classList.remove('has-info');
+            setDot(false);
             loader.pin(null);
             return;
         }
         if (prefetched !== next.path) {
             prefetched = next.path;
-            button.classList.remove('has-info');
+            setDot(false);
             loader.pin(next.path);
             prefetch(next.path);
         }

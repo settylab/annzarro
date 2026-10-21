@@ -226,6 +226,10 @@ def test_the_parts_are_fetched_once_after_the_dataset_opens_and_the_dialog_needs
     _prefetched(page)
     page.wait_for_function("() => document.querySelector('#dataset-info').classList.contains('has-info')")
     assert _parts(s.requests) == ["about,readme,structure"], "one request for the three parts"
+    button = page.locator("#dataset-info")
+    assert button.get_attribute("aria-label") == "Dataset information"
+    described = button.get_attribute("aria-describedby")
+    assert described and page.inner_text(f"#{described}", timeout=2000) == "This dataset has a description"
     _open_dialog(page)
     assert page.locator("#dsi-pane-about .dsi-title").inner_text() == "Liver atlas"
     _tab(page, "readme")
@@ -243,6 +247,7 @@ def test_the_dot_is_only_on_a_dataset_with_something_to_read(opened):
     _prefetched(s.page)
     s.page.wait_for_timeout(500)
     assert not s.page.evaluate("() => document.querySelector('#dataset-info').classList.contains('has-info')")
+    assert s.page.locator("#dataset-info").get_attribute("aria-describedby") is None
     assert not s.errors, s.errors
 
 
