@@ -61,6 +61,7 @@ ROUTES = [
     ("POST", "/api/v1/cache/reset?dataset_path={p}"),
     ("GET", "/api/v1/core/datasets?dir={d}"),
     ("GET", "/api/v1/directories/list?path={d}"),
+    ("GET", "/api/v1/datasets/text-search?q=x&folder={d}"),
     ("GET", "/api/v1/datasets/{seg}"),
     ("GET", "/api/v1/datasets/{seg}/info"),
     ("GET", "/api/v1/datasets/{seg}/uns/structure"),
@@ -73,6 +74,7 @@ NO_PATH = {
     "serve_static", "static", "get_current_user", "policy_effective", "get_cache_info", "get_config", "get_status",
     "health",             # the probe answers from memory and takes no argument
     "list_all_datasets", "list_dataset_folder", "list_dataset_search",  # the folder listing confines itself (test_dataset_folders.py)
+    "text_index_status", "text_index_refresh",   # no argument: the status and the refresh button (test_text_search.py)
     "lookup_datasets",    # names its paths in the body, not the URL: swept below (test_lookup_*)
     "get_home_directory", "validate_zarr_url",  # remote policy, below
     "delete_session", "duplicate_session", "check_session_exists", "export_session",
