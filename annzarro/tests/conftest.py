@@ -169,6 +169,16 @@ def _private_state_dir(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _forget_loaded_state_dir():
+    """Loading configuration fixes the state directory for the process (paths.set_state_dir);
+    a later test that sets ANNZARRO_HOME must see it take effect, not an earlier test's value."""
+    from annzarro.utils import paths
+    paths.set_state_dir(None)
+    yield
+    paths.set_state_dir(None)
+
+
+@pytest.fixture(autouse=True)
 def _restore_remote_policy():
     """Every app a test builds sets the process-wide remote store policy (server/core.py); put
     it back, or a later test in the same process (an xdist worker runs any mix of files) reads

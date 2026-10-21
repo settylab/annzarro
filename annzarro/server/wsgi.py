@@ -58,6 +58,11 @@ def load_hosted_config(config_path=None, env=None):
     if not valid:
         raise RuntimeError("Invalid AnnZarro configuration: " + "; ".join(errors))
 
+    from annzarro.utils.paths import state_dir_problems
+    problems = state_dir_problems(merged.get("server") or {})
+    if problems:
+        raise RuntimeError("; ".join(problems))
+
     flask_config = manager.to_flask_config()
     flask_config.pop("__using_config_manager", None)
 

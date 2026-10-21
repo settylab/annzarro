@@ -35,6 +35,16 @@ server:
   # relative to the directory annzarro is started from; the default is the
   # folder the desktop app uses.
   data_dir: "~/annzarro-data"
+  # Where annzarro keeps what it writes (users, admin state, logs, caches, the
+  # PID file). Never inside a data root: the server refuses to start then.
+  # Also --state-dir and ANNZARRO_SERVER_STATE_DIR (ANNZARRO_HOME is the older
+  # name). `annzarro paths` lists every location and why it is there.
+  state_dir: "~/.annzarro"
+  # Optional, default <state_dir>/cache: disposable caches, safe to delete.
+  # cache_dir: /var/cache/annzarro
+  # Optional, default <state_dir>/panel-sets. Reserved: panel sets still live
+  # in <data_dir>/sessions until they move.
+  # panel_sets_dir: /var/lib/annzarro/panel-sets
   # Directories beyond data_dir a shared server may read datasets from, e.g.
   # ["/lab/atlases"]. Every dataset path must resolve (symlinks and ".."
   # followed) inside data_dir or one of these.
@@ -50,7 +60,7 @@ server:
   arbitrary_paths: admins
   
   # Logging configuration
-  # null = ~/.annzarro/logs/annzarro_server.log (or $ANNZARRO_HOME/logs/...).
+  # null = ~/.annzarro/logs/annzarro_server.log (under server.state_dir).
   # A relative path is taken relative to the directory annzarro is started from.
   log_file: null
   log_level: "INFO"

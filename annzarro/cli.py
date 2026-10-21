@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
 from annzarro.server import run_server
-from annzarro.utils.config_manager import config_manager
+from annzarro.utils import paths
+from annzarro.utils.config_manager import ConfigManager, config_manager
 
 # Configure logging
 logging.basicConfig(
@@ -104,12 +105,20 @@ def start_server(args: argparse.Namespace) -> int:
     if not config.get('auth', {}).get('enabled'):
         logger.info("Authentication disabled")
     
+    problems = paths.state_dir_problems(config.get("server", {}))
+    if problems:
+        for problem in problems:
+            logger.error(problem)
+        sys.exit(1)
+
     # Convert to flat structure for the server
     flask_config = config_manager.to_flask_config()
     
     # A detached server re-runs this command in a child process; hand it the
     # same configuration inputs, not just host/port/data-dir.
     detach_args = []
+    if getattr(args, 'state_dir', None):
+        detach_args += ['--state-dir', os.path.abspath(os.path.expanduser(args.state_dir))]
     if args.config:
         detach_args += ['--config', os.path.abspath(os.path.expanduser(args.config))]
     if getattr(args, 'development', False):
@@ -166,6 +175,15 @@ def stop_server(args: argparse.Namespace) -> int:
     import psutil
     from annzarro.utils.paths import pid_file as default_pid_file
 
+    if getattr(args, 'state_dir', None) or getattr(args, 'config', None):
+        # Before any server configuration is loaded the state directory comes
+        # from the flag, else from the named configuration file.
+        manager = ConfigManager()
+        try:
+            manager.load_config(env="production", config_path=getattr(args, 'config', None), cli_args=args)
+        except (FileNotFoundError, ValueError) as e:
+            logger.error(f"Configuration error: {e}")
+            return 1
     pid_file = default_pid_file()
     if not pid_file.exists():
         logger.error(f"No server to stop: {pid_file} not found. `annzarro stop` stops a "
@@ -1012,6 +1030,7 @@ def main(argv: List[str] = None) -> int:
     overrides.add_argument('--host', help="Host to bind to (server.host)")
     overrides.add_argument('--port', type=int, help="Port to bind to (server.port)")
     overrides.add_argument('--data-dir', help="Data directory (server.data_dir)")
+    overrides.add_argument('--state-dir', help="Directory annzarro writes to: users, logs, caches (server.state_dir)")
     overrides.add_argument(
         '--auth-disabled', action='store_true',
         help="Disable login (auth.enabled=false). Login is otherwise required when --host is not "
@@ -1031,6 +1050,9 @@ def main(argv: List[str] = None) -> int:
     
     # Stop command
     stop_parser = subparsers.add_parser('stop', help="Stop the Annzarro server")
+    stop_parser.add_argument('--state-dir', help="State directory of the server to stop (server.state_dir)")
+    stop_parser.add_argument('--config', default=argparse.SUPPRESS,
+                             help="Configuration file of the server to stop (for its server.state_dir)")
     stop_parser.set_defaults(func=stop_server)
     
     # User management command
@@ -1193,6 +1215,9 @@ def main(argv: List[str] = None) -> int:
     # Store command: what in a store's layout makes AnnZarro slow (annzarro/store_command.py)
     from annzarro.store_command import add_parser as add_store_parser
     add_store_parser(subparsers)
+
+    from annzarro.paths_command import add_parser as add_paths_parser
+    add_paths_parser(subparsers, overrides)
 
     # Serve command (production server, gunicorn)
     from annzarro.server.serve import add_parser as add_serve_parser

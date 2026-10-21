@@ -8,10 +8,10 @@ only needs the keys it changes.
 | 1 | Built-in defaults | `base.yaml`, then `production.yaml` (or `development.yaml` with `--development`), inside the installed package |
 | 2 | System file | `/etc/annzarro/config.yaml` |
 | 3 | User file | `~/.config/annzarro/config.yaml` (`$XDG_CONFIG_HOME` honoured) |
-| 4 | Project file | `./config.yaml` in the directory the command runs from |
+| 4 | Project file (deprecated) | `./config.yaml` in the directory the command runs from. Still read, with a warning naming the file; it stops working in 0.8. Name the file with `--config` or `ANNZARRO_CONFIG` instead. |
 | 5 | Named file | `--config FILE`, or else the file named by `ANNZARRO_CONFIG` (read by every `annzarro` command and by the gunicorn entry point); must exist |
 | 6 | Environment | `ANNZARRO_<SECTION>_<KEY>` |
-| 7 | Command line | `--host`, `--port`, `--data-dir`, `--auth-disabled` |
+| 7 | Command line | `--host`, `--port`, `--data-dir`, `--state-dir`, `--auth-disabled` |
 
 Files may be YAML (`.yaml`, `.yml`) or JSON. After merging, a few values are derived (default
 paths, login on a network address) and the result is validated: `server.host`, `server.port`
@@ -49,6 +49,9 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `workers` * | 2 x CPUs + 1, at most 4 | gunicorn worker processes, read by `annzarro.server.gunicorn_config`. Each has its own cache. |
 | `threads` * | 4 per gunicorn worker; 32 for `annzarro start` | Threads per gunicorn worker. The bundled configuration uses the `gthread` worker class, so a slow request does not hold a whole worker; the server answers `workers x threads` requests at once. `annzarro start` serves with 32 request threads unless this is set (env `ANNZARRO_SERVER_THREADS`); ten browser tabs of four panels each on a 1-million-cell store ran without error or delay from 16 to 64. |
 | `data_dir` | `~/annzarro-data` | Data directory: the datasets offered in the dataset browser (stores at its top level and in its `datasets/` subdirectory), and `sessions/` for panel sets. A configured relative path is taken from the working directory; `~` is expanded. |
+| `state_dir` | `~/.annzarro` | Where annzarro writes: the log, PID file, default users file and login key, admin state, `freshness/` and `fingerprints/`. Also `--state-dir` and `ANNZARRO_SERVER_STATE_DIR`; `ANNZARRO_HOME` is the older name for the same thing (both set to different folders stops the server at startup). It must not lie inside a data root (`data_dir`, `allowed_dirs`, `admin_data_roots`); the server refuses to start otherwise and says which key. Give each server on a host its own. `annzarro paths` prints the result. |
+| `cache_dir` | `<state_dir>/cache` | Disposable caches. Safe to delete and to leave out of backups. Same data-root rule as `state_dir`; env `ANNZARRO_SERVER_CACHE_DIR`. |
+| `panel_sets_dir` | `<state_dir>/panel-sets` | Reserved for the panel sets directory; panel sets are still saved in `<data_dir>/sessions` and this key does not move them yet. Same data-root rule; env `ANNZARRO_SERVER_PANEL_SETS_DIR`. |
 | `allowed_dirs` * | none | Extra directory trees a shared server may open, e.g. targets of symlinks in `data_dir`. Every store under them can be opened by path. |
 | `arbitrary_paths` | `admins` | Who may open a dataset path outside `data_dir` and `allowed_dirs` (after symlinks and `..` are resolved). `admins`: admins of a shared server with login, so an admin login can read any file the server process can (each such open is logged with the admin's name), and the one user of a local server (loopback, no login: a laptop, the desktop app); other users never. `local-only`: only that local user; on a shared server nobody, admins included. `none`: nobody, local servers included. Any other value stops the server at startup. Env `ANNZARRO_SERVER_ARBITRARY_PATHS`. |
 | `hosted` * | unset | `true` forces shared-server behaviour (path confinement, remote policy, compression, exposure warning) whatever the host; `false` forces local behaviour. Unset: decided by login and host. The gunicorn entry point sets `true` unless you set `false`. |

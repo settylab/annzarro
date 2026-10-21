@@ -72,6 +72,19 @@ server:
       description: Data directory
       default: "~/annzarro-data"
       security: internal  # an absolute server path; the client does not need it
+    state_dir:
+      type: string
+      description: "Directory annzarro writes to: users, admin state, logs, caches, PID file. Never inside a data root"
+      default: "~/.annzarro"
+      security: internal
+    panel_sets_dir:
+      type: string
+      description: "Panel sets directory (default <state_dir>/panel-sets); reserved, panel sets still use <data_dir>/sessions"
+      security: internal
+    cache_dir:
+      type: string
+      description: "Disposable caches (default <state_dir>/cache); safe to delete"
+      security: internal
     allowed_dirs:
       type: array
       items:
