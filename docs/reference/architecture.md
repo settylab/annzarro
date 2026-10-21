@@ -120,6 +120,6 @@ server, so a dataset of millions of cells never sends its full name list ({doc}`
 ## What AnnZarro does not do
 
 It never writes to a dataset and never runs user code. The only files it writes are panel sets
-in `<data_dir>/sessions/`, server logs, and (with login) the user file. That is what lets a lab
+in `<state_dir>/panel-sets/`, server logs, and (with login) the user file. That is what lets a lab
 host datasets for many users without granting write or compute access
 ({doc}`../deployment/index`).

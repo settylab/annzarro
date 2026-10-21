@@ -17,6 +17,7 @@ from annzarro.server import access, permissions
 from annzarro.server.auth import AuthManager
 from annzarro.server.core import create_app
 from annzarro.tests.server.rich_store import make_rich_store
+from annzarro.server import panel_sets
 
 PASSWORD = "pw-for-tests"
 USERS = {"alice": True, "bob": False, "carol": False}
@@ -94,8 +95,8 @@ def test_a_hidden_set_is_the_reply_of_a_set_that_does_not_exist(sets):
     for method, url, query in (("get", "/api/v1/sessions/load", {"name": "on-out"}),
                                ("get", "/api/v1/sessions/export", {"name": "on-out"}),
                                ("delete", "/api/v1/sessions/delete", {"name": "on-out"}),
-                               ("get", "/api/v1/sessions/load", {"file": f"{sets.data}/sessions/on-out.json"}),
-                               ("get", "/api/v1/sessions/export", {"file": f"{sets.data}/sessions/on-out.json"})):
+                               ("get", "/api/v1/sessions/load", {"file": f"{panel_sets.directory(sets.config)}/on-out.json"}),
+                               ("get", "/api/v1/sessions/export", {"file": f"{panel_sets.directory(sets.config)}/on-out.json"})):
         hidden = getattr(bob, method)(url, query_string=query)
         absent_query = {k: v.replace("on-out", "no-such-set") for k, v in query.items()}
         absent = getattr(bob, method)(url, query_string=absent_query)

@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 from flask import current_app, jsonify, request
 
-from .. import health, permissions, session_quota, session_store
+from .. import health, panel_sets, permissions, session_quota, session_store
 from ..auth import LastAdminError
 from . import audit
 from .guard import require_admin
@@ -65,7 +65,7 @@ def _iso(epoch):
 
 
 def _sessions_dir():
-    return os.path.join(current_app.config.get("data_dir") or "", "sessions")
+    return panel_sets.directory(current_app.config)
 
 
 def _locks(user, now):

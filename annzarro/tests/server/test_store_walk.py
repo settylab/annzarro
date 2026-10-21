@@ -25,6 +25,7 @@ def world(tmp_path):
     _make(data / "a" / "mid.zarr")
     _make(data / ".hidden" / "no.zarr")
     _make(data / "sessions" / "no.zarr")
+    (data / "sessions" / "set.json").write_text("{}")       # panel sets still live here: the folder is skipped
     _make(data / "a" / "sessions" / "yes.zarr")
     app = create_app({"TESTING": True, "host": "127.0.0.1", "data_dir": str(data), "log_file": str(tmp_path / "t.log"),
                       "user_file": str(tmp_path / "users.json"), "secret_key": "test-only-secret"})
@@ -119,3 +120,9 @@ def test_a_restricted_user_gets_granted_stores_then_the_walk_of_granted_folders_
     assert got[0] == "top.zarr"
     assert sorted(got[1:]) == ["deep.zarr", "mid.zarr", "yes.zarr"]      # the link out of the grant is not listed
     assert "secret.zarr" not in got and "leak.zarr" not in got
+
+
+def test_an_emptied_top_sessions_folder_is_walked_like_any_folder(world):
+    config, data = world
+    (data / "sessions" / "set.json").unlink()
+    assert "sessions/no.zarr" in _names(store_walk.iter_stores(config))

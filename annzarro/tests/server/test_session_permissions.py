@@ -14,6 +14,7 @@ import pytest
 from annzarro.server.auth import AuthManager
 from annzarro.server.core import create_app
 from annzarro.server.permissions import is_exposed
+from annzarro.server import panel_sets
 
 API = "/api/v1/sessions"
 PASSWORD = "pw-for-tests"
@@ -48,7 +49,7 @@ def open_app(tmp_path):
 
 
 def _sessions_dir(app):
-    return os.path.join(app.config["data_dir"], "sessions")
+    return panel_sets.directory(app.config)
 
 
 def _client(app, username=None):

@@ -2,8 +2,8 @@
 
 A **panel set** is a named, stored view: the dataset, the focused cell and gene, the cell subset,
 the split layout with its sizes, and every panel with its settings, the same things a
-{doc}`share link <share-links>` carries. Panel sets are stored **on the server**, in the
-`sessions` folder of its data directory, so every user of the same server sees the same list.
+{doc}`share link <share-links>` carries. Panel sets are stored **on the server**, in its
+panel-sets folder ({ref}`panel-sets-location`), so every user of the same server sees the same list.
 They are the way to keep views for later and to hand them to colleagues on a shared server; a
 share link sends one view as a URL instead. **Load** opens a panel set exactly as its share link
 would: its dataset, subset and focus, and the panels that were open when it was saved, in their
@@ -189,7 +189,7 @@ case ({doc}`../deployment/hosting-checklist`).
 
 | | Panel set | Share link | Autosave |
 |---|---|---|---|
-| Stored | on the server, `<data_dir>/sessions/*.json` | in the URL fragment, nowhere on the server | in your browser's local storage |
+| Stored | on the server, `<state_dir>/panel-sets/*.json` | in the URL fragment, nowhere on the server | in your browser's local storage |
 | Visible to | every user of the server | whoever has the URL | you, in this browser |
 | Panels and settings | yes | yes | yes |
 | Split layout and sizes | yes, opened by **Load** | yes | yes |
@@ -241,7 +241,7 @@ from a new visit by the tab's own history entry, which holds a random id of the 
 
 ```{admonition} What happens on the server
 :class: note
-Saving writes one JSON file to `<data_dir>/sessions/`; the file holds the panel settings, not
+Saving writes one JSON file to the panel-sets folder; the file holds the panel settings, not
 data. Loading reads it back. Each panel then requests its vectors like any new panel. The
 server never writes to the dataset itself.
 ```
@@ -273,3 +273,18 @@ panel-set-like thing it resets is the autosaved current layout, which lives in t
 Not affected, whichever way you answer: panel sets saved on the server, and your login. The login
 is a server cookie; cookies are left alone, and AnnZarro keeps no sign-in or CSRF state in the
 browser's storage. Other sites' data is never touched; the clear covers this address only.
+
+(panel-sets-location)=
+## Where the server keeps panel sets
+
+Panel sets are JSON files in `<state_dir>/panel-sets/` (`~/.annzarro/panel-sets/` unless the
+server sets `server.state_dir`), created on the first save and readable only by the server
+account. `server.panel_sets_dir` names another folder. Nothing is written into the data
+directory, so it can be read-only.
+
+Panel sets saved by an older release sit in `<data_dir>/sessions/`. A server that finds panel sets
+there, with no `server.panel_sets_dir` set and nothing yet in the new folder, keeps using that
+folder: it says so in its log, on the admin **Health** page and in `annzarro paths`. Nothing moves
+by itself. To move them, copy them with `annzarro panel-sets migrate` ({doc}`../reference/cli`),
+which verifies every copy, overwrites nothing and deletes nothing; afterwards the server uses the
+new folder, and you can delete the old `sessions` folder yourself.

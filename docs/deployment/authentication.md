@@ -1,7 +1,7 @@
 # Login, users and permissions
 
 AnnZarro never writes datasets. The only thing users create on a server is **panel sets**,
-saved as JSON in `<data_dir>/sessions/` and listed for every user of that server. Login decides
+saved as JSON in `<state_dir>/panel-sets/` and listed for every user of that server. Login decides
 who can reach the server at all and who may change which panel set.
 
 ## When login is on

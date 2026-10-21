@@ -379,6 +379,8 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         app.config.update(DEFAULT_CONFIG)
     if not app.config.get("data_dir"):
         app.config["data_dir"] = default_data_dir()
+    from annzarro.server import panel_sets
+    panel_sets.log_startup(app.config)
     
     # A limit that is not a number would fail at its first request, not here
     from annzarro.server.limits import validate_limits

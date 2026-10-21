@@ -23,7 +23,7 @@ from ...core import name_index
 from ...core import read_guard
 from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core import subset as cell_subset
-from .. import access, atomic_store, confinement, permissions, session_quota, session_store
+from .. import access, atomic_store, confinement, panel_sets, permissions, session_quota, session_store
 from .. import http_cache
 from . import dataset_folders, dataset_lookup
 from ...core.array_response import wants_binary, wants_codes
@@ -2143,7 +2143,7 @@ def register_data_routes(app, api_version):
                 search = dataset_folders.granted_sources(restricted)
             else:
                 search = [(data_dir, entry) for entry in _listdir(data_dir)
-                          if entry not in ("datasets", "sessions")]
+                          if entry != "datasets" and entry not in panel_sets.top_level_skip(app.config)]
                 if os.path.isdir(datasets_dir):
                     search += [(datasets_dir, entry) for entry in _listdir(datasets_dir)]
             
@@ -2266,14 +2266,12 @@ def register_data_routes(app, api_version):
 
     def _get_sessions_dir():
         """
-        Get the sessions directory path and ensure it exists.
+        Get the panel-sets directory path (panel_sets.py decides where) and ensure it exists.
         
         Returns:
             Path to the sessions directory.
         """
-        sessions_dir = os.path.join(app.config.get("data_dir"), "sessions")
-        os.makedirs(sessions_dir, exist_ok=True)
-        return sessions_dir
+        return panel_sets.ensure(app.config)
         
     def _is_safe_session_path(file_path, sessions_dir=None):
         """

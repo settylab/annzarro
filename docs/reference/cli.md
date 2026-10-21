@@ -108,6 +108,22 @@ the same flags as `annzarro start`, so `annzarro paths --config site.yaml` shows
 would use. Exit status 1, with the reason printed, when a location would stop the server from
 starting, for example a state directory inside a data directory.
 
+## `annzarro panel-sets migrate`
+
+```text
+annzarro panel-sets migrate [--dry-run] [--config CONFIG] [--data-dir DIR] [--state-dir DIR]
+                            [--env production|development]
+```
+
+Copy the panel sets of an older install from `<data_dir>/sessions/` to `server.panel_sets_dir`
+(by default `<state_dir>/panel-sets/`). Each copy is compared byte for byte with its original. The
+command writes nothing into the data directory, never overwrites a different file already in the
+new folder (it reports a conflict and exits 1), never deletes anything and can be run again: files
+already copied are reported as identical. `--dry-run` lists what would be copied and writes
+nothing. Once the new folder holds panel sets the server uses it; the command then prints that you
+can delete the old `sessions` folder. Run it with the same `--config` the server uses. See
+{ref}`panel-sets-location`.
+
 ## `annzarro user`
 
 Manage the users file named by `auth.user_file` ({doc}`../deployment/authentication`). The

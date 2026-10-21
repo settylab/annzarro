@@ -79,7 +79,7 @@ server:
       security: internal
     panel_sets_dir:
       type: string
-      description: "Panel sets directory (default <state_dir>/panel-sets); reserved, panel sets still use <data_dir>/sessions"
+      description: "Panel sets directory (default <state_dir>/panel-sets). While panel sets still sit in <data_dir>/sessions and this key is unset, that folder is used until `annzarro panel-sets migrate` copies them"
       security: internal
     cache_dir:
       type: string

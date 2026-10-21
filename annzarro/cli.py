@@ -1219,6 +1219,9 @@ def main(argv: List[str] = None) -> int:
     from annzarro.paths_command import add_parser as add_paths_parser
     add_paths_parser(subparsers, overrides)
 
+    from annzarro.panel_sets_command import add_parser as add_panel_sets_parser
+    add_panel_sets_parser(subparsers, overrides)
+
     # Serve command (production server, gunicorn)
     from annzarro.server.serve import add_parser as add_serve_parser
     add_serve_parser(subparsers)

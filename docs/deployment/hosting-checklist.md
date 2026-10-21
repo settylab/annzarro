@@ -37,7 +37,7 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
   above. Keep the admin list short, or lock admins in too with `server.arbitrary_paths: none`.
 - **Threaded workers.** The bundled gunicorn configuration, which `annzarro serve` runs, uses
   `gthread` (`server.threads`, default 4); keep it if you start gunicorn with your own options.
-- **Stores read-only for the service account;** only `<data_dir>/sessions/` writable.
+- **Stores read-only for the service account;** nothing under the data directory is written; panel sets go to `<state_dir>/panel-sets/`. If `annzarro paths` shows panel sets in `<data_dir>/sessions` (legacy), run `annzarro panel-sets migrate` first.
 - **Remote stores.** Either `remote_stores: deny`, or a `remote_allowlist` of the exact
   bucket or URL prefixes you serve. Never `allow` without an allowlist on a shared server (the
   server logs a warning if you do). Admins can change the state in the browser under Admin > Data
