@@ -169,10 +169,13 @@ def _private_state_dir(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
-def _forget_loaded_state_dir():
+def _forget_loaded_state_dir(monkeypatch, tmp_path_factory):
     """Loading configuration fixes the state directory for the process (paths.set_state_dir);
-    a later test that sets ANNZARRO_HOME must see it take effect, not an earlier test's value."""
+    a later test that sets ANNZARRO_HOME must see it take effect, not an earlier test's value.
+    Each test also gets its own state directory: panel sets are kept there (server/panel_sets.py),
+    and one test's must not be another's."""
     from annzarro.utils import paths
+    monkeypatch.setenv("ANNZARRO_HOME", str(tmp_path_factory.mktemp("annzarro_home")))
     paths.set_state_dir(None)
     yield
     paths.set_state_dir(None)

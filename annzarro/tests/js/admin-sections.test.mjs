@@ -9,7 +9,7 @@ import { AdminError, createAdminApi } from "../../../static/js/admin/admin-api.j
 import { createReauthModal } from "../../../static/js/admin/reauth-modal.js";
 import { SECTIONS, createRouter, sectionFromHash, showToast } from "../../../static/js/admin/admin-main.js";
 import { chainText, detailText, recordRow } from "../../../static/js/admin/audit.js";
-import { cacheText, readersText, refusalText, sumRefusals } from "../../../static/js/admin/health.js";
+import { cacheText, panelSetsLine, readersText, refusalText, sumRefusals } from "../../../static/js/admin/health.js";
 import { deleteMessage, reassignMessage } from "../../../static/js/admin/panel-sets.js";
 
 const F = JSON.parse(readFileSync(new URL("./admin-fixtures.json", import.meta.url), "utf8"));
@@ -197,6 +197,17 @@ test("health: workers, a stale badge, refusals summed over workers", async () =>
   assert.equal(refusalText({ a: 0 }), "-");
   const bar = find(view, (n) => n.classes().includes("progress-bar"));
   assert.match(bar.getAttribute("style"), /width: 40%/);
+});
+
+test("health: the panel-sets location, and a legacy one says so with the migrate hint", async () => {
+  const { nav, view } = page();
+  const router = makeRouter({ nav, view, api: mockApi().api });
+  await router.show("health");
+  const line = find(view, (n) => n.id === "admin-health-panel-sets");
+  assert.match(line.textContent, /Panel sets: .*\/srv\/annzarro\/data\/sessions.*legacy.*annzarro panel-sets migrate/);
+  assert.equal(panelSetsLine(null), null);
+  const fresh = panelSetsLine({ path: "/var/lib/annzarro/panel-sets", legacy: false, note: null });
+  assert.match(fresh.textContent, /^Panel sets: \/var\/lib\/annzarro\/panel-sets$/);
 });
 
 test("health: cache text names the name indices when they hold memory, readers are ranked over workers", () => {

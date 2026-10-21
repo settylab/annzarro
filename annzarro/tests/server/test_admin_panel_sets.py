@@ -12,6 +12,7 @@ import pytest
 from annzarro.server import session_quota
 from annzarro.server.admin import audit
 from annzarro.tests.server.admin_helpers import ADMIN, USER, login, make_app, unsafe_headers
+from annzarro.server import panel_sets
 
 BASE = "/api/v1/admin/panel-sets"
 SESSIONS = "/api/v1/sessions"
@@ -29,7 +30,7 @@ def _save(client, name, **extra):
 
 
 def _read(app, name):
-    with open(os.path.join(app.config["data_dir"], "sessions", f"{name}.json")) as f:
+    with open(os.path.join(panel_sets.directory(app.config), f"{name}.json")) as f:
         return json.load(f)
 
 
@@ -50,7 +51,7 @@ def _seed(app, per_user=None):
 def test_access_matrix(app):
     anon, alice, root = app.test_client(), login(app, USER), login(app, ADMIN)
     _seed(app)
-    before = sorted(os.listdir(os.path.join(app.config["data_dir"], "sessions")))
+    before = sorted(os.listdir(panel_sets.directory(app.config)))
     log = len(audit.read(app.admin_dir, limit=500))
     assert anon.get(BASE).status_code == 401
     assert alice.get(BASE).status_code == 403
@@ -59,7 +60,7 @@ def test_access_matrix(app):
         assert anon.open(path, method=method, json=body).status_code == 401, path
         assert _call(alice, method, path, body).status_code == 403, path
     # a user's refused attempt changed nothing (the refusal itself may be audited)
-    assert sorted(os.listdir(os.path.join(app.config["data_dir"], "sessions"))) == before
+    assert sorted(os.listdir(panel_sets.directory(app.config))) == before
     assert _read(app, "a0")["owner"] == USER
     assert len(audit.read(app.admin_dir, limit=500)) >= log
 
@@ -94,7 +95,7 @@ def test_usage_is_what_the_quota_module_counts(tmp_path):
     assert usage[USER]["count"] == 3 and usage[USER]["limit"] == 3
     assert refused.get_json()["used"] == usage[USER]["count"]
     assert refused.get_json()["limit"] == usage[USER]["limit"]
-    sessions = os.path.join(app.config["data_dir"], "sessions")
+    sessions = panel_sets.directory(app.config)
     on_disk = sum(os.path.getsize(os.path.join(sessions, n)) for n in os.listdir(sessions) if n.endswith(".json"))
     held = session_quota.entries(sessions)
     assert usage[USER]["bytes"] + usage[ADMIN]["bytes"] == on_disk == sum(e.size for e in held)
@@ -156,7 +157,7 @@ def test_reassign_refusals_move_nothing(app):
 
 def test_reassign_does_not_rewrite_an_unreadable_file(app):
     _, root = _seed(app)
-    path = os.path.join(app.config["data_dir"], "sessions", "broken.json")
+    path = os.path.join(panel_sets.directory(app.config), "broken.json")
     with open(path, "w") as f:
         f.write("{not json")
     response = _call(root, "POST", BASE + "/reassign", {"names": ["a0", "broken"], "to_owner": ADMIN})
@@ -180,7 +181,7 @@ def test_delete(app):
     alice, root = _seed(app)
     response = _call(root, "DELETE", BASE, {"names": ["a0", "ghost", "r0"]})
     assert response.get_json() == {"deleted": 2, "missing": ["ghost"]}
-    sessions = os.path.join(app.config["data_dir"], "sessions")
+    sessions = panel_sets.directory(app.config)
     assert sorted(n for n in os.listdir(sessions) if n.endswith(".json")) == ["a1.json", "a2.json"]
     record = audit.read(app.admin_dir, limit=1)[0]
     assert record["action"] == "panel_sets.delete" and record["detail"]["count"] == 2
@@ -195,7 +196,7 @@ def test_a_name_cannot_leave_the_directory(app, tmp_path):
     outside = os.path.join(app.config["data_dir"], "outside.json")
     with open(outside, "w") as f:
         f.write("{}")
-    sessions = os.path.join(app.config["data_dir"], "sessions")
+    sessions = panel_sets.directory(app.config)
     os.symlink(outside, os.path.join(sessions, "link.json"))
     response = _call(root, "DELETE", BASE, {"names": ["../outside", "link"]})
     assert response.get_json() == {"deleted": 0, "missing": ["../outside", "link"]}
@@ -205,7 +206,7 @@ def test_a_name_cannot_leave_the_directory(app, tmp_path):
 def test_lock_timeout_answers_503(app):
     from annzarro.server import atomic_store, session_store
     _, root = _seed(app)
-    sessions = os.path.join(app.config["data_dir"], "sessions")
+    sessions = panel_sets.directory(app.config)
     with session_store.locked(sessions):
         # the same thread cannot take the lock twice, so hold it from another process
         pass
@@ -256,7 +257,7 @@ def _saver(tmp_path, results, start):
     not have moved back to someone it was already handed on from."""
     app = make_app(tmp_path, admin_rate_per_minute=100000)
     root = login(app, ADMIN)
-    path = os.path.join(app.config["data_dir"], "sessions", "shared.json")
+    path = os.path.join(panel_sets.directory(app.config), "shared.json")
     start.wait(30)
     codes, seen, went_back = [], 0, []
     for i in range(ROUNDS):
@@ -275,7 +276,7 @@ def _reassigner(tmp_path, results, start):
     must belong to that user or a later one."""
     app = make_app(tmp_path, admin_rate_per_minute=100000)
     root = login(app, ADMIN)
-    path = os.path.join(app.config["data_dir"], "sessions", "shared.json")
+    path = os.path.join(panel_sets.directory(app.config), "shared.json")
     start.wait(30)
     codes, went_back = [], []
     for k in range(HANDOVERS):
@@ -313,13 +314,13 @@ def test_concurrent_save_and_reassign_across_processes_lose_nothing(tmp_path):
     final = _read(app, "shared")
     assert final["n"] == ROUNDS - 1                      # the last save is the one on disk
     assert final["owner"] == f"u{HANDOVERS - 1}"         # and the last handover too
-    assert [f for f in os.listdir(os.path.join(app.config["data_dir"], "sessions")) if f.endswith(".tmp")] == []
+    assert [f for f in os.listdir(panel_sets.directory(app.config)) if f.endswith(".tmp")] == []
 
 
 def test_reassign_owner_takes_every_set_of_one_owner_under_the_shared_lock(app):
     from annzarro.server import session_store
     _seed(app)
-    sessions = os.path.join(app.config["data_dir"], "sessions")
+    sessions = panel_sets.directory(app.config)
     with app.test_request_context():
         assert session_store.reassign_owner(sessions, USER, ADMIN) == 3
         assert session_store.reassign_owner(sessions, USER, ADMIN) == 0
@@ -329,14 +330,14 @@ def test_reassign_owner_takes_every_set_of_one_owner_under_the_shared_lock(app):
 
 def test_delete_of_a_directory_named_like_a_set_is_missing_not_a_500(app):
     _, root = _seed(app)
-    os.mkdir(os.path.join(app.config["data_dir"], "sessions", "dir.json"))
+    os.mkdir(os.path.join(panel_sets.directory(app.config), "dir.json"))
     response = _call(root, "DELETE", BASE, {"names": ["dir"]})
     assert response.status_code == 200 and response.get_json() == {"deleted": 0, "missing": ["dir"]}
 
 
 def test_rename_is_atomic_and_never_writes_through_a_link(app):
     alice, _ = _seed(app)
-    sessions = os.path.join(app.config["data_dir"], "sessions")
+    sessions = panel_sets.directory(app.config)
     os.symlink(os.path.join(sessions, "a2.json"), os.path.join(sessions, "trap.json"))
     before = _read(app, "a2")
     refused = alice.post(f"{SESSIONS}/rename", json={"old_name": "a0", "new_name": "trap"})
@@ -351,7 +352,7 @@ def test_sets_keep_the_mode_open_w_gave(app):
     """New sets get 0666 & ~umask; an existing set keeps its mode through save, reassign and rename."""
     from annzarro.server import session_store
     alice, root = _seed(app)
-    sessions = os.path.join(app.config["data_dir"], "sessions")
+    sessions = panel_sets.directory(app.config)
     mode = lambda name: os.stat(os.path.join(sessions, f"{name}.json")).st_mode & 0o777   # noqa: E731
     assert mode("a0") == 0o666 & ~session_store._UMASK
     os.chmod(os.path.join(sessions, "a1.json"), 0o640)

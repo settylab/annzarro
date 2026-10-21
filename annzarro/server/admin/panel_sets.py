@@ -10,7 +10,7 @@ import os
 
 from flask import current_app, jsonify, request
 
-from .. import session_quota, session_store
+from .. import panel_sets, session_quota, session_store
 from . import audit
 from .guard import require_admin
 
@@ -22,10 +22,9 @@ AUDIT_NAMES = 50
 
 
 def _sessions_dir(create=False):
-    path = os.path.join(current_app.config.get("data_dir"), "sessions")
     if create:
-        os.makedirs(path, exist_ok=True)
-    return path
+        return panel_sets.ensure(current_app.config)
+    return panel_sets.directory(current_app.config)
 
 
 def _bad(message, reason="bad_request", status=400, **extra):
