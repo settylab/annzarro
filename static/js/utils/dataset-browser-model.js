@@ -10,7 +10,7 @@
  * Pure functions, so they run under `node --test`.
  */
 
-import { compileQuery, searchParts } from './dataset-picker.js';
+import { compileQuery, searchParts, splitByRanges } from './dataset-picker.js';
 
 // ---- what a row says ---------------------------------------------------------------------
 
@@ -384,4 +384,195 @@ export function countSummary({ stores, folders, query, truncated = false, sorted
     if (truncated) text += `; the search stopped at its limit`;
     if (sortedAmong) text += `; sorted among ${sortedAmong} loaded`;
     return text;
+}
+
+// ---- searching the descriptions ------------------------------------------------------------
+//
+// The server's text search (`GET /datasets/text-search`) answers `{results, partial, index}`; a result is a
+// listing entry plus `title`, `score`, `matched` and `snippet: {field, text, highlights}`, with the highlights
+// as `[start, end]` offsets in UTF-16 code units, which are the indices of a JavaScript string.
+
+export const TEXT_SECTION = 'Found in titles, attribution and READMEs';
+
+/** How often the index status is read while a crawl runs. */
+export const POLL_MS = 750;
+
+/**
+ * A snippet as pieces to set with `textContent`: `[{text, hit}]`. The offsets are the server's; any that
+ * lie outside the text, overlap, or cut a surrogate pair are repaired or dropped, so a bad answer cannot
+ * break the line.
+ */
+export function snippetParts(snippet) {
+    const text = snippet && typeof snippet.text === 'string' ? snippet.text : '';
+    if (!text) return [];
+    const ranges = [];
+    const whole = i => i > 0 && i < text.length && /[\uDC00-\uDFFF]/.test(text[i]) && /[\uD800-\uDBFF]/.test(text[i - 1]);
+    for (const pair of (snippet && Array.isArray(snippet.highlights) ? snippet.highlights : [])) {
+        if (!Array.isArray(pair)) continue;
+        let [from, to] = pair;
+        if (!Number.isInteger(from) || !Number.isInteger(to)) continue;
+        from = Math.max(0, from);
+        to = Math.min(text.length, to);
+        if (whole(from)) from--;
+        if (whole(to)) to++;
+        if (to > from) ranges.push([from, to]);
+    }
+    ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const merged = [];
+    for (const r of ranges) {
+        const last = merged[merged.length - 1];
+        if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]); else merged.push([r[0], r[1]]);
+    }
+    return splitByRanges(text, merged);
+}
+
+/** What identifies a hit: its path, else (a path the server did not send) its relative path. */
+const hitKey = hit => hit.path || hit.rel_path || '';
+
+/**
+ * The text hits to list under the name matches: listing-entry rows marked `textHit`, without the stores the
+ * name matches already show (a store found both ways appears once, among the names).
+ * @param {Array} nameRows - the rows the name search gave
+ * @param {Array} hits - the server's `results`
+ */
+export function textRows(nameRows, hits) {
+    const have = new Set(nameRows.map(r => r.path));
+    const seen = new Set();
+    const out = [];
+    for (const hit of Array.isArray(hits) ? hits : []) {
+        const key = hitKey(hit);
+        if (!key || have.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        out.push({ ...hit, path: hit.path || key, kind: 'store', textHit: true, matched: Array.isArray(hit.matched) ? hit.matched : [] });
+    }
+    return out;
+}
+
+/** The query as the terms the server searches for: words and "quoted phrases". */
+export function queryTerms(query) {
+    const terms = [];
+    for (const m of String(query || '').matchAll(/"([^"]*)"|(\S+)/g)) {
+        const term = (m[1] !== undefined ? m[1] : m[2]).trim();
+        if (term) terms.push(term);
+    }
+    return terms;
+}
+
+/** Fold a text for matching: no case, no accents (NFKD), as the server compares. */
+function fold(text) {
+    return text.normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
+}
+
+/**
+ * Where the terms occur in `text`: merged `[start, end]` offsets into `text` (UTF-16), matched case- and
+ * accent-insensitively. Used to mark the first hit in a README the server already found.
+ */
+export function termRanges(text, terms) {
+    const source = String(text || '');
+    const wanted = (terms || []).map(t => fold(String(t))).filter(Boolean);
+    if (!source || !wanted.length) return [];
+    let folded = '';
+    const back = [];           // folded index -> index of its character in the source
+    for (let i = 0; i < source.length;) {
+        const cp = source.codePointAt(i);
+        const width = cp > 0xFFFF ? 2 : 1;
+        const piece = fold(source.slice(i, i + width));
+        for (let k = 0; k < piece.length; k++) back.push(i);
+        folded += piece;
+        i += width;
+    }
+    const found = [];
+    for (const term of wanted) {
+        for (let at = folded.indexOf(term); at !== -1; at = folded.indexOf(term, at + term.length)) {
+            const start = back[at];
+            const lastChar = back[at + term.length - 1];
+            const end = lastChar + (source.codePointAt(lastChar) > 0xFFFF ? 2 : 1);
+            found.push([start, end]);
+        }
+    }
+    found.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const merged = [];
+    for (const r of found) {
+        const last = merged[merged.length - 1];
+        if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]); else merged.push(r);
+    }
+    return merged;
+}
+
+/** "just now", "3 min ago", "2 h ago", "4 days ago" for a time in seconds since the epoch ('' when not known). */
+export function agoLabel(seconds, now = Date.now() / 1000) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '';
+    const s = Math.max(0, now - seconds);
+    if (s < 45) return 'just now';
+    if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
+    if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+    const days = Math.round(s / 86400);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * The one line under the search field about the description index, from the `index` object of an answer.
+ * `percent` is set while a crawl runs. The counts are only there when the server sent them (an unrestricted user).
+ * @returns {{text: string, percent: number|null}|null} null when there is nothing to say
+ */
+export function indexLine(index, now = Date.now() / 1000) {
+    if (!index) return null;
+    if (index.state === 'running') {
+        const f = index.progress && Number.isFinite(index.progress.fraction) ? index.progress.fraction : null;
+        const percent = f === null ? null : Math.max(0, Math.min(100, Math.round(f * 100)));
+        return { text: `Indexing descriptions…${percent === null ? '' : ` ${percent}%`}`, percent };
+    }
+    if (index.state === 'failed') return { text: 'Descriptions could not be indexed.', percent: null };
+    if (index.state === 'idle' && !index.built_at) return null;
+    const ago = agoLabel(index.built_at, now);
+    const bits = [];
+    bits.push(Number.isFinite(index.stores) ? `${countLabel(index.stores)} datasets indexed${ago ? ` ${ago}` : ''}` : (ago ? `Indexed ${ago}` : 'Indexed'));
+    if (index.stale) bits.push('updating');
+    if (index.capped || index.partial) bits.push('some datasets are not searched');
+    return { text: bits.join(', '), percent: null };
+}
+
+/**
+ * Reads the index status every `interval` ms while a crawl runs and tells when it has finished.
+ * `fetchStatus()` resolves to the status object (or rejects); `onStatus(status)` gets each reading;
+ * `onDone(status)` gets the first reading that is not `running`. Stops by itself after `maxFailures`
+ * readings in a row that failed. The timers are injectable for tests.
+ */
+export function createIndexPoller({ fetchStatus, onStatus = () => {}, onDone = () => {}, interval = POLL_MS, maxFailures = 5, setTimer = setTimeout, clearTimer = clearTimeout }) {
+    let timer = null;
+    let active = false;
+    let generation = 0;
+    let failures = 0;
+    const tick = async (mine) => {
+        timer = null;
+        let status = null;
+        let failed = false;
+        try { status = await fetchStatus(); } catch { failed = true; }
+        if (!active || mine !== generation) return;
+        if (failed) {
+            failures++;
+            if (failures >= maxFailures) { active = false; return; }
+        } else {
+            failures = 0;
+            onStatus(status);
+            if (!status || status.state !== 'running') { active = false; onDone(status); return; }
+        }
+        timer = setTimer(() => tick(mine), interval);
+    };
+    return {
+        start() {
+            if (active) return;
+            active = true;
+            failures = 0;
+            const mine = ++generation;
+            timer = setTimer(() => tick(mine), interval);
+        },
+        stop() {
+            active = false;
+            generation++;
+            if (timer !== null) clearTimer(timer);
+            timer = null;
+        },
+        get running() { return active; }
+    };
 }

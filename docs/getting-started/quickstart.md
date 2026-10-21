@@ -26,7 +26,7 @@ unzipping. To use a store you already have, link it into the data directory inst
 
 The dataset browser lists `.zarr` directories and `.h5ad` files at the top level of the data directory
 and in its `datasets` subdirectory, if there is one. Panel sets you save are written to
-`~/annzarro-data/sessions/`.
+`~/.annzarro/panel-sets/`, not to the data directory.
 
 ## 2. Start the server
 

@@ -78,6 +78,8 @@ def test_the_health_section(served, browser):
     page.goto(base + "/admin#health")
     page.wait_for_selector("#admin-health-workers")
     assert page.inner_text("#admin-health-workers").startswith("1 ")
+    line = page.inner_text("#admin-health-panel-sets")
+    assert line.startswith("Panel sets: ") and "panel-sets" in line and "legacy" not in line
     assert str(os.getpid()) in page.inner_text("table")
     assert "admin_only 1" in page.inner_text("main, #admin-main")
     assert "7.6 MB" in page.inner_text("table")                      # the 1000 x 1000 float64 matrix

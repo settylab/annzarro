@@ -440,6 +440,7 @@ STORAGE_KEYS = {
     "annzarro.recents:": "static/js/utils/dataset-recents.js",
     "annzarro.recentDatasets:": "static/js/utils/dataset-recents.js",
     "annzarro.pins:": "static/js/utils/dataset-pins.js",
+    "annzarro.listings:": "static/js/utils/dataset-listing-cache.js",
     "annzarro.subsetSize:": "static/js/utils/subset-carry.js",
     "annzarro_memory_pending": "static/js/utils/memory-guard.js",
     "annzarro_memory_margin": "static/js/utils/memory-guard.js",

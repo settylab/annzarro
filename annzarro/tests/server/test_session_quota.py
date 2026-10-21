@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
+from annzarro.server import panel_sets
 from annzarro.server.auth import AuthManager
 from annzarro.server.core import create_app
 
@@ -50,7 +51,7 @@ def test_a_user_cannot_keep_more_sets_than_the_limit(tmp_path):
     body = refused.get_json()
     assert body["reason"] == "session_quota_user" and body["limit"] == 3 and body["used"] == 3
     assert "max_sessions_per_user" in body["error"]
-    assert not os.path.exists(tmp_path / "data" / "sessions" / "a3.json")
+    assert not os.path.exists(os.path.join(panel_sets.directory(app.config), "a3.json"))
     # her own sets can still be overwritten, and another user has their own allowance
     assert _save(alice, "a0", note="again").status_code == 200
     assert _save(bob, "b0").status_code == 200

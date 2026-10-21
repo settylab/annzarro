@@ -1,5 +1,6 @@
 import { DataManager } from '../../data-manager.js';
 import { RemoteNames } from '../../utils/remote-names.js';
+import { trackHover } from '../../utils/hover-copy.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
 import { greyMarker, styleArea } from '../../utils/point-style.js';
@@ -594,6 +595,7 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
       }, true);
     }
     attachLazyNames(plotContainer);
+    trackHover(plotContainer);
     // One click handler per graph: every redraw used to add another, so a
     // click ran setFocusedCell once per redraw so far.
     if (plotContainer.__azClickHandler && typeof plotContainer.removeListener === 'function') {

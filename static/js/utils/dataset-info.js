@@ -1,10 +1,11 @@
 /**
  * What a dataset says about itself: attribution, README and AnnData structure.
  *
- * The data comes from `GET /api/v1/datasets/info?path=&parts=` (server: core/dataset_info.py), one
- * part at a time and only when it is shown. This module has the loader (cached, one request per
- * part), the drawing of each part, and the loading and error states, so the dataset information
- * dialog (dataset-info-dialog.js) and the dataset browser's details pane show the same thing.
+ * The data comes from `GET /api/v1/datasets/info?path=&parts=` (server: core/dataset_info.py): the
+ * dataset dialog asks for the parts in one request when the dataset has been open a moment (a
+ * remote store's structure excepted), and a part not yet held is asked for when it is shown. This
+ * module has the loader (cached and bounded), the drawing of each part, and the loading and error
+ * states, so the dataset information dialog (dataset-info-dialog.js) and the dataset browser's details pane show the same thing.
  *
  * Everything the dataset's author wrote is set as text (`textContent`), except the README, which
  * goes through the safe Markdown renderer (safe-markdown.js: escape first, then a small allow-list;
@@ -103,39 +104,93 @@ export function citationText(about) {
 
 // ---- loading ---------------------------------------------------------------------------------
 
+/** Datasets whose parts the loader keeps besides the pinned (open) one; the least recently used go first. */
+export const KEPT_DATASETS = 8;
+
+/** True for a path the server reads over the network (s3://, gs://, https:// ...). */
+export function isRemotePath(path) {
+    return /^[a-z][a-z0-9+.-]*:\/\//i.test(String(path || ''));
+}
+
 /**
  * A loader of the parts of one server's datasets: each (path, part) is asked for once and kept, a
- * request in flight is shared, and a failure is not kept (so "Try again" asks again).
- * @param {{url: string, fetchImpl?: Function}} options
+ * request in flight is shared, and a failure is not kept (so "Try again" asks again). The parts of
+ * the pinned dataset and of the `kept` datasets used last are held; older ones are dropped.
+ * @param {{url: string, fetchImpl?: Function, kept?: number}} options
  */
-export function createInfoLoader({ url, fetchImpl = (...args) => fetch(...args) }) {
+export function createInfoLoader({ url, fetchImpl = (...args) => fetch(...args), kept: keptDatasets = KEPT_DATASETS }) {
     const kept = new Map();
     const flying = new Map();
-    async function request(path, part) {
-        const response = await fetchImpl(`${url}?path=${encodeURIComponent(path)}&parts=${part}`);
+    const used = new Map();            // the datasets read, least recently used first
+    let pinned = null;
+    let epoch = 0;                     // moved by forget(): an answer to an older request is not kept
+
+    function drop(path) {
+        used.delete(path);
+        for (const key of [...kept.keys()]) if (key.startsWith(`${path}|`)) kept.delete(key);
+    }
+    function touch(path) {
+        used.delete(path);
+        used.set(path, true);
+        const others = [...used.keys()].filter((p) => p !== pinned);
+        for (const old of others.slice(0, Math.max(0, others.length - keptDatasets))) drop(old);
+    }
+    async function request(path, parts) {
+        const response = await fetchImpl(`${url}?path=${encodeURIComponent(path)}&parts=${parts.join(',')}`);
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
             const error = new Error(body.error || `The server answered ${response.status}`);
             error.status = response.status;
             throw error;
         }
-        return body[part];
+        return body;
+    }
+    function fly(path, parts) {
+        const started = epoch;
+        const whole = request(path, parts).then((body) => {
+            if (started === epoch) {
+                for (const part of parts) if (body[part] !== undefined) kept.set(`${path}|${part}`, body[part]);
+                touch(path);
+            }
+            return body;
+        });
+        for (const part of parts) {
+            const key = `${path}|${part}`;
+            const one = whole.then((body) => body[part]);
+            flying.set(key, one);
+            const clear = () => { if (flying.get(key) === one) flying.delete(key); };
+            one.then(clear, clear);
+        }
+        return whole;
     }
     return {
         /** @returns {Promise<Object>} the part (`about`, `readme` or `structure`) of the dataset at `path` */
         load(path, part) {
             const key = `${path}|${part}`;
-            if (kept.has(key)) return Promise.resolve(kept.get(key));
+            if (kept.has(key)) { touch(path); return Promise.resolve(kept.get(key)); }
             if (flying.has(key)) return flying.get(key);
-            const promise = request(path, part).then((value) => { kept.set(key, value); return value; })
-                .finally(() => flying.delete(key));
-            flying.set(key, promise);
-            return promise;
+            fly(path, [part]).catch(() => {});
+            return flying.get(key);
+        },
+        /**
+         * One request for every one of `parts` not kept and not in flight (none when all are); the
+         * parts then answer `load` and `peek`. A failure is not kept and not thrown.
+         * @returns {Promise<void>}
+         */
+        async loadAll(path, parts) {
+            const missing = parts.filter((part) => !kept.has(`${path}|${part}`) && !flying.has(`${path}|${part}`));
+            if (!missing.length) return;
+            try { await fly(path, missing); } catch (error) { /* a tab asks again, with its own error state */ }
         },
         peek(path, part) { return kept.get(`${path}|${part}`); },
+        /** The dataset whose parts are always held (the one that is open), or null. */
+        pin(path) { pinned = path || null; if (pinned && used.has(pinned)) touch(pinned); },
         /** Forget what was read of `path` (the dataset was refreshed), or of everything. */
         forget(path = null) {
-            for (const key of [...kept.keys()]) if (path === null || key.startsWith(`${path}|`)) kept.delete(key);
+            epoch += 1;
+            if (path === null) { kept.clear(); used.clear(); flying.clear(); return; }
+            drop(path);
+            for (const key of [...flying.keys()]) if (key.startsWith(`${path}|`)) flying.delete(key);
         }
     };
 }

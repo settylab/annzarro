@@ -340,6 +340,22 @@ A disabled type is missing from the panel menu. A saved panel set or
 the panel's saved JSON, so saving the layout again loses nothing and enabling the panel restores
 it.
 
+### Searching descriptions
+
+[`datasets.text-search.enabled`]{#policy-datasets-text-search-enabled} is on by default. It governs the
+search over the attribution and READMEs of the datasets (`GET /api/v1/datasets/text-search`, with its
+status and refresh routes: {doc}`../reference/http-api`). Off for a user, the three routes answer
+`403 disabled_by_policy` to them; off in the config file (`server.text_index_enabled: false`) or for
+everyone, no crawl runs either. It is a restrict key like the others: the narrowest value of config, admin
+and user applies.
+
+The server reads the attribution and the first 64 KB of the README of every local store it can list, one crawl at a
+time for the whole server, into a gzipped index in the cache directory (`server.cache_dir`, shared by all
+workers). Remote datasets are not indexed. A search shows a user only the stores they can open, and a
+restricted user is told the path of what they may open (as in their listings), nothing above a grant, and not how many stores the server holds. **Clear cache**
+marks the index stale, so the next search refreshes it; it does not delete it. The limits are in
+{doc}`resource-limits`.
+
 ### Outbound hosts
 
 Gene Set Analysis is the one panel that sends gene ids to other servers ({doc}`../user-guide/gene-set`).

@@ -111,7 +111,7 @@ DATA_KINDS = ("dataset", "remote", "listing", "panelset")
 
 #: Extra argument that carries a path or URL, by endpoint (the rest is in confinement).
 URL_ENDPOINTS = {"validate_zarr_url": "url"}
-FOLDER_ENDPOINTS = {"list_dataset_folder": "folder", "list_dataset_search": "folder"}
+FOLDER_ENDPOINTS = {"list_dataset_folder": "folder", "list_dataset_search": "folder", "text_search": "folder"}
 
 
 def gate(kind):

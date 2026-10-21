@@ -15,6 +15,8 @@ import { escapeHtml, canModify, lockReason, failureLine, authIndicator, refreshP
 import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
+import { installHoverCopy } from './utils/hover-copy.js';
+import { installPanelTarget } from './utils/panel-target.js';
 import { noticeDuration, planReplacement, joinNotices, focusOutsideSubsetNotice, fingerprintPendingNotice } from './utils/notice-rules.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
@@ -44,6 +46,7 @@ import { loadRecents, recordRecent, userKey, lookupPaths, recentEntries } from '
 import { convenienceStorage } from './utils/convenience-storage.js';
 import { formatLabel } from './utils/dataset-browser-model.js';
 import { createDatasetBrowser } from './utils/dataset-browser.js';
+import { createListingCache } from './utils/dataset-listing-cache.js';
 import { initAboutDialog } from './utils/about-dialog.js';
 import { firstDatasetChoice, keysUsedByPanels, isRemote } from './utils/dataset-browser-model.js';
 import { loadPins, togglePin } from './utils/dataset-pins.js';
@@ -102,6 +105,8 @@ const App = (function() {
                 _showNotification(vendor.title, vendor.message, 'error');
                 return;
             }
+
+            installHoverCopy();
 
             // When the login expires mid-session, go to the login page and
             // come back to this dataset and view (utils/session-expiry.js)
@@ -2198,12 +2203,31 @@ const App = (function() {
         return keysUsedByPanels(layout && layout.panelConfigs, structure);
     }
 
+    /** The dataset listings kept for the browser (utils/dataset-listing-cache.js), per server (origin and URL prefix) and user. @private */
+    let _listings = null;
+    function _listingCache() {
+        if (!_listings) {
+            let storage = null;
+            try { storage = convenienceStorage(Config.SERVER_CONFIG, window); } catch { /* storage blocked */ }
+            _listings = createListingCache({ storage, scope: window.location.origin + appRoot() });
+        }
+        return _listings;
+    }
+
     /** What the dataset browser reads from the application (the contract is in utils/dataset-browser.js). @private */
     function _browserServices() {
         const origin = () => window.location.origin;
         const user = () => _recentsUserKey || 'local';
         return {
-            urls: { folder: Config.API.DATASET_FOLDER, search: Config.API.DATASET_SEARCH, details: Config.API.DATASET_DETAILS, lookup: Config.API.DATASET_LOOKUP },
+            urls: {
+                folder: Config.API.DATASET_FOLDER, search: Config.API.DATASET_SEARCH, details: Config.API.DATASET_DETAILS, lookup: Config.API.DATASET_LOOKUP,
+                textSearch: Config.API.DATASET_TEXT_SEARCH, textStatus: Config.API.DATASET_TEXT_STATUS, textRefresh: Config.API.DATASET_TEXT_REFRESH
+            },
+            /** Whether the policy lets this user search the descriptions (a server without a policy allows it; its own answer is the safety net). */
+            textSearchAllowed: async () => {
+                const r = await Policy.fresh(['datasets.text-search.enabled']).catch(() => ({ status: 'absent' }));
+                return !(r.status === 'ok' && r.values && r.values['datasets.text-search.enabled'] === false);
+            },
             get infoLoader() { return _datasetInfo ? _datasetInfo.loader : null; },      // mounted after the browser is made
             me: _authMe,
             stored: () => {
@@ -2211,6 +2235,7 @@ const App = (function() {
                     return { recents: loadRecents(convenienceStorage(Config.SERVER_CONFIG, window), origin(), user()), pins: loadPins(window.localStorage, origin(), user()) };
                 } catch { return { recents: [], pins: [] }; }
             },
+            get listings() { return _listingCache(); },      // made when the browser first opens: the site's storage setting is known by then
             lookup: (paths) => lookupPaths(Config.API.DATASET_LOOKUP, paths),
             togglePin: (item) => {
                 try { return togglePin(window.localStorage, origin(), user(), item).pinned; } catch { return false; }
@@ -3945,11 +3970,12 @@ const App = (function() {
                 'LOAD_SESSION': 'Load panel set',
                 'OPEN_DATASET': 'Open a dataset (the dataset browser)',
                 'REFRESH_DATASETS': 'Refresh the dataset',
-                'NEW_PANEL': 'New panel (focus panel selector)',
-                'CLOSE_PANEL': 'Close current panel',
-                'SPLIT_HORIZONTAL': 'Split current panel horizontally',
-                'SPLIT_VERTICAL': 'Split current panel vertically',
-                'TOGGLE_CONTROLS': 'Toggle current panel controls',
+                'NEW_PANEL': 'New panel (go to the panel selector)',
+                'CLOSE_PANEL': 'Close the panel under the pointer',
+                'SPLIT_HORIZONTAL': 'Split the panel under the pointer side by side',
+                'SPLIT_VERTICAL': 'Split the panel under the pointer top and bottom',
+                'TOGGLE_CONTROLS': 'Toggle controls of the panel under the pointer',
+                'COPY_HOVER': 'Copy the hover label of the point under the pointer',
                 'SHOW_HELP': 'Show this help',
                 'CLOSE_MODAL': 'Close modal dialogs'
             };
@@ -4113,37 +4139,13 @@ const App = (function() {
      * @private
      */
     function _initKeyboardShortcuts() {
-        // Helper function to trigger an action on the most centered panel
+        // Helper function to trigger an action on the panel the shortcut is aimed at (utils/panel-target.js)
+        const _targetTile = installPanelTarget();
+        // Close is never aimed by a guess: with the pointer and the focus on no panel it does nothing
         function _triggerActionOnFocusedPanel(buttonClass) {
-            // Find panels that are currently visible in the viewport
-            const tiles = Array.from(document.querySelectorAll('.tile:not(.tile-selector)'));
-            if (tiles.length === 0) return;
-            
-            // Get the tile that's most centered in the viewport
-            const viewportHeight = window.innerHeight;
-            const viewportCenter = viewportHeight / 2;
-            
-            let closestTile = null;
-            let closestDistance = Infinity;
-            
-            tiles.forEach(tile => {
-                const rect = tile.getBoundingClientRect();
-                const tileCenter = rect.top + rect.height / 2;
-                const distance = Math.abs(tileCenter - viewportCenter);
-                
-                if (distance < closestDistance) {
-                    closestDistance = distance;
-                    closestTile = tile;
-                }
-            });
-            
-            if (closestTile) {
-                // Find and click the specific button
-                const button = closestTile.querySelector(`.${buttonClass}`);
-                if (button) {
-                    button.click();
-                }
-            }
+            const tile = _targetTile({ guess: buttonClass !== 'tile-close' });
+            const button = tile && tile.querySelector(`.${buttonClass}`);
+            if (button) button.click();
         }
 
         // Helper function to check if a keyboard event matches a shortcut configuration
@@ -4307,7 +4309,7 @@ const App = (function() {
         // If in desktop mode, register additional Ctrl+key combinations for common actions
         if (!Config.KEYBOARD_SHORTCUTS.BROWSER_COMPATIBLE) {
             // Add Ctrl+key combinations for desktop/application mode
-            const desktopKeys = ['n', 'w', 'h', 'v', 'c'];
+            const desktopKeys = ['n', 'w', 'h', 'v', 't'];
             const desktopActions = ['NEW_PANEL', 'CLOSE_PANEL', 'SPLIT_HORIZONTAL', 'SPLIT_VERTICAL', 'TOGGLE_CONTROLS'];
             
             desktopKeys.forEach((key, index) => {

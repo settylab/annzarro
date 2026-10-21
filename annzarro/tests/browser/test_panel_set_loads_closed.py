@@ -53,12 +53,13 @@ def _free_port():
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
     home = tmp_path_factory.mktemp("home")
-    # panel sets are saved under the data dir: use a copy, not the repo's
+    # use a copy of the fixture store, not the repo's; panel sets are kept in the state directory
     data_dir = tmp_path_factory.mktemp("data")
     shutil.copytree(FIXTURE, data_dir / "fixture_small.zarr")
     # the same cells under another name: "another dataset" for add-to-closed
     shutil.copytree(FIXTURE, data_dir / "other_small.zarr")
     DATA["dir"] = data_dir
+    DATA["sets"] = home / "panel-sets"
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
@@ -486,7 +487,7 @@ def _set_doc(name, open_ids, legacy=False, dataset=None):
 
 
 def _write_set(name, open_ids, legacy=False, dataset=None):
-    sessions = DATA["dir"] / "sessions"
+    sessions = DATA["sets"]
     sessions.mkdir(exist_ok=True)
     (sessions / f"{name}.json").write_text(json.dumps(_set_doc(name, open_ids, legacy, dataset)))
 

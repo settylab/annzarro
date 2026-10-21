@@ -31,6 +31,7 @@ EXTRA_QUERY = {
     "get_statistics": {"data_path": "X"},
     "get_data_by_path": {"path": "X"},
     "list_dataset_search": {"q": "zarr"},
+    "text_search": {"q": "zarr"},
     "get_paginated_data": {"matrix_type": "X", "rows": "0,1", "cols": "0,1"},
     "get_obsm_dataframe_columns": {"key": "X_umap"},
     "get_varm_dataframe_columns": {"key": "x"},
@@ -43,8 +44,9 @@ FOLDER_ARG = {"list_directory": "path", "list_dataset_folder": "folder", "list_l
 #: The argument that names the store where it is not ``dataset_path``.
 STORE_ARG = {"dataset_details": "path", "dataset_info": "path"}
 CHECKED_KINDS = ("dataset", "remote", "listing")
-#: Routes whose reply carries state of the call (a rate-limited refresh): compare the status only.
-STATEFUL = ("refresh_dataset",)
+#: Routes whose reply carries state of the call (a rate-limited refresh, a crawl's progress): compare the status only.
+#: What the text search tells whom is in test_text_search.py.
+STATEFUL = ("refresh_dataset", "text_index_refresh", "text_search", "text_index_status")
 
 
 # --- the app and its fixture -------------------------------------------------
@@ -253,6 +255,10 @@ def test_out_of_grant_reply_is_the_nonexistent_reply_on_every_route(app, restric
             assert denied.status_code == 404   # a remote URL has no "nonexistent" reply: it is not fetched
             continue
         nothing = restricted.request(bob, rule, method, "nope")
+        if rule.endpoint in STATEFUL:
+            assert denied.status_code == nothing.status_code, (rule.rule, method)
+            checked += 1
+            continue
         assert blank(denied, restricted.spelling(rule, "out")) == \
             blank(nothing, restricted.spelling(rule, "nope")), (rule.rule, method)
         checked += 1

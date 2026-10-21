@@ -21,7 +21,7 @@ import time
 
 from flask import current_app as app, jsonify, request
 
-from .. import access, confinement
+from .. import access, confinement, panel_sets, store_walk
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +244,7 @@ def list_folder(config, folder, offset=0, limit=None, sort="name", order="asc"):
     if not os.path.isdir(path):
         raise FileNotFoundError(path)
     at_top = os.path.realpath(path) == os.path.realpath(data_dir)
-    skip = ("sessions",) if at_top else ()
+    skip = (panel_sets.top_level_skip(config) if at_top else ()) + panel_sets.state_folders_in(config, path)
     entries = [e for e in (_entry(data_dir, path, n) for n in data_routes._listdir(path) if n not in skip) if e]
     if at_top:
         entries += _admin_root_entries(config, data_dir, {e["path"] for e in entries})
@@ -326,6 +326,8 @@ def register_dataset_folder_routes(app_, api_version):
     register_dataset_details_routes(app_, api_version)
     from .dataset_info import register_dataset_info_routes
     register_dataset_info_routes(app_, api_version)
+    from .text_search import register_text_search_routes
+    register_text_search_routes(app_, api_version)
 
     @app_.route(f"/api/{api_version}/datasets/search", methods=["GET"])
     @access.gate("listing")
@@ -427,82 +429,30 @@ def search_tree(config, query, regex=False, limit=None, folder=""):
     real path. At most ``dataset_folder_max_entries`` matches are returned, with
     their counts, format and modified time.
     """
-    from . import data_routes
     matches_text = _compile_query(query, regex)
-    data_dir = os.path.expanduser(config.get("data_dir"))
     cap = int(config.get("dataset_folder_max_entries") or DEFAULT_MAX_ENTRIES)
     limit = max(1, min(int(limit or cap), cap))
     max_depth = int(config.get("dataset_search_max_depth") or DEFAULT_SEARCH_DEPTH)
     max_visited = int(config.get("dataset_search_max_entries") or DEFAULT_SEARCH_VISITED)
     deadline = time.monotonic() + SEARCH_SECONDS
     user = access.restricted_user()
-    found, visited, truncated = [], 0, False
-    scope = None
-    if folder:
-        scope = _resolve_folder(config, folder)
-        if not os.path.isdir(scope):
-            raise FileNotFoundError(scope)
-        if is_store_dir(scope, os.path.basename(scope.rstrip(os.sep))):
-            return {"results": [], "truncated": False, "visited": 0}
-        queue, seen = [(scope, 0)], {os.path.realpath(scope)}
-    elif user:
-        # only their grants: a granted store is matched by name, a granted folder is walked
-        queue, seen = [], set()
-        for entry in _grant_entries(user):
-            if entry["kind"] == "folder":
-                queue.append((entry["path"], 0))
-                seen.add(entry["path"])
-            else:
-                try:
-                    if matches_text(entry["name"], deadline):
-                        found.append(entry)
-                except TimeoutError:          # the clock ran out inside a match
-                    truncated = True
-    else:
-        queue, seen = [(data_dir, 0)], {os.path.realpath(data_dir)}
-    if scope is None and not user:
-        # the data directories admins added are top-level folders of the picker, so they are searched too
-        for root in _admin_root_entries(config, data_dir, set()):
-            real = os.path.realpath(root["path"])
-            if real not in seen:
-                seen.add(real)
-                queue.append((root["path"], 1))
-    while queue and not truncated:
-        folder, depth = queue.pop(0)
-        skip = ("sessions",) if os.path.realpath(folder) == os.path.realpath(data_dir) else ()
-        for name in data_routes._listdir(folder):
-            if name in skip or name.startswith("."):
-                continue
-            visited += 1
-            if visited > max_visited or time.monotonic() > deadline:
-                truncated = True
+    scope = _resolve_folder(config, folder) if folder else None
+    stats = store_walk.WalkStats()
+    found = []
+    for entry in store_walk.iter_stores(config, scope, user, deadline, max_depth, max_visited, stats):
+        try:
+            below = os.path.relpath(entry["path"], scope) if scope else entry["rel_path"]
+            hit = matches_text(entry["name"], deadline) or matches_text(below, deadline)
+        except TimeoutError:         # the clock ran out inside a match
+            stats.truncated = True
+            break
+        if hit:
+            found.append(entry)
+            if len(found) >= limit:
+                stats.truncated = True
                 break
-            entry = _entry(data_dir, folder, name)
-            if entry is None:
-                continue
-            if user and not access.may_read(user, entry["path"]):
-                continue      # a link leading out of the grant is not entered, listed or counted
-            if entry["kind"] == "folder":
-                real = os.path.realpath(entry["path"])
-                if depth + 1 < max_depth and real not in seen:
-                    seen.add(real)
-                    queue.append((entry["path"], depth + 1))
-                elif depth + 1 >= max_depth:
-                    truncated = True
-                continue
-            try:
-                below = os.path.relpath(entry["path"], scope) if scope else entry["rel_path"]
-                hit = matches_text(name, deadline) or matches_text(below, deadline)
-            except TimeoutError:         # the clock ran out inside a match
-                truncated = True
-                break
-            if hit:
-                found.append(entry)
-                if len(found) >= limit:
-                    truncated = True
-                    break
     found = access.filter_entries(found)[:limit]
     found.sort(key=lambda e: (e["rel_path"].count(os.sep), e["rel_path"]))
     for entry in found:
         _fill_store(entry)
-    return {"results": found, "truncated": truncated, "visited": visited}
+    return {"results": found, "truncated": stats.truncated, "visited": stats.visited}

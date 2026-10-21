@@ -198,6 +198,7 @@ def test_remove_counts_the_panel_sets_that_named_the_root(layout):
     assert _add(admin, root).status_code == 201
     sessions = layout / "data" / "sessions"
     sessions.mkdir()
+    (sessions / "legacy.json").write_text("{}")         # panel sets still in the data directory: legacy mode
     for name, dataset in (("a", root / "cells.zarr"), ("b", root / "cells.zarr"), ("c", layout / "data" / "x.zarr"),
                           ("d", "cells.zarr"), ("e", None)):
         (sessions / f"{name}.json").write_text(json.dumps({"name": name, "dataset": str(dataset) if dataset else None}))

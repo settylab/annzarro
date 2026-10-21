@@ -72,6 +72,19 @@ server:
       description: Data directory
       default: "~/annzarro-data"
       security: internal  # an absolute server path; the client does not need it
+    state_dir:
+      type: string
+      description: "Directory annzarro writes to: users, admin state, logs, caches, PID file. Never inside a data root"
+      default: "~/.annzarro"
+      security: internal
+    panel_sets_dir:
+      type: string
+      description: "Panel sets directory (default <state_dir>/panel-sets). While panel sets still sit in <data_dir>/sessions and this key is unset, that folder is used until `annzarro panel-sets migrate` copies them"
+      security: internal
+    cache_dir:
+      type: string
+      description: "Disposable caches (default <state_dir>/cache); safe to delete"
+      security: internal
     allowed_dirs:
       type: array
       items:
@@ -168,6 +181,50 @@ server:
       minimum: 0
       description: Seconds the dataset browser's details request spends on the store check of one zarr store before it answers with the findings so far; 0 turns the check off there
       default: 1.5
+    text_index_enabled:
+      type: boolean
+      description: Whether users may search the attribution and READMEs of the datasets, and whether the server builds the index that search reads (the policy key datasets.text-search.enabled; an administrator can also turn it off for everyone or one user)
+      default: true
+    text_index_workers:
+      type: integer
+      minimum: 1
+      description: Threads the crawl of the description index reads stores with
+      default: 2
+    text_index_store_timeout_s:
+      type: number
+      minimum: 1
+      description: Seconds the description crawl waits for one store before it marks it timed out and goes on
+      default: 5
+    text_index_crawl_timeout_s:
+      type: number
+      minimum: 1
+      description: Seconds one crawl of the description index may take; then it saves what it has and is marked partial
+      default: 300
+    text_index_max_stores:
+      type: integer
+      minimum: 1
+      description: Stores one crawl of the description index covers; past it the crawl is marked partial
+      default: 20000
+    text_index_readme_kb:
+      type: integer
+      minimum: 1
+      description: Kilobytes of each README the description index keeps
+      default: 64
+    text_index_max_mb:
+      type: number
+      minimum: 1
+      description: Megabytes of text the description index may hold (each worker holds it in memory); past it READMEs are dropped from the largest down
+      default: 64
+    text_index_ttl_s:
+      type: number
+      minimum: 1
+      description: Seconds after which a description search also starts a crawl to refresh the index
+      default: 600
+    text_index_min_interval_s:
+      type: number
+      minimum: 0
+      description: Seconds between two crawls of the description index, whoever asks (a search or the Refresh button); 0 = no limit
+      default: 60
     dataset_search_max_entries:
       type: integer
       description: Entries the dataset picker's search of the data directory looks at before it stops and says the result is partial
@@ -559,7 +616,7 @@ site:
       properties:
         persistent_convenience:
           type: boolean
-          description: "false keeps the layout autosave, the last sessions and the recent datasets only until the tab closes"
+          description: "false keeps the layout autosave, the last sessions, the recent datasets and the dataset listings only until the tab closes"
           default: true
 
 # UI configuration

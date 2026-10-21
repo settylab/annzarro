@@ -128,8 +128,13 @@ def test_electron_ships_the_frozen_server_and_starts_it_on_loopback():
     with open(os.path.join(ELECTRON, "main.js")) as f:
         main = f.read()
     assert "const HOST = '127.0.0.1';" in main
-    for arg in ("'--host', HOST", "'--auth-disabled'", "'--no-browser'"):
-        assert arg in main
+    assert "host: HOST" in main
+    # the arguments themselves: annzarro/tests/js/desktop-state.test.mjs
+    with open(os.path.join(ELECTRON, "state-logic.js")) as f:
+        logic = f.read()
+    for arg in ("'--host', host", "'--auth-disabled'", "'--no-browser'", "'--state-dir'"):
+        assert arg in logic
+    assert "state-logic.js" in build["files"]
 
 
 def test_windows_icon_has_a_256px_image():

@@ -17,7 +17,7 @@ Start the server in the foreground, served by waitress with HTTP keep-alive (a p
 
 ```text
 annzarro start [--config CONFIG] [--host HOST] [--port PORT] [--data-dir DATA_DIR]
-               [--auth-disabled] [--detach] [--development] [--venv-path VENV_PATH]
+               [--state-dir STATE_DIR] [--auth-disabled] [--detach] [--development] [--venv-path VENV_PATH]
                [--no-browser]
 ```
 
@@ -26,9 +26,10 @@ annzarro start [--config CONFIG] [--host HOST] [--port PORT] [--data-dir DATA_DI
 | `--host HOST` | Address to bind (`server.host`, default `127.0.0.1`). Any address other than `127.0.0.1`, `localhost` or `::1` turns login on and confines paths to the data directory. |
 | `--port PORT` | Port (`server.port`, default 8000). |
 | `--data-dir DIR` | Data directory (`server.data_dir`, default `~/annzarro-data`, created if missing). `~` is expanded; a relative path is taken from the current directory. |
+| `--state-dir DIR` | State directory (`server.state_dir`, default `~/.annzarro`): where the log, PID file, users file and caches go. Better kept outside the data directories: inside one, the server logs a warning at start-up and leaves the folder out of dataset listings. |
 | `--auth-disabled` | Login off, even on a network address. There a `SECURITY` warning is logged and the header shows "No login". |
 | `--no-browser` | Do not open a browser. Also implied by the environment variable `ANNZARRO_HEADLESS`. |
-| `--detach` | Start the server in the background and write its PID to `~/.annzarro/server.pid` (`$ANNZARRO_HOME/server.pid`), mode 0600. |
+| `--detach` | Start the server in the background and write its PID to `<state dir>/server.pid` (`~/.annzarro/server.pid` by default), mode 0600. |
 | `--development` | Use the `development` defaults (Flask debug mode with the reloader and interactive debugger, CORS on, login off, DEBUG logging). Never on a reachable host. |
 | `--config FILE` | As the global option. |
 | `--venv-path PATH` | Accepted for the desktop app's launcher; has no effect. |
@@ -79,11 +80,49 @@ which keeps working.
 
 ## `annzarro stop`
 
-Stop a server started with `--detach`. It reads `~/.annzarro/server.pid` (`$ANNZARRO_HOME/server.pid`)
-and signals that process only if the file is yours and the process is your own `annzarro start`;
+```text
+annzarro stop [--state-dir STATE_DIR] [--config CONFIG]
+```
+
+Stop a server started with `--detach`. It reads `server.pid` in the state directory
+(`~/.annzarro` by default) and
+signals that process only if the file is yours and the process is your own `annzarro start`;
 otherwise it refuses and removes the stale file. It sends SIGTERM, waits 5 s, then SIGKILL. A
 server started in the foreground has no PID file; stop it with Ctrl+C. Exit status 1 when there
-is nothing to stop.
+is nothing to stop. Name the server's state directory with `--state-dir`, `ANNZARRO_SERVER_STATE_DIR`
+(`ANNZARRO_HOME`) or the `--config` file that sets `server.state_dir`.
+
+## `annzarro paths`
+
+```text
+annzarro paths [--config CONFIG] [--data-dir DIR] [--state-dir DIR] [--env production|development]
+               [--format text|json]
+```
+
+Print where annzarro reads and writes, and why each location is what it is: the configuration
+files considered (found or not), then the data directory and any extra data directories, the
+state directory, users file, admin state, log file, PID file, panel sets directory and cache. Each
+location is followed by its origin: a flag (`flag --state-dir`), an environment variable
+(`environment variable ANNZARRO_HOME`), a configuration key with its file, or the default. It takes
+the same flags as `annzarro start`, so `annzarro paths --config site.yaml` shows what that server
+would use. A state, panel-sets or cache directory inside a data directory is listed under "Warnings"; the
+exit status stays 0.
+
+## `annzarro panel-sets migrate`
+
+```text
+annzarro panel-sets migrate [--dry-run] [--config CONFIG] [--data-dir DIR] [--state-dir DIR]
+                            [--env production|development]
+```
+
+Copy the panel sets of an older install from `<data_dir>/sessions/` to `server.panel_sets_dir`
+(by default `<state_dir>/panel-sets/`). Each copy is compared byte for byte with its original. The
+command writes nothing into the data directory, never overwrites a different file already in the
+new folder (it reports a conflict and exits 1), never deletes anything and can be run again: files
+already copied are reported as identical. `--dry-run` lists what would be copied and writes
+nothing. Once the new folder holds panel sets the server uses it; the command then prints that you
+can delete the old `sessions` folder. Run it with the same `--config` the server uses. See
+{ref}`panel-sets-location`.
 
 ## `annzarro user`
 
@@ -275,7 +314,7 @@ on success, 2 when the store or the README file cannot be used (the message says
 | `ANNZARRO_<SECTION>_<KEY>` | Sets any configuration key, e.g. `ANNZARRO_SERVER_PORT=9000`, `ANNZARRO_SERVER_CACHE_MEMORY_MB=1000`, `ANNZARRO_AUTH_ENABLED=true`, `ANNZARRO_AUTH_SECRET_KEY=...`, `ANNZARRO_SERVER_HOSTED=true`, `ANNZARRO_SERVER_WORKERS=2`, `ANNZARRO_SERVER_ALLOWED_DIRS=/a,/b` (comma-separated list). Variables that name no key are listed as "ignored" by `config show`. |
 | `ANNZARRO_REMOTE_STORES`, `_ALLOWLIST`, `_CREDENTIALS`, `_CONNECT_TIMEOUT`, `_READ_TIMEOUT`, `_REQUEST_TIMEOUT`, `_CHUNK_CACHE_MB` | Override the `server.remote_*` keys ({ref}`config-environment`). |
 | `ANNZARRO_AUTH_DISABLED` | `true`, `yes`, `1` or `on`: login off, as `--auth-disabled`, for `annzarro start` and gunicorn alike. Any other value leaves login as configured. |
-| `ANNZARRO_HOME` | State directory instead of `~/.annzarro` (log, PID file, default users file and login key, and `freshness/`, the datasets' generations behind every ETag). Give each server on a host its own: one server's start invalidates the ETags of every server sharing the directory, so their browsers fetch everything again ({ref}`several services on one host <lab-server-several>`). |
+| `ANNZARRO_SERVER_STATE_DIR`, `ANNZARRO_HOME` | State directory instead of `~/.annzarro` (`server.state_dir`; `--state-dir` wins over both, and the two must not name different folders) (log, PID file, default users file and login key, and `freshness/`, the datasets' generations behind every ETag). Give each server on a host its own: one server's start invalidates the ETags of every server sharing the directory, so their browsers fetch everything again ({ref}`several services on one host <lab-server-several>`). |
 | `ANNZARRO_HEADLESS` | Any value: never open a browser. |
 | `ANNZARRO_EXTERNAL_REQUESTS` | `off`, `ask`, `on` or `none`: overrides `integrations.external_requests`, whether the Gene Set Analysis panel may contact external services. Any other value is ignored. |
 | `ANNZARRO_CONFIG` | Configuration file used when `--config` is not given, by every `annzarro` command and by the WSGI entry point (gunicorn). `--config` wins if both are set. |

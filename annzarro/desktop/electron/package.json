@@ -1,7 +1,7 @@
 {
   "name": "annzarro-desktop",
   "productName": "AnnZarro",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "AnnZarro desktop app: the AnnZarro single-cell viewer with its server bundled",
   "main": "main.js",
   "author": {
@@ -47,6 +47,7 @@
       "window-chrome.js",
       "dataset-open.js",
       "dataset-open-logic.js",
+      "state-logic.js",
       "preload.js",
       "loading.html",
       "error.html",

@@ -20,9 +20,11 @@ It opens a dialog with three tabs.
 | **README** | The dataset's `uns["README"]`, rendered as Markdown (see "The README" below). |
 | **Structure** | The AnnData layout: number of cells and genes, the `obs` and `var` columns with their types, the keys of `obsm`, `varm`, `obsp`, `varp` and `layers` with their shapes, encodings and, for sparse matrices, the number of stored values and density, `raw` (marked as not shown in plots), the tree of `uns` (a dataframe or categorical there is one line, not its parts), groups AnnZarro does not know, and the limits applied. Categoricals show their first ten labels with the colours from `uns["<column>_colors"]` and warn when the colour count differs from the category count. |
 
-Each tab is read from the server when it is first shown, with a loading indication; a failure is
-said in words and offers **Try again**. Nothing is read before someone opens the dialog. The
-dataset browser's details pane shows the same attribution under the facts of a store, with the
+A moment after a dataset opens, once its first plot has been asked for, the browser reads the three
+tabs in one request while it is idle, so they show at once when you open the dialog; for a remote
+store the Structure tab is left until you open it. A tab not yet read is read when first shown, with a loading indication; a
+failure is said in words and offers **Try again**. The browser keeps what it read for the open
+dataset and the eight used last. The dataset browser's details pane shows the same attribution under the facts of a store, with the
 README and the structure as sections that load when you open them. A dataset that records no
 attribution and has no README adds nothing to the pane.
 
@@ -229,4 +231,6 @@ read only after the store has said how big it is; one stored over 8 MB is not re
 It follows the dataset browser's access rules: a user sees the information of a dataset only where
 they may open it, and a dataset they may not read answers as one that does not exist. The reply
 carries the store's name and never its path. Answers are cached by the store's file times, so a
-store annotated while the server runs shows the change at the next request.
+store annotated while the server runs shows the change at the next request. The reply of a local
+store carries an `ETag` that moves with those file times, so a page that asks again is answered
+`304 Not Modified`; a remote store's reply has none.

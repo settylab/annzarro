@@ -84,6 +84,7 @@ unasked and can be set to session-only (`site.storage.persistent_convenience: fa
 | `annzarro_restoring` | A marker that a session was being restored, so one that did not finish (the tab ran out of memory) is not restored by itself again | Technical |
 | `annzarro.recents:<origin>\|<user>` | Recently opened dataset paths | Convenience |
 | `annzarro.recentDatasets:<origin>` | The older, per-origin form of the recents list, moved to the key above at first use | Convenience |
+| `annzarro.listings:<origin and prefix>\|<user>` | The dataset listings the dataset browser read last (the first page of the data directory and of each folder opened, at most 40 listings), shown at once when the browser opens while it reads them again | Convenience |
 | `annzarro_memory_pending`, `annzarro_memory_margin` | A marker that a heavy action was under way and the memory margin learned from it for actions of about that size, so a tab that ran out of memory is not repeated; forgotten after a week, when an action that large succeeds, or with **Reset the margin** | Technical |
 
 "Close all panels" with its checkbox clears all of it, and the browser's own settings do too.
@@ -95,17 +96,17 @@ A test lists these keys and fails when one is added without being described here
 
 Under the reading of the ePrivacy rules that most authorities share, choices the visitor made and
 what is strictly needed for the service they asked for need no consent. The convenience items
-(the autosave, the last sessions and the recents) are grey: they are written automatically and
+(the autosave, the last sessions, the recents and the dataset listings) are grey: they are written automatically and
 kept between visits. The risk is low (nothing leaves
 the browser, there is no third party, no tracking value), and a cautious operator can remove it:
 
 ```yaml
 site:
   storage:
-    persistent_convenience: false   # the autosave, last sessions and recents last only until the tab closes
+    persistent_convenience: false   # the autosave, last sessions, recents and dataset listings last only until the tab closes
 ```
 
-An earlier visit's autosave, last sessions and recents are then forgotten at the next load.
+An earlier visit's autosave, last sessions, recents and dataset listings are then forgotten at the next load.
 
 A new visit lists the last session and draws it only on **Restore**; a reload of the tab restores
 it (`ui.autosave.auto_restore: reload`, the default). `never` only lists it, for a reload too;
@@ -156,7 +157,7 @@ contains a script, iframe, embed or an address on another server.
 | Sign-in lock-out (5 failures per user and address) | Memory | Yes, briefly | 15 minutes |
 | Users file: user name, password hash, admin flag | `auth.user_file` | Yes | Until you delete the user |
 | Admin audit log: time, admin, IP address, action | State directory | Yes | Rotates at 50 MB, five files kept |
-| Panel sets: owner, name, dataset, layout; other users can see them | `<data dir>/sessions/` | Yes (owner) | Until deleted |
+| Panel sets: owner, name, dataset, layout; other users can see them | `<state dir>/panel-sets/` | Yes (owner) | Until deleted |
 | The datasets | Data directory | Possibly | Your decision, see [Human data](#human-data) |
 
 Choose a retention period for the logs, write it into the notice, and rotate or delete accordingly.
@@ -188,7 +189,7 @@ Other keys:
 | `security_contact` | none | A `mailto:` or `https://` address. Serves `/.well-known/security.txt` (RFC 9116). The file must sit at the root of your domain, so a proxy that mounts AnnZarro under a path has to pass this one through |
 | `languages` | `en` | The language of the texts (`de`, `en`): the `lang` of the text pages and `Preferred-Languages` in `security.txt` |
 | `software_credits` | `true` | Whether the About dialog keeps AnnZarro's credit: the Setty Lab logo, the Setty Lab and Fred Hutch links, the NIH funding statement and the citation. `false` leaves the name, the version, the MIT licence and links to the documentation and the repository. The credit is about the software, never about your site, and the authors appreciate hosters keeping it beside their own content |
-| `storage.persistent_convenience` | `true` | `false` keeps the autosave, the last sessions and the recents only until the tab closes |
+| `storage.persistent_convenience` | `true` | `false` keeps the autosave, the last sessions, the recents and the dataset listings only until the tab closes |
 
 A wrong value (a `javascript:` address, a missing file, an unknown option) stops the server at
 start and says what is wrong.

@@ -4150,7 +4150,40 @@ details.aesthetics-section > .aesthetics-body {
     min-width: 0;
 }
 .dsb-search .form-control { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.dsb-regex { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
+.dsb-regex { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 0; }
+/* the two toggles are a pair: same height and padding, the field's focus ring does not cover them */
+.dsb-regex, .dsb-text { display: inline-flex; align-items: center; justify-content: center; padding: 0.25rem 0.6rem; line-height: 1.5; flex: 0 0 auto; }
+.dsb-regex { min-width: 2.25rem; font-weight: 600; }
+.dsb-text { gap: 0.35rem; }
+.dsb-regex:not(.active), .dsb-text:not(.active) { border-color: var(--az-muted); }
+.dsb-search .form-control:focus { z-index: 1; }
+.dsb-search .btn { position: relative; z-index: 2; }
+.dsb-search .dsb-regex:has(+ .dsb-text:not([hidden])) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.dsb-text { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; white-space: nowrap; }
+.dsb-text.active, .dsb-regex.active { color: var(--az-link); border-color: var(--az-link); background: var(--az-accent-bg); position: relative; }
+.dsb-text-state { display: flex; align-items: center; gap: 0.6rem; padding: 0 1rem 0.4rem; font-size: 0.8rem; color: var(--az-muted); }
+.dsb-text-state[hidden], .dsb-progress[hidden] { display: none; }
+.dsb-progress { flex: 0 1 12rem; min-width: 4rem; height: 0.5rem; accent-color: var(--az-link); }
+/* The hits in descriptions: a heading row, then each store with its title and the words in context */
+.dsb-section-row th {
+    padding: 0.5rem 0.5rem 0.25rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--az-muted);
+    background: var(--az-surface-2);
+    border-top: 2px solid var(--az-border);
+}
+.dsb-title { font-size: 0.85rem; color: var(--az-text); overflow-wrap: anywhere; }
+.dsb-snippet { font-size: 0.8rem; color: var(--az-text-2); overflow-wrap: anywhere; }
+.dsb-snippet-field {
+    margin-right: 0.4rem;
+    padding: 0 0.35rem;
+    border-radius: 0.7rem;
+    font-size: 0.68rem;
+    background: var(--az-surface-3);
+    color: var(--az-text-2);
+}
 .dsb-chips {
     display: flex;
     flex-wrap: wrap;
@@ -4169,6 +4202,9 @@ details.aesthetics-section > .aesthetics-body {
 .dsb-toggle { border-radius: 1rem; }
 .dsb-toggle.active { color: var(--az-link); border-color: var(--az-link); background: var(--az-accent-bg); }
 .dsb-search-error { padding: 0 1rem; }
+.dsb-refresh { margin-left: auto; }
+.dsb-refresh-note { margin-left: 0.5rem; color: var(--az-warn-text); }
+.dsb-refresh .btn:disabled { cursor: progress; }
 .dsb-layout {
     flex: 1 1 auto;
     display: grid;
@@ -4355,6 +4391,7 @@ details.aesthetics-section > .aesthetics-body {
     .dsb-col-genes, .dsb-col-format, .dsb-col-opened,
     .dsb-table td:nth-child(3), .dsb-table td:nth-child(4), .dsb-table td:nth-child(6) { display: none; }
     .dsb-crumb-edit { display: none; }
+    .dsb-text-label { display: none; }
     #dataset-browser .modal-body { height: auto; flex: 1 1 auto; }
 }
 @media (pointer: coarse) {

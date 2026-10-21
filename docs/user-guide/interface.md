@@ -151,6 +151,31 @@ The dataset browser with a dataset selected. Numbers match the list below.
    citation or README ({doc}`../deployment/dataset-attribution`) shows them under these facts; the
    README and the structure open when you click their headings.
 
+**Search descriptions** (the button beside **.\***, on by default; **Alt+D** switches it) also looks in
+what each dataset says about itself: its title, description, authors, citation, licence, funding and the
+first 64 KB of its README ({doc}`../deployment/dataset-attribution`). The datasets whose name matches stay
+at the top; below them, under **Found in titles, attribution and READMEs**, each dataset that holds all your
+words comes with its title and a few words of context, the matches marked. Words may be quoted to keep
+them together ("bone marrow"); case and accents do not matter. A hit opens and selects like any row, and
+its README opens on the first match. Regular expressions search names only, so turning **.\*** on switches
+descriptions off, and turning descriptions on ends the regular expression. The line under the field says
+how up to date the search is ("8 datasets indexed 3 min ago"), and shows **Indexing descriptions…** with a
+progress bar while the server reads them for the first time; the results appear when it is done. **Refresh**
+asks the server to read the descriptions again (at most once a minute). The button is not there when an
+administrator turned the search off ({doc}`../deployment/admin`). Remote datasets are not
+searched.
+
+**Opening it again is quick.** The browser keeps the listings it has read, the data directory and
+each folder you opened, in your browser (separately for each server and each user, at most 40 listings,
+the first page of each), and shows them the moment it opens while it reads them again. The list is
+updated in place when the new one arrives; your search text, the selection and the scroll position stay.
+**Refresh**, at the right of the filters, reads the folder shown, the places and Recent again. It turns
+into **Refreshing…** with a turning icon and cannot be clicked until the read is done. If the server cannot
+be reached, the list from earlier stays and a note says it could not be refreshed. A dataset that has
+been removed since disappears at the next read; if you click one before that, the browser asks first
+and says it is no longer available. A site set to session-only storage
+({doc}`../deployment/public-site`) keeps the listings only until the tab closes.
+
 Switching datasets does not ask: the open panels stay and read from the new dataset, and a back button
 beside the dataset name ("Back to *old name*") returns to the dataset you left. It stays until the next
 switch, and going back is itself a switch, so the button then offers the dataset you just left.
@@ -172,12 +197,7 @@ the dataset button. Rows and column headers are those of an ordinary table, so a
 a row as "short.zarr, 200 cells, 20 genes, zarr v2, modified ..."; counts and the progress of an
 opening are announced politely.
 
-| Keys | Action |
-|---|---|
-| **Ctrl+O** (**Cmd+O**) | Open the dataset browser |
-| **Ctrl+Shift+L** (**Cmd+Shift+L**) | Load Panel Set |
-| **/** or **~**, in the browser | Type a path or URL (the key is the first character of the path; **Ctrl+L** or **Cmd+L** also works where the web browser passes it on) |
-| **F1** | List the keyboard shortcuts |
+All the keys are listed under {ref}`keyboard-shortcuts`.
 
 In the desktop app **Open file or folder...** (also **Ctrl+Shift+O**, **Cmd+Shift+O**) in the browser
 and on the welcome screen opens your system's dialog and takes a `.zarr` folder or an `.h5ad` file
@@ -239,6 +259,35 @@ The Welcome tile.
 The first cell plot, with its controls open.
 ```
 
+(keyboard-shortcuts)=
+## Keyboard shortcuts
+
+**F1** lists them in the app. The single letters are off while you type in a field. Where a
+shortcut says **Ctrl**, use **Cmd** on a Mac.
+
+| Keys | Action |
+|---|---|
+| **Ctrl+S** | Save the panel set |
+| **Ctrl+Shift+L** | Load a panel set |
+| **Ctrl+O** | Open the dataset browser |
+| **Ctrl+R** | Refresh the dataset (the desktop app only; a web browser keeps it for reloading the page) |
+| **N** | Go to the empty panel selector, or add one |
+| **T** | Show or hide the controls of the panel under the mouse |
+| **H** | Split the panel under the mouse side by side: a new pane to its right |
+| **V** | Split the panel under the mouse top and bottom: a new pane below it |
+| **W** | Close the panel under the mouse |
+| **C** | Copy the hover label while the pointer is on a point ({ref}`more <hover-copy>`); otherwise nothing |
+| **F1** | List the keyboard shortcuts |
+| **Escape** | Close the open dialog |
+| **Alt+D**, in the dataset browser | Switch the search of descriptions on or off |
+| **/** or **~**, in the dataset browser | Type a path or URL (the key is the first character of the path; **Ctrl+L** also works where the web browser passes it on) |
+| **Shift** and **Esc**, drawing a line filter in a table | **Shift** snaps the line to multiples of 45°; **Esc** drops the line and leaves the tool |
+
+**T**, **H**, **V** and **W** act on the panel under the mouse pointer. With the pointer
+outside every panel they act on the panel that holds the keyboard focus, and failing that on
+the panel nearest the middle of the window; **W** is the exception and does nothing then, so
+that it never closes a panel you did not point at.
+
 ## Tile controls
 
 ```{figure} ../_static/screens/user-guide/ui-tile-header.png
@@ -255,6 +304,8 @@ A tile header.
 3. **Split side by side** puts a new, empty pane to the right of this tile.
 4. **Split top and bottom** puts a new, empty pane below this tile.
 5. **Close** removes the tile. Its settings are kept under **Duplicate or Reopen Panel**.
+
+The keys for these buttons are in {ref}`keyboard-shortcuts`.
 
 
 ## Split and resize
