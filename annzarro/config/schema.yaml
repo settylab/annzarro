@@ -189,7 +189,7 @@ server:
       type: integer
       minimum: 1
       description: Threads the crawl of the description index reads stores with
-      default: 4
+      default: 2
     text_index_store_timeout_s:
       type: number
       minimum: 1

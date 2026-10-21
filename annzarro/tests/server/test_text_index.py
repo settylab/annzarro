@@ -219,10 +219,51 @@ def test_a_crawl_past_its_time_is_partial_and_keeps_what_it_has(world):
     assert "liver.zarr" in entries(world)
 
 
-def test_more_stores_than_the_limit_make_the_index_partial(world):
+def test_more_stores_than_the_limit_are_capped_and_the_index_is_kept_and_served(world):
     world.config["text_index_max_stores"] = 2
     status = crawl(world)
-    assert status["state"] == "partial" and len(entries(world)) == 2
+    assert status["state"] == "done" and status["capped"] is True and len(entries(world)) == 2
+    loaded = text_index.load(world.config)
+    assert loaded.stores_capped is True and loaded.partial is False and loaded.capped is False
+    assert text_index.describe(world.config)["stale"] is False        # a cap is not a reason to crawl again
+    assert find(loaded, "zarr")[0], "the capped index answers"
+    crawl(world)                                                    # again: still two, no growth past the cap
+    assert len(entries(world)) == 2
+
+
+def test_the_size_cap_is_a_flag_never_an_error(world):
+    world.config["text_index_max_mb"] = 0.0001
+    status = crawl(world)
+    assert status["state"] == "done" and status["capped"] is True and status["errors"] == 1      # only the broken store
+    loaded = text_index.load(world.config)
+    assert loaded.capped is True and loaded.stores_capped is False and len(loaded) == 5
+    assert all(e["readme"] == "" for e in loaded.entries)
+    assert find(loaded, "liver")[0] == ["liver.zarr"]               # attribution is still searched
+
+
+def test_a_crawl_cut_by_its_time_is_kept_and_the_next_one_continues_from_it(world, monkeypatch):
+    reads = []
+    real = text_index.read_text
+    clock = {"slow": True}
+
+    def read(path, n):
+        reads.append(os.path.basename(path))
+        if clock["slow"]:
+            time.sleep(0.4)
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    world.config.update(text_index_workers=1, text_index_crawl_timeout_s=1.0)
+    first = crawl(world)
+    assert first["state"] == "partial"
+    done = len(entries(world))
+    assert 0 < done < 5
+    loaded = text_index.load(world.config)
+    assert loaded.partial is True and text_index.describe(world.config)["stale"] is True      # a search continues it
+    clock["slow"] = False
+    reads.clear()
+    second = crawl(world)
+    assert second["state"] == "done" and second["reused"] == done and len(reads) == 5 - done
+    assert len(entries(world)) == 5 and text_index.load(world.config).partial is False
 
 
 def test_the_index_size_cap_drops_the_largest_readmes(tmp_path):

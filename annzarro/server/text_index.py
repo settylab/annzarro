@@ -160,13 +160,13 @@ def _cap_size(entries, max_mb):
     return True
 
 
-def write_index(config, entries, built_at, complete, capped=False, partial=False):
+def write_index(config, entries, built_at, complete, capped=False, partial=False, stores_capped=False):
     """Write ``index.json.gz`` atomically: a reader sees the old file or the new one, never half."""
     directory = index_dir(config)
     directory.mkdir(parents=True, exist_ok=True)
     target = str(directory / "index.json.gz")
     body = {"version": INDEX_VERSION, "built_at": built_at, "written_at": _now(), "complete": complete,
-            "partial": partial, "capped": capped, "entries": entries}
+            "partial": partial, "capped": capped, "stores_capped": stores_capped, "entries": entries}
     tmp = f"{target}.{os.getpid()}.{threading.get_ident()}.tmp"
     try:
         with open(tmp, "wb") as raw:
@@ -195,6 +195,7 @@ class Loaded:
         self.complete = bool(body.get("complete"))
         self.capped = bool(body.get("capped"))
         self.partial = bool(body.get("partial"))
+        self.stores_capped = bool(body.get("stores_capped"))
         self.entries = body.get("entries") or []
         self.folded = [self._fold_entry(e) for e in self.entries]
 
@@ -288,7 +289,7 @@ def describe(config):
     index = load(config)
     built_at = index.built_at if index is not None and index.complete else None
     stale = index is not None and (built_at is None or _now() - built_at > setting(config, "text_index_ttl_s")
-                                   or built_at < _invalidated_at(config))
+                                   or built_at < _invalidated_at(config) or index.partial)
     state = status.get("state", "idle")
     total = status.get("total")
     fraction = None
@@ -428,6 +429,8 @@ def crawl(config):
     prior_built = previous.built_at if previous is not None and previous.complete else None
 
     stores, truncated = _enumerate(config, deadline, max_stores)
+    out_of_time = clock() > deadline          # the walk stopped on the clock: more may exist, and the old entries stay
+    stores_capped = truncated and not out_of_time
     status = {"state": "running", "started": _now(), "heartbeat": _now(), "done": 0, "total": len(stores), "read": 0,
               "reused": 0, "errors": 0, "built_at": prior_built}
     results = {}                     # real path: entry
@@ -454,7 +457,7 @@ def crawl(config):
 
     def snapshot():
         """Everything known now: this crawl's results, and the older entries of stores not read yet."""
-        kept = {real: e for real, e in old.items() if real not in results and (truncated or real in enumerated)}
+        kept = {real: e for real, e in old.items() if real not in results and (real in enumerated or out_of_time or partial)}
         return sorted([*results.values(), *kept.values()], key=lambda e: e["path"])
 
     enumerated = {s["real"] for s in stores}
@@ -466,7 +469,7 @@ def crawl(config):
 
     pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="text-index")
     info = {pool.submit(job, store): (store, sig) for store, sig in todo}
-    pending, stuck, partial, since_checkpoint = set(info), set(), truncated, 0
+    pending, stuck, partial, since_checkpoint = set(info), set(), out_of_time, 0
 
     def finish(future, entry):
         nonlocal since_checkpoint
@@ -509,9 +512,9 @@ def crawl(config):
     entries = snapshot()
     capped = _cap_size(entries, float(setting(config, "text_index_max_mb")))
     finished = _now()
-    write_index(config, entries, finished, complete=True, capped=capped, partial=partial)
+    write_index(config, entries, finished, complete=True, capped=capped, partial=partial, stores_capped=stores_capped)
     status.update(state="partial" if partial else "done", heartbeat=finished, built_at=finished, finished=finished,
-                  capped=capped, total=len(stores))
+                  capped=capped or stores_capped, total=len(stores))
     _write_status(config, status)
     return status
 

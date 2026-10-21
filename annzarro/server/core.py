@@ -66,7 +66,7 @@ DEFAULT_CONFIG = {
     "dataset_search_max_entries": 20000, # entries that search looks at before it stops (and says so)
     "dataset_details_check_budget_s": 1.5,  # seconds the details request spends on a store check before it answers with the findings so far; 0 = no check
     "text_index_enabled": True,           # the description index and its search (policy key datasets.text-search.enabled)
-    "text_index_workers": 4,              # threads the index crawl reads stores with
+    "text_index_workers": 2,              # threads the index crawl reads stores with
     "text_index_store_timeout_s": 5,      # seconds the crawl waits for one store
     "text_index_crawl_timeout_s": 300,    # seconds one crawl may take; then it is partial
     "text_index_max_stores": 20000,       # stores one crawl covers

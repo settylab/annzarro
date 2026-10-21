@@ -41,7 +41,11 @@ def _summary(config, view):
     body = {"state": view["state"], "stale": view["stale"], "built_at": view["built_at"], "progress": progress}
     index = view["index"]
     if not restricted and index is not None:
-        body.update(stores=len(index), partial=index.partial, capped=index.capped)
+        body.update(stores=len(index), partial=index.partial)
+        if index.stores_capped:
+            body["max_stores"] = int(text_index.setting(config, "text_index_max_stores"))
+    if index is not None:
+        body["capped"] = index.capped or index.stores_capped
     return body
 
 

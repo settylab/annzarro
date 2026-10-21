@@ -39,7 +39,7 @@ LIMITS: Dict[str, Limit] = {limit.key: limit for limit in (
     Limit("dataset_search_max_entries", 20_000),
     Limit("dataset_details_check_budget_s", 1.5, integer=False, zero_off=True),
     Limit("dataset_scan_max_entries", 200_000),
-    Limit("text_index_workers", 4),
+    Limit("text_index_workers", 2),
     Limit("text_index_store_timeout_s", 5, integer=False),
     Limit("text_index_crawl_timeout_s", 300, integer=False),
     Limit("text_index_max_stores", 20_000),

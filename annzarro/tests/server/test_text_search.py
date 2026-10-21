@@ -314,3 +314,16 @@ def test_remote_stores_are_never_crawled_even_with_a_remote_grant(tmp_path):
     access.set_restricted(app.config, "bob", True)
     search(client(app, "carol"), app, "liver")
     assert all("://" not in e["path"] for e in text_index.load(app.config).entries)
+
+
+def test_a_capped_index_says_so_and_only_an_unrestricted_user_is_told_counts(granted):
+    granted.config["text_index_max_stores"] = 3
+    carol, bob = client(granted, "carol"), client(granted, "bob")
+    body = search(carol, granted, "atlas").get_json()
+    assert body["index"]["capped"] is True and body["index"]["max_stores"] == 3 and body["index"]["stores"] == 3
+    mine = search(bob, granted, "atlas").get_json()["index"]
+    assert mine["capped"] is True and "stores" not in mine and "max_stores" not in mine
+    assert carol.get(STATUS).get_json()["capped"] is True
+    # the name search is not touched by the cap
+    found = carol.get("/api/v1/datasets/search", query_string={"q": "zarr"}).get_json()
+    assert len(found["results"]) == 5
