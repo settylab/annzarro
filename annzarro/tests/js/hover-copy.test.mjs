@@ -79,7 +79,7 @@ test('the key: C alone, with a label showing, outside a field', async () => {
         return e;
     };
     const ok = press();
-    assert.ok(ok.defaultPrevented && ok.stopped, 'ours: the controls are not toggled too');
+    assert.ok(ok.defaultPrevented && ok.stopped, 'ours: nothing else acts on the key');
     await new Promise(r => setTimeout(r, 0));
     assert.equal(wrote.length, 1);
     for (const extra of [{ metaKey: true }, { ctrlKey: true }, { altKey: true }, { shiftKey: true }, { repeat: true },

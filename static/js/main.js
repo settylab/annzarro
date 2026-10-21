@@ -16,6 +16,7 @@ import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installHoverCopy } from './utils/hover-copy.js';
+import { installPanelTarget } from './utils/panel-target.js';
 import { noticeDuration, planReplacement, joinNotices, focusOutsideSubsetNotice, fingerprintPendingNotice } from './utils/notice-rules.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
@@ -3969,11 +3970,11 @@ const App = (function() {
                 'LOAD_SESSION': 'Load panel set',
                 'OPEN_DATASET': 'Open a dataset (the dataset browser)',
                 'REFRESH_DATASETS': 'Refresh the dataset',
-                'NEW_PANEL': 'New panel (focus panel selector)',
-                'CLOSE_PANEL': 'Close current panel',
-                'SPLIT_HORIZONTAL': 'Split current panel horizontally',
-                'SPLIT_VERTICAL': 'Split current panel vertically',
-                'TOGGLE_CONTROLS': 'Toggle current panel controls (not while a hover label shows: then C copies it)',
+                'NEW_PANEL': 'New panel (go to the panel selector)',
+                'CLOSE_PANEL': 'Close the panel under the pointer',
+                'SPLIT_HORIZONTAL': 'Split the panel under the pointer side by side',
+                'SPLIT_VERTICAL': 'Split the panel under the pointer top and bottom',
+                'TOGGLE_CONTROLS': 'Toggle controls of the panel under the pointer',
                 'COPY_HOVER': 'Copy the hover label of the point under the pointer',
                 'SHOW_HELP': 'Show this help',
                 'CLOSE_MODAL': 'Close modal dialogs'
@@ -4138,37 +4139,13 @@ const App = (function() {
      * @private
      */
     function _initKeyboardShortcuts() {
-        // Helper function to trigger an action on the most centered panel
+        // Helper function to trigger an action on the panel the shortcut is aimed at (utils/panel-target.js)
+        const _targetTile = installPanelTarget();
+        // Close is never aimed by a guess: with the pointer and the focus on no panel it does nothing
         function _triggerActionOnFocusedPanel(buttonClass) {
-            // Find panels that are currently visible in the viewport
-            const tiles = Array.from(document.querySelectorAll('.tile:not(.tile-selector)'));
-            if (tiles.length === 0) return;
-            
-            // Get the tile that's most centered in the viewport
-            const viewportHeight = window.innerHeight;
-            const viewportCenter = viewportHeight / 2;
-            
-            let closestTile = null;
-            let closestDistance = Infinity;
-            
-            tiles.forEach(tile => {
-                const rect = tile.getBoundingClientRect();
-                const tileCenter = rect.top + rect.height / 2;
-                const distance = Math.abs(tileCenter - viewportCenter);
-                
-                if (distance < closestDistance) {
-                    closestDistance = distance;
-                    closestTile = tile;
-                }
-            });
-            
-            if (closestTile) {
-                // Find and click the specific button
-                const button = closestTile.querySelector(`.${buttonClass}`);
-                if (button) {
-                    button.click();
-                }
-            }
+            const tile = _targetTile({ guess: buttonClass !== 'tile-close' });
+            const button = tile && tile.querySelector(`.${buttonClass}`);
+            if (button) button.click();
         }
 
         // Helper function to check if a keyboard event matches a shortcut configuration
@@ -4332,7 +4309,7 @@ const App = (function() {
         // If in desktop mode, register additional Ctrl+key combinations for common actions
         if (!Config.KEYBOARD_SHORTCUTS.BROWSER_COMPATIBLE) {
             // Add Ctrl+key combinations for desktop/application mode
-            const desktopKeys = ['n', 'w', 'h', 'v', 'c'];
+            const desktopKeys = ['n', 'w', 'h', 'v', 't'];
             const desktopActions = ['NEW_PANEL', 'CLOSE_PANEL', 'SPLIT_HORIZONTAL', 'SPLIT_VERTICAL', 'TOGGLE_CONTROLS'];
             
             desktopKeys.forEach((key, index) => {
