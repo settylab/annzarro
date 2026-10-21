@@ -10,10 +10,19 @@
 set -e
 STATE="${ANNZARRO_HOME:-/state}"
 
+# The data directory the configuration in effect gives (the image's /data unless the operator
+# mounted a file or set a variable of their own). Empty if the server cannot say.
+effective_data_dir() {
+    "${ANNZARRO_BIN:-annzarro}" paths --format json 2>/dev/null |
+        sed -n '/"label": "data directory"/{n;s/.*"path": "\(.*\)",\{0,1\}$/\1/p;}' | head -n 1
+}
+
 # Old layout: /state/data holds panel sets, or the "data" link made by the previous entrypoint,
-# and the operator has not chosen another data_dir.
+# and the operator has not chosen another data_dir (a variable, or a mounted configuration file).
 old_layout() {
     [ -z "${ANNZARRO_SERVER_DATA_DIR:-}" ] || return 1
+    dir="$(effective_data_dir)"
+    [ -z "$dir" ] || [ "$dir" = "/data" ] || return 1
     [ -d "$STATE/data/sessions" ] || [ -L "$STATE/data/data" ] || return 1
 }
 
