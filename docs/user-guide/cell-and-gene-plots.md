@@ -292,8 +292,8 @@ hover label with two obs columns.
 While a hover label shows, press **C** to copy it as plain text: the name, then one `label: value`
 line for x, y, z, the colour and each hover column, with the same numbers as the label. A brief
 "Copied hover info" confirms it. It works in 2D and 3D plots and in large-plot mode (where the
-label holds the name, x, y and colour). With no label showing, **C** toggles the panel's controls
-as before; it does nothing while you type in a field, and **Ctrl+C** or **Cmd+C** is untouched. The
+label holds the name, x, y and colour). With no label showing, **C** does nothing; it is
+also off while you type in a field, and **Ctrl+C** or **Cmd+C** is untouched. The
 browser lets a page copy only over https or on localhost; elsewhere a short message says so.
 
 ## Zoom, pan and click

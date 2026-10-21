@@ -3,7 +3,7 @@
 A headless Chromium with clipboard permission hovers a point, presses C and reads
 the clipboard back: the name, x, y, the colour and the Hover column, one per line.
 C typed in an input and Cmd+C leave the clipboard alone, and with no label showing
-C still toggles the panel's controls.
+C does nothing (T toggles the panel's controls).
 
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI).
@@ -193,7 +193,7 @@ def test_typing_and_chords_leave_the_clipboard(page, server):
     assert page.locator(".notification").count() == 0
 
 
-def test_c_without_a_label_toggles_controls(page, server):
+def test_c_without_a_label_does_nothing_and_t_toggles(page, server):
     page.goto(_link(server))
     _ready(page)
     page.evaluate("""() => { window.__toggled = 0;
@@ -203,12 +203,16 @@ def test_c_without_a_label_toggles_controls(page, server):
     page.keyboard.press("c")
     page.wait_for_function("() => /Copied hover info/.test((document.querySelector('.notification') || {}).textContent || '')")
     assert page.evaluate("window.__toggled") == 0
-    # with none, it toggles as before and copies nothing
+    # with none, it does nothing, and T toggles the controls
     page.mouse.move(2, 2)
     page.wait_for_function(
         "() => { const t = document.querySelector('.large-plot-tip'); return !t || t.style.display === 'none'; }")
     _arm(page)
     page.keyboard.press("c")
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.__toggled") == 0
+    assert _clipboard(page) == "sentinel"
+    page.keyboard.press("t")
     page.wait_for_function("() => window.__toggled === 1")
     assert _clipboard(page) == "sentinel"
 
@@ -230,7 +234,7 @@ def test_c_in_3d(page, server):
     lines = _clipboard(page).split("\n")
     assert lines[0].startswith("cell_") and any(l.startswith("z: ") for l in lines), lines
     assert any("total_counts" in l or l.startswith("c:") for l in lines), lines
-    # the label goes (plotly_unhover): C is the controls' again
+    # the label goes (plotly_unhover): C copies nothing
     page.evaluate("g => document.querySelector(g).emit('plotly_unhover', {})", GRAPH)
     page.evaluate("navigator.clipboard.writeText('sentinel')")
     page.keyboard.press("c")

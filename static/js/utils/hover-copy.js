@@ -7,8 +7,8 @@
  * column, whatever the label's width. Large-plot mode has no Plotly label;
  * its tooltip (panels/plot-utilities/large-interact.js) is read instead.
  *
- * C is also "toggle controls" (config.js): it copies only while a label is
- * showing, and otherwise falls through to that. Typing in a field and any
+ * C copies only while a label is showing and otherwise does nothing (toggling a
+ * panel's controls is T, config.js). Typing in a field and any
  * Ctrl, Cmd or Alt chord are left alone, so Cmd+C copies a selection as usual.
  */
 import { notify } from './notify.js';
@@ -121,9 +121,7 @@ export async function copyHover(text, io = {}) {
 }
 
 /**
- * Add the C key. In the capture phase, so that when a label is showing C is
- * ours and does not also toggle the panel's controls; with none showing the
- * event is not touched.
+ * Add the C key. With no label showing the event is not touched.
  * @returns {function(): void}  removes the listener
  */
 export function installHoverCopy() {

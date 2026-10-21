@@ -303,8 +303,8 @@ const Config = (function() {
         CLOSE_PANEL: { key: 'w', modifiers: {} },
         SPLIT_HORIZONTAL: { key: 'h', modifiers: {} },
         SPLIT_VERTICAL: { key: 'v', modifiers: {} },
-        TOGGLE_CONTROLS: { key: 'c', modifiers: {} },
-        // the same key, while a point's hover label shows (utils/hover-copy.js)
+        TOGGLE_CONTROLS: { key: 't', modifiers: {} },
+        // copies the hover label while one shows (utils/hover-copy.js)
         COPY_HOVER: { key: 'c', modifiers: {} },
         
         // Special keys that don't generally conflict

@@ -282,6 +282,10 @@ A tile header.
 4. **Split top and bottom** puts a new, empty pane below this tile.
 5. **Close** removes the tile. Its settings are kept under **Duplicate or Reopen Panel**.
 
+Four keys do the same for the panel under the mouse pointer, or when the pointer is not on one,
+the panel that holds the keyboard focus: **T** toggles the controls, **H** and **V** split, and
+**W** closes. They are off while you type in a field. **F1** lists them.
+
 
 ## Split and resize
 
