@@ -151,6 +151,17 @@ The dataset browser with a dataset selected. Numbers match the list below.
    citation or README ({doc}`../deployment/dataset-attribution`) shows them under these facts; the
    README and the structure open when you click their headings.
 
+**Opening it again is quick.** The browser keeps the listings it has read, the data directory and
+each folder you opened, in your browser (separately for each server and each user, at most 40 listings,
+the first page of each), and shows them the moment it opens while it reads them again. The list is
+updated in place when the new one arrives; your search text, the selection and the scroll position stay.
+**Refresh**, at the right of the filters, reads the folder shown, the places and Recent again. It turns
+into **Refreshing…** with a turning icon and cannot be clicked until the read is done. If the server cannot
+be reached, the list from earlier stays and a note says it could not be refreshed. A dataset that has
+been removed since disappears at the next read; if you click one before that, the browser asks first
+and says it is no longer available. A site set to session-only storage
+({doc}`../deployment/public-site`) keeps the listings only until the tab closes.
+
 Switching datasets does not ask: the open panels stay and read from the new dataset, and a back button
 beside the dataset name ("Back to *old name*") returns to the dataset you left. It stays until the next
 switch, and going back is itself a switch, so the button then offers the dataset you just left.

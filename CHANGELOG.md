@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- The dataset browser opens at once on the listings it read before (the data directory and each folder you opened) and reads fresh ones behind them, updating the list in place without losing your search, selection or scroll. A new **Refresh** button reads the folder, the places and Recent again; it shows that it is busy and cannot be clicked meanwhile, and a failed refresh keeps the list with a note. The listings are kept in the browser per server and user (a convenience item, forgotten with the tab on a session-only site).
+
 ## 0.7.1 (2026-10-19)
 
 ### Added

@@ -223,6 +223,11 @@
                             <button id="dsb-regex" type="button" class="btn btn-sm btn-outline-secondary dsb-regex" title="Regular expression search" aria-label="Regular expression search" aria-pressed="false">.*</button>
                         </div>
                         <div id="dsb-chips" class="dsb-chips" role="group" aria-label="Filters"></div>
+                        <div class="dsb-refresh">
+                            <button id="dsb-refresh" type="button" class="btn btn-sm btn-outline-secondary" aria-busy="false" title="Read the datasets again">
+                                <i class="fas fa-sync-alt" aria-hidden="true"></i> <span id="dsb-refresh-text">Refresh</span>
+                            </button>
+                        </div>
                     </div>
                     <div id="dsb-search-error" class="small text-danger dsb-search-error" hidden></div>
                     <div class="dsb-layout">
@@ -244,7 +249,10 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <span id="dsb-status" class="dsb-status" role="status" aria-live="polite"></span>
+                    <span>
+                        <span id="dsb-status" class="dsb-status" role="status" aria-live="polite"></span>
+                        <span id="dsb-refresh-note" class="dsb-refresh-note" role="status" hidden>Could not refresh. Showing the list from earlier.</span>
+                    </span>
                     <span class="dsb-hints" aria-hidden="true"><kbd>Enter</kbd> open <kbd>Esc</kbd> close <kbd id="dsb-hint-path">/</kbd> path</span>
                 </div>
             </div>

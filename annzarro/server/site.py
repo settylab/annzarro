@@ -72,6 +72,8 @@ STORAGE_INVENTORY = (
     ("annzarro.recents:<origin>|<user>", "Recently opened datasets", "Convenience"),
     ("annzarro.recentDatasets:<origin>", "The older form of the recent datasets, moved to the key above",
      "Convenience"),
+    ("annzarro.listings:<origin and prefix>|<user>", "The dataset listings the browser read last (the first page of "
+     "each folder opened), shown at once while it reads them again", "Convenience"),
     ("annzarro_memory_pending, annzarro_memory_margin", "A marker that a heavy action was under way, and the "
      "memory margin learned from it for actions of that size, so a tab that ran out of memory does not repeat it "
      "(forgotten after a week, when an action that large succeeds, or with Reset the margin)", "Technical"),
@@ -687,7 +689,7 @@ _HELP = {
                  "in security.txt.",
     "software_credits": "Keeps AnnZarro's credit in About (the Setty Lab, the NIH funding, how to cite it). "
                         "Off leaves the name, version, licence and links. It credits the software, never your site.",
-    "storage.persistent_convenience": "Off keeps the layout autosave, the last sessions and the recent datasets "
+    "storage.persistent_convenience": "Off keeps the layout autosave, the last sessions, the recent datasets and the dataset listings "
                                       "only until the tab closes, so the browser keeps nothing between visits but "
                                       "the visitor's own choices.",
 }

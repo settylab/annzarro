@@ -559,7 +559,7 @@ site:
       properties:
         persistent_convenience:
           type: boolean
-          description: "false keeps the layout autosave, the last sessions and the recent datasets only until the tab closes"
+          description: "false keeps the layout autosave, the last sessions, the recent datasets and the dataset listings only until the tab closes"
           default: true
 
 # UI configuration

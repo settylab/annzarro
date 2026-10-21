@@ -4169,6 +4169,9 @@ details.aesthetics-section > .aesthetics-body {
 .dsb-toggle { border-radius: 1rem; }
 .dsb-toggle.active { color: var(--az-link); border-color: var(--az-link); background: var(--az-accent-bg); }
 .dsb-search-error { padding: 0 1rem; }
+.dsb-refresh { margin-left: auto; }
+.dsb-refresh-note { margin-left: 0.5rem; color: var(--az-warn-text); }
+.dsb-refresh .btn:disabled { cursor: progress; }
 .dsb-layout {
     flex: 1 1 auto;
     display: grid;
