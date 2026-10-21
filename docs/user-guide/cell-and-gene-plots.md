@@ -289,6 +289,8 @@ view's JSON it can also name other sources, such as a layer column:
 the **Hover** list keeps such entries when you change its selection. {doc}`focus-and-lock` shows a
 hover label with two obs columns.
 
+(hover-copy)=
+
 While a hover label shows, press **C** to copy it as plain text: the name, then one `label: value`
 line for x, y, z, the colour and each hover column, with the same numbers as the label. A brief
 "Copied hover info" confirms it. It works in 2D and 3D plots and in large-plot mode (where the

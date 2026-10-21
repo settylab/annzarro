@@ -197,13 +197,7 @@ the dataset button. Rows and column headers are those of an ordinary table, so a
 a row as "short.zarr, 200 cells, 20 genes, zarr v2, modified ..."; counts and the progress of an
 opening are announced politely.
 
-| Keys | Action |
-|---|---|
-| **Ctrl+O** (**Cmd+O**) | Open the dataset browser |
-| **Ctrl+Shift+L** (**Cmd+Shift+L**) | Load Panel Set |
-| **Alt+D**, in the browser | Switch the search of descriptions on or off |
-| **/** or **~**, in the browser | Type a path or URL (the key is the first character of the path; **Ctrl+L** or **Cmd+L** also works where the web browser passes it on) |
-| **F1** | List the keyboard shortcuts |
+All the keys are listed under {ref}`keyboard-shortcuts`.
 
 In the desktop app **Open file or folder...** (also **Ctrl+Shift+O**, **Cmd+Shift+O**) in the browser
 and on the welcome screen opens your system's dialog and takes a `.zarr` folder or an `.h5ad` file
@@ -265,6 +259,34 @@ The Welcome tile.
 The first cell plot, with its controls open.
 ```
 
+(keyboard-shortcuts)=
+## Keyboard shortcuts
+
+**F1** lists them in the app. The single letters are off while you type in a field. Where a
+shortcut says **Ctrl**, use **Cmd** on a Mac.
+
+| Keys | Action |
+|---|---|
+| **Ctrl+S** | Save the panel set |
+| **Ctrl+Shift+L** | Load a panel set |
+| **Ctrl+O** | Open the dataset browser |
+| **Ctrl+R** | Refresh the dataset (the desktop app only; a web browser keeps it for reloading the page) |
+| **N** | Go to the empty panel selector, or add one |
+| **T** | Show or hide the controls of the panel under the mouse |
+| **H** | Split the panel under the mouse side by side: a new pane to its right |
+| **V** | Split the panel under the mouse top and bottom: a new pane below it |
+| **W** | Close the panel under the mouse |
+| **C** | Copy the hover label while the pointer is on a point ({ref}`more <hover-copy>`); otherwise nothing |
+| **F1** | List the keyboard shortcuts |
+| **Escape** | Close the open dialog |
+| **Alt+D**, in the dataset browser | Switch the search of descriptions on or off |
+| **/** or **~**, in the dataset browser | Type a path or URL (the key is the first character of the path; **Ctrl+L** also works where the web browser passes it on) |
+| **Shift** and **Esc**, drawing a line filter in a table | **Shift** snaps the line to multiples of 45°; **Esc** drops the line and leaves the tool |
+
+**T**, **H**, **V** and **W** act on the panel under the mouse pointer. With the pointer
+outside every panel they act on the panel that holds the keyboard focus, and failing that on
+the panel nearest the middle of the window.
+
 ## Tile controls
 
 ```{figure} ../_static/screens/user-guide/ui-tile-header.png
@@ -282,9 +304,7 @@ A tile header.
 4. **Split top and bottom** puts a new, empty pane below this tile.
 5. **Close** removes the tile. Its settings are kept under **Duplicate or Reopen Panel**.
 
-Four keys do the same for the panel under the mouse pointer, or when the pointer is not on one,
-the panel that holds the keyboard focus: **T** toggles the controls, **H** and **V** split, and
-**W** closes. They are off while you type in a field. **F1** lists them.
+The keys for these buttons are in {ref}`keyboard-shortcuts`.
 
 
 ## Split and resize
