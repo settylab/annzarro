@@ -22,6 +22,10 @@ with the release after it. Older releases are listed on
 - A `config.yaml` picked up from the directory annzarro is started from is still read, but now logs a warning naming the file: this stops working in 0.8. Name the file with `--config` or `ANNZARRO_CONFIG` instead.
 - The dataset browser opens at once on the listings it read before (the data directory and each folder you opened) and reads fresh ones behind them, updating the list in place without losing your search, selection or scroll. A new **Refresh** button reads the folder, the places and Recent again; it shows that it is busy and cannot be clicked meanwhile, and a failed refresh keeps the list with a note. The listings are kept in the browser per server and user (a convenience item, forgotten with the tab on a session-only site).
 
+### Docs
+- The README and the licence page cite v0.7.1 by its DOI,
+  [10.5281/zenodo.23490614](https://doi.org/10.5281/zenodo.23490614).
+
 ## 0.7.1 (2026-10-19)
 
 ### Added
