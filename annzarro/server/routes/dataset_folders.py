@@ -21,7 +21,7 @@ import time
 
 from flask import current_app as app, jsonify, request
 
-from .. import access, confinement, store_walk
+from .. import access, confinement, panel_sets, store_walk
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +244,7 @@ def list_folder(config, folder, offset=0, limit=None, sort="name", order="asc"):
     if not os.path.isdir(path):
         raise FileNotFoundError(path)
     at_top = os.path.realpath(path) == os.path.realpath(data_dir)
-    skip = ("sessions",) if at_top else ()
+    skip = panel_sets.top_level_skip(config) if at_top else ()
     entries = [e for e in (_entry(data_dir, path, n) for n in data_routes._listdir(path) if n not in skip) if e]
     if at_top:
         entries += _admin_root_entries(config, data_dir, {e["path"] for e in entries})

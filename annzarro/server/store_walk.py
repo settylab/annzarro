@@ -11,7 +11,7 @@ depth, entry and time limits stop it. What the walk reached is left in a ``WalkS
 import os
 import time
 
-from . import access
+from . import access, panel_sets
 
 
 class WalkStats:
@@ -40,12 +40,13 @@ def iter_stores(config, scope=None, user=None, deadline=None, max_depth=6, max_v
     from .routes import data_routes, dataset_folders as df
     stats = stats if stats is not None else WalkStats()
     data_dir = os.path.expanduser(config.get("data_dir"))
+    top_skip = panel_sets.top_level_skip(config)
     stores = []
     if scope is not None:
         if not os.path.isdir(scope):
             raise FileNotFoundError(scope)
         if df.is_store_dir(scope, os.path.basename(scope.rstrip(os.sep))):
-            return _walk(data_dir, [], [], set(), None, user, deadline, max_depth, max_visited, stats, data_routes, df)
+            return _walk(data_dir, [], [], set(), None, user, deadline, max_depth, max_visited, stats, data_routes, df, top_skip)
         queue, seen = [(scope, 0)], {os.path.realpath(scope)}
     elif user:
         queue, seen = [], set()
@@ -64,14 +65,14 @@ def iter_stores(config, scope=None, user=None, deadline=None, max_depth=6, max_v
             if real not in seen:
                 seen.add(real)
                 queue.append((root["path"], 1))
-    return _walk(data_dir, stores, queue, seen, scope, user, deadline, max_depth, max_visited, stats, data_routes, df)
+    return _walk(data_dir, stores, queue, seen, scope, user, deadline, max_depth, max_visited, stats, data_routes, df, top_skip)
 
 
-def _walk(data_dir, stores, queue, seen, scope, user, deadline, max_depth, max_visited, stats, data_routes, df):
+def _walk(data_dir, stores, queue, seen, scope, user, deadline, max_depth, max_visited, stats, data_routes, df, top_skip):
     yield from stores
     while queue and not stats.truncated:
         folder, depth = queue.pop(0)
-        skip = ("sessions",) if os.path.realpath(folder) == os.path.realpath(data_dir) else ()
+        skip = top_skip if os.path.realpath(folder) == os.path.realpath(data_dir) else ()
         for name in data_routes._listdir(folder):
             if name in skip or name.startswith("."):
                 continue

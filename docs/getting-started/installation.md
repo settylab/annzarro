@@ -212,7 +212,7 @@ AnnZarro never writes to datasets. It writes only:
 | Server log | `~/.annzarro/logs/annzarro_server.log` |
 | PID file of `annzarro start --detach` | `~/.annzarro/server.pid` |
 | Users file and login key (only when login is enabled) | `~/.annzarro/auth/users.json`, `~/.annzarro/auth/annzarro_secret_key` |
-| Saved panel sets | `<data directory>/sessions/` (by default `~/annzarro-data/sessions/`) |
+| Saved panel sets | `~/.annzarro/panel-sets/` ({ref}`panel-sets-location`) |
 
 Set `ANNZARRO_HOME` to move `~/.annzarro` elsewhere, for example to a project directory on a
 cluster where the home directory is small.

@@ -25,7 +25,7 @@ import time
 
 from flask import current_app, jsonify, request
 
-from .. import confinement, permissions
+from .. import confinement, panel_sets, permissions
 from ..routes import dataset_folders
 from . import audit, overlay
 from .guard import require_admin
@@ -133,7 +133,7 @@ def _server_state(config):
     panel sets."""
     from . import state_dir
     return [os.path.dirname(state_dir(config)), state_dir(config),
-            os.path.join(_real(config.get("data_dir") or ""), "sessions")]
+            _real(panel_sets.directory(config))]
 
 
 def _active_real_roots(config):
@@ -296,7 +296,7 @@ def add_root():
 def _panel_sets_under(config, roots):
     """How many saved panel sets name a dataset inside one of ``roots``."""
     from .. import session_quota
-    sessions = os.path.join(os.path.expanduser(config.get("data_dir") or ""), "sessions")
+    sessions = panel_sets.directory(config)
     count = 0
     for stored in session_quota.entries(sessions):
         dataset = stored.data.get("dataset")

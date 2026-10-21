@@ -35,7 +35,7 @@ The image also carries the labels `title`, `description`, `source`, `url`, `docu
 | Path in the container | What it holds |
 |---|---|
 | `/data` | the datasets. Mount it **read-only**; AnnZarro never writes datasets |
-| `/state` | everything the server writes: the users file and login key (`/state/auth`), the admin settings, saved panel sets (`/state/data/sessions`) and logs (`/state/logs`). A volume that survives restarts |
+| `/state` | everything the server writes: the users file and login key (`/state/auth`), the admin settings, saved panel sets (`/state/panel-sets`) and logs (`/state/logs`). A volume that survives restarts |
 | `/etc/annzarro/container.yaml` | the configuration the image starts with (`ANNZARRO_CONFIG`); mount your own file over it, or change single values with `ANNZARRO_<SECTION>_<KEY>` variables |
 
 The server listens on `0.0.0.0:8000` inside the container. The datasets under `/data` show up in the

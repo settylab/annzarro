@@ -17,6 +17,7 @@ from annzarro import cli
 from annzarro.server.admin import audit
 from annzarro.server.auth import AuthManager
 from annzarro.tests.server.admin_helpers import (ADMIN, PASSWORD, USER, login, make_app, unsafe_headers)
+from annzarro.server import panel_sets
 
 BASE = "/api/v1/admin/users"
 
@@ -93,7 +94,7 @@ def test_list_shows_the_table_without_secrets(app, admin):
 
 
 def test_list_counts_panel_sets_and_shows_active_locks(app, admin):
-    sessions = os.path.join(app.config["data_dir"], "sessions")
+    sessions = panel_sets.directory(app.config)
     os.makedirs(sessions)
     for i, owner in enumerate([USER, USER, ADMIN, None]):
         with open(os.path.join(sessions, f"s{i}.json"), "w") as f:
@@ -297,7 +298,7 @@ def test_remove_user(app, admin):
 
 
 def test_remove_can_hand_the_panel_sets_over(app, admin):
-    sessions = os.path.join(app.config["data_dir"], "sessions")
+    sessions = panel_sets.directory(app.config)
     os.makedirs(sessions)
     for i, owner in enumerate([USER, USER, ADMIN]):
         with open(os.path.join(sessions, f"s{i}.json"), "w") as f:
@@ -515,7 +516,7 @@ def test_a_refused_change_is_still_refused_when_the_audit_fails(app, admin, brok
 
 
 def test_removal_is_audited_before_the_handover_and_the_handover_on_its_own(app, admin):
-    sessions = os.path.join(app.config["data_dir"], "sessions")
+    sessions = panel_sets.directory(app.config)
     os.makedirs(sessions)
     with open(os.path.join(sessions, "s.json"), "w") as f:
         json.dump({"owner": USER}, f)

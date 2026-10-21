@@ -157,7 +157,7 @@ contains a script, iframe, embed or an address on another server.
 | Sign-in lock-out (5 failures per user and address) | Memory | Yes, briefly | 15 minutes |
 | Users file: user name, password hash, admin flag | `auth.user_file` | Yes | Until you delete the user |
 | Admin audit log: time, admin, IP address, action | State directory | Yes | Rotates at 50 MB, five files kept |
-| Panel sets: owner, name, dataset, layout; other users can see them | `<data dir>/sessions/` | Yes (owner) | Until deleted |
+| Panel sets: owner, name, dataset, layout; other users can see them | `<state dir>/panel-sets/` | Yes (owner) | Until deleted |
 | The datasets | Data directory | Possibly | Your decision, see [Human data](#human-data) |
 
 Choose a retention period for the logs, write it into the notice, and rotate or delete accordingly.

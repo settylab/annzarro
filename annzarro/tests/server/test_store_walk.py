@@ -25,6 +25,7 @@ def world(tmp_path):
     _make(data / "a" / "mid.zarr")
     _make(data / ".hidden" / "no.zarr")
     _make(data / "sessions" / "no.zarr")
+    (data / "sessions" / "set.json").write_text("{}")       # panel sets still live here: the folder is skipped
     _make(data / "a" / "sessions" / "yes.zarr")
     app = create_app({"TESTING": True, "host": "127.0.0.1", "data_dir": str(data), "log_file": str(tmp_path / "t.log"),
                       "user_file": str(tmp_path / "users.json"), "secret_key": "test-only-secret"})

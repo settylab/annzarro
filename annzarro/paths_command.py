@@ -43,6 +43,20 @@ def describe_origin(manager, key: str) -> str:
     return "default"
 
 
+def panel_sets_entry(manager, server) -> dict:
+    """Where panel sets are kept; a legacy location says so, with the reason."""
+    from annzarro.server import panel_sets
+
+    location = panel_sets.resolve(manager.to_flask_config())
+    if location.mode == panel_sets.LEGACY:
+        return {"label": "panel sets", "path": location.path, "legacy": True,
+                "why": "legacy location: " + location.note}
+    why = describe_origin(manager, "server.panel_sets_dir")
+    if location.note:
+        why += "; " + location.note
+    return {"label": "panel sets", "path": location.path, "legacy": False, "why": why}
+
+
 def collect(manager) -> dict:
     """The report as data: config files, then one entry per location."""
     from annzarro.server.admin import STATE_DIR_NAME
@@ -64,7 +78,7 @@ def collect(manager) -> dict:
         entry("admin state", os.path.join(os.path.dirname(user_file), STATE_DIR_NAME), "beside the users file"),
         entry("log file", server.get("log_file"), describe_origin(manager, "server.log_file")),
         entry("PID file", str(paths.pid_file()), "in the state directory"),
-        entry("panel sets", server["panel_sets_dir"], describe_origin(manager, "server.panel_sets_dir")),
+        panel_sets_entry(manager, server),
         entry("cache", server["cache_dir"], describe_origin(manager, "server.cache_dir")),
     ]
     for extra in server.get("allowed_dirs") or []:

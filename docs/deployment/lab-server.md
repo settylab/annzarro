@@ -8,7 +8,7 @@ outside the directories you allow. This is the "Lab server" arrangement of {doc}
 ```text
 browser ──HTTPS──▶ nginx :443 ──HTTP──▶ gunicorn 127.0.0.1:8000 ──▶ annzarro.server.wsgi:create_wsgi_app()
                                                                      reads /srv/annzarro/data (read-only)
-                                                                     writes /srv/annzarro/data/sessions
+                                                                     writes /var/lib/annzarro (state, panel sets)
 ```
 
 The rest of this page sets that up on a Linux host; {doc}`containers` runs the same arrangement from a Docker image or an Apptainer image. Read {doc}`authentication` for users and
@@ -29,14 +29,17 @@ sudo /opt/annzarro/venv/bin/pip install 'annzarro[server]'     # 'annzarro[serve
 ## 2. Lay out the data directory
 
 ```bash
-sudo mkdir -p /srv/annzarro/data/sessions
+sudo mkdir -p /srv/annzarro/data
 sudo ln -s /lab/atlases/bm_aging_annzarro.zarr /srv/annzarro/data/     # one link per dataset
-sudo chown annzarro: /srv/annzarro/data/sessions              # the only place the server writes
 ```
 
-Keep the stores themselves read-only for the `annzarro` account. The server only reads them,
-and file permissions make that a property of the host rather than of the code. Panel sets are
-JSON files in `<data_dir>/sessions/`, which must be writable.
+Keep the stores themselves, and the whole data directory, read-only for the `annzarro` account.
+The server only reads them, and file permissions make that a property of the host rather than of
+the code. Panel sets are JSON files in `<state_dir>/panel-sets/` (here `/var/lib/annzarro/panel-sets/`,
+created on the first save), so nothing is written under the data directory. An install that
+saved panel sets in `<data_dir>/sessions/` with an older release keeps using that folder, which
+must then stay writable, until you copy them with `annzarro panel-sets migrate`
+({ref}`panel-sets-location`).
 
 A dataset linked into the data directory from elsewhere is refused on a shared server unless its
 target's directory is listed in `server.allowed_dirs`. The server names every such link in a

@@ -1,7 +1,7 @@
 """How much one server's panel sets may take, and what listing them costs.
 
-Panel sets are JSON files in ``<data_dir>/sessions``, written by whoever may
-save: with login off, anyone who reaches the server. Nothing bounded their
+Panel sets are JSON files in the panel-sets directory (``server/panel_sets.py``), written by
+whoever may save: with login off, anyone who reaches the server. Nothing bounded their
 number or their total size, so a loop of saves filled the disk, and
 ``sessions/list`` parsed every file on every call.
 

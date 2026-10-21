@@ -433,7 +433,7 @@ not carry.
 
 ## Panel sets
 
-Panel sets are JSON files in `<data_dir>/sessions/`, shared by all users of a server
+Panel sets are JSON files in `<state_dir>/panel-sets/` ({ref}`panel-sets-location`), shared by all users of a server
 ({doc}`../user-guide/panel-sets`). With login on, deleting, renaming or overwriting is limited
 to the owner and admins; a refusal is `403` with `reason` `not_owner` or `legacy_admin_only`.
 

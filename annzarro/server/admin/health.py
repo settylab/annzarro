@@ -2,7 +2,7 @@
 
 from flask import current_app, jsonify, request
 
-from .. import cache_reset, health
+from .. import cache_reset, health, panel_sets
 from . import audit
 from .guard import require_admin
 
@@ -15,7 +15,9 @@ def get_health():
     monitor = health.monitor(current_app)
     if monitor is None:       # only when login is off, where the guard has already refused
         return jsonify(error="Health needs login.", reason="admin_requires_login"), 404
-    return jsonify(monitor.collect())
+    report = monitor.collect()
+    report["panel_sets"] = panel_sets.describe(current_app.config)
+    return jsonify(report)
 
 
 @require_admin(action="cache.clear")
