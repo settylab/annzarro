@@ -52,3 +52,11 @@ test('a pointer or focus outside the known panels is not a target', () => {
 test('no panels, nothing to act on', () => {
     assert.equal(chooseTargetTile({ tiles: [], pointerEl: null, activeEl: null, viewport }), null);
 });
+
+test('without the guess (Close), only the pointer or the focus choose', () => {
+    const pick = (pointerEl, activeEl) => chooseTargetTile({ tiles, pointerEl, activeEl, viewport, guess: false });
+    assert.equal(pick(inside(second), null), second);
+    assert.equal(pick(null, inside(first)), first);
+    assert.equal(pick(outside, outside), null);
+    assert.equal(pick(null, null), null);
+});

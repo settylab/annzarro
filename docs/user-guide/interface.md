@@ -285,7 +285,8 @@ shortcut says **Ctrl**, use **Cmd** on a Mac.
 
 **T**, **H**, **V** and **W** act on the panel under the mouse pointer. With the pointer
 outside every panel they act on the panel that holds the keyboard focus, and failing that on
-the panel nearest the middle of the window.
+the panel nearest the middle of the window; **W** is the exception and does nothing then, so
+that it never closes a panel you did not point at.
 
 ## Tile controls
 

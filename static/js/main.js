@@ -4141,8 +4141,9 @@ const App = (function() {
     function _initKeyboardShortcuts() {
         // Helper function to trigger an action on the panel the shortcut is aimed at (utils/panel-target.js)
         const _targetTile = installPanelTarget();
+        // Close is never aimed by a guess: with the pointer and the focus on no panel it does nothing
         function _triggerActionOnFocusedPanel(buttonClass) {
-            const tile = _targetTile();
+            const tile = _targetTile({ guess: buttonClass !== 'tile-close' });
             const button = tile && tile.querySelector(`.${buttonClass}`);
             if (button) button.click();
         }

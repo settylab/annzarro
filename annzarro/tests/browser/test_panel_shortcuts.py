@@ -137,3 +137,11 @@ def test_c_without_a_label_does_nothing(page):
     assert not _hidden(page, FIRST) and not _hidden(page, SECOND)
     assert page.evaluate("navigator.clipboard.readText()") == "sentinel"
     assert page.locator(".notification").count() == 0
+
+
+def test_w_with_the_pointer_off_every_panel_closes_nothing(page):
+    page.mouse.move(1, 1)
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    page.keyboard.press("w")
+    page.wait_for_timeout(500)
+    assert page.locator(FIRST).count() == 1 and page.locator(SECOND).count() == 1
