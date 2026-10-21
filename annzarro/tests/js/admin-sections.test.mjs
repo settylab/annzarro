@@ -9,7 +9,7 @@ import { AdminError, createAdminApi } from "../../../static/js/admin/admin-api.j
 import { createReauthModal } from "../../../static/js/admin/reauth-modal.js";
 import { SECTIONS, createRouter, sectionFromHash, showToast } from "../../../static/js/admin/admin-main.js";
 import { chainText, detailText, recordRow } from "../../../static/js/admin/audit.js";
-import { cacheText, panelSetsLine, readersText, refusalText, sumRefusals } from "../../../static/js/admin/health.js";
+import { cacheText, panelSetsLine, readersText, warningsBlock, refusalText, sumRefusals } from "../../../static/js/admin/health.js";
 import { deleteMessage, reassignMessage } from "../../../static/js/admin/panel-sets.js";
 
 const F = JSON.parse(readFileSync(new URL("./admin-fixtures.json", import.meta.url), "utf8"));
@@ -208,6 +208,23 @@ test("health: the panel-sets location, and a legacy one says so with the migrate
   assert.equal(panelSetsLine(null), null);
   const fresh = panelSetsLine({ path: "/var/lib/annzarro/panel-sets", legacy: false, note: null });
   assert.match(fresh.textContent, /^Panel sets: \/var\/lib\/annzarro\/panel-sets$/);
+});
+
+test("health: server warnings are listed as text, and nothing shows without any", async () => {
+  assert.equal(warningsBlock(undefined), null);
+  assert.equal(warningsBlock([]), null);
+  const evil = "server.state_dir (/home/u/.annzarro) lies inside the data root /home/u <img src=x onerror=alert(1)>";
+  const block = warningsBlock([evil]);
+  assert.equal(block.id, "admin-health-warnings");
+  assert.ok(block.textContent.includes(evil), "the string appears verbatim, as text");
+  assert.equal(find(block, (n) => n.tagName && n.tagName.toLowerCase() === "img"), null);
+  const { nav, view } = page();
+  const router = makeRouter({ nav, view, api: mockApi({ "/health": { ...F.health, warnings: [evil] } }).api });
+  await router.show("health");
+  assert.match(find(view, (n) => n.id === "admin-health-warnings").textContent, /lies inside the data root/);
+  const { nav: nav2, view: view2 } = page();
+  await makeRouter({ nav: nav2, view: view2, api: mockApi().api }).show("health");
+  assert.equal(find(view2, (n) => n.id === "admin-health-warnings"), null);
 });
 
 test("health: cache text names the name indices when they hold memory, readers are ranked over workers", () => {
