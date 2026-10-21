@@ -357,6 +357,31 @@ def test_parts_are_cached_and_a_changed_store_is_read_again(client, data, monkey
     assert info(client, store, parts="about").get_json()["about"]["title"] == "Renamed"
 
 
+def test_the_reply_carries_a_tag_and_an_unchanged_store_answers_304(client, data):
+    first = info(client, data / "v2.zarr", parts="about,readme")
+    tag = first.headers["ETag"]
+    assert first.status_code == 200 and first.headers["Cache-Control"] == "private, no-cache"
+    again = client.get(URL, query_string={"path": str(data / "v2.zarr"), "parts": "about,readme"}, headers={"If-None-Match": tag})
+    assert again.status_code == 304 and again.data == b"" and again.headers["ETag"] == tag
+    other = info(client, data / "v2.zarr", parts="about")
+    assert other.headers["ETag"] != tag, "the tag names the parts"
+
+
+def test_the_tag_moves_when_the_readme_changes(client, data):
+    store = data / "v2.zarr"
+    tag = info(client, store, parts="readme").headers["ETag"]
+    dataset_annotate.annotate_store(str(store), None, "# Changed\n")
+    os.utime(store / "uns" / "README", (1, 1))        # a coarse clock must not hide the change from the test
+    moved = client.get(URL, query_string={"path": str(store), "parts": "readme"}, headers={"If-None-Match": tag})
+    assert moved.status_code == 200 and moved.headers["ETag"] != tag
+    assert "Changed" in moved.get_json()["readme"]["text"]
+
+
+def test_a_missing_store_has_no_tag(client, data):
+    reply = info(client, data / "nope.zarr", parts="about")
+    assert reply.status_code == 404 and "ETag" not in reply.headers
+
+
 # --- remote ------------------------------------------------------------------------------------------
 
 REMOTE = "s3://lab-bucket/atlas.zarr"
@@ -371,8 +396,9 @@ def test_a_remote_store_is_read_through_the_remote_opener(client, data, monkeypa
     body = info(client, REMOTE).get_json()
     assert opened == [REMOTE] and body["name"] == "atlas.zarr"
     assert body["about"]["title"] == "Liver atlas" and body["structure"]["n_obs"] == 200
-    info(client, REMOTE)
+    reply = info(client, REMOTE)
     assert opened == [REMOTE], "cached for a minute"
+    assert "ETag" not in reply.headers, "a remote store has no cheap fingerprint"
 
 
 def test_remote_stores_follow_the_server_policy(tmp_path):

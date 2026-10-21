@@ -211,25 +211,51 @@ def test_a_dataset_without_attribution_says_so(opened):
     assert not s.errors, s.errors
 
 
-# ---- README, lazily ----------------------------------------------------------------------
+# ---- prefetch ------------------------------------------------------------------------------
 
-def test_each_part_is_requested_only_when_shown(opened):
+def _prefetched(page, count=1):
+    page.wait_for_function(
+        "(n) => performance.getEntriesByType('resource').filter((e) => e.name.includes('/datasets/info')).length >= n",
+        arg=count, timeout=15_000)
+
+
+def test_the_parts_are_fetched_once_after_the_dataset_opens_and_the_dialog_needs_no_request(opened):
     go, _data = opened
     s = go("liver.zarr")
     page = s.page
-    page.wait_for_timeout(500)
-    assert _parts(s.requests) == [], "nothing is read before the button is pressed"
+    _prefetched(page)
+    page.wait_for_function("() => document.querySelector('#dataset-info').classList.contains('has-info')")
+    assert _parts(s.requests) == ["about,readme,structure"], "one request for the three parts"
     _open_dialog(page)
-    assert _parts(s.requests) == ["about"]
+    assert page.locator("#dsi-pane-about .dsi-title").inner_text() == "Liver atlas"
+    _tab(page, "readme")
+    assert page.locator("#dsi-pane-readme .dsi-readme").count() == 1
+    _tab(page, "structure")
+    assert page.locator("#dsi-pane-structure .dsi-summary").count() == 1
+    assert page.locator(".dsi-loading").count() == 0, "no spinner"
+    assert _parts(s.requests) == ["about,readme,structure"], "opening the dialog and its tabs asks for nothing"
+    assert not s.errors, s.errors
+
+
+def test_the_dot_is_only_on_a_dataset_with_something_to_read(opened):
+    go, _data = opened
+    s = go("plain.zarr")
+    _prefetched(s.page)
+    s.page.wait_for_timeout(500)
+    assert not s.page.evaluate("() => document.querySelector('#dataset-info').classList.contains('has-info')")
+    assert not s.errors, s.errors
+
+
+def test_a_tab_opened_before_the_prefetch_still_shows_and_is_not_asked_twice(opened):
+    go, _data = opened
+    s = go("liver.zarr")
+    page = s.page
+    _open_dialog(page)                                  # before the prefetch has had its turn
     _tab(page, "readme")
     page.wait_for_function("() => document.querySelector('#dsi-pane-readme .dsi-readme')")
-    assert _parts(s.requests) == ["about", "readme"]
-    _tab(page, "structure")
-    page.wait_for_function("() => document.querySelector('#dsi-pane-structure .dsi-summary')")
-    assert _parts(s.requests) == ["about", "readme", "structure"]
-    _tab(page, "about")
-    _tab(page, "readme")
-    assert _parts(s.requests) == ["about", "readme", "structure"], "a part already read is not asked for again"
+    page.wait_for_timeout(2500)
+    asked = [part for group in _parts(s.requests) for part in group.split(",")]
+    assert sorted(asked) == ["about", "readme", "structure"], f"each part once, whoever asked: {asked}"
     assert not s.errors, s.errors
 
 
@@ -274,7 +300,16 @@ def test_a_slow_part_shows_a_loading_state_and_a_failed_one_an_error_that_can_be
     s = go("liver.zarr")
     page = s.page
     held = []
-    page.route(INFO_URL, lambda route: held.append(route) if "parts=structure" in route.request.url else route.continue_())
+
+    def hold(route):                                    # the idle prefetch (all the parts) is refused; the structure alone is held
+        url = route.request.url
+        if url.endswith("parts=structure"):
+            held.append(route)
+        elif "," in url.split("parts=")[1]:
+            route.abort()
+        else:
+            route.continue_()
+    page.route(INFO_URL, hold)
     _open_dialog(page)
     _tab(page, "structure")
     loading = page.locator("#dsi-pane-structure .dsi-loading")
@@ -384,10 +419,11 @@ def test_the_details_pane_shows_the_attribution_and_reads_the_rest_when_asked(op
     page.wait_for_function("() => document.querySelector('#dsb-details .dsb-about')?.dataset.state === 'ready'", timeout=20_000)
     assert "CC-BY-4.0" in info.inner_text() and "Jane Doe, John Roe" in info.inner_text()
     assert info.locator(".dsi-doi a").get_attribute("href") == "https://doi.org/10.1234/abcd.5"
-    assert _parts(s.requests) == ["about"], "the README and the structure wait to be opened"
+    liver = lambda: _parts([u for u in s.requests if "liver.zarr" in u])     # the open dataset's own prefetch is not the pane's
+    assert liver() == ["about"], "the README and the structure wait to be opened"
     info.locator("details[data-part=readme] summary").click()
     page.wait_for_function("() => document.querySelector('#dsb-details .dsi-readme h5')")
-    assert _parts(s.requests) == ["about", "readme"]
+    assert liver() == ["about", "readme"]
     info.locator("details[data-part=structure] summary").click()
     page.wait_for_function("() => document.querySelector('#dsb-details .dsi-summary')")
     _shot(page, "browser-pane-1440-light.png")

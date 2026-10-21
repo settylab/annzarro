@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { safeHref, safeColour, densityLabel, shapeLabel, memberType, columnType, citationText, createInfoLoader } =
+const { safeHref, safeColour, densityLabel, shapeLabel, memberType, columnType, citationText, createInfoLoader, isRemotePath } =
   await import("../../../static/js/utils/dataset-info.js");
 
 test("only http, https and mailto addresses become links", () => {
@@ -71,6 +71,58 @@ test("forget drops one dataset or all", async () => {
   loader.forget();
   assert.equal(loader.peek("b", "about"), undefined);
   assert.equal(calls.length, 3);
+});
+
+test("loadAll asks once for the parts not held, and a tab opened meanwhile joins that request", async () => {
+  const { calls, loader } = fake([{ body: { about: 1, readme: 2, structure: 3 } }]);
+  const all = loader.loadAll("/d/x.zarr", ["about", "readme", "structure"]);
+  const tab = loader.load("/d/x.zarr", "structure");
+  await all;
+  assert.equal(await tab, 3);
+  assert.deepEqual(calls, ["/api/v1/datasets/info?path=%2Fd%2Fx.zarr&parts=about,readme,structure"]);
+  assert.equal(loader.peek("/d/x.zarr", "readme"), 2);
+  await loader.loadAll("/d/x.zarr", ["about", "readme", "structure"]);
+  assert.equal(calls.length, 1, "everything held: no request");
+});
+
+test("loadAll asks only for what is missing and does not throw on a failure", async () => {
+  const { calls, loader } = fake([{ body: { about: 1 } }, { ok: false, status: 500, body: { error: "boom" } }, { body: { structure: 3 } }]);
+  await loader.load("p", "about");
+  await loader.loadAll("p", ["about", "structure"]);
+  assert.equal(loader.peek("p", "structure"), undefined);
+  assert.match(calls[1], /parts=structure$/);
+  assert.equal(await loader.load("p", "structure"), 3, "the tab asks again after the failed prefetch");
+});
+
+test("an answer that arrives after forget is not kept", async () => {
+  const { loader } = fake([{ body: { about: 1 } }]);
+  const pending = loader.loadAll("p", ["about"]);
+  loader.forget("p");
+  await pending;
+  assert.equal(loader.peek("p", "about"), undefined);
+});
+
+test("only the pinned dataset and the most recent others are kept", async () => {
+  const answers = Array.from({ length: 6 }, (_, i) => ({ body: { about: i } }));
+  const { loader } = (() => {
+    const calls = [];
+    const fetchImpl = async () => ({ ok: true, status: 200, json: async () => answers.shift().body });
+    return { calls, loader: createInfoLoader({ url: "/u", fetchImpl, kept: 2 }) };
+  })();
+  loader.pin("a");
+  for (const path of ["a", "b", "c", "d", "e"]) await loader.load(path, "about");
+  assert.equal(loader.peek("a", "about"), 0, "the open dataset stays whatever its age");
+  assert.equal(loader.peek("b", "about"), undefined);
+  assert.equal(loader.peek("c", "about"), undefined);
+  assert.equal(loader.peek("d", "about"), 3);
+  assert.equal(loader.peek("e", "about"), 4);
+});
+
+test("a path is remote when it has a scheme", () => {
+  assert.equal(isRemotePath("s3://b/x.zarr"), true);
+  assert.equal(isRemotePath("https://h/x.zarr"), true);
+  assert.equal(isRemotePath("/data/x.zarr"), false);
+  assert.equal(isRemotePath("C:\\data\\x.zarr"), false);
 });
 
 test("a colour is only ever a plain colour", () => {

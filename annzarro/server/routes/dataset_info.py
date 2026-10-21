@@ -10,15 +10,17 @@ store re-annotated while the server runs answers afresh. Who may ask is the deta
 store the requester may not read, or that is not there, answers 404 ``not_found``. The reply names
 the store but never its path.
 """
+import hashlib
 import logging
 import os
 import threading
 import time
 from collections import OrderedDict
 
-from flask import jsonify, request
+from flask import current_app, jsonify, request
 
 from .. import access
+from ..http_cache import CACHE_CONTROL
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,25 @@ def _signature(path, remote):
         except OSError:
             extra.append((member, None))
     return (base, tuple(extra))
+
+
+def etag_for(path, parts):
+    """The tag of the reply for ``parts`` of the local store at ``path``, or None (remote, or not there).
+
+    Made from the store's stat signature (the one the cache above is keyed by), the parts and the
+    reply format, so it moves when ``uns`` or the store's metadata does and never reads the store.
+    """
+    from ... import __version__
+    from ...core import remote
+    from ..http_cache import ENCODING_VERSION
+    if remote.is_remote_path(path) or not os.path.exists(path):
+        return None
+    try:
+        signature = _signature(path, False)
+    except OSError:
+        return None
+    raw = f"{ENCODING_VERSION}|{__version__}|{','.join(parts)}|{path}|{signature}"
+    return hashlib.sha1(raw.encode("utf-8", "surrogateescape")).hexdigest()
 
 
 def describe(path, parts):
@@ -96,6 +117,12 @@ def register_dataset_info_routes(app_, api_version):
             return jsonify({"error": f"parts is a comma-separated choice of {', '.join(core_info.PARTS)}",
                             "reason": "bad_parts"}), 400
         parts = list(dict.fromkeys(parts))
+        etag = etag_for(path, parts)
+        if etag is not None and request.if_none_match.contains_weak(etag):
+            response = current_app.response_class(status=304)
+            response.set_etag(etag, weak=True)
+            response.headers["Cache-Control"] = CACHE_CONTROL
+            return response
         try:
             result = describe(path, parts)
         except core_info.InfoError as exc:
@@ -108,4 +135,8 @@ def register_dataset_info_routes(app_, api_version):
                 return data_routes._reader_error_response(exc, path)
             logger.error(f"Error reading the information of {path}: {exc}")
             return jsonify({"error": f"Failed to read the dataset information: {exc}"}), 500
-        return jsonify({"name": os.path.basename(path.rstrip("/").rstrip(os.sep)) or path, **result})
+        response = jsonify({"name": os.path.basename(path.rstrip("/").rstrip(os.sep)) or path, **result})
+        if etag is not None:
+            response.set_etag(etag, weak=True)
+            response.headers["Cache-Control"] = CACHE_CONTROL
+        return response
