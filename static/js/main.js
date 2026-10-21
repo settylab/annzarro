@@ -2218,7 +2218,15 @@ const App = (function() {
         const origin = () => window.location.origin;
         const user = () => _recentsUserKey || 'local';
         return {
-            urls: { folder: Config.API.DATASET_FOLDER, search: Config.API.DATASET_SEARCH, details: Config.API.DATASET_DETAILS, lookup: Config.API.DATASET_LOOKUP },
+            urls: {
+                folder: Config.API.DATASET_FOLDER, search: Config.API.DATASET_SEARCH, details: Config.API.DATASET_DETAILS, lookup: Config.API.DATASET_LOOKUP,
+                textSearch: Config.API.DATASET_TEXT_SEARCH, textStatus: Config.API.DATASET_TEXT_STATUS, textRefresh: Config.API.DATASET_TEXT_REFRESH
+            },
+            /** Whether the policy lets this user search the descriptions (a server without a policy allows it; its own answer is the safety net). */
+            textSearchAllowed: async () => {
+                const r = await Policy.fresh(['datasets.text-search.enabled']).catch(() => ({ status: 'absent' }));
+                return !(r.status === 'ok' && r.values && r.values['datasets.text-search.enabled'] === false);
+            },
             get infoLoader() { return _datasetInfo ? _datasetInfo.loader : null; },      // mounted after the browser is made
             me: _authMe,
             stored: () => {

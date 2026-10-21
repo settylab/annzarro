@@ -12,8 +12,9 @@ let any user ask for it to be rebuilt.
   sooner it answers the current status (``started: false``).
 
 The index holds every store the crawl could list, so every answer is filtered for the requester after
-the lookup: a store they may not open is no hit, no snippet and no count. A restricted user is told no
-absolute path and only a fraction of progress, never how many stores the server holds.
+the lookup: a store they may not open is no hit, no snippet and no count. A restricted user is told the
+path of what they may open (as in their listings), nothing above a grant, and only a fraction of progress, never how
+many stores the server holds.
 """
 import logging
 import os
@@ -64,7 +65,9 @@ def _row(hit, user):
            "title": (entry.get("about") or {}).get("title") or None, "score": round(hit["score"], 2),
            "matched": hit["matched"], "snippet": hit["snippet"]}
     if user:
-        row["path"], row["rel_path"] = None, access.display_path(user, entry["real"])
+        # the path of a store they may open, as their folder listings give it (it is what opens the row); the
+        # directories above a grant are not told, so the name shown starts at the grant
+        row["path"], row["rel_path"] = entry["real"], access.display_path(user, entry["real"])
     probe = {"path": entry["path"], "h5ad": entry["h5ad"]}
     try:
         df._fill_store(probe)

@@ -221,6 +221,9 @@
                         <div class="dsb-search">
                             <input id="dsb-search" type="search" class="form-control form-control-sm" placeholder="Search name or path" aria-label="Search datasets by name or path" autocomplete="off" spellcheck="false">
                             <button id="dsb-regex" type="button" class="btn btn-sm btn-outline-secondary dsb-regex" title="Regular expression search" aria-label="Regular expression search" aria-pressed="false">.*</button>
+                            <button id="dsb-text" type="button" class="btn btn-sm btn-outline-secondary dsb-text" title="Search descriptions (Alt+D)" aria-label="Search descriptions" aria-pressed="false" aria-keyshortcuts="Alt+D" hidden>
+                                <i class="fas fa-align-left" aria-hidden="true"></i> <span class="dsb-text-label">Descriptions</span>
+                            </button>
                         </div>
                         <div id="dsb-chips" class="dsb-chips" role="group" aria-label="Filters"></div>
                         <div class="dsb-refresh">
@@ -230,6 +233,11 @@
                         </div>
                     </div>
                     <div id="dsb-search-error" class="small text-danger dsb-search-error" hidden></div>
+                    <div id="dsb-text-state" class="dsb-text-state" role="status" hidden>
+                        <span id="dsb-text-state-text" aria-hidden="true"></span>
+                        <span id="dsb-text-state-live" class="visually-hidden"></span>
+                        <progress id="dsb-text-progress" class="dsb-progress" max="100" value="0" aria-label="Indexing descriptions" hidden></progress>
+                    </div>
                     <div class="dsb-layout">
                         <nav id="dsb-places" class="dsb-places" aria-label="Places"></nav>
                         <select id="dsb-places-select" class="form-select form-select-sm dsb-places-select" aria-label="Place"></select>

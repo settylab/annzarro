@@ -151,6 +151,20 @@ The dataset browser with a dataset selected. Numbers match the list below.
    citation or README ({doc}`../deployment/dataset-attribution`) shows them under these facts; the
    README and the structure open when you click their headings.
 
+**Search descriptions** (the button beside **.\***, on by default; **Alt+D** switches it) also looks in
+what each dataset says about itself: its title, description, authors, citation, licence, funding and the
+first 64 KB of its README ({doc}`../deployment/dataset-attribution`). The datasets whose name matches stay
+at the top; below them, under **Found in titles, attribution and READMEs**, each dataset that holds all your
+words comes with its title and a few words of context, the matches marked. Words may be quoted to keep
+them together ("bone marrow"); case and accents do not matter. A hit opens and selects like any row, and
+its README opens on the first match. Regular expressions search names only, so turning **.\*** on switches
+descriptions off, and turning descriptions on ends the regular expression. The line under the field says
+how up to date the search is ("8 datasets indexed 3 min ago"), and shows **Indexing descriptions…** with a
+progress bar while the server reads them for the first time; the results appear when it is done. **Refresh**
+asks the server to read the descriptions again (at most once a minute). The button is not there when an
+administrator turned the search off ({doc}`../deployment/admin`). Remote datasets are not
+searched.
+
 **Opening it again is quick.** The browser keeps the listings it has read, the data directory and
 each folder you opened, in your browser (separately for each server and each user, at most 40 listings,
 the first page of each), and shows them the moment it opens while it reads them again. The list is
@@ -187,6 +201,7 @@ opening are announced politely.
 |---|---|
 | **Ctrl+O** (**Cmd+O**) | Open the dataset browser |
 | **Ctrl+Shift+L** (**Cmd+Shift+L**) | Load Panel Set |
+| **Alt+D**, in the browser | Switch the search of descriptions on or off |
 | **/** or **~**, in the browser | Type a path or URL (the key is the first character of the path; **Ctrl+L** or **Cmd+L** also works where the web browser passes it on) |
 | **F1** | List the keyboard shortcuts |
 

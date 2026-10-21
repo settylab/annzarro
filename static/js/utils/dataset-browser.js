@@ -13,11 +13,12 @@
  * (Up, Down, Home, End, PageUp, PageDown move; Enter opens, a folder is
  * entered; Left or Backspace goes to the parent folder, Right enters a
  * folder; printable keys do type-ahead on the names; `/` returns to the
- * search field; Ctrl or Cmd+L edits the path). Clicking a name opens it,
+ * search field; Alt+D toggles the search of descriptions; Ctrl or Cmd+L edits the path). Clicking a name opens it,
  * clicking elsewhere in a row selects it and fills the details pane.
  *
  * services (everything the dialog reads from the application):
- *   urls            {folder, search, details, lookup}
+ *   urls            {folder, search, details, lookup, textSearch, textStatus, textRefresh}
+ *   textSearchAllowed() Promise of whether the policy lets this user search the descriptions (false hides the toggle)
  *   infoLoader      the loader of utils/dataset-info.js (attribution, README, structure of a dataset), or null
  *   me()            Promise of auth/me (null when it cannot be read)
  *   stored()        {recents, pins}: [{path, label, openedAt|pinnedAt}], newest first (the user is known)
@@ -41,12 +42,14 @@ import {
 } from './dataset-picker.js';
 import { recentEntries, userKey } from './dataset-recents.js';
 import { listingId } from './dataset-listing-cache.js';
+import { csrfFetch } from './csrf.js';
 import { drawAbout, drawReadme, drawStructure, showError, showLoading, showPart } from './dataset-info.js';
 import {
     COLUMNS, SERVER_SORTS, FORMAT_CHIPS, CELL_BANDS, MODIFIED_BANDS,
     applyFilters, emptyFilters, filtersActive, searchRows, sortRows, ariaSort, nextSort, typeAheadIndex,
     buildPlaces, breadcrumbs, matchBadge, matchesView, rowDescription, countLabel, dateLabel, dateTimeLabel,
-    openedLabel, formatLabel, countSummary, isRemote, missingKeys
+    openedLabel, formatLabel, countSummary, isRemote, missingKeys,
+    TEXT_SECTION, snippetParts, textRows, queryTerms, termRanges, indexLine, createIndexPoller
 } from './dataset-browser-model.js';
 
 const PAGE = 200;
@@ -77,6 +80,47 @@ function appendWrapped(parent, text, ranges = []) {
         }
         if (part.hit) parent.appendChild(holder);
     }
+}
+
+/** Append `text` to `parent`, in <mark> where the snippet's highlights say (text nodes only, never markup). */
+function appendSnippet(parent, snippet) {
+    for (const part of snippetParts(snippet)) {
+        if (part.hit) parent.appendChild(el('mark', null, part.text));
+        else parent.appendChild(document.createTextNode(part.text));
+    }
+}
+
+/** Mark every place the terms occur in the text of `container` and bring the first into view. */
+function markTerms(container, terms) {
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node);
+    let first = null;
+    let marks = 0;
+    for (const node of nodes) {
+        if (marks >= 200) break;
+        const text = node.nodeValue;
+        const ranges = termRanges(text, terms);
+        if (!ranges.length) continue;
+        const pieces = document.createDocumentFragment();
+        let at = 0;
+        for (const [from, to] of ranges) {
+            if (from > at) pieces.appendChild(document.createTextNode(text.slice(at, from)));
+            const mark = el('mark', 'dsi-mark', text.slice(from, to));
+            pieces.appendChild(mark);
+            first = first || mark;
+            marks++;
+            at = to;
+        }
+        if (at < text.length) pieces.appendChild(document.createTextNode(text.slice(at)));
+        node.parentNode.replaceChild(pieces, node);
+    }
+    if (first) first.scrollIntoView({ block: 'center' });
+}
+
+/** Where a text hit matched, in a word or two. */
+function fieldLabel(field) {
+    return field === 'readme' ? 'README' : String(field || '').replace(/_/g, ' ');
 }
 
 function formatBytes(n) {
@@ -112,7 +156,8 @@ export function createDatasetBrowser(services) {
         searchError: $('dsb-search-error'), chips: $('dsb-chips'), places: $('dsb-places'), placesSelect: $('dsb-places-select'),
         crumbs: $('dsb-crumbs'), pathForm: $('dsb-pathform'), path: $('dsb-path'), pathOpen: $('dsb-path-open'),
         pathLabel: $('dsb-path-label'), refresh: $('dsb-refresh'), refreshText: $('dsb-refresh-text'), refreshNote: $('dsb-refresh-note'), pathError: $('dsb-path-error'), tableWrap: $('dsb-table-wrap'), details: $('dsb-details'),
-        status: $('dsb-status'), native: $('dsb-open-native'), pathbar: $('dsb-pathbar'), hintPath: $('dsb-hint-path')
+        status: $('dsb-status'), native: $('dsb-open-native'), text: $('dsb-text'),
+        textState: $('dsb-text-state'), textStateText: $('dsb-text-state-text'), textStateLive: $('dsb-text-state-live'), textProgress: $('dsb-text-progress'), pathbar: $('dsb-pathbar'), hintPath: $('dsb-hint-path')
     };
     if (!root) return { open: async () => null, close() {}, isOpen: () => false };
     const modal = bootstrap.Modal.getOrCreateInstance(root);
@@ -126,6 +171,9 @@ export function createDatasetBrowser(services) {
     let detailsAbort = null;
     let searchTimer = null;
     let searchAbort = null;
+    let textTimer = null;
+    let textAbort = null;
+    let liveText = '';
     let typeBuffer = '';
     let typeTimer = null;
     let statusTimer = null;
@@ -149,6 +197,10 @@ export function createDatasetBrowser(services) {
             matchOf: new Map(),            // path -> entry with `match` (the stores like the view's)
             query: options.query || '',
             regex: false,
+            textAllowed: false,            // the policy lets this user search the descriptions
+            textOn: true,                  // the toggle
+            text: { hits: null, index: null },     // hits: {key, results, partial, error}; index: the server's `index`
+            textSearching: null,
             filters: emptyFilters(),
             sort: null,                    // null: the default of the place
             limit: PAGE,
@@ -321,6 +373,7 @@ export function createDatasetBrowser(services) {
         const atRoot = inFolderPlace() && !S.folder;
         await whileRefreshing(() => Promise.all([
             loadQuick({ keep: true }),
+            refreshIndex(),
             inFolderPlace() ? loadFolder({ refresh: true }) : null,
             atRoot ? null : refreshRoot()
         ]));
@@ -389,6 +442,7 @@ export function createDatasetBrowser(services) {
 
     /** Ask the server for stores below the folder shown, once the typing pauses. */
     function scheduleSearch() {
+        scheduleText();
         clearTimeout(searchTimer);
         if (searchAbort) searchAbort.abort();
         S.remote = null;
@@ -417,6 +471,125 @@ export function createDatasetBrowser(services) {
         }, SEARCH_DELAY_MS);
     }
 
+    // ---- the search of descriptions --------------------------------------------------------
+
+    /** Whether the descriptions are searched now: allowed, switched on, and not in regular expression mode. */
+    const textActive = () => !!S && S.textAllowed && S.textOn && !S.regex;
+    const textKey = () => `${S.folder}|${S.query}`;
+    const wantsText = () => textActive() && !!S.query.trim() && !looksLikePath(S.query);
+
+    /** The server's answer to the query, once the typing pauses; the answer for another query is dropped. */
+    function scheduleText(immediate = false) {
+        if (!S) return;
+        clearTimeout(textTimer);
+        if (textAbort) textAbort.abort();
+        S.textSearching = null;
+        if (!textActive()) poller.stop();
+        if (!wantsText()) return;
+        const key = textKey();
+        let done;
+        S.textSearching = new Promise(resolve => { done = resolve; });
+        textTimer = setTimeout(async () => {
+            if (!S) return done();
+            textAbort = new AbortController();
+            const params = new URLSearchParams({ q: S.query });
+            if (inFolderPlace() && S.folder) params.set('folder', S.folder);
+            try {
+                const { ok, status, body } = await getJson(`${services.urls.textSearch}?${params}`, textAbort.signal);
+                if (!S || key !== textKey()) return done();
+                if (!ok) {
+                    if (status === 404 || (status === 403 && body.reason === 'disabled_by_policy')) {
+                        S.textAllowed = false;          // the policy changed under the open dialog
+                        S.text = { hits: null, index: null };
+                        poller.stop();
+                    } else S.text.hits = { key, error: body.error || 'The description search failed' };
+                } else {
+                    S.text.hits = { key, results: body.results || [], partial: !!body.partial };
+                    S.text.index = body.index || null;
+                    if (S.text.index && S.text.index.state === 'running') poller.start();
+                }
+            } catch (e) {
+                if (e && e.name === 'AbortError') return done();
+                if (!S || key !== textKey()) return done();
+                S.text.hits = { key, error: (e && e.message) || 'The description search failed' };
+            }
+            done();
+            render();
+        }, immediate ? 0 : SEARCH_DELAY_MS);
+    }
+
+    /** Reads the index status while a crawl runs; when it ends the query is asked again. Stopped when the dialog closes. */
+    const poller = createIndexPoller({
+        fetchStatus: async () => {
+            const { ok, body } = await getJson(services.urls.textStatus);
+            if (!ok) throw new Error(body.error || 'The index status could not be read');
+            return body;
+        },
+        onStatus: status => { if (S) { S.text.index = status; renderTextState(); } },
+        onDone: status => {
+            if (!S) return;
+            S.text.index = status;
+            if (wantsText()) scheduleText(true);
+            render();
+        }
+    });
+
+    /** Ask the server to read the descriptions again (the Refresh button); it rate-limits, and says what it is doing. */
+    async function refreshIndex() {
+        if (!S || !S.textAllowed || !S.textOn) return;
+        const mine = S;
+        try {
+            const response = await csrfFetch(services.urls.textRefresh, { method: 'POST' });
+            const body = await response.json().catch(() => ({}));
+            if (S !== mine) return;
+            if (response.ok) {
+                S.text.index = body;
+                if (body.state === 'running') poller.start();
+            } else if (response.status === 404 || (response.status === 403 && body.reason === 'disabled_by_policy')) {
+                S.textAllowed = false;
+                poller.stop();
+            }
+        } catch { /* the folder read says whether the server is there; the index line keeps what it knew */ }
+    }
+
+    /** The toggle: pressed while the descriptions are searched, hidden when the policy forbids it. */
+    function renderTextToggle() {
+        dom.text.hidden = !S.textAllowed;
+        const on = textActive();
+        dom.text.setAttribute('aria-pressed', String(on));
+        dom.text.classList.toggle('active', on);
+        dom.search.placeholder = on ? 'Search names and descriptions' : 'Search name or path';
+    }
+
+    /** One line under the field about the index, with a progress bar while it is built. */
+    function renderTextState() {
+        const line = textActive() ? indexLine(S.text.index) : null;
+        const running = !!line && line.text.startsWith('Indexing');
+        const show = !!line && (running || !!S.query.trim());
+        dom.textState.hidden = !show;
+        if (!show) { liveText = ''; return; }
+        dom.textStateText.textContent = line.text;
+        dom.textProgress.hidden = !running;
+        if (running && line.percent !== null) dom.textProgress.value = line.percent; else dom.textProgress.removeAttribute('value');
+        // the live region changes when the state does, not at every percent
+        const said = running ? 'Indexing descriptions' : line.text;
+        if (said !== liveText) { liveText = said; dom.textStateLive.textContent = said; }
+    }
+
+    function toggleText() {
+        if (!S || !S.textAllowed) return;
+        const wasRegex = S.regex;
+        if (S.regex) {
+            S.regex = false;               // the description search has no regular expressions: turning it on ends regex mode
+            dom.regex.classList.remove('active');
+            dom.regex.setAttribute('aria-pressed', 'false');
+            S.textOn = true;
+        } else S.textOn = !S.textOn;
+        S.limit = PAGE;
+        if (wasRegex) scheduleSearch(); else scheduleText();
+        render();
+    }
+
     // ---- the rows ------------------------------------------------------------------------
 
     /** The rows of the place before the search, the chips and the sort. */
@@ -437,10 +610,16 @@ export function createDatasetBrowser(services) {
             const have = new Set(rows.map(r => r.path));
             rows = rows.concat(S.remote.entries.filter(e => !have.has(e.path)).map(e => ({ ...annotate(e), kind: 'store' })));
         }
+        const matches = rows;
         rows = applyFilters(rows, S.filters);
         const sort = effectiveSort();
         if (!sort.server) rows = sortRows(rows, sort.key, sort.dir);
         else rows = sortRows(rows, null);     // the server's order, folders kept first
+        // the stores whose title, attribution or README holds the words follow, best first (the server's order)
+        const hits = S.text.hits;
+        if (wantsText() && hits && hits.key === textKey() && hits.results) {
+            rows = rows.concat(applyFilters(textRows(matches, hits.results), S.filters));
+        }
         return { rows, compiled: found.compiled };
     }
 
@@ -460,6 +639,8 @@ export function createDatasetBrowser(services) {
     function render() {
         if (!S) return;
         renderRefresh();
+        renderTextToggle();
+        renderTextState();
         renderPlaces();
         renderChips();
         renderPathbar();
@@ -726,14 +907,26 @@ export function createDatasetBrowser(services) {
         }
 
         const focusPath = rows.some(r => r.path === S.focus) ? S.focus : (rows[0] && rows[0].path);
-        rows.forEach((row, i) => tbody.appendChild(rowNode(row, compiled, row.path === focusPath, i)));
+        let sectioned = false;
+        rows.forEach((row, i) => {
+            if (row.textHit && !sectioned) {
+                sectioned = true;
+                const tr = el('tr', 'dsb-section-row');
+                const th = el('th', null, TEXT_SECTION);
+                th.scope = 'colgroup';
+                th.colSpan = COLUMNS.length;
+                tr.appendChild(th);
+                tbody.appendChild(tr);
+            }
+            tbody.appendChild(rowNode(row, compiled, row.path === focusPath, i));
+        });
         table.appendChild(tbody);
 
         if (!rows.length && !pathRow && !L.loading) {
             const none = el('div', 'dsb-state');
             const filtered = filtersActive(S.filters) || searching();
             none.textContent = filtered ? 'No dataset matches the search and filters.' : emptyText();
-            if (searching() && S.remote === null && S.searching) none.textContent = 'Searching subfolders…';
+            if (searching() && ((S.remote === null && S.searching) || (S.textSearching && !S.text.hits))) none.textContent = 'Searching…';
             wrap.appendChild(none);
             if (!filtered) { wrap.appendChild(table); table.classList.add('visually-hidden'); }
             else wrap.appendChild(table);
@@ -758,6 +951,11 @@ export function createDatasetBrowser(services) {
             wrap.appendChild(more);
         }
         if (S.remote && S.remote.error && searching()) wrap.appendChild(el('div', 'dsb-state text-danger', S.remote.error));
+        const found = S.text.hits;
+        if (wantsText() && found && found.key === textKey()) {
+            if (found.error) wrap.appendChild(el('div', 'dsb-state text-danger', found.error));
+            else if (found.partial) wrap.appendChild(el('div', 'dsb-state', 'The description search stopped at its limit; narrow it to see more.'));
+        }
         if (S.remote && S.remote.truncated && searching()) wrap.appendChild(el('div', 'dsb-state', 'The search stopped at its limit; narrow it to see more.'));
         if (inFolderPlace() && !searching() && sort.key && !sort.server && L.more) {
             wrap.appendChild(el('div', 'dsb-state', `Sorted among ${L.offset} loaded.`));
@@ -777,6 +975,7 @@ export function createDatasetBrowser(services) {
         tr.dataset.path = row.path;
         tr.dataset.kind = row.kind;
         if (row.error) tr.classList.add('dsb-unreadable');
+        if (row.textHit) tr.classList.add('dsb-text-hit');
         if (S.selected === row.path) tr.classList.add('selected');
         const th = el('th', 'dsb-namecell');
         th.scope = 'row';
@@ -836,6 +1035,21 @@ export function createDatasetBrowser(services) {
             relLine.title = row.path;
             th.appendChild(relLine);
         }
+        if (row.textHit) {
+            const snippet = row.snippet || {};
+            const titled = snippet.field === 'title';
+            if (row.title) {
+                const title = el('div', 'dsb-title');
+                if (titled) appendSnippet(title, snippet); else title.textContent = row.title;
+                th.appendChild(title);
+            }
+            if (!titled && snippetParts(snippet).length) {
+                const line = el('div', 'dsb-snippet');
+                if (snippet.field) line.appendChild(el('span', 'dsb-snippet-field', fieldLabel(snippet.field)));
+                appendSnippet(line, snippet);
+                th.appendChild(line);
+            }
+        }
         if (row.error) th.appendChild(el('div', 'dsb-reason', row.error));
         const desc = el('span', 'visually-hidden', rowDescription(row));
         desc.id = describedBy;
@@ -872,19 +1086,21 @@ export function createDatasetBrowser(services) {
     function activate(row) {
         if (row.kind === 'folder') { goFolder(row.path); return; }
         if (row.error) { select(row); return; }
-        choose(row.path);
+        choose(row.path, { check: !!row.textHit });
     }
 
-    async function choose(path) {
+    async function choose(path, { check = false } = {}) {
         if (!path || !S) return null;
-        // a row of a listing kept from earlier may name a dataset that is gone: ask before the dialog closes
-        if (S.listing.stale && !isRemote(path)) {
+        // a row of a listing kept from earlier, or of a hit in an index up to its age old, may name a dataset that is gone:
+        // ask before the dialog closes
+        if ((S.listing.stale || check) && !isRemote(path)) {
             const mine = S;
             const found = await services.lookup([path]).catch(() => []);
             if (S !== mine) return null;
             if (found[0] && found[0].status === 'unavailable') {
                 S.listing.entries = S.listing.entries.filter(e => e.path !== path);
                 S.listing.offset = S.listing.entries.length;
+                if (S.text.hits && S.text.hits.results) S.text.hits.results = S.text.hits.results.filter(e => (e.path || e.rel_path) !== path);
                 if (S.selected === path) S.selected = null;
                 S.notice = 'That dataset is no longer available.';
                 render();
@@ -945,7 +1161,7 @@ export function createDatasetBrowser(services) {
         open.type = 'button';
         open.id = 'dsb-details-open';
         open.disabled = !folder && !!row.error;
-        open.addEventListener('click', () => (folder ? goFolder(row.path) : choose(row.path)));
+        open.addEventListener('click', () => (folder ? goFolder(row.path) : choose(row.path, { check: !!row.textHit })));
         actions.appendChild(open);
         const pinned = !folder && S.pinned.has(row.path);
         const pin = el('button', 'btn btn-sm btn-outline-secondary', pinned ? 'Unpin' : 'Pin');
@@ -992,6 +1208,7 @@ export function createDatasetBrowser(services) {
         if (!loader || !holder) return;
         const current = () => !!S && S.selected === row.path && holder.isConnected;
         if (!current()) return;
+        const terms = row.textHit ? queryTerms(S.query) : [];
         holder.dataset.state = 'loading';
         const slow = setTimeout(() => { if (current() && holder.dataset.state === 'loading') showLoading(holder, 'Loading the attribution…'); }, 250);
         try {
@@ -1013,9 +1230,14 @@ export function createDatasetBrowser(services) {
                 more.addEventListener('toggle', () => {
                     if (!more.open || asked) return;
                     asked = true;
-                    showPart(body, { loader, path: row.path, part, draw, current, compact: true }).then((ok) => { if (!ok) asked = false; });
+                    showPart(body, { loader, path: row.path, part, draw, current, compact: true }).then((ok) => {
+                        if (!ok) asked = false;
+                        else if (part === 'readme' && terms.length && row.matched.includes('readme')) markTerms(body, terms);
+                    });
                 });
                 holder.appendChild(more);
+                // a README that holds the words opens on the first of them
+                if (part === 'readme' && terms.length && row.matched.includes('readme')) more.open = true;
             }
         } catch (e) {
             if (!current()) return;
@@ -1200,6 +1422,8 @@ export function createDatasetBrowser(services) {
             const sort = effectiveSort();
             const among = inFolderPlace() && !searching() && sort.key && !sort.server && S.listing.more ? S.listing.offset : null;
             let text = S.listing.loading && inFolderPlace() ? 'Loading…' : countSummary({ stores, folders, query: S.query, truncated: !!(S.remote && S.remote.truncated), sortedAmong: among });
+            const described = rows.filter(r => r.textHit).length;
+            if (described) text += `; ${described} found in titles, attribution and READMEs`;
             if (S.mode !== 'change' && S.me && S.me.restricted) text += '. Only datasets shared with you are listed.';
             if (S.notice) text = `${S.notice} ${text}`;
             dom.status.textContent = text;
@@ -1256,6 +1480,7 @@ export function createDatasetBrowser(services) {
             if (!S.query) return;
             if (looksLikePath(S.query)) { await submitPath(S.query); return; }
             if (S.searching) await S.searching;
+            if (S && S.textSearching) await S.textSearching;
             if (!S) return;
             const rows = currentRows().rows.filter(r => !r.error);
             const first = rows.find(r => r.kind === 'store') || rows[0];
@@ -1276,13 +1501,14 @@ export function createDatasetBrowser(services) {
     if (dom.refresh) dom.refresh.addEventListener('click', () => refresh());
     dom.regex.addEventListener('click', () => {
         if (!S) return;
-        S.regex = !S.regex;
+        S.regex = !S.regex;       // regular expressions search names only: the descriptions are left out while it is on
         dom.regex.classList.toggle('active', S.regex);
         dom.regex.setAttribute('aria-pressed', String(S.regex));
         scheduleSearch();
         render();
         dom.search.focus();
     });
+    dom.text.addEventListener('click', () => { toggleText(); dom.search.focus(); });
     dom.placesSelect.addEventListener('change', () => goPlace(dom.placesSelect.value));
     dom.tableWrap.addEventListener('keydown', onTableKey);
     dom.pathOpen.addEventListener('click', () => submitPath());
@@ -1302,6 +1528,7 @@ export function createDatasetBrowser(services) {
     // Escape closes the path field first, then the dialog
     root.addEventListener('keydown', (e) => {
         if (!S) return;
+        if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'KeyD' && S.textAllowed) { e.preventDefault(); toggleText(); return; }
         if (e.key === 'Escape' && S.pathOpen) { e.preventDefault(); e.stopImmediatePropagation(); closePathField(); (tbodyButtons()[0] || dom.search).focus(); return; }
         // Ctrl/Cmd+L also works where the browser delivers it (Safari keeps it for its address bar)
         if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') { e.preventDefault(); openPathField(); return; }
@@ -1324,7 +1551,10 @@ export function createDatasetBrowser(services) {
         shown = false;
         root.classList.remove('dsb-sheet');
         clearTimeout(searchTimer);
+        clearTimeout(textTimer);
         clearTimeout(detailsTimer);
+        poller.stop();
+        if (textAbort) textAbort.abort();
         if (searchAbort) searchAbort.abort();
         if (detailsAbort) detailsAbort.abort();
         const target = returnFocus && document.contains(returnFocus) ? returnFocus : document.getElementById('dataset-button');
@@ -1400,6 +1630,9 @@ export function createDatasetBrowser(services) {
         dom.search.value = S.query;
         dom.regex.classList.remove('active');
         dom.regex.setAttribute('aria-pressed', 'false');
+        dom.text.hidden = true;
+        dom.textState.hidden = true;
+        liveText = '';
         configureNative();
         dom.hintPath.textContent = services.shortcut.path;
         dom.tableWrap.textContent = '';
@@ -1411,9 +1644,14 @@ export function createDatasetBrowser(services) {
         renderRefresh();
         modal.show();
         const mine = S;
-        const [me] = await Promise.all([services.me().catch(() => null)]);
+        const [me, textAllowed] = await Promise.all([
+            services.me().catch(() => null),
+            services.textSearchAllowed ? services.textSearchAllowed().catch(() => true) : Promise.resolve(false)
+        ]);
         if (S !== mine) return closed;
         S.me = me;
+        S.textAllowed = !!textAllowed;
+        renderTextToggle();
         const stored = services.stored();
         S.pinned = new Set(stored.pins.map(p => p.path));
         setBanner();

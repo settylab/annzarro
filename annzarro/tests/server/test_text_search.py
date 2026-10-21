@@ -214,14 +214,16 @@ def test_a_restricted_user_finds_only_what_they_may_open(granted):
     assert body["partial"] is False
 
 
-def test_a_restricted_user_is_told_no_absolute_path_and_the_name_from_the_grant(granted):
+def test_a_restricted_user_is_told_the_path_of_what_they_may_open_and_the_name_from_the_grant(granted):
     bob = client(granted, "bob")
     reply = search(bob, granted, "atlas")
     rows = {r["name"]: r for r in reply.get_json()["results"]}
-    assert rows["liver.zarr"]["path"] is None and rows["liver.zarr"]["rel_path"] == "liver.zarr"
-    assert rows["heart.zarr"]["path"] is None and rows["heart.zarr"]["rel_path"] == os.path.join("sub", "heart.zarr")
+    # the path their listings give for the same store: it is what opens the row
+    assert rows["liver.zarr"]["path"] == os.path.realpath(f"{granted.data}/liver.zarr")
+    assert rows["heart.zarr"]["path"] == os.path.realpath(f"{granted.data}/sub/heart.zarr")
+    assert rows["liver.zarr"]["rel_path"] == "liver.zarr" and rows["heart.zarr"]["rel_path"] == os.path.join("sub", "heart.zarr")
+    assert bob.get("/api/v1/datasets/details", query_string={"path": rows["heart.zarr"]["path"]}).status_code == 200
     text = reply.get_data(as_text=True)
-    assert granted.data not in text and os.path.dirname(granted.data) not in text
     assert "out.zarr" not in text and "plain.zarr" not in text
 
 

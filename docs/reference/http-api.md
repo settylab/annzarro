@@ -637,7 +637,7 @@ same; what differs for a restricted user:
   allowed directory or not, present or missing. `If-None-Match` of an earlier read does not get a `304`.
 - `GET /datasets/details` leaves `path` and `link_target` out (`null`) and gives `rel_path` from the name of
   the granted folder or store; a `folder=` of `GET /datasets/search` or `GET /datasets/text-search` must lie inside a grant.
-  `GET /datasets/text-search` returns only stores inside their grants, with `path: null` and `rel_path` from the granted folder or store's name; its `index` and `/datasets/text-index/status` give them a `fraction` of progress but never the number of stores the server holds.
+  `GET /datasets/text-search` returns only stores inside their grants, with the `path` of the store (as their listings give it) and `rel_path` from the granted folder or store's name; its `index` and `/datasets/text-index/status` give them a `fraction` of progress but never the number of stores the server holds.
 - `GET /directories/home` answers `{"directory": null}`. Their listings start at their grants
   and name no folder above one: `parent` is `null` at a grant, and `rel_path` is relative to the
   granted folder (`null` on `/datasets/<path>`).
