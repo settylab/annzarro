@@ -66,7 +66,7 @@ same way.
 **About AnnZarro.** Click the app name at the top left (or focus it and press Enter) to open a
 small dialog with the version, links to the documentation, the repository and the changelog, how
 to cite AnnZarro (the paper and the software's DOI), who develops it (the Setty Lab at Fred
-Hutch Cancer Center, with the Fred Hutch logo in the desktop app), and the funding statement. Escape or the close button closes it and puts focus back on the name.
+Hutch Cancer Center), and the funding statement. Escape or the close button closes it and puts focus back on the name.
 
 (colour-theme)=
 ## Light and dark theme

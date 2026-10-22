@@ -39,13 +39,12 @@ export const FIELDS = {
     footer_links: { title: 'Footer links' },
     robots: { title: 'Search engines' },
     software_credits: { title: 'AnnZarro credit in About' },
-    fred_hutch_logo: { title: 'Fred Hutch logo in About' },
     'storage.persistent_convenience': { title: 'Keep convenience items between visits' },
 };
 
 const GROUPS = [
     ['Who runs the site', ['operator', 'contact', 'contact_label', 'security_contact', 'languages']],
-    ['Behaviour', ['footer_links', 'robots', 'software_credits', 'fred_hutch_logo', 'storage.persistent_convenience']],
+    ['Behaviour', ['footer_links', 'robots', 'software_credits', 'storage.persistent_convenience']],
 ];
 
 const SOURCE_TEXT = { admin: 'set here', config: 'config file', env: 'environment', default: 'default' };

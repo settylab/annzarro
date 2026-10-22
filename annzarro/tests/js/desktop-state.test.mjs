@@ -62,11 +62,3 @@ test('the result dialog shows stdout on success and stderr on failure', () => {
     assert.deepEqual(state.migrationSummary(0, 'From a\nTo b\n\nCopied 2\n', ''), { ok: true, detail: 'From a\nTo b\nCopied 2' });
     assert.deepEqual(state.migrationSummary(1, 'partial', 'Error: locked'), { ok: false, detail: 'Error: locked' });
 });
-
-test('the app turns the Fred Hutch logo on for its own server, with no login', () => {
-    const env = state.serverEnv('abc');
-    assert.equal(env.ANNZARRO_SITE_FRED_HUTCH_LOGO, 'true');
-    assert.equal(env.ANNZARRO_ELECTRON_APP, 'true');
-    assert.equal(env.ANNZARRO_AUTH_DISABLED, 'true');
-    assert.equal(env.ANNZARRO_INSTANCE_ID, 'abc');
-});

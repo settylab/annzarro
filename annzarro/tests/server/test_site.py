@@ -285,7 +285,6 @@ def test_inline_texts_are_escaped_in_the_dialog_too(tmp_path):
     ({"languages": "<x>"}, "site.languages"),
     ({"storage": {"persistent_convenience": "yes"}}, "persistent_convenience"),
     ({"software_credits": "no"}, "site.software_credits"),
-    ({"fred_hutch_logo": "yes"}, "site.fred_hutch_logo"),
 ])
 def test_wrong_values_stop_the_server_at_start(tmp_path, site, fragment):
     with pytest.raises(ValueError, match=re.escape(fragment)):
@@ -530,37 +529,3 @@ def test_software_credits_off_leaves_name_version_licence_and_two_links(tmp_path
     assert 'href="https://annzarro.readthedocs.io"' in modal and 'href="https://github.com/settylab/annzarro"' in modal
     assert 'id="about-this-site"' in modal, "the site's own block is unaffected"
     assert "site-footer" in html, "so is the footer"
-
-
-def about_modal(html):
-    return html[html.index('id="about-modal"'):html.index('id="session-modal"')]
-
-
-def test_fred_hutch_logo_is_off_by_default_and_the_credit_is_text(tmp_path):
-    manager = ConfigManager()
-    manager.load_config(env="production")
-    assert manager.to_flask_config()["site"]["fred_hutch_logo"] is False
-    modal = about_modal(body(get(app_with(tmp_path), "/")))
-    assert "about-brand" not in modal and "img/brand/" not in modal
-    assert "Fred Hutch Cancer Center</a>" in modal and "about-logos" in modal
-
-
-def test_fred_hutch_logo_on_shows_the_sign_post_linked_with_one_alt(tmp_path):
-    modal = about_modal(body(get(app_with(tmp_path, {"fred_hutch_logo": True}), "/")))
-    assert modal.count('alt="Fred Hutch Cancer Center"') == 1
-    assert 'href="https://www.fredhutch.org"' in modal and "img/brand/fredhutch-annzarro-signpost.svg" in modal
-    assert modal.index("about-dev") < modal.index("about-brand") < modal.index("about-lab") < modal.index("about-funding")
-    assert "</a> at<br><a" in modal, "the text credit stays beside the logo"
-    assert "about-logos" not in modal
-
-
-def test_fred_hutch_logo_needs_the_software_credit(tmp_path):
-    modal = about_modal(body(get(app_with(tmp_path, {"fred_hutch_logo": True, "software_credits": False}), "/")))
-    assert "about-brand" not in modal and "Fred Hutch" not in modal
-
-
-def test_the_environment_the_desktop_app_sets_turns_it_on(monkeypatch):
-    monkeypatch.setenv("ANNZARRO_SITE_FRED_HUTCH_LOGO", "true")
-    manager = ConfigManager()
-    manager.load_config(env="production")
-    assert manager.to_flask_config()["site"]["fred_hutch_logo"] is True
