@@ -34,7 +34,7 @@ The full licence texts, source URLs and checksums of every file are in
 [`annzarro/THIRD_PARTY_LICENSES/`](https://github.com/settylab/annzarro/tree/main/annzarro/THIRD_PARTY_LICENSES),
 which the package installs both inside `annzarro/THIRD_PARTY_LICENSES/` and in its
 `dist-info/licenses/` directory. The minified Plotly.js file is a bundle of npm modules under
-MIT, ISC, BSD-3-Clause (mapbox-gl, d3), BSD-2-Clause, Zlib and Unlicense licences;
+MIT, ISC, BSD-3-Clause (MapLibre GL JS, d3), BSD-2-Clause, Zlib and Unlicense licences;
 `plotly-bundled.txt` there holds the licence text of every package in Plotly.js's
 dependency tree. The Python dependencies (Flask, zarr, NumPy, pandas and others) are installed
 separately by pip under their own licences.

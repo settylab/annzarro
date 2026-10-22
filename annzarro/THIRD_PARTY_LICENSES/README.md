@@ -66,7 +66,7 @@ buttons.html5.min.js includes FileSaver.js 1.3.3 (MIT, Copyright (c) 2016 Eli Gr
 
 ### Plotly.js 2.35.3
 
-The minified bundle includes npm modules under MIT, ISC (d3-color, d3-interpolate, earcut, geojson-vt, supercluster, topojson-client, ...), BSD-3-Clause (mapbox-gl 1.10.1, @plotly/d3, d3-*, pbf, @mapbox/vector-tile, ieee754, ...), BSD-2-Clause (@mapbox/tiny-sdf, @mapbox/unitbezier, ...), Zlib (gl-mat4) and Unlicense (mumath). plotly-bundled.txt keeps the bundle's own licence banners and the licence text of every package in plotly.js 2.20.0's production dependency tree (scripts/plotly_licences.py), a superset of the bundle that also lists one Apache-2.0 and one BlueOak-1.0.0 package.
+The minified bundle includes npm modules under MIT, ISC (d3-color, d3-interpolate, earcut, geojson-vt, supercluster, topojson-client, ...), BSD-3-Clause (MapLibre GL JS 4.5.2, @plotly/d3, d3-*, pbf, @mapbox/vector-tile, ieee754, ...), BSD-2-Clause (@mapbox/tiny-sdf, @mapbox/unitbezier, ...), Zlib (gl-mat4) and Unlicense (mumath). plotly-bundled.txt keeps the bundle's own licence banners and the licence text of every package in plotly.js 2.20.0's production dependency tree (scripts/plotly_licences.py), a superset of the bundle that also lists Apache-2.0, BlueOak-1.0.0, CC-BY-4.0 and 0BSD packages, which are build tooling and not in the bundle.
 
 - `vendor/js/plotly-2.35.3.min.js` (`MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense`), from <https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.3/plotly.min.js>, sha256 `fc84e3cfa55d23d3654c562ea5deb3c274eb6972a6adf66941d1a821e34825e4`
 
