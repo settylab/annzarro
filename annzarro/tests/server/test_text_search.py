@@ -356,3 +356,14 @@ def test_a_restricted_user_gets_no_counts(granted):
     body = client(granted, "bob").get(STATUS).get_json()
     assert not {"stores", "searchable", "not_yet", "unreadable"} & set(body)
     assert "background" in body
+
+
+# --- a hit is the dataset the listings give -------------------------------------------------------------
+
+def test_a_hits_path_is_the_path_the_dataset_listing_gives(world):
+    """The browser marks a description hit "same cells and genes" (and keeps it under the match chip) by
+    looking its path up among the candidates read from /datasets: the two must name a store alike."""
+    carol = client(world, "carol")
+    listed = {os.path.basename(d["path"]): d["path"] for d in carol.get("/api/v1/datasets").get_json()}
+    hits = search(carol, world, "liver").get_json()["results"]
+    assert hits and all(listed[h["name"]] == h["path"] for h in hits)

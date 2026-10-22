@@ -17,6 +17,9 @@ with the release after it. Older releases are listed on
 ### Fixed
 - The description search indexes datasets on a networked filesystem. Each dataset's attribution and README are now read from the files under `uns`, not through its consolidated metadata. Before, a read first checked that listing against every metadata file of the dataset, which was about 94% of the read time: 13 to 15 s for a dataset with about 2,500 metadata files, measured over a network filesystem. Those datasets passed the 5 s limit per dataset, so the crawl marked them timed out and stopped after the first few. A dataset is read again when `uns`, `uns/annzarro` or `uns/README` changes on disk, as before: `annzarro annotate`, re-consolidating, or adding an attribution field (even without consolidating) is picked up. A value rewritten in place under an existing field is not, until the dataset is annotated or re-consolidated; that limit predates this release.
 
+### Fixed
+- In the dataset browser, the **Matches this view** button (now **Like this view's dataset**) no longer hides the results of a description search. The button narrows the table to datasets with the same cells and genes, the same size or the same name as the dataset the view was made on. It is on at first when you choose a dataset for a view that has none. Description hits never carried that match, so while the button was on every hit was hidden, the matching ones too. Hits now carry their **same cells and genes** (or **same size**, **same name**) tag and are shown whether or not the button is on; the other filters still apply to them. The button's tooltip says what it keeps.
+
 ### Docs
 - The README and the licence page cite v0.7.2 by its DOI,
   [10.5281/zenodo.23547580](https://doi.org/10.5281/zenodo.23547580).
