@@ -16,6 +16,7 @@
 
 import { h, setChildren, badge } from './dom.js';
 import { keyHelp } from './help-catalog.js';
+import { renderPasteRules } from './paste-rules.js';
 
 /** Order and titles of the registry's `area` values; an unknown area follows, titled from its name. */
 export const AREAS = [
@@ -81,6 +82,8 @@ export function validateValue(type, value) {
         case 'hosts':
             if (!Array.isArray(value)) return 'Enter a list of hosts.';
             return value.every((v) => /^[A-Za-z0-9.-]+(:\d+)?$/.test(v)) ? null : 'Hosts are bare names such as example.org.';
+        case 'paste_rules':
+            return Array.isArray(value) ? null : 'Enter a list of rules.';
         case 'paths':
             if (!Array.isArray(value)) return 'Enter a list of paths.';
             return value.every((v) => typeof v === 'string' && v.startsWith('/')) ? null : 'Paths must be absolute.';
@@ -99,6 +102,7 @@ export function formatValue(type, value) {
     const spec = typeSpec(type);
     if (value === null || value === undefined) return 'not set';
     if (spec.kind === 'bool') return value ? 'on' : 'off';
+    if (spec.kind === 'paste_rules') return Array.isArray(value) ? `${value.length} rule${value.length === 1 ? '' : 's'}` : 'not set';
     if (Array.isArray(value)) return value.length ? value.join(', ') : 'none';
     return String(value);
 }
@@ -299,6 +303,8 @@ export function renderControl(key, disabled, commit, fail) {
                 if (problem) fail(problem);
                 else commit(next);
             }, { disabled, placeholder: spec.kind === 'hosts' ? 'host.example.org' : '/absolute/path' });
+        case 'paste_rules':
+            return renderPasteRules(key, disabled, commit, fail);
         default:
             return h('code', { text: formatValue(key.type, key.value) });
     }
@@ -336,7 +342,7 @@ export function renderPolicyRow(key, { onChange, layer = 'admin', frozen = '' } 
     };
     const control = state.editable
         ? renderControl(key, false, run, fail)
-        : (typeSpec(key.type).kind === 'bool' || ['hosts', 'paths', 'subset'].includes(typeSpec(key.type).kind)
+        : (typeSpec(key.type).kind === 'bool' || ['hosts', 'paths', 'subset', 'paste_rules'].includes(typeSpec(key.type).kind)
             ? renderControl(key, true, () => {}, () => {})
             : h('code', { class: 'policy-readonly-value', text: formatValue(key.type, key.value) }));
     const source = key.locked ? 'locked' : (key.source || 'default');

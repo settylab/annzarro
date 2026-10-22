@@ -151,7 +151,7 @@ REGISTRY = Registry()
 #: Modules that declare keys when imported; ``load_declarations`` imports them,
 #: so a registry is complete wherever it is built. Add yours here.
 DECLARING_MODULES = ("annzarro.server.limits", "annzarro.core.remote", "annzarro.server.policy.panels",
-                     "annzarro.server.site", "annzarro.server.text_index")
+                     "annzarro.server.site", "annzarro.server.text_index", "annzarro.server.paste_focus")
 
 
 def load_declarations() -> None:

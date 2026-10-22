@@ -57,6 +57,7 @@ import { defaultHierarchy } from './utils/deeplink.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
+import { pasteSettings, matchRules, resolveDataset, isTextTarget, storeBase } from './utils/paste-focus.js';
 import { mountThemeToggle } from './utils/theme-toggle.js';
 import { startDesktopFrame } from './utils/desktop-frame.js';
 import { keepLast } from './utils/site-footer.js';
@@ -4135,6 +4136,96 @@ const App = (function() {
     }
     
     
+    // -- paste to focus (utils/paste-focus.js): a pasted cell or gene name sets the focus --
+
+    /** The question a paste asked about another dataset, while it is on screen (one at a time). */
+    let _pasteQuestion = null;
+
+    /** Whether the open dataset has a gene of this name (asks the server when the genes are not in the page). @private */
+    async function _geneExists(name) {
+        if (DataManager.getGeneIndex(name) >= 0) return true;
+        const datasetPath = DataManager.getCurrentDataset();
+        if (!datasetPath) return false;
+        try {
+            const body = await fetchNameMatches(Config.API.NAMES, { datasetPath, entity: 'genes', query: name, mode: 'exact', limit: 1 });
+            return !!(body && body.matches && body.matches[0] && body.matches[0].name === name);
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Focus the pasted cell, else the pasted gene, in the open dataset, and say so in one toast.
+     * The cell is located the way the Focused Cell box does (also on a dataset whose names stay on
+     * the server, and outside the subset). @private
+     */
+    async function _focusPasted(hit) {
+        if (!DataManager.getCurrentDataset()) return;
+        if (hit.cell) {
+            const cell = await DataManager.locateCell(hit.cell).catch(() => null);
+            if (cell && (cell.position >= 0 || cell.row !== null)) {
+                DataManager.setFocusedCell(hit.cell);
+                _showNotification('', `Focused cell ${hit.cell} (from clipboard)`, 'success');
+                return;
+            }
+        }
+        if (hit.gene && await _geneExists(hit.gene)) {
+            DataManager.setFocusedGene(hit.gene);
+            _showNotification('', `Focused gene ${hit.gene} (from clipboard)`, 'success');
+            return;
+        }
+        _showNotification('', `${hit.cell || hit.gene} is not in this dataset`, 'info');
+    }
+
+    /** Open `entry`, then focus what was pasted in it. @private */
+    async function _openForPaste(entry, hit) {
+        const state = await DatasetState.open(entry.path, { source: 'user' });
+        if (state && state.status === 'open') await _focusPasted(hit);
+    }
+
+    /** Act on the first rule that matched the pasted text. @private */
+    async function _applyPaste(hit) {
+        if (_pasteQuestion) _pasteQuestion.cancel();
+        const target = resolveDataset(hit.dataset, _listedDatasets, DataManager.getCurrentDataset(), hit.datasetMatch);
+        const name = hit.cell || hit.gene;
+        if (target.kind === 'one') {
+            const handle = _pasteQuestion = { cancel: () => {} };
+            const choice = await _askNotification('', `${name} is in ${target.entry.name || storeBase(target.entry.path)}. Open it?`,
+                [{ key: 'open', label: 'Open', primary: true }], { type: 'info', handle });
+            if (_pasteQuestion === handle) _pasteQuestion = null;
+            if (choice === 'open') await _openForPaste(target.entry, hit);
+        } else if (target.kind === 'many') {
+            const shown = target.entries.slice(0, 5);
+            const more = target.entries.length - shown.length;
+            const handle = _pasteQuestion = { cancel: () => {} };
+            const choice = await _askNotification('',
+                `${name} may be in ${target.entries.length} other datasets. Open one?${more ? ` (${more} more not listed)` : ''}`,
+                shown.map((e, i) => ({ key: String(i), label: e.name || storeBase(e.path), primary: i === 0 })),
+                { type: 'info', handle });
+            if (_pasteQuestion === handle) _pasteQuestion = null;
+            if (choice !== null && shown[Number(choice)]) await _openForPaste(shown[Number(choice)], hit);
+        } else {
+            await _focusPasted(hit);
+        }
+    }
+
+    /**
+     * The document's paste event (it needs no clipboard permission, also on plain http): text
+     * pasted outside a text field and a dialog, matching a rule, sets the focus. Anything else is
+     * the browser's and the user's business. @private
+     */
+    function _onPaste(e) {
+        if (isTextTarget(e.target) || isTextTarget(document.activeElement)) return;
+        if (document.querySelector('.modal.show')) return;
+        const settings = pasteSettings((key, fallback) => Policy.get(key, fallback));
+        if (!settings.enabled) return;
+        const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+        const hit = matchRules(text, settings.rules);
+        if (!hit) return;
+        e.preventDefault();
+        _applyPaste(hit).catch(err => console.warn('Paste to focus failed:', err));
+    }
+
     /**
      * Initialize keyboard shortcut handlers
      * @private
@@ -4324,6 +4415,7 @@ const App = (function() {
             });
         }
         
+        document.addEventListener('paste', _onPaste);
         console.log('Keyboard shortcuts initialized');
     }
     

@@ -624,6 +624,34 @@ ui:
   description: UI settings
   security: public   # the browser reads these
   properties:
+    paste_focus:
+      type: object
+      description: "Paste to focus: Ctrl+V or Cmd+V outside a text field sets the focused cell or gene from the clipboard text"
+      properties:
+        enabled:
+          type: boolean
+          description: "Whether pasting sets the focus"
+          default: true
+        rules:
+          type: array
+          description: "Rules tried in order, the first match wins: pattern (a JavaScript regular expression with the named groups cell, gene and optionally dataset), dataset_match (exact, prefix or contains) and enabled"
+          items:
+            type: object
+            properties:
+              pattern:
+                type: string
+              dataset_match:
+                type: string
+                enum: [exact, prefix, contains]
+                default: prefix
+              enabled:
+                type: boolean
+                default: true
+            required: [pattern]
+          default:
+            - pattern: '^(?=(?<gene>\S+)$)(?<cell>\S+)$'
+              dataset_match: prefix
+              enabled: true
     enabled_panel_types:
       type: array
       description: List of enabled panel types

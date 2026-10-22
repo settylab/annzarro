@@ -347,6 +347,19 @@ site:
 
 # UI configuration
 ui:
+  # Paste to focus: Ctrl+V / Cmd+V outside a text field sets the focused cell or gene from the
+  # clipboard text (docs/user-guide, docs/deployment/admin.md). A hosted server's admin edits the
+  # rules on the Settings page. Rules run in order, the first match wins. A rule is a JavaScript
+  # regular expression with the named groups (?<cell>...), (?<gene>...) and optionally
+  # (?<dataset>...), and dataset_match: exact | prefix | contains for the dataset group.
+  paste_focus:
+    enabled: true
+    rules:
+      # the whole trimmed text is one name: a cell, else a gene
+      - pattern: '^(?=(?<gene>\S+)$)(?<cell>\S+)$'
+        dataset_match: prefix
+        enabled: true
+
   # Panel type settings
   enabled_panel_types:
     - cell-plot

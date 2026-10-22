@@ -79,6 +79,26 @@ Previous cell (1) and the Focused Cell picker (2).
 1. Click **Previous cell** (1). The focus returns to the HSC and the walk panel shows its row again.
 2. **Next cell** moves forward again. The gene history arrows work the same way for genes.
 
+(paste-to-focus)=
+## Paste a cell or gene name
+
+Copy a cell or gene name anywhere (a spreadsheet, another tool, a message), click on the page
+outside a text box and press **Ctrl+V** (**Cmd+V** on a Mac). If AnnZarro recognises the text, the
+cell or gene becomes the focused cell or gene, as if you had picked it in the header, and a short
+notice says so: "Focused cell hdfihbcc-1 (from clipboard)".
+
+* The plain case: the whole text is one name. AnnZarro tries it as a cell name, then as a gene
+  name, in the open dataset.
+* If the name is not in the open dataset, the notice says so ("hdfihbcc-1 is not in this dataset").
+* Text that is not a name AnnZarro knows how to read is ignored without a notice, because people paste
+  for other reasons. Text longer than 4,096 characters is ignored.
+* Pasting into a text box (a picker, a filter, a search field) or while a dialog is open pastes
+  the text as usual.
+* A site can teach AnnZarro to read more, for example a whole table row copied from another
+  platform, which also names the dataset. When the row names another dataset on the server,
+  AnnZarro asks "hdfihbcc-1 is in BL_1697_spatial_annzarro.zarr. Open it?" and opens it only when
+  you press **Open**. It never switches dataset by itself. See {ref}`admin-paste-focus`.
+
 ## Lock a panel
 
 Every axis or colour that follows the focus (types `obsp`, `layer` and `varp`) has two extra
