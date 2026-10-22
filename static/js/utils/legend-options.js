@@ -39,6 +39,33 @@ export const DOT_SIZE_MIN = 2;
 export const DOT_SIZE_MAX = 16;
 export const DOT_SIZE_AUTO = 12;
 export const COLUMNS_MAX = 8;
+export const TITLE_SIZE_MIN = 6;
+export const TITLE_SIZE_MAX = 48;
+export const TITLE_GAP_MAX = 80;
+
+/** The legend title's size (px): set in Plot Options, else 2 px above the text, as it has always been. */
+export function legendTitleSize(settings) {
+    const n = settings && settings.legendTitleSize;
+    if (typeof n === 'number' && Number.isFinite(n)) return Math.max(TITLE_SIZE_MIN, Math.min(TITLE_SIZE_MAX, Math.round(n)));
+    return settings && settings.fontSize ? settings.fontSize + 2 : 14;
+}
+
+/** The gap (px) between the title and the first entry set in Plot Options, or null: the blank line it always had. */
+export function legendTitleGap(settings) {
+    const n = settings && settings.legendTitleGap;
+    return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(TITLE_GAP_MAX, Math.round(n))) : null;
+}
+
+/** Plotly's line height, in em: a blank line of font size g/1.3 is g px high. */
+const LINE_EM = 1.3;
+
+/** What follows the title's text: a blank line of the title's size, or, for a set gap, one that high (none for 0). */
+export function titleGapMarkup(settings) {
+    const gap = legendTitleGap(settings);
+    if (gap === null) return '<br>\u00a0';
+    if (gap === 0) return '';
+    return `<br><span style="font-size:${Math.round((gap / LINE_EM) * 10) / 10}px">\u00a0</span>`;
+}
 
 /** The dot size set in Plot Options (px), or null: the constant legend, as before the option. */
 export function legendDotSize(settings) {
@@ -88,7 +115,7 @@ export function legendTitleText(settings) {
     if (settings.showLegendTitle === false) return '';
     const text = colourTitle(settings.color);
     if (!text) return '';
-    return `${titleIndent(settings.fontFamily, (settings.fontSize || 12) + 2)}${text}<br>\u00a0`;
+    return `${titleIndent(settings.fontFamily, legendTitleSize(settings))}${text}${titleGapMarkup(settings)}`;
 }
 
 /** The legend options a figure's layout carries (the builders' nested `layout`; edits it in place). */
@@ -97,6 +124,7 @@ export function legendOptionsIntoLayout(layout, settings) {
     lg.itemsizing = legendDotSize(settings) === null ? 'constant' : 'trace';
     lg.title = { ...(lg.title || {}), text: legendTitleText(settings) };
     lg.title.side = 'top';
+    lg.title.font = { ...(lg.title.font || {}), size: legendTitleSize(settings) };
     if (legendColumns(settings) > 1) Object.assign(lg, COLUMN_LAYOUT);
     if (lg.orientation) lg.orientation = legendOrientation(lg.orientation, settings);
     layout.meta = { ...(layout.meta || {}), azLegendColumns: legendColumns(settings) };
@@ -109,6 +137,7 @@ export function legendOptionKeys(settings) {
         'legend.itemsizing': legendDotSize(settings) === null ? 'constant' : 'trace',
         'legend.title.text': legendTitleText(settings),
         'legend.title.side': 'top',
+        'legend.title.font.size': legendTitleSize(settings),
         'legend.traceorder': legendColumns(settings) > 1 ? COLUMN_LAYOUT.traceorder : null,
         'legend.groupclick': legendColumns(settings) > 1 ? COLUMN_LAYOUT.groupclick : null,
         'meta.azLegendColumns': legendColumns(settings)

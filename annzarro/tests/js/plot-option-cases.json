@@ -179,6 +179,18 @@
    "render": true
   },
   {
+   "key": "legendTitleSize",
+   "value": 20,
+   "panel": "a",
+   "render": true
+  },
+  {
+   "key": "legendTitleGap",
+   "value": 30,
+   "panel": "a",
+   "render": true
+  },
+  {
    "key": "legendColumns",
    "value": 2,
    "panel": "a",

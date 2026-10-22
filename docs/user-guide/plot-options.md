@@ -201,7 +201,11 @@ and **Apply to other panels** copies it.
   8; 1 or empty is one column), each with a **Reset**. The entries read down the columns, with the
   title above them, and each column is as wide as its longest label; columns that do not fit the
   width the legend has wrap onto a new row. A click on an entry still hides that category alone. They
-  work on 2D, 3D and large plots, and with the legend at any position. **Text** size has a **Reset** too.
+  work on 2D, 3D and large plots, and with the legend at any position. **Title size** (6 to 48 px;
+  empty is 2 px above the text size) and **Title gap** (0 to 80 px; empty is one blank line) set the
+  title's size and its distance to the first entry. **Text** size has a **Reset** too.
+- A legend longer than the plot scrolls on screen; an exported image (SVG or PNG, as shown or full)
+  always holds the whole legend, and is made taller when the legend needs it.
 - **Colour bar**, for a numerical colour, has its own **position** (right, left, top, bottom, or
   **with the legend**, the default, which follows **Legend Position**), a **Length** from 10 to
   100 % of the plot's height (or width when horizontal; 100 % by default) and **Ticks**, the
