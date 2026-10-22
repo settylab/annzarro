@@ -744,6 +744,7 @@ const PanelManager = (function() {
      * Restore layout dimensions and structure
      * @param {Object} layout - Layout configuration
      * @param {Object} [options]
+     * @param {string[]} [options.keep] - ids of open panels to keep as drawn (a history step)
      * @param {Object} [options.placeholder] - open the layout without data:
      *     every tile gets a placeholder that keeps its saved settings
      *     (utils/placeholder-panel.js), given {message, onChangeDataset}
@@ -756,6 +757,20 @@ const PanelManager = (function() {
         
         // Track currently active panels before restore
         const previouslyActivePanels = new Set(_activePanels);
+
+        // Panels kept as they are (a history step that did not change them): their content, with the
+        // graph or table drawn in it, is lifted out before the container is cleared and put into the
+        // new tile of the same id. Nothing is read, built or drawn again for them.
+        const kept = new Map();
+        for (const id of options.keep || []) {
+            const panel = _panels.get(id);
+            const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
+            const content = tile && tile.querySelector('.tile-content');
+            if (panel && content && !panel.isPlaceholder && _activePanels.has(panel)) {
+                content.remove();
+                kept.set(id, content);
+            }
+        }
         
         // Clear the active panels set - we'll repopulate it
         _activePanels.clear();
@@ -851,6 +866,20 @@ const PanelManager = (function() {
                 const contentContainer = tileElement.querySelector('.tile-content');
                 if (!contentContainer) continue;
                 
+                if (kept.has(id)) {
+                    const panel = _panels.get(id);
+                    contentContainer.replaceWith(kept.get(id));
+                    _setupTileEventHandlers(tileElement, id);
+                    _activePanels.add(panel);
+                    const keptTitle = tileElement.querySelector('.tile-title');
+                    if (keptTitle && panel.getTitle) keptTitle.value = panel.getTitle();
+                    const visible = layout.controlState && layout.controlState[id] !== undefined
+                        ? layout.controlState[id]
+                        : (layout.panelConfigs && layout.panelConfigs[id] || {}).controlsVisible;
+                    if (visible !== undefined) _applyControlsVisible(tileElement, visible);
+                    continue;
+                }
+
                 // Extract panel type from ID (everything before the last dash).
                 // Shared with the deep-link encoder via panelTypeFromTileId.
                 const type = panelTypeFromTileId(id);
@@ -1054,6 +1083,17 @@ const PanelManager = (function() {
         const type = panelTypeFromTileId(id);
         const Constructor = _panelTypes.get(type);
         if (!old || !content || !Constructor || old.isPlaceholder || !_activePanels.has(old)) return false;
+        // An open Plot Options menu is hidden first, to the end of its transition: disposed in the middle
+        // of it, Bootstrap throws when the hide ends
+        const menuButton = document.getElementById(`aesthetics-menu-btn-${id}`);
+        const menu = menuButton && window.bootstrap && window.bootstrap.Popover.getInstance(menuButton);
+        if (menu && document.querySelector('.aesthetics-popover')) {
+            await new Promise(resolve => {
+                menuButton.addEventListener('hidden.bs.popover', resolve, { once: true });
+                setTimeout(resolve, 600);
+                menu.hide();
+            });
+        }
         _activePanels.delete(old);
         try {
             if (typeof old.destroy === 'function') old.destroy();

@@ -84,10 +84,16 @@ test('another dataset or other cells reload the view', () => {
     assert.equal(diffViews(v, null, ctx).kind, 'reload');
 });
 
-test('a different arrangement rebuilds the layout', () => {
-    const a = view({}, {}, [tile('cell-plot-1')]);
-    const b = view({}, {}, [tile('cell-plot-1'), tile('cell-plot-2')]);
-    assert.equal(diffViews(a, b, ctx).kind, 'layout');
+test('a different arrangement rebuilds the layout around the unchanged panels', () => {
+    const c1 = { id: 'cell-plot-1', size: 4 };
+    const a = view({ 'cell-plot-1': c1 }, {}, [tile('cell-plot-1')]);
+    const b = view({ 'cell-plot-1': c1, 'cell-plot-2': { id: 'cell-plot-2' } }, {}, [tile('cell-plot-1'), tile('cell-plot-2')]);
+    assert.deepEqual(diffViews(a, b, ctx), { kind: 'layout', keep: ['cell-plot-1'] });
+    assert.deepEqual(diffViews(b, a, ctx), { kind: 'layout', keep: ['cell-plot-1'] });
+    // a panel whose settings changed as well is not kept
+    const c = view({ 'cell-plot-1': { id: 'cell-plot-1', size: 9 }, 'cell-plot-2': { id: 'cell-plot-2' } }, {},
+        [tile('cell-plot-1'), tile('cell-plot-2')]);
+    assert.deepEqual(diffViews(a, c, ctx), { kind: 'layout', keep: [] });
 });
 
 test('the same arrangement rebuilds only the panels whose settings differ', () => {
@@ -103,4 +109,13 @@ test('a control bar shown or hidden is toggled, not rebuilt', () => {
     const a = view(configs, { 'cell-plot-1': true, 'cell-plot-2': true });
     const b = view(configs, { 'cell-plot-1': true, 'cell-plot-2': false });
     assert.deepEqual(diffViews(a, b, ctx), { kind: 'panels', panels: [], controls: ['cell-plot-2'] });
+});
+
+test('a point size that follows the plot area is not a difference', () => {
+    const a = view({ 'cell-plot-1': { id: 'cell-plot-1', autoPointSize: true, pointSize: 4.7 } }, {}, [tile('cell-plot-1')]);
+    const b = view({ 'cell-plot-1': { id: 'cell-plot-1', autoPointSize: true, pointSize: 5.1 } }, {}, [tile('cell-plot-1')]);
+    assert.deepEqual(diffViews(a, b, ctx), { kind: 'panels', panels: [], controls: [] });
+    const c = view({ 'cell-plot-1': { id: 'cell-plot-1', autoPointSize: false, pointSize: 4.7 } }, {}, [tile('cell-plot-1')]);
+    const d = view({ 'cell-plot-1': { id: 'cell-plot-1', autoPointSize: false, pointSize: 5.1 } }, {}, [tile('cell-plot-1')]);
+    assert.deepEqual(diffViews(c, d, ctx).panels, ['cell-plot-1']);
 });

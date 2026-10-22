@@ -616,7 +616,7 @@ const App = (function() {
         SessionManager.onViewMayHaveChanged(_syncUrlSoon);
         // The autosave tick alone would notice an option changed up to its interval later, and fold
         // several changes into one history entry: a control used, or a focus set, says so at once
-        for (const type of ['input', 'change', 'click']) document.addEventListener(type, _syncUrlSoon, true);
+        for (const type of ['input', 'change', 'click', 'pointerup']) document.addEventListener(type, _syncUrlSoon, true);
         for (const type of ['focusedGeneChanged', 'focusedCellChanged', 'taxonomyIdChanged']) {
             document.addEventListener(type, _syncUrlSoon);
         }
@@ -745,8 +745,11 @@ const App = (function() {
             _adoptViewStyle(target);
             await _applyFocusSteps(live.constants || {}, target.constants || {}, link.datasetPath);
             if (diff.kind === 'layout') {
-                PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
-                await PanelManager.restoreLayout(target.layout);
+                // Closed panels are cleaned up as ever; the panels whose settings did not change keep what they drew
+                const kept = new Set(diff.keep);
+                PanelManager.getActivePanels().map(p => p.getId()).filter(id => !kept.has(id))
+                    .forEach(id => PanelManager.closePanel(id));
+                await PanelManager.restoreLayout(target.layout, { keep: diff.keep });
                 PanelManager.ensureWelcomeFallback();
             } else {
                 const layout = target.layout;

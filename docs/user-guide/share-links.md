@@ -94,7 +94,7 @@ the browser's history, and the browser's Back button steps to the view before it
 closed is back, the setting returns to its old value, the focused cell or gene is the previous
 one. Forward goes the other way. Changes made in one go share an entry: dragging a slider, clicking
 a number box's arrows several times, typing, or an action that sets several things one after the
-other. When only some panels' settings differ, only those panels are rebuilt and the others stay as they are; opening or closing a panel rebuilds the layout. Switching to
+other. Only the panels a step changes are rebuilt or redrawn; the others, large plots included, stay as they are, also when the step opens or closes a panel or moves a split. Switching to
 another dataset is an entry too, and Back returns to that dataset with the view it had. Panning and
 zooming a plot are not part of the address, so they are not undone. Back from the first view leaves
 AnnZarro for the page before it, and a reload keeps the entries. The browser keeps only the most

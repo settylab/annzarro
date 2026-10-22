@@ -92,12 +92,25 @@ export function stableStringify(value) {
 }
 
 /**
+ * A panel's settings as a step compares them: a point size or opacity that follows the plot
+ * area (auto) is derived from the panel's size, not chosen, so it is not a difference.
+ */
+function comparable(config) {
+    if (!config || typeof config !== 'object') return config || null;
+    const out = { ...config };
+    if (out.autoPointSize !== false) delete out.pointSize;
+    if (out.autoPointOpacity !== false) delete out.pointOpacity;
+    return out;
+}
+
+/**
  * What a move to another view changes, from two views in the form
  * SessionManager.captureView returns. Decides how much the app redraws:
  *
  * - `reload`: the dataset or the cells shown differ: open the view as a link does
  * - `layout`: the arrangement of the panels differs (a panel opened or closed,
- *   a split moved): the layout is rebuilt
+ *   a split moved): the layout is rebuilt around the panels that are kept (`keep`:
+ *   same settings, not redrawn)
  * - otherwise only `panels` (ids whose settings differ) are rebuilt in place,
  *   `controls` (ids whose control bar shows or hides) are toggled, and
  *   `constants` (focused gene, cell, species) are set; the rest is untouched
@@ -111,14 +124,20 @@ export function diffViews(from, to, { samePath, sameSubset }) {
     const a = (from && from.layout) || {};
     const b = (to && to.layout) || {};
     if (!to || !to.layout) return { kind: 'reload' };
-    if (stableStringify(a.hierarchy || []) !== stableStringify(b.hierarchy || [])) return { kind: 'layout' };
+    if (stableStringify(a.hierarchy || []) !== stableStringify(b.hierarchy || [])) {
+        // the panels in both views with the same settings are kept as they are drawn
+        const before = new Set(collectTileIds(a.hierarchy || []));
+        const keep = collectTileIds(b.hierarchy || []).filter(id => before.has(id)
+            && stableStringify(comparable((a.panelConfigs || {})[id])) === stableStringify(comparable((b.panelConfigs || {})[id])));
+        return { kind: 'layout', keep };
+    }
     const panels = [];
     const controls = [];
     const ids = new Set(collectTileIds(b.hierarchy || []));
     for (const id of ids) {
         const was = (a.panelConfigs || {})[id];
         const now = (b.panelConfigs || {})[id];
-        if (stableStringify(was || null) !== stableStringify(now || null)) panels.push(id);
+        if (stableStringify(comparable(was)) !== stableStringify(comparable(now))) panels.push(id);
         const shown = (b.controlState || {})[id];
         if (shown !== undefined && shown !== (a.controlState || {})[id]) controls.push(id);
     }
