@@ -695,6 +695,9 @@ def crawl(config):
         for future in [f for f in late if f.done()]:
             late_answer(future)
     finally:
+        # reads still under way when the crawl ends (its deadline, an error) keep their threads too: count them
+        with _late_reads_guard:
+            _late_reads.update(f for f in running if f.running())
         pool.shutdown(wait=False, cancel_futures=True)
 
     entries = snapshot()

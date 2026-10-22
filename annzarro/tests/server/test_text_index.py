@@ -354,6 +354,29 @@ def test_late_reads_left_by_earlier_crawls_count_against_the_spare_threads(world
     assert crawl(world)["state"] == "done"                                   # once they answer, crawls read again
 
 
+def test_reads_cut_off_by_the_crawl_deadline_count_against_the_spare_threads_too(world, monkeypatch):
+    """A read still under way at the crawl's deadline is not late yet (store timeout > crawl timeout), but it
+    holds its thread all the same: crawl after crawl must not start more of them."""
+    world.config.update(text_index_store_timeout_s=3600, text_index_crawl_timeout_s=0.5, text_index_workers=2)
+    monkeypatch.setattr(text_index, "_late_reads", set())
+    release = threading.Event()
+    real = text_index.read_text
+
+    def read(path, n):
+        if path.endswith(("liver.zarr", "heart.zarr")):
+            release.wait(30)
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    hanging = lambda: sum(1 for t in threading.enumerate() if t.name.startswith("text-index") and t.is_alive())
+    try:
+        for _ in range(4):
+            assert crawl(world)["state"] == "partial"
+            assert hanging() <= 2 and len(text_index._late_reads) <= 2
+    finally:
+        release.set()
+    assert wait_for(lambda: all(f.done() for f in text_index._late_reads))
+
+
 def test_a_crawl_past_its_time_is_partial_and_keeps_what_it_has(world):
     crawl(world)
     world.config["text_index_crawl_timeout_s"] = 0.0001
