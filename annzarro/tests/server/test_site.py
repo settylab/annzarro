@@ -590,3 +590,10 @@ def test_the_shipped_artwork_and_the_trademark_notice_exist():
 def site_module_logo():
     from annzarro.server.site import LOGO_FILE
     return LOGO_FILE
+
+
+@pytest.mark.parametrize("logo", [False, True])
+def test_software_credits_off_removes_every_fred_hutch_mention_from_the_dialog(tmp_path, logo):
+    """What a fork does to comply with TRADEMARKS.md: no Fred Hutch name or logo is left in About."""
+    modal = about_modal(body(get(app_with(tmp_path, {"software_credits": False, "fred_hutch_logo": logo}), "/")))
+    assert "Fred Hutch" not in modal and "fredhutch" not in modal.lower()

@@ -4,4 +4,4 @@ The Fred Hutch name and logo are trademarks of Fred Hutchinson Cancer Center and
 
 The MIT license does not grant any rights to the names, logos, or trademarks of Fred Hutch. Forks and derivative works must remove Fred Hutch's name and logo and must not suggest endorsement by Fred Hutch.
 
-The artwork is in `static/img/brand/`. The desktop app and servers that Fred Hutch runs show it, because they turn on `site.fred_hutch_logo` (off by default); a fork turns that setting off and deletes `static/img/brand/`, after which AnnZarro credits the Setty Lab at Fred Hutch Cancer Center in text only.
+The artwork is in `static/img/brand/`. Our desktop app and servers that Fred Hutch runs show it (`site.fred_hutch_logo`, off by default). A fork or derivative work must remove Fred Hutch's name and logo: delete `static/img/brand/`, leave `site.fred_hutch_logo` off, and remove the Fred Hutch name from the About dialog's credit (`templates/_about_credit.html`), or turn the whole credit off with `site.software_credits: false`.
