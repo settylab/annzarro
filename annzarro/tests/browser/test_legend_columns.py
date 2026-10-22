@@ -329,3 +329,114 @@ def test_a_cut_label_keeps_what_tells_it_apart_and_has_the_full_name_on_hover(pa
     assert all(any(c.isdigit() for c in t) for t in shown), shown               # and keeps its number
     cut = [(t, full) for t, full in r if t.endswith("\u2026") or t.startswith("\u2026")]
     assert cut and all(full in LABELS for _, full in cut), r
+
+
+ALIGN = """(sel) => { const gd = document.querySelector(sel);
+    const root = gd.getBoundingClientRect();
+    const rel = (r) => ({ left: r.left - root.left, right: r.right - root.left, top: r.top - root.top, bottom: r.bottom - root.top });
+    const textRect = (el) => { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let n = w.nextNode(); n; n = w.nextNode()) if (/\\S/.test(n.textContent.replace(/\\u00a0/g, ''))) { const r = document.createRange(); r.setStart(n, n.textContent.search(/[^\\u00a0 ]/)); r.setEnd(n, n.textContent.length); return rel(r.getBoundingClientRect()); }
+        return null; };
+    const note = [...gd.querySelectorAll('g.infolayer g.annotation text')].find(t => t.textContent.trim() === 'lineage');
+    const title = note ? textRect(note) : textRect(gd.querySelector('g.legend text[class$="titletext"]'));
+    const bgs = [...gd.querySelectorAll('g.legend, g.legend2, g.legend3')].map(g => rel(g.querySelector('rect.bg').getBoundingClientRect()));
+    const dot = rel(gd.querySelector('g.legend g.traces .scatterpts').getBoundingClientRect());
+    return { title, dot, annotated: !!note, ink: note ? [getComputedStyle(note).fill, getComputedStyle(note).fillOpacity] : null, left: Math.min(...bgs.map(b => b.left)), right: Math.max(...bgs.map(b => b.right)), width: root.width, height: root.height }; }"""
+
+
+def test_markers_alignment_puts_the_title_on_the_markers(page, server):
+    _open(page, server, None, legendTitleAlign="markers")
+    r = page.evaluate(ALIGN, TILE)
+    assert abs(r["title"]["left"] - r["dot"]["left"]) <= 1, r
+    _open(page, server, 2, legendTitleAlign="markers")
+    r = page.evaluate(ALIGN, TILE)
+    assert abs(r["title"]["left"] - r["dot"]["left"]) <= 1, r
+    # the default beside the plot is the markers, above it the centre; labels is the title as it was, over the labels
+    _open(page, server)
+    d = page.evaluate(ALIGN, TILE)
+    assert abs(d["title"]["left"] - d["dot"]["left"]) <= 1, d
+    _open(page, server, None, legendTitleAlign="labels")
+    lab = page.evaluate(ALIGN, TILE)
+    assert lab["title"]["left"] > lab["dot"]["left"] + 20, lab
+
+
+@pytest.mark.parametrize("position", ["right", "top"])
+@pytest.mark.parametrize("columns", [None, 2, 3])
+def test_centre_alignment_centres_the_title_across_all_columns(page, server, columns, position):
+    _open(page, server, columns, legendTitleAlign="centre", legendPosition=position)
+    r = page.evaluate(ALIGN, TILE)
+    assert r["annotated"] == (columns is not None), r
+    if columns:
+        assert r["ink"][1] != "0" and r["ink"][0].replace(" ", "") != "rgba(0,0,0,0)", ("the title is invisible", r)
+    assert abs((r["title"]["left"] + r["title"]["right"]) / 2 - (r["left"] + r["right"]) / 2) <= 1.5, r
+    assert r["title"]["top"] >= 0 and r["title"]["right"] <= r["width"], r
+
+
+def test_the_default_follows_the_position_and_a_choice_sticks(page, server):
+    _open(page, server, 2, legendPosition="top")
+    r = page.evaluate(ALIGN, TILE)
+    assert r["annotated"] and abs((r["title"]["left"] + r["title"]["right"]) / 2 - (r["left"] + r["right"]) / 2) <= 1.5, r
+    _open(page, server, 2, legendPosition="top", legendTitleAlign="markers")
+    r = page.evaluate(ALIGN, TILE)
+    assert not r["annotated"] and abs(r["title"]["left"] - r["dot"]["left"]) <= 1, r
+
+
+def test_right_alignment_ends_at_the_last_column(page, server):
+    _open(page, server, 2, legendTitleAlign="right")
+    r = page.evaluate(ALIGN, TILE)
+    assert r["annotated"] and abs(r["title"]["right"] - r["right"]) <= 4, r
+
+
+@pytest.mark.parametrize("align", ["markers", "labels", "centre", "right"])
+@pytest.mark.parametrize("columns", [None, 2])
+def test_title_gap_and_size_work_with_every_alignment(page, server, columns, align):
+    seen = []
+    for gap in (0, 1, 10):
+        _open(page, server, columns, legendTitleAlign=align, legendTitleGap=gap, legendTitleSize=20, legendPosition="top")
+        r = page.evaluate(ALIGN, TILE)
+        assert r["title"] and r["title"]["top"] >= -0.5 and r["title"]["bottom"] - r["title"]["top"] >= 18, (gap, r)
+        seen.append(r["title"]["top"])
+    assert seen[0] <= seen[2] + 12, seen
+
+
+def test_the_menu_sets_and_resets_the_alignment(page, server):
+    _open(page, server, 2)
+    page.click("#aesthetics-menu-btn-cell-plot-M")
+    page.click("details[data-panel='cell-plot-M'][data-section='legend'] summary")
+    assert page.is_disabled("#reset-legend-title-align-cell-plot-M")
+    page.select_option("#legend-title-align-cell-plot-M", "centre")
+    page.wait_for_function("(sel) => [...document.querySelector(sel).querySelectorAll('g.infolayer g.annotation text')].some(t => t.textContent.trim() === 'lineage')", arg=TILE, timeout=15000)
+    assert not page.is_disabled("#reset-legend-title-align-cell-plot-M")
+    page.click("#reset-legend-title-align-cell-plot-M")
+    page.wait_for_function("(sel) => ![...document.querySelector(sel).querySelectorAll('g.infolayer g.annotation text')].some(t => t.textContent.trim() === 'lineage')", arg=TILE, timeout=15000)
+    page.wait_for_timeout(500)
+    r = page.evaluate(ALIGN, TILE)
+    assert abs(r["title"]["left"] - r["dot"]["left"]) <= 1, r
+
+
+EXPORT_NOTE = """async ([sel, how]) => {
+  const { exportImageData } = await import('/static/js/utils/plot-export.js');
+  const gd = document.querySelector(sel);
+  const svg = await exportImageData(gd, how, { format: 'svg', width: 1600, height: 700, scale: 1 });
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;left:0;top:0';
+  host.innerHTML = svg;
+  document.body.appendChild(host);
+  try {
+    const root = host.querySelector('svg').getBoundingClientRect();
+    const note = [...host.querySelectorAll('g.annotation')].find(g => g.textContent.trim() === 'lineage');
+    const t = note && note.querySelector('text').getBoundingClientRect();
+    const legends = [...host.querySelectorAll('g.legend, g.legend2')].map(g => g.querySelector('rect.bg').getBoundingClientRect());
+    return { note: !!note, title: t ? [t.left - root.left, t.right - root.left] : null, legends: legends.map(r => [r.left - root.left, r.right - root.left]), W: root.width };
+  } finally { host.remove(); }
+}"""
+
+
+@pytest.mark.parametrize("how", ["full", "shown"])
+def test_an_export_of_a_centred_title_over_two_columns(page, server, how):
+    _open(page, server, 2, legendTitleAlign="centre")
+    r = page.evaluate(EXPORT_NOTE, [TILE, how])
+    assert r["note"] and len(r["legends"]) == 2, r
+    left = min(lg[0] for lg in r["legends"])
+    right = max(lg[1] for lg in r["legends"])
+    assert abs((r["title"][0] + r["title"][1]) / 2 - (left + right) / 2) <= 1.5, r

@@ -49,6 +49,28 @@ export function legendTitleGap(settings) {
     return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(TITLE_GAP_MAX, Math.round(n))) : null;
 }
 
+/** Where the legend title sits across the legend: its left edge at the markers' or at the labels', centred, or right. */
+export const TITLE_ALIGNS = Object.freeze(['markers', 'labels', 'centre', 'right']);
+
+/** The title alignment set in Plot Options, or null: it follows the legend's position (`legendTitleAlign`). */
+export function legendTitleAlignSetting(settings) {
+    const v = settings && settings.legendTitleAlign;
+    return TITLE_ALIGNS.includes(v) ? v : null;
+}
+
+/** The title alignment in effect: the one set, else centred over a legend above or below the plot and at the markers beside it. */
+export function legendTitleAlign(settings) {
+    const set = legendTitleAlignSetting(settings);
+    if (set) return set;
+    const pos = settings && settings.legendPosition;
+    return pos === 'top' || pos === 'bottom' ? 'centre' : 'markers';
+}
+
+/** Plotly's `legend.title.side` for an alignment (a single legend aligns its own title). */
+export function titleSide(align) {
+    return align === 'centre' ? 'top center' : align === 'right' ? 'top right' : 'top';
+}
+
 /** Plotly's line height, in em: a line of the title's font is 1.3 times its size high. */
 const LINE_EM = 1.3;
 
@@ -146,6 +168,21 @@ export function titleIndent(fontFamily, titleSize, indent = LABEL_INDENT) {
     return '\u00a0'.repeat(Math.max(0, Math.round(indent / space)));
 }
 
+/** Px from the legend's left edge, left of the title, to the left edge of a symbol of `marker` px: Plotly centres it in 30 px (`itemwidth`). */
+export function markerIndent(marker) {
+    return 18 - marker / 2;
+}
+
+/** Non-breaking spaces `px` wide in a title of `size` px: whole spaces at its size, the rest in one smaller span. */
+export function titleIndentPx(fontFamily, size, px) {
+    const hit = SPACE_EM.find(([re]) => re.test(fontFamily || ''));
+    const space = (hit ? hit[1] : 0.278);
+    const whole = Math.max(0, Math.floor(px / (space * size)));
+    const rest = px - whole * space * size;
+    const small = Math.round((rest / space) * 100) / 100;
+    return '\u00a0'.repeat(whole) + (small >= 1 ? `<span style="font-size:${small}px">\u00a0</span>` : '');
+}
+
 /**
  * The legend title: the colouring's name, empty when the title is switched off. Plotly sets a title flush
  * left, a little left of the symbols and with no room below it, so it is indented (non-breaking spaces) to
@@ -157,7 +194,10 @@ export function legendTitleText(settings, blank = false) {
     const name = colourTitle(settings.color);
     if (!name) return '';
     const size = legendTitleSize(settings);
-    const line = `${titleIndent(settings.fontFamily, size)}${blank ? '\u00a0' : name}`;
+    const align = legendTitleAlign(settings);
+    const indent = align === 'labels' ? titleIndent(settings.fontFamily, size)
+        : align === 'markers' ? titleIndentPx(settings.fontFamily, size, markerIndent(proxyMarkerSize(settings))) : '';
+    const line = `${indent}${blank ? '\u00a0' : name}`;
     const plan = titleGapPlan(settings);
     if (!plan) return `${line}<br>\u00a0`;
     const lead = '\u00a0<br>'.repeat(plan.lead);
@@ -176,7 +216,7 @@ export function legendOptionsIntoLayout(layout, settings) {
     const lg = layout.legend = { ...(layout.legend || {}) };
     lg.itemsizing = legendDotSize(settings) === null ? 'constant' : 'trace';
     lg.title = { ...(lg.title || {}), text: legendTitleText(settings) };
-    lg.title.side = 'top';
+    lg.title.side = titleSide(legendTitleAlign(settings));
     lg.title.font = { ...(lg.title.font || {}), size: legendTitleFontSize(settings) };
     if (lg.orientation) lg.orientation = legendOrientation(lg.orientation, settings);
     layout.meta = { ...(layout.meta || {}), ...columnMeta(settings) };
@@ -185,15 +225,20 @@ export function legendOptionsIntoLayout(layout, settings) {
 
 /** What the legend's columns need to know of the settings, in the layout's `meta`. */
 function columnMeta(settings) {
-    return { azLegendColumns: legendColumns(settings), azLegendGap: legendColumnGap(settings), azLegendPosition: (settings && settings.legendPosition) || 'right' };
+    return { azTitleAlign: legendTitleAlign(settings), azLegendColumns: legendColumns(settings), azLegendGap: legendColumnGap(settings), azLegendPosition: (settings && settings.legendPosition) || 'right' };
+}
+
+/** The title's text, side and alignment as relayout keys (they change with the alignment, the gap and the position). */
+export function legendTitleKeys(settings) {
+    const align = legendTitleAlign(settings);
+    return { 'legend.title.text': legendTitleText(settings), 'legend.title.side': titleSide(align), 'meta.azTitleAlign': align };
 }
 
 /** The same as relayout keys, for a graph already drawn; `position` is the legend's position, `placed` what it was before. */
 export function legendOptionKeys(settings) {
     return {
         'legend.itemsizing': legendDotSize(settings) === null ? 'constant' : 'trace',
-        'legend.title.text': legendTitleText(settings),
-        'legend.title.side': 'top',
+        ...legendTitleKeys(settings),
         'legend.title.font.size': legendTitleFontSize(settings),
         'meta.azLegendColumns': legendColumns(settings),
         'meta.azLegendGap': legendColumnGap(settings),
@@ -536,6 +581,7 @@ export function planLegendColumns(gd) {
     if (used < 2) {
         for (let k = 2; L[`legend${k}`]; k++) relayout[`legend${k}`] = null;
         setMargin('l'); setMargin('r');
+        titleNote(gd, relayout, false, false);
         if (meta.azColPlaced === true) {
             const b = LEGEND_POSITIONS[pos] || LEGEND_POSITIONS.right;
             Object.assign(relayout, { 'legend.x': b.x, 'legend.xanchor': b.xanchor, 'legend.yanchor': b.yanchor,
@@ -597,6 +643,8 @@ export function planLegendColumns(gd) {
         for (const [key, v] of Object.entries(keys)) if (!same(cur[key], v)) relayout[`${id}.${key}`] = v;
     });
     if (meta.azColPlaced !== true) relayout['meta.azColPlaced'] = true;
+    const noteWanted = (meta.azTitleAlign === 'centre' || meta.azTitleAlign === 'right') && !!(L.legend && L.legend.title && L.legend.title.text);
+    titleNote(gd, relayout, noteWanted, Object.keys(relayout).length === 0 && nameIdx.length === 0 && legendIdx.length === 0);
     return finish(relayout, margin, meta, legendIdx, legendVal, nameIdx, nameVal);
 }
 
@@ -606,6 +654,62 @@ function finish(relayout, margin, meta, legendIdx, legendVal, nameIdx, nameVal) 
     if (legendIdx.length) restyle.push([{ legend: legendVal }, legendIdx]);
     if (nameIdx.length) restyle.push([{ name: nameVal }, nameIdx]);
     return Object.keys(relayout).length || restyle.length ? { relayout, restyle } : null;
+}
+
+const NOTE = 'az-legend-title';
+const CLEAR = 'rgba(0,0,0,0)';
+const isClear = (c) => typeof c === 'string' && c.replace(/\s/g, '') === CLEAR;
+
+/**
+ * The legend title across several columns. One legend aligns only its own title, so for Centre and Right
+ * over columns the first legend's title stays (invisible, for its height) and the title is a layout annotation,
+ * placed from where the first and last legend and the title's text were drawn. Edits `relayout`.
+ * @param {boolean} active - whether the annotation is wanted
+ * @param {boolean} settled - whether the legends have stopped moving, so that their places can be read
+ */
+function titleNote(gd, relayout, active, settled) {
+    const L = gd.layout, FL = gd._fullLayout;
+    const meta = L.meta || {};
+    const list = Array.isArray(L.annotations) ? L.annotations : [];
+    const mine = list.find(a => a && a.name === NOTE);
+    const cur = L.legend && L.legend.title && L.legend.title.font && L.legend.title.font.color;
+    if (!active) {
+        if (mine) relayout.annotations = list.filter(a => a !== mine);
+        if (isClear(cur)) relayout['legend.title.font.color'] = meta.azTitleColor ?? FL.font.color ?? '#000000';
+        return;
+    }
+    if (!isClear(cur)) {
+        if (cur !== undefined && cur !== meta.azTitleColor) relayout['meta.azTitleColor'] = cur;
+        relayout['legend.title.font.color'] = CLEAR;
+    }
+    if (!settled || typeof document === 'undefined') return;
+    const first = gd.querySelector('g.legend rect.bg');
+    const lastId = legendId(usedColumns(gd.data, meta.azLegendColumns || 1) - 1);
+    const last = gd.querySelector(`g.${lastId} rect.bg`);
+    const text = gd.querySelector('g.legend text[class$="titletext"]');
+    if (!first || !last || !text) return;
+    const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
+    let node = null;
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/\S/.test(n.textContent.replace(/\u00a0/g, ''))) { node = n; break; }
+    if (!node) return;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const t = range.getBoundingClientRect(), a = first.getBoundingClientRect(), b = last.getBoundingClientRect(), g = gd.getBoundingClientRect();
+    const align = meta.azTitleAlign;
+    const px = align === 'right' ? b.right - 2 : (a.left + b.right) / 2;
+    const size = FL._size;
+    const font = FL.legend && FL.legend.title && FL.legend.title.font || {};
+    const span = node.parentElement ? parseFloat(getComputedStyle(node.parentElement).fontSize) : NaN;
+    const want = {
+        name: NOTE, text: node.textContent.replace(/\u00a0/g, ' ').trim().replace(/</g, '&lt;'), showarrow: false, xref: 'paper', yref: 'paper',
+        x: round((px - g.left - size.l) / size.w), y: round((size.t + size.h - ((t.top + t.bottom) / 2 - g.top)) / size.h),
+        xanchor: align === 'right' ? 'right' : 'center', yanchor: 'middle', align: align === 'right' ? 'right' : 'center',
+        borderpad: 0, borderwidth: 0, captureevents: false,
+        font: { family: font.family, size: Number.isFinite(span) && span > 0 ? span : font.size, color: (isClear(meta.azTitleColor) ? undefined : meta.azTitleColor) || (isClear(cur) ? undefined : cur) || FL.font.color || '#000000' }
+    };
+    const same2 = mine && mine.text === want.text && same(mine.x, want.x) && same(mine.y, want.y) && mine.xanchor === want.xanchor
+        && mine.font && mine.font.size === want.font.size && mine.font.color === want.font.color && mine.font.family === want.font.family;
+    if (!same2) relayout.annotations = [...list.filter(x => x !== mine), want];
 }
 
 /** A cut entry shows its full name on hover (an SVG title on the entry). */
