@@ -317,3 +317,15 @@ def test_the_title_is_whole_at_every_gap(page, server, columns):
     for a, b in ((0, 10), (10, 25), (1, 10), (5, 25)):
         assert abs((gaps[b] - gaps[a]) - (b - a)) <= 2.5, (a, b, gaps)
     assert gaps[0] <= gaps[1] <= gaps[2] + 1.5 <= gaps[5] + 3 <= gaps[10] + 6, gaps
+
+
+def test_a_cut_label_keeps_what_tells_it_apart_and_has_the_full_name_on_hover(page, server):
+    page.set_viewport_size({"width": 700, "height": 800})
+    _open(page, server, 3)
+    r = page.evaluate("""(sel) => [...document.querySelector(sel).querySelectorAll('g.traces')].map(g => [g.textContent, (g.querySelector(':scope > title') || {}).textContent || null])""", TILE)
+    assert len(r) == LINEAGES
+    shown = [t for t, _ in r]
+    assert len(set(shown)) == LINEAGES, shown                                  # every label still differs
+    assert all(any(c.isdigit() for c in t) for t in shown), shown               # and keeps its number
+    cut = [(t, full) for t, full in r if t.endswith("\u2026") or t.startswith("\u2026")]
+    assert cut and all(full in LABELS for _, full in cut), r

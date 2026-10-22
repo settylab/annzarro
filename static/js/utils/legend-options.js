@@ -351,6 +351,37 @@ export function cutLabel(text, max, measure) {
     return `${text.slice(0, Math.max(1, lo))}\u2026`;
 }
 
+/** The length of the longest prefix all of `texts` share. */
+function commonPrefix(texts) {
+    if (!texts.length) return 0;
+    let n = texts[0].length;
+    for (const t of texts) { let i = 0; while (i < n && i < t.length && t[i] === texts[0][i]) i++; n = i; }
+    return n;
+}
+
+/**
+ * `text` cut to at most `max` px, keeping what tells it from `all` the labels of the legend: the prefix and
+ * suffix they all share are shortened first (an ellipsis where something is dropped), the middle part that
+ * differs is kept whole where it fits, and only then is it cut in the middle (head and tail kept).
+ */
+export function cutLabelAmong(text, max, measure, all) {
+    if (measure(text) <= max) return text;
+    const pre = commonPrefix(all);
+    const rev = (t) => [...t].reverse().join('');
+    const suf = commonPrefix(all.map(rev));
+    const lp = Math.min(pre, text.length), ls = Math.min(suf, Math.max(0, text.length - lp));
+    let kp = lp, ks = ls;
+    const build = () => `${kp < lp ? '\u2026' : ''}${text.slice(lp - kp, text.length - ls + ks)}${ks < ls ? '\u2026' : ''}`;
+    while (measure(build()) > max && (kp > 0 || ks > 0)) { if (kp >= ks) kp--; else ks--; }
+    const body = build();
+    if (measure(body) <= max) return body;
+    // the differing part alone is too wide: its head and tail around an ellipsis
+    let h = Math.ceil(body.length / 2), t = Math.floor(body.length / 2);
+    const mid = () => `${body.slice(0, h)}\u2026${t ? body.slice(body.length - t) : ''}`;
+    while (measure(mid()) > max && (h > 1 || t > 0)) { if (h > t) h--; else t--; }
+    return mid();
+}
+
 /**
  * Where the legends of columns of `widths` px go, as Plotly's paper fractions (of the plot's width, from its
  * left edge) with the legends' anchors. At the `right` of the plot the columns start `PLOT_GAP` px from
@@ -531,10 +562,11 @@ export function planLegendColumns(gd) {
     const measure = legendMeasure(gd);
     const needs = groups.map(g => Math.max(0, ...g.map(t => measure(t.azName ?? t.name))) + ENTRY_EXTRA);
     const fit = fitColumns(needs, gap, side ? W * COLUMNS_SHARE : Math.max(plot.w, 200));
+    const allLabels = proxies.map(t => t.azName ?? t.name);
     groups.forEach((g, c) => {
         for (const t of g) {
             const full = t.azName ?? t.name;
-            const shown = fit.limits ? cutLabel(full, fit.limits[c] - ENTRY_EXTRA, measure) : full;
+            const shown = fit.limits ? cutLabelAmong(full, fit.limits[c] - ENTRY_EXTRA, measure, allLabels) : full;
             if (shown !== t.name) { nameIdx.push(at.get(t)); nameVal.push(shown); }
             if (shown !== full) t.azName = full;
         }
@@ -576,11 +608,26 @@ function finish(relayout, margin, meta, legendIdx, legendVal, nameIdx, nameVal) 
     return Object.keys(relayout).length || restyle.length ? { relayout, restyle } : null;
 }
 
+/** A cut entry shows its full name on hover (an SVG title on the entry). */
+function showFullNames(gd) {
+    try {
+        for (const el of gd.querySelectorAll('g.traces')) {
+            const full0 = el.__data__ && el.__data__[0] && el.__data__[0].trace;
+            const trace = full0 && gd.data[full0.index];
+            const full = trace && trace.azName !== undefined && trace.azName !== trace.name ? trace.azName : null;
+            let title = el.querySelector(':scope > title');
+            if (!full) { if (title) title.remove(); continue; }
+            if (!title) { title = document.createElementNS('http://www.w3.org/2000/svg', 'title'); el.appendChild(title); }
+            if (title.textContent !== full) title.textContent = full;
+        }
+    } catch (err) { /* a hover hint only */ }
+}
+
 /** Bring the legends of a drawn graph to its columns and their places; resolves when they are settled. */
 export async function syncLegendColumns(gd, pass = 0) {
     if (!gd || !Array.isArray(gd.data) || !gd.layout || !gd._fullLayout || _setting.has(gd) || typeof Plotly === 'undefined') return;
     const plan = planLegendColumns(gd);
-    if (!plan || pass >= MAX_PASSES) return;
+    if (!plan || pass >= MAX_PASSES) { showFullNames(gd); return; }
     _setting.add(gd);
     try {
         for (const [update, idx] of plan.restyle) await Plotly.restyle(gd, update, idx);
