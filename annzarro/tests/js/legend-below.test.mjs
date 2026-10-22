@@ -19,6 +19,13 @@ test('only the horizontal legend hanging from the axes down is a bottom legend',
     assert.equal(isBelowLegend(undefined), false);
 });
 
+test('the first of several columns hanging from the axes is a bottom legend too', () => {
+    const cols = { legend: { orientation: 'v', yanchor: 'top', x: 0.3, y: -0.2 }, meta: { azLegendColumns: 2 } };
+    assert.equal(isBelowLegend(cols), true);
+    assert.equal(isBelowLegend({ ...cols, meta: { azLegendColumns: 1 } }), false);
+    assert.equal(isBelowLegend({ legend: { orientation: 'v', yanchor: 'middle', y: 0.5 }, meta: { azLegendColumns: 2 } }), false);
+});
+
 test('the same pixels are a bigger fraction of a shorter plot', () => {
     assert.equal(belowLegendY(68, 340), -0.2);
     assert.equal(belowLegendY(68, 120), -0.5667);

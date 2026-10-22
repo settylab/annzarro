@@ -177,7 +177,7 @@ CONTROLS = {
     "showTickMarks": ("check", "show-tick-marks"), "showLegend": ("check", "show-legend"), "showLegendTitle": ("check", "show-legend-title"), "showScaleBar": ("check", "show-scale-bar"),
     "marginsUnlinked": ("check", "margins-unlink"), "focusedNoFill": ("check", "focused-no-fill"),
     "tickCount": ("fill", "tick-count"), "axisLineWidth": ("fill", "axis-line-width"), "gridLineWidth": ("fill", "grid-line-width"),
-    "zeroLineWidth": ("fill", "zero-line-width"), "legendDotSize": ("fill", "legend-dot-size"), "legendColumns": ("fill", "legend-columns"), "fontSize": ("fill", "font-size"), "colorbarTicks": ("fill", "colorbar-ticks"),
+    "zeroLineWidth": ("fill", "zero-line-width"), "legendDotSize": ("fill", "legend-dot-size"), "legendColumns": ("fill", "legend-columns"), "legendColumnGap": ("fill", "legend-column-gap"), "fontSize": ("fill", "font-size"), "colorbarTicks": ("fill", "colorbar-ticks"),
     "scaleBarUnit": ("fill", "scale-bar-unit"), "notInTableScale": ("fill", "not-in-table-scale"),
     "notInTableOpacity": ("fill", "not-in-table-opacity"), "focusedScale": ("fill", "focused-scale"),
     "focusedOpacity": ("fill", "focused-opacity"), "focusedEdgeWidth": ("fill", "focused-edge-width"),

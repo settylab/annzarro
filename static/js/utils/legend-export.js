@@ -25,10 +25,19 @@ export function extraHeight(imageHeight, top, height, pad = LEGEND_PAD) {
     return Number.isFinite(need) && need > 0 ? need : 0;
 }
 
-/** Whether Plotly shows only part of the legend of a drawn graph. */
+/** The drawn legends of a layout: `legend`, `legend2`, ... (a legend in columns is one legend per column). */
+function legendsOf(fullLayout) {
+    const out = [];
+    for (let i = 1; fullLayout && fullLayout[i === 1 ? 'legend' : `legend${i}`]; i++) {
+        out.push([i === 1 ? 'legend' : `legend${i}`, fullLayout[i === 1 ? 'legend' : `legend${i}`]]);
+    }
+    return out;
+}
+
+/** Whether Plotly shows only part of a legend of a drawn graph. */
 export function legendIsClipped(fullLayout) {
-    const lg = fullLayout && fullLayout.legend;
-    return !!lg && fullLayout.showlegend !== false && lg._height > (lg._effHeight ?? lg._height) + 0.5;
+    return !!fullLayout && fullLayout.showlegend !== false
+        && legendsOf(fullLayout).some(([, lg]) => lg._height > (lg._effHeight ?? lg._height) + 0.5);
 }
 
 /**
@@ -37,16 +46,18 @@ export function legendIsClipped(fullLayout) {
  */
 export function unclipLegend(svg, fullLayout) {
     if (!svg || !legendIsClipped(fullLayout)) return 0;
-    const box = svg.querySelector('g.legend');
-    if (!box) return 0;
-    const lg = fullLayout.legend;
-    const scroll = box.querySelector('.scrollbox');
-    if (scroll) { scroll.removeAttribute('clip-path'); scroll.setAttribute('transform', ''); }
-    box.querySelectorAll('.scrollbar').forEach(n => n.remove());
-    const bg = box.querySelector('rect.bg');
-    if (bg) bg.setAttribute('height', String(lg._height));
+    let extra = 0;
     const height = parseFloat(svg.getAttribute('height')) || fullLayout.height;
-    const extra = extraHeight(height, translateY(box.getAttribute('transform')), lg._height);
+    for (const [id, lg] of legendsOf(fullLayout)) {
+        const box = svg.querySelector(`g.${id}`);
+        if (!box) continue;
+        const scroll = box.querySelector('.scrollbox');
+        if (scroll) { scroll.removeAttribute('clip-path'); scroll.setAttribute('transform', ''); }
+        box.querySelectorAll('.scrollbar').forEach(n => n.remove());
+        const bg = box.querySelector('rect.bg');
+        if (bg) bg.setAttribute('height', String(lg._height));
+        extra = Math.max(extra, extraHeight(height, translateY(box.getAttribute('transform')), lg._height));
+    }
     if (extra) {
         const grown = height + extra;
         svg.setAttribute('height', String(grown));

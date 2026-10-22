@@ -199,6 +199,12 @@
    "note": "the entry width that makes the columns is set from the legend as drawn, in a few steps; the same to within a few pixels"
   },
   {
+   "key": "legendColumnGap",
+   "value": 40,
+   "panel": "a",
+   "render": false
+  },
+  {
    "key": "showLegendTitle",
    "value": false,
    "panel": "a",

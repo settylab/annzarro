@@ -2,7 +2,7 @@ import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage 
 import { axisTitle, refreshScaleBar, flipRelayout } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
 import { applyLegendOptions, legendOrientation, legendTitleText, legendTitleSize, legendTitleFontSize, defaultTitleGap, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX,
-    TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX } from '../../utils/legend-options.js';
+    TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX, COLUMN_GAP_MAX, COLUMN_GAP_DEFAULT } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
@@ -487,13 +487,22 @@ export function createPopoverContent(id, settings) {
                     <button class="btn btn-outline-secondary" type="button" id="reset-legend-dot-size-${id}" title="Back to the default dots"
                         ${settings.legendDotSize == null ? 'disabled' : ''}>Reset</button>
                 </div>
-                <div class="input-group input-group-sm">
+                <div class="input-group input-group-sm mb-1">
                     <span class="input-group-text">Columns</span>
                     <input type="number" class="form-control" id="legend-columns-${id}" value="${settings.legendColumns ?? ''}"
                         placeholder="1" data-step-from="1" min="1" max="${COLUMNS_MAX}" step="1"
-                        title="Lay the legend out in this many columns; 1 or empty: one column. Labels too long for that many columns give fewer.">
+                        title="Lay the legend out in this many columns, side by side, the entries in order down each; 1 or empty: one column. Labels too long for the room are cut short.">
                     <button class="btn btn-outline-secondary" type="button" id="reset-legend-columns-${id}" title="Back to one column"
                         ${settings.legendColumns == null ? 'disabled' : ''}>Reset</button>
+                </div>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">Column gap</span>
+                    <input type="number" class="form-control" id="legend-column-gap-${id}" value="${settings.legendColumnGap ?? ''}"
+                        placeholder="${COLUMN_GAP_DEFAULT}" data-step-from="${COLUMN_GAP_DEFAULT}" min="0" max="${COLUMN_GAP_MAX}" step="1"
+                        title="Space in px between the columns of the legend; empty: ${COLUMN_GAP_DEFAULT} px">
+                    <span class="input-group-text">px</span>
+                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-column-gap-${id}" title="Back to the default gap"
+                        ${settings.legendColumnGap == null ? 'disabled' : ''}>Reset</button>
                 </div>
             </div>
             <!-- Colour bar -->
@@ -1903,7 +1912,8 @@ const LEGEND_BOXES = [
     { box: 'legend-dot-size', key: 'legendDotSize', min: DOT_SIZE_MIN, max: DOT_SIZE_MAX },
     { box: 'legend-columns', key: 'legendColumns', min: 1, max: COLUMNS_MAX },
     { box: 'legend-title-size', key: 'legendTitleSize', min: TITLE_SIZE_MIN, max: TITLE_SIZE_MAX },
-    { box: 'legend-title-gap', key: 'legendTitleGap', min: 0, max: TITLE_GAP_MAX }
+    { box: 'legend-title-gap', key: 'legendTitleGap', min: 0, max: TITLE_GAP_MAX },
+    { box: 'legend-column-gap', key: 'legendColumnGap', min: 0, max: COLUMN_GAP_MAX }
 ];
 
 /** A Reset button's state as drawn: disabled while its colour follows the theme (syncColourControls keeps it so). */
@@ -1915,7 +1925,7 @@ function resetState(settings, key) {
 function syncOptionResets(id, settings) {
     const atDefault = { 'font-size': (settings.fontSize || 12) === 12, 'legend-dot-size': settings.legendDotSize == null,
                         'legend-columns': settings.legendColumns == null, 'legend-title-size': settings.legendTitleSize == null,
-                        'legend-title-gap': settings.legendTitleGap == null };
+                        'legend-title-gap': settings.legendTitleGap == null, 'legend-column-gap': settings.legendColumnGap == null };
     for (const [name, yes] of Object.entries(atDefault)) {
         const reset = document.getElementById(`reset-${name}-${id}`);
         if (reset) reset.disabled = yes;
@@ -2047,6 +2057,7 @@ export function legendPlacement(data, posConfig, settings = {}) {
   }
   return {
     'legend.orientation': legendOrientation(posConfig.legendOrientation, settings),
+    'meta.azLegendPosition': settings.legendPosition || 'right',
     'legend.x':           posConfig.legendX,
     'legend.y':           posConfig.legendY,
     'legend.xanchor':     posConfig.legendXanchor,
