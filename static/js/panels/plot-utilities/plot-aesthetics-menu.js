@@ -2,7 +2,7 @@ import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage 
 import { axisTitle, refreshScaleBar, flipRelayout } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
 import { applyLegendOptions, legendOrientation, legendTitleText, legendTitleSize, legendTitleFontSize, defaultTitleGap, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX,
-    TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX, COLUMN_GAP_MAX, COLUMN_GAP_DEFAULT } from '../../utils/legend-options.js';
+    TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX, COLUMN_GAP_MAX, COLUMN_GAP_DEFAULT, legendTitleKeys } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
@@ -467,6 +467,16 @@ export function createPopoverContent(id, settings) {
                     <span class="input-group-text">px</span>
                     <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-size-${id}" title="Back to the default size"
                         ${settings.legendTitleSize == null ? 'disabled' : ''}>Reset</button>
+                </div>
+                <div class="input-group input-group-sm mb-1">
+                    <span class="input-group-text">Title align</span>
+                    <select class="form-select" id="legend-title-align-${id}"
+                        title="Where the legend title sits: Auto is centred over a legend above or below the plot and at the markers beside it; Markers: its left edge at the markers'; Labels: at the labels'. Centre and Right are across all the columns.">
+                        ${[['', 'Auto'], ['markers', 'Markers'], ['labels', 'Labels'], ['centre', 'Centre'], ['right', 'Right']]
+                            .map(([v, label]) => `<option value="${v}" ${(settings.legendTitleAlign || '') === v ? 'selected' : ''}>${label}</option>`).join('')}
+                    </select>
+                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-align-${id}" title="Back to Auto"
+                        ${settings.legendTitleAlign == null ? 'disabled' : ''}>Reset</button>
                 </div>
                 <div class="input-group input-group-sm mb-1">
                     <span class="input-group-text">Title gap</span>
@@ -1110,6 +1120,16 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             settings.showLegendTitle = target.checked;
             applyLegendOptions(plotContainer, settings);
             notifySettingsChanged(id, 'showLegendTitle', settings.showLegendTitle);
+            return;
+        }
+        if ((target.id === `legend-title-align-${id}` && e.type === 'change') || (target.id === `reset-legend-title-align-${id}` && e.type === 'click')) {
+            const reset = target.id.startsWith('reset-');
+            settings.legendTitleAlign = reset ? null : (target.value || null);
+            if (reset) document.getElementById(`legend-title-align-${id}`).value = '';
+            applyLegendOptions(plotContainer, settings,
+                getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
+            notifySettingsChanged(id, 'legendTitleAlign', settings.legendTitleAlign);
+            syncOptionResets(id, settings);
             return;
         }
         const legendBox = LEGEND_BOXES.find(b => target.id === `${b.box}-${id}`);
@@ -1925,7 +1945,7 @@ function resetState(settings, key) {
 function syncOptionResets(id, settings) {
     const atDefault = { 'font-size': (settings.fontSize || 12) === 12, 'legend-dot-size': settings.legendDotSize == null,
                         'legend-columns': settings.legendColumns == null, 'legend-title-size': settings.legendTitleSize == null,
-                        'legend-title-gap': settings.legendTitleGap == null, 'legend-column-gap': settings.legendColumnGap == null };
+                        'legend-title-gap': settings.legendTitleGap == null, 'legend-column-gap': settings.legendColumnGap == null, 'legend-title-align': settings.legendTitleAlign == null };
     for (const [name, yes] of Object.entries(atDefault)) {
         const reset = document.getElementById(`reset-${name}-${id}`);
         if (reset) reset.disabled = yes;
@@ -2058,6 +2078,7 @@ export function legendPlacement(data, posConfig, settings = {}) {
   return {
     'legend.orientation': legendOrientation(posConfig.legendOrientation, settings),
     'meta.azLegendPosition': settings.legendPosition || 'right',
+    ...legendTitleKeys(settings),
     'legend.x':           posConfig.legendX,
     'legend.y':           posConfig.legendY,
     'legend.xanchor':     posConfig.legendXanchor,

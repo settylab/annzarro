@@ -207,7 +207,7 @@ and **Apply to other panels** copies it.
   alone, and a double click shows only that category, from any column. They work on 2D, 3D and large
   plots, and with the legend at any position. **Title size** (6 to 48 px;
   empty is 2 px above the text size) and **Title gap** (0 to 80 px, added to the 2 px Plotly leaves; empty is
-  one blank line) set the title's size and its distance to the first entry in true pixels. In an empty
+  one blank line) set the title's size and its distance to the first entry in true pixels. **Title align** puts the title's left edge at the legend's markers (**Markers**) or at its labels (**Labels**), or centres it (**Centre**) or ends it at the right (**Right**) across all the columns; **Auto**, the default, is Centre for a legend above or below the plot and Markers beside it, and a choice you make stays whatever the position. In an empty
   number box the arrows step from the default the box shows. **Text** size has a **Reset** too.
 - A legend longer than the plot scrolls on screen; an exported image (SVG or PNG, as shown or full)
   always holds the whole legend, and is made taller when the legend needs it.

@@ -182,7 +182,7 @@ CONTROLS = {
     "notInTableOpacity": ("fill", "not-in-table-opacity"), "focusedScale": ("fill", "focused-scale"),
     "focusedOpacity": ("fill", "focused-opacity"), "focusedEdgeWidth": ("fill", "focused-edge-width"),
     "exportWidth": ("fill", "plot-width"), "exportHeight": ("fill", "plot-height"),
-    "fontFamily": ("select", "font-family"), "legendPosition": ("select", "legend-position"),
+    "fontFamily": ("select", "font-family"), "legendPosition": ("select", "legend-position"), "legendTitleAlign": ("select", "legend-title-align"),
     "colorbarPosition": ("select", "colorbar-position"), "scaleBarCorner": ("select", "scale-bar-corner"),
     "colorbarLength": ("slide", "colorbar-length", 100), "scaleBarSize": ("slide", "scale-bar-size", 100),
 }
