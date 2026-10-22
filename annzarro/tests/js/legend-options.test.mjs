@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     legendDotSize, proxyMarkerSize, legendColumns, legendOrientation, legendTitleText, titleIndent, LABEL_INDENT, columnSizes, assignColumns,
-    legendOptionsIntoLayout, legendOptionKeys, DOT_SIZE_MAX, blankTitle, fitColumns, cutLabel, placeColumns, legendColumnGap, legendIds,
+    legendOptionsIntoLayout, legendOptionKeys, DOT_SIZE_MAX, blankTitle, fitColumns, cutLabel, cutLabelAmong, placeColumns, legendColumnGap, legendIds,
     withLegendColumns, usedColumns, planLegendColumns
 } from '../../../static/js/utils/legend-options.js';
 import { legendKey } from '../../../static/js/utils/legend-entries.js';
@@ -115,6 +115,18 @@ test('columns that fit are left alone, wider ones are squeezed and then cut', ()
     assert.equal(cutLabel('short', 100, measure), 'short');
     const cut = cutLabel('a very long label indeed', 100, measure);
     assert.ok(cut.endsWith('\u2026') && measure(cut) <= 100 && cut.length > 3, cut);
+});
+
+test('a cut label keeps what tells it from the others', () => {
+    const measure = (t) => t.length * 10;
+    const all = ['Haematopoietic lineage 00 progenitor', 'Haematopoietic lineage 01 progenitor', 'Haematopoietic lineage 13 progenitor'];
+    const cut = all.map(l => cutLabelAmong(l, 200, measure, all));
+    assert.ok(cut.every(c => measure(c) <= 200 && /\d\d/.test(c)), cut.join('|'));
+    assert.equal(new Set(cut).size, 3);
+    assert.equal(cutLabelAmong(all[0], 400, measure, all), all[0]);
+    const tiny = all.map(l => cutLabelAmong(l, 90, measure, all));
+    assert.ok(tiny.every(c => measure(c) <= 90 && /\d\d/.test(c)) && new Set(tiny).size === 3, tiny.join('|'));
+    assert.ok(cutLabelAmong('abcdefghijklmnop', 80, measure, ['abcdefghijklmnop']).includes('\u2026'));
 });
 
 test('columns sit side by side to the right of the plot, in order, never overlapping', () => {
