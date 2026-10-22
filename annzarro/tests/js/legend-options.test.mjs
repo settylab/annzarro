@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
     legendDotSize, proxyMarkerSize, legendColumns, legendOrientation, legendTitleText, titleIndent, LABEL_INDENT, columnSizes, assignColumns,
     legendOptionsIntoLayout, legendOptionKeys, DOT_SIZE_MAX, blankTitle, fitColumns, cutLabel, cutLabelAmong, placeColumns, legendColumnGap, legendIds,
-    withLegendColumns, usedColumns, planLegendColumns
+    withLegendColumns, usedColumns
 } from '../../../static/js/utils/legend-options.js';
 import { legendKey } from '../../../static/js/utils/legend-entries.js';
 import { normalizePlotOptions, pickStyle, adoptStyle, defaultLook } from '../../../static/js/panels/plot-utilities/plot-options.js';

@@ -295,7 +295,7 @@ export function withLegendColumns(traces, layout) {
             if (k <= used) layout[`legend${k}`] = columnLegend(layout, k - 1);
             else delete layout[`legend${k}`];
         }
-        if (used > 1) Object.assign(layout.legend = { ...(layout.legend || {}) }, rowKeysFor(layout, 0, used, null));
+        if (used > 1) Object.assign(layout.legend = { ...(layout.legend || {}) }, rowKeysFor(layout, 0));
     }
     return traces;
 }
@@ -424,7 +424,7 @@ function columnLegend(layout, k) {
     const here = layout[legendId(k)] || {};
     const keep = {};
     for (const key of ['x', 'xanchor']) if (here[key] !== undefined) keep[key] = here[key];
-    return { ...out, ...keep, ...rowKeysFor(layout, k, 2) };
+    return { ...out, ...keep, ...rowKeysFor(layout, k) };
 }
 
 /**
@@ -432,7 +432,7 @@ function columnLegend(layout, k) {
  * top of the plot for a legend at its side, the position's own anchor above or below it. Column 0's y below
  * the plot is legend-below.js's; the other columns follow it.
  */
-function rowKeysFor(layout, k, used) {
+function rowKeysFor(layout, k) {
     const pos = (layout.meta && layout.meta.azLegendPosition) || 'right';
     const b = LEGEND_POSITIONS[pos] || LEGEND_POSITIONS.right;
     const lg = layout.legend || {};
@@ -574,7 +574,7 @@ export function planLegendColumns(gd) {
 
     // the legends: one per column, each with its title (blank after the first)
     let structural = legendIdx.length > 0 || nameIdx.length > 0;
-    const first = rowKeysFor(L, 0, used);
+    const first = rowKeysFor(L, 0);
     for (const [key, v] of Object.entries(first)) if (!same((L.legend || {})[key], v)) relayout[`legend.${key}`] = v;
     for (let k = 1; k < used; k++) {
         const wanted = columnLegend(L, k);
@@ -593,7 +593,7 @@ export function planLegendColumns(gd) {
     ids.forEach((id, k) => {
         const p = placed.legends[k];
         const cur = k === 0 ? (L.legend || {}) : (L[id] || {});
-        const keys = { ...rowKeysFor(L, k, used), x: p.x, xanchor: p.xanchor };
+        const keys = { ...rowKeysFor(L, k), x: p.x, xanchor: p.xanchor };
         for (const [key, v] of Object.entries(keys)) if (!same(cur[key], v)) relayout[`${id}.${key}`] = v;
     });
     if (meta.azColPlaced !== true) relayout['meta.azColPlaced'] = true;
@@ -620,7 +620,7 @@ function showFullNames(gd) {
             if (!title) { title = document.createElementNS('http://www.w3.org/2000/svg', 'title'); el.appendChild(title); }
             if (title.textContent !== full) title.textContent = full;
         }
-    } catch (err) { /* a hover hint only */ }
+    } catch { /* a hover hint only */ }
 }
 
 /** Bring the legends of a drawn graph to its columns and their places; resolves when they are settled. */
