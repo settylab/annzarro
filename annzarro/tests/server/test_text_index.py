@@ -326,6 +326,34 @@ def test_a_late_store_does_not_take_a_reading_thread_away(world, monkeypatch):
     assert most[0] == 2                      # two stores were read at once while liver.zarr held its thread
 
 
+def test_late_reads_left_by_earlier_crawls_count_against_the_spare_threads(world, monkeypatch):
+    """A late read keeps its thread across crawls; without a bound per process every crawl left more."""
+    world.config.update(text_index_store_timeout_s=0.2, text_index_workers=2)
+    monkeypatch.setattr(text_index, "RETRY_TIMEOUT_AFTER_S", 0)          # read the late stores again at once
+    monkeypatch.setattr(text_index, "_late_reads", set())
+    release = threading.Event()
+    real = text_index.read_text
+
+    def read(path, n):
+        if path.endswith(("liver.zarr", "heart.zarr")):
+            release.wait(30)                 # never answers while the test runs
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    hanging = lambda: sum(1 for t in threading.enumerate() if t.name.startswith("text-index") and t.is_alive())
+    try:
+        states = []
+        for _ in range(4):
+            time.sleep(0.01)
+            states.append(crawl(world)["state"])
+            assert len(text_index._late_reads) <= 2 and hanging() <= 2      # never more than workers, crawl after crawl
+        assert states[0] == "partial" and states[1:] == ["partial"] * 3     # the later crawls read nothing
+        assert entries(world)["plain.zarr"]["error"] is None                # what the first one read is kept
+    finally:
+        release.set()
+    assert wait_for(lambda: all(f.done() for f in text_index._late_reads))
+    assert crawl(world)["state"] == "done"                                   # once they answer, crawls read again
+
+
 def test_a_crawl_past_its_time_is_partial_and_keeps_what_it_has(world):
     crawl(world)
     world.config["text_index_crawl_timeout_s"] = 0.0001

@@ -78,7 +78,7 @@ class InfoError(RuntimeError):
 
 def _open_on_disk(path: str):
     """The root group of the local zarr store at ``path``, read from the files on disk, never from its
-    consolidated listing: what is read is current by construction, and nothing else of the store is visited."""
+    consolidated listing: what is read is what is on disk now, and nothing else of the store is visited."""
     import zarr
     from .store_check import _ZARR3
     from .zarr_reader import zarr_format_problem

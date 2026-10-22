@@ -50,6 +50,10 @@ HEARTBEAT_EVERY_S = 0.5
 CHECKPOINT_EVERY = 500
 #: a store whose read timed out is read again once its entry is this old, even if it did not change
 RETRY_TIMEOUT_AFTER_S = 3600
+#: reads of this process that passed their timeout and have not answered yet, across crawls: each holds a
+#: thread that cannot be stopped, so a crawl reads only with what is left of ``text_index_workers`` for them
+_late_reads = set()
+_late_reads_guard = threading.Lock()
 #: ``(field, weight)``: the order matters, it is the order ``matched`` lists them in
 FIELDS = (("title", 8), ("name", 6), ("authors", 5), ("contacts", 5), ("description", 4), ("doi", 4),
           ("citation", 4), ("attribution", 3), ("license", 3), ("funding", 3), ("provenance", 3),
@@ -613,14 +617,24 @@ def crawl(config):
         began[store["real"]] = clock()
         return read_text(store["real"], readme_bytes)
 
-    # A read past the timeout cannot be stopped, so it keeps its thread: the pool has ``workers`` more threads
-    # than it reads with, and a store that is late hands its place to the next one. Only when that many
-    # stores are late at once does the crawl stop (partial), so a slow filesystem never piles up threads.
-    max_late = workers
+    # A read past the timeout cannot be stopped, so it keeps its thread: the pool has spare threads, and a
+    # store that is late hands its place to the next one. The spares are ``workers`` per PROCESS, not per
+    # crawl: late reads left by earlier crawls that still hold their threads count against them. When none
+    # is left, this crawl stops (partial) before it reads, and the next one tries again once they answer.
+    with _late_reads_guard:
+        _late_reads.difference_update([f for f in _late_reads if f.done()])
+        carried = len(_late_reads)
+    max_late = max(0, workers - carried)
+    starved = not max_late and bool(todo)
+    if starved:
+        logger.warning(f"Text index: {carried} reads of earlier crawls have not answered and hold their threads; "
+                       f"this crawl reads nothing until they do")
+        todo = []
     pool = ThreadPoolExecutor(max_workers=workers + max_late, thread_name_prefix="text-index")
     queue = list(reversed(todo))
     info = {}
-    running, late, partial, since_checkpoint = set(), set(), out_of_time, 0
+    partial = out_of_time or starved
+    running, late, since_checkpoint = set(), set(), 0
 
     def submit():
         while queue and len(running) < workers:
@@ -667,8 +681,10 @@ def crawl(config):
                 if now - began.get(store["real"], now) > store_timeout:
                     running.discard(future)
                     late.add(future)
+                    with _late_reads_guard:
+                        _late_reads.add(future)
                     finish(future, _entry(store, sig, error="timeout"))
-            if len(late) >= max_late:
+            if len(late) >= max_late:   # (max_late >= 1 here: a crawl with none left reads nothing)
                 partial = True       # as many stores as spare threads never answer: stop, do not pile up
                 break
             submit()
@@ -689,7 +705,10 @@ def crawl(config):
                   capped=capped or stores_capped, total=len(stores))
     _write_status(config, status)
     timeouts = sum(1 for e in results.values() if e.get("error") == "timeout")
-    why = (" (out of time)" if clock() > deadline else f" ({len(late)} datasets did not answer)") if partial else ""
+    why = ""
+    if partial:
+        why = (" (out of time)" if clock() > deadline else " (late reads of earlier crawls hold every spare thread)"
+               if starved else f" ({len(late)} datasets did not answer)")
     searchable = sum(1 for e in entries if not e.get("error"))
     logger.info(f"Text index crawl {status['state']}{why} in {clock() - began_at:.1f} s: {searchable} of {len(entries)} datasets searchable, "
                 f"{status['read']} read, {status['reused']} unchanged, {status['errors']} not readable"
