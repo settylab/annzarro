@@ -185,6 +185,10 @@ server:
       type: boolean
       description: Whether users may search the attribution and READMEs of the datasets, and whether the server builds the index that search reads (the policy key datasets.text-search.enabled; an administrator can also turn it off for everyone or one user)
       default: true
+    text_index_background:
+      type: boolean
+      description: Build the description index a few seconds after the server starts, continue a partial crawl, and refresh it after text_index_ttl_s without waiting for a search; false builds it only when a search asks
+      default: true
     text_index_workers:
       type: integer
       minimum: 1

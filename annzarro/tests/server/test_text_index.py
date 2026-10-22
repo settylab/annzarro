@@ -678,3 +678,98 @@ def test_the_folder_limits_the_search_to_the_stores_below_it(loaded, world):
     names, _, _ = find(loaded, "heart", folder=os.path.realpath(f"{world.data}/sub"))
     assert names == ["heart.zarr"]
     assert find(loaded, "heart", folder=os.path.realpath(f"{world.data}/nodir"))[0] == []
+
+
+# --- the keeper: built and kept fresh without a search -------------------------------------------------
+
+def wait_for(predicate, seconds=30):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+@pytest.fixture
+def keeper(world):
+    started = []
+
+    def start(app=world, **timings):
+        thread = text_index.start_keeper(app, first=timings.get("first", 0), every=timings.get("every", 0.1), force=True)
+        started.append(thread)
+        return thread
+    yield start
+    for thread in started:
+        if thread is not None:
+            thread.stop()
+            thread.join(10)
+    wait_idle(world)
+
+
+def test_the_keeper_builds_the_index_after_the_start_without_a_search(world, keeper):
+    assert text_index.load(world.config) is None
+    keeper(first=0.2)
+    assert wait_for(lambda: text_index.describe(world.config)["state"] == "done")
+    assert len(text_index.load(world.config)) == 5 and not text_index.describe(world.config)["stale"]
+
+
+def test_the_keeper_continues_a_partial_crawl_until_it_is_done(world, keeper, monkeypatch):
+    real = text_index.read_text
+    slow = {"on": True}
+
+    def read(path, n):
+        if slow["on"]:
+            time.sleep(0.4)
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    world.config.update(text_index_workers=1, text_index_crawl_timeout_s=1.0)
+    assert crawl(world)["state"] == "partial"
+    left = 5 - len(entries(world))
+    slow["on"] = False
+    keeper()
+    assert wait_for(lambda: text_index.describe(world.config)["state"] == "done")
+    status = text_index.read_status(world.config)
+    assert status["read"] == left and status["reused"] == 5 - left       # it went on from where the first one stopped
+    assert text_index.load(world.config).partial is False
+
+
+def test_the_keeper_refreshes_an_index_older_than_the_ttl(world, keeper, monkeypatch):
+    crawl(world)
+    built = text_index.load(world.config).built_at
+    assert text_index.keep_once(world) is False                           # fresh: nothing to do
+    real = text_index._now
+    monkeypatch.setattr(text_index, "_now", lambda: real() + 700)        # past text_index_ttl_s (600)
+    assert text_index.keep_once(world) is True
+    wait_idle(world)
+    assert text_index.load(world.config).built_at > built
+
+
+def test_the_keeper_does_nothing_while_the_search_is_off_for_the_server(world):
+    from annzarro.server.admin import overlay
+    overlay.update(world.config, lambda o: o.setdefault("policy", {}).update({text_index.KEY: False}))
+    assert text_index.keep_once(world) is False
+    assert text_index.load(world.config) is None and text_index.read_status(world.config)["state"] == "idle"
+
+
+def test_the_keeper_is_off_by_configuration_and_in_tests_unless_asked(tmp_path):
+    make_world(tmp_path)
+    off = create_app(config_for(tmp_path, text_index_background=False))
+    assert text_index.start_keeper(off, force=True) is None
+    disabled = create_app(config_for(tmp_path, text_index_enabled=False))
+    assert text_index.start_keeper(disabled, force=True) is None
+    testing = create_app(config_for(tmp_path))
+    assert text_index.start_keeper(testing) is None                       # TESTING: only a keeper test starts one
+
+
+def test_a_server_starts_one_keeper_per_index_and_it_waits_for_the_start(tmp_path):
+    make_world(tmp_path)
+    config = {k: v for k, v in config_for(tmp_path).items() if k != "TESTING"}
+    app = create_app(config)
+    thread = text_index._keepers.get(str(text_index.index_dir(app.config)))
+    assert thread is not None and thread.is_alive()                       # create_app started it
+    assert text_index.start_keeper(app) is thread                         # one per index in a process
+    time.sleep(0.3)
+    assert text_index.read_status(app.config)["state"] == "idle"          # its first round waits (conftest: a day)
+    thread.stop()
+    thread.join(10)

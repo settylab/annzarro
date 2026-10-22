@@ -353,7 +353,11 @@ The server reads the attribution and the first 64 KB of the README of every loca
 time for the whole server, into a gzipped index in the cache directory (`server.cache_dir`, shared by all
 workers). Remote datasets are not indexed. A search shows a user only the stores they can open, and a
 restricted user is told the path of what they may open (as in their listings), nothing above a grant, and not how many stores the server holds. **Clear cache**
-marks the index stale, so the next search refreshes it; it does not delete it. The limits are in
+marks the index stale, so it is refreshed (by the background keeper, or by the next search); it does not delete it.
+The server builds the index by itself a few seconds after it starts, continues a crawl that stopped
+partway, and refreshes the index once it is older than `server.text_index_ttl_s`, without waiting for
+a search; each crawl logs a line at INFO when it starts and one when it ends, with its counts.
+`server.text_index_background: false` leaves the crawl to the searches, as in 0.7.2. The limits are in
 {doc}`resource-limits`.
 
 ### Outbound hosts

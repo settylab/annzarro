@@ -66,6 +66,7 @@ DEFAULT_CONFIG = {
     "dataset_search_max_entries": 20000, # entries that search looks at before it stops (and says so)
     "dataset_details_check_budget_s": 1.5,  # seconds the details request spends on a store check before it answers with the findings so far; 0 = no check
     "text_index_enabled": True,           # the description index and its search (policy key datasets.text-search.enabled)
+    "text_index_background": True,        # build the index at server start and keep it fresh, not only when a search asks
     "text_index_workers": 2,              # threads the index crawl reads stores with
     "text_index_store_timeout_s": 15,     # seconds the crawl waits for one store before it reads the next
     "text_index_crawl_timeout_s": 300,    # seconds one crawl may take; then it is partial
@@ -501,6 +502,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
         def _tag_instance(response):
             response.headers["X-AnnZarro-Instance"] = instance_id
             return response
+
+    # the description index is built in the background once the server is up, and kept fresh (text_index.py)
+    from annzarro.server import text_index
+    text_index.start_keeper(app)
 
     return app
 

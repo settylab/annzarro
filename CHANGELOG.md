@@ -8,6 +8,11 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- The server builds the description index by itself. A few seconds after it starts it crawls the datasets in the background, continues a crawl that stopped partway (for time, or because datasets did not answer) until every dataset is read, and refreshes the index once it is older than `server.text_index_ttl_s`, without waiting for a search. One crawl runs at a time across all workers; none runs while the search is off for everyone. `server.text_index_background: false` keeps the 0.7.2 behaviour, where a crawl starts only when a search or **Refresh** asks.
+- A crawl writes one line to the server log at INFO when it starts and one when it ends: how many datasets it found, read, kept unchanged and could not read (and how many timed out), how long it took, and why it stopped when it is partial.
+- A dataset that takes longer than `server.text_index_store_timeout_s` no longer costs the crawl a reader thread: a spare thread reads the next dataset, and the late dataset's text is kept if it arrives before the crawl ends. The crawl stops early only when as many datasets as reader threads are late at once. The default limit per dataset is now 15 s (was 5 s).
+
 ### Fixed
 - The description search indexes datasets on a networked filesystem. Each dataset's attribution and README are now read from the files under `uns`, not through its consolidated metadata. Before, a read first checked that listing against every metadata file of the dataset, which was about 94% of the read time: 13 to 15 s for a dataset with about 2,500 metadata files, measured over a network filesystem. Those datasets passed the 5 s limit per dataset, so the crawl marked them timed out and stopped after the first few. An attribution field written without consolidating is now indexed too.
 

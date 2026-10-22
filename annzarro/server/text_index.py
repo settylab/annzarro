@@ -418,6 +418,80 @@ def start_crawl(app, force=False):
     return True
 
 
+# -- the keeper: the index is built and kept fresh without waiting for a search -----------------------
+#
+# Each server process runs one keeper thread (``start_keeper``, from ``create_app``). It waits
+# ``KEEPER_FIRST_S`` so the server is listening first, then every ``KEEPER_EVERY_S`` asks
+# ``start_crawl`` for a crawl, which starts one only when the index is missing, older than
+# ``text_index_ttl_s``, partial, or failed, and at most every ``text_index_min_interval_s``; the
+# crawl lock keeps it to one crawl for all processes. A partial crawl is thus continued in the
+# background until it is done, reading only what it has not read. Off with
+# ``server.text_index_background: false`` (the index is then built when a search asks, as before),
+# and never while the description search is off for the server.
+
+KEEPER_FIRST_S = 5.0
+KEEPER_EVERY_S = 30.0
+_keepers = {}                     # index directory: the keeper thread of this process
+_keepers_guard = threading.Lock()
+
+
+def background_enabled(app):
+    """Whether this server keeps its index fresh by itself: ``server.text_index_background`` (on by
+    default) and the search on in the configuration."""
+    return app.config.get("text_index_background", True) is not False and app.config.get("text_index_enabled", True) is not False
+
+
+def _search_on(app):
+    """Whether the description search is on for the server as a whole (config and policy)."""
+    if app.config.get("text_index_enabled", True) is False:
+        return False
+    from .policy.routes import engine
+    with app.app_context():
+        resolved = engine(app).resolve(KEY, None)
+        return resolved.value not in engine(app).registry.keys[KEY].type.off
+
+
+def keep_once(app):
+    """One round of the keeper: start a crawl if one is due. Returns whether it started one."""
+    if not _search_on(app):
+        return False
+    return start_crawl(app)
+
+
+def start_keeper(app, first=None, every=None, force=False):
+    """Start this process's keeper thread for ``app`` (once per index); returns it, or None when off.
+
+    A TESTING app starts none unless ``force`` (a test of the keeper itself).
+    """
+    if not background_enabled(app) or (app.testing and not force):
+        return None
+    first = KEEPER_FIRST_S if first is None else first
+    every = KEEPER_EVERY_S if every is None else every
+    key = str(index_dir(app.config))
+    with _keepers_guard:
+        alive = _keepers.get(key)
+        if alive is not None and alive.is_alive():
+            return alive
+        stop = threading.Event()
+
+        def loop():
+            if stop.wait(first):
+                return
+            while True:
+                try:
+                    keep_once(app)
+                except Exception as exc:          # the keeper outlives a bad round: the next one tries again
+                    logger.warning(f"Text index keeper: {exc}", exc_info=True)
+                if stop.wait(every):
+                    return
+
+        thread = threading.Thread(target=loop, name="text-index-keeper", daemon=True)
+        thread.stop = stop.set
+        _keepers[key] = thread
+        thread.start()
+        return thread
+
+
 def _run(app, release):
     config = app.config
     try:
