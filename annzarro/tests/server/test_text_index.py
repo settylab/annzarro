@@ -9,6 +9,7 @@ import json
 import multiprocessing
 import os
 import shutil
+import sys
 import threading
 import time
 
@@ -163,6 +164,47 @@ def test_an_unchanged_store_is_not_read_again_and_a_changed_one_is(world, monkey
     assert reads == ["liver.zarr"] and status["read"] == 1
     assert entries(world)["liver.zarr"]["about"]["title"] == "Liver atlas v2"
     assert text_index.readme_of(entries(world)["liver.zarr"]) == "new readme"
+
+
+def test_the_crawl_reads_uns_from_disk_and_never_checks_the_whole_listing(world, monkeypatch):
+    zarr_reader = sys.modules["annzarro.core.zarr_reader"]
+    checked = []
+    real = zarr_reader.consolidated_staleness
+    monkeypatch.setattr(zarr_reader, "consolidated_staleness", lambda path: checked.append(path) or real(path))
+    status = crawl(world)
+    assert status["state"] == "done" and status["read"] == 5
+    assert checked == []                     # the check that visits every metadata file of a store is not run
+    assert entries(world)["liver.zarr"]["about"]["title"] == "Liver atlas"
+
+
+def test_reading_from_disk_gives_what_the_listing_gives(world):
+    from annzarro.core import dataset_info
+    for name in ("plain.zarr", "liver.zarr", "out.zarr", os.path.join("sub", "heart.zarr")):
+        path = os.path.join(world.data, name)
+        assert dataset_info.read_info(path, ["about", "readme"], on_disk=True) == dataset_info.read_info(path, ["about", "readme"])
+    with pytest.raises(dataset_info.InfoError):
+        dataset_info.read_info(os.path.join(world.data, "broken.zarr"), ["about", "readme"], on_disk=True)
+
+
+def test_an_uns_edit_the_consolidated_listing_does_not_have_is_indexed(world, monkeypatch):
+    from annzarro.core import dataset_annotate as da
+    liver = f"{world.data}/liver.zarr"
+    assert os.path.exists(f"{liver}/.zmetadata")
+    crawl(world)
+    time.sleep(0.01)
+    with monkeypatch.context() as m:                       # written without consolidating: the listing still says "Liver atlas"
+        m.setattr(da, "_is_consolidated", lambda path, fmt: False)
+        # a field the store did not have: a node the listing does not know, so only a read from disk sees it
+        annotate(liver, {**LIVER, "title": "Liver atlas, edited", "citation": "Doe et al., an edited citation"}, "an edited readme")
+    with open(f"{liver}/.zmetadata") as fh:
+        assert "uns/annzarro/citation" not in fh.read()
+    status = crawl(world)
+    assert status["read"] == 1 and status["reused"] == 4    # only uns moved, and that is enough to read it again
+    assert entries(world)["liver.zarr"]["about"]["title"] == "Liver atlas, edited"
+    assert entries(world)["liver.zarr"]["about"]["citation"] == "Doe et al., an edited citation"
+    assert text_index.readme_of(entries(world)["liver.zarr"]) == "an edited readme"
+    found, _ = text_index.search(text_index.load(world.config), ["edited citation"], lambda e: True)
+    assert [h["entry"]["name"] for h in found] == ["liver.zarr"]
 
 
 def test_a_vanished_store_is_dropped(world):

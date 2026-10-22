@@ -76,8 +76,28 @@ class InfoError(RuntimeError):
 
 # ---- opening ---------------------------------------------------------------------------------
 
-def _open_group(path: str, remote: bool):
-    """(root, closer) of the store at ``path``; a store that is not AnnData raises InfoError."""
+def _open_on_disk(path: str):
+    """The root group of the local zarr store at ``path``, read from the files on disk, never from its
+    consolidated listing: what is read is current by construction, and nothing else of the store is visited."""
+    import zarr
+    from .store_check import _ZARR3
+    from .zarr_reader import zarr_format_problem
+    problem = zarr_format_problem(path)
+    if problem:
+        raise InfoError(problem)
+    if not any(os.path.exists(os.path.join(path, f)) for f in (".zgroup", ".zarray", "zarr.json")):
+        raise InfoError(f"{os.path.basename(path)} does not look like a zarr store (no .zgroup or zarr.json)")
+    try:
+        return zarr.open_group(path, mode="r", **({"use_consolidated": False} if _ZARR3 else {}))
+    except Exception as exc:
+        raise InfoError(f"Cannot open {os.path.basename(path)}: {exc}") from exc
+
+
+def _open_group(path: str, remote: bool, on_disk: bool = False):
+    """(root, closer) of the store at ``path``; a store that is not AnnData raises InfoError.
+
+    ``on_disk`` opens a local zarr store without its consolidated listing (``_open_on_disk``).
+    """
     if remote:
         from . import zarr_reader
         return zarr_reader._get_root(path), (lambda: None)
@@ -88,6 +108,8 @@ def _open_group(path: str, remote: bool):
         context = _open(path)
         file = context.__enter__()
         return file, (lambda: context.__exit__(None, None, None))
+    if on_disk:
+        return _open_on_disk(path), (lambda: None)
     from .store_check import StoreCheckError, _open
     try:
         root, _remote, _consolidated = _open(path, None)
@@ -624,8 +646,16 @@ def _structure_from(root, remote: bool = False, budget_s: Optional[float] = None
 
 # ---- entry -----------------------------------------------------------------------------------
 
-def read_info(path: str, parts=PARTS, remote: bool = False) -> Dict[str, Any]:
+def read_info(path: str, parts=PARTS, remote: bool = False, on_disk: bool = False) -> Dict[str, Any]:
     """The requested ``parts`` (``about``, ``readme``, ``structure``) of the store at ``path``.
+
+    Args:
+        path: The store.
+        parts: Which parts to read.
+        remote: Whether ``path`` is a remote store.
+        on_disk: Read a local zarr store from its files, not its consolidated listing. The listing
+            is otherwise checked against every metadata file of the store first, which on a networked
+            filesystem is most of the cost; ``about`` and ``readme`` live in ``uns`` and need none of it.
 
     Raises:
         InfoError: The store cannot be read as AnnData (the message says why).
@@ -635,7 +665,7 @@ def read_info(path: str, parts=PARTS, remote: bool = False) -> Dict[str, Any]:
         raise ValueError(f"unknown parts: {', '.join(unknown)}")
     path = str(path)
     try:
-        root, close = _open_group(path, remote)
+        root, close = _open_group(path, remote, on_disk=on_disk and not remote)
     except InfoError:
         raise
     except Exception as exc:

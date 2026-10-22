@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixed
+- The description search indexes datasets on a networked filesystem. Each dataset's attribution and README are now read from the files under `uns`, not through its consolidated metadata. Before, a read first checked that listing against every metadata file of the dataset, which was about 94% of the read time: 13 to 15 s for a dataset with about 2,500 metadata files, measured over a network filesystem. Those datasets passed the 5 s limit per dataset, so the crawl marked them timed out and stopped after the first few. An attribution field written without consolidating is now indexed too.
+
 ### Docs
 - The README and the licence page cite v0.7.2 by its DOI,
   [10.5281/zenodo.23547580](https://doi.org/10.5281/zenodo.23547580).

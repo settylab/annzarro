@@ -121,7 +121,8 @@ def read_text(path, readme_bytes):
     """``(about, readme, readme_cut)`` of the store at ``path``: ``about`` maps each attribution field
     that has text to that text. Raises what ``read_info`` raises."""
     from ..core import dataset_info
-    info = dataset_info.read_info(path, ["about", "readme"])
+    # from the files on disk: the whole-store check of the consolidated listing was most of every read
+    info = dataset_info.read_info(path, ["about", "readme"], on_disk=True)
     raw = info["about"]
     about = {}
     for name in ABOUT_FIELDS:
