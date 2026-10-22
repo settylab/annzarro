@@ -87,8 +87,18 @@ Once the view is open, the address bar follows it, as in a map: about half a sec
 change something (open or close a panel, change a setting, change the focus) the `#view=` part
 of the address is replaced with the current view. A refresh brings back what you see now, not
 the view you were sent, and the address you copy from the bar is a link to it. The address is
-replaced, not added to, so the Back button is not affected, and it is not touched while a
-dataset is loading.
+not touched while a dataset is loading.
+
+**Back and Forward undo and redo the view**, as in a map. Each change you make adds one entry to
+the browser's history, and the browser's Back button steps to the view before it: the panel you
+closed is back, the setting returns to its old value, the focused cell or gene is the previous
+one. Forward goes the other way. Changes made in one go share an entry: dragging a slider, clicking
+a number box's arrows several times, typing, or an action that sets several things one after the
+other. When only some panels' settings differ, only those panels are rebuilt and the others stay as they are; opening or closing a panel rebuilds the layout. Switching to
+another dataset is an entry too, and Back returns to that dataset with the view it had. Panning and
+zooming a plot are not part of the address, so they are not undone. Back from the first view leaves
+AnnZarro for the page before it, and a reload keeps the entries. The browser keeps only the most
+recent entries of a tab (about fifty in Chrome).
 
 A link without `#view=` (`http://<server>/?dataset_path=<path>`) opens the blank dashboard of
 that dataset: no panels, every panel type offered on the welcome screen. It ignores the panels

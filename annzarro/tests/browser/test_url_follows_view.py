@@ -2,11 +2,11 @@
 
 Opening a share link and then changing the view used to leave the URL at the
 shared view: a refresh threw the user back to it. Now the app keeps the URL at
-the current view (history.replaceState, after the view settles):
+the current view (history.replaceState or pushState, after the view settles):
 
 1. open a link with two plots, close one, wait: the fragment changes, and a
    reload shows one plot, not two;
-2. no history entries are added by the updates;
+2. one history entry is added by the change (Back returns to the shared view: tests/browser/test_url_history.py);
 3. a clean link (?dataset_path= without #view=) opens the blank dashboard
    of that dataset, even when a view was autosaved in this browser;
 4. closing every panel drops the fragment again (the clean link).
@@ -128,8 +128,8 @@ def test_url_follows_the_view_and_a_clean_link_is_blank(server):
             assert "dataset_path=" in page.evaluate("() => location.search")
             _shot(page, "2-after-change")
 
-            # (c) the updates added no history entries
-            assert page.evaluate("() => history.length") == history_before
+            # (c) the change added one history entry, not one per update
+            assert page.evaluate("() => history.length") == history_before + 1
 
             # a reload gets what is on screen now, not the shared view
             page.reload()
