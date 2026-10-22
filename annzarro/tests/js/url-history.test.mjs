@@ -2,7 +2,7 @@
 // history entry, and what a step changes on screen (utils/url-history.js).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHistoryPolicy, diffViews, layoutStep, stableStringify, MERGE_MS } from '../../../static/js/utils/url-history.js';
+import { createHistoryPolicy, diffViews, stableStringify, MERGE_MS } from '../../../static/js/utils/url-history.js';
 
 const run = (policy, steps) => steps.map(([now, path, capped]) => {
     const how = policy.decide({ now, path });
@@ -118,35 +118,4 @@ test('a point size that follows the plot area is not a difference', () => {
     const c = view({ 'cell-plot-1': { id: 'cell-plot-1', autoPointSize: false, pointSize: 4.7 } }, {}, [tile('cell-plot-1')]);
     const d = view({ 'cell-plot-1': { id: 'cell-plot-1', autoPointSize: false, pointSize: 5.1 } }, {}, [tile('cell-plot-1')]);
     assert.deepEqual(diffViews(c, d, ctx).panels, ['cell-plot-1']);
-});
-
-const split = (a, b, pcts = [50, 50]) => ({
-    type: 'split', direction: 'horizontal', panes: pcts.map(percentage => ({ percentage })), children: [tile(a), tile(b)]
-});
-const at = (hierarchy) => ({ layout: { hierarchy } });
-
-test('a layout step that is one close, one open or a moved split is named', () => {
-    const one = at([tile('cell-plot-1'), { type: 'selector' }]);
-    const two = at([tile('cell-plot-1'), tile('cell-plot-2'), { type: 'selector' }]);
-    assert.deepEqual(layoutStep(two, one), { op: 'close', id: 'cell-plot-2' });
-    assert.deepEqual(layoutStep(one, two), { op: 'open', id: 'cell-plot-2', where: 'row' });
-    const pair = at([split('cell-plot-1', 'cell-plot-2')]);
-    const solo = at([tile('cell-plot-1')]);
-    assert.deepEqual(layoutStep(pair, solo), { op: 'close', id: 'cell-plot-2' });
-    assert.deepEqual(layoutStep(solo, pair),
-        { op: 'open', id: 'cell-plot-2', where: 'pane', sibling: 'cell-plot-1', direction: 'horizontal' });
-    assert.deepEqual(layoutStep(pair, at([split('cell-plot-1', 'cell-plot-2', [30, 70])])), { op: 'resize' });
-    assert.deepEqual(layoutStep(pair, at([{ ...split('cell-plot-1', 'cell-plot-2'), height: 500 }])), { op: 'resize' });
-});
-
-test('a layout step of several changes is not a single move', () => {
-    const pair = at([split('cell-plot-1', 'cell-plot-2')]);
-    assert.equal(layoutStep(pair, at([tile('cell-plot-3')])), null);
-    assert.equal(layoutStep(at([tile('cell-plot-1')]), pair.layout.hierarchy.length && at([split('cell-plot-2', 'cell-plot-1')])), null);
-    // a panel opened first in its split cannot be made by hand: rebuilt
-    assert.equal(layoutStep(at([tile('cell-plot-1')]), at([split('cell-plot-2', 'cell-plot-1')])), null);
-    // two panels opened at once
-    assert.equal(layoutStep(at([tile('cell-plot-1')]), at([tile('cell-plot-1'), tile('cell-plot-2'), tile('cell-plot-3')])), null);
-    // the same panels, arranged differently
-    assert.equal(layoutStep(pair, at([tile('cell-plot-1'), tile('cell-plot-2')])), null);
 });

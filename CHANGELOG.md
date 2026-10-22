@@ -8,8 +8,6 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
-- Browser Back and Forward now animate a panel closing or opening and a split moving, as the same actions do by hand, instead of jumping.
-
 ## 0.7.4 (2026-10-22)
 
 ### Added

@@ -270,11 +270,8 @@ const PanelManager = (function() {
         // Set up all event handlers
         _setupTileEventHandlers(tileElement, id);
         
-        // Initialize the panel; a history step waits on initDone
-        const initial = panel.init();
-        panel.initDone = Promise.resolve(initial).then(() => {}, error => {
-            console.error(`Error initializing panel ${id}:`, error);
-        });
+        // Initialize the panel
+        panel.init();
         
         // Apply control panel visibility if specified
         if (Object.prototype.hasOwnProperty.call(config, 'controlsVisible')) {
@@ -1119,95 +1116,6 @@ const PanelManager = (function() {
         return true;
     }
 
-    /** Pane shares and row heights of a layout, set on the open tiles: shares ease, rows follow the layout motion. */
-    function _applySizes(hierarchy) {
-        const nodes = (hierarchy || []).filter(n => n && n.type !== 'selector');
-        const splits = [];
-        const walk = (node) => {
-            if (node && node.type === 'split') {
-                splits.push(node);
-                (node.children || []).forEach(walk);
-            }
-        };
-        nodes.forEach(walk);
-        const containers = [...(_container || document).querySelectorAll('.split-container')];
-        const changes = [];
-        if (containers.length === splits.length) {
-            containers.forEach((container, i) => {
-                const panes = LayoutManager.childPanes(container);
-                const shares = splits[i].panes || [];
-                if (panes.length !== 2 || shares.length !== 2) return;
-                panes.forEach((pane, k) => {
-                    const share = shares[k].percentage || 50;
-                    pane.dataset.flexPercentage = share;
-                    changes.push([pane, share]);
-                });
-            });
-        }
-        const rows = [...document.querySelectorAll('.tile-container > .panel-wrapper')];
-        if (rows.length === nodes.length) {
-            LayoutMotion.capture();
-            rows.forEach((row, i) => {
-                if (nodes[i].height > 0) row.style.setProperty('--panel-height', `${nodes[i].height}px`);
-            });
-        }
-        LayoutMotion.flex(changes);
-    }
-
-    /**
-     * Show one layout move (utils/url-history.js layoutStep) the way the app
-     * makes it by hand: a closed panel through closePanel, an opened one into a
-     * new row or a split-off pane, a moved split by easing the shares. The
-     * panels that stay are neither rebuilt nor drawn again. Resolves true once
-     * the motion has ended and a new panel has drawn; false (nothing changed)
-     * when the screen is not as the move needs, and the caller rebuilds.
-     *
-     * @param {Object} step - from layoutStep
-     * @param {Object} layout - the layout to show
-     * @returns {Promise<boolean>}
-     */
-    async function applyLayoutStep(step, layout) {
-        const tileOf = (id) => document.querySelector(`.tile[data-tile-id="${id}"]`);
-        let opened = null;
-        if (step.op === 'close') {
-            const panel = _panels.get(step.id);
-            if (!panel || !_activePanels.has(panel) || !tileOf(step.id)) return false;
-            closePanel(step.id);
-            _applySizes(layout.hierarchy);
-        } else if (step.op === 'open') {
-            const type = panelTypeFromTileId(step.id);
-            if (!_panelTypes.has(type) || tileOf(step.id) || !_container) return false;
-            const saved = (layout.panelConfigs || {})[step.id] || {};
-            const config = { ...saved, id: step.id };
-            const visible = layout.controlState && layout.controlState[step.id] !== undefined
-                ? layout.controlState[step.id] : saved.controlsVisible;
-            if (visible !== undefined) config.controlsVisible = visible;
-            let beside = null;
-            if (step.where === 'pane') {
-                beside = tileOf(step.sibling);
-                if (!beside || !beside.parentElement || !_activePanels.has(_panels.get(step.sibling))) return false;
-            } else if (!_welcomeSelectionTile || !_welcomeSelectionTile.tileSelector.isConnected) {
-                return false;
-            }
-            // a panel closed earlier under this id: the saved settings are what comes back
-            if (_panels.has(step.id)) removePanel(step.id);
-            if (beside) {
-                const { secondPane } = LayoutManager.createSplit(beside.parentElement, beside, step.direction);
-                opened = createPanel(type, config, secondPane);
-            } else {
-                opened = createPanelInLayout(type, config);
-            }
-            if (!opened) return false;
-            _applySizes(layout.hierarchy);
-        } else {
-            _applySizes(layout.hierarchy);
-        }
-        await LayoutMotion.whenIdle();
-        if (opened && opened.initDone) await opened.initDone;
-        updateSourcePanelSelection();
-        return true;
-    }
-
     /** Show or hide an open panel's control bar. @param {string} id @param {boolean} visible */
     function showControls(id, visible) {
         _applyControlsVisible(document.querySelector(`.tile[data-tile-id="${id}"]`), visible);
@@ -1328,7 +1236,6 @@ const PanelManager = (function() {
         resetPanels,
         saveLayout,
         restoreLayout,
-        applyLayoutStep,
         registerClosedPanel,
         removePanel,
         replacePanel,
