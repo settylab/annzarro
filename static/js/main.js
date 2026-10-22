@@ -54,7 +54,7 @@ import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
 import { mountDatasetInfo } from './utils/dataset-info-dialog.js';
 import { defaultHierarchy } from './utils/deeplink.js';
-import { createHistoryPolicy, diffViews } from './utils/url-history.js';
+import { createHistoryPolicy, diffViews, layoutStep } from './utils/url-history.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
@@ -744,15 +744,32 @@ const App = (function() {
         try {
             _adoptViewStyle(target);
             await _applyFocusSteps(live.constants || {}, target.constants || {}, link.datasetPath);
-            if (diff.kind === 'layout') {
-                // Closed panels are cleaned up as ever; the panels whose settings did not change keep what they drew
+            const layout = target.layout;
+            const step = diff.kind === 'layout' ? layoutStep(live, target) : null;
+            if (step && await PanelManager.applyLayoutStep(step, layout)) {
+                // One move, shown as the app makes it. Panels that stay but whose settings changed are rebuilt in place.
+                const kept = new Set(diff.keep);
+                const stay = new Set(collectTileIds(live.layout.hierarchy || []));
+                const ids = collectTileIds(layout.hierarchy || []).filter(id => stay.has(id));
+                ids.filter(id => kept.has(id) && layout.controlState && layout.controlState[id] !== undefined
+                    && layout.controlState[id] !== (live.layout.controlState || {})[id])
+                    .forEach(id => PanelManager.showControls(id, layout.controlState[id]));
+                await Promise.all(ids.filter(id => !kept.has(id)).map(id => {
+                    const config = { ...(layout.panelConfigs || {})[id] };
+                    if (layout.controlState && layout.controlState[id] !== undefined) {
+                        config.controlsVisible = layout.controlState[id];
+                    }
+                    return PanelManager.replacePanel(id, config);
+                }));
+                PanelManager.ensureWelcomeFallback();
+            } else if (diff.kind === 'layout') {
+                // Several changes at once: the layout is rebuilt. Closed panels are cleaned up as ever; the panels whose settings did not change keep what they drew
                 const kept = new Set(diff.keep);
                 PanelManager.getActivePanels().map(p => p.getId()).filter(id => !kept.has(id))
                     .forEach(id => PanelManager.closePanel(id));
                 await PanelManager.restoreLayout(target.layout, { keep: diff.keep });
                 PanelManager.ensureWelcomeFallback();
             } else {
-                const layout = target.layout;
                 diff.controls.forEach(id => PanelManager.showControls(id, layout.controlState[id]));
                 await Promise.all(diff.panels.map(id => {
                     const config = { ...(layout.panelConfigs || {})[id] };

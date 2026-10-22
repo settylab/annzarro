@@ -25,6 +25,7 @@ const EASING = 'cubic-bezier(0.2, 0, 0, 1)'; // ease-out: quick start, soft land
 let _rows = null;          // Map row -> height before the change, while a play is pending
 let _slides = [];          // [element, width before] to transition by max-width
 let _running = null;       // {pinned, timer} of the transition on screen
+let _flex = null;          // {els, timer} of the split sizes easing, while they do
 const _after = new Set();  // callbacks deferred to the end of the transition
 
 function reduced() {
@@ -34,7 +35,44 @@ function reduced() {
 
 /** True while a layout transition is on screen (or about to start). */
 export function moving() {
-    return _running !== null || _rows !== null;
+    return _running !== null || _rows !== null || _flex !== null;
+}
+
+/** Resolves once no layout transition is on screen (at once when none is). */
+export function whenIdle() {
+    return new Promise(resolve => afterMotion(resolve));
+}
+
+/**
+ * Ease split panes to new sizes (a split moved by a history step): the same
+ * duration and easing as the other transitions, on flex-grow. Plots refit
+ * once at the end (afterMotion), not on every frame. A second call while one
+ * runs lets the first land at once, then eases from there.
+ * @param {Array<[HTMLElement, number]>} changes - [pane, new flex value]
+ */
+export function flex(changes) {
+    const todo = changes.filter(([el, value]) => el.isConnected && parseFloat(el.style.flex) !== value);
+    if (_flex) endFlex();
+    if (reduced() || typeof requestAnimationFrame !== 'function' || !todo.length) {
+        for (const [el, value] of changes) el.style.flex = `${value}`;
+        return;
+    }
+    const els = [];
+    for (const [el] of todo) {
+        els.push([el, el.style.transition]);
+        el.style.transition = `flex-grow ${DURATION_MS}ms ${EASING}`;
+    }
+    void document.body.offsetHeight; // start from the old sizes
+    for (const [el, value] of changes) el.style.flex = `${value}`;
+    _flex = { els, timer: setTimeout(endFlex, DURATION_MS + 60) };
+}
+
+function endFlex() {
+    if (!_flex) return;
+    clearTimeout(_flex.timer);
+    for (const [el, transition] of _flex.els) el.style.transition = transition;
+    _flex = null;
+    finish();
 }
 
 /**
