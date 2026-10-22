@@ -47,7 +47,7 @@ jobs:
           import glob, zipfile
           names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
           for needed in ("annzarro/templates/index.html", "annzarro/static/js/main.js",
-                         "annzarro/static/vendor/js/plotly-2.35.3.min.js"):
+                         "annzarro/static/vendor/js/plotly-2.35.3-annzarro.min.js"):
               assert needed in names, f"missing from wheel: {needed}"
           assert not any(n.startswith("annzarro/tests/") for n in names), "tests in wheel"
           print(len(names), "files; frontend and vendor bundles present")

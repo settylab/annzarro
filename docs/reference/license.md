@@ -26,17 +26,18 @@ Each file keeps its original copyright header. The versions are pinned with SHA-
 | DataTables SearchBuilder | 1.4.2 | `MIT` |
 | DataTables Select | 1.6.2 | `MIT` |
 | DataTables FixedHeader | 3.3.2 | `MIT` |
-| [Plotly.js](https://plotly.com/javascript/) (bundles npm modules, see below) | 2.35.3 | `MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense AND Apache-2.0 AND 0BSD` |
+| [Plotly.js](https://plotly.com/javascript/) (trimmed build, bundles npm modules, see below) | 2.35.3 | `MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense AND Apache-2.0 AND BSL-1.0` |
 | [chroma.js](https://gka.github.io/chroma.js/) | 2.4.2 | `BSD-3-Clause AND Apache-2.0` |
 | [Font Awesome Free](https://fontawesome.com/) | 6.4.0 | `MIT AND OFL-1.1` |
 
 The full licence texts, source URLs and checksums of every file are in
 [`annzarro/THIRD_PARTY_LICENSES/`](https://github.com/settylab/annzarro/tree/main/annzarro/THIRD_PARTY_LICENSES),
 which the package installs both inside `annzarro/THIRD_PARTY_LICENSES/` and in its
-`dist-info/licenses/` directory. The minified Plotly.js file is a bundle of npm modules under
-MIT, ISC, BSD-3-Clause (MapLibre GL JS, d3), BSD-2-Clause, Zlib, Unlicense, Apache-2.0 (weak-map) and 0BSD (tslib helpers in MapLibre) licences;
-`plotly-bundled.txt` there holds the licence text of every package in Plotly.js's
-dependency tree. The Python dependencies (Flask, zarr, NumPy, pandas and others) are installed
+`dist-info/licenses/` directory. The minified Plotly.js file is a build of the unmodified
+Plotly.js 2.35.3 source with only the plot types AnnZarro draws (scatter, scattergl, scatter3d),
+made by `scripts/build-plotly-bundle.sh`. It bundles npm modules under
+MIT, ISC, BSD-3-Clause (d3), BSD-2-Clause, Zlib, Unlicense, Apache-2.0 (weak-map) and BSL-1.0 licences;
+`plotly-bundled.txt` there holds the licence text of every package inside it. The Python dependencies (Flask, zarr, NumPy, pandas and others) are installed
 separately by pip under their own licences.
 
 ## Desktop apps

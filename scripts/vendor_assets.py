@@ -3,7 +3,7 @@
 Install the pinned third-party frontend assets into ``static/vendor/``.
 
 The list lives in ``scripts/vendor-assets.json``: for every file its upstream
-URL, SHA-256 and SPDX license, grouped by component. Nothing is written to the
+URL (or, for a file built in this repository, its ``local`` path), SHA-256 and SPDX license, grouped by component. Nothing is written to the
 destination unless its checksum matches the manifest, so a compromised CDN or a
 silently changed upstream file fails the build instead of shipping.
 
@@ -82,17 +82,30 @@ def verify(dest=DEFAULT_DEST, manifest=None):
     return missing, mismatched
 
 
+def _source(item):
+    """Where an entry comes from: its upstream URL, or the repository file named by ``local``."""
+    return item["url"] if "url" in item else item["local"]
+
+
 def _download(item, target, timeout=60):
-    req = urllib.request.Request(item["url"], headers={"User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
-    except Exception as e:  # network, HTTP, TLS
-        raise VendorError(f"cannot download {item['url']}: {e}") from e
+    if "local" in item:
+        # A file built in this repository (scripts/build-plotly-bundle.sh), not fetched.
+        try:
+            with open(os.path.join(REPO_ROOT, item["local"]), "rb") as f:
+                data = f.read()
+        except OSError as e:
+            raise VendorError(f"cannot read {item['local']}: {e}") from e
+    else:
+        req = urllib.request.Request(item["url"], headers={"User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = resp.read()
+        except Exception as e:  # network, HTTP, TLS
+            raise VendorError(f"cannot download {item['url']}: {e}") from e
     digest = hashlib.sha256(data).hexdigest()
     if digest != item["sha256"]:
         raise VendorError(
-            f"checksum mismatch for {item['url']}: expected {item['sha256']}, got {digest}. "
+            f"checksum mismatch for {_source(item)}: expected {item['sha256']}, got {digest}. "
             "Refusing to install it. If upstream really changed, review the new file and "
             "update scripts/vendor-assets.json deliberately."
         )
@@ -164,8 +177,9 @@ def render_notice(manifest=None):
             lines += [comp["notes"], ""]
         for entry in comp["files"]:
             lic = entry.get("license", comp["license"])
-            lines.append(f"- `vendor/{entry['path']}` (`{lic}`), from <{entry['url']}>, "
-                         f"sha256 `{entry['sha256']}`")
+            origin = f"from <{entry['url']}>" if "url" in entry else \
+                f"built from the pinned source by `scripts/build-plotly-bundle.sh` (`{entry['local']}`)"
+            lines.append(f"- `vendor/{entry['path']}` (`{lic}`), {origin}, sha256 `{entry['sha256']}`")
         lines.append("")
     return "\n".join(lines)
 

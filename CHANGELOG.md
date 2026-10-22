@@ -9,7 +9,7 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Changed
-- The plots use Plotly.js 2.35.3 (was 2.20.0), bundled with the app as before. Plots look and behave as they did; the upstream release notes list fixes for scattergl zooming, legends and hover.
+- The plots use Plotly.js 2.35.3 (was 2.20.0), trimmed to the plot types AnnZarro uses, so the bundled file is about half the size of the full 2.35 file and smaller than 2.20's. Plots look and behave as they did; the upstream release notes list fixes for scattergl zooming, legends and hover.
 
 ## 0.7.3 (2026-10-22)
 

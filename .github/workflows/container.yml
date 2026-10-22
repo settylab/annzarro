@@ -14,6 +14,7 @@ on:
       - "pyproject.toml"
       - "scripts/vendor-assets.json"
       - "scripts/vendor_assets.py"
+      - "scripts/plotly/**"
   workflow_dispatch:
 
 concurrency:

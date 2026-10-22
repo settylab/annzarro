@@ -16,7 +16,7 @@ header. The full license texts are in this directory.
 | [DataTables SearchBuilder](https://datatables.net/extensions/searchbuilder/) | 1.4.2 | `MIT` | [datatables.txt](datatables.txt) |
 | [DataTables Select](https://datatables.net/extensions/select/) | 1.6.2 | `MIT` | [datatables.txt](datatables.txt) |
 | [DataTables FixedHeader](https://datatables.net/extensions/fixedheader/) | 3.3.2 | `MIT` | [datatables.txt](datatables.txt) |
-| [Plotly.js](https://plotly.com/javascript/) | 2.35.3 | `MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense AND Apache-2.0 AND 0BSD` | [plotly.txt](plotly.txt), [plotly-bundled.txt](plotly-bundled.txt) |
+| [Plotly.js](https://plotly.com/javascript/) | 2.35.3 | `MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense AND Apache-2.0 AND BSL-1.0` | [plotly.txt](plotly.txt), [plotly-bundled.txt](plotly-bundled.txt) |
 | [chroma.js](https://gka.github.io/chroma.js/) | 2.4.2 | `BSD-3-Clause AND Apache-2.0` | [chroma.txt](chroma.txt), [Apache-2.0.txt](Apache-2.0.txt) |
 | [Font Awesome Free](https://fontawesome.com/) | 6.4.0 | `MIT AND OFL-1.1` | [fontawesome.txt](fontawesome.txt) |
 
@@ -66,9 +66,9 @@ buttons.html5.min.js includes FileSaver.js 1.3.3 (MIT, Copyright (c) 2016 Eli Gr
 
 ### Plotly.js 2.35.3
 
-The minified bundle includes npm modules under MIT, ISC (d3-color, d3-interpolate, earcut, geojson-vt, supercluster, topojson-client, ...), BSD-3-Clause (MapLibre GL JS 4.5.2, @plotly/d3, d3-*, pbf, @mapbox/vector-tile, ieee754, ...), BSD-2-Clause (@mapbox/tiny-sdf, @mapbox/unitbezier, ...), Zlib (gl-mat4), Unlicense (mumath), Apache-2.0 (weak-map, copyright Google; no NOTICE file) and 0BSD (the tslib helpers inside MapLibre GL JS's worker code). plotly-bundled.txt keeps the bundle's own licence banners and the licence text of every package in plotly.js 2.20.0's production dependency tree (scripts/plotly_licences.py), a superset of the bundle that also lists Apache-2.0, BlueOak-1.0.0, CC-BY-4.0 and 0BSD packages, of which only weak-map and tslib are in the bundle: the rest (webpack's @webassemblyjs/* and @xtuc/long, caniuse-lite, baseline-browser-mapping, isexe, sax) is build or development tooling.
+A custom bundle of plotly.js 2.35.3 holding only the trace types AnnZarro draws (scatter, scattergl, scatter3d), no transforms, built by scripts/build-plotly-bundle.sh with plotly.js's own partial-bundle tool and committed at scripts/plotly/plotly-2.35.3-annzarro.min.js (it is not fetched from a CDN). It includes npm modules under MIT, ISC (earcut, ...), BSD-3-Clause (@plotly/d3, d3-*, ieee754, ...), BSD-2-Clause, Zlib (gl-mat4, ...), Unlicense (gl-format-compiler-error), Apache-2.0 (weak-map, copyright Google; no NOTICE file) and BSL-1.0 (polytope-closest-point) licences. plotly-bundled.txt keeps the bundle's own licence banners and the licence text of every package inside it (scripts/plotly_licences.py).
 
-- `vendor/js/plotly-2.35.3.min.js` (`MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense AND Apache-2.0 AND 0BSD`), from <https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.3/plotly.min.js>, sha256 `fc84e3cfa55d23d3654c562ea5deb3c274eb6972a6adf66941d1a821e34825e4`
+- `vendor/js/plotly-2.35.3-annzarro.min.js` (`MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense AND Apache-2.0 AND BSL-1.0`), built from the pinned source by `scripts/build-plotly-bundle.sh` (`scripts/plotly/plotly-2.35.3-annzarro.min.js`), sha256 `8fa609d4e9223f75eb37f5146dd739c401e0595203d4560454a6b8dcee33fc95`
 
 ### chroma.js 2.4.2
 
