@@ -8,6 +8,8 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.7.4 (2026-10-22)
+
 ### Added
 - The browser's Back and Forward buttons undo and redo what you changed, as in a map, instead of leaving AnnZarro: each change (closing a panel, a setting, the focused cell or gene, another dataset) is a step, changes made in one go (a slider drag, clicking a number box's arrows, typing) are one step, and only the panels a step changes are redrawn (opening or closing a panel, or moving a split, leaves the other plots as they are). Back from the first view still goes to the page before AnnZarro.
 - Paste a cell or gene name: press Ctrl+V (Cmd+V on a Mac) on the page, outside a text box, and the copied name becomes the focused cell or gene in the open dataset. An administrator can add rules that read other text, such as a table row copied from another platform that also names the dataset (AnnZarro asks before it opens another dataset). The rules are the settings `ui.paste_focus.enabled` and `ui.paste_focus.rules`, edited on the admin Settings page with a test box; see the admin guide.
@@ -15,6 +17,7 @@ with the release after it. Older releases are listed on
 - Plot Options > Legend and colour bar: **Title size** and **Title gap** set the size of the legend title and its distance to the first entry. They are saved with the panel, in links and in panel sets, and copied by Apply to other panels.
 
 ### Changed
+- The plots use Plotly.js 2.35.3 (was 2.20.0), trimmed to the plot types AnnZarro uses, so the bundled file is about half the size of the full 2.35 file and smaller than 2.20's. Plots look and behave as they did; the upstream release notes list fixes for scattergl zooming, legends and hover.
 - Plot Options > Legend: **Title align** sets where the legend title sits: at the markers, at the labels, centred or at the right, across all the columns of a legend in columns. Auto (the default) centres the title over a legend above or below the plot and puts it at the markers beside it; the title used to start at the labels. It is saved with the panel and in links, and copied by Apply to other panels.
 
 ### Fixed
@@ -26,9 +29,6 @@ with the release after it. Older releases are listed on
 - An exported image (SVG or PNG) holds the whole legend. A legend longer than the plot was cut off in the image; the image is now taller where the legend needs it.
 - The first click on an arrow of a number box in Plot Options (legend columns, dot size, text size) no longer moves the menu instead of stepping the value. The menu now keeps its place when a group opens, and a click in a box no longer re-applies its option.
 - Copying text works on a server reached over plain `http://` (a cluster node, for example): **C** over a point, **Share Link**, **Copy citation**, copying gene ids and names, and the admin password copy no longer need `https` or `localhost`. Only copying a plot as an image still does, and its message says so and points to Download. "Not copied" now appears only when the browser refused both ways.
-
-### Changed
-- The plots use Plotly.js 2.35.3 (was 2.20.0), trimmed to the plot types AnnZarro uses, so the bundled file is about half the size of the full 2.35 file and smaller than 2.20's. Plots look and behave as they did; the upstream release notes list fixes for scattergl zooming, legends and hover.
 
 ## 0.7.3 (2026-10-22)
 
