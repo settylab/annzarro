@@ -12,8 +12,9 @@ shared by every worker, which loads it again when its stamp moves and answers qu
   status whose heartbeat is older than ``HEARTBEAT_STALE_S`` belongs to a dead crawler.
 * **Incremental.** A store is read again only when its stat signature moved (or its last read timed
   out an hour ago). Entries of vanished stores are dropped.
-* **Bounded.** ``text_index_workers`` threads, ``text_index_store_timeout_s`` per store (a stuck
-  read cannot be killed, so a crawl whose threads are all stuck stops as ``partial``),
+* **Bounded.** ``text_index_workers`` threads, ``text_index_store_timeout_s`` per store (a late
+  read cannot be killed: it keeps its thread, a spare one takes its place, and its answer is kept if it
+  comes before the crawl ends; a crawl with as many late stores as workers at once stops as ``partial``),
   ``text_index_crawl_timeout_s`` and ``text_index_max_stores`` per crawl, ``text_index_max_mb`` for
   the whole index (READMEs are dropped from the largest down past it).
 * **Stale while revalidate.** A search answers from the index it has and starts a crawl when the
@@ -31,7 +32,7 @@ import re
 import threading
 import time
 import unicodedata
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from . import atomic_store
 from .limits import LIMITS
@@ -530,9 +531,21 @@ def crawl(config):
         began[store["real"]] = clock()
         return read_text(store["real"], readme_bytes)
 
-    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="text-index")
-    info = {pool.submit(job, store): (store, sig) for store, sig in todo}
-    pending, stuck, partial, since_checkpoint = set(info), set(), out_of_time, 0
+    # A read past the timeout cannot be stopped, so it keeps its thread: the pool has ``workers`` more threads
+    # than it reads with, and a store that is late hands its place to the next one. Only when that many
+    # stores are late at once does the crawl stop (partial), so a slow filesystem never piles up threads.
+    max_late = workers
+    pool = ThreadPoolExecutor(max_workers=workers + max_late, thread_name_prefix="text-index")
+    queue = list(reversed(todo))
+    info = {}
+    running, late, partial, since_checkpoint = set(), set(), out_of_time, 0
+
+    def submit():
+        while queue and len(running) < workers:
+            store, sig = queue.pop()
+            future = pool.submit(job, store)
+            info[future] = (store, sig)
+            running.add(future)
 
     def finish(future, entry):
         nonlocal since_checkpoint
@@ -543,32 +556,46 @@ def crawl(config):
         status["done"] += 1
         since_checkpoint += 1
 
+    def late_answer(future):
+        """A late read that answered after all: its result replaces the timeout entry."""
+        store, sig = info[future]
+        entry = _result_entry(store, sig, future)
+        results[store["real"]] = entry
+        status["errors"] -= not entry["error"]
+
     beat()
     try:
-        while pending:
+        submit()
+        while running:
             if clock() > deadline:
                 partial = True
                 break
-            done, _ = wait(pending, timeout=HEARTBEAT_EVERY_S)
+            done, _ = wait(running | late, timeout=HEARTBEAT_EVERY_S, return_when=FIRST_COMPLETED)
             for future in done:
-                pending.discard(future)
-                store, sig = info[future]
-                finish(future, _result_entry(store, sig, future))
+                if future in late:
+                    late.discard(future)
+                    late_answer(future)
+                else:
+                    running.discard(future)
+                    store, sig = info[future]
+                    finish(future, _result_entry(store, sig, future))
             now = clock()
-            for future in list(pending):
+            for future in list(running):
                 store, sig = info[future]
                 if now - began.get(store["real"], now) > store_timeout:
-                    pending.discard(future)
-                    stuck.add(future)
+                    running.discard(future)
+                    late.add(future)
                     finish(future, _entry(store, sig, error="timeout"))
-            stuck = {f for f in stuck if not f.done()}
-            if len(stuck) >= workers:
-                partial = True       # every thread is held by a store that never answers: stop, do not pile up
+            if len(late) >= max_late:
+                partial = True       # as many stores as spare threads never answer: stop, do not pile up
                 break
+            submit()
             if since_checkpoint >= CHECKPOINT_EVERY:
                 since_checkpoint = 0
                 write_index(config, snapshot(), prior_built, complete=False)
             beat()
+        for future in [f for f in late if f.done()]:
+            late_answer(future)
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
 

@@ -270,6 +270,52 @@ def test_the_crawl_stops_as_partial_when_every_thread_is_stuck(world, monkeypatc
     assert entries(world)["liver.zarr"]["error"] == "timeout"
 
 
+def test_a_late_store_that_answers_before_the_crawl_ends_is_indexed(world, monkeypatch):
+    world.config.update(text_index_store_timeout_s=2.0, text_index_workers=2)
+    real = text_index.read_text
+    answered = threading.Event()
+
+    def read(path, n):
+        if path.endswith("liver.zarr"):
+            result = real(path, n)
+            time.sleep(3.0)                  # past the timeout, but it does answer
+            answered.set()
+            return result
+        answered.wait(1.2)                   # the others stay well inside the timeout and keep the crawl going
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    status = crawl(world)
+    assert answered.is_set() and status["state"] == "done"
+    assert entries(world)["liver.zarr"]["error"] is None and entries(world)["liver.zarr"]["about"]["title"] == "Liver atlas"
+    assert status["errors"] == 1                                   # only the broken store
+
+
+def test_a_late_store_does_not_take_a_reading_thread_away(world, monkeypatch):
+    world.config.update(text_index_store_timeout_s=1.0, text_index_workers=2)
+    release = threading.Event()
+    real = text_index.read_text
+    lock, active, most = threading.Lock(), [0], [0]
+
+    def read(path, n):
+        if path.endswith("liver.zarr"):
+            release.wait(10)
+            return real(path, n)
+        with lock:
+            active[0] += 1
+            most[0] = max(most[0], active[0])
+        time.sleep(0.6)
+        with lock:
+            active[0] -= 1
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    try:
+        status = crawl(world)
+    finally:
+        release.set()
+    assert status["state"] == "done" and entries(world)["liver.zarr"]["error"] == "timeout"
+    assert most[0] == 2                      # two stores were read at once while liver.zarr held its thread
+
+
 def test_a_crawl_past_its_time_is_partial_and_keeps_what_it_has(world):
     crawl(world)
     world.config["text_index_crawl_timeout_s"] = 0.0001

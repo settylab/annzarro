@@ -99,7 +99,7 @@ _HELP = {
     "dataset_details_check_budget_s": "Seconds the dataset browser spends checking one zarr store when it shows its details; it then reports what it found so far. 0 turns the check off there.",
     "dataset_scan_max_entries": "Directory entries a listing of the data directory, or the store count in the server status, reads before it stops and marks the result truncated.",
     "text_index_workers": "Threads the crawl of the description index reads stores with. The crawl runs once per server, in one worker.",
-    "text_index_store_timeout_s": "Seconds the description crawl waits for one store before it marks the store timed out and goes on. A crawl whose threads are all stuck on such stores stops.",
+    "text_index_store_timeout_s": "Seconds the description crawl waits for one store before it marks the store timed out and goes on with a spare thread; the store's answer is still kept if it comes before the crawl ends. A crawl with as many late stores at once as reader threads stops.",
     "text_index_crawl_timeout_s": "Seconds one crawl of the description index may take; then it saves what it has and is marked partial.",
     "text_index_max_stores": "Stores one crawl of the description index covers; past it the crawl is marked partial.",
     "text_index_readme_kb": "Kilobytes of each README the description index keeps.",
