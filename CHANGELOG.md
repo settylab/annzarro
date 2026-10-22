@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixed
+- The first click on an arrow of a number box in Plot Options (legend columns, dot size, text size) no longer moves the menu instead of stepping the value. The menu now keeps its place when a group opens, and a click in a box no longer re-applies its option.
+
 ## 0.7.3 (2026-10-22)
 
 ### Added

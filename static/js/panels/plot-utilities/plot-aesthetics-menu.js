@@ -78,9 +78,20 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
       if (rightInput && marginRight) rightInput.value = marginRight;
     }
     syncColourControls(id, settings);     // a colour that follows the theme has nothing to reset
+    // Popper places the menu once; opening a group makes it taller and the old place goes stale, until
+    // the first change of an option moves it, under the pointer. Follow the menu's size instead.
+    const tip = document.querySelector('.aesthetics-popover');
+    if (tip && typeof ResizeObserver === 'function') {
+      sizeWatch?.disconnect();
+      sizeWatch = new ResizeObserver(() => popover.update());
+      sizeWatch.observe(tip);
+    }
   };
   
+  let sizeWatch = null;
   const onHide = () => {
+    sizeWatch?.disconnect();
+    sizeWatch = null;
     menuButton.classList.remove('btn-aesthetics-active');
     menuButton.classList.add('btn-outline-secondary');
   };
@@ -115,6 +126,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
 
   // Return cleanup function
   return function cleanup() {
+    sizeWatch?.disconnect();
     popover.dispose();
     menuButton.removeEventListener('shown.bs.popover', onShown);
     menuButton.removeEventListener('hide.bs.popover',  onHide);
@@ -1346,6 +1358,9 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
     // A change to the look made here is a look of the plot's own: it is no longer on Default
     // (the buttons that put it on Default or set the default say so themselves)
     const menuHandler = function(e) {
+        // A press in a box or a list is not a change of it (its input/change events are): handling the click
+        // re-applied the option and moved the menu before the arrow of a number box had been used.
+        if (e.type === 'click' && e.target.matches && e.target.matches('input[type="number"], input[type="text"], input[type="range"], input[type="color"], select')) return;
         if (settings.styleDefault !== true) return handleMenuEvent(e);
         const look = JSON.stringify(pickStyle(settings));
         handleMenuEvent(e);
