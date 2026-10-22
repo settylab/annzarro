@@ -549,7 +549,7 @@ def test_fred_hutch_logo_on_shows_the_sign_post_linked_with_one_alt(tmp_path):
     modal = about_modal(body(get(app_with(tmp_path, {"fred_hutch_logo": True}), "/")))
     assert modal.count('alt="Fred Hutch Cancer Center"') == 1
     assert 'href="https://www.fredhutch.org"' in modal and "img/brand/fredhutch-annzarro-signpost.svg" in modal
-    assert modal.index("about-brand") < modal.index("about-dev") < modal.index("about-lab")
+    assert modal.index("about-lab") < modal.index("about-dev") < modal.index("about-brand") < modal.index("about-funding")
     assert "</a> at<br><a" in modal, "the text credit stays beside the logo"
     assert "about-logos" not in modal
 

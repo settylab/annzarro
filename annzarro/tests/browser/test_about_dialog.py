@@ -258,16 +258,18 @@ def test_about_version_appears_when_opened_before_the_script_loads(server):
             browser.close()
 
 
-BRAND_BOXES = """() => { const r = (s) => document.querySelector(s).getBoundingClientRect();
-    const b = r('.about-brand-logo'), l = r('.about-logo-lab');
-    return {brand: [b.left, b.top, b.right, b.bottom], lab: [l.left, l.top, l.right, l.bottom],
-            plate: getComputedStyle(document.querySelector('.about-brand-link')).backgroundColor,
-            padding: parseFloat(getComputedStyle(document.querySelector('.about-brand-link')).paddingLeft),
-            linkW: r('.about-brand-link').width, fw: r('.about-brand-logo').width,
-            alt: document.querySelector('.about-brand-logo').alt,
-            href: document.querySelector('.about-brand-link').href,
-            labParent: document.querySelector('.about-logo-lab').closest('.about-lab') !== null,
-            sibling: document.querySelector('.about-brand').nextElementSibling.className} }"""
+BRAND_BOXES = """() => { const rect = (e) => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; };
+    const q = (s) => document.querySelector(s), link = q('.about-brand-link');
+    const body = q('#about-modal .modal-body'), cs = getComputedStyle(body);
+    return {brand: rect(q('.about-brand-logo')), lab: rect(q('.about-logo-lab')), dev: rect(q('.about-dev')),
+            plateBox: rect(link), content: [body.getBoundingClientRect().left + parseFloat(cs.paddingLeft),
+                                            body.getBoundingClientRect().right - parseFloat(cs.paddingRight)],
+            plate: getComputedStyle(link).backgroundColor, padding: parseFloat(getComputedStyle(link).paddingLeft),
+            alt: q('.about-brand-logo').alt, href: link.href,
+            labInLab: q('.about-logo-lab').closest('.about-lab') !== null,
+            brandInLab: q('.about-brand').closest('.about-lab') !== null,
+            funding: q('.about-funding').querySelector('img') !== null,
+            fundingTop: q('.about-funding').getBoundingClientRect().top} }"""
 
 
 def test_about_without_the_key_has_the_text_credit_and_requests_no_fred_hutch_image(server):
@@ -300,19 +302,23 @@ def test_about_with_the_key_shows_the_sign_post_and_keeps_the_lab_logo_apart(bra
             info = page.evaluate(BRAND_BOXES)
             assert info["alt"] == "Fred Hutch Cancer Center", "the sign post is not announced twice"
             assert info["href"] == "https://www.fredhutch.org/"
-            assert 255 <= info["fw"] <= 320
-            # the Setty Lab logo is lower, smaller, and not next to the Fred Hutch logo: the credit text
-            # sits between them and they share no row
-            brand, lab = info["brand"], info["lab"]
-            assert lab[1] > brand[3] + 40, "the lab logo is well below the Fred Hutch logo"
-            assert (lab[3] - lab[1]) < (brand[3] - brand[1]) * 1.2 + 20
-            assert info["sibling"] == "about-dev", "the text credit follows the Fred Hutch logo"
-            assert info["labParent"]
+            width = info["content"][1] - info["content"][0]
+            # the sign post is scaled whole to the content width; in the dark theme its plate spans it
+            assert abs((info["plateBox"][2] - info["plateBox"][0]) - width) < 1.5
+            assert info["brand"][2] - info["brand"][0] >= width * 0.85
+            # the credit line comes first, with the lab illustration (a quarter to a third of the width)
+            # beside it; the sign post follows, clearly apart; nothing sits beside the funding text
+            lab = info["lab"]
+            assert 0.22 * width <= lab[2] - lab[0] <= 0.36 * width
+            assert info["dev"][2] <= lab[0] + 1 and info["dev"][1] < info["brand"][1]
+            assert info["brand"][1] - lab[3] >= 12, "the sign post is clearly apart from the lab illustration"
+            assert info["fundingTop"] > info["brand"][3] and not info["funding"], "no image beside the NIH text"
+            assert info["labInLab"] and not info["brandInLab"]
             assert page.evaluate("document.querySelector('.about-logos')") is None
             if scheme == "dark":
                 assert info["plate"] == "rgb(255, 255, 255)", "navy artwork on a white plate"
                 # clear space at least the F's cap height: 38.9 of the artwork's 804.9 units
-                assert info["padding"] >= info["fw"] * 38.9 / 804.9
+                assert info["padding"] >= (info["brand"][2] - info["brand"][0]) * 38.9 / 804.9
             else:
                 assert info["plate"] == "rgba(0, 0, 0, 0)"
             _shot(page, f"about-brand-{scheme}-desktop")
@@ -331,7 +337,8 @@ def test_about_with_the_key_fits_a_phone(brand_server, scheme):
                                  " <= document.querySelector('#about-modal .modal-body').clientWidth")
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
             logo = page.evaluate(BRAND_BOXES)
-            assert 0 < logo["fw"] < 330 and logo["brand"][2] <= 390
+            assert logo["brand"][2] <= 390 and logo["plateBox"][2] <= 390 and logo["lab"][2] <= 390
+            assert logo["brand"][1] > logo["lab"][3]
             _shot(page, f"about-brand-{scheme}-phone")
         finally:
             browser.close()
