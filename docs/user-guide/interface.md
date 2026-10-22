@@ -159,8 +159,11 @@ words comes with its title and a few words of context, the matches marked. Words
 them together ("bone marrow"); case and accents do not matter. A hit opens and selects like any row, and
 its README opens on the first match. Regular expressions search names only, so turning **.\*** on switches
 descriptions off, and turning descriptions on ends the regular expression. The line under the field says
-how up to date the search is ("8 datasets indexed 3 min ago"), and shows **Indexing descriptions…** with a
-progress bar while the server reads them for the first time; the results appear when it is done. **Refresh**
+how up to date the search is ("8 datasets indexed 3 min ago"), and shows **Indexing descriptions: 120 of
+3,400 datasets** with a progress bar while the server reads them (a user limited to some folders sees a
+percentage). The server builds the index by itself shortly after it starts. When it has not read every
+dataset yet the line says how many are not searched yet and that indexing continues ("5 datasets indexed
+just now; 64 not searched yet, indexing continues"), and how many could not be read. **Refresh**
 asks the server to read the descriptions again (at most once a minute). The button is not there when an
 administrator turned the search off ({doc}`../deployment/admin`). Remote datasets are not
 searched.

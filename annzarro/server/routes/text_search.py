@@ -19,7 +19,7 @@ many stores the server holds.
 import logging
 import os
 
-from flask import jsonify, request
+from flask import current_app, jsonify, request
 
 from .. import access, confinement, text_index
 from ..policy import requires
@@ -41,8 +41,14 @@ def _summary(config, view):
             progress.update(done=status.get("done"), total=status.get("total"), errors=status.get("errors"))
     body = {"state": view["state"], "stale": view["stale"], "built_at": view["built_at"], "progress": progress}
     index = view["index"]
+    body["background"] = text_index.background_enabled(current_app)
     if not restricted and index is not None:
         body.update(stores=len(index), partial=index.partial)
+        # what the line under the search says: searched now, not yet (not reached, or late: read again later), unreadable
+        total = status.get("total") if view["state"] != "running" else None
+        not_reached = max(0, int(total) - len(index)) if isinstance(total, int) else 0
+        body.update(searchable=len(index) - index.errors, unreadable=index.errors - index.timeouts,
+                    not_yet=not_reached + index.timeouts)
         if index.stores_capped:
             body["max_stores"] = int(text_index.setting(config, "text_index_max_stores"))
     if index is not None:

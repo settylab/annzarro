@@ -512,24 +512,38 @@ export function agoLabel(seconds, now = Date.now() / 1000) {
 
 /**
  * The one line under the search field about the description index, from the `index` object of an answer.
- * `percent` is set while a crawl runs. The counts are only there when the server sent them (an unrestricted user).
+ * `percent` is set while a crawl runs. The counts are only there when the server sent them (an unrestricted
+ * user): `progress.done`/`progress.total` while it runs; `searchable` (datasets whose text is searched),
+ * `not_yet` (found but not read yet, or late: a later crawl reads them) and `unreadable` after it.
+ * `background` says the server goes on by itself, so a partial index is said to continue.
  * @returns {{text: string, percent: number|null}|null} null when there is nothing to say
  */
 export function indexLine(index, now = Date.now() / 1000) {
     if (!index) return null;
+    const count = n => Number.isFinite(n) ? n : null;
     if (index.state === 'running') {
-        const f = index.progress && Number.isFinite(index.progress.fraction) ? index.progress.fraction : null;
+        const p = index.progress || {};
+        const f = Number.isFinite(p.fraction) ? p.fraction : null;
         const percent = f === null ? null : Math.max(0, Math.min(100, Math.round(f * 100)));
+        if (count(p.done) !== null && count(p.total) !== null && p.total > 0) {
+            const of = `${countLabel(Math.min(p.done, p.total))} of ${countLabel(p.total)} dataset${p.total === 1 ? '' : 's'}`;
+            return { text: `Indexing descriptions: ${of}`, percent };
+        }
         return { text: `Indexing descriptions…${percent === null ? '' : ` ${percent}%`}`, percent };
     }
     if (index.state === 'failed') return { text: 'Descriptions could not be indexed.', percent: null };
     if (index.state === 'idle' && !index.built_at) return null;
     const ago = agoLabel(index.built_at, now);
+    const indexed = count(index.searchable) !== null ? index.searchable : count(index.stores);
     const bits = [];
-    bits.push(Number.isFinite(index.stores) ? `${countLabel(index.stores)} datasets indexed${ago ? ` ${ago}` : ''}` : (ago ? `Indexed ${ago}` : 'Indexed'));
-    if (index.stale) bits.push('updating');
-    if (index.capped || index.partial) bits.push('some datasets are not searched');
-    return { text: bits.join(', '), percent: null };
+    bits.push(indexed !== null ? `${countLabel(indexed)} dataset${indexed === 1 ? '' : 's'} indexed${ago ? ` ${ago}` : ''}` : (ago ? `Indexed ${ago}` : 'Indexed'));
+    const goesOn = index.background ? ', indexing continues' : ', a search continues it';
+    if (index.partial || count(index.not_yet) > 0) {
+        bits.push(count(index.not_yet) > 0 ? `${countLabel(index.not_yet)} not searched yet${goesOn}` : `some not searched yet${goesOn}`);
+    } else if (index.stale) bits.push('updating');
+    if (count(index.unreadable) > 0) bits.push(`${countLabel(index.unreadable)} could not be read`);
+    if (index.capped) bits.push('some datasets are not searched');
+    return { text: bits.join('; '), percent: null };
 }
 
 /**

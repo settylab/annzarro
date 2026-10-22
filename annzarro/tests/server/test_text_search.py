@@ -236,7 +236,8 @@ def test_a_restricted_user_is_told_a_fraction_never_a_count(granted):
     assert carol.get(STATUS).get_json()["progress"]["total"] == 12
     # the search reply carries the same index summary
     reply = bob.get(SEARCH, query_string={"q": "atlas"}).get_json()
-    assert set(reply["index"]) == {"state", "stale", "built_at", "progress"}
+    # background says whether the server goes on by itself: a setting of the server, not a count of its stores
+    assert set(reply["index"]) == {"state", "stale", "built_at", "progress", "background"}
     assert "total" not in json.dumps(reply["index"]) and "errors" not in json.dumps(reply["index"])
 
 
@@ -329,3 +330,29 @@ def test_a_capped_index_says_so_and_only_an_unrestricted_user_is_told_counts(gra
     # the name search is not touched by the cap
     found = carol.get("/api/v1/datasets/search", query_string={"q": "zarr"}).get_json()
     assert len(found["results"]) == 5
+
+
+# --- what the line under the search is told ---------------------------------------------------------------
+
+def test_the_status_counts_searchable_not_yet_and_unreadable_and_says_the_server_goes_on(world, monkeypatch):
+    real = text_index.read_text
+
+    def read(path, n):
+        if path.endswith("heart.zarr"):
+            time.sleep(1.5)                  # past the limit below: late, so "not searched yet"
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    world.config.update(text_index_store_timeout_s=0.3)
+    with world.test_request_context("/"):
+        text_index.crawl(world.config)
+    body = client(world, "alice").get(STATUS).get_json()
+    assert (body["stores"], body["searchable"], body["not_yet"], body["unreadable"]) == (5, 3, 1, 1)   # broken.zarr cannot be read
+    assert body["background"] is True
+
+
+def test_a_restricted_user_gets_no_counts(granted):
+    with granted.test_request_context("/"):
+        text_index.crawl(granted.config)
+    body = client(granted, "bob").get(STATUS).get_json()
+    assert not {"stores", "searchable", "not_yet", "unreadable"} & set(body)
+    assert "background" in body

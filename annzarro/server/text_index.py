@@ -226,10 +226,15 @@ class Loaded:
         self.stores_capped = bool(header.get("stores_capped"))
         self.entries = []
         self.folded = []              # per entry: {field: folded text} for fields that are not ASCII, else a shared {}
+        self.errors = 0               # entries whose store could not be read (timeouts included)
+        self.timeouts = 0             # of them, stores that did not answer in time: a later crawl reads them again
 
     def add(self, record):
         """Take one line of the file."""
         record.setdefault("real", record["path"])        # the same string object: no memory
+        if record.get("error"):
+            self.errors += 1
+            self.timeouts += record["error"] == "timeout"
         extra = _NOTHING
         for name, text in fields_of(record).items():
             if text and not text.isascii():

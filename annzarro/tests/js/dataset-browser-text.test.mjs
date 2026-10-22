@@ -79,12 +79,25 @@ test('ages are short', () => {
 
 test('the index line: building, done with and without counts, stale, capped, failed, nothing', () => {
     const now = 1_000_000;
-    assert.deepEqual(M.indexLine({ state: 'running', progress: { fraction: 0.42 } }, now), { text: 'Indexing descriptions… 42%', percent: 42 });
+    assert.deepEqual(M.indexLine({ state: 'running', progress: { fraction: 0.42 } }, now), { text: 'Indexing descriptions… 42%', percent: 42 }, 'a restricted user: a fraction');
     assert.deepEqual(M.indexLine({ state: 'running', progress: null }, now), { text: 'Indexing descriptions…', percent: null });
+    assert.deepEqual(M.indexLine({ state: 'running', progress: { fraction: 0.035, done: 120, total: 3400 } }, now),
+        { text: 'Indexing descriptions: 120 of 3,400 datasets', percent: 4 }, 'the counts when the server sends them');
     assert.equal(M.indexLine({ state: 'done', built_at: now - 180, stores: 1234 }, now).text, '1,234 datasets indexed 3 min ago');
+    assert.equal(M.indexLine({ state: 'done', built_at: now - 180, stores: 1236, searchable: 1234 }, now).text, '1,234 datasets indexed 3 min ago',
+        'indexed counts what is searched, not the entries that could not be read');
     assert.equal(M.indexLine({ state: 'done', built_at: now - 180 }, now).text, 'Indexed 3 min ago', 'no count for a restricted user');
-    assert.equal(M.indexLine({ state: 'done', built_at: now - 180, stale: true }, now).text, 'Indexed 3 min ago, updating');
-    assert.equal(M.indexLine({ state: 'partial', built_at: now - 180, partial: true, stores: 5 }, now).text, '5 datasets indexed 3 min ago, some datasets are not searched');
+    assert.equal(M.indexLine({ state: 'done', built_at: now - 180, stale: true }, now).text, 'Indexed 3 min ago; updating');
+    // the operator's case: a crawl that stopped early is not "N datasets indexed, some not searched"
+    assert.equal(M.indexLine({ state: 'partial', built_at: now, partial: true, stale: true, stores: 4, searchable: 0, not_yet: 69, background: true }, now).text,
+        '0 datasets indexed just now; 69 not searched yet, indexing continues');
+    assert.equal(M.indexLine({ state: 'partial', built_at: now - 180, partial: true, stores: 5, searchable: 5, not_yet: 3 }, now).text,
+        '5 datasets indexed 3 min ago; 3 not searched yet, a search continues it', 'without the background crawl a search continues it');
+    assert.equal(M.indexLine({ state: 'partial', built_at: now - 180, partial: true, background: true }, now).text,
+        'Indexed 3 min ago; some not searched yet, indexing continues', 'a restricted user: no counts');
+    assert.equal(M.indexLine({ state: 'done', built_at: now - 180, stores: 7, searchable: 5, unreadable: 2 }, now).text,
+        '5 datasets indexed 3 min ago; 2 could not be read');
+    assert.equal(M.indexLine({ state: 'done', built_at: now - 180, stores: 1, searchable: 1 }, now).text, '1 dataset indexed 3 min ago');
     assert.match(M.indexLine({ state: 'done', built_at: now, capped: true }, now).text, /not searched/);
     assert.equal(M.indexLine({ state: 'failed' }, now).text, 'Descriptions could not be indexed.');
     assert.equal(M.indexLine({ state: 'idle', built_at: null }, now), null);
