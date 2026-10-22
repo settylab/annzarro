@@ -41,12 +41,12 @@ def _free_port():
         return s.getsockname()[1]
 
 
-@pytest.fixture
-def server(tmp_path):
+def _serve(tmp_path, extra_env=None):
+    """Start a server; yields its root and stops it. `extra_env` is what the desktop app adds."""
     (tmp_path / "home").mkdir()
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(tmp_path / "home"), ANNZARRO_HEADLESS="1",
-               PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
+               PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""), **(extra_env or {}))
     env.pop("ANNZARRO_CONFIG", None)
     proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--auth-disabled", "--host", "127.0.0.1",
                              "--port", str(port), "--data-dir", DATA_DIR, "--no-browser"],
@@ -64,6 +64,17 @@ def server(tmp_path):
     yield root
     proc.terminate()
     proc.wait(10)
+
+
+@pytest.fixture
+def server(tmp_path):
+    yield from _serve(tmp_path)
+
+
+@pytest.fixture
+def brand_server(tmp_path):
+    """As the desktop app starts its server: site.fred_hutch_logo on (utils desktop serverEnv)."""
+    yield from _serve(tmp_path, {"ANNZARRO_SITE_FRED_HUTCH_LOGO": "true"})
 
 
 def _open(browser, root, scheme="light", width=1440, height=900):
@@ -243,5 +254,103 @@ def test_about_version_appears_when_opened_before_the_script_loads(server):
                                    timeout=10000)
             version = json.load(urllib.request.urlopen(server + "/api/v1/config"))["annzarro_version"]
             assert page.locator("#about-version").inner_text() == version
+        finally:
+            browser.close()
+
+
+BRAND_BOXES = """() => { const rect = (e) => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; };
+    const q = (s) => document.querySelector(s), link = q('.about-brand-link');
+    const body = q('#about-modal .modal-body'), cs = getComputedStyle(body);
+    return {brand: rect(q('.about-brand-logo')), lab: rect(q('.about-logo-lab')), dev: rect(q('.about-dev')),
+            plateBox: rect(link), content: [body.getBoundingClientRect().left + parseFloat(cs.paddingLeft),
+                                            body.getBoundingClientRect().right - parseFloat(cs.paddingRight)],
+            plate: getComputedStyle(link).backgroundColor, padding: parseFloat(getComputedStyle(link).paddingLeft),
+            alt: q('.about-brand-logo').alt, href: link.href,
+            labInLab: q('.about-logo-lab').closest('.about-lab') !== null,
+            brandInLab: q('.about-brand').closest('.about-lab') !== null,
+            funding: rect(q('.about-funding'))} }"""
+
+
+def test_about_without_the_key_has_the_text_credit_and_requests_no_fred_hutch_image(server):
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_context(viewport={"width": 1440, "height": 900}).new_page()
+            requested = []
+            page.on("request", lambda req: requested.append(req.url))
+            page.goto(server)
+            page.wait_for_function("() => document.querySelector('.app-title').title.includes('AnnZarro ')", timeout=30000)
+            _show(page)
+            assert page.locator(".about-brand").count() == 0
+            assert "Setty Lab at Fred Hutch Cancer Center" in " ".join(page.locator("#about-modal").inner_text().split())
+            assert not [u for u in requested if "fredhutch" in u or "/img/brand/" in u]
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_about_with_the_key_shows_the_sign_post_and_keeps_the_lab_logo_apart(brand_server, scheme):
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = _open(browser, brand_server, scheme)
+            _show(page)
+            logos = page.evaluate(LOGOS)
+            assert sorted(l[0] for l in logos) == ["Fred Hutch Cancer Center", "Setty Lab"]
+            assert all(l[1] > 0 for l in logos), "both images loaded"
+            info = page.evaluate(BRAND_BOXES)
+            assert info["alt"] == "Fred Hutch Cancer Center", "the sign post is not announced twice"
+            assert info["href"] == "https://www.fredhutch.org/"
+            width = info["content"][1] - info["content"][0]
+            # the sign post is scaled whole to the content width; in the dark theme its plate spans it
+            assert abs((info["plateBox"][2] - info["plateBox"][0]) - width) < 1.5
+            assert info["brand"][2] - info["brand"][0] >= width * 0.85
+            # the mockup's order: the credit line, the sign post, then the funding text with the lab
+            # illustration (about a third of the width) beside it on the right
+            lab = info["lab"]
+            assert 0.28 * width <= lab[2] - lab[0] <= 0.38 * width
+            assert info["dev"][3] <= info["brand"][1], "the credit line is above the sign post"
+            assert lab[1] >= info["brand"][3], "the lab illustration is below the sign post, never above it"
+            assert lab[0] > info["funding"][2] - 1 and info["funding"][0] < lab[0], "beside the funding text, on its right"
+            assert info["labInLab"] and not info["brandInLab"]
+            assert page.evaluate("document.querySelector('.about-logos')") is None
+            if scheme == "dark":
+                assert info["plate"] == "rgb(255, 255, 255)", "the navy artwork on a white plate"
+                # clear space at least the F's cap height: 38.9 of the artwork's 804.9 units
+                assert info["padding"] >= (info["brand"][2] - info["brand"][0]) * 38.9 / 804.9
+            else:
+                assert info["plate"] == "rgba(0, 0, 0, 0)"
+            _shot(page, f"about-brand-{scheme}-desktop")
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_about_with_the_key_fits_a_phone(brand_server, scheme):
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = _open(browser, brand_server, scheme, 390, 844)
+            _show(page)
+            assert page.evaluate("document.querySelector('#about-modal .modal-body').scrollWidth"
+                                 " <= document.querySelector('#about-modal .modal-body').clientWidth")
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            logo = page.evaluate(BRAND_BOXES)
+            assert logo["brand"][2] <= 390 and logo["plateBox"][2] <= 390 and logo["lab"][2] <= 390
+            assert logo["brand"][3] <= logo["lab"][1]
+            _shot(page, f"about-brand-{scheme}-phone")
+        finally:
+            browser.close()
+
+
+def test_the_sign_post_file_is_served(brand_server):
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = _open(browser, brand_server)
+            _show(page)
+            src = page.evaluate("document.querySelector('.about-brand-logo').src")
+            assert src.endswith("/static/img/brand/fredhutch-annzarro-signpost.svg")
+            assert urllib.request.urlopen(src, timeout=5).status == 200
         finally:
             browser.close()

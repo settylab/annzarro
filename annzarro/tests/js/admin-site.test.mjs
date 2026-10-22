@@ -10,7 +10,7 @@ import site, { canonicalText, checklist, configText, previewDocument, sameValue,
 const EMPTY = { label: "Imprint", url: null, markdown: null, file: null };
 
 function key(name, value, extra = {}) {
-  const kind = name.startsWith("site.storage") || name === "site.software_credits" ? "bool"
+  const kind = name.startsWith("site.storage") || ["site.software_credits", "site.fred_hutch_logo"].includes(name) ? "bool"
     : ["site.footer_links", "site.robots"].includes(name) ? "enum"
       : ["site.imprint", "site.privacy", "site.accessibility", "site.terms"].includes(name) ? "site_text" : "site_line";
   const type = kind === "enum" ? { kind, choices: name === "site.robots" ? ["auto", "index", "noindex"] : ["auto", "about-only"] }
@@ -25,7 +25,7 @@ function policy(overrides = {}) {
     key("site.accessibility", { ...EMPTY, label: "Accessibility" }), key("site.terms", { ...EMPTY, label: "Terms of use" }),
     key("site.operator", null), key("site.contact", null), key("site.contact_label", "Contact"),
     key("site.security_contact", null), key("site.languages", "en"), key("site.footer_links", "auto"),
-    key("site.robots", "auto"), key("site.software_credits", true), key("site.storage.persistent_convenience", true),
+    key("site.robots", "auto"), key("site.software_credits", true), key("site.fred_hutch_logo", false), key("site.storage.persistent_convenience", true),
     { name: "panel.cell-plot.enabled", type: { kind: "bool" }, section: "", value: true },
   ].map((k) => ({ ...k, ...(overrides[k.name] || {}) }));
   return { version: "v", keys, unknown: [], issues: [] };
@@ -37,7 +37,7 @@ afterEach(() => { uninstallFakeDocument(); });
 
 test("siteKeys takes the keys of the site section, by their short name", () => {
   const keys = siteKeys(policy());
-  assert.equal(Object.keys(keys).length, 13);
+  assert.equal(Object.keys(keys).length, 14);
   assert.equal(keys.imprint.name, "site.imprint");
   assert.equal(keys["storage.persistent_convenience"].value, true);
   assert.equal(keys["cell-plot.enabled"], undefined);
@@ -88,7 +88,7 @@ test("the section shows the checklist, a help on every field, the sandboxed prev
   assert.match(el.textContent, /Public site/);
   assert.equal(findAll(el, (n) => n.getAttribute && n.getAttribute("data-check") !== null && n.getAttribute("data-check") !== undefined).length, 4);
   const helps = findAll(el, (n) => n.getAttribute && n.getAttribute("data-help") !== null && n.getAttribute("data-help") !== undefined);
-  assert.equal(helps.length, 13);
+  assert.equal(helps.length, 14);
   assert.ok(helps.every((h) => /^Help for site\./.test(h.getAttribute("title"))));
   const frames = findAll(el, (n) => n.tagName === "IFRAME");
   assert.equal(frames.length, 4);
