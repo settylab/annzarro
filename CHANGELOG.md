@@ -14,6 +14,7 @@ with the release after it. Older releases are listed on
 - Plot Options > Legend and colour bar: **Title size** and **Title gap** set the size of the legend title and its distance to the first entry. They are saved with the panel, in links and in panel sets, and copied by Apply to other panels.
 
 ### Fixed
+- A large plot whose data could not be loaded, for example because the browser ran out of memory (Safari reported only "Load failed"), now says so, names how many other plots are open and offers Try again, Half the cells, Subset and Close other plots.
 - Going back to the app from the admin or account pages, by their "Back to" link or the browser's Back button, shows the panels you left. The link used to open a blank start page, and Back could do the same when you left while panels were still drawing (large datasets).
 - Plot Options: the arrows of an empty number box (legend title size and gap, dot size, columns, tick counts) step from the default the box shows, by one, instead of jumping to the lowest value. The legend **Title gap** is a true pixel distance (0 to 80 px, every value different) instead of a blank line.
 - An exported image (SVG or PNG) holds the whole legend. A legend longer than the plot was cut off in the image; the image is now taller where the legend needs it.

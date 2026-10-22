@@ -307,6 +307,12 @@ export function noteOutOfMemory(id) {
     _outOfMemory.add(String(id));
     ledger._changed();
 }
+/** Plots (cell and gene) other than panel `id` that hold memory now, the same count on every browser. */
+export function otherPlotCount(id) {
+    const all = new Map([...ledger.entries, ...ledger.pending].map(([k, e]) => [String(k), e]));
+    all.delete(String(id));
+    return [...all.values()].filter(e => e.kind === 'cell-plot' || e.kind === 'gene-plot').length;
+}
 /** Panels whose last draw ran out of memory and that are still open. */
 export function outOfMemoryPanels() { return [..._outOfMemory]; }
 /** Draws in flight (reserved, not yet committed or cancelled). */

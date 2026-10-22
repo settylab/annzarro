@@ -23,7 +23,7 @@ import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
 import { Config } from '../../config.js';
 import { RemoteNames } from '../../utils/remote-names.js';
-import { colourKind, isOutOfMemory, MEMORY_ADVICE, DRAW_ANYWAY_RISK } from '../../utils/memory-guard.js';
+import { colourKind, isOutOfMemory, isNetworkFailure, loadFailureText, MEMORY_ADVICE, DRAW_ANYWAY_RISK } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
@@ -35,7 +35,7 @@ import { legendOptionsIntoLayout, legendTitleFontSize } from '../../utils/legend
 import { cancelLoads } from '../../utils/load-scope.js';
 import {
   drawCheck, reserve, commit, cancel, refusalText, refusalPanel, crashedDrawing, takeOverride, markIfRisky, unmark, hoverLabelsCheck,
-  takeTurn, bindTurn, releaseTurn, noteOutOfMemory, bindingLabel
+  takeTurn, bindTurn, releaseTurn, noteOutOfMemory, bindingLabel, otherPlotCount
 } from '../../utils/memory-guard-ui.js';
 
 // the loads of a panel that the Cancel button can stop (utils/load-scope.js)
@@ -1325,6 +1325,17 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       // The classification carried on the error says WHY; the existing
       // troubleshooting hints are kept underneath it as the "what to do next".
       const unit = data && data.entities === 'genes' ? 'genes' : 'cells';
+      // A large plot whose request got no answer ("Load failed" in Safari): say what it
+      // probably was and offer the way out, instead of the browser's two words.
+      const nCellsNow = unit === 'cells' ? (DataManager.getCells() || []).length : 0;
+      if (nCellsNow > largePlotPoints() && isNetworkFailure(error)) {
+        const others = otherPlotCount(id);
+        const say = loadFailureText(nCellsNow, others);
+        drawPlaceholder(plotContainer, null, 'cells', { say: { severity: 'error', ...say },
+          actions: [['redraw', 'Try again'], ['subset-half', 'Half the cells'], ['subset', 'Subset\u2026'], ['close-others', 'Close other plots']] });
+        noteOutOfMemory(id);
+        return;
+      }
       const coverage = error.coverage || Coverage.missing(GAP.FAILED, error.message || 'unknown error',
         { source: 'plot data', unit });
       drawPlaceholder(plotContainer, coverage, unit);

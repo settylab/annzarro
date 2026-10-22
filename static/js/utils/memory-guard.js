@@ -999,6 +999,46 @@ export function isOutOfMemory(error) {
     return OUT_OF_MEMORY_MESSAGES.some(re => re.test(message));
 }
 
+// What fetch() rejects with when the request never got an answer: WebKit
+// (Safari) "Load failed", Chrome "Failed to fetch", Firefox "NetworkError when
+// attempting to fetch resource.". None says why. A server that answered, even
+// with an error, sets a status on our error (data-manager.js), so it is not one.
+const NETWORK_FAILURE_MESSAGES = [
+    /^load failed$/i,
+    /^failed to fetch$/i,
+    /^networkerror when attempting to fetch resource/i,
+    /^network request failed$/i,
+    /^the network connection was lost\.?$/i
+];
+
+/**
+ * Did `error` come from a request that got no answer (see above)? A large
+ * plot's point buffers are the likeliest cause: the browser ends or refuses
+ * a request when it has no memory left to receive the body.
+ */
+export function isNetworkFailure(error) {
+    if (!error || typeof error !== 'object' || error.status || error.data) return false;
+    if (error.name === 'AbortError') return false;
+    return error.name === 'TypeError' && NETWORK_FAILURE_MESSAGES.some(re => re.test(String(error.message || '').trim()));
+}
+
+/**
+ * The words for a large plot whose data request got no answer.
+ * @param {number} points - cells of the plot
+ * @param {number} others - other plots open
+ * @returns {{headline: string, lines: string[]}}
+ */
+export function loadFailureText(points, others = 0) {
+    const n = Number(points) || 0;
+    const count = n >= 1e6 ? `${(n / 1e6) >= 100 ? Math.round(n / 1e6) : (n / 1e6).toFixed(1).replace(/\.0$/, '')} million` : n.toLocaleString('en-US');
+    const open = others > 0 ? ` with ${others} other plot${others === 1 ? '' : 's'} open` : '';
+    return {
+        headline: `Could not load the ${count} points for this plot`,
+        lines: [`The browser probably ran out of memory${open}, or lost the connection to the server.`,
+            'Close other plots, or plot a subset of cells, then try again.']
+    };
+}
+
 /** "0.8 GB", "120 MB": rounded, so it does not look more precise than it is. */
 export function formatGB(bytes) {
     const b = Math.max(0, Number(bytes) || 0);
