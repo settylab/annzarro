@@ -487,7 +487,8 @@ def crawl(config):
     max_stores = int(setting(config, "text_index_max_stores"))
     readme_bytes = int(setting(config, "text_index_readme_kb") * 1024)
     clock = time.monotonic
-    deadline = clock() + crawl_timeout
+    began_at = clock()
+    deadline = began_at + crawl_timeout
     previous = load(config)
     old = {e["real"]: e for e in previous.entries} if previous is not None else {}
     prior_built = previous.built_at if previous is not None and previous.complete else None
@@ -510,6 +511,8 @@ def crawl(config):
         else:
             todo.append((store, sig))
     status["done"] = status["reused"]
+    logger.info(f"Text index crawl started: {len(stores)} datasets found in {clock() - began_at:.1f} s, "
+                f"{len(todo)} to read, {status['reused']} unchanged; {workers} threads, {store_timeout:g} s per dataset")
 
     last_beat = [0.0]
 
@@ -606,6 +609,12 @@ def crawl(config):
     status.update(state="partial" if partial else "done", heartbeat=finished, built_at=finished, finished=finished,
                   capped=capped or stores_capped, total=len(stores))
     _write_status(config, status)
+    timeouts = sum(1 for e in results.values() if e.get("error") == "timeout")
+    why = (" (out of time)" if clock() > deadline else f" ({len(late)} datasets did not answer)") if partial else ""
+    searchable = sum(1 for e in entries if not e.get("error"))
+    logger.info(f"Text index crawl {status['state']}{why} in {clock() - began_at:.1f} s: {searchable} of {len(entries)} datasets searchable, "
+                f"{status['read']} read, {status['reused']} unchanged, {status['errors']} not readable"
+                f"{f' ({timeouts} timed out)' if timeouts else ''}{', capped' if status['capped'] else ''}")
     return status
 
 

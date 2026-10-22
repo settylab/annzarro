@@ -225,6 +225,16 @@ def test_an_uns_edit_the_consolidated_listing_does_not_have_is_indexed(world, mo
     assert [h["entry"]["name"] for h in found] == ["liver.zarr"]
 
 
+def test_a_crawl_logs_one_line_when_it_starts_and_one_when_it_ends(world, caplog):
+    import logging
+    with caplog.at_level(logging.INFO, logger="annzarro.server.text_index"):
+        crawl(world)
+    lines = [r.getMessage() for r in caplog.records if r.name == "annzarro.server.text_index" and r.levelno == logging.INFO]
+    assert len(lines) == 2
+    assert lines[0].startswith("Text index crawl started: 5 datasets found") and "5 to read, 0 unchanged" in lines[0]
+    assert lines[1].startswith("Text index crawl done in ") and "4 of 5 datasets searchable, 5 read, 0 unchanged, 1 not readable" in lines[1]
+
+
 def test_a_vanished_store_is_dropped(world):
     crawl(world)
     shutil.rmtree(f"{world.data}/out.zarr")
