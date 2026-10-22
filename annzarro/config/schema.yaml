@@ -133,6 +133,11 @@ server:
       description: Serve Prometheus metrics at /metrics (request counts and latency by route group, in-flight requests, caches, memory). Off by default; only metrics_allow networks can read it
       default: false
       security: internal
+    update_check:
+      type: boolean
+      description: Let the admin Server health page ask PyPI (a plain GET, nothing about the server is sent) whether a newer AnnZarro is out, at most once in a few hours and only when an admin opens the page. false = never ask; the page then shows only the running version. The desktop app never asks
+      default: true
+      security: internal
     metrics_allow:
       type: array
       items:

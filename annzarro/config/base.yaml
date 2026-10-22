@@ -74,6 +74,10 @@ server:
   # reverse proxy is refused unless proxy_count trusts the proxy.
   metrics_enabled: false
   # metrics_allow: [127.0.0.0/8, "::1/128"]
+
+  # The admin Server health page asks PyPI once in a few hours whether a newer AnnZarro exists
+  # (a plain GET; nothing about the server is sent). false = never ask, for offline servers.
+  update_check: true
   
   # Response size protection
   max_response_elements: 10000000

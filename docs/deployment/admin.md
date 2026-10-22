@@ -444,6 +444,16 @@ many datasets are searchable, not yet searched (not reached, or they did not ans
 **Rebuild now** starts a crawl at once (audited as `text_index.rebuild`): it reads again what changed, and does nothing while one runs.
 There is no schedule to set here; the refresh interval is `server.text_index_ttl_s`.
 
+The page shows the version the server runs. When an administrator opens it, the server also asks PyPI
+whether a newer release exists (`GET https://pypi.org/pypi/annzarro/json`, a plain request with
+Python's default user agent that carries nothing about your server), and if so adds one line:
+"AnnZarro 0.8.0 is available (this server runs 0.7.3)", with `pip install -U annzarro` and a link to
+the release notes. Pre-releases are ignored. The answer is kept for six hours per server process, so
+reloading the page does not ask again; a failed request (offline, timeout, a reply that is not
+understood) is remembered for 15 minutes and shows no notice. Nothing is requested at start-up, for
+other users or in the background. Set `server.update_check: false` for a server that must not make
+outbound requests; the page then shows only the running version. The desktop app never asks.
+
 `GET /status` and `GET /cache/info` answer admins only on a shared server.
 
 (admin-audit)=

@@ -79,7 +79,22 @@ export function descriptionSearchBlock(info, rebuild) {
                 + (info.built_at ? `last built ${formatTimestamp(new Date(info.built_at * 1000).toISOString())}` : 'not built yet') + (info.capped ? '; more datasets than the size limit allows' : '') }) : null);
 }
 
+/** The "AnnZarro 0.8.0 is available (this server runs 0.7.2)" line with the upgrade command and release notes link;
+ *  the running version alone when there is nothing newer or the check is off or failed. */
+export function versionLine(info) {
+    if (!info || !info.current) return null;
+    if (!info.update_available) {
+        return h('p', { class: 'small text-muted', id: 'admin-health-version', text: `AnnZarro ${info.current}` });
+    }
+    return h('p', { class: 'small', id: 'admin-health-version' },
+        h('span', { id: 'admin-health-update', text: `AnnZarro ${info.latest} is available (this server runs ${info.current}). Upgrade with ` }),
+        h('code', { text: info.upgrade_command || 'pip install -U annzarro' }),
+        h('span', { text: '. ' }),
+        info.url ? h('a', { href: info.url, target: '_blank', rel: 'noopener noreferrer', id: 'admin-health-release-notes', text: 'Release notes' }) : null);
+}
+
 let body = null;
+let versionBox = null;
 let bar = null;
 let apiRef = null;
 let ctxRef = null;
@@ -170,6 +185,15 @@ export function readersText(workers) {
     return held.length ? held.slice(0, 5).map((r) => `${r.who} ${formatMb(r.mb)} (share ${formatMb(r.share)})`).join(' | ') : 'none';
 }
 
+/** Asked once when the page opens (not on the 10 s refresh); a failure leaves the box empty. */
+async function showVersion() {
+    try {
+        setChildren(versionBox, versionLine(await apiRef.health.versionCheck()));
+    } catch {
+        // no notice: the page works without it
+    }
+}
+
 export default {
     id: 'health',
     title: 'Server health',
@@ -179,9 +203,11 @@ export default {
         ctxRef = ctx;
         bar = h('div', { class: 'mb-3' });
         body = h('div');
-        setChildren(target, bar, body);
+        versionBox = h('div');
+        setChildren(target, bar, versionBox, body);
         drawButton();
         await load();
+        showVersion();
     },
     refresh: () => load(),
 };

@@ -146,7 +146,7 @@ contains a script, iframe, embed or an address on another server.
 * **Links** to documentation, GitHub, DOIs and gene databases are ordinary links: nothing is sent
   until a visitor clicks, and no referrer goes along.
 * **Your server.** Remote stores (`s3://`, `https://`) are read by the server from an allow-list;
-  no visitor data goes with those requests. There is no telemetry and no update check.
+  no visitor data goes with those requests. There is no telemetry. The one request the server makes on its own account is the admin update notice: when an administrator opens the Server health page, a plain GET to `pypi.org` for the latest version number, at most once in six hours, nothing about your server or visitors sent. `server.update_check: false` turns it off.
 
 ### Data on the server
 

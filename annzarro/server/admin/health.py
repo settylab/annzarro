@@ -2,7 +2,7 @@
 
 from flask import current_app, jsonify, request
 
-from .. import cache_reset, health, panel_sets, text_index
+from .. import cache_reset, health, panel_sets, text_index, update_check
 from annzarro.utils import paths
 from . import audit
 from .guard import require_admin
@@ -21,6 +21,13 @@ def get_health():
     report["warnings"] = paths.state_dir_warnings(current_app.config)
     report["description_search"] = _description_search()
     return jsonify(report)
+
+
+@require_admin
+def version_check():
+    """GET /api/v1/admin/version-check: the running version, and the newer one on PyPI if there is one
+    (asked only now, cached for hours; see server/update_check.py)."""
+    return jsonify(update_check.check(current_app.config))
 
 
 def _description_search():
@@ -62,5 +69,6 @@ def clear_cache():
 def register(blueprint):
     """Add this section's routes to the admin blueprint."""
     blueprint.add_url_rule("/api/v1/admin/health", "health", get_health)
+    blueprint.add_url_rule("/api/v1/admin/version-check", "version_check", version_check)
     blueprint.add_url_rule("/api/v1/admin/cache/clear", "cache_clear", clear_cache, methods=["POST"])
     blueprint.add_url_rule("/api/v1/admin/text-index/rebuild", "text_index_rebuild", rebuild_text_index, methods=["POST"])

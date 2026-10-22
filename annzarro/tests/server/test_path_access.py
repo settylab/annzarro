@@ -88,7 +88,7 @@ NO_PATH = {
     "admin.user_grants_add", "admin.user_grants_remove",   # access admin: paths to grant or check, never opened (test_admin_user_access.py)
     "admin.policy", "admin.user_policy",           # test_admin_settings.py
     "admin.site_texts",                            # test_site_admin.py: takes no argument, reads the site in effect
-    "admin.health", "admin.cache_clear", "admin.text_index_rebuild",   # the cache clear names a cache key in its body, never opened; the rebuild takes no argument
+    "admin.health", "admin.version_check", "admin.cache_clear", "admin.text_index_rebuild",   # the cache clear names a cache key in its body, never opened; the rebuild and the version check take no argument
     "admin.data_roots", "admin.data_roots_browse", "admin.data_roots_datasets",   # data directories: admin only, they name
     "admin.data_roots_add", "admin.data_roots_remove",   # directories to add, not datasets to read (test_admin_data_roots.py)
     "admin.panel_sets", "admin.panel_sets_reassign", "admin.panel_sets_delete",   # panel sets: admin only, no dataset paths

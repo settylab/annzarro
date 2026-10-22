@@ -50,6 +50,7 @@ DEFAULT_CONFIG = {
     "log_level": "INFO",
     "log_format": "text",  # "json" = one JSON object per line on stderr (jsonlog.py)
     "metrics_enabled": False,  # True = Prometheus /metrics for the networks in metrics_allow (metrics.py)
+    "update_check": True,  # True = the admin Health page may ask PyPI for a newer version (update_check.py)
     "auth_enabled": False,
     "user_file": "users.json",
     "unified_server": True,  # New flag to indicate we're using the unified server approach
