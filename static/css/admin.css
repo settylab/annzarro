@@ -140,8 +140,13 @@
 }
 
 @media (max-width: 767.98px) {
+    /* minmax(0, ...): a track of 1fr never shrinks below its widest control (the paste rules editor) */
     .policy-row {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .policy-row > * {
+        min-width: 0;
     }
 
     .policy-meta {
@@ -206,4 +211,10 @@
     .site-editor {
         grid-template-columns: 1fr;
     }
+}
+
+/* The paste rule's "match" choice has long option texts: it shrinks to the row on a phone */
+.paste-rule-match {
+    min-width: 0;
+    max-width: 100%;
 }
