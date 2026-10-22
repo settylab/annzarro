@@ -593,7 +593,7 @@ const App = (function() {
      * (a cheap undo); the changes of one action replace it (url-history.js).
      * @private
      */
-    const URL_SYNC_DELAY_MS = 600;
+    const URL_SYNC_DELAY_MS = 400;
     const URL_SYNC_MAX_MS = 3000;
     let _urlSyncTimer = null;
     let _urlSyncSince = 0;      // when the update pending was first asked for
@@ -603,6 +603,50 @@ const App = (function() {
     let _historyBusy = false;       // a history entry is being applied
     let _historyAgain = false;      // another step came meanwhile
     let _lastHistoryStepAt = 0;
+    // The action a change belongs to (utils/url-history.js): one key per control taking repeated input,
+    // a new one for every discrete action
+    let _actionKey = null;
+    let _actionAt = 0;              // when the user last acted
+    let _actionSeq = 0;
+    let _landedAt = 0;              // when a history entry was last applied
+    let _pointerKey = null;         // the action a press started, until its click
+    const _controlKeys = new WeakMap();
+    /** Controls whose repeated input is one gesture: a slider, a number box, a field. */
+    function _actionKeyOf(event) {
+        const target = event && event.target instanceof Element ? event.target : null;
+        const control = target && target.closest('input, textarea');
+        if (control && !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color'].includes(control.type)) {
+            if (!_controlKeys.has(control)) _controlKeys.set(control, `control-${++_actionSeq}`);
+            return _controlKeys.get(control);
+        }
+        // a press, its release and its click are one action
+        if (event && (event.type === 'pointerup' || event.type === 'click') && _pointerKey) {
+            const key = _pointerKey;
+            if (event.type === 'click') _pointerKey = null;
+            return key;
+        }
+        const key = `action-${++_actionSeq}`;
+        _pointerKey = event && event.type === 'pointerdown' ? key : null;
+        return key;
+    }
+    /**
+     * The user acted. A pending change belongs to the action before: it is written now, as its own entry,
+     * before this one starts (these listeners run before the control's own).
+     * @param {Event} event
+     * @param {{flush?: boolean}} [options] - flush: false for a signal that comes after the change it names
+     */
+    function _noteAction(event, { flush = true } = {}) {
+        if (!_urlSyncOn) return;
+        const key = _actionKeyOf(event);
+        if (flush && key !== _actionKey && _urlSyncTimer) {
+            clearTimeout(_urlSyncTimer);
+            _urlSyncTimer = null;
+            _syncUrlNow({ key: _actionKey });
+        }
+        _actionKey = key;
+        _actionAt = Date.now();
+        _syncUrlSoon();
+    }
     function _startUrlSync() {
         if (_urlSyncOn) return;
         _urlSyncOn = true;
@@ -616,10 +660,22 @@ const App = (function() {
         SessionManager.onViewMayHaveChanged(_syncUrlSoon);
         // The autosave tick alone would notice an option changed up to its interval later, and fold
         // several changes into one history entry: a control used, or a focus set, says so at once
-        for (const type of ['input', 'change', 'click', 'pointerup']) document.addEventListener(type, _syncUrlSoon, true);
-        for (const type of ['focusedGeneChanged', 'focusedCellChanged', 'taxonomyIdChanged']) {
-            document.addEventListener(type, _syncUrlSoon);
+        for (const type of ['input', 'change', 'click', 'pointerup', 'pointerdown', 'keydown', 'paste']) {
+            document.addEventListener(type, _noteAction, true);
         }
+        // a focus set is a discrete action, signalled after the change: it ends no earlier one
+        for (const type of ['focusedGeneChanged', 'focusedCellChanged', 'taxonomyIdChanged']) {
+            document.addEventListener(type, (event) => _noteAction(event, { flush: false }));
+        }
+        // leaving the page: what is pending is written, not lost
+        const flushPending = () => {
+            if (!_urlSyncTimer) return;
+            clearTimeout(_urlSyncTimer);
+            _urlSyncTimer = null;
+            _syncUrlNow({ key: _actionKey });
+        };
+        window.addEventListener('pagehide', flushPending);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushPending(); });
         // a new or reset session default is in the address at once: a reload before the delay must not read the old one
         onSessionStyleChange(() => _syncUrlNow());
         _syncUrlSoon();
@@ -634,10 +690,21 @@ const App = (function() {
         _urlSyncTimer = setTimeout(() => {
             _urlSyncTimer = null;
             // written because the view kept changing, not because it went quiet: the same gesture goes on
-            _syncUrlNow({ capped });
+            _syncUrlNow({ capped, key: _actionKey });
         }, wait);
     }
-    async function _syncUrlNow({ force = false, capped = false } = {}) {
+    let _syncTail = Promise.resolve();     // the write before: writes to the history keep their order
+    async function _syncUrlNow(options = {}) {
+        const before = _syncTail;
+        let done;
+        _syncTail = new Promise(resolve => { done = resolve; });
+        try {
+            return await _syncUrlWrite(options, before);
+        } finally {
+            done();
+        }
+    }
+    async function _syncUrlWrite({ force = false, capped = false, key: action = null } = {}, before = Promise.resolve()) {
         if (!_urlSyncOn) return;
         // An entry of the history being applied (Back, Forward) is not a change to record
         if (_historyBusy) return;
@@ -656,18 +723,20 @@ const App = (function() {
             const key = `${path}\n${json}`;
             if (key === _urlSyncView) return;
             const payload = hasPanels ? await encodeViewPayload(view) : null;
+            await before;
+            if (key === _urlSyncView) return;
             const next = syncedLocation(window.location.href, path, payload);
             // Changed while encoding: the next tick takes it
             if (_isLoadingDataset) return _syncUrlSoon();
             if (next) {
                 // A settled change starts a history entry, or rewrites the one it continues (utils/url-history.js)
                 const now = Date.now();
-                if (_historyPolicy.decide({ now, path }) === 'push') {
+                if (_historyPolicy.decide({ now, path, key: action, acted: _actionAt > _landedAt }) === 'push') {
                     history.pushState({ ...(history.state || {}) }, '', next);
                 } else {
                     history.replaceState(history.state, '', next);
                 }
-                _historyPolicy.written({ now, path, capped });
+                _historyPolicy.written({ now, path, key: action, capped });
             } else {
                 _historyPolicy.baseline({ path });
             }
@@ -706,7 +775,8 @@ const App = (function() {
                 const current = DatasetState.get().status === 'none' ? null : (_lastLoadedDatasetPath || DataManager.getCurrentDataset());
                 const path = current ? _labelOf(current) : '';
                 _urlSyncView = `${path}\n${hasPanels ? JSON.stringify(view) : ''}`;
-                _historyPolicy.landed({ now: Date.now(), path });
+                _landedAt = Date.now();
+                _historyPolicy.landed({ now: _landedAt, path });
             } catch { /* bookkeeping only: the next sync takes what is on screen */ }
             _historyBusy = false;
         }
