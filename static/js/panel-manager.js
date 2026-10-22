@@ -1040,6 +1040,48 @@ const PanelManager = (function() {
     }
 
     /**
+     * Rebuild one open panel in its own tile with another config, leaving
+     * every other panel as it is (a history step that changed one plot's
+     * settings). False when the panel is not open, or is a placeholder.
+     * @param {string} id
+     * @param {Object} config - the panel's saved config
+     * @returns {Promise<boolean>}
+     */
+    async function replacePanel(id, config) {
+        const old = _panels.get(id);
+        const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
+        const content = tile && tile.querySelector('.tile-content');
+        const type = panelTypeFromTileId(id);
+        const Constructor = _panelTypes.get(type);
+        if (!old || !content || !Constructor || old.isPlaceholder || !_activePanels.has(old)) return false;
+        _activePanels.delete(old);
+        try {
+            if (typeof old.destroy === 'function') old.destroy();
+            else if (typeof old.cleanup === 'function') old.cleanup();
+        } catch (error) {
+            console.warn(`replacePanel: cleanup of ${id} failed:`, error);
+        }
+        _panelsByType.forEach(set => set.delete(old));
+        content.innerHTML = '';
+        const panel = new Constructor(content, { ...config, id });
+        _panels.set(id, panel);
+        _panelsByType.get(type).add(panel);
+        _activePanels.add(panel);
+        const titleInput = tile.querySelector('.tile-title');
+        if (titleInput && panel.getTitle) titleInput.value = panel.getTitle();
+        const pending = panel.init();
+        if (config.controlsVisible !== undefined) _applyControlsVisible(tile, config.controlsVisible);
+        await pending;
+        updateSourcePanelSelection();
+        return true;
+    }
+
+    /** Show or hide an open panel's control bar. @param {string} id @param {boolean} visible */
+    function showControls(id, visible) {
+        _applyControlsVisible(document.querySelector(`.tile[data-tile-id="${id}"]`), visible);
+    }
+
+    /**
      * Forget a panel entirely (not just close it): its tile, its listeners
      * and its entry in every registry. Used when a loaded panel set brings a
      * panel with the same id, so the id, and every reference to it (a plot's
@@ -1156,6 +1198,8 @@ const PanelManager = (function() {
         restoreLayout,
         registerClosedPanel,
         removePanel,
+        replacePanel,
+        showControls,
         updateSourcePanelSelection
     };
 })();
