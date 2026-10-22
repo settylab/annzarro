@@ -339,8 +339,8 @@ def test_late_reads_left_by_earlier_crawls_count_against_the_spare_threads(world
             release.wait(30)                 # never answers while the test runs
         return real(path, n)
     monkeypatch.setattr(text_index, "read_text", read)
-    hanging = lambda: sum(1 for t in threading.enumerate() if t.name.startswith("text-index") and t.is_alive())
-    assert wait_for(lambda: hanging() == 0)              # readers a test before left behind (a late store sleeping) are gone
+    before = {t.ident for t in threading.enumerate()}      # readers an earlier test left behind are not this test's
+    hanging = lambda: sum(1 for t in threading.enumerate() if t.name.startswith("text-index") and t.is_alive() and t.ident not in before)
     try:
         states = []
         for _ in range(4):
@@ -369,8 +369,8 @@ def test_reads_cut_off_by_the_crawl_deadline_count_against_the_spare_threads_too
             release.wait(30)
         return real(path, n)
     monkeypatch.setattr(text_index, "read_text", read)
-    hanging = lambda: sum(1 for t in threading.enumerate() if t.name.startswith("text-index") and t.is_alive())
-    assert wait_for(lambda: hanging() == 0)              # readers a test before left behind (a late store sleeping) are gone
+    before = {t.ident for t in threading.enumerate()}      # readers an earlier test left behind are not this test's
+    hanging = lambda: sum(1 for t in threading.enumerate() if t.name.startswith("text-index") and t.is_alive() and t.ident not in before)
     try:
         for _ in range(4):
             assert crawl(world)["state"] == "partial"
