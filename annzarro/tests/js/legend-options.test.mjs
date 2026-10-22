@@ -22,7 +22,7 @@ test('unset, the legend is the constant one it always was', () => {
     assert.equal(legendColumns(s), 1);
     assert.equal(legendOrientation('v', s), 'v');
     assert.equal(legendTitleText(s).replace(/^\u00a0+|<br>\u00a0$/g, ''), 'cell_type');
-    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': legendTitleText(s), 'legend.title.side': 'top', 'legend.traceorder': null, 'legend.groupclick': null, 'meta.azLegendColumns': 1 });
+    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': legendTitleText(s), 'legend.title.side': 'top', 'legend.title.font.size': 14, 'legend.traceorder': null, 'legend.groupclick': null, 'meta.azLegendColumns': 1 });
 });
 
 test('a dot size is clamped to what Plotly draws and gives the proxies that size', () => {
@@ -124,4 +124,26 @@ test('the title starts where the labels start, in any of the fonts, and leaves a
     assert.ok(text.endsWith('cell_type<br>\u00a0'));
     assert.equal(text.match(/^\u00a0*/)[0].length, titleIndent('Arial', 18).length);
     assert.equal(legendTitleText({ color: { type: 'none', key: '', column: '' } }), '');       // nothing to title
+});
+
+test('legend title: size is the setting or 2 px above the text, kept in range', async () => {
+  const { legendTitleSize } = await import('../../../static/js/utils/legend-options.js');
+  assert.equal(legendTitleSize({}), 14);
+  assert.equal(legendTitleSize({ fontSize: 12 }), 14);
+  assert.equal(legendTitleSize({ fontSize: 20 }), 22);
+  assert.equal(legendTitleSize({ fontSize: 12, legendTitleSize: 30 }), 30);
+  assert.equal(legendTitleSize({ legendTitleSize: 1 }), 6);
+  assert.equal(legendTitleSize({ legendTitleSize: 500 }), 48);
+});
+
+test('legend title: the gap is a blank line unless set, none at 0', async () => {
+  const { titleGapMarkup, legendTitleGap, legendTitleText } = await import('../../../static/js/utils/legend-options.js');
+  assert.equal(legendTitleGap({}), null);
+  assert.equal(titleGapMarkup({}), '<br>\u00a0');
+  assert.equal(titleGapMarkup({ legendTitleGap: 0 }), '');
+  assert.match(titleGapMarkup({ legendTitleGap: 13 }), /^<br><span style="font-size:10px">\u00a0<\/span>$/);
+  assert.equal(legendTitleGap({ legendTitleGap: 999 }), 80);
+  const s = { color: { type: 'obs', key: 'cell_type', column: '' } };
+  assert.ok(legendTitleText(s).endsWith('<br>\u00a0'), 'default look unchanged');
+  assert.ok(!legendTitleText({ ...s, legendTitleGap: 0 }).includes('<br>'));
 });

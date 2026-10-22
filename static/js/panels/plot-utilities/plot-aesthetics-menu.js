@@ -1,7 +1,8 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, refreshScaleBar, flipRelayout } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
-import { applyLegendOptions, legendOrientation, legendTitleText, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX } from '../../utils/legend-options.js';
+import { applyLegendOptions, legendOrientation, legendTitleText, legendTitleSize, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX,
+    TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import {
@@ -78,9 +79,20 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
       if (rightInput && marginRight) rightInput.value = marginRight;
     }
     syncColourControls(id, settings);     // a colour that follows the theme has nothing to reset
+    // Popper places the menu once; opening a group makes it taller and the old place goes stale, until
+    // the first change of an option moves it, under the pointer. Follow the menu's size instead.
+    const tip = document.querySelector('.aesthetics-popover');
+    if (tip && typeof ResizeObserver === 'function') {
+      sizeWatch?.disconnect();
+      sizeWatch = new ResizeObserver(() => popover.update());
+      sizeWatch.observe(tip);
+    }
   };
   
+  let sizeWatch = null;
   const onHide = () => {
+    sizeWatch?.disconnect();
+    sizeWatch = null;
     menuButton.classList.remove('btn-aesthetics-active');
     menuButton.classList.add('btn-outline-secondary');
   };
@@ -115,6 +127,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
 
   // Return cleanup function
   return function cleanup() {
+    sizeWatch?.disconnect();
     popover.dispose();
     menuButton.removeEventListener('shown.bs.popover', onShown);
     menuButton.removeEventListener('hide.bs.popover',  onHide);
@@ -444,6 +457,24 @@ export function createPopoverContent(id, settings) {
                     <input class="form-check-input" type="checkbox" id="show-legend-title-${id}"
                         ${settings.showLegendTitle !== false ? 'checked' : ''}>
                     <label class="form-check-label" for="show-legend-title-${id}">Legend title</label>
+                </div>
+                <div class="input-group input-group-sm mb-1">
+                    <span class="input-group-text">Title size</span>
+                    <input type="number" class="form-control" id="legend-title-size-${id}" value="${settings.legendTitleSize ?? ''}"
+                        placeholder="${legendTitleSize({ fontSize: settings.fontSize })}" min="${TITLE_SIZE_MIN}" max="${TITLE_SIZE_MAX}" step="1"
+                        title="Size of the legend title; empty: 2 px above the text size">
+                    <span class="input-group-text">px</span>
+                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-size-${id}" title="Back to the default size"
+                        ${settings.legendTitleSize == null ? 'disabled' : ''}>Reset</button>
+                </div>
+                <div class="input-group input-group-sm mb-1">
+                    <span class="input-group-text">Title gap</span>
+                    <input type="number" class="form-control" id="legend-title-gap-${id}" value="${settings.legendTitleGap ?? ''}"
+                        placeholder="auto" min="0" max="${TITLE_GAP_MAX}" step="1"
+                        title="Space between the legend title and the first entry; empty: one blank line">
+                    <span class="input-group-text">px</span>
+                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-gap-${id}" title="Back to the default gap"
+                        ${settings.legendTitleGap == null ? 'disabled' : ''}>Reset</button>
                 </div>
                 <div class="input-group input-group-sm mb-1">
                     <span class="input-group-text">Dot size</span>
@@ -1070,26 +1101,25 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             notifySettingsChanged(id, 'showLegendTitle', settings.showLegendTitle);
             return;
         }
-        if (target.id === `legend-dot-size-${id}` || target.id === `legend-columns-${id}`) {
-            const dots = target.id === `legend-dot-size-${id}`;
+        const legendBox = LEGEND_BOXES.find(b => target.id === `${b.box}-${id}`);
+        if (legendBox) {
             const n = parseInt(target.value, 10);
-            if (target.value !== '' && !(n >= (dots ? DOT_SIZE_MIN : 1))) return;
-            const key = dots ? 'legendDotSize' : 'legendColumns';
-            // empty, and one column, are unset
-            settings[key] = target.value === '' || (!dots && n === 1) ? null : Math.min(n, dots ? DOT_SIZE_MAX : COLUMNS_MAX);
+            if (target.value !== '' && !(n >= legendBox.min)) return;
+            // empty is unset, and so is one column
+            settings[legendBox.key] = target.value === '' || (legendBox.key === 'legendColumns' && n === 1) ? null : Math.min(n, legendBox.max);
             applyLegendOptions(plotContainer, settings,
                 getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
-            notifySettingsChanged(id, key, settings[key]);
+            notifySettingsChanged(id, legendBox.key, settings[legendBox.key]);
             syncOptionResets(id, settings);
             return;
         }
-        if (target.id === `reset-legend-dot-size-${id}` || target.id === `reset-legend-columns-${id}`) {
-            const key = target.id === `reset-legend-dot-size-${id}` ? 'legendDotSize' : 'legendColumns';
-            settings[key] = null;
-            document.getElementById(`${key === 'legendDotSize' ? 'legend-dot-size' : 'legend-columns'}-${id}`).value = '';
+        const legendReset = LEGEND_BOXES.find(b => target.id === `reset-${b.box}-${id}`);
+        if (legendReset) {
+            settings[legendReset.key] = null;
+            document.getElementById(`${legendReset.box}-${id}`).value = '';
             applyLegendOptions(plotContainer, settings,
                 getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
-            notifySettingsChanged(id, key, null);
+            notifySettingsChanged(id, legendReset.key, null);
             syncOptionResets(id, settings);
             return;
         }
@@ -1346,6 +1376,9 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
     // A change to the look made here is a look of the plot's own: it is no longer on Default
     // (the buttons that put it on Default or set the default say so themselves)
     const menuHandler = function(e) {
+        // A press in a box or a list is not a change of it (its input/change events are): handling the click
+        // re-applied the option and moved the menu before the arrow of a number box had been used.
+        if (e.type === 'click' && e.target.matches && e.target.matches('input[type="number"], input[type="text"], input[type="range"], input[type="color"], select')) return;
         if (settings.styleDefault !== true) return handleMenuEvent(e);
         const look = JSON.stringify(pickStyle(settings));
         handleMenuEvent(e);
@@ -1592,7 +1625,7 @@ function applyTextFont(plotContainer, settings) {
     });
     const update = {
         ...text('font', 0),
-        ...text('legend.font', 0), ...text('legend.title.font', 2),
+        ...text('legend.font', 0), ...text('legend.title.font', 2), 'legend.title.font.size': legendTitleSize(settings),
         ...text('coloraxis.colorbar.tickfont', 0), ...text('coloraxis.colorbar.title.font', 2)
     };
     for (const axis of axisPaths(settings)) Object.assign(update, text(`${axis}.tickfont`, 0), text(`${axis}.title.font`, 2));
@@ -1839,6 +1872,14 @@ function syncFocusedFill(id, settings) {
     if (width && settings.focusedEdgeWidth !== undefined) width.value = settings.focusedEdgeWidth;
 }
 
+/** The number boxes of the legend: the box's id, the setting, the least and the most it takes. */
+const LEGEND_BOXES = [
+    { box: 'legend-dot-size', key: 'legendDotSize', min: DOT_SIZE_MIN, max: DOT_SIZE_MAX },
+    { box: 'legend-columns', key: 'legendColumns', min: 1, max: COLUMNS_MAX },
+    { box: 'legend-title-size', key: 'legendTitleSize', min: TITLE_SIZE_MIN, max: TITLE_SIZE_MAX },
+    { box: 'legend-title-gap', key: 'legendTitleGap', min: 0, max: TITLE_GAP_MAX }
+];
+
 /** A Reset button's state as drawn: disabled while its colour follows the theme (syncColourControls keeps it so). */
 function resetState(settings, key) {
     return isFollowing(settings, key) ? 'disabled title="Following the app theme"' : 'title="Follow the app theme again"';
@@ -1847,7 +1888,8 @@ function resetState(settings, key) {
 /** The Reset buttons of the number boxes (text size, legend dots and columns): disabled at the default, where there is nothing to reset. */
 function syncOptionResets(id, settings) {
     const atDefault = { 'font-size': (settings.fontSize || 12) === 12, 'legend-dot-size': settings.legendDotSize == null,
-                        'legend-columns': settings.legendColumns == null };
+                        'legend-columns': settings.legendColumns == null, 'legend-title-size': settings.legendTitleSize == null,
+                        'legend-title-gap': settings.legendTitleGap == null };
     for (const [name, yes] of Object.entries(atDefault)) {
         const reset = document.getElementById(`reset-${name}-${id}`);
         if (reset) reset.disabled = yes;
