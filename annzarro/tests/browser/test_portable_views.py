@@ -258,6 +258,7 @@ def test_a_store_without_a_field_marks_it_and_switching_back_restores_it(browser
 
 
 def _share(page):
+    page.evaluate("document.execCommand = () => false")   # copying refused both ways: the field shows
     page.click("#btn-share-link")
     page.wait_for_selector("#share-link-fallback:not([hidden])", timeout=15000)
     return page.input_value("#share-link-field")

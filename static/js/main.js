@@ -1,6 +1,7 @@
 /**
  * Main Application Module for AnnZarro
  */
+import { copyText } from './utils/clipboard.js';
 import { PanelManager } from './panel-manager.js';
 import { Config } from './config.js';
 import { Policy } from './policy.js';
@@ -508,7 +509,7 @@ const App = (function() {
         }
 
         try {
-            await navigator.clipboard.writeText(link);
+            if (!await copyText(link)) throw new Error('copy not allowed');
             fallback.hidden = true;
             const label = button.querySelector('.btn-share-label');
             label.textContent = 'Copied!';
@@ -2258,7 +2259,7 @@ const App = (function() {
             },
             isDesktop: document.documentElement.hasAttribute('data-desktop'),
             get localMode() { return Config.SERVER_CONFIG.local_mode === true || Config.SERVER_CONFIG.single_user === true; },
-            copy: (text) => navigator.clipboard.writeText(text),
+            copy: async (text) => { if (!await copyText(text)) throw new Error('copy not allowed'); },
             shortcut: { open: _isMac() ? '\u2318O' : 'Ctrl+O', path: '/' }
         };
     }

@@ -37,6 +37,7 @@
  * cannot be routed around without the guard going red.
  */
 
+import { copyText } from './clipboard.js';
 import { plotlyColorscale } from './color-scales.js';
 import { Coverage, GAP, breakdown, compactCount, exactCount } from './coverage.js';
 import { keepTitlesFitted } from './plot-titles.js';
@@ -389,8 +390,8 @@ function wireStrips() {
             const names = [...box.querySelectorAll('.ps-names-list li')].map(li => li.textContent);
             const said = box.querySelector('.ps-names-said');
             const done = (text) => { if (said) said.textContent = text; };
-            Promise.resolve().then(() => navigator.clipboard.writeText(names.join('\n')))
-                .then(() => done(`Copied ${exactCount(names.length)}`), () => done('Copying is not allowed here'));
+            copyText(names.join('\n'))
+                .then((ok) => done(ok ? `Copied ${exactCount(names.length)}` : 'Copying is not allowed here'));
             return;
         }
         const action = e.target.closest('[data-ps-action]');

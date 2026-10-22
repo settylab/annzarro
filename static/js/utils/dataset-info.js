@@ -12,6 +12,7 @@
  * links only http, https and mailto; no raw HTML, no images). A link of the attribution is only
  * made when its address is http(s) or mailto, whatever the server said.
  */
+import { copyText } from './clipboard.js';
 import { renderSafeMarkdown, MAX_CHARS } from './safe-markdown.js';
 import { mountStructureSearch } from './structure-search.js';
 
@@ -364,7 +365,7 @@ export function drawAbout(container, about, { compact = false, copy = null } = {
         const button = el(doc, 'button', 'btn btn-sm btn-outline-secondary dsi-copy', 'Copy citation');
         button.type = 'button';
         button.addEventListener('click', async () => {
-            const write = copy || ((value) => navigator.clipboard.writeText(value));
+            const write = copy || (async (value) => { if (!await copyText(value)) throw new Error('copy not allowed'); });
             try { await write(text); button.textContent = 'Copied'; } catch { button.textContent = 'Copy failed'; }
             setTimeout(() => { button.textContent = 'Copy citation'; }, 1500);
         });

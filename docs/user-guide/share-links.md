@@ -12,8 +12,8 @@ gets the same view. Nothing is stored on the server; the view travels inside the
    dataset is open.
 3. Paste it into a message or a document.
 
-When the browser does not allow clipboard access (pages served over plain `http://` from a cluster
-node, for example), AnnZarro shows the link in a field under the button instead, already
+Pages served over plain `http://` (a cluster node, for example) copy the link too. Only when the
+browser refuses copying altogether, AnnZarro shows the link in a field under the button instead, already
 selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, and close the field with **×**.
 
 ```{figure} ../_static/screens/user-guide/share-fallback.png

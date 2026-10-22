@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixed
+- Copying text works on a server reached over plain `http://` (a cluster node, for example): **C** over a point, **Share Link**, **Copy citation**, copying gene ids and names, and the admin password copy no longer need `https` or `localhost`. Only copying a plot as an image still does, and its message says so and points to Download. "Not copied" now appears only when the browser refused both ways.
+
 ## 0.7.3 (2026-10-22)
 
 ### Added

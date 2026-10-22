@@ -63,7 +63,8 @@ test('copyHover says it copied, or says why not', async () => {
     said.length = 0;
     assert.equal(await copyHover('a', { write: async () => { throw new Error('denied'); }, say: (...a) => said.push(a) }), false);
     assert.equal(said[0][0], 'Not copied');
-    assert.match(said[0][1], /secure|permission/);
+    assert.match(said[0][1], /did not allow copying/);
+    assert.doesNotMatch(said[0][1], /https/);
 });
 
 test('the key: C alone, with a label showing, outside a field', async () => {
