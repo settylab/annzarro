@@ -192,13 +192,13 @@
     {
       "name": "Plotly.js",
       "version": "2.35.3",
-      "license": "MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense",
+      "license": "MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense AND Apache-2.0 AND 0BSD",
       "homepage": "https://plotly.com/javascript/",
       "license_files": [
         "plotly.txt",
         "plotly-bundled.txt"
       ],
-      "notes": "The minified bundle includes npm modules under MIT, ISC (d3-color, d3-interpolate, earcut, geojson-vt, supercluster, topojson-client, ...), BSD-3-Clause (MapLibre GL JS 4.5.2, @plotly/d3, d3-*, pbf, @mapbox/vector-tile, ieee754, ...), BSD-2-Clause (@mapbox/tiny-sdf, @mapbox/unitbezier, ...), Zlib (gl-mat4) and Unlicense (mumath). plotly-bundled.txt keeps the bundle's own licence banners and the licence text of every package in plotly.js 2.20.0's production dependency tree (scripts/plotly_licences.py), a superset of the bundle that also lists Apache-2.0, BlueOak-1.0.0, CC-BY-4.0 and 0BSD packages, which are build tooling and not in the bundle.",
+      "notes": "The minified bundle includes npm modules under MIT, ISC (d3-color, d3-interpolate, earcut, geojson-vt, supercluster, topojson-client, ...), BSD-3-Clause (MapLibre GL JS 4.5.2, @plotly/d3, d3-*, pbf, @mapbox/vector-tile, ieee754, ...), BSD-2-Clause (@mapbox/tiny-sdf, @mapbox/unitbezier, ...), Zlib (gl-mat4), Unlicense (mumath), Apache-2.0 (weak-map, copyright Google; no NOTICE file) and 0BSD (the tslib helpers inside MapLibre GL JS's worker code). plotly-bundled.txt keeps the bundle's own licence banners and the licence text of every package in plotly.js 2.20.0's production dependency tree (scripts/plotly_licences.py), a superset of the bundle that also lists Apache-2.0, BlueOak-1.0.0, CC-BY-4.0 and 0BSD packages, of which only weak-map and tslib are in the bundle: the rest (webpack's @webassemblyjs/* and @xtuc/long, caniuse-lite, baseline-browser-mapping, isexe, sax) is build or development tooling.",
       "files": [
         {
           "path": "js/plotly-2.35.3.min.js",
