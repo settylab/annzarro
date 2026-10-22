@@ -330,6 +330,10 @@ site:
   # the NIH funding statement and how to cite it. Hosters are welcome to keep it; false leaves
   # only the name, version, MIT licence and links to the documentation and repository.
   software_credits: true
+  # true shows the Fred Hutch logo with the AnnZarro sign post in the About dialog. The logo is
+  # Fred Hutch's trademark: the desktop app turns this on; leave it false on any other install,
+  # which then credits the Setty Lab at Fred Hutch Cancer Center in text.
+  fred_hutch_logo: false
   storage:
     # false: the layout autosave, the last sessions, the recent datasets and the dataset listings last only until
     # the tab closes (sessionStorage), so the browser keeps nothing between visits except

@@ -9,6 +9,7 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Added
+- The desktop app's About dialog shows the Fred Hutch Cancer Center logo with the AnnZarro sign post, as Fred Hutch's brand team supplied it; the Setty Lab logo moves lower, beside the funding statement. In the dark theme the logo sits on a white plate. Every other copy of AnnZarro keeps the text credit, because the logo is Fred Hutch's trademark. The new `site.fred_hutch_logo` setting (default `false`, on the admin Public site page, `ANNZARRO_SITE_FRED_HUTCH_LOGO`) shows it. The Fred Hutch name and logo are not covered by the MIT licence; see the licence page.
 - The Server health page has a **Description search** block: whether the search is on, the state of its index (building, up to date, not complete, failed), how many datasets are searchable, not searched yet and unreadable, when it was last built, and **Rebuild now**, which crawls at once (audited as `text_index.rebuild`). The refresh interval stays a setting, `server.text_index_ttl_s`.
 - `GET /api/v1/datasets/text-search` takes `offset` and `current`, and answers `more`: how many matches follow the page.
 

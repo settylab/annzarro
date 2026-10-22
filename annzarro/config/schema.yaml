@@ -600,6 +600,10 @@ site:
       type: boolean
       description: "false reduces the About dialog's software credit to the name, version, licence and links"
       default: true
+    fred_hutch_logo:
+      type: boolean
+      description: "true shows the Fred Hutch logo with the AnnZarro sign post in the About dialog (the desktop app sets it); false credits the Setty Lab at Fred Hutch Cancer Center in text only"
+      default: false
     storage:
       type: object
       description: "What the browser keeps between visits"
