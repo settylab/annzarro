@@ -329,3 +329,14 @@ def test_a_capped_index_says_so_and_only_an_unrestricted_user_is_told_counts(gra
     # the name search is not touched by the cap
     found = carol.get("/api/v1/datasets/search", query_string={"q": "zarr"}).get_json()
     assert len(found["results"]) == 5
+
+
+# --- a hit is the dataset the listings give -------------------------------------------------------------
+
+def test_a_hits_path_is_the_path_the_dataset_listing_gives(world):
+    """The browser marks a description hit "same cells and genes" (and keeps it under the match chip) by
+    looking its path up among the candidates read from /datasets: the two must name a store alike."""
+    carol = client(world, "carol")
+    listed = {os.path.basename(d["path"]): d["path"] for d in carol.get("/api/v1/datasets").get_json()}
+    hits = search(carol, world, "liver").get_json()["results"]
+    assert hits and all(listed[h["name"]] == h["path"] for h in hits)

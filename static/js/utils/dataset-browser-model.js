@@ -91,7 +91,13 @@ export function matchBadge(entry) {
     }
 }
 
-/** Whether the entry matches the view at all (the "Matches this view" chip). */
+/** The chip that keeps the stores like the view's dataset, and what it says it does. */
+export const MATCH_CHIP = {
+    label: "Like this view's dataset",
+    title: 'Only datasets with the same cells and genes, the same size, or the same name as the dataset this view was made on'
+};
+
+/** Whether the entry matches the view at all (the MATCH_CHIP chip). */
 export function matchesView(entry) {
     return !!matchBadge(entry);
 }
@@ -446,6 +452,16 @@ export function textRows(nameRows, hits) {
         out.push({ ...hit, path: hit.path || key, kind: 'store', textHit: true, matched: Array.isArray(hit.matched) ? hit.matched : [] });
     }
     return out;
+}
+
+/**
+ * The description section's rows: the hits not already among the name matches, each marked with its
+ * match to the view (`annotate`, as the listed rows are), passed through the chips except the match chip.
+ * The words were found in the dataset's own text, so a hit is shown whether or not it is like the view's
+ * dataset; its badge says when it is.
+ */
+export function textSection(nameRows, hits, filters, annotate = row => row) {
+    return applyFilters(textRows(nameRows, hits).map(annotate), { ...filters, matches: false });
 }
 
 /** The query as the terms the server searches for: words and "quoted phrases". */

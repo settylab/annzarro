@@ -59,8 +59,9 @@ gene names are checked when they are ready.
 **Change dataset** (in the notice, on every "no data" panel, and the dataset button while a view has
 no data) opens the dataset browser ({ref}`dataset-browser`) titled "Choose a dataset for this view", with
 what the view was saved on at the top. The datasets with the same cells and genes carry a **same cells and
-genes** tag (or **same size**, **same name**) and the **Matches this view** button, on at first, narrows the
-table to them. You can also type a path in the path field; a shared server opens it only inside its data
+genes** tag (or **same size**, **same name**) and the **Like this view's dataset** button, on at first, narrows the
+table to them (it does not narrow the **Found in titles, attribution and READMEs** section of a description search,
+whose datasets carry the same tags). You can also type a path in the path field; a shared server opens it only inside its data
 directory ({doc}`../deployment/hosting-checklist`). The view then opens on the chosen store. On a store
 with other cells or genes the warning above comes first.
 
