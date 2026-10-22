@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    legendDotSize, proxyMarkerSize, legendColumns, legendOrientation, legendTitleText, titleIndent, LABEL_INDENT, columnSizes, assignColumns,
+    legendDotSize, proxyMarkerSize, legendColumns, legendOrientation, legendTitleText, LABEL_INDENT, legendTitleShift, columnSizes, assignColumns,
     legendOptionsIntoLayout, legendOptionKeys, DOT_SIZE_MAX, blankTitle, fitColumns, cutLabel, cutLabelAmong, placeColumns, legendColumnGap, legendIds,
     withLegendColumns, usedColumns, legendTitleAlign, titleSide
 } from '../../../static/js/utils/legend-options.js';
@@ -23,7 +23,7 @@ test('unset, the legend is the constant one it always was', () => {
     assert.equal(legendColumns(s), 1);
     assert.equal(legendOrientation('v', s), 'v');
     assert.equal(legendTitleText(s).replace(/<span[^>]*>\u00a0<\/span>|^\u00a0+|<br>\u00a0$/g, ''), 'cell_type');
-    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': legendTitleText(s), 'legend.title.side': 'top', 'meta.azTitleAlign': 'markers', 'legend.title.font.size': 14, 'meta.azLegendColumns': 1, 'meta.azLegendGap': 24, 'meta.azLegendPosition': 'right' });
+    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': legendTitleText(s), 'legend.title.side': 'top', 'meta.azTitleAlign': 'markers', 'meta.azTitleShift': 12, 'legend.title.font.size': 14, 'meta.azLegendColumns': 1, 'meta.azLegendGap': 24, 'meta.azLegendPosition': 'right' });
 });
 
 test('a dot size is clamped to what Plotly draws and gives the proxies that size', () => {
@@ -189,14 +189,22 @@ test('the options are normalised, copied with the look and reset by the default 
     assert.deepEqual([look.legendDotSize, look.legendColumns, look.showLegendTitle], [null, null, true]);
 });
 
-test('the title starts where the labels start, in any of the fonts, and leaves a line below it', () => {
-    const px = (family, size) => titleIndent(family, size).length * size * ({ Courier: 0.6, 'Times New Roman': 0.25, Georgia: 0.241, Verdana: 0.352 }[family] ?? 0.278);
-    for (const family of ['Arial', 'Times New Roman', 'Courier', 'Georgia', 'Verdana']) {
-        for (const size of [10, 14, 18, 26]) assert.ok(Math.abs(px(family, size) - LABEL_INDENT) <= size * 0.35, `${family} ${size}: ${px(family, size)}`);
+test('the title text is the name whatever the alignment; the shift is kept apart', () => {
+    for (const align of [undefined, 'markers', 'labels', 'centre', 'right']) {
+        for (const legendTitleGap of [undefined, 0, 10]) {
+            const text = legendTitleText({ color: colour, fontSize: 16, legendTitleAlign: align, legendTitleGap });
+            const bare = text.replace(/<\/?span[^>]*>|<br>|\u00a0/g, '');
+            assert.equal(bare, 'cell_type', `${align} ${legendTitleGap}: only the name, the line breaks and spacing: ${text}`);
+            if (legendTitleGap === undefined) assert.equal(text, 'cell_type<br>\u00a0', 'the default title is the name and a blank line');
+        }
     }
-    const text = legendTitleText({ color: colour, fontSize: 16, fontFamily: 'Arial, Helvetica, sans-serif', legendTitleAlign: 'labels' });
-    assert.ok(text.endsWith('cell_type<br>\u00a0'));
-    assert.equal(text.match(/^\u00a0*/)[0].length, titleIndent('Arial', 18).length);
+    assert.equal(legendTitleShift({ legendTitleAlign: 'markers' }), 12);                // 18 - 12 / 2
+    assert.equal(legendTitleShift({ legendTitleAlign: 'markers', legendDotSize: 16 }), 10);
+    assert.equal(legendTitleShift({ legendTitleAlign: 'labels' }), LABEL_INDENT);
+    assert.equal(legendTitleShift({ legendTitleAlign: 'centre' }), 0);
+    assert.equal(legendTitleShift({ legendPosition: 'top' }), 0);                       // auto: centre
+    assert.equal(legendTitleShift({ legendPosition: 'right' }), 12);                    // auto: markers
+    assert.equal(legendOptionKeys({ color: colour })['meta.azTitleShift'], 12);
     assert.equal(legendTitleText({ color: { type: 'none', key: '', column: '' } }), '');       // nothing to title
 });
 
@@ -246,6 +254,4 @@ test('title alignment follows the legend position unless it is set', () => {
     assert.equal(titleSide('markers'), 'top');
     const text = (a) => legendTitleText({ color: colour, legendTitleAlign: a });
     assert.ok(!text('centre').startsWith('\u00a0') && !text('right').startsWith('\u00a0'));
-    assert.ok(text('markers').startsWith('\u00a0'), 'markers: indented to the markers, to the pixel');
-    assert.ok(text('labels').startsWith('\u00a0'), 'labels: indented as the title always was');
 });

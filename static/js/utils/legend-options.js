@@ -173,14 +173,14 @@ export function markerIndent(marker) {
     return 18 - marker / 2;
 }
 
-/** Non-breaking spaces `px` wide in a title of `size` px: whole spaces at its size, the rest in one smaller span. */
-export function titleIndentPx(fontFamily, size, px) {
-    const hit = SPACE_EM.find(([re]) => re.test(fontFamily || ''));
-    const space = (hit ? hit[1] : 0.278);
-    const whole = Math.max(0, Math.floor(px / (space * size)));
-    const rest = px - whole * space * size;
-    const small = Math.round((rest / space) * 100) / 100;
-    return '\u00a0'.repeat(whole) + (small >= 1 ? `<span style="font-size:${small}px">\u00a0</span>` : '');
+/**
+ * Px the legend title is moved right of where Plotly puts it (2 px from the legend's left edge): to the
+ * markers' left edge, or to the labels'. Applied to the drawn title (`shiftLegendTitles`), not written
+ * into its text, so the stored title stays the colouring's name.
+ */
+export function legendTitleShift(settings) {
+    const align = legendTitleAlign(settings);
+    return align === 'markers' ? markerIndent(proxyMarkerSize(settings)) : align === 'labels' ? LABEL_INDENT : 0;
 }
 
 /**
@@ -194,10 +194,7 @@ export function legendTitleText(settings, blank = false) {
     const name = colourTitle(settings.color);
     if (!name) return '';
     const size = legendTitleSize(settings);
-    const align = legendTitleAlign(settings);
-    const indent = align === 'labels' ? titleIndent(settings.fontFamily, size)
-        : align === 'markers' ? titleIndentPx(settings.fontFamily, size, markerIndent(proxyMarkerSize(settings))) : '';
-    const line = `${indent}${blank ? '\u00a0' : name}`;
+    const line = blank ? '\u00a0' : name;
     const plan = titleGapPlan(settings);
     if (!plan) return `${line}<br>\u00a0`;
     const lead = '\u00a0<br>'.repeat(plan.lead);
@@ -225,13 +222,13 @@ export function legendOptionsIntoLayout(layout, settings) {
 
 /** What the legend's columns need to know of the settings, in the layout's `meta`. */
 function columnMeta(settings) {
-    return { azTitleAlign: legendTitleAlign(settings), azLegendColumns: legendColumns(settings), azLegendGap: legendColumnGap(settings), azLegendPosition: (settings && settings.legendPosition) || 'right' };
+    return { azTitleAlign: legendTitleAlign(settings), azTitleShift: legendTitleShift(settings), azLegendColumns: legendColumns(settings), azLegendGap: legendColumnGap(settings), azLegendPosition: (settings && settings.legendPosition) || 'right' };
 }
 
 /** The title's text, side and alignment as relayout keys (they change with the alignment, the gap and the position). */
 export function legendTitleKeys(settings) {
     const align = legendTitleAlign(settings);
-    return { 'legend.title.text': legendTitleText(settings), 'legend.title.side': titleSide(align), 'meta.azTitleAlign': align };
+    return { 'legend.title.text': legendTitleText(settings), 'legend.title.side': titleSide(align), 'meta.azTitleAlign': align, 'meta.azTitleShift': legendTitleShift(settings) };
 }
 
 /** The same as relayout keys, for a graph already drawn; `position` is the legend's position, `placed` what it was before. */
@@ -745,11 +742,24 @@ export async function syncLegendColumns(gd, pass = 0) {
     await syncLegendColumns(gd, pass + 1);
 }
 
+/** Move the drawn legend title right by `meta.azTitleShift` px (a transform on its text, so its stored text stays the name). */
+export function shiftLegendTitles(gd) {
+    if (!gd || !gd.layout || typeof gd.querySelectorAll !== 'function') return;
+    const meta = gd.layout.meta || {};
+    const dx = Number(meta.azTitleShift) || 0;
+    const note = meta.azTitleAlign === 'centre' || meta.azTitleAlign === 'right';
+    const el = gd.querySelector('g.legend text[class$="titletext"]');
+    if (!el) return;
+    if (dx > 0 && !note) el.setAttribute('transform', `translate(${Math.round(dx * 100) / 100},0)`);
+    else el.removeAttribute('transform');
+}
+
 const _listeners = new WeakMap();
 
 /** Settle the legends into columns now and after every redraw; a double click isolates a category in every column. */
 export function watchLegendColumns(gd) {
     if (!gd) return;
+    shiftLegendTitles(gd);
     syncLegendColumns(gd);
     if (typeof gd.on !== 'function') return;
     let fns = _listeners.get(gd);
@@ -757,7 +767,7 @@ export function watchLegendColumns(gd) {
         gd.removeListener('plotly_afterplot', fns.after);
         gd.removeListener('plotly_legenddoubleclick', fns.dbl);
     }
-    fns = { after: () => syncLegendColumns(gd), dbl: (e) => legendDoubleClick(gd, e) };
+    fns = { after: () => { shiftLegendTitles(gd); syncLegendColumns(gd); }, dbl: (e) => legendDoubleClick(gd, e) };
     _listeners.set(gd, fns);
     gd.on('plotly_afterplot', fns.after);
     gd.on('plotly_legenddoubleclick', fns.dbl);
