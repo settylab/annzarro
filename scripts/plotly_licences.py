@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Write annzarro/THIRD_PARTY_LICENSES/plotly-bundled.txt.
 
-plotly-2.20.0.min.js is a webpack bundle of plotly.js and its npm
+plotly-2.35.3.min.js is a webpack bundle of plotly.js and its npm
 dependencies, which are under several licences (MIT, ISC, BSD-3-Clause,
 BSD-2-Clause, Zlib, Unlicense, Apache-2.0, BlueOak-1.0.0, mapbox-gl's own
 BSD-3-Clause text). This collects the licence text of every package in
-plotly.js 2.20.0's production dependency tree: a superset of what the bundle
+plotly.js 2.35.3's production dependency tree: a superset of what the bundle
 contains, so nothing it contains is left out.
 
     mkdir /tmp/plt && cd /tmp/plt && npm init -y >/dev/null \\
-        && npm install --ignore-scripts plotly.js@2.20.0
+        && npm install --ignore-scripts plotly.js@2.35.3
     python scripts/plotly_licences.py /tmp/plt/node_modules
 
-The upstream banners kept in the minified file (plotly-2.20.0.min.js.LICENSE.txt)
+The upstream banners kept in the minified file (plotly-2.35.3.min.js.LICENSE.txt)
 stay at the top of the output.
 """
 
@@ -25,9 +25,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 OUT = REPO / "annzarro" / "THIRD_PARTY_LICENSES" / "plotly-bundled.txt"
-PLOTLY_VERSION = "2.20.0"
+PLOTLY_VERSION = "2.35.3"
 LICENCE_FILE = re.compile(r"^(licen[cs]e|copying|unlicense)", re.I)
-BANNERS_MARK = "=== Banners kept in plotly-2.20.0.min.js (upstream plotly-2.20.0.min.js.LICENSE.txt) ==="
+BANNERS_MARK = "=== Banners kept in plotly-2.35.3.min.js (upstream plotly-2.35.3.min.js.LICENSE.txt) ==="
 SPLIT = "=" * 78
 
 

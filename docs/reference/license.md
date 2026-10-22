@@ -26,7 +26,7 @@ Each file keeps its original copyright header. The versions are pinned with SHA-
 | DataTables SearchBuilder | 1.4.2 | `MIT` |
 | DataTables Select | 1.6.2 | `MIT` |
 | DataTables FixedHeader | 3.3.2 | `MIT` |
-| [Plotly.js](https://plotly.com/javascript/) (bundles npm modules, see below) | 2.20.0 | `MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense` |
+| [Plotly.js](https://plotly.com/javascript/) (bundles npm modules, see below) | 2.35.3 | `MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense` |
 | [chroma.js](https://gka.github.io/chroma.js/) | 2.4.2 | `BSD-3-Clause AND Apache-2.0` |
 | [Font Awesome Free](https://fontawesome.com/) | 6.4.0 | `MIT AND OFL-1.1` |
 
@@ -35,7 +35,7 @@ The full licence texts, source URLs and checksums of every file are in
 which the package installs both inside `annzarro/THIRD_PARTY_LICENSES/` and in its
 `dist-info/licenses/` directory. The minified Plotly.js file is a bundle of npm modules under
 MIT, ISC, BSD-3-Clause (mapbox-gl, d3), BSD-2-Clause, Zlib and Unlicense licences;
-`plotly-bundled.txt` there holds the licence text of every package in Plotly.js 2.20.0's
+`plotly-bundled.txt` there holds the licence text of every package in Plotly.js's
 dependency tree. The Python dependencies (Flask, zarr, NumPy, pandas and others) are installed
 separately by pip under their own licences.
 
