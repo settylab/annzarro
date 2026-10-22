@@ -136,14 +136,21 @@ test('legend title: size is the setting or 2 px above the text, kept in range', 
   assert.equal(legendTitleSize({ legendTitleSize: 500 }), 48);
 });
 
-test('legend title: the gap is a blank line unless set, none at 0', async () => {
-  const { titleGapMarkup, legendTitleGap, legendTitleText } = await import('../../../static/js/utils/legend-options.js');
-  assert.equal(legendTitleGap({}), null);
-  assert.equal(titleGapMarkup({}), '<br>\u00a0');
-  assert.equal(titleGapMarkup({ legendTitleGap: 0 }), '');
-  assert.match(titleGapMarkup({ legendTitleGap: 13 }), /^<br><span style="font-size:10px">\u00a0<\/span>$/);
-  assert.equal(legendTitleGap({ legendTitleGap: 999 }), 80);
+test('legend title: a gap is lines of a small element font, so it is linear in px', async () => {
+  const { titleGapPlan, legendTitleFontSize, legendTitleText, defaultTitleGap } = await import('../../../static/js/utils/legend-options.js');
+  assert.equal(titleGapPlan({}), null);
+  assert.equal(legendTitleFontSize({}), 14);                      // unset: the title's own size, as before
+  assert.equal(defaultTitleGap({ fontSize: 12 }), 18);
   const s = { color: { type: 'obs', key: 'cell_type', column: '' } };
   assert.ok(legendTitleText(s).endsWith('<br>\u00a0'), 'default look unchanged');
+  assert.deepEqual(titleGapPlan({ legendTitleGap: 0 }), { lines: 0, size: 14 });
   assert.ok(!legendTitleText({ ...s, legendTitleGap: 0 }).includes('<br>'));
+  for (const gap of [1, 10, 20, 40, 80]) {
+    const plan = titleGapPlan({ legendTitleGap: gap });
+    assert.ok(plan.size <= 14 && plan.size >= 1, `${gap}: the first line must not move`);
+    assert.ok(Math.abs(plan.lines * 1.3 * plan.size - gap) < 0.7 || plan.size === 1, `${gap} px: ${JSON.stringify(plan)}`);
+    assert.equal(legendTitleFontSize({ legendTitleGap: gap }), plan.size);
+  }
+  assert.equal((legendTitleText({ ...s, legendTitleGap: 40 }).match(/<br>/g) || []).length, titleGapPlan({ legendTitleGap: 40 }).lines);
+  assert.equal(titleGapPlan({ legendTitleGap: 999 }).lines >= 1, true);
 });

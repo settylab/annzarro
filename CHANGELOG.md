@@ -14,6 +14,7 @@ with the release after it. Older releases are listed on
 - Plot Options > Legend and colour bar: **Title size** and **Title gap** set the size of the legend title and its distance to the first entry. They are saved with the panel, in links and in panel sets, and copied by Apply to other panels.
 
 ### Fixed
+- Plot Options: the arrows of an empty number box (legend title size and gap, dot size, columns, tick counts) step from the default the box shows, by one, instead of jumping to the lowest value. The legend **Title gap** is a true pixel distance (0 to 80 px, every value different) instead of a blank line.
 - An exported image (SVG or PNG) holds the whole legend. A legend longer than the plot was cut off in the image; the image is now taller where the legend needs it.
 - The first click on an arrow of a number box in Plot Options (legend columns, dot size, text size) no longer moves the menu instead of stepping the value. The menu now keeps its place when a group opens, and a click in a box no longer re-applies its option.
 - Copying text works on a server reached over plain `http://` (a cluster node, for example): **C** over a point, **Share Link**, **Copy citation**, copying gene ids and names, and the admin password copy no longer need `https` or `localhost`. Only copying a plot as an image still does, and its message says so and points to Download. "Not copied" now appears only when the browser refused both ways.

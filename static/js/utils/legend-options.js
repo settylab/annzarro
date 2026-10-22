@@ -56,15 +56,35 @@ export function legendTitleGap(settings) {
     return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(TITLE_GAP_MAX, Math.round(n))) : null;
 }
 
-/** Plotly's line height, in em: a blank line of font size g/1.3 is g px high. */
+/** Plotly's line height, in em: a line of the title's font is 1.3 times its size high. */
 const LINE_EM = 1.3;
 
-/** What follows the title's text: a blank line of the title's size, or, for a set gap, one that high (none for 0). */
-export function titleGapMarkup(settings) {
+/** The gap (px) a blank line under a title of `size` px makes, which is the legend title's default. */
+export function defaultTitleGap(settings) {
+    return Math.round(LINE_EM * legendTitleSize(settings));
+}
+
+/**
+ * How a set gap is made. Plotly spaces the lines of a title by the title element's font (1.3 times its
+ * size) whatever size a span inside a line has, so the gap cannot come from a span on the blank line.
+ * The title's text is a span of the title's size inside a title element of a small size P, and the gap
+ * is `lines` blank lines of 1.3 P each: P = gap / (1.3 lines), at most the title's size (the first line
+ * does not move), and the gap is the pixels asked for, plus the 2 px Plotly leaves anyway. 0 is no
+ * blank line. Unset: the title's own size and one blank line, as it always was.
+ * @returns {{lines: number, size: number}|null} null when unset
+ */
+export function titleGapPlan(settings) {
     const gap = legendTitleGap(settings);
-    if (gap === null) return '<br>\u00a0';
-    if (gap === 0) return '';
-    return `<br><span style="font-size:${Math.round((gap / LINE_EM) * 10) / 10}px">\u00a0</span>`;
+    if (gap === null) return null;
+    if (gap === 0) return { lines: 0, size: legendTitleSize(settings) };
+    const lines = Math.ceil(gap / (LINE_EM * legendTitleSize(settings)));
+    return { lines, size: Math.max(1, Math.round((gap / (LINE_EM * lines)) * 100) / 100) };
+}
+
+/** The font size of the legend title's element: the title's size, or, for a set gap, the line size of its plan. */
+export function legendTitleFontSize(settings) {
+    const plan = titleGapPlan(settings);
+    return plan && plan.lines > 0 ? plan.size : legendTitleSize(settings);
 }
 
 /** The dot size set in Plot Options (px), or null: the constant legend, as before the option. */
@@ -115,7 +135,12 @@ export function legendTitleText(settings) {
     if (settings.showLegendTitle === false) return '';
     const text = colourTitle(settings.color);
     if (!text) return '';
-    return `${titleIndent(settings.fontFamily, legendTitleSize(settings))}${text}${titleGapMarkup(settings)}`;
+    const size = legendTitleSize(settings);
+    const line = `${titleIndent(settings.fontFamily, size)}${text}`;
+    const plan = titleGapPlan(settings);
+    if (!plan) return `${line}<br>\u00a0`;
+    if (plan.lines === 0) return line;
+    return `<span style="font-size:${size}px">${line}</span>${'<br>\u00a0'.repeat(plan.lines)}`;
 }
 
 /** The legend options a figure's layout carries (the builders' nested `layout`; edits it in place). */
@@ -124,7 +149,7 @@ export function legendOptionsIntoLayout(layout, settings) {
     lg.itemsizing = legendDotSize(settings) === null ? 'constant' : 'trace';
     lg.title = { ...(lg.title || {}), text: legendTitleText(settings) };
     lg.title.side = 'top';
-    lg.title.font = { ...(lg.title.font || {}), size: legendTitleSize(settings) };
+    lg.title.font = { ...(lg.title.font || {}), size: legendTitleFontSize(settings) };
     if (legendColumns(settings) > 1) Object.assign(lg, COLUMN_LAYOUT);
     if (lg.orientation) lg.orientation = legendOrientation(lg.orientation, settings);
     layout.meta = { ...(layout.meta || {}), azLegendColumns: legendColumns(settings) };
@@ -137,7 +162,7 @@ export function legendOptionKeys(settings) {
         'legend.itemsizing': legendDotSize(settings) === null ? 'constant' : 'trace',
         'legend.title.text': legendTitleText(settings),
         'legend.title.side': 'top',
-        'legend.title.font.size': legendTitleSize(settings),
+        'legend.title.font.size': legendTitleFontSize(settings),
         'legend.traceorder': legendColumns(settings) > 1 ? COLUMN_LAYOUT.traceorder : null,
         'legend.groupclick': legendColumns(settings) > 1 ? COLUMN_LAYOUT.groupclick : null,
         'meta.azLegendColumns': legendColumns(settings)

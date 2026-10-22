@@ -1,7 +1,7 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, refreshScaleBar, flipRelayout } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
-import { applyLegendOptions, legendOrientation, legendTitleText, legendTitleSize, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX,
+import { applyLegendOptions, legendOrientation, legendTitleText, legendTitleSize, legendTitleFontSize, defaultTitleGap, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX,
     TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
@@ -345,7 +345,7 @@ export function createPopoverContent(id, settings) {
                 <div class="input-group input-group-sm mt-1">
                     <span class="input-group-text">Ticks per axis</span>
                     <input type="number" class="form-control" id="tick-count-${id}" value="${settings.tickCount ?? ''}"
-                        placeholder="auto" min="2" max="30" step="1" title="About this many ticks on each axis; empty: automatic">
+                        placeholder="auto" data-step-from="6" min="2" max="30" step="1" title="About this many ticks on each axis; empty: automatic">
                 </div>
             </div>
 
@@ -461,7 +461,8 @@ export function createPopoverContent(id, settings) {
                 <div class="input-group input-group-sm mb-1">
                     <span class="input-group-text">Title size</span>
                     <input type="number" class="form-control" id="legend-title-size-${id}" value="${settings.legendTitleSize ?? ''}"
-                        placeholder="${legendTitleSize({ fontSize: settings.fontSize })}" min="${TITLE_SIZE_MIN}" max="${TITLE_SIZE_MAX}" step="1"
+                        placeholder="${legendTitleSize({ fontSize: settings.fontSize })}" data-step-from="${legendTitleSize({ fontSize: settings.fontSize })}"
+                        min="${TITLE_SIZE_MIN}" max="${TITLE_SIZE_MAX}" step="1"
                         title="Size of the legend title; empty: 2 px above the text size">
                     <span class="input-group-text">px</span>
                     <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-size-${id}" title="Back to the default size"
@@ -470,8 +471,9 @@ export function createPopoverContent(id, settings) {
                 <div class="input-group input-group-sm mb-1">
                     <span class="input-group-text">Title gap</span>
                     <input type="number" class="form-control" id="legend-title-gap-${id}" value="${settings.legendTitleGap ?? ''}"
-                        placeholder="auto" min="0" max="${TITLE_GAP_MAX}" step="1"
-                        title="Space between the legend title and the first entry; empty: one blank line">
+                        placeholder="${defaultTitleGap({ fontSize: settings.fontSize })}" data-step-from="${defaultTitleGap({ fontSize: settings.fontSize })}"
+                        min="0" max="${TITLE_GAP_MAX}" step="1"
+                        title="Space in px between the legend title and the first entry; empty: one blank line">
                     <span class="input-group-text">px</span>
                     <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-gap-${id}" title="Back to the default gap"
                         ${settings.legendTitleGap == null ? 'disabled' : ''}>Reset</button>
@@ -479,7 +481,7 @@ export function createPopoverContent(id, settings) {
                 <div class="input-group input-group-sm mb-1">
                     <span class="input-group-text">Dot size</span>
                     <input type="number" class="form-control" id="legend-dot-size-${id}" value="${settings.legendDotSize ?? ''}"
-                        placeholder="${DOT_SIZE_AUTO}" min="${DOT_SIZE_MIN}" max="${DOT_SIZE_MAX}" step="1"
+                        placeholder="${DOT_SIZE_AUTO}" data-step-from="${DOT_SIZE_AUTO}" min="${DOT_SIZE_MIN}" max="${DOT_SIZE_MAX}" step="1"
                         title="Size of the dots in the legend of a categorical colouring, independent of the points' size; empty: ${DOT_SIZE_AUTO} px">
                     <span class="input-group-text">px</span>
                     <button class="btn btn-outline-secondary" type="button" id="reset-legend-dot-size-${id}" title="Back to the default dots"
@@ -488,7 +490,7 @@ export function createPopoverContent(id, settings) {
                 <div class="input-group input-group-sm">
                     <span class="input-group-text">Columns</span>
                     <input type="number" class="form-control" id="legend-columns-${id}" value="${settings.legendColumns ?? ''}"
-                        placeholder="1" min="1" max="${COLUMNS_MAX}" step="1"
+                        placeholder="1" data-step-from="1" min="1" max="${COLUMNS_MAX}" step="1"
                         title="Lay the legend out in this many columns; 1 or empty: one column. Labels too long for that many columns give fewer.">
                     <button class="btn btn-outline-secondary" type="button" id="reset-legend-columns-${id}" title="Back to one column"
                         ${settings.legendColumns == null ? 'disabled' : ''}>Reset</button>
@@ -509,7 +511,7 @@ export function createPopoverContent(id, settings) {
                 <div class="input-group input-group-sm">
                     <span class="input-group-text">Ticks</span>
                     <input type="number" class="form-control" id="colorbar-ticks-${id}" value="${settings.colorbarTicks ?? ''}"
-                        placeholder="auto" min="2" max="30" step="1">
+                        placeholder="auto" data-step-from="5" min="2" max="30" step="1">
                 </div>
             </div>
 
@@ -1407,6 +1409,27 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         t.dispatchEvent(new Event('change', { bubbles: true }));
     };
 
+    // The same with the mouse: a press on the arrows of an empty box puts the default in first (the browser's
+    // step then goes from there), and a press that steps nothing takes it out again.
+    let preset = null;
+    const onSpinnerPress = (e) => {
+        const t = e.target;
+        if (!t.matches || !t.matches('input[type="number"][data-step-from]') || t.value !== '' || !t.id.endsWith(`-${id}`)) return;
+        if (e.clientX < t.getBoundingClientRect().right - 24) return;
+        t.value = t.dataset.stepFrom;
+        preset = t;
+    };
+    const onStepped = (e) => { if (e.target === preset) preset = null; };
+    const onSpinnerDone = () => {
+        const t = preset;
+        preset = null;
+        if (t && t.value === t.dataset.stepFrom) t.value = '';
+    };
+    document.body.addEventListener('pointerdown', onSpinnerPress, true);
+    document.body.addEventListener('input', onStepped, true);
+    const onRelease = () => setTimeout(onSpinnerDone, 0);
+    document.body.addEventListener('pointerup', onRelease, true);
+
     // Use event delegation on document body for better event handling
     document.body.addEventListener('keydown', onStepKey);
     document.body.addEventListener('click', menuHandler);
@@ -1417,6 +1440,9 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
     return function cleanup() {
         document.removeEventListener('toggle', onToggle, true);
         document.body.removeEventListener('keydown', onStepKey);
+        document.body.removeEventListener('pointerdown', onSpinnerPress, true);
+        document.body.removeEventListener('input', onStepped, true);
+        document.body.removeEventListener('pointerup', onRelease, true);
         document.body.removeEventListener('click', menuHandler);
         document.body.removeEventListener('change', menuHandler);
         document.body.removeEventListener('input', menuHandler);
@@ -1625,7 +1651,7 @@ function applyTextFont(plotContainer, settings) {
     });
     const update = {
         ...text('font', 0),
-        ...text('legend.font', 0), ...text('legend.title.font', 2), 'legend.title.font.size': legendTitleSize(settings),
+        ...text('legend.font', 0), ...text('legend.title.font', 2), 'legend.title.font.size': legendTitleFontSize(settings),
         ...text('coloraxis.colorbar.tickfont', 0), ...text('coloraxis.colorbar.title.font', 2)
     };
     for (const axis of axisPaths(settings)) Object.assign(update, text(`${axis}.tickfont`, 0), text(`${axis}.title.font`, 2));

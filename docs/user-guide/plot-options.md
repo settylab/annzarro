@@ -202,8 +202,9 @@ and **Apply to other panels** copies it.
   title above them, and each column is as wide as its longest label; columns that do not fit the
   width the legend has wrap onto a new row. A click on an entry still hides that category alone. They
   work on 2D, 3D and large plots, and with the legend at any position. **Title size** (6 to 48 px;
-  empty is 2 px above the text size) and **Title gap** (0 to 80 px; empty is one blank line) set the
-  title's size and its distance to the first entry. **Text** size has a **Reset** too.
+  empty is 2 px above the text size) and **Title gap** (0 to 80 px, added to the 2 px Plotly leaves; empty is
+  one blank line) set the title's size and its distance to the first entry in true pixels. In an empty
+  number box the arrows step from the default the box shows. **Text** size has a **Reset** too.
 - A legend longer than the plot scrolls on screen; an exported image (SVG or PNG, as shown or full)
   always holds the whole legend, and is made taller when the legend needs it.
 - **Colour bar**, for a numerical colour, has its own **position** (right, left, top, bottom, or

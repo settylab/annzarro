@@ -92,7 +92,7 @@ def test_a_legend_that_fits_exports_as_it_did(page, server):
 SIZES = """() => { const gd = document.querySelector('%s');
   const t = gd.querySelector('.legend .legendtitletext');
   const first = gd.querySelector('.legend g.traces').getBoundingClientRect();
-  return { size: parseFloat(getComputedStyle(t).fontSize), gap: first.top - (t.querySelector('tspan.line') || t).getBoundingClientRect().bottom,
+  return { size: Math.max(...[t, ...t.querySelectorAll('tspan')].map(n => parseFloat(getComputedStyle(n).fontSize) || 0)), gap: first.top - (t.querySelector('tspan.line') || t).getBoundingClientRect().bottom,
            layout: gd._fullLayout.legend.title.font.size }; }""" % TILE
 
 
@@ -105,7 +105,7 @@ def test_title_size_and_gap(page, server):
     page.click("details[data-panel='cell-plot-M'][data-section='legend'] summary")
     page.fill("#legend-title-size-cell-plot-M", "24")
     page.press("#legend-title-size-cell-plot-M", "Tab")
-    page.wait_for_function("() => document.querySelector('%s')._fullLayout.legend.title.font.size === 24" % TILE)
+    page.wait_for_timeout(800)
     big = page.evaluate(SIZES)
     assert big["size"] == 24, big
     page.fill("#legend-title-gap-cell-plot-M", "30")
@@ -138,3 +138,21 @@ def test_title_size_and_gap(page, server):
     page.wait_for_timeout(600)
     back = page.evaluate(SIZES)
     assert back["size"] == 14 and abs(back["gap"] - base["gap"]) < 2, (back, base)
+
+
+@pytest.mark.parametrize("title_size", [None, 24])
+def test_title_gap_is_pixels_and_linear(page, server, title_size):
+    """The distance from the title's text to the first entry grows by the gap set, within 2 px, for every value."""
+    root, store = server
+    extra = {"legendTitleSize": title_size} if title_size else {}
+    seen = {}
+    for n in (0, 1, 5, 10, 20, 40, 80):
+        _go(page, root, store, legendTitleGap=n, **extra)
+        seen[n] = page.evaluate(SIZES)["gap"]
+    for n, gap in seen.items():
+        assert abs((gap - seen[0]) - n) <= 2, (n, seen)
+    # unset is the blank line it always was: the same as a gap of one line
+    _go(page, root, store, **extra)
+    base = page.evaluate(SIZES)
+    line = round(1.3 * (title_size or 14))
+    assert abs((base["gap"] - seen[0]) - line) <= 2, (base, seen, line)
