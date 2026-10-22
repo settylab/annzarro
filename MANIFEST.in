@@ -2,5 +2,6 @@
 # wheel is built from the sdist. Package data (frontend, vendored bundles,
 # config defaults, third-party licenses) is added from setup.py's package_data.
 include scripts/vendor_assets.py scripts/vendor-assets.json
+include scripts/plotly/plotly-2.35.3-annzarro.min.js
 prune annzarro/tests
 include CHANGELOG.md

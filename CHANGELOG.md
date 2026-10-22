@@ -20,6 +20,9 @@ with the release after it. Older releases are listed on
 - The first click on an arrow of a number box in Plot Options (legend columns, dot size, text size) no longer moves the menu instead of stepping the value. The menu now keeps its place when a group opens, and a click in a box no longer re-applies its option.
 - Copying text works on a server reached over plain `http://` (a cluster node, for example): **C** over a point, **Share Link**, **Copy citation**, copying gene ids and names, and the admin password copy no longer need `https` or `localhost`. Only copying a plot as an image still does, and its message says so and points to Download. "Not copied" now appears only when the browser refused both ways.
 
+### Changed
+- The plots use Plotly.js 2.35.3 (was 2.20.0), trimmed to the plot types AnnZarro uses, so the bundled file is about half the size of the full 2.35 file and smaller than 2.20's. Plots look and behave as they did; the upstream release notes list fixes for scattergl zooming, legends and hover.
+
 ## 0.7.3 (2026-10-22)
 
 ### Added

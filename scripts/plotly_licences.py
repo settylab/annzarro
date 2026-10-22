@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """Write annzarro/THIRD_PARTY_LICENSES/plotly-bundled.txt.
 
-plotly-2.20.0.min.js is a webpack bundle of plotly.js and its npm
+plotly-2.35.3-annzarro.min.js is a webpack bundle of plotly.js and its npm
 dependencies, which are under several licences (MIT, ISC, BSD-3-Clause,
-BSD-2-Clause, Zlib, Unlicense, Apache-2.0, BlueOak-1.0.0, mapbox-gl's own
-BSD-3-Clause text). This collects the licence text of every package in
-plotly.js 2.20.0's production dependency tree: a superset of what the bundle
-contains, so nothing it contains is left out.
+BSD-2-Clause, Zlib, Unlicense, Apache-2.0, ...). This collects the licence text
+of every package inside the bundle: the names in scripts/plotly/bundle-packages.txt
+(written by scripts/build-plotly-bundle.sh: webpack's modules plus the prebuilt
+stackgl set behind scatter3d), looked up in the installed trees given as
+arguments. Each tree must be a node_modules directory holding those packages:
 
-    mkdir /tmp/plt && cd /tmp/plt && npm init -y >/dev/null \\
-        && npm install --ignore-scripts plotly.js@2.20.0
-    python scripts/plotly_licences.py /tmp/plt/node_modules
+    scripts/build-plotly-bundle.sh /tmp/plt-build         # builds, lists the packages
+    mkdir /tmp/plt-sg && cd /tmp/plt-sg && npm init -y >/dev/null \\
+        && npm install --ignore-scripts --legacy-peer-deps <stackgl_modules/package.json dependencies>
+    python scripts/plotly_licences.py /tmp/plt-build/plotly.js/node_modules /tmp/plt-sg/node_modules
 
-The upstream banners kept in the minified file (plotly-2.20.0.min.js.LICENSE.txt)
-stay at the top of the output.
+The licence banners the minified file keeps (its .LICENSE.txt) are read from
+/tmp/plt-build/plotly.js/dist/plotly-annzarro.min.js.LICENSE.txt when that file
+exists beside the first tree, else from the current plotly-bundled.txt.
+Packages named in the list but found in no tree are reported and fail the run.
 """
 
 import collections
@@ -25,9 +29,11 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 OUT = REPO / "annzarro" / "THIRD_PARTY_LICENSES" / "plotly-bundled.txt"
-PLOTLY_VERSION = "2.20.0"
+PLOTLY_VERSION = "2.35.3"
+BUNDLE = f"plotly-{PLOTLY_VERSION}-annzarro.min.js"
+PACKAGE_LIST = REPO / "scripts" / "plotly" / "bundle-packages.txt"
 LICENCE_FILE = re.compile(r"^(licen[cs]e|copying|unlicense)", re.I)
-BANNERS_MARK = "=== Banners kept in plotly-2.20.0.min.js (upstream plotly-2.20.0.min.js.LICENSE.txt) ==="
+BANNERS_MARK = f"=== Banners kept in {BUNDLE} (upstream plotly-annzarro.min.js.LICENSE.txt) ==="
 SPLIT = "=" * 78
 
 
@@ -113,31 +119,54 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.""",
 
 
 def main(argv):
-    if len(argv) != 1:
+    if not argv:
         sys.exit(__doc__)
-    node_modules = Path(argv[0])
-    plotly = json.loads((node_modules / "plotly.js" / "package.json").read_text())
-    if plotly["version"] != PLOTLY_VERSION:
+    trees = [Path(a) for a in argv]
+    plotly = json.loads((trees[0] / "plotly.js" / "package.json").read_text()) \
+        if (trees[0] / "plotly.js" / "package.json").exists() else None
+    if plotly and plotly["version"] != PLOTLY_VERSION:
         sys.exit(f"node_modules has plotly.js {plotly['version']}, not {PLOTLY_VERSION}")
+    wanted = {l.strip() for l in PACKAGE_LIST.read_text().splitlines() if l.strip()}
 
     existing = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
-    if BANNERS_MARK in existing:
+    upstream = trees[0].parent / "dist" / "plotly-annzarro.min.js.LICENSE.txt"
+    if upstream.exists():
+        banners = upstream.read_text(encoding="utf-8").strip()
+    elif BANNERS_MARK in existing:
         banners = existing.split(BANNERS_MARK, 1)[1].split(SPLIT + "\n=== Licence texts", 1)[0].strip()
     else:
-        banners = existing.strip()  # the first version held only the banners
+        banners = existing.strip()
+    banners = banners.strip("=\n ")
 
-    pkgs = sorted(packages(node_modules), key=lambda p: (p[0].lower(), p[1]))
+    found, seen_keys = {}, set()
+    for tree in trees:
+        for pkg in packages(tree):
+            # aliases (node_modules/regl holds @plotly/regl) match by folder name too
+            parent = pkg[3].parent
+            folder = pkg[3].name if parent.name == "node_modules" else f"{parent.name}/{pkg[3].name}"
+            for key in (pkg[0], folder):
+                if key in wanted:
+                    seen_keys.add(key)
+                    found.setdefault((pkg[0], pkg[1]), pkg)
+    absent = sorted(wanted - seen_keys)
+    if absent:
+        sys.exit("not installed in any tree: " + ", ".join(absent))
+    pkgs = sorted(found.values(), key=lambda p: (p[0].lower(), p[1]))
     counts = collections.Counter(p[2] for p in pkgs)
     out = [
-        f"Third-party code in plotly-{PLOTLY_VERSION}.min.js",
+        f"Third-party code in {BUNDLE}",
         "",
-        f"The Plotly.js bundle (plotly.js {PLOTLY_VERSION}, MIT, see plotly.txt) includes npm",
-        "packages under their own licences. Below are, first, the licence banners the",
-        "minified file itself keeps, then the licence text of every package in plotly.js",
-        f"{PLOTLY_VERSION}'s production dependency tree ({len(pkgs)} packages, a superset of",
-        "the modules the bundle contains), generated by scripts/plotly_licences.py.",
+        f"The Plotly.js bundle (plotly.js {PLOTLY_VERSION}, MIT, see plotly.txt) is a custom build holding the",
+        "scatter, scattergl and scatter3d traces, with the npm packages they use, under their own",
+        "licences. Below are, first, the licence banners the minified file itself keeps, then the",
+        f"licence text of every package inside it ({len(pkgs)} packages), generated by scripts/plotly_licences.py.",
+        "The modules webpack bundled are listed exactly; scatter3d's WebGL code (stackgl) is a",
+        "prebuilt file, so for it the list is every runtime dependency of that file, a superset that",
+        "includes the tools glslify ran at build time (escodegen, esprima, estraverse, esutils,",
+        "source-map, sprintf-js, commander, stack-trace). maplibre-gl is listed because plotly.js",
+        "embeds its stylesheet; its code is not in the bundle.",
         "",
-        "Licences in the tree: " + ", ".join(f"{k} ({v})" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])),
+        "Licences in the bundle: " + ", ".join(f"{k} ({v})" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])),
         "",
         SPLIT,
         BANNERS_MARK,
@@ -146,7 +175,7 @@ def main(argv):
         banners,
         "",
         SPLIT,
-        "=== Licence texts of the packages in plotly.js's dependency tree ===",
+        "=== Licence texts of the packages in the bundle ===",
         SPLIT,
     ]
     missing = []
