@@ -110,28 +110,123 @@ def test_back_over_a_moved_split_eases_and_refits_once(page, server):
     assert _marked(page, A) == "mine"
 
 
-def test_three_quick_backs_end_on_the_right_view(page, server):
-    page.goto(_view_link(server, [_tile(A)], {A: _cfgs()[A]}))
-    _drawn(page, A)
+
+C = "cell-plot-c3"
+D = "cell-plot-d4"
+
+
+def _rows(page, server, ids=(A, B, C)):
+    """Panels in rows, drawn and settled."""
+    cfgs = {**_cfgs(), C: {**_cfgs()[B], "id": C}, D: {**_cfgs()[A], "id": D}}
+    page.goto(_view_link(server, [_tile(i) for i in ids], {i: cfgs[i] for i in ids}))
+    for pid in ids:
+        _drawn(page, pid)
     page.wait_for_timeout(SETTLE_MS)
     _mark(page, A)
-    base = page.evaluate(LENGTH)
-    # three actions, each its own entry: open B, close B, open B again
-    for _ in range(2):
-        page.evaluate("(cfg) => window.PanelManager.createPanelInLayout('cell-plot', cfg)", _cfgs()[B])
-        page.wait_for_function(_count(2), timeout=30000)
-        page.wait_for_timeout(SETTLE_MS)
-        page.locator(f".tile[data-tile-id='{B}'] .tile-close").first.click()
-        page.wait_for_function(_count(1))
-        page.wait_for_timeout(SETTLE_MS)
-    assert page.evaluate(LENGTH) == base + 4
-    page.evaluate("() => { history.back(); history.back(); history.back(); }")
-    page.wait_for_timeout(5000)
-    # four entries back from the end: three steps land on the entry after the first open of B
-    assert page.evaluate(TILES) == [A, B]
-    assert _marked(page, A) == "mine"
-    page.go_back()
-    page.wait_for_function(_count(1), timeout=30000)
-    page.wait_for_timeout(1500)
+    return page.evaluate(LENGTH)
+
+
+def _close(page, pid):
+    page.locator(f".tile[data-tile-id='{pid}'] .tile-close").first.click()
+    page.wait_for_function("(id) => !document.querySelector(`.tile[data-tile-id=\"${id}\"]`)", arg=pid)
+
+
+def test_two_quick_closes_are_two_entries_and_each_back_animates(page, server):
+    base = _rows(page, server)
+    _close(page, C)
+    page.wait_for_timeout(200)
+    _close(page, B)
+    page.wait_for_timeout(SETTLE_MS)
+    assert page.evaluate(LENGTH) == base + 2
     assert page.evaluate(TILES) == [A]
+    page.evaluate(WATCH)
+    page.go_back()
+    page.wait_for_function(_count(2), timeout=30000)
+    _drawn(page, B)
+    assert page.evaluate(TILES) == sorted([A, B])
+    page.go_back()
+    page.wait_for_function(_count(3), timeout=30000)
+    _drawn(page, C)
+    assert page.evaluate(TILES) == sorted([A, B, C])
+    assert page.evaluate("() => window.__rebuilds") == 0
     assert _marked(page, A) == "mine"
+
+
+def test_spinner_clicks_and_a_slider_drag_are_one_entry_each(page, server):
+    from annzarro.tests.browser.test_plot_options import _menu
+    page.goto(_view_link(server, [_split([A, B])], _cfgs()))
+    _drawn(page, A)
+    _drawn(page, B)
+    _menu(page, A, "text")
+    page.wait_for_timeout(SETTLE_MS)
+    base = page.evaluate(LENGTH)
+    page.focus(f"#font-size-{A}")
+    for _ in range(5):
+        page.keyboard.press("ArrowUp")
+        page.wait_for_timeout(150)
+    page.wait_for_timeout(SETTLE_MS)
+    assert page.evaluate(LENGTH) == base + 1
+    # a slider: press, move through values, release
+    slider = page.evaluate("""() => {
+        const r = [...document.querySelectorAll('input[type=range]')].find(e => e.offsetParent !== null);
+        if (!r) return null;
+        r.id = r.id || 'test-slider';
+        return r.id;
+    }""")
+    assert slider
+    page.evaluate("""async (id) => {
+        const r = document.getElementById(id);
+        const min = +r.min || 0, max = +r.max || 100;
+        r.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        for (let i = 1; i <= 8; i++) {
+            r.value = min + (max - min) * i / 10;
+            r.dispatchEvent(new Event('input', { bubbles: true }));
+            await new Promise(res => setTimeout(res, 80));
+        }
+        r.dispatchEvent(new Event('change', { bubbles: true }));
+        r.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    }""", slider)
+    page.wait_for_timeout(SETTLE_MS)
+    assert page.evaluate(LENGTH) == base + 2
+
+
+def test_changes_to_two_controls_300ms_apart_are_two_entries(page, server):
+    from annzarro.tests.browser.test_plot_options import _menu
+    page.goto(_view_link(server, [_split([A, B])], _cfgs()))
+    _drawn(page, A)
+    _drawn(page, B)
+    _menu(page, A, "text")
+    page.wait_for_timeout(SETTLE_MS)
+    base = page.evaluate(LENGTH)
+    _menu(page, A, "axes")
+    first, second = f"axis-line-width-{A}", f"font-size-{A}"
+    page.fill(f"#{first}", "2")
+    page.press(f"#{first}", "Tab")
+    page.wait_for_timeout(300)
+    page.fill(f"#{second}", "16")
+    page.press(f"#{second}", "Tab")
+    page.wait_for_timeout(SETTLE_MS)
+    assert page.evaluate(LENGTH) == base + 2
+    page.go_back()
+    page.wait_for_function("(id) => window.PanelManager.saveLayout().panelConfigs[id].fontSize !== 16", arg=A, timeout=30000)
+
+
+def test_three_quick_backs_end_on_the_right_view(page, server):
+    base = _rows(page, server, (A, B, C, D))
+    for pid in (D, C, B):
+        _close(page, pid)
+        page.wait_for_timeout(700)
+    page.wait_for_timeout(SETTLE_MS)
+    assert page.evaluate(LENGTH) == base + 3
+    assert page.evaluate(TILES) == [A]
+    page.evaluate(WATCH)
+    page.evaluate("() => { history.back(); history.back(); history.back(); }")
+    page.wait_for_function(_count(4), timeout=60000)
+    page.wait_for_timeout(2500)
+    assert page.evaluate(TILES) == sorted([A, B, C, D])
+    assert _marked(page, A) == "mine"
+    # and forward once undoes only the first close
+    page.go_forward()
+    page.wait_for_function(_count(3), timeout=30000)
+    page.wait_for_timeout(1500)
+    assert page.evaluate(TILES) == sorted([A, B, C])
