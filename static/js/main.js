@@ -2221,7 +2221,7 @@ const App = (function() {
         return {
             urls: {
                 folder: Config.API.DATASET_FOLDER, search: Config.API.DATASET_SEARCH, details: Config.API.DATASET_DETAILS, lookup: Config.API.DATASET_LOOKUP,
-                textSearch: Config.API.DATASET_TEXT_SEARCH, textStatus: Config.API.DATASET_TEXT_STATUS, textRefresh: Config.API.DATASET_TEXT_REFRESH
+                textSearch: Config.API.DATASET_TEXT_SEARCH
             },
             /** Whether the policy lets this user search the descriptions (a server without a policy allows it; its own answer is the safety net). */
             textSearchAllowed: async () => {

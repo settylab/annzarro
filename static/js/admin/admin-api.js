@@ -256,7 +256,9 @@ export function createAdminApi({
         },
         health: {
             get: () => get('/health'),
+            versionCheck: () => get('/version-check'),
             clearCache: (datasetPath) => send('POST', '/cache/clear', datasetPath ? { dataset_path: datasetPath } : {}),
+            rebuildTextIndex: () => send('POST', '/text-index/rebuild', {}),
         },
         panelSets: {
             list: (query) => get('/panel-sets', query),

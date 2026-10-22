@@ -182,6 +182,15 @@ def _forget_loaded_state_dir(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _no_background_crawl(monkeypatch):
+    """An app built without TESTING starts the description index keeper (text_index.start_keeper); in a
+    test its first round would land in the middle of whatever the test checks. Push it out of reach: a
+    test of the keeper starts one with its own timings."""
+    from annzarro.server import text_index
+    monkeypatch.setattr(text_index, "KEEPER_FIRST_S", 24 * 3600.0)
+
+
+@pytest.fixture(autouse=True)
 def _restore_remote_policy():
     """Every app a test builds sets the process-wide remote store policy (server/core.py); put
     it back, or a later test in the same process (an xdist worker runs any mix of files) reads

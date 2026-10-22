@@ -74,7 +74,6 @@ NO_PATH = {
     "serve_static", "static", "get_current_user", "policy_effective", "get_cache_info", "get_config", "get_status",
     "health",             # the probe answers from memory and takes no argument
     "list_all_datasets", "list_dataset_folder", "list_dataset_search",  # the folder listing confines itself (test_dataset_folders.py)
-    "text_index_status", "text_index_refresh",   # no argument: the status and the refresh button (test_text_search.py)
     "lookup_datasets",    # names its paths in the body, not the URL: swept below (test_lookup_*)
     "get_home_directory", "validate_zarr_url",  # remote policy, below
     "delete_session", "duplicate_session", "check_session_exists", "export_session",
@@ -89,7 +88,7 @@ NO_PATH = {
     "admin.user_grants_add", "admin.user_grants_remove",   # access admin: paths to grant or check, never opened (test_admin_user_access.py)
     "admin.policy", "admin.user_policy",           # test_admin_settings.py
     "admin.site_texts",                            # test_site_admin.py: takes no argument, reads the site in effect
-    "admin.health", "admin.cache_clear",   # the cache clear names a cache key in its body, never opened
+    "admin.health", "admin.version_check", "admin.cache_clear", "admin.text_index_rebuild",   # the cache clear names a cache key in its body, never opened; the rebuild and the version check take no argument
     "admin.data_roots", "admin.data_roots_browse", "admin.data_roots_datasets",   # data directories: admin only, they name
     "admin.data_roots_add", "admin.data_roots_remove",   # directories to add, not datasets to read (test_admin_data_roots.py)
     "admin.panel_sets", "admin.panel_sets_reassign", "admin.panel_sets_delete",   # panel sets: admin only, no dataset paths

@@ -9,6 +9,7 @@ import json
 import multiprocessing
 import os
 import shutil
+import sys
 import threading
 import time
 
@@ -29,7 +30,7 @@ LIVER_README = "# Liver atlas\n\nSee [the paper](https://example.org/secret-targ
 
 def config_for(tmp_path, **extra):
     config = {"TESTING": True, "host": "127.0.0.1", "data_dir": str(tmp_path / "data"), "log_file": str(tmp_path / "t.log"),
-              "user_file": str(tmp_path / "users.json"), "secret_key": "test-only-secret", "text_index_min_interval_s": 0}
+              "user_file": str(tmp_path / "users.json"), "secret_key": "test-only-secret"}
     config.update(extra)
     return config
 
@@ -39,12 +40,12 @@ def annotate(store, fields, readme=None):
 
 
 def make_world(tmp_path):
-    """data/{plain.zarr, liver.zarr, out.zarr, sub/heart.zarr, broken.zarr (empty)}."""
+    """data/{plain.zarr (no text), liver.zarr, out.zarr, sub/heart.zarr, broken.zarr (a README that is no zarr array)}."""
     data = tmp_path / "data"
     (data / "sub").mkdir(parents=True)
     for rel in ("plain.zarr", "liver.zarr", "out.zarr", "sub/heart.zarr"):
         shutil.copytree(FIXTURE, data / rel)
-    (data / "broken.zarr").mkdir()
+    (data / "broken.zarr" / "uns" / "README").mkdir(parents=True)
     annotate(data / "liver.zarr", LIVER, LIVER_README)
     annotate(data / "out.zarr", {"title": "Secret kidney"}, "kidneysecret lives here")
     annotate(data / "sub" / "heart.zarr", {"title": "Heart", "description": "Cardiomyocytes of the heart."},
@@ -165,6 +166,75 @@ def test_an_unchanged_store_is_not_read_again_and_a_changed_one_is(world, monkey
     assert text_index.readme_of(entries(world)["liver.zarr"]) == "new readme"
 
 
+def test_the_crawl_reads_uns_from_disk_and_never_checks_the_whole_listing(world, monkeypatch):
+    zarr_reader = sys.modules["annzarro.core.zarr_reader"]
+    checked = []
+    real = zarr_reader.consolidated_staleness
+    monkeypatch.setattr(zarr_reader, "consolidated_staleness", lambda path: checked.append(path) or real(path))
+    status = crawl(world)
+    assert status["state"] == "done" and status["read"] == 4          # plain.zarr has no text to read
+    assert checked == []                     # the check that visits every metadata file of a store is not run
+    assert entries(world)["liver.zarr"]["about"]["title"] == "Liver atlas"
+
+
+def test_reading_from_disk_gives_what_the_listing_gives(world):
+    from annzarro.core import dataset_info
+    for name in ("plain.zarr", "liver.zarr", "out.zarr", os.path.join("sub", "heart.zarr")):
+        path = os.path.join(world.data, name)
+        assert dataset_info.read_info(path, ["about", "readme"], on_disk=True) == dataset_info.read_info(path, ["about", "readme"])
+    with pytest.raises(dataset_info.InfoError):
+        dataset_info.read_info(os.path.join(world.data, "broken.zarr"), ["about", "readme"], on_disk=True)
+
+
+def test_read_from_disk_a_groups_members_come_in_name_order_whatever_the_directory_order(world, monkeypatch):
+    from annzarro.core import dataset_info
+    liver = os.path.join(world.data, "liver.zarr")
+    annotate(liver, {**LIVER, "provenance": {"source": "GEO", "processing": "scanpy", "project": "atlas", "code": "repo@1"}})
+    listed = dataset_info.read_info(liver, ["about"])
+    real = dataset_info._names
+    seen = []
+    for order in (lambda names: names, lambda names: list(reversed(names))):    # two directories listing alike members differently
+        monkeypatch.setattr(dataset_info, "_names", lambda group, o=order: o(real(group)))
+        got = dataset_info.read_info(liver, ["about"], on_disk=True)
+        assert list(got["about"]["provenance"]) == ["code", "processing", "project", "source"]
+        seen.append(json.dumps(got))                         # a dict compares equal in any order: compare the text
+    assert seen[0] == seen[1]
+    monkeypatch.setattr(dataset_info, "_names", real)
+    assert dataset_info.read_info(liver, ["about"]) == listed and list(listed["about"]["provenance"]) == list(
+        dataset_info.read_info(liver, ["about"])["about"]["provenance"])                # the listing read keeps its order
+
+
+def test_an_uns_edit_the_consolidated_listing_does_not_have_is_indexed(world, monkeypatch):
+    from annzarro.core import dataset_annotate as da
+    liver = f"{world.data}/liver.zarr"
+    assert os.path.exists(f"{liver}/.zmetadata")
+    crawl(world)
+    time.sleep(0.01)
+    with monkeypatch.context() as m:                       # written without consolidating: the listing still says "Liver atlas"
+        m.setattr(da, "_is_consolidated", lambda path, fmt: False)
+        # a field the store did not have: a node the listing does not know, so only a read from disk sees it
+        annotate(liver, {**LIVER, "title": "Liver atlas, edited", "citation": "Doe et al., an edited citation"}, "an edited readme")
+    with open(f"{liver}/.zmetadata") as fh:
+        assert "uns/annzarro/citation" not in fh.read()
+    status = crawl(world)
+    assert status["read"] == 1 and status["reused"] == 4    # only uns moved, and that is enough to read it again
+    assert entries(world)["liver.zarr"]["about"]["title"] == "Liver atlas, edited"
+    assert entries(world)["liver.zarr"]["about"]["citation"] == "Doe et al., an edited citation"
+    assert text_index.readme_of(entries(world)["liver.zarr"]) == "an edited readme"
+    found, _, _ = text_index.search(text_index.load(world.config), ["edited citation"], lambda e: True)
+    assert [h["entry"]["name"] for h in found] == ["liver.zarr"]
+
+
+def test_a_crawl_logs_one_line_when_it_starts_and_one_when_it_ends(world, caplog):
+    import logging
+    with caplog.at_level(logging.INFO, logger="annzarro.server.text_index"):
+        crawl(world)
+    lines = [r.getMessage() for r in caplog.records if r.name == "annzarro.server.text_index" and r.levelno == logging.INFO]
+    assert len(lines) == 2
+    assert lines[0].startswith("Text index crawl started: 5 datasets found") and "4 to read, 0 unchanged, 1 without text" in lines[0]
+    assert lines[1].startswith("Text index crawl done in ") and "4 of 5 datasets searchable, 4 read, 0 unchanged, 1 not readable" in lines[1]
+
+
 def test_a_vanished_store_is_dropped(world):
     crawl(world)
     shutil.rmtree(f"{world.data}/out.zarr")
@@ -210,9 +280,109 @@ def test_the_crawl_stops_as_partial_when_every_thread_is_stuck(world, monkeypatc
     assert entries(world)["liver.zarr"]["error"] == "timeout"
 
 
-def test_a_crawl_past_its_time_is_partial_and_keeps_what_it_has(world):
+def test_a_late_store_that_answers_before_the_crawl_ends_is_indexed(world, monkeypatch):
+    world.config.update(text_index_store_timeout_s=2.0, text_index_workers=2)
+    real = text_index.read_text
+    answered = threading.Event()
+
+    def read(path, n):
+        if path.endswith("liver.zarr"):
+            result = real(path, n)
+            time.sleep(3.0)                  # past the timeout, but it does answer
+            answered.set()
+            return result
+        answered.wait(1.2)                   # the others stay well inside the timeout and keep the crawl going
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    status = crawl(world)
+    assert answered.is_set() and status["state"] == "done"
+    assert entries(world)["liver.zarr"]["error"] is None and entries(world)["liver.zarr"]["about"]["title"] == "Liver atlas"
+    assert status["errors"] == 1                                   # only the broken store
+
+
+def test_a_late_store_does_not_take_a_reading_thread_away(world, monkeypatch):
+    world.config.update(text_index_store_timeout_s=1.0, text_index_workers=2)
+    release = threading.Event()
+    real = text_index.read_text
+    lock, active, most = threading.Lock(), [0], [0]
+
+    def read(path, n):
+        if path.endswith("liver.zarr"):
+            release.wait(10)
+            return real(path, n)
+        with lock:
+            active[0] += 1
+            most[0] = max(most[0], active[0])
+        time.sleep(0.6)
+        with lock:
+            active[0] -= 1
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    try:
+        status = crawl(world)
+    finally:
+        release.set()
+    assert status["state"] == "done" and entries(world)["liver.zarr"]["error"] == "timeout"
+    assert most[0] == 2                      # two stores were read at once while liver.zarr held its thread
+
+
+def test_late_reads_left_by_earlier_crawls_count_against_the_spare_threads(world, monkeypatch):
+    """A late read keeps its thread across crawls; without a bound per process every crawl left more."""
+    world.config.update(text_index_store_timeout_s=0.2, text_index_workers=2)
+    monkeypatch.setattr(text_index, "RETRY_TIMEOUT_AFTER_S", 0)          # read the late stores again at once
+    monkeypatch.setattr(text_index, "_late_reads", set())
+    release = threading.Event()
+    real = text_index.read_text
+
+    def read(path, n):
+        if path.endswith(("liver.zarr", "heart.zarr")):
+            release.wait(30)                 # never answers while the test runs
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    before = {t.ident for t in threading.enumerate()}      # readers an earlier test left behind are not this test's
+    hanging = lambda: sum(1 for t in threading.enumerate() if t.name.startswith("text-index") and t.is_alive() and t.ident not in before)
+    try:
+        states = []
+        for _ in range(4):
+            time.sleep(0.01)
+            states.append(crawl(world)["state"])
+            assert len(text_index._late_reads) <= 2 and hanging() <= 2      # never more than workers, crawl after crawl
+        assert states[0] == "partial" and states[1:] == ["partial"] * 3     # the later crawls read nothing
+        assert entries(world)["plain.zarr"]["error"] is None                # what the first one read is kept
+    finally:
+        release.set()
+    assert wait_for(lambda: all(f.done() for f in text_index._late_reads))
+    assert crawl(world)["state"] == "done"                                   # once they answer, crawls read again
+
+
+def test_reads_cut_off_by_the_crawl_deadline_count_against_the_spare_threads_too(world, monkeypatch):
+    """A read still under way at the crawl's deadline is not late yet (store timeout > crawl timeout), but it
+    holds its thread all the same: crawl after crawl must not start more of them."""
+    world.config.update(text_index_store_timeout_s=3600, text_index_workers=2)
+    monkeypatch.setattr(text_index, "CRAWL_SECONDS", 0.5)
+    monkeypatch.setattr(text_index, "_late_reads", set())
+    release = threading.Event()
+    real = text_index.read_text
+
+    def read(path, n):
+        if path.endswith(("liver.zarr", "heart.zarr")):
+            release.wait(30)
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    before = {t.ident for t in threading.enumerate()}      # readers an earlier test left behind are not this test's
+    hanging = lambda: sum(1 for t in threading.enumerate() if t.name.startswith("text-index") and t.is_alive() and t.ident not in before)
+    try:
+        for _ in range(4):
+            assert crawl(world)["state"] == "partial"
+            assert hanging() <= 2 and len(text_index._late_reads) <= 2
+    finally:
+        release.set()
+    assert wait_for(lambda: all(f.done() for f in text_index._late_reads))
+
+
+def test_a_crawl_past_its_time_is_partial_and_keeps_what_it_has(world, monkeypatch):
     crawl(world)
-    world.config["text_index_crawl_timeout_s"] = 0.0001
+    monkeypatch.setattr(text_index, "CRAWL_SECONDS", 0.0001)
     shutil.rmtree(f"{world.data}/out.zarr")                    # a change the cut-off crawl cannot have processed
     os.utime(f"{world.data}/liver.zarr/uns/annzarro", None)
     status = crawl(world)
@@ -253,7 +423,8 @@ def test_a_crawl_cut_by_its_time_is_kept_and_the_next_one_continues_from_it(worl
             time.sleep(0.4)
         return real(path, n)
     monkeypatch.setattr(text_index, "read_text", read)
-    world.config.update(text_index_workers=1, text_index_crawl_timeout_s=1.0)
+    world.config.update(text_index_workers=1)
+    monkeypatch.setattr(text_index, "CRAWL_SECONDS", 1.0)
     first = crawl(world)
     assert first["state"] == "partial"
     done = len(entries(world))
@@ -340,12 +511,12 @@ def test_a_running_crawl_with_a_fresh_heartbeat_is_left_alone(world):
     assert text_index.start_crawl(world, force=True) is False
 
 
-def test_a_crawl_starts_at_most_once_per_interval(tmp_path):
-    make_world(tmp_path)
-    app = create_app(config_for(tmp_path, text_index_min_interval_s=60))
-    assert text_index.start_crawl(app, force=True) is True
-    wait_idle(app)
-    assert text_index.start_crawl(app, force=True) is False
+def test_a_rebuild_starts_at_once_even_right_after_a_crawl_but_the_keeper_waits_for_it_to_be_due(world):
+    assert text_index.start_crawl(world, force=True) is True
+    wait_idle(world)
+    assert text_index.start_crawl(world) is False                    # fresh: the keeper has nothing to do
+    assert text_index.start_crawl(world, force=True) is True         # an administrator's rebuild is not rate limited
+    wait_idle(world)
 
 
 def test_the_index_file_is_gzipped_json_and_leaves_no_temporary_file(world):
@@ -453,10 +624,10 @@ def test_clear_cache_marks_the_index_stale_without_deleting_it(world):
     assert view["stale"] is True and len(view["index"]) == 5
 
 
-def test_an_old_index_is_stale_and_a_search_refreshes_it(world, monkeypatch):
+def test_an_old_index_is_stale_and_the_keeper_refreshes_it(world, monkeypatch):
     crawl(world)
     real = time.time
-    monkeypatch.setattr(text_index, "_now", lambda: real() + 700)
+    monkeypatch.setattr(text_index, "_now", lambda: real() + 2000)       # past text_index_ttl_s (1800)
     assert text_index.describe(world.config)["stale"] is True
     assert text_index.start_crawl(world) is True
     wait_idle(world)
@@ -471,7 +642,7 @@ def loaded(world):
 
 
 def find(loaded, query, readable=lambda e: True, **kw):
-    hits, partial = text_index.search(loaded, text_index.parse_query(query), readable, **kw)
+    hits, more, partial = text_index.search(loaded, text_index.parse_query(query), readable, **kw)
     return [h["entry"]["name"] for h in hits], hits, partial
 
 
@@ -562,3 +733,160 @@ def test_the_folder_limits_the_search_to_the_stores_below_it(loaded, world):
     names, _, _ = find(loaded, "heart", folder=os.path.realpath(f"{world.data}/sub"))
     assert names == ["heart.zarr"]
     assert find(loaded, "heart", folder=os.path.realpath(f"{world.data}/nodir"))[0] == []
+
+
+# --- the keeper: built and kept fresh without a search -------------------------------------------------
+
+def wait_for(predicate, seconds=30):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+@pytest.fixture
+def keeper(world):
+    started = []
+
+    def start(app=world, **timings):
+        thread = text_index.start_keeper(app, first=timings.get("first", 0), every=timings.get("every", 0.1), force=True)
+        started.append(thread)
+        return thread
+    yield start
+    for thread in started:
+        if thread is not None:
+            thread.stop()
+            thread.join(10)
+    wait_idle(world)
+
+
+def test_the_keeper_builds_the_index_after_the_start_without_a_search(world, keeper):
+    assert text_index.load(world.config) is None
+    keeper(first=0.2)
+    assert wait_for(lambda: text_index.describe(world.config)["state"] == "done")
+    assert len(text_index.load(world.config)) == 5 and not text_index.describe(world.config)["stale"]
+
+
+def test_the_keeper_continues_a_partial_crawl_until_it_is_done(world, keeper, monkeypatch):
+    real = text_index.read_text
+    slow = {"on": True}
+
+    def read(path, n):
+        if slow["on"]:
+            time.sleep(0.4)
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    world.config.update(text_index_workers=1)
+    monkeypatch.setattr(text_index, "CRAWL_SECONDS", 1.0)
+    assert crawl(world)["state"] == "partial"
+    left = 5 - len(entries(world))
+    slow["on"] = False
+    keeper()
+    assert wait_for(lambda: text_index.describe(world.config)["state"] == "done")
+    status = text_index.read_status(world.config)
+    assert status["read"] == left and status["reused"] == 5 - left       # it went on from where the first one stopped
+    assert text_index.load(world.config).partial is False
+
+
+def test_the_keeper_refreshes_an_index_older_than_the_ttl(world, keeper, monkeypatch):
+    crawl(world)
+    built = text_index.load(world.config).built_at
+    assert text_index.keep_once(world) is False                           # fresh: nothing to do
+    real = text_index._now
+    monkeypatch.setattr(text_index, "_now", lambda: real() + 2000)       # past text_index_ttl_s (1800)
+    assert text_index.keep_once(world) is True
+    wait_idle(world)
+    assert text_index.load(world.config).built_at > built
+
+
+def test_the_keeper_does_nothing_while_the_search_is_off_for_the_server(world):
+    from annzarro.server.admin import overlay
+    overlay.update(world.config, lambda o: o.setdefault("policy", {}).update({text_index.KEY: False}))
+    assert text_index.keep_once(world) is False
+    assert text_index.load(world.config) is None and text_index.read_status(world.config)["state"] == "idle"
+
+
+def test_the_keeper_is_off_by_configuration_and_in_tests_unless_asked(tmp_path):
+    make_world(tmp_path)
+    disabled = create_app(config_for(tmp_path, text_index_enabled=False))
+    assert text_index.start_keeper(disabled, force=True) is None
+    testing = create_app(config_for(tmp_path))
+    assert text_index.start_keeper(testing) is None                       # TESTING: only a keeper test starts one
+
+
+def test_a_server_starts_one_keeper_per_index_and_it_waits_for_the_start(tmp_path):
+    make_world(tmp_path)
+    config = {k: v for k, v in config_for(tmp_path).items() if k != "TESTING"}
+    app = create_app(config)
+    thread = text_index._keepers.get(str(text_index.index_dir(app.config)))
+    assert thread is not None and thread.is_alive()                       # create_app started it
+    assert text_index.start_keeper(app) is thread                         # one per index in a process
+    time.sleep(0.3)
+    assert text_index.read_status(app.config)["state"] == "idle"          # its first round waits (conftest: a day)
+    thread.stop()
+    thread.join(10)
+
+
+# --- the cost of a crawl, counted in filesystem calls --------------------------------------------------
+
+class FsCalls:
+    """Counts the filesystem calls made on paths below given directories: stat, listing and opening a file."""
+
+    def __init__(self, monkeypatch, roots):
+        import builtins
+        import io
+        self.roots = {os.path.realpath(r): {"stat": 0, "list": 0, "open": 0} for r in roots}
+        self.busy = threading.local()             # realpath itself stats: do not count (or recurse into) that
+        counts = self
+
+        def counted(kind, real):
+            def wrapper(path, *args, **kwargs):
+                counts.add(kind, path)
+                return real(path, *args, **kwargs)
+            return wrapper
+        for owner, name, kind in ((os, "stat", "stat"), (os, "lstat", "stat"), (os, "scandir", "list"), (os, "listdir", "list"),
+                                  (os, "open", "open"), (builtins, "open", "open"), (io, "open", "open")):
+            monkeypatch.setattr(owner, name, counted(kind, getattr(owner, name)))
+
+    def add(self, kind, path):
+        if isinstance(path, int) or getattr(self.busy, "on", False):     # a file descriptor was counted when it was opened
+            return
+        self.busy.on = True
+        try:
+            path = os.path.realpath(os.fspath(path))
+        except (TypeError, ValueError):
+            return
+        finally:
+            self.busy.on = False
+        for root, tally in self.roots.items():
+            if path == root or path.startswith(root + os.sep):
+                tally[kind] += 1
+
+    def of(self, root):
+        tally = self.roots[os.path.realpath(root)]
+        return {**tally, "total": sum(tally.values())}
+
+
+def test_a_store_with_nothing_to_index_costs_only_its_signature_and_so_does_a_recheck(world, monkeypatch):
+    """The crawl's cost per store in filesystem calls: no text means no reads at all, an unchanged store is
+    re-checked by its signature stats alone, and only a store with a README or an attribution is opened."""
+    stores = {name: f"{world.data}/{name}" for name in ("plain.zarr", "liver.zarr")}
+    calls = FsCalls(monkeypatch, stores.values())
+    crawl(world)
+    first = {name: calls.of(path) for name, path in stores.items()}
+    for tally in calls.roots.values():
+        tally.update(stat=0, list=0, open=0)
+    status = crawl(world)                                           # nothing changed
+    second = {name: calls.of(path) for name, path in stores.items()}
+    assert status["read"] == 0 and status["reused"] == 5
+    print(f"filesystem calls per store, first crawl: {first}; re-check of unchanged stores: {second}")
+    # a store with no README and no attribution: stat calls only, nothing listed or opened
+    assert first["plain.zarr"]["list"] == 0 and first["plain.zarr"]["open"] == 0
+    # re-checking an unchanged store costs the same signature stats whether it has text or not, and opens nothing
+    assert second["plain.zarr"] == second["liver.zarr"]
+    assert second["liver.zarr"]["list"] == 0 and second["liver.zarr"]["open"] == 0
+    # reading a store with a README does cost more: it is opened
+    assert first["liver.zarr"]["total"] > first["plain.zarr"]["total"] and first["liver.zarr"]["open"] > 0
+    assert first["plain.zarr"]["total"] == second["plain.zarr"]["total"]

@@ -9,7 +9,7 @@ import { AdminError, createAdminApi } from "../../../static/js/admin/admin-api.j
 import { createReauthModal } from "../../../static/js/admin/reauth-modal.js";
 import { SECTIONS, createRouter, sectionFromHash, showToast } from "../../../static/js/admin/admin-main.js";
 import { chainText, detailText, recordRow } from "../../../static/js/admin/audit.js";
-import { cacheText, panelSetsLine, readersText, warningsBlock, refusalText, sumRefusals } from "../../../static/js/admin/health.js";
+import { cacheText, descriptionSearchBlock, searchStateText, panelSetsLine, readersText, versionLine, warningsBlock, refusalText, sumRefusals } from "../../../static/js/admin/health.js";
 import { deleteMessage, reassignMessage } from "../../../static/js/admin/panel-sets.js";
 
 const F = JSON.parse(readFileSync(new URL("./admin-fixtures.json", import.meta.url), "utf8"));
@@ -208,6 +208,43 @@ test("health: the panel-sets location, and a legacy one says so with the migrate
   assert.equal(panelSetsLine(null), null);
   const fresh = panelSetsLine({ path: "/var/lib/annzarro/panel-sets", legacy: false, note: null });
   assert.match(fresh.textContent, /^Panel sets: \/var\/lib\/annzarro\/panel-sets$/);
+});
+
+test("health: the description search block says its state and counts, and Rebuild now is there unless it is off or running", async () => {
+  assert.equal(descriptionSearchBlock(undefined, () => {}), null);
+  const info = { enabled: true, state: "partial", built_at: 1_000_000, complete: false, capped: false, searchable: 120, not_yet: 3280, unreadable: 2, stores: 3402 };
+  const block = descriptionSearchBlock(info, () => {});
+  assert.equal(block.id, "admin-description-search");
+  const button = find(block, (n) => n.id === "admin-description-rebuild");
+  assert.equal(button.textContent, "Rebuild now");
+  assert.ok(!button.disabled);
+  assert.match(find(block, (n) => n.id === "admin-description-counts").textContent, /^120 searchable, 3,280 not yet, 2 unreadable; last built /);
+  assert.equal(searchStateText({ ...info, state: "running" }), "Building");
+  assert.equal(searchStateText({ ...info, state: "done", complete: true }), "Up to date");
+  assert.equal(searchStateText({ ...info, state: "failed" }), "The last build failed");
+  assert.match(searchStateText({ ...info, enabled: false }), /^Off/);
+  assert.equal(find(descriptionSearchBlock({ ...info, state: "running" }, () => {}), (n) => n.id === "admin-description-rebuild").disabled, true, "no second build while one runs");
+  const off = descriptionSearchBlock({ ...info, enabled: false }, () => {});
+  assert.equal(find(off, (n) => n.id === "admin-description-rebuild").disabled, true, "nothing to build while the search is off");
+  assert.equal(find(off, (n) => n.id === "admin-description-counts"), null);
+  assert.match(find(descriptionSearchBlock({ ...info, built_at: null }, () => {}), (n) => n.id === "admin-description-counts").textContent, /not built yet$/);
+});
+
+test("health: the version line shows the running version, and the update notice only when PyPI has a newer one", async () => {
+  assert.equal(versionLine(undefined), null);
+  const plain = versionLine({ enabled: true, current: "0.7.3", latest: null, update_available: false });
+  assert.equal(plain.textContent, "AnnZarro 0.7.3");
+  assert.equal(find(plain, (n) => n.id === "admin-health-update"), null);
+  assert.equal(versionLine({ enabled: false, reason: "disabled", current: "0.7.3" }).textContent, "AnnZarro 0.7.3");
+  const info = { enabled: true, current: "0.7.3", latest: "0.8.0", update_available: true,
+    upgrade_command: "pip install -U annzarro", url: "https://github.com/settylab/annzarro/releases/tag/v0.8.0" };
+  const line = versionLine(info);
+  assert.equal(find(line, (n) => n.id === "admin-health-update").textContent, "AnnZarro 0.8.0 is available (this server runs 0.7.3). Upgrade with ");
+  assert.match(line.textContent, /pip install -U annzarro\. Release notes$/);
+  assert.equal(find(line, (n) => n.id === "admin-health-release-notes").getAttribute("href"), info.url);
+  // text only: markup in a version string stays text
+  const odd = versionLine({ ...info, latest: "<b>9</b>" });
+  assert.match(find(odd, (n) => n.id === "admin-health-update").textContent, /^AnnZarro <b>9<\/b> is available/);
 });
 
 test("health: server warnings are listed as text, and nothing shows without any", async () => {

@@ -9,6 +9,8 @@ manager. The admin opens /admin#health:
   "Refusals by reason" after a reload;
 * "Clear cache" asks once (Cancel leaves the cache alone), then empties the
   cache, says so, and the audit log holds the record;
+* the Description search block shows its state, and "Rebuild now" builds the
+  index and is audited;
 * the console has no errors and no CSP violations.
 
 Needs Playwright with Chromium; skipped otherwise, unless
@@ -98,6 +100,54 @@ def test_the_health_section(served, browser):
     assert zarr_reader.get_cache_info()["item_counts"]["total"] == 0
     last = audit.read(app.admin_dir, limit=1)[0]
     assert (last["action"], last["actor"], last["outcome"]) == ("cache.clear", ADMIN, "ok")
+
+    # the Description search block: its state, and Rebuild now builds the index and is audited
+    page.wait_for_selector("#admin-description-search")
+    assert page.inner_text("#admin-description-state") == "Waiting for its first build"
+    page.click("#admin-description-rebuild")
+    page.wait_for_function("() => document.getElementById('admin-description-state').textContent === 'Up to date'", timeout=30_000)
+    assert page.inner_text("#admin-description-counts").startswith("0 searchable, 0 not yet, 0 unreadable; last built ")
+    last = audit.read(app.admin_dir, limit=1)[0]
+    assert (last["action"], last["actor"], last["outcome"]) == ("text_index.rebuild", ADMIN, "ok")
     assert problems == []
     context.close()
     user_context.close()
+
+
+def test_the_update_notice_on_the_health_page(served, browser, monkeypatch):
+    """PyPI answered by a test double: the page shows the running version and, for a newer one, the notice."""
+    from annzarro.server import update_check
+    app, base = served
+    asked = []
+
+    def newer():
+        asked.append(1)
+        return "99.1.0"
+
+    monkeypatch.setattr(update_check, "fetch_latest", newer)
+    update_check.reset_cache()
+    try:
+        context, page = _sign_in(browser, base, ADMIN)
+        problems = []
+        page.on("console", lambda m: m.type == "error" and problems.append(m.text))
+        page.on("pageerror", lambda e: problems.append(str(e)))
+        page.goto(base + "/admin#health")
+        page.wait_for_selector("#admin-health-update")
+        assert page.inner_text("#admin-health-update").startswith("AnnZarro 99.1.0 is available (this server runs ")
+        assert "pip install -U annzarro" in page.inner_text("#admin-health-version")
+        assert page.get_attribute("#admin-health-release-notes", "href").endswith("/releases/tag/v99.1.0")
+        page.reload()
+        page.wait_for_selector("#admin-health-update")
+        assert len(asked) == 1, "the second page load is answered from the cache"
+
+        # off: only the running version
+        app.config["update_check"] = False
+        page.reload()
+        page.wait_for_selector("#admin-health-version")
+        assert page.inner_text("#admin-health-version").startswith("AnnZarro ")
+        assert page.query_selector("#admin-health-update") is None
+        assert problems == []
+        context.close()
+    finally:
+        app.config["update_check"] = True
+        update_check.reset_cache()

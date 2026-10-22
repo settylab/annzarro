@@ -40,13 +40,11 @@ LIMITS: Dict[str, Limit] = {limit.key: limit for limit in (
     Limit("dataset_details_check_budget_s", 1.5, integer=False, zero_off=True),
     Limit("dataset_scan_max_entries", 200_000),
     Limit("text_index_workers", 2),
-    Limit("text_index_store_timeout_s", 5, integer=False),
-    Limit("text_index_crawl_timeout_s", 300, integer=False),
+    Limit("text_index_store_timeout_s", 15, integer=False),
     Limit("text_index_max_stores", 20_000),
     Limit("text_index_readme_kb", 64),
     Limit("text_index_max_mb", 64, integer=False),
-    Limit("text_index_ttl_s", 600, integer=False),
-    Limit("text_index_min_interval_s", 60, integer=False, zero_off=True),
+    Limit("text_index_ttl_s", 1800, integer=False),
     Limit("read_user_share_percent", 50, integer=False, zero_off=True),
     Limit("subset_budget_mb", None, integer=False, nullable=True),
     Limit("subset_wait_s", 30, integer=False, zero_off=True),
@@ -57,6 +55,21 @@ LIMITS: Dict[str, Limit] = {limit.key: limit for limit in (
     Limit("limit_request_field_size", 8190, zero_off=True),
     Limit("max_request_mb", 64, integer=False, zero_off=True),
 )}
+
+
+#: Settings that 0.7.2 and the early 0.7.3 builds knew and are gone; a config file that still sets one is
+#: accepted, with a warning, and the value is ignored
+DEPRECATED = {
+    "text_index_background": "the server always keeps the description index fresh; turn the search off with text_index_enabled or the Settings page",
+    "text_index_crawl_timeout_s": "a crawl that runs long is continued by the server, so there is nothing to set",
+    "text_index_min_interval_s": "a search no longer starts a crawl; the server refreshes every text_index_ttl_s",
+}
+
+
+def deprecated_settings(server: Optional[Dict[str, Any]]) -> List[str]:
+    """One warning for every removed ``server.*`` setting that ``server`` still sets."""
+    return [f"server.{key} is no longer used ({why}); remove it from the configuration"
+            for key, why in DEPRECATED.items() if server and key in server]
 
 
 def validate_limits(server: Optional[Dict[str, Any]]) -> List[str]:
@@ -98,14 +111,12 @@ _HELP = {
     "dataset_search_max_entries": "Entries the dataset browser's search looks at before it stops and marks the result truncated.",
     "dataset_details_check_budget_s": "Seconds the dataset browser spends checking one zarr store when it shows its details; it then reports what it found so far. 0 turns the check off there.",
     "dataset_scan_max_entries": "Directory entries a listing of the data directory, or the store count in the server status, reads before it stops and marks the result truncated.",
-    "text_index_workers": "Threads the crawl of the description index reads stores with. The crawl runs once per server, in one worker.",
-    "text_index_store_timeout_s": "Seconds the description crawl waits for one store before it marks the store timed out and goes on. A crawl whose threads are all stuck on such stores stops.",
-    "text_index_crawl_timeout_s": "Seconds one crawl of the description index may take; then it saves what it has and is marked partial.",
+    "text_index_workers": "Threads the crawl of the description index reads stores with. The crawl runs once per server, in one worker, and is started by the server itself.",
+    "text_index_store_timeout_s": "Seconds the description crawl waits for one store before it marks the store timed out and goes on with a spare thread; the store's answer is still kept if it comes before the crawl ends. Late reads count against the spare threads of the server process across crawls; when there are as many as reader threads, a crawl stops.",
     "text_index_max_stores": "Stores one crawl of the description index covers; past it the crawl is marked partial.",
     "text_index_readme_kb": "Kilobytes of each README the description index keeps.",
     "text_index_max_mb": "Megabytes of text the description index may hold, and every worker holds in memory; past it the READMEs are dropped from the largest down.",
-    "text_index_ttl_s": "Seconds after which a search answers from the description index but also starts a crawl to refresh it.",
-    "text_index_min_interval_s": "Seconds between two crawls of the description index, whoever asks (a search or the Refresh button). 0 turns the limit off.",
+    "text_index_ttl_s": "Seconds after which the server reads the datasets again for changes and refreshes the description index; it also continues a crawl that stopped partway.",
     "read_user_share_percent": "Percentage of the shared read and subset memory budgets that one user may hold while another waits, so one user cannot make everyone else's requests fail with 503 read_busy. 0 gives a user the whole budgets. Applies to a server that other people can reach.",
     "subset_wait_s": "Seconds a cell subset waits for its memory budget before it is answered 503 read_busy. 0 turns the limit off.",
     "max_requests": "Requests a gunicorn worker serves before it is replaced, which returns memory that crept and empties its caches. 0 never replaces it. Read when the server starts.",
@@ -131,12 +142,10 @@ _LABEL = {
     "dataset_scan_max_entries": "Directory scan size (entries)",
     "text_index_workers": "Description crawl threads",
     "text_index_store_timeout_s": "Description crawl time per store (s)",
-    "text_index_crawl_timeout_s": "Description crawl time (s)",
     "text_index_max_stores": "Description crawl size (stores)",
     "text_index_readme_kb": "README text indexed (KB)",
     "text_index_max_mb": "Description index size (MB)",
-    "text_index_ttl_s": "Description index age before refresh (s)",
-    "text_index_min_interval_s": "Time between description crawls (s)",
+    "text_index_ttl_s": "Description index refresh interval (s)",
     "read_user_share_percent": "Per-user share of read budgets (%)",
     "subset_budget_mb": "Cell subset memory (MB)",
     "subset_wait_s": "Cell subset wait (s)",

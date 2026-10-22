@@ -4161,9 +4161,8 @@ details.aesthetics-section > .aesthetics-body {
 .dsb-search .dsb-regex:has(+ .dsb-text:not([hidden])) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .dsb-text { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; white-space: nowrap; }
 .dsb-text.active, .dsb-regex.active { color: var(--az-link); border-color: var(--az-link); background: var(--az-accent-bg); position: relative; }
-.dsb-text-state { display: flex; align-items: center; gap: 0.6rem; padding: 0 1rem 0.4rem; font-size: 0.8rem; color: var(--az-muted); }
-.dsb-text-state[hidden], .dsb-progress[hidden] { display: none; }
-.dsb-progress { flex: 0 1 12rem; min-width: 4rem; height: 0.5rem; accent-color: var(--az-link); }
+.dsb-text-state { padding: 0 1rem 0.4rem; font-size: 0.8rem; color: var(--az-muted); }
+.dsb-text-state[hidden] { display: none; }
 /* The hits in descriptions: a heading row, then each store with its title and the words in context */
 .dsb-section-row th {
     padding: 0.5rem 0.5rem 0.25rem;

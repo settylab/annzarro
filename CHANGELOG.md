@@ -8,6 +8,30 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.7.3 (2026-10-22)
+
+### Added
+- `annzarro --version` prints the installed version (`annzarro 0.7.3`) and exits.
+- The Server health page shows the version the server runs and, when PyPI lists a newer release, one line to say so with the upgrade command (`pip install -U annzarro`) and a link to the release notes. The server asks PyPI (`GET /api/v1/admin/version-check`) only when an administrator opens the page, at most once in six hours per process, and ignores pre-releases and any failure. Set `server.update_check: false` for a server that must not make outbound requests. The desktop app never asks; it has its own updater.
+- The Server health page has a **Description search** block: whether the search is on, the state of its index (building, up to date, not complete, failed), how many datasets are searchable, not searched yet and unreadable, when it was last built, and **Rebuild now**, which crawls at once (audited as `text_index.rebuild`). The refresh interval stays a setting, `server.text_index_ttl_s`.
+- `GET /api/v1/datasets/text-search` takes `offset` and `current`, and answers `more`: how many matches follow the page.
+
+### Changed
+- The server builds the description index by itself and keeps it fresh. A few seconds after it starts (15 s) it crawls the datasets in the background, continues a crawl that stopped partway (for time, or because datasets did not answer) until every dataset is read, and reads again for changes once the index is older than `server.text_index_ttl_s`, now 30 minutes (was 10). One crawl runs at a time across all workers; none runs while the search is off. A search never starts a crawl. Nothing needs to be set up, on a server or in the desktop app.
+- The line under the dataset browser's search appears only while datasets are not searched yet: **Descriptions of 120 of 3,400 datasets searched so far** (a user limited to some folders is told that some datasets are not searched yet, without counts), and is gone once all are. It is not polled: the next search shows the newer state. The progress bar is gone.
+- A dataset with neither a README nor an attribution is no longer opened by the crawl: a few `stat` calls tell there is nothing to read, and it is found by its name only. A dataset that has not changed costs the same few calls on every round.
+- A crawl writes one line to the server log at INFO when it starts and one when it ends: how many datasets it found, read, kept unchanged and could not read (and how many timed out), how long it took, and why it stopped when it is partial.
+- A dataset that takes longer than `server.text_index_store_timeout_s` no longer costs the crawl a reader thread: a spare thread reads the next dataset, and the late dataset's text is kept if it arrives before the crawl ends. Late reads that have not answered count against the spare threads of the whole server process, across crawls, so a dataset that never answers cannot make each new crawl leave more threads behind. The default limit per dataset is now 15 s (was 5 s).
+
+### Removed
+- The description index can no longer be started by users. **Refresh** in the dataset browser leaves it alone, and `POST /api/v1/datasets/text-index/refresh` and `GET /api/v1/datasets/text-index/status` are gone (404). An administrator rebuilds it on the Server health page.
+- Three `server.*` settings of 0.7.2: `text_index_background` (the server always keeps the index fresh; turn the search off with `server.text_index_enabled` or the Settings page), `text_index_crawl_timeout_s` (a long crawl is continued) and `text_index_min_interval_s` (a search no longer starts a crawl). A configuration file that still sets one keeps working: the server and `annzarro config validate` warn that it is no longer used, and ignore the value.
+
+### Fixed
+- In the dataset browser, the description hit for the dataset you have open now comes first, and when there are more matches than the server returns, **N more** under the hits loads the next ones. Before, a dataset past the server's limit of 50 could not be reached.
+- The description search indexes datasets on a networked filesystem. Each dataset's attribution and README are now read from the files under `uns`, not through its consolidated metadata. Before, a read first checked that listing against every metadata file of the dataset, which was about 94% of the read time: 13 to 15 s for a dataset with about 2,500 metadata files, measured over a network filesystem. Those datasets passed the 5 s limit per dataset, so the crawl marked them timed out and stopped after the first few. A dataset is read again when `uns`, `uns/annzarro` or `uns/README` changes on disk: `annzarro annotate`, re-consolidating, or adding an attribution field (even without consolidating) is picked up. A value rewritten in place under an existing field is not, until the dataset is annotated or re-consolidated; that limit predates this release.
+- In the dataset browser, the **Matches this view** button (now **Like this view's dataset**) no longer hides the results of a description search. The button narrows the table to datasets with the same cells and genes, the same size or the same name as the dataset the view was made on. It is on at first when you choose a dataset for a view that has none. Description hits never carried that match, so while the button was on every hit was hidden, the matching ones too. Hits now carry their **same cells and genes** (or **same size**, **same name**) tag and are shown whether or not the button is on; the other filters still apply to them. The button's tooltip says what it keeps.
+
 ### Docs
 - The README and the licence page cite v0.7.2 by its DOI,
   [10.5281/zenodo.23547580](https://doi.org/10.5281/zenodo.23547580).

@@ -18,6 +18,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
+import annzarro
 from annzarro.server import run_server
 from annzarro.utils import paths
 from annzarro.utils.config_manager import ConfigManager, config_manager
@@ -1016,6 +1017,8 @@ def main(argv: List[str] = None) -> int:
     # Global options
     parser.add_argument('--config', help="Path to configuration file")
     parser.add_argument('--debug', action='store_true', help="Enable debug logging")
+    parser.add_argument('--version', action='version', version=f"annzarro {annzarro.__version__}",
+                        help="Print the installed version and exit")
     
     # Flags that override configuration keys. Shared by `start` and the
     # `config` subcommands, so `config show --port 9000` shows what

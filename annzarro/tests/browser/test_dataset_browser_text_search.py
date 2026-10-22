@@ -3,10 +3,12 @@
 A server with stores that carry attribution and READMEs (``annzarro store annotate``'s writer), three users
 (``alice`` an admin, ``carol`` unrestricted, ``bob`` restricted to the folder ``sub``) and the index built by
 the server's own crawl. Covered: a word only a README holds finds the store under the name matches; a title
-hit ranks above a README hit; text from a README is shown as text; selecting a hit opens the README on the
-first highlight; the policy switch hides the toggle; a restricted user sees nothing outside the grants; the
-progress line while the index is built; Refresh asks for the index again; Alt+D; regex mode; one request per
-pause in typing; dark mode and a phone width without horizontal scrolling.
+hit ranks above a README hit; the dataset that is open ranks first among the hits; "N more" loads the next
+page; text from a README is shown as text; selecting a hit opens the README on the first highlight; the policy
+switch hides the toggle; a restricted user sees nothing outside the grants; the one line while datasets are
+not searched yet (and none once they are, with no polling and no progress bar); Refresh leaves the index
+alone; Alt+D; regex mode; one request per pause in typing; dark mode and a phone width without horizontal
+scrolling.
 
 Set DATASET_SHOTS to a folder to keep screenshots of the results section. Needs Playwright with Chromium;
 skipped without it, or failed when ANNZARRO_REQUIRE_BROWSER=1.
@@ -15,6 +17,7 @@ import os
 import shutil
 import socket
 import threading
+import time
 
 import pytest
 
@@ -24,13 +27,13 @@ from annzarro.server.core import create_app
 from annzarro.server.routes import data_routes
 from annzarro.tests.e2e.dsb_servers import FIXTURE, SHOTS, Session, _require
 from annzarro.tests.server.test_text_index import annotate
-from annzarro.tests.ui_helpers import BROWSER, BUTTON, ROW, close_browser, open_browser
+from annzarro.tests.ui_helpers import BROWSER, BUTTON, ROW, open_browser, open_dataset
 
 PASSWORD = "pw-for-browser-tests"
 TEXT_ROW = f"{ROW}.dsb-text-hit"
 SECTION = f"{BROWSER} #dsb-table tbody tr.dsb-section-row"
 TEXT_REQUEST = "/api/v1/datasets/text-search"
-STATE_LINE = "#dsb-text-state-text"
+STATE_LINE = "#dsb-text-state"
 
 STORES = {
     "bm_aging.zarr": ({"title": "Bone marrow ageing"}, "# Notes\n\nPreprocessing followed by clustering of the marrow.\n"),
@@ -52,7 +55,7 @@ class World:
         return Session(self.base, login=(user, PASSWORD), **kwargs)
 
 
-def serve(tmp_path, **config):
+def serve(tmp_path, build=True, **config):
     data = tmp_path / "data"
     for rel, spec in STORES.items():
         (data / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -63,10 +66,12 @@ def serve(tmp_path, **config):
     for name, admin in (("alice", True), ("bob", False), ("carol", False)):
         manager.add_user(name, PASSWORD, is_admin=admin)
     app = create_app({"TESTING": True, "host": "127.0.0.1", "data_dir": str(data), "log_file": str(tmp_path / "t.log"),
-                      "auth_enabled": True, "user_file": str(tmp_path / "users.json"), "secret_key": "browser-test",
-                      "text_index_min_interval_s": 0, **config})
+                      "auth_enabled": True, "user_file": str(tmp_path / "users.json"), "secret_key": "browser-test", **config})
     access.add_grant(app.config, "bob", "dir", str(data / "sub"), actor="alice")
     access.set_restricted(app.config, "bob", True)
+    if build and config.get("text_index_enabled", True):
+        with app.test_request_context("/"):       # the server's keeper does this a little after it starts
+            text_index.crawl(app.config)
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -298,81 +303,116 @@ def test_a_restricted_user_opens_a_hit(world):
         s.close()
 
 
-def test_the_progress_line_shows_while_the_index_is_built_and_the_hits_arrive_when_it_is_done(tmp_path, monkeypatch):
-    _require()
-    gate = threading.Event()
+def _build_with_a_late_store(w, monkeypatch):
+    """Crawl once with title_hit.zarr answering too late: 7 of the 8 datasets are searched."""
     real = text_index.read_text
-    monkeypatch.setattr(text_index, "read_text", lambda path, n: (gate.wait(60), real(path, n))[1])
-    w, server, thread = serve(tmp_path, text_index_store_timeout_s=60)
+    w.app.config["text_index_store_timeout_s"] = 0.3         # below the validated minimum, to keep the test short
+
+    def read(path, n):
+        if path.endswith("title_hit.zarr"):
+            time.sleep(1.5)
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    with w.app.test_request_context("/"):
+        text_index.crawl(w.app.config)
+    monkeypatch.setattr(text_index, "read_text", real)
+
+
+def test_one_line_says_how_far_the_index_is_and_goes_away_once_it_is_complete_with_no_polling(tmp_path, monkeypatch):
+    _require()
+    w, server, thread = serve(tmp_path, build=False)
     s = w.session()
     try:
+        _build_with_a_late_store(w, monkeypatch)
         page = s.page
         polls = []
-        page.on("request", lambda r: polls.append(r.url) if "text-index/status" in r.url else None)
+        page.on("request", lambda r: polls.append(r.url) if "/datasets/text-index" in r.url else None)
         open_browser(page)
+        assert page.locator("#dsb-text-progress").count() == 0, "no progress bar"
         _type(page, "preprocessing")
-        page.wait_for_function("() => /^Indexing descriptions/.test(document.getElementById('dsb-text-state-text').textContent)", timeout=20_000)
-        assert page.is_visible("#dsb-text-progress")
-        assert page.locator(TEXT_ROW).count() == 0
-        _shot(page, "text-search-indexing.png", settled=False)
-        page.wait_for_timeout(2000)
-        assert len(polls) >= 2, "the status is read while the crawl runs"
-        gate.set()
         _wait_hits(page, 3)
-        page.wait_for_function("() => document.getElementById('dsb-text-progress').hidden", timeout=20_000)
-        assert not page.inner_text(STATE_LINE).startswith("Indexing")
-        assert "datasets indexed" in page.inner_text(STATE_LINE)
-        seen = len(polls)
+        page.wait_for_function("() => /searched so far/.test(document.getElementById('dsb-text-state').textContent)", timeout=20_000)
+        assert page.inner_text(STATE_LINE) == "Descriptions of 7 of 8 datasets searched so far"
+        _shot(page, "text-search-indexing.png", settled=False)
+        # the server goes on by itself; the line is not polled, the next query shows the newer state
+        monkeypatch.setattr(text_index, "RETRY_TIMEOUT_AFTER_S", 0)
+        with w.app.test_request_context("/"):
+            text_index.crawl(w.app.config)
         page.wait_for_timeout(2000)
-        assert len(polls) == seen, "polling stopped with the crawl"
+        assert "searched so far" in page.inner_text(STATE_LINE), "nothing is read by itself"
+        _type(page, "clustering")
+        page.wait_for_function("() => document.getElementById('dsb-text-state').hidden", timeout=20_000)
+        assert polls == [], polls
     finally:
-        gate.set()
         s.close()
         _stop(server, thread)
 
 
-def test_polling_stops_when_the_dialog_closes(tmp_path, monkeypatch):
+def test_a_restricted_user_gets_the_line_without_counts(tmp_path, monkeypatch):
     _require()
-    gate = threading.Event()
-    real = text_index.read_text
-    monkeypatch.setattr(text_index, "read_text", lambda path, n: (gate.wait(60), real(path, n))[1])
-    w, server, thread = serve(tmp_path, text_index_store_timeout_s=60)
-    s = w.session()
+    w, server, thread = serve(tmp_path, build=False)
+    s = w.session("bob")
     try:
-        page = s.page
-        polls = []
-        page.on("request", lambda r: polls.append(r.url) if "text-index/status" in r.url else None)
-        open_browser(page, query="preprocessing")
-        page.wait_for_function("() => /^Indexing descriptions/.test(document.getElementById('dsb-text-state-text').textContent)", timeout=20_000)
-        page.wait_for_timeout(1700)
-        assert polls
-        close_browser(page)
-        page.wait_for_timeout(300)
-        seen = len(polls)
-        page.wait_for_timeout(2000)
-        assert len(polls) == seen
+        _build_with_a_late_store(w, monkeypatch)
+        open_browser(s.page)
+        _type(s.page, "grantedword")
+        _wait_hits(s.page)
+        s.page.wait_for_function("() => document.getElementById('dsb-text-state').textContent.length > 0", timeout=20_000)
+        text = s.page.inner_text(STATE_LINE)
+        assert text == "Descriptions of some datasets are not searched yet" and not any(ch.isdigit() for ch in text)
     finally:
-        gate.set()
         s.close()
         _stop(server, thread)
 
 
-def test_refresh_asks_the_server_to_read_the_descriptions_again(world):
+def test_refresh_leaves_the_description_index_alone(world):
     s = _open(world, query="preprocessing")
     try:
         page = s.page
         _wait_hits(page, 3)
         posts = []
-        page.on("request", lambda r: posts.append(r) if r.method == "POST" and "text-index/refresh" in r.url else None)
+        page.on("request", lambda r: posts.append(r.url) if r.method == "POST" and "text-index" in r.url else None)
         page.click("#dsb-refresh")
         page.wait_for_function("() => document.getElementById('dsb-refresh').getAttribute('aria-busy') === 'false'", timeout=30_000)
-        assert len(posts) == 1
-        # with the toggle off the button leaves the index alone
-        page.keyboard.press("Alt+d")
-        assert page.get_attribute("#dsb-text", "aria-pressed") == "false"
-        page.click("#dsb-refresh")
-        page.wait_for_function("() => document.getElementById('dsb-refresh').getAttribute('aria-busy') === 'false'", timeout=30_000)
-        assert len(posts) == 1
+        assert posts == []
+    finally:
+        s.close()
+
+
+def test_the_dataset_that_is_open_ranks_first_among_the_description_hits(world):
+    s = world.session()
+    try:
+        page = s.page
+        open_dataset(page, os.path.join(world.data, "readme_hit.zarr"))
+        open_browser(page, query="preprocessing")
+        _wait_hits(page, 3)
+        names = _text_names(page)
+        assert names[0] == "readme_hit.zarr" and "title_hit.zarr" in names, names      # it was third by score
+    finally:
+        s.close()
+
+
+def test_n_more_loads_the_next_page_of_hits(world):
+    s = world.session()
+    try:
+        page = s.page
+        seen = []
+
+        def shorten(route):            # two results a page, so that four datasets need more than one
+            url = route.request.url
+            seen.append(url)
+            route.continue_(url=url + "&limit=2")
+        page.route("**/api/v1/datasets/text-search*", shorten)
+        open_browser(page, query="preprocessing")
+        more = f"{BROWSER} .dsb-text-more"
+        page.wait_for_selector(more, timeout=30_000)
+        assert page.inner_text(more).strip() == "3 more"
+        while page.locator(more).count():
+            page.click(more)
+            page.wait_for_function("(sel) => !document.querySelector(sel) || !document.querySelector(sel).disabled", arg=more, timeout=20_000)
+        assert {"title_hit.zarr", "readme_hit.zarr", "bm_aging.zarr", "granted.zarr"} == set(_text_names(page))
+        assert any("offset=2" in u for u in seen), seen
+        assert not s.errors, s.errors
     finally:
         s.close()
 
@@ -417,7 +457,7 @@ def test_typing_asks_once_per_pause_and_an_empty_query_asks_nothing(world):
     s = _open(world, query="preprocessing")
     try:
         page = s.page
-        _wait_hits(page, 3)          # the first search builds the index and asks again when it is done
+        _wait_hits(page, 3)
         page.fill("#dsb-search", "")
         page.wait_for_timeout(500)
         requests = []

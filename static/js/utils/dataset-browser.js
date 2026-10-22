@@ -17,7 +17,7 @@
  * clicking elsewhere in a row selects it and fills the details pane.
  *
  * services (everything the dialog reads from the application):
- *   urls            {folder, search, details, lookup, textSearch, textStatus, textRefresh}
+ *   urls            {folder, search, details, lookup, textSearch}
  *   textSearchAllowed() Promise of whether the policy lets this user search the descriptions (false hides the toggle)
  *   infoLoader      the loader of utils/dataset-info.js (attribution, README, structure of a dataset), or null
  *   me()            Promise of auth/me (null when it cannot be read)
@@ -42,14 +42,13 @@ import {
 } from './dataset-picker.js';
 import { recentEntries, userKey } from './dataset-recents.js';
 import { listingId } from './dataset-listing-cache.js';
-import { csrfFetch } from './csrf.js';
 import { drawAbout, drawReadme, drawStructure, showError, showLoading, showPart } from './dataset-info.js';
 import {
     COLUMNS, SERVER_SORTS, FORMAT_CHIPS, CELL_BANDS, MODIFIED_BANDS,
     applyFilters, emptyFilters, filtersActive, searchRows, sortRows, ariaSort, nextSort, typeAheadIndex,
     buildPlaces, breadcrumbs, matchBadge, matchesView, rowDescription, countLabel, dateLabel, dateTimeLabel,
     openedLabel, formatLabel, countSummary, isRemote, missingKeys,
-    TEXT_SECTION, snippetParts, textRows, queryTerms, termRanges, indexLine, createIndexPoller
+    TEXT_SECTION, snippetParts, textSection, MATCH_CHIP, queryTerms, termRanges, indexLine, moreLabel
 } from './dataset-browser-model.js';
 
 const PAGE = 200;
@@ -157,7 +156,7 @@ export function createDatasetBrowser(services) {
         crumbs: $('dsb-crumbs'), pathForm: $('dsb-pathform'), path: $('dsb-path'), pathOpen: $('dsb-path-open'),
         pathLabel: $('dsb-path-label'), refresh: $('dsb-refresh'), refreshText: $('dsb-refresh-text'), refreshNote: $('dsb-refresh-note'), pathError: $('dsb-path-error'), tableWrap: $('dsb-table-wrap'), details: $('dsb-details'),
         status: $('dsb-status'), native: $('dsb-open-native'), text: $('dsb-text'),
-        textState: $('dsb-text-state'), textStateText: $('dsb-text-state-text'), textStateLive: $('dsb-text-state-live'), textProgress: $('dsb-text-progress'), pathbar: $('dsb-pathbar'), hintPath: $('dsb-hint-path')
+        textState: $('dsb-text-state'), pathbar: $('dsb-pathbar'), hintPath: $('dsb-hint-path')
     };
     if (!root) return { open: async () => null, close() {}, isOpen: () => false };
     const modal = bootstrap.Modal.getOrCreateInstance(root);
@@ -173,7 +172,6 @@ export function createDatasetBrowser(services) {
     let searchAbort = null;
     let textTimer = null;
     let textAbort = null;
-    let liveText = '';
     let typeBuffer = '';
     let typeTimer = null;
     let statusTimer = null;
@@ -199,7 +197,7 @@ export function createDatasetBrowser(services) {
             regex: false,
             textAllowed: false,            // the policy lets this user search the descriptions
             textOn: true,                  // the toggle
-            text: { hits: null, index: null },     // hits: {key, results, partial, error}; index: the server's `index`
+            text: { hits: null, index: null },     // hits: {key, results, more, partial, error, loadingMore}; index: the server's `index`
             textSearching: null,
             filters: emptyFilters(),
             sort: null,                    // null: the default of the place
@@ -373,7 +371,6 @@ export function createDatasetBrowser(services) {
         const atRoot = inFolderPlace() && !S.folder;
         await whileRefreshing(() => Promise.all([
             loadQuick({ keep: true }),
-            refreshIndex(),
             inFolderPlace() ? loadFolder({ refresh: true }) : null,
             atRoot ? null : refreshRoot()
         ]));
@@ -484,7 +481,6 @@ export function createDatasetBrowser(services) {
         clearTimeout(textTimer);
         if (textAbort) textAbort.abort();
         S.textSearching = null;
-        if (!textActive()) poller.stop();
         if (!wantsText()) return;
         const key = textKey();
         let done;
@@ -492,21 +488,17 @@ export function createDatasetBrowser(services) {
         textTimer = setTimeout(async () => {
             if (!S) return done();
             textAbort = new AbortController();
-            const params = new URLSearchParams({ q: S.query });
-            if (inFolderPlace() && S.folder) params.set('folder', S.folder);
             try {
-                const { ok, status, body } = await getJson(`${services.urls.textSearch}?${params}`, textAbort.signal);
+                const { ok, status, body } = await getJson(`${services.urls.textSearch}?${textParams()}`, textAbort.signal);
                 if (!S || key !== textKey()) return done();
                 if (!ok) {
                     if (status === 404 || (status === 403 && body.reason === 'disabled_by_policy')) {
                         S.textAllowed = false;          // the policy changed under the open dialog
                         S.text = { hits: null, index: null };
-                        poller.stop();
                     } else S.text.hits = { key, error: body.error || 'The description search failed' };
                 } else {
-                    S.text.hits = { key, results: body.results || [], partial: !!body.partial };
+                    S.text.hits = { key, results: body.results || [], more: body.more || 0, partial: !!body.partial };
                     S.text.index = body.index || null;
-                    if (S.text.index && S.text.index.state === 'running') poller.start();
                 }
             } catch (e) {
                 if (e && e.name === 'AbortError') return done();
@@ -518,38 +510,37 @@ export function createDatasetBrowser(services) {
         }, immediate ? 0 : SEARCH_DELAY_MS);
     }
 
-    /** Reads the index status while a crawl runs; when it ends the query is asked again. Stopped when the dialog closes. */
-    const poller = createIndexPoller({
-        fetchStatus: async () => {
-            const { ok, body } = await getJson(services.urls.textStatus);
-            if (!ok) throw new Error(body.error || 'The index status could not be read');
-            return body;
-        },
-        onStatus: status => { if (S) { S.text.index = status; renderTextState(); } },
-        onDone: status => {
-            if (!S) return;
-            S.text.index = status;
-            if (wantsText()) scheduleText(true);
-            render();
-        }
-    });
+    /** The query string of a description search: the words, the folder shown, the open dataset (ranked first) and the page. */
+    function textParams(offset = 0) {
+        const params = new URLSearchParams({ q: S.query });
+        if (inFolderPlace() && S.folder) params.set('folder', S.folder);
+        const open = services.currentPath();
+        if (open) params.set('current', open);
+        if (offset) params.set('offset', String(offset));
+        return params;
+    }
 
-    /** Ask the server to read the descriptions again (the Refresh button); it rate-limits, and says what it is doing. */
-    async function refreshIndex() {
-        if (!S || !S.textAllowed || !S.textOn) return;
-        const mine = S;
+    /** The next page of description hits (the "N more" button), added after those shown. */
+    async function loadMoreText() {
+        const hits = S && S.text.hits;
+        if (!hits || !hits.results || hits.loadingMore) return;
+        const key = textKey();
+        if (hits.key !== key) return;
+        hits.loadingMore = true;
+        render();
         try {
-            const response = await csrfFetch(services.urls.textRefresh, { method: 'POST' });
-            const body = await response.json().catch(() => ({}));
-            if (S !== mine) return;
-            if (response.ok) {
-                S.text.index = body;
-                if (body.state === 'running') poller.start();
-            } else if (response.status === 404 || (response.status === 403 && body.reason === 'disabled_by_policy')) {
-                S.textAllowed = false;
-                poller.stop();
-            }
-        } catch { /* the folder read says whether the server is there; the index line keeps what it knew */ }
+            const { ok, body } = await getJson(`${services.urls.textSearch}?${textParams(hits.results.length)}`);
+            if (!S || S.text.hits !== hits || key !== textKey()) return;
+            if (!ok) throw new Error(body.error || 'The description search failed');
+            hits.results = hits.results.concat(body.results || []);
+            hits.more = body.more || 0;
+            hits.partial = !!body.partial;
+            S.text.index = body.index || S.text.index;
+        } catch (e) {
+            if (S && S.text.hits === hits) hits.error = (e && e.message) || 'The description search failed';
+        }
+        hits.loadingMore = false;
+        if (S) render();
     }
 
     /** The toggle: pressed while the descriptions are searched, hidden when the policy forbids it. */
@@ -561,19 +552,11 @@ export function createDatasetBrowser(services) {
         dom.search.placeholder = on ? 'Search names and descriptions' : 'Search name or path';
     }
 
-    /** One line under the field about the index, with a progress bar while it is built. */
+    /** One line under the field while datasets are not searched yet; nothing when they all are. */
     function renderTextState() {
-        const line = textActive() ? indexLine(S.text.index) : null;
-        const running = !!line && line.text.startsWith('Indexing');
-        const show = !!line && (running || !!S.query.trim());
-        dom.textState.hidden = !show;
-        if (!show) { liveText = ''; return; }
-        dom.textStateText.textContent = line.text;
-        dom.textProgress.hidden = !running;
-        if (running && line.percent !== null) dom.textProgress.value = line.percent; else dom.textProgress.removeAttribute('value');
-        // the live region changes when the state does, not at every percent
-        const said = running ? 'Indexing descriptions' : line.text;
-        if (said !== liveText) { liveText = said; dom.textStateLive.textContent = said; }
+        const line = textActive() && S.query.trim() ? indexLine(S.text.index) : null;
+        dom.textState.hidden = !line;
+        dom.textState.textContent = line || '';
     }
 
     function toggleText() {
@@ -618,7 +601,7 @@ export function createDatasetBrowser(services) {
         // the stores whose title, attribution or README holds the words follow, best first (the server's order)
         const hits = S.text.hits;
         if (wantsText() && hits && hits.key === textKey() && hits.results) {
-            rows = rows.concat(applyFilters(textRows(matches, hits.results), S.filters));
+            rows = rows.concat(textSection(matches, hits.results, S.filters, annotate));
         }
         return { rows, compiled: found.compiled };
     }
@@ -707,8 +690,9 @@ export function createDatasetBrowser(services) {
         make('cells', [...S.filters.cells][0] || '');
         make('modified', S.filters.modified);
         if (S.viewMatches) {
-            const b = el('button', 'btn btn-sm btn-outline-secondary dsb-chip dsb-toggle', 'Matches this view');
+            const b = el('button', 'btn btn-sm btn-outline-secondary dsb-chip dsb-toggle', MATCH_CHIP.label);
             b.type = 'button';
+            b.title = MATCH_CHIP.title;
             b.id = 'dsb-filter-matches';
             b.setAttribute('aria-pressed', String(S.filters.matches));
             b.classList.toggle('active', S.filters.matches);
@@ -955,6 +939,13 @@ export function createDatasetBrowser(services) {
         if (wantsText() && found && found.key === textKey()) {
             if (found.error) wrap.appendChild(el('div', 'dsb-state text-danger', found.error));
             else if (found.partial) wrap.appendChild(el('div', 'dsb-state', 'The description search stopped at its limit; narrow it to see more.'));
+            if (!found.error && found.more > 0) {
+                const next = el('button', 'btn btn-sm btn-link dsb-more dsb-text-more', found.loadingMore ? 'Loading…' : moreLabel(found.more));
+                next.type = 'button';
+                next.disabled = !!found.loadingMore;
+                next.addEventListener('click', loadMoreText);
+                wrap.appendChild(next);
+            }
         }
         if (S.remote && S.remote.truncated && searching()) wrap.appendChild(el('div', 'dsb-state', 'The search stopped at its limit; narrow it to see more.'));
         if (inFolderPlace() && !searching() && sort.key && !sort.server && L.more) {
@@ -1556,7 +1547,6 @@ export function createDatasetBrowser(services) {
         clearTimeout(searchTimer);
         clearTimeout(textTimer);
         clearTimeout(detailsTimer);
-        poller.stop();
         if (textAbort) textAbort.abort();
         if (searchAbort) searchAbort.abort();
         if (detailsAbort) detailsAbort.abort();
@@ -1635,7 +1625,6 @@ export function createDatasetBrowser(services) {
         dom.regex.setAttribute('aria-pressed', 'false');
         dom.text.hidden = true;
         dom.textState.hidden = true;
-        liveText = '';
         configureNative();
         dom.hintPath.textContent = services.shortcut.path;
         dom.tableWrap.textContent = '';

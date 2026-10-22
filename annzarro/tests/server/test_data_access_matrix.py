@@ -44,9 +44,9 @@ FOLDER_ARG = {"list_directory": "path", "list_dataset_folder": "folder", "list_l
 #: The argument that names the store where it is not ``dataset_path``.
 STORE_ARG = {"dataset_details": "path", "dataset_info": "path"}
 CHECKED_KINDS = ("dataset", "remote", "listing")
-#: Routes whose reply carries state of the call (a rate-limited refresh, a crawl's progress): compare the status only.
+#: Routes whose reply carries state of the call (a rate-limited refresh, how far the index is): compare the status only.
 #: What the text search tells whom is in test_text_search.py.
-STATEFUL = ("refresh_dataset", "text_index_refresh", "text_search", "text_index_status")
+STATEFUL = ("refresh_dataset", "text_search")
 
 
 # --- the app and its fixture -------------------------------------------------

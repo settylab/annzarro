@@ -343,18 +343,24 @@ it.
 ### Searching descriptions
 
 [`datasets.text-search.enabled`]{#policy-datasets-text-search-enabled} is on by default. It governs the
-search over the attribution and READMEs of the datasets (`GET /api/v1/datasets/text-search`, with its
-status and refresh routes: {doc}`../reference/http-api`). Off for a user, the three routes answer
+search over the attribution and READMEs of the datasets (`GET /api/v1/datasets/text-search`: {doc}`../reference/http-api`). Off for a user, the route answers
 `403 disabled_by_policy` to them; off in the config file (`server.text_index_enabled: false`) or for
 everyone, no crawl runs either. It is a restrict key like the others: the narrowest value of config, admin
 and user applies.
 
 The server reads the attribution and the first 64 KB of the README of every local store it can list, one crawl at a
 time for the whole server, into a gzipped index in the cache directory (`server.cache_dir`, shared by all
-workers). Remote datasets are not indexed. A search shows a user only the stores they can open, and a
-restricted user is told the path of what they may open (as in their listings), nothing above a grant, and not how many stores the server holds. **Clear cache**
-marks the index stale, so the next search refreshes it; it does not delete it. The limits are in
-{doc}`resource-limits`.
+workers). It needs no setup: each server process runs a keeper that starts the first crawl a few seconds after it
+starts (15 s), continues a crawl that stopped partway, and reads the datasets again for changes once the index is older than
+`server.text_index_ttl_s` (30 minutes). A search never starts a crawl. A dataset with neither a README nor an
+attribution is not opened: its signature (a few `stat` calls) already says there is nothing to read, and it is found by
+name only; a dataset that has not changed costs the same few `stat` calls on every later round. Remote datasets are
+not indexed. A search shows a user only the stores they can open, and a restricted user is told the path of what they
+may open (as in their listings), nothing above a grant, and not how many stores the server holds. **Clear cache**
+marks the index stale, so the keeper refreshes it on its next round; it does not delete it. Each crawl logs a line at INFO
+when it starts and one when it ends, with its counts. The limits are in {doc}`resource-limits`.
+
+The **Description search** block on the Server health section ({ref}`admin-health`) shows the state and has **Rebuild now**.
 
 ### Outbound hosts
 
@@ -431,6 +437,22 @@ worker is replaced (`max_requests`). A worker that has not written for a minute 
 and left out of the totals: it is stuck, or it ran on another host and is gone (a process of this
 host that is gone is dropped). **Clear cache** empties the result caches of every worker (all datasets,
 or one) and is audited; it does what `POST /cache/reset` does for an admin.
+
+The **Description search** block shows the state of the index the dataset browser searches: off (the switch is on the Settings page,
+[Searching descriptions](#policy-datasets-text-search-enabled)), building, up to date, not complete (the server continues), or failed; how
+many datasets are searchable, not yet searched (not reached, or they did not answer in time: they are read again) and unreadable; and when it was last built.
+**Rebuild now** starts a crawl at once (audited as `text_index.rebuild`): it reads again what changed, and does nothing while one runs.
+There is no schedule to set here; the refresh interval is `server.text_index_ttl_s`.
+
+The page shows the version the server runs. When an administrator opens it, the server also asks PyPI
+whether a newer release exists (`GET https://pypi.org/pypi/annzarro/json`, a plain request with
+Python's default user agent that carries nothing about your server), and if so adds one line:
+"AnnZarro 0.8.0 is available (this server runs 0.7.3)", with `pip install -U annzarro` and a link to
+the release notes. Pre-releases are ignored. The answer is kept for six hours per server process, so
+reloading the page does not ask again; a failed request (offline, timeout, a reply that is not
+understood) is remembered for 15 minutes and shows no notice. Nothing is requested at start-up, for
+other users or in the background. Set `server.update_check: false` for a server that must not make
+outbound requests; the page then shows only the running version. The desktop app never asks.
 
 `GET /status` and `GET /cache/info` answer admins only on a shared server.
 

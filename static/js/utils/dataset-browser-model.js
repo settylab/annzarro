@@ -91,7 +91,13 @@ export function matchBadge(entry) {
     }
 }
 
-/** Whether the entry matches the view at all (the "Matches this view" chip). */
+/** The chip that keeps the stores like the view's dataset, and what it says it does. */
+export const MATCH_CHIP = {
+    label: "Like this view's dataset",
+    title: 'Only datasets with the same cells and genes, the same size, or the same name as the dataset this view was made on'
+};
+
+/** Whether the entry matches the view at all (the MATCH_CHIP chip). */
 export function matchesView(entry) {
     return !!matchBadge(entry);
 }
@@ -388,14 +394,11 @@ export function countSummary({ stores, folders, query, truncated = false, sorted
 
 // ---- searching the descriptions ------------------------------------------------------------
 //
-// The server's text search (`GET /datasets/text-search`) answers `{results, partial, index}`; a result is a
+// The server's text search (`GET /datasets/text-search`) answers `{results, more, partial, index}` (`more`: matches after this page); a result is a
 // listing entry plus `title`, `score`, `matched` and `snippet: {field, text, highlights}`, with the highlights
 // as `[start, end]` offsets in UTF-16 code units, which are the indices of a JavaScript string.
 
 export const TEXT_SECTION = 'Found in titles, attribution and READMEs';
-
-/** How often the index status is read while a crawl runs. */
-export const POLL_MS = 750;
 
 /**
  * A snippet as pieces to set with `textContent`: `[{text, hit}]`. The offsets are the server's; any that
@@ -446,6 +449,16 @@ export function textRows(nameRows, hits) {
         out.push({ ...hit, path: hit.path || key, kind: 'store', textHit: true, matched: Array.isArray(hit.matched) ? hit.matched : [] });
     }
     return out;
+}
+
+/**
+ * The description section's rows: the hits not already among the name matches, each marked with its
+ * match to the view (`annotate`, as the listed rows are), passed through the chips except the match chip.
+ * The words were found in the dataset's own text, so a hit is shown whether or not it is like the view's
+ * dataset; its badge says when it is.
+ */
+export function textSection(nameRows, hits, filters, annotate = row => row) {
+    return applyFilters(textRows(nameRows, hits).map(annotate), { ...filters, matches: false });
 }
 
 /** The query as the terms the server searches for: words and "quoted phrases". */
@@ -499,80 +512,25 @@ export function termRanges(text, terms) {
     return merged;
 }
 
-/** "just now", "3 min ago", "2 h ago", "4 days ago" for a time in seconds since the epoch ('' when not known). */
-export function agoLabel(seconds, now = Date.now() / 1000) {
-    if (!Number.isFinite(seconds) || seconds <= 0) return '';
-    const s = Math.max(0, now - seconds);
-    if (s < 45) return 'just now';
-    if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
-    if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-    const days = Math.round(s / 86400);
-    return `${days} day${days === 1 ? '' : 's'} ago`;
-}
-
 /**
- * The one line under the search field about the description index, from the `index` object of an answer.
- * `percent` is set while a crawl runs. The counts are only there when the server sent them (an unrestricted user).
- * @returns {{text: string, percent: number|null}|null} null when there is nothing to say
+ * The one line under the search field about the description index, from the `index` object of an answer: null
+ * when every dataset is searched (or the server said nothing), else how far it is. The counts are only there
+ * for an unrestricted user (`searched`, `total`); `capped` says the server's size limit leaves datasets out.
+ * There is no polling: the next query shows the newer state.
+ * @returns {string|null}
  */
-export function indexLine(index, now = Date.now() / 1000) {
-    if (!index) return null;
-    if (index.state === 'running') {
-        const f = index.progress && Number.isFinite(index.progress.fraction) ? index.progress.fraction : null;
-        const percent = f === null ? null : Math.max(0, Math.min(100, Math.round(f * 100)));
-        return { text: `Indexing descriptions…${percent === null ? '' : ` ${percent}%`}`, percent };
+export function indexLine(index) {
+    if (!index || index.complete !== false) return null;
+    const searched = Number.isFinite(index.searched) ? index.searched : null;
+    const total = Number.isFinite(index.total) && index.total > 0 ? index.total : null;
+    if (index.capped) {
+        return searched !== null ? `Descriptions of ${countLabel(searched)} datasets searched; the server's limit leaves out the rest` : 'Descriptions of some datasets are not searched; the server\'s limit leaves them out';
     }
-    if (index.state === 'failed') return { text: 'Descriptions could not be indexed.', percent: null };
-    if (index.state === 'idle' && !index.built_at) return null;
-    const ago = agoLabel(index.built_at, now);
-    const bits = [];
-    bits.push(Number.isFinite(index.stores) ? `${countLabel(index.stores)} datasets indexed${ago ? ` ${ago}` : ''}` : (ago ? `Indexed ${ago}` : 'Indexed'));
-    if (index.stale) bits.push('updating');
-    if (index.capped || index.partial) bits.push('some datasets are not searched');
-    return { text: bits.join(', '), percent: null };
+    if (searched !== null && total !== null) return `Descriptions of ${countLabel(Math.min(searched, total))} of ${countLabel(total)} datasets searched so far`;
+    return 'Descriptions of some datasets are not searched yet';
 }
 
-/**
- * Reads the index status every `interval` ms while a crawl runs and tells when it has finished.
- * `fetchStatus()` resolves to the status object (or rejects); `onStatus(status)` gets each reading;
- * `onDone(status)` gets the first reading that is not `running`. Stops by itself after `maxFailures`
- * readings in a row that failed. The timers are injectable for tests.
- */
-export function createIndexPoller({ fetchStatus, onStatus = () => {}, onDone = () => {}, interval = POLL_MS, maxFailures = 5, setTimer = setTimeout, clearTimer = clearTimeout }) {
-    let timer = null;
-    let active = false;
-    let generation = 0;
-    let failures = 0;
-    const tick = async (mine) => {
-        timer = null;
-        let status = null;
-        let failed = false;
-        try { status = await fetchStatus(); } catch { failed = true; }
-        if (!active || mine !== generation) return;
-        if (failed) {
-            failures++;
-            if (failures >= maxFailures) { active = false; return; }
-        } else {
-            failures = 0;
-            onStatus(status);
-            if (!status || status.state !== 'running') { active = false; onDone(status); return; }
-        }
-        timer = setTimer(() => tick(mine), interval);
-    };
-    return {
-        start() {
-            if (active) return;
-            active = true;
-            failures = 0;
-            const mine = ++generation;
-            timer = setTimer(() => tick(mine), interval);
-        },
-        stop() {
-            active = false;
-            generation++;
-            if (timer !== null) clearTimer(timer);
-            timer = null;
-        },
-        get running() { return active; }
-    };
+/** The label of the button that loads the next page of description hits (`more` is the server's count). */
+export function moreLabel(more) {
+    return Number.isFinite(more) && more > 0 ? `${countLabel(more)} more` : '';
 }

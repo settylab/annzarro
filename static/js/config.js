@@ -90,8 +90,6 @@ const Config = (function() {
         DATASET_FOLDER: `${API_BASE}/datasets/folder`,
         DATASET_SEARCH: `${API_BASE}/datasets/search`,
         DATASET_TEXT_SEARCH: `${API_BASE}/datasets/text-search`,
-        DATASET_TEXT_STATUS: `${API_BASE}/datasets/text-index/status`,
-        DATASET_TEXT_REFRESH: `${API_BASE}/datasets/text-index/refresh`,
         DATASET_LOOKUP: `${API_BASE}/datasets/lookup`,
         DATASET_DETAILS: `${API_BASE}/datasets/details`,
         DATASET_ABOUT: `${API_BASE}/datasets/info`,

@@ -133,6 +133,11 @@ server:
       description: Serve Prometheus metrics at /metrics (request counts and latency by route group, in-flight requests, caches, memory). Off by default; only metrics_allow networks can read it
       default: false
       security: internal
+    update_check:
+      type: boolean
+      description: Let the admin Server health page ask PyPI (a plain GET, nothing about the server is sent) whether a newer AnnZarro is out, at most once in a few hours and only when an admin opens the page. false = never ask; the page then shows only the running version. The desktop app never asks
+      default: true
+      security: internal
     metrics_allow:
       type: array
       items:
@@ -194,16 +199,11 @@ server:
       type: number
       minimum: 1
       description: Seconds the description crawl waits for one store before it marks it timed out and goes on
-      default: 5
-    text_index_crawl_timeout_s:
-      type: number
-      minimum: 1
-      description: Seconds one crawl of the description index may take; then it saves what it has and is marked partial
-      default: 300
+      default: 15
     text_index_max_stores:
       type: integer
       minimum: 1
-      description: Stores one crawl of the description index covers; past it the crawl is marked partial
+      description: Stores one crawl of the description index covers; past it the rest are not searched
       default: 20000
     text_index_readme_kb:
       type: integer
@@ -218,13 +218,8 @@ server:
     text_index_ttl_s:
       type: number
       minimum: 1
-      description: Seconds after which a description search also starts a crawl to refresh the index
-      default: 600
-    text_index_min_interval_s:
-      type: number
-      minimum: 0
-      description: Seconds between two crawls of the description index, whoever asks (a search or the Refresh button); 0 = no limit
-      default: 60
+      description: Seconds after which the server reads the datasets again for changes and refreshes the description index
+      default: 1800
     dataset_search_max_entries:
       type: integer
       description: Entries the dataset picker's search of the data directory looks at before it stops and says the result is partial

@@ -3,13 +3,14 @@
 The package installs one command, `annzarro`. All output below is from `annzarro <command> --help`.
 
 ```text
-annzarro [-h] [--config CONFIG] [--debug] {start,stop,user,admin,install,config,desktop,export,store,serve} ...
+annzarro [-h] [--config CONFIG] [--debug] [--version] {start,stop,user,admin,install,config,desktop,export,store,serve} ...
 ```
 
 | Global option | Meaning |
 |---|---|
 | `--config FILE` | Configuration file, layered over the built-in defaults and the system, user and project files ({doc}`configuration`). Must exist. `start`, `serve`, `user`, `admin` and the `config` subcommands also accept it after the subcommand (`annzarro user --config FILE add ...`). |
 | `--debug` | Debug logging; a failing command also prints its traceback. |
+| `--version` | Print `annzarro <version>` (the installed version) and exit. |
 
 ## `annzarro start`
 

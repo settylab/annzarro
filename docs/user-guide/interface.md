@@ -158,10 +158,13 @@ at the top; below them, under **Found in titles, attribution and READMEs**, each
 words comes with its title and a few words of context, the matches marked. Words may be quoted to keep
 them together ("bone marrow"); case and accents do not matter. A hit opens and selects like any row, and
 its README opens on the first match. Regular expressions search names only, so turning **.\*** on switches
-descriptions off, and turning descriptions on ends the regular expression. The line under the field says
-how up to date the search is ("8 datasets indexed 3 min ago"), and shows **Indexing descriptions…** with a
-progress bar while the server reads them for the first time; the results appear when it is done. **Refresh**
-asks the server to read the descriptions again (at most once a minute). The button is not there when an
+descriptions off, and turning descriptions on ends the regular expression. The dataset you have open is listed first among the
+descriptions when it matches. A search shows 50 hits and, when more matched, a button, for example **12 more**, that
+loads the next ones. The server builds the index of descriptions by itself shortly after it starts and keeps it
+fresh, so there is nothing to start. While it has not read every dataset yet, one line under the field says so
+("Descriptions of 120 of 3,400 datasets searched so far"; a user limited to some folders is told that some datasets are not
+searched yet, without counts), and the next search shows the newer state. When all are read the line is not there.
+A dataset with neither a README nor an attribution is found by its name only. The button is not there when an
 administrator turned the search off ({doc}`../deployment/admin`). Remote datasets are not
 searched.
 
