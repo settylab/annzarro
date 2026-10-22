@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixed
+- In the dataset browser, the **Matches this view** button (now **Like this view's dataset**) no longer hides the results of a description search. The button narrows the table to datasets with the same cells and genes, the same size or the same name as the dataset the view was made on. It is on at first when you choose a dataset for a view that has none. Description hits never carried that match, so while the button was on every hit was hidden, the matching ones too. Hits now carry their **same cells and genes** (or **same size**, **same name**) tag and are shown whether or not the button is on; the other filters still apply to them. The button's tooltip says what it keeps.
+
 ### Docs
 - The README and the licence page cite v0.7.2 by its DOI,
   [10.5281/zenodo.23547580](https://doi.org/10.5281/zenodo.23547580).

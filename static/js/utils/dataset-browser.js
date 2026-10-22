@@ -49,7 +49,7 @@ import {
     applyFilters, emptyFilters, filtersActive, searchRows, sortRows, ariaSort, nextSort, typeAheadIndex,
     buildPlaces, breadcrumbs, matchBadge, matchesView, rowDescription, countLabel, dateLabel, dateTimeLabel,
     openedLabel, formatLabel, countSummary, isRemote, missingKeys,
-    TEXT_SECTION, snippetParts, textRows, queryTerms, termRanges, indexLine, createIndexPoller
+    TEXT_SECTION, snippetParts, textSection, MATCH_CHIP, queryTerms, termRanges, indexLine, createIndexPoller
 } from './dataset-browser-model.js';
 
 const PAGE = 200;
@@ -618,7 +618,7 @@ export function createDatasetBrowser(services) {
         // the stores whose title, attribution or README holds the words follow, best first (the server's order)
         const hits = S.text.hits;
         if (wantsText() && hits && hits.key === textKey() && hits.results) {
-            rows = rows.concat(applyFilters(textRows(matches, hits.results), S.filters));
+            rows = rows.concat(textSection(matches, hits.results, S.filters, annotate));
         }
         return { rows, compiled: found.compiled };
     }
@@ -707,8 +707,9 @@ export function createDatasetBrowser(services) {
         make('cells', [...S.filters.cells][0] || '');
         make('modified', S.filters.modified);
         if (S.viewMatches) {
-            const b = el('button', 'btn btn-sm btn-outline-secondary dsb-chip dsb-toggle', 'Matches this view');
+            const b = el('button', 'btn btn-sm btn-outline-secondary dsb-chip dsb-toggle', MATCH_CHIP.label);
             b.type = 'button';
+            b.title = MATCH_CHIP.title;
             b.id = 'dsb-filter-matches';
             b.setAttribute('aria-pressed', String(S.filters.matches));
             b.classList.toggle('active', S.filters.matches);

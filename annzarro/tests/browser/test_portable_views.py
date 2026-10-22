@@ -301,7 +301,7 @@ def test_a_link_opened_on_other_cells_warns_first(browser, servers):
 
 def test_choosing_a_dataset_for_a_view_marks_the_stores_that_match_it(browser, servers):
     """The view's fingerprint says which stores of the server are the same cells and genes: they get a badge, and the
-    "Matches this view" chip (on) narrows to them; a store with other cells is not one."""
+    "Like this view's dataset" chip (on) narrows to them; a store with other cells is not one."""
     link = _shared_view(browser, servers)
     ctx, page, errors = _page(browser)
     try:

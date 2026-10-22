@@ -20,6 +20,26 @@ test('text hits come after the name matches and a store found both ways is liste
     assert.deepEqual(M.textRows(names, null), []);
 });
 
+test('the match chip does not hide description hits, and a hit like the view carries its badge', () => {
+    const like = new Map([['/d/b.zarr', { match: 'same' }]]);
+    const annotate = row => (like.has(row.path) ? { ...row, ...like.get(row.path) } : row);
+    const on = { ...M.emptyFilters(), matches: true };
+    const rows = M.textSection([], [hit('b.zarr', { format: 'zarr' }), hit('c.zarr', { format: 'zarr' })], on, annotate);
+    assert.deepEqual(rows.map(r => r.name), ['b.zarr', 'c.zarr'], 'the chip is on (as when it is switched on for a view without data): both hits stay');
+    assert.equal(M.matchBadge(rows[0]), 'same cells and genes');
+    assert.equal(M.matchBadge(rows[1]), '');
+    // the bug this fixes: through applyFilters with the chip on, every hit was dropped, the matching one too
+    assert.deepEqual(M.applyFilters(M.textRows([], [hit('b.zarr')]), on), []);
+    // the other chips still narrow the section
+    const h5 = { ...M.emptyFilters(), formats: new Set(['h5ad']), matches: true };
+    assert.deepEqual(M.textSection([], [hit('b.zarr', { format: 'zarr' })], h5, annotate), []);
+});
+
+test('the match chip says what it keeps', () => {
+    assert.equal(M.MATCH_CHIP.label, "Like this view's dataset");
+    assert.match(M.MATCH_CHIP.title, /same cells and genes, the same size, or the same name as the dataset this view was made on/);
+});
+
 test('a hit without a path is keyed by its relative path', () => {
     const rows = M.textRows([], [{ name: 'x.zarr', path: null, rel_path: 'grant/x.zarr' }]);
     assert.equal(rows[0].path, 'grant/x.zarr');
