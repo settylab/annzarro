@@ -35,7 +35,7 @@ import { recolourCheck, refusalText, bindingLabel } from '../../utils/memory-gua
 import { MEMORY_ADVICE } from '../../utils/memory-guard.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
-import { legendTitleText, legendTitleSize } from '../../utils/legend-options.js';
+import { legendTitleText, legendTitleFontSize } from '../../utils/legend-options.js';
 import { highlightLargeFocus, clearLargeFocus, restyleLargeFocus } from './large-interact.js';
 import { focusMarker, focusRestyle, focusSize, focusParams } from '../../utils/focus-style.js';
 
@@ -468,7 +468,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         (plotContainer.layout && plotContainer.layout.uirevision) || 'view', settings.color),
                     'legend.title.text': legendTitleText(settings),
                     'legend.title.font': { 
-                        size: legendTitleSize(settings),
+                        size: legendTitleFontSize(settings),
                         family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
                         color: plotColour(settings, 'textColor')
                     }
@@ -867,7 +867,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     Plotly.relayout(plotContainer, {
                         'legend.title.text': legendTitleText(settings),
                         'legend.title.font': { 
-                            size: legendTitleSize(settings),
+                            size: legendTitleFontSize(settings),
                             family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
                             color: plotColour(settings, 'textColor')
                         }

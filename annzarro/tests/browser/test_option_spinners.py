@@ -49,3 +49,22 @@ def test_menu_follows_its_size_when_a_group_opens(page, server):
     page.press(f"#font-size-{A}", "Tab")
     page.wait_for_timeout(500)
     assert abs(_box(page)[1] - top) < 1      # a change of an option leaves the menu where it is
+
+
+# an empty box steps from the value its placeholder shows (the default): one press, exactly one from that
+EMPTY = [("legend", f"#legend-title-size-{A}", "15"), ("legend", f"#legend-title-gap-{A}", "19"),
+         ("legend", f"#legend-dot-size-{A}", "13"), ("legend", f"#legend-columns-{A}", "2")]
+
+
+@pytest.mark.parametrize("section,selector,want", EMPTY)
+def test_the_arrow_of_an_empty_box_steps_from_the_default(page, server, section, selector, want):
+    _open(page, server)
+    _menu(page, A, section)
+    page.wait_for_timeout(600)
+    assert page.input_value(selector) == ""
+    box = page.locator(selector).bounding_box()
+    x, y = box["x"] + box["width"] - 12, box["y"] + box["height"] * 0.3
+    page.mouse.move(x, y)
+    page.mouse.click(x, y)
+    page.wait_for_timeout(600)
+    assert page.input_value(selector) == want
