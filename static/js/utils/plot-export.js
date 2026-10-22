@@ -28,7 +28,7 @@ import { exportWithCoverage } from './panel-surface.js';
 import { releasePlot } from './release-plot.js';
 import { syncSceneCamera } from './scene-camera.js';
 import { unclipLegend, legendIsClipped } from './legend-export.js';
-import { syncLegendColumns } from './legend-options.js';
+import { syncLegendColumns, shiftLegendTitles } from './legend-options.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
@@ -101,6 +101,7 @@ export async function fullImage(gd, { format = 'png', width = 1200, height = 800
         }
         await S.getRedrawFunc(clone)();
         await new Promise(resolve => setTimeout(resolve, S.getDelay(clone._fullLayout)));
+        shiftLegendTitles(clone);
         w = clone._fullLayout.width;
         h = clone._fullLayout.height;
         svg = S.toSVG(clone, format, scale);
