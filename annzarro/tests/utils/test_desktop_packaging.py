@@ -38,6 +38,20 @@ def test_third_party_licenses_and_license_are_bundled(bundled):
     assert "./LICENSE" in bundled
 
 
+def test_trademark_notice_ships_next_to_the_license(bundled):
+    import json
+    import tomllib
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    assert os.path.isfile(os.path.join(root, "TRADEMARKS.md"))
+    with open(os.path.join(root, "pyproject.toml"), "rb") as handle:
+        # license-files puts it in the wheel's dist-info/licenses and in the sdist, beside LICENSE
+        assert {"LICENSE", "TRADEMARKS.md"} <= set(tomllib.load(handle)["project"]["license-files"])
+    assert "./TRADEMARKS.md" in bundled
+    with open(os.path.join(root, "annzarro", "desktop", "electron", "package.json"), encoding="utf-8") as handle:
+        extra = {item["to"] for item in json.load(handle)["build"]["extraResources"] if isinstance(item, dict)}
+    assert {"LICENSE", "TRADEMARKS.md"} <= extra
+
+
 def test_frontend_is_bundled_where_the_server_looks(bundled):
     assert "annzarro/templates/index.html" in bundled
     assert "annzarro/static/js/config.js" in bundled

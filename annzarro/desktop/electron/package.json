@@ -74,6 +74,10 @@
       {
         "from": "../../../LICENSE",
         "to": "LICENSE"
+      },
+      {
+        "from": "../../../TRADEMARKS.md",
+        "to": "TRADEMARKS.md"
       }
     ],
     "artifactName": "AnnZarro-${version}-${os}-${arch}.${ext}",

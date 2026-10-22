@@ -9,7 +9,7 @@ description = "Read-only browser viewer for AnnData (zarr, h5ad) built around ce
 readme = "README.md"
 requires-python = ">=3.9"  # list[str] annotations are evaluated at import
 license = "MIT"
-license-files = ["LICENSE", "annzarro/THIRD_PARTY_LICENSES/*"]
+license-files = ["LICENSE", "TRADEMARKS.md", "annzarro/THIRD_PARTY_LICENSES/*"]
 authors = [
     {name = "Dominik J. Otto", email = "dotto@fredhutch.org"},
     {name = "Siddharth Baasri"},

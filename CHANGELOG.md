@@ -9,7 +9,7 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Added
-- The desktop app's About dialog shows the Fred Hutch Cancer Center logo with the AnnZarro sign post, as Fred Hutch's brand team supplied it; the Setty Lab logo moves lower, beside the funding statement. In the dark theme the logo sits on a white plate. Every other copy of AnnZarro keeps the text credit, because the logo is Fred Hutch's trademark. The new `site.fred_hutch_logo` setting (default `false`, on the admin Public site page, `ANNZARRO_SITE_FRED_HUTCH_LOGO`) shows it. The Fred Hutch name and logo are not covered by the MIT licence; see the licence page.
+- The desktop app's About dialog shows the Fred Hutch Cancer Center logo with the AnnZarro sign post, as Fred Hutch's brand team supplied it; the Setty Lab logo moves lower, beside the funding statement. In the dark theme the logo sits on a white plate. Every other copy of AnnZarro keeps the text credit, because the logo is Fred Hutch's trademark. The new `site.fred_hutch_logo` setting (default `false`, on the admin Public site page, `ANNZARRO_SITE_FRED_HUTCH_LOGO`) shows it. The Fred Hutch name and logo are trademarks of Fred Hutchinson Cancer Center and are not covered by the MIT license; see `TRADEMARKS.md`.
 - Plot Options > Legend and colour bar: **Title size** and **Title gap** set the size of the legend title and its distance to the first entry. They are saved with the panel, in links and in panel sets, and copied by Apply to other panels.
 
 ### Fixed

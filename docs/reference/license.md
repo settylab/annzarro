@@ -11,14 +11,13 @@ Copyright (c) 2025-2026 Dominik J. Otto, Siddharth Baasri, Manu Setty
 The full text is in [`LICENSE`](https://github.com/settylab/annzarro/blob/main/LICENSE) and is
 installed with the package (`annzarro-<version>.dist-info/licenses/LICENSE`).
 
-## Fred Hutch name and logo
+## Trademarks
 
-The Fred Hutch name and logo are trademarks of Fred Hutchinson Cancer Center and are not licensed
-under the MIT licence; they appear in AnnZarro with permission. The desktop app shows the logo in
-its About dialog. A copy of AnnZarro that anyone else runs credits the Setty Lab at Fred Hutch
-Cancer Center in text only, unless `site.fred_hutch_logo` is turned on (see
-{doc}`../deployment/public-site`), which is meant for copies Fred Hutch runs. The artwork is in
-`static/img/brand/` with a [notice](https://github.com/settylab/annzarro/blob/main/static/img/brand/NOTICE.md).
+The Fred Hutch name and logo are trademarks of Fred Hutchinson Cancer Center and are not licensed under the MIT license that covers the rest of AnnZarro; they appear in AnnZarro with permission. Do not reuse them, or change them, without Fred Hutch's permission.
+
+The MIT license does not grant any rights to the names, logos, or trademarks of Fred Hutch. Forks and derivative works must remove Fred Hutch's name and logo and must not suggest endorsement by Fred Hutch.
+
+The full notice is [`TRADEMARKS.md`](https://github.com/settylab/annzarro/blob/main/TRADEMARKS.md), installed with the package next to `LICENSE`. The artwork is in `static/img/brand/`; the desktop app and servers that Fred Hutch runs show it through `site.fred_hutch_logo` (see {doc}`../deployment/public-site`).
 
 ## Third-party components
 

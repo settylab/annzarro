@@ -284,6 +284,7 @@ def test_about_without_the_key_has_the_text_credit_and_requests_no_fred_hutch_im
             assert page.locator(".about-brand").count() == 0
             assert "Setty Lab at Fred Hutch Cancer Center" in " ".join(page.locator("#about-modal").inner_text().split())
             assert not [u for u in requested if "fredhutch" in u or "/img/brand/" in u]
+            assert "trademarks of Fred Hutchinson" not in page.locator("#about-modal").inner_text()
         finally:
             browser.close()
 
@@ -320,6 +321,12 @@ def test_about_with_the_key_shows_the_sign_post_and_keeps_the_lab_logo_apart(bra
                 assert info["padding"] >= (info["brand"][2] - info["brand"][0]) * 38.9 / 804.9
             else:
                 assert info["plate"] == "rgba(0, 0, 0, 0)"
+            # Legal's line closes the dialog, below the MIT licence line, small and muted like the disclaimer
+            text = " ".join(page.locator("#about-modal .modal-body").inner_text().split())
+            line = ("Fred Hutch name and logo are trademarks of Fred Hutchinson Cancer Center, used on this page with "
+                    "permission. You may not use or modify without permission from Fred Hutch.")
+            assert text.endswith(line) and text.index("released under the MIT licence.") < text.index(line)
+            assert page.evaluate("getComputedStyle(document.querySelector('.about-trademark')).fontSize") == "12px"
             _shot(page, f"about-brand-{scheme}-desktop")
         finally:
             browser.close()
