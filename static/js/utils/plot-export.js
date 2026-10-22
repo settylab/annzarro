@@ -28,6 +28,7 @@ import { exportWithCoverage } from './panel-surface.js';
 import { releasePlot } from './release-plot.js';
 import { syncSceneCamera } from './scene-camera.js';
 import { unclipLegend, legendIsClipped } from './legend-export.js';
+import { syncLegendColumns } from './legend-options.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
@@ -91,6 +92,8 @@ export async function fullImage(gd, { format = 'png', width = 1200, height = 800
         const layout = { ...copyLayout(gd.layout), width, height };
         const config = { ...(gd._context || {}), _exportedPlot: true, staticPlot: true, setBackground: false };
         await P.newPlot(clone, data, layout, config);
+        // a legend in columns: placed for the export's own width (legend-options.js)
+        await syncLegendColumns(clone);
         // automatic point size and opacity for the export's own plot area
         // (the panel's hook, plot-make.js), so it is as dense as on screen
         if (typeof gd.__azExportMarkers === 'function') {

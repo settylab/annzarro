@@ -13,7 +13,7 @@
  * follow the app theme otherwise (utils/plot-theme.js).
  */
 import { adoptColourModel, plotColour, pinPalette, COLOUR_MODEL } from '../../utils/plot-theme.js';
-import { DOT_SIZE_MIN, DOT_SIZE_MAX, COLUMNS_MAX, TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX } from '../../utils/legend-options.js';
+import { DOT_SIZE_MIN, DOT_SIZE_MAX, COLUMNS_MAX, TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX, COLUMN_GAP_MAX } from '../../utils/legend-options.js';
 
 export const SCALE_BAR_CORNERS = ['bottom-right', 'bottom-left', 'top-right', 'top-left'];
 export const COLORBAR_POSITIONS = ['legend', 'right', 'left', 'top', 'bottom'];
@@ -28,6 +28,7 @@ export const OPTION_DEFAULTS = Object.freeze({
   legendDotSize: null,             // null: the constant legend (12 px); else the legend dots' size in px (utils/legend-options.js)
   legendColumns: null,             // null: one column; else 2 or more
   showLegendTitle: true,
+  legendColumnGap: null,           // null: 24 px between the columns; else the space in px
   legendTitleSize: null,           // null: 2 px above the text size; else the legend title's size in px
   legendTitleGap: null,            // null: a blank line; else the gap in px between the title and the first entry
   bare: false,                     // the Bare preset: no axis at all (set with it; the Default preset clears it)
@@ -58,6 +59,7 @@ export function normalizePlotOptions(settings) {
   s.legendDotSize = isNum(s.legendDotSize) && s.legendDotSize >= DOT_SIZE_MIN
     ? Math.min(Math.round(s.legendDotSize), DOT_SIZE_MAX) : null;
   s.legendColumns = isNum(s.legendColumns) && s.legendColumns >= 2 ? Math.min(Math.round(s.legendColumns), COLUMNS_MAX) : null;
+  s.legendColumnGap = isNum(s.legendColumnGap) ? Math.max(0, Math.min(COLUMN_GAP_MAX, Math.round(s.legendColumnGap))) : null;
   s.showLegendTitle = s.showLegendTitle !== false;
   s.legendTitleSize = isNum(s.legendTitleSize) ? Math.max(TITLE_SIZE_MIN, Math.min(TITLE_SIZE_MAX, Math.round(s.legendTitleSize))) : null;
   s.legendTitleGap = isNum(s.legendTitleGap) ? Math.max(0, Math.min(TITLE_GAP_MAX, Math.round(s.legendTitleGap))) : null;
@@ -208,7 +210,7 @@ export function defaultLook() {
     tickCount: null, fontSize: 12, fontFamily: undefined, axisLineWidth: 1, gridLineWidth: 1, zeroLineWidth: 1,
     margins: { ...DEFAULT_MARGINS }, marginsUnlinked: false,
     legendPosition: 'right', showLegend: true, legendDotSize: null, legendColumns: null, showLegendTitle: true,
-    legendTitleSize: null, legendTitleGap: null,
+    legendTitleSize: null, legendTitleGap: null, legendColumnGap: null,
     bare: false,
     colorbarPosition: 'legend', colorbarLength: 1, colorbarTicks: null,
     showScaleBar: false, scaleBarCorner: 'bottom-right'
@@ -274,7 +276,7 @@ export const STYLE_KEYS = Object.freeze([
   'showGrid', 'showAxisTitles', 'showAxisLabels', 'showAxisLines', 'showZeroLines', 'showTickMarks', 'tickCount',
   'bgColor', 'gridColor', 'axisColor', 'textColor', 'zeroLineColor', 'backdropColor', 'showBackdrop',
   'axisLineWidth', 'gridLineWidth', 'zeroLineWidth', 'fontSize', 'fontFamily',
-  'margins', 'marginsUnlinked', 'legendPosition', 'showLegend', 'legendDotSize', 'legendColumns', 'showLegendTitle', 'legendTitleSize', 'legendTitleGap', 'bare',
+  'margins', 'marginsUnlinked', 'legendPosition', 'showLegend', 'legendDotSize', 'legendColumns', 'showLegendTitle', 'legendTitleSize', 'legendTitleGap', 'legendColumnGap', 'bare',
   'colorbarPosition', 'colorbarLength', 'colorbarTicks',
   'showScaleBar', 'scaleBarCorner', 'scaleBarSize', 'scaleBarUnit',
   'notInTableScale', 'notInTableOpacity', 'notInTableColor',

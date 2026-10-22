@@ -15,7 +15,7 @@ from annzarro.tests.browser.test_plot_options import (  # noqa: F401  (fixtures 
 
 # per legend entry: the symbol's drawn width and the entry's left edge; the legend's title text
 LEGEND = """(id) => { const gd = (%s)(id);
-    const items = [...gd.querySelectorAll('.legend g.traces')].map(g => ({
+    const items = [...gd.querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => ({
         x: Math.round(g.getBoundingClientRect().x), y: Math.round(g.getBoundingClientRect().y),
         dot: Math.round(g.querySelector('.legendpoints path.scatterpts').getBoundingClientRect().width) }));
     const title = gd.querySelector('.legend .legendtitletext');
@@ -35,18 +35,18 @@ def large_server(tmp_path_factory):
 
 
 # the widest legend entry: its symbol and its label
-WIDEST = """(id) => Math.max(...[...(%s)(id).querySelectorAll('.legend g.traces')].map(g => g.getBoundingClientRect().width))""" % GD
+WIDEST = """(id) => Math.max(...[...(%s)(id).querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => g.getBoundingClientRect().width))""" % GD
 # which categories' points are drawn: the visible point traces, by legend group
 SHOWN = """(id) => { const gd = (%s)(id); return gd.data.filter(t => t.meta === 'az-points' || (t.legendgroup && t.showlegend === false && t.meta !== 'az-legend'))
     .filter(t => t.visible !== 'legendonly').map(t => t.legendgroup).sort(); }""" % GD
-ENTRIES = """(id) => [...(%s)(id).querySelectorAll('.legend g.traces')].map(g => g.getBoundingClientRect())""" % GD
+ENTRIES = """(id) => [...(%s)(id).querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => g.getBoundingClientRect())""" % GD
 
 
 def _title_above(page, pid=A):
     """The legend's title lies above its first entry, not beside it."""
     page.wait_for_function("(id) => !!(%s)(id).querySelector('.legend .legendtitletext')" % GD, arg=pid)
     t = page.evaluate("(id) => { const gd = (%s)(id); const t = gd.querySelector('.legend .legendtitletext').getBoundingClientRect();"
-                      " const e = Math.min(...[...gd.querySelectorAll('.legend g.traces')].map(g => g.getBoundingClientRect().y));"
+                      " const e = Math.min(...[...gd.querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => g.getBoundingClientRect().y));"
                       " return { bottom: t.bottom, entry: e }; }" % GD, pid)
     assert t["bottom"] <= t["entry"] + 4, t
 
@@ -78,15 +78,15 @@ def _exercise(page, root, extra=None, large=False):
     _menu(page, A, "legend")
     # dots: independent of the points' size
     _change(page, f"#legend-dot-size-{A}", 6)
-    page.wait_for_function("(id) => [...(%s)(id).querySelectorAll('.legend .scatterpts')].every(p => Math.round(p.getBoundingClientRect().width) === 6)" % GD, arg=A)
+    page.wait_for_function("(id) => [...(%s)(id).querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) .scatterpts')].every(p => Math.round(p.getBoundingClientRect().width) === 6)" % GD, arg=A)
     assert _legend(page)["itemsizing"] == "trace"
     _change(page, f"#legend-dot-size-{A}", 40)                           # more than Plotly draws: 16
-    page.wait_for_function("(id) => [...(%s)(id).querySelectorAll('.legend .scatterpts')].every(p => Math.round(p.getBoundingClientRect().width) === 16)" % GD, arg=A)
-    # columns: a horizontal legend of two columns; the entries fill them row by row
+    page.wait_for_function("(id) => [...(%s)(id).querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) .scatterpts')].every(p => Math.round(p.getBoundingClientRect().width) === 16)" % GD, arg=A)
+    # columns: a legend per column, side by side; the entries fill each column in order
     _change(page, f"#legend-columns-{A}", 2)
-    page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll('.legend g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === 2" % GD, arg=A, timeout=15000)
+    page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === 2" % GD, arg=A, timeout=15000)
     two = _legend(page)
-    assert two["orientation"] == "h" and two["rows"] == -(-n // 2), two
+    assert two["orientation"] == "v" and two["rows"] == -(-n // 2), two
     # compact: the columns are as far apart as two (not more) need, not stretched over the page
     xs = sorted({i["x"] for i in two["items"]})
     assert xs[1] - xs[0] <= page.evaluate(WIDEST, A) + 40, (two, page.evaluate(WIDEST, A))
@@ -94,11 +94,11 @@ def _exercise(page, root, extra=None, large=False):
     _title_above(page)
     assert {i["dot"] for i in two["items"]} == {16}, two                     # the dot size stays
     _change(page, f"#legend-columns-{A}", 3)
-    page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll('.legend g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === %d" % (GD, min(3, n)), arg=A, timeout=15000)
+    page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === %d" % (GD, min(3, n)), arg=A, timeout=15000)
     # the legend moves with its position, and keeps the columns
     for position in ("bottom", "top", "left", "right"):
         page.select_option(f"#legend-position-{A}", position)
-        page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll('.legend g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === %d" % (GD, min(3, n)), arg=A, timeout=15000)
+        page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === %d" % (GD, min(3, n)), arg=A, timeout=15000)
         page.wait_for_timeout(600)
         _title_above(page)
     # a click on an entry hides that category's points alone, not its column's; a double click isolates it
@@ -116,7 +116,7 @@ def _exercise(page, root, extra=None, large=False):
     # 2 -> 1 with the spinner: the single vertical column again (a click on the plot closed the menu)
     _menu(page, A, "legend")
     _change(page, f"#legend-columns-{A}", 2)
-    page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll('.legend g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === 2" % GD, arg=A, timeout=15000)
+    page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === 2" % GD, arg=A, timeout=15000)
     page.focus(f"#legend-columns-{A}")
     page.keyboard.press("ArrowDown")
     page.wait_for_function("(id) => (%s)(id)._fullLayout.legend.orientation === 'v' && !(%s)(id).layout.legend.entrywidth" % (GD, GD), arg=A, timeout=15000)
@@ -124,7 +124,7 @@ def _exercise(page, root, extra=None, large=False):
     assert one["columns"] == 1 and one["rows"] == n and _settings(page, A)["legendColumns"] is None, one
     assert page.input_value(f"#legend-columns-{A}") == "1"
     _change(page, f"#legend-columns-{A}", 3)
-    page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll('.legend g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === %d" % (GD, min(3, n)), arg=A, timeout=15000)
+    page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === %d" % (GD, min(3, n)), arg=A, timeout=15000)
     # the title
     page.uncheck(f"#show-legend-title-{A}")
     page.wait_for_function("(id) => !(%s)(id).querySelector('.legend .legendtitletext') || !(%s)(id).querySelector('.legend .legendtitletext').textContent" % (GD, GD), arg=A)
@@ -160,9 +160,9 @@ def test_dots_columns_and_title_in_large_plot_mode(page, large_server):
 
 def test_the_options_in_a_link_draw_the_first_legend(page, server):
     _open(page, server, {"legendDotSize": 7, "legendColumns": 2, "showLegendTitle": False})
-    page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll('.legend g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === 2" % GD, arg=A, timeout=15000)
+    page.wait_for_function("(id) => new Set([...(%s)(id).querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => Math.round(g.getBoundingClientRect().x))).size === 2" % GD, arg=A, timeout=15000)
     lg = _legend(page)
-    assert {i["dot"] for i in lg["items"]} == {7} and lg["title"] == "" and lg["orientation"] == "h", lg
+    assert {i["dot"] for i in lg["items"]} == {7} and lg["title"] == "" and lg["orientation"] == "v", lg
 
 
 def test_text_size_has_a_reset(page, server):
@@ -193,14 +193,12 @@ def test_64_entries_in_columns(page, many_server):
         view["layout"]["panelConfigs"]["cell-plot-M"]["legendColumns"] = columns
         link = head + "#view=" + base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
         page.goto(link)
-        page.wait_for_function("() => document.querySelectorAll('.tile[data-tile-id=\"cell-plot-M\"] .legend g.traces').length === 64", timeout=60000)
+        page.wait_for_function("() => document.querySelectorAll('.tile[data-tile-id=\"cell-plot-M\"] :is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces').length === 64", timeout=60000)
         page.wait_for_timeout(1200)
         s = page.evaluate("""() => { const gd = document.querySelector('.tile[data-tile-id="cell-plot-M"] .js-plotly-plot');
             const r = gd.getBoundingClientRect();
-            const items = [...gd.querySelectorAll('.legend g.traces')].map(g => g.getBoundingClientRect());
+            const items = [...gd.querySelectorAll(':is(.legend, .legend2, .legend3, .legend4, .legend5, .legend6, .legend7, .legend8) g.traces')].map(g => g.getBoundingClientRect());
             return { n: items.length, left: Math.min(...items.map(i => i.left)) - r.left, right: Math.max(...items.map(i => i.right)) - r.left,
                      width: r.width, columns: new Set(items.map(i => Math.round(i.x))).size }; }""")
         assert s["n"] == 64 and s["left"] >= -1 and s["right"] <= s["width"] + 1, s     # all drawn, inside the graph
-        assert s["columns"] <= columns * 2, s                                           # wraps into rows of columns, not into one row
-        if columns == 4:
-            assert s["columns"] == 4, s
+        assert s["columns"] == columns, s                                               # one column each, never wrapped

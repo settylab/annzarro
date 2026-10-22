@@ -198,10 +198,14 @@ and **Apply to other panels** copies it.
   bottom lies outside the axes, below the x-axis title at the bottom, and the margin grows to make room.
 - For the legend of a categorical colour: **Legend title** (on by default), **Dot size** (2 to 16 px;
   empty draws the 12 px dots of the default legend, whatever the points' size) and **Columns** (2 to
-  8; 1 or empty is one column), each with a **Reset**. The entries read down the columns, with the
-  title above them, and each column is as wide as its longest label; columns that do not fit the
-  width the legend has wrap onto a new row. A click on an entry still hides that category alone. They
-  work on 2D, 3D and large plots, and with the legend at any position. **Title size** (6 to 48 px;
+  8; 1 or empty is one column), each with a **Reset**. The entries read down the columns in order
+  (the first column takes the first ceil(n / columns) of them), with the title above the first one.
+  The columns sit side by side, never wrapping or stacking, each as wide as its longest label, with
+  a **Column gap** between them (0 to 80 px; empty is 24 px). They take at most 60 % of the width of the
+  graph (of the plot's width for a legend on top or at the bottom); labels that would need more are
+  cut short with an ellipsis, so the plot keeps its room. A click on an entry hides that category
+  alone, and a double click shows only that category, from any column. They work on 2D, 3D and large
+  plots, and with the legend at any position. **Title size** (6 to 48 px;
   empty is 2 px above the text size) and **Title gap** (0 to 80 px, added to the 2 px Plotly leaves; empty is
   one blank line) set the title's size and its distance to the first entry in true pixels. In an empty
   number box the arrows step from the default the box shows. **Text** size has a **Reset** too.

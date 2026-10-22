@@ -22,10 +22,14 @@
 export const AXIS_TEXT_ESTIMATE = 60;
 export const GAP = 8;
 
-/** Whether a layout's legend is the horizontal one hanging below the axes (a bottom legend). */
+/**
+ * Whether a layout's legend is the one hanging below the axes (a bottom legend): the horizontal one, or the
+ * first of several columns (legend-options.js), whose other legends follow its y.
+ */
 export function isBelowLegend(layout) {
     const lg = layout && layout.legend;
-    return !!lg && lg.orientation === 'h' && lg.yanchor === 'top' && typeof lg.y === 'number' && lg.y <= 0.5;
+    const columns = !!(layout && layout.meta && layout.meta.azLegendColumns > 1);
+    return !!lg && (lg.orientation === 'h' || columns) && lg.yanchor === 'top' && typeof lg.y === 'number' && lg.y <= 0.5;
 }
 
 /** The `legend.y` (paper fraction, negative) that puts the legend's top `offsetPx` below the axes of a plot `plotH` px high. */

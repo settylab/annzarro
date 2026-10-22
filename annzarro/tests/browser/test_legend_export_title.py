@@ -92,7 +92,8 @@ def test_a_legend_that_fits_exports_as_it_did(page, server):
 SIZES = """() => { const gd = document.querySelector('%s');
   const t = gd.querySelector('.legend .legendtitletext');
   const first = gd.querySelector('.legend g.traces').getBoundingClientRect();
-  return { size: Math.max(...[t, ...t.querySelectorAll('tspan')].map(n => parseFloat(getComputedStyle(n).fontSize) || 0)), gap: first.top - (t.querySelector('tspan.line') || t).getBoundingClientRect().bottom,
+  const lines = [...t.querySelectorAll('tspan.line')];     // the title's text is on the first line with something in it
+  return { size: Math.max(...[t, ...t.querySelectorAll('tspan')].map(n => parseFloat(getComputedStyle(n).fontSize) || 0)), gap: first.top - (lines.find(n => /\\S/.test(n.textContent.replace(/\\u00a0/g, ''))) || t).getBoundingClientRect().bottom,
            layout: gd._fullLayout.legend.title.font.size }; }""" % TILE
 
 

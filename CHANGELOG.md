@@ -15,6 +15,8 @@ with the release after it. Older releases are listed on
 
 ### Fixed
 - A large plot whose data could not be loaded, for example because the browser ran out of memory (Safari reported only "Load failed"), now says so, names how many other plots are open and offers Try again, Half the cells, Subset and Close other plots.
+- Legend columns (Plot Options > Legend) are real columns: side by side next to the plot, in order, each as wide as its labels, whatever their length. Two columns of long labels used to stay one column. The columns take at most 60 % of the width of the graph (longer labels are cut short with an ellipsis), keep working with click and double click to hide and isolate a category, and are whole in exported images. The new **Column gap** sets the space between them (default 24 px).
+- The legend title is no longer cut off at the top at a small **Title gap** (1 to 20 px or so); every gap from 0 up shows the whole title, and is that many pixels.
 - Going back to the app from the admin or account pages, by their "Back to" link or the browser's Back button, shows the panels you left. The link used to open a blank start page, and Back could do the same when you left while panels were still drawing (large datasets).
 - Plot Options: the arrows of an empty number box (legend title size and gap, dot size, columns, tick counts) step from the default the box shows, by one, instead of jumping to the lowest value. The legend **Title gap** is a true pixel distance (0 to 80 px, every value different) instead of a blank line.
 - An exported image (SVG or PNG) holds the whole legend. A legend longer than the plot was cut off in the image; the image is now taller where the legend needs it.
