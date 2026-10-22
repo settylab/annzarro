@@ -9,6 +9,8 @@ manager. The admin opens /admin#health:
   "Refusals by reason" after a reload;
 * "Clear cache" asks once (Cancel leaves the cache alone), then empties the
   cache, says so, and the audit log holds the record;
+* the Description search block shows its state, and "Rebuild now" builds the
+  index and is audited;
 * the console has no errors and no CSP violations.
 
 Needs Playwright with Chromium; skipped otherwise, unless
@@ -98,6 +100,15 @@ def test_the_health_section(served, browser):
     assert zarr_reader.get_cache_info()["item_counts"]["total"] == 0
     last = audit.read(app.admin_dir, limit=1)[0]
     assert (last["action"], last["actor"], last["outcome"]) == ("cache.clear", ADMIN, "ok")
+
+    # the Description search block: its state, and Rebuild now builds the index and is audited
+    page.wait_for_selector("#admin-description-search")
+    assert page.inner_text("#admin-description-state") == "Waiting for its first build"
+    page.click("#admin-description-rebuild")
+    page.wait_for_function("() => document.getElementById('admin-description-state').textContent === 'Up to date'", timeout=30_000)
+    assert page.inner_text("#admin-description-counts").startswith("0 searchable, 0 not yet, 0 unreadable; last built ")
+    last = audit.read(app.admin_dir, limit=1)[0]
+    assert (last["action"], last["actor"], last["outcome"]) == ("text_index.rebuild", ADMIN, "ok")
     assert problems == []
     context.close()
     user_context.close()

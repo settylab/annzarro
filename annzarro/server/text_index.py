@@ -10,15 +10,18 @@ shared by every worker, which loads it again when its stamp moves and answers qu
 * **One crawler at a time**, across workers, by an ``flock`` on ``crawl.lock`` held for the whole run
   (a thread lock where there is no ``fcntl``). ``status.json`` carries the progress; a ``running``
   status whose heartbeat is older than ``HEARTBEAT_STALE_S`` belongs to a dead crawler.
-* **Incremental.** A store is read again only when its stat signature moved (or its last read timed
-  out an hour ago). Entries of vanished stores are dropped.
+* **Incremental, and light.** A store is read again only when its stat signature moved (or its last read
+  timed out an hour ago); an unchanged store costs its signature stats. A zarr store with neither
+  ``uns/README`` nor ``uns/annzarro`` has no text to read: the signature already says so, and it is
+  indexed by name alone without being opened. Entries of vanished stores are dropped.
 * **Bounded.** ``text_index_workers`` threads, ``text_index_store_timeout_s`` per store (a late
   read cannot be killed: it keeps its thread, a spare one takes its place, and its answer is kept if it
   comes before the crawl ends; a crawl with as many late stores as workers at once stops as ``partial``),
-  ``text_index_crawl_timeout_s`` and ``text_index_max_stores`` per crawl, ``text_index_max_mb`` for
+  ``CRAWL_SECONDS`` and ``text_index_max_stores`` per crawl, ``text_index_max_mb`` for
   the whole index (READMEs are dropped from the largest down past it).
-* **Stale while revalidate.** A search answers from the index it has and starts a crawl when the
-  index is older than ``text_index_ttl_s``; a crawl starts at most every ``text_index_min_interval_s``.
+* **Kept by the keeper.** Each server process runs one thread (``start_keeper``) that starts a crawl a
+  little after the server is up, continues a partial one and refreshes the index once it is older than
+  ``text_index_ttl_s``. A search never starts a crawl; an administrator can ask for one (``rebuild``).
 
 Nothing here knows who is asking. The index holds every store the crawl could list, so a reader
 filters per requester after the lookup (routes/text_search.py, access.py).
@@ -46,6 +49,8 @@ logger = logging.getLogger(__name__)
 
 INDEX_VERSION = 3
 HEARTBEAT_STALE_S = 30
+#: one crawl stops (partial) after this long; the keeper goes on with the rest
+CRAWL_SECONDS = 300
 HEARTBEAT_EVERY_S = 0.5
 CHECKPOINT_EVERY = 500
 #: a store whose read timed out is read again once its entry is this old, even if it did not change
@@ -356,19 +361,32 @@ def invalidate(config):
 
 
 def describe(config):
-    """``(state, stale, built_at, fraction, status, index)`` for the replies: what a reader may be told."""
+    """``{state, stale, built_at, status, index}`` for the replies: what a reader may be told."""
     status = read_status(config)
     index = load(config)
     built_at = index.built_at if index is not None and index.complete else None
     stale = index is not None and (built_at is None or _now() - built_at > setting(config, "text_index_ttl_s")
                                    or built_at < _invalidated_at(config) or index.partial)
-    state = status.get("state", "idle")
-    total = status.get("total")
-    fraction = None
-    if state == "running" and total:
-        fraction = round(min(1.0, (status.get("done") or 0) / total), 3)
-    return {"state": state, "stale": stale, "built_at": built_at, "fraction": fraction,
-            "status": status, "index": index}
+    return {"state": status.get("state", "idle"), "stale": stale, "built_at": built_at, "status": status, "index": index}
+
+
+def counts(view):
+    """``{stores, searchable, not_yet, unreadable}`` of the index in ``describe``'s ``view``, for those who may be
+    told how many stores the server holds. ``not_yet`` are stores not reached or late (a later crawl reads them),
+    ``unreadable`` those that cannot be read at all."""
+    index = view["index"]
+    if index is None:
+        return {"stores": 0, "searchable": 0, "not_yet": 0, "unreadable": 0}
+    total = view["status"].get("total") if view["state"] != "running" else None
+    not_reached = max(0, int(total) - len(index)) if isinstance(total, int) else 0
+    return {"stores": len(index), "searchable": len(index) - index.errors, "unreadable": index.errors - index.timeouts,
+            "not_yet": not_reached + index.timeouts}
+
+
+def complete(view):
+    """Whether every store the server could list has its text searched."""
+    index = view["index"]
+    return index is not None and index.complete and not index.partial and not index.stores_capped and index.timeouts == 0
 
 
 # -- the crawl ---------------------------------------------------------------------------------------
@@ -396,20 +414,17 @@ def _try_lock(config):
 
 
 def start_crawl(app, force=False):
-    """Start a crawl in a daemon thread unless one runs or the last started too recently.
+    """Start a crawl in a daemon thread unless one runs. Returns whether this call started it.
 
-    Returns whether this call started it. ``force`` is the Refresh button; without it the crawl is
-    only started when the index is missing or older than ``text_index_ttl_s``. Either way a crawl
-    starts at most every ``text_index_min_interval_s`` (across workers: ``status.json`` says when).
+    Without ``force`` (the keeper) a crawl starts only when the index is missing, partial, or older than
+    ``text_index_ttl_s``, or the last one failed; ``force`` (an administrator's rebuild) starts one now.
+    The crawl lock keeps it to one crawl across all workers.
     """
     config = app.config
     view = describe(config)
     if view["state"] == "running":
         return False
     if not force and view["index"] is not None and not view["stale"] and view["state"] != "failed":
-        return False
-    started = float(view["status"].get("started") or 0)
-    if _now() - started < setting(config, "text_index_min_interval_s"):
         return False
     release = _try_lock(config)
     if release is None:
@@ -427,30 +442,22 @@ def start_crawl(app, force=False):
     return True
 
 
-# -- the keeper: the index is built and kept fresh without waiting for a search -----------------------
+# -- the keeper: the index is built and kept fresh without waiting for anyone ---------------------------
 #
 # Each server process runs one keeper thread (``start_keeper``, from ``create_app``). It waits
-# ``KEEPER_FIRST_S`` so the server is listening first, then every ``KEEPER_EVERY_S`` asks
+# ``KEEPER_FIRST_S`` so the server is up and listening first, then every ``KEEPER_EVERY_S`` asks
 # ``start_crawl`` for a crawl, which starts one only when the index is missing, older than
-# ``text_index_ttl_s``, partial, or failed, and at most every ``text_index_min_interval_s``; the
-# crawl lock keeps it to one crawl for all processes. A partial crawl is thus continued in the
-# background until it is done, reading only what it has not read. Off with
-# ``server.text_index_background: false`` (the index is then built when a search asks, as before),
-# and never while the description search is off for the server.
+# ``text_index_ttl_s``, partial, or failed; the crawl lock keeps it to one crawl for all processes.
+# A partial crawl is thus continued until it is done, reading only what it has not read. Nothing runs
+# while the description search is off for the server (``text_index_enabled`` or the policy key).
 
-KEEPER_FIRST_S = 5.0
-KEEPER_EVERY_S = 30.0
+KEEPER_FIRST_S = 15.0
+KEEPER_EVERY_S = 60.0
 _keepers = {}                     # index directory: the keeper thread of this process
 _keepers_guard = threading.Lock()
 
 
-def background_enabled(app):
-    """Whether this server keeps its index fresh by itself: ``server.text_index_background`` (on by
-    default) and the search on in the configuration."""
-    return app.config.get("text_index_background", True) is not False and app.config.get("text_index_enabled", True) is not False
-
-
-def _search_on(app):
+def search_on(app):
     """Whether the description search is on for the server as a whole (config and policy)."""
     if app.config.get("text_index_enabled", True) is False:
         return False
@@ -462,7 +469,7 @@ def _search_on(app):
 
 def keep_once(app):
     """One round of the keeper: start a crawl if one is due. Returns whether it started one."""
-    if not _search_on(app):
+    if not search_on(app):
         return False
     return start_crawl(app)
 
@@ -472,7 +479,7 @@ def start_keeper(app, first=None, every=None, force=False):
 
     A TESTING app starts none unless ``force`` (a test of the keeper itself).
     """
-    if not background_enabled(app) or (app.testing and not force):
+    if app.config.get("text_index_enabled", True) is False or (app.testing and not force):
         return None
     first = KEEPER_FIRST_S if first is None else first
     every = KEEPER_EVERY_S if every is None else every
@@ -553,25 +560,31 @@ def _enumerate(config, deadline, max_stores):
     return found, truncated
 
 
-def _signature(entry):
+def _probe(entry):
+    """``(signature, has_text)`` of a store from stat calls alone. ``has_text`` is False for a zarr store with
+    neither ``uns/README`` nor ``uns/annzarro``: it has nothing to read, and is not opened. A file (.h5ad) cannot
+    say, so it is always read."""
     from ..server.routes import dataset_info as info_routes
     try:
-        digest = hashlib.blake2b(repr(info_routes._signature(entry["real"], False)).encode("utf-8", "surrogateescape"), digest_size=8)
-        return digest.hexdigest()
+        signature = info_routes._signature(entry["real"], False)
     except OSError:
-        return None
+        return None, True
+    digest = hashlib.blake2b(repr(signature).encode("utf-8", "surrogateescape"), digest_size=8).hexdigest()
+    if not isinstance(signature[0], tuple):          # (mtime, size) of a file
+        return digest, True
+    _uns, annzarro, readme = signature[1]
+    return digest, annzarro[1] is not None or readme[1] is not None
 
 
 def crawl(config):
     """Build or refresh the index. The caller holds the crawl lock; this writes ``status.json`` and the index."""
     workers = int(setting(config, "text_index_workers"))
     store_timeout = float(setting(config, "text_index_store_timeout_s"))
-    crawl_timeout = float(setting(config, "text_index_crawl_timeout_s"))
     max_stores = int(setting(config, "text_index_max_stores"))
     readme_bytes = int(setting(config, "text_index_readme_kb") * 1024)
     clock = time.monotonic
     began_at = clock()
-    deadline = began_at + crawl_timeout
+    deadline = began_at + CRAWL_SECONDS
     previous = load(config)
     old = {e["real"]: e for e in previous.entries} if previous is not None else {}
     prior_built = previous.built_at if previous is not None and previous.complete else None
@@ -583,19 +596,23 @@ def crawl(config):
               "reused": 0, "errors": 0, "built_at": prior_built}
     results = {}                     # real path: entry
     todo = []
+    bare = 0
     for store in stores:
-        sig = _signature(store)
+        sig, has_text = _probe(store)
         before = old.get(store["real"])
         retry = before is not None and before.get("error") == "timeout" and _now() - before.get("read_at", 0) > RETRY_TIMEOUT_AFTER_S
         if before is not None and sig is not None and before.get("sig") == sig and not retry:
             results[store["real"]] = {**before, "name": store["name"], "path": store["path"], "rel_path": store["rel_path"],
                                       "h5ad": store["h5ad"]}
             status["reused"] += 1
+        elif not has_text:
+            results[store["real"]] = _entry(store, sig)       # nothing to read: indexed by name alone
+            bare += 1
         else:
             todo.append((store, sig))
-    status["done"] = status["reused"]
+    status["done"] = status["reused"] + bare
     logger.info(f"Text index crawl started: {len(stores)} datasets found in {clock() - began_at:.1f} s, "
-                f"{len(todo)} to read, {status['reused']} unchanged; {workers} threads, {store_timeout:g} s per dataset")
+                f"{len(todo)} to read, {status['reused']} unchanged, {bare} without text; {workers} threads, {store_timeout:g} s per dataset")
 
     last_beat = [0.0]
 
@@ -870,12 +887,14 @@ def _field_text(entry, field):
     return (entry.get("about") or {}).get(field, "")
 
 
-def search(loaded, terms, readable, folder=None, limit=50, seconds=SEARCH_SECONDS):
-    """``(hits, partial)``: entries of ``loaded`` that contain every term, best first.
+def search(loaded, terms, readable, folder=None, limit=50, seconds=SEARCH_SECONDS, offset=0, current=None):
+    """``(hits, more, partial)``: entries of ``loaded`` that contain every term, best first.
 
-    ``readable(entry)`` is asked of each candidate in score order, after the lookup, and a candidate it
-    refuses is not returned or counted. ``folder`` (a real path) keeps the stores below it. A hit is
-    ``{"entry", "score", "matched", "snippet"}``. ``partial`` says the clock ran out.
+    ``readable(entry)`` is asked of each candidate in order, after the lookup, and a candidate it refuses is
+    not returned or counted. ``folder`` (a real path) keeps the stores below it. ``current`` (a path) puts the
+    store the user has open first when it matches. The page is ``limit`` hits from ``offset``; ``more`` counts
+    the readable matches after it. A hit is ``{"entry", "score", "matched", "snippet"}``. ``partial`` says the
+    clock ran out (``more`` is then a lower bound).
     """
     from .routes import dataset_folders as df
     deadline = time.monotonic() + seconds
@@ -891,15 +910,20 @@ def search(loaded, terms, readable, folder=None, limit=50, seconds=SEARCH_SECOND
         result = _score(entry, extra, terms)
         if result is not None:
             scored.append((result[0], entry, extra, result[1]))
-    scored.sort(key=lambda item: (-item[0], df.name_key(item[1])))
-    hits = []
+    scored.sort(key=lambda item: (current is None or current not in (item[1]["path"], item[1]["real"]), -item[0],
+                                  df.name_key(item[1])))
+    hits, skipped, more = [], 0, 0
     for score, entry, extra, matched in scored:
-        if len(hits) >= limit:
-            break
         if time.monotonic() > deadline:
             partial = True
             break
         if not readable(entry):
+            continue
+        if skipped < offset:
+            skipped += 1
+            continue
+        if len(hits) >= limit:
+            more += 1
             continue
         # the snippet comes from the best matching field that is text about the store, the name only if nothing else matched
         texty = [f for f in matched if f != "name"]
@@ -908,7 +932,7 @@ def search(loaded, terms, readable, folder=None, limit=50, seconds=SEARCH_SECOND
             field = "rel_path"
         hits.append({"entry": entry, "score": score, "matched": matched,
                      "snippet": _snippet(_field_text(entry, field), folded_field(entry, extra, field), terms, field)})
-    return hits, partial
+    return hits, more, partial
 
 
 # -- the policy key ----------------------------------------------------------------------------------
@@ -922,7 +946,7 @@ def _declare_policy_key() -> None:
     declare(Key(
         name=KEY, type=Bool(), default=True, scope="user", combine="restrict", area="features",
         config_path="server.text_index_enabled", client=True, label="Search descriptions and READMEs",
-        routes=("text_search", "text_index_status", "text_index_refresh"), guide=policy_guide(KEY),
+        routes=("text_search",), guide=policy_guide(KEY),
         description="Whether users may search the attribution and READMEs of the datasets they can open, and whether the server "
                     "builds the index that search reads. On by default. Off for a user hides the search from them; off for "
                     "everyone (also server.text_index_enabled: false in the config file) stops the crawl."))

@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from annzarro.server.core import DEFAULT_CONFIG
-from annzarro.server.limits import LIMITS, validate_limits
+from annzarro.server.limits import DEPRECATED, LIMITS, deprecated_settings, validate_limits
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 CONFIG = os.path.join(ROOT, "annzarro", "config")
@@ -63,3 +63,38 @@ def test_create_app_refuses_a_bad_limit():
     from annzarro.server.core import create_app
     with pytest.raises(ValueError, match="name_search_max_regex_chars"):
         create_app({"TESTING": True, "auth_enabled": False, "name_search_max_regex_chars": "many"})
+
+
+@pytest.mark.parametrize("key", sorted(DEPRECATED))
+def test_a_setting_that_was_removed_is_not_a_limit_and_is_not_in_the_defaults(key):
+    assert key not in LIMITS and key not in DEFAULT_CONFIG
+    assert key not in _yaml("base.yaml")["server"] and key not in _yaml("schema.yaml")["server"]["properties"]
+
+
+def test_the_settings_removed_after_0_7_2_are_still_accepted_with_a_warning(tmp_path, monkeypatch, caplog):
+    from annzarro.utils.config_manager import ConfigManager
+    assert set(DEPRECATED) == {"text_index_background", "text_index_crawl_timeout_s", "text_index_min_interval_s"}
+    server = {"text_index_background": False, "text_index_crawl_timeout_s": 300, "text_index_min_interval_s": 60, "text_index_workers": 4}
+    assert validate_limits(server) == []                      # no error: 0.7.2 configs keep working
+    assert [w.split(" ")[0] for w in deprecated_settings(server)] == [f"server.{k}" for k in DEPRECATED]
+    assert all("no longer used" in w for w in deprecated_settings(server)) and deprecated_settings({"text_index_workers": 4}) == []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(ConfigManager, "SYSTEM_CONFIG_PATH", str(tmp_path / "none.yaml"))
+    path = tmp_path / "site.yaml"
+    path.write_text("server:\n  text_index_min_interval_s: 30\n")
+    mgr = ConfigManager()
+    mgr.load_config(env="production", config_path=str(path))
+    with caplog.at_level("WARNING"):
+        ok, errors = mgr.validate_config()
+    assert ok, errors
+    assert any("server.text_index_min_interval_s is no longer used" in r.getMessage() for r in caplog.records)
+
+
+def test_a_server_starts_with_a_removed_setting_and_says_so(tmp_path, caplog):
+    from annzarro.server.core import create_app
+    with caplog.at_level("WARNING", logger="annzarro.server.core"):
+        app = create_app({"TESTING": True, "data_dir": str(tmp_path), "log_file": str(tmp_path / "t.log"),
+                          "text_index_background": False, "text_index_crawl_timeout_s": 5})
+    assert app is not None
+    said = [r.getMessage() for r in caplog.records if "no longer used" in r.getMessage()]
+    assert len(said) == 2 and "server.text_index_background" in said[0]

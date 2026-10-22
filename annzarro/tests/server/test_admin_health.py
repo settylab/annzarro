@@ -16,6 +16,7 @@ from annzarro.tests.server.admin_helpers import ADMIN, USER, login, make_app, un
 
 HEALTH = "/api/v1/admin/health"
 CLEAR = "/api/v1/admin/cache/clear"
+REBUILD = "/api/v1/admin/text-index/rebuild"
 
 
 @pytest.fixture
@@ -322,9 +323,9 @@ def test_a_user_cannot_clear_and_nothing_is_audited(app):
 PATH_WORDS = ("data_dir", "hostname", "pid", "platform", "python_version", "start_time")
 
 
-@pytest.mark.parametrize("path", ["/api/v1/status", "/api/v1/cache/info", HEALTH, CLEAR])
+@pytest.mark.parametrize("path", ["/api/v1/status", "/api/v1/cache/info", HEALTH, CLEAR, REBUILD])
 def test_the_access_matrix(app, path):
-    post = path == CLEAR
+    post = path in (CLEAR, REBUILD)
     def call(client):
         if post:
             return client.post(path, data="{}", headers=unsafe_headers(client)) if "csrf" in _session(client) \
@@ -373,3 +374,73 @@ def test_a_shared_server_without_login_has_no_admins(tmp_path):
     client = app.test_client()
     assert set(client.get("/api/v1/status").get_json()["server"]) == {"status", "version"}
     assert client.get("/api/v1/cache/info").status_code == 403
+
+
+# --- the Description search block and its rebuild ------------------------------------------------------
+
+def _store(app, name, title=None, readme=None):
+    import shutil
+    from annzarro.core import dataset_annotate
+    from annzarro.tests.server.test_text_index import FIXTURE
+    target = os.path.join(app.config["data_dir"], name)
+    shutil.copytree(FIXTURE, target)
+    if title:
+        dataset_annotate.annotate_store(target, {"title": title}, readme)
+
+
+def _wait_built(app, seconds=30):
+    from annzarro.server import text_index
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if text_index.describe(app.config)["state"] not in ("running",) and text_index.load(app.config) is not None:
+            return
+        time.sleep(0.05)
+    raise AssertionError("the index was not built")
+
+
+def test_the_health_report_has_the_description_search_block(app):
+    _store(app, "plain.zarr")
+    _store(app, "liver.zarr", "Liver atlas", "# Liver\n")
+    block = _get(app).get_json()["description_search"]
+    assert block == {"enabled": True, "state": "idle", "built_at": None, "complete": False, "capped": False,
+                     "stores": 0, "searchable": 0, "not_yet": 0, "unreadable": 0}
+    assert _get(app, USER).status_code == 403
+
+
+def test_rebuild_now_builds_the_index_audits_it_and_the_block_then_counts_it(app):
+    _store(app, "plain.zarr")
+    _store(app, "liver.zarr", "Liver atlas", "# Liver\n")
+    client = login(app, ADMIN)
+    reply = client.post(REBUILD, data="{}", headers=unsafe_headers(client))
+    assert reply.status_code == 200 and reply.get_json()["started"] is True
+    _wait_built(app)
+    block = client.get(HEALTH).get_json()["description_search"]
+    assert block["state"] == "done" and block["complete"] is True and block["built_at"]
+    assert (block["stores"], block["searchable"], block["not_yet"], block["unreadable"]) == (2, 2, 0, 0)
+    last = audit.read(app.admin_dir, limit=1)[0]
+    assert (last["action"], last["actor"], last["outcome"], last["detail"]) == ("text_index.rebuild", ADMIN, "ok", {"started": True})
+    # not rate limited: another one right away starts again
+    again = client.post(REBUILD, data="{}", headers=unsafe_headers(client))
+    assert again.get_json()["started"] is True
+    _wait_built(app)
+
+
+def test_rebuild_while_one_runs_changes_nothing_and_says_so(app):
+    from annzarro.server import text_index
+    release = text_index._try_lock(app.config)
+    try:
+        client = login(app, ADMIN)
+        reply = client.post(REBUILD, data="{}", headers=unsafe_headers(client))
+        assert reply.status_code == 200 and reply.get_json()["started"] is False
+    finally:
+        release()
+
+
+def test_rebuild_is_refused_for_a_user_and_while_the_search_is_off(tmp_path):
+    off = make_app(tmp_path, text_index_enabled=False)
+    admin = login(off, ADMIN)
+    refused = admin.post(REBUILD, data="{}", headers=unsafe_headers(admin))
+    assert refused.status_code == 409 and refused.get_json()["reason"] == "disabled"
+    assert admin.get(HEALTH).get_json()["description_search"]["enabled"] is False
+    user = login(off, USER)
+    assert user.post(REBUILD, data="{}", headers=unsafe_headers(user)).status_code == 403

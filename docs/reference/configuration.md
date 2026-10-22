@@ -92,16 +92,13 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `dataset_search_max_depth` | `6` | Folders deep the dataset browser's search of the data directory (`GET /api/v1/datasets/search`) goes. |
 | `dataset_search_max_entries` | `20000` | Entries that search looks at before it stops and answers `"truncated": true`. It also stops after 3 s (not a setting). With `mode=regex` the pattern goes through the same guard as the name search (`name_search_max_regex_chars`, `regex_too_complex`). |
 | `dataset_details_check_budget_s` | `1.5` | Seconds the dataset browser's details request (`GET /api/v1/datasets/details`) spends on the store check of one zarr store. When it runs out the request answers with the findings so far and `budget_reached: true`. `0` turns the check off there (the command `annzarro store check` is not affected). |
-| `text_index_background` | `true` | Whether the server builds the description index by itself: a few seconds after it starts, then whenever the index is partial, failed or older than `text_index_ttl_s`, at most every `text_index_min_interval_s`, one crawl at a time across workers. `false`: a crawl starts only when a search or **Refresh** asks for one. No crawl runs while the search is off for everyone. |
-| `text_index_enabled` | `true` | Whether the description search (`GET /api/v1/datasets/text-search`) is on and the server builds the index it reads. It is the config layer of the policy key `datasets.text-search.enabled` ({doc}`../deployment/admin`): `false` here turns it off for everyone and stops the crawl. |
-| `text_index_workers` | `2` | Threads the index crawl reads stores with. Only one crawl runs at a time on the server. The reads are Python code, so every thread takes CPU from the worker that runs the crawl: measured on 20,000 stores, opening a dataset in that worker took 34 ms without a crawl, 62 ms with 2 threads and 115 ms with 4. Raise it on a slow network file system, where threads mostly wait. |
+| `text_index_enabled` | `true` | Whether the description search (`GET /api/v1/datasets/text-search`) is on and the server builds and keeps fresh the index it reads. It is the config layer of the policy key `datasets.text-search.enabled` ({doc}`../deployment/admin`): `false` here turns it off for everyone and stops the crawl. |
+| `text_index_workers` | `2` | Threads the index crawl reads stores with. Only one crawl runs at a time on the server (the desktop app is one server for one user, and the defaults suit it). The reads are Python code, so every thread takes CPU from the worker that runs the crawl: measured on 20,000 stores, opening a dataset in that worker took 34 ms without a crawl, 62 ms with 2 threads and 115 ms with 4. Raise it on a slow network file system, where threads mostly wait. |
 | `text_index_store_timeout_s` | `15` | Seconds the crawl waits for one store before it goes on to the next with a spare thread; the store's answer is still kept if it comes before the crawl ends, otherwise it is marked timed out and left out of the search until it is read again. |
-| `text_index_crawl_timeout_s` | `300` | Seconds one crawl may take; then it saves what it has and the index is `partial`. |
-| `text_index_max_stores` | `20000` | Stores one crawl covers; past it the index is `partial`. |
+| `text_index_max_stores` | `20000` | Stores one crawl covers; the rest are not searched (`index.capped`). |
 | `text_index_readme_kb` | `64` | Kilobytes of each README the index keeps. |
 | `text_index_max_mb` | `64` | Megabytes of text the index may hold; each worker holds it in memory. Past it READMEs are dropped from the largest down (`capped: true`). |
-| `text_index_ttl_s` | `600` | Seconds after which a description search is answered from the index and also starts a crawl to refresh it (`stale: true` meanwhile). |
-| `text_index_min_interval_s` | `60` | Seconds between two crawls, whoever asks (a search or `POST /api/v1/datasets/text-index/refresh`). `0` turns the limit off. |
+| `text_index_ttl_s` | `1800` | Seconds after which the server reads the datasets again for changes and refreshes the description index; it also continues a crawl that stopped partway. A dataset that has not changed costs a few `stat` calls. An administrator can rebuild at once on the Server health page. |
 | `lock_timeout_s` | `10` | Seconds a request waits for the lock on the users file (every login writes it), the admin state or the panel sets before it answers `503 busy` with `Retry-After`. |
 | `admin_data_roots` | `[]` | Directories inside which an admin may add data directories in the browser ({doc}`../deployment/admin`). Empty: adding is off and the list is read-only. Keep them writable by trusted accounts only. |
 | `admin_reauth_minutes` | `30` | Minutes the admin's password entry lets them change things in the admin interface. `0`: never asked. |
@@ -119,6 +116,8 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `https_enabled`, `cert_file`, `key_file` | `false`, `config/ssl/cert.pem`, `config/ssl/key.pem` | TLS in `annzarro start` itself, which then serves through Flask's development server instead of waitress, and in the bundled gunicorn configuration. Use a reverse proxy instead ({doc}`../deployment/lab-server`). |
 | `cors_enabled`, `cors_origins` | `false`, `*` | Cross-origin access to `/api/*` from the listed origins. Off by default: no `Access-Control-Allow-Origin` header is sent. |
 | `unified_server` | `true` | Historical; no effect. |
+
+Three settings of 0.7.2 are gone: `text_index_background` (the server always keeps the description index fresh; turn the search off with `text_index_enabled`), `text_index_crawl_timeout_s` (a crawl that runs long is continued) and `text_index_min_interval_s` (a search no longer starts a crawl). A configuration file that still sets one is accepted; the server and `annzarro config validate` warn that it is no longer used, and the value is ignored.
 
 ## `auth`
 

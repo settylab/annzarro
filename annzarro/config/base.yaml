@@ -104,29 +104,24 @@ server:
   # on the store check of one zarr store before it answers with the findings so
   # far (budget_reached: true). 0 = the details never run the check.
   dataset_details_check_budget_s: 1.5
-  # Search over the attribution and READMEs of the local datasets. A crawl
-  # (one at a time on the server) reads the attribution fields and the first
-  # text_index_readme_kb KB of each README into one shared index in the cache
-  # directory, text_index_workers threads at a time, text_index_store_timeout_s
-  # per store, text_index_crawl_timeout_s per crawl (then it saves what it has
-  # and is marked partial) and text_index_max_stores stores at most. The index
-  # holds text_index_max_mb MB at most (READMEs are dropped from the largest
-  # down). A search older than text_index_ttl_s starts a refresh, and a crawl
-  # starts at most every text_index_min_interval_s seconds (0 = no limit).
-  # text_index_enabled: false turns the search off and stops the crawl.
+  # Search over the attribution and READMEs of the local datasets. The server
+  # builds the index by itself a little after it starts and keeps it fresh: a
+  # crawl (one at a time on the server) reads the attribution fields and the
+  # first text_index_readme_kb KB of each README of the datasets that have
+  # either, into one shared index in the cache directory, text_index_workers
+  # threads at a time and text_index_store_timeout_s per dataset, at most
+  # text_index_max_stores datasets. It goes on until every dataset is read and
+  # reads again only what changed, once the index is older than text_index_ttl_s.
+  # The index holds text_index_max_mb MB at most (READMEs are dropped from the
+  # largest down). text_index_enabled: false turns the search off and stops the
+  # crawl (the Settings page does the same without a restart).
   text_index_enabled: true
-  # Build the index in the background a few seconds after the server starts,
-  # continue a partial crawl, and refresh it after text_index_ttl_s, without
-  # waiting for a search. false: a crawl starts only when a search asks for it.
-  text_index_background: true
   text_index_workers: 2
   text_index_store_timeout_s: 15
-  text_index_crawl_timeout_s: 300
   text_index_max_stores: 20000
   text_index_readme_kb: 64
   text_index_max_mb: 64
-  text_index_ttl_s: 600
-  text_index_min_interval_s: 60
+  text_index_ttl_s: 1800
   # Longest regular expression a name search (mode=regex) runs, in characters,
   # and the seconds one regex scan may take before it answers with the matches
   # found so far (partial: true). Patterns that repeat a repeat or branch inside

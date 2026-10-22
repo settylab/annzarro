@@ -2,7 +2,8 @@
  * Server health section (design 5, 2.5): workers, caches, memory, refusals and active
  * users from GET /admin/health. Refreshes every 10 s while the tab is visible
  * (the router reads `autoRefreshMs`). "Clear cache" asks once, then empties the caches of every
- * worker (POST /admin/cache/clear, audited).
+ * worker (POST /admin/cache/clear, audited). The "Description search" block shows the state of the index
+ * the dataset browser searches, with "Rebuild now" (POST /admin/text-index/rebuild, audited).
  */
 
 import { h, setChildren, badge, table } from './dom.js';
@@ -52,6 +53,32 @@ export function workerRows(workers) {
     ]);
 }
 
+/** The state of the description index in words. */
+export function searchStateText(info) {
+    if (!info.enabled) return 'Off (Settings, "Search descriptions and READMEs")';
+    if (info.state === 'running') return 'Building';
+    if (info.state === 'failed') return 'The last build failed';
+    if (info.complete) return 'Up to date';
+    if (info.state === 'idle' && !info.built_at) return 'Waiting for its first build';
+    return 'Not complete, the server continues';
+}
+
+/** The "Description search" block: state, how many datasets are searchable, not yet, or unreadable, when it was
+ *  built, and the button that builds it now. Nothing when the server did not report it. */
+export function descriptionSearchBlock(info, rebuild) {
+    if (!info) return null;
+    const running = info.state === 'running';
+    return h('div', { class: 'small mb-3', id: 'admin-description-search' },
+        h('div', { class: 'd-flex flex-wrap align-items-center gap-3' },
+            h('strong', { text: 'Description search' }),
+            h('span', { id: 'admin-description-state', text: searchStateText(info) }),
+            h('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', id: 'admin-description-rebuild', text: running ? 'Building...' : 'Rebuild now',
+                disabled: !info.enabled || running, onclick: rebuild })),
+        info.enabled ? h('div', { class: 'text-muted', id: 'admin-description-counts',
+            text: `${formatCount(info.searchable)} searchable, ${formatCount(info.not_yet)} not yet, ${formatCount(info.unreadable)} unreadable; `
+                + (info.built_at ? `last built ${formatTimestamp(new Date(info.built_at * 1000).toISOString())}` : 'not built yet') + (info.capped ? '; more datasets than the size limit allows' : '') }) : null);
+}
+
 let body = null;
 let bar = null;
 let apiRef = null;
@@ -73,6 +100,15 @@ async function clear() {
         drawButton();
     }
     await load();
+}
+
+async function rebuildIndex() {
+    try {
+        await apiRef.health.rebuildTextIndex();
+        if (ctxRef && ctxRef.toast) ctxRef.toast('Description search: building the index.', 'success');
+    } finally {
+        await load();
+    }
 }
 
 function drawButton() {
@@ -98,6 +134,7 @@ async function load() {
                 h('div', { class: 'fs-5', text: formatMb(totals.rss_mb) })) : null),
         table(['pid', 'Age', 'Requests', 'Read budget', 'Cache', 'Memory', 'Refusals'], workerRows(workers), 'No workers reported.'),
         panelSetsLine(data.panel_sets),
+        descriptionSearchBlock(data.description_search, rebuildIndex),
         warningsBlock(data.warnings),
         h('p', { class: 'small' }, h('strong', { text: 'Refusals by reason: ' }), refusalText(sumRefusals(workers))),
         h('p', { class: 'small' }, h('strong', { text: 'Top readers now: ' }), readersText(workers)),

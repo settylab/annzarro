@@ -28,7 +28,7 @@ def reset_all(dataset_path=None):
         from flask import current_app, has_app_context
         if has_app_context():
             from . import text_index
-            text_index.invalidate(current_app.config)      # the next text search revalidates; the index stays
+            text_index.invalidate(current_app.config)      # the keeper revalidates it; the index stays
     result["cache_config"] = {
         "cache_enabled": zarr_reader.enable_caching,
         "cache_memory_mb": zarr_reader.max_memory_mb,

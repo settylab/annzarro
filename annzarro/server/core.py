@@ -66,15 +66,12 @@ DEFAULT_CONFIG = {
     "dataset_search_max_entries": 20000, # entries that search looks at before it stops (and says so)
     "dataset_details_check_budget_s": 1.5,  # seconds the details request spends on a store check before it answers with the findings so far; 0 = no check
     "text_index_enabled": True,           # the description index and its search (policy key datasets.text-search.enabled)
-    "text_index_background": True,        # build the index at server start and keep it fresh, not only when a search asks
     "text_index_workers": 2,              # threads the index crawl reads stores with
     "text_index_store_timeout_s": 15,     # seconds the crawl waits for one store before it reads the next
-    "text_index_crawl_timeout_s": 300,    # seconds one crawl may take; then it is partial
     "text_index_max_stores": 20000,       # stores one crawl covers
     "text_index_readme_kb": 64,           # KB of each README indexed
     "text_index_max_mb": 64,              # MB of text the index may hold (READMEs are dropped from the largest down)
-    "text_index_ttl_s": 600,              # age after which a search also starts a refresh
-    "text_index_min_interval_s": 60,      # seconds between two crawls; 0 = no limit
+    "text_index_ttl_s": 1800,            # age after which the keeper reads the datasets again for changes
     "name_search_max_regex_chars": 200,   # longest regex a name search runs (a longer one is a 400 regex_too_long)
     "name_search_timeout_s": 10,          # seconds a regex name search scans before it answers partially; 0 = no limit
     "read_user_share_percent": 50,        # % of read_budget_mb one user (else one address) may hold at once; 0 = no share
@@ -393,7 +390,9 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     panel_sets.log_startup(app.config)
     
     # A limit that is not a number would fail at its first request, not here
-    from annzarro.server.limits import validate_limits
+    from annzarro.server.limits import deprecated_settings, validate_limits
+    for warning in deprecated_settings(app.config):
+        logger.warning(warning)
     problems = validate_limits(app.config)
     if problems:
         raise ValueError("; ".join(problems))

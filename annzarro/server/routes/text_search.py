@@ -1,25 +1,23 @@
-"""Searching what the datasets say about themselves: ``/api/v1/datasets/text-search`` and the index behind it.
+"""Searching what the datasets say about themselves: ``GET /api/v1/datasets/text-search`` and the index behind it.
 
 The attribution fields and the first 64 KB of the README of every local store the server can list are
-crawled into one index (``server/text_index.py``); these routes search it, report how it is doing and
-let any user ask for it to be rebuilt.
+crawled into one index (``server/text_index.py``), which the server builds and keeps fresh by itself; this
+route only searches it. A search never starts a crawl.
 
-* ``GET  /datasets/text-search?q=&folder=&limit=``: stores whose text holds every term of ``q``, best
-  first, each with a snippet and the offsets to highlight. Starts a crawl when there is no index or
-  it is stale, and answers from the old index meanwhile (``index.stale``).
-* ``GET  /datasets/text-index/status``: ``{state, stale, built_at, progress}``, for polling.
-* ``POST /datasets/text-index/refresh``: starts a crawl at most every ``server.text_index_min_interval_s``;
-  sooner it answers the current status (``started: false``).
+* ``GET /datasets/text-search?q=&folder=&limit=&offset=&current=``: stores whose text holds every term of
+  ``q``, best first, each with a snippet and the offsets to highlight; ``current`` (the path of the dataset the
+  user has open) ranks that dataset first when it matches. ``more`` counts the matches after the page, and
+  ``offset`` asks for the next one. ``index`` says whether every dataset is searched.
 
 The index holds every store the crawl could list, so every answer is filtered for the requester after
 the lookup: a store they may not open is no hit, no snippet and no count. A restricted user is told the
-path of what they may open (as in their listings), nothing above a grant, and only a fraction of progress, never how
-many stores the server holds.
+path of what they may open (as in their listings), nothing above a grant, and never how many stores the
+server holds.
 """
 import logging
 import os
 
-from flask import current_app, jsonify, request
+from flask import jsonify, request
 
 from .. import access, confinement, text_index
 from ..policy import requires
@@ -30,29 +28,18 @@ DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 
 
-def _summary(config, view):
-    """``index`` of a reply: what the requester may be told of the index."""
-    restricted = access.is_restricted_requester()
-    status = view["status"]
-    progress = None
-    if view["state"] == "running":
-        progress = {"fraction": view["fraction"]}
-        if not restricted:
-            progress.update(done=status.get("done"), total=status.get("total"), errors=status.get("errors"))
-    body = {"state": view["state"], "stale": view["stale"], "built_at": view["built_at"], "progress": progress}
+def _summary(view):
+    """``index`` of the reply: ``{complete}``; while datasets are not searched yet, ``{complete: false, capped}``
+    and, for a requester who may know how many the server holds, ``searched`` and ``total``."""
+    if text_index.complete(view):
+        return {"complete": True}
     index = view["index"]
-    body["background"] = text_index.background_enabled(current_app)
-    if not restricted and index is not None:
-        body.update(stores=len(index), partial=index.partial)
-        # what the line under the search says: searched now, not yet (not reached, or late: read again later), unreadable
-        total = status.get("total") if view["state"] != "running" else None
-        not_reached = max(0, int(total) - len(index)) if isinstance(total, int) else 0
-        body.update(searchable=len(index) - index.errors, unreadable=index.errors - index.timeouts,
-                    not_yet=not_reached + index.timeouts)
-        if index.stores_capped:
-            body["max_stores"] = int(text_index.setting(config, "text_index_max_stores"))
-    if index is not None:
-        body["capped"] = index.capped or index.stores_capped
+    body = {"complete": False, "capped": bool(index is not None and index.stores_capped)}
+    if not access.is_restricted_requester():
+        counts = text_index.counts(view)
+        body["searched"] = counts["searchable"] + counts["unreadable"]
+        total = view["status"].get("total")
+        body["total"] = max(int(total), counts["stores"]) if isinstance(total, int) else (counts["stores"] or None)
     return body
 
 
@@ -112,27 +99,12 @@ def register_text_search_routes(app_, api_version):
             if not os.path.isdir(resolved):
                 return jsonify({"error": "Folder not found", "reason": "not_found"}), 404
             real_folder = os.path.realpath(resolved)
-        if terms:
-            text_index.start_crawl(app_)
+        offset = max(0, request.args.get("offset", 0, type=int) or 0)
         view = text_index.describe(config)
-        results, partial = [], False
+        results, more, partial = [], 0, False
         if terms and view["index"] is not None:
-            hits, partial = text_index.search(view["index"], terms, _readable(config), real_folder, limit)
+            hits, more, partial = text_index.search(view["index"], terms, _readable(config), real_folder, limit, offset=offset,
+                                                    current=request.args.get("current") or None)
             user = access.restricted_user()
             results = [_row(hit, user) for hit in hits]
-        return jsonify({"results": results, "partial": partial, "index": _summary(config, view)})
-
-    @app_.route(f"{base}/text-index/status", methods=["GET"])
-    @access.gate("listing")
-    @requires(text_index.KEY)
-    def text_index_status():
-        return jsonify(_summary(app_.config, text_index.describe(app_.config)))
-
-    @app_.route(f"{base}/text-index/refresh", methods=["POST"])
-    @access.gate("listing")
-    @requires(text_index.KEY)
-    def text_index_refresh():
-        started = text_index.start_crawl(app_, force=True)
-        body = _summary(app_.config, text_index.describe(app_.config))
-        body["started"] = started
-        return jsonify(body)
+        return jsonify({"results": results, "more": more, "partial": partial, "index": _summary(view)})

@@ -1,4 +1,4 @@
-"""The description search over HTTP: who is told what, the policy switch, polling and the refresh limit.
+"""The description search over HTTP: who is told what, the policy switch, the ranking and the next page.
 
 ``bob`` is restricted to the store ``liver.zarr`` and the folder ``sub``; ``carol`` is unrestricted and
 ``alice`` an admin. ``out.zarr`` (title "Secret kidney", README "kidneysecret") is outside bob's grants,
@@ -16,13 +16,12 @@ from annzarro.server.admin import overlay, settings
 from annzarro.server.auth import AuthManager
 from annzarro.server.core import create_app
 from annzarro.server.routes import data_routes
-from annzarro.tests.server.test_text_index import FIXTURE, annotate, config_for, make_world, wait_idle
+from annzarro.tests.server.test_text_index import FIXTURE, annotate, config_for, crawl, make_world
 
 PASSWORD = "pw-for-tests"
 USERS = {"alice": True, "bob": False, "carol": False}
 SEARCH = "/api/v1/datasets/text-search"
-STATUS = "/api/v1/datasets/text-index/status"
-REFRESH = "/api/v1/datasets/text-index/refresh"
+GONE = ("/api/v1/datasets/text-index/status", "/api/v1/datasets/text-index/refresh")     # 0.7.2 routes, removed
 
 
 @pytest.fixture(autouse=True)
@@ -63,13 +62,12 @@ def client(app, name):
     return c
 
 
-def search(c, app, q, wait=True, **args):
-    """The reply of a search once the index is built (the first search starts the crawl and gets nothing)."""
-    reply = c.get(SEARCH, query_string={"q": q, **args})
-    if wait and reply.status_code == 200 and reply.get_json()["index"]["state"] == "running":
-        wait_idle(app)
-        reply = c.get(SEARCH, query_string={"q": q, **args})
-    return reply
+def search(c, app, q, **args):
+    """The reply of a search. A search never builds the index (the server's keeper does), so the first one here
+    builds it by hand."""
+    if text_index.load(app.config) is None:
+        crawl(app)
+    return c.get(SEARCH, query_string={"q": q, **args})
 
 
 def names(reply):
@@ -79,25 +77,30 @@ def names(reply):
 # --- the flow ---------------------------------------------------------------------------------------
 
 def test_anonymous_requests_are_refused(world):
-    anon = world.test_client()
-    assert anon.get(SEARCH, query_string={"q": "liver"}).status_code == 401
-    assert anon.get(STATUS).status_code == 401
-    assert anon.post(REFRESH).status_code == 401
+    assert world.test_client().get(SEARCH, query_string={"q": "liver"}).status_code == 401
 
 
-def test_the_first_search_starts_the_crawl_and_the_next_one_finds_the_store(world):
+def test_a_search_never_starts_a_crawl_and_says_what_is_not_searched_yet(world):
     carol = client(world, "carol")
     first = carol.get(SEARCH, query_string={"q": "liver"})
     body = first.get_json()
-    assert first.status_code == 200 and body["results"] == [] and body["index"]["state"] == "running"
-    wait_idle(world)
-    body = carol.get(SEARCH, query_string={"q": "liver"}).get_json()
-    assert body["index"]["state"] == "done" and body["index"]["stale"] is False and body["index"]["built_at"]
-    assert body["partial"] is False
+    assert first.status_code == 200 and body["results"] == [] and body["more"] == 0
+    assert body["index"] == {"complete": False, "capped": False, "searched": 0, "total": None}
+    time.sleep(0.2)
+    assert text_index.read_status(world.config)["state"] == "idle" and not text_index.index_dir(world.config).exists()
+    body = search(carol, world, "liver").get_json()
+    assert body["index"] == {"complete": True} and body["partial"] is False
     top = body["results"][0]
     assert top["name"] == "liver.zarr" and top["title"] == "Liver atlas" and top["path"] == os.path.realpath(top["path"])
     assert top["rel_path"] == "liver.zarr" and top["cells"] == 200 and top["genes"] == 20 and top["format"]
     assert top["snippet"]["text"] and top["matched"][0] == "title" and top["score"] > 0
+
+
+def test_the_routes_of_0_7_2_that_polled_and_refreshed_are_gone(world):
+    carol = client(world, "carol")
+    assert carol.get(GONE[0]).status_code == 404
+    assert carol.post(GONE[1]).status_code in (404, 405)
+    assert text_index.read_status(world.config)["state"] == "idle"
 
 
 def test_a_readme_word_is_found_with_its_snippet_and_highlight(world):
@@ -109,41 +112,10 @@ def test_a_readme_word_is_found_with_its_snippet_and_highlight(world):
     assert hit["snippet"]["text"][start:end] == "hepatocytes"
     # the text is data for textContent: markup in a README stays markup
     annotate(f"{world.data}/plain.zarr", {"title": "Markup"}, "<img src=x onerror=alert(1)> payload")
-    carol.post(REFRESH)
-    wait_idle(world)
     time.sleep(0.01)
+    crawl(world)
     body = search(carol, world, "payload").get_json()
     assert body["results"][0]["snippet"]["text"].startswith("<img src=x")
-
-
-def test_status_is_pollable_and_reports_progress_while_a_crawl_runs(world):
-    carol = client(world, "carol")
-    assert carol.get(STATUS).get_json()["state"] == "idle"
-    text_index._write_status(world.config, {"state": "running", "started": time.time(), "heartbeat": time.time(),
-                                            "done": 2, "total": 8, "errors": 1})
-    body = carol.get(STATUS).get_json()
-    assert body["state"] == "running" and body["progress"] == {"fraction": 0.25, "done": 2, "total": 8, "errors": 1}
-
-
-def test_the_refresh_button_is_open_to_everyone_and_limited_to_one_a_minute(tmp_path):
-    app = make_app(tmp_path, text_index_min_interval_s=60)
-    bob, carol = client(app, "bob"), client(app, "carol")
-    first = carol.post(REFRESH)
-    assert first.status_code == 200 and first.get_json()["started"] is True
-    wait_idle(app)
-    for who in (carol, bob):
-        again = who.post(REFRESH).get_json()
-        assert again["started"] is False and again["state"] == "done"
-
-
-def test_an_old_index_is_answered_stale_while_a_refresh_starts(world, monkeypatch):
-    carol = client(world, "carol")
-    assert names(search(carol, world, "liver")) == ["liver.zarr"]
-    real = time.time
-    monkeypatch.setattr(text_index, "_now", lambda: real() + 700)
-    body = carol.get(SEARCH, query_string={"q": "liver"}).get_json()
-    assert body["results"][0]["name"] == "liver.zarr" and body["index"]["stale"] is True
-    wait_idle(world)
 
 
 def test_a_query_that_is_refused_or_empty(world):
@@ -166,32 +138,64 @@ def test_the_folder_scopes_the_search(world):
     assert missing.status_code == 404 and missing.get_json()["reason"] == "not_found"
 
 
-def test_limit_caps_the_results(world):
+def test_limit_caps_the_results_and_the_answer_says_how_many_more_matched(world):
     carol = client(world, "carol")
-    assert len(search(carol, world, "zarr", limit=2).get_json()["results"]) == 2
+    body = search(carol, world, "zarr", limit=2).get_json()
+    assert len(body["results"]) == 2 and body["more"] == 3          # five stores have "zarr" in their name
+    rest = carol.get(SEARCH, query_string={"q": "zarr", "limit": 2, "offset": 2}).get_json()
+    assert len(rest["results"]) == 2 and rest["more"] == 1
+    last = carol.get(SEARCH, query_string={"q": "zarr", "limit": 2, "offset": 4}).get_json()
+    assert len(last["results"]) == 1 and last["more"] == 0
+    every = [r["name"] for r in body["results"] + rest["results"] + last["results"]]
+    assert sorted(every) == sorted(set(every)) and len(every) == 5      # the pages tile the matches
+    assert names(carol.get(SEARCH, query_string={"q": "zarr", "limit": 200})) == every
+    assert carol.get(SEARCH, query_string={"q": "zarr", "offset": 99}).get_json()["results"] == []
+    assert carol.get(SEARCH, query_string={"q": "zarr", "offset": -3}).status_code == 200
+
+
+def test_the_dataset_the_user_has_open_ranks_first_when_it_matches(world):
+    carol = client(world, "carol")
+    plain = names(search(carol, world, "atlas"))
+    assert plain[0] == "liver.zarr"                           # its title says "Liver atlas": the better hit
+    heart = os.path.realpath(f"{world.data}/sub/heart.zarr")
+    body = carol.get(SEARCH, query_string={"q": "atlas", "current": heart}).get_json()
+    assert [r["name"] for r in body["results"]] == ["heart.zarr", "liver.zarr"]
+    first_page = carol.get(SEARCH, query_string={"q": "atlas", "current": heart, "limit": 1}).get_json()
+    assert [r["name"] for r in first_page["results"]] == ["heart.zarr"] and first_page["more"] == 1     # even when the limit cuts the list
+    elsewhere = carol.get(SEARCH, query_string={"q": "liver", "current": heart}).get_json()
+    assert [r["name"] for r in elsewhere["results"]] == ["liver.zarr"]                                # it does not match: not added
+    assert names(carol.get(SEARCH, query_string={"q": "atlas", "current": "/no/such"})) == plain
+
+
+def test_the_open_dataset_does_not_unlock_a_store_a_restricted_user_may_not_read(granted):
+    bob = client(granted, "bob")
+    out = os.path.realpath(f"{granted.data}/out.zarr")
+    body = search(bob, granted, "kidneysecret", current=out).get_json()
+    assert body["results"] == [] and body["more"] == 0
 
 
 # --- the policy switch ----------------------------------------------------------------------------------
 
-def test_off_in_the_config_answers_disabled_by_policy_on_every_route_and_crawls_nothing(tmp_path):
+def test_off_in_the_config_answers_disabled_by_policy_and_crawls_nothing(tmp_path):
     app = make_app(tmp_path, text_index_enabled=False)
     carol = client(app, "carol")
-    for reply in (carol.get(SEARCH, query_string={"q": "liver"}), carol.get(STATUS), carol.post(REFRESH)):
-        assert reply.status_code == 403
-        assert reply.get_json()["reason"] == "disabled_by_policy" and reply.get_json()["key"] == text_index.KEY
+    reply = carol.get(SEARCH, query_string={"q": "liver"})
+    assert reply.status_code == 403
+    assert reply.get_json()["reason"] == "disabled_by_policy" and reply.get_json()["key"] == text_index.KEY
+    assert text_index.start_keeper(app, first=0, force=True) is None
     assert not text_index.index_dir(app.config).exists()
 
 
 def test_an_admin_can_turn_it_off_for_everyone(world):
     overlay.update(world.config, lambda o: o.setdefault("policy", {}).update({text_index.KEY: False}))
     assert client(world, "carol").get(SEARCH, query_string={"q": "liver"}).status_code == 403
-    assert client(world, "alice").get(STATUS).status_code == 403
+    assert client(world, "alice").get(SEARCH, query_string={"q": "liver"}).status_code == 403
 
 
 def test_an_admin_can_turn_it_off_for_one_user(world):
     settings.update_user_policy(world.config, "carol", lambda stored: (None, {**stored, text_index.KEY: False}))
-    assert client(world, "carol").get(STATUS).status_code == 403
-    assert client(world, "alice").get(STATUS).status_code == 200
+    assert client(world, "carol").get(SEARCH, query_string={"q": "liver"}).status_code == 403
+    assert client(world, "alice").get(SEARCH, query_string={"q": "liver"}).status_code == 200
 
 
 def test_the_key_is_declared_for_the_effective_policy_and_the_routes(world):
@@ -227,26 +231,33 @@ def test_a_restricted_user_is_told_the_path_of_what_they_may_open_and_the_name_f
     assert "out.zarr" not in text and "plain.zarr" not in text
 
 
-def test_a_restricted_user_is_told_a_fraction_never_a_count(granted):
-    bob, carol = client(granted, "bob"), client(granted, "carol")
-    text_index._write_status(granted.config, {"state": "running", "started": time.time(), "heartbeat": time.time(),
-                                              "done": 3, "total": 12, "errors": 2})
-    mine = bob.get(STATUS).get_json()
-    assert mine["progress"] == {"fraction": 0.25} and "stores" not in mine
-    assert carol.get(STATUS).get_json()["progress"]["total"] == 12
-    # the search reply carries the same index summary
-    reply = bob.get(SEARCH, query_string={"q": "atlas"}).get_json()
-    # background says whether the server goes on by itself: a setting of the server, not a count of its stores
-    assert set(reply["index"]) == {"state", "stale", "built_at", "progress", "background"}
-    assert "total" not in json.dumps(reply["index"]) and "errors" not in json.dumps(reply["index"])
+def test_only_an_unrestricted_user_is_told_how_many_datasets_are_searched(granted, monkeypatch):
+    real = text_index.read_text
+
+    def read(path, n):
+        if path.endswith("heart.zarr"):
+            time.sleep(1.5)                  # past the limit below: late, so "not searched yet"
+        return real(path, n)
+    monkeypatch.setattr(text_index, "read_text", read)
+    granted.config.update(text_index_store_timeout_s=0.3)
+    crawl(granted)
+    carol, bob = client(granted, "carol"), client(granted, "bob")
+    # five datasets: heart is late, broken cannot be read (final: it is not waited for), the rest are searched
+    assert carol.get(SEARCH, query_string={"q": "atlas"}).get_json()["index"] == {"complete": False, "capped": False, "searched": 4, "total": 5}
+    mine = bob.get(SEARCH, query_string={"q": "atlas"}).get_json()["index"]
+    assert mine == {"complete": False, "capped": False}
 
 
-def test_an_unrestricted_user_and_an_admin_see_every_store_and_the_counts(granted):
+def test_a_complete_index_says_only_that(granted):
+    crawl(granted)
+    for who in ("bob", "carol", "alice"):
+        assert client(granted, who).get(SEARCH, query_string={"q": "atlas"}).get_json()["index"] == {"complete": True}
+
+
+def test_an_unrestricted_user_and_an_admin_see_every_store(granted):
     for who in ("carol", "alice"):
         c = client(granted, who)
         assert "out.zarr" in names(search(c, granted, "kidneysecret"))
-    body = client(granted, "carol").get(STATUS).get_json()
-    assert body["stores"] == 5 and body["partial"] is False
 
 
 def test_a_grant_added_or_removed_changes_the_hits_at_once_without_a_new_crawl(granted):
@@ -323,39 +334,11 @@ def test_a_capped_index_says_so_and_only_an_unrestricted_user_is_told_counts(gra
     granted.config["text_index_max_stores"] = 3
     carol, bob = client(granted, "carol"), client(granted, "bob")
     body = search(carol, granted, "atlas").get_json()
-    assert body["index"]["capped"] is True and body["index"]["max_stores"] == 3 and body["index"]["stores"] == 3
-    mine = search(bob, granted, "atlas").get_json()["index"]
-    assert mine["capped"] is True and "stores" not in mine and "max_stores" not in mine
-    assert carol.get(STATUS).get_json()["capped"] is True
+    assert body["index"] == {"complete": False, "capped": True, "searched": 3, "total": 3}
+    assert search(bob, granted, "atlas").get_json()["index"] == {"complete": False, "capped": True}
     # the name search is not touched by the cap
     found = carol.get("/api/v1/datasets/search", query_string={"q": "zarr"}).get_json()
     assert len(found["results"]) == 5
-
-
-# --- what the line under the search is told ---------------------------------------------------------------
-
-def test_the_status_counts_searchable_not_yet_and_unreadable_and_says_the_server_goes_on(world, monkeypatch):
-    real = text_index.read_text
-
-    def read(path, n):
-        if path.endswith("heart.zarr"):
-            time.sleep(1.5)                  # past the limit below: late, so "not searched yet"
-        return real(path, n)
-    monkeypatch.setattr(text_index, "read_text", read)
-    world.config.update(text_index_store_timeout_s=0.3)
-    with world.test_request_context("/"):
-        text_index.crawl(world.config)
-    body = client(world, "alice").get(STATUS).get_json()
-    assert (body["stores"], body["searchable"], body["not_yet"], body["unreadable"]) == (5, 3, 1, 1)   # broken.zarr cannot be read
-    assert body["background"] is True
-
-
-def test_a_restricted_user_gets_no_counts(granted):
-    with granted.test_request_context("/"):
-        text_index.crawl(granted.config)
-    body = client(granted, "bob").get(STATUS).get_json()
-    assert not {"stores", "searchable", "not_yet", "unreadable"} & set(body)
-    assert "background" in body
 
 
 # --- a hit is the dataset the listings give -------------------------------------------------------------

@@ -681,8 +681,9 @@ class ConfigManager:
         if str(mode).strip().lower() not in ("admins", "local-only", "none"):
             errors.append(f"Invalid server.arbitrary_paths: {mode!r} (expected admins, local-only or none)")
 
-        from ..server.limits import validate_limits
+        from ..server.limits import deprecated_settings, validate_limits
         errors.extend(validate_limits(server_section))
+        warnings.extend(deprecated_settings(server_section))
 
         port = self.config.get("server", {}).get("port") if isinstance(self.config.get("server"), dict) else None
         if port is not None and (isinstance(port, bool) or not isinstance(port, int) or not 0 < port < 65536):
