@@ -141,58 +141,12 @@ test('a layout step that is one close, one open or a moved split is named', () =
 
 test('a layout step of several changes is not a single move', () => {
     const pair = at([split('cell-plot-1', 'cell-plot-2')]);
+    assert.equal(layoutStep(pair, at([tile('cell-plot-3')])), null);
     assert.equal(layoutStep(at([tile('cell-plot-1')]), pair.layout.hierarchy.length && at([split('cell-plot-2', 'cell-plot-1')])), null);
     // a panel opened first in its split cannot be made by hand: rebuilt
     assert.equal(layoutStep(at([tile('cell-plot-1')]), at([split('cell-plot-2', 'cell-plot-1')])), null);
+    // two panels opened at once
+    assert.equal(layoutStep(at([tile('cell-plot-1')]), at([tile('cell-plot-1'), tile('cell-plot-2'), tile('cell-plot-3')])), null);
     // the same panels, arranged differently
     assert.equal(layoutStep(pair, at([tile('cell-plot-1'), tile('cell-plot-2')])), null);
-});
-
-test('several opens and closes in one step play together', () => {
-    const solo = at([tile('cell-plot-1')]);
-    const three = at([tile('cell-plot-1'), tile('cell-plot-2'), tile('cell-plot-3')]);
-    assert.deepEqual(layoutStep(solo, three), { op: 'multi', steps: [
-        { op: 'open', id: 'cell-plot-2', where: 'row' }, { op: 'open', id: 'cell-plot-3', where: 'row' }] });
-    // one panel replaced by another
-    const swapped = layoutStep(at([split('cell-plot-1', 'cell-plot-2')]), at([split('cell-plot-1', 'cell-plot-3')]));
-    assert.deepEqual(swapped, { op: 'multi', steps: [
-        { op: 'close', id: 'cell-plot-2' },
-        { op: 'open', id: 'cell-plot-3', where: 'pane', sibling: 'cell-plot-1', direction: 'horizontal' }] });
-    assert.deepEqual(layoutStep(three, solo).steps.map(s => s.op), ['close', 'close']);
-});
-
-const keyed = (p, steps) => steps.map(([now, key, extra = {}]) => {
-    const how = p.decide({ now, path: 'a', key, ...extra });
-    p.written({ now, path: 'a', key, capped: extra.capped });
-    return how;
-});
-
-test('discrete actions are separate entries however soon they follow', () => {
-    // close a panel, open another 200 ms later
-    assert.deepEqual(keyed(createHistoryPolicy(), [[0, 'x'], [10000, 'close'], [10200, 'open']]),
-        ['replace', 'push', 'push']);
-});
-
-test('repeated input of one control is one entry; another control is another', () => {
-    // five clicks on one spinner, then a slider drag
-    assert.deepEqual(keyed(createHistoryPolicy(), [[0, 'x'], [10000, 'spin'], [10300, 'spin'], [10600, 'spin'],
-        [10900, 'spin'], [11200, 'spin']]), ['replace', 'push', 'replace', 'replace', 'replace', 'replace']);
-    // control X, then control Y 300 ms later
-    assert.deepEqual(keyed(createHistoryPolicy(), [[0, 'x'], [10000, 'X'], [10300, 'Y']]), ['replace', 'push', 'push']);
-    // back to X after Y is a new action
-    assert.deepEqual(keyed(createHistoryPolicy(), [[0, 'x'], [10000, 'X'], [10300, 'Y'], [10600, 'X']]),
-        ['replace', 'push', 'push', 'push']);
-});
-
-test('the settling of one action, written in several goes, shares its entry; a long pause does not', () => {
-    assert.deepEqual(keyed(createHistoryPolicy(), [[0, 'x'], [10000, 'open'], [10900, 'open'], [11800, 'open'], [20000, 'open']]),
-        ['replace', 'push', 'replace', 'replace', 'push']);
-});
-
-test('a user action right after Back starts an entry; panels settling there do not', () => {
-    const p = createHistoryPolicy();
-    keyed(p, [[0, 'x'], [10000, 'a1']]);
-    p.landed({ now: 12000, path: 'a' });
-    assert.equal(p.decide({ now: 12500, path: 'a', key: 'a1', acted: false }), 'replace');
-    assert.equal(p.decide({ now: 12500, path: 'a', key: 'a2', acted: true }), 'push');
 });

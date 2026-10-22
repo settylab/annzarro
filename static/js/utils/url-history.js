@@ -26,58 +26,40 @@ import { collectTileIds } from './deeplink.js';
 export const MERGE_MS = 1200;
 /** After Back or Forward, panels still settle (normalise their settings): that is no new action. */
 export const LANDING_MS = 3000;
-/** Changes of one control, or of one action settling, closer than this are one gesture. */
-export const GESTURE_MS = 3000;
 
 /**
  * Whether the next settled change starts a history entry.
- *
- * A change carries the key of the action that made it (main.js): one key per
- * control that takes repeated input (a slider, a number box, a text field) and
- * a new key for every discrete action (a click on a button, closing a panel,
- * the end of a split drag, a focused cell or gene). Changes with the same
- * key, less than `gestureMs` apart, are one gesture and share an entry; a
- * change with another key is another action and starts its own, however
- * soon it follows. A change with no key (nothing the user did) shares the
- * entry written less than `mergeMs` before.
- * @param {{mergeMs?: number, gestureMs?: number, landingMs?: number}} [options]
- * @returns {{decide: Function, written: Function, baseline: Function, landed: Function}}
+ * @param {{mergeMs?: number}} [options]
+ * @returns {{decide: Function, applied: Function}}
  */
-export function createHistoryPolicy({ mergeMs = MERGE_MS, gestureMs = GESTURE_MS, landingMs = LANDING_MS } = {}) {
+export function createHistoryPolicy({ mergeMs = MERGE_MS, landingMs = LANDING_MS } = {}) {
     let seen = false;       // a first view was written
     let path = '';          // the dataset of the last written view
     let at = 0;             // when it was written
-    let lastKey = null;     // the action that wrote it
     let landedAt = -Infinity; // when a history entry was last applied
     let continuing = false; // that write was forced by the maximum wait: the burst goes on
 
     return {
         /**
-         * @param {{now: number, path: string, key?: *, acted?: boolean}} change
-         *   path: the dataset of the new view ('' with none); key: the action
-         *   that made it (null: none the user took); acted: the user acted
-         *   since the last Back or Forward
+         * @param {{now: number, path: string, capped?: boolean}} change
+         *   path: the dataset of the new view ('' with none); capped: this
+         *   write comes from the maximum wait, not from a quiet moment
          * @returns {'push'|'replace'}
          */
-        decide({ now, path: next, key = null, acted = false }) {
+        decide({ now, path: next }) {
             if (!seen) return 'replace';
-            // panels settling after a Back or Forward are no new action
-            if (now - landedAt < landingMs && !(acted && key !== null)) return 'replace';
+            if (now - landedAt < landingMs) return 'replace';
             if (!path || !next) return 'replace';
-            if (next !== path) return 'push';
-            if (key !== null) {
-                return key === lastKey && (continuing || now - at < gestureMs) ? 'replace' : 'push';
-            }
             if (continuing) return 'replace';
+            if (next !== path) return 'push';
             return now - at < mergeMs ? 'replace' : 'push';
         },
-        /** The view was written (either way): remember when, by which action, and whether the burst goes on. */
-        written({ now, path: next, key = null, capped = false }) {
+        /** The view was written (either way): remember when, and whether the burst goes on. */
+        written({ now, path: next, capped = false }) {
             // the first write only puts the opening view in the address: no action of the user's to merge with
             at = seen ? now : -Infinity;
             seen = true;
             path = next || '';
-            lastKey = key;
             continuing = !!capped;
         },
         /** The address already holds this view (nothing to write): it is the entry the next change starts from. */
@@ -90,8 +72,7 @@ export function createHistoryPolicy({ mergeMs = MERGE_MS, gestureMs = GESTURE_MS
         landed({ now, path: next }) {
             seen = true;
             path = next || '';
-            at = -Infinity;
-            lastKey = null;
+            at = now - mergeMs;
             landedAt = now;
             continuing = false;
         }
@@ -210,27 +191,17 @@ function paneBeside(nodes, id) {
     return null;
 }
 
-/** The move that opens `id` in `next` from `cur` (arrangements), or null. */
-function openOf(cur, next, id) {
-    if (stableStringify(withoutTile(next, id)) !== stableStringify(cur)) return null;
-    const last = next[next.length - 1];
-    if (last && last.type === 'tile' && last.id === id) return { op: 'open', id, where: 'row' };
-    const beside = paneBeside(next, id);
-    return beside ? { op: 'open', id, where: 'pane', ...beside } : null;
-}
-
 /**
- * The moves a layout step is, when the app already animates each of them:
+ * The one move a layout step is, when it is one the app already animates:
  * `close` (a panel closed; its sibling takes the room), `open` (a panel made
- * in a new row, or in a pane split off beside a panel) and `resize` (only
- * pane shares and row heights differ). One move is returned as it is, several
- * as `{op: 'multi', steps}` (closes first, then opens in an order each of which
- * can be made by hand); they play together. Null for anything else (a panel
- * moved, a hierarchy not made of such moves), which is rebuilt.
+ * in a new row, or in a pane split off beside a panel) or `resize` (only
+ * pane shares and row heights differ). Null for anything else (several panels
+ * at once, a panel moved), which is rebuilt.
  *
  * @param {Object} from - the view on screen
  * @param {Object} to - the view of the history entry
- * @returns {Object|null}
+ * @returns {{op: 'close'|'resize', id?: string}|{op: 'open', id: string, where: 'row'}
+ *     |{op: 'open', id: string, where: 'pane', sibling: string, direction: string}|null}
  */
 export function layoutStep(from, to) {
     const a = from && from.layout && from.layout.hierarchy;
@@ -240,31 +211,22 @@ export function layoutStep(from, to) {
     const after = new Set(collectTileIds(b));
     const removed = [...before].filter(id => !after.has(id));
     const added = [...after].filter(id => !before.has(id));
-    const target = arrangement(b);
-    let current = arrangement(a);
+    const now = stableStringify(arrangement(a));
+    const next = arrangement(b);
     if (!removed.length && !added.length) {
-        return stableStringify(current) === stableStringify(target) ? { op: 'resize' } : null;
+        return now === stableStringify(next) ? { op: 'resize' } : null;
     }
-    const steps = [];
-    for (const id of removed) {
-        current = withoutTile(current, id);
-        steps.push({ op: 'close', id });
+    if (removed.length === 1 && !added.length) {
+        return stableStringify(withoutTile(arrangement(a), removed[0])) === stableStringify(next)
+            ? { op: 'close', id: removed[0] } : null;
     }
-    const without = (ids) => ids.reduce((nodes, id) => withoutTile(nodes, id), target);
-    let pending = added;
-    if (stableStringify(current) !== stableStringify(without(pending))) return null;
-    while (pending.length) {
-        let found = null;
-        for (const id of pending) {
-            const rest = pending.filter(other => other !== id);
-            const candidate = without(rest);
-            const step = openOf(current, candidate, id);
-            if (step) { found = { step, rest, candidate }; break; }
-        }
-        if (!found) return null;
-        steps.push(found.step);
-        current = found.candidate;
-        pending = found.rest;
+    if (added.length === 1 && !removed.length) {
+        const id = added[0];
+        if (stableStringify(withoutTile(next, id)) !== now) return null;
+        const last = next[next.length - 1];
+        if (last && last.type === 'tile' && last.id === id) return { op: 'open', id, where: 'row' };
+        const beside = paneBeside(next, id);
+        if (beside) return { op: 'open', id, where: 'pane', ...beside };
     }
-    return steps.length === 1 ? steps[0] : { op: 'multi', steps };
+    return null;
 }

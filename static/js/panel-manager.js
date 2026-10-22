@@ -1168,44 +1168,42 @@ const PanelManager = (function() {
      */
     async function applyLayoutStep(step, layout) {
         const tileOf = (id) => document.querySelector(`.tile[data-tile-id="${id}"]`);
-        const opened = [];
-        // Several moves are made in one go, so their motions play together
-        for (const move of step.op === 'multi' ? step.steps : [step]) {
-            if (move.op === 'close') {
-                const panel = _panels.get(move.id);
-                if (!panel || !_activePanels.has(panel) || !tileOf(move.id)) return false;
-                closePanel(move.id);
-            } else if (move.op === 'open') {
-                const type = panelTypeFromTileId(move.id);
-                if (!_panelTypes.has(type) || tileOf(move.id) || !_container) return false;
-                const saved = (layout.panelConfigs || {})[move.id] || {};
-                const config = { ...saved, id: move.id };
-                const visible = layout.controlState && layout.controlState[move.id] !== undefined
-                    ? layout.controlState[move.id] : saved.controlsVisible;
-                if (visible !== undefined) config.controlsVisible = visible;
-                let beside = null;
-                if (move.where === 'pane') {
-                    beside = tileOf(move.sibling);
-                    if (!beside || !beside.parentElement || !_activePanels.has(_panels.get(move.sibling))) return false;
-                } else if (!_welcomeSelectionTile || !_welcomeSelectionTile.tileSelector.isConnected) {
-                    return false;
-                }
-                // a panel closed earlier under this id: the saved settings are what comes back
-                if (_panels.has(move.id)) removePanel(move.id);
-                let panel;
-                if (beside) {
-                    const { secondPane } = LayoutManager.createSplit(beside.parentElement, beside, move.direction);
-                    panel = createPanel(type, config, secondPane);
-                } else {
-                    panel = createPanelInLayout(type, config);
-                }
-                if (!panel) return false;
-                opened.push(panel);
+        let opened = null;
+        if (step.op === 'close') {
+            const panel = _panels.get(step.id);
+            if (!panel || !_activePanels.has(panel) || !tileOf(step.id)) return false;
+            closePanel(step.id);
+            _applySizes(layout.hierarchy);
+        } else if (step.op === 'open') {
+            const type = panelTypeFromTileId(step.id);
+            if (!_panelTypes.has(type) || tileOf(step.id) || !_container) return false;
+            const saved = (layout.panelConfigs || {})[step.id] || {};
+            const config = { ...saved, id: step.id };
+            const visible = layout.controlState && layout.controlState[step.id] !== undefined
+                ? layout.controlState[step.id] : saved.controlsVisible;
+            if (visible !== undefined) config.controlsVisible = visible;
+            let beside = null;
+            if (step.where === 'pane') {
+                beside = tileOf(step.sibling);
+                if (!beside || !beside.parentElement || !_activePanels.has(_panels.get(step.sibling))) return false;
+            } else if (!_welcomeSelectionTile || !_welcomeSelectionTile.tileSelector.isConnected) {
+                return false;
             }
+            // a panel closed earlier under this id: the saved settings are what comes back
+            if (_panels.has(step.id)) removePanel(step.id);
+            if (beside) {
+                const { secondPane } = LayoutManager.createSplit(beside.parentElement, beside, step.direction);
+                opened = createPanel(type, config, secondPane);
+            } else {
+                opened = createPanelInLayout(type, config);
+            }
+            if (!opened) return false;
+            _applySizes(layout.hierarchy);
+        } else {
+            _applySizes(layout.hierarchy);
         }
-        _applySizes(layout.hierarchy);
         await LayoutMotion.whenIdle();
-        await Promise.all(opened.map(panel => panel.initDone));
+        if (opened && opened.initDone) await opened.initDone;
         updateSourcePanelSelection();
         return true;
     }
