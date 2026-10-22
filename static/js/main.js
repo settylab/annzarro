@@ -22,7 +22,7 @@ import { noticeDuration, planReplacement, joinNotices, focusOutsideSubsetNotice,
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
 import { clearSiteStorage, clearSiteStorageNow, bareUrl } from './utils/site-storage.js';
-import { shouldAutoRestore, navigationType } from './utils/last-sessions.js';
+import { shouldAutoRestore, navigationType, cameFromOwnPage } from './utils/last-sessions.js';
 import { lastSessionElement } from './utils/last-session-card.js';
 import { sameSubset, describeParts, partSpec } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
@@ -168,7 +168,12 @@ const App = (function() {
             // A reload of the tab (or Back/Forward to it) carries on where it was; a
             // fresh visit to the bare address (a new tab, the address typed, a
             // bookmark) is a clean start: no dataset and the server's default subset
-            const navigation = navigationType(window.performance);
+            // Coming back from the admin or account pages by their link back is the
+            // way back to the same view, as the browser's Back button is
+            let navigation = navigationType(window.performance);
+            if (navigation === 'navigate' && cameFromOwnPage(document.referrer, window.location.origin, appRoot())) {
+                navigation = 'back_forward';
+            }
             const cleanStart = navigation !== 'reload' && navigation !== 'back_forward'
                 && !parseDeepLinkLocation(window.location);
             // The kept subset size is the tab's (sessionStorage); the one an
@@ -3697,6 +3702,8 @@ const App = (function() {
                     a.textContent = link.text;
                     a.title = link.title;
                     a.href = link.href;
+                    // the page is left on purpose: what is still drawing is not a page that ended
+                    a.addEventListener('click', () => SessionManager.leaveOnPurpose());
                     return a;
                 }));
             }

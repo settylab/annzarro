@@ -72,6 +72,24 @@ export function navigationType(perf) {
     }
 }
 
+/**
+ * Whether `referrer` is one of this server's own admin or account pages: the
+ * page the user came back from (their link back to the app is a plain link,
+ * which the browser reports as a fresh visit).
+ * @param {string} referrer - document.referrer
+ * @param {string} origin - location.origin
+ * @param {string} [root] - the mount point (appRoot)
+ */
+export function cameFromOwnPage(referrer, origin, root = '') {
+    try {
+        const url = new URL(referrer);
+        if (url.origin !== origin) return false;
+        return ['/admin', '/account'].some((p) => url.pathname === root + p || url.pathname.startsWith(`${root}${p}/`));
+    } catch {
+        return false;
+    }
+}
+
 /** Whether the page restores the autosave by itself. */
 export function shouldAutoRestore({ mode, navigation, unfinished = false }) {
     const m = autoRestoreMode(mode);
