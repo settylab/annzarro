@@ -186,6 +186,24 @@ def test_reading_from_disk_gives_what_the_listing_gives(world):
         dataset_info.read_info(os.path.join(world.data, "broken.zarr"), ["about", "readme"], on_disk=True)
 
 
+def test_read_from_disk_a_groups_members_come_in_name_order_whatever_the_directory_order(world, monkeypatch):
+    from annzarro.core import dataset_info
+    liver = os.path.join(world.data, "liver.zarr")
+    annotate(liver, {**LIVER, "provenance": {"source": "GEO", "processing": "scanpy", "project": "atlas", "code": "repo@1"}})
+    listed = dataset_info.read_info(liver, ["about"])
+    real = dataset_info._names
+    seen = []
+    for order in (lambda names: names, lambda names: list(reversed(names))):    # two directories listing alike members differently
+        monkeypatch.setattr(dataset_info, "_names", lambda group, o=order: o(real(group)))
+        got = dataset_info.read_info(liver, ["about"], on_disk=True)
+        assert list(got["about"]["provenance"]) == ["code", "processing", "project", "source"]
+        seen.append(json.dumps(got))                         # a dict compares equal in any order: compare the text
+    assert seen[0] == seen[1]
+    monkeypatch.setattr(dataset_info, "_names", real)
+    assert dataset_info.read_info(liver, ["about"]) == listed and list(listed["about"]["provenance"]) == list(
+        dataset_info.read_info(liver, ["about"])["about"]["provenance"])                # the listing read keeps its order
+
+
 def test_an_uns_edit_the_consolidated_listing_does_not_have_is_indexed(world, monkeypatch):
     from annzarro.core import dataset_annotate as da
     liver = f"{world.data}/liver.zarr"

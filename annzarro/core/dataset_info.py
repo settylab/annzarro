@@ -227,7 +227,12 @@ def _read_tree(node, path: str, state: Dict[str, Any], depth: int = 0):
             state["skipped"].append(path)
             return _MISSING
         out = {}
-        for name in _names(node)[:TREE_CHILDREN]:
+        names = _names(node)
+        if state.get("by_name"):
+            # read from disk, the members come in the filesystem's order: sort them, so the result (and,
+            # past the cap, which members are read) does not change from one directory listing to the next
+            names = sorted(names)
+        for name in names[:TREE_CHILDREN]:
             try:
                 value = _read_tree(node[name], f"{path}/{name}", state, depth + 1)
             except Exception:
@@ -263,7 +268,7 @@ def _stored_bytes_ok(node) -> bool:
     return size is None or size <= MAX_STORED_TEXT
 
 
-def _about_from(uns) -> Dict[str, Any]:
+def _about_from(uns, by_name: bool = False) -> Dict[str, Any]:
     fields: Dict[str, Any] = {}
     ignored: List[str] = []
     fallbacks: List[str] = []
@@ -274,7 +279,7 @@ def _about_from(uns) -> Dict[str, Any]:
         ignored.append("annzarro")
         group = None
     if group is not None:
-        state = {"nodes": TREE_NODES, "skipped": []}
+        state = {"nodes": TREE_NODES, "skipped": [], "by_name": by_name}
         tree = _read_tree(group, "annzarro", state)
         result = dataset_schema.normalise(tree)
         fields.update(result["fields"])
@@ -656,6 +661,8 @@ def read_info(path: str, parts=PARTS, remote: bool = False, on_disk: bool = Fals
         on_disk: Read a local zarr store from its files, not its consolidated listing. The listing
             is otherwise checked against every metadata file of the store first, which on a networked
             filesystem is most of the cost; ``about`` and ``readme`` live in ``uns`` and need none of it.
+            The members of an attribution group are then read in name order (the listing keeps the
+            order they were written in): the same text, possibly joined in another order.
 
     Raises:
         InfoError: The store cannot be read as AnnData (the message says why).
@@ -676,7 +683,7 @@ def read_info(path: str, parts=PARTS, remote: bool = False, on_disk: bool = Fals
         uns = root["uns"] if _has(root, "uns") and _is_group(root["uns"]) else None
         out: Dict[str, Any] = {}
         if "about" in parts:
-            out["about"] = _about_from(uns)
+            out["about"] = _about_from(uns, by_name=on_disk)
         if "readme" in parts:
             out["readme"] = _readme_from(uns)
         if "structure" in parts:
