@@ -268,8 +268,7 @@ BRAND_BOXES = """() => { const rect = (e) => { const r = e.getBoundingClientRect
             alt: q('.about-brand-logo').alt, href: link.href,
             labInLab: q('.about-logo-lab').closest('.about-lab') !== null,
             brandInLab: q('.about-brand').closest('.about-lab') !== null,
-            funding: q('.about-funding').querySelector('img') !== null,
-            fundingTop: q('.about-funding').getBoundingClientRect().top} }"""
+            funding: rect(q('.about-funding'))} }"""
 
 
 def test_about_without_the_key_has_the_text_credit_and_requests_no_fred_hutch_image(server):
@@ -306,17 +305,17 @@ def test_about_with_the_key_shows_the_sign_post_and_keeps_the_lab_logo_apart(bra
             # the sign post is scaled whole to the content width; in the dark theme its plate spans it
             assert abs((info["plateBox"][2] - info["plateBox"][0]) - width) < 1.5
             assert info["brand"][2] - info["brand"][0] >= width * 0.85
-            # the credit line comes first, with the lab illustration (a quarter to a third of the width)
-            # beside it; the sign post follows, clearly apart; nothing sits beside the funding text
+            # the mockup's order: the credit line, the sign post, then the funding text with the lab
+            # illustration (about a third of the width) beside it on the right
             lab = info["lab"]
-            assert 0.22 * width <= lab[2] - lab[0] <= 0.36 * width
-            assert info["dev"][2] <= lab[0] + 1 and info["dev"][1] < info["brand"][1]
-            assert info["brand"][1] - lab[3] >= 12, "the sign post is clearly apart from the lab illustration"
-            assert info["fundingTop"] > info["brand"][3] and not info["funding"], "no image beside the NIH text"
+            assert 0.28 * width <= lab[2] - lab[0] <= 0.38 * width
+            assert info["dev"][3] <= info["brand"][1], "the credit line is above the sign post"
+            assert lab[1] >= info["brand"][3], "the lab illustration is below the sign post, never above it"
+            assert lab[0] > info["funding"][2] - 1 and info["funding"][0] < lab[0], "beside the funding text, on its right"
             assert info["labInLab"] and not info["brandInLab"]
             assert page.evaluate("document.querySelector('.about-logos')") is None
             if scheme == "dark":
-                assert info["plate"] == "rgb(255, 255, 255)", "navy artwork on a white plate"
+                assert info["plate"] == "rgb(255, 255, 255)", "the navy artwork on a white plate"
                 # clear space at least the F's cap height: 38.9 of the artwork's 804.9 units
                 assert info["padding"] >= (info["brand"][2] - info["brand"][0]) * 38.9 / 804.9
             else:
@@ -338,7 +337,7 @@ def test_about_with_the_key_fits_a_phone(brand_server, scheme):
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
             logo = page.evaluate(BRAND_BOXES)
             assert logo["brand"][2] <= 390 and logo["plateBox"][2] <= 390 and logo["lab"][2] <= 390
-            assert logo["brand"][1] > logo["lab"][3]
+            assert logo["brand"][3] <= logo["lab"][1]
             _shot(page, f"about-brand-{scheme}-phone")
         finally:
             browser.close()
