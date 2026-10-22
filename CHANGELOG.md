@@ -8,6 +8,8 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.7.3 (2026-10-22)
+
 ### Added
 - `annzarro --version` prints the installed version (`annzarro 0.7.3`) and exits.
 - The Server health page shows the version the server runs and, when PyPI lists a newer release, one line to say so with the upgrade command (`pip install -U annzarro`) and a link to the release notes. The server asks PyPI (`GET /api/v1/admin/version-check`) only when an administrator opens the page, at most once in six hours per process, and ignores pre-releases and any failure. Set `server.update_check: false` for a server that must not make outbound requests. The desktop app never asks; it has its own updater.
