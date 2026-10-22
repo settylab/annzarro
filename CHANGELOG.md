@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- The desktop app's About dialog shows the Fred Hutch Cancer Center logo with the AnnZarro sign post, as Fred Hutch's brand team supplied it; the Setty Lab logo moves lower, beside the funding statement. In the dark theme the logo sits on a white plate until a reverse version exists. Every other copy of AnnZarro keeps the text credit, because the logo is Fred Hutch's trademark. The new `site.fred_hutch_logo` setting (default `false`, on the admin Public site page, `ANNZARRO_SITE_FRED_HUTCH_LOGO`) shows it. The Fred Hutch name and logo are not covered by the MIT licence; see the licence page.
+
 ### Docs
 - The README and the licence page cite v0.7.2 by its DOI,
   [10.5281/zenodo.23547580](https://doi.org/10.5281/zenodo.23547580).

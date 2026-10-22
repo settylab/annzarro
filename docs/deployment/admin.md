@@ -397,7 +397,7 @@ equal. Three notes:
 The Public site section sets the `site` keys while the server runs: the imprint, privacy notice,
 accessibility statement and terms of use (each a link or a text written there, with a live
 preview), the operator, the contact and its link text, the footer, search engines, the security
-contact, the language of the texts, the AnnZarro credit in About and whether convenience items are
+contact, the language of the texts, the AnnZarro credit in About, the Fred Hutch logo in it (off unless Fred Hutch runs the copy) and whether convenience items are
 kept between visits. A checklist at the top says which of imprint, privacy notice, contact and
 accessibility statement are missing. A saved change shows in the footer, About and the `/site/`
 pages at the next request, without a restart. A value set here wins over the configuration file

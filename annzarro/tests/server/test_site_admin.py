@@ -58,6 +58,7 @@ def test_every_site_key_is_listed_for_the_public_site_section_with_its_help(admi
     assert set(keys) == {"site.imprint", "site.privacy", "site.accessibility", "site.terms", "site.operator",
                          "site.contact", "site.contact_label", "site.footer_links", "site.robots",
                          "site.security_contact", "site.languages", "site.software_credits",
+                         "site.fred_hutch_logo",
                          "site.storage.persistent_convenience"}
     for key in keys.values():
         assert key["section"] == "site" and key["area"] == "site" and key["scope"] == "server"
@@ -66,6 +67,7 @@ def test_every_site_key_is_listed_for_the_public_site_section_with_its_help(admi
     assert "Impressum" in keys["site.imprint"]["description"]
     assert keys["site.imprint"]["value"] == {"label": "Imprint", "url": None, "markdown": None, "file": None}
     assert keys["site.software_credits"]["value"] is True
+    assert keys["site.fred_hutch_logo"]["value"] is False
 
 
 def test_site_keys_never_reach_the_browser_policy(app):
@@ -174,7 +176,7 @@ def test_wrong_values_are_refused_inline_and_nothing_is_stored(app, admin, name,
 
 
 @pytest.mark.parametrize("name, value", [("site.footer_links", "never"), ("site.robots", "sometimes"),
-                                         ("site.software_credits", "no"), ("site.storage.persistent_convenience", 1)])
+                                         ("site.software_credits", "no"), ("site.fred_hutch_logo", "yes"), ("site.storage.persistent_convenience", 1)])
 def test_choices_and_switches_refuse_anything_else(app, admin, name, value):
     reply = put(admin, {name: value})
     assert reply.status_code == 400 and name in reply.get_json()["errors"]

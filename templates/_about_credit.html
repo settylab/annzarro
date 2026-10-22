@@ -1,4 +1,4 @@
-{# AnnZarro's own credit in the About dialog (index.html) and on /site/about; site.software_credits false shortens it. #}{# site:begin #}{% if site.software_credits %}{# site:end #}
+{# AnnZarro's own credit in the About dialog (index.html) and on /site/about; site.software_credits false shortens it; site.fred_hutch_logo adds the Fred Hutch sign post (the desktop app), elsewhere the credit is text. #}{# site:begin #}{% if site.software_credits %}{# site:end #}
                     <p>Interactive exploration of cell-by-cell and gene-by-gene relationships in single-cell data, straight from Zarr.</p>
                     <p class="about-links">
                         <a href="https://annzarro.readthedocs.io" target="_blank" rel="noopener noreferrer">Documentation</a>
@@ -9,11 +9,15 @@
                         <a href="https://doi.org/10.64898/2026.10.10.758158" target="_blank" rel="noopener noreferrer">doi:10.64898/2026.10.10.758158</a>.
                         The software, all versions:
                         <a href="https://doi.org/10.5281/zenodo.23222216" target="_blank" rel="noopener noreferrer">doi:10.5281/zenodo.23222216</a>.</p>
-                    <hr>
+                    <hr>{# site:begin #}{% if site.fred_hutch_logo %}
+                    <div class="about-brand"><a class="about-brand-link" href="https://www.fredhutch.org" target="_blank" rel="noopener noreferrer"><img class="about-brand-logo" src="{{ url_for('static', filename='img/brand/fredhutch-annzarro-signpost.svg') }}" alt="Fred Hutch Cancer Center" width="805" height="128"></a></div>{% endif %}{# site:end #}
                     <p class="about-dev">AnnZarro is developed by the <a href="https://research.fredhutch.org/setty" target="_blank" rel="noopener noreferrer">Setty Lab</a> at<br><a href="https://www.fredhutch.org" target="_blank" rel="noopener noreferrer">Fred Hutch Cancer Center</a></p>
-                    <div class="about-logos">
+                    {# site:begin #}{% if site.fred_hutch_logo %}<div class="about-lab">
+                        <p class="about-funding">The development of AnnZarro is supported by the National Institute of General Medical Sciences of the National Institutes of Health under award numbers R35GM147125 and K99GM159044.</p>
+                        <a class="about-lab-link" href="https://research.fredhutch.org/setty" target="_blank" rel="noopener noreferrer" title="Setty Lab"><img class="about-logo about-logo-lab" src="{{ url_for('static', filename='img/settylab-logo.svg') }}" alt="Setty Lab"></a>
+                    </div>{% else %}{# site:end #}<div class="about-logos">
                         <a href="https://research.fredhutch.org/setty" target="_blank" rel="noopener noreferrer" title="Setty Lab"><img class="about-logo about-logo-lab" src="{{ url_for('static', filename='img/settylab-logo.svg') }}" alt="Setty Lab"></a>
                     </div>
-                    <p class="about-funding">The development of AnnZarro is supported by the National Institute of General Medical Sciences of the National Institutes of Health under award numbers R35GM147125 and K99GM159044.</p>
+                    <p class="about-funding">The development of AnnZarro is supported by the National Institute of General Medical Sciences of the National Institutes of Health under award numbers R35GM147125 and K99GM159044.</p>{# site:begin #}{% endif %}{# site:end #}
                     <p class="about-fine">The content of AnnZarro is solely the responsibility of its authors and does not necessarily represent the official views of the National Institutes of Health. AnnZarro is released under the MIT licence.</p>{# site:begin #}{% else %}<p class="about-links"><a href="https://annzarro.readthedocs.io" target="_blank" rel="noopener noreferrer">Documentation</a> <a href="https://github.com/settylab/annzarro" target="_blank" rel="noopener noreferrer">GitHub</a></p>
                     <p class="about-fine">AnnZarro is released under the MIT licence.</p>{% endif %}{# site:end #}

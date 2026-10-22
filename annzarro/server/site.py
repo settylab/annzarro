@@ -126,6 +126,7 @@ class Site:
         self.language = "en"
         self.persistent_convenience = True
         self.software_credits = True
+        self.fred_hutch_logo = False
         self.warnings: List[str] = []
 
     @property
@@ -252,6 +253,12 @@ class Site:
             credits = True
         site.software_credits = credits
 
+        logo = section.get("fred_hutch_logo", False)
+        if not isinstance(logo, bool):
+            problems.append("site.fred_hutch_logo must be true or false")
+            logo = False
+        site.fred_hutch_logo = logo
+
         if problems:
             raise ValueError("; ".join(problems))
         return site
@@ -287,6 +294,7 @@ class SiteView:
         self.operator = site.operator
         self.language = site.language
         self.software_credits = site.software_credits
+        self.fred_hutch_logo = site.fred_hutch_logo
         contact = site.contact or site.contact_fallback
         href = Site.contact_href(contact)
         self.contact = {"label": site.contact_label, "text": contact, "href": href,
@@ -689,6 +697,10 @@ _HELP = {
                  "in security.txt.",
     "software_credits": "Keeps AnnZarro's credit in About (the Setty Lab, the NIH funding, how to cite it). "
                         "Off leaves the name, version, licence and links. It credits the software, never your site.",
+    "fred_hutch_logo": "Shows the Fred Hutch logo with the AnnZarro sign post in About. Off (the default) credits "
+                       "the Setty Lab at Fred Hutch Cancer Center in text only. The logo is Fred Hutch's "
+                       "trademark, shown by the desktop app with permission; set it only for a copy of AnnZarro "
+                       "that Fred Hutch runs.",
     "storage.persistent_convenience": "Off keeps the layout autosave, the last sessions, the recent datasets and the dataset listings "
                                       "only until the tab closes, so the browser keeps nothing between visits but "
                                       "the visitor's own choices.",
@@ -709,6 +721,7 @@ _LABELS = {
     "footer_links": "Footer links",
     "robots": "Search engines",
     "software_credits": "AnnZarro credit in About",
+    "fred_hutch_logo": "Fred Hutch logo in About",
     "storage.persistent_convenience": "Keep convenience items between visits",
 }
 
@@ -738,11 +751,12 @@ def _declare_site_keys() -> None:
                                                              "https://example.org/security"), format="security"), None)
     add("languages", LineSetting("languages", ("en", "de"), default="en", format="language"), "en")
     add("software_credits", Bool(), True)
+    add("fred_hutch_logo", Bool(), False)
     add("storage.persistent_convenience", Bool(), True)
 
 
 _declare_site_keys()
 #: Every site.* key, in the order the admin page shows them
 SITE_KEYS = tuple(f"site.{p}" for p in (*KINDS, "operator", "contact", "contact_label", "footer_links", "robots",
-                                         "security_contact", "languages", "software_credits",
+                                         "security_contact", "languages", "software_credits", "fred_hutch_logo",
                                          "storage.persistent_convenience"))

@@ -288,7 +288,7 @@ the operator's.
 Who runs the site and the texts it owes its visitors: `imprint`, `privacy`, `accessibility` and
 `terms` (each a `url`, a `markdown` text or a Markdown `file`, and a `label`), `operator`,
 `contact`, `contact_label`, `footer_links`, `robots`, `security_contact`, `languages`,
-`software_credits` and `storage.persistent_convenience`. Public, except a text's `file`. The keys,
+`software_credits`, `fred_hutch_logo` and `storage.persistent_convenience`. Public, except a text's `file`. The keys,
 their defaults and what each shows where are in {doc}`../deployment/public-site`.
 
 With login on, an admin can set every one of them on the admin page's Public site section,
