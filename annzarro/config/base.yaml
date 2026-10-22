@@ -116,7 +116,7 @@ server:
   # text_index_enabled: false turns the search off and stops the crawl.
   text_index_enabled: true
   text_index_workers: 2
-  text_index_store_timeout_s: 5
+  text_index_store_timeout_s: 15
   text_index_crawl_timeout_s: 300
   text_index_max_stores: 20000
   text_index_readme_kb: 64

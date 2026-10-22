@@ -67,7 +67,7 @@ DEFAULT_CONFIG = {
     "dataset_details_check_budget_s": 1.5,  # seconds the details request spends on a store check before it answers with the findings so far; 0 = no check
     "text_index_enabled": True,           # the description index and its search (policy key datasets.text-search.enabled)
     "text_index_workers": 2,              # threads the index crawl reads stores with
-    "text_index_store_timeout_s": 5,      # seconds the crawl waits for one store
+    "text_index_store_timeout_s": 15,     # seconds the crawl waits for one store before it reads the next
     "text_index_crawl_timeout_s": 300,    # seconds one crawl may take; then it is partial
     "text_index_max_stores": 20000,       # stores one crawl covers
     "text_index_readme_kb": 64,           # KB of each README indexed

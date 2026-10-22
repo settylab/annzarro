@@ -194,7 +194,7 @@ server:
       type: number
       minimum: 1
       description: Seconds the description crawl waits for one store before it marks it timed out and goes on
-      default: 5
+      default: 15
     text_index_crawl_timeout_s:
       type: number
       minimum: 1
