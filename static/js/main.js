@@ -289,8 +289,10 @@ const App = (function() {
             // only the fragment, which the browser treats as in-page navigation:
             // no reload, so the new view would silently not apply. Reload instead.
             window.addEventListener('hashchange', () => {
-                // Back and Forward between our own entries change the fragment too: they are applied in place
-                if (Date.now() - _lastHistoryStepAt < 1000) return;
+                // Back and Forward between our own entries change the fragment too: they are applied in place.
+                // Those entries carry the state this page wrote; a typed or pasted fragment has none. (A time
+                // window after the step is not safe: a busy page can deliver this event much later.)
+                if (history.state && history.state.azPage) return;
                 const parts = parseDeepLinkLocation(window.location);
                 if (parts && parts.payload) window.location.reload();
             });
@@ -602,7 +604,6 @@ const App = (function() {
     const _historyPolicy = createHistoryPolicy();
     let _historyBusy = false;       // a history entry is being applied
     let _historyAgain = false;      // another step came meanwhile
-    let _lastHistoryStepAt = 0;
     function _startUrlSync() {
         if (_urlSyncOn) return;
         _urlSyncOn = true;
@@ -610,7 +611,6 @@ const App = (function() {
         window.addEventListener('popstate', (event) => {
             // only the entries this page wrote (a fragment someone typed has no state: hashchange reloads for it)
             if (!event.state || !event.state.azPage) return;
-            _lastHistoryStepAt = Date.now();
             _onHistoryStep();
         });
         SessionManager.onViewMayHaveChanged(_syncUrlSoon);

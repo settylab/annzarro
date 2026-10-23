@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixed
+- Back and Forward no longer reload the page when AnnZarro is busy drawing large plots. A step that took more than a second to be handled reloaded the page, which could leave the panels closed with "Did not finish loading".
+
 ## 0.7.4 (2026-10-22)
 
 ### Added
