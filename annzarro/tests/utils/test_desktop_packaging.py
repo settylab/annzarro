@@ -40,12 +40,16 @@ def test_third_party_licenses_and_license_are_bundled(bundled):
 
 def test_trademark_notice_ships_next_to_the_license(bundled):
     import json
-    import tomllib
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # Python < 3.11 has no tomllib
+        tomllib = None
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     assert os.path.isfile(os.path.join(root, "TRADEMARKS.md"))
-    with open(os.path.join(root, "pyproject.toml"), "rb") as handle:
-        # license-files puts it in the wheel's dist-info/licenses and in the sdist, beside LICENSE
-        assert {"LICENSE", "TRADEMARKS.md"} <= set(tomllib.load(handle)["project"]["license-files"])
+    if tomllib is not None:
+        with open(os.path.join(root, "pyproject.toml"), "rb") as handle:
+            # license-files puts it in the wheel's dist-info/licenses and in the sdist, beside LICENSE
+            assert {"LICENSE", "TRADEMARKS.md"} <= set(tomllib.load(handle)["project"]["license-files"])
     assert "./TRADEMARKS.md" in bundled
     with open(os.path.join(root, "annzarro", "desktop", "electron", "package.json"), encoding="utf-8") as handle:
         extra = {item["to"] for item in json.load(handle)["build"]["extraResources"] if isinstance(item, dict)}

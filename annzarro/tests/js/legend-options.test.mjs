@@ -23,7 +23,7 @@ test('unset, the legend is the constant one it always was', () => {
     assert.equal(legendColumns(s), 1);
     assert.equal(legendOrientation('v', s), 'v');
     assert.equal(legendTitleText(s).replace(/<span[^>]*>\u00a0<\/span>|^\u00a0+|<br>\u00a0$/g, ''), 'cell_type');
-    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': legendTitleText(s), 'legend.title.side': 'top', 'meta.azTitleAlign': 'markers', 'meta.azTitleShift': 12, 'legend.title.font.size': 14, 'meta.azLegendColumns': 1, 'meta.azLegendGap': 24, 'meta.azLegendPosition': 'right' });
+    assert.deepEqual(legendOptionKeys(s), { 'legend.itemsizing': 'constant', 'legend.title.text': legendTitleText(s), 'legend.title.side': 'top', 'meta.azTitleAlign': 'markers', 'meta.azTitleShift': 12, 'meta.azTitleSize': 14, 'legend.title.font.size': 14, 'meta.azLegendColumns': 1, 'meta.azLegendGap': 24, 'meta.azLegendPosition': 'right' });
 });
 
 test('a dot size is clamped to what Plotly draws and gives the proxies that size', () => {
