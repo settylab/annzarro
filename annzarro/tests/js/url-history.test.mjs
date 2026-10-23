@@ -2,7 +2,7 @@
 // history entry, and what a step changes on screen (utils/url-history.js).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHistoryPolicy, diffViews, layoutStep, stableStringify, MERGE_MS } from '../../../static/js/utils/url-history.js';
+import { createHistoryPolicy, diffViews, layoutStep, viewsMatch, unrecordedChange, stableStringify, MERGE_MS } from '../../../static/js/utils/url-history.js';
 
 const run = (policy, steps) => steps.map(([now, path, capped]) => {
     const how = policy.decide({ now, path });
@@ -195,4 +195,22 @@ test('a user action right after Back starts an entry; panels settling there do n
     p.landed({ now: 12000, path: 'a' });
     assert.equal(p.decide({ now: 12500, path: 'a', key: 'a1', acted: false }), 'replace');
     assert.equal(p.decide({ now: 12500, path: 'a', key: 'a2', acted: true }), 'push');
+});
+
+test('the view on screen matches an entry only when panels, controls and shares do', () => {
+    const live = { layout: { hierarchy: [split('cell-plot-1', 'cell-plot-2', [50, 50])], panelConfigs: {}, controlState: { 'cell-plot-1': true } } };
+    const same = { layout: { hierarchy: [split('cell-plot-1', 'cell-plot-2', [51, 49])], panelConfigs: {}, controlState: { 'cell-plot-1': true } } };
+    assert.equal(viewsMatch(live, same), true);
+    assert.equal(viewsMatch(live, { layout: { ...same.layout, hierarchy: [split('cell-plot-1', 'cell-plot-2', [30, 70])] } }), false);
+    assert.equal(viewsMatch(live, { layout: { ...same.layout, hierarchy: [tile('cell-plot-1')] } }), false);
+    assert.equal(viewsMatch(live, { layout: { ...same.layout, controlState: { 'cell-plot-1': false } } }), false);
+});
+
+test('an unrecorded change is a setting, a panel, a share or a focus that differs', () => {
+    const base = (cfg, constants = {}) => ({ constants, layout: { hierarchy: [tile('cell-plot-1')], panelConfigs: { 'cell-plot-1': cfg }, controlState: {} } });
+    assert.equal(unrecordedChange(base({ id: 'cell-plot-1', size: 4 }), base({ id: 'cell-plot-1', size: 4 })), false);
+    assert.equal(unrecordedChange(base({ id: 'cell-plot-1', size: 5 }), base({ id: 'cell-plot-1', size: 4 })), true);
+    assert.equal(unrecordedChange(base({ id: 'cell-plot-1' }, { focusedGene: 'G' }), base({ id: 'cell-plot-1' })), true);
+    // a size that follows the plot area is derived, not a change
+    assert.equal(unrecordedChange(base({ id: 'cell-plot-1', pointSize: 7 }), base({ id: 'cell-plot-1', pointSize: 3 })), false);
 });

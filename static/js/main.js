@@ -54,7 +54,7 @@ import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
 import { mountDatasetInfo } from './utils/dataset-info-dialog.js';
 import { defaultHierarchy } from './utils/deeplink.js';
-import { createHistoryPolicy, diffViews, layoutStep } from './utils/url-history.js';
+import { createHistoryPolicy, diffViews, layoutStep, viewMismatch, unrecordedChange } from './utils/url-history.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
@@ -610,6 +610,10 @@ const App = (function() {
     let _actionAt = 0;              // when the user last acted
     let _actionSeq = 0;
     let _landedAt = 0;              // when a history entry was last applied
+    let _historyIndex = 0;          // the position of the entry on screen among the entries this page wrote
+    let _historyEpoch = 0;          // counts Back and Forward steps; a write started before one is dropped
+    let _revertedBack = false;      // the Back just taken was turned into a revert of an unrecorded change
+    let _syncBusy = 0;              // writes under way
     let _pointerKey = null;         // the action a press started, until its click
     const _controlKeys = new WeakMap();
     /** Controls whose repeated input is one gesture: a slider, a number box, a field. */
@@ -655,6 +659,23 @@ const App = (function() {
         window.addEventListener('popstate', (event) => {
             // only the entries this page wrote (a fragment someone typed has no state: hashchange reloads for it)
             if (!event.state || !event.state.azPage) return;
+            const index = event.state.azIdx || 0;
+            const from = _historyIndex;
+            _historyIndex = index;
+            // Every write waiting or on its way belongs to the view before this step: none may land after it
+            _historyEpoch++;
+            clearTimeout(_urlSyncTimer);
+            _urlSyncTimer = null;
+            _actionKey = null;
+            _pointerKey = null;
+            // A change not written yet is no entry to go back to: Back shows the last recorded view,
+            // which is the entry just ahead of this one
+            if (index < from && !_historyBusy && !_revertedBack && _unrecorded()) {
+                _revertedBack = true;
+                history.forward();
+                return;
+            }
+            _revertedBack = false;
             _onHistoryStep();
         });
         SessionManager.onViewMayHaveChanged(_syncUrlSoon);
@@ -693,19 +714,43 @@ const App = (function() {
             _syncUrlNow({ capped, key: _actionKey });
         }, wait);
     }
+    /** The key of the view on screen, as _urlSyncView holds it. @private */
+    function _liveViewKey() {
+        const view = SessionManager.captureView();
+        const hasPanels = Object.keys((view.layout && view.layout.panelConfigs) || {}).length > 0;
+        const current = DatasetState.get().status === 'none' ? null : (_lastLoadedDatasetPath || DataManager.getCurrentDataset());
+        const path = current ? _labelOf(current) : '';
+        return `${path}\n${hasPanels ? JSON.stringify(view) : ''}`;
+    }
+    /** Whether the view on screen has a change no history entry holds yet. @private */
+    function _unrecorded() {
+        if (_noDataView || _isLoadingDataset || _urlSyncView === null) return false;
+        if (_urlSyncTimer || _syncBusy > 0) return true;
+        try {
+            const [path, ...rest] = _urlSyncView.split('\n');
+            const json = rest.join('\n');
+            const live = _liveViewKey().split('\n');
+            if (live[0] !== path) return true;
+            if (!json) return live.slice(1).join('\n') !== '';
+            return unrecordedChange(SessionManager.captureView(), JSON.parse(json));
+        } catch { return false; }
+    }
     let _syncTail = Promise.resolve();     // the write before: writes to the history keep their order
     async function _syncUrlNow(options = {}) {
         const before = _syncTail;
         let done;
         _syncTail = new Promise(resolve => { done = resolve; });
+        _syncBusy++;
         try {
             return await _syncUrlWrite(options, before);
         } finally {
+            _syncBusy--;
             done();
         }
     }
     async function _syncUrlWrite({ force = false, capped = false, key: action = null } = {}, before = Promise.resolve()) {
         if (!_urlSyncOn) return;
+        const epoch = _historyEpoch;
         // An entry of the history being applied (Back, Forward) is not a change to record
         if (_historyBusy) return;
         // A load in flight, a restore drawing its panels, or a layout shown
@@ -724,15 +769,21 @@ const App = (function() {
             if (key === _urlSyncView) return;
             const payload = hasPanels ? await encodeViewPayload(view) : null;
             await before;
+            // a Back or Forward came meanwhile: this view is not the one to write
+            if (epoch !== _historyEpoch || _historyBusy) return;
             if (key === _urlSyncView) return;
             const next = syncedLocation(window.location.href, path, payload);
             // Changed while encoding: the next tick takes it
             if (_isLoadingDataset) return _syncUrlSoon();
-            if (next) {
+            if (next && new URL(next, window.location.href).href === window.location.href) {
+                // the address holds this view already: an entry for it would be a Back that does nothing
+                _historyPolicy.baseline({ path });
+            } else if (next) {
                 // A settled change starts a history entry, or rewrites the one it continues (utils/url-history.js)
                 const now = Date.now();
                 if (_historyPolicy.decide({ now, path, key: action, acted: _actionAt > _landedAt }) === 'push') {
-                    history.pushState({ ...(history.state || {}) }, '', next);
+                    _historyIndex = ((history.state && history.state.azIdx) || 0) + 1;
+                    history.pushState({ ...(history.state || {}), azIdx: _historyIndex }, '', next);
                 } else {
                     history.replaceState(history.state, '', next);
                 }
@@ -755,8 +806,6 @@ const App = (function() {
      * @private
      */
     async function _onHistoryStep() {
-        clearTimeout(_urlSyncTimer);
-        _urlSyncTimer = null;
         if (_historyBusy) { _historyAgain = true; return; }
         _historyBusy = true;
         try {
@@ -770,11 +819,8 @@ const App = (function() {
         } finally {
             try {
                 // what is on screen is the entry's view now: later settling is no change to push
-                const view = SessionManager.captureView();
-                const hasPanels = Object.keys((view.layout && view.layout.panelConfigs) || {}).length > 0;
-                const current = DatasetState.get().status === 'none' ? null : (_lastLoadedDatasetPath || DataManager.getCurrentDataset());
-                const path = current ? _labelOf(current) : '';
-                _urlSyncView = `${path}\n${hasPanels ? JSON.stringify(view) : ''}`;
+                const path = _liveViewKey().split('\n')[0];
+                _urlSyncView = _liveViewKey();
                 _landedAt = Date.now();
                 _historyPolicy.landed({ now: _landedAt, path });
             } catch { /* bookkeeping only: the next sync takes what is on screen */ }
@@ -848,6 +894,15 @@ const App = (function() {
                     }
                     return PanelManager.replacePanel(id, config);
                 }));
+            }
+            // Whatever the way here (an animation cut short, a panel that did not come back), the
+            // screen must be the entry's view: if it is not, that view is built at once
+            const mismatch = viewMismatch(SessionManager.captureView(), target);
+            if (mismatch) {
+                console.warn(`The history step did not land on the entry's view (${mismatch}); building it at once`);
+                PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
+                await PanelManager.restoreLayout(target.layout);
+                PanelManager.ensureWelcomeFallback();
             }
         } finally {
             SessionManager.endRestore();

@@ -268,3 +268,61 @@ export function layoutStep(from, to) {
     }
     return steps.length === 1 ? steps[0] : { op: 'multi', steps };
 }
+
+/** The pane shares of a hierarchy, in the order of its splits. */
+function sharesOf(nodes) {
+    const out = [];
+    const walk = (node) => {
+        if (node && node.type === 'split') {
+            out.push(...(node.panes || []).map(p => (p && p.percentage) || 50));
+            (node.children || []).forEach(walk);
+        }
+    };
+    (nodes || []).forEach(walk);
+    return out;
+}
+
+/**
+ * Whether the view on screen is the view of a history entry: the same panels
+ * in the same arrangement with the same control bars and (within a
+ * few percent) split shares. (A panel's own settings are not compared: a panel
+ * built from the entry's settings fills in defaults of its own.) After a step this must hold, whatever the way
+ * there; if it does not, the entry's layout is built at once.
+ *
+ * @param {Object} live - the view on screen
+ * @param {Object} target - the view of the history entry
+ */
+export function viewsMatch(live, target) {
+    return viewMismatch(live, target) === null;
+}
+
+/** What differs between the view on screen and a history entry's view, as a short text; null when nothing does. */
+export function viewMismatch(live, target) {
+    const a = (live && live.layout) || {};
+    const b = (target && target.layout) || {};
+    if (stableStringify(arrangement(a.hierarchy)) !== stableStringify(arrangement(b.hierarchy))) return 'arrangement';
+    for (const id of collectTileIds(b.hierarchy || [])) {
+        const shown = (b.controlState || {})[id];
+        if (shown !== undefined && shown !== (a.controlState || {})[id]) return `controls of ${id}`;
+    }
+    const x = sharesOf(a.hierarchy);
+    const y = sharesOf(b.hierarchy);
+    return x.length === y.length && x.every((v, i) => Math.abs(v - y[i]) <= 3) ? null : `shares ${x} vs ${y}`;
+}
+
+/**
+ * Whether the view on screen holds a change the recorded view (the entry's) does not: other panels or
+ * arrangement, other control bars or shares, other settings of a panel, another focused gene or cell.
+ * Derived values (a point size that follows the plot area) are not changes.
+ */
+export function unrecordedChange(live, recorded) {
+    if (viewMismatch(live, recorded) !== null) return true;
+    const diff = diffViews(live, recorded, { samePath: true, sameSubset: true });
+    // a layout diff here is only shares within the tolerance; settings are compared through the panels left over
+    const settings = diff.kind === 'panels' ? diff.panels
+        : collectTileIds((live.layout && live.layout.hierarchy) || []).filter(id => !(diff.keep || []).includes(id));
+    if (settings.length) return true;
+    const a = (live && live.constants) || {};
+    const b = (recorded && recorded.constants) || {};
+    return (a.focusedGene || '') !== (b.focusedGene || '') || (a.focusedCell || '') !== (b.focusedCell || '');
+}
