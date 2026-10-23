@@ -532,6 +532,28 @@ function baseMargin(layout, side) {
     return typeof now === 'number' ? now : 80;
 }
 
+/**
+ * Px the first legend's title reaches past the right edge of its box: the title is shifted right to the markers
+ * (`shiftLegendTitles`), which Plotly does not count in the legend's width. Zero for a title drawn as an annotation.
+ */
+function titleOverhang(gd, used) {
+    const meta = (gd.layout && gd.layout.meta) || {};
+    if (typeof document === 'undefined' || !(Number(meta.azTitleShift) > 0)) return 0;
+    if (used > 1 && (meta.azTitleAlign === 'centre' || meta.azTitleAlign === 'right')) return 0;
+    const text = gd.querySelector('g.legend text[class$="titletext"]');
+    const bg = gd.querySelector('g.legend rect.bg');
+    if (!text || !bg) return 0;
+    let right = -Infinity;
+    const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!/\S/.test(n.textContent.replace(/\u00a0/g, ''))) continue;
+        const r = document.createRange();
+        r.selectNodeContents(n);
+        right = Math.max(right, r.getBoundingClientRect().right);
+    }
+    return Number.isFinite(right) ? Math.max(0, Math.ceil(right - bg.getBoundingClientRect().right + 2)) : 0;
+}
+
 /** The placement keys of legends that are not the columns' own and must be left to their owners when comparing. */
 const PLACED = ['x', 'xanchor', 'y', 'yanchor'];
 
@@ -575,6 +597,22 @@ export function planLegendColumns(gd) {
     const pos = meta.azLegendPosition || 'right';
     const proxies = proxiesInOrder(gd.data);
 
+    const over = titleOverhang(gd, used);
+    if (used < 2 && pos === 'right' && over > 0 && FL.legend && FL._size && FL.legend._width > 0) {
+        // one legend whose shifted title is wider than its entries: room for the title past the box, in the margin
+        for (let k = 2; L[`legend${k}`]; k++) relayout[`legend${k}`] = null;
+        const baseM = { l: baseMargin(L, 'l'), r: baseMargin(L, 'r') };
+        const placed = placeColumns({ position: 'right', widths: [FL.legend._width + over], gap: 0, width: FL.width,
+            margins: { l: FL._size.l, r: FL._size.r }, base: baseM });
+        setMargin('l');
+        setMargin('r', placed.margin.r, baseM.r);
+        const cur = L.legend || {};
+        if (!same(cur.x, placed.legends[0].x)) relayout['legend.x'] = placed.legends[0].x;
+        if (cur.xanchor !== 'left') relayout['legend.xanchor'] = 'left';
+        if (meta.azColPlaced !== true) relayout['meta.azColPlaced'] = true;
+        titleNote(gd, relayout, false, false);
+        return finish(relayout, margin, meta, legendIdx, legendVal, nameIdx, nameVal);
+    }
     if (used < 2) {
         for (let k = 2; L[`legend${k}`]; k++) relayout[`legend${k}`] = null;
         setMargin('l'); setMargin('r');
@@ -627,6 +665,7 @@ export function planLegendColumns(gd) {
 
     // the places, from the widths Plotly measured
     const widths = ids.map(id => FL[id] && FL[id]._width);
+    if (widths.every(w => Number.isFinite(w)) && over > 0) widths[0] += over;     // the shifted title is part of the first column
     if (!widths.every(w => Number.isFinite(w) && w > 0)) return finish(relayout, margin, meta, legendIdx, legendVal, nameIdx, nameVal);
     const baseM = { l: baseMargin(L, 'l'), r: baseMargin(L, 'r') };
     const placed = placeColumns({ position: pos, widths, gap: fit.gap, width: W, margins, base: baseM });

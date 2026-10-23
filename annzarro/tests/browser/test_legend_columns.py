@@ -35,6 +35,7 @@ else:
 
 LINEAGES = 14
 LABELS = [f"Haematopoietic lineage {i:02d} progenitor" for i in range(LINEAGES)]    # 40 characters
+LONG_NAME = "a_colour_column_with_a_very_long_name_for_its_title"
 TILE = '.tile[data-tile-id="cell-plot-M"] .js-plotly-plot'
 
 
@@ -46,6 +47,7 @@ def server(tmp_path_factory):
     shutil.copytree(os.path.join(DATA_DIR, "fixture_small.zarr"), store)
     obs = open_group(os.path.join(store, "obs"), mode="a")
     _categorical(obs, "lineage", np.arange(N) % LINEAGES, LABELS)
+    _categorical(obs, LONG_NAME, np.arange(N) % 3, ["a", "b", "c"])
     zarr.consolidate_metadata(store)
     (home / "c.yaml").write_text("ui: {}\n")
     exe = shutil.which("annzarro", path=os.path.dirname(sys.executable)) or shutil.which("annzarro")
@@ -86,21 +88,22 @@ def page():
 
 
 def _link(root, store, **extra):
+    colour = extra.pop("colour", "lineage")
     cfg = {"id": "cell-plot-M", "title": "umap", "z": None,
            "x": {"type": "obsm", "key": "X_umap", "column": "0"}, "y": {"type": "obsm", "key": "X_umap", "column": "1"},
-           "color": {"type": "obs", "key": "lineage", "column": ""}, **extra}
+           "color": {"type": "obs", "key": colour, "column": ""}, **extra}
     view = {"v": 1, "layout": {"v": 1, "hierarchy": [{"type": "tile", "id": "cell-plot-M", "controlsVisible": True}],
                                "controlState": {"cell-plot-M": True}, "panelConfigs": {"cell-plot-M": cfg}}}
     enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
     return f"{root}/?dataset_path={store}#view={enc}"
 
 
-def _open(page, server, columns=None, **extra):
+def _open(page, server, columns=None, entries=LINEAGES, **extra):
     root, store = server
     if columns:
         extra["legendColumns"] = columns
     page.goto(_link(root, store, **extra))
-    page.wait_for_function("(sel) => { const g = document.querySelector(sel); return !!g && !!g._fullLayout && g.querySelectorAll('g.legend g.traces, g.legend2 g.traces, g.legend3 g.traces').length >= %d; }" % LINEAGES,
+    page.wait_for_function("(sel) => { const g = document.querySelector(sel); return !!g && !!g._fullLayout && g.querySelectorAll('g.legend g.traces, g.legend2 g.traces, g.legend3 g.traces').length >= %d; }" % entries,
                            arg=TILE, timeout=60000)
     if columns and columns > 1:
         _settled(page, columns)
@@ -440,3 +443,35 @@ def test_an_export_of_a_centred_title_over_two_columns(page, server, how):
     left = min(lg[0] for lg in r["legends"])
     right = max(lg[1] for lg in r["legends"])
     assert abs((r["title"][0] + r["title"][1]) / 2 - (left + right) / 2) <= 1.5, r
+
+
+OVER = """(sel) => { const gd = document.querySelector(sel); const root = gd.getBoundingClientRect();
+    const text = gd.querySelector('g.legend text[class$="titletext"]');
+    let right = -1, left = 1e9;
+    const w = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) if (/\\S/.test(n.textContent.replace(/\\u00a0/g, ''))) { const r = document.createRange(); r.selectNodeContents(n); const b = r.getBoundingClientRect(); right = Math.max(right, b.right - root.left); left = Math.min(left, b.left - root.left); }
+    const bg = gd.querySelector('g.legend rect.bg').getBoundingClientRect();
+    const plot = gd._fullLayout._size;
+    return { titleRight: right, titleLeft: left, boxRight: bg.right - root.left, width: root.width, plotRight: plot.l + plot.w }; }"""
+
+
+@pytest.mark.parametrize("columns", [None, 2])
+def test_a_long_title_over_short_labels_stays_inside_the_graph(page, server, columns):
+    _open(page, server, columns, entries=3, colour=LONG_NAME, legendTitleAlign="markers", legendPosition="right")
+    r = page.evaluate(OVER, TILE)
+    assert r["titleRight"] <= r["width"] - 2, ("the title is cut by the graph's edge", r)
+    assert r["titleLeft"] >= r["plotRight"], ("the title lies over the plot", r)
+    # exported: as shown and full, the title's right edge is inside the image
+    for how in ("shown", "full"):
+        e = page.evaluate("""async ([sel, how, name]) => {
+            const { exportImageData } = await import('/static/js/utils/plot-export.js');
+            const gd = document.querySelector(sel);
+            const svg = await exportImageData(gd, how, { format: 'svg', width: 1000, height: 500, scale: 1 });
+            const host = document.createElement('div'); host.style.cssText = 'position:absolute;left:0;top:0'; host.innerHTML = svg; document.body.appendChild(host);
+            try {
+                const root = host.querySelector('svg').getBoundingClientRect();
+                const t = [...host.querySelectorAll('g.legend text')].find(n => n.textContent.replace(/\\u00a0/g, '').trim() === name);
+                const b = t.getBoundingClientRect();
+                return { right: b.right - root.left, width: root.width };
+            } finally { host.remove(); } }""", [TILE, how, LONG_NAME])
+        assert e["right"] <= e["width"] - 2, (how, e)
