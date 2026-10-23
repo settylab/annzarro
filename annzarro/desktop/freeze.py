@@ -123,6 +123,10 @@ def datas():
         if license_file.is_file():
             out.append((str(license_file), "."))
             break
+    for notice in (pkg / "TRADEMARKS.md", pkg.parent / "TRADEMARKS.md"):
+        if notice.is_file():
+            out.append((str(notice), "."))
+            break
     return out
 
 

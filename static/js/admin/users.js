@@ -10,6 +10,7 @@
  * the server is what enforces it.
  */
 
+import { copyText as copyClipboard } from '../utils/clipboard.js';
 import { h, setChildren, badge, table } from './dom.js';
 import { formatTimestamp, formatCount, isValidUsername } from './admin-format.js';
 import { accessCell, mountAccessPanel } from './access.js';
@@ -88,13 +89,8 @@ function button(text, onclick, { tone = 'outline-secondary', title, disabled = f
     });
 }
 
-async function copyText(text) {
-    const nav = globalThis.navigator;
-    if (nav && nav.clipboard && nav.clipboard.writeText) {
-        await nav.clipboard.writeText(text);
-        return true;
-    }
-    return false;
+function copyText(text) {
+    return copyClipboard(text);
 }
 
 function secretNotice() {

@@ -11,6 +11,7 @@
  * panel's controls is T, config.js). Typing in a field and any
  * Ctrl, Cmd or Alt chord are left alone, so Cmd+C copies a selection as usual.
  */
+import { copyText } from './clipboard.js';
 import { notify } from './notify.js';
 
 /** The value a template key names for one point: x, y, z, text, marker.color, hovertext, customdata. */
@@ -107,17 +108,21 @@ function typing(target) {
  * @param {{write?: function(string): Promise, say?: function}} [io]  for tests
  */
 export async function copyHover(text, io = {}) {
-  const write = io.write || ((t) => navigator.clipboard.writeText(t));
   const say = io.say || notify;
+  let ok;
   try {
-    await write(text);
-    say('Copied hover info', '', 'success', 1500);
-    return true;
+    // io.write is for tests and throws on failure; copyText resolves false instead
+    ok = io.write ? (await io.write(text), true) : await copyText(text);
   } catch (err) {
     console.info('Copying hover info failed:', err);
-    say('Not copied', 'The browser does not allow copying here (it needs a secure page, https or localhost, and permission).', 'warning');
-    return false;
+    ok = false;
   }
+  if (ok) {
+    say('Copied hover info', '', 'success', 1500);
+    return true;
+  }
+  say('Not copied', 'The browser did not allow copying. Select the text and use Ctrl+C instead.', 'warning');
+  return false;
 }
 
 /**

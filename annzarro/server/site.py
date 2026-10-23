@@ -51,6 +51,8 @@ ABOUT_LABEL = "About"
 DATA_LABEL = "Data & privacy"
 #: Pages the software writes itself, beside the operator's four texts
 GENERATED = ("about", "data")
+#: The Fred Hutch sign post, under static/ (see TRADEMARKS.md)
+LOGO_FILE = "img/brand/fredhutch-annzarro-signpost.svg"
 GUIDE_URL = "https://annzarro.readthedocs.io/en/latest/deployment/public-site.html"
 
 #: What the browser keeps (key, what it holds, kind), as docs/deployment/public-site.md lists it;
@@ -126,6 +128,7 @@ class Site:
         self.language = "en"
         self.persistent_convenience = True
         self.software_credits = True
+        self.fred_hutch_logo = False
         self.warnings: List[str] = []
 
     @property
@@ -252,6 +255,12 @@ class Site:
             credits = True
         site.software_credits = credits
 
+        logo = section.get("fred_hutch_logo", False)
+        if not isinstance(logo, bool):
+            problems.append("site.fred_hutch_logo must be true or false")
+            logo = False
+        site.fred_hutch_logo = logo
+
         if problems:
             raise ValueError("; ".join(problems))
         return site
@@ -282,11 +291,13 @@ class Site:
 class SiteView:
     """What the templates see as ``site``, for one request (links depend on where the app is mounted)."""
 
-    def __init__(self, site: Site, root: str, hosted: bool = False):
+    def __init__(self, site: Site, root: str, hosted: bool = False, logo_available: bool = True):
         self.configured = site.configured
         self.operator = site.operator
         self.language = site.language
         self.software_credits = site.software_credits
+        # without the artwork (a fork deleted static/img/brand/) the credit stays text, with no broken image
+        self.fred_hutch_logo = site.fred_hutch_logo and logo_available
         contact = site.contact or site.contact_fallback
         href = Site.contact_href(contact)
         self.contact = {"label": site.contact_label, "text": contact, "href": href,
@@ -406,10 +417,15 @@ def install(app: Flask) -> Site:
                        "every page. German and EU guidance expect them on each page of a public site.")
     warn_about_config(app.config)
     hosted = is_hosted(app.config)
+    logo_available = os.path.isfile(os.path.join(app.static_folder or "", LOGO_FILE))
+    if current(app).fred_hutch_logo and not logo_available:
+        logger.warning("Site: fred_hutch_logo is on but static/%s is missing; About credits Fred Hutch in text only.",
+                       LOGO_FILE)
 
     @app.context_processor
     def _site_context():
-        return {"site": SiteView(current(app), request.script_root if has_request_context() else "", hosted)}
+        return {"site": SiteView(current(app), request.script_root if has_request_context() else "", hosted,
+                                 logo_available)}
 
     @app.after_request
     def _robots_header(response):
@@ -689,6 +705,10 @@ _HELP = {
                  "in security.txt.",
     "software_credits": "Keeps AnnZarro's credit in About (the Setty Lab, the NIH funding, how to cite it). "
                         "Off leaves the name, version, licence and links. It credits the software, never your site.",
+    "fred_hutch_logo": "Shows the Fred Hutch logo with the AnnZarro sign post in About. Off (the default) credits "
+                       "the Setty Lab at Fred Hutch Cancer Center in text only. The logo is Fred Hutch's "
+                       "trademark, shown by the desktop app with permission; set it only for a copy of AnnZarro "
+                       "that Fred Hutch runs.",
     "storage.persistent_convenience": "Off keeps the layout autosave, the last sessions, the recent datasets and the dataset listings "
                                       "only until the tab closes, so the browser keeps nothing between visits but "
                                       "the visitor's own choices.",
@@ -709,6 +729,7 @@ _LABELS = {
     "footer_links": "Footer links",
     "robots": "Search engines",
     "software_credits": "AnnZarro credit in About",
+    "fred_hutch_logo": "Fred Hutch logo in About",
     "storage.persistent_convenience": "Keep convenience items between visits",
 }
 
@@ -738,11 +759,12 @@ def _declare_site_keys() -> None:
                                                              "https://example.org/security"), format="security"), None)
     add("languages", LineSetting("languages", ("en", "de"), default="en", format="language"), "en")
     add("software_credits", Bool(), True)
+    add("fred_hutch_logo", Bool(), False)
     add("storage.persistent_convenience", Bool(), True)
 
 
 _declare_site_keys()
 #: Every site.* key, in the order the admin page shows them
 SITE_KEYS = tuple(f"site.{p}" for p in (*KINDS, "operator", "contact", "contact_label", "footer_links", "robots",
-                                         "security_contact", "languages", "software_credits",
+                                         "security_contact", "languages", "software_credits", "fred_hutch_logo",
                                          "storage.persistent_convenience"))

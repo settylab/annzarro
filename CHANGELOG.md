@@ -8,6 +8,28 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.7.4 (2026-10-22)
+
+### Added
+- The browser's Back and Forward buttons undo and redo what you changed, as in a map, instead of leaving AnnZarro: each change (closing a panel, a setting, the focused cell or gene, another dataset) is a step, changes made in one go (a slider drag, clicking a number box's arrows, typing) are one step, and only the panels a step changes are redrawn (opening or closing a panel, or moving a split, leaves the other plots as they are). Back from the first view still goes to the page before AnnZarro.
+- Paste a cell or gene name: press Ctrl+V (Cmd+V on a Mac) on the page, outside a text box, and the copied name becomes the focused cell or gene in the open dataset. An administrator can add rules that read other text, such as a table row copied from another platform that also names the dataset (AnnZarro asks before it opens another dataset). The rules are the settings `ui.paste_focus.enabled` and `ui.paste_focus.rules`, edited on the admin Settings page with a test box; see the admin guide.
+- The desktop app's About dialog shows the Fred Hutch Cancer Center logo with the AnnZarro sign post, as Fred Hutch's brand team supplied it; the Setty Lab logo moves lower, beside the funding statement. In the dark theme the logo sits on a white plate. Every other copy of AnnZarro keeps the text credit, because the logo is Fred Hutch's trademark. The new `site.fred_hutch_logo` setting (default `false`, on the admin Public site page, `ANNZARRO_SITE_FRED_HUTCH_LOGO`) shows it. The Fred Hutch name and logo are trademarks of Fred Hutchinson Cancer Center and are not covered by the MIT license; see `TRADEMARKS.md`.
+- Plot Options > Legend and colour bar: **Title size** and **Title gap** set the size of the legend title and its distance to the first entry. They are saved with the panel, in links and in panel sets, and copied by Apply to other panels.
+
+### Changed
+- The plots use Plotly.js 2.35.3 (was 2.20.0), trimmed to the plot types AnnZarro uses, so the bundled file is about half the size of the full 2.35 file and smaller than 2.20's. Plots look and behave as they did; the upstream release notes list fixes for scattergl zooming, legends and hover.
+- Plot Options > Legend: **Title align** sets where the legend title sits: at the markers, at the labels, centred or at the right, across all the columns of a legend in columns. Auto (the default) centres the title over a legend above or below the plot and puts it at the markers beside it; the title used to start at the labels. It is saved with the panel and in links, and copied by Apply to other panels.
+
+### Fixed
+- A large plot whose data could not be loaded, for example because the browser ran out of memory (Safari reported only "Load failed"), now says so, names how many other plots are open and offers Try again, Half the cells, Subset and Close other plots.
+- Legend columns (Plot Options > Legend) are real columns: side by side next to the plot, in order, each as wide as its labels, whatever their length. Two columns of long labels used to stay one column. The columns take at most 60 % of the width of the graph (longer labels are cut short with an ellipsis), keep working with click and double click to hide and isolate a category, and are whole in exported images. The new **Column gap** sets the space between them (default 24 px).
+- The legend title is no longer cut off at the top at a small **Title gap** (1 to 20 px or so); every gap from 0 up shows the whole title, and is that many pixels.
+- Going back to the app from the admin or account pages, by their "Back to" link or the browser's Back button, shows the panels you left. The link used to open a blank start page, and Back could do the same when you left while panels were still drawing (large datasets).
+- Plot Options: the arrows of an empty number box (legend title size and gap, dot size, columns, tick counts) step from the default the box shows, by one, instead of jumping to the lowest value. The legend **Title gap** is a true pixel distance (0 to 80 px, every value different) instead of a blank line.
+- An exported image (SVG or PNG) holds the whole legend. A legend longer than the plot was cut off in the image; the image is now taller where the legend needs it.
+- The first click on an arrow of a number box in Plot Options (legend columns, dot size, text size) no longer moves the menu instead of stepping the value. The menu now keeps its place when a group opens, and a click in a box no longer re-applies its option.
+- Copying text works on a server reached over plain `http://` (a cluster node, for example): **C** over a point, **Share Link**, **Copy citation**, copying gene ids and names, and the admin password copy no longer need `https` or `localhost`. Only copying a plot as an image still does, and its message says so and points to Download. "Not copied" now appears only when the browser refused both ways.
+
 ## 0.7.3 (2026-10-22)
 
 ### Added

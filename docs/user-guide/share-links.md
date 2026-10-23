@@ -12,8 +12,8 @@ gets the same view. Nothing is stored on the server; the view travels inside the
    dataset is open.
 3. Paste it into a message or a document.
 
-When the browser does not allow clipboard access (pages served over plain `http://` from a cluster
-node, for example), AnnZarro shows the link in a field under the button instead, already
+Pages served over plain `http://` (a cluster node, for example) copy the link too. Only when the
+browser refuses copying altogether, AnnZarro shows the link in a field under the button instead, already
 selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, and close the field with **×**.
 
 ```{figure} ../_static/screens/user-guide/share-fallback.png
@@ -87,8 +87,18 @@ Once the view is open, the address bar follows it, as in a map: about half a sec
 change something (open or close a panel, change a setting, change the focus) the `#view=` part
 of the address is replaced with the current view. A refresh brings back what you see now, not
 the view you were sent, and the address you copy from the bar is a link to it. The address is
-replaced, not added to, so the Back button is not affected, and it is not touched while a
-dataset is loading.
+not touched while a dataset is loading.
+
+**Back and Forward undo and redo the view**, as in a map. Each change you make adds one entry to
+the browser's history, and the browser's Back button steps to the view before it: the panel you
+closed is back, the setting returns to its old value, the focused cell or gene is the previous
+one. Forward goes the other way. Changes made in one go share an entry: dragging a slider, clicking
+a number box's arrows several times, typing, or an action that sets several things one after the
+other. Only the panels a step changes are rebuilt or redrawn; the others, large plots included, stay as they are, also when the step opens or closes a panel or moves a split. Switching to
+another dataset is an entry too, and Back returns to that dataset with the view it had. Panning and
+zooming a plot are not part of the address, so they are not undone. Back from the first view leaves
+AnnZarro for the page before it, and a reload keeps the entries. The browser keeps only the most
+recent entries of a tab (about fifty in Chrome).
 
 A link without `#view=` (`http://<server>/?dataset_path=<path>`) opens the blank dashboard of
 that dataset: no panels, every panel type offered on the welcome screen. It ignores the panels

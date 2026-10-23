@@ -334,6 +334,10 @@ site:
   # the NIH funding statement and how to cite it. Hosters are welcome to keep it; false leaves
   # only the name, version, MIT licence and links to the documentation and repository.
   software_credits: true
+  # true shows the Fred Hutch logo with the AnnZarro sign post in the About dialog. The logo is
+  # Fred Hutch's trademark: the desktop app turns this on; leave it false on any other install,
+  # which then credits the Setty Lab at Fred Hutch Cancer Center in text.
+  fred_hutch_logo: false
   storage:
     # false: the layout autosave, the last sessions, the recent datasets and the dataset listings last only until
     # the tab closes (sessionStorage), so the browser keeps nothing between visits except
@@ -343,6 +347,19 @@ site:
 
 # UI configuration
 ui:
+  # Paste to focus: Ctrl+V / Cmd+V outside a text field sets the focused cell or gene from the
+  # clipboard text (docs/user-guide, docs/deployment/admin.md). A hosted server's admin edits the
+  # rules on the Settings page. Rules run in order, the first match wins. A rule is a JavaScript
+  # regular expression with the named groups (?<cell>...), (?<gene>...) and optionally
+  # (?<dataset>...), and dataset_match: exact | prefix | contains for the dataset group.
+  paste_focus:
+    enabled: true
+    rules:
+      # the whole trimmed text is one name: a cell, else a gene
+      - pattern: '^(?=(?<gene>\S+)$)(?<cell>\S+)$'
+        dataset_match: prefix
+        enabled: true
+
   # Panel type settings
   enabled_panel_types:
     - cell-plot

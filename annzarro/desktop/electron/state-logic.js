@@ -5,6 +5,7 @@
  *
  *   - stateDirFor        the server's state directory, inside the app's own profile
  *   - serverArgs         the server's command line (the data folder is the datasets folder itself)
+ *   - serverEnv          the environment the app gives its server: no login, and the Fred Hutch logo in About
  *   - cliArgs            the same location flags for `paths` and `panel-sets migrate`
  *   - isLegacy           whether `annzarro paths --format json` reports panel sets in <data>/sessions
  *   - normalizeSettings / shouldOffer / afterAnswer   the once-only "copy panel sets" prompt
@@ -30,6 +31,21 @@ function locationArgs(dataDir, stateDir) {
 function serverArgs({ port, host, dataDir, stateDir }) {
     return ['start', '--host', host, '--port', String(port), ...locationArgs(dataDir, stateDir),
         '--auth-disabled', '--no-browser'];
+}
+
+/**
+ * The environment the app adds for its server. The signed desktop app is the one install that shows the
+ * Fred Hutch logo in About (the brand team approved it for this build only); every other install credits
+ * Fred Hutch in text. ANNZARRO_SITE_FRED_HUTCH_LOGO sets site.fred_hutch_logo.
+ */
+function serverEnv(instanceId) {
+    return {
+        ANNZARRO_ELECTRON_APP: 'true',
+        ANNZARRO_HEADLESS: '1',
+        ANNZARRO_AUTH_DISABLED: 'true',
+        ANNZARRO_SITE_FRED_HUTCH_LOGO: 'true',
+        ANNZARRO_INSTANCE_ID: instanceId,
+    };
 }
 
 /** `annzarro <command...>` with the locations; `extra` goes after them. */
@@ -74,6 +90,6 @@ function migrationSummary(code, stdout, stderr) {
 }
 
 module.exports = {
-    SETTINGS_FILE, CHOICES, stateDirFor, locationArgs, serverArgs, cliArgs, isLegacy,
+    SETTINGS_FILE, CHOICES, stateDirFor, locationArgs, serverArgs, serverEnv, cliArgs, isLegacy,
     normalizeSettings, shouldOffer, afterAnswer, migrationSummary,
 };

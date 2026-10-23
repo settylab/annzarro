@@ -11,7 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const {
-    autoRestoreMode, shouldAutoRestore, navigationType, sessionFingerprint, pushHistory, trimHistory, lastSessionList,
+    autoRestoreMode, shouldAutoRestore, navigationType, cameFromOwnPage, sessionFingerprint, pushHistory, trimHistory, lastSessionList,
     unfinishedReason, deadMarker, linkDidNotFinish, withDefaultSubset, sessionLabel, sessionSummary, unfinishedText,
     panelCount, hashString, MAX_SESSIONS, MAX_ENTRY_CHARS, MARKER_LIVE_MS
 } = await import('../../../static/js/utils/last-sessions.js');
@@ -61,6 +61,19 @@ test('navigationType reads the navigation entry, the older interface, or says na
     assert.equal(navigationType({ getEntriesByType: () => [] }), 'navigate');
     assert.equal(navigationType(undefined), 'navigate');
     assert.equal(navigationType({ getEntriesByType: () => { throw new Error('no'); } }), 'navigate');
+});
+
+test('cameFromOwnPage knows the admin and account pages of this server, under a mount point too', () => {
+    const o = 'http://h:1';
+    assert.equal(cameFromOwnPage(`${o}/admin`, o), true);
+    assert.equal(cameFromOwnPage(`${o}/admin#data`, o), true);
+    assert.equal(cameFromOwnPage(`${o}/account/password`, o), true);
+    assert.equal(cameFromOwnPage(`${o}/x/admin`, o, '/x'), true);
+    assert.equal(cameFromOwnPage(`${o}/admin`, o, '/x'), false);
+    assert.equal(cameFromOwnPage(`${o}/administrator`, o), false);
+    assert.equal(cameFromOwnPage('http://other/admin', o), false);
+    assert.equal(cameFromOwnPage(`${o}/`, o), false);
+    assert.equal(cameFromOwnPage('', o), false);
 });
 
 test('the fingerprint is the view and dataset, not the page, the time or the version', () => {

@@ -453,8 +453,8 @@ uploaded file also becomes a saved panel set on that server, visible to its othe
 (tut-tour-share)=
 ### Share link
 
-31. Click **Share Link**. The link is copied to the clipboard. Where the browser does not allow
-    that (a plain `http` address on a cluster node, for example), the link appears in a field
+31. Click **Share Link**. The link is copied to the clipboard. Where the browser refuses
+    copying, the link appears in a field
     under the button, already selected; copy it with Ctrl+C or Cmd+C.
 
     ```{figure} ../_static/screens/paper/fig2-share-link.png

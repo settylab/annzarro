@@ -156,6 +156,7 @@ Defaults sent to the browser through `/api/v1/config`.
 | `defaults.subset_threshold` | `200000` | A dataset with more cells than this opens on a reproducible cell subset; `0` means always. |
 | `defaults.large_plot_points` | `1000000` | A Cell Plot with more points than this is drawn in large-plot mode: table filters and 3D are off (see {doc}`../user-guide/subsets`). |
 | `defaults.names_on_demand_above` | `5000000` | A dataset with more cells than this does not download the names of the cells it shows, whatever the subset: hover, click, the focused cell and a table's page ask the server for the names they show, and sorting or searching a table on the names loads them all once. See {ref}`names-on-demand`. |
+| `paste_focus.enabled`, `paste_focus.rules` | `true`, one rule | Paste to focus: Ctrl+V or Cmd+V outside a text box sets the focused cell or gene from the clipboard text, by the rules (`pattern` with the named groups `cell`, `gene`, `dataset`; `dataset_match`; `enabled`). They are the config layer of the policy keys `ui.paste_focus.enabled` and `ui.paste_focus.rules`. See {ref}`admin-paste-focus`. |
 | `defaults.prefetch_next_part` | `auto` | After a part is shown, read the next part's cells and embedding coordinates in the background, at low priority, so stepping forward waits for little. `auto`: on a single-user server (the laptop, the desktop app) only; `true` or `false` force it. |
 | `defaults.subset_size`, `defaults.subset_seed` | `100000`, `0` | Cells in that default subset, and its seed. See {doc}`../design/subsetting`. |
 | `memory.enforce` | `block` | Browser memory guard: what happens when an action would not fit in the browser tab's memory. `block` disables it and says why, `warn` says so and lets it run, `off` never interferes. See [Browser memory](#browser-memory-uimemory). |
@@ -289,7 +290,7 @@ the operator's.
 Who runs the site and the texts it owes its visitors: `imprint`, `privacy`, `accessibility` and
 `terms` (each a `url`, a `markdown` text or a Markdown `file`, and a `label`), `operator`,
 `contact`, `contact_label`, `footer_links`, `robots`, `security_contact`, `languages`,
-`software_credits` and `storage.persistent_convenience`. Public, except a text's `file`. The keys,
+`software_credits`, `fred_hutch_logo` and `storage.persistent_convenience`. Public, except a text's `file`. The keys,
 their defaults and what each shows where are in {doc}`../deployment/public-site`.
 
 With login on, an admin can set every one of them on the admin page's Public site section,

@@ -352,3 +352,36 @@ def test_a_large_plot_is_drawn_once_on_load(server, colour):
             assert len(draws) == 1, draws
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_failed_point_request_says_what_to_do(server, engine):
+    """A large plot whose point request gets no answer (Safari: "Load failed")
+    says that the browser probably ran out of memory and offers the ways out;
+    the browser's two words are not shown. Try again draws the plot."""
+    colour = {"type": "obs", "key": "cell_type", "column": ""}
+    with playwright.sync_playwright() as pw:
+        try:
+            browser = getattr(pw, engine).launch()
+        except Exception as exc:  # the engine is not installed
+            pytest.skip(f"{engine} not available: {exc}")
+        try:
+            page = browser.new_page(viewport={"width": 1300, "height": 900})
+            blocked = {"on": True}
+
+            def route(r):
+                r.abort() if blocked["on"] else r.continue_()
+            page.route("**/obsm/**", route)
+            page.goto(_link(server, colour, None))
+            s = _wait(page, lambda s: s["placeholder"] and not s["busy"])
+            text = s["placeholder"]
+            assert "Could not load the 200 points for this plot" in text, text
+            assert "The browser probably ran out of memory" in text, text
+            assert "Close other plots, or plot a subset of cells, then try again." in text, text
+            assert "failed to read" not in text and "Load failed" not in text and "Failed to fetch" not in text, text
+            blocked["on"] = False
+            page.locator('.tile[data-tile-id="cell-plot-L"] .coverage-placeholder__do button',
+                         has_text="Try again").click()
+            _wait(page, lambda s: s["points"] == 200 and not s["busy"])
+        finally:
+            browser.close()

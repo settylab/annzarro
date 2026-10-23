@@ -411,7 +411,7 @@ def test_the_theme_buttons_are_gone_and_a_pinned_palette_still_loads(tab, server
 
 def test_a_link_keeps_pinned_colours_and_lets_the_rest_follow(tab, server):
     t = tab("light")
-    t.page.add_init_script("Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('no clipboard')) } });")
+    t.page.add_init_script("Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('no clipboard')) } }); document.execCommand = () => false;")
     page = _open(t, server)
     _menu(page, A)
     _set_colour(page, f"#grid-color-{A}", "#12ab34")

@@ -141,3 +141,5 @@ ESLint. See [running the tests](https://annzarro.readthedocs.io/en/latest/gettin
 
 MIT ([LICENSE](https://github.com/settylab/annzarro/blob/main/LICENSE)). The web interface bundles unmodified third-party libraries under their
 own permissive licences, listed in [`annzarro/THIRD_PARTY_LICENSES/`](https://github.com/settylab/annzarro/tree/main/annzarro/THIRD_PARTY_LICENSES).
+
+**Trademarks.** The Fred Hutch name and logo are trademarks of Fred Hutchinson Cancer Center and are not licensed under the MIT license that covers the rest of AnnZarro; they appear in AnnZarro with permission. Do not reuse them, or change them, without Fred Hutch's permission. The MIT license does not grant any rights to the names, logos, or trademarks of Fred Hutch. Forks and derivative works must remove Fred Hutch's name and logo and must not suggest endorsement by Fred Hutch. See [TRADEMARKS.md](https://github.com/settylab/annzarro/blob/main/TRADEMARKS.md).

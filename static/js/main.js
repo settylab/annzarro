@@ -1,6 +1,7 @@
 /**
  * Main Application Module for AnnZarro
  */
+import { copyText } from './utils/clipboard.js';
 import { PanelManager } from './panel-manager.js';
 import { Config } from './config.js';
 import { Policy } from './policy.js';
@@ -21,7 +22,7 @@ import { noticeDuration, planReplacement, joinNotices, focusOutsideSubsetNotice,
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
 import { appRoot } from './utils/app-url.js';
 import { clearSiteStorage, clearSiteStorageNow, bareUrl } from './utils/site-storage.js';
-import { shouldAutoRestore, navigationType } from './utils/last-sessions.js';
+import { shouldAutoRestore, navigationType, cameFromOwnPage } from './utils/last-sessions.js';
 import { lastSessionElement } from './utils/last-session-card.js';
 import { sameSubset, describeParts, partSpec } from './utils/subset.js';
 import { countNoun } from './utils/coverage.js';
@@ -53,9 +54,11 @@ import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
 import { mountDatasetInfo } from './utils/dataset-info-dialog.js';
 import { defaultHierarchy } from './utils/deeplink.js';
+import { createHistoryPolicy, diffViews } from './utils/url-history.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
+import { pasteSettings, matchRules, resolveDataset, isTextTarget, storeBase } from './utils/paste-focus.js';
 import { mountThemeToggle } from './utils/theme-toggle.js';
 import { startDesktopFrame } from './utils/desktop-frame.js';
 import { keepLast } from './utils/site-footer.js';
@@ -166,7 +169,12 @@ const App = (function() {
             // A reload of the tab (or Back/Forward to it) carries on where it was; a
             // fresh visit to the bare address (a new tab, the address typed, a
             // bookmark) is a clean start: no dataset and the server's default subset
-            const navigation = navigationType(window.performance);
+            // Coming back from the admin or account pages by their link back is the
+            // way back to the same view, as the browser's Back button is
+            let navigation = navigationType(window.performance);
+            if (navigation === 'navigate' && cameFromOwnPage(document.referrer, window.location.origin, appRoot())) {
+                navigation = 'back_forward';
+            }
             const cleanStart = navigation !== 'reload' && navigation !== 'back_forward'
                 && !parseDeepLinkLocation(window.location);
             // The kept subset size is the tab's (sessionStorage); the one an
@@ -281,6 +289,8 @@ const App = (function() {
             // only the fragment, which the browser treats as in-page navigation:
             // no reload, so the new view would silently not apply. Reload instead.
             window.addEventListener('hashchange', () => {
+                // Back and Forward between our own entries change the fragment too: they are applied in place
+                if (Date.now() - _lastHistoryStepAt < 1000) return;
                 const parts = parseDeepLinkLocation(window.location);
                 if (parts && parts.payload) window.location.reload();
             });
@@ -508,7 +518,7 @@ const App = (function() {
         }
 
         try {
-            await navigator.clipboard.writeText(link);
+            if (!await copyText(link)) throw new Error('copy not allowed');
             fallback.hidden = true;
             const label = button.querySelector('.btn-share-label');
             label.textContent = 'Copied!';
@@ -578,9 +588,9 @@ const App = (function() {
      * `?dataset_path=` names the open dataset (as the data directory names it)
      * from the moment it is open, whoever opened it, and goes with no dataset
      * open. With no panel at all the fragment is removed: the clean link opens
-     * the blank dashboard of the dataset. Not pushState: Back and Forward stay
-     * the browser's (to the page before AnnZarro), never a dataset without
-     * the view it was seen with.
+     * the blank dashboard of the dataset. A settled change that begins a new
+     * action pushes a history entry, so Back and Forward step through views
+     * (a cheap undo); the changes of one action replace it (url-history.js).
      * @private
      */
     const URL_SYNC_DELAY_MS = 600;
@@ -589,10 +599,27 @@ const App = (function() {
     let _urlSyncSince = 0;      // when the update pending was first asked for
     let _urlSyncOn = false;
     let _urlSyncView = null;    // the dataset and JSON of the view the bar holds
+    const _historyPolicy = createHistoryPolicy();
+    let _historyBusy = false;       // a history entry is being applied
+    let _historyAgain = false;      // another step came meanwhile
+    let _lastHistoryStepAt = 0;
     function _startUrlSync() {
         if (_urlSyncOn) return;
         _urlSyncOn = true;
+        // Back and Forward step through the views the address recorded
+        window.addEventListener('popstate', (event) => {
+            // only the entries this page wrote (a fragment someone typed has no state: hashchange reloads for it)
+            if (!event.state || !event.state.azPage) return;
+            _lastHistoryStepAt = Date.now();
+            _onHistoryStep();
+        });
         SessionManager.onViewMayHaveChanged(_syncUrlSoon);
+        // The autosave tick alone would notice an option changed up to its interval later, and fold
+        // several changes into one history entry: a control used, or a focus set, says so at once
+        for (const type of ['input', 'change', 'click', 'pointerup']) document.addEventListener(type, _syncUrlSoon, true);
+        for (const type of ['focusedGeneChanged', 'focusedCellChanged', 'taxonomyIdChanged']) {
+            document.addEventListener(type, _syncUrlSoon);
+        }
         // a new or reset session default is in the address at once: a reload before the delay must not read the old one
         onSessionStyleChange(() => _syncUrlNow());
         _syncUrlSoon();
@@ -603,10 +630,17 @@ const App = (function() {
         if (!_urlSyncTimer) _urlSyncSince = now;
         clearTimeout(_urlSyncTimer);
         const wait = Math.max(0, Math.min(URL_SYNC_DELAY_MS, _urlSyncSince + URL_SYNC_MAX_MS - now));
-        _urlSyncTimer = setTimeout(() => { _urlSyncTimer = null; _syncUrlNow(); }, wait);
+        const capped = wait < URL_SYNC_DELAY_MS;
+        _urlSyncTimer = setTimeout(() => {
+            _urlSyncTimer = null;
+            // written because the view kept changing, not because it went quiet: the same gesture goes on
+            _syncUrlNow({ capped });
+        }, wait);
     }
-    async function _syncUrlNow({ force = false } = {}) {
+    async function _syncUrlNow({ force = false, capped = false } = {}) {
         if (!_urlSyncOn) return;
+        // An entry of the history being applied (Back, Forward) is not a change to record
+        if (_historyBusy) return;
         // A load in flight, a restore drawing its panels, or a layout shown
         // without data is not a view to keep (`force`: Close all, whose empty view is settled)
         if (_noDataView) return;
@@ -625,11 +659,125 @@ const App = (function() {
             const next = syncedLocation(window.location.href, path, payload);
             // Changed while encoding: the next tick takes it
             if (_isLoadingDataset) return _syncUrlSoon();
-            if (next) history.replaceState(history.state, '', next);
+            if (next) {
+                // A settled change starts a history entry, or rewrites the one it continues (utils/url-history.js)
+                const now = Date.now();
+                if (_historyPolicy.decide({ now, path }) === 'push') {
+                    history.pushState({ ...(history.state || {}) }, '', next);
+                } else {
+                    history.replaceState(history.state, '', next);
+                }
+                _historyPolicy.written({ now, path, capped });
+            } else {
+                _historyPolicy.baseline({ path });
+            }
             _urlSyncView = key;
         } catch (e) {
             // replaceState can throw in sandboxed iframes; never fatal
             console.debug('URL sync skipped:', e);
+        }
+    }
+
+    /**
+     * Back or Forward landed on an entry this page wrote: show that view. A
+     * second step while one is applied is taken after it, from the address
+     * then. Nothing is recorded while it runs (_syncUrlNow); afterwards the
+     * view on screen is the one the address holds.
+     * @private
+     */
+    async function _onHistoryStep() {
+        clearTimeout(_urlSyncTimer);
+        _urlSyncTimer = null;
+        if (_historyBusy) { _historyAgain = true; return; }
+        _historyBusy = true;
+        try {
+            do {
+                _historyAgain = false;
+                await _applyHistoryEntry();
+            } while (_historyAgain);
+        } catch (error) {
+            console.error('Applying the history entry failed:', error);
+            _showNotification('View not restored', error.message || 'Could not show that view.', 'error');
+        } finally {
+            try {
+                // what is on screen is the entry's view now: later settling is no change to push
+                const view = SessionManager.captureView();
+                const hasPanels = Object.keys((view.layout && view.layout.panelConfigs) || {}).length > 0;
+                const current = DatasetState.get().status === 'none' ? null : (_lastLoadedDatasetPath || DataManager.getCurrentDataset());
+                const path = current ? _labelOf(current) : '';
+                _urlSyncView = `${path}\n${hasPanels ? JSON.stringify(view) : ''}`;
+                _historyPolicy.landed({ now: Date.now(), path });
+            } catch { /* bookkeeping only: the next sync takes what is on screen */ }
+            _historyBusy = false;
+        }
+    }
+
+    /**
+     * Make the view the address holds the view on screen, redrawing only what
+     * differs (utils/url-history.js diffViews): another dataset or other cells
+     * open it as a link does; another arrangement rebuilds the layout; the
+     * same arrangement rebuilds just the panels whose settings changed.
+     * @private
+     */
+    async function _applyHistoryEntry() {
+        const link = await _parseDeepLink();
+        if (!link) return;      // no dataset in the address: not a view of ours
+        const target = link.view;
+        const open = DatasetState.get().status === 'open' && !_noDataView && !_isLoadingDataset;
+        const current = open ? (_lastLoadedDatasetPath || DataManager.getCurrentDataset()) : null;
+        const samePath = !!current && link.datasetPath === _labelOf(current);
+        const subset = target && 'subset' in target ? target.subset : undefined;
+        const shown = DataManager.getSubset();
+        const sameCells = subset === undefined || sameSubset(shown ? shown.subset : null, subset);
+        const live = open ? SessionManager.captureView() : null;
+        const diff = target && live ? diffViews(live, target, { samePath, sameSubset: sameCells })
+            : { kind: 'reload' };
+
+        if (diff.kind === 'reload') {
+            PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
+            await _applyDeepLink(link);
+            PanelManager.updateSourcePanelSelection();
+            PanelManager.ensureWelcomeFallback();
+            return;
+        }
+        SessionManager.beginRestore('history');
+        try {
+            _adoptViewStyle(target);
+            await _applyFocusSteps(live.constants || {}, target.constants || {}, link.datasetPath);
+            if (diff.kind === 'layout') {
+                // Closed panels are cleaned up as ever; the panels whose settings did not change keep what they drew
+                const kept = new Set(diff.keep);
+                PanelManager.getActivePanels().map(p => p.getId()).filter(id => !kept.has(id))
+                    .forEach(id => PanelManager.closePanel(id));
+                await PanelManager.restoreLayout(target.layout, { keep: diff.keep });
+                PanelManager.ensureWelcomeFallback();
+            } else {
+                const layout = target.layout;
+                diff.controls.forEach(id => PanelManager.showControls(id, layout.controlState[id]));
+                await Promise.all(diff.panels.map(id => {
+                    const config = { ...(layout.panelConfigs || {})[id] };
+                    if (layout.controlState && layout.controlState[id] !== undefined) {
+                        config.controlsVisible = layout.controlState[id];
+                    }
+                    return PanelManager.replacePanel(id, config);
+                }));
+            }
+        } finally {
+            SessionManager.endRestore();
+        }
+    }
+
+    /** The focused gene, cell and species of a view, set where they differ from `from`. @private */
+    async function _applyFocusSteps(from, to, datasetPath) {
+        if ((from.focusedGene || '') !== (to.focusedGene || '')) {
+            DataManager.setFocusedGene(to.focusedGene || null, true);
+        }
+        if ((from.focusedCell || '') !== (to.focusedCell || '')) {
+            if (to.focusedCell) await _applyConstants({ focusedCell: to.focusedCell, cellRows: to.cellRows }, datasetPath);
+            else DataManager.setFocusedCell(null, true);
+        }
+        if (to.taxonomyId && to.taxonomyId !== from.taxonomyId) {
+            DataManager.setTaxonomyId(to.taxonomyId, { source: to.taxonomySource === 'inferred' ? 'inferred' : 'explicit' });
         }
     }
 
@@ -663,6 +811,40 @@ const App = (function() {
         replaceSessionStyles(change.styles);
         saveSessionStylesTo(window.sessionStorage);
         restyleDefaultPlots();
+    }
+    /**
+     * The focus a view records: gene, cell (with the dataset rows it knows
+     * them by) and species. Shared by opening a view and stepping the history.
+     * @private
+     */
+    async function _applyConstants(constants, datasetPath) {
+        if (constants.focusedGene) {
+            DataManager.setFocusedGene(constants.focusedGene);
+        }
+        // Dataset rows the link recorded for its cells: checked against
+        // the names, they spare a dataset-wide name lookup for a cell
+        // the subset does not show
+        DataManager.setCellRowHints(datasetPath, constants.cellRows);
+        if (constants.focusedCell) {
+            // Kept also when the subset does not show it (its rows are
+            // read by dataset row); a cell the dataset lacks is focused as
+            // before, and its panels say it is not in this dataset
+            const cell = await DataManager.locateCell(constants.focusedCell);
+            if (cell && cell.unreadable) {
+                // Said once: loading the dataset may already have said it
+                if (_focusOutsideSubsetNoticed !== constants.focusedCell) {
+                    const said = focusOutsideSubsetNotice(constants.focusedCell);
+                    _showNotification(said.title, said.message, 'warning');
+                }
+            } else {
+                DataManager.setFocusedCell(constants.focusedCell);
+                if (cell && !cell.shown && cell.row !== null) _noticeFocusOutside(constants.focusedCell);
+            }
+        }
+        if (constants.taxonomyId) {
+            DataManager.setTaxonomyId(constants.taxonomyId,
+                { source: constants.taxonomySource === 'inferred' ? 'inferred' : 'explicit' });
+        }
     }
     async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false } = {}) {
         _adoptViewStyle(view);
@@ -719,35 +901,8 @@ const App = (function() {
         await DatasetState.open(datasetPath, { source: 'view' });
 
         if (view) {
-            // 2. Restore the focused gene (drives highlighting + the gene selector).
-            const constants = view.constants || {};
-            if (constants.focusedGene) {
-                DataManager.setFocusedGene(constants.focusedGene);
-            }
-            // Dataset rows the link recorded for its cells: checked against
-            // the names, they spare a dataset-wide name lookup for a cell
-            // the subset does not show
-            DataManager.setCellRowHints(datasetPath, constants.cellRows);
-            if (constants.focusedCell) {
-                // Kept also when the subset does not show it (its rows are
-                // read by dataset row); a cell the dataset lacks is focused as
-                // before, and its panels say it is not in this dataset
-                const cell = await DataManager.locateCell(constants.focusedCell);
-                if (cell && cell.unreadable) {
-                    // Said once: loading the dataset may already have said it
-                    if (_focusOutsideSubsetNoticed !== constants.focusedCell) {
-                        const said = focusOutsideSubsetNotice(constants.focusedCell);
-                        _showNotification(said.title, said.message, 'warning');
-                    }
-                } else {
-                    DataManager.setFocusedCell(constants.focusedCell);
-                    if (cell && !cell.shown && cell.row !== null) _noticeFocusOutside(constants.focusedCell);
-                }
-            }
-            if (constants.taxonomyId) {
-                DataManager.setTaxonomyId(constants.taxonomyId,
-                    { source: constants.taxonomySource === 'inferred' ? 'inferred' : 'explicit' });
-            }
+            // 2. Restore the focused gene (drives highlighting + the gene selector), the cell, the species.
+            await _applyConstants(view.constants || {}, datasetPath);
 
             // 3. Materialize the panels. Two shapes, one preferred:
             //
@@ -2258,7 +2413,7 @@ const App = (function() {
             },
             isDesktop: document.documentElement.hasAttribute('data-desktop'),
             get localMode() { return Config.SERVER_CONFIG.local_mode === true || Config.SERVER_CONFIG.single_user === true; },
-            copy: (text) => navigator.clipboard.writeText(text),
+            copy: async (text) => { if (!await copyText(text)) throw new Error('copy not allowed'); },
             shortcut: { open: _isMac() ? '\u2318O' : 'Ctrl+O', path: '/' }
         };
     }
@@ -3695,6 +3850,8 @@ const App = (function() {
                     a.textContent = link.text;
                     a.title = link.title;
                     a.href = link.href;
+                    // the page is left on purpose: what is still drawing is not a page that ended
+                    a.addEventListener('click', () => SessionManager.leaveOnPurpose());
                     return a;
                 }));
             }
@@ -4134,6 +4291,96 @@ const App = (function() {
     }
     
     
+    // -- paste to focus (utils/paste-focus.js): a pasted cell or gene name sets the focus --
+
+    /** The question a paste asked about another dataset, while it is on screen (one at a time). */
+    let _pasteQuestion = null;
+
+    /** Whether the open dataset has a gene of this name (asks the server when the genes are not in the page). @private */
+    async function _geneExists(name) {
+        if (DataManager.getGeneIndex(name) >= 0) return true;
+        const datasetPath = DataManager.getCurrentDataset();
+        if (!datasetPath) return false;
+        try {
+            const body = await fetchNameMatches(Config.API.NAMES, { datasetPath, entity: 'genes', query: name, mode: 'exact', limit: 1 });
+            return !!(body && body.matches && body.matches[0] && body.matches[0].name === name);
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Focus the pasted cell, else the pasted gene, in the open dataset, and say so in one toast.
+     * The cell is located the way the Focused Cell box does (also on a dataset whose names stay on
+     * the server, and outside the subset). @private
+     */
+    async function _focusPasted(hit) {
+        if (!DataManager.getCurrentDataset()) return;
+        if (hit.cell) {
+            const cell = await DataManager.locateCell(hit.cell).catch(() => null);
+            if (cell && (cell.position >= 0 || cell.row !== null)) {
+                DataManager.setFocusedCell(hit.cell);
+                _showNotification('', `Focused cell ${hit.cell} (from clipboard)`, 'success');
+                return;
+            }
+        }
+        if (hit.gene && await _geneExists(hit.gene)) {
+            DataManager.setFocusedGene(hit.gene);
+            _showNotification('', `Focused gene ${hit.gene} (from clipboard)`, 'success');
+            return;
+        }
+        _showNotification('', `${hit.cell || hit.gene} is not in this dataset`, 'info');
+    }
+
+    /** Open `entry`, then focus what was pasted in it. @private */
+    async function _openForPaste(entry, hit) {
+        const state = await DatasetState.open(entry.path, { source: 'user' });
+        if (state && state.status === 'open') await _focusPasted(hit);
+    }
+
+    /** Act on the first rule that matched the pasted text. @private */
+    async function _applyPaste(hit) {
+        if (_pasteQuestion) _pasteQuestion.cancel();
+        const target = resolveDataset(hit.dataset, _listedDatasets, DataManager.getCurrentDataset(), hit.datasetMatch);
+        const name = hit.cell || hit.gene;
+        if (target.kind === 'one') {
+            const handle = _pasteQuestion = { cancel: () => {} };
+            const choice = await _askNotification('', `${name} is in ${target.entry.name || storeBase(target.entry.path)}. Open it?`,
+                [{ key: 'open', label: 'Open', primary: true }], { type: 'info', handle });
+            if (_pasteQuestion === handle) _pasteQuestion = null;
+            if (choice === 'open') await _openForPaste(target.entry, hit);
+        } else if (target.kind === 'many') {
+            const shown = target.entries.slice(0, 5);
+            const more = target.entries.length - shown.length;
+            const handle = _pasteQuestion = { cancel: () => {} };
+            const choice = await _askNotification('',
+                `${name} may be in ${target.entries.length} other datasets. Open one?${more ? ` (${more} more not listed)` : ''}`,
+                shown.map((e, i) => ({ key: String(i), label: e.name || storeBase(e.path), primary: i === 0 })),
+                { type: 'info', handle });
+            if (_pasteQuestion === handle) _pasteQuestion = null;
+            if (choice !== null && shown[Number(choice)]) await _openForPaste(shown[Number(choice)], hit);
+        } else {
+            await _focusPasted(hit);
+        }
+    }
+
+    /**
+     * The document's paste event (it needs no clipboard permission, also on plain http): text
+     * pasted outside a text field and a dialog, matching a rule, sets the focus. Anything else is
+     * the browser's and the user's business. @private
+     */
+    function _onPaste(e) {
+        if (isTextTarget(e.target) || isTextTarget(document.activeElement)) return;
+        if (document.querySelector('.modal.show')) return;
+        const settings = pasteSettings((key, fallback) => Policy.get(key, fallback));
+        if (!settings.enabled) return;
+        const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+        const hit = matchRules(text, settings.rules);
+        if (!hit) return;
+        e.preventDefault();
+        _applyPaste(hit).catch(err => console.warn('Paste to focus failed:', err));
+    }
+
     /**
      * Initialize keyboard shortcut handlers
      * @private
@@ -4323,6 +4570,7 @@ const App = (function() {
             });
         }
         
+        document.addEventListener('paste', _onPaste);
         console.log('Keyboard shortcuts initialized');
     }
     

@@ -11,6 +11,14 @@ Copyright (c) 2025-2026 Dominik J. Otto, Siddharth Baasri, Manu Setty
 The full text is in [`LICENSE`](https://github.com/settylab/annzarro/blob/main/LICENSE) and is
 installed with the package (`annzarro-<version>.dist-info/licenses/LICENSE`).
 
+## Trademarks
+
+The Fred Hutch name and logo are trademarks of Fred Hutchinson Cancer Center and are not licensed under the MIT license that covers the rest of AnnZarro; they appear in AnnZarro with permission. Do not reuse them, or change them, without Fred Hutch's permission.
+
+The MIT license does not grant any rights to the names, logos, or trademarks of Fred Hutch. Forks and derivative works must remove Fred Hutch's name and logo and must not suggest endorsement by Fred Hutch.
+
+The full notice is [`TRADEMARKS.md`](https://github.com/settylab/annzarro/blob/main/TRADEMARKS.md), installed with the package next to `LICENSE`. The artwork is in `static/img/brand/`; the desktop app and servers that Fred Hutch runs show it through `site.fred_hutch_logo` (see {doc}`../deployment/public-site`).
+
 ## Third-party components
 
 The web interface ships the following libraries, unmodified, under `annzarro/static/vendor/`.
@@ -26,17 +34,18 @@ Each file keeps its original copyright header. The versions are pinned with SHA-
 | DataTables SearchBuilder | 1.4.2 | `MIT` |
 | DataTables Select | 1.6.2 | `MIT` |
 | DataTables FixedHeader | 3.3.2 | `MIT` |
-| [Plotly.js](https://plotly.com/javascript/) (bundles npm modules, see below) | 2.20.0 | `MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense` |
+| [Plotly.js](https://plotly.com/javascript/) (trimmed build, bundles npm modules, see below) | 2.35.3 | `MIT AND ISC AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND Unlicense AND Apache-2.0 AND BSL-1.0` |
 | [chroma.js](https://gka.github.io/chroma.js/) | 2.4.2 | `BSD-3-Clause AND Apache-2.0` |
 | [Font Awesome Free](https://fontawesome.com/) | 6.4.0 | `MIT AND OFL-1.1` |
 
 The full licence texts, source URLs and checksums of every file are in
 [`annzarro/THIRD_PARTY_LICENSES/`](https://github.com/settylab/annzarro/tree/main/annzarro/THIRD_PARTY_LICENSES),
 which the package installs both inside `annzarro/THIRD_PARTY_LICENSES/` and in its
-`dist-info/licenses/` directory. The minified Plotly.js file is a bundle of npm modules under
-MIT, ISC, BSD-3-Clause (mapbox-gl, d3), BSD-2-Clause, Zlib and Unlicense licences;
-`plotly-bundled.txt` there holds the licence text of every package in Plotly.js 2.20.0's
-dependency tree. The Python dependencies (Flask, zarr, NumPy, pandas and others) are installed
+`dist-info/licenses/` directory. The minified Plotly.js file is a build of the unmodified
+Plotly.js 2.35.3 source with only the plot types AnnZarro draws (scatter, scattergl, scatter3d),
+made by `scripts/build-plotly-bundle.sh`. It bundles npm modules under
+MIT, ISC, BSD-3-Clause (d3), BSD-2-Clause, Zlib, Unlicense, Apache-2.0 (weak-map) and BSL-1.0 licences;
+`plotly-bundled.txt` there holds the licence text of every package inside it. The Python dependencies (Flask, zarr, NumPy, pandas and others) are installed
 separately by pip under their own licences.
 
 ## Desktop apps

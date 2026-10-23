@@ -126,7 +126,7 @@ def _footer(page):
 
 def test_every_field_has_a_help_on_hover_and_focus_and_the_guide_is_linked(section):
     helps = section.locator("[data-help]")
-    assert helps.count() == 13
+    assert helps.count() == 14      # one per setting; the Fred Hutch logo setting (0.7.4) made it 14
     for i in range(helps.count()):
         mark = helps.nth(i)
         assert mark.get_attribute("aria-label").startswith("Help: ")

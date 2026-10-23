@@ -362,6 +362,64 @@ when it starts and one when it ends, with its counts. The limits are in {doc}`re
 
 The **Description search** block on the Server health section ({ref}`admin-health`) shows the state and has **Rebuild now**.
 
+(admin-paste-focus)=
+### Paste to focus
+
+Pressing Ctrl+V or Cmd+V on the page, outside a text box and a dialog, reads the clipboard text and, if a rule
+recognises it, sets the focused cell or gene ({ref}`paste-to-focus`). The page reads the text from the browser's
+`paste` event, so it needs no clipboard permission and works over plain http. Two settings, on the **Settings**
+page under Features:
+
+* [`ui.paste_focus.enabled`]{#policy-ui-paste-focus-enabled}, on by default.
+* [`ui.paste_focus.rules`]{#policy-ui-paste-focus-rules}, the rules, tried in order. The first rule whose
+  pattern matches and names a cell or a gene wins. The default is one rule that takes the whole trimmed text as a
+  single name and tries it as a cell, then as a gene. Remove it to stop plain names from being recognised.
+
+A rule has three fields:
+
+| Field | Meaning |
+|---|---|
+| `pattern` | A regular expression in JavaScript's flavour with the named groups `(?<cell>...)`, `(?<gene>...)` and optionally `(?<dataset>...)`. At least one of `cell` and `gene` is required. With both, the cell is tried first, then the gene. At most 500 characters. |
+| `dataset_match` | How the `dataset` group is compared with the names of the stores, without folder and extension: `prefix` (the default), `exact` or `contains`. |
+| `enabled` | `true` (the default); `false` keeps the rule in the list without using it. |
+
+A list holds at most 20 rules. The pasted text is trimmed first, and text over 4,096 characters is ignored.
+
+The `dataset` group works like this. If it refers to the open dataset, the cell or gene is focused. If it refers
+to exactly one other dataset in the listing, a notice asks "... is in `<store>`. Open it?" and opens the dataset on
+**Open**, then focuses the cell. If it refers to several, the notice lists up to five and the user picks one. If it
+refers to none, the group is ignored and the open dataset is tried. A paste never changes the dataset on its own.
+When a rule matched but the cell or gene is not in the dataset, the user sees a notice saying so; text that no rule
+matches is ignored silently.
+
+For a row copied from another platform, such as
+
+```text
+BL_1697	5127.7	7483.4	hdfihbcc-1	Endothelial	LSEC	LSEC	onboard
+```
+
+whose first field starts the name of the store (`BL_1697_spatial_annzarro.zarr`) and whose fourth field is the cell:
+
+```yaml
+ui:
+  paste_focus:
+    enabled: true
+    rules:
+      - pattern: '^(?<dataset>[^\t]+)\t[^\t]*\t[^\t]*\t(?<cell>[^\t]+)'
+        dataset_match: prefix
+```
+
+The **Settings** page edits the list: add, remove and reorder rules, set the pattern and the match mode, and
+paste a sample into the **Test** box to see which rule takes it and what it extracts (the box runs on the form, saved
+or not). A pattern is checked when saved: it must compile as a JavaScript regular expression (lookbehind needs a
+fixed width, and syntax JavaScript lacks, such as `(?i)`, atomic groups and possessive quantifiers, is refused),
+name `cell` or `gene`, and be at most 500 characters.
+
+The patterns run in each user's browser, on at most 4,096 characters. A pattern that backtracks badly (nested
+quantifiers such as `(a+)+$`) slows only the page of the user who pastes, never the server; keep patterns anchored
+and simple. The desktop app has no admin page: set `ui.paste_focus` in its configuration file
+({doc}`../reference/configuration`), as above.
+
 ### Outbound hosts
 
 Gene Set Analysis is the one panel that sends gene ids to other servers ({doc}`../user-guide/gene-set`).
@@ -403,7 +461,7 @@ equal. Three notes:
 The Public site section sets the `site` keys while the server runs: the imprint, privacy notice,
 accessibility statement and terms of use (each a link or a text written there, with a live
 preview), the operator, the contact and its link text, the footer, search engines, the security
-contact, the language of the texts, the AnnZarro credit in About and whether convenience items are
+contact, the language of the texts, the AnnZarro credit in About, the Fred Hutch logo in it (off unless Fred Hutch runs the copy) and whether convenience items are
 kept between visits. A checklist at the top says which of imprint, privacy notice, contact and
 accessibility statement are missing. A saved change shows in the footer, About and the `/site/`
 pages at the next request, without a restart. A value set here wins over the configuration file

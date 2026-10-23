@@ -861,7 +861,13 @@ function forgetInitialRanges(gd) {
   gd.__azForgetsInitialRanges = true;
   gd.on('plotly_afterplot', () => {
     const fl = gd._fullLayout;
-    for (const axis of ['xaxis', 'yaxis']) if (fl && fl[axis]) delete fl[axis]._rangeInitial;
+    // _rangeInitial is Plotly 2.20's record; 2.26 and later keep one per end
+    for (const axis of ['xaxis', 'yaxis']) {
+      if (!fl || !fl[axis]) continue;
+      delete fl[axis]._rangeInitial;
+      delete fl[axis]._rangeInitial0;
+      delete fl[axis]._rangeInitial1;
+    }
   });
 }
 

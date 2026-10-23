@@ -212,10 +212,7 @@ async function startServerOn(port, dataDir) {
         cwd: cwd || app.getPath('userData'),
         env: {
             ...process.env,
-            ANNZARRO_ELECTRON_APP: 'true',
-            ANNZARRO_HEADLESS: '1',
-            ANNZARRO_AUTH_DISABLED: 'true',
-            ANNZARRO_INSTANCE_ID: instanceId,
+            ...stateLogic.serverEnv(instanceId),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,

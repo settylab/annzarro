@@ -74,6 +74,8 @@ STATIC_FILES = [
     "favicon.png",
     "img/*.png",
     "img/*.svg",
+    "img/brand/*.svg",
+    "img/brand/NOTICE.md",
     "css/*.css",
     "js/*.js",
     "js/package.json",

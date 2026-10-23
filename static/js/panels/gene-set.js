@@ -17,6 +17,7 @@
  * snapshot, keys, staleness; runner.js: requests, retries, pacing; links.js:
  * the links), which Node tests cover.
  */
+import { copyText } from '../utils/clipboard.js';
 import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -1653,7 +1654,7 @@ const GeneSetPanel = (function() {
             const text = _source.ids.join('\n');
             const status = _dom.sectionEls.get('links').result.querySelector('.gs-links__copied');
             try {
-                await navigator.clipboard.writeText(text);
+                if (!await copyText(text)) throw new Error('copy not allowed');
                 if (status) status.textContent = `Copied ${fmt(_source.ids.length)} ids.`;
             } catch {
                 if (status) status.textContent = 'This browser did not allow copying; use Download links CSV.';

@@ -247,7 +247,7 @@ def test_clipboard_refused_says_so(server):
         browser = p.chromium.launch()
         try:
             page = browser.new_page(viewport={"width": 1300, "height": 800})     # no permission granted
-            page.add_init_script("Object.defineProperty(navigator, 'clipboard', {value: {writeText: () => Promise.reject(new Error('denied'))}})")
+            page.add_init_script("Object.defineProperty(navigator, 'clipboard', {value: {writeText: () => Promise.reject(new Error('denied'))}}); document.execCommand = () => false")
             page.goto(_link(server))
             _ready(page)
             _hover_a_point(page)

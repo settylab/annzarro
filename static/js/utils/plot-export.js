@@ -27,6 +27,8 @@
 import { exportWithCoverage } from './panel-surface.js';
 import { releasePlot } from './release-plot.js';
 import { syncSceneCamera } from './scene-camera.js';
+import { unclipLegend, legendIsClipped } from './legend-export.js';
+import { syncLegendColumns, shiftLegendTitles } from './legend-options.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
@@ -90,6 +92,8 @@ export async function fullImage(gd, { format = 'png', width = 1200, height = 800
         const layout = { ...copyLayout(gd.layout), width, height };
         const config = { ...(gd._context || {}), _exportedPlot: true, staticPlot: true, setBackground: false };
         await P.newPlot(clone, data, layout, config);
+        // a legend in columns: placed for the export's own width (legend-options.js)
+        await syncLegendColumns(clone);
         // automatic point size and opacity for the export's own plot area
         // (the panel's hook, plot-make.js), so it is as dense as on screen
         if (typeof gd.__azExportMarkers === 'function') {
@@ -97,9 +101,14 @@ export async function fullImage(gd, { format = 'png', width = 1200, height = 800
         }
         await S.getRedrawFunc(clone)();
         await new Promise(resolve => setTimeout(resolve, S.getDelay(clone._fullLayout)));
+        shiftLegendTitles(clone);
         w = clone._fullLayout.width;
         h = clone._fullLayout.height;
-        svg = stableSvgIds(S.toSVG(clone, format, scale), uidTokens(clone));
+        svg = S.toSVG(clone, format, scale);
+        // a legend taller than the plot is whole in the image, which grows to hold it
+        const grown = wholeLegend(svg, clone._fullLayout);
+        if (grown) { svg = grown.svg; h += grown.extra; }
+        svg = stableSvgIds(svg, uidTokens(clone));
     } finally {
         // before the image is encoded: the off-screen plot's points and GPU
         // buffers are not needed for it
@@ -108,6 +117,15 @@ export async function fullImage(gd, { format = 'png', width = 1200, height = 800
     }
     if (format === 'svg') return svg;
     return S.svgToImg({ format, width: w, height: h, scale, canvas: document.createElement('canvas'), svg, promise: true });
+}
+
+/** SVG text with the whole legend and the extra height that took, or null when the legend was not clipped. */
+function wholeLegend(svgText, fullLayout) {
+    if (!legendIsClipped(fullLayout)) return null;
+    const root = new DOMParser().parseFromString(svgText, 'image/svg+xml').documentElement;
+    if (!root || root.nodeName !== 'svg') return null;
+    const extra = unclipLegend(root, fullLayout);
+    return { svg: new XMLSerializer().serializeToString(root), extra };
 }
 
 /** Whether `gd` can be exported AS SHOWN (2D plots; a 3D scene does not keep its drawn image). */
@@ -172,6 +190,7 @@ export function snapshotSvg(gd) {
     paper.setAttribute('width', String(width));
     paper.setAttribute('height', String(height));
     paper.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    unclipLegend(paper, fl);
     return stableSvgIds(new XMLSerializer().serializeToString(paper), uidTokens(gd));
 }
 
@@ -184,7 +203,8 @@ export async function snapshotImage(gd, { format = 'png', ratio = ratioOf(gd) } 
     const svg = snapshotSvg(gd);
     if (format === 'svg') return svg;
     const fl = gd._fullLayout;
-    return P.Snapshot.svgToImg({ format, width: fl.width, height: fl.height, scale: ratio,
+    const grown = Number((/^<svg\b[^>]*?\sheight="([\d.]+)"/.exec(svg) || [])[1]);     // a long legend made it taller
+    return P.Snapshot.svgToImg({ format, width: fl.width, height: grown > fl.height ? grown : fl.height, scale: ratio,
         canvas: document.createElement('canvas'), svg, promise: true });
 }
 

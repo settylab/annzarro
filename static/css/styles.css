@@ -263,7 +263,23 @@ body {
 /* the lab's tree has dark outlines: on a light tile in the dark theme */
 [data-theme="dark"] .about-logo-lab { background: #fff; border-radius: 0.4rem; padding: 0.3rem 0.45rem; box-sizing: content-box; }
 .about-funding { margin-bottom: 0.4rem !important; }
+/* The Fred Hutch sign post (desktop app only, site.fred_hutch_logo): approved artwork, shown unaltered and
+   scaled whole to the content width, its own white space included. In the dark theme it sits on a white plate
+   whose padding is at least the cap height of the "F" (4.83% of the artwork's width). Below it the funding text
+   has the Setty Lab illustration beside it: a supporting graphic, never the logo's pair. */
+.about-brand { margin: 0 0 1rem; container-type: inline-size; }
+.about-brand-link { display: block; border-radius: 0.25rem; }
+.about-brand-link:focus-visible { outline: 2px solid var(--az-link); outline-offset: 4px; }
+.about-brand-logo { display: block; width: 100%; height: auto; }
+[data-theme="dark"] .about-brand-link { background: #fff; border-radius: 0.5rem; padding: 5.5cqw; }
+.about-lab { display: flex; align-items: center; gap: 1.25rem; margin: 0 0 0.65rem; }
+.about-lab .about-funding { flex: 1 1 auto; margin: 0 !important; }
+.about-lab-link { flex: 0 0 33%; display: block; border-radius: 0.25rem; }
+.about-lab-link:focus-visible { outline: 2px solid var(--az-link); outline-offset: 4px; }
+.about-lab .about-logo { height: auto; width: 100%; }
+[data-theme="dark"] .about-lab .about-logo-lab { box-sizing: border-box; }
 .about-fine { font-size: 0.75rem; color: var(--az-muted); margin-bottom: 0 !important; }
+.about-fine.about-trademark { margin-top: 0.5rem; }
 
 /* The theme toggle at the right end of the statistics bar: small enough not to make the bar taller */
 .dataset-stats .theme-toggle .btn {

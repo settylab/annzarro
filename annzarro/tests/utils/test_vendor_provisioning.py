@@ -88,7 +88,7 @@ def test_manifest_ships_nothing_the_ui_does_not_load():
 
 
 def test_manifest_entries_are_pinned_and_licensed():
-    """Every vendored file has a URL, a SHA-256 and an SPDX license, and every
+    """Every vendored file has a URL (or a repository file), a SHA-256 and an SPDX license, and every
     license text the manifest cites ships in THIRD_PARTY_LICENSES."""
     for comp in _manifest()["components"]:
         assert comp["license"] and comp["version"], comp["name"]
@@ -96,7 +96,10 @@ def test_manifest_entries_are_pinned_and_licensed():
             assert os.path.isfile(os.path.join(LICENSES_DIR, text)), (comp["name"], text)
         for entry in comp["files"]:
             assert re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]), entry["path"]
-            assert entry["url"].startswith("https://"), entry["path"]
+            if "local" in entry:  # built in this repository, not fetched
+                assert os.path.isfile(os.path.join(REPO_ROOT, entry["local"])), entry["path"]
+            else:
+                assert entry["url"].startswith("https://"), entry["path"]
 
 
 def test_third_party_notice_is_generated_from_the_manifest():

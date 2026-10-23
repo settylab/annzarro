@@ -53,7 +53,7 @@ import { buildPointIndexSliced } from '../../utils/point-index.js';
 import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus, applyPendingClick } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { colourTitle } from '../../utils/plot-titles.js';
-import { proxyMarkerSize, legendOptionsIntoLayout } from '../../utils/legend-options.js';
+import { proxyMarkerSize, legendOptionsIntoLayout, legendTitleFontSize } from '../../utils/legend-options.js';
 import { usableUnsPalette, unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
 import { GROUP_COLOURS, LEGEND_NAMES, grouped, groupOf, groupLegendName, categoryCount, colourGroupKey } from '../../utils/categories.js';
 
@@ -248,7 +248,7 @@ function interleave(groups) {
 }
 
 function titleFont(settings) {
-  return { size: settings.fontSize ? settings.fontSize + 2 : 14,
+  return { size: legendTitleFontSize(settings),
     family: settings.fontFamily || 'Arial, Helvetica, sans-serif', color: plotColour(settings, 'textColor') };
 }
 

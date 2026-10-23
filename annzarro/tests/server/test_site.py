@@ -285,6 +285,7 @@ def test_inline_texts_are_escaped_in_the_dialog_too(tmp_path):
     ({"languages": "<x>"}, "site.languages"),
     ({"storage": {"persistent_convenience": "yes"}}, "persistent_convenience"),
     ({"software_credits": "no"}, "site.software_credits"),
+    ({"fred_hutch_logo": "yes"}, "site.fred_hutch_logo"),
 ])
 def test_wrong_values_stop_the_server_at_start(tmp_path, site, fragment):
     with pytest.raises(ValueError, match=re.escape(fragment)):
@@ -529,3 +530,70 @@ def test_software_credits_off_leaves_name_version_licence_and_two_links(tmp_path
     assert 'href="https://annzarro.readthedocs.io"' in modal and 'href="https://github.com/settylab/annzarro"' in modal
     assert 'id="about-this-site"' in modal, "the site's own block is unaffected"
     assert "site-footer" in html, "so is the footer"
+
+
+TRADEMARK_LINE = ("Fred Hutch name and logo are trademarks of Fred Hutchinson Cancer Center, used on this page with "
+                  "permission. You may not use or modify without permission from Fred Hutch.")
+
+
+def about_modal(html):
+    return html[html.index('id="about-modal"'):html.index('id="session-modal"')]
+
+
+def test_fred_hutch_logo_is_off_by_default_and_the_credit_is_text(tmp_path):
+    manager = ConfigManager()
+    manager.load_config(env="production")
+    assert manager.to_flask_config()["site"]["fred_hutch_logo"] is False
+    modal = about_modal(body(get(app_with(tmp_path), "/")))
+    assert "about-brand" not in modal and "img/brand/" not in modal and TRADEMARK_LINE not in modal
+    assert "Fred Hutch Cancer Center</a>" in modal and "about-logos" in modal
+
+
+def test_fred_hutch_logo_on_shows_the_sign_post_linked_with_one_alt(tmp_path):
+    modal = about_modal(body(get(app_with(tmp_path, {"fred_hutch_logo": True}), "/")))
+    assert modal.count('alt="Fred Hutch Cancer Center"') == 1
+    assert 'href="https://www.fredhutch.org"' in modal and "img/brand/fredhutch-annzarro-signpost.svg" in modal
+    assert modal.index("about-dev") < modal.index("about-brand") < modal.index("about-lab") < modal.index("about-funding")
+    assert "</a> at<br><a" in modal, "the text credit stays beside the logo"
+    assert "about-logos" not in modal
+    assert TRADEMARK_LINE in modal and modal.index("MIT licence.") < modal.index(TRADEMARK_LINE)
+
+
+def test_fred_hutch_logo_needs_the_software_credit(tmp_path):
+    modal = about_modal(body(get(app_with(tmp_path, {"fred_hutch_logo": True, "software_credits": False}), "/")))
+    assert "about-brand" not in modal and "Fred Hutch" not in modal
+
+
+def test_the_environment_the_desktop_app_sets_turns_it_on(monkeypatch):
+    monkeypatch.setenv("ANNZARRO_SITE_FRED_HUTCH_LOGO", "true")
+    manager = ConfigManager()
+    manager.load_config(env="production")
+    assert manager.to_flask_config()["site"]["fred_hutch_logo"] is True
+
+
+def test_without_the_artwork_the_key_on_falls_back_to_the_text_credit(tmp_path, monkeypatch):
+    """A fork that deleted static/img/brand/: no broken image, no trademark line, a warning in the log."""
+    from annzarro.server import site as site_module
+    monkeypatch.setattr(site_module, "LOGO_FILE", "img/brand/not-there.svg")
+    modal = about_modal(body(get(app_with(tmp_path, {"fred_hutch_logo": True}), "/")))
+    assert "about-brand" not in modal and "img/brand/" not in modal and TRADEMARK_LINE not in modal
+    assert "about-logos" in modal and "Fred Hutch Cancer Center</a>" in modal
+
+
+def test_the_shipped_artwork_and_the_trademark_notice_exist():
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    assert os.path.isfile(os.path.join(root, "static", site_module_logo()))
+    notice = open(os.path.join(root, "TRADEMARKS.md"), encoding="utf-8").read()
+    assert "The MIT license does not grant any rights to the names, logos, or trademarks of Fred Hutch." in notice
+
+
+def site_module_logo():
+    from annzarro.server.site import LOGO_FILE
+    return LOGO_FILE
+
+
+@pytest.mark.parametrize("logo", [False, True])
+def test_software_credits_off_removes_every_fred_hutch_mention_from_the_dialog(tmp_path, logo):
+    """What a fork does to comply with TRADEMARKS.md: no Fred Hutch name or logo is left in About."""
+    modal = about_modal(body(get(app_with(tmp_path, {"software_credits": False, "fred_hutch_logo": logo}), "/")))
+    assert "Fred Hutch" not in modal and "fredhutch" not in modal.lower()

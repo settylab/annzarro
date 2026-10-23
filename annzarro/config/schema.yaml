@@ -605,6 +605,10 @@ site:
       type: boolean
       description: "false reduces the About dialog's software credit to the name, version, licence and links"
       default: true
+    fred_hutch_logo:
+      type: boolean
+      description: "true shows the Fred Hutch logo with the AnnZarro sign post in the About dialog (the desktop app sets it); false credits the Setty Lab at Fred Hutch Cancer Center in text only"
+      default: false
     storage:
       type: object
       description: "What the browser keeps between visits"
@@ -620,6 +624,34 @@ ui:
   description: UI settings
   security: public   # the browser reads these
   properties:
+    paste_focus:
+      type: object
+      description: "Paste to focus: Ctrl+V or Cmd+V outside a text field sets the focused cell or gene from the clipboard text"
+      properties:
+        enabled:
+          type: boolean
+          description: "Whether pasting sets the focus"
+          default: true
+        rules:
+          type: array
+          description: "Rules tried in order, the first match wins: pattern (a JavaScript regular expression with the named groups cell, gene and optionally dataset), dataset_match (exact, prefix or contains) and enabled"
+          items:
+            type: object
+            properties:
+              pattern:
+                type: string
+              dataset_match:
+                type: string
+                enum: [exact, prefix, contains]
+                default: prefix
+              enabled:
+                type: boolean
+                default: true
+            required: [pattern]
+          default:
+            - pattern: '^(?=(?<gene>\S+)$)(?<cell>\S+)$'
+              dataset_match: prefix
+              enabled: true
     enabled_panel_types:
       type: array
       description: List of enabled panel types

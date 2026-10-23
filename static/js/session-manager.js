@@ -1113,6 +1113,19 @@ const SessionManager = (function() {
     }
     ledger.onChange(_scheduleSettle);
 
+    /**
+     * The user leaves for one of the app's own pages (admin, account) on purpose:
+     * this page's marker goes, so a restore or draw still running is not taken
+     * for a page that ended, and the way back opens the view as it was left.
+     * A draw that ran out of memory keeps its marker.
+     */
+    function leaveOnPurpose() {
+        if (_marker && !(_marker.failed && _marker.failed.length)) {
+            _marker = null;
+            _writeMarker();
+        }
+    }
+
     /** Whether a restore is running or this page's marker stands (for tests). */
     function restoreMarker() {
         return _marker ? { ..._marker, hold: _hold } : null;
@@ -1175,6 +1188,7 @@ const SessionManager = (function() {
         beginRestore,
         endRestore,
         restoreMarker,
+        leaveOnPurpose,
         notifyPanelUpdate,
         onViewMayHaveChanged,
         setViewApplier,

@@ -4,8 +4,9 @@ The operator, with no panel open, switched from bm_aging to tahoe: the address d
 refresh opened bm_aging again. Removing the dataset from the address opened the last one anyway.
 
 1. Every way a dataset opens (the dataset browser, the desktop app's call, the back button beside the
-   name) writes ``?dataset_path=<path relative to the data directory>`` with history.replaceState (no
-   history entries), panels or not; a reload opens that dataset.
+   name) writes ``?dataset_path=<path relative to the data directory>``, panels or not; a reload opens that
+   dataset. The first dataset replaces the welcome address; each later switch is a history entry
+   (Back returns to the previous dataset).
 2. A fresh visit to the bare address opens no dataset, although several were opened before: the
    welcome screen offers the recent ones and the dataset browser.
 3. One store in the data directory is still opened at start (the server's choice, not leftover state),
@@ -86,7 +87,8 @@ def test_the_address_follows_every_switch_with_no_panel_open_and_a_reload_opens_
         page.click("#dataset-back")
         wait_for_open(page, "tahoe_95.6M.zarr")
         _wait_named(page, "tahoe_95.6M.zarr")
-        assert page.evaluate("() => history.length") == history, "replaceState: no history entries"
+        # the first dataset replaced the bare address; tahoe, lung and the way back to tahoe each added an entry
+        assert page.evaluate("() => history.length") == history + 3
 
         # a reload opens the dataset of the address, not the one opened first
         page.reload()

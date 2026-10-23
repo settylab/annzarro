@@ -157,7 +157,8 @@ class Shooter:
             ctx.add_init_script("""
               Object.defineProperty(navigator, 'clipboard', {value: {
                 writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError'))
-              }});""")
+              }});
+              document.execCommand = () => false;""")
         page = ctx.new_page()
         page._inflight = set()
         page.on("request", lambda r: page._inflight.add(r))

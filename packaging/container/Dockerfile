@@ -13,7 +13,8 @@ ARG PYTHON_IMAGE=python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c6032
 FROM ${PYTHON_IMAGE} AS build
 WORKDIR /src
 COPY scripts/vendor_assets.py scripts/vendor-assets.json scripts/
-# The frontend bundles (jQuery, Plotly, ...) are downloaded here and verified against the SHA-256
+COPY scripts/plotly/plotly-2.35.3-annzarro.min.js scripts/plotly/
+# The frontend bundles (jQuery, ...) are downloaded here (Plotly's trimmed bundle is copied from scripts/plotly/) and verified against the SHA-256
 # in scripts/vendor-assets.json; a changed upstream file fails the build. setup.py then packages them.
 RUN python scripts/vendor_assets.py
 COPY pyproject.toml setup.py MANIFEST.in README.md LICENSE CHANGELOG.md ./
