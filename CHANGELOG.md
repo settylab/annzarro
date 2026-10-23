@@ -8,6 +8,11 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.7.5 (2026-10-23)
+
+### Fixed
+- The Windows desktop app builds again, and a Git checkout on Windows installs again. Git turned the line endings of the bundled Plotly file into Windows ones, so its checksum no longer matched and the build refused it. 0.7.4 was therefore released on PyPI only, with no desktop apps; 0.7.5 is 0.7.4 with this fix.
+
 ## 0.7.4 (2026-10-22)
 
 ### Added
