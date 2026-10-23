@@ -222,13 +222,13 @@ export function legendOptionsIntoLayout(layout, settings) {
 
 /** What the legend's columns need to know of the settings, in the layout's `meta`. */
 function columnMeta(settings) {
-    return { azTitleAlign: legendTitleAlign(settings), azTitleShift: legendTitleShift(settings), azLegendColumns: legendColumns(settings), azLegendGap: legendColumnGap(settings), azLegendPosition: (settings && settings.legendPosition) || 'right' };
+    return { azTitleAlign: legendTitleAlign(settings), azTitleShift: legendTitleShift(settings), azTitleSize: legendTitleSize(settings), azLegendColumns: legendColumns(settings), azLegendGap: legendColumnGap(settings), azLegendPosition: (settings && settings.legendPosition) || 'right' };
 }
 
 /** The title's text, side and alignment as relayout keys (they change with the alignment, the gap and the position). */
 export function legendTitleKeys(settings) {
     const align = legendTitleAlign(settings);
-    return { 'legend.title.text': legendTitleText(settings), 'legend.title.side': titleSide(align), 'meta.azTitleAlign': align, 'meta.azTitleShift': legendTitleShift(settings) };
+    return { 'legend.title.text': legendTitleText(settings), 'legend.title.side': titleSide(align), 'meta.azTitleAlign': align, 'meta.azTitleShift': legendTitleShift(settings), 'meta.azTitleSize': legendTitleSize(settings) };
 }
 
 /** The same as relayout keys, for a graph already drawn; `position` is the legend's position, `placed` what it was before. */
@@ -338,8 +338,38 @@ export function withLegendColumns(traces, layout) {
             else delete layout[`legend${k}`];
         }
         if (used > 1) Object.assign(layout.legend = { ...(layout.legend || {}) }, rowKeysFor(layout, 0));
+        else roomForShiftedTitle(traces, layout);
     }
     return traces;
+}
+
+/**
+ * A single legend on the right whose title, shifted to the markers, is wider than its entries needs the room
+ * `planLegendColumns` gives it (x = 1, a margin that holds the title). Estimated from the text's width before the
+ * first draw, so that the draw already has it and nothing is relaid out after it. Edits `layout`.
+ */
+function roomForShiftedTitle(traces, layout) {
+    try { fitShiftedTitle(traces, layout); } catch { /* an estimate only: the legend sync settles it after the draw */ }
+}
+
+function fitShiftedTitle(traces, layout) {
+    const meta = layout.meta || {};
+    const shift = Number(meta.azTitleShift) || 0;
+    const title = ((layout.legend && layout.legend.title && layout.legend.title.text) || '').replace(/<[^>]*>/g, '').replace(/\u00a0/g, '').trim();
+    if (!shift || !title || (meta.azLegendPosition || 'right') !== 'right' || typeof document === 'undefined') return;
+    const names = proxiesInOrder(traces).map(t => t.name);
+    if (!names.length) return;
+    const font = (layout.legend && layout.legend.font) || layout.font || {};
+    const entries = Math.max(...names.map(measureIn(font.family, font.size))) + ENTRY_EXTRA - 10;
+    const tw = 2 + measureIn((layout.legend.title.font || {}).family || font.family, meta.azTitleSize || 14)(title);
+    const natural = Math.max(entries, tw);
+    if (natural - (tw + shift) >= SLACK_NEEDED) return;
+    const over = Math.max(0, Math.ceil(tw + shift - natural)) + 2;
+    const base = layout.margin && typeof layout.margin.r === 'number' ? layout.margin.r : 80;
+    const r = Math.max(base, Math.ceil(natural + over + EDGE_PAD) + 6);
+    layout.legend = { ...layout.legend, x: 1, xanchor: 'left' };
+    layout.margin = { ...(layout.margin || {}), r };
+    layout.meta = { ...meta, azColPlaced: true, azColMargin: { r: { set: r, base } } };
 }
 
 // ---- placement ------------------------------------------------------------------------------------
@@ -353,6 +383,8 @@ export const EDGE_PAD = 8;
 export const PLOT_GAP = 12;
 /** Room (px) the y-axis tick labels take, left of the plot, in front of a legend at the left. */
 export const TICK_ROOM = 50;
+/** A shifted title that ends less than this many px short of its legend's right edge gets the room (x = 1, a margin) a title past it needs. */
+const SLACK_NEEDED = 24;
 /** Px of an entry beyond its label's text: the symbol and the padding. */
 export const ENTRY_EXTRA = 46;
 
@@ -491,6 +523,12 @@ let _measureCtx = null;
 /** A function giving the px width of a text in the legend's font, by the canvas's own measure. */
 function legendMeasure(gd) {
     const font = (gd._fullLayout && gd._fullLayout.legend && gd._fullLayout.legend.font) || (gd._fullLayout && gd._fullLayout.font) || {};
+    return measureIn(font.family, font.size);
+}
+
+/** A function giving the px width of a text in `family` at `size` px. */
+function measureIn(family, size) {
+    const font = { family, size };
     if (!_measureCtx && typeof document !== 'undefined') _measureCtx = document.createElement('canvas').getContext('2d');
     if (!_measureCtx) return (t) => String(t).length * 7;
     _measureCtx.font = `${font.size || 12}px ${font.family || 'sans-serif'}`;
@@ -533,16 +571,16 @@ function baseMargin(layout, side) {
 }
 
 /**
- * Px the first legend's title reaches past the right edge of its box: the title is shifted right to the markers
+ * Px between the shifted title's right edge and the right edge of the first legend's box (negative when it reaches past): the title is shifted right to the markers
  * (`shiftLegendTitles`), which Plotly does not count in the legend's width. Zero for a title drawn as an annotation.
  */
-function titleOverhang(gd, used) {
+function titleSlack(gd, used) {
     const meta = (gd.layout && gd.layout.meta) || {};
-    if (typeof document === 'undefined' || !(Number(meta.azTitleShift) > 0)) return 0;
-    if (used > 1 && (meta.azTitleAlign === 'centre' || meta.azTitleAlign === 'right')) return 0;
+    if (typeof document === 'undefined' || !(Number(meta.azTitleShift) > 0)) return Infinity;
+    if (used > 1 && (meta.azTitleAlign === 'centre' || meta.azTitleAlign === 'right')) return Infinity;
     const text = gd.querySelector('g.legend text[class$="titletext"]');
     const bg = gd.querySelector('g.legend rect.bg');
-    if (!text || !bg) return 0;
+    if (!text || !bg) return Infinity;
     let right = -Infinity;
     const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -551,7 +589,7 @@ function titleOverhang(gd, used) {
         r.selectNodeContents(n);
         right = Math.max(right, r.getBoundingClientRect().right);
     }
-    return Number.isFinite(right) ? Math.max(0, Math.ceil(right - bg.getBoundingClientRect().right + 2)) : 0;
+    return Number.isFinite(right) ? bg.getBoundingClientRect().right - right : Infinity;
 }
 
 /** The placement keys of legends that are not the columns' own and must be left to their owners when comparing. */
@@ -597,17 +635,20 @@ export function planLegendColumns(gd) {
     const pos = meta.azLegendPosition || 'right';
     const proxies = proxiesInOrder(gd.data);
 
-    const over = titleOverhang(gd, used);
-    if (used < 2 && pos === 'right' && over > 0 && FL.legend && FL._size && FL.legend._width > 0) {
-        // one legend whose shifted title is wider than its entries: room for the title past the box, in the margin
+    const slack = titleSlack(gd, used);
+    const over = Math.max(0, Math.ceil(2 - slack));
+    if (used < 2 && pos === 'right' && slack < SLACK_NEEDED && FL.legend && FL._size && FL.legend._width > 0) {
+        // one legend whose shifted title is wider than its entries: the legend at the plot's right edge (x = 1, which
+        // does not move when the plot is resized) and a margin of its width, the title's overhang and a little more
         for (let k = 2; L[`legend${k}`]; k++) relayout[`legend${k}`] = null;
         const baseM = { l: baseMargin(L, 'l'), r: baseMargin(L, 'r') };
-        const placed = placeColumns({ position: 'right', widths: [FL.legend._width + over], gap: 0, width: FL.width,
-            margins: { l: FL._size.l, r: FL._size.r }, base: baseM });
         setMargin('l');
-        setMargin('r', placed.margin.r, baseM.r);
+        const wantR = Math.max(baseM.r, Math.ceil(FL.legend._width + over + EDGE_PAD));
+        const nowR = L.margin && L.margin.r;
+        // the margin the first draw was given from an estimate stays while it holds the title and is not much more
+        setMargin('r', meta.azColMargin && meta.azColMargin.r && nowR === meta.azColMargin.r.set && nowR >= wantR && nowR <= wantR + 16 ? nowR : wantR, baseM.r);
         const cur = L.legend || {};
-        if (!same(cur.x, placed.legends[0].x)) relayout['legend.x'] = placed.legends[0].x;
+        if (cur.x !== 1) relayout['legend.x'] = 1;
         if (cur.xanchor !== 'left') relayout['legend.xanchor'] = 'left';
         if (meta.azColPlaced !== true) relayout['meta.azColPlaced'] = true;
         titleNote(gd, relayout, false, false);
