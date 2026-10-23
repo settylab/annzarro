@@ -26,6 +26,7 @@
  */
 import { colourTitle } from './plot-titles.js';
 import { legendKey } from './legend-entries.js';
+import { arrayMax } from './array-stats.js';
 
 /** Legend symbols: Plotly draws them at the marker size up to 16 px; 12 px is what the constant legend draws. */
 export const DOT_SIZE_MIN = 2;
@@ -360,7 +361,7 @@ function fitShiftedTitle(traces, layout) {
     const names = proxiesInOrder(traces).map(t => t.name);
     if (!names.length) return;
     const font = (layout.legend && layout.legend.font) || layout.font || {};
-    const entries = Math.max(...names.map(measureIn(font.family, font.size))) + ENTRY_EXTRA - 10;
+    const entries = arrayMax(names.map(measureIn(font.family, font.size))) + ENTRY_EXTRA - 10;
     const tw = 2 + measureIn((layout.legend.title.font || {}).family || font.family, meta.azTitleSize || 14)(title);
     const natural = Math.max(entries, tw);
     if (natural - (tw + shift) >= SLACK_NEEDED) return;
