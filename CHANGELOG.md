@@ -12,6 +12,9 @@ with the release after it. Older releases are listed on
 - The README and the licence page cite v0.7.5 by its DOI,
   [10.5281/zenodo.23587867](https://doi.org/10.5281/zenodo.23587867).
 
+### Fixed
+- Back and Forward no longer reload the page when AnnZarro is busy drawing large plots. A step that took more than a second to be handled reloaded the page, which could leave the panels closed with "Did not finish loading".
+
 ## 0.7.5 (2026-10-23)
 
 ### Fixed
