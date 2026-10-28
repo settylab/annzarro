@@ -733,6 +733,8 @@ export function refreshScaleBar(gd, settings) {
 
 export function attachViewportTracking(plotContainer, settings) {
   if (typeof plotContainer.on !== 'function') return;
+  // what C copies and a paste applies: which coordinates are on the axes (utils/view-copy.js)
+  plotContainer.__azSettings = settings;
   // a 3D turn released outside the plot is recorded too (scene-camera.js)
   recordCameraOnRelease();
   forgetInitialRanges(plotContainer);

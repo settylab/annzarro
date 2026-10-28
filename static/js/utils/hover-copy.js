@@ -11,8 +11,9 @@
  * panel's controls is T, config.js). Typing in a field and any
  * Ctrl, Cmd or Alt chord are left alone, so Cmd+C copies a selection as usual.
  */
-import { copyText } from './clipboard.js';
+import { copyText, copyTextWith } from './clipboard.js';
 import { notify } from './notify.js';
+import { descriptorFor, VIEW_MIME } from './view-copy.js';
 
 /** The value a template key names for one point: x, y, z, text, marker.color, hovertext, customdata. */
 function valueOf(trace, pt, key) {
@@ -73,6 +74,12 @@ function graphs(root) {
  * @returns {string|null}
  */
 export function hoverCopyText(root = document) {
+  const hit = hoverCopyInfo(root);
+  return hit ? hit.text : null;
+}
+
+/** Like hoverCopyText, and the graph the label is on: {text, gd}, or null. */
+export function hoverCopyInfo(root = document) {
   for (const gd of graphs(root)) {
     if (typeof gd.matches === 'function' && !gd.matches(':hover')) continue;
     const st = gd.__largeState;
@@ -80,7 +87,7 @@ export function hoverCopyText(root = document) {
       const tip = typeof document !== 'undefined' && document.querySelector('.large-plot-tip');
       if (st.hovered >= 0 && tip && tip.style.display !== 'none') {
         const rows = [...tip.children].map(d => d.textContent.trim()).filter(Boolean);
-        if (rows.length) return rows.join('\n');
+        if (rows.length) return { text: rows.join('\n'), gd };
       }
       continue;
     }
@@ -90,7 +97,7 @@ export function hoverCopyText(root = document) {
       const trace = (gd._fullData && gd._fullData[pt.curveNumber]) || (gd.data && gd.data[pt.curveNumber]) || pt.fullData;
       return trace ? hoverLines(trace, pt).join('\n') : '';
     }).filter(Boolean);
-    if (blocks.length) return blocks.join('\n');
+    if (blocks.length) return { text: blocks.join('\n'), gd };
   }
   return null;
 }
@@ -107,12 +114,16 @@ function typing(target) {
  * @param {string} text
  * @param {{write?: function(string): Promise, say?: function}} [io]  for tests
  */
-export async function copyHover(text, io = {}) {
+export async function copyHover(text, io = {}, gd = null) {
   const say = io.say || notify;
   let ok;
   try {
+    // with a view: the text and the view descriptor in one gesture (view-copy.js)
+    let view = null;
+    try { view = gd ? descriptorFor(gd, text, io.dataset || null) : null; } catch { /* the text alone */ }
     // io.write is for tests and throws on failure; copyText resolves false instead
-    ok = io.write ? (await io.write(text), true) : await copyText(text);
+    if (io.write) { await io.write(text, view); ok = true; }
+    else ok = view ? await copyTextWith(text, { [VIEW_MIME]: JSON.stringify(view) }) : await copyText(text);
   } catch (err) {
     console.info('Copying hover info failed:', err);
     ok = false;
@@ -127,18 +138,19 @@ export async function copyHover(text, io = {}) {
 
 /**
  * Add the C key. With no label showing the event is not touched.
+ * @param {function(): ?string} [currentDataset]  the open dataset, for a graph that does not know its own
  * @returns {function(): void}  removes the listener
  */
-export function installHoverCopy() {
+export function installHoverCopy(currentDataset = null) {
   const onKey = (e) => {
     if (e.key !== 'c' && e.key !== 'C') return;
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat || e.isComposing) return;
     if (typing(e.target) || typing(document.activeElement)) return;
-    const text = hoverCopyText();
-    if (text === null) return;
+    const hit = hoverCopyInfo();
+    if (hit === null) return;
     e.preventDefault();
     e.stopPropagation();
-    copyHover(text);
+    copyHover(hit.text, { dataset: currentDataset ? currentDataset() : null }, hit.gd);
   };
   document.addEventListener('keydown', onKey, true);
   return () => document.removeEventListener('keydown', onKey, true);

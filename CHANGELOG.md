@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Added
+- **C** over a point now copies the plot's view as well as the hover text: the range of each axis and, in 3D, the camera. Paste with Ctrl+V (Cmd+V on a Mac) over another panel of the same dataset, also in another tab, and that panel takes the same view where it shows the same coordinates (an x axis showing UMAP 1 lands on whichever axis shows UMAP 1; other axes keep their range). Pasting elsewhere only focuses the pasted cell or gene as before, and pasting into another application still gives only the hover text.
+
 ## 0.7.5 (2026-10-23)
 
 ### Fixed
