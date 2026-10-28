@@ -6,9 +6,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    coordinateId, buildViewDescriptor, parseView, readView, viewHtml, planView, viewMessage,
-    describeTarget, applyPlan, entityOf, VIEW_MIME
-} from '../../../static/js/utils/view-copy.js';
+    coordinateId, buildViewDescriptor, parseView, planView, viewMessage, describeTarget, applyPlan, roundRange,
+    capture, match, apply
+} from '../../../static/js/utils/view-descriptor.js';
+import { readView, viewHtml, entityOf, VIEW_MIME } from '../../../static/js/utils/view-copy.js';
 import { legacyCopy, copyTextWith } from '../../../static/js/utils/clipboard.js';
 
 const umap = (column) => ({ type: 'obsm', key: 'X_umap', column: String(column) });
@@ -221,4 +222,20 @@ test('copyTextWith: a failed flavoured copy falls back to the text alone', async
     const nav = { clipboard: { writeText: async (t) => { wrote = t; } } };
     assert.equal(await copyTextWith('c1', { [VIEW_MIME]: '{}' }, { doc, nav, secure: true }), true);
     assert.equal(wrote, 'c1');
+});
+
+test('roundRange: 4 digits of the span, so near-equal views are one view', () => {
+    assert.deepEqual(roundRange([0.123456789, 1.987654321]), [0.1235, 1.988]);
+    assert.deepEqual(roundRange([5000.123, 5000.9876]), [5000.123, 5000.988]);
+    assert.deepEqual(roundRange([100000.1, 100002.9]), [100000.1, 100002.9]);
+    assert.deepEqual(roundRange(roundRange([0.1234567, 2.7654321])), roundRange([0.1234567, 2.7654321]));
+    assert.deepEqual(roundRange([1, 1]), [1, 1]);
+    const g = graph({ x: umap(0), y: umap(1) }, { x: [0.12345678, 1.98765432], y: [2, 4] });
+    assert.deepEqual(buildViewDescriptor(g, g.__azSettings, {}).axes[0].range, [0.1235, 1.988]);
+});
+
+test('shared names: capture, match, apply', () => {
+    assert.equal(capture, buildViewDescriptor);
+    assert.equal(match, planView);
+    assert.equal(apply, applyPlan);
 });
