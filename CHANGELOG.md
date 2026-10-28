@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Docs
+- The README and the licence page cite v0.7.5 by its DOI,
+  [10.5281/zenodo.23587867](https://doi.org/10.5281/zenodo.23587867).
+
 ## 0.7.5 (2026-10-23)
 
 ### Fixed
