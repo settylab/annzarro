@@ -4344,10 +4344,20 @@ const App = (function() {
         if (state && state.status === 'open') await _focusPasted(hit);
     }
 
-    /** Act on the first rule that matched the pasted text. @private */
+    /** Like resolveDataset, for a copied view that names its store by path: the open one, a listed one, or neither. @private */
+    function _resolveDatasetPath(path) {
+        const current = DataManager.getCurrentDataset();
+        if (!path || path === current) return { kind: 'current' };
+        const entry = (_listedDatasets || []).find(e => e && e.path === path && !e.error);
+        return entry ? { kind: 'one', entry } : { kind: 'none' };
+    }
+
+    /** Act on the first rule that matched the pasted text (or on what a copied view names). @private */
     async function _applyPaste(hit) {
         if (_pasteQuestion) _pasteQuestion.cancel();
-        const target = resolveDataset(hit.dataset, _listedDatasets, DataManager.getCurrentDataset(), hit.datasetMatch);
+        const target = hit.datasetPath !== undefined
+            ? _resolveDatasetPath(hit.datasetPath)
+            : resolveDataset(hit.dataset, _listedDatasets, DataManager.getCurrentDataset(), hit.datasetMatch);
         const name = hit.cell || hit.gene;
         if (target.kind === 'one') {
             const handle = _pasteQuestion = { cancel: () => {} };
@@ -4379,17 +4389,25 @@ const App = (function() {
         if (isTextTarget(e.target) || isTextTarget(document.activeElement)) return;
         if (document.querySelector('.modal.show')) return;
         const settings = pasteSettings((key, fallback) => Policy.get(key, fallback));
-        // the focus first, as ever; it is on its own switch
-        const hit = settings.enabled ? matchRules(e.clipboardData ? e.clipboardData.getData('text/plain') : '', settings.rules) : null;
+        // the focus first, as ever; it is on its own switch. A copied view names its entity and
+        // dataset itself, so the rules read the text only when there is none
+        const view = readView(e.clipboardData);
+        let hit = null;
+        if (settings.enabled) {
+            const entity = view && view.entity && view.entity.id ? view.entity : null;
+            hit = entity
+                ? { rule: -1, datasetMatch: 'exact', dataset: '', datasetPath: view.dataset || '',
+                    cell: entity.kind === 'gene' ? '' : entity.id, gene: entity.kind === 'gene' ? entity.id : '' }
+                : matchRules(e.clipboardData ? e.clipboardData.getData('text/plain') : '', settings.rules);
+        }
         if (hit) _applyPaste(hit).catch(err => console.warn('Paste to focus failed:', err));
         // then the copied view, on the panel under the pointer only (utils/view-copy.js)
-        const handled = _pasteView(e);
+        const handled = _pasteView(e, view);
         if (hit || handled) e.preventDefault();
     }
 
     /** Apply the view on the clipboard to the panel under the pointer; true if there was one to say something about. @private */
-    function _pasteView(e) {
-        const view = readView(e.clipboardData);
+    function _pasteView(e, view) {
         if (!view) return false;
         const gd = _panelUnderPointer ? _panelUnderPointer() : null;
         if (!gd) return false;

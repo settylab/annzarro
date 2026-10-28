@@ -48,9 +48,8 @@ def _free_port():
 
 def _start(home, params, enabled=True):
     cfg = home / "c.yaml"
-    # a rule that reads the first line of the hover text, as an admin would set one up
-    cfg.write_text(f"ui:\n  defaults:\n    large_plot_points: {params}\n  paste_focus:\n    enabled: {str(enabled).lower()}\n"
-                   "    rules:\n      - pattern: '^(?<cell>cell_\\d+)'\n        dataset_match: prefix\n")
+    # the default paste-focus rules: a copied view names its cell itself
+    cfg.write_text(f"ui:\n  defaults:\n    large_plot_points: {params}\n  paste_focus:\n    enabled: {str(enabled).lower()}\n")
     port = _free_port()
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
@@ -350,3 +349,21 @@ def test_the_view_reaches_another_tab(server, page):
     other.wait_for_timeout(500)
     assert _close(_ranges(other, "cell-plot-B"), view)
     assert not other.errors, other.errors
+
+
+def test_a_view_from_another_dataset_is_not_applied_and_says_so(server, page):
+    root, large = server
+    _open(page, root, (umap(0), umap(1)), (umap(0), umap(1)))
+    before = _ranges(page, "cell-plot-B")
+    view = {"schema": "annzarro-view", "version": 1, "dataset": "/elsewhere/other.zarr",
+            "entity": {"kind": "cell", "id": "cell_0001"}, "dims": 2,
+            "axes": [{"axis": "x", "key": "obsm:X_umap", "dim": 0, "range": [-0.1, 0.1]},
+                     {"axis": "y", "key": "obsm:X_umap", "dim": 1, "range": [-0.1, 0.1]}]}
+    page.mouse.move(*page.evaluate(CENTRE, gd("cell-plot-B")))
+    page.wait_for_timeout(100)
+    page.evaluate("""v => { const d = new DataTransfer(); d.setData('text/plain', 'cell_0001\\nx: 1');
+        d.setData('application/x-annzarro-view+json', JSON.stringify(v));
+        document.body.dispatchEvent(new ClipboardEvent('paste', {clipboardData: d, bubbles: true, cancelable: true})); }""", view)
+    _wait_toast(page, "View not applied: copied from another dataset")
+    page.wait_for_timeout(400)
+    assert _close(_ranges(page, "cell-plot-B"), before)
