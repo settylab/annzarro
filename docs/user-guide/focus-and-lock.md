@@ -101,7 +101,7 @@ notice says so: "Focused cell hdfihbcc-1 (from clipboard)".
 * Text copied with **C** over a plot also carries the hovered cell or gene, its dataset and that
   plot's view. Pasted into AnnZarro, the carried cell or gene is focused, whatever the site's rules
   say, and another dataset is offered with the same "Open it?" question. With the pointer over a
-  panel, the panel takes the view as well ({ref}`copy-view`); the view is applied even where an
+  panel, the panel takes the view as well ({ref}`more <copy-view>`); the view is applied even where an
   administrator has switched paste-to-focus off, while the focus is not.
 
 ## Lock a panel
