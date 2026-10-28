@@ -131,7 +131,8 @@ def _ranges(page, pid):
 
 
 def _close(a, b):
-    return all(abs(p - q) < 1e-6 * max(1, abs(q)) for k in b for p, q in zip(a[k], b[k]))
+    # the copied view is rounded to 4 digits of the axis span, so within 1e-3 of it
+    return all(abs(p - q) < 2e-3 * max(1, abs(b[k][1] - b[k][0])) for k in b for p, q in zip(a[k], b[k]))
 
 
 def _zoom(page, pid):
