@@ -393,8 +393,12 @@ def test_a_copy_from_another_store_asks_to_open_it_and_does_not_apply_the_view(t
     for pid in ("cell-plot-A", "cell-plot-B"):
         page.wait_for_function(READY, arg=gd(pid), timeout=60000)
     zoomed = _zoom(page, "cell-plot-A")
+    # WebKit has no clipboard-read permission: the descriptor is read as the copy event sets it
+    page.evaluate("""() => { document.addEventListener('copy', (e) => {
+        window.__copied = e.clipboardData.getData('application/x-annzarro-view+json'); }); }""")
     _copy(page, lambda: _hover(page, "cell-plot-A"))
-    cell = page.evaluate("navigator.clipboard.readText()").split("\n")[0] if page.browser_name == "chromium" else None
+    cell = json.loads(page.evaluate("window.__copied"))["entity"]["id"]
+    assert cell.startswith("cell_")
 
     other = page.context.new_page()
     other.errors = []
@@ -403,17 +407,14 @@ def test_a_copy_from_another_store_asks_to_open_it_and_does_not_apply_the_view(t
     for pid in ("cell-plot-A", "cell-plot-B"):
         other.wait_for_function(READY, arg=gd(pid), timeout=60000)
     other.wait_for_timeout(500)
-    initial = other.input_value("#focused-cell")
     _paste_over(other, "cell-plot-B")
     _wait_toast(other, r"is in alpha\.zarr\. Open it\?")
     _wait_toast(other, "View not applied: copied from another dataset")
     assert "cell_" in other.evaluate("() => document.querySelector('.notification-ask').textContent")
     other.click(".notification-ask .notification-actions button:has-text('Open')")
     other.wait_for_function("() => /alpha\\.zarr/.test(window.location.search) || /alpha/.test(document.body.innerText)", timeout=20000)
-    other.wait_for_function("v => { const x = document.getElementById('focused-cell').value; return /^cell_\\d+$/.test(x) && x !== v; }",
-                            arg=initial, timeout=30000)
-    if cell:
-        assert other.input_value("#focused-cell") == cell
+    other.wait_for_function("c => document.getElementById('focused-cell').value === c", arg=cell, timeout=30000)
+    assert other.input_value("#focused-cell") == cell
     for pid in ("cell-plot-A", "cell-plot-B"):
         other.wait_for_function(READY, arg=gd(pid), timeout=60000)
     other.wait_for_timeout(800)
