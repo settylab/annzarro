@@ -17,6 +17,8 @@ import { notifyEach } from './utils/notify-panels.js';
 import { createPlaceholderPanel } from './utils/placeholder-panel.js';
 import { Policy } from './policy.js';
 import * as LayoutMotion from './utils/layout-motion.js';
+import { viewOf } from './utils/url-history.js';
+import { orientRange, isFlipped, autorangeValue } from './panels/plot-utilities/plot-make-helper.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -1210,6 +1212,40 @@ const PanelManager = (function() {
         return true;
     }
 
+    /**
+     * Put an open plot at the zoom or camera a saved config records: one relayout, nothing rebuilt or
+     * fetched again. A fitted plot (no zoom recorded) is fitted again. False when the panel has no
+     * drawn graph to move (the caller rebuilds it).
+     *
+     * @param {string} id
+     * @param {Object} config - the panel's saved settings
+     * @returns {Promise<boolean>}
+     */
+    async function applyViewport(id, config) {
+        const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
+        const gd = tile && tile.querySelector('.js-plotly-plot');
+        const settings = gd && gd.__azSettings;
+        const panel = _panels.get(id);
+        if (!gd || !settings || !panel || !_activePanels.has(panel) || !window.Plotly) return false;
+        const view = viewOf(config);
+        let update;
+        if (settings.z) {
+            update = { 'scene.camera': view && view.camera ? view.camera
+                : { up: { x: 0, y: 0, z: 1 }, center: { x: 0, y: 0, z: 0 }, eye: { x: 1.25, y: 1.25, z: 1.25 } } };
+        } else if (view && (view.x || view.y)) {
+            update = {};
+            if (view.x) update['xaxis.range'] = orientRange(view.x, isFlipped(settings, 'x'));
+            if (view.y) update['yaxis.range'] = orientRange(view.y, isFlipped(settings, 'y'));
+        } else {
+            update = { 'xaxis.autorange': autorangeValue(settings, 'x'), 'yaxis.autorange': autorangeValue(settings, 'y') };
+        }
+        await window.Plotly.relayout(gd, update);
+        // exactly what the entry records, whatever the event handler rounded it to
+        settings.viewport2D = settings.z ? settings.viewport2D : (config.viewport2D || null);
+        settings.viewport3D = settings.z ? (config.viewport3D || null) : settings.viewport3D;
+        return true;
+    }
+
     /** Show or hide an open panel's control bar. @param {string} id @param {boolean} visible */
     function showControls(id, visible) {
         _applyControlsVisible(document.querySelector(`.tile[data-tile-id="${id}"]`), visible);
@@ -1331,6 +1367,7 @@ const PanelManager = (function() {
         saveLayout,
         restoreLayout,
         applyLayoutStep,
+        applyViewport,
         registerClosedPanel,
         removePanel,
         replacePanel,

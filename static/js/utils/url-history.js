@@ -117,9 +117,31 @@ export function stableStringify(value) {
 function comparable(config) {
     if (!config || typeof config !== 'object') return config || null;
     const out = { ...config };
+    // where the plot is zoomed or turned is its own kind of change (viewOf): drawn by a relayout
+    delete out.viewport2D;
+    delete out.viewport3D;
     if (out.autoPointSize !== false) delete out.pointSize;
     if (out.autoPointOpacity !== false) delete out.pointOpacity;
     return out;
+}
+
+/**
+ * The zoom or camera of a panel's saved settings, as a step compares it: ranges and camera only
+ * (the fields they were made on are the panel's settings). Null when the plot is fitted.
+ */
+export function viewOf(config) {
+  if (!config || typeof config !== 'object') return null;
+  if (config.z) {
+    const v = config.viewport3D;
+    return v && v.eye ? { camera: { eye: v.eye, up: v.up, center: v.center } } : null;
+  }
+  const v = config.viewport2D;
+  return v && (v.xrange || v.yrange) ? { x: v.xrange || null, y: v.yrange || null } : null;
+}
+
+/** Whether two panel settings put the plot at different zooms or camera positions. */
+export function viewDiffers(a, b) {
+  return stableStringify(viewOf(a)) !== stableStringify(viewOf(b));
 }
 
 /**
@@ -151,16 +173,18 @@ export function diffViews(from, to, { samePath, sameSubset }) {
         return { kind: 'layout', keep };
     }
     const panels = [];
+    const views = [];
     const controls = [];
     const ids = new Set(collectTileIds(b.hierarchy || []));
     for (const id of ids) {
         const was = (a.panelConfigs || {})[id];
         const now = (b.panelConfigs || {})[id];
         if (stableStringify(comparable(was)) !== stableStringify(comparable(now))) panels.push(id);
+        else if (viewDiffers(was, now)) views.push(id);
         const shown = (b.controlState || {})[id];
         if (shown !== undefined && shown !== (a.controlState || {})[id]) controls.push(id);
     }
-    return { kind: 'panels', panels, controls };
+    return { kind: 'panels', panels, views, controls };
 }
 
 /** A layout node without the sizes a drag changes (a pane's share, a row's height) or a control bar. */
@@ -319,6 +343,12 @@ export function unrecordedChange(live, recorded) {
     if (viewMismatch(live, recorded) !== null) return true;
     const diff = diffViews(live, recorded, { samePath: true, sameSubset: true });
     // a layout diff here is only shares within the tolerance; settings are compared through the panels left over
+    if (diff.kind === 'panels' && diff.views.length) return true;
+    const was = (live.layout && live.layout.panelConfigs) || {};
+    const now = (recorded && recorded.layout && recorded.layout.panelConfigs) || {};
+    for (const id of collectTileIds((live.layout && live.layout.hierarchy) || [])) {
+        if (now[id] && viewDiffers(was[id], now[id])) return true;
+    }
     const settings = diff.kind === 'panels' ? diff.panels
         : collectTileIds((live.layout && live.layout.hierarchy) || []).filter(id => !(diff.keep || []).includes(id));
     if (settings.length) return true;

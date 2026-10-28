@@ -54,7 +54,7 @@ import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
 import { mountDatasetInfo } from './utils/dataset-info-dialog.js';
 import { defaultHierarchy } from './utils/deeplink.js';
-import { createHistoryPolicy, diffViews, layoutStep, viewMismatch, unrecordedChange } from './utils/url-history.js';
+import { createHistoryPolicy, diffViews, layoutStep, viewMismatch, unrecordedChange, viewDiffers } from './utils/url-history.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
@@ -614,6 +614,7 @@ const App = (function() {
     let _historyEpoch = 0;          // counts Back and Forward steps; a write started before one is dropped
     let _revertedBack = false;      // the Back just taken was turned into a revert of an unrecorded change
     let _syncBusy = 0;              // writes under way
+    let _wheelKey = null;
     let _pointerKey = null;         // the action a press started, until its click
     const _controlKeys = new WeakMap();
     /** Controls whose repeated input is one gesture: a slider, a number box, a field. */
@@ -623,6 +624,12 @@ const App = (function() {
         if (control && !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color'].includes(control.type)) {
             if (!_controlKeys.has(control)) _controlKeys.set(control, `control-${++_actionSeq}`);
             return _controlKeys.get(control);
+        }
+        // wheel turns that follow each other are one zoom
+        if (event && event.type === 'wheel') {
+            const now = Date.now();
+            if (!(_actionKey && String(_actionKey).startsWith('wheel-') && now - _actionAt < 700)) _wheelKey = `wheel-${++_actionSeq}`;
+            return _wheelKey;
         }
         // a press, its release and its click are one action
         if (event && (event.type === 'pointerup' || event.type === 'click') && _pointerKey) {
@@ -681,7 +688,7 @@ const App = (function() {
         SessionManager.onViewMayHaveChanged(_syncUrlSoon);
         // The autosave tick alone would notice an option changed up to its interval later, and fold
         // several changes into one history entry: a control used, or a focus set, says so at once
-        for (const type of ['input', 'change', 'click', 'pointerup', 'pointerdown', 'keydown', 'paste']) {
+        for (const type of ['input', 'change', 'click', 'pointerup', 'pointerdown', 'keydown', 'paste', 'wheel']) {
             document.addEventListener(type, _noteAction, true);
         }
         // a focus set is a discrete action, signalled after the change: it ends no earlier one
@@ -887,13 +894,28 @@ const App = (function() {
                 PanelManager.ensureWelcomeFallback();
             } else {
                 diff.controls.forEach(id => PanelManager.showControls(id, layout.controlState[id]));
-                await Promise.all(diff.panels.map(id => {
+                // a zoom or a turned camera: one relayout of the graph; a graph that cannot take it is rebuilt
+                const rebuild = [...diff.panels];
+                await Promise.all(diff.views.map(async id => {
+                    try {
+                        if (!await PanelManager.applyViewport(id, (layout.panelConfigs || {})[id])) rebuild.push(id);
+                    } catch (error) {
+                        console.warn('Moving the view failed; the panel is rebuilt:', error);
+                        rebuild.push(id);
+                    }
+                }));
+                await Promise.all(rebuild.map(id => {
                     const config = { ...(layout.panelConfigs || {})[id] };
                     if (layout.controlState && layout.controlState[id] !== undefined) {
                         config.controlsVisible = layout.controlState[id];
                     }
                     return PanelManager.replacePanel(id, config);
                 }));
+            }
+            // panels kept as they were drawn keep their zoom too: put it where the entry has it
+            if (diff.kind === 'layout') {
+                await Promise.all(diff.keep.filter(id => viewDiffers((live.layout.panelConfigs || {})[id], (layout.panelConfigs || {})[id]))
+                    .map(id => PanelManager.applyViewport(id, (layout.panelConfigs || {})[id]).catch(() => false)));
             }
             // Whatever the way here (an animation cut short, a panel that did not come back), the
             // screen must be the entry's view: if it is not, that view is built at once

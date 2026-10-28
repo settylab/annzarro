@@ -15,6 +15,9 @@ with the release after it. Older releases are listed on
 ### Changed
 - Back and Forward over a panel opening or closing, or a split moving, animate as those actions do by hand, and quick actions are separate steps: each Back lands exactly on the view it recorded, or, if a smooth step is not safe, on a hard rebuild of it.
 
+### Added
+- Zoom, pan and a turned 3D camera are part of the view: each gesture (a box zoom, a modebar zoom or reset, a drag pan, a run of scroll-wheel zooms, a rotation) is one step of Back and Forward, which move the plot with one relayout, without redrawing it or asking for its data again. Ranges are rounded to four digits of the axis span, so the address does not change by float noise; a plot that is not zoomed stores nothing, and links without a zoom open as before.
+
 ### Fixed
 - Back and Forward no longer reload the page when AnnZarro is busy drawing large plots. A step that took more than a second to be handled reloaded the page, which could leave the panels closed with "Did not finish loading".
 

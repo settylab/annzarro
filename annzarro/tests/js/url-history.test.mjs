@@ -2,7 +2,7 @@
 // history entry, and what a step changes on screen (utils/url-history.js).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHistoryPolicy, diffViews, layoutStep, viewsMatch, unrecordedChange, stableStringify, MERGE_MS } from '../../../static/js/utils/url-history.js';
+import { createHistoryPolicy, diffViews, layoutStep, viewOf, viewDiffers, viewsMatch, unrecordedChange, stableStringify, MERGE_MS } from '../../../static/js/utils/url-history.js';
 
 const run = (policy, steps) => steps.map(([now, path, capped]) => {
     const how = policy.decide({ now, path });
@@ -100,21 +100,21 @@ test('the same arrangement rebuilds only the panels whose settings differ', () =
     const a = view({ 'cell-plot-1': { id: 'cell-plot-1', size: 4, x: 1 }, 'cell-plot-2': { id: 'cell-plot-2', size: 4 } });
     // key order differs, values equal for plot 2
     const b = view({ 'cell-plot-1': { id: 'cell-plot-1', size: 9, x: 1 }, 'cell-plot-2': { size: 4, id: 'cell-plot-2' } });
-    assert.deepEqual(diffViews(a, b, ctx), { kind: 'panels', panels: ['cell-plot-1'], controls: [] });
-    assert.deepEqual(diffViews(a, a, ctx), { kind: 'panels', panels: [], controls: [] });
+    assert.deepEqual(diffViews(a, b, ctx), { kind: 'panels', views: [], panels: ['cell-plot-1'], controls: [] });
+    assert.deepEqual(diffViews(a, a, ctx), { kind: 'panels', views: [], panels: [], controls: [] });
 });
 
 test('a control bar shown or hidden is toggled, not rebuilt', () => {
     const configs = { 'cell-plot-1': { id: 'cell-plot-1' }, 'cell-plot-2': { id: 'cell-plot-2' } };
     const a = view(configs, { 'cell-plot-1': true, 'cell-plot-2': true });
     const b = view(configs, { 'cell-plot-1': true, 'cell-plot-2': false });
-    assert.deepEqual(diffViews(a, b, ctx), { kind: 'panels', panels: [], controls: ['cell-plot-2'] });
+    assert.deepEqual(diffViews(a, b, ctx), { kind: 'panels', views: [], panels: [], controls: ['cell-plot-2'] });
 });
 
 test('a point size that follows the plot area is not a difference', () => {
     const a = view({ 'cell-plot-1': { id: 'cell-plot-1', autoPointSize: true, pointSize: 4.7 } }, {}, [tile('cell-plot-1')]);
     const b = view({ 'cell-plot-1': { id: 'cell-plot-1', autoPointSize: true, pointSize: 5.1 } }, {}, [tile('cell-plot-1')]);
-    assert.deepEqual(diffViews(a, b, ctx), { kind: 'panels', panels: [], controls: [] });
+    assert.deepEqual(diffViews(a, b, ctx), { kind: 'panels', views: [], panels: [], controls: [] });
     const c = view({ 'cell-plot-1': { id: 'cell-plot-1', autoPointSize: false, pointSize: 4.7 } }, {}, [tile('cell-plot-1')]);
     const d = view({ 'cell-plot-1': { id: 'cell-plot-1', autoPointSize: false, pointSize: 5.1 } }, {}, [tile('cell-plot-1')]);
     assert.deepEqual(diffViews(c, d, ctx).panels, ['cell-plot-1']);
@@ -213,4 +213,30 @@ test('an unrecorded change is a setting, a panel, a share or a focus that differ
     assert.equal(unrecordedChange(base({ id: 'cell-plot-1' }, { focusedGene: 'G' }), base({ id: 'cell-plot-1' })), true);
     // a size that follows the plot area is derived, not a change
     assert.equal(unrecordedChange(base({ id: 'cell-plot-1', pointSize: 7 }), base({ id: 'cell-plot-1', pointSize: 3 })), false);
+});
+
+test('a zoom or a camera is a view change of its own, not a settings change', () => {
+    const cfg = (extra) => ({ id: 'cell-plot-1', size: 4, ...extra });
+    const zoom = { axes: 'a', xrange: [0, 1], yrange: [0, 2] };
+    const a = view({ 'cell-plot-1': cfg() }, {}, [tile('cell-plot-1')]);
+    const b = view({ 'cell-plot-1': cfg({ viewport2D: zoom }) }, {}, [tile('cell-plot-1')]);
+    assert.deepEqual(diffViews(a, b, ctx), { kind: 'panels', panels: [], views: ['cell-plot-1'], controls: [] });
+    assert.deepEqual(diffViews(b, a, ctx).views, ['cell-plot-1']);
+    // the same zoom is no change, and a setting changed with it is a rebuild
+    assert.deepEqual(diffViews(b, b, ctx).views, []);
+    const c = view({ 'cell-plot-1': cfg({ viewport2D: zoom, size: 9 }) }, {}, [tile('cell-plot-1')]);
+    assert.deepEqual(diffViews(b, c, ctx).panels, ['cell-plot-1']);
+    // 3D: the camera
+    const eye = { x: 1, y: 1, z: 1 };
+    assert.deepEqual(viewOf({ z: {}, viewport3D: { eye, up: eye, center: eye } }), { camera: { eye, up: eye, center: eye } });
+    assert.equal(viewOf({ viewport2D: null }), null);
+    assert.equal(viewDiffers({ viewport2D: null }, {}), false);
+    assert.equal(viewDiffers({ viewport2D: { xrange: [0, 1] } }, { viewport2D: { xrange: [0, 2] } }), true);
+});
+
+test('a view moved and not yet recorded is an unrecorded change', () => {
+    const a = view({ 'cell-plot-1': { id: 'cell-plot-1' } }, {}, [tile('cell-plot-1')]);
+    const b = view({ 'cell-plot-1': { id: 'cell-plot-1', viewport2D: { xrange: [0, 1], yrange: [0, 1] } } }, {}, [tile('cell-plot-1')]);
+    assert.equal(unrecordedChange(b, a), true);
+    assert.equal(unrecordedChange(a, a), false);
 });
