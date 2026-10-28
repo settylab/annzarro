@@ -16,6 +16,7 @@ own copy and paste events carry the clipboard), in Chromium and WebKit, in regul
 Needs Playwright with Chromium and WebKit; a missing browser skips, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
 import base64
+import shutil
 import json
 import os
 import socket
@@ -46,7 +47,7 @@ def _free_port():
         return s.getsockname()[1]
 
 
-def _start(home, params, enabled=True):
+def _start(home, params, enabled=True, data_dir=DATA_DIR):
     cfg = home / "c.yaml"
     # the default paste-focus rules: a copied view names its cell itself
     cfg.write_text(f"ui:\n  defaults:\n    large_plot_points: {params}\n  paste_focus:\n    enabled: {str(enabled).lower()}\n")
@@ -54,7 +55,7 @@ def _start(home, params, enabled=True):
     env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
                PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
     proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--config", str(cfg), "--host", "127.0.0.1",
-                             "--port", str(port), "--data-dir", DATA_DIR, "--no-browser", "--auth-disabled"],
+                             "--port", str(port), "--data-dir", str(data_dir), "--no-browser", "--auth-disabled"],
                             env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     root = f"http://127.0.0.1:{port}"
     for i in range(120):
@@ -367,3 +368,55 @@ def test_a_view_from_another_dataset_is_not_applied_and_says_so(server, page):
     _wait_toast(page, "View not applied: copied from another dataset")
     page.wait_for_timeout(400)
     assert _close(_ranges(page, "cell-plot-B"), before)
+
+
+@pytest.fixture(scope="module")
+def two_stores(tmp_path_factory):
+    data = tmp_path_factory.mktemp("two")
+    for name in ("alpha.zarr", "beta.zarr"):
+        shutil.copytree(STORE, data / name)
+    proc, root = _start(tmp_path_factory.mktemp("home2"), 10**9, data_dir=data)
+    yield root, data
+    proc.terminate()
+    proc.wait(10)
+
+
+def test_a_copy_from_another_store_asks_to_open_it_and_does_not_apply_the_view(two_stores, page):
+    root, data = two_stores
+    store = lambda n: str(data / n)  # noqa: E731
+
+    def link(name):
+        return _link(root, (umap(0), umap(1)), (umap(0), umap(1))).replace(
+            urllib.parse.quote(STORE, safe="/"), urllib.parse.quote(store(name), safe="/"))
+
+    page.goto(link("alpha.zarr"))
+    for pid in ("cell-plot-A", "cell-plot-B"):
+        page.wait_for_function(READY, arg=gd(pid), timeout=60000)
+    zoomed = _zoom(page, "cell-plot-A")
+    _copy(page, lambda: _hover(page, "cell-plot-A"))
+    cell = page.evaluate("navigator.clipboard.readText()").split("\n")[0] if page.browser_name == "chromium" else None
+
+    other = page.context.new_page()
+    other.errors = []
+    other.on("pageerror", lambda e: other.errors.append(str(e)))
+    other.goto(link("beta.zarr"))
+    for pid in ("cell-plot-A", "cell-plot-B"):
+        other.wait_for_function(READY, arg=gd(pid), timeout=60000)
+    other.wait_for_timeout(500)
+    initial = other.input_value("#focused-cell")
+    _paste_over(other, "cell-plot-B")
+    _wait_toast(other, r"is in alpha\.zarr\. Open it\?")
+    _wait_toast(other, "View not applied: copied from another dataset")
+    assert "cell_" in other.evaluate("() => document.querySelector('.notification-ask').textContent")
+    other.click(".notification-ask .notification-actions button:has-text('Open')")
+    other.wait_for_function("() => /alpha\\.zarr/.test(window.location.search) || /alpha/.test(document.body.innerText)", timeout=20000)
+    other.wait_for_function("v => { const x = document.getElementById('focused-cell').value; return /^cell_\\d+$/.test(x) && x !== v; }",
+                            arg=initial, timeout=30000)
+    if cell:
+        assert other.input_value("#focused-cell") == cell
+    for pid in ("cell-plot-A", "cell-plot-B"):
+        other.wait_for_function(READY, arg=gd(pid), timeout=60000)
+    other.wait_for_timeout(800)
+    assert not _close(_ranges(other, "cell-plot-B"), zoomed), "the view was applied"
+    assert not other.evaluate("() => /View applied/.test(document.body.innerText)")
+    assert not other.errors, other.errors

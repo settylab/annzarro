@@ -60,7 +60,7 @@ import { createHistoryPolicy, diffViews } from './utils/url-history.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
-import { pasteSettings, matchRules, resolveDataset, isTextTarget, storeBase } from './utils/paste-focus.js';
+import { pasteSettings, matchRules, resolveDataset, resolveDatasetPath, isTextTarget, storeBase } from './utils/paste-focus.js';
 import { mountThemeToggle } from './utils/theme-toggle.js';
 import { startDesktopFrame } from './utils/desktop-frame.js';
 import { keepLast } from './utils/site-footer.js';
@@ -4344,19 +4344,11 @@ const App = (function() {
         if (state && state.status === 'open') await _focusPasted(hit);
     }
 
-    /** Like resolveDataset, for a copied view that names its store by path: the open one, a listed one, or neither. @private */
-    function _resolveDatasetPath(path) {
-        const current = DataManager.getCurrentDataset();
-        if (!path || path === current) return { kind: 'current' };
-        const entry = (_listedDatasets || []).find(e => e && e.path === path && !e.error);
-        return entry ? { kind: 'one', entry } : { kind: 'none' };
-    }
-
     /** Act on the first rule that matched the pasted text (or on what a copied view names). @private */
     async function _applyPaste(hit) {
         if (_pasteQuestion) _pasteQuestion.cancel();
         const target = hit.datasetPath !== undefined
-            ? _resolveDatasetPath(hit.datasetPath)
+            ? resolveDatasetPath(hit.datasetPath, _listedDatasets, DataManager.getCurrentDataset())
             : resolveDataset(hit.dataset, _listedDatasets, DataManager.getCurrentDataset(), hit.datasetMatch);
         const name = hit.cell || hit.gene;
         if (target.kind === 'one') {

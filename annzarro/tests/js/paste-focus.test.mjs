@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 
 const {
     MAX_TEXT, DEFAULT_RULES, compilePattern, compileRules, pasteSettings, matchRules, storeBase,
-    datasetNameMatches, resolveDataset, isTextTarget
+    datasetNameMatches, resolveDataset, resolveDatasetPath, isTextTarget
 } = await import('../../../static/js/utils/paste-focus.js');
 
 const ROW = 'BL_1697\t5127.7\t7483.4\thdfihbcc-1\tEndothelial\tLSEC\tLSEC\tonboard';
@@ -162,4 +162,14 @@ test('text fields keep their paste', () => {
     assert.ok(isTextTarget(el('DIV', { isContentEditable: true })));
     assert.ok(!isTextTarget(el('DIV')));
     assert.ok(!isTextTarget(null));
+});
+
+test('a copied view names its store by path: the open one, a listed one, or none', () => {
+    const listing = [{ path: '/d/a.zarr' }, { path: '/d/b.zarr' }, { path: '/d/bad.zarr', error: 'x' }];
+    assert.deepEqual(resolveDatasetPath('/d/a.zarr', listing, '/d/a.zarr'), { kind: 'current' });
+    assert.deepEqual(resolveDatasetPath('', listing, '/d/a.zarr'), { kind: 'current' });
+    assert.deepEqual(resolveDatasetPath('/d/b.zarr', listing, '/d/a.zarr'), { kind: 'one', entry: listing[1] });
+    assert.deepEqual(resolveDatasetPath('/d/bad.zarr', listing, '/d/a.zarr'), { kind: 'none' });
+    assert.deepEqual(resolveDatasetPath('/d/zzz.zarr', listing, '/d/a.zarr'), { kind: 'none' });
+    assert.deepEqual(resolveDatasetPath('/d/b.zarr', null, null), { kind: 'none' });
 });
