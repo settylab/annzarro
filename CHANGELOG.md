@@ -12,6 +12,9 @@ with the release after it. Older releases are listed on
 - The README and the licence page cite v0.7.5 by its DOI,
   [10.5281/zenodo.23587867](https://doi.org/10.5281/zenodo.23587867).
 
+### Changed
+- Back and Forward over a panel opening or closing, or a split moving, animate as those actions do by hand, and quick actions are separate steps: each Back lands exactly on the view it recorded, or, if a smooth step is not safe, on a hard rebuild of it.
+
 ### Fixed
 - Back and Forward no longer reload the page when AnnZarro is busy drawing large plots. A step that took more than a second to be handled reloaded the page, which could leave the panels closed with "Did not finish loading".
 
