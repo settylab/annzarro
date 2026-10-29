@@ -3,7 +3,7 @@ import { RemoteNames } from '../../utils/remote-names.js';
 import { trackHover } from '../../utils/hover-copy.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
-import { roundRange } from '../../utils/view-descriptor.js';
+import { roundedRange, roundCamera } from '../../utils/view-rounding.js';
 import { greyMarker, styleArea } from '../../utils/point-style.js';
 import { plotArea } from '../../utils/view-point-style.js';
 import { scaleBar, replaceScaleBar, SCALE_BAR } from './plot-options.js';
@@ -730,21 +730,6 @@ export function refreshScaleBar(gd, settings) {
     shapes: replaceScaleBar(gd.layout.shapes, bar ? bar.shapes : []),
     annotations: replaceScaleBar(gd.layout.annotations, bar ? bar.annotations : [])
   }).catch(() => {});
-}
-
-/** A range rounded to 4 significant digits of its span (flip order kept); anything but two numbers as it is. */
-export function roundedRange(range) {
-  if (!Array.isArray(range) || range.length !== 2 || !range.every(v => typeof v === 'number' && Number.isFinite(v))) return range;
-  const [lo, hi] = roundRange([Math.min(range[0], range[1]), Math.max(range[0], range[1])]);
-  return range[0] <= range[1] ? [lo, hi] : [hi, lo];
-}
-
-/** A 3D camera as the view records it: eye, up and center, to 3 decimals. */
-export function roundCamera(camera) {
-  const r = (p) => (p && typeof p === 'object'
-    ? { x: Math.round(Number(p.x) * 1000) / 1000, y: Math.round(Number(p.y) * 1000) / 1000, z: Math.round(Number(p.z) * 1000) / 1000 }
-    : p);
-  return { eye: r(camera.eye), up: r(camera.up), center: r(camera.center) };
 }
 
 export function attachViewportTracking(plotContainer, settings) {

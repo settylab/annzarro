@@ -33,6 +33,8 @@ import urllib.request
 
 import pytest
 
+from annzarro.tests.browser.view_rounding import round_range
+
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
 else:
@@ -152,6 +154,11 @@ def _zoom(page, s):
     return view
 
 
+def _kept(view):
+    """The zoom as the plot keeps it, rounded (view_rounding.py): the view a rebuild draws again."""
+    return (round_range(view[0]), round_range(view[1]))
+
+
 def _new_seed(page):
     page.click("#subset-button")
     page.wait_for_selector("#subset-seed", state="visible")
@@ -178,6 +185,7 @@ def test_zoom_survives_recolour_parts_seed_and_link(server):
             assert s["large"] == large, "large-plot mode is not what this case tests"
             view = _zoom(page, s)
             _assert_view(page.evaluate(STATE), view, "zoom")
+            view = _kept(view)
 
             # 1. recolour: another category, then a gene
             before = s["colour"]

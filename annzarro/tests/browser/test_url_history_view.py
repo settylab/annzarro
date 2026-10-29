@@ -82,7 +82,7 @@ def test_pan_back_forward(page, server):
 
 C3 = {"type": "obs", "key": "total_counts", "column": ""}
 EYE = f"""() => {{ const sc = {GD}._fullLayout.scene; const c = sc._scene && sc._scene.getCamera ? sc._scene.getCamera() : sc.camera;
-  return [c.eye.x, c.eye.y, c.eye.z].map(v => Math.round(v * 100) / 100); }}"""
+  return [c.eye.x, c.eye.y, c.eye.z]; }}"""
 
 
 def _start3d(page, server):
@@ -125,11 +125,11 @@ def test_a_3d_rotation_is_one_entry_and_back_restores_the_camera(page, server):
     assert page.evaluate(LENGTH) == base + 1
     page.go_back()
     page.wait_for_timeout(2500)
-    assert page.evaluate(EYE) == before
+    assert page.evaluate(EYE) == pytest.approx(before, abs=2e-3)      # the entry keeps the camera rounded to 3 decimals
     assert _marked(page, A) == "mine"
     page.go_forward()
     page.wait_for_timeout(2500)
-    assert page.evaluate(EYE) == turned
+    assert page.evaluate(EYE) == pytest.approx(turned, abs=2e-3)
 
 
 def test_a_link_with_ranges_reproduces_the_view_and_an_old_link_is_unchanged(page, server):
