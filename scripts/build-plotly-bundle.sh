@@ -19,6 +19,10 @@
 # type in static/js; the browser test tests_browser/test_plotly_traces.py fails when a trace type
 # AnnZarro creates is missing.
 #
+# The source is patched first by scripts/plotly/patch-source.js (the focus layer's WebGL context is not
+# made: one context per 2D graph). A WORKDIR that already holds a patched checkout is refused by the
+# patch's own match check; use a fresh one.
+#
 # The build is NOT byte-reproducible across checkouts: webpack derives its numeric module ids
 # from the absolute path of the checkout (two clean builds in different directories differ by
 # those ids, a few dozen bytes; the same directory rebuilds identically), and plotly.js writes the
@@ -46,6 +50,8 @@ fi
 [ "$(git -C "$src" rev-parse HEAD)" = "$COMMIT" ] || { echo "error: $TAG is not commit $COMMIT" >&2; exit 1; }
 
 cd "$src"
+# one WebGL context per 2D graph (see scripts/plotly/patch-source.js); fails if the code moved
+node "$here/plotly/patch-source.js" "$src"
 npm ci --ignore-scripts --no-audit --no-fund >/dev/null
 npm run --silent preprocess
 node tasks/custom_bundle.js --out annzarro --traces "$TRACES" --transforms none >/dev/null

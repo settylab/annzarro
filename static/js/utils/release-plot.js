@@ -6,7 +6,7 @@
  * or the WebGL context itself: their GPU buffers and the context stay until
  * the canvas is garbage-collected, and anything that still refers to the
  * scene keeps them for good. A page may hold about 16 live WebGL contexts
- * (each 2D plot holds two); past that the browser drops the oldest, and a
+ * (each plot holds one since scripts/plotly/patch-source.js; two before); past that the browser drops the oldest, and a
  * panel goes blank. Every image export draws an off-screen copy of the plot
  * and purges it the same way.
  *
