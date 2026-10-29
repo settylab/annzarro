@@ -148,17 +148,13 @@ test('a layout step of several changes is not a single move', () => {
     assert.equal(layoutStep(pair, at([tile('cell-plot-1'), tile('cell-plot-2')])), null);
 });
 
-test('several opens and closes in one step play together', () => {
+test('several opens and closes in one step are not animated', () => {
     const solo = at([tile('cell-plot-1')]);
     const three = at([tile('cell-plot-1'), tile('cell-plot-2'), tile('cell-plot-3')]);
-    assert.deepEqual(layoutStep(solo, three), { op: 'multi', steps: [
-        { op: 'open', id: 'cell-plot-2', where: 'row' }, { op: 'open', id: 'cell-plot-3', where: 'row' }] });
+    assert.equal(layoutStep(solo, three), null);
+    assert.equal(layoutStep(three, solo), null);
     // one panel replaced by another
-    const swapped = layoutStep(at([split('cell-plot-1', 'cell-plot-2')]), at([split('cell-plot-1', 'cell-plot-3')]));
-    assert.deepEqual(swapped, { op: 'multi', steps: [
-        { op: 'close', id: 'cell-plot-2' },
-        { op: 'open', id: 'cell-plot-3', where: 'pane', sibling: 'cell-plot-1', direction: 'horizontal' }] });
-    assert.deepEqual(layoutStep(three, solo).steps.map(s => s.op), ['close', 'close']);
+    assert.equal(layoutStep(at([split('cell-plot-1', 'cell-plot-2')]), at([split('cell-plot-1', 'cell-plot-3')])), null);
 });
 
 const keyed = (p, steps) => steps.map(([now, key, extra = {}]) => {

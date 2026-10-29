@@ -65,6 +65,7 @@ import { keepLast } from './utils/site-footer.js';
 import { createLoadActions, createDatasetBadge, createStyleBadge, helpContent, clearTips } from './panelset-load-ui.js';
 import { markDatasetUnavailable, clearDatasetUnavailable, notAvailableText, UNAVAILABLE_TITLE } from './utils/no-dataset-screen.js';
 import { vendorProblem } from './utils/vendor-check.js';
+import * as LayoutMotion from './utils/layout-motion.js';
 import {
     loadSessionStylesFrom, replaceSessionStyles, saveSessionStylesTo, viewStyleChange, styleSummary, onSessionStyleChange, isStyleOnly
 } from './utils/session-style.js';
@@ -868,7 +869,8 @@ const App = (function() {
             _adoptViewStyle(target);
             await _applyFocusSteps(live.constants || {}, target.constants || {}, link.datasetPath);
             const layout = target.layout;
-            const step = diff.kind === 'layout' ? layoutStep(live, target) : null;
+            // animated only when it is the one step: not while another is queued or a motion still runs
+            const step = diff.kind === 'layout' && !_historyAgain && !LayoutMotion.moving() ? layoutStep(live, target) : null;
             if (step && await PanelManager.applyLayoutStep(step, layout)) {
                 // One move, shown as the app makes it. Panels that stay but whose settings changed are rebuilt in place.
                 const kept = new Set(diff.keep);

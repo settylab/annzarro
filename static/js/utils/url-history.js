@@ -244,17 +244,14 @@ function openOf(cur, next, id) {
 }
 
 /**
- * The moves a layout step is, when the app already animates each of them:
- * `close` (a panel closed; its sibling takes the room), `open` (a panel made
- * in a new row, or in a pane split off beside a panel) and `resize` (only
- * pane shares and row heights differ). One move is returned as it is, several
- * as `{op: 'multi', steps}` (closes first, then opens in an order each of which
- * can be made by hand); they play together. Null for anything else (a panel
- * moved, a hierarchy not made of such moves), which is rebuilt.
+ * The one move a layout step is, when it is a single change the app already animates: `close` (one
+ * panel closed, its sibling takes the room), `open` (one panel made in a new row, or in a pane split
+ * off beside a panel) or `resize` (only pane shares and row heights differ). Null for anything else
+ * (several panels, a panel moved, any other change of the hierarchy): that step is built at once.
  *
  * @param {Object} from - the view on screen
  * @param {Object} to - the view of the history entry
- * @returns {Object|null}
+ * @returns {{op: 'close'|'resize', id?: string}|Object|null}
  */
 export function layoutStep(from, to) {
     const a = from && from.layout && from.layout.hierarchy;
@@ -264,33 +261,17 @@ export function layoutStep(from, to) {
     const after = new Set(collectTileIds(b));
     const removed = [...before].filter(id => !after.has(id));
     const added = [...after].filter(id => !before.has(id));
+    const current = arrangement(a);
     const target = arrangement(b);
-    let current = arrangement(a);
     if (!removed.length && !added.length) {
         return stableStringify(current) === stableStringify(target) ? { op: 'resize' } : null;
     }
-    const steps = [];
-    for (const id of removed) {
-        current = withoutTile(current, id);
-        steps.push({ op: 'close', id });
+    if (removed.length === 1 && !added.length) {
+        return stableStringify(withoutTile(current, removed[0])) === stableStringify(target)
+            ? { op: 'close', id: removed[0] } : null;
     }
-    const without = (ids) => ids.reduce((nodes, id) => withoutTile(nodes, id), target);
-    let pending = added;
-    if (stableStringify(current) !== stableStringify(without(pending))) return null;
-    while (pending.length) {
-        let found = null;
-        for (const id of pending) {
-            const rest = pending.filter(other => other !== id);
-            const candidate = without(rest);
-            const step = openOf(current, candidate, id);
-            if (step) { found = { step, rest, candidate }; break; }
-        }
-        if (!found) return null;
-        steps.push(found.step);
-        current = found.candidate;
-        pending = found.rest;
-    }
-    return steps.length === 1 ? steps[0] : { op: 'multi', steps };
+    if (added.length === 1 && !removed.length) return openOf(current, target, added[0]);
+    return null;
 }
 
 /** The pane shares of a hierarchy, in the order of its splits. */

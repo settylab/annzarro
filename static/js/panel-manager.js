@@ -1171,8 +1171,7 @@ const PanelManager = (function() {
     async function applyLayoutStep(step, layout) {
         const tileOf = (id) => document.querySelector(`.tile[data-tile-id="${id}"]`);
         const opened = [];
-        // Several moves are made in one go, so their motions play together
-        for (const move of step.op === 'multi' ? step.steps : [step]) {
+        for (const move of [step]) {
             if (move.op === 'close') {
                 const panel = _panels.get(move.id);
                 if (!panel || !_activePanels.has(panel) || !tileOf(move.id)) return false;
