@@ -48,14 +48,14 @@ export function entityOf(text, tileId) {
 }
 
 /** The descriptor for the graph a copy was made on, or null. */
-export function descriptorFor(gd, text, currentDataset = null) {
+export function descriptorFor(gd, text, currentDataset = null, { entity = true } = {}) {
     if (!gd || !gd.__azSettings) return null;
     const tile = typeof gd.closest === 'function' ? gd.closest('.tile') : null;
     const tileId = (tile && tile.dataset && tile.dataset.tileId) || '';
     const panel = /^(cell|gene)-plot/.exec(tileId);
     return buildViewDescriptor(gd, gd.__azSettings, {
         dataset: gd.__azDrawnDataset || currentDataset,
-        entity: entityOf(text, tileId),
+        entity: entity ? entityOf(text, tileId) : null,
         panel: panel ? panel[0] : null
     });
 }

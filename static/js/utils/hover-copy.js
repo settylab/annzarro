@@ -14,6 +14,7 @@
 import { copyText, copyTextWith } from './clipboard.js';
 import { notify } from './notify.js';
 import { descriptorFor, VIEW_MIME } from './view-copy.js';
+import { viewSummary } from './view-descriptor.js';
 
 /** The value a template key names for one point: x, y, z, text, marker.color, hovertext, customdata. */
 function valueOf(trace, pt, key) {
@@ -137,7 +138,44 @@ export async function copyHover(text, io = {}, gd = null) {
 }
 
 /**
- * Add the C key. With no label showing the event is not touched.
+ * The drawn plot the pointer is over (its area, axes, modebar or legend), with or without a hovered
+ * point; null when it is over none.
+ * @param {Document|HTMLElement} [root]
+ * @returns {?HTMLElement}
+ */
+export function plotUnderPointer(root = document) {
+  return graphs(root).find(gd => gd.__azSettings && typeof gd.matches === 'function' && gd.matches(':hover')) || null;
+}
+
+/**
+ * Copy the view of a plot with no point hovered: a one-line description as the text, the view
+ * descriptor (no entity) as the custom flavour. Says "View copied", or why not.
+ * @param {HTMLElement} gd
+ * @param {{write?: function(string, Object): Promise, say?: function, dataset?: string}} [io]  for tests
+ */
+export async function copyView(gd, io = {}) {
+  const say = io.say || notify;
+  let ok = false;
+  try {
+    const view = descriptorFor(gd, '', io.dataset || null, { entity: false });
+    if (!view) return false;
+    const text = viewSummary(view);
+    if (io.write) { await io.write(text, view); ok = true; }
+    else ok = await copyTextWith(text, { [VIEW_MIME]: JSON.stringify(view) });
+  } catch (err) {
+    console.info('Copying the view failed:', err);
+  }
+  if (ok) {
+    say('View copied', '', 'success', 1500);
+    return true;
+  }
+  say('Not copied', 'The browser did not allow copying.', 'warning');
+  return false;
+}
+
+/**
+ * Add the C key. Over a point with a label it copies the label and the view; over the rest of a
+ * plot, the view alone; anywhere else the event is not touched.
  * @param {function(): ?string} [currentDataset]  the open dataset, for a graph that does not know its own
  * @returns {function(): void}  removes the listener
  */
@@ -146,11 +184,19 @@ export function installHoverCopy(currentDataset = null) {
     if (e.key !== 'c' && e.key !== 'C') return;
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat || e.isComposing) return;
     if (typing(e.target) || typing(document.activeElement)) return;
+    const dataset = currentDataset ? currentDataset() : null;
     const hit = hoverCopyInfo();
-    if (hit === null) return;
+    if (hit !== null) {
+      e.preventDefault();
+      e.stopPropagation();
+      copyHover(hit.text, { dataset }, hit.gd);
+      return;
+    }
+    const gd = plotUnderPointer();
+    if (!gd) return;
     e.preventDefault();
     e.stopPropagation();
-    copyHover(hit.text, { dataset: currentDataset ? currentDataset() : null }, hit.gd);
+    copyView(gd, { dataset });
   };
   document.addEventListener('keydown', onKey, true);
   return () => document.removeEventListener('keydown', onKey, true);

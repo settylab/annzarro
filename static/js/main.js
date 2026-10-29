@@ -4551,7 +4551,14 @@ const App = (function() {
         // dataset itself, so the rules read the text only when there is none
         const view = readView(e.clipboardData);
         let hit = null;
-        if (settings.enabled) {
+        // a view copied with no point hovered names no cell: nothing to focus, whatever the text says
+        if (view && !(view.entity && view.entity.id)) {
+            if (settings.enabled && !(_panelUnderPointer && _panelUnderPointer())) {
+                _showNotification('', 'Nothing to focus: the copied view has no cell', 'info', 3000);
+                e.preventDefault();
+                return;
+            }
+        } else if (settings.enabled) {
             const entity = view && view.entity && view.entity.id ? view.entity : null;
             hit = entity
                 ? { rule: -1, datasetMatch: 'exact', dataset: '', datasetPath: view.dataset || '',

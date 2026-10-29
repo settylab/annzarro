@@ -172,6 +172,22 @@ def _hover(page, pid):
     pytest.fail("no point under the pointer")
 
 
+def _hover_empty(page, pid):
+    """Put the pointer on the plot area where no point has a label; the pointer stays there."""
+    g = gd(pid)
+    box = page.evaluate("""g => { const r = document.querySelector(g + ' .nsewdrag').getBoundingClientRect();
+        return [r.left, r.top, r.width, r.height]; }""", g)
+    for i in (1, 29, 15):
+        for j in range(1, 30):
+            page.mouse.move(box[0] + box[2] * i / 30, box[1] + box[3] * j / 30)
+            page.wait_for_timeout(60)
+            if page.evaluate("""g => { const e = document.querySelector(g), t = document.querySelector('.large-plot-tip');
+                    const labelled = e.__largeState ? !!(t && t.style.display !== 'none') : !!(e._hoverdata && e._hoverdata.length);
+                    return !labelled && e.matches(':hover'); }""", g):
+                return
+    pytest.fail("no spot without a label")
+
+
 def _hover_3d(page, pid):
     page.mouse.move(*page.evaluate(CENTRE, gd(pid)))
     page.evaluate("""g => { const e = document.querySelector(g);
@@ -421,3 +437,57 @@ def test_a_copy_from_another_store_asks_to_open_it_and_does_not_apply_the_view(t
     assert not _close(_ranges(other, "cell-plot-B"), zoomed), "the view was applied"
     assert not other.evaluate("() => /View applied/.test(document.body.innerText)")
     assert not other.errors, other.errors
+
+
+def _copy_view_only(page, hover):
+    hover()
+    page.keyboard.press("c")
+    page.wait_for_function("() => /View copied/.test(document.body.innerText)")
+
+
+def test_c_on_empty_plot_area_copies_the_view_and_a_paste_applies_it(server, page):
+    root, large = server
+    _open(page, root, (umap(0), umap(1)), (umap(0), umap(1)))
+    view = _zoom(page, "cell-plot-A")
+    page.evaluate("() => document.querySelectorAll('.notification').forEach(n => n.remove())")
+    _copy_view_only(page, lambda: _hover_empty(page, "cell-plot-A"))
+    assert not page.evaluate("() => /Copied hover info/.test(document.body.innerText)")
+    initial = page.input_value("#focused-cell")
+    _paste_over(page, "cell-plot-B")
+    _wait_toast(page, r"View applied \(x, y\)")
+    page.wait_for_timeout(500)
+    assert _close(_ranges(page, "cell-plot-B"), view)
+    assert page.input_value("#focused-cell") == initial, "an entity-less view focuses nothing"
+    # a text box gets the one-line description, never JSON
+    page.focus("#focused-cell")
+    page.keyboard.press(PASTE)
+    text = page.input_value("#focused-cell")
+    assert text.startswith("AnnZarro view of fixture_small.zarr: x obsm:X_umap[0]") and "{" not in text, text
+
+
+def test_c_on_the_modebar_copies_the_view(server, page):
+    root, large = server
+    _open(page, root, (umap(0), umap(1)), (umap(0), umap(1)))
+    page.mouse.move(*page.evaluate(CENTRE, gd("cell-plot-A")))
+    page.wait_for_timeout(100)
+    page.evaluate("g => { const m = document.querySelector(g + ' .modebar'); m.style.opacity = 1; m.style.display = 'block'; }", gd("cell-plot-A"))
+    page.mouse.move(*page.evaluate(CENTRE, gd("cell-plot-A") + " .modebar"))
+    page.wait_for_function("g => document.querySelector(g).matches(':hover')", arg=gd("cell-plot-A"))
+    page.keyboard.press("c")
+    page.wait_for_function("() => /View copied/.test(document.body.innerText)")
+
+
+def test_a_paste_of_an_entityless_view_outside_a_panel_says_nothing_to_focus(server, page):
+    root, large = server
+    _open(page, root, (umap(0), umap(1)), (umap(0), umap(1)))
+    _zoom(page, "cell-plot-A")
+    before = _ranges(page, "cell-plot-B")
+    _copy_view_only(page, lambda: _hover_empty(page, "cell-plot-A"))
+    initial = page.input_value("#focused-cell")
+    for at in ([700, 4],):
+        _paste_over(page, at=at)
+        _wait_toast(page, "Nothing to focus: the copied view has no cell")
+        page.wait_for_timeout(300)
+        assert page.input_value("#focused-cell") == initial
+        assert not page.evaluate("() => /View applied|Focused cell/.test(document.body.innerText)")
+        assert _close(_ranges(page, "cell-plot-B"), before)

@@ -234,12 +234,12 @@ def test_c_in_3d(page, server):
     lines = _clipboard(page).split("\n")
     assert lines[0].startswith("cell_") and any(l.startswith("z: ") for l in lines), lines
     assert any("total_counts" in l or l.startswith("c:") for l in lines), lines
-    # the label goes (plotly_unhover): C copies nothing
+    # the label goes (plotly_unhover): C copies the view alone, as a line of text
     page.evaluate("g => document.querySelector(g).emit('plotly_unhover', {})", GRAPH)
     page.evaluate("navigator.clipboard.writeText('sentinel')")
     page.keyboard.press("c")
-    page.wait_for_timeout(300)
-    assert _clipboard(page) == "sentinel"
+    page.wait_for_function("() => /View copied/.test((document.querySelector('.notification') || {}).textContent || '')")
+    assert _clipboard(page).startswith("AnnZarro view of "), _clipboard(page)
 
 
 def test_clipboard_refused_says_so(server):

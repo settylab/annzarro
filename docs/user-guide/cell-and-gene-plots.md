@@ -301,7 +301,9 @@ copy works on plain `http://` servers too. If the browser refuses, a short messa
 (copy-view)=
 
 **C** also copies the panel's view, next to the text and without changing it: pasting into another
-application still gives only the hover label. The view is the range of each axis and, in a 3D plot,
+application still gives only the hover label. With no point under the pointer, **C** over the plot
+(its area, axes, modebar or legend) copies the view alone: "View copied", and the text is a line such
+as `AnnZarro view of store.zarr: x obsm:X_umap[0] 1.23 to 4.56; y obsm:X_umap[1] -2 to 3`. The view is the range of each axis and, in a 3D plot,
 the camera. Press **Ctrl+V** (**Cmd+V** on a Mac) with the pointer over another panel of the same
 dataset, in this tab or another tab of AnnZarro in the same browser, and that panel is brought to
 the same view where it can be. A panel's axes are matched by what they show, not by position: a
@@ -312,7 +314,8 @@ a 3D plot only the matching ranges are set. A short notice says "View applied (x
 matching coordinates". A view copied from another dataset is not applied, and the notice says so.
 Pasting over the panel you copied from restores its view, which works as a bookmark of a
 zoom. Pasting anywhere else (the header, the panel chooser, a split boundary, empty space) applies
-no view, and the focus still follows the paste as described in {ref}`paste-to-focus`. The view is
+no view, and the focus still follows the paste as described in {ref}`paste-to-focus`; a view copied
+with no point has no cell, and the notice says "Nothing to focus: the copied view has no cell". The view is
 not part of the page address, so it is not a step of Back and Forward.
 
 ## Zoom, pan and click

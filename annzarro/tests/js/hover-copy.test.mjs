@@ -95,3 +95,40 @@ test('the key: C alone, with a label showing, outside a field', async () => {
     await new Promise(r => setTimeout(r, 0));
     assert.equal(wrote.length, 1);
 });
+
+test('the key over a plot with no label: the view is copied, with a one-line text and no entity', async () => {
+    const { plotUnderPointer, copyView } = await import('../../../static/js/utils/hover-copy.js');
+    const ax = (r) => ({ type: 'linear', range: r });
+    const umap = (c) => ({ type: 'obsm', key: 'X_umap', column: String(c) });
+    const gd = { matches: () => true, __azSettings: { x: umap(0), y: umap(1) }, __azDrawnDataset: '/d/a.zarr',
+        _fullLayout: { xaxis: ax([1.23456, 4.56789]), yaxis: ax([-2, 3]) } };
+    active = gd;
+    assert.equal(plotUnderPointer(globalThis.document), gd);
+    gd.matches = () => false;
+    assert.equal(plotUnderPointer(globalThis.document), null);
+    gd.matches = () => true;
+    const wrote = [];
+    const said = [];
+    assert.equal(await copyView(gd, { write: async (t, v) => wrote.push([t, v]), say: (...a) => said.push(a) }), true);
+    assert.equal(wrote[0][0], 'AnnZarro view of a.zarr: x obsm:X_umap[0] 1.235 to 4.568; y obsm:X_umap[1] -2 to 3');
+    assert.equal(wrote[0][1].entity, null);
+    assert.equal(said[0][0], 'View copied');
+    // the key itself
+    const writes = [];
+    Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (t) => { writes.push(t); } } }, configurable: true });
+    installHoverCopy();
+    const onKey = listeners.filter(([t]) => t === 'keydown').pop()[1];
+    const press = (extra = {}) => {
+        const e = { key: 'c', target: { tagName: 'DIV' }, defaultPrevented: false,
+            preventDefault() { this.defaultPrevented = true; }, stopPropagation() {}, ...extra };
+        onKey(e);
+        return e;
+    };
+    assert.ok(press().defaultPrevented);
+    await new Promise(r => setTimeout(r, 0));
+    assert.match(writes[0], /^AnnZarro view of a\.zarr: x /);
+    assert.ok(!press({ target: { tagName: 'INPUT' } }).defaultPrevented, 'typing a c still types it');
+    gd.__azSettings = null;
+    assert.ok(!press().defaultPrevented, 'a graph with no view to describe is left alone');
+    active = null;
+});

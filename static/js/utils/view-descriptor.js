@@ -128,6 +128,21 @@ export function parseView(json) {
 }
 
 /**
+ * A one-line description of a view, for the plain-text flavour of a copy that has no hovered point:
+ * "AnnZarro view of store.zarr: x obsm:X_umap[0] 1.23 to 4.56; y obsm:X_umap[1] -2 to 3".
+ * @param {Object} view  a descriptor
+ * @returns {string}
+ */
+export function viewSummary(view) {
+    const store = String((view && view.dataset) || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+    const num = (v) => String(Number(Number(v).toPrecision(4)));
+    const parts = ((view && view.axes) || []).map(a =>
+        `${a.axis} ${a.key}${a.dim === null || a.dim === undefined ? '' : `[${a.dim}]`} ${num(a.range[0])} to ${num(a.range[1])}`);
+    if (view && view.camera) parts.push('3D camera');
+    return `AnnZarro view${store ? ` of ${store}` : ''}: ${parts.join('; ')}`;
+}
+
+/**
  * What to do with a descriptor on a target panel.
  * @param {Object} view  parsed descriptor
  * @param {{dataset: string|null, settings: Object, axes: Object}} target
