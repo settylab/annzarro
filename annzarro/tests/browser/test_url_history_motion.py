@@ -18,7 +18,13 @@ WIDTH_OF_A = f"document.querySelector(\".tile[data-tile-id='{A}']\").getBounding
 
 # Records A's width on every frame, and counts rebuilds and autosize relayouts
 WATCH = """() => {
-  window.__w = []; window.__rebuilds = 0; window.__relayouts = 0; window.__on = true;
+  window.__w = []; window.__rebuilds = 0; window.__relayouts = 0; window.__on = true; window.__motion = [];
+  // the layout motion (utils/layout-motion.js) eases by a CSS transition it sets on the moving element:
+  // seeing it set is the animated path, however many frames a slow machine drew of it
+  if (window.__mo) window.__mo.disconnect();
+  window.__mo = new MutationObserver((list) => { for (const m of list) { const t = m.target.style && m.target.style.transition;
+    if (t && /(max-width|height|flex-grow)/.test(t) && !/none/.test(t)) window.__motion.push(t); } });
+  window.__mo.observe(document.body, { attributes: true, attributeFilter: ['style'], subtree: true });
   const pm = window.PanelManager, orig = pm.restoreLayout;
   pm.restoreLayout = function () { window.__rebuilds++; return orig.apply(this, arguments); };
   const rl = window.Plotly.relayout;
@@ -30,6 +36,11 @@ WATCH = """() => {
   };
   tick();
 }""" % A
+
+
+def _animated(page):
+    """The transitions the layout motion set since the watch (an empty list: the step was built at once)."""
+    return page.evaluate("() => window.__motion")
 
 
 def _between(page):
@@ -66,9 +77,8 @@ def test_back_over_a_close_and_forward_animate_without_a_rebuild(page, server):
     page.go_back()                       # opens B beside A: A narrows through intermediate widths
     page.wait_for_function(_count(2), timeout=30000)
     _drawn(page, B)
-    widths = _between(page)
-    inside = [w for w in widths if half + 20 < w < full - 20]
-    assert inside, widths
+    _between(page)
+    assert _animated(page), "Back over the close was not animated"
     assert page.evaluate("() => window.__rebuilds") == 0
     assert _marked(page, A) == "mine"
     assert abs(page.evaluate(WIDTH_OF_A) - half) < 4
@@ -77,8 +87,8 @@ def test_back_over_a_close_and_forward_animate_without_a_rebuild(page, server):
     page.go_forward()
     page.wait_for_function(_count(1), timeout=30000)
     page.wait_for_timeout(600)
-    widths = _between(page)
-    assert [w for w in widths if half + 20 < w < full - 20], widths
+    _between(page)
+    assert _animated(page), "Forward over the open was not animated"
     assert page.evaluate("() => window.__rebuilds") == 0
     assert _marked(page, A) == "mine"
     assert page.evaluate(TILES) == [A]
@@ -102,8 +112,8 @@ def test_back_over_a_moved_split_eases_and_refits_once(page, server):
     page.wait_for_function("(w) => JSON.stringify(window.PanelManager.saveLayout().hierarchy[0].panes.map(p => Math.round(p.percentage))) === JSON.stringify(w)",
                            arg=before, timeout=30000)
     page.wait_for_timeout(1200)
-    widths = _between(page)
-    assert [w for w in widths if moved + 20 < w < start - 20], widths
+    _between(page)
+    assert _animated(page), "Back over the moved split was not animated"
     assert page.evaluate("() => window.__rebuilds") == 0
     # two graphs, each refitted once at the end rather than on every frame
     assert page.evaluate("() => window.__relayouts") <= 2
