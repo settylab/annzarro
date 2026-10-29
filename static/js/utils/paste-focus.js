@@ -130,6 +130,20 @@ export function resolveDataset(wanted, listing, currentPath, mode) {
 }
 
 /**
+ * Which dataset a copied view names by its store path (not by a name to match).
+ * @param {string} path - the copied store path
+ * @param {Array<{path: string, error?: *}>} listing - the dataset listing
+ * @param {string|null} currentPath - the open dataset
+ * @returns {{kind: 'current'}|{kind: 'none'}|{kind: 'one', entry: Object}}
+ *   'current': it is the open one (or no path was given); 'none': it is not listed, so it cannot be opened
+ */
+export function resolveDatasetPath(path, listing, currentPath) {
+    if (!path || path === currentPath) return { kind: 'current' };
+    const entry = (listing || []).find(e => e && e.path === path && !e.error);
+    return entry ? { kind: 'one', entry } : { kind: 'none' };
+}
+
+/**
  * Whether a paste into `target` is the browser's own (a text field) and must be left alone.
  * @param {Element|null} target
  */

@@ -279,7 +279,7 @@ shortcut says **Ctrl**, use **Cmd** on a Mac.
 | **H** | Split the panel under the mouse side by side: a new pane to its right |
 | **V** | Split the panel under the mouse top and bottom: a new pane below it |
 | **W** | Close the panel under the mouse |
-| **C** | Copy the hover label while the pointer is on a point ({ref}`more <hover-copy>`); otherwise nothing |
+| **C** | Copy the hover label, and the plot's view, while the pointer is on a point ({ref}`more <hover-copy>`); otherwise nothing |
 | **F1** | List the keyboard shortcuts |
 | **Escape** | Close the open dialog |
 | **Alt+D**, in the dataset browser | Switch the search of descriptions on or off |

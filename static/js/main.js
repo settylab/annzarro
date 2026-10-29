@@ -17,6 +17,8 @@ import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installHoverCopy } from './utils/hover-copy.js';
+import { readView, trackPointerPanel } from './utils/view-copy.js';
+import { planView, viewMessage, describeTarget, applyPlan } from './utils/view-descriptor.js';
 import { installPanelTarget } from './utils/panel-target.js';
 import { noticeDuration, planReplacement, joinNotices, focusOutsideSubsetNotice, fingerprintPendingNotice } from './utils/notice-rules.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
@@ -58,7 +60,7 @@ import { createHistoryPolicy, diffViews, layoutStep, viewMismatch, unrecordedCha
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
-import { pasteSettings, matchRules, resolveDataset, isTextTarget, storeBase } from './utils/paste-focus.js';
+import { pasteSettings, matchRules, resolveDataset, resolveDatasetPath, isTextTarget, storeBase } from './utils/paste-focus.js';
 import { mountThemeToggle } from './utils/theme-toggle.js';
 import { startDesktopFrame } from './utils/desktop-frame.js';
 import { keepLast } from './utils/site-footer.js';
@@ -110,7 +112,8 @@ const App = (function() {
                 return;
             }
 
-            installHoverCopy();
+            installHoverCopy(() => DataManager.getCurrentDataset());
+            _panelUnderPointer = trackPointerPanel();
 
             // When the login expires mid-session, go to the login page and
             // come back to this dataset and view (utils/session-expiry.js)
@@ -4462,6 +4465,9 @@ const App = (function() {
     /** The question a paste asked about another dataset, while it is on screen (one at a time). */
     let _pasteQuestion = null;
 
+    /** The graph of the panel under the pointer, for a pasted view (utils/view-copy.js). */
+    let _panelUnderPointer = null;
+
     /** Whether the open dataset has a gene of this name (asks the server when the genes are not in the page). @private */
     async function _geneExists(name) {
         if (DataManager.getGeneIndex(name) >= 0) return true;
@@ -4504,10 +4510,12 @@ const App = (function() {
         if (state && state.status === 'open') await _focusPasted(hit);
     }
 
-    /** Act on the first rule that matched the pasted text. @private */
+    /** Act on the first rule that matched the pasted text (or on what a copied view names). @private */
     async function _applyPaste(hit) {
         if (_pasteQuestion) _pasteQuestion.cancel();
-        const target = resolveDataset(hit.dataset, _listedDatasets, DataManager.getCurrentDataset(), hit.datasetMatch);
+        const target = hit.datasetPath !== undefined
+            ? resolveDatasetPath(hit.datasetPath, _listedDatasets, DataManager.getCurrentDataset())
+            : resolveDataset(hit.dataset, _listedDatasets, DataManager.getCurrentDataset(), hit.datasetMatch);
         const name = hit.cell || hit.gene;
         if (target.kind === 'one') {
             const handle = _pasteQuestion = { cancel: () => {} };
@@ -4539,12 +4547,35 @@ const App = (function() {
         if (isTextTarget(e.target) || isTextTarget(document.activeElement)) return;
         if (document.querySelector('.modal.show')) return;
         const settings = pasteSettings((key, fallback) => Policy.get(key, fallback));
-        if (!settings.enabled) return;
-        const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
-        const hit = matchRules(text, settings.rules);
-        if (!hit) return;
-        e.preventDefault();
-        _applyPaste(hit).catch(err => console.warn('Paste to focus failed:', err));
+        // the focus first, as ever; it is on its own switch. A copied view names its entity and
+        // dataset itself, so the rules read the text only when there is none
+        const view = readView(e.clipboardData);
+        let hit = null;
+        if (settings.enabled) {
+            const entity = view && view.entity && view.entity.id ? view.entity : null;
+            hit = entity
+                ? { rule: -1, datasetMatch: 'exact', dataset: '', datasetPath: view.dataset || '',
+                    cell: entity.kind === 'gene' ? '' : entity.id, gene: entity.kind === 'gene' ? entity.id : '' }
+                : matchRules(e.clipboardData ? e.clipboardData.getData('text/plain') : '', settings.rules);
+        }
+        if (hit) _applyPaste(hit).catch(err => console.warn('Paste to focus failed:', err));
+        // then the copied view, on the panel under the pointer only (utils/view-copy.js)
+        const handled = _pasteView(e, view);
+        if (hit || handled) e.preventDefault();
+    }
+
+    /** Apply the view on the clipboard to the panel under the pointer; true if there was one to say something about. @private */
+    function _pasteView(e, view) {
+        if (!view) return false;
+        const gd = _panelUnderPointer ? _panelUnderPointer() : null;
+        if (!gd) return false;
+        const target = describeTarget(gd, DataManager.getCurrentDataset());
+        if (!target) return false;
+        const plan = planView(view, target);
+        // info: the focus toast that follows (success) stacks below it instead of replacing it
+        _showNotification('', viewMessage(plan), 'info', 3000);
+        applyPlan(gd, plan).catch(err => console.warn('Applying the pasted view failed:', err));
+        return true;
     }
 
     /**

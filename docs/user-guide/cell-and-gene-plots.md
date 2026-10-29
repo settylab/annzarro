@@ -298,6 +298,23 @@ label holds the name, x, y and colour). With no label showing, **C** does nothin
 also off while you type in a field, and **Ctrl+C** or **Cmd+C** is untouched. The
 copy works on plain `http://` servers too. If the browser refuses, a short message says so.
 
+(copy-view)=
+
+**C** also copies the panel's view, next to the text and without changing it: pasting into another
+application still gives only the hover label. The view is the range of each axis and, in a 3D plot,
+the camera. Press **Ctrl+V** (**Cmd+V** on a Mac) with the pointer over another panel of the same
+dataset, in this tab or another tab of AnnZarro in the same browser, and that panel is brought to
+the same view where it can be. A panel's axes are matched by what they show, not by position: a
+copied x axis showing UMAP 1 sets the axis of the other panel that shows UMAP 1, even if that is
+its y axis. Axes that show something else keep their range. A 3D plot takes the camera only when
+all three axes show the same coordinates as the copied plot, in the same places; between a 2D and
+a 3D plot only the matching ranges are set. A short notice says "View applied (x, y)" or "No
+matching coordinates". A view copied from another dataset is not applied, and the notice says so.
+Pasting over the panel you copied from restores its view, which works as a bookmark of a
+zoom. Pasting anywhere else (the header, the panel chooser, a split boundary, empty space) applies
+no view, and the focus still follows the paste as described in {ref}`paste-to-focus`. The view is
+not part of the page address, so it is not a step of Back and Forward.
+
 ## Zoom, pan and click
 
 The toolbar in the top right corner of a plot's axes (it appears when the pointer is over the plot)
