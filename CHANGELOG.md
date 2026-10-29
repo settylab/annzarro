@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixed
+- A 2D plot uses one WebGL context, not two. Safari allows about 16 at once and keeps a released one in its count until it is cleaned up, so after a few panels were opened and closed the plots already on screen went blank or the page restarted. Plots draw and behave as before.
+
 ### Docs
 - The README and the licence page cite v0.7.5 by its DOI,
   [10.5281/zenodo.23587867](https://doi.org/10.5281/zenodo.23587867).
