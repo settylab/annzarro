@@ -449,7 +449,8 @@ STORAGE_KEYS = {
 }
 #: annzarro* strings that are not storage keys: meta tags, DOM events, file names, metadata in exported files
 NOT_STORAGE = {"annzarro-csrf", "annzarro-root", "annzarro:open-dataset-browser", "annzarro:open-subset",
-               "annzarro:memory-changed", "annzarro:notify", "annzarro:themechange", "annzarro_plot", "annzarro-recipe"}
+               "annzarro:memory-changed", "annzarro:notify", "annzarro:themechange", "annzarro_plot", "annzarro-recipe",
+               "annzarro-view"}   # the schema name of a copied view (utils/view-descriptor.js), kept on the clipboard only
 #: the only source files that touch localStorage or sessionStorage; a new one needs a look at what it keeps
 STORAGE_USERS = {"static/js/theme-init.js", "static/js/session-manager.js", "static/js/main.js",
                  "static/js/panels/gene-set.js", "static/js/utils/memory-guard-ui.js", "static/js/utils/theme.js",

@@ -3,6 +3,7 @@ import { RemoteNames } from '../../utils/remote-names.js';
 import { trackHover } from '../../utils/hover-copy.js';
 import { generateDiscreteColors, groupColours } from './colors.js';
 import { recordCameraOnRelease } from '../../utils/scene-camera.js';
+import { roundedRange, roundCamera } from '../../utils/view-rounding.js';
 import { greyMarker, styleArea } from '../../utils/point-style.js';
 import { plotArea } from '../../utils/view-point-style.js';
 import { scaleBar, replaceScaleBar, SCALE_BAR } from './plot-options.js';
@@ -733,6 +734,8 @@ export function refreshScaleBar(gd, settings) {
 
 export function attachViewportTracking(plotContainer, settings) {
   if (typeof plotContainer.on !== 'function') return;
+  // what C copies and a paste applies: which coordinates are on the axes (utils/view-copy.js)
+  plotContainer.__azSettings = settings;
   // a 3D turn released outside the plot is recorded too (scene-camera.js)
   recordCameraOnRelease();
   forgetInitialRanges(plotContainer);
@@ -771,7 +774,7 @@ export function attachViewportTracking(plotContainer, settings) {
   const trackView = (eventData) => {
     if (settings.z) {
       const camera = eventData['scene.camera'];
-      if (camera) settings.viewport3D = { eye: camera.eye, up: camera.up, center: camera.center };
+      if (camera) settings.viewport3D = roundCamera(camera);
       return !!camera;
     }
     // Reset axes / double click: back to the axes Plotly fits
@@ -787,10 +790,12 @@ export function attachViewportTracking(plotContainer, settings) {
     // A zoom along one axis (a drag on its edge) keeps the other as drawn
     const fl = plotContainer._fullLayout || {};
     const shown = (axis) => (fl[axis] && Array.isArray(fl[axis].range) ? [...fl[axis].range] : null);
+    // rounded to 4 digits of the span: the same view is always the same value, so float noise
+    // is no new history entry and no new link
     settings.viewport2D = {
       axes: axesSignature(settings),
-      xrange: xrange ? [...xrange] : (settings.viewport2D && settings.viewport2D.xrange) || shown('xaxis'),
-      yrange: yrange ? [...yrange] : (settings.viewport2D && settings.viewport2D.yrange) || shown('yaxis')
+      xrange: roundedRange(xrange ? [...xrange] : (settings.viewport2D && settings.viewport2D.xrange) || shown('xaxis')),
+      yrange: roundedRange(yrange ? [...yrange] : (settings.viewport2D && settings.viewport2D.yrange) || shown('yaxis'))
     };
     return true;
   };

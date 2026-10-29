@@ -98,6 +98,11 @@ notice says so: "Focused cell hdfihbcc-1 (from clipboard)".
   platform, which also names the dataset. When the row names another dataset on the server,
   AnnZarro asks "hdfihbcc-1 is in BL_1697_spatial_annzarro.zarr. Open it?" and opens it only when
   you press **Open**. It never switches dataset by itself. See {ref}`admin-paste-focus`.
+* Text copied with **C** over a plot also carries the hovered cell or gene, its dataset and that
+  plot's view. Pasted into AnnZarro, the carried cell or gene is focused, whatever the site's rules
+  say, and another dataset is offered with the same "Open it?" question. With the pointer over a
+  panel, the panel takes the view as well ({ref}`more <copy-view>`); the view is applied even where an
+  administrator has switched paste-to-focus off, while the focus is not.
 
 ## Lock a panel
 

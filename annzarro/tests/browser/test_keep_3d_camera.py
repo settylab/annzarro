@@ -31,6 +31,8 @@ import urllib.request
 
 import pytest
 
+from annzarro.tests.browser.view_rounding import round_camera
+
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
 else:
@@ -265,10 +267,11 @@ def _assert_kept(page, want, what, settled=None):
     _assert_camera(s, want, what + " (on screen)")
     saved = page.evaluate(SETTINGS)
     assert saved, f"{what}: no camera in the panel settings"
+    kept = round_camera(want)       # the settings keep the camera rounded (view_rounding.py)
     for part in ("eye", "center", "up"):
         for k in "xyz":
-            assert saved[part][k] == pytest.approx(want[part][k], abs=1e-4), \
-                f"{what}: settings {part}.{k} is {saved[part][k]}, not {want[part][k]}"
+            assert saved[part][k] == pytest.approx(kept[part][k], abs=1e-9), \
+                f"{what}: settings {part}.{k} is {saved[part][k]}, not {kept[part][k]} (shown {want[part][k]})"
 
 
 def _norm(c):

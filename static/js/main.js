@@ -17,6 +17,8 @@ import { accountLinks } from './utils/account-links.js';
 import { mountNamePicker, fetchNameMatches, fetchNameIndexState, mergeScopedMatches, datasetNamesScanned } from './utils/name-picker.js';
 import { NOTIFY_EVENT } from './utils/notify.js';
 import { installHoverCopy } from './utils/hover-copy.js';
+import { readView, trackPointerPanel } from './utils/view-copy.js';
+import { planView, viewMessage, describeTarget, applyPlan } from './utils/view-descriptor.js';
 import { installPanelTarget } from './utils/panel-target.js';
 import { noticeDuration, planReplacement, joinNotices, focusOutsideSubsetNotice, fingerprintPendingNotice } from './utils/notice-rules.js';
 import { installSessionExpiryHandler } from './utils/session-expiry.js';
@@ -54,17 +56,18 @@ import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
 import { mountDatasetInfo } from './utils/dataset-info-dialog.js';
 import { defaultHierarchy } from './utils/deeplink.js';
-import { createHistoryPolicy, diffViews } from './utils/url-history.js';
+import { createHistoryPolicy, diffViews, layoutStep, viewMismatch, unrecordedChange, viewDiffers } from './utils/url-history.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
-import { pasteSettings, matchRules, resolveDataset, isTextTarget, storeBase } from './utils/paste-focus.js';
+import { pasteSettings, matchRules, resolveDataset, resolveDatasetPath, isTextTarget, storeBase } from './utils/paste-focus.js';
 import { mountThemeToggle } from './utils/theme-toggle.js';
 import { startDesktopFrame } from './utils/desktop-frame.js';
 import { keepLast } from './utils/site-footer.js';
 import { createLoadActions, createDatasetBadge, createStyleBadge, helpContent, clearTips } from './panelset-load-ui.js';
 import { markDatasetUnavailable, clearDatasetUnavailable, notAvailableText, UNAVAILABLE_TITLE } from './utils/no-dataset-screen.js';
 import { vendorProblem } from './utils/vendor-check.js';
+import * as LayoutMotion from './utils/layout-motion.js';
 import {
     loadSessionStylesFrom, replaceSessionStyles, saveSessionStylesTo, viewStyleChange, styleSummary, onSessionStyleChange, isStyleOnly
 } from './utils/session-style.js';
@@ -109,7 +112,8 @@ const App = (function() {
                 return;
             }
 
-            installHoverCopy();
+            installHoverCopy(() => DataManager.getCurrentDataset());
+            _panelUnderPointer = trackPointerPanel();
 
             // When the login expires mid-session, go to the login page and
             // come back to this dataset and view (utils/session-expiry.js)
@@ -289,8 +293,10 @@ const App = (function() {
             // only the fragment, which the browser treats as in-page navigation:
             // no reload, so the new view would silently not apply. Reload instead.
             window.addEventListener('hashchange', () => {
-                // Back and Forward between our own entries change the fragment too: they are applied in place
-                if (Date.now() - _lastHistoryStepAt < 1000) return;
+                // Back and Forward between our own entries change the fragment too: they are applied in place.
+                // Those entries carry the state this page wrote; a typed or pasted fragment has none. (A time
+                // window after the step is not safe: a busy page can deliver this event much later.)
+                if (history.state && history.state.azPage) return;
                 const parts = parseDeepLinkLocation(window.location);
                 if (parts && parts.payload) window.location.reload();
             });
@@ -593,7 +599,7 @@ const App = (function() {
      * (a cheap undo); the changes of one action replace it (url-history.js).
      * @private
      */
-    const URL_SYNC_DELAY_MS = 600;
+    const URL_SYNC_DELAY_MS = 400;
     const URL_SYNC_MAX_MS = 3000;
     let _urlSyncTimer = null;
     let _urlSyncSince = 0;      // when the update pending was first asked for
@@ -602,7 +608,61 @@ const App = (function() {
     const _historyPolicy = createHistoryPolicy();
     let _historyBusy = false;       // a history entry is being applied
     let _historyAgain = false;      // another step came meanwhile
-    let _lastHistoryStepAt = 0;
+    // The action a change belongs to (utils/url-history.js): one key per control taking repeated input,
+    // a new one for every discrete action
+    let _actionKey = null;
+    let _actionAt = 0;              // when the user last acted
+    let _actionSeq = 0;
+    let _landedAt = 0;              // when a history entry was last applied
+    let _historyIndex = 0;          // the position of the entry on screen among the entries this page wrote
+    let _historyEpoch = 0;          // counts Back and Forward steps; a write started before one is dropped
+    let _revertedBack = false;      // the Back just taken was turned into a revert of an unrecorded change
+    let _syncBusy = 0;              // writes under way
+    let _wheelKey = null;
+    let _pointerKey = null;         // the action a press started, until its click
+    const _controlKeys = new WeakMap();
+    /** Controls whose repeated input is one gesture: a slider, a number box, a field. */
+    function _actionKeyOf(event) {
+        const target = event && event.target instanceof Element ? event.target : null;
+        const control = target && target.closest('input, textarea');
+        if (control && !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color'].includes(control.type)) {
+            if (!_controlKeys.has(control)) _controlKeys.set(control, `control-${++_actionSeq}`);
+            return _controlKeys.get(control);
+        }
+        // wheel turns that follow each other are one zoom
+        if (event && event.type === 'wheel') {
+            const now = Date.now();
+            if (!(_actionKey && String(_actionKey).startsWith('wheel-') && now - _actionAt < 700)) _wheelKey = `wheel-${++_actionSeq}`;
+            return _wheelKey;
+        }
+        // a press, its release and its click are one action
+        if (event && (event.type === 'pointerup' || event.type === 'click') && _pointerKey) {
+            const key = _pointerKey;
+            if (event.type === 'click') _pointerKey = null;
+            return key;
+        }
+        const key = `action-${++_actionSeq}`;
+        _pointerKey = event && event.type === 'pointerdown' ? key : null;
+        return key;
+    }
+    /**
+     * The user acted. A pending change belongs to the action before: it is written now, as its own entry,
+     * before this one starts (these listeners run before the control's own).
+     * @param {Event} event
+     * @param {{flush?: boolean}} [options] - flush: false for a signal that comes after the change it names
+     */
+    function _noteAction(event, { flush = true } = {}) {
+        if (!_urlSyncOn) return;
+        const key = _actionKeyOf(event);
+        if (flush && key !== _actionKey && _urlSyncTimer) {
+            clearTimeout(_urlSyncTimer);
+            _urlSyncTimer = null;
+            _syncUrlNow({ key: _actionKey });
+        }
+        _actionKey = key;
+        _actionAt = Date.now();
+        _syncUrlSoon();
+    }
     function _startUrlSync() {
         if (_urlSyncOn) return;
         _urlSyncOn = true;
@@ -610,16 +670,44 @@ const App = (function() {
         window.addEventListener('popstate', (event) => {
             // only the entries this page wrote (a fragment someone typed has no state: hashchange reloads for it)
             if (!event.state || !event.state.azPage) return;
-            _lastHistoryStepAt = Date.now();
+            const index = event.state.azIdx || 0;
+            const from = _historyIndex;
+            _historyIndex = index;
+            // Every write waiting or on its way belongs to the view before this step: none may land after it
+            _historyEpoch++;
+            clearTimeout(_urlSyncTimer);
+            _urlSyncTimer = null;
+            _actionKey = null;
+            _pointerKey = null;
+            // A change not written yet is no entry to go back to: Back shows the last recorded view,
+            // which is the entry just ahead of this one
+            if (index < from && !_historyBusy && !_revertedBack && _unrecorded()) {
+                _revertedBack = true;
+                history.forward();
+                return;
+            }
+            _revertedBack = false;
             _onHistoryStep();
         });
         SessionManager.onViewMayHaveChanged(_syncUrlSoon);
         // The autosave tick alone would notice an option changed up to its interval later, and fold
         // several changes into one history entry: a control used, or a focus set, says so at once
-        for (const type of ['input', 'change', 'click', 'pointerup']) document.addEventListener(type, _syncUrlSoon, true);
-        for (const type of ['focusedGeneChanged', 'focusedCellChanged', 'taxonomyIdChanged']) {
-            document.addEventListener(type, _syncUrlSoon);
+        for (const type of ['input', 'change', 'click', 'pointerup', 'pointerdown', 'keydown', 'paste', 'wheel']) {
+            document.addEventListener(type, _noteAction, true);
         }
+        // a focus set is a discrete action, signalled after the change: it ends no earlier one
+        for (const type of ['focusedGeneChanged', 'focusedCellChanged', 'taxonomyIdChanged']) {
+            document.addEventListener(type, (event) => _noteAction(event, { flush: false }));
+        }
+        // leaving the page: what is pending is written, not lost
+        const flushPending = () => {
+            if (!_urlSyncTimer) return;
+            clearTimeout(_urlSyncTimer);
+            _urlSyncTimer = null;
+            _syncUrlNow({ key: _actionKey });
+        };
+        window.addEventListener('pagehide', flushPending);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushPending(); });
         // a new or reset session default is in the address at once: a reload before the delay must not read the old one
         onSessionStyleChange(() => _syncUrlNow());
         _syncUrlSoon();
@@ -634,11 +722,46 @@ const App = (function() {
         _urlSyncTimer = setTimeout(() => {
             _urlSyncTimer = null;
             // written because the view kept changing, not because it went quiet: the same gesture goes on
-            _syncUrlNow({ capped });
+            _syncUrlNow({ capped, key: _actionKey });
         }, wait);
     }
-    async function _syncUrlNow({ force = false, capped = false } = {}) {
+    /** The key of the view on screen, as _urlSyncView holds it. @private */
+    function _liveViewKey() {
+        const view = SessionManager.captureView();
+        const hasPanels = Object.keys((view.layout && view.layout.panelConfigs) || {}).length > 0;
+        const current = DatasetState.get().status === 'none' ? null : (_lastLoadedDatasetPath || DataManager.getCurrentDataset());
+        const path = current ? _labelOf(current) : '';
+        return `${path}\n${hasPanels ? JSON.stringify(view) : ''}`;
+    }
+    /** Whether the view on screen has a change no history entry holds yet. @private */
+    function _unrecorded() {
+        if (_noDataView || _isLoadingDataset || _urlSyncView === null) return false;
+        if (_urlSyncTimer || _syncBusy > 0) return true;
+        try {
+            const [path, ...rest] = _urlSyncView.split('\n');
+            const json = rest.join('\n');
+            const live = _liveViewKey().split('\n');
+            if (live[0] !== path) return true;
+            if (!json) return live.slice(1).join('\n') !== '';
+            return unrecordedChange(SessionManager.captureView(), JSON.parse(json));
+        } catch { return false; }
+    }
+    let _syncTail = Promise.resolve();     // the write before: writes to the history keep their order
+    async function _syncUrlNow(options = {}) {
+        const before = _syncTail;
+        let done;
+        _syncTail = new Promise(resolve => { done = resolve; });
+        _syncBusy++;
+        try {
+            return await _syncUrlWrite(options, before);
+        } finally {
+            _syncBusy--;
+            done();
+        }
+    }
+    async function _syncUrlWrite({ force = false, capped = false, key: action = null } = {}, before = Promise.resolve()) {
         if (!_urlSyncOn) return;
+        const epoch = _historyEpoch;
         // An entry of the history being applied (Back, Forward) is not a change to record
         if (_historyBusy) return;
         // A load in flight, a restore drawing its panels, or a layout shown
@@ -656,18 +779,26 @@ const App = (function() {
             const key = `${path}\n${json}`;
             if (key === _urlSyncView) return;
             const payload = hasPanels ? await encodeViewPayload(view) : null;
+            await before;
+            // a Back or Forward came meanwhile: this view is not the one to write
+            if (epoch !== _historyEpoch || _historyBusy) return;
+            if (key === _urlSyncView) return;
             const next = syncedLocation(window.location.href, path, payload);
             // Changed while encoding: the next tick takes it
             if (_isLoadingDataset) return _syncUrlSoon();
-            if (next) {
+            if (next && new URL(next, window.location.href).href === window.location.href) {
+                // the address holds this view already: an entry for it would be a Back that does nothing
+                _historyPolicy.baseline({ path });
+            } else if (next) {
                 // A settled change starts a history entry, or rewrites the one it continues (utils/url-history.js)
                 const now = Date.now();
-                if (_historyPolicy.decide({ now, path }) === 'push') {
-                    history.pushState({ ...(history.state || {}) }, '', next);
+                if (_historyPolicy.decide({ now, path, key: action, acted: _actionAt > _landedAt }) === 'push') {
+                    _historyIndex = ((history.state && history.state.azIdx) || 0) + 1;
+                    history.pushState({ ...(history.state || {}), azIdx: _historyIndex }, '', next);
                 } else {
                     history.replaceState(history.state, '', next);
                 }
-                _historyPolicy.written({ now, path, capped });
+                _historyPolicy.written({ now, path, key: action, capped });
             } else {
                 _historyPolicy.baseline({ path });
             }
@@ -686,8 +817,6 @@ const App = (function() {
      * @private
      */
     async function _onHistoryStep() {
-        clearTimeout(_urlSyncTimer);
-        _urlSyncTimer = null;
         if (_historyBusy) { _historyAgain = true; return; }
         _historyBusy = true;
         try {
@@ -701,12 +830,10 @@ const App = (function() {
         } finally {
             try {
                 // what is on screen is the entry's view now: later settling is no change to push
-                const view = SessionManager.captureView();
-                const hasPanels = Object.keys((view.layout && view.layout.panelConfigs) || {}).length > 0;
-                const current = DatasetState.get().status === 'none' ? null : (_lastLoadedDatasetPath || DataManager.getCurrentDataset());
-                const path = current ? _labelOf(current) : '';
-                _urlSyncView = `${path}\n${hasPanels ? JSON.stringify(view) : ''}`;
-                _historyPolicy.landed({ now: Date.now(), path });
+                const path = _liveViewKey().split('\n')[0];
+                _urlSyncView = _liveViewKey();
+                _landedAt = Date.now();
+                _historyPolicy.landed({ now: _landedAt, path });
             } catch { /* bookkeeping only: the next sync takes what is on screen */ }
             _historyBusy = false;
         }
@@ -744,23 +871,65 @@ const App = (function() {
         try {
             _adoptViewStyle(target);
             await _applyFocusSteps(live.constants || {}, target.constants || {}, link.datasetPath);
-            if (diff.kind === 'layout') {
-                // Closed panels are cleaned up as ever; the panels whose settings did not change keep what they drew
+            const layout = target.layout;
+            // animated only when it is the one step: not while another is queued or a motion still runs
+            const step = diff.kind === 'layout' && !_historyAgain && !LayoutMotion.moving() ? layoutStep(live, target) : null;
+            if (step && await PanelManager.applyLayoutStep(step, layout)) {
+                // One move, shown as the app makes it. Panels that stay but whose settings changed are rebuilt in place.
                 const kept = new Set(diff.keep);
-                PanelManager.getActivePanels().map(p => p.getId()).filter(id => !kept.has(id))
-                    .forEach(id => PanelManager.closePanel(id));
-                await PanelManager.restoreLayout(target.layout, { keep: diff.keep });
-                PanelManager.ensureWelcomeFallback();
-            } else {
-                const layout = target.layout;
-                diff.controls.forEach(id => PanelManager.showControls(id, layout.controlState[id]));
-                await Promise.all(diff.panels.map(id => {
+                const stay = new Set(collectTileIds(live.layout.hierarchy || []));
+                const ids = collectTileIds(layout.hierarchy || []).filter(id => stay.has(id));
+                ids.filter(id => kept.has(id) && layout.controlState && layout.controlState[id] !== undefined
+                    && layout.controlState[id] !== (live.layout.controlState || {})[id])
+                    .forEach(id => PanelManager.showControls(id, layout.controlState[id]));
+                await Promise.all(ids.filter(id => !kept.has(id)).map(id => {
                     const config = { ...(layout.panelConfigs || {})[id] };
                     if (layout.controlState && layout.controlState[id] !== undefined) {
                         config.controlsVisible = layout.controlState[id];
                     }
                     return PanelManager.replacePanel(id, config);
                 }));
+                PanelManager.ensureWelcomeFallback();
+            } else if (diff.kind === 'layout') {
+                // Several changes at once: the layout is rebuilt. Closed panels are cleaned up as ever; the panels whose settings did not change keep what they drew
+                const kept = new Set(diff.keep);
+                PanelManager.getActivePanels().map(p => p.getId()).filter(id => !kept.has(id))
+                    .forEach(id => PanelManager.closePanel(id));
+                await PanelManager.restoreLayout(target.layout, { keep: diff.keep });
+                PanelManager.ensureWelcomeFallback();
+            } else {
+                diff.controls.forEach(id => PanelManager.showControls(id, layout.controlState[id]));
+                // a zoom or a turned camera: one relayout of the graph; a graph that cannot take it is rebuilt
+                const rebuild = [...diff.panels];
+                await Promise.all(diff.views.map(async id => {
+                    try {
+                        if (!await PanelManager.applyViewport(id, (layout.panelConfigs || {})[id])) rebuild.push(id);
+                    } catch (error) {
+                        console.warn('Moving the view failed; the panel is rebuilt:', error);
+                        rebuild.push(id);
+                    }
+                }));
+                await Promise.all(rebuild.map(id => {
+                    const config = { ...(layout.panelConfigs || {})[id] };
+                    if (layout.controlState && layout.controlState[id] !== undefined) {
+                        config.controlsVisible = layout.controlState[id];
+                    }
+                    return PanelManager.replacePanel(id, config);
+                }));
+            }
+            // panels kept as they were drawn keep their zoom too: put it where the entry has it
+            if (diff.kind === 'layout') {
+                await Promise.all(diff.keep.filter(id => viewDiffers((live.layout.panelConfigs || {})[id], (layout.panelConfigs || {})[id]))
+                    .map(id => PanelManager.applyViewport(id, (layout.panelConfigs || {})[id]).catch(() => false)));
+            }
+            // Whatever the way here (an animation cut short, a panel that did not come back), the
+            // screen must be the entry's view: if it is not, that view is built at once
+            const mismatch = viewMismatch(SessionManager.captureView(), target);
+            if (mismatch) {
+                console.warn(`The history step did not land on the entry's view (${mismatch}); building it at once`);
+                PanelManager.getActivePanels().map(p => p.getId()).forEach(id => PanelManager.closePanel(id));
+                await PanelManager.restoreLayout(target.layout);
+                PanelManager.ensureWelcomeFallback();
             }
         } finally {
             SessionManager.endRestore();
@@ -4296,6 +4465,9 @@ const App = (function() {
     /** The question a paste asked about another dataset, while it is on screen (one at a time). */
     let _pasteQuestion = null;
 
+    /** The graph of the panel under the pointer, for a pasted view (utils/view-copy.js). */
+    let _panelUnderPointer = null;
+
     /** Whether the open dataset has a gene of this name (asks the server when the genes are not in the page). @private */
     async function _geneExists(name) {
         if (DataManager.getGeneIndex(name) >= 0) return true;
@@ -4338,10 +4510,12 @@ const App = (function() {
         if (state && state.status === 'open') await _focusPasted(hit);
     }
 
-    /** Act on the first rule that matched the pasted text. @private */
+    /** Act on the first rule that matched the pasted text (or on what a copied view names). @private */
     async function _applyPaste(hit) {
         if (_pasteQuestion) _pasteQuestion.cancel();
-        const target = resolveDataset(hit.dataset, _listedDatasets, DataManager.getCurrentDataset(), hit.datasetMatch);
+        const target = hit.datasetPath !== undefined
+            ? resolveDatasetPath(hit.datasetPath, _listedDatasets, DataManager.getCurrentDataset())
+            : resolveDataset(hit.dataset, _listedDatasets, DataManager.getCurrentDataset(), hit.datasetMatch);
         const name = hit.cell || hit.gene;
         if (target.kind === 'one') {
             const handle = _pasteQuestion = { cancel: () => {} };
@@ -4373,12 +4547,42 @@ const App = (function() {
         if (isTextTarget(e.target) || isTextTarget(document.activeElement)) return;
         if (document.querySelector('.modal.show')) return;
         const settings = pasteSettings((key, fallback) => Policy.get(key, fallback));
-        if (!settings.enabled) return;
-        const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
-        const hit = matchRules(text, settings.rules);
-        if (!hit) return;
-        e.preventDefault();
-        _applyPaste(hit).catch(err => console.warn('Paste to focus failed:', err));
+        // the focus first, as ever; it is on its own switch. A copied view names its entity and
+        // dataset itself, so the rules read the text only when there is none
+        const view = readView(e.clipboardData);
+        let hit = null;
+        // a view copied with no point hovered names no cell: nothing to focus, whatever the text says
+        if (view && !(view.entity && view.entity.id)) {
+            if (settings.enabled && !(_panelUnderPointer && _panelUnderPointer())) {
+                _showNotification('', 'Nothing to focus: the copied view has no cell', 'info', 3000);
+                e.preventDefault();
+                return;
+            }
+        } else if (settings.enabled) {
+            const entity = view && view.entity && view.entity.id ? view.entity : null;
+            hit = entity
+                ? { rule: -1, datasetMatch: 'exact', dataset: '', datasetPath: view.dataset || '',
+                    cell: entity.kind === 'gene' ? '' : entity.id, gene: entity.kind === 'gene' ? entity.id : '' }
+                : matchRules(e.clipboardData ? e.clipboardData.getData('text/plain') : '', settings.rules);
+        }
+        if (hit) _applyPaste(hit).catch(err => console.warn('Paste to focus failed:', err));
+        // then the copied view, on the panel under the pointer only (utils/view-copy.js)
+        const handled = _pasteView(e, view);
+        if (hit || handled) e.preventDefault();
+    }
+
+    /** Apply the view on the clipboard to the panel under the pointer; true if there was one to say something about. @private */
+    function _pasteView(e, view) {
+        if (!view) return false;
+        const gd = _panelUnderPointer ? _panelUnderPointer() : null;
+        if (!gd) return false;
+        const target = describeTarget(gd, DataManager.getCurrentDataset());
+        if (!target) return false;
+        const plan = planView(view, target);
+        // info: the focus toast that follows (success) stacks below it instead of replacing it
+        _showNotification('', viewMessage(plan), 'info', 3000);
+        applyPlan(gd, plan).catch(err => console.warn('Applying the pasted view failed:', err));
+        return true;
     }
 
     /**

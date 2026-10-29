@@ -244,6 +244,13 @@ def test_a_row_naming_another_store_asks_before_opening_it(browser, served):
         ask.locator("button", has_text="Open").click()
         page.wait_for_function("() => document.getElementById('focused-cell').value === 'hdfihbcc-1'", timeout=30000)
         page.wait_for_function("() => /BL_1697_spatial_annzarro/.test(document.body.innerText)", timeout=15000)
+        # the address follows the switch, as for any other way of opening a dataset, and Back returns to the first
+        page.wait_for_function("(s) => decodeURIComponent(location.search).includes(s)", arg=STORE_A, timeout=15000)
+        assert STORE_B not in urllib.parse.unquote(page.evaluate("() => location.search"))
+        page.wait_for_timeout(2500)
+        page.go_back()
+        page.wait_for_function("(s) => decodeURIComponent(location.search).includes(s)", arg=STORE_B, timeout=30000)
+        page.wait_for_function("() => document.getElementById('focused-cell').value === 'cB0'", timeout=30000)
         assert not errors, errors
     finally:
         context.close()

@@ -34,6 +34,8 @@ import urllib.parse
 import urllib.request
 
 import pytest
+
+from annzarro.tests.browser.view_rounding import round_range
 from annzarro.tests.ui_helpers import open_dataset
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
@@ -192,6 +194,11 @@ def _zoom(page, s):
     return view
 
 
+def _kept(view):
+    """The zoom as the plot keeps it, rounded (view_rounding.py): the view a rebuild draws again."""
+    return (round_range(view[0]), round_range(view[1]))
+
+
 def _close(a, b):
     return a is not None and all(abs(p - q) < 1e-6 * max(1, abs(q)) for p, q in zip(a, b))
 
@@ -226,7 +233,7 @@ def test_part_step_swaps_data_in_place(server):
             page = _open(browser, _link(root, subset=dict(SPEC, part=0), focused=focused), errors)
             s = _settle(page, lambda s: s["part"] == "1" and (large or s["rows"]) and s["focused"] == focused)
             assert s["large"] == large, s["large"]
-            view = _zoom(page, s)
+            view = _kept(_zoom(page, s))
             # the table as the user left it: searched, sorted, ten a page
             if not large:
                 page.evaluate("""(q) => jQuery(document.querySelector(

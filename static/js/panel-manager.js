@@ -17,6 +17,8 @@ import { notifyEach } from './utils/notify-panels.js';
 import { createPlaceholderPanel } from './utils/placeholder-panel.js';
 import { Policy } from './policy.js';
 import * as LayoutMotion from './utils/layout-motion.js';
+import { viewOf } from './utils/url-history.js';
+import { orientRange, isFlipped, autorangeValue } from './panels/plot-utilities/plot-make-helper.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -270,8 +272,11 @@ const PanelManager = (function() {
         // Set up all event handlers
         _setupTileEventHandlers(tileElement, id);
         
-        // Initialize the panel
-        panel.init();
+        // Initialize the panel; a history step waits on initDone
+        const initial = panel.init();
+        panel.initDone = Promise.resolve(initial).then(() => {}, error => {
+            console.error(`Error initializing panel ${id}:`, error);
+        });
         
         // Apply control panel visibility if specified
         if (Object.prototype.hasOwnProperty.call(config, 'controlsVisible')) {
@@ -1116,6 +1121,130 @@ const PanelManager = (function() {
         return true;
     }
 
+    /** Pane shares and row heights of a layout, set on the open tiles: shares ease, rows follow the layout motion. */
+    function _applySizes(hierarchy) {
+        const nodes = (hierarchy || []).filter(n => n && n.type !== 'selector');
+        const splits = [];
+        const walk = (node) => {
+            if (node && node.type === 'split') {
+                splits.push(node);
+                (node.children || []).forEach(walk);
+            }
+        };
+        nodes.forEach(walk);
+        const containers = [...(_container || document).querySelectorAll('.split-container')];
+        const changes = [];
+        if (containers.length === splits.length) {
+            containers.forEach((container, i) => {
+                const panes = LayoutManager.childPanes(container);
+                const shares = splits[i].panes || [];
+                if (panes.length !== 2 || shares.length !== 2) return;
+                panes.forEach((pane, k) => {
+                    const share = shares[k].percentage || 50;
+                    pane.dataset.flexPercentage = share;
+                    changes.push([pane, share]);
+                });
+            });
+        }
+        const rows = [...document.querySelectorAll('.tile-container > .panel-wrapper')];
+        if (rows.length === nodes.length) {
+            LayoutMotion.capture();
+            rows.forEach((row, i) => {
+                if (nodes[i].height > 0) row.style.setProperty('--panel-height', `${nodes[i].height}px`);
+            });
+        }
+        LayoutMotion.flex(changes);
+    }
+
+    /**
+     * Show one layout move (utils/url-history.js layoutStep) the way the app
+     * makes it by hand: a closed panel through closePanel, an opened one into a
+     * new row or a split-off pane, a moved split by easing the shares. The
+     * panels that stay are neither rebuilt nor drawn again. Resolves true once
+     * the motion has ended and a new panel has drawn; false (nothing changed)
+     * when the screen is not as the move needs, and the caller rebuilds.
+     *
+     * @param {Object} step - from layoutStep
+     * @param {Object} layout - the layout to show
+     * @returns {Promise<boolean>}
+     */
+    async function applyLayoutStep(step, layout) {
+        const tileOf = (id) => document.querySelector(`.tile[data-tile-id="${id}"]`);
+        const opened = [];
+        for (const move of [step]) {
+            if (move.op === 'close') {
+                const panel = _panels.get(move.id);
+                if (!panel || !_activePanels.has(panel) || !tileOf(move.id)) return false;
+                closePanel(move.id);
+            } else if (move.op === 'open') {
+                const type = panelTypeFromTileId(move.id);
+                if (!_panelTypes.has(type) || tileOf(move.id) || !_container) return false;
+                const saved = (layout.panelConfigs || {})[move.id] || {};
+                const config = { ...saved, id: move.id };
+                const visible = layout.controlState && layout.controlState[move.id] !== undefined
+                    ? layout.controlState[move.id] : saved.controlsVisible;
+                if (visible !== undefined) config.controlsVisible = visible;
+                let beside = null;
+                if (move.where === 'pane') {
+                    beside = tileOf(move.sibling);
+                    if (!beside || !beside.parentElement || !_activePanels.has(_panels.get(move.sibling))) return false;
+                } else if (!_welcomeSelectionTile || !_welcomeSelectionTile.tileSelector.isConnected) {
+                    return false;
+                }
+                // a panel closed earlier under this id: the saved settings are what comes back
+                if (_panels.has(move.id)) removePanel(move.id);
+                let panel;
+                if (beside) {
+                    const { secondPane } = LayoutManager.createSplit(beside.parentElement, beside, move.direction);
+                    panel = createPanel(type, config, secondPane);
+                } else {
+                    panel = createPanelInLayout(type, config);
+                }
+                if (!panel) return false;
+                opened.push(panel);
+            }
+        }
+        _applySizes(layout.hierarchy);
+        await LayoutMotion.whenIdle();
+        await Promise.all(opened.map(panel => panel.initDone));
+        updateSourcePanelSelection();
+        return true;
+    }
+
+    /**
+     * Put an open plot at the zoom or camera a saved config records: one relayout, nothing rebuilt or
+     * fetched again. A fitted plot (no zoom recorded) is fitted again. False when the panel has no
+     * drawn graph to move (the caller rebuilds it).
+     *
+     * @param {string} id
+     * @param {Object} config - the panel's saved settings
+     * @returns {Promise<boolean>}
+     */
+    async function applyViewport(id, config) {
+        const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
+        const gd = tile && tile.querySelector('.js-plotly-plot');
+        const settings = gd && gd.__azSettings;
+        const panel = _panels.get(id);
+        if (!gd || !settings || !panel || !_activePanels.has(panel) || !window.Plotly) return false;
+        const view = viewOf(config);
+        let update;
+        if (settings.z) {
+            update = { 'scene.camera': view && view.camera ? view.camera
+                : { up: { x: 0, y: 0, z: 1 }, center: { x: 0, y: 0, z: 0 }, eye: { x: 1.25, y: 1.25, z: 1.25 } } };
+        } else if (view && (view.x || view.y)) {
+            update = {};
+            if (view.x) update['xaxis.range'] = orientRange(view.x, isFlipped(settings, 'x'));
+            if (view.y) update['yaxis.range'] = orientRange(view.y, isFlipped(settings, 'y'));
+        } else {
+            update = { 'xaxis.autorange': autorangeValue(settings, 'x'), 'yaxis.autorange': autorangeValue(settings, 'y') };
+        }
+        await window.Plotly.relayout(gd, update);
+        // exactly what the entry records, whatever the event handler rounded it to
+        settings.viewport2D = settings.z ? settings.viewport2D : (config.viewport2D || null);
+        settings.viewport3D = settings.z ? (config.viewport3D || null) : settings.viewport3D;
+        return true;
+    }
+
     /** Show or hide an open panel's control bar. @param {string} id @param {boolean} visible */
     function showControls(id, visible) {
         _applyControlsVisible(document.querySelector(`.tile[data-tile-id="${id}"]`), visible);
@@ -1236,6 +1365,8 @@ const PanelManager = (function() {
         resetPanels,
         saveLayout,
         restoreLayout,
+        applyLayoutStep,
+        applyViewport,
         registerClosedPanel,
         removePanel,
         replacePanel,

@@ -273,7 +273,7 @@ def test_tiles_follow_the_headroom_and_close_frees(server, page):
         const gd = document.querySelector('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot');
         window.__gls = gd._fullLayout._glcanvas.data().filter(d => d.regl).map(d => d.regl._gl);
     }""")
-    assert page.evaluate("() => window.__gls.length") == 2
+    assert page.evaluate("() => window.__gls.length") == 1      # one context per 2D graph (scripts/plotly/patch-source.js)
     page.evaluate("() => window.PanelManager.closePanel('cell-plot-a')")
     assert page.evaluate("() => window.__gls.every(gl => gl.isContextLost())")
     assert page.evaluate("""async () => {
@@ -531,7 +531,7 @@ def test_closing_frees_only_what_is_private(server, page):
         window.__gls = gd._fullLayout._glcanvas.data().filter(d => d.regl).map(d => d.regl._gl);
     }""")
     page.evaluate("() => window.PanelManager.closePanel('cell-plot-B')")
-    assert page.evaluate("() => window.__gls.length === 2 && window.__gls.every(gl => gl.isContextLost())")
+    assert page.evaluate("() => window.__gls.length === 1 && window.__gls.every(gl => gl.isContextLost())")
     assert page.evaluate("""async () => {
         const g = await import('/static/js/utils/memory-guard-ui.js');
         const { DataManager } = await import('/static/js/data-manager.js');

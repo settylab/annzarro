@@ -8,6 +8,19 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.7.6 (2026-10-28)
+
+### Added
+- Zoom, pan and a turned 3D camera are part of the view: each gesture (a box zoom, a modebar zoom or reset, a drag pan, a run of scroll-wheel zooms, a rotation) is one step of Back and Forward, which move the plot with one relayout, without redrawing it or asking for its data again. Ranges are rounded to four digits of the axis span, so the address does not change by float noise; a plot that is not zoomed stores nothing, and links without a zoom open as before.
+- **C** over a plot now copies its view, with or without a point under the pointer: the range of each axis and, in 3D, the camera. Over a point it also copies the hover text as before; elsewhere on the plot (its area, axes, modebar or legend) it copies a one-line description of the view and says "View copied". Paste with Ctrl+V (Cmd+V on a Mac) over another panel of the same dataset, also in another tab, and that panel takes the same view where it shows the same coordinates (an x axis showing UMAP 1 lands on whichever axis shows UMAP 1; other axes keep their range). Pasting elsewhere only focuses the copied cell or gene as before (a view copied with no point has none, and says so), and pasting into another application gives only the text.
+
+### Changed
+- Back and Forward over a single panel opening or closing, or a split moving, animate as those actions do by hand (any other step switches straight to the recorded view), and quick actions are separate steps: each Back lands exactly on the view it recorded, or, if a smooth step is not safe, on a hard rebuild of it.
+
+### Fixed
+- A 2D plot uses one WebGL context, not two. Safari allows about 16 at once and keeps a released one in its count until it is cleaned up, so after a few panels were opened and closed the plots already on screen went blank or the page restarted. Plots draw and behave as before.
+- Back and Forward no longer reload the page when AnnZarro is busy drawing large plots. A step that took more than a second to be handled reloaded the page, which could leave the panels closed with "Did not finish loading".
+
 ### Docs
 - The README and the licence page cite v0.7.5 by its DOI,
   [10.5281/zenodo.23587867](https://doi.org/10.5281/zenodo.23587867).

@@ -15,7 +15,7 @@ Build it from the repository root:
 
 ```bash
 docker build -f packaging/container/Dockerfile \
-  --build-arg VERSION=0.7.5 --build-arg REVISION=$(git rev-parse --short HEAD) \
+  --build-arg VERSION=0.7.6 --build-arg REVISION=$(git rev-parse --short HEAD) \
   -t annzarro:local .
 ```
 
