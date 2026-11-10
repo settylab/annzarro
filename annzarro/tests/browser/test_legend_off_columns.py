@@ -96,3 +96,4 @@ def test_continuous_colour_and_back_keeps_the_columns(page, server):
     page.select_option(CSEL, "lineage")
     _settled(page, 2)
     assert page.evaluate(VISIBLE, TILE)["legends"] == 2
+

@@ -656,7 +656,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     traces.push({
       type: 'scattergl', mode: 'markers', x: [X[0]], y: [Y[0]], hoverinfo: 'skip', showlegend: false, meta: COLOUR_BAR,
       marker: { size: 0.1, opacity: 0, color: [cmin], cmin, cmax, colorscale: plotlyColorscale(settings.colorScale),
-        reversescale: !!settings.colorReversed, showscale: true, colorbar: bar }
+        reversescale: !!settings.colorReversed, showscale: settings.showLegend !== false, colorbar: bar }
     });
     layout.showlegend = false;
   } else {
