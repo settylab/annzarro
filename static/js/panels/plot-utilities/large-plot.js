@@ -589,7 +589,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     }
     if (start[NA + 1] > start[NA]) traces.push(legendTrace('NA', NA_COLOR, settings, 1001));
     traces.push(...interleave(groups));
-    layout.showlegend = true;
+    layout.showlegend = settings.showLegend !== false;     // Show Legend off: none
     // legend as the regular path draws it (plot-make.js, categorical branch)
     const pos = getPositioningByLocation(settings.legendPosition || 'right');
     layout.legend = { ...(layout.legend || {}), title: { text: colourTitle(settings.color), font: titleFont(settings) },

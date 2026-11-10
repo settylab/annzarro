@@ -616,7 +616,11 @@ export function planLegendColumns(gd) {
     const L = gd.layout, FL = gd._fullLayout;
     if (!L || !FL || !FL._size || !Array.isArray(gd.data)) return null;
     const meta = L.meta || {};
-    const columns = meta.azLegendColumns || 1;
+    // A legend that is off is no columns: Plotly's layout.showlegend governs only the first legend, so the other
+    // columns would stay. Collapsed to one column, the traces go back to the one legend (which showlegend hides),
+    // and the other legends, the title note, the margins and the placement are undone; on again, the columns
+    // in meta come back.
+    const columns = L.showlegend === false ? 1 : (meta.azLegendColumns || 1);
     const used = usedColumns(gd.data, columns);
     const want = legendsFor(gd.data, columns);
     const relayout = {};
