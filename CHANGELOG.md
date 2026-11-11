@@ -9,6 +9,7 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Fixed
+- A large plot (more cells than the large-plot limit) with a flipped axis no longer loses its zoom when you change the colour map or any other setting, or when you open a link made from the zoomed view: it keeps the view you chose, as the regular plot does. Double-clicking still returns to the fitted view.
 - Turning the legend off in a legend of two or more columns hides every column, not only the first, together with the title above them and the room kept for them, so the plot takes the width back; turning it on again brings the same columns, gap, title and position back. A saved panel or link with the legend off and several columns opens with no legend, and a large plot (more cells than the large-plot limit) now honours Show Legend off, colour bar included, which it ignored.
 
 ### Docs

@@ -2365,7 +2365,9 @@ export function buildPlotLayout(settings, data) {
   // Build layout with our pure helper
   const layout = createLayout(settings);
   // Hide NaN / Hide Outliers remove points; keep the axes where all points are
-  const pinned = data ? stableAxisRanges(data, settings) : null;
+  // Without data (large-plot mode builds its layout before it has loaded any) the zoom the user
+  // chose still applies: with autorange off, or a flipped axis ('reversed') would be refitted over it
+  const pinned = data ? stableAxisRanges(data, settings) : keptViewRanges(settings);
   if (pinned && pinned['xaxis.range']) layout.xaxis = { ...layout.xaxis, range: pinned['xaxis.range'], autorange: false };
   if (pinned && pinned['yaxis.range']) layout.yaxis = { ...layout.yaxis, range: pinned['yaxis.range'], autorange: false };
   
