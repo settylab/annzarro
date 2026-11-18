@@ -963,8 +963,10 @@ const App = (function() {
     async function _applyView(target, options = {}) {
         // the restore marker stands until every panel is drawn (session-manager.js)
         SessionManager.beginRestore('view');
+        // a newer view, or the user choosing a dataset, ends this one (see _viewSuperseded)
+        const epoch = ++_viewEpoch;
         try {
-            return await _applyViewNow(target, options);
+            return await _applyViewNow(target, { ...options, epoch });
         } finally {
             SessionManager.endRestore();
         }
@@ -1015,13 +1017,20 @@ const App = (function() {
                 { source: constants.taxonomySource === 'inferred' ? 'inferred' : 'explicit' });
         }
     }
-    async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false } = {}) {
+    // Counts the views being applied and the datasets the user chose. A view that finds the count moved
+    // on after an await was overtaken: it builds nothing more (no late panels on the wrong dataset).
+    let _viewEpoch = 0;
+    const _superseded = { status: 'cancelled', message: 'Another dataset or view was opened first.' };
+
+    async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false, epoch = _viewEpoch } = {}) {
+        const gone = () => epoch !== _viewEpoch;
         _adoptViewStyle(view);
         // Where the view's store is here: its path, the path relative to the
         // data directory, or a store in the data directory with the same
         // cells and genes (or, for a view without a fingerprint, the same
         // name). Not found: the layout opens without data.
         located = located || await _locateStore(datasetPath, view, { exact });
+        if (gone()) return _superseded;
         if (!located.path) {
             await _applyViewWithoutData(view, located);
             return { status: 'no-data', message: `${located.missing || datasetPath} was not found` };
@@ -1050,6 +1059,7 @@ const App = (function() {
         // path for it, or the path relative to the data directory
         // (rel_path, as a share link or saved set records it).
         datasetPath = await _listedPathFor(datasetPath, located.probe && located.probe.relPath);
+        if (gone()) return _superseded;
         _leaveNoDataMode();
 
         // 0. The cells the view shows. A view without `subset` keeps the
@@ -1068,10 +1078,12 @@ const App = (function() {
         // 1. Load the dataset through the normal (non-silent) path so selectors
         //    and dataset info populate exactly as a manual selection would.
         await DatasetState.open(datasetPath, { source: 'view' });
+        if (gone()) return _superseded;
 
         if (view) {
             // 2. Restore the focused gene (drives highlighting + the gene selector), the cell, the species.
             await _applyConstants(view.constants || {}, datasetPath);
+            if (gone()) return _superseded;
 
             // 3. Materialize the panels. Two shapes, one preferred:
             //
@@ -1569,6 +1581,8 @@ const App = (function() {
         // keep the open store's own path when the set names it differently
         if (current && located.path && sameDatasetPath(located.path, current, listing)) located.path = current;
         const applied = await _applyView({ datasetPath: target, view: plan.view }, { located, trust: !!chosen });
+        // the user opened something else meanwhile: this set builds nothing more
+        if (applied && applied.status === 'cancelled') return applied;
         const datasetPath = located.path || target;
 
         // Panels that were closed when the set was saved come back closed.
@@ -2599,7 +2613,7 @@ const App = (function() {
     function _openDataset(datasetPath, { source = 'user' } = {}) {
         if (!datasetPath) return Promise.resolve();
         const chosen = isUserSource(source);
-        if (chosen) _markUserChoice(datasetPath);
+        if (chosen) { _markUserChoice(datasetPath); _viewEpoch++; }
         // a view open without data opens on the chosen dataset
         if (chosen && _noDataView) {
             return _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
