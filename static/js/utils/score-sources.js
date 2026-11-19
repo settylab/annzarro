@@ -62,7 +62,8 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     const hashOf = (recipe) => recipeHash(recipe);
     // The aggregation belongs to the consumer, not the signature: a score is the signature's genes and
     // shared settings read with one method. Edits are compared without it.
-    const withMethod = (recipe, sub) => ({ ...recipe, method: sub || DEFAULT_METHOD });
+    // The layer is the consumer's too: it becomes the recipe's `input` for that request ('' keeps the signature's own).
+    const withMethod = (recipe, sub, layer = '') => ({ ...recipe, method: sub || DEFAULT_METHOD, ...(layer ? { input: layer } : {}) });
     const editHash = (recipe) => hashOf(withMethod(recipe, DEFAULT_METHOD));
     const genesIn = (recipe) => recipe.genes.length + (recipe.down ? recipe.down.length : 0);
 
@@ -113,7 +114,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             return { ...base, state: signatures.off && signatures.off() ? 'off' : 'deleted' };
         }
         handle.lastTitle = sig.title;
-        const recipe = withMethod(appliedOf(handle.sigId, sig), handle.sub);
+        const recipe = withMethod(appliedOf(handle.sigId, sig), handle.sub, handle.layer);
         const held = heldOf(handle.sigId);
         if (genesIn(recipe) === 0) {
             dropKey(handle);
@@ -128,6 +129,12 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         }
         const snap = store.snapshot(key);
         base.key = key;
+        base.layer = recipe.input;
+        // the layer is not in the dataset: said as a state of its own, not as a failure
+        if (snap.state === 'failed' && snap.reason === 'key_not_found') {
+            handle.shown = null;
+            return { ...base, held, state: 'nolayer', message: snap.message, layer: recipe.input };
+        }
         // A score is one number per cell shown. One of another length is for other cells (a subset
         // changed while it was on its way, or a stale entry): it is asked for again once, and then
         // stated as failed with Retry, never shown and never waited on in silence.
@@ -217,9 +224,9 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
          * @param {string} id
          * @param {{onChange: (state: Object) => void, visible?: () => boolean, host?: any, role?: string}} spec
          */
-        watch(id, { onChange, visible = () => true, host = null, role = '', sub = null }) {
+        watch(id, { onChange, visible = () => true, host = null, role = '', sub = null, layer = '' }) {
             const handle = {
-                sigId: id, sub, key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
+                sigId: id, sub, layer, key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
                 read() { return read(handle); },
                 release() {
                     if (handle.released) return;

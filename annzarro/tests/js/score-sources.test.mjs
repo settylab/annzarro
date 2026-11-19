@@ -23,6 +23,7 @@ function world({ estimateSeconds = () => 2, tierOf = () => 'auto', cells = 3 } =
     const api = {
         async estimate({ recipe }) {
             calls.estimate.push(recipe.genes.slice());
+            if (recipe.input === 'nope') throw Object.assign(new Error("This dataset has no layer 'nope'."), { status: 404, reason: 'key_not_found' });
             const seconds = estimateSeconds(recipe);
             return { estimate: { seconds, tier: tierOf(seconds), auto_max_s: 60, max_s: 600, live_max_s: 5 } };
         },
@@ -394,4 +395,33 @@ test('a score whose length fits is untouched, and an unknown cell count checks n
     assert.equal(w.waiting.length, 1);
     w.ctx.cells = null;
     assert.equal(handle.read().state, 'ready');
+});
+
+test('the consumer\'s layer is the request\'s input: two layers are two scores, one layer shared, none is the signature\'s own', async () => {
+    const w = world();
+    w.add('S1', 'T', ['A'], { input: 'X' });
+    const hs = [watch(w, 'S1', { layer: 'counts' }), watch(w, 'S1', { layer: 'counts' }), watch(w, 'S1', { layer: 'log1p' }),
+        watch(w, 'S1'), watch(w, 'S1', { layer: 'X' })];
+    for (const h of hs) h.handle.read();
+    await settle();
+    w.finish(0); w.finish(1);                      // two at a time: the third waits for a slot
+    await settle();
+    assert.deepEqual(w.calls.compute.map(c => c.recipe.input).sort(), ['X', 'counts', 'log1p'], 'X given twice (own and explicit) is one score');
+    assert.equal(hs[0].handle.read().key, hs[1].handle.read().key);
+    assert.equal(hs[3].handle.read().key, hs[4].handle.read().key);
+});
+
+test('a layer the dataset does not have is its own state, from the server\'s not-found reply', async () => {
+    const w = world();
+    w.add('S1', 'T', ['A']);
+    const { handle } = watch(w, 'S1', { layer: 'nope' });
+    handle.read();
+    await settle();
+    const snap = handle.read();
+    assert.equal(snap.state, 'nolayer');
+    assert.equal(snap.layer, 'nope');
+    const note = N.describeScore({ ...snap, title: 'T' }, { role: 'x' });
+    assert.equal(note.headline, "Layer 'nope' is not in this dataset, so 'T' has no score.");
+    assert.equal(note.tag.text, 'Layer not found');
+    assert.deepEqual(note.actions.map(a => a[0]), ['score-open', 'score-choose']);
 });

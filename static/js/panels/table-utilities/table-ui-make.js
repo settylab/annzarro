@@ -16,6 +16,7 @@ import { isScoreColumn } from '../../utils/score-column.js';
 import { getSource } from '../../utils/source-registry.js';
 import { DEFAULT_METHOD } from '../../utils/gene-signature.js';
 import '../../utils/score-source.js';
+import { layerKeys } from '../../utils/structure-keys.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -181,7 +182,7 @@ export function populateColumnsCellTable(dataSources, datasetStructure, id, sett
         let items = [];
         
         if (source.id === 'gene-score') {
-            buildScoreTab(id, settings);
+            buildScoreTab(id, settings, datasetStructure);
             continue;
         } else if (source.id === 'obs' && datasetStructure.obs?.columns) {
             items = datasetStructure.obs.columns.map(column => ({
@@ -326,7 +327,7 @@ async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, i
 
 /** The id of a column's checkbox in the chooser. */
 function checkboxIdFor(column, panelId) {
-    return `checkbox-${column.type}-${column.key}-${column.column}-${panelId}`.replace(/\s+/g, '_');
+    return `checkbox-${column.type}-${column.key}-${column.column}${column.type === 'gene-score' && column.layer ? `-of-${column.layer}` : ''}-${panelId}`.replace(/\s+/g, '_');
 }
 
 /**
@@ -337,7 +338,7 @@ function checkboxIdFor(column, panelId) {
  * @param {string} id - the table panel's id
  * @param {Object} settings - the panel settings
  */
-export function buildScoreTab(id, settings) {
+export function buildScoreTab(id, settings, structure = null) {
     const pane = document.getElementById(`gene-score-content-${id}`);
     const provider = getSource('gene-score');
     if (!pane || !provider) return;
@@ -352,6 +353,24 @@ export function buildScoreTab(id, settings) {
     }
     const subs = provider.subKeys();
     const ticked = (settings.columns || []).filter(isScoreColumn);
+    // The layer the scores listed here are computed over (a column's own choice, like its aggregation)
+    pane.__structure = structure || pane.__structure || null;
+    const layer = pane.dataset.layer || '';
+    const bar = document.createElement('div');
+    bar.className = 'd-flex align-items-center gap-2 mb-2';
+    const pick = document.createElement('select');
+    pick.className = 'form-select form-select-sm az-score-layer';
+    pick.setAttribute('aria-label', 'Layer the scores are computed over');
+    const keys = layerKeys(pane.__structure);
+    pick.appendChild(new Option("of the signature's own input", '', false, !layer));
+    for (const k of keys) pick.appendChild(new Option(`of ${k}`, k, false, k === layer));
+    if (layer && !keys.includes(layer)) pick.appendChild(new Option(`of ${layer} (not in this dataset)`, layer, false, true));
+    pick.addEventListener('change', () => {
+        pane.dataset.layer = pick.value;
+        buildScoreTab(id, settings);
+    });
+    bar.appendChild(pick);
+    list.appendChild(bar);
     for (const sig of signatures) {
         const group = document.createElement('div');
         group.className = 'az-score-group';
@@ -362,7 +381,7 @@ export function buildScoreTab(id, settings) {
         heading.title = sig.open ? sig.title : `${sig.title} (closed)`;
         group.appendChild(heading);
         for (const sub of subs) {
-            const item = { type: 'gene-score', key: sig.id, column: sub.value };
+            const item = { type: 'gene-score', key: sig.id, column: sub.value, ...(layer ? { layer } : {}) };
             const div = document.createElement('div');
             div.className = 'form-check py-0 ms-3';
             const checkbox = document.createElement('input');
@@ -372,9 +391,10 @@ export function buildScoreTab(id, settings) {
             checkbox.setAttribute('data-type', item.type);
             checkbox.setAttribute('data-key', item.key);
             checkbox.setAttribute('data-column', item.column);
+            if (layer) checkbox.setAttribute('data-layer', layer);
             checkbox.setAttribute('data-label', sig.title);
             checkbox.dataset.scoreBound = '1';
-            checkbox.checked = ticked.some(c => c.key === sig.id && (c.column || DEFAULT_METHOD) === sub.value);
+            checkbox.checked = ticked.some(c => c.key === sig.id && (c.column || DEFAULT_METHOD) === sub.value && (c.layer || '') === layer);
             checkbox.addEventListener('change', () => updateSelectedColumnsList(id, settings));
             const label = document.createElement('label');
             label.className = 'form-check-label';
@@ -844,14 +864,18 @@ function updateSelectedColumnsList(id, settings) {
         
         // Add to settings (a score column also keeps the signature's title, for when it is deleted)
         const entry = { type, key, column };
-        if (type === 'gene-score') entry.label = checkbox.getAttribute('data-label') || undefined;
+        if (type === 'gene-score') {
+            entry.label = checkbox.getAttribute('data-label') || undefined;
+            const layer = checkbox.getAttribute('data-layer');
+            if (layer) entry.layer = layer;
+        }
         settings.columns.push(entry);
         
         // Create list item
         const listItem = document.createElement('li');
         listItem.className = 'list-group-item';
         
-        const displayName = getColumnDisplayName({ type, key, column });
+        const displayName = getColumnDisplayName(entry);
         
         // Create text span with ellipsis for long names
         const textSpan = document.createElement('span');

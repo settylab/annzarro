@@ -1211,6 +1211,15 @@ function setupAxisSelectorListeners(
     handleAxisUpdate(axis, plotType);
   });
 
+  // The layer a gene score is computed over: its own consumer setting
+  $container.find('.axis-layer-select').on('change', function() {
+    const axis = jQuery(this).data('axis');
+    delete settings[axis].auto;
+    const value = jQuery(this).val();
+    if (value) settings[axis].layer = value; else delete settings[axis].layer;
+    handleAxisUpdate(axis, plotType);
+  });
+
   // Column selectors
   $container.find('.axis-column-select').on('change', function() {
     const axis = jQuery(this).data('axis');

@@ -21,7 +21,7 @@ import { createScoreStore } from './score-store.js';
 import { createScoreSources } from './score-sources.js';
 import { createScoreApi } from './gene-score-client.js';
 import { describeScore, worstNotice } from './score-notices.js';
-import { registerSource, subKeyOf } from './source-registry.js';
+import { registerSource, subKeyOf, layerOf } from './source-registry.js';
 import { METHODS, DEFAULT_METHOD } from './gene-signature.js';
 
 /** What each aggregation is called where a consumer picks it (level 3). */
@@ -90,7 +90,8 @@ export function signatureList() {
     const open = new Set(PanelManager.getActivePanels().map(p => p.getId()));
     return PanelManager.getAllPanels()
         .filter(p => p.getType && p.getType() === 'gene-signature')
-        .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()) }));
+        .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()),
+            input: p.getRecipe ? p.getRecipe().input : 'X' }));
 }
 
 /** The title of the signature a setting names, or what it was called when last seen. */
@@ -104,8 +105,14 @@ export function scoreTitle(setting) {
 /** The name a consumer shows for a score: the signature's title, and the aggregation when it is not the default. */
 export function scoreLabel(setting) {
     const sub = subKeyOf(setting);
-    const title = scoreTitle(setting).replace(/ · (z-score mean|mean)$/, '');
-    return !sub || sub === DEFAULT_METHOD ? title : `${title} · ${SUB_LABELS[sub] || sub}`;
+    const title = scoreTitle(setting).replace(/( · (z-score mean|mean))?( · of .+)?$/, '');
+    const layer = layerOf(setting);
+    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
+    const own = panel && panel.getRecipe ? panel.getRecipe().input : null;
+    let out = !sub || sub === DEFAULT_METHOD ? title : `${title} · ${SUB_LABELS[sub] || sub}`;
+    // the layer is named when it is not the one the signature itself reads
+    if (layer && layer !== own) out += ` · of ${layer}`;
+    return out;
 }
 
 /** A custom error: the series cannot be drawn yet, and why. */
@@ -185,10 +192,10 @@ function stillUsed(rec) {
     if (!panel || typeof panel.getConfig !== 'function') return true;
     const cfg = panel.getConfig();
     if (isHover(rec.role)) {
-        return (cfg.hoverInfo || []).some(h => h && h.type === 'gene-score' && h.key === rec.sigId && subKeyOf(h) === rec.sub);
+        return (cfg.hoverInfo || []).some(h => h && h.type === 'gene-score' && h.key === rec.sigId && subKeyOf(h) === rec.sub && layerOf(h) === rec.layer);
     }
     const s = cfg[rec.role];
-    return !!(s && s.type === 'gene-score' && s.key === rec.sigId && subKeyOf(s) === rec.sub);
+    return !!(s && s.type === 'gene-score' && s.key === rec.sigId && subKeyOf(s) === rec.sub && layerOf(s) === rec.layer);
 }
 
 // ---------------------------------------------------------------------------
@@ -287,15 +294,16 @@ function recordFor(host, role, setting) {
     const map = recordsOf(host);
     let rec = map.get(role);
     const sub = subKeyOf(setting);
-    if (rec && (rec.sigId !== setting.key || rec.sub !== sub)) {
+    const layer = layerOf(setting);
+    if (rec && (rec.sigId !== setting.key || rec.sub !== sub || rec.layer !== layer)) {
         release(host, role);
         rec = null;
     }
     if (!rec) {
         const { sources } = scores();
-        rec = { role, sigId: setting.key, sub, setting, panelId: panelIdOf(host), drawnKey: undefined, handle: null };
+        rec = { role, sigId: setting.key, sub, layer, setting, panelId: panelIdOf(host), drawnKey: undefined, handle: null };
         rec.handle = sources.watch(setting.key, {
-            host, role, sub, visible: () => isVisible(host),
+            host, role, sub, layer, visible: () => isVisible(host),
             onChange: (snap) => onChange(host, rec, snap)
         });
         recordsOf(host).set(role, rec);

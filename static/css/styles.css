@@ -3364,6 +3364,10 @@ button.dtsb-button.dtsb-clear:hover {
     min-width: 0;
 }
 
+/* The layer of a gene score takes a line of its own below the three choices. */
+.axis-selector:has(> .axis-layer-select:not([hidden])) { flex-wrap: wrap; }
+.axis-selector .axis-layer-select { flex: 1 1 100%; width: auto; min-width: 0; }
+
 /* A constant colour has no key or column: the type select says so in full. */
 .axis-selector:has(> .axis-type-select option[value="none"]:checked) > .axis-type-select {
     flex: 0 1 auto;

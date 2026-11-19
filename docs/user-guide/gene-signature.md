@@ -118,6 +118,7 @@ colour's score).
 A score is chosen in three steps, as an embedding is: the source (**gene-score**), the signature, and
 the **aggregation** (z-score mean, the default, or mean). Each axis, the colour and the hover can use a
 different signature or a different aggregation of the same one; the same choice on two axes is computed once.
+A fourth menu, under the three, chooses the **layer** the score is computed over: "of X", or any layer of the dataset (the default is the signature's own input). A cell table's score columns have the same choice at the top of the **gene-score** tab. The same signature over two layers is two scores; a layer the dataset does not have is stated over the plot.
 The score can be on any axis, x, y and z (3D) included, against another score, an obs column or a gene.
 In large-plot mode x, y and colour take a score; 3D and extra hover columns are not available there.
 **Use in** offers **Colour**, **Use as X** and **Use as Y** for each Cell Plot.

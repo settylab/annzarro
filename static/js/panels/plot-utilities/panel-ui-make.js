@@ -66,6 +66,7 @@ function axisRow(axis, label, id, attrs = 'class="axis-selector-container ctl-ro
                 <select class="form-select form-select-sm axis-column-select" data-axis="${axis}" disabled>
                   <option value="">Loading...</option>
                 </select>
+                <select class="form-select form-select-sm axis-layer-select" data-axis="${axis}" hidden aria-label="Layer the score is computed over"></select>
               </div>
             </div>`;
 }
@@ -113,6 +114,7 @@ export function createPanelStructure(container, id, settings) {
                 <select class="form-select form-select-sm axis-column-select" data-axis="color" disabled>
                   <option value="">Loading...</option>
                 </select>
+                <select class="form-select form-select-sm axis-layer-select" data-axis="color" hidden aria-label="Layer the score is computed over"></select>
               </div>
             </div>
           </div>

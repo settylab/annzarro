@@ -76,7 +76,7 @@ window.fetch = async (url, init) => {
     let body = {};
     try { body = JSON.parse(init.body); } catch (e) { body = {}; }
     const kind = body.estimate_only ? 'estimate' : 'compute';
-    window.__scoreCalls.push({ kind, genes: (body.recipe && body.recipe.genes) || [], method: (body.recipe && body.recipe.method) || null, confirm: !!body.confirm, subset: body.subset || null });
+    window.__scoreCalls.push({ kind, genes: (body.recipe && body.recipe.genes) || [], method: (body.recipe && body.recipe.method) || null, input: (body.recipe && body.recipe.input) || null, confirm: !!body.confirm, subset: body.subset || null });
     if (window.__scoreFake) {
       const out = window.__scoreFake(kind, body, () => real(url, init), init);
       if (out) return out;

@@ -79,7 +79,7 @@ export function hoverInfoFromSelection(plotType, selected, previous) {
   const scores = selected.filter(v => v.startsWith(SCORE_PREFIX));
   selected = selected.filter(v => !v.startsWith(SCORE_PREFIX));
   const kept = (Array.isArray(previous) ? previous : [])
-    .filter(h => h && !(h.type === type && !h.column && h.key !== '_index') && h.type !== 'gene-score');
+    .filter(h => h && !(h.type === type && !h.column && h.key !== '_index') && !(h.type === 'gene-score' && !h.layer));
   if (!kept.some(h => h.type === type && h.key === '_index')) kept.unshift({ type, key: '_index' });
   return kept.concat((selected || []).filter(k => k && k !== '_index').map(key => ({ type, key })),
     scores.map(v => ({ type: 'gene-score', ...parseScoreValue(v) })));

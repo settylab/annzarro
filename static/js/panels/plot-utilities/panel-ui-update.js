@@ -576,6 +576,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     populateKeySelector(settings, $keySelect[0], datasetStructure);
     limitTextAxisOptions($keySelect[0], large, textObsColumns(datasetStructure));
     populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure);
+    populateLayerSelector(settings, $container.find(`.axis-layer-select[data-axis="${axis}"]`)[0], datasetStructure);
     
     // Add or update the refocus and lock buttons for layer, obsp, and varp types
     const $axisSelector = $columnSelect.closest('.axis-selector');
@@ -1166,4 +1167,34 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
 // signatures were added, removed or renamed
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('annzarro:panels-changed', () => refreshScoreKeySelects());
+}
+
+/**
+ * The fourth choice of a gene score: the layer it is computed over. Shown for a gene-score source
+ * only. The first option is the signature's own input (stored as no layer, so a link made before
+ * layers were a choice keeps its meaning); then X and each layer, as the layer source lists them.
+ * @param {Object} settings - the axis settings (`layer` is set or cleared)
+ * @param {HTMLSelectElement|undefined} select
+ * @param {Object} datasetStructure
+ */
+export function populateLayerSelector(settings, select, datasetStructure) {
+  if (!select) return;
+  if (settings.type !== 'gene-score') {
+    select.hidden = true;
+    select.innerHTML = '';
+    if (settings.layer) delete settings.layer;
+    return;
+  }
+  const sig = getSource('gene-score').entities().find(e => e.id === settings.key);
+  const own = sig && sig.input ? sig.input : 'X';
+  const keys = layerKeys(datasetStructure);
+  const wanted = settings.layer || '';
+  const options = [{ value: '', text: `of ${own} (the signature's own)` }].concat(keys.map(k => ({ value: k, text: `of ${k}` })));
+  // a layer the dataset does not have stays listed, so the plot can say it is missing
+  if (wanted && !keys.includes(wanted)) options.push({ value: wanted, text: `of ${wanted} (not in this dataset)` });
+  select.innerHTML = '';
+  for (const o of options) select.appendChild(new Option(o.text, o.value, false, o.value === wanted));
+  select.value = wanted;
+  select.hidden = false;
+  select.title = 'The layer the score is computed over';
 }
