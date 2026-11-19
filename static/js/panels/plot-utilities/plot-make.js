@@ -2224,8 +2224,10 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   // An OPEN table that has not published its rows yet (being opened, or it could not be) is read as a
   // closed one: its closed selection, if it has one, serves until it publishes; else the plot waits
   const gated = TableResolver.gate(settings.tableFilter);
-  const closed = !!(window.PanelManager && window.PanelManager.getActivePanels
-    && !window.PanelManager.getActivePanels().includes(tablePanel)) || !!gated;
+  // a gene signature has no rows to freeze: its genes are its recipe, so closed it filters as open.
+  // It is never queued in the table resolver (the host only knows Cell and Gene Tables).
+  const closed = !tablePanel.selectionIsLive && (!!(window.PanelManager && window.PanelManager.getActivePanels
+    && !window.PanelManager.getActivePanels().includes(tablePanel)) || !!gated);
   let outOfDate = false;      // a closed table's filter that does not know these cells: unresolved, not "no cell"
 
   if (closed) {

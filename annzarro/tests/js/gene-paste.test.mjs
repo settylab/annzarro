@@ -261,3 +261,46 @@ test("a large paste parses and matches quickly", () => {
   assert.equal(r.toAdd.length, 50000);
   assert.ok(Date.now() - t0 < 2000);
 });
+
+test("table: a named column the dataset knows beats an earlier named column it does not", () => {
+  const text = "gene_id,gene_symbol,x\nENSG1,CD3D,1\nENSG2,CD4,2\nENSG3,CD8A,3";
+  assert.equal(parseGeneInput(text).table.column, 0, "no dataset: ids before symbols");
+  const r = parseGeneInput(text, { score: (v) => M.countKnown(v, GENES) });
+  assert.equal(r.table.column, 1);
+  // an unnamed column with more matches does not displace a named one that has some
+  const t = parseGeneInput("symbol,other\nCD3D,CD4\nNOPE,CD8A\nNOPE2,IL7R", { score: (v) => M.countKnown(v, GENES) });
+  assert.equal(t.table.column, 0);
+});
+
+test("id columns: which var column translates Ensembl or Entrez ids", () => {
+  assert.equal(M.pickIdColumnFor("ensembl", ["mean", "gene_ids", "feature_name"]), "gene_ids");
+  assert.equal(M.pickIdColumnFor("ensembl", ["mean", "Ensembl_ID"]), "Ensembl_ID");
+  assert.equal(M.pickIdColumnFor("ensembl", ["gene_ids", "gene_id"]), "gene_id", "ids in ID_COLUMN_PREFERENCE order");
+  assert.equal(M.pickIdColumnFor("ensembl", ["mean", "gene_symbol", "feature_name"]), null, "names are not ids");
+  assert.equal(M.pickIdColumnFor("ensembl", ["_index", "mean"]), null);
+  assert.equal(M.pickIdColumnFor("entrez", ["mean", "Entrez_ID", "gene_ids"]), "Entrez_ID");
+  assert.equal(M.pickIdColumnFor("entrez", ["gene_ids"]), null);
+  assert.equal(M.pickIdColumnFor("ensembl", undefined), null);
+});
+
+test("id kind of the names that did not match", () => {
+  const ens = Array.from({ length: 6 }, (_, i) => `ENSG0000000${1000 + i}`);
+  assert.equal(M.idKindOf(ens, 6), "ensembl");
+  assert.equal(M.idKindOf(ens, 20), null, "a minority of the names");
+  assert.equal(M.idKindOf(["1234", "5678", "9"], 3), "entrez");
+  assert.equal(M.idKindOf(["FOO1", "BAR2"], 2), null);
+  assert.equal(M.idKindOf([], 0), null);
+});
+
+test("id map: ids and bare ids to dataset names, and matching through it", () => {
+  const genes = ["CD3D", "CD4", "GATA1"];
+  const map = M.buildIdMap(["ENSG00000167286.7", "ENSG00000010610", null], genes);
+  assert.equal(map.get("ENSG00000167286.7"), "CD3D");
+  assert.equal(map.get("ENSG00000167286"), "CD3D", "version stripped");
+  assert.equal(map.get("ENSG00000010610"), "CD4");
+  assert.equal(map.size, 3);
+  const r = matchGenes(["ENSG00000167286.3", "ENSG00000010610", "ENSG00000999999", "GATA1"], { geneNames: genes, idToName: map });
+  assert.deepEqual(r.toAdd, ["CD3D", "CD4", "GATA1"], "the recipe gets names, not ids");
+  assert.equal(r.idMatches.length, 2);
+  assert.deepEqual(r.unmatched, ["ENSG00000999999"]);
+});

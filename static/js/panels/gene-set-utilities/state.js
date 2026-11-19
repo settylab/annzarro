@@ -99,6 +99,8 @@ export function inputKey(adapter, parts) {
  */
 export function readTableSelection(table, { open, geneNames }) {
     if (!table) return { status: 'missing', names: null, title: '' };
+    // a gene signature has no rows to freeze: its genes are its recipe, so closed it reads as open
+    if (table.selectionIsLive) open = true;
     const title = (typeof table.getTitle === 'function' && table.getTitle()) || '';
     if (open && typeof table.isReady === 'function' && !table.isReady()) {
         return { status: 'waiting', names: null, title };

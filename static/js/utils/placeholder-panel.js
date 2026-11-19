@@ -16,7 +16,7 @@
 
 const LABELS = {
     'cell-plot': 'Cell plot', 'gene-plot': 'Gene plot', 'cell-table': 'Cell table',
-    'gene-table': 'Gene table', 'gene-set': 'Gene set analysis'
+    'gene-table': 'Gene table', 'gene-set': 'Gene set analysis', 'gene-signature': 'Gene signature'
 };
 
 /**

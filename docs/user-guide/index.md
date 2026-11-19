@@ -9,6 +9,7 @@ cell-and-gene-plots
 colour-scales
 tables-and-filters
 gene-set
+gene-signature
 panel-sets
 share-links
 plot-options

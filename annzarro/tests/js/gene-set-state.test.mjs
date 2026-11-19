@@ -119,6 +119,18 @@ test('the source: open, waiting, closed (its frozen names), closed and unknown, 
     assert.equal(S.readTableSelection(table({ closedSelection: null }), { open: false, geneNames: genes }).status, 'closed-unknown');
 });
 
+test('a gene signature is read as open whether or not its panel is: its genes are its recipe', () => {
+    const genes = ['G0', 'G1', 'G2', 'G3'];
+    const signature = { selectionIsLive: true, getTitle: () => 'Signature 1', isReady: () => true, getConfig: () => ({ currentEntries: [2, 0] }) };
+    for (const open of [true, false]) {
+        const r = S.readTableSelection(signature, { open, geneNames: genes });
+        assert.deepEqual(r, { status: 'open', names: ['G2', 'G0'], title: 'Signature 1' }, `open: ${open}`);
+    }
+    // a gene table that is closed is still read as before
+    const table = { getTitle: () => 'T', isReady: () => true, getConfig: () => ({ currentEntries: [1], closedSelection: null }) };
+    assert.equal(S.readTableSelection(table, { open: false, geneNames: genes }).status, 'closed-unknown');
+});
+
 test('ids from an ID column: missing values counted, repeats sent once, names kept parallel', () => {
     const col = { G0: 'TP53', G1: '', G2: 'TP53', G3: 'nan', G4: 7157, G5: 'MDM2' };
     const r = S.selectionIds(['G0', 'G1', 'G2', 'G3', 'G4', 'G5'], { idColumn: 'symbol', idOf: (n) => col[n] });

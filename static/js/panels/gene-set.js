@@ -428,6 +428,11 @@ const GeneSetPanel = (function() {
             });
         }
 
+        /** The panels that can be the source: gene tables, and gene signatures (their genes are the selection). */
+        function sourcePanels() {
+            return [...PanelManager.getPanelsByType('gene-table'), ...PanelManager.getPanelsByType('gene-signature')];
+        }
+
         /** Tables were added, closed, reopened or renamed. */
         function onPanelsChanged() {
             if (!_initialized) return;
@@ -438,7 +443,7 @@ const GeneSetPanel = (function() {
                 setSource(_settings.tableFilter);
                 return;
             }
-            if (!PanelManager.getPanelsByType('gene-table').length && before !== 'none') {
+            if (!sourcePanels().length && before !== 'none') {
                 setSource('none');
                 return;
             }
@@ -886,7 +891,7 @@ const GeneSetPanel = (function() {
             if (!_dom) return false;
             const sel = _dom.source;
             D.clear(sel);
-            const tables = PanelManager.getPanelsByType('gene-table');
+            const tables = sourcePanels();
             const active = new Set(PanelManager.getActivePanels());
             if (!tables.length) {
                 sel.appendChild(D.el('option', { value: 'none', text: 'No gene table yet' }));
@@ -896,7 +901,8 @@ const GeneSetPanel = (function() {
             }
             sel.disabled = false;
             for (const t of tables) {
-                const label = `${t.getTitle()}${active.has(t) ? '' : ' (closed)'}`;
+                // a signature is its panel open or closed, so it carries no "(closed)"
+                const label = `${t.getTitle()}${active.has(t) || t.selectionIsLive ? '' : ' (closed)'}`;
                 sel.appendChild(D.el('option', { value: t.getId(), text: label }));
             }
             let changed = false;
@@ -1206,7 +1212,7 @@ const GeneSetPanel = (function() {
             const tag = _source.status === 'closed' ? ' (source table closed: its selection when it closed)' : '';
             if (g === 'no-dataset') text = 'No dataset loaded.';
             else if (g === 'no-source') {
-                text = PanelManager.getPanelsByType('gene-table').length ? 'Pick a gene table as the source.'
+                text = sourcePanels().length ? 'Pick a gene table as the source.'
                     : 'No gene table yet. Add one with Create New Panel (the panel chooser) → Gene Table; '
                         + 'this panel then analyses the genes passing its filter.';
             }

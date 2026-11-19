@@ -1463,6 +1463,90 @@ button.dtsb-button.dtsb-clear:hover {
 .gs-menu__check { flex: 0 0 1em; color: var(--az-link); }
 .gs-menu__warn { color: var(--az-warn-text); font-size: 0.75rem; }
 
+/* Gene Signature panel (panels/gene-signature.js): the status zone, the add
+   controls, the gene list as a virtualised grid. Words carry every state; the
+   --az-* tokens carry both themes. */
+.tile-content > .gsig-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.gsig-panel {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    height: 100%;
+    min-height: 0;
+    font-size: 0.8125rem;
+    container: gsig / inline-size;
+}
+.gsig-status {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--az-border);
+    background-color: var(--az-surface-2);
+}
+.gsig-status__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
+.gsig-summary { font-weight: 600; }
+.gsig-definition, .gsig-usedby { color: var(--az-muted); font-size: 0.75rem; }
+.gsig-menu-wrap { position: relative; }
+.gsig-controls {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--az-border);
+    background-color: var(--az-surface-2);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.gsig-search-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.gsig-search { flex: 1 1 10rem; min-width: 0; }
+.gsig-controls .form-control-sm, .gsig-controls .btn-sm, .gsig-listbar .btn-sm { font-size: 0.8125rem; }
+.gsig-toggle.active { background: var(--az-muted); color: var(--az-surface); }
+.gsig-search.is-invalid { border-color: var(--az-danger-text); }
+.gsig-searchnote { min-height: 0; font-size: 0.75rem; color: var(--az-muted); }
+.gsig-searchnote:empty { display: none; }
+.gsig-searchnote--error { color: var(--az-danger-text); }
+.gsig-add-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.gsig-short { display: none; }
+.gsig-listbar {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px;
+    padding: 4px 8px;
+}
+.gsig-listbar__actions { display: flex; gap: 4px; }
+.gsig-viewswitch { display: inline-flex; border: 1px solid var(--az-border-strong); border-radius: 4px; overflow: hidden; }
+.gsig-seg { border: 0; background: var(--az-surface); padding: 2px 10px; font-size: 0.8125rem; color: inherit; }
+.gsig-seg + .gsig-seg { border-left: 1px solid var(--az-border-strong); }
+.gsig-seg.active { background: var(--az-muted); color: var(--az-surface); }
+.gsig-seg:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
+.gsig-message { padding: 0 8px 4px; color: var(--az-muted); font-size: 0.75rem; }
+.gsig-message:empty { display: none; }
+.gsig-empty { padding: 8px; color: var(--az-muted); }
+.gsig-link { padding: 0 2px; font-size: 0.8125rem; }
+.gsig-grid {
+    position: relative;
+    flex: 1 1 12rem;
+    min-height: 8rem;
+    overflow-y: auto;
+    border-top: 1px solid var(--az-border);
+    background: var(--az-surface);
+}
+.gsig-grid:focus-within { outline: 1px solid var(--az-link); outline-offset: -1px; }
+.gsig-grid__sizer { position: relative; width: 100%; }
+.gsig-grid__rows { position: absolute; inset: 0 0 auto 0; }
+.gsig-row { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; }
+.gsig-row:hover { background: var(--az-surface-3); }
+.gsig-cell { display: flex; align-items: center; gap: 8px; padding: 0 10px; width: 100%; min-width: 0; }
+.gsig-tick { margin: 0; flex: 0 0 auto; }
+.gsig-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gsig-note { color: var(--az-warn-text); font-size: 0.75rem; white-space: nowrap; }
+.gsig-row.is-missing .gsig-name { color: var(--az-muted); }
+.gsig-row.is-removed .gsig-name { text-decoration: line-through; color: var(--az-muted); }
+@container gsig (max-width: 360px) {
+    .gsig-long { display: none; }
+    .gsig-short { display: inline; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .gsig-row { transition: none; }
+}
+
 /* one persistent line: fresh, stale or a notice */
 .gs-bar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
@@ -4815,3 +4899,11 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .gene-paste .gp-over { margin: 0.5rem 0; padding: 0.5rem 0.6rem; border: 1px solid var(--az-danger-border); background: var(--az-danger-bg); color: var(--az-danger-text); border-radius: 4px; display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
 .gene-paste .gp-over-count { font-weight: 600; }
 .gene-paste .gp-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.6rem; }
+
+/* Paste or upload inside the Gene Signature panel: the flow replaces the list */
+.gsig-panel.gsig-flowing > .gsig-listbar,
+.gsig-panel.gsig-flowing > .gsig-note-line,
+.gsig-panel.gsig-flowing > .gsig-empty,
+.gsig-panel.gsig-flowing > .gsig-grid { display: none; }
+.gsig-flow { padding: 4px 0; }
+.gsig-flow[hidden] { display: none; }
