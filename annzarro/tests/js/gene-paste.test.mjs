@@ -261,3 +261,13 @@ test("a large paste parses and matches quickly", () => {
   assert.equal(r.toAdd.length, 50000);
   assert.ok(Date.now() - t0 < 2000);
 });
+
+test("table: a named column the dataset knows beats an earlier named column it does not", () => {
+  const text = "gene_id,gene_symbol,x\nENSG1,CD3D,1\nENSG2,CD4,2\nENSG3,CD8A,3";
+  assert.equal(parseGeneInput(text).table.column, 0, "no dataset: ids before symbols");
+  const r = parseGeneInput(text, { score: (v) => M.countKnown(v, GENES) });
+  assert.equal(r.table.column, 1);
+  // an unnamed column with more matches does not displace a named one that has some
+  const t = parseGeneInput("symbol,other\nCD3D,CD4\nNOPE,CD8A\nNOPE2,IL7R", { score: (v) => M.countKnown(v, GENES) });
+  assert.equal(t.table.column, 0);
+});

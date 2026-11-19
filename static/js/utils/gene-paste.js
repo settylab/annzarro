@@ -230,13 +230,20 @@ export function pickGeneColumn(rows, headerRow, score) {
         }
     }
     if (typeof score === 'function') {
-        let best = -1, bestScore = 0;
-        const candidates = [...byName, ...Array.from({ length: width }, (_, i) => i).filter(i => !byName.includes(i))];
-        for (const c of candidates) {
-            const s = score(rows.slice(0, 5000).map(r => cleanName(r[c] || '')).filter(Boolean));
-            if (s > bestScore) { best = c; bestScore = s; }
-        }
-        if (best >= 0) return best;
+        const best = (cols) => {
+            let pick = -1, top = 0;
+            for (const c of cols) {
+                const n = score(rows.slice(0, 5000).map(r => cleanName(r[c] || '')).filter(Boolean));
+                if (n > top) { pick = c; top = n; }
+            }
+            return pick;
+        };
+        // among the columns named like genes the one the dataset knows most of (ids before symbols on a tie),
+        // else any column the dataset knows
+        const named = best(byName);
+        if (named >= 0) return named;
+        const any = best(Array.from({ length: width }, (_, i) => i));
+        if (any >= 0) return any;
     }
     return byName.length ? byName[0] : 0;
 }

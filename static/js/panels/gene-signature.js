@@ -33,6 +33,7 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { createGeneGrid } from '../utils/gene-grid.js';
 import { getFixedGenes } from './table-utilities/panel-tracker.js';
+import { pasteSource } from './gene-signature-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
     GENE_LIMIT, normalizeRecipe, recipeHash, definitionText, planAdd, limitMessage, searchNames, enterTarget,
@@ -45,9 +46,14 @@ const SEARCH_DELAY_MS = 90;
 /**
  * Ways to add genes beyond the ones built in, from later steps (paste and
  * upload). Each is `(ctx) => items`, where an item is
- * `{id, label, run: () => void}` and `ctx` is `{panel, genes}`.
+ * `{id, label, run: () => void}` and `ctx` is `{panel, genes}`. An item with `inline: true` is a
+ * button beside Add from (`shortLabel` on narrow panels) instead of a menu entry, and one with
+ * `drop: (file) => void` takes a file dropped on the panel.
  */
 export const ADD_SOURCES = [];
+
+// Paste or upload (step 4): an inline button next to Add from, and a drop target over the panel
+ADD_SOURCES.push(pasteSource);
 
 /**
  * Places to use a signature beyond the ones built in, from later steps (the
@@ -100,6 +106,7 @@ const GeneSignaturePanel = (function() {
         let D = null;
         let _grid = null;
         const _undo = new UndoStack();
+        let _flow = null;                 // an inline flow (paste and upload) replacing the list: {node, opener, onClose}
         const _listeners = [];
 
         // -------------------------------------------------------------------
@@ -133,6 +140,7 @@ const GeneSignaturePanel = (function() {
         function cleanup() {
             clearTimeout(_timer);
             _timer = null;
+            closeFlow(null, { focus: false });
             for (const [target, type, fn] of _listeners.splice(0)) target.removeEventListener(type, fn);
             if (_grid) _grid.destroy();
             _grid = null;
@@ -397,10 +405,12 @@ const GeneSignaturePanel = (function() {
             el('span', { class: 'gsig-long', text: 'Add from ▾' }), el('span', { class: 'gsig-short', text: 'Add ▾' }));
             const addMenu = el('div', { class: 'gs-menu gsig-menu', id: sid('addfrom-menu'), role: 'menu', hidden: true,
                 on: { keydown: (e) => onMenuKey(e, 'addfrom') } });
+            const _flowHost = el('div', { class: 'gsig-flow', hidden: true });
             const controls = el('div', { class: 'gsig-controls' },
                 el('div', { class: 'gsig-search-row' }, search, regex, matchCase, tickAllBtn),
                 searchNote,
-                el('div', { class: 'gsig-add-row' }, el('span', { class: 'gsig-menu-wrap' }, addFrom, addMenu)));
+                el('div', { class: 'gsig-add-row' }, ...inlineButtons(), el('span', { class: 'gsig-menu-wrap' }, addFrom, addMenu)),
+                _flowHost);
 
             const allBtn = el('button', { type: 'button', role: 'radio', class: 'gsig-seg', on: { click: () => setView('all') } });
             const selBtn = el('button', { type: 'button', role: 'radio', class: 'gsig-seg', on: { click: () => setView('selected') } });
@@ -424,10 +434,12 @@ const GeneSignaturePanel = (function() {
             const root = el('div', { class: 'gsig-panel' });
             root.insertAdjacentHTML('afterbegin', noDatasetScreenHtml(_id));
             root.addEventListener('keydown', onPanelKey);
+            root.addEventListener('dragover', onPanelDragOver);
+            root.addEventListener('drop', onPanelDrop);
             root.append(status, controls, listbar, message, note, empty, _grid.element);
             _container.innerHTML = '';
             _container.appendChild(root);
-            _dom = { root, controls, status, summary, useIn, useInMenu, definition, usedBy, search, regex, matchCase, tickAllBtn, searchNote,
+            _dom = { root, controls, flowHost: _flowHost, status, summary, useIn, useInMenu, definition, usedBy, search, regex, matchCase, tickAllBtn, searchNote,
                 addFrom, addMenu, allBtn, selBtn, undoBtn, clearBtn, listbar, message, note, empty,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
         }
@@ -673,8 +685,67 @@ const GeneSignaturePanel = (function() {
                 items.push({ id: `table:${table.getId()}`, label: `${title} · ${fmtCount(names.length)} gene${names.length === 1 ? '' : 's'}`,
                     run: () => addGenes(names, { label: title, outside }) });
             }
-            for (const source of ADD_SOURCES) items.push(...source({ panel: api, genes: _names }));
+            for (const item of addSourceItems()) if (!item.inline) items.push(item);
             return items;
+        }
+
+        function addSourceItems() {
+            const out = [];
+            for (const source of ADD_SOURCES) out.push(...source({ panel: api, genes: _names }));
+            return out;
+        }
+
+        /** The buttons of the sources that sit beside Add from (Paste or upload). */
+        function inlineButtons() {
+            return addSourceItems().filter(i => i.inline).map(item => D.el('button', {
+                type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-inline', data: { id: item.id },
+                aria: { label: item.label }, on: { click: () => { closeMenus(); item.run(); } } },
+            D.el('span', { class: 'gsig-long', text: item.label }), D.el('span', { class: 'gsig-short', text: item.shortLabel || item.label })));
+        }
+
+        /**
+         * Show `node` in place of the list (zones 3 to 5 of the design), until closeFlow.
+         * @param {HTMLElement} node
+         * @param {{opener?: string, onClose?: () => void}} [opts] - `opener`: id of the inline button that gets the focus back
+         */
+        function openFlow(node, opts = {}) {
+            if (!_dom) return;
+            closeFlow(null, { focus: false });
+            closeMenus();
+            _flow = { node, opener: opts.opener, onClose: opts.onClose };
+            _dom.flowHost.append(node);
+            _dom.flowHost.hidden = false;
+            _dom.root.classList.add('gsig-flowing');
+        }
+
+        /** Put the list back. The focus goes to the button that opened the flow. */
+        function closeFlow(opener, { focus = true } = {}) {
+            const flow = _flow;
+            if (!flow) return;
+            _flow = null;
+            if (flow.onClose) flow.onClose();
+            flow.node.remove();
+            if (!_dom) return;
+            _dom.flowHost.hidden = true;
+            _dom.root.classList.remove('gsig-flowing');
+            if (_grid) _grid.refresh();
+            const id = opener || flow.opener;
+            const btn = id && _dom.root.querySelector(`.gsig-inline[data-id="${CSS.escape(id)}"]`);
+            if (focus && btn) btn.focus();
+        }
+
+        function onPanelDragOver(e) {
+            const types = e.dataTransfer && e.dataTransfer.types;
+            if (types && [...types].includes('Files') && addSourceItems().some(i => i.drop)) e.preventDefault();
+        }
+
+        /** A file dropped on the panel goes to the source that takes files (Paste or upload). */
+        function onPanelDrop(e) {
+            const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+            const item = addSourceItems().find(i => i.drop);
+            if (!file || !item) return;
+            e.preventDefault();
+            item.drop(file);
         }
 
         /** What "Use in" offers: the Gene Plots it can filter, the Gene Set Analysis panels it can feed, and what later steps add. */
@@ -721,6 +792,7 @@ const GeneSignaturePanel = (function() {
         function onDataUpdate(updateType, updateData) {
             if (updateType === 'datasetChanged') {
                 if (!_initialized) return undefined;
+                closeFlow(null, { focus: false });
                 loadGenes();
                 _dom.noData.style.display = 'none';
                 syncControlsWithDataset(_dom.controls, true);
@@ -767,6 +839,11 @@ const GeneSignaturePanel = (function() {
             getRecipeHash: () => recipeHash(_recipe),
             addGenes,
             undo,
+            // for the sources that plug in (paste and upload)
+            getDatasetGenes: () => DataManager.getGenes(),
+            getSelectedGenes: () => [..._recipe.genes, ..._recipe.down],
+            openFlow,
+            closeFlow,
             _debugState
         };
         return api;

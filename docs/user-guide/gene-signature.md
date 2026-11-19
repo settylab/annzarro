@@ -54,6 +54,39 @@ Adding says what happened ("Added 30 genes from DE genes. 12 were already select
 change of the list, a tick batch, **Tick all**, an add or **Clear**, can be undone with **Undo**
 (or Ctrl+Z, Cmd+Z on a Mac, outside the search box). Ticks made in quick succession undo together.
 
+### Paste or upload genes
+
+**Paste or upload** (**Paste** in a narrow panel) is beside **Add from**. It opens a box in place of the
+list. Paste genes into it, or choose a file with **Choose file**, or drop a file anywhere on the panel.
+Nothing is added until you have seen a preview.
+
+- **Any separator.** A new line, comma, semicolon, tab, space or pipe, or a mix of them. Quotes, stray
+  spaces, Windows line endings and byte-order marks are dealt with. Lines starting with `#` are ignored.
+- **Files.** A plain list; a CSV or TSV, with or without a header row (the gene column is chosen by its
+  name, such as `gene_symbol`, or by how many of its values are genes of the dataset, and you can pick
+  another one, and tick or untick **Header row**); a GMT, which holds several gene sets, so you pick one
+  (each shows how many of its genes matched); or a GRP, one gene per line. **Read as** changes how the
+  text is read when the guess is wrong. Excel files are refused: save the sheet as CSV first. A file can
+  be up to 10 MB.
+- **Private.** The text or file is read in your browser and is never sent to the server. Only the genes
+  you add become part of the signature.
+
+The preview says how many genes **will be added**, how many were **already selected**, how many were
+**duplicates in the list**, how many matched **ignoring case** (**Show** lists them, such as
+`cd3d > CD3D`; **Match case** turns this off) and how many are **not in this dataset**. Those names are
+listed, and **Copy** puts them on the clipboard. It also warns when:
+
+- the names look like Ensembl or Entrez ids and the dataset uses gene symbols;
+- most matches differ only in case, so the list may come from another species (names are matched,
+  not orthologs);
+- a name looks like a gene that Excel turned into a date, such as `1-Mar`.
+
+A signature holds up to 2,000 genes, counting the ones already selected. Over that, the preview says so,
+**Add** is off and nothing is added; shorten the list and try again.
+
+**Add** adds the genes as one step: **Undo** (or Ctrl+Z, Cmd+Z on a Mac) takes the whole paste back.
+**Cancel**, **Esc** and **Add** return you to the list and put the cursor back on **Paste or upload**.
+
 ## Use a signature
 
 **Use in** lists what the signature can feed now:

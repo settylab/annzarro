@@ -115,6 +115,7 @@ export function mountGenePaste(container, o) {
         e.preventDefault();
         dragDepth = 0;
         root.classList.remove('gp-dragging');
+        e.stopPropagation();    // the panel around us also takes drops; this one is ours
         const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
         if (f) fromFile(f);
     });
@@ -358,6 +359,8 @@ export function mountGenePaste(container, o) {
             if (r.text.trim() === '') { showStage('input'); return; }
             begin(r.text, fileName);
         },
+        /** Read a file as if it had been chosen or dropped. */
+        loadFile(file) { return fromFile(file); },
         reset,
         destroy() { root.remove(); }
     };
