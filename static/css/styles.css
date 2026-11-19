@@ -4779,3 +4779,39 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 }
 .filter-notice__card { pointer-events: auto; max-width: min(34em, 90%); margin: 0; text-align: left; }
 .filter-notice__text { margin-top: 2px; overflow-wrap: anywhere; }
+
+/* Paste or upload genes, and its preview (static/js/utils/gene-paste-preview.js) */
+.gene-paste { font-size: 0.875rem; color: var(--az-text); }
+.gene-paste .gp-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
+.gene-paste .gp-title:focus { outline: 2px solid var(--az-focus-border); outline-offset: 2px; }
+.gene-paste .gp-text { font-family: var(--bs-font-monospace, monospace); font-size: 0.8125rem; resize: vertical; min-height: 6rem; }
+.gene-paste .gp-hint { color: var(--az-muted); font-size: 0.8125rem; margin: 0.3rem 0; }
+.gene-paste .gp-filerow { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem; }
+.gene-paste .gp-filerow .btn-primary { margin-left: auto; }
+.gene-paste .gp-drop { color: var(--az-muted); }
+.gene-paste.gp-dragging { outline: 2px dashed var(--az-focus-border); outline-offset: 2px; background: var(--az-accent-bg); }
+.gene-paste .gp-error { margin-top: 0.4rem; padding: 0.4rem 0.6rem; border: 1px solid var(--az-danger-border); background: var(--az-danger-bg); color: var(--az-danger-text); border-radius: 4px; }
+.gene-paste .gp-readas-label { display: flex; align-items: center; gap: 0.4rem; margin: 0; }
+.gene-paste .gp-readas-label select { width: auto; }
+.gene-paste .gp-controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin: 0.4rem 0; }
+.gene-paste .gp-controls select, .gene-paste .gp-controls input[type=search] { width: auto; min-width: 10rem; }
+.gene-paste .gp-check { display: inline-flex; align-items: center; gap: 0.3rem; margin: 0; }
+.gene-paste .gp-sample { overflow-x: auto; max-height: 9rem; border: 1px solid var(--az-border); border-radius: 4px; }
+.gene-paste .gp-sample-table { margin: 0; font-size: 0.8125rem; }
+.gene-paste .gp-genecol { background: var(--az-accent-bg); font-weight: 600; }
+.gene-paste .gp-sets { max-height: 11rem; overflow-y: auto; border: 1px solid var(--az-border); border-radius: 4px; }
+.gene-paste .gp-set { display: flex; align-items: baseline; gap: 0.5rem; padding: 0.2rem 0.5rem; margin: 0; cursor: pointer; }
+.gene-paste .gp-set:hover { background: var(--az-surface-2); }
+.gene-paste .gp-set-name { flex: 1; overflow-wrap: anywhere; }
+.gene-paste .gp-set-count { color: var(--az-muted); white-space: nowrap; }
+.gene-paste .gp-counts { margin: 0.5rem 0; }
+.gene-paste .gp-count { display: flex; align-items: baseline; gap: 0.5rem; }
+.gene-paste .gp-n { min-width: 3.5em; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.gene-paste .gp-show { padding: 0 0.25rem; margin-left: auto; }
+.gene-paste .gp-casemap { margin: 0.2rem 0 0.2rem 4rem; padding: 0 0 0 1rem; max-height: 8rem; overflow-y: auto; color: var(--az-text-2); }
+.gene-paste .gp-matchcase { margin-top: 0.3rem; justify-content: flex-end; width: 100%; }
+.gene-paste .gp-note { margin: 0.4rem 0; padding: 0.35rem 0.6rem; border: 1px solid var(--az-warn-border); background: var(--az-warn-bg); color: var(--az-warn-text); border-radius: 4px; }
+.gene-paste .gp-names { max-height: 8rem; overflow-y: auto; overflow-wrap: anywhere; font-family: var(--bs-font-monospace, monospace); font-size: 0.8125rem; user-select: text; }
+.gene-paste .gp-over { margin: 0.5rem 0; padding: 0.5rem 0.6rem; border: 1px solid var(--az-danger-border); background: var(--az-danger-bg); color: var(--az-danger-text); border-radius: 4px; display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
+.gene-paste .gp-over-count { font-weight: 600; }
+.gene-paste .gp-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.6rem; }
