@@ -551,3 +551,38 @@ def test_matrix_kind_refuses_what_it_cannot_answer(client, layout):
     assert client.get(KIND).status_code == 400
     assert kind(client, layout, input="x" * 1001).status_code == 400
     assert client.get(KIND, query_string={"dataset_path": str(layout / "data" / "missing.zarr")}).status_code in (403, 404)
+
+
+def test_a_refused_or_failed_control_adjusted_request_leaves_the_slot_and_the_budget_free(client, big, monkeypatch):
+    """One bad request must not block every later score on the worker: the slot and the read budget are
+    given back on every way out (no control to draw, an error after the stream began, a closed stream)."""
+    before = read_guard.in_flight_bytes()
+
+    def free():
+        assert route._slot.acquire(blocking=False), "the slot is held"
+        route._slot.release()
+        assert read_guard.in_flight_bytes() == before, "the read budget is held"
+
+    parse(post(client, big, {"recipe": {"genes": BIG, "method": "control_adjusted"}}, name="big.zarr").get_data())
+    free()                                                             # no control genes
+    real = gs.compute
+
+    def broken(plan, rows=None, should_stop=None):
+        events = real(plan, rows, should_stop)
+        yield next(events)
+        raise OSError("disk gone")
+    monkeypatch.setattr(gs, "compute", broken)
+    frames, _ = parse(post(client, big, {"recipe": {"genes": SIGNATURE, "method": "control_adjusted"}},
+                           name="big.zarr").get_data())
+    assert frames[-1]["type"] == "error"
+    free()                                                             # failed after the stream began
+    monkeypatch.setattr(gs, "compute", real)
+    resp = post(client, big, {"recipe": {"genes": SIGNATURE, "method": "control_adjusted"}}, name="big.zarr",
+                buffered=False)
+    next(resp.response)                                                # one frame read, then the client goes away
+    resp.close()
+    free()
+    refused = post(client, big, {"recipe": {"genes": SIGNATURE, "method": "control_adjusted", "clip": -1}}, name="big.zarr")
+    assert refused.status_code == 200 or refused.status_code == 400
+    free()
+    assert run_big(client, big, {"method": "control_adjusted"})[0][-1]["scored"], "and the next score runs"
