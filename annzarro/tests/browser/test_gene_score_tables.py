@@ -591,26 +591,22 @@ def test_a_closed_table_with_a_score_column_comes_back_from_a_link_and_opens_wit
         fresh.close()
 
 
-def test_use_in_adds_the_score_to_a_cell_table_and_a_table_that_has_it_says_so(page, served):
+def test_the_column_chooser_adds_the_score_to_a_cell_table_and_a_table_that_has_it_shows_it_ticked(page, served):
     _slow(page, "auto", 3)
     _open(page, served, table=_table(columns=[OBS]), sig_open=True)
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
-    page.click(f"{S} .gsig-usein")
-    labels = page.locator(f"{S} .gsig-menu [role=menuitem]").all_inner_texts()
-    assert "Add to Cell Table 1" in labels, labels
-    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('Add to Cell Table 1')")
+    assert page.locator(f"{S} .gsig-usein").count() == 0, "the signature panel has no Use in menu"
+    page.click(f"#gene-score-tab-{TID}")
+    page.check(f"#checkbox-gene-score-{SIG}-zscore_mean-{TID}")
+    page.click(f"#apply-columns-{TID}")
     until(page, "(box) => document.querySelectorAll(box + ' .dataTables_scrollHead th').length === 3", BOX)
     assert _headers(page)[2] == "T cell score (computing)"
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns", TID)
     assert [(c["type"], c["key"], c["column"]) for c in cfg] == [("obs", "score", ""), ("gene-score", SIG, "zscore_mean")]
-    assert page.evaluate(f"() => document.getElementById('checkbox-gene-score-{SIG}-zscore_mean-{TID}').checked") is True
     until(page, "() => window.__ctls.length === 1")
     _finish(page, 0)
     _wait_ready(page)
-    # the table has it now: the menu says so and does not add it twice
-    page.click(f"{S} .gsig-usein")
-    item = page.locator(f"{S} .gsig-menu [role=menuitem]:has-text('Add to Cell Table 1')")
-    assert item.get_attribute("aria-disabled") == "true" or item.is_disabled()
+    assert page.evaluate(f"() => document.getElementById('checkbox-gene-score-{SIG}-zscore_mean-{TID}').checked") is True
 
 
 def test_new_cells_keep_the_table_and_the_column_asks_for_its_own_score(page, served):

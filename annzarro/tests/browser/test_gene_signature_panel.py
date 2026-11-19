@@ -8,7 +8,7 @@ GENE2992), enough for a virtualised list and for the 2,000 gene limit.
 
 1.  F1: a Gene Signature is added from the chooser, opens on the full gene list
     (3,000 rows in a virtualised grid), a gene is typed, Enter ticks it and the
-    box keeps the focus, and Use in filters a Gene Plot by it.
+    box keeps the focus, and the Gene Plot's own table filter selects it.
 2.  F3: Add from a gene table adds the genes that pass its filter, says how
     many were already selected, and Undo takes the step back.
 3.  The limit: 2,000 genes are allowed, 2,001 add nothing, and the message
@@ -184,14 +184,9 @@ def _shown_on_plot(page):
     }""" % P)
 
 
-def _use_in(page, label):
-    page.click(f"{S} .gsig-usein")
-    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('{label}')")
-
-
 def _add_from(page, label):
     page.click(f"{S} .gsig-addfrom")
-    page.click(f"{S} #gsig-addfrom-menu-gene-signature-S [role=menuitem]:has-text('{label}')")
+    page.click(f".gsig-menu:not([hidden]) [role=menuitem]:has-text('{label}')")
 
 
 # -------------------------------------------------------------------- tests
@@ -213,7 +208,7 @@ def test_f1_add_a_signature_type_a_gene_and_use_it(page, served):
     assert "Z-score mean of X, clipped at ±10" in page.inner_text(f"{tile} .gsig-definition")
     assert page.get_attribute(f"{tile} .gsig-grid", "aria-rowcount") == "3000"
     assert page.inner_text(f"{tile} .gsig-viewswitch .active") == "All genes 3,000"
-    assert page.locator(f"{tile} .gsig-usein").is_disabled(), "nothing to use yet"
+    assert page.locator(f"{tile} .gsig-usein").count() == 0, "no Use in menu: consumers choose the signature in their own source menus"
     assert page.locator(f"{tile} .gsig-clear").is_hidden()
 
     # type a gene, Enter: ticked, the box is cleared and keeps the focus
@@ -229,13 +224,10 @@ def test_f1_add_a_signature_type_a_gene_and_use_it(page, served):
     page.press(f"{tile} .gsig-search", "Enter")
     until(page, "(id) => window.PanelManager.getPanel(id).getRecipe().genes.length === 2", sig_id)
 
-    # Use in: the Gene Plot is filtered by the signature and draws its two genes
-    assert not page.locator(f"{tile} .gsig-usein").is_disabled()
-    page.click(f"{tile} .gsig-usein")
-    page.click(f"{tile} .gsig-menu [role=menuitem]:has-text('Filter Gene Plot 1')")
+    # the Gene Plot's own table filter lists the signature; choosing it filters the plot
+    page.select_option(f"{P} select.table-filter-select", sig_id)
     until(page, "(id) => window.PanelManager.getPanel('gene-plot-P').getConfig().tableFilter === id", sig_id)
     page.wait_for_timeout(800)
-    assert page.evaluate("() => document.querySelector('%s select.table-filter-select').value" % P) == sig_id
     assert _shown_on_plot(page) == ["GENE0042", "KLF1"]
     assert "Used by 1 plot" in page.inner_text(f"{tile} .gsig-usedby")
 
@@ -247,9 +239,9 @@ def test_f3_add_the_genes_of_a_gene_table_and_undo(page, served):
     until(page, "() => window.PanelManager.getPanel('gene-table-T').getConfig().currentEntries.length === 100")
 
     page.click(f"{S} .gsig-addfrom")
-    items = page.locator(f"{S} .gsig-menu:not([hidden]) [role=menuitem]").all_inner_texts()
+    items = page.locator(".gsig-menu:not([hidden]) [role=menuitem]").all_inner_texts()
     assert "DE genes · 100 genes" in items, items
-    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('DE genes')")
+    page.click(".gsig-menu:not([hidden]) [role=menuitem]:has-text('DE genes')")
     until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 98 + 3")
     assert _message(page) == "Added 98 genes from DE genes. 2 were already selected."
     assert page.get_attribute(f"{S} .gsig-undo", "title") == "Undo: add 98 genes from DE genes"
@@ -275,10 +267,10 @@ def test_focused_and_fixed_genes_are_listed_with_their_source(page, served):
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     page.evaluate("async () => { const { DataManager } = await import('/static/js/data-manager.js'); DataManager.setFocusedGene('GAPDH'); }")
     page.click(f"{S} .gsig-addfrom")
-    items = page.locator(f"{S} .gsig-menu:not([hidden]) [role=menuitem]").all_inner_texts()
+    items = page.locator(".gsig-menu:not([hidden]) [role=menuitem]").all_inner_texts()
     assert "GAPDH · focused" in items, items
     assert any(i.startswith("KLF1 · fixed in") for i in items), items
-    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('GAPDH')")
+    page.click(".gsig-menu:not([hidden]) [role=menuitem]:has-text('GAPDH')")
     until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 1")
     assert _genes(page) == ["GAPDH"]
     assert _message(page) == "Added GAPDH."
@@ -450,11 +442,11 @@ def test_a_gene_plot_and_a_gene_set_panel_follow_a_signature_open_and_closed(pag
     assert "closed" not in page.inner_text(f"{G} .gs-bar__text").lower()
 
 
-def test_use_in_feeds_a_gene_set_panel(page, served):
+def test_a_gene_set_panel_takes_a_signature_from_its_source_menu(page, served):
     gene_set = {"id": "gene-set-G", "title": "Gene Set Analysis 1", "autoUpdate": False}
     _open_signature(page, served, ["GENE0001", "GENE0002"], extra_open=["gene-set-G"], extra_cfgs={"gene-set-G": gene_set})
     page.wait_for_selector(f"{G} .gs-controls", timeout=30000)
-    _use_in(page, "Analyse in Gene Set Analysis 1")
+    page.select_option(f"{G} select[id^='gs-source-']", SIG)
     until(page, "() => window.PanelManager.getPanel('gene-set-G').getConfig().tableFilter === 'gene-signature-S'")
     until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().source.count === 2")
     assert "Used by 1 Gene Set Analysis" in page.inner_text(f"{S} .gsig-usedby")
@@ -673,3 +665,62 @@ def test_a_new_dataset_keeps_the_recipe_and_recounts_the_missing_genes(page, ser
     page.click(f"{S} .gsig-seg:has-text('All genes')")
     assert page.get_attribute(f"{S} .gsig-grid", "aria-rowcount") == "3"
     assert page.locator(f"{S} .gsig-row.is-missing").count() == 0
+
+
+POPOVER_BOX = """() => {
+    const m = [...document.querySelectorAll('.gsig-menu')].find(e => !e.hidden);
+    if (!m) return null;
+    const r = m.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    const corners = [[r.left + 1, r.top + 1], [r.right - 2, r.top + 1], [r.left + 1, r.bottom - 2], [r.right - 2, r.bottom - 2]]
+        .map(([x, y]) => { const e = document.elementFromPoint(x, y); return !!e && m.contains(e); });
+    return { inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight, topmost: !!hit && m.contains(hit),
+             corners, w: r.width, h: r.height, inBody: m.parentElement === document.body };
+}"""
+
+
+def test_add_from_popover_is_fully_visible_and_topmost_beside_a_plot(page, served):
+    _open_signature(page, served, [], with_plot=True)
+    page.click(f"{S} .gsig-addfrom")
+    box = page.evaluate(POPOVER_BOX)
+    assert box and box["w"] > 20 and box["h"] > 10, box
+    assert box["inside"] and box["topmost"] and all(box["corners"]) and box["inBody"], box
+    # Esc closes it and the focus returns to the button
+    page.keyboard.press("Escape")
+    assert page.evaluate(POPOVER_BOX) is None
+    assert page.evaluate("() => document.activeElement.classList.contains('gsig-addfrom')")
+    # an outside click closes it
+    page.click(f"{S} .gsig-addfrom")
+    assert page.evaluate(POPOVER_BOX)
+    page.click(f"{P} .tile-title")
+    assert page.evaluate(POPOVER_BOX) is None
+    # a narrow window: the popover slides back into the viewport
+    page.set_viewport_size({"width": 420, "height": 700})
+    page.click(f"{S} .gsig-addfrom")
+    box = page.evaluate(POPOVER_BOX)
+    assert box and box["inside"] and box["topmost"], box
+
+
+def test_the_focused_gene_is_one_click_away(page, served):
+    _open_signature(page, served, ["KLF1"])
+    btn = f"{S} .gsig-focused"
+    page.evaluate("async () => { const { DataManager } = await import('/static/js/data-manager.js'); DataManager.setFocusedGene('GAPDH'); }")
+    until(page, "(b) => { const e = document.querySelector(b); return e && !e.hidden && e.textContent === '+ GAPDH (focused)'; }", btn)
+    assert not page.locator(btn).is_disabled()
+    page.click(btn)
+    until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 2")
+    assert _genes(page) == ["GAPDH", "KLF1"]
+    assert _message(page) == "Added GAPDH."
+    # already in the list: disabled, with the reason
+    assert page.locator(btn).is_disabled() and "already in the list" in page.get_attribute(btn, "title")
+    # one undo step; the button comes back
+    page.click(f"{S} .gsig-undo")
+    assert _genes(page) == ["KLF1"]
+    assert not page.locator(btn).is_disabled()
+    # follows the focus
+    page.evaluate("async () => { const { DataManager } = await import('/static/js/data-manager.js'); DataManager.setFocusedGene('CD3D'); }")
+    until(page, "(b) => document.querySelector(b).textContent === '+ CD3D (focused)'", btn)
+    # a focused gene absent from the dataset cannot be added
+    page.evaluate("async () => { const { DataManager } = await import('/static/js/data-manager.js'); DataManager.setFocusedGene('NOT_A_GENE'); }")
+    until(page, "(b) => document.querySelector(b).textContent === '+ NOT_A_GENE (focused)'", btn)
+    assert page.locator(btn).is_disabled() and "not in this dataset" in page.get_attribute(btn, "title")

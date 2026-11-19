@@ -1488,6 +1488,9 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-summary { font-weight: 600; }
 .gsig-definition, .gsig-usedby { color: var(--az-muted); font-size: 0.75rem; }
 .gsig-menu-wrap { position: relative; }
+/* Add from: a fixed popover under body, above every panel (placed by the panel from its button) */
+.gsig-menu { position: fixed; right: auto; z-index: 3000; overflow-y: auto; max-width: calc(100vw - 8px); }
+.gsig-focused { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gsig-controls {
     padding: 6px 8px;
     border-bottom: 1px solid var(--az-border);

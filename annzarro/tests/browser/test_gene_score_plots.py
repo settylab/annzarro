@@ -881,19 +881,23 @@ def test_open_signature_works_with_no_chooser_tile_in_the_page(page, served):
     assert "T cell score" in page.inner_text(f"{S} .tile-title, {S} input.tile-title") or page.input_value(f"{S} .tile-title") == "T cell score"
 
 
-def test_use_in_colours_a_cell_plot_by_the_signature(page, served):
+def _choose_score(page, axis, key=SIG):
+    """Pick a signature as an axis source through the plot's own menus: gene-score, then the signature."""
+    page.select_option(f"{C} select.axis-type-select[data-axis='{axis}']", "gene-score")
+    until(page, "([t, a, k]) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"' + a + '\"] option')].some(o => o.value === k)", [C, axis, key])
+    page.select_option(f"{C} select.axis-key-select[data-axis='{axis}']", key)
+
+
+def test_the_source_menus_colour_a_cell_plot_by_the_signature(page, served):
     plain = _cell(color={"type": "obs", "key": "score", "column": ""})
     _open(page, served, plots=(("cell-plot-C", plain),), sig_open=True)
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
-    page.click(f"{S} .gsig-usein")
-    labels = page.locator(f"{S} .gsig-menu [role=menuitem]").all_inner_texts()
-    assert "Colour Cell Plot 1" in labels, labels
-    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('Colour Cell Plot 1')")
+    assert page.locator(f"{S} .gsig-usein").count() == 0, "the signature panel has no Use in menu"
+    _choose_score(page, "color")
     _wait_coloured(page)
     cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color")
     assert cfg["type"] == "gene-score" and cfg["key"] == SIG and cfg["label"] == "T cell score"
     assert [c["kind"] for c in _calls(page)] == ["estimate", "compute"]
-    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-type-select[data-axis=\"color\"]').value", C) == "gene-score"
 
 
 def _set_subset(page, on, n=30):
@@ -1076,17 +1080,13 @@ def test_flipping_a_score_axis_and_zoom_are_kept(page, served):
     assert r[0] > r[1] and abs(r[0] - 3) < 1e-6, "the zoom the user chose survives a redraw"
 
 
-def test_use_in_offers_colour_x_and_y_for_a_chosen_cell_plot(page, served):
+def test_the_source_menus_take_the_signature_on_x_and_y(page, served):
     plain = _cell(color={"type": "none", "key": "", "column": ""})
     _open(page, served, plots=(("cell-plot-C", plain),), sig_open=True)
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
-    page.click(f"{S} .gsig-usein")
-    labels = page.locator(f"{S} .gsig-menu [role=menuitem]").all_inner_texts()
-    assert {"Colour Cell Plot 1", "Use as X in Cell Plot 1", "Use as Y in Cell Plot 1"} <= set(labels), labels
-    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('Use as X in')")
+    _choose_score(page, "x")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().x.type === 'gene-score'")
-    page.click(f"{S} .gsig-usein")
-    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('Use as Y in')")
+    _choose_score(page, "y")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().y.type === 'gene-score'")
     cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig()")
     assert cfg["x"]["key"] == SIG and cfg["y"]["key"] == SIG and cfg["x"]["column"] == "zscore_mean"
