@@ -86,7 +86,42 @@ window.fetch = async (url, init) => {
 };
 """
 
-LINE = """(o) => new TextEncoder().encode(JSON.stringify(o) + '\\n')"""
+# A score that waits for the test: estimate with the given tier, a stream the test feeds.
+#   window.__slow(tier, seconds)  installs it;  __frame(i, obj) sends a frame to the i-th request;
+#   __finish(i, values, header) ends it;  __fail413(message) makes the next compute a refusal.
+SLOW = """
+window.__ctls = [];
+window.__enc = new TextEncoder();
+window.__slow = (tier, seconds, opts) => {
+  opts = opts || {};
+  window.__scoreFake = (kind, body, real, init) => {
+    if (kind === 'estimate') {
+      return new Response(JSON.stringify({ estimate: { seconds, tier, auto_max_s: 60, max_s: 600, live_max_s: 5, layout: 'csc', entries: 10 },
+        missing: [], duplicated: [], recipe: {} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (opts.refuse) {
+      return new Response(JSON.stringify({ error: opts.refuse, reason: 'score_too_expensive', estimate: { seconds, tier } }),
+        { status: 413, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (opts.passThrough) return undefined;
+    const i = window.__ctls.length;
+    const stream = new ReadableStream({ start(c) {
+      window.__ctls[i] = c;
+      if (init && init.signal) init.signal.addEventListener('abort', () => { try { c.error(new DOMException('Aborted', 'AbortError')); } catch (e) { /* closed */ } });
+    } });
+    return new Response(stream, { status: 200 });
+  };
+};
+window.__frame = (i, o) => window.__ctls[i].enqueue(window.__enc.encode(JSON.stringify(o) + '\\n'));
+window.__finish = (i, values, header) => {
+  window.__frame(i, Object.assign({ type: 'result', scored: true, n_used: 2, n_cells: values.length, byte_length: values.length * 4, dtype: 'float32' }, header || {}));
+  window.__ctls[i].enqueue(new Uint8Array(new Float32Array(values).buffer));
+  window.__ctls[i].close();
+};
+window.__error = (i, reason, message) => { window.__frame(i, { type: 'error', reason, message }); window.__ctls[i].close(); };
+"""
+INIT = INIT + SLOW
+RAMP = list(range(N_OBS))
 
 
 def _make_store(path):
@@ -300,3 +335,208 @@ def test_f5_a_link_with_a_closed_signature_computes_with_nothing_open(page, serv
     # one estimate, one computation
     assert [c["kind"] for c in _calls(page)] == ["estimate", "compute"]
     assert _notice(page) is None and _tag(page) is None, "a ready score says nothing"
+
+
+def _slow(page, tier, seconds, **opts):
+    """The score route waits for the test from now on: on the page that is open, and on every page the test opens next."""
+    page.add_init_script(f"window.__slow({json.dumps(tier)}, {json.dumps(seconds)}, {json.dumps(opts)})")
+    if page.url.startswith("http"):
+        page.evaluate("([tier, seconds, opts]) => window.__slow(tier, seconds, opts)", [tier, seconds, opts])
+
+
+def _finish(page, i=0, values=None, **header):
+    page.evaluate("([i, v, h]) => window.__finish(i, v, h)", [i, values if values is not None else RAMP, header])
+
+
+def _frame(page, i, **obj):
+    page.evaluate("([i, o]) => window.__frame(i, o)", [i, obj])
+
+
+def _action(page, name, tile=C):
+    page.click(f"{tile} [data-ps-action='{name}']")
+
+
+def test_f6_a_slow_score_asks_once_then_shows_progress_then_the_colours(page, served):
+    _slow(page, "confirm", 130)
+    _open(page, served, wait=False)
+    page.wait_for_selector(f"{C} .score-notice", timeout=30000)
+    note = _notice(page)
+    assert note["state"] == "awaiting"
+    assert "'T cell score' will take about 2 minutes." in note["text"]
+    assert ["score-compute|Compute"] == [a for a in note["actions"] if a.startswith("score-compute")]
+    assert _tag(page) == "Score not computed"
+    # the plot is there, in neutral points, with no colour bar
+    assert _drawn(page)
+    assert page.locator(f"{C} .colorbar").count() == 0
+    assert [c["kind"] for c in _calls(page)] == ["estimate"], "nothing was computed without the click"
+    # one click
+    box = _box(page)
+    _action(page, "score-compute")
+    until(page, "() => window.__ctls.length === 1")
+    assert _calls(page, "compute")[0]["confirm"] is True, "the click is sent as confirm: true"
+    _frame(page, 0, type="progress", done=0, total=2)
+    _frame(page, 0, type="progress", done=1, total=2)
+    until(page, "(t) => (document.querySelector(t + ' .score-notice') || {textContent: ''}).textContent.includes('1 of 2 genes')", C)
+    note = _notice(page)
+    assert note["state"] == "computing"
+    assert "Computing 'T cell score': 1 of 2 genes." in note["text"]
+    assert any(a.startswith("score-cancel|Cancel") for a in note["actions"])
+    assert _tag(page) == "Score computing"
+    assert _box(page) == box, "a notice never moves or resizes the plot"
+    _finish(page, 0)
+    _wait_coloured(page)
+    assert _notice(page) is None and _tag(page) is None
+    assert _box(page) == box
+    assert _numbers(page) == [float(v) for v in RAMP]
+
+
+def test_the_cost_tiers_are_read_from_the_estimate(page, served):
+    # auto: computes without asking, up to the limit the estimate states
+    _slow(page, "auto", 59)
+    _open(page, served, wait=False)
+    until(page, "() => window.__ctls.length === 1")
+    assert _notice(page)["state"] == "computing"
+    _finish(page, 0)
+    _wait_coloured(page)
+
+    # refused: the server's own explanation, no computation, ways out
+    page.goto("about:blank")
+    _slow(page, "refused", 1500, refuse="This score would take about 25 minutes; the limit is 10. Use fewer genes.")
+    _open(page, served, wait=False)
+    page.wait_for_selector(f"{C} .score-notice[data-state='refused']", timeout=30000)
+    note = _notice(page)
+    assert "'T cell score' would take about 25 minutes, so it was not run." in note["text"]
+    assert "Use fewer genes." in note["text"], "the server's explanation"
+    assert [a.split("|")[0] for a in note["actions"]] == ["score-open", "score-choose"]
+    assert _tag(page) == "Score refused"
+    assert page.evaluate("() => window.__ctls.length") == 0
+    assert not page.locator(f"{C} [data-ps-action='score-compute']").count(), "above the limit there is no Compute"
+
+
+def test_computing_shows_progress_and_cancel_stops_it_and_compute_starts_it_again(page, served):
+    _slow(page, "auto", 3)
+    _open(page, served, wait=False)
+    until(page, "() => window.__ctls.length === 1")
+    _frame(page, 0, type="progress", done=31, total=50)
+    until(page, "(t) => (document.querySelector(t + ' .score-notice') || {textContent: ''}).textContent.includes('31 of 50 genes')", C)
+    box = _box(page)
+    assert _drawn(page), "neutral points are drawn while the score computes"
+    assert _tag(page) == "Score computing"
+    _action(page, "score-cancel")
+    page.wait_for_selector(f"{C} .score-notice[data-state='cancelled']")
+    note = _notice(page)
+    assert "'T cell score' was cancelled. This plot has no colour." in note["text"]
+    assert _tag(page) == "Score cancelled"
+    assert _box(page) == box
+    # the request was aborted: its stream is errored; nothing was computed
+    _action(page, "score-compute")
+    until(page, "() => window.__ctls.length === 2")
+    _finish(page, 1)
+    _wait_coloured(page)
+    assert _notice(page) is None
+
+
+def test_a_failed_score_says_why_and_retry_asks_again(page, served):
+    _slow(page, "auto", 3)
+    _open(page, served, wait=False)
+    until(page, "() => window.__ctls.length === 1")
+    page.evaluate("() => window.__error(0, 'read_failed', 'Failed to read the dataset: the server stopped responding')")
+    page.wait_for_selector(f"{C} .score-notice[data-state='failed']")
+    note = _notice(page)
+    assert "'T cell score' could not be computed: Failed to read the dataset: the server stopped responding." in note["text"]
+    assert [a.split("|")[0] for a in note["actions"]] == ["score-retry", "score-open"]
+    assert _tag(page) == "Score failed"
+    _action(page, "score-retry")
+    until(page, "() => window.__ctls.length === 2")
+    _finish(page, 1)
+    _wait_coloured(page)
+    assert _notice(page) is None
+
+
+def test_two_plots_that_share_a_score_share_the_request_and_cancel_says_so(page, served):
+    _slow(page, "auto", 3)
+    _open(page, served, plots=(("cell-plot-C", None), ("cell-plot-D", _cell("cell-plot-D", "Cell Plot 2"))))
+    page.wait_for_selector(f"{C2} .score-notice", timeout=30000)
+    until(page, "() => window.__ctls.length === 1")
+    assert len(_calls(page, "compute")) == 1 and len(_calls(page, "estimate")) == 1, "one computation for two plots"
+    until(page, "(t) => (document.querySelector(t + ' .score-notice') || {textContent: ''}).textContent.includes('Cancel for 2 plots')", C)
+    _finish(page, 0)
+    _wait_coloured(page, C)
+    _wait_coloured(page, C2)
+    assert len(_calls(page, "compute")) == 1
+
+
+def test_a_signature_with_no_genes_and_one_with_no_gene_in_the_dataset_each_say_so(page, served):
+    _open(page, served, sig=_sig(genes=()))
+    page.wait_for_selector(f"{C} .score-notice[data-state='nogenes']", timeout=30000)
+    assert "'T cell score' has no genes yet." in _notice(page)["text"]
+    assert _tag(page) == "No genes"
+    assert _calls(page) == [], "nothing is asked of the server for an empty signature"
+    assert [a.split("|")[0] for a in _notice(page)["actions"]] == ["score-open"]
+
+    page.goto("about:blank")
+    _open(page, served, sig=_sig(genes=("NOT_A_GENE", "NOR_THIS")))
+    page.wait_for_selector(f"{C} .score-notice[data-state='noscore']", timeout=30000)
+    assert "None of the genes of 'T cell score' are in this dataset." in _notice(page)["text"]
+    assert _tag(page) == "No score"
+
+
+def test_a_deleted_signature_says_so_and_the_plot_keeps_its_setting(page, served):
+    _open(page, served)
+    _wait_coloured(page)
+    page.evaluate("() => window.PanelManager.removePanel('gene-signature-S')")
+    page.wait_for_selector(f"{C} .score-notice[data-state='deleted']")
+    assert "Signature 'T cell score' was deleted." in _notice(page)["text"]
+    assert _tag(page) == "Source deleted"
+    assert [a.split("|")[0] for a in _notice(page)["actions"]] == ["score-choose"]
+    assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.key") == SIG
+    # the key list still names it, as deleted
+    assert page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => o.textContent)", C) \
+        == ["T cell score (deleted)"]
+
+
+def test_the_source_menu_offers_gene_score_and_lists_every_signature_open_or_closed(page, served):
+    other = {"id": "gene-signature-O", "title": "B cell score", "genes": ["CD3E"]}
+    _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "obs", "key": "score", "column": ""})),),
+          extra_cfgs={"gene-signature-O": other}, sig_open=True)
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    options = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"color\"] option')].map(o => o.value)", C)
+    assert options == ["none", "obs", "obsm", "obsp", "layer", "gene-score"] or "gene-score" in options
+    for axis in ("x", "y"):
+        assert "gene-score" in page.evaluate(
+            "([t, a]) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"' + a + '\"] option')].map(o => o.value)", [C, axis])
+    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
+    until(page, "(t) => document.querySelector(t + ' select.axis-key-select[data-axis=\"color\"]').options.length === 2", C)
+    labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => o.textContent)", C)
+    assert labels == ["T cell score", "B cell score"] or sorted(labels) == ["B cell score", "T cell score"], labels
+    assert not any("closed" in l.lower() for l in labels), "no suffix: the chooser alone says Closed"
+    # the second is closed (not in the layout) and still offered; pick it
+    page.select_option(f"{C} select.axis-key-select[data-axis='color']", "gene-signature-O")
+    _wait_coloured(page)
+    assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color")["key"] == "gene-signature-O"
+    assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.label") == "B cell score"
+    # the colour bar names the signature
+    bars = page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data
+        .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title))
+        .filter(Boolean)""", C)
+    assert bars == ["B cell score"], bars
+
+
+def test_f4_close_the_signature_and_the_plot_keeps_its_colours_then_reopen_it(page, served):
+    _open(page, served, sig_open=True)
+    _wait_coloured(page)
+    before = _numbers(page)
+    requests = len(_calls(page))
+    page.click(f"{S} .tile-close, {S} [data-action='close'], {S} .close-panel-btn")
+    until(page, "() => !window.PanelManager.getActivePanels().some(p => p.getId() === 'gene-signature-S')")
+    page.wait_for_timeout(500)
+    assert page.evaluate("() => window.PanelManager.getPanel('gene-signature-S') != null"), "closed, still a signature"
+    assert _numbers(page) == before, "the plot keeps its colours"
+    assert _notice(page) is None
+    assert len(_calls(page)) == requests, "closing the panel asks nothing"
+    # reopened: the same id, so the plot follows it (Open signature needs no chooser tile)
+    page.evaluate("() => window.PanelManager.reopenClosedPanel('gene-signature-S', {nextTo: 'cell-plot-C'})")
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    assert page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getType()") == "gene-signature"
+    assert _numbers(page) == before
+    assert len(_calls(page)) == requests, "reopening asks nothing: the key is the same"

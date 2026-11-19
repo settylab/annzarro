@@ -57,7 +57,7 @@ export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
 
     switch (snap.state) {
         case 'deleted':
-            return out('deleted', 'warning', 'Source deleted', `Signature ${T} was deleted.`, '', [choose]);
+            return out('deleted', 'warning', 'Source deleted', snap.title ? `Signature ${t} was deleted.` : 'The signature was deleted.', '', [choose]);
         case 'off':
             return out('off', 'warning', 'Turned off', 'Gene signatures are turned off on this server.', '', [choose]);
         case 'failed':

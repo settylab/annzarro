@@ -185,7 +185,8 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         // is gone, so the plot can say it was deleted
         const list = signatureList();
         keyOptions = list.map(sig => ({ value: sig.id, text: sig.title }));
-        if (settings.key && !list.some(sig => sig.id === settings.key)) {
+        // (a key left over from another source type is not a deleted signature: signature ids are panel ids)
+        if (settings.key && /^gene-signature-/.test(settings.key) && !list.some(sig => sig.id === settings.key)) {
           keyOptions.push({ value: settings.key, text: `${settings.label || settings.key} (deleted)` });
         }
         if (!keyOptions.length) keyOptions = [{ value: '', text: 'No signatures yet' }];
