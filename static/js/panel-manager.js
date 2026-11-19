@@ -416,6 +416,9 @@ const PanelManager = (function() {
             console.error('Error updating table filter dropdowns:', error);
         }
 
+        // Gene-score key lists and the plots that show a signature follow the signatures that exist
+        document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
+
         // Panels that follow another panel (a gene set panel's source
         // table) hear that one was added, closed, reopened or renamed
         _activePanels.forEach(panel => {
@@ -1287,6 +1290,8 @@ const PanelManager = (function() {
         const byType = _panelsByType.get(panelTypeFromTileId(id));
         if (byType) byType.delete(panel);
         _panelsByType.forEach(set => set.delete(panel));
+        // what showed a score of a signature that is gone says so
+        document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
     }
 
     /**

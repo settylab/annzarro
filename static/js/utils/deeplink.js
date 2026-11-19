@@ -508,7 +508,8 @@ export function panelsToAdd(plan, isTaken, freshId) {
 
 /**
  * Rewrite references between panels after ids changed: a plot's
- * `tableFilter` holds the id of the table it is filtered by.
+ * `tableFilter` holds the id of the table it is filtered by, and a plot's x,
+ * y, z, colour or hover `gene-score` source holds the id of its signature.
  * @param {Object[]} configs - panel configs, rewritten in place
  * @param {Map<string,string>|Object} idMap - old id -> new id
  * @returns {Object[]} the same configs
@@ -518,6 +519,19 @@ export function remapPanelReferences(configs, idMap) {
     configs.forEach(cfg => {
         if (cfg && typeof cfg.tableFilter === 'string' && map.has(cfg.tableFilter)) {
             cfg.tableFilter = map.get(cfg.tableFilter);
+        }
+        if (!cfg) return;
+        const follow = (source) => {
+            if (source && source.type === 'gene-score' && typeof source.key === 'string' && map.has(source.key)) {
+                source.key = map.get(source.key);
+            }
+        };
+        for (const axis of ['x', 'y', 'z', 'color']) follow(cfg[axis]);
+        if (Array.isArray(cfg.hoverInfo)) cfg.hoverInfo.forEach(follow);
+        // what a source remembers of the types it was set to before
+        for (const axis of ['x', 'y', 'z', 'color']) {
+            const history = cfg[axis] && cfg[axis].history && cfg[axis].history['gene-score'];
+            if (history && typeof history.key === 'string' && map.has(history.key)) history.key = map.get(history.key);
         }
     });
     return configs;

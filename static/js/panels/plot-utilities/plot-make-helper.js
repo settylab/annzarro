@@ -103,6 +103,8 @@ export function axisTitle(settings, axis) {
   const custom = settings[`${axis}axisTitle`];
   if (custom) return custom;
   const a = settings[axis];
+  // a gene score is named by its signature's title, not by the panel id it is stored under
+  if (a.type === 'gene-score') return a.label || a.key;
   return `${a.type}.${a.key}` + (a.column ? `.${a.column}` : '');
 }
 

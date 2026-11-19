@@ -1,0 +1,327 @@
+/**
+ * Dependants of a signature's score and what an edit does to them
+ * (static/js/utils/score-sources.js, score-notices.js): the applied recipe,
+ * live updates under `live_max_s`, edits held behind Update score from it, the
+ * previous score kept meanwhile, deletion, a new subset, and every sentence of
+ * the notices.
+ *
+ * Run:  node --test annzarro/tests/js/score-sources.test.mjs
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+const S = await import('../../../static/js/utils/score-store.js');
+const D = await import('../../../static/js/utils/score-sources.js');
+const N = await import('../../../static/js/utils/score-notices.js');
+const G = await import('../../../static/js/utils/gene-signature.js');
+
+const settle = () => new Promise(resolve => setTimeout(resolve, 5));
+
+function world({ estimateSeconds = () => 2, tierOf = () => 'auto', cells = 3 } = {}) {
+    const calls = { estimate: [], compute: [] };
+    const waiting = [];
+    const api = {
+        async estimate({ recipe }) {
+            calls.estimate.push(recipe.genes.slice());
+            const seconds = estimateSeconds(recipe);
+            return { estimate: { seconds, tier: tierOf(seconds), auto_max_s: 60, max_s: 600, live_max_s: 5 } };
+        },
+        compute(req) {
+            calls.compute.push(req);
+            return new Promise((resolve, reject) => {
+                waiting.push({ req, resolve });
+                req.signal.addEventListener('abort', () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })));
+            });
+        }
+    };
+    const store = S.createScoreStore({ api });
+    const sigs = new Map();
+    const ctx = { dataset: 'd.zarr', subset: null };
+    const timers = [];
+    const sources = D.createScoreSources({
+        store,
+        signatures: { get: (id) => sigs.get(id) || null, off: () => false },
+        context: () => ({ ...ctx }),
+        liveDelayMs: 10,
+        setTimer: (fn, ms) => { const t = { fn, ms, off: false }; timers.push(t); return t; },
+        clearTimer: (t) => { if (t) t.off = true; }
+    });
+    const add = (id, title, genes, extra = {}) => {
+        const sig = { title, recipe: () => G.normalizeRecipe({ genes: sig.genes, ...extra }).recipe, genes };
+        sigs.set(id, sig);
+        return sig;
+    };
+    const fire = async () => {          // let the edit pause end
+        for (const t of timers.splice(0)) if (!t.off) await t.fn();
+        await settle();
+    };
+    const finish = (i, n = cells, header = { n_used: 2 }) => waiting[i].resolve({ header, values: new Float32Array(n).fill(i + 1) });
+    return { calls, store, sources, sigs, ctx, add, fire, finish, waiting };
+}
+
+const watch = (w, id, extra = {}) => {
+    const states = [];
+    const handle = w.sources.watch(id, { onChange: (s) => states.push(s), ...extra });
+    return { handle, states };
+};
+
+test('a closed or restored signature computes when a dependant reads it, with nothing else open', async () => {
+    const w = world();
+    w.add('S1', 'T cell score', ['CD3D', 'CD3E']);
+    const { handle } = watch(w, 'S1');
+    assert.equal(handle.read().state, 'estimating', 'the first read starts the work');
+    await settle();
+    assert.equal(handle.read().state, 'computing');
+    w.finish(0);
+    await settle();
+    const snap = handle.read();
+    assert.equal(snap.state, 'ready');
+    assert.equal(snap.values.length, 3);
+    assert.equal(snap.title, 'T cell score');
+});
+
+test('two plots of one signature share the score: one estimate, one request', async () => {
+    const w = world();
+    w.add('S1', 'T', ['A']);
+    const a = watch(w, 'S1'), b = watch(w, 'S1');
+    a.handle.read(); b.handle.read();
+    await settle();
+    w.finish(0);
+    await settle();
+    assert.equal(w.calls.compute.length, 1);
+    assert.equal(a.handle.read().state, 'ready');
+    assert.equal(b.handle.read().state, 'ready');
+    assert.equal(a.handle.sharers(), 2);
+});
+
+test('renaming changes nothing the score depends on: no request, the new title shows', async () => {
+    const w = world();
+    const sig = w.add('S1', 'T', ['A']);
+    const { handle } = watch(w, 'S1');
+    handle.read();
+    await settle();
+    w.finish(0);
+    await settle();
+    sig.title = 'T cell score';
+    assert.equal(handle.read().title, 'T cell score');
+    assert.equal(handle.read().state, 'ready');
+    assert.equal(w.calls.compute.length, 1);
+});
+
+test('an edit under live_max_s updates the dependants after a short pause, keeping the previous score meanwhile', async () => {
+    const w = world({ estimateSeconds: () => 2 });
+    const sig = w.add('S1', 'T', ['A']);
+    const { handle, states } = watch(w, 'S1');
+    handle.read();
+    await settle();
+    w.finish(0);
+    await settle();
+    sig.genes = ['A', 'B'];
+    w.sources.recipeChanged('S1');
+    assert.equal(handle.read().state, 'ready', 'still the previous recipe until the pause ends');
+    assert.equal(handle.read().held, null, 'a live edit is not held');
+    await w.fire();                                  // pause ends, estimate 2 s < 5 s
+    const mid = handle.read();
+    assert.equal(mid.state, 'updating');
+    assert.equal(mid.previous, true);
+    assert.equal(mid.values[0], 1, 'the previous values');
+    await settle();
+    w.finish(1);
+    await settle();
+    const done = handle.read();
+    assert.equal(done.state, 'ready');
+    assert.equal(done.values[0], 2);
+    assert.ok(states.length > 0, 'the dependant was told');
+});
+
+test('an edit at live_max_s or more is held behind Update score; the dependants keep the previous score', async () => {
+    const w = world({ estimateSeconds: (r) => (r.genes.length > 1 ? 40 : 2) });
+    const sig = w.add('S1', 'T', ['A']);
+    const { handle } = watch(w, 'S1');
+    handle.read();
+    await settle();
+    w.finish(0);
+    await settle();
+    sig.genes = ['A', 'B'];
+    w.sources.recipeChanged('S1');
+    sig.genes = ['A', 'B', 'C'];
+    w.sources.recipeChanged('S1');
+    sig.genes = ['A', 'B', 'C', 'D'];
+    w.sources.recipeChanged('S1');
+    await w.fire();
+    const snap = handle.read();
+    assert.equal(snap.state, 'ready');
+    assert.deepEqual(snap.held, { edits: 3, seconds: 40 }, '3 changes not applied, about 40 s');
+    assert.equal(snap.values[0], 1, 'the previous score is still shown');
+    assert.equal(w.calls.compute.length, 1, 'nothing was computed for the edits');
+    assert.deepEqual(w.sources.status('S1').held, { edits: 3, seconds: 40 });
+    // Update score
+    assert.equal(w.sources.update('S1'), true);
+    assert.equal(handle.read().held, null);
+    assert.equal(handle.read().state, 'updating');
+    await settle();
+    assert.equal(w.calls.compute.length, 2);
+    assert.deepEqual(w.calls.compute[1].recipe.genes, ['A', 'B', 'C', 'D']);
+});
+
+test('an edit undone before the pause ends costs nothing, and one undone while held clears the hold', async () => {
+    const w = world({ estimateSeconds: () => 40 });
+    const sig = w.add('S1', 'T', ['A']);
+    const { handle } = watch(w, 'S1');
+    handle.read();
+    await settle();
+    w.finish(0);
+    await settle();
+    sig.genes = ['A', 'B'];
+    w.sources.recipeChanged('S1');
+    await w.fire();
+    assert.ok(handle.read().held);
+    sig.genes = ['A'];                       // Undo
+    w.sources.recipeChanged('S1');
+    assert.equal(handle.read().held, null);
+    await w.fire();
+    assert.equal(w.calls.compute.length, 1);
+});
+
+test('a held edit that lands in the 60 s to 10 minute tier asks for one click after Update score', async () => {
+    const w = world({ estimateSeconds: (r) => (r.genes.length > 1 ? 120 : 2), tierOf: (s) => (s > 60 ? 'confirm' : 'auto') });
+    const sig = w.add('S1', 'T', ['A']);
+    const { handle } = watch(w, 'S1');
+    handle.read();
+    await settle();
+    w.finish(0);
+    await settle();
+    sig.genes = ['A', 'B'];
+    w.sources.recipeChanged('S1');
+    await w.fire();
+    w.sources.update('S1');
+    handle.read();
+    await settle();
+    const snap = handle.read();
+    assert.equal(snap.state, 'awaiting');
+    assert.equal(snap.estimate.seconds, 120);
+    assert.equal(handle.compute(), true);
+    await settle();
+    assert.equal(w.calls.compute.at(-1).confirm, true);
+});
+
+test('a signature that is gone is "deleted", and one that returns resolves again from the cache', async () => {
+    const w = world();
+    const sig = w.add('S1', 'T', ['A']);
+    const { handle } = watch(w, 'S1');
+    handle.read();
+    await settle();
+    w.finish(0);
+    await settle();
+    w.sigs.delete('S1');
+    assert.equal(handle.read().state, 'deleted');
+    assert.equal(handle.read().title, 'T', 'it says which signature');
+    w.sigs.set('S1', sig);
+    assert.equal(handle.read().state, 'ready');
+    assert.equal(w.calls.compute.length, 1);
+});
+
+test('a signature with no genes has no score and asks nothing of the server', async () => {
+    const w = world();
+    w.add('S1', 'T', []);
+    const { handle } = watch(w, 'S1');
+    assert.equal(handle.read().state, 'nogenes');
+    await settle();
+    assert.equal(w.calls.estimate.length, 0);
+});
+
+test('a new subset or dataset is a new key; the previous values are not shown for other cells', async () => {
+    const w = world();
+    w.add('S1', 'T', ['A']);
+    const { handle } = watch(w, 'S1');
+    handle.read();
+    await settle();
+    w.finish(0);
+    await settle();
+    w.ctx.subset = 'k2';
+    w.sources.contextChanged();
+    const snap = handle.read();
+    assert.notEqual(snap.state, 'ready');
+    assert.equal(snap.values, undefined, 'values of other cells are not kept');
+    await settle();
+    assert.equal(w.calls.compute.length, 2);
+    assert.equal(w.calls.compute[1].subset, 'k2');
+    // the old key is not needed by anyone now: its score stays cached for Back
+    w.ctx.subset = null;
+    w.sources.contextChanged();
+    assert.equal(handle.read().state, 'ready');
+    assert.equal(w.calls.compute.length, 2, 'going back makes no request');
+});
+
+test('releasing the last dependant aborts the work', async () => {
+    const w = world();
+    w.add('S1', 'T', ['A']);
+    const { handle } = watch(w, 'S1');
+    handle.read();
+    await settle();
+    handle.release();
+    await settle();
+    assert.equal(w.calls.compute[0].signal.aborted, true);
+    assert.equal(w.sources.appliedOf('S1'), null, 'the applied recipe is forgotten with the last dependant');
+});
+
+test('a signature turned off by the administrator says so', async () => {
+    const store = S.createScoreStore({ api: { estimate: async () => ({}), compute: async () => ({}) } });
+    const sources = D.createScoreSources({ store, signatures: { get: () => null, off: () => true },
+        context: () => ({ dataset: 'd', subset: null }) });
+    const handle = sources.watch('S1', { onChange() {} });
+    assert.equal(handle.read().state, 'off');
+});
+
+// ---------------------------------------------------------------- wording
+
+test('each state has its sentence, tag and actions (design 7.3)', () => {
+    const t = (state, extra = {}, role = 'colour') => N.describeScore({ state, title: 'T cell score', ...extra }, { role });
+    const computing = t('computing', { progress: { done: 31, total: 50 } });
+    assert.equal(computing.headline, "Computing 'T cell score': 31 of 50 genes. This plot has no colour.");
+    assert.equal(computing.tag.text, 'Score computing');
+    assert.deepEqual(computing.actions, [['score-cancel', 'Cancel']]);
+    assert.equal(N.describeScore({ state: 'computing', title: 'T cell score', progress: { done: 1, total: 2 } }, { role: 'x' }).headline,
+        "Computing 'T cell score': 1 of 2 genes.", 'an axis does not talk about colour');
+    assert.equal(N.describeScore({ state: 'computing', title: 'T' }, { sharers: 3 }).actions[0][1], 'Cancel for 3 plots');
+    assert.equal(t('queued').headline, "'T cell score' is waiting for another score to finish. This plot has no colour.");
+    assert.equal(t('awaiting', { estimate: { seconds: 125 } }).headline, "'T cell score' will take about 2 minutes. This plot has no colour.");
+    assert.deepEqual(t('awaiting', { estimate: { seconds: 125 } }).actions[0], ['score-compute', 'Compute']);
+    assert.equal(t('cancelled').headline, "'T cell score' was cancelled. This plot has no colour.");
+    const refused = t('refused', { estimate: { seconds: 1500 }, message: 'This score would take about 25 minutes; the limit is 10. Use fewer genes.' });
+    assert.equal(refused.headline, "'T cell score' would take about 25 minutes, so it was not run.");
+    assert.match(refused.text, /Use fewer genes/);
+    assert.deepEqual(refused.actions.map(a => a[0]), ['score-open', 'score-choose']);
+    const failed = t('failed', { message: 'The server stopped responding.' });
+    assert.equal(failed.headline, "'T cell score' could not be computed: The server stopped responding.");
+    assert.deepEqual(failed.actions[0], ['score-retry', 'Retry']);
+    assert.equal(t('deleted').headline, "Signature 'T cell score' was deleted.");
+    assert.deepEqual(t('deleted').actions, [['score-choose', 'Choose another']]);
+    assert.equal(t('nogenes').headline, "'T cell score' has no genes yet.");
+    assert.equal(t('noscore', { reason: 'no_gene_present' }).headline, "None of the genes of 'T cell score' are in this dataset.");
+    assert.equal(t('off').headline, 'Gene signatures are turned off on this server.');
+    assert.equal(t('updating').headline, "Showing the previous 'T cell score'. Updating.");
+    const held = t('ready', { held: { edits: 3, seconds: 40 } });
+    assert.equal(held.headline, "Showing the previous 'T cell score'. 3 changes are not applied. About 40 seconds.");
+    assert.deepEqual(held.actions, [['score-update', 'Update score']]);
+    assert.equal(held.blocksAxis, false, 'a held edit never hides a plot');
+    assert.equal(t('ready'), null, 'a ready score says nothing');
+    for (const state of ['computing', 'queued', 'awaiting', 'cancelled', 'refused', 'failed', 'deleted', 'nogenes', 'noscore', 'updating', 'off']) {
+        assert.ok(t(state).tag.text.length <= 20, `${state}: the strip tag is short`);
+    }
+});
+
+test('how long a score takes is said in seconds up to a minute and a half, then minutes', () => {
+    assert.equal(N.durationText(1), 'about 1 second');
+    assert.equal(N.durationText(40), 'about 40 seconds');
+    assert.equal(N.durationText(125), 'about 2 minutes');
+    assert.equal(N.durationText(1500), 'about 25 minutes');
+    assert.equal(N.durationText(null), 'a while');
+});
+
+test('of several scores a plot states the worst', () => {
+    const t = (state) => N.describeScore({ state, title: 'T' }, {});
+    assert.equal(N.worstNotice([t('computing'), t('failed'), null]).state, 'failed');
+    assert.equal(N.worstNotice([null, null]), null);
+    assert.equal(N.worstNotice([t('updating'), t('computing')]).state, 'computing');
+});

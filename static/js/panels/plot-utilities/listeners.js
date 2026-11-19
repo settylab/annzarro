@@ -279,7 +279,7 @@ export function setupPlotControlListeners(
       if (!off && !(await hoverPickFits(settings, plotType, plotContainer, !!data.colorRanked))) {
         Object.assign(settings, before);
         if (before.hoverOff === undefined) delete settings.hoverOff;
-        const prior = new Set((before.hoverInfo || []).map(h => h && h.key));
+        const prior = new Set((before.hoverInfo || []).map(h => h && (h.type === 'gene-score' ? `gene-score:${h.key}` : h.key)));
         for (const o of e.target.options) o.selected = o.value !== NO_HOVER && prior.has(o.value);
         showHoverChoice(plotContainer, settings);
         return;
@@ -1217,7 +1217,7 @@ function setupAxisSelectorListeners(
       if (data && data.generation === null) { loadDataAndCreatePlot(); return; }
       // one load per axis: a newer change of it aborts this one
       const signal = beginLoad(plotContainer, `axis:${axis}`);
-      loadAxisData(settings[axis], plotType, plotContainer, { signal }).then(axisData => {
+      loadAxisData(settings[axis], plotType, plotContainer, { signal, axis }).then(axisData => {
         if (signal.aborted) throw new DOMException('Axis load aborted', 'AbortError');
         if (axisData?.values) {
           data[axis] = axisData;

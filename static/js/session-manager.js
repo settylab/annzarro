@@ -655,6 +655,17 @@ const SessionManager = (function() {
                     if (live && live.setConfig && panel.config.tableFilter !== undefined) {
                         live.setConfig({ tableFilter: panel.config.tableFilter });
                     }
+                    // a plot's gene-score sources follow their signature to its new id
+                    if (live && live.setConfig) {
+                        const follow = {};
+                        for (const axis of ['x', 'y', 'z', 'color']) {
+                            if (panel.config[axis] && panel.config[axis].type === 'gene-score') follow[axis] = panel.config[axis];
+                        }
+                        if (Array.isArray(panel.config.hoverInfo) && panel.config.hoverInfo.some(h => h && h.type === 'gene-score')) {
+                            follow.hoverInfo = panel.config.hoverInfo;
+                        }
+                        if (Object.keys(follow).length) live.setConfig(follow);
+                    }
                 });
             }
             

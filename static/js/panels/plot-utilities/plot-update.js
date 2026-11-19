@@ -966,7 +966,7 @@ export async function loadColorDataAndUpdatePlot(
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
-        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour', panel: settings, signal });
+        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour', panel: settings, signal, axis: 'color' });
         if (signal.aborted) throw new DOMException('Recolour aborted', 'AbortError');
 
         if (colorData && colorData.values) {
@@ -1602,7 +1602,7 @@ export async function refocusAxisOnEntity(
       // Pass the plotContainer to loadAxisData to enable loading indicators
       const signal = beginLoad(plotContainer, `axis:${axis}`);
       try {
-        const axisData = await loadAxisData(settings[axis], plotType, plotContainer, { signal });
+        const axisData = await loadAxisData(settings[axis], plotType, plotContainer, { signal, axis });
         if (signal.aborted) throw new DOMException('Axis load aborted', 'AbortError');
         if (!axisData || !axisData.values) {
           throw new Error(`Loading data for ${axis} generated no values.`);

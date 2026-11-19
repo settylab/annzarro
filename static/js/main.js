@@ -31,6 +31,7 @@ import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
 import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/subset-loading.js';
 import { registerStatusActions, setStatusTag } from './utils/panel-surface.js';
+import { scoreActionAvailable, runScoreAction } from './utils/score-source.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
 import { overrideOnce, maxSubsetCells, resetLearned } from './utils/memory-guard-ui.js';
@@ -1950,7 +1951,7 @@ const App = (function() {
             case 'close-others': return _otherPlots(id).length > 0;
             case 'reopen-table': return !!document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
             case 'table-filter-off': return !!_tableFilterSelect(id);
-            default: return false;
+            default: return scoreActionAvailable(action, host);
         }
     }
 
@@ -2052,6 +2053,9 @@ const App = (function() {
                 exportImage(host, 'shown', { format: 'png', filename: 'plot_' + new Date().toISOString().replace(/[:.]/g, '-') })
                     .catch(error => console.error('Export as shown failed:', error));
                 break;
+            default:
+                // the notices of a gene-signature score: Compute, Cancel, Retry, Update score, Open signature, Choose another
+                runScoreAction(action, host);
         }
     }
 
