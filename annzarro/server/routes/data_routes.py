@@ -604,6 +604,8 @@ def register_data_routes(app, api_version):
         remote.request_deadline(None)
     dataset_folders.register_dataset_folder_routes(app, api_version)
     dataset_lookup.register_dataset_lookup_routes(app, api_version)
+    from . import gene_score as gene_score_routes
+    gene_score_routes.register_gene_score_routes(app, api_version)
 
     http_cache.install_gzip(app)
 

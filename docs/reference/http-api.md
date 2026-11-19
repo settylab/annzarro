@@ -364,6 +364,77 @@ $ curl -s "http://127.0.0.1:8812/api/v1/data/subset/locate?dataset_path=$DS&subs
 {"rows":[0,-1,-1,-1]}
 ```
 
+(http-gene-score)=
+## Gene signature scores
+
+`POST /data/gene_score?dataset_path=` gives one number per cell for a list of genes, a *signature*.
+The dataset is named in the query, as on every data route (the access gate and the path checks read it);
+the recipe and the cells to show go in a JSON body, because 2,000 names do not fit a request line.
+
+```json
+{"recipe": {"genes": ["CD3E", "CD8A"], "input": "X", "method": "zscore_mean", "clip": 10},
+ "subset": {"n": 100000, "seed": 0},
+ "estimate_only": false,
+ "confirm": false}
+```
+
+The **recipe** is the whole definition of a score. Only `genes` is required.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `genes` | (required) | gene names, matched exactly; at most 2,000 distinct names (`413 too_many_genes`); a repeated name counts once |
+| `input` | `"X"` | `"X"`, or the name of a layer |
+| `method` | `"zscore_mean"` | `zscore_mean`: the mean over genes of the z-score `(x - mean) / sd`, clipped at plus and minus `clip`. `mean`: the mean over genes of `x`. Mean and SD are taken over **all cells of the dataset**, zeros included, so a score does not change with the cells shown |
+| `clip` | `10` | a number above 0, or `null` for no clipping; anything else is `400 bad_clip`. Only the z-score mean clips: the recipe keeps the value, but it changes nothing under `mean` |
+| `down`, `seed`, `method: "control_adjusted"` | `[]`, `null` | reserved for up and down genes and control-adjusted scores. The recipe format already holds them; the server answers `400 down_not_available` or `400 method_not_available` until they are computed |
+| `version` | `1` | the algorithm version; a recipe for another version is `400 unsupported_version` |
+
+A gene that is not in the dataset is listed and left out. A gene with the same value in every cell is left
+out of the z-score mean and listed. If a name occurs more than once in the dataset the first is used, and
+the reply says so. Values that are not finite (NaN, infinity) are missing: ignored for that gene, so a cell
+scores from the genes it has, and is NaN when it has none. With no usable gene there is no score (never a
+column of zeros), and the reply says why.
+
+**The estimate.** `estimate_only: true` reads no gene and answers `200` with the cost, known from the
+store's index before any data is read:
+
+```json
+{"estimate": {"entries": 1810234, "seconds": 0.24, "tier": "auto", "live_max_s": 5.0, "auto_max_s": 60.0, "max_s": 600.0,
+              "layout": "csc", "n_cells": 100000, "genes": 50, "genes_requested": 50, "genes_missing": 0},
+ "missing": [], "duplicated": [], "recipe": {"method": "zscore_mean", "input": "X", "clip": 10.0,
+                                                "version": 1, "genes": 50}}
+```
+
+`live_max_s` (5 s) is where a client stops updating an open signature live and collects edits behind a button; the estimate is cheap (it reads the store's index, never a gene), so a client may ask on each edit. The `tier` follows `seconds`. `auto` (up to 60 s): compute without asking. `confirm` (60 s to 10 minutes):
+the request must carry `confirm: true`, else it is `409 confirmation_required`. `refused` (over 10 minutes):
+`413 score_too_expensive`, whatever `confirm` says; the message says what would help (fewer genes, or for a
+matrix stored by cell, a copy stored by gene). The estimate is a bound from the entries to read and a
+conservative rate per layout; a matrix stored by cell (CSR) must be scanned whole to read a gene, so it
+costs far more than one stored by gene (CSC), and a remote store is estimated at a tenth of a local rate.
+
+**The stream.** Otherwise the reply is `application/x-annzarro-score-stream`: JSON frames, one per line, then
+raw bytes.
+
+1. `{"type":"progress","done":k,"total":n}` as genes are read.
+2. `{"type":"result", ...}`, then `byte_length` bytes: little-endian float32, one value per cell shown, in the
+   order the cells are shown (the `subset`'s order; all cells without one). The frame has `scored`, `reason`
+   and `message` (why there is no score, and `byte_length: 0`), `n_cells` (the dataset), `n_shown`,
+   `n_used`, `recipe` (what was computed: `clip` is `null` for `mean`), `genes` (per gene: `name`, `column`,
+   `status` `used`, `constant` or `no_values`, `mean`, `sd`, `detected`, the fraction of cells with a non-zero
+   value, and `clipped`, the fraction beyond the clip), `missing`, `duplicated`, `warnings`, `entries_read` and
+   `seconds`.
+3. `{"type":"error","reason":...,"message":...}` if the work fails after the stream began. The status is
+   already `200`, so a stream that ends without a `result` frame has failed.
+
+Nothing is cached or kept: the server holds a score only while it computes it.
+
+A closed connection stops the work: the next progress write fails and the work ends after the read in
+progress. One score is computed at a time per worker; another request waits up to 30 s for it, then answers
+`503 read_busy` with `Retry-After`. The memory a score holds (the running sum for the cells shown, and the
+entries read ahead, at most about 48 million entries) counts against `server.read_budget_mb` while it runs.
+The request body is at most 1 MB (`413 request_too_large`). It only reads, but it is a POST, so the forgery
+check of every other POST applies.
+
 ## Dataset discovery and structure
 
 | Route | Returns |
@@ -672,6 +743,9 @@ same; what differs for a restricted user:
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 409 | `session_quota_user`, `session_quota_total` | saving, duplicating or importing a panel set would pass `server.max_sessions_per_user`, `server.max_sessions` or `server.max_sessions_mb`; the body has `limit` and `used`. Delete sets you no longer need |
+| 400 | `bad_recipe`, `bad_clip`, `bad_method`, `bad_seed`, `unsupported_version`, `down_not_available`, `method_not_available` | `POST /data/gene_score`: a recipe the server cannot use ({ref}`http-gene-score`) |
+| 409 | `confirmation_required` | a gene score whose estimate is over 60 s and not over 10 minutes, sent without `confirm: true` |
+| 413 | `too_many_genes`, `score_too_expensive` | a signature of more than 2,000 genes; a gene score estimated over 10 minutes |
 | 413 | `request_too_large` | the request body is over `server.max_request_mb` (64 MB; panel-set saves and imports) |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
 | 431 | (none) | `annzarro start` only: the request line and headers together are over 262,144 bytes (waitress answers, not the app; under gunicorn a header field over `server.limit_request_field_size` is a `400`) |
