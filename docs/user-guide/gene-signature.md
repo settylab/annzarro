@@ -4,8 +4,8 @@ A **Gene Signature** is a named list of genes, kept as a recipe: the genes, and 
 worked out from them. The **Gene Signature** panel builds the list. It opens on every gene of the
 dataset, ready to tick, and it needs no setup. The default way of scoring is stated in the panel
 ("Z-score mean of X, clipped at ±10": each gene is turned into a z-score over all cells, then the genes
-are averaged). Two other ways are chosen where a score is used, and the settings every way shares are under
-**Scoring** ({ref}`gene-signature-scoring`).
+are averaged). Other ways to score are offered under **Score options** ({ref}`gene-signature-scoring`) and
+chosen where a score is used.
 
 A signature outlives its panel. Close the panel and the signature is still there, listed in the
 panel chooser as **Closed**, and still usable wherever a gene table is: it can filter a Gene Plot and
@@ -121,7 +121,7 @@ The score works in large-plot mode too (colour and axes; the tooltip shows the
 colour's score).
 
 A score is chosen in three steps, as an embedding is: the source (**gene-score**), the signature, and
-the **aggregation** (z-score mean, the default; mean; or control-adjusted). Each axis, the colour and the hover can use a
+the **aggregation** (z-score mean, the default, or any other the signature offers). Each axis, the colour and the hover can use a
 different signature or a different aggregation of the same one; the same choice on two axes is computed once.
 The score can be on any axis, x, y and z (3D) included, against another score, an obs column or a gene.
 In large-plot mode x, y and colour take a score; 3D and extra hover columns are not available there.
@@ -157,38 +157,56 @@ score and says "3 changes are not applied. About 40 seconds." The signature's pa
 **Update score** to apply them.
 
 (gene-signature-scoring)=
-### Scoring: the settings every score shares
+### Score options: what the signature offers
 
-Under **Scoring** in the signature's panel are the settings the signature shares with every score made from it.
-The collapsed row always states them ("X, clipped at ±10"), so a link opened with other settings is never
-hidden. How the genes are combined is not set here: each plot or table chooses the aggregation for its own
-axis, colour or column.
+Under **Score options** in the signature's panel you decide what plots and tables are offered and how each
+option is computed. A plot or table only picks from what is offered: choose **gene-score** as the source,
+then the signature, then the option. The collapsed row always states it ("Offered: z-score mean, mean, sum ·
+layer X"), so a link opened with other settings is never hidden.
 
-- **Input** is the matrix the scores are read from: **X**, or one of the dataset's layers. Scores are meant
-  for normalised, log-transformed values. If the input looks like raw counts, a warning says so ("X looks
-  like raw counts (whole numbers up to 557). Scores should be computed on normalised, log-transformed data,
-  or they follow sequencing depth.") and, when one of the other layers looks log-normalised and is named
-  that way, offers it with **Use logged_counts**. The same goes for values that are normalised but not
-  log-transformed. The warning shows under the row with Scoring closed and under **Input** when it is open,
-  and goes away when you choose another input. It is a warning, not a block.
-- **Clip z-scores at ±** (default 10) stops one rare gene dominating the average: its z-score can reach
-  the hundreds when a gene is detected in a handful of cells. Type any number above 0, or untick to turn
-  clipping off. A value that is not a number above 0 is refused with "Enter a number above 0." and the last
-  good value stays. Only the z-score mean uses the clip, so changing it asks the server for nothing when
-  the plots in use show a plain mean or a control-adjusted score.
-- **Seed** (default 0) fixes the control genes of a control-adjusted score, so the same seed always gives the
-  same score and a link keeps its meaning. Any whole number from 0 up.
+An option is an **aggregation** read from a **layer**. Each aggregation has a **Offer** box and a
+one-line definition in the panel, and its parameters appear beside it:
 
-**Control-adjusted** (Tirosh et al. 2016, as scanpy's `score_genes`) subtracts what a cell shows of genes that
-behave like the signature's but are not in it. Genes are cut into 25 bins by how often they are detected;
-for each bin that holds one of your genes, 50 genes of that bin are drawn as controls; the score is the
-mean of your genes less the mean of the controls. It removes differences in depth and quality between
-cells that move every gene together. It needs genes that differ in how often they are detected, so it
-means little on scaled data, where every gene is present in every cell.
+| Aggregation | What it gives | Parameters |
+|---|---|---|
+| **Z-score mean** (default) | each gene becomes a z-score over all cells, so every gene counts equally, then the genes are averaged | **Clip z-scores at ±** (default 10, any number above 0, or off) |
+| **Mean** | the plain average of the genes, in the units of the matrix | none |
+| **Sum** | the genes added up; a gene with no value in a cell adds nothing | none |
+| **Detected** | the share of the genes with a non-zero value in the cell, from 0 to 1 | none |
+| **Fraction of total** | the genes added up as a share of the cell's total over all genes, as for percent mitochondrial | none |
+| **Control-adjusted** (Tirosh et al. 2016, as scanpy's `score_genes`) | the average of the genes less the average of control genes of similar detection | **Bins** (25), **Controls per bin** (50), **Seed** (0) |
 
-A change to any of these is an edit of the signature, like a tick: a quick score updates after a short
-pause, and one that would take 5 seconds or more waits behind **Update score**. The input, the clip and
-the seed are carried by links, panel sets and Back and Forward.
+Z-score mean, mean and sum are offered at first; switch the others on with one click. At least one option stays
+offered. The clip stops one rare gene dominating the average (its z-score can reach the hundreds when a gene is
+detected in a handful of cells); it applies to the z-score mean only, so its box is off, with the reason, when
+that option is not offered. A number that is not valid is refused ("Enter a number above 0.") and the last good
+value stays.
+
+**Detected** is a share, not a count, so it means the same when a gene is missing from the dataset and compares
+between signatures of different sizes. **Fraction of total** needs the total of every cell, which is one pass over
+the whole matrix, so it takes longer than the others and asks first on a large dataset. It is meaningful for raw
+counts and for normalised values that are not log-transformed; on log-transformed or scaled values the result
+carries a warning. **Control-adjusted** removes differences in depth and quality between cells that move every
+gene together; it needs genes that differ in how often they are detected, so it means little on scaled data. The
+same seed always gives the same controls, so a link keeps its meaning.
+
+**Layers** lists X and the dataset's layers, each with an **Offer** box and one marked **default**, which is used
+where a plot or table does not choose. The default layer is always offered. Scores are meant for normalised,
+log-transformed values. If a layer looks like raw counts, a warning says so under it ("X looks like raw counts
+(whole numbers up to 557). Scores should be computed on normalised, log-transformed data, or they follow
+sequencing depth.") and, when another layer looks log-normalised and is named that way, offers it with **Use
+logged_counts**; the same goes for values that are normalised but not log-transformed. It is a warning, not a
+block. With the section closed, the warning for the default layer shows under the row.
+
+Each option also says how many plots and tables use it ("used by 2"). Switching an option off never breaks
+a plot or table that uses it: it keeps its setting, marks it "(no longer offered)" and keeps drawing, and
+switching the option on again clears the mark. Links and panel sets keep the options, the layers and every
+parameter.
+
+A change to a setting that changes a score is an edit of the signature, like a tick: a quick score updates
+after a short pause, and one that would take 5 seconds or more waits behind **Update score**. A clip edit asks
+the server for nothing when the plots in use show another aggregation, and a seed edit recomputes only
+control-adjusted scores. Choosing what is offered changes no score.
 
 ### Opening several at once
 

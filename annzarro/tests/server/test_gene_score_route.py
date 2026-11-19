@@ -101,8 +101,8 @@ def test_a_stream_is_progress_then_a_result_then_the_vector(client, layout, matr
     result = frames[-1]
     assert result["scored"] and result["dtype"] == "float32" and result["byte_length"] == 4 * N_OBS
     assert (result["n_cells"], result["n_shown"], result["n_used"]) == (N_OBS, N_OBS, len(GENES))
-    assert result["recipe"] == {"method": "zscore_mean", "input": "X", "clip": 10.0, "seed": None, "version": 1,
-                                "genes": len(GENES)}
+    assert result["recipe"] == {"method": "zscore_mean", "input": "X", "clip": 10.0, "seed": None, "bins": None,
+                                "controls": None, "version": 1, "genes": len(GENES)}
     want, _ = reference(matrix, GENES)
     np.testing.assert_allclose(vector, want, rtol=2e-6, atol=2e-6)
     assert {g["name"]: g["status"] for g in result["genes"]}[gene(1)] == "used"
@@ -482,8 +482,8 @@ def test_a_control_adjusted_score_reports_its_seed_and_controls(client, big):
     recipe = {"method": "control_adjusted", "seed": 5, "clip": 3}
     frames, vector = run_big(client, big, recipe)
     result = frames[-1]
-    assert result["recipe"] == {"method": "control_adjusted", "input": "X", "clip": None, "seed": 5, "version": 1,
-                                "genes": len(SIGNATURE)}
+    assert result["recipe"] == {"method": "control_adjusted", "input": "X", "clip": None, "seed": 5, "bins": 25,
+                                "controls": 50, "version": 1, "genes": len(SIGNATURE)}
     assert result["binning"] == "detection" and result["n_controls"] == result["n_controls_used"] > 0
     assert result["scored"] and vector.shape == (200,)
     assert frames[0]["total"] == len(SIGNATURE) and frames[1]["total"] == len(SIGNATURE) + result["n_controls"]
@@ -586,3 +586,15 @@ def test_a_refused_or_failed_control_adjusted_request_leaves_the_slot_and_the_bu
     assert refused.status_code == 200 or refused.status_code == 400
     free()
     assert run_big(client, big, {"method": "control_adjusted"})[0][-1]["scored"], "and the next score runs"
+
+
+@pytest.mark.parametrize("method", ["sum", "detected", "fraction_of_total"])
+def test_the_new_aggregations_stream_like_any_other(client, layout, matrix, method):
+    frames, vector = score(client, layout, {"method": method})
+    result = frames[-1]
+    assert result["recipe"]["method"] == method and result["scored"] and vector.shape == (N_OBS,)
+    if method == "fraction_of_total":
+        assert result["entries_read"] > 0 and frames[0]["total"] == len(GENES)
+        est = post(client, layout, {"recipe": {"genes": NAMES, "method": method}, "estimate_only": True}).get_json()["estimate"]
+        plain = post(client, layout, {"recipe": {"genes": NAMES, "method": "sum"}, "estimate_only": True}).get_json()["estimate"]
+        assert est["entries"] > plain["entries"], "the pass over every gene is in the estimate"
