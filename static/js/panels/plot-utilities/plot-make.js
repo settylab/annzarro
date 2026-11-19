@@ -30,7 +30,7 @@ import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
 import { NO_HOVER } from './hover-columns.js';
 import { describeScore } from '../../utils/score-notices.js';
-import { loadScoreSeries, scoreTitle, scoreLabel, drawScorePlaceholder, ScoreUnavailable } from '../../utils/score-source.js';
+import { loadScoreSeries, loadScoreSeriesWhenReady, scoreTitle, scoreLabel, drawScorePlaceholder, ScoreUnavailable } from '../../utils/score-source.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
@@ -778,9 +778,9 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
           throw new ScoreUnavailable(notice.headline, notice,
             Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected }));
         }
-        const scored = await loadScoreSeries(settings, {
+        const scored = await loadScoreSeriesWhenReady(settings, {
           host: plotContainer, role: role === 'colour' ? 'color' : (axis || role || 'x'), expected, unit
-        });
+        }, signal);
         return { values: scored.values, type: 'numerical', categories: null, coverage: scored.coverage, rankOf: null,
           ranked: false, groupNames: null };
       }

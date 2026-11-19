@@ -10,7 +10,7 @@ import urllib.parse
 
 from annzarro.tests.browser.test_gene_score_plots import (  # noqa: F401
     C, S, SIG, SCORE, _calls, _cell, _numbers, _open, _tag, _notice, _wait_coloured, _ready_plot, _slow, _finish,
-    _box, _action, _drawn, INIT, page, served, large_page, large_served, _wait_large_coloured, _url)
+    _box, _action, _drawn, _frame, INIT, page, served, large_page, large_served, _wait_large_coloured, _url)
 from annzarro.tests.browser.test_memory_guard import until
 
 
@@ -311,3 +311,90 @@ def test_plot_hover_and_table_menus_leave_out_a_combination_that_cannot_be_compu
     boxes = page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' input.column-checkbox')].map(c => c.id)", T.TID)
     assert not any("detected-of-X" in b or "fraction_of_total-of-X" in b for b in boxes), boxes
     assert any("detected-of-counts" in b for b in boxes), boxes
+
+
+def _colour_snapshot(page):
+    return page.evaluate("""(t) => { const g = document.querySelector(t + ' .js-plotly-plot');
+        const d = g && g.data && g.data.find(d => d.marker && Array.isArray(d.marker.color) && d.marker.colorscale);
+        return d ? Array.from(d.marker.color).map(Number).join() : null; }""", C)
+
+
+def _sample(page):
+    """What the plot area shows now: the drawn colours, the loading pill, any notice or tag, any 'N of M genes'."""
+    return page.evaluate("""(t) => {
+        const tile = document.querySelector(t);
+        const grey = [...tile.querySelectorAll('.js-plotly-plot .scatterlayer path.point')].some(p => /rgb\\(200, ?200, ?200\\)|#c8c8c8/i.test(p.style.fill || ''));
+        return { pill: [...tile.querySelectorAll('.loading-overlay, .loading-indicator, [class*="loading"]')].some(e => e.offsetParent !== null),
+                 notice: !!tile.querySelector('.score-notice'), tag: !!tile.querySelector('.ps-tag[data-tag="score"]'),
+                 placeholder: !!tile.querySelector('.coverage-placeholder'),
+                 genes: /\\d+ of \\d+ genes/.test(tile.textContent), grey };
+    }""", C)
+
+
+def _watch_and_finish(page, before, ramp):
+    seen = []
+    for _ in range(8):
+        seen.append(_sample(page))
+        assert _colour_snapshot(page) == before, "the old colours stay while the score is on its way"
+        page.wait_for_timeout(150)
+    _frame(page, 0, type="progress", done=0, total=12)
+    page.wait_for_timeout(300)
+    seen.append(_sample(page))
+    assert _colour_snapshot(page) == before
+    assert any(s["pill"] for s in seen), "the standard loading pill shows"
+    assert not any(s["notice"] or s["tag"] or s["placeholder"] or s["genes"] for s in seen), seen
+    _finish(page, 0, ramp)
+
+
+def test_switching_a_colour_from_an_obs_column_to_a_pending_score_keeps_the_old_plot_with_the_loading_pill(page, served):
+    from annzarro.tests.browser.test_gene_score_plots import _choose_score
+    _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "obs", "key": "score", "column": ""})),), sig=TWO)
+    _wait_coloured(page)
+    before = _colour_snapshot(page)
+    assert before
+    _slow(page, "auto", 3)
+    _choose_score(page, "color")
+    until(page, "() => window.__ctls.length === 1")
+    _watch_and_finish(page, before, [float(i) * 3 for i in range(60)])
+    until(page, "([t, b]) => { const g = document.querySelector(t + ' .js-plotly-plot'); const d = g.data.find(d => d.marker && Array.isArray(d.marker.color) && d.marker.colorscale); return !!d && Array.from(d.marker.color).map(Number).join() !== b; }", [C, before])
+    assert _notice(page) is None and _tag(page) is None
+
+
+def test_switching_between_two_score_options_keeps_the_old_plot_with_the_loading_pill(page, served):
+    _open(page, served, plots=(("cell-plot-C", _cell()),), sig=TWO)
+    _wait_coloured(page)
+    before = _colour_snapshot(page)
+    _slow(page, "auto", 3)
+    page.select_option(f"{C} select.axis-column-select[data-axis='color']", "mean@X")
+    until(page, "() => window.__ctls.length === 1")
+    _watch_and_finish(page, before, [float(i) * 2 + 1 for i in range(60)])
+    until(page, "([t, b]) => { const g = document.querySelector(t + ' .js-plotly-plot'); const d = g.data.find(d => d.marker && Array.isArray(d.marker.color) && d.marker.colorscale); return !!d && Array.from(d.marker.color).map(Number).join() !== b; }", [C, before])
+
+
+def test_a_pending_score_on_an_axis_keeps_the_old_plot_not_a_placeholder(page, served):
+    from annzarro.tests.browser.test_gene_score_plots import _choose_score
+    _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "none", "key": "", "column": ""})),), sig=TWO)
+    _ready_plot(page)
+    _slow(page, "auto", 3)
+    _choose_score(page, "x")
+    until(page, "() => window.__ctls.length === 1")
+    for _ in range(6):
+        s = _sample(page)
+        assert not s["placeholder"] and not s["notice"] and not s["genes"], s
+        assert _drawn(page)
+        page.wait_for_timeout(150)
+    _frame(page, 0, type="progress", done=0, total=12)
+    page.wait_for_timeout(300)
+    assert not _sample(page)["genes"] and _drawn(page)
+    _finish(page, 0, [float(i) for i in range(60)])
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!g && g.layout.xaxis.title.text.indexOf('T cell score') === 0; }", C)
+
+
+def test_a_score_that_lasts_is_still_said_over_the_old_plot(page, served):
+    from annzarro.tests.browser.test_gene_score_plots import _choose_score
+    _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "obs", "key": "score", "column": ""})),), sig=TWO)
+    _wait_coloured(page)
+    _slow(page, "confirm", 130)
+    _choose_score(page, "color")
+    page.wait_for_selector(f"{C} .score-notice[data-state='awaiting']", timeout=30000)
+    assert _tag(page) == "Score not computed"

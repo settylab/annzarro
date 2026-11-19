@@ -49,7 +49,7 @@ import { releasePlot } from '../../utils/release-plot.js';
 import { classifyError, classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { columnsParam } from '../../utils/column-param.js';
 import { LARGE_TYPES, formatPoints, largeThreshold } from './large-plot-controls.js';
-import { loadScoreSeries } from '../../utils/score-source.js';
+import { loadScoreSeriesWhenReady } from '../../utils/score-source.js';
 import { buildPointIndexSliced } from '../../utils/point-index.js';
 import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus, applyPendingClick } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
@@ -106,7 +106,7 @@ async function loadSeries(s, datasetPath, structure, signal, { axis = null, host
   if (s.type === 'gene-score') {
     // the Float32Array of the score store itself: nothing is copied (utils/score-source.js);
     // a score that is not ready throws ScoreUnavailable (a colour is drawn neutral, an axis is a placeholder)
-    const scored = await loadScoreSeries(s, { host, role, expected: (DataManager.getCells() || []).length, array: false });
+    const scored = await loadScoreSeriesWhenReady(s, { host, role, expected: (DataManager.getCells() || []).length, array: false }, signal);
     return { values: scored.vector };
   }
   if (s.type === 'obsm') {
