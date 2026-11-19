@@ -540,3 +540,352 @@ def test_f4_close_the_signature_and_the_plot_keeps_its_colours_then_reopen_it(pa
     assert page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getType()") == "gene-signature"
     assert _numbers(page) == before
     assert len(_calls(page)) == requests, "reopening asks nothing: the key is the same"
+
+
+def test_a_score_on_an_axis_is_a_placeholder_while_it_computes_and_names_the_signature_after(page, served):
+    _slow(page, "auto", 3)
+    cfg = _cell(x=SCORE, y=UMAP_Y, color={"type": "none", "key": "", "column": ""})
+    _open(page, served, plots=(("cell-plot-C", cfg),), wait=False)
+    until(page, "() => window.__ctls.length === 1")
+    page.wait_for_selector(f"{C} .coverage-placeholder", timeout=30000)
+    until(page, "(t) => ((document.querySelector(t + ' .coverage-placeholder') || {dataset: {}}).dataset || {}).scoreState === 'computing'", C)
+    holder = _placeholder(page)
+    assert holder["state"] == "computing"
+    assert "Computing 'T cell score'" in holder["text"]
+    assert any(a.startswith("score-cancel") for a in holder["actions"])
+    assert not _drawn(page), "nothing truthful can be drawn from an axis that is not there"
+    _frame(page, 0, type="progress", done=1, total=2)
+    until(page, "(t) => (document.querySelector(t + ' .coverage-placeholder') || {textContent: ''}).textContent.includes('1 of 2 genes')", C)
+    _finish(page, 0)
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.length); }", C)
+    assert _placeholder(page) is None and _notice(page) is None
+    xs = page.evaluate("(t) => Array.from(document.querySelector(t + ' .js-plotly-plot').data[0].x).map(Number)", C)
+    assert len(xs) == 60 and xs[:3] == [0.0, 1.0, 2.0] or sorted(xs)[:3] == [0.0, 1.0, 2.0]
+    title = page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C)
+    assert title == "T cell score", "the axis names the signature, not the panel id"
+
+
+def test_hover_lists_the_score_beside_the_columns_and_labels_it_by_title(page, served):
+    cfg = _cell(hoverInfo=[{"type": "obs", "key": "_index"}, {"type": "gene-score", "key": SIG}], color={"type": "none", "key": "", "column": ""})
+    _open(page, served, plots=(("cell-plot-C", cfg),))
+    options = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.hover-columns-select optgroup[label="Gene scores"] option')]
+        .map(o => [o.value, o.textContent, o.selected])""", C)
+    assert options == [[f"gene-score:{SIG}", "T cell score", True]]
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score')))); }", C)
+    text = page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data.flatMap(d => d.hovertext || []).filter(h => String(h).includes('T cell score'))[0]""", C)
+    assert "T cell score:" in text
+    # picking it in the Hover list writes the setting
+    page.goto("about:blank")
+    _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "none", "key": "", "column": ""})),))
+    page.select_option(f"{C} select.hover-columns-select", [f"gene-score:{SIG}"])
+    until(page, "() => (window.PanelManager.getPanel('cell-plot-C').getConfig().hoverInfo || []).some(h => h.type === 'gene-score' && h.key === 'gene-signature-S')")
+
+
+def test_large_plot_mode_colours_by_a_score_and_its_tooltip_reads_the_vector(large_page, large_served):
+    _open(large_page, large_served)
+    _wait_large_coloured(large_page)
+    assert large_page.evaluate("(t) => !!document.querySelector(t + ' .plot-status .ps-tag[data-tag=\"large\"]')", C), "large-plot mode"
+    assert _tag(large_page) is None and _notice(large_page) is None
+    assert [c["kind"] for c in _calls(large_page)] == ["estimate", "compute"]
+    # the series is the store's Float32Array itself
+    names = large_page.evaluate("""(t) => [...new Set(document.querySelector(t + ' .js-plotly-plot').data.map(d => d.name))]""", C)
+    assert any(str(n).startswith("bin ") for n in names), names
+    bars = large_page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data
+        .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title))
+        .filter(Boolean)""", C)
+    assert bars == ["T cell score"]
+    # the tooltip's colour line is read from the held vector, not asked of the server for one cell
+    until(large_page, """(tile) => { const g = document.querySelector(tile + ' .js-plotly-plot');
+        return !!(g && g.__largeState && g.__largeState.index && g._fullLayout); }""", C)
+    spot = large_page.evaluate("""(tile) => {
+        const g = document.querySelector(tile + ' .js-plotly-plot'), idx = g.__largeState.index;
+        const xa = g._fullLayout.xaxis, ya = g._fullLayout.yaxis, r = g.querySelector('.nsewdrag').getBoundingClientRect();
+        const p = Array.from(idx.rows).indexOf(30);
+        return { x: r.left + xa.l2p(idx.X[p]), y: r.top + ya.l2p(idx.Y[p]) };
+    }""", C)
+    before = len(_calls(large_page))
+    large_page.mouse.move(spot["x"] - 60, spot["y"] - 60)
+    large_page.mouse.move(spot["x"] + 1, spot["y"] + 1, steps=4)
+    until(large_page, """() => { const t = document.querySelector('.large-plot-tip');
+        return !!(t && t.style.display !== 'none' && Array.from(t.children).some(c => c.textContent.startsWith('T cell score: '))); }""")
+    tip = large_page.evaluate("() => Array.from(document.querySelector('.large-plot-tip').children).map(c => c.textContent)")
+    line = [t for t in tip if t.startswith("T cell score: ")][0]
+    held = large_page.evaluate("""async () => {
+        const mod = await import('/static/js/utils/score-source.js');
+        const setting = window.PanelManager.getPanel('cell-plot-C').getConfig().color;
+        return mod.heldScoreValue(setting, 30);
+    }""")
+    assert held is not None and abs(float(line.split(": ")[1]) - held) <= abs(held) * 1e-3 + 1e-9, (line, held)
+    assert len(_calls(large_page)) == before, "the value came from the vector: no request"
+
+
+def _wait_large_coloured(page, tile=C):
+    until(page, """(tile) => {
+        const gd = document.querySelector(tile + ' .js-plotly-plot');
+        return !!(gd && gd.data && gd.data.some(t => t.marker && t.marker.colorscale));
+    }""", tile)
+
+
+def test_large_plot_mode_axes_and_states(large_page, large_served):
+    _slow(large_page, "auto", 3)
+    cfg = _cell(x=SCORE, color={"type": "none", "key": "", "column": ""})
+    _open(large_page, large_served, plots=(("cell-plot-C", cfg),), wait=False)
+    until(large_page, "() => window.__ctls.length === 1")
+    large_page.wait_for_selector(f"{C} .coverage-placeholder", timeout=30000)
+    until(large_page, "(t) => ((document.querySelector(t + ' .coverage-placeholder') || {dataset: {}}).dataset || {}).scoreState === 'computing'", C)
+    assert _placeholder(large_page)["state"] == "computing"
+    _finish(large_page, 0)
+    until(large_page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.length); }", C)
+    assert large_page.evaluate("(t) => !!document.querySelector(t + ' .plot-status .ps-tag[data-tag=\"large\"]')", C)
+
+    # a colour from a score that asks first: neutral points, the overlay, the plot in place
+    large_page.goto("about:blank")
+    _slow(large_page, "confirm", 130)
+    _open(large_page, large_served, wait=False)
+    large_page.wait_for_selector(f"{C} .score-notice[data-state='awaiting']", timeout=30000)
+    assert _drawn(large_page)
+    assert "'T cell score' will take about 2 minutes." in _notice(large_page)["text"]
+    box = _box(large_page)
+    _action(large_page, "score-compute")
+    until(large_page, "() => window.__ctls.length === 1")
+    _finish(large_page, 0)
+    _wait_large_coloured(large_page)
+    assert _box(large_page) == box
+
+
+def _edit(page, genes):
+    """Edit the open signature as the user would: add genes through the panel."""
+    page.evaluate("(genes) => window.PanelManager.getPanel('gene-signature-S').addGenes(genes)", genes)
+
+
+def _changed_from(page, before, tile=C):
+    until(page, "([t, b]) => { const g = document.querySelector(t + ' .js-plotly-plot'); "
+                "const x = g && g.data.find(d => d.marker && d.marker.colorscale); "
+                "return !!x && Array.from(x.marker.color).join() !== b.join(); }", [tile, before])
+
+
+def test_a_quick_edit_updates_the_plot_by_itself_after_a_short_pause(page, served):
+    _open(page, served, sig_open=True)
+    _wait_coloured(page)
+    before = _numbers(page)
+    _edit(page, ["GENE0100"])
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
+    _changed_from(page, before)
+    assert _calls(page, "compute")[1]["genes"] == ["GENE0001", "GENE0002", "GENE0100"]
+    assert _notice(page) is None, "a live update ends without a notice"
+
+
+def test_edits_of_a_slow_score_are_held_behind_update_score_and_the_plot_keeps_the_previous_one(page, served):
+    # estimates: the first recipes are quick; with a fifth gene the score takes 40 s
+    page.add_init_script("""window.__scoreFake = (kind, body, real) => {
+        if (kind !== 'estimate') return undefined;
+        const seconds = body.recipe.genes.length > 3 ? 40 : 1;
+        return new Response(JSON.stringify({ estimate: { seconds, tier: 'auto', auto_max_s: 60, max_s: 600, live_max_s: 5, layout: 'csc', entries: 1 },
+            missing: [], duplicated: [], recipe: {} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };""")
+    _open(page, served, sig_open=True)
+    _wait_coloured(page)
+    before = _numbers(page)
+    box = _box(page)
+    _edit(page, ["GENE0100"])
+    _edit(page, ["GENE0200"])
+    _edit(page, ["GENE0300"])
+    page.wait_for_selector(f"{C} .score-notice[data-state='held']")
+    note = _notice(page)
+    assert "Showing the previous 'T cell score'. 3 changes are not applied. About 40 seconds." in note["text"]
+    assert [a.split("|")[0] for a in note["actions"]] == ["score-update"]
+    assert _tag(page) == "Score out of date"
+    assert _numbers(page) == before, "the plot keeps the previous score"
+    assert _box(page) == box
+    assert len(_calls(page, "compute")) == 1, "the edits cost nothing until they are applied"
+    assert "3 changes are not applied" in page.inner_text(f"{S} .gsig-score"), "the panel says so too"
+    _action(page, "score-update")
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
+    assert _calls(page, "compute")[1]["genes"] == ["GENE0001", "GENE0002", "GENE0100", "GENE0200", "GENE0300"]
+    _changed_from(page, before)
+    assert _notice(page) is None
+    # the same button in the panel
+    _edit(page, ["GENE0400"])
+    _edit(page, ["GENE0500"])
+    page.wait_for_selector(f"{S} .gsig-score [data-score-command='update']")
+    page.click(f"{S} .gsig-score [data-score-command='update']")
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 3")
+
+
+def test_while_an_update_computes_the_plot_shows_the_previous_score_and_says_so(page, served):
+    _open(page, served, sig_open=True)
+    _wait_coloured(page)
+    before = _numbers(page)
+    _slow(page, "auto", 1)
+    _edit(page, ["GENE0100"])
+    until(page, "() => window.__ctls.length === 1")
+    page.wait_for_selector(f"{C} .score-notice[data-state='updating']")
+    assert "Showing the previous 'T cell score'. Updating." in _notice(page)["text"]
+    assert _tag(page) == "Score updating"
+    assert _numbers(page) == before
+    _finish(page, 0, [float(v) * 2 for v in RAMP])
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); const x = g.data.find(d => d.marker && d.marker.colorscale); return !!x && Array.from(x.marker.color)[3] === 6; }", C)
+    assert _notice(page) is None
+
+
+def test_history_makes_no_request_when_the_key_is_unchanged(page, served):
+    _open(page, served, plots=(("cell-plot-C", None), ("cell-plot-D", _cell("cell-plot-D", "Cell Plot 2", color=UMAP_Y))))
+    _wait_coloured(page)
+    first = len(_calls(page))
+    assert first == 2
+    # close the plot (a history step), then Back: the plot is made again with the same recipe
+    page.click(f"{C} .tile-close, {C} [data-action='close'], {C} .close-panel-btn")
+    until(page, "() => !window.PanelManager.getActivePanels().some(p => p.getId() === 'cell-plot-C')")
+    page.wait_for_timeout(1500)
+    page.go_back()
+    until(page, "() => window.PanelManager.getActivePanels().some(p => p.getId() === 'cell-plot-C')")
+    _wait_coloured(page)
+    assert len(_calls(page)) == first, _calls(page)
+    # a recipe edited since is a new key, and does ask
+    _open(page, served, sig_open=True)
+    _edit(page, ["GENE0003"])
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
+    assert _calls(page, "compute")[1]["genes"] == ["GENE0001", "GENE0002", "GENE0003"]
+
+
+def test_the_link_of_a_view_with_a_closed_signature_carries_the_recipe_and_no_computed_value(page, served):
+    _open(page, served)
+    _wait_coloured(page)
+    view = page.evaluate("() => (window.SessionManager || window.sessionManager).captureView()")
+    configs = view["layout"]["panelConfigs"]
+    assert configs[SIG]["genes"] == ["GENE0001", "GENE0002"], "the closed signature is carried"
+    assert SIG not in json.dumps(view["layout"]["hierarchy"]), "closed: no tile"
+    assert configs["cell-plot-C"]["color"]["type"] == "gene-score" and configs["cell-plot-C"]["color"]["key"] == SIG
+    text = json.dumps(view)
+    assert "Float32" not in text and "values" not in text
+    assert len(text) < 6000, "sixty scores would be hundreds of digits more"
+    other = page.context.browser.new_page()
+    other.add_init_script(INIT)
+    other.goto(page.url)
+    other.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
+    _wait_coloured(other)
+    assert [c["kind"] for c in _calls(other)] == ["estimate", "compute"]
+    assert _numbers(other) == _numbers(page)
+    other.close()
+
+
+def _save_set(page, name):
+    page.click("#btn-save-session")
+    page.fill("#session-name", name)
+    page.click("#btn-confirm-session")
+    page.wait_for_function("() => document.getElementById('session-modal').offsetParent === null")
+    page.wait_for_selector(".modal-backdrop", state="detached")
+
+
+def test_a_panel_set_with_a_closed_signature_loads_with_its_colours_and_carries_no_values(page, served):
+    _open(page, served)
+    _wait_coloured(page)
+    want = _numbers(page)
+    _save_set(page, "score-set")
+    saved = json.dumps(page.evaluate("() => PanelManager.saveLayout()"))
+    assert "Float32" not in saved and '"values"' not in saved
+    root, store = served
+    fresh = page.context.browser.new_page(viewport={"width": 1500, "height": 1000})
+    fresh.add_init_script(INIT)
+    try:
+        fresh.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}")
+        fresh.wait_for_selector("#btn-load-session", state="visible", timeout=30000)
+        fresh.wait_for_selector(".tile-selector", state="visible", timeout=30000)
+        fresh.click("#btn-load-session")
+        fresh.locator(".session-card[data-session-name='score-set'] .session-load").first.click()
+        fresh.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
+        _wait_coloured(fresh)
+        assert _numbers(fresh) == want
+        assert fresh.evaluate("() => window.PanelManager.getActivePanels().map(p => p.getId())") == ["cell-plot-C"], "the signature is closed"
+        assert fresh.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes") == ["GENE0001", "GENE0002"]
+        assert [c["kind"] for c in _calls(fresh)] == ["estimate", "compute"]
+    finally:
+        fresh.close()
+
+
+def test_added_panels_that_need_new_ids_keep_their_plot_and_signature_together(page, served):
+    _open(page, served)
+    _wait_coloured(page)
+    _save_set(page, "remap-set")
+    page.click("#btn-load-session")
+    page.locator(".session-card[data-session-name='remap-set'] .session-add-closed").first.click()
+    page.wait_for_function("() => PanelManager.getAllPanels().length === 4", timeout=30000)
+    got = page.evaluate("""() => PanelManager.getAllPanels().map(p => [p.getType(), p.getId(),
+        p.getType() === 'cell-plot' ? p.getConfig().color.key : null])""")
+    sigs = [g[1] for g in got if g[0] == "gene-signature"]
+    plots = [g for g in got if g[0] == "cell-plot"]
+    assert len(sigs) == 2 and sigs[0] == SIG and sigs[1] != SIG
+    added = [g for g in plots if g[1] != "cell-plot-C"][0]
+    assert added[2] == sigs[1], "the added plot colours by the added signature, not by the one that was already there"
+    assert [g for g in plots if g[1] == "cell-plot-C"][0][2] == SIG
+
+
+def test_at_most_two_scores_compute_at_once_and_a_shared_score_is_one_request(page, served):
+    extra = {f"gene-signature-{k}": {"id": f"gene-signature-{k}", "title": f"Score {k}", "genes": [f"GENE000{k}"]} for k in range(1, 5)}
+    plots = tuple((f"cell-plot-{k}", _cell(f"cell-plot-{k}", f"Cell Plot {k}", color={"type": "gene-score", "key": f"gene-signature-{k}",
+                                                                                         "label": f"Score {k}", "column": ""}))
+                  for k in range(1, 5))
+    _slow(page, "auto", 3)
+    page.set_viewport_size({"width": 1700, "height": 1400})
+    _open(page, served, plots=plots, sig=False, extra_cfgs=extra, wait=False)
+    until(page, "() => window.__ctls.length === 2")
+    page.wait_for_timeout(800)
+    assert page.evaluate("() => window.__ctls.length") == 2, "two at a time"
+    assert len(_calls(page, "compute")) == 2
+    queued = page.evaluate("""() => [...document.querySelectorAll('.score-notice')].map(e => e.dataset.state).sort()""")
+    assert queued.count("queued") == 2 and queued.count("computing") == 2, queued
+    _finish(page, 0)
+    until(page, "() => window.__ctls.length === 3")
+    _finish(page, 1)
+    until(page, "() => window.__ctls.length === 4")
+    _finish(page, 2)
+    _finish(page, 3)
+    for k in range(1, 5):
+        _wait_coloured(page, f'.tile[data-tile-id="cell-plot-{k}"]')
+
+
+def test_a_score_off_screen_waits_until_its_plot_comes_into_view(page, served):
+    extra = {"gene-signature-2": {"id": "gene-signature-2", "title": "Score 2", "genes": ["GENE0002"]}}
+    two = _cell("cell-plot-2", "Cell Plot 2", color={"type": "gene-score", "key": "gene-signature-2", "label": "Score 2", "column": ""})
+    _slow(page, "auto", 3)
+    page.add_init_script("""window.__hold = true; const o = window.IntersectionObserver;
+        window.IntersectionObserver = class { constructor(cb) { this.cb = cb; window.__io = window.__io || []; window.__io.push(this); }
+            observe(el) { this.el = el; if (!window.__hold) this.cb([{ isIntersecting: true, target: el }]); else if (el.id.endsWith('cell-plot-2')) this.cb([{ isIntersecting: false, target: el }]); else this.cb([{ isIntersecting: true, target: el }]); }
+            disconnect() {} unobserve() {} };""")
+    _open(page, served, plots=(("cell-plot-C", None), ("cell-plot-2", two)), extra_cfgs=extra, wait=False)
+    until(page, "() => window.__ctls.length === 1")
+    page.wait_for_timeout(800)
+    assert len(_calls(page, "estimate")) == 1 and page.evaluate("() => window.__ctls.length") == 1, "nothing starts for the plot off screen"
+    page.evaluate("""() => { window.__hold = false; for (const io of window.__io) if (io.el) io.cb([{ isIntersecting: true, target: io.el }]); }""")
+    until(page, "() => window.__ctls.length === 2")
+
+
+def test_open_signature_works_with_no_chooser_tile_in_the_page(page, served):
+    _slow(page, "refused", 1500, refuse="Too large. Use fewer genes.")
+    _open(page, served, wait=False)
+    page.wait_for_selector(f"{C} .score-notice[data-state='refused']", timeout=30000)
+    # take every chooser out of the page: reopening must not click a chooser tile's button (reopen-table does)
+    page.evaluate("() => document.querySelectorAll('.tile-selector, .panel-closed-btn').forEach(e => e.remove())")
+    assert page.locator(".panel-closed-btn").count() == 0
+    assert page.locator(S).count() == 0
+    _action(page, "score-open")
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    # the same id, so the plot follows; the tile of the plot was split, the signature is beside it
+    assert page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getType()") == "gene-signature"
+    assert page.evaluate("() => window.PanelManager.getActivePanels().map(p => p.getId()).sort()") == ["cell-plot-C", "gene-signature-S"]
+    assert "T cell score" in page.inner_text(f"{S} .tile-title, {S} input.tile-title") or page.input_value(f"{S} .tile-title") == "T cell score"
+
+
+def test_use_in_colours_a_cell_plot_by_the_signature(page, served):
+    plain = _cell(color={"type": "obs", "key": "score", "column": ""})
+    _open(page, served, plots=(("cell-plot-C", plain),), sig_open=True)
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    page.click(f"{S} .gsig-usein")
+    labels = page.locator(f"{S} .gsig-menu [role=menuitem]").all_inner_texts()
+    assert "Colour Cell Plot 1" in labels, labels
+    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('Colour Cell Plot 1')")
+    _wait_coloured(page)
+    cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color")
+    assert cfg["type"] == "gene-score" and cfg["key"] == SIG and cfg["label"] == "T cell score"
+    assert [c["kind"] for c in _calls(page)] == ["estimate", "compute"]
+    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-type-select[data-axis=\"color\"]').value", C) == "gene-score"
