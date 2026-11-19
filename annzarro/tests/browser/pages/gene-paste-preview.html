@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gene paste preview test page</title>
+<link rel="stylesheet" href="/static/vendor/css/bootstrap.min.css">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+<div id="host" style="max-width: 420px; margin: 1rem"></div>
+<button id="outside" type="button">outside</button>
+<script type="module">
+import { mountGenePaste } from '/static/js/utils/gene-paste-preview.js';
+window.added = [];
+window.cancelled = 0;
+window.mountPaste = (opts) => {
+    const host = document.getElementById('host');
+    host.textContent = '';
+    window.added = [];
+    window.cancelled = 0;
+    window.paste = mountGenePaste(host, {
+        ...opts,
+        onAdd: (genes, info) => window.added.push({ genes, info }),
+        onCancel: () => { window.cancelled++; }
+    });
+    return true;
+};
+window.ready = true;
+</script>
+</body>
+</html>
