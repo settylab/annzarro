@@ -897,7 +897,11 @@ def test_the_source_menus_colour_a_cell_plot_by_the_signature(page, served):
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     assert page.locator(f"{S} .gsig-usein").count() == 0, "the signature panel has no Use in menu"
     _choose_score(page, "color")
-    _wait_coloured(page)
+    # the obs colours stay while the score is on its way (the old plot is kept): wait for the score's own colours,
+    # not for "some colours"
+    until(page, """(t) => { const g = document.querySelector(t + ' .js-plotly-plot');
+        return !!g && g.data.some(d => d.marker && d.marker.colorbar && d.marker.colorbar.title
+            && String(d.marker.colorbar.title.text || d.marker.colorbar.title).startsWith('T cell score')); }""", C)
     cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color")
     assert cfg["type"] == "gene-score" and cfg["key"] == SIG and cfg["label"] == "T cell score"
     assert [c["kind"] for c in _calls(page)] == ["estimate", "compute"]
