@@ -247,3 +247,28 @@ test('plot area: applyAutoPointStyle keeps the area per panel; the grey points f
     assert.equal(applyAutoPointStyle(set, 1e6, BASE, REF_AREA * 8), false);
     assert.deepEqual([set.pointSize, set.pointOpacity], [3, 0.5]);
 });
+
+test('3D: the automatic size is 0.6 of the 2D curve value, at every N and area; 2D is unchanged', async () => {
+    const { AUTO_3D_SIZE_FACTOR, REF_AREA, AREA_RANGE } = await import('../../../static/js/utils/point-style.js');
+    assert.equal(AUTO_3D_SIZE_FACTOR, 0.6);
+    for (const k of [1 / 8, 1 / 2, 1, 4, 8]) {
+        for (const n of [0, 200, 3e3, 1e4, 1e5, 1e6]) {
+            const area = REF_AREA * k;
+            const curveSize = autoValue(n / Math.min(AREA_RANGE[1], Math.max(AREA_RANGE[0], k)), BASE.size, AUTO_CURVE.size);
+            const s3 = autoPointStyle(n, BASE, true, area).size;
+            assert.ok(Math.abs(s3 - Math.max(curveSize * 0.6, 0.392)) < 1e-9, `n=${n} k=${k}: ${s3}`);
+            // 2D is still snapped to the steps scattergl draws, from the full curve
+            assert.equal(autoPointStyle(n, BASE, false, area).size, snapPointSize(curveSize), `2D n=${n} k=${k}`);
+        }
+    }
+    assert.equal(autoPointStyle(200, BASE, true).size, 3);       // 5 * 0.6, not snapped
+    assert.equal(autoPointStyle(200, BASE, false).size, 5.1);
+});
+
+test('3D: a size that is set stays; the grey points in 3D follow the factor', async () => {
+    const { greyMarker } = await import('../../../static/js/utils/point-style.js');
+    const set = { z: { type: 'obsm' }, pointSize: 5, pointOpacity: 1, autoPointSize: false, autoPointOpacity: true };
+    applyAutoPointStyle(set, 200, BASE);
+    assert.equal(set.pointSize, 5);
+    assert.equal(greyMarker({ z: { type: 'obsm' } }, 200).size, autoPointStyle(200, BASE, true).size);
+});
