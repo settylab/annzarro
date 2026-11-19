@@ -1000,6 +1000,10 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
   // Get all table panels from PanelManager
   const tableType = entityType === 'cells' ? 'cell-table' : 'gene-table';
   const tablePanels = window.PanelManager ? window.PanelManager.getPanelsByType(tableType) : [];
+  // a gene signature filters genes like a gene table does: its genes are its recipe
+  if (entityType !== 'cells' && window.PanelManager) {
+    tablePanels.push(...window.PanelManager.getPanelsByType('gene-signature'));
+  }
   
   // Can't proceed if no dropdown and no table panels
   if (!$tableFilterSelect.length && (!tablePanels || !tablePanels.length)) {

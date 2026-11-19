@@ -367,6 +367,7 @@ ui:
     - cell-table
     - gene-table
     - gene-set
+    - gene-signature
   
   # Default visualization settings
   defaults:

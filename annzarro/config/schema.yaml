@@ -657,8 +657,8 @@ ui:
       description: List of enabled panel types
       items:
         type: string
-        enum: [cell-plot, gene-plot, cell-table, gene-table, gene-set]
-      default: [cell-plot, gene-plot, cell-table, gene-table, gene-set]
+        enum: [cell-plot, gene-plot, cell-table, gene-table, gene-set, gene-signature]
+      default: [cell-plot, gene-plot, cell-table, gene-table, gene-set, gene-signature]
     defaults:
       type: object
       description: Default UI settings

@@ -2206,7 +2206,8 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   let newTableEntities = new Set();
   const entityType = data.entities; // 'cells' or 'genes'
   const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
-  const closed = !!(window.PanelManager && window.PanelManager.getActivePanels
+  // a gene signature has no rows to freeze: its genes are its recipe, so closed it filters as open
+  const closed = !tablePanel.selectionIsLive && !!(window.PanelManager && window.PanelManager.getActivePanels
     && !window.PanelManager.getActivePanels().includes(tablePanel));
 
   if (closed) {

@@ -15,7 +15,7 @@ const { closedPanelsOfView, mergeClosedPlans, reconcileClosed } =
     await import('../../../static/js/utils/closed-restore.js');
 const { normalizeView, panelSetToView } = await import('../../../static/js/utils/deeplink.js');
 
-const KNOWN = new Set(['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set']);
+const KNOWN = new Set(['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set', 'gene-signature']);
 const can = (type) => KNOWN.has(type);
 
 const view = (open, configs) => ({
@@ -146,4 +146,25 @@ test('reconciling twice changes nothing the second time', () => {
     const first = reconcileClosed(target, live);
     first.add.forEach(p => live.set(p.id, { open: false, config: p.config }));
     assert.deepEqual(reconcileClosed(target, live), { add: [], replace: [] });
+});
+
+test('a closed gene signature comes back with its recipe and nothing derived', () => {
+    const configs = {
+        'gene-plot-1': { id: 'gene-plot-1', tableFilter: 'gene-signature-1718000000000' },
+        'gene-signature-1718000000000': {
+            id: 'gene-signature-1718000000000', title: 'T cell score',
+            genes: ['CD3D', 'CD3E'], down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, version: 1,
+            currentEntries: [4, 5], closedSelection: { passing: ['CD3D'] }
+        }
+    };
+    const { closed, skipped } = closedPanelsOfView(view(['gene-plot-1'], configs), can);
+    assert.deepEqual(skipped, []);
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0].type, 'gene-signature');
+    assert.deepEqual(closed[0].config, {
+        id: 'gene-signature-1718000000000', title: 'T cell score',
+        genes: ['CD3D', 'CD3E'], down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, version: 1
+    });
+    // a server that switched the type off skips it without an error
+    assert.deepEqual(closedPanelsOfView(view([], configs), t => t !== 'gene-signature').closed.map(c => c.type), ['gene-plot']);
 });

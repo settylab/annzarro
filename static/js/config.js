@@ -192,7 +192,7 @@ const Config = (function() {
             '9031': 'Gallus gallus'
         },
         // Enable/disable specific panel types in the selection tile
-        ENABLED_PANEL_TYPES: ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set'],
+        ENABLED_PANEL_TYPES: ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set', 'gene-signature'],
         
         // Plot aesthetics defaults
         PLOT_AESTHETICS: {

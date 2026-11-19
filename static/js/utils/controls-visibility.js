@@ -47,5 +47,6 @@ export function controlsElementOf(content) {
     if (!content || typeof content.querySelector !== 'function') return null;
     return content.querySelector('.plot-controls')
         || content.querySelector('.table-controls')
-        || content.querySelector('.gs-controls');
+        || content.querySelector('.gs-controls')
+        || content.querySelector('.gsig-controls');
 }
