@@ -1511,6 +1511,9 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-scoring__actions { display: flex; justify-content: flex-end; }
 .gsig-inputwarn { color: var(--az-warn-text); font-size: 0.75rem; }
 .gsig-menu-wrap { position: relative; }
+/* Add from: a fixed popover under body, above every panel (placed by the panel from its button) */
+.gsig-menu { position: fixed; right: auto; z-index: 3000; overflow-y: auto; max-width: calc(100vw - 8px); }
+.gsig-focused { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gsig-controls {
     padding: 6px 8px;
     border-bottom: 1px solid var(--az-border);
@@ -1568,6 +1571,66 @@ button.dtsb-button.dtsb-clear:hover {
 }
 @media (prefers-reduced-motion: reduce) {
     .gsig-row { transition: none; }
+}
+
+/* Inspect (panels/gene-signature-inspect.js): the score's distribution and each gene's figures, behind one button.
+   Thin bars, hairline axes, text in text tokens, both themes through --az-*. */
+.gsig-inspect { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--az-border); background: var(--az-surface-2); }
+.gsig-inspect.is-open { max-height: 65%; }
+.gsig-inspect__toggle {
+    display: flex; align-items: baseline; gap: 6px; width: 100%; border: 0; background: transparent; color: var(--az-text);
+    padding: 5px 8px; text-align: left; font-size: 0.8125rem;
+}
+.gsig-inspect__toggle:focus-visible, .gsig-inspect__sort:focus-visible, .gsig-inspect__gene:focus-visible,
+.gsig-hist__group:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
+.gsig-inspect__name { font-weight: 600; }
+.gsig-inspect__summary { color: var(--az-muted); font-size: 0.75rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gsig-inspect__body { overflow-y: auto; padding: 0 8px 8px; min-height: 0; }
+.gsig-inspect__body[hidden], .gsig-inspect__content[hidden] { display: none; }
+.gsig-inspect__agg { display: inline-flex; border: 1px solid var(--az-border-strong); border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+.gsig-inspect__definition, .gsig-inspect__note, .gsig-inspect__missing { color: var(--az-muted); font-size: 0.75rem; }
+.gsig-inspect__missing.is-warn { color: var(--az-warn-text); }
+.gsig-inspect__state { font-size: 0.75rem; padding: 2px 0; color: var(--az-text-2); }
+.gsig-inspect__state[hidden] { display: none; }
+.gsig-inspect__heading { font-weight: 600; margin-top: 4px; }
+.gsig-inspect__chartwrap { position: relative; }
+.gsig-inspect__chart { width: 100%; min-width: 0; }
+.gsig-hist__group { display: block; border-radius: 2px; }
+.gsig-hist { display: block; max-width: 100%; }
+.gsig-hist__axis { stroke: var(--az-border-strong); stroke-width: 1; }
+.gsig-hist__grid { stroke: var(--az-border); stroke-width: 1; }
+.gsig-hist__tick { fill: var(--az-muted); font-size: 10px; }
+.gsig-hist__bar { fill: var(--az-link); opacity: 0.8; }
+.gsig-hist__bar.is-active { opacity: 1; }
+.gsig-hist__hit { fill: transparent; }
+.gsig-hist__tip {
+    position: absolute; top: -2px; left: 0; z-index: 2; pointer-events: none; white-space: nowrap;
+    background: var(--az-surface); color: var(--az-text); border: 1px solid var(--az-border-strong); border-radius: 4px;
+    padding: 2px 6px; font-size: 0.75rem; opacity: 0; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+.gsig-hist__tip.is-shown { opacity: 1; }
+.gsig-inspect__figures { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 0.75rem; }
+.gsig-inspect__figure-label { color: var(--az-muted); }
+.gsig-inspect__export { margin: 4px 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.gsig-inspect__result { min-height: 0; font-size: 0.75rem; color: var(--az-muted); }
+.gsig-inspect__result:empty { display: none; }
+.gsig-inspect__flags { font-size: 0.75rem; color: var(--az-warn-text); font-weight: 600; margin-top: 4px; }
+.gsig-inspect__flags[hidden] { display: none; }
+.gsig-inspect__genes { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin-top: 4px; }
+.gsig-inspect__genes th, .gsig-inspect__genes td { padding: 2px 4px; border-bottom: 1px solid var(--az-border-soft); vertical-align: top; text-align: right; font-weight: 400; }
+.gsig-inspect__genes th.gsig-col-name, .gsig-inspect__genes th[scope="row"] { text-align: left; }
+.gsig-inspect__genes thead th { font-weight: 600; color: var(--az-text-2); border-bottom: 1px solid var(--az-border-strong); }
+.gsig-inspect__sort, .gsig-inspect__gene { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; font-weight: inherit; }
+.gsig-inspect__gene { color: var(--az-link); text-align: left; }
+.gsig-inspect__gene:hover { text-decoration: underline; }
+.gsig-inspect__flag { color: var(--az-warn-text); font-size: 0.6875rem; text-align: left; font-weight: 400; }
+.gsig-inspect__empty { color: var(--az-muted); padding: 4px 0; }
+.gsig-panel.gsig-flowing > .gsig-inspect { display: none; }
+@container gsig (max-width: 360px) {
+    .gsig-inspect__genes .gsig-col-extra { display: none; }
+}
+@container gsig (max-width: 280px) {
+    .gsig-inspect__chartwrap { display: none; }
 }
 
 /* one persistent line: fresh, stale or a notice */
@@ -4930,3 +4993,15 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .gsig-panel.gsig-flowing > .gsig-grid { display: none; }
 .gsig-flow { padding: 4px 0; }
 .gsig-flow[hidden] { display: none; }
+
+/* A Cell Table's gene-signature score columns (panels/table-utilities/table-score-ui.js) */
+.az-score-state { font-weight: normal; opacity: 0.75; white-space: nowrap; }
+.az-sort-off.sorting, .az-sort-off.sorting_asc, .az-sort-off.sorting_desc { cursor: default; }
+.az-sort-off.sorting::before, .az-sort-off.sorting::after,
+.az-sort-off.sorting_asc::before, .az-sort-off.sorting_asc::after,
+.az-sort-off.sorting_desc::before, .az-sort-off.sorting_desc::after { opacity: 0.12 !important; }
+.az-score-wait { font-style: italic; }
+/* A filter that reads a score that is not ready holds the rows: nothing is shown, nothing is counted */
+.az-score-held .dataTables_wrapper > .row:not(.az-sb-row):not(.az-search-row) { display: none; }
+.az-score-held-note { margin: 0.5rem 0; padding: 0.5rem 0.75rem; font-size: 0.875rem; }
+.az-score-group-title { font-size: 0.8125rem; margin-top: 0.25rem; }

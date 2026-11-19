@@ -82,7 +82,7 @@ Ttr panel did not change, because it depends on the focused gene.
   or a 3D stack (x, y and section depth as three columns with **3D Plot**).
 - **Image orientation.** If the tissue appears upside down, store the positions with y negated
   (as `spatial_upright` does here) when preparing the store; AnnZarro has no axis-flip control.
-- **Aspect ratio.** Without **Equal aspect** the axes fill the tile and stretch the section to
+- **Aspect ratio.** A new Cell Plot on an embedding starts with **Equal aspect** on. Without it the axes fill the tile and stretch the section to
   the tile's shape. **Equal aspect** is saved with the panel (`equalAspect`), in panel sets and
   share links. For an export, set the export width and height in proportion to the tile
   ({doc}`export`).

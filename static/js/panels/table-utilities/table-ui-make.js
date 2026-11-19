@@ -12,6 +12,10 @@ import {
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { getColumnDisplayName } from './table-data.js';
 import { isDerived } from '../../utils/line-select.js';
+import { isScoreColumn } from '../../utils/score-column.js';
+import { getSource } from '../../utils/source-registry.js';
+import { DEFAULT_METHOD } from '../../utils/gene-signature.js';
+import '../../utils/score-source.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -176,7 +180,10 @@ export function populateColumnsCellTable(dataSources, datasetStructure, id, sett
         
         let items = [];
         
-        if (source.id === 'obs' && datasetStructure.obs?.columns) {
+        if (source.id === 'gene-score') {
+            buildScoreTab(id, settings);
+            continue;
+        } else if (source.id === 'obs' && datasetStructure.obs?.columns) {
             items = datasetStructure.obs.columns.map(column => ({
                 type: 'obs',
                 key: column,
@@ -276,7 +283,8 @@ async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, i
         { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
         { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
         { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
-        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
+        { id: 'layer', name: 'layer', label: 'layers' }, // Expression Layers
+        { id: 'gene-score', name: 'gene-score', label: 'gene-score' } // Gene signature scores
     ];
     
     createDataTabs(tabsContainer, tabContent, dataSources, id, datasetStructure);
@@ -314,6 +322,100 @@ async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, i
     // Activate the first tab
     const firstTab = tabsContainer.querySelector('button');
     if (firstTab) firstTab.click();
+}
+
+/** The id of a column's checkbox in the chooser. */
+function checkboxIdFor(column, panelId) {
+    return `checkbox-${column.type}-${column.key}-${column.column}-${panelId}`.replace(/\s+/g, '_');
+}
+
+/**
+ * The gene-score tab of a Cell Table's chooser: every signature (open or closed), and under each
+ * the aggregations it can be read with (the source's three levels, utils/source-registry.js).
+ * Several signatures and several aggregations of one can be ticked at once: each is a column.
+ * Rebuilt whenever panels come, go or are renamed, since a signature can be made at any time.
+ * @param {string} id - the table panel's id
+ * @param {Object} settings - the panel settings
+ */
+export function buildScoreTab(id, settings) {
+    const pane = document.getElementById(`gene-score-content-${id}`);
+    const provider = getSource('gene-score');
+    if (!pane || !provider) return;
+    const list = pane.querySelector('.checkbox-list');
+    if (!list) return;
+    const search = pane.querySelector('.column-search');
+    list.innerHTML = '';
+    const signatures = provider.entities();
+    if (!signatures.length) {
+        list.innerHTML = '<div class="alert alert-secondary">No signatures yet. Add a Gene Signature panel to score cells.</div>';
+        return;
+    }
+    const subs = provider.subKeys();
+    const ticked = (settings.columns || []).filter(isScoreColumn);
+    for (const sig of signatures) {
+        const group = document.createElement('div');
+        group.className = 'az-score-group';
+        group.dataset.signature = sig.id;
+        const heading = document.createElement('div');
+        heading.className = 'az-score-group-title fw-semibold';
+        heading.textContent = sig.title;
+        heading.title = sig.open ? sig.title : `${sig.title} (closed)`;
+        group.appendChild(heading);
+        for (const sub of subs) {
+            const item = { type: 'gene-score', key: sig.id, column: sub.value };
+            const div = document.createElement('div');
+            div.className = 'form-check py-0 ms-3';
+            const checkbox = document.createElement('input');
+            checkbox.className = 'form-check-input column-checkbox';
+            checkbox.type = 'checkbox';
+            checkbox.id = checkboxIdFor(item, id);
+            checkbox.setAttribute('data-type', item.type);
+            checkbox.setAttribute('data-key', item.key);
+            checkbox.setAttribute('data-column', item.column);
+            checkbox.setAttribute('data-label', sig.title);
+            checkbox.dataset.scoreBound = '1';
+            checkbox.checked = ticked.some(c => c.key === sig.id && (c.column || DEFAULT_METHOD) === sub.value);
+            checkbox.addEventListener('change', () => updateSelectedColumnsList(id, settings));
+            const label = document.createElement('label');
+            label.className = 'form-check-label';
+            label.htmlFor = checkbox.id;
+            label.textContent = sub.label;
+            div.dataset.search = `${sig.title} ${sub.label}`.toLowerCase();
+            div.append(checkbox, label);
+            group.appendChild(div);
+        }
+        list.appendChild(group);
+    }
+    if (search && !search.dataset.scoreBound) {
+        search.dataset.scoreBound = '1';
+        search.addEventListener('input', (e) => {
+            const text = e.target.value.toLowerCase();
+            for (const group of pane.querySelectorAll('.az-score-group')) {
+                let any = false;
+                for (const row of group.querySelectorAll('.form-check')) {
+                    const match = row.dataset.search.includes(text);
+                    row.style.display = match ? '' : 'none';
+                    any = any || match;
+                }
+                group.style.display = any ? '' : 'none';
+            }
+        });
+    }
+}
+
+/**
+ * Take a column out of the chooser and the table's columns (the table is built again by the
+ * caller). The tick goes first: the chooser derives the columns from its ticks.
+ * @param {string} id
+ * @param {Object} settings
+ * @param {Object} column
+ * @param {(a: Object, b: Object) => boolean} same
+ */
+export function removeColumnFromChooser(id, settings, column, same) {
+    const box = document.getElementById(checkboxIdFor({ ...column, column: column.column || DEFAULT_METHOD }, id));
+    if (box) box.checked = false;
+    settings.columns = (settings.columns || []).filter(c => !same(c, column));
+    updateSelectedColumnsList(id, settings);
 }
 
 function createAccordionHeader(sourceId, panelId, label, index) {
@@ -609,10 +711,15 @@ export function setupColumnSelectionEvents(id, settings, entityType) {
     
     // Handle checkbox changes
     checkboxes.forEach(checkbox => {
+        if (checkbox.dataset.scoreBound) return;      // the gene-score tab listens for itself
         checkbox.addEventListener('change', () => {
             updateSelectedColumnsList(id, settings);
         }, { signal });
     });
+    // signatures come and go: the gene-score tab lists them again
+    if (entityType === 'cells') {
+        document.addEventListener('annzarro:panels-changed', () => buildScoreTab(id, settings), { signal });
+    }
     
     // Handle apply button
     const applyButton = document.getElementById(`apply-columns-${id}`);
@@ -723,6 +830,10 @@ function updateSelectedColumnsList(id, settings) {
     // The columns the line-selection tool derived are not in the chooser: they
     // stay, after the ticked ones
     const derived = (settings.columns || []).filter(isDerived);
+    // so do score columns whose signature is no longer listed (deleted): they say so in the table,
+    // and go when the user removes them
+    const orphans = (settings.columns || []).filter(c => isScoreColumn(c)
+        && !document.getElementById(checkboxIdFor({ ...c, column: c.column || DEFAULT_METHOD }, id)));
     settings.columns = [];
     
     // Add each selected column
@@ -731,12 +842,10 @@ function updateSelectedColumnsList(id, settings) {
         const key = checkbox.getAttribute('data-key');
         const column = checkbox.getAttribute('data-column');
         
-        // Add to settings
-        settings.columns.push({
-            type,
-            key,
-            column
-        });
+        // Add to settings (a score column also keeps the signature's title, for when it is deleted)
+        const entry = { type, key, column };
+        if (type === 'gene-score') entry.label = checkbox.getAttribute('data-label') || undefined;
+        settings.columns.push(entry);
         
         // Create list item
         const listItem = document.createElement('li');
@@ -794,6 +903,28 @@ function updateSelectedColumnsList(id, settings) {
         selectedColumnsList.appendChild(listItem);
     }
 
+    for (const column of orphans) {
+        settings.columns.push(column);
+        const listItem = document.createElement('li');
+        listItem.className = 'list-group-item orphan-score-column';
+        const textSpan = document.createElement('span');
+        const name = getColumnDisplayName(column);
+        textSpan.textContent = shortColumnName(name);
+        textSpan.title = `${name} (the signature is gone)`;
+        textSpan.className = 'text-truncate';
+        listItem.appendChild(textSpan);
+        const removeButton = document.createElement('button');
+        removeButton.className = 'btn btn-outline-danger btn-xs';
+        removeButton.innerHTML = '<i class="fas fa-times"></i>';
+        removeButton.title = 'Remove from selection';
+        removeButton.addEventListener('click', () => {
+            settings.columns = settings.columns.filter(c => c !== column);
+            updateSelectedColumnsList(id, settings);
+        });
+        listItem.appendChild(removeButton);
+        selectedColumnsList.appendChild(listItem);
+    }
+
     // Show "no columns selected" message if no columns are selected
     if (settings.columns.length === 0) {
         const emptyItem = document.createElement('li');
@@ -825,6 +956,8 @@ function restoreSelectedColumns(id, settings) {
     
     // Check all checkboxes that match a column in settings
     settings.columns.forEach(col => {
+        // a link made before aggregations existed names the signature only: the default one
+        if (isScoreColumn(col) && !col.column) col.column = DEFAULT_METHOD;
         const checkboxId = `checkbox-${col.type}-${col.key}-${col.column}-${id}`.replace(/\s+/g, '_');
         const checkbox = document.getElementById(checkboxId);
         if (checkbox) {

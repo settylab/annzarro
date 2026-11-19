@@ -58,13 +58,20 @@ import { PLOT_PALETTES, plotColour } from './plot-theme.js';
  * height: 310 x 181 px, about 1/4). Past either end (a thumbnail, a
  * 5000 px export) the value stays at that end. The size never exceeds
  * base however large the area: the curve is base for few points. 3D sizes
- * follow the area as 2D ones do (the scene fills the plot area); 3D
- * opacity stays 1.
+ * follow the area as 2D ones do (the scene fills the plot area), times
+ * AUTO_3D_SIZE_FACTOR (3D points read larger than the same px in 2D: they
+ * are drawn in perspective and overlap in depth); 3D opacity stays 1.
  */
 export const AUTO_CURVE = Object.freeze({
   size: Object.freeze({ nHalf: 6000, exponent: 0.3 }),
   opacity: Object.freeze({ nHalf: 9000, exponent: 0.18 })
 });
+
+/**
+ * The automatic 3D size is this share of the 2D curve's value (before the
+ * smallest-step floor). Only the automatic size: a size that is set stays.
+ */
+export const AUTO_3D_SIZE_FACTOR = 0.6;
 
 /** The plot area (CSS px^2) the curve's values are for. */
 export const REF_AREA = 660 * 332;
@@ -89,7 +96,7 @@ export function areaCount(n, area) {
  * px^2 (default REF_AREA). `is3D`: a scatter3d plot,
  * whose automatic opacity is 1 at any N (below 1 Plotly draws its points
  * out of depth order, far ones over near ones) and whose sizes are not
- * snapped; 2D sizes are ones scattergl draws (slider-scales.js
+ * snapped and are AUTO_3D_SIZE_FACTOR of the curve; 2D sizes are ones scattergl draws (slider-scales.js
  * snapPointSize); both are at least one step (0.392 px).
  */
 export function autoPointStyle(n, base, is3D = false, area = REF_AREA) {
@@ -97,7 +104,7 @@ export function autoPointStyle(n, base, is3D = false, area = REF_AREA) {
   const size = autoValue(n, base.size, AUTO_CURVE.size);
   return {
     // never below the smallest step scattergl draws, 3D too
-    size: is3D ? Math.max(size, snapPointSize(0)) : snapPointSize(size),
+    size: is3D ? Math.max(size * AUTO_3D_SIZE_FACTOR, snapPointSize(0)) : snapPointSize(size),
     opacity: is3D ? 1 : Math.min(1, autoValue(n, base.opacity, AUTO_CURVE.opacity))
   };
 }

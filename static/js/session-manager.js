@@ -666,6 +666,11 @@ const SessionManager = (function() {
                         }
                         if (Object.keys(follow).length) live.setConfig(follow);
                     }
+                    // a table's score columns, and the filter conditions that name them, follow too
+                    if (live && live.updateConfig && Array.isArray(panel.config.columns)
+                        && panel.config.columns.some(c => c && c.type === 'gene-score')) {
+                        live.updateConfig({ columns: panel.config.columns, searchBuilderConfig: panel.config.searchBuilderConfig });
+                    }
                 });
             }
             

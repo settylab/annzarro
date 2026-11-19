@@ -40,6 +40,7 @@ import { createScoringSection } from './gene-signature-scoring.js';
 import { createKindClient } from '../utils/matrix-kind-client.js';
 import { layerKeys } from '../utils/structure-keys.js';
 import { Config } from '../config.js';
+import { createInspect } from './gene-signature-inspect.js';
 import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
@@ -64,57 +65,6 @@ export const ADD_SOURCES = [];
 
 // Paste or upload (step 4): an inline button next to Add from, and a drop target over the panel
 ADD_SOURCES.push(pasteSource);
-
-/**
- * Places to use a signature beyond the ones built in, from later steps (the
- * colour of a cell plot, a cell table column). Each is
- * `(ctx) => items`, where an item is `{id, label, run: () => void, disabled?: string}`
- * and `ctx` is `{panel, id, title}`.
- */
-export const USE_IN = [];
-
-/**
- * Make one of `plot`'s sources (x, y or colour) this signature's score, as the user would with the
- * plot's own menus: the source becomes gene-score and its signature this one, with the default
- * aggregation. A signature's score is computed when the plot needs it.
- */
-async function useAs(plot, axis, id, title) {
-    const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(plot.getId())}"]`);
-    const typeSelect = tile && tile.querySelector(`select.axis-type-select[data-axis="${axis}"]`);
-    const keySelect = tile && tile.querySelector(`select.axis-key-select[data-axis="${axis}"]`);
-    const current = () => (plot.getConfig() || {})[axis] || {};
-    if (!typeSelect || !keySelect) {
-        plot.setConfig({ [axis]: { ...current(), type: 'gene-score', key: id, label: title, column: '' } });
-        if (plot.refreshPlot) await plot.refreshPlot();
-        return;
-    }
-    const fire = (select) => {
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-    };
-    if (current().type !== 'gene-score') {
-        typeSelect.value = 'gene-score';
-        fire(typeSelect);
-        // the type change fills the key list (it is asynchronous)
-        for (let i = 0; i < 100 && !(current().type === 'gene-score' && [...keySelect.options].some(o => o.value === id)); i++) {
-            await new Promise(resolve => setTimeout(resolve, 30));
-        }
-    }
-    if (current().key !== id) {
-        if (![...keySelect.options].some(o => o.value === id)) return;
-        keySelect.value = id;
-        fire(keySelect);
-    }
-}
-
-/** For a chosen Cell Plot: Colour, Use as X, Use as Y. */
-USE_IN.push(({ id, title }) => PanelManager.getActivePanels()
-    .filter(panel => panel.getType() === 'cell-plot')
-    .flatMap(panel => [
-        ['color', `Colour ${panel.getTitle()}`],
-        ['x', `Use as X in ${panel.getTitle()}`],
-        ['y', `Use as Y in ${panel.getTitle()}`]
-    ].map(([axis, label]) => ({ id: `${axis}:${panel.getId()}`, label,
-        run: () => { useAs(panel, axis, id, title).catch((error) => console.error(`Use as ${axis} failed:`, error)); } }))));
 
 /** The dataset's gene index, shared by every signature (a Map of name -> position), rebuilt when the genes change. */
 let _indexCache = { key: null, index: null };
@@ -160,6 +110,7 @@ const GeneSignaturePanel = (function() {
         let D = null;
         let _grid = null;
         let _scoring = null;              // the Scoring section: the shared settings of every score
+        let _inspect = null;
         const _undo = new UndoStack();
         const _idMaps = new Map();        // dataset + column -> Promise of id -> gene name, read only when a paste needs it
         let _flow = null;                 // an inline flow (paste and upload) replacing the list: {node, opener, onClose}
@@ -174,7 +125,9 @@ const GeneSignaturePanel = (function() {
             buildDom();
             listen(document, 'click', onDocumentClick);
             listen(document, 'change', onSomeSelectChanged);
-            listen(document, 'focusedGeneChanged', () => { closeMenus(); });
+            listen(document, 'focusedGeneChanged', () => { closeMenus(); paintFocused(); });
+            listen(window, 'resize', placeMenu);
+            listen(window, 'scroll', () => { if (_openMenu) closeMenus(); }, true);
             const loaded = DataManager.isDatasetLoaded();
             _dom.noData.style.display = loaded ? 'none' : 'flex';
             syncControlsWithDataset(_dom.controls, loaded);
@@ -199,9 +152,12 @@ const GeneSignaturePanel = (function() {
             clearTimeout(_timer);
             _timer = null;
             closeFlow(null, { focus: false });
+            if (_dom && _dom.addMenu.parentElement === document.body) _dom.addMenu.remove();
             for (const [target, type, fn] of _listeners.splice(0)) target.removeEventListener(type, fn);
             if (_grid) _grid.destroy();
             _grid = null;
+            if (_inspect) _inspect.destroy();
+            _inspect = null;
             if (_unwatchScore) _unwatchScore();
             _unwatchScore = null;
             if (_scoring) _scoring.destroy();
@@ -466,11 +422,6 @@ const GeneSignaturePanel = (function() {
             const sid = (x) => `gsig-${x}-${_id}`;
             const status = el('div', { class: 'gsig-status', role: 'region', aria: { label: 'Signature' } });
             const summary = el('span', { class: 'gsig-summary', id: sid('summary') });
-            const useIn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-usein',
-                aria: { haspopup: 'menu', expanded: 'false', controls: sid('usein-menu') }, on: { click: () => toggleMenu('usein') } },
-            'Use in ▾');
-            const useInMenu = el('div', { class: 'gs-menu gsig-menu', id: sid('usein-menu'), role: 'menu', hidden: true,
-                on: { keydown: (e) => onMenuKey(e, 'usein') } });
             const definition = el('div', { class: 'gsig-definition', id: sid('definition') });
             const usedBy = el('div', { class: 'gsig-usedby' });
             const scoreLine = el('div', { class: 'gsig-score', hidden: true });
@@ -481,7 +432,7 @@ const GeneSignaturePanel = (function() {
                 getInUse: () => aggregationsInUse(_id)
             });
             status.append(
-                el('div', { class: 'gsig-status__row' }, summary, el('span', { class: 'gsig-menu-wrap' }, useIn, useInMenu)),
+                el('div', { class: 'gsig-status__row' }, summary),
                 definition, usedBy, scoreLine, _scoring.warning, _scoring.element);
 
             const search = el('input', { type: 'search', class: 'form-control form-control-sm gsig-search', id: sid('search'),
@@ -498,12 +449,15 @@ const GeneSignaturePanel = (function() {
                 aria: { haspopup: 'menu', expanded: 'false', controls: sid('addfrom-menu') }, on: { click: () => toggleMenu('addfrom') } },
             el('span', { class: 'gsig-long', text: 'Add from ▾' }), el('span', { class: 'gsig-short', text: 'Add ▾' }));
             const addMenu = el('div', { class: 'gs-menu gsig-menu', id: sid('addfrom-menu'), role: 'menu', hidden: true,
-                on: { keydown: (e) => onMenuKey(e, 'addfrom') } });
+                on: { keydown: (e) => onMenuKey(e) } });
+            const addMenuHome = el('span', { class: 'gsig-menu-wrap' }, addFrom, addMenu);
+            const focusedBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary gsig-focused', hidden: true,
+                on: { click: addFocused } });
             const _flowHost = el('div', { class: 'gsig-flow', hidden: true });
             const controls = el('div', { class: 'gsig-controls' },
                 el('div', { class: 'gsig-search-row' }, search, regex, matchCase, tickAllBtn),
                 searchNote,
-                el('div', { class: 'gsig-add-row' }, ...inlineButtons(), el('span', { class: 'gsig-menu-wrap' }, addFrom, addMenu)),
+                el('div', { class: 'gsig-add-row' }, focusedBtn, ...inlineButtons(), addMenuHome),
                 _flowHost);
 
             const allBtn = el('button', { type: 'button', role: 'radio', class: 'gsig-seg', on: { click: () => setView('all') } });
@@ -530,11 +484,12 @@ const GeneSignaturePanel = (function() {
             root.addEventListener('keydown', onPanelKey);
             root.addEventListener('dragover', onPanelDragOver);
             root.addEventListener('drop', onPanelDrop);
-            root.append(status, controls, listbar, message, note, empty, _grid.element);
+            _inspect = createInspect({ id: _id, D, getTitle: () => _title, getRecipe, focusGene: (gene) => DataManager.setFocusedGene(gene) });
+            root.append(status, controls, listbar, message, note, empty, _grid.element, _inspect.element);
             _container.innerHTML = '';
             _container.appendChild(root);
-            _dom = { root, controls, flowHost: _flowHost, status, summary, useIn, useInMenu, definition, usedBy, scoreLine, search, regex, matchCase, tickAllBtn, searchNote,
-                addFrom, addMenu, allBtn, selBtn, undoBtn, clearBtn, listbar, message, note, empty,
+            _dom = { root, controls, flowHost: _flowHost, status, summary, definition, usedBy, scoreLine, search, regex, matchCase, tickAllBtn, searchNote,
+                addFrom, addMenu, addMenuHome, focusedBtn, allBtn, selBtn, undoBtn, clearBtn, listbar, message, note, empty,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
         }
 
@@ -548,8 +503,7 @@ const GeneSignaturePanel = (function() {
                 ? `${fmtCount(n)} of ${fmtCount(GENE_LIMIT)} genes selected`
                 : `Tick genes to build a score. A signature holds up to ${fmtCount(GENE_LIMIT)} genes.`;
             _dom.definition.textContent = `${definitionText(_recipe)}.${missing ? ` ${fmtCount(missing)} not in this dataset.` : ''}`;
-            _dom.useIn.disabled = n === 0;
-            _dom.useIn.title = n === 0 ? 'Tick genes first' : 'Use this signature in a plot or an analysis';
+            paintFocused();
 
             _dom.search.classList.toggle('is-invalid', _search.invalid);
             _dom.regex.setAttribute('aria-pressed', String(_search.regex));
@@ -755,43 +709,63 @@ const GeneSignaturePanel = (function() {
 
         let _openMenu = null;
 
-        function menuParts(which) {
-            return which === 'usein' ? { button: _dom.useIn, menu: _dom.useInMenu } : { button: _dom.addFrom, menu: _dom.addMenu };
+        function menuParts() {
+            return { button: _dom.addFrom, menu: _dom.addMenu };
+        }
+
+        /** Put the open menu where the button is, in the viewport, above every panel; flip or slide at the edges. */
+        function placeMenu() {
+            if (!_dom || _openMenu !== 'addfrom') return;
+            const { button, menu } = menuParts();
+            const b = button.getBoundingClientRect();
+            const margin = 4;
+            menu.style.maxHeight = `${Math.max(120, window.innerHeight - 2 * margin)}px`;
+            const w = menu.offsetWidth, h = menu.offsetHeight;
+            let left = Math.min(Math.max(margin, b.left), Math.max(margin, window.innerWidth - w - margin));
+            let top = b.bottom + 2;
+            if (top + h > window.innerHeight - margin) {
+                const above = b.top - 2 - h;
+                top = above >= margin ? above : Math.max(margin, window.innerHeight - h - margin);
+            }
+            menu.style.left = `${left}px`;
+            menu.style.top = `${top}px`;
         }
 
         function toggleMenu(which) {
             if (_openMenu === which) { closeMenus(); return; }
             closeMenus();
-            const { button, menu } = menuParts(which);
+            const { button, menu } = menuParts();
             D.clear(menu);
-            const items = which === 'usein' ? useInItems() : addFromItems();
+            const items = addFromItems();
             if (!items.length) {
-                menu.appendChild(D.el('div', { class: 'gs-menu__item gsig-menu__none', text: which === 'usein' ? 'Nothing to use it in yet' : 'Nothing to add from' }));
+                menu.appendChild(D.el('div', { class: 'gs-menu__item gsig-menu__none', text: 'Nothing to add from' }));
             }
             for (const item of items) {
                 menu.appendChild(D.el('button', { type: 'button', role: 'menuitem', class: 'gs-menu__item', disabled: !!item.disabled,
                     title: item.disabled || undefined, data: { id: item.id },
                     on: { click: () => { closeMenus(); button.focus(); item.run(); } } }, item.label));
             }
+            // a portal to body: the panel and its neighbours clip and stack what is inside them
+            document.body.appendChild(menu);
             menu.hidden = false;
             button.setAttribute('aria-expanded', 'true');
             _openMenu = which;
+            placeMenu();
             const first = menu.querySelector('button:not(:disabled)');
-            if (first) first.focus();
+            if (first) first.focus({ preventScroll: true });
         }
 
         function closeMenus() {
             if (!_dom) return;
-            for (const which of ['usein', 'addfrom']) {
-                const { button, menu } = menuParts(which);
-                menu.hidden = true;
-                button.setAttribute('aria-expanded', 'false');
-            }
+            const { button, menu } = menuParts();
+            menu.hidden = true;
+            button.setAttribute('aria-expanded', 'false');
+            if (menu.parentElement === document.body) _dom.addMenuHome.appendChild(menu);
             _openMenu = null;
         }
 
-        function onMenuKey(e, which) {
-            const { button, menu } = menuParts(which);
+        function onMenuKey(e) {
+            const { button, menu } = menuParts();
             const items = [...menu.querySelectorAll('button:not(:disabled)')];
             const i = items.indexOf(document.activeElement);
             if (e.key === 'Escape') { closeMenus(); button.focus(); e.preventDefault(); e.stopPropagation(); }
@@ -801,7 +775,7 @@ const GeneSignaturePanel = (function() {
         }
 
         function onDocumentClick(e) {
-            if (_openMenu && _dom && !e.target.closest('.gsig-menu-wrap')) closeMenus();
+            if (_openMenu && _dom && !e.target.closest('.gsig-menu-wrap') && !e.target.closest('.gsig-menu')) closeMenus();
         }
 
         /** A table filter or a source changed somewhere: who uses this signature may have changed. */
@@ -926,42 +900,29 @@ const GeneSignaturePanel = (function() {
             item.drop(file);
         }
 
-        /** What "Use in" offers: the Gene Plots it can filter, the Gene Set Analysis panels it can feed, and what later steps add. */
-        function useInItems() {
-            const items = [];
-            const active = PanelManager.getActivePanels();
-            for (const panel of active) {
-                const type = panel.getType();
-                if (type === 'gene-plot') {
-                    items.push({ id: `filter:${panel.getId()}`, label: `Filter ${panel.getTitle()}`, run: () => filterPlot(panel) });
-                } else if (type === 'gene-set') {
-                    items.push({ id: `analyse:${panel.getId()}`, label: `Analyse in ${panel.getTitle()}`, run: () => feedAnalysis(panel) });
-                }
-            }
-            for (const provider of USE_IN) items.push(...provider({ panel: api, id: _id, title: _title }));
-            return items;
+        /** The focused gene as a one-click add; disabled, with the reason, when it cannot be added. */
+        function paintFocused() {
+            if (!_dom) return;
+            const gene = DataManager.getFocusedGene();
+            const btn = _dom.focusedBtn;
+            btn.hidden = !gene;
+            if (!gene) return;
+            let reason = '';
+            if (_nameSet.size && !_nameSet.has(gene)) reason = `${gene} is not in this dataset`;
+            else if (_recipe.genes.includes(gene) || _recipe.down.includes(gene)) reason = `${gene} is already in the list`;
+            btn.textContent = `+ ${gene} (focused)`;
+            btn.disabled = !!reason;
+            btn.title = reason || `Add the focused gene ${gene}`;
+            btn.setAttribute('aria-label', reason ? `Add ${gene}, focused: unavailable, ${reason}` : `Add ${gene}, the focused gene`);
         }
 
-        /** Select this signature in a Gene Plot's table filter, as the user would. */
-        function filterPlot(plot) {
-            const select = document.querySelector(`.tile[data-tile-id="${CSS.escape(plot.getId())}"] select.table-filter-select`);
-            if (select && [...select.options].some(o => o.value === _id)) {
-                select.value = _id;
-                select.dispatchEvent(new Event('change', { bubbles: true }));
-                if (window.jQuery) window.jQuery(select).trigger('change');
-            } else {
-                plot.setConfig({ tableFilter: _id });
-                if (plot.onDataUpdate) plot.onDataUpdate('tableChanged', { id: _id });
-            }
-            say(`${plot.getTitle()} is filtered by ${_title}.`);
-            setTimeout(paintUsedBy, 50);
+        function addFocused() {
+            const gene = DataManager.getFocusedGene();
+            if (gene && !btnBlocked()) addGenes([gene]);
         }
 
-        /** Make this signature the source of a Gene Set Analysis panel. */
-        function feedAnalysis(panel) {
-            panel.setConfig({ tableFilter: _id });
-            say(`${panel.getTitle()} analyses ${_title}.`);
-            setTimeout(paintUsedBy, 0);
+        function btnBlocked() {
+            return !_dom || _dom.focusedBtn.disabled;
         }
 
         // -------------------------------------------------------------------
@@ -1025,7 +986,8 @@ const GeneSignaturePanel = (function() {
             getSelectedGenes: () => [..._recipe.genes, ..._recipe.down],
             openFlow,
             closeFlow,
-            _debugState
+            _debugState,
+            _inspect: () => _inspect
         };
         return api;
     }

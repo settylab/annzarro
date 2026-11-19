@@ -83,6 +83,8 @@
  */
 
 import { normalizeViewSubset } from './subset.js';
+import { followSignatureIds } from './score-column.js';
+import { getColumnKey } from './column-key.js';
 
 /** Current deep-link `view` schema version. Bump on a breaking change. */
 export const VIEW_SCHEMA_VERSION = 1;
@@ -509,7 +511,8 @@ export function panelsToAdd(plan, isTaken, freshId) {
 /**
  * Rewrite references between panels after ids changed: a plot's
  * `tableFilter` holds the id of the table it is filtered by, and a plot's x,
- * y, z, colour or hover `gene-score` source holds the id of its signature.
+ * y, z, colour or hover `gene-score` source holds the id of its signature, and so does a
+ * table's `gene-score` column (and the filter conditions that name it).
  * @param {Object[]} configs - panel configs, rewritten in place
  * @param {Map<string,string>|Object} idMap - old id -> new id
  * @returns {Object[]} the same configs
@@ -528,6 +531,8 @@ export function remapPanelReferences(configs, idMap) {
         };
         for (const axis of ['x', 'y', 'z', 'color']) follow(cfg[axis]);
         if (Array.isArray(cfg.hoverInfo)) cfg.hoverInfo.forEach(follow);
+        // a table's score columns, and the conditions of its filter that name them
+        followSignatureIds(cfg, map, getColumnKey);
         // what a source remembers of the types it was set to before
         for (const axis of ['x', 'y', 'z', 'color']) {
             const history = cfg[axis] && cfg[axis].history && cfg[axis].history['gene-score'];

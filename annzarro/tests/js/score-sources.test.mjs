@@ -347,3 +347,51 @@ test('each aggregation of a signature is its own score; the same aggregation is 
     await settle();
     assert.equal(w.calls.compute.length, 4, 'both aggregations recomputed once');
 });
+
+// a score of another length than the cells shown is never waited on in silence ---------------------
+
+test('a score for other cells is asked for again once, then stated as failed with Retry', async () => {
+    const w = world({ cells: 3 });
+    w.ctx.cells = 5;                                  // five cells are shown; the server answers three values
+    w.add('S1', 'T cell score', ['CD3D']);
+    const { handle } = watch(w, 'S1');
+    handle.read();
+    await settle(); await settle();
+    w.finish(0, 3);
+    await settle();
+    // the first look discards it and asks again
+    handle.read();
+    await settle();
+    assert.equal(w.waiting.length, 2, 'one more request for the current cells');
+    w.finish(1, 3);
+    await settle();
+    const snap = handle.read();
+    assert.equal(snap.state, 'failed');
+    assert.equal(snap.reason, 'cells_mismatch');
+    assert.equal(snap.message, 'the score has 3 values for 5 cells');
+    assert.equal(snap.values, undefined, 'the values are not shown');
+    const words = N.describeScore({ ...snap, title: 'T cell score' });
+    assert.equal(words.headline, "'T cell score' could not be computed: the score has 3 values for 5 cells.");
+    assert.deepEqual(words.actions.map(a => a[0]), ['score-retry', 'score-open']);
+    // Retry asks once more, and when the cells now fit the score is shown
+    w.ctx.cells = 3;
+    assert.equal(handle.retry(), true);
+    await settle(); await settle();
+    w.finish(2, 3);
+    await settle();
+    assert.equal(handle.read().state, 'ready');
+});
+
+test('a score whose length fits is untouched, and an unknown cell count checks nothing', async () => {
+    const w = world();
+    w.add('S1', 'T', ['CD3D']);
+    const { handle } = watch(w, 'S1');
+    w.ctx.cells = 3;
+    handle.read(); await settle(); await settle();
+    w.finish(0, 3);
+    await settle();
+    assert.equal(handle.read().state, 'ready');
+    assert.equal(w.waiting.length, 1);
+    w.ctx.cells = null;
+    assert.equal(handle.read().state, 'ready');
+});

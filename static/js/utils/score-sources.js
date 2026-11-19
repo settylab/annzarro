@@ -134,6 +134,20 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         }
         const snap = store.snapshot(key);
         base.key = key;
+        // A score is one number per cell shown. One of another length is for other cells (a subset
+        // changed while it was on its way, or a stale entry): it is asked for again once, and then
+        // stated as failed with Retry, never shown and never waited on in silence.
+        if (snap.state === 'ready' && snap.values && typeof ctx.cells === 'number' && snap.values.length !== ctx.cells) {
+            const got = snap.values.length;
+            if (handle.mismatchKey !== key) {
+                handle.mismatchKey = key;
+                store.discard(key);
+                return { ...base, held, state: 'estimating', progress: null, owners: snap.owners };
+            }
+            return { ...base, held, state: 'failed', reason: 'cells_mismatch', owners: snap.owners,
+                message: `the score has ${got.toLocaleString('en-US')} values for ${ctx.cells.toLocaleString('en-US')} cells`,
+                mismatch: true };
+        }
         if (snap.state === 'ready' && snap.values) {
             handle.shown = { key, ctx: ctxKeyOf(ctx), values: snap.values, header: snap.header };
             return { ...base, held, state: 'ready', values: snap.values, header: snap.header, shownKey: key };
@@ -233,7 +247,17 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
                     }
                 },
                 compute() { return handle.key ? store.accept(handle.key) : false; },
-                retry() { return handle.key ? store.retry(handle.key) : false; },
+                retry() {
+                    if (!handle.key) return false;
+                    if (handle.mismatchKey === handle.key) {
+                        // the score did not fit the cells: ask for it afresh, once more
+                        handle.mismatchKey = null;
+                        store.discard(handle.key);
+                        notifyHandle(handle);
+                        return true;
+                    }
+                    return store.retry(handle.key);
+                },
                 cancel() { return handle.key ? store.cancel(handle.key) : false; },
                 /** Distinct hosts waiting on the same score: "Cancel for 3 plots". */
                 sharers() {

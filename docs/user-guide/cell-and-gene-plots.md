@@ -24,7 +24,9 @@ Cell plot controls, coloured by a categorical obs column.
 4. **Color**: the same three drop-downs for the colour, plus **None (constant)**.
 5. **3D Plot** adds a **Z** row and draws the plot in 3D. Click it again for 2D.
 6. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
-   ({doc}`spatial-coordinates`).
+   ({doc}`spatial-coordinates`). A new Cell Plot starts with it on when both axes are the
+   default, taken from one embedding (UMAP, PCA, spatial); it stays as you set it, and changing
+   the axes does not switch it.
 7. **Highlight Focused Cell** (in gene plots, **Highlight Focused Gene**) draws the focused point
    as a red dot with a black ring. On by default.
 8. **Palette** (categorical colour) or **Map** and range controls (numerical colour,
