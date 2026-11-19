@@ -611,6 +611,10 @@ const PanelManager = (function() {
     async function notifyPanels(updateType, data) {
         // other cells (or another dataset): builds of closed tables for the old ones end
         if (_WHOLE_VIEW_UPDATES.has(updateType)) TableResolver.cellsChanged();
+        // A table's rows changed: a gene table that is a source of a gene score has new genes (utils/score-source.js)
+        if (updateType === 'tableFiltered' && data && data.id) {
+            document.dispatchEvent(new CustomEvent('annzarro:table-filtered', { detail: { id: data.id } }));
+        }
         // A table notice waits for the whole-view update that is running; it
         // is told the table's rows as they are by then
         while (_wholeViewUpdate && !_WHOLE_VIEW_UPDATES.has(updateType)) {

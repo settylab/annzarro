@@ -102,7 +102,11 @@ def test_csv_export_uses_data_not_display():
     src = open(os.path.join(os.path.dirname(os.path.dirname(CSS)), "js", "panels", "table-utilities",
                             "table-data.js"), encoding="utf-8").read()
     block = src[src.index("extend: 'csv'"):src.index("extend: 'csv'") + 600]
-    assert "orthogonal: 'export'" in block
+    # the export asks for the data: orthogonal 'export' leads exportOptions, and the body is never given a display
+    # format (the header may be: a score column names its method and layer there). The behaviour is held by
+    # test_gene_score_tables.py::test_export_writes_the_score_column_when_it_is_ready (numbers, no markup, full precision).
+    assert re.search(r"exportOptions:\s*\{\s*orthogonal:\s*'export'", block)
+    assert "body:" not in block and "format: { body" not in block
 
 
 def test_plot_area_keeps_a_drawable_height():

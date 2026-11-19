@@ -1588,7 +1588,7 @@ button.dtsb-button.dtsb-clear:hover {
     .gsig-row { transition: none; }
 }
 
-/* Inspect (panels/gene-signature-inspect.js): the score's distribution and each gene's figures, behind one button.
+/* Inspect (panels/score-options/inspect-section.js): the score's distribution and each gene's figures, behind one button.
    Thin bars, hairline axes, text in text tokens, both themes through --az-*. */
 .gsig-inspect { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--az-border); background: var(--az-surface-2); }
 .gsig-inspect.is-open { max-height: 65%; }
@@ -5006,8 +5006,6 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .gene-paste .gp-matchcase { margin-top: 0.3rem; justify-content: flex-end; width: 100%; }
 .gene-paste .gp-note { margin: 0.4rem 0; padding: 0.35rem 0.6rem; border: 1px solid var(--az-warn-border); background: var(--az-warn-bg); color: var(--az-warn-text); border-radius: 4px; }
 .gene-paste .gp-names { max-height: 8rem; overflow-y: auto; overflow-wrap: anywhere; font-family: var(--bs-font-monospace, monospace); font-size: 0.8125rem; user-select: text; }
-.gene-paste .gp-over { margin: 0.5rem 0; padding: 0.5rem 0.6rem; border: 1px solid var(--az-danger-border); background: var(--az-danger-bg); color: var(--az-danger-text); border-radius: 4px; display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
-.gene-paste .gp-over-count { font-weight: 600; }
 .gene-paste .gp-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.6rem; }
 
 /* Paste or upload inside the Gene Signature panel: the flow replaces the list */
@@ -5029,3 +5027,9 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .az-score-held .dataTables_wrapper > .row:not(.az-sb-row):not(.az-search-row) { display: none; }
 .az-score-held-note { margin: 0.5rem 0; padding: 0.5rem 0.75rem; font-size: 0.875rem; }
 .az-score-group-title { font-size: 0.8125rem; margin-top: 0.25rem; }
+
+/* A Gene Table's Scores offered and Inspect (panels/score-options): in the settings area under the column chooser,
+   collapsed until opened, so the table stays a table first */
+.table-controls { flex-wrap: wrap; }                                  /* the section below takes its own line */
+.az-score-options { flex: 0 0 100%; min-width: 0; margin-top: 0.25rem; }
+.az-score-options .gsig-inspect.is-open { max-height: 420px; overflow: auto; }

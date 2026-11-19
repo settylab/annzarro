@@ -185,7 +185,6 @@ test("matching: exact, case, duplicates, already selected, unmatched", () => {
   assert.deepEqual(r.caseMatches, [{ input: "cd4", gene: "CD4" }]);
   assert.deepEqual(r.unmatched, ["FOO1"]);
   assert.equal(r.matched, 3);
-  assert.equal(r.overLimit, false);
 });
 
 test("matching: Match case turns the case rule off; an exact name wins over a case fit", () => {
@@ -238,26 +237,19 @@ test("mismatch: mouse casing against human, and Excel dates", () => {
   assert.equal(M.looksLikeExcelDate("MARCHF1"), false);
 });
 
-test("over the limit: flagged, never trimmed", () => {
-  const names = Array.from({ length: 2431 }, (_, i) => `G${i}`);
+test("no limit: every matched gene is offered, none trimmed", () => {
+  const names = Array.from({ length: 24310 }, (_, i) => `G${i}`);
   const r = matchGenes(names, { geneNames: names });
-  assert.equal(DEFAULT_LIMIT, 2000);
-  assert.equal(r.toAdd.length, 2431);
-  assert.equal(r.overLimit, true);
-  assert.equal(r.limit, 2000);
-  // the selected genes count against the limit
-  const cur = Array.from({ length: 1990 }, (_, i) => `C${i}`);
-  const a = matchGenes(["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11"], { geneNames: names, currentGenes: cur });
-  assert.equal(a.resulting, 2001);
-  assert.equal(a.overLimit, true);
-  assert.equal(matchGenes(["G1"], { geneNames: names, currentGenes: cur, limit: 5000 }).overLimit, false);
+  assert.equal(DEFAULT_LIMIT, undefined);
+  assert.equal(r.toAdd.length, 24310);
+  assert.ok(!("overLimit" in r) && !("limit" in r));
 });
 
 test("a large paste parses and matches quickly", () => {
   const genes = Array.from({ length: 60000 }, (_, i) => `GENE${i}`);
   const text = genes.slice(0, 50000).join("\n");
   const t0 = Date.now();
-  const r = matchGenes(parseGeneInput(text).names, { geneNames: genes, limit: 1e6 });
+  const r = matchGenes(parseGeneInput(text).names, { geneNames: genes });
   assert.equal(r.toAdd.length, 50000);
   assert.ok(Date.now() - t0 < 2000);
 });

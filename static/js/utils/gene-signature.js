@@ -14,50 +14,19 @@
  * renaming a signature changes nothing a score depends on.
  */
 import { setHash, stableStringify } from '../panels/gene-set-utilities/state.js';
-import { METHODS, DEFAULT_METHOD, cleanOffered, cleanLayers, paramsOf, methodInfo } from './signature-options.js';
+import {
+    METHODS, DEFAULT_METHOD, paramsOf, methodInfo, normalizeOptions,
+    DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE, MAX_SEED,
+    parseClipText, parseSeedText, parseWholeText, parseThresholdText, cleanWhole, cleanThreshold, cleanClip
+} from './signature-options.js';
 
-export { METHODS, DEFAULT_METHOD };
-
-/** Most genes a signature holds (up genes and down genes together), as the server's MAX_GENES. */
-export const GENE_LIMIT = 2000;
+export {
+    METHODS, DEFAULT_METHOD, DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE,
+    MAX_SEED, parseClipText, parseSeedText, parseWholeText, parseThresholdText, cleanWhole, cleanThreshold, cleanClip
+};
 
 /** The score's algorithm version (the server's ALGORITHM_VERSION). */
 export const RECIPE_VERSION = 1;
-
-export const DEFAULT_CLIP = 10;
-export const DEFAULT_INPUT = 'X';
-/** The seed a control-adjusted score without one means (the server's DEFAULT_SEED). */
-export const DEFAULT_SEED = 0;
-export const DEFAULT_BINS = 25;
-export const DEFAULT_CONTROLS = 50;
-export const BINS_RANGE = [2, 200];
-export const CONTROLS_RANGE = [1, 1000];
-/** Largest seed the page accepts: whole numbers the browser holds exactly (the server takes up to 2^63 - 1). */
-export const MAX_SEED = Number.MAX_SAFE_INTEGER;
-
-/**
- * A clip typed into the panel: a number above 0 (any size, `1e3` included).
- * @param {string} text
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseClipText(text) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = trimmed === '' ? NaN : Number(trimmed);
-    if (!Number.isFinite(value) || value <= 0) return { ok: false, error: 'Enter a number above 0.' };
-    return { ok: true, value };
-}
-
-/**
- * A seed typed into the panel: a whole number from 0 up.
- * @param {string} text
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseSeedText(text) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
-    if (!Number.isSafeInteger(value)) return { ok: false, error: 'Enter a whole number from 0 up.' };
-    return { ok: true, value };
-}
 
 /** Names in the order the lists and links keep them: by code point, so no locale changes a link. */
 export function compareNames(a, b) {
@@ -79,47 +48,18 @@ export function cleanNames(value) {
     return [...seen].sort(compareNames);
 }
 
-/** A whole number in [lo, hi], else the default. */
-export function cleanWhole(value, fallback, [lo, hi]) {
-    return Number.isInteger(value) && value >= lo && value <= hi ? value : fallback;
-}
-
-/** A detection threshold: a finite number from 0 up, else 0. */
-export function cleanThreshold(value) {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
-}
-
-/**
- * A detection threshold typed into the panel: a number from 0 up.
- * @param {string} text
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseThresholdText(text) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = trimmed === '' ? NaN : Number(trimmed);
-    if (!Number.isFinite(value) || value < 0) return { ok: false, error: 'Enter a number from 0 up.' };
-    return { ok: true, value };
-}
-
-/** A clip as the recipe keeps it: a finite number above 0, `null` for none, else the default. */
-export function cleanClip(value) {
-    if (value === null) return null;
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
-    return DEFAULT_CLIP;
-}
-
 /**
  * The recipe a saved config (a link, a panel set, an older version) describes.
  * Anything missing or invalid takes its default, so a hand-edited link still
- * opens. A gene on both sides counts as an up gene (the design's rule). A
- * list over the limit is cut at it, and the notes say so.
+ * opens. A gene on both sides counts as an up gene (the design's rule). There is no
+ * limit on the number of genes: the cost estimate is the only guard.
  * @param {Object} [raw]
  * @returns {{recipe: Object, notes: string[]}}
  */
 export function normalizeRecipe(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
     const notes = [];
-    let genes = cleanNames(src.genes);
+    const genes = cleanNames(src.genes);
     let down = cleanNames(src.down);
     const up = new Set(genes);
     const both = down.filter(name => up.has(name));
@@ -127,30 +67,12 @@ export function normalizeRecipe(raw) {
         down = down.filter(name => !up.has(name));
         notes.push(`${both.length} gene${both.length === 1 ? ' was' : 's were'} on both sides and now count as up.`);
     }
-    if (genes.length + down.length > GENE_LIMIT) {
-        const dropped = genes.length + down.length - GENE_LIMIT;
-        down = down.slice(0, Math.max(0, GENE_LIMIT - genes.length));
-        genes = genes.slice(0, GENE_LIMIT);
-        notes.push(`A signature holds up to ${GENE_LIMIT.toLocaleString('en-US')} genes; ${dropped.toLocaleString('en-US')} were left out.`);
-    }
-    const offered = cleanOffered(src.offered, METHODS.includes(src.method) ? src.method : DEFAULT_METHOD);
-    const method = offered[0];                                     // the first offered method: where a new consumer starts
-    const asked = typeof src.input === 'string' && src.input ? src.input : DEFAULT_INPUT;
-    // the layers in the order they were offered; a link made before layers could be offered has `input` alone
-    const layers = cleanLayers(src.layers, asked);
-    const input = layers[0];                                       // the first offered layer (an old consumer without one means `input`)
-    const seed = Number.isInteger(src.seed) && src.seed >= 0 ? src.seed : null;
+    // how to score and what to offer: one schema, shared with the gene table (utils/signature-options.js)
+    const options = normalizeOptions(src);
     return {
         recipe: {
-            genes, down, input, method,
-            clip: 'clip' in src ? cleanClip(src.clip) : DEFAULT_CLIP,
-            seed,
-            bins: cleanWhole(src.bins, DEFAULT_BINS, BINS_RANGE),
-            controls: cleanWhole(src.controls, DEFAULT_CONTROLS, CONTROLS_RANGE),
-            detect_above: cleanThreshold(src.detect_above),
-            version: RECIPE_VERSION,
-            offered,
-            layers
+            genes, down, ...options,
+            version: RECIPE_VERSION
         },
         notes
     };
@@ -211,21 +133,6 @@ export function definitionText(recipe) {
 }
 
 /**
- * A whole number typed into the panel, within [lo, hi].
- * @param {string} text
- * @param {number[]} range
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseWholeText(text, [lo, hi]) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
-    if (!Number.isSafeInteger(value) || value < lo || value > hi) {
-        return { ok: false, error: `Enter a whole number from ${lo.toLocaleString('en-US')} to ${hi.toLocaleString('en-US')}.` };
-    }
-    return { ok: true, value };
-}
-
-/**
  * The shared settings in words, for the collapsed Scoring row: "X, clipped at ±10", "counts, not clipped, seed 3".
  * The seed is named only when it is set; the clip is named whatever the aggregation, because it is the signature's.
  */
@@ -241,16 +148,14 @@ export function fmtCount(n) {
 }
 
 /**
- * Adding names to a list. Pure: says what would happen, the caller applies it.
- * Over the limit nothing is added, whatever the list holds.
+ * Adding names to a list. Pure: says what would happen, the caller applies it. There is no limit on the
+ * length of a list.
  * @param {string[]} current - the genes now (sorted, distinct)
  * @param {Iterable<string>} incoming
- * @param {number} [limit]
- * @param {number} [others] - genes held elsewhere in the recipe that count toward the limit (the down genes)
- * @returns {{ok: boolean, added: string[], already: number, total: number, wouldBe: number, limit: number, genes: string[]}}
- *   `genes` is the list after the add (the current one when refused)
+ * @returns {{added: string[], already: number, total: number, genes: string[]}}
+ *   `genes` is the list after the add; `already` counts the incoming names the list had
  */
-export function planAdd(current, incoming, limit = GENE_LIMIT, others = 0) {
+export function planAdd(current, incoming) {
     const have = new Set(current);
     const distinct = new Set();
     for (const name of incoming) {
@@ -263,12 +168,7 @@ export function planAdd(current, incoming, limit = GENE_LIMIT, others = 0) {
         else fresh.push(name);
     }
     const added = fresh.sort(compareNames);
-    const wouldBe = current.length + added.length + others;
-    const ok = wouldBe <= limit;
-    return {
-        ok, added: ok ? added : [], already, total: ok ? current.length + added.length : current.length,
-        wouldBe, limit, genes: ok ? mergeSorted(current, added) : current
-    };
+    return { added, already, total: current.length + added.length, genes: mergeSorted(current, added) };
 }
 
 /** Two sorted lists of distinct names, merged (the shorter list walked once). */
@@ -285,17 +185,6 @@ export function mergeSorted(a, b) {
     while (i < a.length) out.push(a[i++]);
     while (j < b.length) out.push(b[j++]);
     return out;
-}
-
-/**
- * The message of a refused add, naming the limit and what the list would have been.
- * @param {{wouldBe: number, limit: number}} plan
- * @param {string} [what] - the thing refused, as "This table has 8,090 genes."
- */
-export function limitMessage(plan, what = '') {
-    const lead = what ? `${what} ` : '';
-    return `${lead}A signature holds up to ${fmtCount(plan.limit)} genes. Nothing was added. `
-        + `It would have made ${fmtCount(plan.wouldBe)}.`;
 }
 
 /**

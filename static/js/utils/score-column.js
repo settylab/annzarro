@@ -65,7 +65,7 @@ export function usedScoreColumns(columns, searchBuilderConfig, keyOf) {
 }
 
 /** The words of a score that is not ready, in a column header and in its cells. */
-const PENDING = new Set(['estimating', 'queued', 'computing', 'idle']);
+const PENDING = new Set(['estimating', 'queued', 'computing', 'idle', 'building']);
 
 /**
  * How a column looks and what it allows, from the state of its score.
@@ -88,6 +88,9 @@ export function columnView(snap, title = '') {
     }
     if (PENDING.has(state)) {
         return view('pending', '(computing)', 'computing…', { exportNote: `Available when ${t} is ready` });
+    }
+    if (state === 'ask') {
+        return view('pending', '(not built)', 'not built', { exportNote: `Available when ${t} is built` });
     }
     if (state === 'awaiting') {
         return view('pending', '(not computed)', 'not computed', { exportNote: `Available when ${t} is computed` });

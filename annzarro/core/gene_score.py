@@ -73,8 +73,6 @@ logger = logging.getLogger(__name__)
 #: Bumped when a change makes the same recipe give different numbers. Part of every cache key.
 ALGORITHM_VERSION = 1
 
-#: Distinct gene names one signature may hold.
-MAX_GENES = 2000
 #: Longest gene name accepted (names longer than any real one are a sign of a hostile request).
 MAX_NAME_CHARS = 1000
 
@@ -232,10 +230,8 @@ def parse_recipe(raw) -> Recipe:
         raise ScoreError(400, "bad_recipe", "recipe.genes is required (a list of gene names, possibly empty).")
     genes = _names(raw["genes"], "genes")
     down = _names(raw.get("down", []), "down")
-    if len(genes) + len(down) > MAX_GENES:
-        raise ScoreError(413, "too_many_genes",
-                         f"A signature holds at most {MAX_GENES:,} genes; this one has {len(genes) + len(down):,}.",
-                         limit=MAX_GENES, requested=len(genes) + len(down))
+    # No gene limit: a score takes no more memory than a gene table, which has none. What bounds a request is its
+    # size (the route's MAX_BODY_BYTES) and the cost estimate's tiers, which refuse what is too expensive.
     if down:
         raise ScoreError(400, "down_not_available", "Down genes are not available yet; send the genes in 'genes'.")
     method = raw.get("method", DEFAULT_METHOD)

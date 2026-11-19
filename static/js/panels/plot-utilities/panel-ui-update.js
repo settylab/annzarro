@@ -7,6 +7,7 @@ import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { signatureList, NEW_SIGNATURE, OFFER_MORE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers } from '../../utils/score-source.js';
 import { scoreValue, parseScoreValue } from './hover-columns.js';
 import { METHODS, methodShort } from '../../utils/signature-options.js';
+import { entityLabel, optionFieldsOf, scoreKeyOptions } from '../../utils/score-source-panels.js';
 import { getSource } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -187,12 +188,12 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         // every signature, open or closed, by its title; the one this setting names stays listed when it
         // is gone, so the plot can say it was deleted
         const list = getSource('gene-score').entities();
-        keyOptions = list.map(sig => ({ value: sig.id, text: sig.title }));
-        // (a key left over from another source type is not a deleted signature: signature ids are panel ids)
-        if (settings.key && /^gene-signature-/.test(settings.key) && !list.some(sig => sig.id === settings.key)) {
+        keyOptions = scoreKeyOptions(list);
+        // (a key left over from another source type is not a deleted source: source ids are panel ids)
+        if (settings.key && /^gene-(signature|table)-/.test(settings.key) && !list.some(sig => sig.id === settings.key)) {
           keyOptions.push({ value: settings.key, text: `${settings.label || settings.key} (deleted)` });
         }
-        if (!keyOptions.length) keyOptions = [{ value: '', text: 'No signatures yet' }];
+        if (!list.length && !keyOptions.length) keyOptions = [{ value: '', text: 'No signatures or tables yet' }];
         keyOptions.push({ value: NEW_SIGNATURE, text: 'New signature…' });
         break;
       }
@@ -279,12 +280,12 @@ export function refreshScoreKeySelects() {
       && keySelect.closest('.plot-panel').querySelector(`select.axis-type-select[data-axis="${axis}"]`);
     if (!typeSelect || typeSelect.value !== 'gene-score') continue;
     const current = keySelect.value;
-    const options = list.map(sig => ({ value: sig.id, text: sig.title }));
+    const options = scoreKeyOptions(list);
     if (current && !list.some(sig => sig.id === current)) {
       const was = keySelect.selectedOptions[0];
       options.push({ value: current, text: `${(was && was.textContent.replace(/ \(deleted\)$/, '')) || current} (deleted)` });
     }
-    if (!options.length) options.push({ value: '', text: 'No signatures yet' });
+    if (!options.length) options.push({ value: '', text: 'No signatures or tables yet' });
     options.push({ value: NEW_SIGNATURE, text: 'New signature…' });
     const same = options.length === keySelect.options.length
       && options.every((o, i) => keySelect.options[i].value === o.value && keySelect.options[i].textContent === o.text);
@@ -316,7 +317,7 @@ export function refreshScoreKeySelects() {
         const got = parseScoreValue(value);
         if (got.key === sig.id && !mine.some(m => m[0] === value)) mine.push([value, `${methodShort(got.column)}${got.layer ? ` · ${got.layer}` : ''} (no longer offered)`]);
       }
-      return mine.map(([value, text], i) => [value, i === 0 ? sig.title : `${sig.title} · ${text}`]);
+      return mine.map(([value, text], i) => [value, i === 0 ? entityLabel(sig) : `${entityLabel(sig)} · ${text}`]);
     });
     const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === 'Gene scores');
     const have = group ? Array.from(group.querySelectorAll('option')) : [];
@@ -1225,8 +1226,8 @@ export function scoreColumnOptions(settings) {
   if (!wanted && settings.key && offered.length && (METHODS.includes(settings.column) || settings.layer)) {
     // the same id form as the offered entries: `method`, or `method@layer` when the signature offers several layers
     const several = offered.some(o => o.value.includes('@'));
-    const own = (window.PanelManager && window.PanelManager.getPanel(settings.key) && window.PanelManager.getPanel(settings.key).getRecipe)
-      ? window.PanelManager.getPanel(settings.key).getRecipe().input : 'X';
+    const source = window.PanelManager && window.PanelManager.getPanel(settings.key);
+    const own = source && (source.getScoreOptions || source.getRecipe) ? optionFieldsOf(source).input : 'X';
     chosen = several ? `${settings.column || 'zscore_mean'}@${settings.layer || own}` : (settings.column || 'zscore_mean');
     options.push({ value: chosen, text: lapsedLabel(settings), method: settings.column || 'zscore_mean', layer: settings.layer || '' });
   } else if (!wanted && offered.length) {

@@ -18,7 +18,6 @@ import { ID_COLUMN_PREFERENCE } from '../panels/gene-set-utilities/state.js';
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 /** Genes a signature holds (design 5). */
-export const DEFAULT_LIMIT = 2000;
 
 /** How `readAs` is spelled, for the preview's menu. */
 export const FORMATS = Object.freeze(['list', 'table', 'gmt', 'grp']);
@@ -328,13 +327,11 @@ export function looksLikeExcelDate(name) { return EXCEL_DATE.test(String(name).t
  * @param {Object} o
  * @param {string[]} o.geneNames the dataset's gene names
  * @param {Iterable<string>} [o.currentGenes] genes already selected
- * @param {number} [o.limit]
  * @param {boolean} [o.matchCase] do not match ignoring case
  * @param {Map<string,string>} [o.idToName] gene id (version stripped) to name
  */
 export function matchGenes(names, o) {
     const { exact, lower } = buildIndex(o.geneNames || []);
-    const limit = o.limit || DEFAULT_LIMIT;
     const current = new Set(o.currentGenes || []);
     const idToName = o.idToName || null;
     const seen = new Set(), resolved = new Set();
@@ -370,10 +367,9 @@ export function matchGenes(names, o) {
         else exactCount++;
         if (current.has(gene)) alreadySelected++; else toAdd.push(gene);
     }
-    const resulting = current.size + toAdd.length;
     const result = {
         total, toAdd, alreadySelected, duplicates, exactCount, caseMatches, idMatches, unmatched, ambiguous,
-        matched: toAdd.length + alreadySelected, limit, resulting, overLimit: resulting > limit, warnings: []
+        matched: toAdd.length + alreadySelected, warnings: []
     };
     result.warnings = mismatchWarnings(result, o);
     return result;

@@ -434,3 +434,23 @@ def test_a_closed_entry_is_pinned_before_the_input_changes(page, served):
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
     until(page, "() => !!window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer")
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer") == "X"
+
+
+def test_a_sorted_table_with_a_hidden_column_keeps_both_after_its_score_column_is_pinned_and_the_input_changes(page, served):
+    from annzarro.tests.browser import test_gene_score_tables as T
+    old_col = {"type": "gene-score", "key": SIG, "column": "zscore_mean", "label": "T cell score"}
+    filt = {"condition": ">", "data": "T cell score", "origData": "gene-score_" + SIG + "_zscore_mean", "type": "num", "value": ["-9"]}
+    table = T._table(columns=[T.OBS, old_col], searchBuilderConfig={"criteria": [filt], "logic": "AND"})
+    T._open(page, served, table=table, sig=TWO, sig_open=True)
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 1")
+    T._wait_ready(page)
+    # sorted by the score, descending, and the obs column hidden: state the user made after the table was built
+    T._api(page, "(dt.order([[2, 'desc']]).draw(), dt.column(1).visible(false), 0)")
+    before = page.evaluate("() => window.PanelManager.getPanel('cell-table-T').getConfig().searchBuilderConfig")
+    assert "gene-score_" + SIG + "_zscore_mean__of_X" in json.dumps(before), "pinned, and its condition with it"
+    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
+    page.wait_for_timeout(1000)
+    assert T._api(page, "dt.order()") == [[2, "desc"]], "the sort stays"
+    assert T._api(page, "dt.column(1).visible()") is False, "the hidden column stays hidden"
+    after = page.evaluate("() => window.PanelManager.getPanel('cell-table-T').getConfig().searchBuilderConfig")
+    assert json.dumps(after) == json.dumps(before), "and so does the filter"

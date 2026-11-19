@@ -19,6 +19,7 @@ import { tableCheck, refusalPanel } from '../../utils/memory-guard-ui.js';
 import { loadTableData, initializeDataTable, releaseTable, getColumnKey } from './table-data.js';
 import { TableScores, tileOnScreen } from './table-scores.js';
 import { usedScoreColumns } from '../../utils/score-column.js';
+import { readsScoreOf } from '../../utils/score-source-panels.js';
 
 const TABLE_KINDS = new Set(['cell-table', 'gene-table']);
 
@@ -121,7 +122,8 @@ const host = {
         const panel = pm.getPanel(dependantId);
         if (!panel || !isActive(panel)) return false;
         const config = panel.getConfig ? panel.getConfig() : null;
-        return !!config && config.tableFilter === tableId;
+        // filtered by the table, or coloured, drawn or columned by its score (a gene table is a source of a gene score)
+        return !!config && (config.tableFilter === tableId || readsScoreOf(config, tableId));
     },
     visible: onScreen,
     cellsKey(kind) {
@@ -150,7 +152,14 @@ const host = {
         const found = panelOf(id);
         const config = found && found.panel.getConfig ? found.panel.getConfig() : null;
         const upstream = config && config.tableFilter;
-        return typeof upstream === 'string' && upstream && upstream !== 'none' && panelOf(upstream) ? [upstream] : [];
+        const out = typeof upstream === 'string' && upstream && upstream !== 'none' && panelOf(upstream) ? [upstream] : [];
+        // a table whose filter reads the score of a gene table needs that table's genes first
+        if (config && Array.isArray(config.columns)) {
+            for (const column of usedScoreColumns(config.columns, config.searchBuilderConfig, getColumnKey)) {
+                if (typeof column.key === 'string' && !out.includes(column.key) && panelOf(column.key)) out.push(column.key);
+            }
+        }
+        return out;
     },
     scoreGate(id, { open }) {
         const found = panelOf(id);
