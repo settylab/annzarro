@@ -17,6 +17,7 @@ import { getSource } from '../../utils/source-registry.js';
 import { DEFAULT_METHOD } from '../../utils/gene-signature.js';
 import '../../utils/score-source.js';
 import { layerKeys } from '../../utils/structure-keys.js';
+import { noteLayers, offeredLayers } from '../../utils/score-offers.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -362,15 +363,22 @@ export function buildScoreTab(id, settings, structure = null) {
     pick.className = 'form-select form-select-sm az-score-layer';
     pick.setAttribute('aria-label', 'Layer the scores are computed over');
     const keys = layerKeys(pane.__structure);
+    noteLayers(keys);
+    // the layers the signatures offer (each signature decides), the signature's own input first
+    const offered = new Set();
+    for (const sig of signatures) {
+        const panel = window.PanelManager && window.PanelManager.getPanel(sig.id);
+        if (panel && panel.getRecipe) for (const l of offeredLayers(panel.getRecipe())) if (l) offered.add(l);
+    }
     pick.appendChild(new Option("of the signature's own input", '', false, !layer));
-    for (const k of keys) pick.appendChild(new Option(`of ${k}`, k, false, k === layer));
-    if (layer && !keys.includes(layer)) pick.appendChild(new Option(`of ${layer} (not in this dataset)`, layer, false, true));
+    for (const k of offered) pick.appendChild(new Option(`of ${k}`, k, false, k === layer));
+    if (layer && !offered.has(layer) && !keys.includes(layer)) pick.appendChild(new Option(`of ${layer} (not in this dataset)`, layer, false, true));
     pick.addEventListener('change', () => {
         pane.dataset.layer = pick.value;
         buildScoreTab(id, settings);
     });
-    bar.appendChild(pick);
-    list.appendChild(bar);
+    // a choice of layers only when the signatures offer more than their own
+    if (offered.size || layer) { bar.appendChild(pick); list.appendChild(bar); }
     for (const sig of signatures) {
         const group = document.createElement('div');
         group.className = 'az-score-group';
@@ -380,7 +388,7 @@ export function buildScoreTab(id, settings, structure = null) {
         heading.textContent = sig.title;
         heading.title = sig.open ? sig.title : `${sig.title} (closed)`;
         group.appendChild(heading);
-        for (const sub of subs) {
+        for (const sub of provider.subKeys(sig.id, layer)) {
             const item = { type: 'gene-score', key: sig.id, column: sub.value, ...(layer ? { layer } : {}) };
             const div = document.createElement('div');
             div.className = 'form-check py-0 ms-3';

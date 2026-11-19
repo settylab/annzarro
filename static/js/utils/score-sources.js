@@ -114,8 +114,15 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             return { ...base, state: signatures.off && signatures.off() ? 'off' : 'deleted' };
         }
         handle.lastTitle = sig.title;
-        const recipe = withMethod(appliedOf(handle.sigId, sig), handle.sub, handle.layer);
+        const applied = appliedOf(handle.sigId, sig);
         const held = heldOf(handle.sigId);
+        // the signature decides what it offers: a consumer on an option it no longer offers says so
+        if (signatures.offers && !signatures.offers(applied, handle.sub, handle.layer)) {
+            dropKey(handle);
+            handle.shown = null;
+            return { ...base, held, state: 'notoffered', sub: handle.sub || DEFAULT_METHOD, layer: handle.layer || applied.input, ownInput: applied.input };
+        }
+        const recipe = withMethod(applied, handle.sub, handle.layer);
         if (genesIn(recipe) === 0) {
             dropKey(handle);
             return { ...base, held, state: 'nogenes' };

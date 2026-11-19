@@ -21,6 +21,7 @@ import { createScoreStore } from './score-store.js';
 import { createScoreSources } from './score-sources.js';
 import { createScoreApi } from './gene-score-client.js';
 import { describeScore, worstNotice } from './score-notices.js';
+import { isOffered, enableOption, offeredMethods } from './score-offers.js';
 import { registerSource, subKeyOf, layerOf } from './source-registry.js';
 import { METHODS, DEFAULT_METHOD } from './gene-signature.js';
 
@@ -60,7 +61,8 @@ function signatureAdapter() {
                 || typeof panel.getRecipe !== 'function') return null;
             return { title: panel.getTitle(), recipe: () => panel.getRecipe() };
         },
-        off: () => !Policy.panelEnabled('gene-signature')
+        off: () => !Policy.panelEnabled('gene-signature'),
+        offers: (recipe, sub, layer) => isOffered(recipe, sub, layer)
     };
 }
 
@@ -388,7 +390,7 @@ export function shownScoreKey(setting) {
 // ---------------------------------------------------------------------------
 // actions of the notices (main.js routes `score-*` here)
 
-export const SCORE_ACTIONS = ['score-compute', 'score-cancel', 'score-retry', 'score-update', 'score-open', 'score-choose'];
+export const SCORE_ACTIONS = ['score-offer', 'score-compute', 'score-cancel', 'score-retry', 'score-update', 'score-open', 'score-choose'];
 
 function shownRecord(host) {
     const map = HOSTS.get(host);
@@ -429,6 +431,10 @@ export function runScoreAction(action, host) {
     switch (action) {
         case 'score-compute':
             for (const r of recordsOf(host).values()) r.handle.compute();
+            break;
+        case 'score-offer':
+            enableOption(rec.sigId, { method: rec.sub, layer: rec.layer });
+            sources.recheck();
             break;
         case 'score-cancel':
             rec.handle.cancel();
@@ -556,6 +562,10 @@ registerSource({
     defaultSub: DEFAULT_METHOD,
     entities: () => signatureList(),
     /** The aggregations the server computes now, z-score mean first; later methods are new entries here. */
-    subKeys: () => METHODS.map(value => ({ value, label: SUB_LABELS[value] || value })),
+    subKeys: (id, layer = '') => {
+        const panel = id ? PanelManager.getPanel(id) : null;
+        const methods = panel && panel.getRecipe ? offeredMethods(panel.getRecipe(), layer) : METHODS;
+        return (methods.length ? methods : METHODS).map(value => ({ value, label: SUB_LABELS[value] || value }));
+    },
     load: (setting, opts) => loadScoreSeries(setting, opts)
 });

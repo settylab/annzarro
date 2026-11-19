@@ -6,6 +6,7 @@ import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScal
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { signatureList, NEW_SIGNATURE } from '../../utils/score-source.js';
 import { getSource } from '../../utils/source-registry.js';
+import { noteLayers, offeredLayers } from '../../utils/score-offers.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
@@ -348,7 +349,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
     case 'gene-score': {
       // level 3 of a source with three levels: the aggregation, z-score mean first (utils/source-registry.js)
       const provider = getSource('gene-score');
-      const subs = provider ? provider.subKeys(settings.key) : [];
+      const subs = provider ? provider.subKeys(settings.key, settings.layer || '') : [];
       columnOptions = subs.map(sub => ({ value: sub.value, text: sub.label }));
       if (!subs.some(sub => sub.value === settings.column)) settings.column = provider ? provider.defaultSub : '';
       break;
@@ -1185,13 +1186,25 @@ export function populateLayerSelector(settings, select, datasetStructure) {
     if (settings.layer) delete settings.layer;
     return;
   }
-  const sig = getSource('gene-score').entities().find(e => e.id === settings.key);
-  const own = sig && sig.input ? sig.input : 'X';
-  const keys = layerKeys(datasetStructure);
-  const wanted = settings.layer || '';
-  const options = [{ value: '', text: `of ${own} (the signature's own)` }].concat(keys.map(k => ({ value: k, text: `of ${k}` })));
-  // a layer the dataset does not have stays listed, so the plot can say it is missing
-  if (wanted && !keys.includes(wanted)) options.push({ value: wanted, text: `of ${wanted} (not in this dataset)` });
+  const panel = window.PanelManager && settings.key ? window.PanelManager.getPanel(settings.key) : null;
+  const recipe = panel && panel.getRecipe ? panel.getRecipe() : null;
+  const own = recipe ? recipe.input || 'X' : 'X';
+  noteLayers(layerKeys(datasetStructure));
+  // the signature decides which layers it offers; a choice is shown only when there is one to make
+  // (or when the consumer holds a layer, so it can be seen and changed)
+  const offered = recipe ? offeredLayers(recipe) : [''];
+  const wanted = settings.layer && settings.layer !== own ? settings.layer : '';
+  if (offered.length < 2 && !wanted) {
+    select.hidden = true;
+    select.innerHTML = '';
+    return;
+  }
+  const options = offered.map(l => ({ value: l, text: l ? `of ${l}` : `of ${own}` }));
+  // a layer the signature does not offer, or the dataset does not have, stays listed so the plot can say so
+  if (wanted && !offered.includes(wanted)) {
+    const known = layerKeys(datasetStructure).includes(wanted);
+    options.push({ value: wanted, text: `of ${wanted} (${known ? 'not offered' : 'not in this dataset'})` });
+  }
   select.innerHTML = '';
   for (const o of options) select.appendChild(new Option(o.text, o.value, false, o.value === wanted));
   select.value = wanted;

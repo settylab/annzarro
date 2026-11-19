@@ -425,3 +425,46 @@ test('a layer the dataset does not have is its own state, from the server\'s not
     assert.equal(note.tag.text, 'Layer not found');
     assert.deepEqual(note.actions.map(a => a[0]), ['score-open', 'score-choose']);
 });
+
+test('a consumer on an option the signature no longer offers says so and asks nothing of the server', async () => {
+    const O = await import('../../../static/js/utils/score-offers.js');
+    const w = world();
+    w.add('S1', 'T', ['A']);
+    // the same world, with the signature's offers consulted
+    const store = w.store;
+    let offered = true;
+    const sources = D.createScoreSources({ store, signatures: { get: (id) => w.sigs.get(id) || null, off: () => false, offers: () => offered },
+        context: () => ({ ...w.ctx }) });
+    const handle = sources.watch('S1', { onChange() {}, sub: 'mean', layer: 'counts' });
+    handle.read();
+    await settle();
+    w.finish(0);
+    await settle();
+    assert.equal(handle.read().state, 'ready');
+    offered = false;
+    const snap = handle.read();
+    assert.equal(snap.state, 'notoffered');
+    assert.equal(snap.layer, 'counts');
+    const note = N.describeScore({ ...snap, title: 'T' }, { role: 'x' });
+    assert.equal(note.headline, "'T' no longer offers mean · counts.");
+    assert.deepEqual(note.actions[0], ['score-offer', 'Offer it again']);
+    offered = true;
+    assert.equal(handle.read().state, 'ready', 'offered again: the score is still in the store');
+    assert.equal(w.calls.compute.length, 1);
+    assert.ok(O.isOffered({ input: 'X' }, 'mean', ''));
+});
+
+test('the stand-in offers every method over the own input and each layer; a plugged model decides instead', async () => {
+    const O = await import('../../../static/js/utils/score-offers.js');
+    O.noteLayers(['X', 'counts']);
+    const r = { input: 'X' };
+    assert.deepEqual(O.offeredLayers(r), ['', 'counts']);
+    assert.deepEqual(O.offeredMethods(r, ''), ['zscore_mean', 'mean']);
+    assert.equal(O.isOffered(r, 'mean', 'X'), true, 'the own input given by name is the same option');
+    assert.equal(O.isOffered(r, 'mean', 'nope'), true, 'a layer the dataset lacks is for the server to state');
+    O.setOfferProvider({ offeredOptions: () => [{ id: 'a', method: 'sum', layer: '', label: 'sum', definition: '' }] });
+    assert.deepEqual(O.offeredLayers(r), ['']);
+    assert.equal(O.isOffered(r, 'mean', ''), false);
+    assert.equal(O.isOffered(r, 'sum', ''), true);
+    O.setOfferProvider(null);
+});

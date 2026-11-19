@@ -45,7 +45,7 @@ def test_the_layer_menu_lists_x_and_each_layer_and_choosing_one_recomputes_over_
     sel = f"{C} select.axis-layer-select[data-axis='color']"
     assert page.is_visible(sel)
     opts = page.evaluate("(s) => [...document.querySelector(s).options].map(o => [o.value, o.textContent])", sel)
-    assert opts == [["", "of X (the signature's own)"], ["X", "of X"], ["counts", "of counts"]]
+    assert opts == [["", "of X"], ["counts", "of counts"]], "the signature's own layer, then the others it offers"
     page.select_option(sel, "counts")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'counts'")
     until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
@@ -121,3 +121,30 @@ def test_a_table_column_has_its_own_layer(page, served):
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns", T.TID)
     got = [(c["column"], c.get("layer")) for c in cfg if c["type"] == "gene-score"]
     assert ("mean", "counts") in got and ("zscore_mean", "counts") in got
+
+
+def test_an_option_the_signature_stops_offering_is_a_state_with_a_one_click_way_back(page, served):
+    _open(page, served, plots=(("cell-plot-C", _cell(color={**SCORE, "column": "mean", "layer": "counts"})),))
+    _wait_coloured(page)
+    # the signature's panel now offers only the z-score mean over its own layer
+    page.evaluate("""async () => {
+        const o = await import('/static/js/utils/score-offers.js');
+        window.__offers = [{ id: 'zscore_mean@', method: 'zscore_mean', layer: '', label: 'z-score mean', definition: '' }];
+        window.__enabled = [];
+        o.setOfferProvider({ offeredOptions: () => window.__offers, enable: (id, opt) => {
+            window.__enabled.push([id, opt.method, opt.layer]);
+            window.__offers = window.__offers.concat([{ id: 'x', method: opt.method, layer: opt.layer, label: 'x', definition: '' }]); } });
+        document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
+    }""")
+    page.wait_for_selector(f"{C} .score-notice[data-state='notoffered']", timeout=30000)
+    note = _notice(page)
+    assert "'T cell score' no longer offers mean \u00b7 counts." in note["text"], note["text"]
+    assert _tag(page) == "Not offered"
+    assert note["actions"][0] == "score-offer|Offer it again"
+    n = len(_calls(page, "compute"))
+    _action(page, "score-offer")
+    page.wait_for_selector(f"{C} .js-plotly-plot")
+    until(page, "() => window.__enabled.length === 1")
+    assert page.evaluate("() => window.__enabled[0]") == [SIG, "mean", "counts"]
+    until(page, "(t) => !document.querySelector(t + ' .score-notice')", C)
+    assert len(_calls(page, "compute")) == n, "served from the store: nothing was recomputed"

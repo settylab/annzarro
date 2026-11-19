@@ -1,3 +1,5 @@
+import { methodLabel } from './score-offers.js';
+
 /**
  * What a dependant of a gene-signature score says in each state (design 7.3,
  * UX review 3.2). Pure: a state in, wording and actions out, so Node tests
@@ -24,7 +26,7 @@ export function durationText(seconds) {
 }
 
 /** Notice states, most urgent first: a plot with two scores states the worst. */
-export const PRIORITY = ['nolayer', 'notcells', 'unset', 'deleted', 'off', 'failed', 'refused', 'awaiting', 'cancelled', 'noscore', 'nogenes',
+export const PRIORITY = ['notoffered', 'nolayer', 'notcells', 'unset', 'deleted', 'off', 'failed', 'refused', 'awaiting', 'cancelled', 'noscore', 'nogenes',
     'estimating', 'queued', 'computing', 'updating', 'held'];
 
 /** The sentence part of a gene count: "31 of 50 genes". */
@@ -82,6 +84,12 @@ export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
             return out('noscore', 'warning', 'No score',
                 missing ? `None of the genes of ${T} are in this dataset.` : (snap.message || `${t} has no score.`), '',
                 [open, choose]);
+        }
+        case 'notoffered': {
+            const m = methodLabel(snap.sub || 'zscore_mean');
+            const what = snap.layer && snap.layer !== snap.ownInput ? `${m} · ${snap.layer}` : m;
+            return out('notoffered', 'warning', 'Not offered', `${snap.title ? `'${snap.title}'` : 'The signature'} no longer offers ${what}.`, '',
+                [['score-offer', 'Offer it again'], choose]);
         }
         case 'nolayer':
             return out('nolayer', 'warning', 'Layer not found', `Layer '${snap.layer || 'X'}' is not in this dataset, so ${t} has no score.`, '',
