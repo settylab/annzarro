@@ -421,3 +421,22 @@ def test_the_gene_limit_counts_distinct_names():
 
 def test_a_seed_is_part_of_the_format_and_kept():
     assert gs.parse_recipe({"genes": ["A"], "seed": 42}).seed == 42
+
+
+@pytest.mark.parametrize("backend,layout", list(itertools.product(BACKENDS, LAYOUTS)))
+@pytest.mark.parametrize("method,clip", [("zscore_mean", 10), ("zscore_mean", 0.05), ("mean", None)])
+def test_a_gene_worked_through_in_small_segments_gives_the_same_score(stores, matrix, monkeypatch, backend, layout,
+                                                                    method, clip):
+    """Large genes are summed a segment at a time to bound memory; the segments must not change the numbers
+    (or the gene figures), including NaN and infinity, which fall in different segments."""
+    path = stores[backend, layout]
+    recipe = {"genes": [gene(i) for i in range(N_VAR)], "method": method, "clip": clip}
+    _, whole, _ = run(path, recipe)
+    monkeypatch.setattr(gs, "SEGMENT_ENTRIES", 3)
+    _, cut, _ = run(path, recipe)
+    np.testing.assert_allclose(cut.values, whole.values, rtol=1e-6, atol=1e-6, equal_nan=True)
+    for a, b in zip(cut.genes, whole.genes):
+        assert (a.name, a.status) == (b.name, b.status)
+        for f in ("mean", "sd", "detected", "clipped"):
+            assert getattr(a, f) == pytest.approx(getattr(b, f), rel=1e-9) if getattr(b, f) is not None \
+                else getattr(a, f) is None

@@ -95,6 +95,8 @@ READ_THREADS = 6
 #: A CSR matrix or a dense array is read this many genes (and at most BATCH_ENTRIES stored hits) at a time.
 MAX_BATCH_GENES = 256
 BATCH_ENTRIES = 24_000_000
+#: Stored entries of one gene worked through at a time (float64 temporaries are this long).
+SEGMENT_ENTRIES = 1 << 22
 #: Cells up to which the running sum is float64; above it float32 saves memory.
 FLOAT64_CELLS = 20_000_000
 
@@ -631,59 +633,110 @@ class _Accumulator:
     # -- one gene ---------------------------------------------------------
     def add(self, name: str, col: int, rows: Optional[np.ndarray], values: np.ndarray) -> None:
         """Take in one gene: its stored entries (``rows`` given) or its whole column (``rows`` None)."""
-        n = self.n_obs
-        v = np.asarray(values, dtype=np.float64)
-        if rows is not None:
-            rows, v = _canonical(np.asarray(rows, dtype=np.int64), v)
+        if rows is None:
+            self._add_column(name, col, np.asarray(values, dtype=np.float64))
+        else:
+            self._add_sparse(name, col, *_canonical(np.asarray(rows), np.asarray(values)))
+
+    def _gene(self, name, col, n_finite, mean, sd, lo, hi, nonzero) -> Optional["GeneStat"]:
+        """Record a gene's figures; the stat when it enters the score, None when it does not."""
+        constant = lo == hi or not (sd > 0 and math.isfinite(sd))
+        stat = GeneStat(name, col, "constant" if constant else "used", mean, 0.0 if constant else sd,
+                        nonzero / self.n_obs, None)
+        self.stats.append(stat)
+        if constant and self.zscore:
+            return None                                     # no spread, no z-score
+        self.n_used += 1
+        return stat
+
+    def _add_column(self, name, col, v) -> None:
+        """A whole column (dense store), one value per cell."""
         finite = np.isfinite(v)
-        n_finite = n - int(v.size - finite.sum())          # cells with a value, implicit zeros included
+        n_finite = int(finite.sum())
         if n_finite == 0:
             self.stats.append(GeneStat(name, col, "no_values"))
             return
         vf = v[finite]
-        implicit = n - int(v.size) if rows is not None else 0
         mean = float(vf.sum()) / n_finite
-        lo, hi = (float(vf.min()), float(vf.max())) if vf.size else (0.0, 0.0)
-        if implicit:
-            lo, hi = min(lo, 0.0), max(hi, 0.0)
         centred = vf - mean
-        sd = math.sqrt((float((centred * centred).sum()) + implicit * mean * mean) / n_finite)
-        constant = lo == hi or not (sd > 0 and math.isfinite(sd))
-        stat = GeneStat(name, col, "constant" if constant else "used", mean, 0.0 if constant else sd,
-                        int(np.count_nonzero(vf)) / n, None)
-        self.stats.append(stat)
-        if constant and self.zscore:
-            return                                          # no spread, no z-score
-        self.n_used += 1
-
+        sd = math.sqrt(float((centred * centred).sum()) / n_finite)
+        stat = self._gene(name, col, n_finite, mean, sd, float(vf.min()), float(vf.max()), int(np.count_nonzero(vf)))
+        if stat is None:
+            return
         if self.zscore:
             z = centred / sd
-            z0 = float(self._clip(np.float64(-mean / sd)))
             if self.clip is not None:
-                over = int((np.abs(z) > self.clip).sum()) + (implicit if abs(mean / sd) > self.clip else 0)
-                stat.clipped = over / n
+                stat.clipped = int((np.abs(z) > self.clip).sum()) / self.n_obs
             transformed = self._clip(z)
         else:
-            z0, transformed = 0.0, vf
+            transformed = vf
+        column = np.zeros(self.n_obs, dtype=np.float64)
+        column[finite] = transformed
+        if self.shown is not None:
+            column, finite = column[self.shown], finite[self.shown]
+        self.acc += column
+        if not finite.all():
+            self._mark_missing(np.flatnonzero(~finite))
 
-        if rows is None:
-            column = np.zeros(n, dtype=np.float64)
-            column[finite] = transformed
-            if self.shown is not None:
-                column, finite = column[self.shown], finite[self.shown]
-            self.acc += column
-            if not finite.all():
-                self._mark_missing(np.flatnonzero(~finite))
+    def _add_sparse(self, name, col, rows, values) -> None:
+        """A gene's stored entries, worked through ``SEGMENT_ENTRIES`` at a time so a gene held by a
+        large share of 100 million cells needs no array of its own size in float64."""
+        n = self.n_obs
+        seg = SEGMENT_ENTRIES
+        bounds = [(i, min(i + seg, values.size)) for i in range(0, values.size, seg)]
+        total, n_nan, nonzero = 0.0, 0, 0
+        lo, hi = math.inf, -math.inf
+        for i, j in bounds:                                       # pass 1: sum, range, count
+            v = values[i:j].astype(np.float64)
+            finite = np.isfinite(v)
+            n_nan += int(v.size - finite.sum())
+            vf = v[finite]
+            if vf.size:
+                total += float(vf.sum())
+                lo, hi = min(lo, float(vf.min())), max(hi, float(vf.max()))
+                nonzero += int(np.count_nonzero(vf))
+        n_finite = n - n_nan
+        if n_finite == 0:
+            self.stats.append(GeneStat(name, col, "no_values"))
             return
-        # sparse: every cell holds z0; a stored entry adds what it differs by, a missing one cancels z0
-        correction = np.full(v.size, -z0, dtype=np.float64)
-        correction[finite] = transformed - z0
+        implicit = n - int(values.size)                          # cells with no stored entry hold zero
+        if implicit:
+            lo, hi = min(lo, 0.0), max(hi, 0.0)
+        mean = total / n_finite
+        squares = implicit * mean * mean
+        for i, j in bounds:                                       # pass 2: spread
+            v = values[i:j].astype(np.float64)
+            d = v[np.isfinite(v)] - mean
+            squares += float((d * d).sum())
+        sd = math.sqrt(squares / n_finite)
+        stat = self._gene(name, col, n_finite, mean, sd, lo, hi, nonzero)
+        if stat is None:
+            return
+        # every cell holds z0; a stored entry adds what it differs by, a missing one cancels z0
+        if self.zscore:
+            z0 = float(self._clip(np.float64(-mean / sd)))
+            over = implicit if self.clip is not None and abs(mean / sd) > self.clip else 0
+        else:
+            z0, over = 0.0, 0
         self.baseline += z0
-        pos, hit = self._positions(rows)
-        self.acc[pos] += correction if hit is None else correction[hit]
-        bad = ~finite if hit is None else ~finite[hit]
-        if bad.any():
-            self._mark_missing(pos[bad])
+        for i, j in bounds:                                       # pass 3: the cells' share
+            v = values[i:j].astype(np.float64)
+            finite = np.isfinite(v)
+            correction = np.full(v.size, -z0, dtype=np.float64)
+            if self.zscore:
+                z = (v[finite] - mean) / sd
+                if self.clip is not None:
+                    over += int((np.abs(z) > self.clip).sum())
+                correction[finite] = self._clip(z) - z0
+            else:
+                correction[finite] = v[finite]
+            pos, hit = self._positions(rows[i:j].astype(np.int64))
+            self.acc[pos] += correction if hit is None else correction[hit]
+            bad = ~finite if hit is None else ~finite[hit]
+            if bad.any():
+                self._mark_missing(pos[bad])
+        if self.zscore and self.clip is not None:
+            stat.clipped = over / n
 
     def result(self) -> Optional[np.ndarray]:
         if self.n_used == 0:
