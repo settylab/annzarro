@@ -18,8 +18,11 @@ it can be the source of a Gene Set Analysis panel.
 3. Choose the signature where you choose any source: a Gene Plot's **Table** menu, a Gene Set Analysis
    panel's **Source** menu, or **gene-score** in a Cell Plot or Cell Table (see below).
 
-The panel states how many genes it holds, always against its limit: **a signature holds up to 2,000
-genes**. Adding more than that adds nothing at all, and the panel says how many it would have made.
+The panel states how many genes it holds. **There is no limit** on the length of the list: a score takes no
+more memory than a gene table, which has none. What guards a large list is the cost estimate, which asks
+before a slow score and refuses one that would take too long (see *When a score is slow*). A signature of
+every gene of a dataset is allowed; a link or panel set that holds thousands of genes is long, see
+*Close, reopen, share*.
 
 ### Ticking genes
 
@@ -92,8 +95,7 @@ only when your list turns out to be ids, and the preview says "Matching ids…" 
 are counted separately as **matched by id**, and the signature keeps the dataset's gene names, not the
 ids. If the dataset has no such column, or it cannot be read, the preview says so and nothing is added.
 
-A signature holds up to 2,000 genes, counting the ones already selected. Over that, the preview says so,
-**Add** is off and nothing is added; shorten the list and try again.
+A pasted list can be any length; the preview counts the genes that will be added and **Add** adds them all.
 
 **Add** adds the genes as one step: **Undo** (or Ctrl+Z, Cmd+Z on a Mac) takes the whole paste back.
 **Cancel**, **Esc** and **Add** return you to the list and put the cursor back on **Paste or upload**.
@@ -247,6 +249,39 @@ score**).
 In a narrow panel (under 360 px) the table keeps only the gene and its detection rate; under 280 px
 the chart is replaced by its figures.
 
+(gene-table-score)=
+## Score the genes of a gene table
+
+A **Gene Table** is a source of a gene score exactly as a signature is. The one difference is how the genes
+are chosen: a signature's are ticked by hand, a table's are the rows that pass its filter. Everything else is
+the same: the score, the cost estimate and its three tiers, the aggregations and layers, the notices over a plot,
+**Update score**, and **Inspect**.
+
+Choose **gene-score** as a plot's source (or on a Cell Table's **gene-score** tab) and the list of sources shows
+**Gene signatures** and **Gene tables** under their own headings when both exist. Pick a table, then an
+option, as for a signature. The label names the table ("Gene Table 1 · mean").
+
+**What the genes are.** The rows that pass the table's filter now: its conditions and its search box, the same
+rows that a Gene Plot filtered by the table or a Gene Set Analysis panel reads. Change the filter and the
+score follows, as it does when a signature is edited: a quick score updates a moment after you stop, and one
+that would take 5 seconds or more collects behind **Update score**. A filter that passes the same genes as
+before asks the server for nothing, and a score computed for a set of genes is kept, so going back to a filter you
+had used is instant.
+
+**A table that is closed or came from a link.** A closed table keeps the genes that passed when it closed. One
+restored from a link, a panel set or Back and Forward has only its configuration, so the page builds its filter in
+the background first, then asks for the score. A plot that is waiting says which: "Building 'Gene Table 1' to find its
+genes, then scoring them", a **Build filter** button for a table of 200,000 rows or more (the build pauses the page
+for a few seconds), or why a table is too large or cannot be built. A table whose filter depends on a table that
+reads its score, through a hand-edited link, is named as a circle and nothing is computed.
+
+**Scores offered, in the table.** Under the column chooser, in the table's controls, a Gene Table has the same
+**Scores offered** section as a signature (collapsed to one row such as "z-score mean, mean, sum · X") and an
+**Inspect** section (collapsed). The table is still a table first: both stay closed until opened, and they go
+with the controls when these are hidden. The table stores these settings, and nothing else about the score, in its
+configuration, so links, panel sets and Back and Forward keep them; a table that offers the defaults stores
+nothing. Gene Set Analysis and Gene Plot filters read the table as before.
+
 ## Rank cells in a Cell Table
 
 A Cell Table can show a signature's score as a column, so you can sort the cells by it, filter on it and
@@ -302,6 +337,13 @@ A signature is saved as configuration only: its title, its genes (sorted, so equ
 links), its scoring settings and nothing computed. Share links, saved panel sets and Back and
 Forward all carry it, closed or open. The panel chooser lists a closed signature with its name; pick
 **Reopen** to open it again under the same name, so the plots and analyses that use it keep using it.
+
+**Long lists make long links.** A share link carries the whole view in the part after `#`, deflated, so it is
+never sent to the server and has no server-side limit. A list of genes compresses by about half: a link holding
+one signature is about 3,400 characters at 500 gene symbols, 12,000 at 2,000, 29,000 at 5,000 and 106,000 at 20,000
+(Ensembl ids compress better: 2,100, 7,300, 18,000 and 71,000). The browser's address bar holds links of this size, but chat and
+email programs cut long links. For a list of thousands of genes, save a **panel set** and share that: it
+carries the same configuration with no limit on its length.
 
 ## Keyboard
 

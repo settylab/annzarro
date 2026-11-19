@@ -1,5 +1,5 @@
 /**
- * Who depends on which signature's score, and what an edit does to them.
+ * Who depends on which source's score (a signature, or a gene table), and what an edit does to them.
  * Pure (no DOM, no page state): the page supplies the signatures, the current
  * dataset and subset, and a timer. utils/score-source.js binds it to the page.
  *
@@ -34,7 +34,11 @@ function copyRecipe(recipe) {
 
 /**
  * @typedef {Object} Signatures
- * @property {(id: string) => ({title: string, recipe: () => Object}|null)} get
+ * @property {(id: string) => ({title: string, kind?: string, recipe: () => Object, gate?: (dependant: ?string) => (Object|null),
+ *   actions?: ({accept: Function, cancel: Function, retry: Function}|null)}|null)} get
+ *   A SOURCE is a signature or a gene table (utils/score-source-panels.js). A table whose genes cannot be read yet
+ *   (it is being built in the background, waits for a click, is refused, failed or part of a cycle) has a `gate`: its
+ *   dependants wait on it, with the table resolver's own states, before any score is asked for.
  * @property {() => boolean} [off] - gene signatures are turned off here
  */
 
@@ -76,6 +80,11 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     const changesScore = (id, a, b) => pairsUsed(id).some(p => hashOf(withMethod(a, p.sub, p.layer)) !== hashOf(withMethod(b, p.sub, p.layer)));
     const genesIn = (recipe) => recipe.genes.length + (recipe.down ? recipe.down.length : 0);
 
+    /** The gate of a source for a dependant: the state its genes are in, or null when they can be read. */
+    function gateOf(sig, handle) {
+        return typeof sig.gate === 'function' ? sig.gate(handle.dependant || null) : null;
+    }
+
     function appliedOf(id, sig) {
         let recipe = applied.get(id);
         if (!recipe) {
@@ -83,6 +92,15 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             applied.set(id, recipe);
         }
         return recipe;
+    }
+
+    /** A button of a gate notice (Build filter, Cancel, Retry): the source's own way, the table resolver's. */
+    function gateAction(handle, action) {
+        const sig = signatures.get(handle.sigId);
+        const actions = sig && sig.actions;
+        if (!actions || !gateOf(sig, handle)) return false;
+        actions[action]();
+        return true;
     }
 
     function ctxKeyOf(ctx) { return `${ctx.dataset}\u0001${ctx.subset || ''}`; }
@@ -136,12 +154,21 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         }
         const ctx = context();
         const sig = signatures.get(handle.sigId);
-        const base = { sigId: handle.sigId, title: sig ? sig.title : handle.lastTitle || '', held: null, key: null };
+        const base = { sigId: handle.sigId, title: sig ? sig.title : handle.lastTitle || '', held: null, key: null,
+            kind: handle.lastKind || 'signature' };
         if (!sig) {
             dropKey(handle);
             return { ...base, state: signatures.off && signatures.off() ? 'off' : 'deleted' };
         }
         handle.lastTitle = sig.title;
+        base.kind = handle.lastKind = sig.kind || 'signature';
+        // a table whose genes are not known yet: wait for them, the score is asked for once they are
+        const gate = gateOf(sig, handle);
+        if (gate) {
+            dropKey(handle);
+            const { state, ...rest } = gate;
+            return { ...base, held: null, state, ...rest };
+        }
         const applied = appliedOf(handle.sigId, sig);
         const held = heldOf(handle.sigId);
         const recipe = withMethod(applied, handle.sub, handle.layer);
@@ -206,7 +233,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         const p = pending.get(id);
         const probe = mine[0] ? read(mine[0]) : null;
         return {
-            id, exists: !!sig, dependants: mine.length,
+            id, exists: !!sig, kind: sig ? sig.kind || 'signature' : null, dependants: mine.length,
             held: heldOf(id), checking: !!(p && !p.held),
             state: probe ? probe.state : null, progress: probe ? probe.progress || null : null,
             header: probe ? probe.header || null : null, sharers: mine.length ? mine[0].sharers() : 0,
@@ -229,6 +256,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         const p = pending.get(id);
         if (!sig || !p || p.token !== mine) return;
         p.timer = null;
+        if (gateOf(sig, { dependant: null })) { pending.delete(id); notifySource(id); return; }
         const edited = copyRecipe(sig.recipe());
         if (genesIn(edited) === 0) { apply(id); return; }
         const ctx = context();
@@ -259,9 +287,9 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
          * @param {string} id
          * @param {{onChange: (state: Object) => void, visible?: () => boolean, host?: any, role?: string}} spec
          */
-        watch(id, { onChange, visible = () => true, host = null, role = '', sub = null, layer = null }) {
+        watch(id, { onChange, visible = () => true, host = null, role = '', sub = null, layer = null, dependant = null }) {
             const handle = {
-                sigId: id, sub, layer, key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
+                sigId: id, sub, layer, dependant: dependant || (typeof host === 'string' ? host : null), key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
                 read() { return read(handle); },
                 release() {
                     if (handle.released) return;
@@ -276,9 +304,12 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
                         pending.delete(id);
                     }
                 },
-                compute() { return handle.key ? store.accept(handle.key) : false; },
+                compute() {
+                    if (!handle.key) return gateAction(handle, 'accept');
+                    return store.accept(handle.key);
+                },
                 retry() {
-                    if (!handle.key) return false;
+                    if (!handle.key) return gateAction(handle, 'retry');
                     if (handle.mismatchKey === handle.key) {
                         // the score did not fit the cells: ask for it afresh, once more
                         handle.mismatchKey = null;
@@ -288,7 +319,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
                     }
                     return store.retry(handle.key);
                 },
-                cancel() { return handle.key ? store.cancel(handle.key) : false; },
+                cancel() { return handle.key ? store.cancel(handle.key) : gateAction(handle, 'cancel'); },
                 /** Distinct hosts waiting on the same score: "Cancel for 3 plots". */
                 sharers() {
                     const hosts = new Set();
@@ -309,6 +340,8 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
                 notifySource(id);
                 return;
             }
+            // a table whose genes are not known yet has no recipe to compare: its dependants hear it when it has
+            if (gateOf(sig, [...handles].find(h => h.sigId === id))) { notifySource(id); return; }
             const live = sig.recipe();
             const was = applied.get(id);
             if (!was) { appliedOf(id, sig); notifySource(id); return; }

@@ -19,6 +19,10 @@ import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-
 import { tableMayLoad } from './table-utilities/table-memory.js';
 import { TableResolver } from '../utils/table-resolver.js';
 import './table-utilities/table-background.js';
+import { makeDom } from './gene-set-utilities/dom.js';
+import { createScoreOptions } from './score-options/score-options.js';
+import { normalizeOptions, storedOptions, isDefaultOptions, offeredOptions } from '../utils/signature-options.js';
+import { signatureChanged, signatureRenamed, onSignatureStatus } from '../utils/score-source.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -37,6 +41,8 @@ const GeneTablePanel = (function() {
         let _dataTable = null;
         let _tableListenersCleanup = null;
         let _isFirstLoad = true;
+        let _scoreOptions = null;         // Scores offered and Inspect (panels/score-options/score-options.js), shared with the gene signature
+        let _unwatchScore = null;
         
         // Initialize settings with default options
         const _settings = {
@@ -51,7 +57,11 @@ const GeneTablePanel = (function() {
             searchSmart: true,
             searchCaseInsensitive: true,
             currentEntries: [],
-            filteredGenes: null
+            filteredGenes: null,
+            // What this table offers plots and tables as a source of a gene score: the option fields of a signature's
+            // recipe (utils/signature-options.js), stored only when they are not the defaults. The genes are never
+            // stored: they are the rows that pass the filter.
+            scoreOptions: null
         };
         
         // Override with provided options
@@ -72,6 +82,7 @@ const GeneTablePanel = (function() {
                 // Store references for later use
                 _tableContainer = tableContainer;
                 _controlsContainer = controlsContainer;
+                mountScoreOptions(controlsContainer);
                 
                 // Manually update the UI based on dataset loading status
                 const isDatasetLoaded = DataManager.isDatasetLoaded();
@@ -114,6 +125,7 @@ const GeneTablePanel = (function() {
                 
                 // Initialize UI state with the dataset
                 await initializeTableUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                if (_scoreOptions) _scoreOptions.datasetChanged();
                 
                 // Always initialize the table, even if no columns are selected
                 await refreshTable();
@@ -304,6 +316,10 @@ const GeneTablePanel = (function() {
          */
         function cleanup() {
             cancelLoads(_tableContainer);
+            if (_unwatchScore) _unwatchScore();
+            _unwatchScore = null;
+            if (_scoreOptions) _scoreOptions.destroy();
+            _scoreOptions = null;
             if (_dataTable) {
                 // what other panels still read (a plot's table filter, the
                 // panel set) stays, as values; the DataTable's rows go
@@ -420,9 +436,12 @@ const GeneTablePanel = (function() {
          * @param {string} title - New title
          */
         function setTitle(title) {
+            const renamed = title !== _title;
             _title = title;
             // Update title in settings to ensure it's included in getConfig()
             _settings.title = title;
+            // plots that show this table's score, and the source menus, name it by its title
+            if (renamed) signatureRenamed(_id);
         }
         
         /**
@@ -451,12 +470,72 @@ const GeneTablePanel = (function() {
             
             // Update title if provided
             if (config.title) {
+                const renamed = config.title !== _title;
                 _title = config.title;
+                if (renamed) signatureRenamed(_id);
             }
             
             // Update other settings; never the read-only views of the live
             // DataTable (searchBuilderConfig, currentEntries)
+            const before = JSON.stringify(_settings.scoreOptions);
             assignKnownSettings(_settings, config);
+            if ('scoreOptions' in config && JSON.stringify(_settings.scoreOptions) !== before) {
+                // Back and Forward, a panel set: the offer changed from outside; its readers follow
+                _settings.scoreOptions = isDefaultOptions(_settings.scoreOptions) ? null : storedOptions(_settings.scoreOptions);
+                if (_scoreOptions) _scoreOptions.changed(['offered', 'layers', 'input']);
+                signatureChanged(_id);
+                signatureRenamed(_id);
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // a source of a gene score: Scores offered (shared with the Gene Signature, panels/score-options)
+
+        /** The option fields now: the defaults until the user offers something else. */
+        function getScoreOptions() {
+            return normalizeOptions(_settings.scoreOptions);
+        }
+
+        /** Store a patch of option fields; nothing is stored while they are the defaults. */
+        function storeScoreOptions(patch) {
+            const next = normalizeOptions({ ...getScoreOptions(), ...patch });
+            _settings.scoreOptions = isDefaultOptions(next) ? null : storedOptions(next);
+        }
+
+        /**
+         * Offer other scores from outside the section (a plot's "Offer other scores…", a notice's one-click Offer again):
+         * stored, and told to the readers, as an edit in the section is.
+         */
+        function setScoreOptions(patch) {
+            storeScoreOptions(patch);
+            if (_scoreOptions) _scoreOptions.changed(Object.keys(patch));
+            signatureChanged(_id);
+            signatureRenamed(_id);
+            if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+        }
+
+        /** What plots and tables are offered by this table's score: methods and layers that can be computed. */
+        function getOfferedOptions() {
+            return _scoreOptions ? _scoreOptions.getOfferedOptions() : offeredOptions(getScoreOptions());
+        }
+
+        /**
+         * Scores offered and Inspect, in the settings area under the column chooser: the table stays a table first, and
+         * both are collapsed with a summary line until opened.
+         */
+        function mountScoreOptions(controlsContainer) {
+            if (_scoreOptions) _scoreOptions.destroy();
+            if (_unwatchScore) _unwatchScore();
+            const D = makeDom(document);
+            _scoreOptions = createScoreOptions({
+                id: _id, D, getOptions: getScoreOptions, setOptions: storeScoreOptions, getTitle: () => _title,
+                focusGene: (gene) => DataManager.setFocusedGene(gene)
+            });
+            const section = D.el('div', { class: 'az-score-options', data: { scoreOptions: '' } },
+                _scoreOptions.warning, _scoreOptions.scoring.element, _scoreOptions.inspect.element);
+            controlsContainer.append(section);
+            _scoreOptions.paint();
+            _unwatchScore = onSignatureStatus(_id, () => { if (_scoreOptions) _scoreOptions.paintAggregations(); });
         }
         
         /**
@@ -505,7 +584,14 @@ const GeneTablePanel = (function() {
             setTitle,
             getType,
             getConfig,
-            updateConfig
+            updateConfig,
+            // as a source of a gene score (utils/score-source-panels.js): the option fields; the genes are the rows
+            // that pass the filter, read through the selection every reader of a table uses
+            getScoreOptions,
+            setScoreOptions,
+            getOfferedOptions,
+            revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
+            _inspect: () => (_scoreOptions ? _scoreOptions.inspect : null)
         };
     }
     

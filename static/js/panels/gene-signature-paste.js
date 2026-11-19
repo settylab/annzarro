@@ -10,7 +10,6 @@
  * either order.
  */
 import { mountGenePaste } from '../utils/gene-paste-preview.js';
-import { GENE_LIMIT } from '../utils/gene-signature.js';
 
 const ID = 'paste-upload';
 const open = new WeakMap();      // panel api -> the mounted flow
@@ -30,7 +29,6 @@ function openPaste(panel) {
     const flow = mountGenePaste(host, {
         geneNames: panel.getDatasetGenes(),
         currentGenes: () => panel.getSelectedGenes(),
-        limit: GENE_LIMIT,
         idLookup: (kind) => panel.loadIdMap(kind),
         onCancel: close,
         onAdd: (genes, info) => {

@@ -41,8 +41,11 @@ from . import data_routes
 
 logger = logging.getLogger(__name__)
 
-#: Body size one request may have: 2,000 names of any real length, a subset spec and a few flags.
-MAX_BODY_BYTES = 1 << 20
+#: Body size one request may have. There is no gene limit, so this is the bound on a gene list: 16 MiB holds about
+#: 490,000 names of 30 characters (a dataset's every gene is 20,000 to 60,000, a few names of 15 to 20 characters),
+#: with a subset spec and a few flags. It equals the server's own default for every request (server.max_request_mb),
+#: which answers first when it is set lower.
+MAX_BODY_BYTES = 16 << 20
 #: Seconds a request waits for the score being computed before it answers 503.
 QUEUE_WAIT_S = 30.0
 #: Seconds a remote store may be read for one score (the request deadline ends with the request itself).

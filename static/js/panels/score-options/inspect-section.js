@@ -19,15 +19,15 @@
  * Nothing is computed, and nothing is watched, until the section is opened.
  * Closing it lets go of the score (a score a plot still needs stays).
  */
-import { DataManager } from '../data-manager.js';
-import { scores } from '../utils/score-source.js';
-import { describeScore } from '../utils/score-notices.js';
-import { DEFAULT_METHOD, definitionText, fmtCount } from '../utils/gene-signature.js';
-import { cleanOffered, methodLabel } from '../utils/signature-options.js';
+import { DataManager } from '../../data-manager.js';
+import { scores } from '../../utils/score-source.js';
+import { describeScore } from '../../utils/score-notices.js';
+import { DEFAULT_METHOD, definitionText, fmtCount } from '../../utils/gene-signature.js';
+import { cleanOffered, methodLabel } from '../../utils/signature-options.js';
 import {
     distribution, binText, missingText, geneRows, flagSummary, sortGeneRows, GENE_COLUMNS, ROWS_FIRST,
     fmtNum, fmtPercent, geneCsv, scoreCsvParts, fileName
-} from '../utils/score-inspect.js';
+} from '../../utils/score-inspect.js';
 
 /** What each aggregation is called here. */
 const METHOD_LABELS = {};

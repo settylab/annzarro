@@ -4,14 +4,14 @@ Step 3 of the gene-signature plan. A signature is a named recipe (genes plus
 how to score them) that outlives its panel. This step builds the list; scoring
 and the `gene-score` source come later. The store is generated: 60 cells and
 3,000 genes (ACTB, CD3D, CD3E, CD3G, Cd3d, GAPDH, KLF1 and GENE0000 to
-GENE2992), enough for a virtualised list and for the 2,000 gene limit.
+GENE2992), enough for a virtualised list and for a list of thousands of genes.
 
 1.  F1: a Gene Signature is added from the chooser, opens on the full gene list
     (3,000 rows in a virtualised grid), a gene is typed, Enter ticks it and the
     box keeps the focus, and the Gene Plot's own table filter selects it.
 2.  F3: Add from a gene table adds the genes that pass its filter, says how
     many were already selected, and Undo takes the step back.
-3.  The limit: 2,000 genes are allowed, 2,001 add nothing, and the message
+3.  No limit: every gene can be ticked, and the summary
     says so.
 4.  The list is virtualised: a few dozen rows are in the page whatever the
     length, and the last row is reachable.
@@ -204,7 +204,7 @@ def test_f1_add_a_signature_type_a_gene_and_use_it(page, served):
 
     # the first view: the full gene list, a default score, nothing to configure
     assert page.inner_text(f"{tile} .gsig-summary").startswith("Tick genes to build a score")
-    assert "2,000" in page.inner_text(f"{tile} .gsig-summary"), "the limit is stated"
+    assert "2,000" not in page.inner_text(f"{tile} .gsig-summary"), "there is no limit to state"
     assert page.inner_text(f"{tile} .gsig-scoring__summary") == "z-score mean, mean, sum · X"
     assert page.get_attribute(f"{tile} .gsig-grid", "aria-rowcount") == "3000"
     assert page.inner_text(f"{tile} .gsig-viewswitch .active") == "All genes 3,000"
@@ -218,7 +218,7 @@ def test_f1_add_a_signature_type_a_gene_and_use_it(page, served):
     assert page.evaluate("(id) => window.PanelManager.getPanel(id).getRecipe().genes", sig_id) == ["KLF1"]
     assert page.input_value(f"{tile} .gsig-search") == ""
     assert page.evaluate("() => document.activeElement.classList.contains('gsig-search')")
-    assert page.inner_text(f"{tile} .gsig-summary") == "1 of 2,000 genes selected"
+    assert page.inner_text(f"{tile} .gsig-summary") == "1 gene selected"
     # and a second one, in a row
     page.type(f"{tile} .gsig-search", "GENE0042")
     page.press(f"{tile} .gsig-search", "Enter")
@@ -278,37 +278,28 @@ def test_focused_and_fixed_genes_are_listed_with_their_source(page, served):
     assert _message(page) == "Added GAPDH."
 
 
-def test_the_limit_is_2000_and_one_more_adds_nothing(page, served):
+def test_there_is_no_gene_limit_every_gene_can_be_ticked(page, served):
     _open_signature(page, served)
-    # 3,000 genes match: nothing is added
+    # all 3,000 genes match: all are added, as one undoable step
     page.click(f"{S} .gsig-toggle[title='Regular expression']")
     _search(page, ".")
     assert page.inner_text(f"{S} .gsig-tickall") == "Tick all 3,000"
     page.click(f"{S} .gsig-tickall")
-    assert _genes(page) == []
-    msg = _message(page)
-    assert "A signature holds up to 2,000 genes. Nothing was added." in msg and "3,000" in msg, msg
-    assert page.locator(f"{S} .gsig-undo").is_disabled(), "a refused add is not a step"
-
-    # 1,000 + 993 + 6 = 1,999, then one more makes exactly 2,000, and one more is refused
-    for pattern, expect in (("^GENE1", 1000), ("^GENE2", 1993), ("^(ACTB|CD3D|CD3E|CD3G|Cd3d|GAPDH)$", 1999), ("^KLF1$", 2000)):
-        _search(page, pattern)
-        page.click(f"{S} .gsig-tickall")
-        until(page, "(n) => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === n", expect)
-    assert _summary(page) == "2,000 of 2,000 genes selected"
-    _search(page, "^GENE0000$")
-    page.click(f"{S} .gsig-tickall")
-    assert len(_genes(page)) == 2000
-    assert "Nothing was added" in _message(page) and "2,001" in _message(page)
-    # a single tick is refused the same way, and the box is unticked again
-    _search(page, "")
-    _row(page, "GENE0000").locator("input").click()
-    page.wait_for_timeout(200)
-    assert len(_genes(page)) == 2000
-    assert not _row(page, "GENE0000").locator("input").is_checked()
-    # the recipe the server reads has 2,000 genes and the route's fields
+    until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 3000")
+    assert _summary(page) == "3,000 genes selected"
+    assert "Ticked 3,000 genes" in _message(page) and "limit" not in _message(page)
+    assert page.locator(f"{S} .gsig-undo").is_enabled()
+    page.click(f"{S} .gsig-undo")
+    until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 0")
+    # a single tick past 2,000 works the same way
+    page.evaluate("(g) => window.PanelManager.getPanel('gene-signature-S').updateConfig({genes: g})",
+                  [f"GENE{i:04d}" for i in range(2000)])
+    _search(page, "^GENE2500$")
+    _row(page, "GENE2500").locator("input").click()
+    until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 2001")
+    # the recipe the server reads holds them all, and the route's fields
     body = page.evaluate("async () => { const m = await import('/static/js/utils/gene-signature.js'); return m.serverRecipe(window.PanelManager.getPanel('gene-signature-S').getRecipe()); }")
-    assert sorted(body) == ["bins", "clip", "controls", "detect_above", "down", "genes", "input", "method", "seed", "version"] and len(body["genes"]) == 2000
+    assert sorted(body) == ["bins", "clip", "controls", "detect_above", "down", "genes", "input", "method", "seed", "version"] and len(body["genes"]) == 2001
 
 
 def test_the_list_is_virtualised_and_the_last_row_is_reachable(page, served):

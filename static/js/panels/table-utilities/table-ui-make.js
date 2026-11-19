@@ -17,6 +17,7 @@ import { getSource } from '../../utils/source-registry.js';
 import { DEFAULT_METHOD } from '../../utils/gene-signature.js';
 import { scoreOptions, lapsedLabel, noteDatasetLayers, offerOtherScores } from '../../utils/score-source.js';
 import { layerKeys } from '../../utils/structure-keys.js';
+import { entityLabel, optionFieldsOf } from '../../utils/score-source-panels.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -330,7 +331,7 @@ function checkboxIdFor(column, panelId) {
     // a score's layer is always named: there is no default layer, and a column stored without one (an old
     // link) is read on the signature's input at the time
     const sig = column.type === 'gene-score' && window.PanelManager ? window.PanelManager.getPanel(column.key) : null;
-    const layer = column.type === 'gene-score' ? (column.layer || (sig && sig.getRecipe ? sig.getRecipe().input : 'X')) : '';
+    const layer = column.type === 'gene-score' ? (column.layer || (sig && (sig.getScoreOptions || sig.getRecipe) ? optionFieldsOf(sig).input : 'X')) : '';
     return `checkbox-${column.type}-${column.key}-${column.column}${layer ? `-of-${layer}` : ''}-${panelId}`.replace(/\s+/g, '_');
 }
 
@@ -352,7 +353,7 @@ export function buildScoreTab(id, settings, structure = null) {
     list.innerHTML = '';
     const signatures = provider.entities();
     if (!signatures.length) {
-        list.innerHTML = '<div class="alert alert-secondary mb-2">No signatures yet.</div>';
+        list.innerHTML = '<div class="alert alert-secondary mb-2">No signatures or gene tables yet.</div>';
         const make = document.createElement('button');
         make.type = 'button';
         make.className = 'btn btn-sm btn-outline-primary az-score-new';
@@ -373,8 +374,8 @@ export function buildScoreTab(id, settings, structure = null) {
         group.dataset.signature = sig.id;
         const heading = document.createElement('div');
         heading.className = 'az-score-group-title fw-semibold';
-        heading.textContent = sig.title;
-        heading.title = sig.open ? sig.title : `${sig.title} (closed)`;
+        heading.textContent = entityLabel(sig);
+        heading.title = sig.open ? entityLabel(sig) : `${entityLabel(sig)} (closed)`;
         group.appendChild(heading);
         // what the signature offers (method and layer together, as in a plot's menu), and any ticked column
         // it no longer offers (kept, so the table still has it)
@@ -884,7 +885,7 @@ function updateSelectedColumnsList(id, settings) {
             const layer = checkbox.getAttribute('data-layer');
             if (layer) entry.layer = layer;
             const sig = window.PanelManager ? window.PanelManager.getPanel(key) : null;
-            const input = sig && sig.getRecipe ? sig.getRecipe().input : 'X';
+            const input = sig && (sig.getScoreOptions || sig.getRecipe) ? optionFieldsOf(sig).input : 'X';
             const had = before.find(c => c.key === key && (c.column || DEFAULT_METHOD) === column && (c.layer || input) === layer);
             if (had) { delete entry.layer; if (had.layer) entry.layer = had.layer; }
         }

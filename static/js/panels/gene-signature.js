@@ -10,7 +10,7 @@
  * working default (the z-score of each gene, then the average) and nothing to
  * configure: tick genes, or search, tick all that match, add the focused gene,
  * a gene fixed in a plot, or every gene of a gene table. Every change of the
- * list can be undone. A signature holds up to 2,000 genes.
+ * list can be undone. A signature holds any number of genes.
  *
  * It is usable wherever a Gene Table is: a Gene Plot's table filter and the
  * Gene Set Analysis source read it through the same contract a table has
@@ -33,24 +33,17 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { createGeneGrid } from '../utils/gene-grid.js';
 import { getFixedGenes } from './table-utilities/panel-tracker.js';
-import { aggregationsInUse, layersInUse, signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
+import { OPTION_KEYS, offeredOptions } from '../utils/signature-options.js';
+import { signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
-import { createScoringSection } from './gene-signature-scoring.js';
-import { offeredOptions } from '../utils/signature-options.js';
-import { createKindClient, warningFor as kindWarning } from '../utils/matrix-kind-client.js';
-import { layerKeys } from '../utils/structure-keys.js';
-import { Config } from '../config.js';
-import { createInspect } from './gene-signature-inspect.js';
+import { createScoreOptions } from './score-options/score-options.js';
 import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
-    GENE_LIMIT, normalizeRecipe, recipeHash, definitionText, planAdd, limitMessage, searchNames, enterTarget,
+    normalizeRecipe, recipeHash, planAdd, searchNames, enterTarget,
     UndoStack, fmtCount, inDatasetNames, compareNames, storedRecipe
 } from '../utils/gene-signature.js';
-
-/** What the inputs look like, asked once per dataset and input for the whole page. */
-const KIND_CLIENT = createKindClient({ url: Config.API.MATRIX_KIND });
 
 /** Search runs this long after the last key, so a long list is not searched on every key. */
 const SEARCH_DELAY_MS = 90;
@@ -110,8 +103,7 @@ const GeneSignaturePanel = (function() {
         let _dom = null;
         let D = null;
         let _grid = null;
-        let _scoring = null;              // the Scoring section: the shared settings of every score
-        let _inspect = null;
+        let _scoreOptions = null;         // Scores offered and Inspect (panels/score-options/score-options.js), shared with the gene table
         const _undo = new UndoStack();
         const _idMaps = new Map();        // dataset + column -> Promise of id -> gene name, read only when a paste needs it
         let _flow = null;                 // an inline flow (paste and upload) replacing the list: {node, opener, onClose}
@@ -137,7 +129,7 @@ const GeneSignaturePanel = (function() {
             rebuildRows({ top: true });
             paint();
             if (loaded) loadScoringInputs();
-            _unwatchScore = onSignatureStatus(_id, () => { paintScore(); if (_scoring) _scoring.paintAggregations(); });
+            _unwatchScore = onSignatureStatus(_id, () => { paintScore(); if (_scoreOptions) _scoreOptions.paintAggregations(); });
             // a panel opened under an id the page already uses (Back and Forward, a reopened signature, a panel set)
             // is what a plot filtered by that id has not read yet; a table says as much when its rows are in
             if (loaded) announce();
@@ -157,12 +149,10 @@ const GeneSignaturePanel = (function() {
             for (const [target, type, fn] of _listeners.splice(0)) target.removeEventListener(type, fn);
             if (_grid) _grid.destroy();
             _grid = null;
-            if (_inspect) _inspect.destroy();
-            _inspect = null;
             if (_unwatchScore) _unwatchScore();
             _unwatchScore = null;
-            if (_scoring) _scoring.destroy();
-            _scoring = null;
+            if (_scoreOptions) _scoreOptions.destroy();
+            _scoreOptions = null;
             _initialized = false;
             _dom = null;
             _container.innerHTML = '';
@@ -226,10 +216,10 @@ const GeneSignaturePanel = (function() {
             if (config.title && config.title !== _title) { _title = config.title; signatureRenamed(_id); }
             else if (config.title) _title = config.title;
             if (config.controlsVisible !== undefined) _controlsVisible = config.controlsVisible;
-            const recipeKeys = ['genes', 'down', 'input', 'method', 'clip', 'seed', 'bins', 'controls', 'offered', 'layers'];
+            const recipeKeys = ['genes', 'down', ...OPTION_KEYS];
             if (recipeKeys.some(k => k in config)) {
                 setRecipe(Object.fromEntries(recipeKeys.filter(k => k in config).map(k => [k, config[k]])));
-                if (_initialized) { rebuildRows(); paint(); if (_scoring && ('input' in config || 'layers' in config)) _scoring.refreshKind(); }
+                if (_initialized) { rebuildRows(); paint(); if (_scoreOptions) _scoreOptions.changed(Object.keys(config)); }
                 notifyChange();
                 // what consumers may pick changed: their menus follow
                 if (['offered', 'layers', 'input', 'method'].some(k => k in config)) signatureRenamed(_id);
@@ -238,8 +228,7 @@ const GeneSignaturePanel = (function() {
 
         /** What plots and tables are offered: every offered method of every offered layer, those that cannot be computed left out. */
         function getOfferedOptions() {
-            const kinds = _scoring ? _scoring.getKinds() : {};
-            return offeredOptions(_recipe, null, kinds);
+            return _scoreOptions ? _scoreOptions.getOfferedOptions() : offeredOptions(_recipe);
         }
 
         function getId() { return _id; }
@@ -258,26 +247,17 @@ const GeneSignaturePanel = (function() {
 
         /** Read what the inputs are and what the chosen one looks like (raw counts get a warning). */
         function loadScoringInputs() {
-            if (!_scoring) return;
-            _scoring.refreshInputs();
-            _scoring.refreshKind();
+            if (_scoreOptions) _scoreOptions.load();
         }
 
         /**
-         * An edit in the Scoring section: part of the recipe, so it reaches the link and the score's key. The list of
-         * genes did not change, so what is filtered by this signature is not told.
-         * @param {Object} patch - keys of a recipe (input, clip, seed, method)
+         * An edit in Scores offered: part of the recipe, so it reaches the link and the score's key. The list of genes
+         * did not change, so what is filtered by this signature is not told. (The component tells the readers.)
+         * @param {Object} patch - option fields of the recipe (input, clip, seed, method, offered, layers...)
          */
-        function applyScoring(patch) {
+        function storeOptions(patch) {
             setRecipe(patch);
             paint();
-            signatureChanged(_id);
-            if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') {
-                window.sessionManager.notifyPanelUpdate();
-            }
-            // what plots and tables may pick changed: their menus and titles follow
-            if ('offered' in patch || 'layers' in patch || 'input' in patch || 'method' in patch) signatureRenamed(_id);
-            if ('input' in patch || 'layers' in patch) _scoring.refreshKind();
         }
 
         function notifyChange() {
@@ -317,18 +297,14 @@ const GeneSignaturePanel = (function() {
         }
 
         /**
-         * Add genes. Over the limit nothing is added and the message says so.
+         * Add genes.
          * @param {Iterable<string>} names
          * @param {{label?: string, noun?: string, outside?: number}} [opts] - `label`: where they come from ("DE genes")
          * @returns {{ok: boolean, added: number, already: number}}
          */
         function addGenes(names, { label = '', outside = 0, step = '' } = {}) {
             const list = [...names];
-            const plan = planAdd(_recipe.genes, list, GENE_LIMIT, _recipe.down.length);
-            if (!plan.ok) {
-                say(limitMessage(plan, label ? `${label} has ${fmtCount(new Set(list).size)} genes.` : ''));
-                return { ok: false, added: 0, already: plan.already };
-            }
+            const plan = planAdd(_recipe.genes, list);
             if (!plan.added.length) {
                 say(list.length ? `Nothing new: ${plan.already === 1 ? 'that gene is' : 'those genes are'} already selected.` : 'No genes to add.');
                 return { ok: true, added: 0, already: plan.already };
@@ -346,12 +322,7 @@ const GeneSignaturePanel = (function() {
         /** Tick or untick one gene. */
         function toggleGene(name, checked) {
             if (checked) {
-                const plan = planAdd(_recipe.genes, [name], GENE_LIMIT, _recipe.down.length);
-                if (!plan.ok) {
-                    say(limitMessage(plan));
-                    if (_grid) _grid.refresh();
-                    return;
-                }
+                const plan = planAdd(_recipe.genes, [name]);
                 if (plan.added.length) commit(plan.genes, `tick ${name}`, { tick: true });
                 say(`${name} selected.`);
             } else {
@@ -436,16 +407,13 @@ const GeneSignaturePanel = (function() {
             const definition = el('div', { class: 'gsig-definition', id: sid('definition') });
             const usedBy = el('div', { class: 'gsig-usedby' });
             const scoreLine = el('div', { class: 'gsig-score', hidden: true });
-            _scoring = createScoringSection({
-                D, id: _id, getRecipe, apply: applyScoring,
-                getInputs: async () => layerKeys(await DataManager.getDatasetStructure(DataManager.getCurrentDataset())),
-                getKind: (input, opts) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), input, opts),
-                onKinds: () => { signatureRenamed(_id); },
-                getInUse: () => aggregationsInUse(_id), getLayersInUse: () => layersInUse(_id), warningFor: kindWarning
+            _scoreOptions = createScoreOptions({
+                id: _id, D, getOptions: getRecipe, setOptions: storeOptions, getTitle: () => _title,
+                focusGene: (gene) => DataManager.setFocusedGene(gene)
             });
             status.append(
                 el('div', { class: 'gsig-status__row' }, summary),
-                definition, usedBy, scoreLine, _scoring.warning, _scoring.element);
+                definition, usedBy, scoreLine, _scoreOptions.warning, _scoreOptions.scoring.element);
 
             const search = el('input', { type: 'search', class: 'form-control form-control-sm gsig-search', id: sid('search'),
                 placeholder: 'Search genes', autocomplete: 'off', spellcheck: 'false', aria: { label: 'Search genes', describedby: sid('searchnote') },
@@ -496,8 +464,7 @@ const GeneSignaturePanel = (function() {
             root.addEventListener('keydown', onPanelKey);
             root.addEventListener('dragover', onPanelDragOver);
             root.addEventListener('drop', onPanelDrop);
-            _inspect = createInspect({ id: _id, D, getTitle: () => _title, getRecipe, focusGene: (gene) => DataManager.setFocusedGene(gene) });
-            root.append(status, controls, listbar, message, note, empty, _grid.element, _inspect.element);
+            root.append(status, controls, listbar, message, note, empty, _grid.element, _scoreOptions.inspect.element);
             _container.innerHTML = '';
             _container.appendChild(root);
             _dom = { root, controls, flowHost: _flowHost, status, summary, definition, usedBy, scoreLine, search, regex, matchCase, tickAllBtn, searchNote,
@@ -512,8 +479,8 @@ const GeneSignaturePanel = (function() {
             const loaded = _nameSet.size > 0;
             const missing = loaded ? [..._recipe.genes, ..._recipe.down].filter(g => !_nameSet.has(g)).length : 0;
             _dom.summary.textContent = n
-                ? `${fmtCount(n)} of ${fmtCount(GENE_LIMIT)} genes selected`
-                : `Tick genes to build a score. A signature holds up to ${fmtCount(GENE_LIMIT)} genes.`;
+                ? `${fmtCount(n)} ${n === 1 ? 'gene' : 'genes'} selected`
+                : 'Tick genes to build a score.';
             // no single definition here: a signature offers several, and the Scores offered row below states them
             _dom.definition.textContent = missing ? `${fmtCount(missing)} not in this dataset.` : '';
             _dom.definition.hidden = !missing;
@@ -571,7 +538,7 @@ const GeneSignaturePanel = (function() {
 
             paintUsedBy();
             paintScore();
-            if (_scoring) _scoring.paint();
+            if (_scoreOptions) _scoreOptions.paint();
             _dom.message.textContent = _message;
         }
 
@@ -948,8 +915,7 @@ const GeneSignaturePanel = (function() {
                 if (!_initialized) return undefined;
                 closeFlow(null, { focus: false });
                 loadGenes();
-                KIND_CLIENT.clear();
-                loadScoringInputs();
+                if (_scoreOptions) _scoreOptions.datasetChanged();
                 _dom.noData.style.display = 'none';
                 syncControlsWithDataset(_dom.controls, true);
                 rebuildRows({ top: true });
@@ -994,7 +960,7 @@ const GeneSignaturePanel = (function() {
             getRecipe,
             getOfferedOptions,
             getRecipeHash: () => recipeHash(_recipe),
-            revealScoresOffered: () => { if (_scoring) _scoring.reveal(); },
+            revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
             addGenes,
             undo,
             // for the sources that plug in (paste and upload)
@@ -1004,7 +970,7 @@ const GeneSignaturePanel = (function() {
             openFlow,
             closeFlow,
             _debugState,
-            _inspect: () => _inspect
+            _inspect: () => (_scoreOptions ? _scoreOptions.inspect : null)
         };
         return api;
     }

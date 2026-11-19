@@ -24,6 +24,8 @@ import { describeScore, worstNotice } from './score-notices.js';
 import { registerSource, subKeyOf, layerOf } from './source-registry.js';
 import { DEFAULT_METHOD } from './gene-signature.js';
 import { DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
+import { createSourceAdapter, isSourceType, kindOfType, optionFieldsOf } from './score-source-panels.js';
+import { findCycle, TableResolver } from './table-resolver.js';
 
 /** What each aggregation is called where a consumer picks it (level 3). */
 const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
@@ -99,17 +101,29 @@ const HOSTS = new WeakMap();
 /** hosts with records, to repaint */
 const LIVE_HOSTS = new Set();
 
+/** Whether this panel is a source of a gene score: a signature, or a gene table (utils/score-source-panels.js). */
+function isSource(panel) {
+    return !!panel && typeof panel.getType === 'function' && isSourceType(panel.getType());
+}
+
+/** A gene table's score hangs on its rows, which the table resolver may have to build: it is reached through here. */
+const tableResolver = {
+    need: (id, dependant) => TableResolver.need(id, dependant),
+    accept: (id) => TableResolver.accept(id),
+    cancel: (id) => TableResolver.cancel(id),
+    retry: (id) => TableResolver.retry(id),
+    cycleOf: (id) => findCycle(id, (x) => TableResolver.host.depends(x))
+};
+
 function signatureAdapter() {
-    return {
-        get(id) {
-            const panel = id ? PanelManager.getPanel(id) : null;
-            if (!panel || typeof panel.getType !== 'function' || panel.getType() !== 'gene-signature'
-                || typeof panel.getRecipe !== 'function') return null;
-            return { title: panel.getTitle(), recipe: () => panel.getRecipe() };
-        },
+    return createSourceAdapter({
+        panel: (id) => PanelManager.getPanel(id),
+        active: (panel) => PanelManager.getActivePanels().includes(panel),
+        geneNames: () => DataManager.getGenes(),
         off: () => !Policy.panelEnabled('gene-signature'),
-        offers: (recipe, sub, layer) => isOffered(recipe, sub, layer || undefined)
-    };
+        offers: (recipe, sub, layer) => isOffered(recipe, sub, layer || undefined),
+        resolver: tableResolver
+    });
 }
 
 function context() {
@@ -135,8 +149,9 @@ export function _useForTest(store, sources) {
 
 /** The aggregations a signature panel offers consumers, first the default: [{value, label}]. */
 function offeredSubs(panel) {
-    if (!panel || typeof panel.getRecipe !== 'function') return METHODS.map(value => ({ value, label: SUB_LABELS[value] }));
-    const recipe = panel.getRecipe();
+    if (!isSource(panel)) return METHODS.map(value => ({ value, label: SUB_LABELS[value] }));
+    // a signature's recipe, or a table's option fields: both have the default method
+    const recipe = optionFieldsOf(panel);
     const seen = [];
     // what the panel offers (impossible combinations left out), the default first
     for (const o of (typeof panel.getOfferedOptions === 'function' ? panel.getOfferedOptions() : offeredOptions(recipe))) {
@@ -146,18 +161,22 @@ function offeredSubs(panel) {
     return seen.map(value => ({ value, label: SUB_LABELS[value] || value }));
 }
 
-/** Every signature panel, open or closed: [{id, title, open}]. */
+/**
+ * Every source of a gene score, open or closed: signatures first, then gene tables, each in the order they were made.
+ * [{id, title, open, kind: 'signature'|'table', subs}]. The name is kept from before tables were sources.
+ */
 export function signatureList() {
     const open = new Set(PanelManager.getActivePanels().map(p => p.getId()));
-    return PanelManager.getAllPanels()
-        .filter(p => p.getType && p.getType() === 'gene-signature')
-        .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()), subs: offeredSubs(p), input: p.getRecipe ? p.getRecipe().input : 'X', options: scoreOptions(p.getId()) }));
+    const all = PanelManager.getAllPanels().filter(isSource);
+    return [...all.filter(p => p.getType() === 'gene-signature'), ...all.filter(p => p.getType() !== 'gene-signature')]
+        .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()), kind: kindOfType(p.getType()), subs: offeredSubs(p),
+            input: optionFieldsOf(p).input, options: scoreOptions(p.getId()) }));
 }
 
 /** The title of the signature a setting names, or what it was called when last seen. */
 export function scoreTitle(setting) {
     const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    const base = panel && panel.getType && panel.getType() === 'gene-signature' ? panel.getTitle()
+    const base = isSource(panel) ? panel.getTitle()
         : (setting && setting.label) || (setting && setting.key) || '';
     return base;
 }
@@ -168,7 +187,7 @@ export function scoreLabel(setting) {
     const title = scoreTitle(setting).replace(new RegExp(`( · (${METHODS.map(m => SUB_LABELS[m]).join('|')}))?( · of .+)?$`), '');
     const layer = layerOf(setting);
     const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    const own = panel && panel.getRecipe ? panel.getRecipe().input : 'X';
+    const own = panel && isSource(panel) ? optionFieldsOf(panel).input : 'X';
     const out = !sub || sub === DEFAULT_METHOD ? title : `${title} · ${SUB_LABELS[sub] || sub}`;
     // the layer is named when it is not the one the signature itself reads
     return layer && layer !== own ? `${out} · ${layer}` : out;
@@ -182,7 +201,7 @@ export function scoreLabel(setting) {
 export function scoreLabelLines(setting) {
     const title = scoreTitle(setting).replace(new RegExp(`( · (${METHODS.map(m => SUB_LABELS[m]).join('|')}))?( · of .+)?$`), '');
     const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    const own = panel && panel.getRecipe ? panel.getRecipe().input : 'X';
+    const own = panel && isSource(panel) ? optionFieldsOf(panel).input : 'X';
     const sub = subKeyOf(setting);
     return [title, `${SUB_LABELS[sub] || sub} · ${layerOf(setting) || own}`];
 }
@@ -383,7 +402,7 @@ function recordFor(host, role, setting) {
         const { sources } = scores();
         rec = { role, sigId: setting.key, sub, layer: setting.layer || null, setting, panelId: panelIdOf(host), drawnKey: undefined, handle: null };
         rec.handle = sources.watch(setting.key, {
-            host, role, sub, layer: setting.layer || null, visible: () => isVisible(host),
+            host, role, sub, layer: setting.layer || null, dependant: rec.panelId, visible: () => isVisible(host),
             onChange: (snap) => onChange(host, rec, snap)
         });
         recordsOf(host).set(role, rec);
@@ -501,7 +520,7 @@ export function scoreActionAvailable(action, host) {
     const rec = shownRecord(host);
     if (!rec) return false;
     const panel = PanelManager.getPanel(rec.sigId);
-    if (action === 'score-open') return !!panel && panel.getType() === 'gene-signature';
+    if (action === 'score-open') return isSource(panel);
     return true;
 }
 
@@ -551,7 +570,7 @@ export function runScoreAction(action, host) {
  */
 export function openSignature(id, nextTo = null) {
     const panel = PanelManager.getPanel(id);
-    if (!panel || panel.getType() !== 'gene-signature') return null;
+    if (!isSource(panel)) return null;
     if (PanelManager.getActivePanels().includes(panel)) {
         const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(id)}"]`);
         if (tile && tile.scrollIntoView) tile.scrollIntoView({ block: 'nearest' });
@@ -655,6 +674,13 @@ export function dependantsOf(id) {
 
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
     document.addEventListener('annzarro:panels-changed', () => panelsChanged());
+    // A gene table's filter changed, or its rows were built: its genes changed, and its dependants follow as they do
+    // for a signature that is edited (at once when the score is cheap, behind Update score when it is not)
+    document.addEventListener('annzarro:table-filtered', (event) => {
+        const id = event && event.detail && event.detail.id;
+        const panel = id ? PanelManager.getPanel(id) : null;
+        if (isSource(panel) && panel.getType() === 'gene-table') signatureChanged(id);
+    });
 }
 
 
@@ -672,7 +698,7 @@ registerSource({
     /** The aggregations the server computes, z-score mean first; a new method is a new entry in METHODS. */
     subKeys: (id) => {
         const panel = id ? PanelManager.getPanel(id) : null;
-        if (panel && panel.getType && panel.getType() === 'gene-signature') return offeredSubs(panel);
+        if (isSource(panel)) return offeredSubs(panel);
         // no id: every aggregation; an id nothing answers to (a deleted signature): the ones offered by default
         return (id ? DEFAULT_OFFERED : METHODS).map(value => ({ value, label: SUB_LABELS[value] || value }));
     },
@@ -688,8 +714,8 @@ registerSource({
  */
 export function scoreOptions(id) {
     const panel = id ? PanelManager.getPanel(id) : null;
-    if (!panel || !panel.getRecipe) return [];
-    const recipe = panel.getRecipe();
+    if (!isSource(panel)) return [];
+    const recipe = optionFieldsOf(panel);
     // the panel's own graded list: a combination that cannot be computed (a share on a log layer) is left out
     const list = typeof panel.getOfferedOptions === 'function' ? panel.getOfferedOptions() : offeredOptions(recipe, _datasetLayers);
     return list.filter(o => !_datasetLayers || !_datasetLayers.length || _datasetLayers.includes(o.layer)).map(o => ({
@@ -709,17 +735,17 @@ export function optionOf(setting) {
     const sub = subKeyOf(setting);
     const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
     // no layer: the setting follows the signature's default layer (a link made before the layer was stored)
-    const layer = layerOf(setting) || (panel && panel.getRecipe ? panel.getRecipe().input : 'X');
+    const layer = layerOf(setting) || (isSource(panel) ? optionFieldsOf(panel).input : 'X');
     return scoreOptions(setting.key).find(o => o.method === sub && o.layer === layer) || null;
 }
 
 /** The label of an option a consumer holds that the signature no longer offers. */
 export function lapsedLabel(setting) {
     const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    const several = panel && panel.getRecipe ? new Set(offeredOptions(panel.getRecipe(), _datasetLayers).map(o => o.layer)).size > 1 : false;
+    const several = isSource(panel) ? new Set(offeredOptions(optionFieldsOf(panel), _datasetLayers).map(o => o.layer)).size > 1 : false;
     const layer = layerOf(setting);
     const base = methodShort(subKeyOf(setting));
-    return `${several || layer ? `${base} · ${layer || (panel && panel.getRecipe ? panel.getRecipe().input : 'X')}` : base} (no longer offered)`;
+    return `${several || layer ? `${base} · ${layer || (isSource(panel) ? optionFieldsOf(panel).input : 'X')}` : base} (no longer offered)`;
 }
 
 /**
@@ -740,10 +766,14 @@ export function offerOtherScores(id, nextTo = null) {
 /** Offer an option again in the signature's panel (the notice's one-click action). */
 function offerAgain(id, method, layer) {
     const panel = id ? PanelManager.getPanel(id) : null;
-    if (!panel || !panel.getRecipe || !panel.updateConfig) return false;
-    const recipe = panel.getRecipe();
+    if (!isSource(panel)) return false;
+    const recipe = optionFieldsOf(panel);
     const offered = [...new Set([...(recipe.offered || []), method])];
     const layers = layer && !(recipe.layers || []).includes(layer) ? [...(recipe.layers || [recipe.input]), layer] : recipe.layers;
-    panel.updateConfig({ offered, ...(layers ? { layers } : {}) });
+    const patch = { offered, ...(layers ? { layers } : {}) };
+    // a gene table stores the option fields under one key; a signature keeps them in its recipe
+    if (typeof panel.setScoreOptions === 'function') { panel.setScoreOptions(patch); return true; }
+    if (!panel.updateConfig) return false;
+    panel.updateConfig(patch);
     return true;
 }

@@ -228,12 +228,22 @@ def test_a_refused_csr_score_names_the_way_out(client, layout, monkeypatch):
 
 # --- limits and bad requests ----------------------------------------------------------------------------
 
-def test_two_thousand_genes_are_allowed_and_more_are_refused(client, layout):
-    ok = post(client, layout, {"recipe": {"genes": [f"G{i}" for i in range(2000)]}})
-    assert ok.status_code == 200 and parse(ok.get_data())[0][-1]["reason"] == "no_gene_present"
-    resp = post(client, layout, {"recipe": {"genes": [f"G{i}" for i in range(2001)]}})
-    assert resp.status_code == 413 and resp.get_json()["reason"] == "too_many_genes"
-    assert (resp.get_json()["limit"], resp.get_json()["requested"]) == (2000, 2001)
+def test_a_signature_has_no_gene_limit(client, layout):
+    for n in (2000, 2001, 20000):
+        resp = post(client, layout, {"recipe": {"genes": [f"G{i}" for i in range(n)]}})
+        assert resp.status_code == 200 and parse(resp.get_data())[0][-1]["reason"] == "no_gene_present", n
+
+
+def test_every_gene_of_a_large_dataset_fits_the_body_limit(client, layout):
+    # 60,000 Ensembl-style ids: more than the old 1 MB body, well under the bound
+    genes = [f"ENSG{i:011d}" for i in range(60000)]
+    assert len(json.dumps({"recipe": {"genes": genes}})) > 1 << 20
+    resp = post(client, layout, {"recipe": {"genes": genes}})
+    assert resp.status_code == 200 and parse(resp.get_data())[0][-1]["reason"] == "no_gene_present"
+    # 400,000 names of 30 characters is about 14 MB: still inside the bound
+    many = [f"ENSG{i:011d}" + "X" * 15 for i in range(400000)]
+    assert 12 << 20 < len(json.dumps({"recipe": {"genes": many}})) < route.MAX_BODY_BYTES
+    assert post(client, layout, {"recipe": {"genes": many}}).status_code == 200
 
 
 def test_a_body_over_the_limit_is_refused_before_it_is_parsed(client, layout):

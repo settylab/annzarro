@@ -64,7 +64,8 @@ export function hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverO
         }
       }
       mine.forEach((o, i) => {
-        options.push({ value: o.value, label: i === 0 ? sig.title : `${sig.title} · ${o.label}`, selected: !off && scored.has(o.value), group: 'Gene scores' });
+        const name = sig.kind === 'table' ? `${sig.title} (table)` : sig.title;       // (utils/score-source-panels.js entityLabel; this module has no imports)
+        options.push({ value: o.value, label: i === 0 ? name : `${name} · ${o.label}`, selected: !off && scored.has(o.value), group: 'Gene scores' });
       });
     }
   }

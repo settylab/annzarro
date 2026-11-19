@@ -70,7 +70,7 @@ def test_f2_paste_mixed_separators_preview_add_and_undo(page, served):
     _add_btn(page).click()
 
     assert _genes(page) == sorted(["GENE0001", "CD3D", "CD3E", "KLF1", "GAPDH", "ACTB"])
-    assert _summary(page) == "6 of 2,000 genes selected"
+    assert _summary(page) == "6 genes selected"
     assert _message(page) == "Added 5 genes from pasted list. 1 is not in this dataset."
     assert page.locator(f"{S} .gsig-grid").is_visible() and page.locator(f"{S} [data-testid=gp-text]").count() == 0
     assert _focus_is_button(page)
@@ -165,32 +165,18 @@ def test_a_file_dropped_on_the_panel_opens_the_preview(page, served):
     assert _add_btn(page).inner_text() == "Add 2 genes"
 
 
-def test_over_the_limit_adds_nothing_and_is_not_a_step(page, served):
+def test_there_is_no_limit_a_long_list_is_added_in_one_step(page, served):
     _open_signature(page, served)
     _open_flow(page)
     _paste(page, "\n".join(f"GENE{i:04d}" for i in range(2001)))
-    page.wait_for_selector(f"{S} [data-testid=gp-over]")
-    assert "2,001 genes matched" in page.inner_text(f"{S} [data-testid=gp-over]")
-    assert "A signature holds up to 2,000 genes. Nothing was added." in page.inner_text(f"{S} [data-testid=gp-over]")
-    assert _add_btn(page).is_disabled()
-    _add_btn(page).click(force=True)
-    assert _genes(page) == [] and page.locator(f"{S} .gsig-undo").is_disabled()
-    # the selection counts: 1,995 selected, 6 new genes would make 2,001
-    page.click(f"{S} [data-testid=gp-back]")
-    page.click(f"{S} [data-testid=gp-cancel]")
-    selected = [f"GENE{i:04d}" for i in range(1995)]
-    page.evaluate("(g) => window.PanelManager.getPanel('gene-signature-S').updateConfig({genes: g})", selected)
-    _open_flow(page)
-    _paste(page, "\n".join(f"GENE{i:04d}" for i in range(1995, 2001)))
-    page.wait_for_selector(f"{S} [data-testid=gp-over]")
-    assert _add_btn(page).is_disabled()
-    assert len(_genes(page)) == 1995
-    page.click(f"{S} [data-testid=gp-back]")
-    _paste(page, "\n".join(f"GENE{i:04d}" for i in range(1995, 2000)))
-    assert _add_btn(page).inner_text() == "Add 5 genes"
+    assert page.locator(f"{S} [data-testid=gp-over]").count() == 0
+    assert _add_btn(page).inner_text() == "Add 2,001 genes"
     _add_btn(page).click()
-    until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 2000")
-    assert _summary(page) == "2,000 of 2,000 genes selected"
+    until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 2001")
+    assert _summary(page) == "2,001 genes selected"
+    # one undo takes the whole add back
+    page.click(f"{S} .gsig-undo")
+    until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 0")
 
 
 def test_excel_is_refused_and_nothing_is_sent(page, served):

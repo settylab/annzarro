@@ -172,3 +172,46 @@ test('the detection threshold is a number from 0 up and reads as 0 otherwise', (
     for (const bad of ['', '-1', 'x', '1e999']) assert.deepEqual(G.parseThresholdText(bad), { ok: false, error: 'Enter a number from 0 up.' }, bad);
     assert.deepEqual(O.paramsOf(recipe({}), 'detected'), { detect_above: 0 });
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// The shared schema of the option fields: a signature stores them flat in its recipe, a gene table under
+// `scoreOptions`; one definition, one normaliser.
+
+test('the option fields are one schema: the same keys in a signature recipe and in the options a table stores', () => {
+    assert.deepEqual([...O.OPTION_KEYS], ['input', 'method', 'offered', 'layers', 'clip', 'seed', 'bins', 'controls', 'detect_above']);
+    const options = O.normalizeOptions({});
+    assert.deepEqual(Object.keys(options).sort(), [...O.OPTION_KEYS].sort());
+    const r = recipe({});
+    for (const key of O.OPTION_KEYS) assert.deepEqual(r[key], options[key], key);
+    assert.deepEqual(O.pickOptions(r), options, 'what a recipe holds of it is exactly the options');
+});
+
+test('normalising the options: anything invalid takes its default, the default method is always offered', () => {
+    const o = O.normalizeOptions({ method: 'nonsense', offered: ['sum', 'bogus'], layers: ['counts', '', 7], input: '', clip: -1, bins: 1,
+        controls: 5000, seed: -3, detect_above: 'x' });
+    assert.equal(o.method, 'sum', 'a method that is not offered gives way to one that is');
+    assert.deepEqual(o.offered, ['sum']);
+    assert.deepEqual(o.layers, ['X', 'counts']);
+    assert.equal(o.input, 'X');
+    assert.deepEqual([o.clip, o.bins, o.controls, o.seed, o.detect_above], [10, 25, 50, null, 0]);
+    assert.deepEqual(O.normalizeOptions(null), O.normalizeOptions(undefined));
+    assert.deepEqual(O.normalizeOptions(o), o, 'normalising is idempotent');
+    assert.equal(O.normalizeOptions({ clip: null }).clip, null, 'no clipping is a setting');
+});
+
+test('stored options are plain copies, and the defaults are recognised so a table stores nothing for them', () => {
+    const o = O.normalizeOptions({ offered: ['mean', 'sum'], layers: ['X', 'counts'] });
+    const stored = O.storedOptions(o);
+    stored.offered.push('x'); stored.layers.push('y');
+    assert.deepEqual(o.offered, ['mean', 'sum']);
+    assert.equal(O.isDefaultOptions({}), true);
+    assert.equal(O.isDefaultOptions(null), true);
+    assert.equal(O.isDefaultOptions(O.normalizeOptions({ clip: 3 })), false);
+    assert.equal(O.isDefaultOptions({ offered: ['zscore_mean', 'mean', 'sum'] }), true, 'the default offer, spelled out');
+    assert.equal(O.isDefaultOptions({ layers: ['X', 'counts'] }), false);
+});
+
+test('a later field (up and down genes) joins the schema in one place: OPTION_KEYS is what every consumer reads', () => {
+    // pickOptions keeps only schema keys, so a field outside the schema never reaches a table's stored options
+    assert.deepEqual(O.pickOptions({ genes: ['A'], down: ['B'], clip: 4, title: 'x', method: 'mean' }), { clip: 4, method: 'mean' });
+});

@@ -26,8 +26,8 @@ export function durationText(seconds) {
 }
 
 /** Notice states, most urgent first: a plot with two scores states the worst. */
-export const PRIORITY = ['nolayer', 'notcells', 'unset', 'deleted', 'off', 'failed', 'refused', 'awaiting', 'cancelled', 'noscore', 'nogenes',
-    'estimating', 'queued', 'computing', 'updating', 'held', 'notoffered'];
+export const PRIORITY = ['nolayer', 'notcells', 'unset', 'deleted', 'off', 'cycle', 'failed', 'refused', 'ask', 'awaiting', 'cancelled', 'noscore',
+    'nogenes', 'building', 'estimating', 'queued', 'computing', 'updating', 'held', 'notoffered'];
 
 /** The sentence part of a gene count: "31 of 50 genes". */
 function progressText(progress) {
@@ -45,8 +45,11 @@ function progressText(progress) {
  */
 export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
     if (!snap) return null;
-    const t = snap.title ? `'${snap.title}'` : 'The signature';
-    const T = snap.title ? `'${snap.title}'` : 'the signature';
+    // a source is a handpicked signature or a gene table (its genes are the rows passing its filter): same states, own nouns
+    const table = snap.kind === 'table';
+    const noun = table ? 'table' : 'signature';
+    const t = snap.title ? `'${snap.title}'` : `The ${noun}`;
+    const T = snap.title ? `'${snap.title}'` : `the ${noun}`;
     const colour = role === 'colour';
     const none = colour ? ' This plot has no colour.' : '';
     const cancelLabel = sharers > 1 ? `Cancel for ${sharers} plots` : 'Cancel';
@@ -55,13 +58,32 @@ export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
         actions, blocksAxis: !['updating', 'held'].includes(state)
     });
     const choose = ['score-choose', 'Choose another'];
-    const open = ['score-open', 'Open signature'];
+    const open = ['score-open', table ? 'Open table' : 'Open signature'];
 
     switch (snap.state) {
         case 'deleted':
-            return out('deleted', 'warning', 'Source deleted', snap.title ? `Signature ${t} was deleted.` : 'The signature was deleted.', '', [choose]);
+            return out('deleted', 'warning', 'Source deleted',
+                snap.title ? `${table ? 'Table' : 'Signature'} ${t} was deleted.` : `The ${noun} was deleted.`, '', [choose]);
         case 'off':
-            return out('off', 'warning', 'Turned off', 'Gene signatures are turned off on this server.', '', [choose]);
+            return out('off', 'warning', 'Turned off', `Gene ${table ? 'tables' : 'signatures'} are turned off on this server.`, '', [choose]);
+        case 'cycle': {
+            // a table's genes depend on a table that depends on this score, so none of them can be settled
+            const names = (snap.cycle || []).slice(0, -1).map(x => `'${x}'`);
+            const ring = names.length === 2 ? `${names[0]} and ${names[1]} depend on each other.`
+                : `${names.join(', ')} depend on each other in a circle.`;
+            return out('cycle', 'warning', 'Circular tables', `${ring}${none}`, '', [open, choose]);
+        }
+        case 'building': {
+            const opening = snap.gate && snap.gate.reason === 'opening';
+            return out('building', 'notice', opening ? 'Opening table' : 'Building filter',
+                opening ? `Waiting for ${T} to open, to score its genes.${none}`
+                    : `Building ${T} to find its genes, then scoring them.${none}`, '',
+                snap.gate && snap.gate.frozen ? [open] : [['score-cancel', cancelLabel], open]);
+        }
+        case 'ask':
+            return out('ask', 'notice', 'Filter not built',
+                `Building ${T} to find its genes will pause the page for a few seconds.${none}`, '',
+                [['score-compute', 'Build filter'], open, choose]);
         case 'failed':
             return out('failed', 'error', 'Score failed',
                 `${t} could not be computed${snap.message ? `: ${trimStop(snap.message)}` : ''}.`, '', [['score-retry', 'Retry'], open]);
@@ -93,7 +115,8 @@ export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
         case 'unset':
             return out('unset', 'notice', 'No signature', 'No signature is chosen.', '', [choose]);
         case 'nogenes':
-            return out('nogenes', 'notice', 'No genes', `${t} has no genes yet.`, '', [open]);
+            return out('nogenes', 'notice', 'No genes',
+                table ? `No row of ${T} passes its filter, so there are no genes to score.` : `${t} has no genes yet.`, '', [open]);
         case 'queued':
             return out('queued', 'notice', 'Score queued', `${t} is waiting for another score to finish.${none}`, '',
                 [['score-cancel', cancelLabel]]);
