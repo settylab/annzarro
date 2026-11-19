@@ -22,7 +22,7 @@ else:
     playwright = pytest.importorskip("playwright.sync_api")
 
 from annzarro.tests.browser.test_gene_score_plots import (  # noqa: E402,F401
-    INIT, N_OBS, RAMP, S, SIG, UMAP_X, UMAP_Y, _cell, _finish, _frame, _new_page, _served, _set_subset, _sig, _slow, _url, served,
+    INIT, N_OBS, RAMP, S, SIG, _save_set, UMAP_X, UMAP_Y, _cell, _finish, _frame, _new_page, _served, _set_subset, _sig, _slow, _url, served,
 )
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
@@ -628,3 +628,21 @@ def test_new_cells_keep_the_table_and_the_column_asks_for_its_own_score(page, se
     _finish(page, 1, [float(i) for i in range(30)])
     _wait_ready(page)
     assert max(float(v) for v in _column(page, 2)) <= 29.0
+
+
+def test_added_panels_that_need_new_ids_keep_a_tables_score_column_and_its_condition_with_their_signature(page, served):
+    sb = {"logic": "AND", "criteria": [FILTERED]}
+    _ready_table(page, served, table=_table(searchBuilderConfig=sb))
+    _save_set(page, "remap-table")
+    page.click("#btn-load-session")
+    page.locator(".session-card[data-session-name='remap-table'] .session-add-closed").first.click()
+    page.wait_for_function("() => PanelManager.getAllPanels().length === 4", timeout=30000)
+    got = page.evaluate("""() => PanelManager.getAllPanels().filter(p => p.getType() === 'cell-table').map(p => {
+        const c = p.getConfig(); return [p.getId(), c.columns.filter(x => x.type === 'gene-score').map(x => x.key), JSON.stringify(c.searchBuilderConfig)]; })""")
+    sigs = page.evaluate("() => PanelManager.getAllPanels().filter(p => p.getType() === 'gene-signature').map(p => p.getId())")
+    assert len(sigs) == 2 and sigs[0] == SIG and sigs[1] != SIG
+    old = [g for g in got if g[0] == TID][0]
+    new = [g for g in got if g[0] != TID][0]
+    assert old[1] == [SIG] and "gene-score_" + SIG + "_zscore_mean" in old[2]
+    assert new[1] == [sigs[1]], "the added table uses the added signature"
+    assert "gene-score_" + sigs[1] + "_zscore_mean" in new[2] and SIG not in new[2], "and its condition names that column"
