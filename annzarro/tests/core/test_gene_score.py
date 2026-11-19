@@ -346,7 +346,7 @@ def test_csr_entries_count_one_scan_of_the_whole_matrix_per_batch(stores, matrix
 
 def test_dense_entries_count_the_chunks_read(stores):
     p = gs.plan(get_reader(stores["zarr", "dense"]), stores["zarr", "dense"], gs.parse_recipe({"genes": KEEP}))
-    assert p.layout == "dense" and p.entries == N_OBS * N_VAR     # chunks span every gene of a row block
+    assert p.layout == "dense" and p.entries == N_OBS * N_VAR     # one batch; chunks span every gene of a row block
 
 
 def test_the_tiers_follow_the_estimated_seconds(stores, monkeypatch):

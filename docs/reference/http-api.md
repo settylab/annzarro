@@ -743,6 +743,9 @@ same; what differs for a restricted user:
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 409 | `session_quota_user`, `session_quota_total` | saving, duplicating or importing a panel set would pass `server.max_sessions_per_user`, `server.max_sessions` or `server.max_sessions_mb`; the body has `limit` and `used`. Delete sets you no longer need |
+| 400 | `bad_recipe`, `bad_clip`, `bad_method`, `bad_seed`, `unsupported_version`, `down_not_available`, `method_not_available` | `POST /data/gene_score`: a recipe the server cannot use ({ref}`http-gene-score`) |
+| 409 | `confirmation_required` | a gene score whose estimate is over 60 s and not over 10 minutes, sent without `confirm: true` |
+| 413 | `too_many_genes`, `score_too_expensive` | a signature of more than 2,000 genes; a gene score estimated over 10 minutes |
 | 413 | `request_too_large` | the request body is over `server.max_request_mb` (64 MB; panel-set saves and imports) |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
 | 431 | (none) | `annzarro start` only: the request line and headers together are over 262,144 bytes (waitress answers, not the app; under gunicorn a header field over `server.limit_request_field_size` is a `400`) |

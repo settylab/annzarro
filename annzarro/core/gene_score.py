@@ -75,9 +75,9 @@ CONFIRM_MAX_S = 600.0
 #: what ``annzarro/tests/server/test_gene_score_bench.py`` measures, so an estimate is rarely low.
 #: ``csr`` counts every stored entry of the matrix once per scan.
 RATES = {
-    "csc": 40e6,
+    "csc": 30e6,
     "csr": 60e6,
-    "dense": 60e6,
+    "dense": 200e6,
 }
 #: Remote stores are read at this fraction of a local store's rate.
 REMOTE_RATE_FACTOR = 0.1
@@ -331,23 +331,25 @@ class _DenseSource(_Source):
             self.threads = 1
         self.itemsize = int(getattr(array.dtype, "itemsize", 4))
 
-    def entries(self, cols):
-        """Matrix elements read: a stored chunk is read whole, so the columns of its blocks count."""
-        if not len(cols):
-            return 0
-        chunks = getattr(self.array, "chunks", None)
-        width = int(chunks[1]) if chunks and len(chunks) == 2 else self.n_var
-        blocks = len({int(c) // width for c in cols})
-        return self.n_obs * min(blocks * width, self.n_var)
-
-    def tasks(self, cols):
+    def _batches(self, cols):
         cols = [int(c) for c in np.sort(np.asarray(cols, dtype=np.int64))]
         size = int(max(1, min(MAX_BATCH_GENES, BATCH_ENTRIES // max(self.n_obs, 1))))
-        out = []
-        for i in range(0, len(cols), size):
-            batch = cols[i:i + size]
-            out.append(_Task(batch, self.n_obs * len(batch), lambda b=batch: self._read(b)))
-        return out
+        return [cols[i:i + size] for i in range(0, len(cols), size)]
+
+    def entries(self, cols):
+        """Matrix elements decoded: every batch decodes whole stored chunks, so the columns of the
+        chunk blocks it touches count, once per batch."""
+        chunks = getattr(self.array, "chunks", None)
+        width = int(chunks[1]) if chunks and len(chunks) == 2 else self.n_var
+        total = 0
+        for batch in self._batches(cols):
+            blocks = len({c // width for c in batch})
+            total += self.n_obs * min(blocks * width, self.n_var)
+        return total
+
+    def tasks(self, cols):
+        return [_Task(batch, self.n_obs * len(batch), lambda b=batch: self._read(b))
+                for batch in self._batches(cols)]
 
     def _read(self, batch):
         block = np.asarray(self._take(batch))
@@ -404,8 +406,16 @@ def _open_zarr(reader, dataset_path: str, input_name: str) -> _OpenSource:
     if shape is None or len(shape) != 2:
         raise _unsupported(label, node.attrs.get("encoding-type") if hasattr(node, "attrs") else None)
 
+    height = int(node.chunks[0]) if getattr(node, "chunks", None) else int(shape[0])
+    n_rows = int(shape[0])
+
     def take(batch):
-        return node[:, batch] if len(batch) > 1 else node[:, batch[0]:batch[0] + 1]
+        # one block of stored rows at a time: zarr would decode every chunk of the columns together
+        out = np.empty((n_rows, len(batch)), dtype=node.dtype)
+        for r0 in range(0, n_rows, max(height, 1)):
+            r1 = min(r0 + height, n_rows)
+            out[r0:r1] = node[r0:r1, batch] if len(batch) > 1 else node[r0:r1, batch[0]:batch[0] + 1]
+        return out
     return _OpenSource(_DenseSource(node, int(shape[0]), int(shape[1]), remote, "zarr", take))
 
 
