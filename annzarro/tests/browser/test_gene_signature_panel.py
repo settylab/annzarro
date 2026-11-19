@@ -268,9 +268,11 @@ def test_focused_and_fixed_genes_are_listed_with_their_source(page, served):
     page.evaluate("async () => { const { DataManager } = await import('/static/js/data-manager.js'); DataManager.setFocusedGene('GAPDH'); }")
     page.click(f"{S} .gsig-addfrom")
     items = page.locator(".gsig-menu:not([hidden]) [role=menuitem]").all_inner_texts()
-    assert "GAPDH · focused" in items, items
+    assert not any("focused" in i for i in items), items          # the focused gene has its own button
+    assert page.inner_text(f"{S} .gsig-focused") == "+ GAPDH (focused)"
     assert any(i.startswith("KLF1 · fixed in") for i in items), items
-    page.click(".gsig-menu:not([hidden]) [role=menuitem]:has-text('GAPDH')")
+    page.keyboard.press("Escape")
+    page.click(f"{S} .gsig-focused")
     until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 1")
     assert _genes(page) == ["GAPDH"]
     assert _message(page) == "Added GAPDH."
@@ -680,10 +682,20 @@ POPOVER_BOX = """() => {
 
 
 def test_add_from_popover_is_fully_visible_and_topmost_beside_a_plot(page, served):
+    page.set_viewport_size({"width": 600, "height": 900})   # a narrow signature pane: its menu is wider than the pane
     _open_signature(page, served, [], with_plot=True)
     page.click(f"{S} .gsig-addfrom")
     box = page.evaluate(POPOVER_BOX)
     assert box and box["w"] > 20 and box["h"] > 10, box
+    # the panels are side by side in a horizontal split, the plot to the right of the signature
+    sig_box, plot_box = page.locator(S).bounding_box(), page.locator(P).bounding_box()
+    assert sig_box["x"] + sig_box["width"] <= plot_box["x"] + 1 and abs(sig_box["y"] - plot_box["y"]) < 3, (sig_box, plot_box)
+    assert page.evaluate("() => !!document.querySelector('.split-container.split-horizontal')")
+    m = page.evaluate("() => { const r = [...document.querySelectorAll('.gsig-menu')].find(e => !e.hidden).getBoundingClientRect(); return r.right; }")
+    assert m > plot_box["x"] + 5, "the popover reaches over the neighbouring plot"
+    shot = os.path.join(os.environ.get("ANNZARRO_SHOT_DIR", "/private/tmp"), "gene-signature-add-from-beside-plot.png")
+    page.screenshot(path=shot)
+    print("SCREENSHOT", shot, "menu right edge", m, "plot left edge", plot_box["x"])
     assert box["inside"] and box["topmost"] and all(box["corners"]) and box["inBody"], box
     # Esc closes it and the focus returns to the button
     page.keyboard.press("Escape")

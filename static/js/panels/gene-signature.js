@@ -452,7 +452,7 @@ const GeneSignaturePanel = (function() {
             const addFrom = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-addfrom',
                 aria: { haspopup: 'menu', expanded: 'false', controls: sid('addfrom-menu') }, on: { click: () => toggleMenu('addfrom') } },
             el('span', { class: 'gsig-long', text: 'Add from ▾' }), el('span', { class: 'gsig-short', text: 'Add ▾' }));
-            const addMenu = el('div', { class: 'gs-menu gsig-menu', id: sid('addfrom-menu'), role: 'menu', hidden: true,
+            const addMenu = el('div', { class: 'gs-menu gsig-menu', id: sid('addfrom-menu'), role: 'menu', hidden: true, tabindex: '-1',
                 on: { keydown: (e) => onMenuKey(e) } });
             const addMenuHome = el('span', { class: 'gsig-menu-wrap' }, addFrom, addMenu);
             const focusedBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary gsig-focused', hidden: true,
@@ -756,7 +756,8 @@ const GeneSignaturePanel = (function() {
             _openMenu = which;
             placeMenu();
             const first = menu.querySelector('button:not(:disabled)');
-            if (first) first.focus({ preventScroll: true });
+            // an empty menu takes the focus itself, so Esc still closes it
+            (first || menu).focus({ preventScroll: true });
         }
 
         function closeMenus() {
@@ -787,15 +788,15 @@ const GeneSignaturePanel = (function() {
             if (e.target && e.target.tagName === 'SELECT') setTimeout(paintUsedBy, 0);
         }
 
-        /** What "Add from" offers: the focused gene, genes fixed in plots, every gene table, and what later steps add. */
+        /** What "Add from" offers: genes fixed in plots (the focused gene has its own button), every gene table, and what later steps add. */
         function addFromItems() {
             const items = [];
             const inData = (g) => _nameSet.has(g);
             const seen = new Set();
             for (const f of getFixedGenes()) {
-                if (!f.gene || seen.has(f.gene) || !inData(f.gene)) continue;
+                if (f.source === 'focused' || !f.gene || seen.has(f.gene) || !inData(f.gene)) continue;
                 seen.add(f.gene);
-                const where = f.source === 'focused' ? 'focused' : `fixed in ${f.panelTitle}`;
+                const where = `fixed in ${f.panelTitle}`;
                 items.push({ id: `gene:${f.gene}`, label: `${f.gene} · ${where}`, run: () => addGenes([f.gene]) });
             }
             const active = new Set(PanelManager.getActivePanels());
