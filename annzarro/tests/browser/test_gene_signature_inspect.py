@@ -132,7 +132,7 @@ def test_opening_computes_and_the_figures_are_the_servers(page, served):
     # the summary beside the button and the figures under the histogram describe the score held
     summary = page.inner_text(f"{TOGGLE} .gsig-inspect__summary")
     assert re.fullmatch(r"Mean -?[\d.e-]+, SD [\d.e-]+, 60 cells", summary), summary
-    assert page.inner_text(f"{I} .gsig-inspect__heading") == "Score distribution, 60 cells shown"
+    assert page.inner_text(f"{I} .gsig-inspect__heading") == "z-score mean · X: score distribution, 60 cells shown"
     assert sum(_bins(page)) == N_OBS
     assert "No cell is missing a score." == page.inner_text(f"{I} .gsig-inspect__missing")
     assert "Z-score mean of X, clipped at ±10." == page.inner_text(f"{I} .gsig-inspect__definition")
@@ -159,10 +159,10 @@ def test_each_aggregation_is_offered_and_a_second_one_is_a_second_score_only_onc
     _open_panel(page, served)
     _inspect(page)
     _wait_table(page)
-    labels = page.eval_on_selector_all(f"{I} .gsig-inspect__agg [role=radio]", "els => els.map(e => e.textContent + '|' + e.getAttribute('aria-checked'))")
-    assert labels == ["Z-score mean|true", "Mean|false", "Sum|false"]
+    labels = page.eval_on_selector_all(f"{I} select.gsig-inspect__select option", "els => els.map(e => e.textContent + '|' + e.selected)")
+    assert labels == ["z-score mean · X|true", "mean · X|false", "sum · X|false"]
     assert len(_calls(page, "compute")) == 1
-    page.click(f"{I} .gsig-inspect__agg [data-method=mean]")
+    page.select_option(f"{I} select.gsig-inspect__select", "mean@X")
     until(page, "(I) => /Mean of X/.test((document.querySelector(I + ' .gsig-inspect__definition') || {}).textContent || '')", I)
     page.wait_for_function("(I) => !!document.querySelector(I + ' .gsig-inspect__genes tbody tr')", arg=I)
     until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute' && c.method === 'mean').length === 1")
@@ -170,7 +170,7 @@ def test_each_aggregation_is_offered_and_a_second_one_is_a_second_score_only_onc
     assert _rows(page)["GENE0001"][3] == "n/a", "a plain mean clips nothing"
     # back to the first: held, so no request
     n = len(_calls(page))
-    page.click(f"{I} .gsig-inspect__agg [data-method=zscore_mean]")
+    page.select_option(f"{I} select.gsig-inspect__select", "zscore_mean@X")
     until(page, "(I) => /Z-score mean/.test(document.querySelector(I + ' .gsig-inspect__definition').textContent)", I)
     page.wait_for_timeout(400)
     assert len(_calls(page)) == n
@@ -182,15 +182,14 @@ def test_the_aggregation_a_plot_shows_is_the_one_inspected_first(page, served):
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     until(page, "() => window.__scoreCalls.some(c => c.kind === 'compute')")
     _inspect(page)
-    assert page.get_attribute(f"{I} [data-method=mean]", "aria-checked") == "true"
+    assert page.input_value(f"{I} select.gsig-inspect__select") == "mean@X"
 
 
 def test_with_no_plot_using_the_signature_inspect_starts_on_the_first_offered_option(page, served):
     _open(page, served, plots=(), sig=_sig(offered=["sum", "mean"]), sig_open=True, wait=False)
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     _inspect(page)
-    assert page.get_attribute(f"{I} [data-method=mean]", "aria-checked") == "true", "mean comes before sum in the menu"
-    assert page.get_attribute(f"{I} [data-method=sum]", "aria-checked") == "false"
+    assert page.input_value(f"{I} select.gsig-inspect__select") == "mean@X", "mean comes before sum in the menu"
 
 
 # --------------------------------------------------------------------------- 4
@@ -244,7 +243,7 @@ def test_cells_with_no_score_are_counted_and_said(page, served):
     assert page.inner_text(f"{I} .gsig-inspect__missing") == "3 cells have no score (every gene is missing there) and are not in the histogram."
     assert "Missing 3" in page.inner_text(f"{I} .gsig-inspect__figures")
     assert sum(_bins(page)) == N_OBS - 3
-    assert page.inner_text(f"{I} .gsig-inspect__heading") == "Score distribution, 60 cells shown"
+    assert page.inner_text(f"{I} .gsig-inspect__heading") == "z-score mean · X: score distribution, 60 cells shown"
 
 
 # --------------------------------------------------------------------------- 6
@@ -330,7 +329,7 @@ def test_export_of_the_gene_figures_and_of_the_score_of_each_cell(page, served):
     header = _server_header(page, genes)
 
     name, text = _download(page, "genes")
-    assert name == "T_cell_score_zscore_mean_genes.csv"
+    assert name == "T_cell_score_zscore_mean_X_genes.csv"
     rows = list(csv.reader(io.StringIO(text)))
     assert rows[0] == ["gene", "status", "detected_fraction", "mean", "sd", "clipped_fraction"]
     assert [r[0] for r in rows[1:]] == [g["name"] for g in header["genes"]]
@@ -338,7 +337,7 @@ def test_export_of_the_gene_figures_and_of_the_score_of_each_cell(page, served):
         assert float(r[2]) == pytest.approx(g["detected"]) and float(r[3]) == pytest.approx(g["mean"]) and float(r[4]) == pytest.approx(g["sd"])
 
     name, text = _download(page, "scores")
-    assert name == "T_cell_score_zscore_mean_scores.csv"
+    assert name == "T_cell_score_zscore_mean_X_scores.csv"
     rows = list(csv.reader(io.StringIO(text)))
     assert rows[0] == ["cell", "score"]
     assert [r[0] for r in rows[1:]] == [f"c{i}" for i in range(N_OBS)]
@@ -465,7 +464,7 @@ def test_an_edit_that_is_held_keeps_the_previous_score_and_update_applies_it(pag
 
 # --------------------------------------------------------------------------- 9, 10, 11
 
-def test_keyboard_opens_and_closes_inspect_and_the_aggregation_is_a_radio_group(page, served):
+def test_keyboard_opens_and_closes_inspect_and_the_option_is_one_select(page, served):
     _open_panel(page, served)
     page.focus(TOGGLE)
     page.keyboard.press("Enter")
@@ -473,11 +472,9 @@ def test_keyboard_opens_and_closes_inspect_and_the_aggregation_is_a_radio_group(
     assert page.get_attribute(TOGGLE, "aria-controls") == page.get_attribute(f"{I} .gsig-inspect__body", "id")
     assert page.get_attribute(f"{I} .gsig-inspect__body", "role") == "region"
     _wait_table(page)
-    assert page.get_attribute(f"{I} .gsig-inspect__agg", "role") == "radiogroup"
-    page.focus(f"{I} [data-method=zscore_mean]")
-    page.keyboard.press("ArrowRight")
-    until(page, "(I) => document.querySelector(I + ' [data-method=mean]').getAttribute('aria-checked') === 'true'", I)
-    assert page.evaluate("() => document.activeElement.dataset.method") == "mean"
+    assert page.get_attribute(f"{I} select.gsig-inspect__select", "aria-label") == "Score inspected: method and layer"
+    page.select_option(f"{I} select.gsig-inspect__select", "mean@X")
+    until(page, "(I) => /Mean of X/.test(document.querySelector(I + ' .gsig-inspect__definition').textContent)", I)
     # tab order: gene buttons in the table are reachable and named
     names = page.eval_on_selector_all(f"{I} .gsig-inspect__gene", "els => els.map(e => e.textContent)")
     assert set(names) == {"GENE0001", "GENE0002"}
@@ -538,3 +535,34 @@ def test_narrow_panels_keep_gene_and_detected_and_below_280_replace_the_chart_by
     until(page, "(S) => document.querySelector(S + ' .gsig-panel').clientWidth <= 270", S)
     assert not page.is_visible(f"{I} .gsig-inspect__chartwrap")
     assert page.is_visible(f"{I} .gsig-inspect__figures"), "the figures stay"
+
+
+def test_inspect_chooses_among_method_and_layer_labels_both_and_requests_a_new_layer_once(page, served):
+    _open_panel(page, served, sig=_sig(layers=["X", "counts"]))
+    _inspect(page)
+    _wait_table(page)
+    assert "z-score mean · X: score distribution" in page.inner_text(f"{I} .gsig-inspect__heading")
+    assert "Per-gene figures for z-score mean · X" in page.inner_text(f"{I} .gsig-inspect__caption")
+    n = len(_calls(page, "compute"))
+    page.select_option(f"{I} select.gsig-inspect__select", "zscore_mean@counts")
+    until(page, f"(n) => window.__scoreCalls.filter(c => c.kind === 'compute').length === n + 1", n)
+    page.wait_for_function("(I) => document.querySelector(I + ' .gsig-inspect__heading').textContent.includes('z-score mean · counts')", arg=I)
+    assert "Per-gene figures for z-score mean · counts" in page.inner_text(f"{I} .gsig-inspect__caption")
+    page.wait_for_timeout(500)
+    assert len(_calls(page, "compute")) == n + 1, "once"
+    assert page.evaluate("() => window.PanelManager.getPanel('gene-signature-S')._inspect()._debug().layer") == "counts"
+    # back to X: held, no request
+    page.select_option(f"{I} select.gsig-inspect__select", "zscore_mean@X")
+    page.wait_for_timeout(500)
+    assert len(_calls(page, "compute")) == n + 1
+
+
+def test_the_layer_a_plot_shows_is_the_one_inspected_first(page, served):
+    cell = base._cell("cell-plot-C", color={"type": "gene-score", "key": SIG, "label": "T cell score", "column": "mean", "layer": "counts"})
+    _open(page, served, plots=(("cell-plot-C", cell),), sig=_sig(layers=["X", "counts"]), sig_open=True, wait=False)
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    until(page, "() => window.__scoreCalls.some(c => c.kind === 'compute')")
+    _inspect(page)
+    assert page.input_value(f"{I} select.gsig-inspect__select") == "mean@counts"
+    page.wait_for_timeout(500)
+    assert len(_calls(page, "compute")) == 1, "the plot's score is the one inspected"

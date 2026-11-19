@@ -60,7 +60,7 @@ export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, fo
         onKinds: () => { signatureRenamed(id); },
         getInUse: () => aggregationsInUse(id), getLayersInUse: () => layersInUse(id), warningFor
     });
-    const inspect = withInspect ? createInspect({ id, D, getTitle, getRecipe: getOptions, focusGene }) : null;
+    const inspect = withInspect ? createInspect({ id, D, getTitle, getRecipe: getOptions, getOptions: () => offeredOptions(getOptions(), null, scoring.getKinds()), focusGene }) : null;
 
     return {
         scoring,

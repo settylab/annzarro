@@ -23,14 +23,11 @@ import { DataManager } from '../../data-manager.js';
 import { scores } from '../../utils/score-source.js';
 import { describeScore } from '../../utils/score-notices.js';
 import { DEFAULT_METHOD, definitionText, fmtCount } from '../../utils/gene-signature.js';
-import { cleanOffered, methodLabel } from '../../utils/signature-options.js';
+import { methodShort, offeredOptions } from '../../utils/signature-options.js';
 import {
     distribution, binText, missingText, geneRows, flagSummary, sortGeneRows, GENE_COLUMNS, ROWS_FIRST,
     fmtNum, fmtPercent, geneCsv, scoreCsvParts, fileName
 } from '../../utils/score-inspect.js';
-
-/** What each aggregation is called here. */
-const METHOD_LABELS = {};
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MARGIN = { left: 38, right: 6, top: 6, bottom: 20 };
@@ -73,13 +70,16 @@ function barPath(x, y, w, h) {
  * @param {{el: Function, clear: Function}} opts.D - the panel's DOM builder
  * @param {() => string} opts.getTitle
  * @param {() => Object} opts.getRecipe
+ * @param {() => Array<{method: string, layer: string, label: string}>} [opts.getOptions] - the combined list plots choose
+ *   from (method and layer, impossible combinations left out); default: built from the recipe
  * @param {(gene: string) => void} opts.focusGene
  * @returns {{element: HTMLElement, destroy: () => void, isOpen: () => boolean, setOpen: (open: boolean) => void}}
  */
-export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
+export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, focusGene }) {
     const sid = (x) => `gsig-inspect-${x}-${id}`;
     let _open = false;
-    let _method = null;                    // the aggregation inspected; chosen when first opened
+    let _method = null;                    // the option inspected (method and layer); chosen when first opened
+    let _layer = null;
     let _handle = null;
     let _snap = null;
     let _sort = { key: 'name', dir: 'asc' };
@@ -95,8 +95,9 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
     D.el('span', { class: 'gsig-inspect__caret', aria: { hidden: 'true' }, text: '▸' }),
     D.el('span', { class: 'gsig-inspect__name', text: 'Inspect' }),
     D.el('span', { class: 'gsig-inspect__summary', text: 'Distribution and figures of each gene' }));
-    const aggregation = D.el('div', { class: 'gsig-inspect__agg', role: 'radiogroup', aria: { label: 'Aggregation inspected' },
-        on: { keydown: onAggKey } });
+    const picker = D.el('select', { class: 'form-select form-select-sm gsig-inspect__select', id: sid('option'),
+        aria: { label: 'Score inspected: method and layer' }, on: { change: () => chooseOption(picker.value) } });
+    const aggregation = D.el('div', { class: 'gsig-inspect__agg' }, picker);
     const definition = D.el('div', { class: 'gsig-inspect__definition' });
     const state = D.el('div', { class: 'gsig-inspect__state', role: 'status', aria: { live: 'polite' } });
     const content = D.el('div', { class: 'gsig-inspect__content', hidden: true });
@@ -129,7 +130,7 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
         element.classList.toggle('is-open', open);
         body.hidden = !open;
         if (open) {
-            if (!_method) _method = firstMethod();
+            if (!_method) { const first = firstOption(); _method = first.method; _layer = first.layer; }
             watch();
             observeSize();
         } else {
@@ -139,29 +140,38 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
         }
     }
 
-    /**
-     * Where inspecting starts: the option a consumer of this signature already uses, preferring one that is already
-     * computed; the first offered option only when nothing uses the signature.
-     */
-    function firstMethod() {
-        const { sources } = scores();
-        const used = sources.handlesOf(id).filter(h => h.role !== 'inspect' && h.sub);
-        const ready = used.find(h => { try { return h.read().state === 'ready'; } catch { return false; } });
-        return (ready || used[0] || {}).sub || methodsHere()[0] || DEFAULT_METHOD;
+    /** The options to inspect: the combined list plots choose from, and the one inspected if it was switched off since. */
+    function optionsHere() {
+        const recipe = getRecipe();
+        const list = (getOptions ? getOptions() : offeredOptions(recipe)).map(o => ({ method: o.method, layer: o.layer, label: o.fullLabel || `${methodShort(o.method)} · ${o.layer}` }));
+        if (_method && !list.some(o => o.method === _method && o.layer === _layer)) {
+            list.push({ method: _method, layer: _layer, label: `${methodShort(_method)} · ${_layer} (no longer offered)` });
+        }
+        return list;
     }
 
-    /** The aggregations to inspect: what the signature offers, and the one being inspected if it was switched off since. */
-    function methodsHere() {
-        const recipe = getRecipe();
-        const list = cleanOffered(recipe.offered, recipe.method);
-        return _method && !list.includes(_method) ? [...list, _method] : list;
+    const optionLabel = () => `${methodShort(_method)} · ${_layer}`;
+
+    /**
+     * Where inspecting starts: the option a consumer of this source already uses, preferring one that is already
+     * computed; the first entry of the list only when nothing uses it.
+     */
+    function firstOption() {
+        const { sources } = scores();
+        const own = getRecipe().input;
+        const used = sources.handlesOf(id).filter(h => h.role !== 'inspect' && h.sub);
+        const ready = used.find(h => { try { return h.read().state === 'ready'; } catch { return false; } });
+        const pick = ready || used[0];
+        if (pick) return { method: pick.sub, layer: pick.layer || own };
+        const first = optionsHere()[0];
+        return first ? { method: first.method, layer: first.layer } : { method: DEFAULT_METHOD, layer: own };
     }
 
     function watch() {
         unwatch();
         const { sources } = scores();
         _handle = sources.watch(id, {
-            host: element, role: 'inspect', sub: _method,
+            host: element, role: 'inspect', sub: _method, layer: _layer,
             visible: () => _open && element.isConnected,
             onChange: (snap) => { _snap = snap; render(); }
         });
@@ -177,24 +187,14 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
         _paintedHeader = null;
     }
 
-    function chooseMethod(method) {
-        if (method === _method) return;
+    function chooseOption(value) {
+        const [method, layer] = value.split('@');
+        if (method === _method && layer === _layer) return;
         _method = method;
+        _layer = layer;
         _drawnFor = null;
         _active = -1;
         if (_open) watch();
-    }
-
-    function onAggKey(e) {
-        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-        e.preventDefault();
-        const methods = methodsHere();
-        const i = methods.indexOf(_method);
-        const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
-        const next = methods[(i + step + methods.length) % methods.length];
-        chooseMethod(next);
-        const btn = aggregation.querySelector(`[data-method="${next}"]`);
-        if (btn) btn.focus();
     }
 
     // ---------------------------------------------------------------------
@@ -203,7 +203,7 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
     function render() {
         if (!_open) return;
         paintAggregation();
-        const recipe = { ...getRecipe(), method: _method };
+        const recipe = { ...getRecipe(), method: _method, input: _layer };
         definition.textContent = `${definitionText(recipe)}.`;
         const snap = _snap;
         const hasValues = !!(snap && snap.values && snap.header);
@@ -222,7 +222,7 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
             _active = -1;
         }
         const header = snap.header;
-        heading.textContent = `Score distribution, ${fmtCount(values.length)} cell${values.length === 1 ? '' : 's'} shown`
+        heading.textContent = `${optionLabel()}: score distribution, ${fmtCount(values.length)} cell${values.length === 1 ? '' : 's'} shown`
             + (header.n_cells && header.n_cells !== values.length ? ` of ${fmtCount(header.n_cells)}` : '');
         drawChart();
         paintFigures();
@@ -232,13 +232,12 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
     }
 
     function paintAggregation() {
-        D.clear(aggregation);
-        for (const method of methodsHere()) {
-            const on = method === _method;
-            aggregation.append(D.el('button', { type: 'button', role: 'radio', class: `gsig-seg${on ? ' active' : ''}`,
-                data: { method }, aria: { checked: String(on) }, tabindex: on ? '0' : '-1',
-                on: { click: () => chooseMethod(method) } }, METHOD_LABELS[method] || methodLabel(method)));
+        D.clear(picker);
+        for (const o of optionsHere()) {
+            picker.append(D.el('option', { value: `${o.method}@${o.layer}`, text: o.label,
+                selected: o.method === _method && o.layer === _layer }));
         }
+        picker.value = `${_method}@${_layer}`;
     }
 
     /** The one line beside the closed or open toggle: the figures when there are some. */
@@ -447,7 +446,7 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
         const snap = _snap;
         if (!snap || !snap.header) return;
         const genes = snap.header.genes || [];
-        download(fileName(getTitle(), `${_method}_genes`), [geneCsv(genes)]);
+        download(fileName(getTitle(), `${_method}_${_layer}_genes`), [geneCsv(genes)]);
         say(`Exported ${fmtCount(genes.length)} gene${genes.length === 1 ? '' : 's'}.`);
     }
 
@@ -463,12 +462,13 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
         }
         if (_snap !== snap && (!_snap || _snap.values !== values)) throw new Error('the score changed while the names loaded. Try again.');
         const parts = scoreCsvParts(names, values, { header: 'score' });
-        download(fileName(getTitle(), `${_method}_scores`), parts);
+        download(fileName(getTitle(), `${_method}_${_layer}_scores`), parts);
         say(`Exported the score of ${fmtCount(values.length)} cell${values.length === 1 ? '' : 's'}.`);
     }
 
     function paintGenes(header) {
         const rows = geneRows(header.genes, _method);
+        const caption = D.el('div', { class: 'gsig-inspect__caption', text: `Per-gene figures for ${optionLabel()}` });
         flags.textContent = flagSummary(rows);
         flags.hidden = !flags.textContent;
         D.clear(tableHost);
@@ -493,7 +493,7 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
                 D.el('td', { class: 'gsig-col-mean gsig-col-extra', text: fmtNum(r.mean) }),
                 D.el('td', { class: 'gsig-col-sd gsig-col-extra', text: fmtNum(r.sd) }),
                 D.el('td', { class: 'gsig-col-clipped gsig-col-extra', text: r.clipped === null ? (clippedOff ? 'n/a' : '') : fmtPercent(r.clipped) })))));
-        tableHost.append(table);
+        tableHost.append(caption, table);
         if (!_showAll && sorted.length > shown.length) {
             tableHost.append(D.el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { inspectAction: 'show-all' },
                 on: { click: () => { _showAll = true; paintGenes(header); } } }, `Show all ${fmtCount(sorted.length)} genes`));
@@ -517,6 +517,6 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
 
     return { element, destroy, isOpen: () => _open, setOpen,
         /** For tests: what the section holds. */
-        _debug: () => ({ open: _open, method: _method, state: _snap && _snap.state, key: _snap && _snap.key, dist: _dist,
+        _debug: () => ({ open: _open, method: _method, layer: _layer, state: _snap && _snap.state, key: _snap && _snap.key, dist: _dist,
             sort: _sort, active: _active }) };
 }
