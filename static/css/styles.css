@@ -4733,3 +4733,41 @@ mark.dsi-mark { background: rgba(255, 200, 0, 0.5); color: inherit; padding: 0 0
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* ── Loading from the first frame (utils/load-progress.js) ───────────────── */
+.load-progress {
+    margin-left: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--az-text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.load-progress::before {
+    content: "";
+    display: inline-block;
+    width: 0.8em;
+    height: 0.8em;
+    margin-right: 0.4em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    vertical-align: -0.1em;
+    animation: spinner 0.75s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .load-progress::before { animation-duration: 3s; } }
+/* the skeleton stands where the panels will be; the container's other children wait behind it */
+body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !important; }
+.az-skeleton { display: flex; flex-direction: column; gap: 6px; width: 100%; min-height: 60vh; }
+.az-skel-row { display: flex; flex: 1 1 0; min-height: 220px; }
+.az-skel-split { display: flex; gap: 6px; min-width: 0; min-height: 0; }
+.az-skel-row > .az-skel-tile, .az-skel-row > .az-skel-split { flex: 1 1 0; }
+.az-skel-tile {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem;
+    min-width: 0; padding: 1rem; text-align: center;
+    border: 1px dashed var(--az-border, rgba(127, 127, 127, 0.5)); border-radius: 6px;
+    background: rgba(var(--az-surface-rgb), 0.6);
+}
+.az-skel-name { font-weight: 600; color: var(--az-text-1, inherit); }
+.az-skel-status { font-size: 0.85rem; color: var(--az-text-2); min-height: 1.2em; }

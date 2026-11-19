@@ -38,6 +38,17 @@ import {
   takeTurn, bindTurn, releaseTurn, noteOutOfMemory, bindingLabel, otherPlotCount
 } from '../../utils/memory-guard-ui.js';
 
+const escapeHtmlText = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+/** What each loading overlay says: the step the panel is on (a status line per panel). */
+const OPERATION_TEXT = {
+  'axis-data': 'Reading coordinates…',
+  'names': 'Reading cell names…',
+  'full-plot': 'Drawing…',
+  'recolour': 'Recolouring…',
+  'refresh': 'Refreshing…',
+  'table-data': 'Reading table…'
+};
 // the loads of a panel that the Cancel button can stop (utils/load-scope.js)
 const CANCELLABLE = new Set(['full-plot', 'axis-data', 'recolour', 'table-data']);
 
@@ -117,8 +128,9 @@ class LoadingIndicator {
       overlay.dataset.containerId = containerId; // Store containerId for fallback cleanup
       // Cancel appears after a moment (css), so a quick load does not flash it
       const cancellable = CANCELLABLE.has(operation);
-      overlay.innerHTML = '<div class="spinner"></div> Loading axis data...' + (cancellable
+      overlay.innerHTML = '<div class="spinner"></div> ' + escapeHtmlText(OPERATION_TEXT[operation] || 'Loading…') + (cancellable
         ? '<button type="button" class="btn btn-sm btn-outline-secondary load-cancel" title="Stop loading and keep what is shown">Cancel</button>' : '');
+      overlay.setAttribute('role', 'status');
       if (cancellable) {
         overlay.onclick = (e) => {
           if (e.target.closest('.load-cancel')) cancelLoads(plotContainer, true);

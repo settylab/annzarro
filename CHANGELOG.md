@@ -8,7 +8,13 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- Opening a share link or loading a panel set now says what is loading from the first moment. Each panel of the view appears at once as a named tile ("Cell plot · UMAP · coloured by cell_type") with a status line, and the dataset bar shows one line such as "Opening link: pbmc.zarr, 4 panels (2 ready)" that goes away when everything is drawn. Before, the page showed the generic welcome tile until the dataset had opened, which on a slow disk could be many seconds. The line is announced politely to screen readers, and a panel is marked busy until it is drawn.
+- The Load Panel Set dialog now closes as soon as you press Load, so the page, the header and the dataset browser stay usable while the set loads; the load is shown in the page. A refusal after that is a notice instead of a line in the dialog.
+- While you switch dataset, the panels that are open are dimmed with a "Switching to …" note and stay usable; the loading box on a panel names the step ("Reading coordinates…", "Drawing…", "Recolouring…") instead of always saying "Loading axis data…".
+
 ### Fixed
+- Opening another dataset while a link or panel set was still opening no longer builds that link's panels on the dataset you just chose. Your choice wins and the other load stops.
 - A large plot (more cells than the large-plot limit) with a flipped axis no longer loses its zoom when you change the colour map or any other setting, or when you open a link made from the zoomed view: it keeps the view you chose, as the regular plot does. Double-clicking still returns to the fitted view.
 - Turning the legend off in a legend of two or more columns hides every column, not only the first, together with the title above them and the room kept for them, so the plot takes the width back; turning it on again brings the same columns, gap, title and position back. A saved panel or link with the legend off and several columns opens with no legend, and a large plot (more cells than the large-plot limit) now honours Show Legend off, colour bar included, which it ignored.
 

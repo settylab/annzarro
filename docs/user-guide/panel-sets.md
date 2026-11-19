@@ -39,6 +39,10 @@ is reported in the dialog, on the card it concerns.
 
 Click **Load Panel Set**. The dialog lists every panel set on the server, newest first.
 
+Pressing **Load** closes the dialog at once and the set opens in the page: its panels show as named
+tiles with a status line, and the dataset bar says what is loading, so nothing stays covered. A
+refusal (for example, no dataset to load onto) appears as a notice.
+
 ```{figure} ../_static/screens/user-guide/panelsets-load.png
 :class: screenshot
 :alt: The Load Panel Set dialog with numbered marks: the search field (1), a card (2), its badge "available here" (3), the blue Load button (4), two small icon buttons (5), the question mark in the header (6) and Upload file (7).

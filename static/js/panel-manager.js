@@ -18,6 +18,7 @@ import { createPlaceholderPanel } from './utils/placeholder-panel.js';
 import { Policy } from './policy.js';
 import * as LayoutMotion from './utils/layout-motion.js';
 import { viewOf } from './utils/url-history.js';
+import { dropSkeleton, panelReady } from './utils/load-progress.js';
 import { orientRange, isFlipped, autorangeValue } from './panels/plot-utilities/plot-make-helper.js';
 
 const PanelManager = (function() {
@@ -273,10 +274,12 @@ const PanelManager = (function() {
         _setupTileEventHandlers(tileElement, id);
         
         // Initialize the panel; a history step waits on initDone
+        // aria-busy from now until it is drawn (or failed): a screen reader hears "busy", then the panel
+        tileElement.setAttribute('aria-busy', 'true');
         const initial = panel.init();
         panel.initDone = Promise.resolve(initial).then(() => {}, error => {
             console.error(`Error initializing panel ${id}:`, error);
-        });
+        }).then(() => { tileElement.removeAttribute('aria-busy'); panelReady(id); });
         
         // Apply control panel visibility if specified
         if (Object.prototype.hasOwnProperty.call(config, 'controlsVisible')) {
@@ -777,6 +780,9 @@ const PanelManager = (function() {
             }
         }
         
+        // the named skeleton of the view gives way to the real tiles, built next
+        dropSkeleton();
+
         // Clear the active panels set - we'll repopulate it
         _activePanels.clear();
         
@@ -951,7 +957,9 @@ const PanelManager = (function() {
                 const savedVisible = layout.controlState && layout.controlState[id] !== undefined
                     ? layout.controlState[id]
                     : panelConfig.controlsVisible;
+                tileElement.setAttribute('aria-busy', 'true');
                 promise = new Promise(resolve => {
+                    const settle = () => { tileElement.removeAttribute('aria-busy'); panelReady(id); resolve(); };
                     Promise.resolve().then(() => {
                         try {
                             const pending = panel.init();
@@ -960,9 +968,9 @@ const PanelManager = (function() {
                         } catch (error) {
                             console.error(`Error initializing restored panel ${id}:`, error);
                         }
-                    }).then(resolve, error => {
+                    }).then(settle, error => {
                         console.error(`Error initializing restored panel ${id}:`, error);
-                        resolve();
+                        settle();
                     });
                 });
                 
