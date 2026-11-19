@@ -443,3 +443,14 @@ def test_a_short_link_has_no_note(page, served):
     _wait_coloured(page)
     _share(page)
     assert page.is_hidden("#share-link-note")
+
+
+def test_a_gene_table_source_with_no_layer_is_pinned_like_a_signature(page, served):
+    _open_table_link(page, served)
+    _wait_coloured(page)
+    cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color")
+    assert cfg["layer"] == "X", "resolved once, to the table's input, when the plot read it"
+    # the table's input changes: consumers that carried no layer were pinned before it
+    page.evaluate("() => window.PanelManager.getPanel('gene-table-G').setScoreOptions({ input: 'counts', layers: ['counts'] })")
+    page.wait_for_timeout(800)
+    assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer") == "X"

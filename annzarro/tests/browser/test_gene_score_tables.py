@@ -385,6 +385,12 @@ def test_export_writes_the_score_column_when_it_is_ready(page, served, tmp_path)
     assert float(row["c3"][2]) == pytest.approx(1.0, abs=1e-6)
     assert row["c3"][2] == "1", "float32 noise is not written: " + row["c3"][2]
     assert float(row["c10"][2]) == pytest.approx(10 / 3, abs=1e-5)
+    # the export is the DATA, not the display (what test_csv_export_uses_data_not_display protects): no markup in any
+    # cell, every value a number, and not rounded to the 4 decimals the table shows
+    assert "<" not in path.read_text() and "&lt;" not in path.read_text(), "no display HTML in the file"
+    for cells in row.values():
+        assert all(float(v) == float(v) for v in cells[1:]), cells
+    assert len(row["c10"][2].split(".")[1]) > 4, "full precision, as the data has it: " + row["c10"][2]
 
 
 # ------------------------------------------------------------ the chain: plot <- table <- score
@@ -537,7 +543,7 @@ def test_a_link_keeps_the_column_reference_and_no_value(page, served):
     text = json.dumps(view)
     cfg = view["layout"]["panelConfigs"][TID]
     assert [(c["type"], c["key"], c["column"]) for c in cfg["columns"]] == [("obs", "score", ""), ("gene-score", SIG, "zscore_mean")]
-    assert cfg["searchBuilderConfig"]["criteria"][0]["origData"] == "gene-score_" + SIG + "_zscore_mean"
+    assert cfg["searchBuilderConfig"]["criteria"][0]["origData"] == "gene-score_" + SIG + "_zscore_mean__of_X", "migrated with its column"
     assert "Float32" not in text and '"values"' not in text
     assert "currentEntries" not in text and "closedSelection" not in text
     assert len(text) < 5000, "sixty scores would be hundreds of digits more"
