@@ -25,7 +25,7 @@ import { registerSource, subKeyOf } from './source-registry.js';
 import { METHODS, DEFAULT_METHOD } from './gene-signature.js';
 
 /** What each aggregation is called where a consumer picks it (level 3). */
-const SUB_LABELS = { zscore_mean: 'z-score mean', mean: 'mean' };
+const SUB_LABELS = { zscore_mean: 'z-score mean', mean: 'mean', control_adjusted: 'control-adjusted' };
 
 /** The value that is not a signature: "New signature..." in the key list. */
 export const NEW_SIGNATURE = '__new_signature__';
@@ -102,7 +102,7 @@ export function scoreTitle(setting) {
 /** The name a consumer shows for a score: the signature's title, and the aggregation when it is not the default. */
 export function scoreLabel(setting) {
     const sub = subKeyOf(setting);
-    const title = scoreTitle(setting).replace(/ · (z-score mean|mean)$/, '');
+    const title = scoreTitle(setting).replace(/ · (z-score mean|mean|control-adjusted)$/, '');
     return !sub || sub === DEFAULT_METHOD ? title : `${title} · ${SUB_LABELS[sub] || sub}`;
 }
 
@@ -530,7 +530,7 @@ registerSource({
     axes: ['x', 'y', 'z', 'color', 'hover'],
     defaultSub: DEFAULT_METHOD,
     entities: () => signatureList(),
-    /** The aggregations the server computes now, z-score mean first; later methods are new entries here. */
+    /** The aggregations the server computes, z-score mean first; a new method is a new entry in METHODS. */
     subKeys: () => METHODS.map(value => ({ value, label: SUB_LABELS[value] || value })),
     load: (setting, opts) => loadScoreSeries(setting, opts)
 });

@@ -46,7 +46,7 @@ def make_matrix(seed=3):
 def _write_matrix(group, name, x, layout, chunks=64):
     """``x`` (dense) stored under ``group[name]`` as ``layout``."""
     if layout == "dense":
-        arr = zarr_compat.write_array(group, name, x, chunks=(chunks, N_VAR))
+        arr = zarr_compat.write_array(group, name, x, chunks=(chunks, x.shape[1]))
         arr.attrs["encoding-type"] = "array"
         arr.attrs["encoding-version"] = "0.2.0"
         return

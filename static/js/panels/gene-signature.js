@@ -36,12 +36,19 @@ import { getFixedGenes } from './table-utilities/panel-tracker.js';
 import { signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
+import { createScoringSection } from './gene-signature-scoring.js';
+import { createKindClient } from '../utils/matrix-kind-client.js';
+import { layerKeys } from '../utils/structure-keys.js';
+import { Config } from '../config.js';
 import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
     GENE_LIMIT, normalizeRecipe, recipeHash, definitionText, planAdd, limitMessage, searchNames, enterTarget,
     UndoStack, fmtCount, inDatasetNames, compareNames, serverRecipe
 } from '../utils/gene-signature.js';
+
+/** What the inputs look like, asked once per dataset and input for the whole page. */
+const KIND_CLIENT = createKindClient({ url: Config.API.MATRIX_KIND });
 
 /** Search runs this long after the last key, so a long list is not searched on every key. */
 const SEARCH_DELAY_MS = 90;
@@ -152,6 +159,7 @@ const GeneSignaturePanel = (function() {
         let _dom = null;
         let D = null;
         let _grid = null;
+        let _scoring = null;              // the Scoring section: the shared settings of every score
         const _undo = new UndoStack();
         const _idMaps = new Map();        // dataset + column -> Promise of id -> gene name, read only when a paste needs it
         let _flow = null;                 // an inline flow (paste and upload) replacing the list: {node, opener, onClose}
@@ -174,6 +182,7 @@ const GeneSignaturePanel = (function() {
             if (loaded) loadGenes();
             rebuildRows({ top: true });
             paint();
+            if (loaded) loadScoringInputs();
             _unwatchScore = onSignatureStatus(_id, () => paintScore());
             // a panel opened under an id the page already uses (Back and Forward, a reopened signature, a panel set)
             // is what a plot filtered by that id has not read yet; a table says as much when its rows are in
@@ -195,6 +204,8 @@ const GeneSignaturePanel = (function() {
             _grid = null;
             if (_unwatchScore) _unwatchScore();
             _unwatchScore = null;
+            if (_scoring) _scoring.destroy();
+            _scoring = null;
             _initialized = false;
             _dom = null;
             _container.innerHTML = '';
@@ -261,7 +272,7 @@ const GeneSignaturePanel = (function() {
             const recipeKeys = ['genes', 'down', 'input', 'method', 'clip', 'seed'];
             if (recipeKeys.some(k => k in config)) {
                 setRecipe(Object.fromEntries(recipeKeys.filter(k => k in config).map(k => [k, config[k]])));
-                if (_initialized) { rebuildRows(); paint(); }
+                if (_initialized) { rebuildRows(); paint(); if (_scoring && 'input' in config) _scoring.refreshKind(); }
                 notifyChange();
             }
         }
@@ -278,6 +289,28 @@ const GeneSignaturePanel = (function() {
             } catch (error) {
                 console.error(`Gene signature ${_id}:`, error);
             }
+        }
+
+        /** Read what the inputs are and what the chosen one looks like (raw counts get a warning). */
+        function loadScoringInputs() {
+            if (!_scoring) return;
+            _scoring.refreshInputs();
+            _scoring.refreshKind();
+        }
+
+        /**
+         * An edit in the Scoring section: part of the recipe, so it reaches the link and the score's key. The list of
+         * genes did not change, so what is filtered by this signature is not told.
+         * @param {Object} patch - keys of a recipe (input, clip, seed, method)
+         */
+        function applyScoring(patch) {
+            setRecipe(patch);
+            paint();
+            signatureChanged(_id);
+            if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') {
+                window.sessionManager.notifyPanelUpdate();
+            }
+            if ('input' in patch) _scoring.refreshKind();
         }
 
         function notifyChange() {
@@ -441,9 +474,14 @@ const GeneSignaturePanel = (function() {
             const definition = el('div', { class: 'gsig-definition', id: sid('definition') });
             const usedBy = el('div', { class: 'gsig-usedby' });
             const scoreLine = el('div', { class: 'gsig-score', hidden: true });
+            _scoring = createScoringSection({
+                D, id: _id, getRecipe, apply: applyScoring,
+                getInputs: async () => layerKeys(await DataManager.getDatasetStructure(DataManager.getCurrentDataset())),
+                getKind: (input) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), input)
+            });
             status.append(
                 el('div', { class: 'gsig-status__row' }, summary, el('span', { class: 'gsig-menu-wrap' }, useIn, useInMenu)),
-                definition, usedBy, scoreLine);
+                definition, usedBy, scoreLine, _scoring.warning, _scoring.element);
 
             const search = el('input', { type: 'search', class: 'form-control form-control-sm gsig-search', id: sid('search'),
                 placeholder: 'Search genes', autocomplete: 'off', spellcheck: 'false', aria: { label: 'Search genes', describedby: sid('searchnote') },
@@ -564,6 +602,7 @@ const GeneSignaturePanel = (function() {
 
             paintUsedBy();
             paintScore();
+            if (_scoring) _scoring.paint();
             _dom.message.textContent = _message;
         }
 
@@ -932,6 +971,8 @@ const GeneSignaturePanel = (function() {
                 if (!_initialized) return undefined;
                 closeFlow(null, { focus: false });
                 loadGenes();
+                KIND_CLIENT.clear();
+                loadScoringInputs();
                 _dom.noData.style.display = 'none';
                 syncControlsWithDataset(_dom.controls, true);
                 rebuildRows({ top: true });

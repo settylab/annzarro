@@ -21,7 +21,7 @@
  * reply), and otherwise the edits collect (`held`) until `update(id)` -
  * "Update score". Dependants keep the previous score meanwhile.
  */
-import { recipeHash, DEFAULT_METHOD } from './gene-signature.js';
+import { recipeHash, DEFAULT_METHOD, METHODS } from './gene-signature.js';
 import { scoreKey } from './score-store.js';
 
 /** Seconds the estimate may be to apply an edit at once, when the reply does not say. */
@@ -63,7 +63,13 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     // The aggregation belongs to the consumer, not the signature: a score is the signature's genes and
     // shared settings read with one method. Edits are compared without it.
     const withMethod = (recipe, sub) => ({ ...recipe, method: sub || DEFAULT_METHOD });
-    const editHash = (recipe) => hashOf(withMethod(recipe, DEFAULT_METHOD));
+    // An edit is a change to any score the signature could give: the genes and every shared setting. The clip only
+    // reaches the z-score mean and the seed only the control-adjusted score, so the hash covers each method.
+    const editHash = (recipe) => METHODS.map(m => hashOf(withMethod(recipe, m))).join('|');
+    /** The aggregations the dependants of a signature read, each once. */
+    const methodsUsed = (id) => [...new Set([...handles].filter(h => h.sigId === id).map(h => h.sub || DEFAULT_METHOD))];
+    /** Whether `b` is a different score from `a` for any aggregation a dependant of `id` reads. */
+    const changesScore = (id, a, b) => methodsUsed(id).some(m => hashOf(withMethod(a, m)) !== hashOf(withMethod(b, m)));
     const genesIn = (recipe) => recipe.genes.length + (recipe.down ? recipe.down.length : 0);
 
     function appliedOf(id, sig) {
@@ -179,13 +185,19 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         const p = pending.get(id);
         if (!sig || !p || p.token !== mine) return;
         p.timer = null;
-        const live = withMethod(copyRecipe(sig.recipe()), DEFAULT_METHOD);
-        if (genesIn(live) === 0) { apply(id); return; }
+        const edited = copyRecipe(sig.recipe());
+        if (genesIn(edited) === 0) { apply(id); return; }
         const ctx = context();
-        const reply = await store.estimateFor(live, ctx.dataset, hashOf(live))
-            .catch(() => null);       // the failure shows when the edit is applied and computed
+        // the slowest of the scores the dependants read decides whether the edit is applied at once
+        const replies = await Promise.all(methodsUsed(id).map((m) => {
+            const live = withMethod(edited, m);
+            return store.estimateFor(live, ctx.dataset, hashOf(live))
+                .catch(() => null);   // the failure shows when the edit is applied and computed
+        }));
         const now = pending.get(id);
         if (!now || now.token !== mine) return;
+        let reply = null;
+        for (const r of replies) if (r && r.estimate && (!reply || r.estimate.seconds > reply.estimate.seconds)) reply = r;
         const estimate = reply && reply.estimate;
         const limit = estimate && typeof estimate.live_max_s === 'number' ? estimate.live_max_s : LIVE_MAX_S;
         if (!estimate || estimate.seconds < limit) {
@@ -247,10 +259,12 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             const was = applied.get(id);
             if (!was) { appliedOf(id, sig); notifySource(id); return; }
             const p = pending.get(id);
-            if (editHash(live) === editHash(was)) {
-                // edited back to what is shown
+            if (!changesScore(id, live, was)) {
+                // edited back to what is shown, or changed only what no dependant reads (the clip, for a plain mean):
+                // the settings are kept, and no score is asked for
                 if (p && p.timer) clearTimer(p.timer);
                 pending.delete(id);
+                if (editHash(live) !== editHash(was)) applied.set(id, copyRecipe(live));
                 notifySource(id);
                 return;
             }

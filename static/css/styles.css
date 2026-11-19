@@ -1487,6 +1487,28 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-status__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
 .gsig-summary { font-weight: 600; }
 .gsig-definition, .gsig-usedby { color: var(--az-muted); font-size: 0.75rem; }
+
+/* Scoring: the settings a signature shares with every score made from it */
+.gsig-scoring { border-top: 1px solid var(--az-border); margin-top: 2px; padding-top: 2px; }
+.gsig-scoring__toggle { display: flex; align-items: baseline; gap: 4px; width: 100%; border: 0; background: none;
+    padding: 2px 0; text-align: left; color: inherit; font-size: 0.8125rem; }
+.gsig-scoring__toggle:focus-visible { outline: 2px solid var(--az-link); outline-offset: 1px; }
+.gsig-scoring__label { font-weight: 600; }
+.gsig-scoring__summary { color: var(--az-muted); font-size: 0.75rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gsig-scoring__body { padding: 4px 0 2px; display: flex; flex-direction: column; gap: 6px; }
+.gsig-scoring__body[hidden] { display: none; }
+.gsig-scoring__row { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); gap: 2px 8px; align-items: start; font-size: 0.8125rem; }
+.gsig-scoring__name { margin: 0; padding-top: 3px; font-weight: 600; }
+.gsig-scoring__field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gsig-scoring__inline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gsig-scoring__inline label { margin: 0; }
+.gsig-scoring__number { width: 6rem; }
+.gsig-scoring__number.is-invalid { border-color: var(--az-danger-text); }
+.gsig-scoring__help { color: var(--az-muted); font-size: 0.75rem; }
+.gsig-scoring__error { color: var(--az-danger-text); font-size: 0.75rem; }
+.gsig-scoring__error[hidden], .gsig-inputwarn[hidden] { display: none; }
+.gsig-scoring__actions { display: flex; justify-content: flex-end; }
+.gsig-inputwarn { color: var(--az-warn-text); font-size: 0.75rem; }
 .gsig-menu-wrap { position: relative; }
 .gsig-controls {
     padding: 6px 8px;

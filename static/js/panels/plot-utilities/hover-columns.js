@@ -24,7 +24,8 @@ export function hoverAnnotation(plotType) {
 export const SCORE_PREFIX = 'gene-score:';
 
 /** The aggregations a hover column can use, z-score mean first (the registry's list; this module has no imports). */
-export const SCORE_SUBS = Object.freeze([{ value: 'zscore_mean', label: 'z-score mean' }, { value: 'mean', label: 'mean' }]);
+export const SCORE_SUBS = Object.freeze([{ value: 'zscore_mean', label: 'z-score mean' }, { value: 'mean', label: 'mean' },
+  { value: 'control_adjusted', label: 'control-adjusted' }]);
 
 /** The picker value of one score. */
 export const scoreValue = (id, sub) => `${SCORE_PREFIX}${id}:${sub}`;

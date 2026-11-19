@@ -5,6 +5,7 @@ like. The arithmetic is tested against a dense reference in tests/core/test_gene
 """
 import io
 import json
+import os
 import re
 import socket
 import threading
@@ -101,7 +102,8 @@ def test_a_stream_is_progress_then_a_result_then_the_vector(client, layout, matr
     result = frames[-1]
     assert result["scored"] and result["dtype"] == "float32" and result["byte_length"] == 4 * N_OBS
     assert (result["n_cells"], result["n_shown"], result["n_used"]) == (N_OBS, N_OBS, len(GENES))
-    assert result["recipe"] == {"method": "zscore_mean", "input": "X", "clip": 10.0, "version": 1, "genes": len(GENES)}
+    assert result["recipe"] == {"method": "zscore_mean", "input": "X", "clip": 10.0, "seed": None, "version": 1,
+                                "genes": len(GENES)}
     want, _ = reference(matrix, GENES)
     np.testing.assert_allclose(vector, want, rtol=2e-6, atol=2e-6)
     assert {g["name"]: g["status"] for g in result["genes"]}[gene(1)] == "used"
@@ -453,3 +455,101 @@ def test_a_forged_request_is_refused(secured, layout):
                         headers={**headers, "X-AnnZarro-CSRF": good, "Sec-Fetch-Site": "cross-site"}).status_code == 403
     ok = sign_in.post(URL, query_string=q, data=body, headers={**headers, "X-AnnZarro-CSRF": good})
     assert ok.status_code == 200 and parse(ok.get_data())[0][-1]["scored"]
+
+
+# --- the control-adjusted score -----------------------------------------------------------------------------
+# A control needs a bin with genes outside the signature, so these use the 150-gene reference matrix.
+
+BIG = [f"G{i:03d}" for i in range(150)]
+SIGNATURE = BIG[3:60:7]
+
+
+@pytest.fixture
+def big(layout):
+    x = np.load(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data",
+                             "gene_score_scanpy_reference.npz"))["x"]
+    make_store(layout / "data" / "big.zarr", x, "csc", "zarr", var_names=BIG)
+    make_store(layout / "data" / "big.h5ad", x, "csr", "h5ad", var_names=BIG)
+    zarr_reader.clear_cache()
+    return layout
+
+
+def run_big(client, big, recipe, name="big.zarr", **body):
+    resp = post(client, big, {"recipe": {"genes": SIGNATURE, **recipe}, **body}, name=name)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return parse(resp.get_data())
+
+
+def test_a_control_adjusted_score_reports_its_seed_and_controls(client, big):
+    recipe = {"method": "control_adjusted", "seed": 5, "clip": 3}
+    frames, vector = run_big(client, big, recipe)
+    result = frames[-1]
+    assert result["recipe"] == {"method": "control_adjusted", "input": "X", "clip": None, "seed": 5, "version": 1,
+                                "genes": len(SIGNATURE)}
+    assert result["binning"] == "detection" and result["n_controls"] == result["n_controls_used"] > 0
+    assert result["scored"] and vector.shape == (200,)
+    assert frames[0]["total"] == len(SIGNATURE) and frames[1]["total"] == len(SIGNATURE) + result["n_controls"]
+    np.testing.assert_array_equal(vector, run_big(client, big, recipe)[1])
+    assert not np.array_equal(vector, run_big(client, big, {**recipe, "seed": 6})[1])
+    assert not np.array_equal(vector, run_big(client, big, {})[1])
+
+
+def test_the_estimate_of_a_control_adjusted_score_counts_its_controls(client, big):
+    est = run_big_estimate(client, big, "control_adjusted")
+    plain = run_big_estimate(client, big, "mean")
+    assert est["controls"] > 0 and est["binning"] == "detection" and "controls" not in plain
+    assert est["entries"] > plain["entries"]
+    by_cell = run_big_estimate(client, big, "control_adjusted", name="big.h5ad")
+    assert by_cell["controls"] is None, "a store by cell has to be read before its controls are known"
+    assert by_cell["entries"] > run_big_estimate(client, big, "mean", name="big.h5ad")["entries"]
+
+
+def run_big_estimate(client, big, method, name="big.zarr"):
+    resp = post(client, big, {"recipe": {"genes": SIGNATURE, "method": method}, "estimate_only": True}, name=name)
+    return resp.get_json()["estimate"]
+
+
+def test_a_score_by_cell_store_draws_the_same_controls(client, big):
+    recipe = {"method": "control_adjusted", "seed": 3}
+    np.testing.assert_allclose(run_big(client, big, recipe)[1], run_big(client, big, recipe, name="big.h5ad")[1],
+                               rtol=2e-6, atol=2e-6)
+
+
+def test_a_control_adjusted_score_with_no_possible_control_says_why(client, big):
+    resp = post(client, big, {"recipe": {"genes": BIG, "method": "control_adjusted"}}, name="big.zarr")
+    frames, vector = parse(resp.get_data())
+    assert frames[-1]["scored"] is False and frames[-1]["reason"] == "no_control_genes" and vector is None
+    assert "control genes" in frames[-1]["message"]
+
+
+# --- what an input looks like -------------------------------------------------------------------------------
+
+KIND = "/api/v1/data/matrix_kind"
+
+
+def kind(client, layout, name="in.zarr", **query):
+    return client.get(KIND, query_string={"dataset_path": ds(layout, name), **query})
+
+
+def test_matrix_kind_names_the_input_and_what_it_looks_like(client, layout):
+    resp = kind(client, layout, input="counts")                       # the layer is round(2 x): whole numbers
+    body = resp.get_json()
+    assert resp.status_code == 200 and body["input"] == "counts" and body["kind"] == "counts"
+    assert body["stats"]["whole"] == 1.0 and body["stats"]["max"] >= 10 and body["suggest"] is None
+    assert set(body["checked"]) == {"X"}, "the other matrices are looked at when this one is counts"
+    x = kind(client, layout).get_json()                                 # default input X; floats reaching 100
+    assert x["input"] == "X" and x["kind"] == "normalised"
+    assert set(x) == {"input", "kind", "stats", "suggest", "checked"}
+
+
+def test_matrix_kind_reads_an_h5ad_store_too(client, layout):
+    body = kind(client, layout, name="cells.h5ad").get_json()
+    assert body["kind"] in {"log", "normalised"} and body["input"] == "X"
+
+
+def test_matrix_kind_refuses_what_it_cannot_answer(client, layout):
+    assert kind(client, layout, input="nope").status_code == 404
+    assert kind(client, layout, input="nope").get_json()["reason"] == "key_not_found"
+    assert client.get(KIND).status_code == 400
+    assert kind(client, layout, input="x" * 1001).status_code == 400
+    assert client.get(KIND, query_string={"dataset_path": str(layout / "data" / "missing.zarr")}).status_code in (403, 404)

@@ -77,7 +77,9 @@ test('a cell plot lists each signature\'s score after the columns, a gene plot d
     const scores = cells.filter(o => o.group === 'Gene scores');
     assert.deepEqual(scores.map(o => [o.value, o.label, o.selected]),
         [[`${SCORE_PREFIX}gene-signature-1:zscore_mean`, 'T cell score', false], [`${SCORE_PREFIX}gene-signature-1:mean`, 'T cell score · mean', false],
-            [`${SCORE_PREFIX}gene-signature-2:zscore_mean`, 'B cell score', true], [`${SCORE_PREFIX}gene-signature-2:mean`, 'B cell score · mean', false]]);
+            [`${SCORE_PREFIX}gene-signature-1:control_adjusted`, 'T cell score · control-adjusted', false],
+            [`${SCORE_PREFIX}gene-signature-2:zscore_mean`, 'B cell score', true], [`${SCORE_PREFIX}gene-signature-2:mean`, 'B cell score · mean', false],
+            [`${SCORE_PREFIX}gene-signature-2:control_adjusted`, 'B cell score · control-adjusted', false]]);
     assert.equal(options('genes', structure, [], false, sigs).some(o => o.group), false);
     // picking one keeps the columns and the other kinds of entries, and the pick is a gene-score entry
     const picked = info('cells', ['Age', `${SCORE_PREFIX}gene-signature-1:mean`], [{ type: 'obs', key: '_index' }]);

@@ -4,7 +4,8 @@ A **Gene Signature** is a named list of genes, kept as a recipe: the genes, and 
 worked out from them. The **Gene Signature** panel builds the list. It opens on every gene of the
 dataset, ready to tick, and it needs no setup. The default way of scoring is stated in the panel
 ("Z-score mean of X, clipped at ±10": each gene is turned into a z-score over all cells, then the genes
-are averaged), and it is the only one for now.
+are averaged). Two other ways are chosen where a score is used, and the settings every way shares are under
+**Scoring** ({ref}`gene-signature-scoring`).
 
 A signature outlives its panel. Close the panel and the signature is still there, listed in the
 panel chooser as **Closed**, and still usable wherever a gene table is: it can filter a Gene Plot and
@@ -113,7 +114,7 @@ in the signature's panel. The score works in large-plot mode too (colour and axe
 colour's score).
 
 A score is chosen in three steps, as an embedding is: the source (**gene-score**), the signature, and
-the **aggregation** (z-score mean, the default, or mean). Each axis, the colour and the hover can use a
+the **aggregation** (z-score mean, the default; mean; or control-adjusted). Each axis, the colour and the hover can use a
 different signature or a different aggregation of the same one; the same choice on two axes is computed once.
 The score can be on any axis, x, y and z (3D) included, against another score, an obs column or a gene.
 In large-plot mode x, y and colour take a score; 3D and extra hover columns are not available there.
@@ -148,6 +149,40 @@ the plot shows the previous score ("Showing the previous 'T cell score'. Updatin
 there. When the new score would take 5 seconds or more, edits collect instead: the plot keeps the previous
 score and says "3 changes are not applied. About 40 seconds." The signature's panel says so as well, with
 **Update score** to apply them.
+
+(gene-signature-scoring)=
+### Scoring: the settings every score shares
+
+Under **Scoring** in the signature's panel are the settings the signature shares with every score made from it.
+The collapsed row always states them ("X, clipped at ±10"), so a link opened with other settings is never
+hidden. How the genes are combined is not set here: each plot or table chooses the aggregation for its own
+axis, colour or column.
+
+- **Input** is the matrix the scores are read from: **X**, or one of the dataset's layers. Scores are meant
+  for normalised, log-transformed values. If the input looks like raw counts, a warning says so ("X looks
+  like raw counts (whole numbers up to 557). Scores should be computed on normalised, log-transformed data,
+  or they follow sequencing depth.") and, when one of the other layers looks log-normalised and is named
+  that way, offers it with **Use logged_counts**. The same goes for values that are normalised but not
+  log-transformed. The warning shows under the row with Scoring closed and under **Input** when it is open,
+  and goes away when you choose another input. It is a warning, not a block.
+- **Clip z-scores at ±** (default 10) stops one rare gene dominating the average: its z-score can reach
+  the hundreds when a gene is detected in a handful of cells. Type any number above 0, or untick to turn
+  clipping off. A value that is not a number above 0 is refused with "Enter a number above 0." and the last
+  good value stays. Only the z-score mean uses the clip, so changing it asks the server for nothing when
+  the plots in use show a plain mean or a control-adjusted score.
+- **Seed** (default 0) fixes the control genes of a control-adjusted score, so the same seed always gives the
+  same score and a link keeps its meaning. Any whole number from 0 up.
+
+**Control-adjusted** (Tirosh et al. 2016, as scanpy's `score_genes`) subtracts what a cell shows of genes that
+behave like the signature's but are not in it. Genes are cut into 25 bins by how often they are detected;
+for each bin that holds one of your genes, 50 genes of that bin are drawn as controls; the score is the
+mean of your genes less the mean of the controls. It removes differences in depth and quality between
+cells that move every gene together. It needs genes that differ in how often they are detected, so it
+means little on scaled data, where every gene is present in every cell.
+
+A change to any of these is an edit of the signature, like a tick: a quick score updates after a short
+pause, and one that would take 5 seconds or more waits behind **Update score**. The input, the clip and
+the seed are carried by links, panel sets and Back and Forward.
 
 ### Opening several at once
 

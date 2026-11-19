@@ -62,8 +62,7 @@ test('clip: a number above 0, null for none, anything else the default', () => {
 test('method, input, seed and version are taken from the config or defaulted', () => {
     assert.equal(recipe({ method: 'mean' }).method, 'mean');
     assert.equal(G.definitionText(recipe({ method: 'mean', input: 'counts' })), 'Mean expression of counts');
-    // control_adjusted is reserved on the server and not offered: it does not survive a hand-edited link
-    assert.equal(recipe({ method: 'control_adjusted' }).method, 'zscore_mean');
+    assert.equal(recipe({ method: 'control_adjusted' }).method, 'control_adjusted');
     assert.equal(recipe({ method: 'nonsense' }).method, 'zscore_mean');
     assert.equal(recipe({ input: 'counts' }).input, 'counts');
     assert.equal(recipe({ input: '' }).input, 'X');

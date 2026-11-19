@@ -384,10 +384,13 @@ The **recipe** is the whole definition of a score. Only `genes` is required.
 |---|---|---|
 | `genes` | (required) | gene names, matched exactly; at most 2,000 distinct names (`413 too_many_genes`); a repeated name counts once |
 | `input` | `"X"` | `"X"`, or the name of a layer |
-| `method` | `"zscore_mean"` | `zscore_mean`: the mean over genes of the z-score `(x - mean) / sd`, clipped at plus and minus `clip`. `mean`: the mean over genes of `x`. Mean and SD are taken over **all cells of the dataset**, zeros included, so a score does not change with the cells shown |
-| `clip` | `10` | a number above 0, or `null` for no clipping; anything else is `400 bad_clip`. Only the z-score mean clips: the recipe keeps the value, but it changes nothing under `mean` |
-| `down`, `seed`, `method: "control_adjusted"` | `[]`, `null` | reserved for up and down genes and control-adjusted scores. The recipe format already holds them; the server answers `400 down_not_available` or `400 method_not_available` until they are computed |
+| `method` | `"zscore_mean"` | `zscore_mean`: the mean over genes of the z-score `(x - mean) / sd`, clipped at plus and minus `clip`. `mean`: the mean over genes of `x`. `control_adjusted`: the mean over genes of `x`, less the mean of `x` over control genes (Tirosh et al. 2016, as scanpy's `score_genes`; see below). Mean and SD are taken over **all cells of the dataset**, zeros included, so a score does not change with the cells shown |
+| `clip` | `10` | a number above 0, or `null` for no clipping; anything else is `400 bad_clip`. Only the z-score mean clips: the recipe keeps the value, but it changes nothing under `mean` or `control_adjusted` |
+| `seed` | `null` | a whole number from 0 up (`400 bad_seed` otherwise), or `null`. Only the control-adjusted score draws anything: it picks the control genes, and `null` means 0. The reply's `recipe.seed` is the seed used (`null` for the other methods) |
+| `down` | `[]` | reserved for up and down genes. The recipe format already holds it; the server answers `400 down_not_available` until it is computed |
 | `version` | `1` | the algorithm version; a recipe for another version is `400 unsupported_version` |
+
+**The control-adjusted score.** Genes are cut into 25 bins by how often they are detected (the share of cells with a stored non-zero value), as scanpy cuts them by mean expression: ranked, then `rank // round(genes / 24)`, so equal figures share a bin. For every bin that holds a signature gene, 50 genes of that bin outside the signature are drawn as controls, or all of them when the bin holds fewer. The score of a cell is its mean over the signature genes less its mean over all the controls. The draw ranks a bin's genes by a fixed hash of the gene's position and the `seed` and takes the lowest 50, so a stored seed gives the same controls on every machine, and adding a gene to the signature moves the controls of its own bin only. Detection costs nothing to read on a store held by gene (CSC); on a store held by cell or a dense matrix the estimate adds one pass over the matrix, and its `controls` is `null` until the pass has run. With no control to draw (a signature that fills every bin it falls in) there is no score, with `reason: "no_control_genes"`. The reply carries `n_controls` and `n_controls_used` (controls that held a value) and `binning` (`detection`). Binning by detection instead of by mean was checked against binning by the mean on two real datasets, a murine bone marrow study and a human PBMC set: the gene rankings agree (Spearman 0.997 and 0.9998), and scores made from either binning with different seeds agree as well as two seeds of one binning do.
 
 A gene that is not in the dataset is listed and left out. A gene with the same value in every cell is left
 out of the z-score mean and listed. If a name occurs more than once in the dataset the first is used, and
@@ -422,11 +425,32 @@ raw bytes.
    `n_used`, `recipe` (what was computed: `clip` is `null` for `mean`), `genes` (per gene: `name`, `column`,
    `status` `used`, `constant` or `no_values`, `mean`, `sd`, `detected`, the fraction of cells with a non-zero
    value, and `clipped`, the fraction beyond the clip), `missing`, `duplicated`, `warnings`, `entries_read` and
-   `seconds`.
+   `seconds`; for a control-adjusted score also `n_controls`, `n_controls_used` and `binning`.
 3. `{"type":"error","reason":...,"message":...}` if the work fails after the stream began. The status is
    already `200`, so a stream that ends without a `result` frame has failed.
 
 Nothing is cached or kept: the server holds a score only while it computes it.
+
+(http-matrix-kind)=
+### What an input looks like
+
+`GET /data/matrix_kind?dataset_path=&input=X` says what the numbers of `X`, or of the layer named by `input`,
+look like, so a client can warn before a score is read from raw counts:
+
+```json
+{"input": "X", "kind": "counts", "stats": {"kind": "counts", "n": 65536, "whole": 1.0, "min": 1.0, "max": 267.0, "negative": 0.0},
+ "suggest": "logged_counts", "checked": {"logged_counts": "log", "MAGIC_imputed_data": "log"}}
+```
+
+It reads a sample of a few thousand stored values spread over the whole matrix, never the matrix. `kind` is
+`counts` (at least 99% whole numbers, none negative, reaching 10 or more), `normalised` (not whole, none negative,
+reaching 50 or more: normalised but not log-transformed), `log` (not whole, none negative, below 50),
+`signed` (1% or more negative values: scaled, centred, fold changes), `other` (whole numbers that stay small)
+or `unknown` (under 100 non-zero values). Only for `counts`, `normalised` and `signed` are the other matrices
+(up to 12) looked at, to fill `checked` and to set `suggest` to a layer that looks log-transformed and whose
+name says `log` (first) or `norm`; imputed and smoothed layers look log-transformed too and are never
+suggested on their looks alone. `404 key_not_found` for a layer the dataset does not have; the access and path
+checks of every data route apply.
 
 A closed connection stops the work: the next progress write fails and the work ends after the read in
 progress. One score is computed at a time per worker; another request waits up to 30 s for it, then answers
