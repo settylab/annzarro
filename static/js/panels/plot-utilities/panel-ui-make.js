@@ -9,7 +9,7 @@ import * as $ from '../../utils/jquery-helpers.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { populateHoverSelect } from './hover-columns.js';
 import { signatureList } from '../../utils/score-source.js';
-import { sourcesFor, getSource } from '../../utils/source-registry.js';
+import { sourcesFor } from '../../utils/source-registry.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, trackValue } from '../../utils/slider-scales.js';
 

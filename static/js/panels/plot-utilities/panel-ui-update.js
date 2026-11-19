@@ -6,6 +6,7 @@ import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScal
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { signatureList, NEW_SIGNATURE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers } from '../../utils/score-source.js';
 import { scoreValue, parseScoreValue } from './hover-columns.js';
+import { METHODS } from '../../utils/signature-options.js';
 import { getSource } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -302,7 +303,6 @@ export function refreshScoreKeySelects() {
     if (cfg && cfg[axis] && cfg[axis].type === 'gene-score') fillScoreColumnSelect(select, scoreColumnOptions(cfg[axis]));
   }
   // the Hover pickers list each score a signature offers, after the columns
-  const wanted = list.flatMap(sig => (sig.options || []).map((o, i) => [scoreValue(sig.id, o.method, o.layer), i === 0 ? sig.title : `${sig.title} · ${o.label}`]));
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
     const picked = new Set(Array.from(select.querySelectorAll('optgroup option')).filter(o => o.selected).map(o => o.value));
     // what each signature offers, and a pick it no longer offers (kept, and marked)
@@ -1214,8 +1214,11 @@ export function scoreColumnOptions(settings) {
   const wanted = optionOf(settings);
   let chosen = wanted ? wanted.value : null;
   let adopt = null;
-  if (!wanted && settings.key && offered.length && (settings.column || settings.layer)) {
-    chosen = `${settings.column || 'zscore_mean'}@${settings.layer || ''}`;
+  // a column left over from another source (an obsm dimension) is not a lapsed choice: only a method is
+  if (!wanted && settings.key && offered.length && (METHODS.includes(settings.column) || settings.layer)) {
+    // the same id form as the offered entries: `method`, or `method@layer` when the signature offers several layers
+    const several = offered.some(o => o.value.includes('@'));
+    chosen = several ? `${settings.column || 'zscore_mean'}@${settings.layer || ''}` : (settings.column || 'zscore_mean');
     options.push({ value: chosen, text: lapsedLabel(settings), method: settings.column || 'zscore_mean', layer: settings.layer || '' });
   } else if (!wanted && offered.length) {
     chosen = offered[0].value;

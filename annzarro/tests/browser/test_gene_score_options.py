@@ -260,7 +260,7 @@ def test_a_plot_is_offered_what_the_panel_offers_and_a_switched_off_option_is_ke
     _offer(page, "mean", False)                                          # the plot reads the mean
     until(page, "(t) => /no longer offered/.test(document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').textContent)", D)
     options = _agg_options(page, D)
-    assert ["mean", "Mean (no longer offered)"] in [list(o) for o in options] or any(v == "mean" and "no longer offered" in t for v, t in options)
+    assert any(v == "mean" and "no longer offered" in t for v, t in options)
     assert page.eval_on_selector(f"{D} select.axis-column-select[data-axis='color']", "s => s.value") == "mean", "its setting is kept"
     assert _numbers(page, D), "and it still draws"
     cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-D').getConfig().color")
@@ -273,7 +273,7 @@ def test_the_hover_picker_lists_only_what_is_offered(page, served):
     _open(page, served, plots=(("cell-plot-C", None),), sig=_sig(offered=["zscore_mean", "detected"]), sig_open=True)
     _wait_coloured(page)
     opts = page.eval_on_selector_all(f"{C} select.hover-columns-select optgroup[label='Gene scores'] option", "els => els.map(e => e.value)")
-    assert opts == [f"gene-score:{SIG}:zscore_mean", f"gene-score:{SIG}:detected"]
+    assert opts == [f"gene-score:{SIG}:zscore_mean:", f"gene-score:{SIG}:detected:"]
 
 
 def test_the_section_shows_which_options_plots_use(page, served):

@@ -128,7 +128,7 @@ function writtenKeys() {
 const NOT_A_PLOT_OPTION = {
     x: 'data choice', y: 'data choice', z: 'data choice', color: 'data choice', hoverInfo: 'data choice (Hover list)',
     column: 'part of an axis or colour choice', key: 'part of an axis or colour choice', type: 'part of an axis or colour choice',
-    history: 'part of an axis or colour choice', locked: 'part of an axis or colour choice',
+    layer: 'part of an axis or colour choice (the layer of a gene score)', history: 'part of an axis or colour choice', locked: 'part of an axis or colour choice',
     viewport2D: 'the zoom (restored by its own tests)', viewport3D: 'the 3D camera (restored by its own tests)',
     tableFilter: 'link to a table', removeNonTableEntries: 'table filter behaviour, with the table panel',
     subsettedCells: 'subset', hideNonSubset: 'subset', title: 'panel title (listed)',

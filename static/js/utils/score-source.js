@@ -23,7 +23,7 @@ import { createScoreApi } from './gene-score-client.js';
 import { describeScore, worstNotice } from './score-notices.js';
 import { registerSource, subKeyOf, layerOf } from './source-registry.js';
 import { DEFAULT_METHOD } from './gene-signature.js';
-import { DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
+import { DEFAULT_OFFERED, METHODS, methodShort, methodLabel, offeredOptions, isOffered } from './signature-options.js';
 
 /** What each aggregation is called where a consumer picks it (level 3). */
 const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
@@ -633,7 +633,7 @@ export function lapsedLabel(setting) {
     const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
     const several = panel && panel.getRecipe ? new Set(offeredOptions(panel.getRecipe(), _datasetLayers).map(o => o.layer)).size > 1 : false;
     const layer = layerOf(setting);
-    const base = methodShort(subKeyOf(setting));
+    const base = methodLabel(subKeyOf(setting));
     return `${several || layer ? `${base} · ${layer || (panel && panel.getRecipe ? panel.getRecipe().input : 'X')}` : base} (no longer offered)`;
 }
 
