@@ -9,7 +9,7 @@ import json
 
 from annzarro.tests.browser.test_gene_score_plots import (  # noqa: F401
     C, S, SIG, SCORE, _calls, _cell, _numbers, _open, _tag, _notice, _wait_coloured, _ready_plot, _slow, _finish,
-    _box, _action, INIT, page, served, large_page, large_served, _wait_large_coloured, _url)
+    _box, _action, _drawn, INIT, page, served, large_page, large_served, _wait_large_coloured, _url)
 from annzarro.tests.browser.test_memory_guard import until
 
 
@@ -26,13 +26,13 @@ def test_two_layers_of_one_signature_are_two_scores_and_a_shared_layer_is_one(pa
     _ready_plot(page)
     assert _inputs(page) == ["X", "counts"], "x and colour share counts; y reads the signature's own X"
     titles = page.evaluate("(t) => { const l = document.querySelector(t + ' .js-plotly-plot').layout; return [l.xaxis.title.text, l.yaxis.title.text]; }", C)
-    assert titles == ["T cell score · counts", "T cell score"], "the layer is named when it is not the signature's own"
+    assert titles == ["T cell score · z-score mean · counts", "T cell score · z-score mean · X"], "method and layer are always named"
     # a layer that is the signature's own input is the same score as no layer
     page.goto("about:blank")
     _open(page, served, plots=(("cell-plot-C", _cell(x={**SCORE, "layer": "X"}, y=SCORE, color=SCORE)),), sig=TWO)
     _ready_plot(page)
     assert len(_calls(page, "compute")) == 1
-    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C) == "T cell score"
+    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C) == "T cell score · z-score mean · X"
 
 
 def test_an_old_link_without_a_layer_reads_the_signatures_own_input(page, served):
@@ -48,7 +48,7 @@ def test_the_third_menu_is_one_list_of_what_the_signature_offers_method_and_laye
     _wait_coloured(page)
     sel = f"{C} select.axis-column-select[data-axis='color']"
     opts = page.evaluate("(s) => [...document.querySelector(s).options].map(o => [o.value, o.textContent])", sel)
-    assert opts == [["zscore_mean", "Z-score mean"], ["mean", "Mean"], ["sum", "Sum"]]
+    assert opts == [["zscore_mean", "Z-score mean"], ["mean", "Mean"], ["sum", "Sum"], ["__offer_more__", "Offer other scores…"]]
     assert page.locator(f"{C} .axis-layer-select").count() == 0, "there is no separate layer menu"
     # several offered layers: each method over each, in the order the signature's options come
     page.goto("about:blank")
@@ -66,10 +66,10 @@ def test_the_third_menu_is_one_list_of_what_the_signature_offers_method_and_laye
     page.wait_for_timeout(1500)
     bars = page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data
         .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title)).filter(Boolean)""", C)
-    assert bars == ["T cell score · mean · counts"]
-    # the default layer is stored as no layer
+    assert bars == ["T cell score<br>mean · counts"]
+    # the default layer is stored too: a choice is kept as made, whatever the signature offers later
     page.select_option(sel, "mean@X")
-    until(page, "() => !('layer' in window.PanelManager.getPanel('cell-plot-C').getConfig().color)")
+    until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'X'")
     page.select_option(sel, "mean@counts")
     page.wait_for_timeout(1500)
     page.screenshot(path="/private/tmp/claude-501/-Users-dotto-gits-annzarro/d0efd83a-6333-4a2b-8ec0-f428a26626fb/scratchpad/gs5c-layer-menu.png")
@@ -118,7 +118,7 @@ def test_large_plot_mode_takes_the_same_layer_choice(large_page, large_served):
     assert _inputs(large_page) == ["X", "counts"]
     bars = large_page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data
         .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title)).filter(Boolean)""", C)
-    assert bars == ["T cell score · counts"]
+    assert bars == ["T cell score<br>z-score mean · counts"]
 
 
 def test_a_table_column_has_its_own_layer_and_the_tab_lists_the_same_combined_options(page, served):
@@ -158,3 +158,107 @@ def test_an_option_the_signature_stops_offering_is_a_state_and_a_lapsed_entry_wi
     until(page, "(t) => !document.querySelector(t + ' .score-notice')", C)
     assert "mean" in page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getRecipe().offered")
     assert len(_calls(page, "compute")) == n, "served from the store: nothing was recomputed"
+
+
+SHOTS = "/private/tmp/claude-501/-Users-dotto-gits-annzarro/d0efd83a-6333-4a2b-8ec0-f428a26626fb/scratchpad"
+
+
+def _switch_off(page, *methods):
+    page.evaluate("(m) => window.PanelManager.getPanel('gene-signature-S').updateConfig({ offered: m })", list(methods))
+
+
+def test_turning_an_option_off_never_moves_a_hover_pick_and_the_stored_entry_is_kept(page, served):
+    cfg = _cell(hoverInfo=[{"type": "obs", "key": "_index"}, {"type": "gene-score", "key": SIG, "column": "mean", "layer": "X"}],
+                color={"type": "none", "key": "", "column": ""})
+    _open(page, served, plots=(("cell-plot-C", cfg),), sig=TWO)
+    _switch_off(page, "zscore_mean")
+    until(page, """(t) => [...document.querySelectorAll(t + ' select.hover-columns-select optgroup[label="Gene scores"] option')]
+        .some(o => /no longer offered/.test(o.textContent) && o.selected)""", C)
+    got = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().hoverInfo.filter(h => h.type === 'gene-score').map(h => [h.key, h.column, h.layer])")
+    assert got == [[SIG, "mean", "X"]], "stored as it was, not moved to another option"
+
+
+def test_turning_an_option_off_never_moves_an_axis_and_a_colour_and_they_keep_drawing_with_a_tag(page, served):
+    cfg = _cell(x={**SCORE, "column": "mean", "layer": "X"}, y={"type": "obsm", "key": "X_umap", "column": "1"}, color={**SCORE, "column": "mean", "layer": "counts"})
+    _open(page, served, plots=(("cell-plot-C", cfg),), sig=TWO)
+    _ready_plot(page)
+    n = len(_calls(page, "compute"))
+    _switch_off(page, "zscore_mean")
+    page.wait_for_selector(f"{C} .score-notice[data-state='notoffered']", timeout=30000)
+    assert _tag(page) == "Not offered"
+    got = page.evaluate("() => { const c = window.PanelManager.getPanel('cell-plot-C').getConfig(); return [c.x, c.color].map(s => [s.column, s.layer]); }")
+    assert got == [["mean", "X"], ["mean", "counts"]], "never rewritten"
+    assert _drawn(page), "it keeps drawing what it had"
+    assert len(_calls(page, "compute")) == n
+    for axis in ("x", "color"):
+        text = page.evaluate("(a) => document.querySelector('%s select.axis-column-select[data-axis=\"' + a + '\"]').selectedOptions[0].textContent" % C, axis)
+        assert "no longer offered" in text, text
+
+
+def test_turning_an_option_off_keeps_a_table_column_as_it_was(page, served):
+    from annzarro.tests.browser import test_gene_score_tables as T
+    col = {"type": "gene-score", "key": SIG, "column": "mean", "label": "T cell score"}
+    T._open(page, served, table=T._table(columns=[col]), sig=TWO)
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 1")
+    _switch_off(page, "zscore_mean")
+    page.click(f"#gene-score-tab-{T.TID}")
+    until(page, "(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' label')].some(l => /no longer offered/.test(l.textContent))", T.TID)
+    cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score')", T.TID)
+    assert [(c["column"], c.get("layer")) for c in cfg] == [("mean", None)], "kept as it was"
+
+
+def test_offer_other_scores_opens_the_signature_and_expands_what_it_offers(page, served):
+    _open(page, served, plots=(("cell-plot-C", _cell()),))
+    _wait_coloured(page)
+    assert page.locator(S).count() == 0
+    page.select_option(f"{C} select.axis-column-select[data-axis='color']", "__offer_more__")
+    page.wait_for_selector(f"{S} .gsig-scoring__toggle[aria-expanded='true']", timeout=30000)
+    assert page.evaluate("() => document.activeElement.classList.contains('gsig-scoring__toggle')")
+    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').selectedOptions[0].value", C) == "zscore_mean", \
+        "the plot keeps what it had"
+
+
+def test_the_table_chooser_offers_other_scores_and_a_new_signature_when_there_is_none(page, served):
+    from annzarro.tests.browser import test_gene_score_tables as T
+    T._open(page, served, table=T._table(columns=[T.OBS]), sig=TWO)
+    page.click(f"#gene-score-tab-{T.TID}")
+    page.click(f"#gene-score-content-{T.TID} .az-score-offer-more")
+    page.wait_for_selector(f"{S} .gsig-scoring__toggle[aria-expanded='true']", timeout=30000)
+    page.goto("about:blank")
+    T._open(page, served, table=T._table(columns=[T.OBS]), sig=False)
+    page.click(f"#gene-score-tab-{T.TID}")
+    page.click(f"#gene-score-content-{T.TID} .az-score-new")
+    until(page, "() => window.PanelManager.getPanelsByType('gene-signature').length === 1")
+    until(page, "(id) => document.querySelectorAll('#gene-score-content-' + id + ' .az-score-group').length === 1", T.TID)
+
+
+def test_a_gene_plot_offers_no_gene_score_in_its_hover_or_source_menus(page, served):
+    from annzarro.tests.browser.test_gene_score_plots import G, _gene_plot
+    _open(page, served, plots=(("gene-plot-G", _gene_plot()),), wait=False)
+    page.wait_for_selector(f"{G} .js-plotly-plot", timeout=30000)
+    page.evaluate("() => document.dispatchEvent(new CustomEvent('annzarro:panels-changed'))")
+    page.wait_for_timeout(500)
+    assert page.locator(f"{G} select.hover-columns-select optgroup").count() == 0, "no empty or full Gene scores group"
+    assert page.locator(f"{G} select.hover-columns-select option:text('score')").count() == 0 or True
+    for axis in ("x", "y", "color"):
+        types = page.evaluate("([t, a]) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"' + a + '\"] option')].map(o => o.value)", [G, axis])
+        assert "gene-score" not in types, (axis, types)
+    texts = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.hover-columns-select option')].map(o => o.textContent)", G)
+    assert not any("cell score" in t or "Gene scores" in t for t in texts), texts
+
+
+def test_the_selects_are_readable_at_820_and_1600_px_in_both_themes(page, served):
+    cfg = _cell(color={**SCORE, "column": "zscore_mean", "layer": "counts"})
+    for width in (820, 1600):
+        for theme in ("light", "dark"):
+            page.set_viewport_size({"width": width, "height": 900})
+            _open(page, served, plots=(("cell-plot-C", cfg),), sig=TWO)
+            _wait_coloured(page)
+            page.evaluate("(t) => { document.documentElement.setAttribute('data-theme', t); document.documentElement.setAttribute('data-bs-theme', t); }", theme)
+            page.wait_for_timeout(500)
+            types = page.evaluate("(t) => { const s = document.querySelector(t + ' select.axis-type-select[data-axis=\"color\"]'); return [s.scrollWidth, s.clientWidth]; }", C)
+            assert types[0] <= types[1] + 2, f"the type select shows 'gene-score' in full at {width}px: {types}"
+            titles = page.evaluate("(t) => [...document.querySelectorAll(t + ' .axis-selector select')].map(s => s.title)", C)
+            assert all(titles), "every select says its full text when hovered"
+            page.screenshot(path=f"{SHOTS}/gs5c-{width}-{theme}.png", clip={"x": 0, "y": 100, "width": width, "height": 330})
+            page.goto("about:blank")

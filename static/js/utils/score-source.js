@@ -28,6 +28,9 @@ import { DEFAULT_OFFERED, METHODS, methodShort, methodLabel, offeredOptions, isO
 /** What each aggregation is called where a consumer picks it (level 3). */
 const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
 
+/** The last entry of a score's option list: opens the signature panel on what it offers. */
+export const OFFER_MORE = '__offer_more__';
+
 /** The value that is not a signature: "New signature..." in the key list. */
 export const NEW_SIGNATURE = '__new_signature__';
 
@@ -119,10 +122,28 @@ export function scoreLabel(setting) {
     const title = scoreTitle(setting).replace(new RegExp(`( · (${METHODS.map(m => SUB_LABELS[m]).join('|')}))?( · of .+)?$`), '');
     const layer = layerOf(setting);
     const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    const own = panel && panel.getRecipe ? panel.getRecipe().input : null;
+    const own = panel && panel.getRecipe ? panel.getRecipe().input : 'X';
     const out = !sub || sub === DEFAULT_METHOD ? title : `${title} · ${SUB_LABELS[sub] || sub}`;
     // the layer is named when it is not the one the signature itself reads
     return layer && layer !== own ? `${out} · ${layer}` : out;
+}
+
+/**
+ * The two lines a score is named by wherever it leaves the app (the colour bar, an axis title, a legend,
+ * a CSV header): the signature's title, then the method and the layer it was computed over, always.
+ * @returns {[string, string]}
+ */
+export function scoreLabelLines(setting) {
+    const title = scoreTitle(setting).replace(new RegExp(`( · (${METHODS.map(m => SUB_LABELS[m]).join('|')}))?( · of .+)?$`), '');
+    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
+    const own = panel && panel.getRecipe ? panel.getRecipe().input : 'X';
+    const sub = subKeyOf(setting);
+    return [title, `${SUB_LABELS[sub] || sub} · ${layerOf(setting) || own}`];
+}
+
+/** The one-line form of scoreLabelLines: "T cell score · z-score mean · X". */
+export function scoreFullLabel(setting) {
+    return scoreLabelLines(setting).join(' · ');
 }
 
 /** A custom error: the series cannot be drawn yet, and why. */
@@ -338,6 +359,9 @@ function recordFor(host, role, setting) {
 export function loadScoreSeries(setting, { host, role, expected, unit = 'cells', array = true }) {
     const title = scoreLabel(setting);
     if (title && setting.label !== title) setting.label = title;
+    // what the colour bar, axis titles and legends say (two lines for the bar), refreshed with the label
+    const lines = scoreLabelLines(setting).join('\n');
+    if (setting.labelFull !== lines) setting.labelFull = lines;
     if (!host || !setting.key) {
         const notice = describeScore({ state: 'unset', title: '' }, { role });
         throw new ScoreUnavailable(notice.headline, notice,
@@ -514,6 +538,7 @@ export function signatureRenamed(id) {
             const title = scoreLabel(rec.setting);
             if (rec.setting.label !== title) {
                 rec.setting.label = title;
+                rec.setting.labelFull = scoreLabelLines(rec.setting).join('\n');
                 if (rec.drawnKey) refreshPanel(host);
             }
         }
@@ -610,7 +635,7 @@ export function scoreOptions(id) {
     if (!panel || !panel.getRecipe) return [];
     const recipe = panel.getRecipe();
     return offeredOptions(recipe, _datasetLayers).map(o => ({
-        id: o.id, value: o.id, method: o.method, layer: o.layer === recipe.input ? '' : o.layer, label: o.label,
+        id: o.id, value: o.id, method: o.method, layer: o.layer, label: o.label,
         short: methodShort(o.method)
     }));
 }
@@ -624,7 +649,9 @@ export function noteDatasetLayers(list) {
 /** The entry a consumer's setting stands for in a signature's options, or null when it is not offered. */
 export function optionOf(setting) {
     const sub = subKeyOf(setting);
-    const layer = layerOf(setting);
+    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
+    // no layer: the setting follows the signature's default layer (a link made before the layer was stored)
+    const layer = layerOf(setting) || (panel && panel.getRecipe ? panel.getRecipe().input : 'X');
     return scoreOptions(setting.key).find(o => o.method === sub && o.layer === layer) || null;
 }
 
@@ -635,6 +662,21 @@ export function lapsedLabel(setting) {
     const layer = layerOf(setting);
     const base = methodLabel(subKeyOf(setting));
     return `${several || layer ? `${base} · ${layer || (panel && panel.getRecipe ? panel.getRecipe().input : 'X')}` : base} (no longer offered)`;
+}
+
+/**
+ * "Offer other scores…": open (or reopen) the signature's panel beside `nextTo`, expand its offered
+ * options and put the cursor there.
+ * @param {string} id - the signature
+ * @param {string|null} nextTo - the panel the request came from
+ */
+export function offerOtherScores(id, nextTo = null) {
+    const panel = openSignature(id, nextTo);
+    if (panel && typeof panel.revealScoresOffered === 'function') {
+        // the panel may still be building its sections
+        setTimeout(() => panel.revealScoresOffered(), 0);
+    }
+    return panel;
 }
 
 /** Offer an option again in the signature's panel (the notice's one-click action). */

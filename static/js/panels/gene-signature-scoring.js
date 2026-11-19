@@ -308,6 +308,8 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         paintAggregations: () => { if (!destroyed && open) { const r = getRecipe(); paintOptions(r); paintLayers(r); paintParams(r); } },
         refreshInputs,
         refreshKind,
+        /** Open the section and put the cursor on it: where a consumer's "Offer other scores…" leads. */
+        reveal() { if (destroyed) return; open = true; paint(); toggle.focus(); },
         destroy() { destroyed = true; },
         /** For tests. */
         state: () => ({ open, inputs: [...inputs], warnings: [...warnings.keys()], lastClip })

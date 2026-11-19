@@ -114,7 +114,26 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     }
 
     /** What a handle shows and which key it stands on, rebinding when the key moved. */
+    /**
+     * Where the consumer's score stands. An option the signature no longer offers is kept and goes on drawing
+     * what it has: the snapshot says `lapsed` and the consumer states it ("Not offered"), never moves to another.
+     */
     function read(handle) {
+        const snap = readOne(handle);
+        const sig = signatures.get(handle.sigId);
+        if (sig && signatures.offers && !signatures.offers(sig.recipe(), handle.sub || DEFAULT_METHOD, handle.layer || '')) {
+            const own = sig.recipe().input;
+            return { ...snap, lapsed: true, sub: handle.sub || DEFAULT_METHOD, layer: handle.layer || own, ownInput: own };
+        }
+        return snap;
+    }
+
+    function readOne(handle) {
+        // a column left over from another source (an obsm dimension) is not a method: nothing is asked of the server for it
+        if (handle.sub && !METHODS.includes(handle.sub)) {
+            dropKey(handle);
+            return { sigId: handle.sigId, title: '', held: null, key: null, state: 'estimating' };
+        }
         const ctx = context();
         const sig = signatures.get(handle.sigId);
         const base = { sigId: handle.sigId, title: sig ? sig.title : handle.lastTitle || '', held: null, key: null };
@@ -125,13 +144,6 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         handle.lastTitle = sig.title;
         const applied = appliedOf(handle.sigId, sig);
         const held = heldOf(handle.sigId);
-        // the signature decides what it offers: a consumer on an option it no longer offers says so
-        if (signatures.offers && !signatures.offers(sig.recipe(), handle.sub || DEFAULT_METHOD, handle.layer || '')) {
-            dropKey(handle);
-            handle.shown = null;
-            return { ...base, held, state: 'notoffered', sub: handle.sub || DEFAULT_METHOD, layer: handle.layer || applied.input,
-                ownInput: applied.input };
-        }
         const recipe = withMethod(applied, handle.sub, handle.layer);
         if (genesIn(recipe) === 0) {
             dropKey(handle);

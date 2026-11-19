@@ -46,8 +46,10 @@ export function hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverO
   const off = hoverOff === true || hoverOff === 'auto';
   const info = Array.isArray(hoverInfo) ? hoverInfo : [];
   const chosen = new Set(info.filter(h => h && h.type === type && !h.column).map(h => h.key));
+  // an entry with no layer follows the signature's default layer (a link made before the layer was stored)
+  const inputOf = (key) => ((signatures.find(s => s.id === key) || {}).input) || 'X';
   const scored = new Map(info.filter(h => h && h.type === 'gene-score')
-    .map(h => [scoreValue(h.key, h.column || 'zscore_mean', h.layer), h]));
+    .map(h => [scoreValue(h.key, h.column || 'zscore_mean', h.layer || inputOf(h.key)), h]));
   const options = [{ value: NO_HOVER, label: 'No hover', selected: off }].concat((datasetStructure?.[type]?.columns || [])
     .filter(c => c !== '_index')
     .map(c => ({ value: c, label: c, selected: !off && chosen.has(c) })));

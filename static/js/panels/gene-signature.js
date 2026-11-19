@@ -983,6 +983,7 @@ const GeneSignaturePanel = (function() {
             // for the steps after this one
             getRecipe,
             getRecipeHash: () => recipeHash(_recipe),
+            revealScoresOffered: () => { if (_scoring) _scoring.reveal(); },
             addGenes,
             undo,
             // for the sources that plug in (paste and upload)

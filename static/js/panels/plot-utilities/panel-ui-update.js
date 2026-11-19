@@ -4,7 +4,7 @@ import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
-import { signatureList, NEW_SIGNATURE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers } from '../../utils/score-source.js';
+import { signatureList, NEW_SIGNATURE, OFFER_MORE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers } from '../../utils/score-source.js';
 import { scoreValue, parseScoreValue } from './hover-columns.js';
 import { METHODS } from '../../utils/signature-options.js';
 import { getSource } from '../../utils/source-registry.js';
@@ -271,6 +271,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
  */
 export function refreshScoreKeySelects() {
   if (typeof document === 'undefined') return;
+  setTimeout(() => syncSelectTitles(), 60);
   const list = signatureList();
   for (const keySelect of document.querySelectorAll('select.axis-key-select')) {
     const axis = keySelect.dataset.axis;
@@ -304,6 +305,9 @@ export function refreshScoreKeySelects() {
   }
   // the Hover pickers list each score a signature offers, after the columns
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
+    // gene scores are a cell source: a Gene Plot's hover never lists them
+    const owner = select.closest('.tile');
+    if (owner && /^gene-plot/.test(owner.dataset.tileId || '')) continue;
     const picked = new Set(Array.from(select.querySelectorAll('optgroup option')).filter(o => o.selected).map(o => o.value));
     // what each signature offers, and a pick it no longer offers (kept, and marked)
     const wanted = list.flatMap((sig) => {
@@ -612,6 +616,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     populateKeySelector(settings, $keySelect[0], datasetStructure);
     limitTextAxisOptions($keySelect[0], large, textObsColumns(datasetStructure));
     populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure);
+    setTimeout(() => syncSelectTitles(), 60);
     
     // Add or update the refocus and lock buttons for layer, obsp, and varp types
     const $axisSelector = $columnSelect.closest('.axis-selector');
@@ -1226,6 +1231,7 @@ export function scoreColumnOptions(settings) {
     chosen = offered[0].value;
     adopt = { method: offered[0].method, layer: offered[0].layer };
   }
+  if (settings.key && offered.length) options.push({ value: OFFER_MORE, text: 'Offer other scores…', method: '', layer: '' });
   return { options, chosen, adopt };
 }
 
@@ -1242,4 +1248,18 @@ function fillScoreColumnSelect(select, built) {
     opt.dataset.layer = built.options[i].layer || '';
   });
   if (built.chosen !== null) select.value = built.chosen;
+}
+
+/** Every axis select says its full text when hovered: a narrow panel cuts the visible one. */
+function syncSelectTitles(root = document) {
+  for (const select of root.querySelectorAll('.axis-selector select')) {
+    const text = select.selectedOptions && select.selectedOptions[0] ? select.selectedOptions[0].textContent : '';
+    if (text && select.title !== text) select.title = text;
+  }
+}
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('change', (e) => {
+    const select = e.target && e.target.closest ? e.target.closest('.axis-selector select') : null;
+    if (select) setTimeout(() => syncSelectTitles(select.closest('.axis-selector').parentNode), 60);
+  });
 }

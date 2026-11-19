@@ -426,7 +426,7 @@ test('a layer the dataset does not have is its own state, from the server\'s not
     assert.deepEqual(note.actions.map(a => a[0]), ['score-open', 'score-choose']);
 });
 
-test('a consumer on an option the signature no longer offers says so and asks nothing of the server', async () => {
+test('a consumer on an option the signature no longer offers keeps drawing it, says so and asks nothing of the server', async () => {
     const w = world();
     w.add('S1', 'T', ['A']);
     // the same world, with the signature's offers consulted
@@ -442,12 +442,16 @@ test('a consumer on an option the signature no longer offers says so and asks no
     assert.equal(handle.read().state, 'ready');
     offered = false;
     const snap = handle.read();
-    assert.equal(snap.state, 'notoffered');
+    assert.equal(snap.state, 'ready', 'it keeps what it has');
+    assert.equal(snap.lapsed, true);
+    assert.ok(snap.values, 'and keeps drawing');
     assert.equal(snap.layer, 'counts');
     const note = N.describeScore({ ...snap, title: 'T' }, { role: 'x' });
     assert.equal(note.headline, "'T' no longer offers mean · counts.");
+    assert.equal(note.blocksAxis, false);
     assert.deepEqual(note.actions[0], ['score-offer', 'Offer it again']);
     offered = true;
+    assert.equal(handle.read().lapsed, undefined);
     assert.equal(handle.read().state, 'ready', 'offered again: the score is still in the store');
     assert.equal(w.calls.compute.length, 1);
 });

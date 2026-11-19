@@ -243,8 +243,9 @@ def test_layers_are_offered_and_one_is_the_default(page, served):
 # ------------------------------------------------------------------ what plots and tables are offered
 
 def _agg_options(page, tile=C, axis="color"):
-    return page.eval_on_selector_all(f"{tile} select.axis-column-select[data-axis='{axis}'] option",
-                                     "els => els.map(e => [e.value, e.textContent])")
+    got = page.eval_on_selector_all(f"{tile} select.axis-column-select[data-axis='{axis}'] option",
+                                    "els => els.map(e => [e.value, e.textContent])")
+    return [o for o in got if o[0] != "__offer_more__"]
 
 
 def test_a_plot_is_offered_what_the_panel_offers_and_a_switched_off_option_is_kept_and_marked(page, served):
@@ -255,7 +256,7 @@ def test_a_plot_is_offered_what_the_panel_offers_and_a_switched_off_option_is_ke
     assert values == ["zscore_mean", "mean", "sum"]
     _expand(page)
     _offer(page, "detected")
-    until(page, "(t) => document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option').length === 4", D)
+    until(page, "(t) => document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option').length === 5", D)
     assert [v for v, _ in _agg_options(page, D)] == ["zscore_mean", "mean", "sum", "detected"]
     _offer(page, "mean", False)                                          # the plot reads the mean
     until(page, "(t) => /no longer offered/.test(document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').textContent)", D)
@@ -273,7 +274,7 @@ def test_the_hover_picker_lists_only_what_is_offered(page, served):
     _open(page, served, plots=(("cell-plot-C", None),), sig=_sig(offered=["zscore_mean", "detected"]), sig_open=True)
     _wait_coloured(page)
     opts = page.eval_on_selector_all(f"{C} select.hover-columns-select optgroup[label='Gene scores'] option", "els => els.map(e => e.value)")
-    assert opts == [f"gene-score:{SIG}:zscore_mean:", f"gene-score:{SIG}:detected:"]
+    assert opts == [f"gene-score:{SIG}:zscore_mean:X", f"gene-score:{SIG}:detected:X"]
 
 
 def test_the_section_shows_which_options_plots_use(page, served):

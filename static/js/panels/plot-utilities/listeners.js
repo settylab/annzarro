@@ -1,4 +1,5 @@
-import { NEW_SIGNATURE } from '../../utils/score-source.js';
+import { NEW_SIGNATURE, OFFER_MORE, offerOtherScores } from '../../utils/score-source.js';
+import { scoreColumnOptions } from './panel-ui-update.js';
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
@@ -1218,6 +1219,13 @@ function setupAxisSelectorListeners(
     if (settings[axis].type === 'gene-score') {
       // one list of the signature's offered options: the method goes in `column`, the layer beside it
       const chosen = this.selectedOptions[0];
+      if (chosen && chosen.value === OFFER_MORE) {
+        // not a choice: the way to the signature's own list of offers; the plot keeps what it had
+        offerOtherScores(settings[axis].key, id);
+        const was = scoreColumnOptions(settings[axis]).chosen;
+        if (was !== null) this.value = was;
+        return;
+      }
       settings[axis].column = (chosen && chosen.dataset.method) || jQuery(this).val();
       const layer = chosen && chosen.dataset.layer;
       if (layer) settings[axis].layer = layer; else delete settings[axis].layer;

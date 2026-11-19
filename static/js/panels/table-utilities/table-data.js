@@ -1031,7 +1031,8 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     // Export the data, not the display: the display rounds
                     // numbers to 4 decimals and wraps ids in HTML. The column
                     // renders return the raw value for any type but 'display'.
-                    exportOptions: { orthogonal: 'export' },
+                    // a score column's header names its method and layer, always (the header cell carries it)
+                    exportOptions: { orthogonal: 'export', format: { header: (data, idx, node) => (node && node.dataset && node.dataset.exportTitle) || data } },
                     filename: function() {
                         // 'this' here refers to the DataTable API instance.
                         // Return the dynamically set property or fallback to a default name.

@@ -524,7 +524,7 @@ def test_the_source_menu_offers_gene_score_and_lists_every_signature_open_or_clo
     bars = page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data
         .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title))
         .filter(Boolean)""", C)
-    assert bars == ["B cell score"], bars
+    assert bars == ["B cell score<br>z-score mean · X"], bars
 
 
 def test_f4_close_the_signature_and_the_plot_keeps_its_colours_then_reopen_it(page, served):
@@ -567,7 +567,7 @@ def test_a_score_on_an_axis_is_a_placeholder_while_it_computes_and_names_the_sig
     xs = page.evaluate("(t) => Array.from(document.querySelector(t + ' .js-plotly-plot').data[0].x).map(Number)", C)
     assert len(xs) == 60 and xs[:3] == [0.0, 1.0, 2.0] or sorted(xs)[:3] == [0.0, 1.0, 2.0]
     title = page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C)
-    assert title == "T cell score", "the axis names the signature, not the panel id"
+    assert title == "T cell score · z-score mean · X", "the axis names the signature, not the panel id"
 
 
 def test_hover_lists_the_score_beside_the_columns_and_labels_it_by_title(page, served):
@@ -575,15 +575,15 @@ def test_hover_lists_the_score_beside_the_columns_and_labels_it_by_title(page, s
     _open(page, served, plots=(("cell-plot-C", cfg),))
     options = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.hover-columns-select optgroup[label="Gene scores"] option')]
         .map(o => [o.value, o.textContent, o.selected])""", C)
-    assert options == [[f"gene-score:{SIG}:zscore_mean:", "T cell score", True], [f"gene-score:{SIG}:mean:", "T cell score · Mean", False],
-                       [f"gene-score:{SIG}:sum:", "T cell score · Sum", False]]
+    assert options == [[f"gene-score:{SIG}:zscore_mean:X", "T cell score", True], [f"gene-score:{SIG}:mean:X", "T cell score · Mean", False],
+                       [f"gene-score:{SIG}:sum:X", "T cell score · Sum", False]]
     until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score')))); }", C)
     text = page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data.flatMap(d => d.hovertext || []).filter(h => String(h).includes('T cell score'))[0]""", C)
     assert "T cell score:" in text
     # picking it in the Hover list writes the setting
     page.goto("about:blank")
     _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "none", "key": "", "column": ""})),))
-    page.select_option(f"{C} select.hover-columns-select", [f"gene-score:{SIG}:zscore_mean:"])
+    page.select_option(f"{C} select.hover-columns-select", [f"gene-score:{SIG}:zscore_mean:X"])
     until(page, "() => (window.PanelManager.getPanel('cell-plot-C').getConfig().hoverInfo || []).some(h => h.type === 'gene-score' && h.key === 'gene-signature-S')")
 
 
@@ -599,7 +599,7 @@ def test_large_plot_mode_colours_by_a_score_and_its_tooltip_reads_the_vector(lar
     bars = large_page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data
         .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title))
         .filter(Boolean)""", C)
-    assert bars == ["T cell score"]
+    assert bars == ["T cell score<br>z-score mean · X"]
     # the tooltip's colour line is read from the held vector, not asked of the server for one cell
     until(large_page, """(tile) => { const g = document.querySelector(tile + ' .js-plotly-plot');
         return !!(g && g.__largeState && g.__largeState.index && g._fullLayout); }""", C)
@@ -613,9 +613,9 @@ def test_large_plot_mode_colours_by_a_score_and_its_tooltip_reads_the_vector(lar
     large_page.mouse.move(spot["x"] - 60, spot["y"] - 60)
     large_page.mouse.move(spot["x"] + 1, spot["y"] + 1, steps=4)
     until(large_page, """() => { const t = document.querySelector('.large-plot-tip');
-        return !!(t && t.style.display !== 'none' && Array.from(t.children).some(c => c.textContent.startsWith('T cell score: '))); }""")
+        return !!(t && t.style.display !== 'none' && Array.from(t.children).some(c => c.textContent.startsWith('T cell score · z-score mean · X: '))); }""")
     tip = large_page.evaluate("() => Array.from(document.querySelector('.large-plot-tip').children).map(c => c.textContent)")
-    line = [t for t in tip if t.startswith("T cell score: ")][0]
+    line = [t for t in tip if t.startswith("T cell score · z-score mean · X: ")][0]
     held = large_page.evaluate("""async () => {
         const mod = await import('/static/js/utils/score-source.js');
         const setting = window.PanelManager.getPanel('cell-plot-C').getConfig().color;
@@ -949,7 +949,7 @@ def test_renaming_a_signature_retitles_its_plots_without_computing_again(page, s
     _wait_coloured(page)
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').setTitle('Exhaustion score')")
     until(page, """(t) => { const g = document.querySelector(t + ' .js-plotly-plot');
-        return !!g && g.data.some(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title) === 'Exhaustion score'); }""", C)
+        return !!g && g.data.some(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title) === 'Exhaustion score<br>z-score mean · X'); }""", C)
     assert len(_calls(page, "compute")) == 1, "a title is not part of the recipe"
     labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => o.textContent)", C)
     assert labels == ["Exhaustion score", "New signature…"]
@@ -986,7 +986,7 @@ def test_a_score_is_selectable_on_every_axis_including_z_in_a_3d_plot(page, serv
     until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => d.type === 'scatter3d' && (d.z || []).length > 1)); }", C)
     zs = page.evaluate("(t) => Array.from(document.querySelector(t + ' .js-plotly-plot').data.find(d => d.type === 'scatter3d').z).map(Number)", C)
     assert len(zs) == 60 and len(set(round(v, 5) for v in zs)) > 1
-    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.scene.zaxis.title.text", C) == "T cell score"
+    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.scene.zaxis.title.text", C) == "T cell score · z-score mean · X"
     # and the z menu offers it
     assert "gene-score" in page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"z\"] option')].map(o => o.value)", C)
 
@@ -997,7 +997,7 @@ def test_two_scores_against_each_other_one_per_signature_and_the_same_signature_
     _ready_plot(page)
     assert sorted(c["genes"][0] for c in _calls(page, "compute")) == ["GENE0001", "GENE0010"]
     titles = page.evaluate("(t) => { const l = document.querySelector(t + ' .js-plotly-plot').layout; return [l.xaxis.title.text, l.yaxis.title.text]; }", C)
-    assert titles == ["T cell score", "B cell score"]
+    assert titles == ["T cell score · z-score mean · X", "B cell score · z-score mean · X"]
     page.goto("about:blank")
     same = _cell(x=SCORE, y=SCORE, color=SCORE)
     _open(page, served, plots=(("cell-plot-C", same),))
@@ -1011,7 +1011,7 @@ def test_a_score_against_an_obs_column_and_against_a_gene(page, served):
     cfg = _cell(x=SCORE, y={"type": "obs", "key": "score", "column": ""}, color={"type": "layer", "key": "X", "column": "KLF1"})
     _open(page, served, plots=(("cell-plot-C", cfg),))
     _ready_plot(page)
-    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C) == "T cell score"
+    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C) == "T cell score · z-score mean · X"
 
 
 def test_two_aggregations_of_one_signature_are_two_scores_and_one_aggregation_is_shared(page, served):
@@ -1022,16 +1022,16 @@ def test_two_aggregations_of_one_signature_are_two_scores_and_one_aggregation_is
     assert sorted(c["method"] for c in computes) == ["mean", "zscore_mean"], "y and colour share the mean; x is the z-score mean"
     assert len(_calls(page, "estimate")) == 2
     titles = page.evaluate("(t) => { const l = document.querySelector(t + ' .js-plotly-plot').layout; return [l.xaxis.title.text, l.yaxis.title.text]; }", C)
-    assert titles == ["T cell score", "T cell score · mean"]
+    assert titles == ["T cell score · z-score mean · X", "T cell score · mean · X"]
     # the third level is a menu: the aggregations the server computes, z-score mean first
     opts = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"y\"] option')].map(o => [o.value, o.textContent])", C)
-    assert opts == [["zscore_mean", "Z-score mean"], ["mean", "Mean"], ["sum", "Sum"]]
+    assert opts == [["zscore_mean", "Z-score mean"], ["mean", "Mean"], ["sum", "Sum"], ["__offer_more__", "Offer other scores…"]]
     # choosing the other aggregation in the menu moves the axis to it
     page.select_option(f"{C} select.axis-column-select[data-axis='x']", "mean")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().x.column === 'mean'")
     page.wait_for_timeout(800)
     assert len(_calls(page, "compute")) == 2, "the mean was already in the store"
-    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C) == "T cell score · mean"
+    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C) == "T cell score · mean · X"
 
 
 def test_a_link_made_before_sub_keys_has_no_column_and_means_the_z_score_mean(page, served):
@@ -1202,7 +1202,7 @@ def test_hover_offers_each_aggregation(page, served):
     until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score · mean:')))); }", C)
     assert _calls(page, "compute")[0]["method"] == "mean"
     # both at once: two scores in the hover, two requests
-    page.select_option(f"{C} select.hover-columns-select", [f"gene-score:{SIG}:zscore_mean:", f"gene-score:{SIG}:mean:"])
+    page.select_option(f"{C} select.hover-columns-select", [f"gene-score:{SIG}:zscore_mean:X", f"gene-score:{SIG}:mean:X"])
     until(page, "() => (window.PanelManager.getPanel('cell-plot-C').getConfig().hoverInfo || []).filter(h => h.type === 'gene-score').length === 2")
     until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score:') && String(h).includes('T cell score · mean:')))); }", C)
     assert sorted(c["method"] for c in _calls(page, "compute")) == ["mean", "zscore_mean"]

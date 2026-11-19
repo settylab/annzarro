@@ -72,14 +72,14 @@ test('the panel builds the picker and the listener writes hoverInfo', () => {
 test('a cell plot lists each score a signature offers, the default first; a gene plot lists none', async () => {
     const { hoverColumnOptions: options, hoverInfoFromSelection: info, scoreValue, parseScoreValue } =
         await import('../../../static/js/panels/plot-utilities/hover-columns.js');
-    const offers = [{ method: 'zscore_mean', layer: '', label: 'Z-score mean' }, { method: 'mean', layer: '', label: 'Mean' },
+    const offers = [{ method: 'zscore_mean', layer: 'X', label: 'Z-score mean' }, { method: 'mean', layer: 'X', label: 'Mean' },
         { method: 'mean', layer: 'counts', label: 'Mean · counts' }];
-    const sigs = [{ id: 'gene-signature-1', title: 'T cell score', options: offers }, { id: 'gene-signature-2', title: 'B cell score', options: offers.slice(0, 1) }];
+    const sigs = [{ id: 'gene-signature-1', title: 'T cell score', input: 'X', options: offers }, { id: 'gene-signature-2', title: 'B cell score', input: 'X', options: offers.slice(0, 1) }];
     const cells = options('cells', structure, [{ type: 'gene-score', key: 'gene-signature-2' }], false, sigs);
     const scores = cells.filter(o => o.group === 'Gene scores');
     assert.deepEqual(scores.map(o => [o.value, o.label, o.selected]), [
-        ['gene-score:gene-signature-1:zscore_mean:', 'T cell score', false], ['gene-score:gene-signature-1:mean:', 'T cell score · Mean', false],
-        ['gene-score:gene-signature-1:mean:counts', 'T cell score · Mean · counts', false], ['gene-score:gene-signature-2:zscore_mean:', 'B cell score', true]]);
+        ['gene-score:gene-signature-1:zscore_mean:X', 'T cell score', false], ['gene-score:gene-signature-1:mean:X', 'T cell score · Mean', false],
+        ['gene-score:gene-signature-1:mean:counts', 'T cell score · Mean · counts', false], ['gene-score:gene-signature-2:zscore_mean:X', 'B cell score', true]]);
     assert.equal(options('genes', structure, [], false, sigs).some(o => o.group), false);
     // a pick the signature no longer offers is kept and marked
     const lapsed = options('cells', structure, [{ type: 'gene-score', key: 'gene-signature-2', column: 'sum' }], false, sigs)

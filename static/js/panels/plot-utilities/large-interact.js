@@ -180,7 +180,7 @@ function showTip(gd, st, hit, clientX, clientY) {
     if (info && info.name !== undefined) rows.push(String(info.name));
     rows.push(...lines);
     if (info && info.colour !== null && info.colour !== undefined && colour && colour.type !== 'none') {
-      rows.push(`${colourTitle(colour)}: ${_fmt(info.colour)}`);
+      rows.push(`${colourTitle(colour).replace('<br>', ' · ')}: ${_fmt(info.colour)}`);
     }
     tip.replaceChildren(...rows.map((t, i) => {
       const d = document.createElement('div');
