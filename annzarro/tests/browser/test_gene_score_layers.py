@@ -70,6 +70,8 @@ def test_the_third_menu_is_one_list_of_what_the_signature_offers_method_and_laye
     # the default layer is stored as no layer
     page.select_option(sel, "mean@X")
     until(page, "() => !('layer' in window.PanelManager.getPanel('cell-plot-C').getConfig().color)")
+    page.select_option(sel, "mean@counts")
+    page.wait_for_timeout(1500)
     page.screenshot(path="/private/tmp/claude-501/-Users-dotto-gits-annzarro/d0efd83a-6333-4a2b-8ec0-f428a26626fb/scratchpad/gs5c-layer-menu.png")
     # a source that is not a score has no such list
     page.select_option(f"{C} select.axis-type-select[data-axis='color']", "obs")

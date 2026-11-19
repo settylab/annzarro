@@ -344,6 +344,8 @@ export function refreshScoreKeySelects() {
  */
 export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure) {
   noteDatasetLayers(layerKeys(datasetStructure));
+  // the layer belongs to a gene score only: another source has none
+  if (settings.type !== 'gene-score' && settings.layer) delete settings.layer;
   // Initialize the settings history if it doesn't exist
   if (!settings.history) {
     settings.history = {};
