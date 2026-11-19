@@ -43,6 +43,24 @@ def make_matrix(seed=3):
     return x.astype(np.float32)
 
 
+WIDE_VAR = 1500
+
+
+def wide_names():
+    return [f"W{i:04d}" for i in range(WIDE_VAR)]
+
+
+def wide_matrix(seed=8):
+    """200 x 1,500, genes detected in 2% to 90% of cells, so every bin holds more genes than the 50 controls
+    drawn from it (the 20 gene store above has no controls to draw, and the 150 gene reference matrix takes
+    every gene of a bin whatever the seed). Gene 2 holds 3.0 in every cell."""
+    rng = np.random.default_rng(seed)
+    rate = rng.uniform(0.02, 0.9, WIDE_VAR)
+    x = rng.gamma(2.0, 1.0, (N_OBS, WIDE_VAR)) * (rng.random((N_OBS, WIDE_VAR)) < rate)
+    x[:, 2] = 3.0
+    return x.astype(np.float32)
+
+
 def _write_matrix(group, name, x, layout, chunks=64):
     """``x`` (dense) stored under ``group[name]`` as ``layout``."""
     if layout == "dense":

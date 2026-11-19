@@ -18,7 +18,7 @@ import pytest
 
 from annzarro.core import gene_score as gs
 from annzarro.core import get_reader
-from annzarro.tests.core.gene_score_store import BACKENDS, LAYOUTS, make_matrix, make_store
+from annzarro.tests.core.gene_score_store import BACKENDS, LAYOUTS, make_matrix, make_store, wide_matrix, wide_names
 
 REFERENCE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data",
                          "gene_score_scanpy_reference.npz")
@@ -184,9 +184,15 @@ def test_a_csc_store_knows_its_controls_before_reading_and_others_after(stores, 
 
 # --- the seed ------------------------------------------------------------------------------------------------
 
-def test_a_seed_gives_the_same_score_every_time_and_a_new_seed_a_new_draw(stores, ref, names):
-    path = stores["zarr", "csc"]
-    genes = [names[c] for c in ref["mixed_cols"][:5]]
+@pytest.fixture(scope="module")
+def wide(tmp_path_factory):
+    """Bins larger than the control size, so the seed matters."""
+    return make_store(tmp_path_factory.mktemp("wide") / "w.zarr", wide_matrix(), "csc", var_names=wide_names())
+
+
+def test_a_seed_gives_the_same_score_every_time_and_a_new_seed_a_new_draw(wide):
+    path = wide
+    genes = wide_names()[10:30]
     a = run(path, {"genes": genes, "method": "control_adjusted", "seed": 11})[1]
     b = run(path, {"genes": genes, "method": "control_adjusted", "seed": 11})[1]
     other = run(path, {"genes": genes, "method": "control_adjusted", "seed": 12})[1]
@@ -248,9 +254,9 @@ def test_missing_genes_are_left_out_and_listed(stores, ref, names):
 
 
 def test_a_constant_gene_stays_in_the_difference_as_it_does_in_the_mean(tmp_path):
-    x = np.where(np.isfinite(make_matrix()), make_matrix(), 0).astype(np.float32)      # gene 2 holds 3.0 everywhere
-    path = make_store(tmp_path / "const.zarr", x, "csc")
-    _, result, _ = run(path, {"genes": ["GENE002", "GENE008", "GENE009"], "method": "control_adjusted"})
+    x = wide_matrix()                                                       # gene 2 holds 3.0 everywhere
+    path = make_store(tmp_path / "const.zarr", x, "csc", var_names=wide_names())
+    _, result, _ = run(path, {"genes": ["W0002", "W0008", "W0009"], "method": "control_adjusted"})
     assert result.n_used == 3 and result.controls
     np.testing.assert_allclose(result.values, dense_score(x, [2, 8, 9], result.controls), **TOL)
 

@@ -5,7 +5,6 @@ like. The arithmetic is tested against a dense reference in tests/core/test_gene
 """
 import io
 import json
-import os
 import re
 import socket
 import threading
@@ -20,7 +19,7 @@ from annzarro.core import read_guard, subset as cell_subset, zarr_reader
 from annzarro.server.auth import AuthManager
 from annzarro.server.core import create_app
 from annzarro.server.routes import gene_score as route
-from annzarro.tests.core.gene_score_store import N_OBS, gene, make_matrix, make_store, reference
+from annzarro.tests.core.gene_score_store import N_OBS, gene, make_matrix, make_store, reference, wide_matrix, wide_names
 from annzarro.tests.server.test_data_access_matrix import RESTRICTED, USERS, PASSWORD, inject_deny_list
 
 URL = "/api/v1/data/gene_score"
@@ -251,7 +250,6 @@ def test_a_body_over_the_limit_is_refused_before_it_is_parsed(client, layout):
     ('{"recipe": {"genes": []}, "extra": 1}', "bad_request"),
     ('{"recipe": {"genes": []}, "estimate_only": "yes"}', "bad_request"),
     ('{"recipe": {"genes": [], "clip": 0}}', "bad_clip"), ('{"recipe": {"genes": [], "clip": -3}}', "bad_clip"),
-    ('{"recipe": {"genes": [], "method": "control_adjusted"}}', "method_not_available"),
     ('{"recipe": {"genes": [], "down": ["A"]}}', "down_not_available"),
     ('{"recipe": {"genes": []}, "dataset_path": "/somewhere/else.zarr"}', "dataset_path_conflict"),
 ])
@@ -458,16 +456,16 @@ def test_a_forged_request_is_refused(secured, layout):
 
 
 # --- the control-adjusted score -----------------------------------------------------------------------------
-# A control needs a bin with genes outside the signature, so these use the 150-gene reference matrix.
+# A control needs a bin with genes outside the signature, and the seed matters only where a bin holds more than
+# 50 genes, so these use a 1,500 gene store.
 
-BIG = [f"G{i:03d}" for i in range(150)]
-SIGNATURE = BIG[3:60:7]
+BIG = wide_names()
+SIGNATURE = BIG[10:30]
 
 
 @pytest.fixture
 def big(layout):
-    x = np.load(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data",
-                             "gene_score_scanpy_reference.npz"))["x"]
+    x = wide_matrix()
     make_store(layout / "data" / "big.zarr", x, "csc", "zarr", var_names=BIG)
     make_store(layout / "data" / "big.h5ad", x, "csr", "h5ad", var_names=BIG)
     zarr_reader.clear_cache()
