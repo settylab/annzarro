@@ -36,6 +36,7 @@ import { getFixedGenes } from './table-utilities/panel-tracker.js';
 import { signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
+import { createInspect } from './gene-signature-inspect.js';
 import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
@@ -152,6 +153,7 @@ const GeneSignaturePanel = (function() {
         let _dom = null;
         let D = null;
         let _grid = null;
+        let _inspect = null;
         const _undo = new UndoStack();
         const _idMaps = new Map();        // dataset + column -> Promise of id -> gene name, read only when a paste needs it
         let _flow = null;                 // an inline flow (paste and upload) replacing the list: {node, opener, onClose}
@@ -193,6 +195,8 @@ const GeneSignaturePanel = (function() {
             for (const [target, type, fn] of _listeners.splice(0)) target.removeEventListener(type, fn);
             if (_grid) _grid.destroy();
             _grid = null;
+            if (_inspect) _inspect.destroy();
+            _inspect = null;
             if (_unwatchScore) _unwatchScore();
             _unwatchScore = null;
             _initialized = false;
@@ -491,7 +495,8 @@ const GeneSignaturePanel = (function() {
             root.addEventListener('keydown', onPanelKey);
             root.addEventListener('dragover', onPanelDragOver);
             root.addEventListener('drop', onPanelDrop);
-            root.append(status, controls, listbar, message, note, empty, _grid.element);
+            _inspect = createInspect({ id: _id, D, getTitle: () => _title, getRecipe, focusGene: (gene) => DataManager.setFocusedGene(gene) });
+            root.append(status, controls, listbar, message, note, empty, _grid.element, _inspect.element);
             _container.innerHTML = '';
             _container.appendChild(root);
             _dom = { root, controls, flowHost: _flowHost, status, summary, useIn, useInMenu, definition, usedBy, scoreLine, search, regex, matchCase, tickAllBtn, searchNote,
@@ -983,7 +988,8 @@ const GeneSignaturePanel = (function() {
             getSelectedGenes: () => [..._recipe.genes, ..._recipe.down],
             openFlow,
             closeFlow,
-            _debugState
+            _debugState,
+            _inspect: () => _inspect
         };
         return api;
     }
