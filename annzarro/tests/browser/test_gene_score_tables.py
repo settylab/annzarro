@@ -393,6 +393,23 @@ def test_export_writes_the_score_column_when_it_is_ready(page, served, tmp_path)
     assert len(row["c10"][2].split(".")[1]) > 4, "full precision, as the data has it: " + row["c10"][2]
 
 
+def test_export_writes_two_score_columns_of_one_source_with_their_full_headers(page, served, tmp_path):
+    counts = {**MEAN_COL, "layer": "counts"}
+    _open(page, served, table=_table(columns=(SCORE_COL, counts)), sig=_sig(layers=["X", "counts"]))
+    until(page, "(box) => { const th = [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].map(t => t.textContent.trim());"
+                " return th.length === 3 && !th.some(t => /computing|not computed|no score/.test(t)); }", BOX)
+    with page.expect_download() as info:
+        page.click(f"#export-csv-{TID}")
+    path = tmp_path / "two.csv"
+    info.value.save_as(str(path))
+    lines = path.read_text().strip().splitlines()
+    assert lines[0].replace('"', "") == "Cell ID,T cell score · z-score mean · X,T cell score · mean · counts"
+    assert len(lines) == N_OBS + 1
+    first = lines[1].replace('"', "").split(",")
+    assert first[0] == "c0" and all(float(v) == float(v) for v in first[1:])
+    assert first[1] != first[2], "two options, two different scores"
+
+
 # ------------------------------------------------------------ the chain: plot <- table <- score
 
 P = '.tile[data-tile-id="cell-plot-C"]'

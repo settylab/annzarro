@@ -1,20 +1,19 @@
 /**
- * The export chooser of Inspect: the user picks which method · layer combinations of a source to export, for a Gene
- * Signature and a Gene Table alike.
- *
- *   Export scores per cell    one row per cell shown, the cell name and one column per combination
- *   Export gene figures       the per-gene figures of each combination's own layer, in the long form
+ * The export chooser of Inspect: the user picks which method · layer combinations of a source to export the gene figures
+ * of, for a Gene Signature and a Gene Table alike. The figures of each combination come from its own layer, in the long
+ * form (one row per combination and gene). Scores per cell are not exported here: a source does not own a set of cells,
+ * and a Cell Table with the score as columns exports them.
  *
  * The chooser lists the source's offered combinations (the list plots choose from, impossible ones left out). The one
  * being inspected is ticked, and any already computed. A combination that is not computed is computed when the user
  * presses Export, never before, through the score store under its usual cost tiers: the estimate is stated beside it
  * when the chooser opens, one that asks first (the confirm tier) is asked about, one that is refused is left out and
  * named, progress is shown with Cancel, and Cancel leaves no file. The CSV is built in chunks that become Blobs as they
- * are made, so a large export never holds its text as one string.
+ * are made.
  */
 import { scores } from '../../utils/score-source.js';
 import { durationText } from '../../utils/score-notices.js';
-import { multiScoreCsvParts, longGeneCsv, exportFileName } from '../../utils/score-inspect.js';
+import { longGeneCsv, exportFileName } from '../../utils/score-inspect.js';
 import { fmtCount } from '../../utils/gene-signature.js';
 
 /** The states in which a combination will not change by itself. */
@@ -27,13 +26,12 @@ const TERMINAL = new Set(['failed', 'refused', 'noscore', 'nogenes', 'cancelled'
  * @param {() => string} o.getTitle
  * @param {() => Array<{method: string, layer: string, label: string}>} o.getOptions - the combinations on offer
  * @param {() => {method: string, layer: string}} o.getCurrent - the one being inspected
- * @param {() => Promise<ArrayLike<string>>} o.getNames - the names of the cells shown
  * @param {(name: string, parts: Array<string|Blob>) => void} o.download
  * @param {(text: string) => void} o.say - the result line
  */
-export function createExportChooser({ D, id, getTitle, getOptions, getCurrent, getNames, download, say }) {
+export function createExportChooser({ D, id, getTitle, getOptions, getCurrent, download, say }) {
     const sid = (x) => `gsig-export-${x}-${id}`;
-    let kind = null;                 // 'scores' | 'genes' while the chooser is open
+    let open_ = false;               // the chooser is open
     let run = null;                  // the export in progress
     let estimates = new Map();       // option key -> {text, tier}
     const key = (o) => `${o.method}@${o.layer}`;
@@ -49,11 +47,9 @@ export function createExportChooser({ D, id, getTitle, getOptions, getCurrent, g
     const computed = (o) => scores().sources.isReady(id, { sub: o.method, layer: o.layer });
     const fail = (error) => { endRun(); say(`Export failed: ${error.message}`); };
 
-    function open(which) {
-        kind = which;
-        title.textContent = which === 'scores'
-            ? 'Export scores per cell: choose the combinations to include'
-            : 'Export gene figures: choose the combinations to include';
+    function open() {
+        open_ = true;
+        title.textContent = 'Export gene figures: choose the combinations to include';
         element.hidden = false;
         status.textContent = '';
         estimates = new Map();
@@ -63,14 +59,14 @@ export function createExportChooser({ D, id, getTitle, getOptions, getCurrent, g
             scores().sources.estimate(id, { sub: o.method, layer: o.layer }).then((reply) => {
                 if (!reply || !reply.estimate) return;
                 estimates.set(key(o), { tier: reply.estimate.tier, seconds: reply.estimate.seconds });
-                if (kind) paintList(false);
+                if (open_) paintList(false);
             }).catch(() => {});
         }
     }
 
     function closeChooser() {
         if (run) cancelRun();
-        kind = null;
+        open_ = false;
         element.hidden = true;
     }
 
@@ -158,7 +154,7 @@ export function createExportChooser({ D, id, getTitle, getOptions, getCurrent, g
     }
 
     async function start() {
-        if (run || !kind) return;
+        if (run || !open_) return;
         const picks = getOptions().filter(o => ticked().has(key(o)));
         if (!picks.length) { status.textContent = 'Tick at least one combination to export.'; return; }
         const options = new Map(picks.map(o => [key(o), o]));
@@ -194,22 +190,15 @@ export function createExportChooser({ D, id, getTitle, getOptions, getCurrent, g
             try {
                 if (!combos.length) { endRun(); status.textContent = `Nothing to export. Left out: ${left.join('; ')}.`; return; }
                 const label = (o) => `${getTitle()} · ${o.label}`;
-                let parts;
-                if (kind === 'scores') {
-                    const names = await getNames();
-                    if (run === null || run.cancelled) return;
-                    parts = multiScoreCsvParts(names, ok.map(([k, s]) => ({ header: label(run.options.get(k)), values: s.values })), { blobs: true });
-                } else {
-                    parts = [longGeneCsv(ok.map(([k, s]) => ({ label: label(run.options.get(k)), genes: (s.header && s.header.genes) || [] })))];
-                }
-                download(exportFileName(getTitle(), kind === 'scores' ? 'scores' : 'genes', combos), parts);
-                say(`Exported ${combos.length} combination${combos.length === 1 ? '' : 's'}${kind === 'scores' ? ' per cell' : ''}.${left.length ? ` Left out: ${left.join('; ')}.` : ''}`);
+                const parts = [longGeneCsv(ok.map(([k, s]) => ({ label: label(run.options.get(k)), genes: (s.header && s.header.genes) || [] })))];
+                download(exportFileName(getTitle(), 'genes', combos), parts);
+                say(`Exported the gene figures of ${combos.length} combination${combos.length === 1 ? '' : 's'}.${left.length ? ` Left out: ${left.join('; ')}.` : ''}`);
             } finally {
                 const had = run !== null;
                 if (had) endRun();
                 status.textContent = '';
                 if (had) element.hidden = true;
-                if (had) kind = null;
+                if (had) open_ = false;
             }
         };
         for (const [k, o] of options) {

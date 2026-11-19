@@ -253,58 +253,6 @@ export function geneCsv(genes) {
 }
 
 /**
- * The score of each cell shown as CSV, in chunks (one string would not fit a very large set): cell name and value.
- * A cell without a score has an empty value.
- * @param {ArrayLike<string>} names - the cells shown, in order
- * @param {ArrayLike<number>} values - the held scores, the same length
- * @param {{header?: string, chunk?: number}} [opts]
- * @returns {string[]} parts to join (a Blob takes them as they are)
- * @throws {Error} when the lengths differ
- */
-export function scoreCsvParts(names, values, { header = 'score', chunk = 50000 } = {}) {
-    if (names.length !== values.length) {
-        throw new Error(`There are ${names.length} cell names for ${values.length} scores.`);
-    }
-    const parts = [`cell,${csvField(header)}\r\n`];
-    for (let start = 0; start < values.length; start += chunk) {
-        const end = Math.min(values.length, start + chunk);
-        const lines = new Array(end - start);
-        for (let i = start; i < end; i++) lines[i - start] = `${csvField(names[i], { text: true })},${float32Text(values[i])}`;
-        parts.push(`${lines.join('\r\n')}\r\n`);
-    }
-    return parts;
-}
-
-/**
- * The scores of several method · layer combinations as CSV, one row per cell shown: the cell name, then one column per
- * combination, headed with its full label. Built in chunks; with `blobs`, each chunk becomes a Blob as soon as it is
- * made, so the text of a large export never sits in memory all at once (1M cells x 6 columns is about 60 MB of text).
- * A cell without a score has an empty value, and cell names that look like formulas get the apostrophe.
- * @param {ArrayLike<string>} names
- * @param {Array<{header: string, values: ArrayLike<number>}>} columns - each as long as `names`
- * @param {{chunk?: number, blobs?: boolean}} [opts]
- * @returns {Array<string|Blob>}
- */
-export function multiScoreCsvParts(names, columns, { chunk = 50000, blobs = false } = {}) {
-    for (const c of columns) {
-        if (names.length !== c.values.length) throw new Error(`There are ${names.length} cell names for ${c.values.length} scores.`);
-    }
-    const wrap = (text) => (blobs ? new Blob([text], { type: 'text/csv' }) : text);
-    const parts = [wrap(`cell,${columns.map(c => csvField(c.header)).join(',')}\r\n`)];
-    for (let start = 0; start < names.length; start += chunk) {
-        const end = Math.min(names.length, start + chunk);
-        const lines = new Array(end - start);
-        for (let i = start; i < end; i++) {
-            let line = csvField(names[i], { text: true });
-            for (const c of columns) line += `,${float32Text(c.values[i])}`;
-            lines[i - start] = line;
-        }
-        parts.push(wrap(`${lines.join('\r\n')}\r\n`));
-    }
-    return parts;
-}
-
-/**
  * The per-gene figures of several combinations in the LONG form: one row per combination and gene, with the
  * combination named in the first column. Long, not one block of columns per combination, because the figures of each
  * combination are read from its own layer (a gene can be constant in one and not in another) and the number of columns

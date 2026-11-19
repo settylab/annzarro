@@ -163,23 +163,6 @@ test('float32 values are written in the fewest digits that read back exactly', (
     }
 });
 
-test('the score csv is cell name and value, in order, with an empty value for a missing score', () => {
-    const parts = I.scoreCsvParts(['c0', 'c,1', 'c2'], new Float32Array([0.5, NaN, -2]));
-    assert.equal(parts.join(''), 'cell,score\r\nc0,0.5\r\n"c,1",\r\nc2,-2\r\n');
-});
-
-test('the score csv is built in chunks and refuses a mismatch', () => {
-    const n = 120_001;
-    const names = Array.from({ length: n }, (_, i) => `c${i}`);
-    const values = new Float32Array(n).map((_, i) => i);
-    const parts = I.scoreCsvParts(names, values, { chunk: 50000 });
-    assert.equal(parts.length, 1 + 3);
-    const lines = parts.join('').split('\r\n');
-    assert.equal(lines.length, n + 2);             // header, rows, trailing empty
-    assert.equal(lines[n], `c${n - 1},${n - 1}`);
-    assert.throws(() => I.scoreCsvParts(['a'], new Float32Array(2)), /1 cell names for 2 scores/);
-});
-
 test('file names are safe', () => {
     assert.equal(I.fileName('T cell score', 'zscore_mean_genes'), 'T_cell_score_zscore_mean_genes.csv');
     assert.equal(I.fileName('a/b\\c:d', 'x'), 'a_b_c_d_x.csv');
@@ -188,30 +171,6 @@ test('file names are safe', () => {
 
 // ---------------------------------------------------------------------------------------------------------------
 // export of several method · layer combinations
-
-test('several combinations make one column each, headed with the full label, a row per cell', () => {
-    const names = ['c0', 'c1', 'c2'];
-    const parts = I.multiScoreCsvParts(names, [
-        { header: 'T · z-score mean · X', values: new Float32Array([1, 2.5, NaN]) },
-        { header: 'T · mean · counts', values: new Float32Array([0.1, 0, 7]) }], { chunk: 2 });
-    assert.deepEqual(parts, ['cell,T · z-score mean · X,T · mean · counts\r\n', 'c0,1,0.1\r\nc1,2.5,0\r\n', 'c2,,7\r\n']);
-    assert.throws(() => I.multiScoreCsvParts(['a'], [{ header: 'h', values: [1, 2] }]), /1 cell names for 2 scores/);
-});
-
-test('formula-like cell names and headers follow the same rules as one column', () => {
-    const parts = I.multiScoreCsvParts(['=SUM(A1)', '+1x', 'a,b'], [{ header: 'a,b', values: [1, 2, 3] }, { header: 'h', values: [4, 5, 6] }]);
-    assert.equal(parts[0], 'cell,"a,b",h\r\n');
-    assert.equal(parts[1], "'=SUM(A1),1,4\r\n'+1x,2,5\r\n\"a,b\",3,6\r\n");
-});
-
-test('blob parts hold the same text, and nothing is one string of the whole file', async () => {
-    const names = Array.from({ length: 120000 }, (_, i) => `c${i}`);
-    const cols = [{ header: 'h', values: new Float32Array(names.length).fill(1) }];
-    const parts = I.multiScoreCsvParts(names, cols, { blobs: true });
-    assert.equal(parts.length, 1 + 3, 'a header and three chunks of at most 50,000 rows');
-    assert.ok(parts.every(p => p instanceof Blob));
-    assert.equal(await new Blob(parts).text(), I.multiScoreCsvParts(names, cols).join(''));
-});
 
 test('gene figures of several combinations are long: one row per combination and gene', () => {
     const csv = I.longGeneCsv([

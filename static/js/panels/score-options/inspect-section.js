@@ -20,7 +20,6 @@
  * Closing it lets go of the score (a score a plot still needs stays).
  */
 import { createExportChooser } from './export-chooser.js';
-import { DataManager } from '../../data-manager.js';
 import { scores } from '../../utils/score-source.js';
 import { describeScore } from '../../utils/score-notices.js';
 import { DEFAULT_METHOD, definitionText, fmtCount } from '../../utils/gene-signature.js';
@@ -423,11 +422,9 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         const why = ready ? undefined : 'Export is available when the score is up to date.';
         exportRow.append(
             D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { inspectExport: 'genes' },
-                disabled: !ready, title: why, on: { click: () => chooser.open('genes') } }, 'Export gene figures (CSV)'),
-            ' ',
-            D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { inspectExport: 'scores' },
-                disabled: !ready, title: why, on: { click: () => chooser.open('scores') } },
-            'Export scores per cell (CSV)'));
+                disabled: !ready, title: why, on: { click: () => chooser.open() } }, 'Export gene figures (CSV)'),
+            D.el('div', { class: 'gsig-inspect__percell', data: { inspectPercell: '' },
+                text: 'To export scores per cell, add them as columns to a Cell Table.' }));
     }
 
     function say(text) {
@@ -437,13 +434,6 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
     // which combinations to export: the chooser (export-chooser.js)
     const chooser = createExportChooser({
         D, id, getTitle, getOptions: optionsHere, getCurrent: () => ({ method: _method, layer: _layer }),
-        getNames: async () => {
-            try {
-                return await DataManager.allCellNames();
-            } catch (error) {
-                throw new Error(`the names of this many cells are not in the browser (${error.message || 'too many'})`, { cause: error });
-            }
-        },
         download, say
     });
     exportRow.after(chooser.element);
