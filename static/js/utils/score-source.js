@@ -468,6 +468,7 @@ export function signatureRenamed(id) {
 /** Panels were added, removed, closed or reopened: a deleted signature shows, a returned one resolves. */
 export function panelsChanged() {
     if (!_sources) return;
+    _sources.recheck();
     _sources.contextChanged();
     for (const host of LIVE_HOSTS) schedulePaint(host);
 }

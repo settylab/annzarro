@@ -16,7 +16,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 5));
 const vec = (n, v = 1) => new Float32Array(n).fill(v);
 
 /** A fake server: each compute waits for `release(i)`; the estimate says what `tier` says. */
-function fakeApi({ tier = 'auto', seconds = 2, fail = null } = {}) {
+function fakeApi({ tier = 'auto', seconds = 2 } = {}) {
     const calls = { estimate: [], compute: [] };
     const waiting = [];
     return {
@@ -115,7 +115,8 @@ test('however many dependants need a score there is one estimate and one request
     assert.equal(f.calls.compute.length, 1);
     f.finish(0);
     await settle();
-    for (const o of owners) assert.equal(store.snapshot(key).state, 'ready', 'every dependant sees it');
+    assert.equal(owners.length, 3);
+    assert.equal(store.snapshot(key).state, 'ready', 'every dependant sees it');
     assert.equal(store.stats().compute, 1);
 });
 
@@ -176,7 +177,7 @@ test('the tier comes from the estimate: auto computes, confirm asks once, refuse
     assert.equal(snap.state, 'awaiting');
     assert.equal(snap.estimate.seconds, 130);
     assert.equal(f.calls.compute.length, 0);
-    assert.equal(store.confirm(keyOf('c')), true);
+    assert.equal(store.accept(keyOf('c')), true);
     await settle();
     assert.equal(f.calls.compute.length, 1);
     assert.equal(f.calls.compute[0].confirm, true, 'the click is sent to the server as confirm: true');
@@ -226,7 +227,7 @@ test('Cancel stops the shared work for everyone, and Compute starts it again', a
     assert.equal(f.calls.compute[0].signal.aborted, true);
     assert.equal(store.snapshot(key).state, 'cancelled');
     assert.equal(store.stats().active, 0);
-    assert.equal(store.confirm(key), true);
+    assert.equal(store.accept(key), true);
     await settle();
     assert.equal(f.calls.compute.length, 2);
     f.finish(1);

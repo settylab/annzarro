@@ -216,7 +216,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
                         pending.delete(id);
                     }
                 },
-                compute() { return handle.key ? store.confirm(handle.key) : false; },
+                compute() { return handle.key ? store.accept(handle.key) : false; },
                 retry() { return handle.key ? store.retry(handle.key) : false; },
                 cancel() { return handle.key ? store.cancel(handle.key) : false; },
                 /** Distinct hosts waiting on the same score: "Cancel for 3 plots". */
@@ -250,7 +250,10 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
                 notifySource(id);
                 return;
             }
-            const next = p || { edits: 0, seconds: null, held: false, timer: null, token: 0 };
+            // told again of a recipe it already knows (the page rechecks after panels change): not another edit
+            if (p && p.lastHash === hashOf(live)) { notifySource(id); return; }
+            const next = p || { edits: 0, seconds: null, held: false, timer: null, token: 0, lastHash: null };
+            next.lastHash = hashOf(live);
             next.edits++;
             next.token = ++token;
             next.held = false;
@@ -260,6 +263,14 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             next.timer = setTimer(() => { decide(id, mine); }, liveDelayMs);
             pending.set(id, next);
             notifySource(id);
+        },
+
+        /** Panels came or went (Back and Forward put a closed signature back): any signature whose recipe differs from the applied one is an edit. */
+        recheck() {
+            for (const id of new Set([...handles].map(h => h.sigId))) {
+                const sig = signatures.get(id);
+                if (sig) this.recipeChanged(id);
+            }
         },
 
         /** "Update score": apply the held edits now. */

@@ -107,7 +107,10 @@ window.__slow = (tier, seconds, opts) => {
     const i = window.__ctls.length;
     const stream = new ReadableStream({ start(c) {
       window.__ctls[i] = c;
-      if (init && init.signal) init.signal.addEventListener('abort', () => { try { c.error(new DOMException('Aborted', 'AbortError')); } catch (e) { /* closed */ } });
+      if (init && init.signal) init.signal.addEventListener('abort', () => {
+        window.__aborted = (window.__aborted || 0) + 1;
+        try { c.error(new DOMException('Aborted', 'AbortError')); } catch (e) { /* closed */ }
+      });
     } });
     return new Response(stream, { status: 200 });
   };
@@ -889,3 +892,68 @@ def test_use_in_colours_a_cell_plot_by_the_signature(page, served):
     assert cfg["type"] == "gene-score" and cfg["key"] == SIG and cfg["label"] == "T cell score"
     assert [c["kind"] for c in _calls(page)] == ["estimate", "compute"]
     assert page.evaluate("(t) => document.querySelector(t + ' select.axis-type-select[data-axis=\"color\"]').value", C) == "gene-score"
+
+
+def _set_subset(page, on, n=30):
+    page.click("#subset-button")
+    page.wait_for_selector("#subset-enabled", state="visible")
+    if page.is_checked("#subset-enabled") != on:
+        page.click("#subset-enabled")
+    if on:
+        if page.is_checked("#subset-n-all"):
+            page.click("#subset-n-all")
+        page.fill("#subset-n", str(n))
+    page.click("#subset-apply")
+    page.wait_for_selector("#subset-modal", state="hidden")
+
+
+def test_the_cells_shown_are_part_of_the_key_so_a_new_subset_asks_and_going_back_does_not(page, served):
+    _open(page, served, subset={"n": 30, "seed": 0})
+    _wait_coloured(page)
+    assert len(_numbers(page)) == 30
+    first = _calls(page, "compute")
+    assert len(first) == 1 and isinstance(first[0]["subset"], str), "the cells shown go to the route"
+    # all the cells: another key, another request, sixty values
+    _set_subset(page, False)
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); const x = g && g.data.find(d => d.marker && d.marker.colorscale); return !!x && x.marker.color.length === 60; }", C)
+    assert _calls(page, "compute")[1]["subset"] is None
+    # the 30 again: served from the store
+    _set_subset(page, True, 30)
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); const x = g && g.data.find(d => d.marker && d.marker.colorscale); return !!x && x.marker.color.length === 30; }", C)
+    assert len(_calls(page, "compute")) == 2
+
+
+def test_closing_the_last_plot_that_needs_a_score_stops_its_computation(page, served):
+    _slow(page, "auto", 3)
+    _open(page, served, plots=(("cell-plot-C", None), ("cell-plot-D", _cell("cell-plot-D", "Cell Plot 2"))), wait=False)
+    until(page, "() => window.__ctls.length === 1")
+    page.click(f"{C} .tile-close, {C} [data-action='close'], {C} .close-panel-btn")
+    until(page, "() => !window.PanelManager.getActivePanels().some(p => p.getId() === 'cell-plot-C')")
+    page.wait_for_timeout(500)
+    assert (page.evaluate("() => window.__aborted") or 0) == 0, "the other plot still needs it"
+    page.click(f"{C2} .tile-close, {C2} [data-action='close'], {C2} .close-panel-btn")
+    until(page, "() => window.__aborted === 1")
+    assert len(_calls(page, "compute")) == 1
+
+
+def test_renaming_a_signature_retitles_its_plots_without_computing_again(page, served):
+    _open(page, served, sig_open=True)
+    _wait_coloured(page)
+    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').setTitle('Exhaustion score')")
+    until(page, """(t) => { const g = document.querySelector(t + ' .js-plotly-plot');
+        return !!g && g.data.some(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title) === 'Exhaustion score'); }""", C)
+    assert len(_calls(page, "compute")) == 1, "a title is not part of the recipe"
+    labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => o.textContent)", C)
+    assert labels == ["Exhaustion score"]
+
+
+def test_a_closed_signature_put_back_with_another_recipe_by_back_or_forward_updates_its_plots(page, served):
+    _open(page, served)
+    _wait_coloured(page)
+    before = _numbers(page)
+    page.evaluate("""() => PanelManager.restoreClosedPanels([{ id: 'gene-signature-S', type: 'gene-signature',
+        config: { id: 'gene-signature-S', title: 'T cell score', genes: ['GENE0050', 'GENE0060'] } }])""")
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
+    assert _calls(page, "compute")[1]["genes"] == ["GENE0050", "GENE0060"]
+    _changed_from(page, before)

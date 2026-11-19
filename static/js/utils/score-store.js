@@ -21,7 +21,7 @@
  *
  * A job's life
  *   idle -> estimating -> queued -> computing -> ready
- *                     \-> awaiting (the estimate asks for one click: `confirm()`)
+ *                     \-> awaiting (the estimate asks for one click: `accept()`)
  *   and, off the main road: refused, failed, noscore, cancelled.
  * The tiers are read from the estimate reply (`auto_max_s`, `max_s`), never
  * written here. At most `maxActive` jobs compute at once, those with a
@@ -375,7 +375,7 @@ export function createScoreStore({ api, budget = DEFAULT_BUDGET, maxActive = DEF
         },
 
         /** The user accepted the estimate: compute. Also retries a failure. */
-        confirm(key) {
+        accept(key) {
             const job = jobs.get(key);
             if (!job || ['ready', 'computing', 'queued', 'estimating'].includes(job.state)) return false;
             job.confirmed = true;
