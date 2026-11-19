@@ -14,8 +14,8 @@ it can be the source of a Gene Set Analysis panel.
 
 1. Add a **Gene Signature** panel (**Create New Panel** → **Gene Signature**, or split a tile).
 2. Tick genes in the list, or type part of a name in **Search genes**.
-3. Press **Use in** to filter a Gene Plot by the signature, or to analyse it in a Gene Set Analysis
-   panel.
+3. Choose the signature where you choose any source: a Gene Plot's **Table** menu, a Gene Set Analysis
+   panel's **Source** menu, or **gene-score** in a Cell Plot or Cell Table (see below).
 
 The panel states how many genes it holds, always against its limit: **a signature holds up to 2,000
 genes**. Adding more than that adds nothing at all, and the panel says how many it would have made.
@@ -43,6 +43,10 @@ Type in **Search genes**. The list narrows to the names that contain what you ty
 - **Esc** clears the box. **Down** moves into the list.
 
 ### Adding genes from elsewhere
+
+The focused gene is one click away: when a gene is focused, **+ CD3D (focused)** sits in the add row and
+adds it as one step. It is greyed, with the reason as its tooltip, when the gene is already in the list or
+not in the dataset, and follows the focus.
 
 **Add from** lists:
 
@@ -95,14 +99,14 @@ A signature holds up to 2,000 genes, counting the ones already selected. Over th
 
 ## Use a signature
 
-**Use in** lists what the signature can feed now:
+There is no menu in the signature's panel for this. A signature is chosen from the place that uses it:
 
-- **Filter** *a Gene Plot*: the plot shows only the signature's genes, as it does for a gene table.
-- **Analyse in** *a Gene Set Analysis panel*: the panel takes the signature's genes as its source,
-  with no "(closed)" mark, because a signature needs no rows of its own.
-
-- **Add to** *a Cell Table*: the signature's score becomes a column of the table (see
-  [Rank cells in a Cell Table](#rank-cells-in-a-cell-table)).
+- A *Gene Plot*'s **Table** menu lists it beside the gene tables, so the plot shows only the
+  signature's genes.
+- A *Gene Set Analysis* panel's **Source** menu lists it by name, with no "(closed)" mark, because a
+  signature needs no rows of its own.
+- A *Cell Plot* or *Cell Table* takes its score through **gene-score** (see below). Each of those menus
+  ends with **New signature…**, which opens a new signature beside the panel.
 
 Both of the first two follow the list as you edit it. They go on working after you close the signature's panel. The
 line under the title says what uses it ("Used by 1 plot, 1 Gene Set Analysis").
@@ -111,8 +115,8 @@ line under the title says what uses it ("Used by 1 plot, 1 Gene Set Analysis").
 
 A signature gives every cell one number. A Cell Plot can take it as its **x**, **y**, **colour** or
 **hover**: choose **gene-score** among the sources (beside obs, obsm, obsp and layer), then pick the
-signature by name. Every signature is listed, open or closed. Or press **Use in** → **Colour Cell Plot 1**
-in the signature's panel. The score works in large-plot mode too (colour and axes; the tooltip shows the
+signature by name. Every signature is listed, open or closed.
+The score works in large-plot mode too (colour and axes; the tooltip shows the
 colour's score).
 
 A score is chosen in three steps, as an embedding is: the source (**gene-score**), the signature, and
@@ -120,7 +124,6 @@ the **aggregation** (z-score mean, the default, or mean). Each axis, the colour 
 different signature or a different aggregation of the same one; the same choice on two axes is computed once.
 The score can be on any axis, x, y and z (3D) included, against another score, an obs column or a gene.
 In large-plot mode x, y and colour take a score; 3D and extra hover columns are not available there.
-**Use in** offers **Colour**, **Use as X** and **Use as Y** for each Cell Plot.
 
 The score is worked out on the server, over all the cells of the dataset, and the plot gets the value
 for the cells it shows. It is worked out when a plot needs it, with no panel open: a closed signature, or
@@ -189,7 +192,7 @@ the chart is replaced by its figures.
 ## Rank cells in a Cell Table
 
 A Cell Table can show a signature's score as a column, so you can sort the cells by it, filter on it and
-export it. Either press **Use in** → **Add to Cell Table 1** in the signature's panel, or open the table's
+export it. Open the table's
 column chooser, choose the **gene-score** tab, and tick a signature and then the aggregation under it
 (z-score mean or mean). Tick as many as you like: several signatures, and several aggregations of one, are
 several columns, and each is computed once however many plots and tables use it.
