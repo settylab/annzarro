@@ -57,6 +57,9 @@ TYPES = {"cell-table-A": "cell-table", "gene-table-E": "gene-table", "cell-plot-
          "gene-plot-D": "gene-plot", "gene-set-F": "gene-set"}
 
 
+HOLD_BUILDS = "window.__azTableLimits = { AUTO_ROWS: 0, ASK_ROWS: 1000000000 };"
+
+
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
     root, proc = _serve(tmp_path_factory)
@@ -79,6 +82,10 @@ def page(server):
         browser = p.chromium.launch()
         try:
             page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            # These tests are about what a restored closed table IS before anything is built: its
+            # configuration only. The background build (utils/table-resolver.js, tested in
+            # test_table_resolver.py) is held at its "Build filter" tier, so the state stays put.
+            page.add_init_script(HOLD_BUILDS)
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
             yield page

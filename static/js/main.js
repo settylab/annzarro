@@ -58,6 +58,7 @@ import { mountDatasetInfo } from './utils/dataset-info-dialog.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import * as LoadProgress from './utils/load-progress.js';
 import { closedPanelsOfView, mergeClosedPlans, reconcileClosed } from './utils/closed-restore.js';
+import { TableResolver } from './panels/table-utilities/table-background.js';
 import { createHistoryPolicy, diffViews, layoutStep, viewMismatch, unrecordedChange, viewDiffers } from './utils/url-history.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
@@ -1171,6 +1172,8 @@ const App = (function() {
      * @private
      */
     function _restoreClosedOf(view, extra = []) {
+        // a link or a panel set is loaded: whatever was being built is for another view
+        TableResolver.reset();
         const can = (type) => PanelManager.canRestoreClosed(type);
         const planned = mergeClosedPlans(closedPanelsOfView(view, can).closed, extra, can);
         return PanelManager.restoreClosedPanels(planned);
@@ -1950,6 +1953,7 @@ const App = (function() {
             case 'close-others': return _otherPlots(id).length > 0;
             case 'reopen-table': return !!document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
             case 'table-filter-off': return !!_tableFilterSelect(id);
+            case 'build-filter': case 'retry-filter': return !!_tableFilterOf(id);
             default: return false;
         }
     }
@@ -2038,6 +2042,17 @@ const App = (function() {
             case 'reopen-table': {
                 const btn = document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
                 if (btn) btn.click();
+                break;
+            }
+            case 'build-filter': {
+                // one click: the table's size is allowed for these cells (utils/table-resolver.js)
+                const table = _tableFilterOf(id);
+                if (table) TableResolver.confirm(table);
+                break;
+            }
+            case 'retry-filter': {
+                const table = _tableFilterOf(id);
+                if (table) TableResolver.retry(table);
                 break;
             }
             case 'table-filter-off': {
