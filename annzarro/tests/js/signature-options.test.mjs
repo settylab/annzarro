@@ -120,7 +120,7 @@ test('each method is graded on each kind of layer: ok, warn once in the panel, o
         assert.equal(g(m, 'counts'), 'warn');
         for (const kind of ['log', 'normalised', 'signed', 'other', 'unknown', undefined]) assert.equal(g(m, kind), 'ok', `${m} ${kind}`);
     }
-    assert.equal(O.gradeOption('sum', 'raw_counts', 'counts').reason, 'On raw_counts this follows sequencing depth.');
+    assert.equal(O.gradeOption('sum', 'raw_counts', 'counts').reason, "On 'raw_counts' this follows sequencing depth.");
     assert.deepEqual(['log', 'normalised', 'counts', 'signed', 'other', 'unknown'].map(k => g('detected', k)), ['ok', 'ok', 'ok', 'cannot', 'ok', 'ok']);
     assert.deepEqual(['log', 'normalised', 'counts', 'signed', 'other', 'unknown'].map(k => g('fraction_of_total', k)), ['warn', 'ok', 'ok', 'cannot', 'ok', 'ok']);
     assert.equal(O.gradeOption('detected', 'X', 'signed').reason, 'Not offered on X: almost every value is non-zero, so every gene counts as detected.');

@@ -89,7 +89,7 @@ export function gradeOption(method, layer, kind) {
         if (kind === 'log') return { grade: 'warn', reason: '% of total on log values is compressed. It is usually read from counts.' };
     }
     if (kind === 'counts' && ['zscore_mean', 'mean', 'sum', 'control_adjusted'].includes(method)) {
-        return { grade: 'warn', reason: `On ${layer} this follows sequencing depth.` };
+        return { grade: 'warn', reason: `On '${layer}' this follows sequencing depth.` };
     }
     return ok;
 }
