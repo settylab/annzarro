@@ -9,7 +9,7 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
+    parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, failureLine, authIndicator, refreshPlan, partialRefreshNotice, signOut } from './utils/session-permissions.js';
@@ -57,6 +57,7 @@ import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
 import { mountDatasetInfo } from './utils/dataset-info-dialog.js';
 import { defaultHierarchy } from './utils/deeplink.js';
 import * as LoadProgress from './utils/load-progress.js';
+import { closedPanelsOfView, mergeClosedPlans, reconcileClosed } from './utils/closed-restore.js';
 import { createHistoryPolicy, diffViews, layoutStep, viewMismatch, unrecordedChange, viewDiffers } from './utils/url-history.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
@@ -896,6 +897,8 @@ const App = (function() {
         try {
             _adoptViewStyle(target);
             await _applyFocusSteps(live.constants || {}, target.constants || {}, link.datasetPath);
+            // the closed panels the entry lists are on the page before any panel is built or rebuilt
+            _reconcileClosedPanels(target);
             const layout = target.layout;
             // animated only when it is the one step: not while another is queued or a motion still runs
             const step = diff.kind === 'layout' && !_historyAgain && !LayoutMotion.moving() ? layoutStep(live, target) : null;
@@ -1047,7 +1050,7 @@ const App = (function() {
     let _viewEpoch = 0;
     const _superseded = { status: 'cancelled', message: 'Another dataset or view was opened first.' };
 
-    async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false, epoch = _viewEpoch } = {}) {
+    async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false, epoch = _viewEpoch, closedPanels = [] } = {}) {
         const gone = () => epoch !== _viewEpoch;
         _adoptViewStyle(view);
         // Where the view's store is here: its path, the path relative to the
@@ -1130,6 +1133,9 @@ const App = (function() {
             //
             //    normalizeView (utils/deeplink.js) guarantees at most one of these
             //    is set, with layout winning when both were supplied.
+            //    The panels that were CLOSED come back first, from their saved settings alone
+            //    (utils/closed-restore.js): a plot filtered by a closed table finds it registered.
+            _restoreClosedOf(view, closedPanels);
             if (view.layout) {
                 await PanelManager.restoreLayout(view.layout);
             } else {
@@ -1144,6 +1150,30 @@ const App = (function() {
         }
         _afterViewOpened(view, located, cmp, trust && said ? { ...said, strong: false } : said);
         return { status: 'success' };
+    }
+
+    /**
+     * Back and Forward: the closed panels the entry lists, on the page. One that is missing is
+     * registered; one that is closed with other settings is replaced; one the page has and the entry
+     * does not list is kept (a step never throws a closed panel away). Nothing is built, so the
+     * address does not change and no history entry is added.
+     * @private
+     */
+    function _reconcileClosedPanels(view) {
+        const can = (type) => PanelManager.canRestoreClosed(type);
+        const { add, replace } = reconcileClosed(closedPanelsOfView(view, can).closed, PanelManager.panelStates());
+        return PanelManager.restoreClosedPanels([...add, ...replace]);
+    }
+
+    /**
+     * Register the closed panels a view lists (and those a caller lists beside it:
+     * a legacy panel set keeps them apart). Configuration only; nothing is built.
+     * @private
+     */
+    function _restoreClosedOf(view, extra = []) {
+        const can = (type) => PanelManager.canRestoreClosed(type);
+        const planned = mergeClosedPlans(closedPanelsOfView(view, can).closed, extra, can);
+        return PanelManager.restoreClosedPanels(planned);
     }
 
     // ── Where a view's store is, and a view without one ───────────────────
@@ -1618,21 +1648,15 @@ const App = (function() {
 
         // keep the open store's own path when the set names it differently
         if (current && located.path && sameDatasetPath(located.path, current, listing)) located.path = current;
-        const applied = await _applyView({ datasetPath: target, view: plan.view }, { located, trust: !!chosen });
+        const applied = await _applyView({ datasetPath: target, view: plan.view }, { located, trust: !!chosen, closedPanels: plan.closedPanels });
         // the user opened something else meanwhile: this set builds nothing more
         if (applied && applied.status === 'cancelled') return applied;
         const datasetPath = located.path || target;
 
-        // Panels that were closed when the set was saved come back closed.
-        const idMap = new Map();
-        const closedConfigs = plan.closedPanels.map(p => {
-            const config = JSON.parse(JSON.stringify(p.config));
-            PanelManager.registerClosedPanel(p.type, config);
-            if (p.id && config.id !== p.id) idMap.set(p.id, config.id);
-            return config;
-        });
-        if (idMap.size) remapPanelReferences(closedConfigs, idMap);
-
+        // The panels that were closed when the set was saved came back closed before the open ones
+        // were built (_applyViewNow), so a plot filtered by one found it.
+        // A set opened without data (its store is not here) did not get that far: they are listed closed now
+        if (applied && applied.status === 'no-data') _restoreClosedOf(plan.view, plan.closedPanels);
         PanelManager.updateSourcePanelSelection();
         PanelManager.ensureWelcomeFallback();
         const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;

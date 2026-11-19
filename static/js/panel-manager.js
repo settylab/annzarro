@@ -855,6 +855,10 @@ const PanelManager = (function() {
                 }
             }
 
+            // The closed panels a view restored are offered by the chooser from here on: the notice
+            // of a plot filtered by a closed table (second pass) offers "Open table" through it
+            updateSourcePanelSelection();
+
             // Set up all the handle resizing
             document.querySelectorAll('.split-handle').forEach(handle => {
                 const container = handle.parentElement;
@@ -1324,6 +1328,53 @@ const PanelManager = (function() {
     }
     
     /**
+     * Whether a closed panel of this type can be restored: registered, and not
+     * switched off by the administrator (utils/closed-restore.js).
+     * @param {string} type
+     * @returns {boolean}
+     */
+    function canRestoreClosed(type) {
+        return _panelTypes.has(type) && Policy.panelEnabled(type);
+    }
+
+    /**
+     * Register the closed panels a view lists, from their saved configuration
+     * only (utils/closed-restore.js). Called BEFORE the open panels are built,
+     * so a plot filtered by a closed table finds it. A panel of the same id
+     * that is closed is replaced by the saved one; an OPEN one is left alone.
+     * @param {Array<{id: string, type: string, config: Object}>} entries
+     * @returns {string[]} the ids registered
+     */
+    function restoreClosedPanels(entries) {
+        const done = [];
+        for (const { id, type, config } of entries || []) {
+            if (!canRestoreClosed(type)) continue;
+            const have = _panels.get(id);
+            if (have && _activePanels.has(have)) continue;
+            if (have) removePanel(id);
+            const panel = registerClosedPanel(type, JSON.parse(JSON.stringify(config)), { keepTitle: true });
+            if (panel) done.push(panel.getId());
+        }
+        if (done.length) updateSourcePanelSelection();
+        return done;
+    }
+
+    /**
+     * The panels on the page by id: whether each is open, and its settings
+     * (what a history step compares closed panels by).
+     * @returns {Map<string, {open: boolean, config: Object}>}
+     */
+    function panelStates() {
+        const out = new Map();
+        _panels.forEach((panel, id) => {
+            let config = {};
+            try { config = panel.getConfig ? panel.getConfig() : {}; } catch { /* a panel mid-teardown */ }
+            out.set(id, { open: _activePanels.has(panel), config });
+        });
+        return out;
+    }
+
+    /**
      * Get all panels (both active and closed)
      * @returns {Array} - Array of all panel instances
      */
@@ -1376,6 +1427,9 @@ const PanelManager = (function() {
         applyLayoutStep,
         applyViewport,
         registerClosedPanel,
+        canRestoreClosed,
+        restoreClosedPanels,
+        panelStates,
         removePanel,
         replacePanel,
         showControls,

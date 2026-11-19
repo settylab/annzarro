@@ -4771,3 +4771,11 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 }
 .az-skel-name { font-weight: 600; color: var(--az-text-1, inherit); }
 .az-skel-status { font-size: 0.85rem; color: var(--az-text-2); min-height: 1.2em; }
+
+/* A notice laid over the plot area (setFilterNotice): the plot under it keeps its size and place */
+.filter-notice {
+    position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+}
+.filter-notice__card { pointer-events: auto; max-width: min(34em, 90%); margin: 0; text-align: left; }
+.filter-notice__text { margin-top: 2px; overflow-wrap: anywhere; }

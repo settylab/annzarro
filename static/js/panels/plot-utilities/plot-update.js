@@ -118,8 +118,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         filter: false 
     };
     
-    // A large plot (large-plot.js) has no incremental updates: redraw it
-    if (data && data.large) {
+    // A large plot (large-plot.js) has no incremental updates: redraw it. So is a plot drawn with a filter
+    // that is not applied yet (no points), or that is not applied yet now
+    if (data && (data.large || data.tableFilterUnresolved || (plotContainer && plotContainer.__drawnUnresolved))) {
         refreshPlot();
         return;
     }
