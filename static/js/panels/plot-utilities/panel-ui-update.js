@@ -1225,7 +1225,9 @@ export function scoreColumnOptions(settings) {
   if (!wanted && settings.key && offered.length && (METHODS.includes(settings.column) || settings.layer)) {
     // the same id form as the offered entries: `method`, or `method@layer` when the signature offers several layers
     const several = offered.some(o => o.value.includes('@'));
-    chosen = several ? `${settings.column || 'zscore_mean'}@${settings.layer || ''}` : (settings.column || 'zscore_mean');
+    const own = (window.PanelManager && window.PanelManager.getPanel(settings.key) && window.PanelManager.getPanel(settings.key).getRecipe)
+      ? window.PanelManager.getPanel(settings.key).getRecipe().input : 'X';
+    chosen = several ? `${settings.column || 'zscore_mean'}@${settings.layer || own}` : (settings.column || 'zscore_mean');
     options.push({ value: chosen, text: lapsedLabel(settings), method: settings.column || 'zscore_mean', layer: settings.layer || '' });
   } else if (!wanted && offered.length) {
     chosen = offered[0].value;

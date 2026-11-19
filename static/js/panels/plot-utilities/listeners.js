@@ -1127,6 +1127,12 @@ function setupAxisSelectorListeners(
       return;
     }
 
+    if (newType === 'gene-score') {
+      // the option list was built and the first option adopted (method in `column`, layer beside it): its ids are not columns
+      handleAxisUpdate(axis, plotType);
+      return;
+    }
+
     const cols = $.findAll('option', $columnSelect).map(o => o.value);
     const current = settings[axis].column;
     if (!cols.includes(current)) {

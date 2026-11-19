@@ -575,8 +575,8 @@ def test_hover_lists_the_score_beside_the_columns_and_labels_it_by_title(page, s
     _open(page, served, plots=(("cell-plot-C", cfg),))
     options = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.hover-columns-select optgroup[label="Gene scores"] option')]
         .map(o => [o.value, o.textContent, o.selected])""", C)
-    assert options == [[f"gene-score:{SIG}:zscore_mean:X", "T cell score", True], [f"gene-score:{SIG}:mean:X", "T cell score · Mean", False],
-                       [f"gene-score:{SIG}:sum:X", "T cell score · Sum", False]]
+    assert options == [[f"gene-score:{SIG}:zscore_mean:X", "T cell score", True], [f"gene-score:{SIG}:mean:X", "T cell score · mean", False],
+                       [f"gene-score:{SIG}:sum:X", "T cell score · sum", False]]
     until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score')))); }", C)
     text = page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data.flatMap(d => d.hovertext || []).filter(h => String(h).includes('T cell score'))[0]""", C)
     assert "T cell score:" in text
@@ -1025,9 +1025,9 @@ def test_two_aggregations_of_one_signature_are_two_scores_and_one_aggregation_is
     assert titles == ["T cell score · z-score mean · X", "T cell score · mean · X"]
     # the third level is a menu: the aggregations the server computes, z-score mean first
     opts = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"y\"] option')].map(o => [o.value, o.textContent])", C)
-    assert opts == [["zscore_mean", "Z-score mean"], ["mean", "Mean"], ["sum", "Sum"], ["__offer_more__", "Offer other scores…"]]
+    assert opts == [["zscore_mean@X", "z-score mean"], ["mean@X", "mean"], ["sum@X", "sum"], ["__offer_more__", "Offer other scores…"]]
     # choosing the other aggregation in the menu moves the axis to it
-    page.select_option(f"{C} select.axis-column-select[data-axis='x']", "mean")
+    page.select_option(f"{C} select.axis-column-select[data-axis='x']", "mean@X")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().x.column === 'mean'")
     page.wait_for_timeout(800)
     assert len(_calls(page, "compute")) == 2, "the mean was already in the store"
@@ -1038,7 +1038,7 @@ def test_a_link_made_before_sub_keys_has_no_column_and_means_the_z_score_mean(pa
     _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "gene-score", "key": SIG, "label": "T cell score"})),))
     _wait_coloured(page)
     assert _calls(page, "compute")[0]["method"] == "zscore_mean"
-    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').value", C) == "zscore_mean"
+    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').value", C) == "zscore_mean@X"
 
 
 def test_the_registry_lists_a_closed_signature_and_its_aggregations(page, served):
@@ -1198,7 +1198,7 @@ def test_hover_offers_each_aggregation(page, served):
     _open(page, served, plots=(("cell-plot-C", cfg),))
     sel = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.hover-columns-select optgroup[label="Gene scores"] option')]
         .map(o => [o.textContent, o.selected])""", C)
-    assert sel == [["T cell score", False], ["T cell score · Mean", True], ["T cell score · Sum", False]]
+    assert sel == [["T cell score", False], ["T cell score · mean", True], ["T cell score · sum", False]]
     until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score · mean:')))); }", C)
     assert _calls(page, "compute")[0]["method"] == "mean"
     # both at once: two scores in the hover, two requests

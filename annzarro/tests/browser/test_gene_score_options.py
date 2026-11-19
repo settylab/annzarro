@@ -289,7 +289,7 @@ def test_a_combination_that_cannot_be_computed_is_left_out_of_the_menu_and_the_p
     assert "counts" in page.inner_text(f"{S} [data-layer='counts'] .gsig-scoring__kind")
     assert "follows sequencing depth" in page.inner_text(f"{S} [data-method='mean']"), "said once, under the method"
     values = [v for v, _ in page.eval_on_selector_all(f"{D} select.axis-column-select[data-axis='color'] option", "els => els.map(e => [e.value, e.textContent])")]
-    assert "detected" in values, "counts is offered, so the plot may pick it"
+    assert "detected@counts" in values, "counts is offered, so the plot may pick it"
 
 
 def test_reset_to_defaults_puts_every_setting_back(page, served):
@@ -342,16 +342,16 @@ def test_a_plot_is_offered_what_the_panel_offers_and_a_switched_off_option_is_ke
     page.wait_for_selector(f"{D} .js-plotly-plot", timeout=30000)
     _wait_coloured(page, D)
     values = [v for v, _ in _agg_options(page, D)]
-    assert values == ["zscore_mean", "mean", "sum"]
+    assert values == ["zscore_mean@X", "mean@X", "sum@X"]
     _expand(page)
     _offer(page, "detected")
     until(page, "(t) => document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option').length === 5", D)
-    assert [v for v, _ in _agg_options(page, D)] == ["zscore_mean", "mean", "sum", "detected"]
+    assert [v for v, _ in _agg_options(page, D)] == ["zscore_mean@X", "mean@X", "sum@X", "detected@X"]
     _offer(page, "mean", False)                                          # the plot reads the mean
     until(page, "(t) => /no longer offered/.test(document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').textContent)", D)
     options = _agg_options(page, D)
-    assert any(v == "mean" and "no longer offered" in t for v, t in options)
-    assert page.eval_on_selector(f"{D} select.axis-column-select[data-axis='color']", "s => s.value") == "mean", "its setting is kept"
+    assert any(v == "mean@X" and "no longer offered" in t for v, t in options)
+    assert page.eval_on_selector(f"{D} select.axis-column-select[data-axis='color']", "s => s.value") == "mean@X", "its setting is kept"
     assert _numbers(page, D), "and it still draws"
     cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-D').getConfig().color")
     assert cfg["column"] == "mean", "the link stays valid"
