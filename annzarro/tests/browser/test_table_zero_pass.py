@@ -108,10 +108,10 @@ def page():
             browser.close()
 
 
-def _link(root, colour, remove, search=SOME):
+def _link(root, colour, remove, search=SOME, linked=True):
     x = {"type": "obsm", "key": "X_umap", "column": "0"}
     y = {"type": "obsm", "key": "X_umap", "column": "1"}
-    cfgs = {P: {"id": P, "x": x, "y": y, "z": None, "tableFilter": T, "removeNonTableEntries": remove,
+    cfgs = {P: {"id": P, "x": x, "y": y, "z": None, "tableFilter": T if linked else "none", "removeNonTableEntries": remove,
                 "color": COLOURS[colour]},
             T: {"id": T, "title": "Table 1", "searchText": search,
                 "columns": [{"type": "obs", "key": "cell_type", "column": ""}]}}
@@ -138,9 +138,15 @@ def _wait(page, want, step):
     raise AssertionError(f"{step}: wanted {want}, the plot shows {got}")
 
 
-def _open(page, url):
+def _open(page, url, colour=None):
     page.goto(url)
     page.wait_for_selector(f'.tile[data-tile-id="{T}"] .dataTables_scrollBody tbody tr', timeout=30000)
+    if colour == "none":
+        # a link without a colour column gets the dataset's default colouring: pick "none" in the panel
+        page.select_option(f"{PLOT} select.axis-type-select[data-axis='color']", "none")
+        page.wait_for_function("(sel) => { const g = document.querySelector(sel + ' .js-plotly-plot');"
+                               " return !!g && g.data.filter(t => t.x && t.x.length > 1 && !/^focused/i.test(t.name || '')).length === 1"
+                               " && g.data.every(t => t.meta !== 'az-legend'); }", arg=PLOT, timeout=30000)
 
 
 def _expect_empty(remove=None):
@@ -153,7 +159,7 @@ def _expect_empty(remove=None):
 @pytest.mark.parametrize("remove", [False, True], ids=["greyed", "removed"])
 @pytest.mark.parametrize("colour", list(COLOURS))
 def test_live_change_to_no_passing_cell(page, server, colour, remove):
-    _open(page, _link(server, colour, remove))
+    _open(page, _link(server, colour, remove), colour)
     _wait(page, {"inTable": N // 2}, "40 rows pass")
     page.fill(SEARCH, NONE)
     got = _wait(page, _expect_empty(remove), "search passes nothing")
@@ -162,6 +168,31 @@ def test_live_change_to_no_passing_cell(page, server, colour, remove):
     # and back: the cells come back, no state of "no cell passes" is left
     page.fill(SEARCH, SOME)
     _wait(page, {"inTable": N // 2, "placeholder": None, "tag": None}, "search passes cells again")
+
+
+POINT_COLOURS = """() => { const gd = document.querySelector('%s .js-plotly-plot');
+    const out = []; if (!gd || !gd.data) return out;
+    for (const t of gd.data) if (t.x && t.x.length > 1 && !/^focused/i.test(t.name || '') && t.meta !== 'az-legend')
+        out.push({ name: t.name, n: t.x.length, colour: typeof t.marker.color === 'string' ? t.marker.color : null }); return out; }""" % PLOT
+
+
+@pytest.mark.parametrize("remove", [False, True], ids=["greyed", "removed"])
+def test_no_point_keeps_the_colour_of_cells_that_pass(page, server, remove):
+    """The reported defect itself: after a live change to 0 passing rows (constant colour), the
+    excluded cells were drawn in the colour of the cells that pass (2,583 points in #1f77b4)."""
+    # the reviewer's route: the table already searched, the plot linked to it from its Table control
+    _open(page, _link(server, "none", remove, linked=False), "none")
+    page.select_option(f"#table-filter-{P}", T)
+    _wait(page, {"inTable": N // 2}, "100 rows pass")
+    in_table = [t["colour"] for t in page.evaluate(POINT_COLOURS) if t["name"] != "Not in table"]
+    assert in_table and None not in in_table, in_table
+    page.fill(SEARCH, NONE)
+    page.wait_for_function("(sel) => document.querySelector(sel + ' .dataTables_info').textContent.includes('0 to 0 of 0')"
+                           " || document.querySelector(sel + ' .dataTables_empty')", arg=f'.tile[data-tile-id="{T}"]')
+    page.wait_for_timeout(3000)
+    drawn = page.evaluate(POINT_COLOURS)
+    assert not [t for t in drawn if t["colour"] in in_table], (in_table, drawn)
+    assert sum(t["n"] for t in drawn) == (0 if remove else N), drawn
 
 
 @pytest.mark.parametrize("remove", [False, True], ids=["greyed", "removed"])
