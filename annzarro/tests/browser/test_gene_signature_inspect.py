@@ -176,14 +176,21 @@ def test_each_aggregation_is_offered_and_a_second_one_is_a_second_score_only_onc
     assert len(_calls(page)) == n
 
 
-def test_inspect_starts_on_the_first_offered_option_whatever_a_plot_shows(page, served):
+def test_the_aggregation_a_plot_shows_is_the_one_inspected_first(page, served):
     cell = base._cell("cell-plot-C", color={"type": "gene-score", "key": SIG, "label": "T cell score", "column": "mean"})
     _open(page, served, plots=(("cell-plot-C", cell),), sig=_sig(), sig_open=True, wait=False)
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     until(page, "() => window.__scoreCalls.some(c => c.kind === 'compute')")
     _inspect(page)
-    assert page.get_attribute(f"{I} [data-method=zscore_mean]", "aria-checked") == "true", "the first offered option, not the plot's"
-    assert page.get_attribute(f"{I} [data-method=mean]", "aria-checked") == "false"
+    assert page.get_attribute(f"{I} [data-method=mean]", "aria-checked") == "true"
+
+
+def test_with_no_plot_using_the_signature_inspect_starts_on_the_first_offered_option(page, served):
+    _open(page, served, plots=(), sig=_sig(offered=["sum", "mean"]), sig_open=True, wait=False)
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    _inspect(page)
+    assert page.get_attribute(f"{I} [data-method=mean]", "aria-checked") == "true", "mean comes before sum in the menu"
+    assert page.get_attribute(f"{I} [data-method=sum]", "aria-checked") == "false"
 
 
 # --------------------------------------------------------------------------- 4
