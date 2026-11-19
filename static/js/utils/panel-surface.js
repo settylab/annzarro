@@ -710,7 +710,10 @@ export function clearForDraw(plotContainer) {
     }
     // the WebGL side too: Plotly.purge leaves it to the garbage collector
     if (plotContainer._fullLayout) releasePlot(plotContainer);
+    // the notice over the plot (setFilterNotice) outlives the drawing under it
+    const notice = Array.from(plotContainer.children).find(c => c.classList && c.classList.contains('filter-notice'));
     plotContainer.innerHTML = '';
+    if (notice) plotContainer.appendChild(notice);
 }
 
 /**

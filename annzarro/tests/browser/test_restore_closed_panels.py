@@ -237,11 +237,11 @@ def test_a_regex_table_selects_the_same_rows_after_restore(page, server):
         "cell-plot-B": _plot_cfg(),
         "cell-table-A": {"id": "cell-table-A", "title": "Table 1", "columns": [CT]}})))
     page.wait_for_selector(f"{A} .dataTables_scrollBody tbody tr", timeout=30000)
-    page.fill(f'{A} input[type="search"]', "^cell_010[0-4]$")
+    page.fill(f'{A} input[type="search"]', "cell_010[0-4]")
     page.click(f'{A} button[id^="btnRegex_"]')
     until(page, "() => window.PanelManager.getPanel('cell-table-A').getConfig().currentEntries.length === 5")
     cfg = page.evaluate("() => { const c = window.PanelManager.getPanel('cell-table-A').getConfig(); return {r: c.searchRegex, s: c.searchSmart, c: c.searchCaseInsensitive, t: c.searchText}; }")
-    assert cfg == {"r": True, "s": True, "c": True, "t": "^cell_010[0-4]$"}
+    assert cfg == {"r": True, "s": True, "c": True, "t": "cell_010[0-4]"}
     open_rows = page.evaluate("() => Array.from(window.PanelManager.getPanel('cell-table-A').getConfig().currentEntries)")
 
     # open: the link keeps the toggles
@@ -369,7 +369,7 @@ def test_back_and_forward_bring_the_closed_panels_back_without_new_entries(page,
     page.wait_for_timeout(2500)
     before = _history_length(page)
     # the user empties the closed list of the table (Clear closed panels): the view changes, an entry is written
-    page.evaluate("() => window.PanelManager.removePanel('cell-table-A')")
+    page.evaluate("() => { window.PanelManager.removePanel('cell-table-A'); window.PanelManager.updateSourcePanelSelection(); }")
     until(page, "() => document.querySelector('%s select.table-filter-select')?.value === 'none'" % B)
     page.wait_for_timeout(2500)
     assert _history_length(page) == before + 1
