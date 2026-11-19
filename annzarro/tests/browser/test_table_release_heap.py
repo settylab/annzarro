@@ -130,9 +130,13 @@ def page(server):
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}")
-            page.wait_for_function("""async () => { const m = await import('/static/js/data-manager.js');
+            # polled with evaluate: wait_for_function does not await an async predicate
+            end = time.time() + 120
+            while not page.evaluate("""async () => { const m = await import('/static/js/data-manager.js');
                 const d = m.DataManager, c = d.getCells();
-                return !!(d.getCurrentDataset() && d.isDatasetLoaded() && c && c.length); }""", timeout=120000)
+                return !!(d.getCurrentDataset() && d.isDatasetLoaded() && c && c.length); }"""):
+                assert time.time() < end, "the dataset did not load"
+                time.sleep(0.2)
             yield page
             assert not errors, errors
         finally:

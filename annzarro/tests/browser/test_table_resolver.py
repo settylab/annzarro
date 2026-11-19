@@ -285,7 +285,7 @@ def test_one_build_at_a_time_and_each_table_once(held, server):
         wait_notice(page, pid=plot_id(i))
     instrument(page, delay=250)
     page.evaluate("""async () => { const { TableResolver } = await import('/static/js/utils/table-resolver.js');
-        for (const t of ['cell-table-t0', 'cell-table-t1', 'cell-table-t2']) TableResolver.confirm(t); }""")
+        for (const t of ['cell-table-t0', 'cell-table-t1', 'cell-table-t2']) TableResolver.accept(t); }""")
     wait_names(page, PASS, pid=plot_id(0))
     wait_names(page, PASS0, pid=plot_id(1))
     wait_names(page, re.compile(r"^cell_0"), n=200, pid=plot_id(2))

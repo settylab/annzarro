@@ -401,7 +401,7 @@ export function createResolver(host, options = {}) {
     }
 
     /** One click on "Build filter": the build of this table's size is allowed for these cells. */
-    function confirm(id) {
+    function accept(id) {
         const panel = host.panel(id);
         if (!panel) return;
         const rec = record(id);
@@ -564,7 +564,7 @@ export function createResolver(host, options = {}) {
     }
 
     return {
-        need, gate, status, confirm, cancel, retry, claim, panelPublished, panelSettled, panelClosed, drop,
+        need, gate, status, accept, cancel, retry, claim, panelPublished, panelSettled, panelClosed, drop,
         cellsChanged, reset, reassess, withdraw,
         /** Tests: the limits in force, and a way to tune them. */
         get limits() { return { ...limits }; },

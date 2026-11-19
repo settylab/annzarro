@@ -2048,7 +2048,7 @@ const App = (function() {
             case 'build-filter': {
                 // one click: the table's size is allowed for these cells (utils/table-resolver.js)
                 const table = _tableFilterOf(id);
-                if (table) TableResolver.confirm(table);
+                if (table) TableResolver.accept(table);
                 break;
             }
             case 'cancel-filter': {
