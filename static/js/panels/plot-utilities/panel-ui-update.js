@@ -6,7 +6,7 @@ import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScal
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { signatureList, NEW_SIGNATURE, OFFER_MORE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers } from '../../utils/score-source.js';
 import { scoreValue, parseScoreValue } from './hover-columns.js';
-import { METHODS } from '../../utils/signature-options.js';
+import { METHODS, methodShort } from '../../utils/signature-options.js';
 import { getSource } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -314,7 +314,7 @@ export function refreshScoreKeySelects() {
       const mine = (sig.options || []).map(o => [scoreValue(sig.id, o.method, o.layer), o.label]);
       for (const value of picked) {
         const got = parseScoreValue(value);
-        if (got.key === sig.id && !mine.some(m => m[0] === value)) mine.push([value, `${got.column}${got.layer ? ` · ${got.layer}` : ''} (no longer offered)`]);
+        if (got.key === sig.id && !mine.some(m => m[0] === value)) mine.push([value, `${methodShort(got.column)}${got.layer ? ` · ${got.layer}` : ''} (no longer offered)`]);
       }
       return mine.map(([value, text], i) => [value, i === 0 ? sig.title : `${sig.title} · ${text}`]);
     });

@@ -1,3 +1,5 @@
+import { methodShort } from '../../utils/signature-options.js';
+
 /**
  * The panel's "Hover" picker: which obs (cell plot) or var (gene plot)
  * columns the hover label lists after x / y / colour.
@@ -58,7 +60,7 @@ export function hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverO
       const mine = (sig.options || []).map(o => ({ value: scoreValue(sig.id, o.method, o.layer), label: o.label }));
       for (const [value, h] of scored) {
         if (h.key === sig.id && !mine.some(m => m.value === value)) {
-          mine.push({ value, label: `${h.column || 'zscore_mean'}${h.layer ? ` · ${h.layer}` : ''} (no longer offered)` });
+          mine.push({ value, label: `${methodShort(h.column || 'zscore_mean')}${h.layer ? ` · ${h.layer}` : ''} (no longer offered)` });
         }
       }
       mine.forEach((o, i) => {
