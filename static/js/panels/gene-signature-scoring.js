@@ -454,6 +454,8 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         paintAggregations: () => { if (!destroyed && open) paint(); },
         refreshInputs,
         refreshKind,
+        /** Open the section and put the cursor on it: where a consumer's "Offer other scores…" leads. */
+        reveal() { if (destroyed) return; open = true; paint(); toggle.focus(); },
         getKinds: () => Object.fromEntries(kinds),
         destroy() { destroyed = true; },
         /** For tests. */

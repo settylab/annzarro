@@ -45,7 +45,8 @@ export function colourTitle(color) {
     if (!color || !color.key) return '';
     const { type, key, column } = color;
     // a gene-score names its signature by title (kept in `label`, refreshed when the signature is read)
-    if (type === 'gene-score') return color.label || key;
+    // two lines: the signature, then the method and layer (a title that leaves the app names both)
+    if (type === 'gene-score') return color.labelFull ? color.labelFull.replace('\n', '<br>') : (color.label || key);
     if (!column) return key;
     return type === 'obsp' || type === 'varp' ? `${key} · row ${column}` : `${key} · ${column}`;
 }

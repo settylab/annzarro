@@ -46,3 +46,22 @@ test('view copy keys a score axis by signature and aggregation; a link without o
     assert.notDeepEqual(coordinateId({ type: 'gene-score', key: 'sig-1', column: 'mean' }), old);
     assert.notDeepEqual(coordinateId({ type: 'gene-score', key: 'sig-2', column: '' }), old);
 });
+
+test('a consumer reads the layer of its own choice, else the signature input; view copy and columns tell layers apart', async () => {
+    const { layerOf, effectiveInput } = R;
+    assert.equal(layerOf({ type: 'gene-score', key: 's' }), '');
+    assert.equal(effectiveInput({ layer: 'counts' }, 'X'), 'counts');
+    assert.equal(effectiveInput({}, 'log1p'), 'log1p');
+    assert.equal(effectiveInput(null, ''), 'X');
+    const a = coordinateId({ type: 'gene-score', key: 'sig-1', column: '' });
+    const b = coordinateId({ type: 'gene-score', key: 'sig-1', column: '', layer: 'counts' });
+    assert.notDeepEqual(a, b, 'the same score over another layer is another coordinate');
+    assert.deepEqual(coordinateId({ type: 'gene-score', key: 'sig-1', column: '', layer: '' }), a);
+    const { getColumnKey } = await import('../../../static/js/utils/column-key.js');
+    const base = { type: 'gene-score', key: 'sig-1', column: 'mean' };
+    assert.notEqual(getColumnKey(base), getColumnKey({ ...base, layer: 'counts' }));
+    assert.equal(getColumnKey(base), getColumnKey({ ...base, layer: '' }), 'old columns keep their key');
+    const { sameScoreColumn } = await import('../../../static/js/utils/score-column.js');
+    assert.equal(sameScoreColumn(base, { ...base, layer: 'counts' }), false);
+    assert.equal(sameScoreColumn(base, { ...base }), true);
+});

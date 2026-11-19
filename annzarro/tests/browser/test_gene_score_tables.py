@@ -379,7 +379,7 @@ def test_export_writes_the_score_column_when_it_is_ready(page, served, tmp_path)
     path = tmp_path / "t.csv"
     info.value.save_as(str(path))
     lines = path.read_text().strip().splitlines()
-    assert lines[0].replace('"', "") == "Cell ID,score,T cell score"
+    assert lines[0].replace('"', "") == "Cell ID,score,T cell score · z-score mean · X"
     row = {l.replace('"', "").split(",")[0]: l.replace('"', "").split(",") for l in lines[1:]}
     assert len(row) == N_OBS
     assert float(row["c3"][2]) == pytest.approx(1.0, abs=1e-6)

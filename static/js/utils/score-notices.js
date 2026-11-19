@@ -1,3 +1,5 @@
+import { methodShort as methodLabel } from './signature-options.js';
+
 /**
  * What a dependant of a gene-signature score says in each state (design 7.3,
  * UX review 3.2). Pure: a state in, wording and actions out, so Node tests
@@ -24,8 +26,8 @@ export function durationText(seconds) {
 }
 
 /** Notice states, most urgent first: a plot with two scores states the worst. */
-export const PRIORITY = ['notcells', 'unset', 'deleted', 'off', 'failed', 'refused', 'awaiting', 'cancelled', 'noscore', 'nogenes',
-    'estimating', 'queued', 'computing', 'updating', 'held'];
+export const PRIORITY = ['nolayer', 'notcells', 'unset', 'deleted', 'off', 'failed', 'refused', 'awaiting', 'cancelled', 'noscore', 'nogenes',
+    'estimating', 'queued', 'computing', 'updating', 'held', 'notoffered'];
 
 /** The sentence part of a gene count: "31 of 50 genes". */
 function progressText(progress) {
@@ -83,6 +85,9 @@ export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
                 missing ? `None of the genes of ${T} are in this dataset.` : (snap.message || `${t} has no score.`), '',
                 [open, choose]);
         }
+        case 'nolayer':
+            return out('nolayer', 'warning', 'Layer not found', `Layer '${snap.layer || 'X'}' is not in this dataset, so ${t} has no score.`, '',
+                [open, choose]);
         case 'notcells':
             return out('notcells', 'notice', 'Not a cell source', 'Gene scores are a cell source; not available in a Gene Plot.', '', []);
         case 'unset':
@@ -102,6 +107,7 @@ export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
             return out('updating', 'notice', 'Score updating', `Showing the previous ${t}. Updating.`, '',
                 [['score-cancel', cancelLabel]]);
         case 'ready':
+            if (snap.lapsed) return noLongerOffered(snap, t, out);
             if (snap.held) {
                 const n = snap.held.edits;
                 const when = Number.isFinite(snap.held.seconds) ? ` ${durationText(snap.held.seconds).replace(/^about/, 'About')}.` : '';
@@ -113,6 +119,16 @@ export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
         default:
             return null;
     }
+}
+
+/** An option the signature stopped offering: kept, still drawing, said so, with the way back. */
+function noLongerOffered(snap, t, out) {
+    const m = methodLabel(snap.sub || 'zscore_mean');
+    const what = snap.layer && snap.layer !== snap.ownInput ? `${m} · ${snap.layer}` : m;
+    const note = out('notoffered', 'warning', 'Not offered', `${t} no longer offers ${what}.`, '',
+        [['score-offer', 'Offer it again'], ['score-choose', 'Choose another']]);
+    note.blocksAxis = false;
+    return note;
 }
 
 function trimStop(message) {

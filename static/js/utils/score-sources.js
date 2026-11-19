@@ -114,7 +114,26 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     }
 
     /** What a handle shows and which key it stands on, rebinding when the key moved. */
+    /**
+     * Where the consumer's score stands. An option the signature no longer offers is kept and goes on drawing
+     * what it has: the snapshot says `lapsed` and the consumer states it ("Not offered"), never moves to another.
+     */
     function read(handle) {
+        const snap = readOne(handle);
+        const sig = signatures.get(handle.sigId);
+        if (sig && signatures.offers && !signatures.offers(sig.recipe(), handle.sub || DEFAULT_METHOD, handle.layer || '')) {
+            const own = sig.recipe().input;
+            return { ...snap, lapsed: true, sub: handle.sub || DEFAULT_METHOD, layer: handle.layer || own, ownInput: own };
+        }
+        return snap;
+    }
+
+    function readOne(handle) {
+        // a column left over from another source (an obsm dimension) is not a method: nothing is asked of the server for it
+        if (handle.sub && !METHODS.includes(handle.sub)) {
+            dropKey(handle);
+            return { sigId: handle.sigId, title: '', held: null, key: null, state: 'estimating' };
+        }
         const ctx = context();
         const sig = signatures.get(handle.sigId);
         const base = { sigId: handle.sigId, title: sig ? sig.title : handle.lastTitle || '', held: null, key: null };
@@ -123,8 +142,9 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             return { ...base, state: signatures.off && signatures.off() ? 'off' : 'deleted' };
         }
         handle.lastTitle = sig.title;
-        const recipe = withMethod(appliedOf(handle.sigId, sig), handle.sub, handle.layer);
+        const applied = appliedOf(handle.sigId, sig);
         const held = heldOf(handle.sigId);
+        const recipe = withMethod(applied, handle.sub, handle.layer);
         if (genesIn(recipe) === 0) {
             dropKey(handle);
             return { ...base, held, state: 'nogenes' };
@@ -138,6 +158,12 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         }
         const snap = store.snapshot(key);
         base.key = key;
+        base.layer = recipe.input;
+        // the layer is not in the dataset: said as a state of its own, not as a failure
+        if (snap.state === 'failed' && snap.reason === 'key_not_found') {
+            handle.shown = null;
+            return { ...base, held, state: 'nolayer', message: snap.message, layer: recipe.input };
+        }
         // A score is one number per cell shown. One of another length is for other cells (a subset
         // changed while it was on its way, or a stale entry): it is asked for again once, and then
         // stated as failed with Retry, never shown and never waited on in silence.

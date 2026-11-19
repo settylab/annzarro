@@ -21,12 +21,15 @@ import { createScoreStore } from './score-store.js';
 import { createScoreSources } from './score-sources.js';
 import { createScoreApi } from './gene-score-client.js';
 import { describeScore, worstNotice } from './score-notices.js';
-import { registerSource, subKeyOf } from './source-registry.js';
+import { registerSource, subKeyOf, layerOf } from './source-registry.js';
 import { DEFAULT_METHOD } from './gene-signature.js';
-import { DEFAULT_OFFERED, METHODS, methodShort, offeredOptions } from './signature-options.js';
+import { DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
 
 /** What each aggregation is called where a consumer picks it (level 3). */
 const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
+
+/** The last entry of a score's option list: opens the signature panel on what it offers. */
+export const OFFER_MORE = '__offer_more__';
 
 /** The value that is not a signature: "New signature..." in the key list. */
 export const NEW_SIGNATURE = '__new_signature__';
@@ -61,7 +64,8 @@ function signatureAdapter() {
                 || typeof panel.getRecipe !== 'function') return null;
             return { title: panel.getTitle(), recipe: () => panel.getRecipe() };
         },
-        off: () => !Policy.panelEnabled('gene-signature')
+        off: () => !Policy.panelEnabled('gene-signature'),
+        offers: (recipe, sub, layer) => isOffered(recipe, sub, layer || undefined)
     };
 }
 
@@ -104,7 +108,7 @@ export function signatureList() {
     const open = new Set(PanelManager.getActivePanels().map(p => p.getId()));
     return PanelManager.getAllPanels()
         .filter(p => p.getType && p.getType() === 'gene-signature')
-        .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()), subs: offeredSubs(p) }));
+        .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()), subs: offeredSubs(p), input: p.getRecipe ? p.getRecipe().input : 'X', options: scoreOptions(p.getId()) }));
 }
 
 /** The title of the signature a setting names, or what it was called when last seen. */
@@ -118,8 +122,31 @@ export function scoreTitle(setting) {
 /** The name a consumer shows for a score: the signature's title, and the aggregation when it is not the default. */
 export function scoreLabel(setting) {
     const sub = subKeyOf(setting);
-    const title = scoreTitle(setting).replace(new RegExp(` · (${METHODS.map(m => SUB_LABELS[m]).join('|')})$`), '');
-    return !sub || sub === DEFAULT_METHOD ? title : `${title} · ${SUB_LABELS[sub] || sub}`;
+    const title = scoreTitle(setting).replace(new RegExp(`( · (${METHODS.map(m => SUB_LABELS[m]).join('|')}))?( · of .+)?$`), '');
+    const layer = layerOf(setting);
+    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
+    const own = panel && panel.getRecipe ? panel.getRecipe().input : 'X';
+    const out = !sub || sub === DEFAULT_METHOD ? title : `${title} · ${SUB_LABELS[sub] || sub}`;
+    // the layer is named when it is not the one the signature itself reads
+    return layer && layer !== own ? `${out} · ${layer}` : out;
+}
+
+/**
+ * The two lines a score is named by wherever it leaves the app (the colour bar, an axis title, a legend,
+ * a CSV header): the signature's title, then the method and the layer it was computed over, always.
+ * @returns {[string, string]}
+ */
+export function scoreLabelLines(setting) {
+    const title = scoreTitle(setting).replace(new RegExp(`( · (${METHODS.map(m => SUB_LABELS[m]).join('|')}))?( · of .+)?$`), '');
+    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
+    const own = panel && panel.getRecipe ? panel.getRecipe().input : 'X';
+    const sub = subKeyOf(setting);
+    return [title, `${SUB_LABELS[sub] || sub} · ${layerOf(setting) || own}`];
+}
+
+/** The one-line form of scoreLabelLines: "T cell score · z-score mean · X". */
+export function scoreFullLabel(setting) {
+    return scoreLabelLines(setting).join(' · ');
 }
 
 /** A custom error: the series cannot be drawn yet, and why. */
@@ -199,10 +226,10 @@ function stillUsed(rec) {
     if (!panel || typeof panel.getConfig !== 'function') return true;
     const cfg = panel.getConfig();
     if (isHover(rec.role)) {
-        return (cfg.hoverInfo || []).some(h => h && h.type === 'gene-score' && h.key === rec.sigId && subKeyOf(h) === rec.sub);
+        return (cfg.hoverInfo || []).some(h => h && h.type === 'gene-score' && h.key === rec.sigId && subKeyOf(h) === rec.sub && layerOf(h) === (rec.layer || ''));
     }
     const s = cfg[rec.role];
-    return !!(s && s.type === 'gene-score' && s.key === rec.sigId && subKeyOf(s) === rec.sub);
+    return !!(s && s.type === 'gene-score' && s.key === rec.sigId && subKeyOf(s) === rec.sub && layerOf(s) === (rec.layer || ''));
 }
 
 // ---------------------------------------------------------------------------
@@ -301,7 +328,7 @@ function recordFor(host, role, setting) {
     const map = recordsOf(host);
     let rec = map.get(role);
     const sub = subKeyOf(setting);
-    if (rec && (rec.sigId !== setting.key || rec.sub !== sub)) {
+    if (rec && (rec.sigId !== setting.key || rec.sub !== sub || (rec.layer || '') !== layerOf(setting))) {
         release(host, role);
         rec = null;
     }
@@ -335,6 +362,9 @@ function recordFor(host, role, setting) {
 export function loadScoreSeries(setting, { host, role, expected, unit = 'cells', array = true }) {
     const title = scoreLabel(setting);
     if (title && setting.label !== title) setting.label = title;
+    // what the colour bar, axis titles and legends say (two lines for the bar), refreshed with the label
+    const lines = scoreLabelLines(setting).join('\n');
+    if (setting.labelFull !== lines) setting.labelFull = lines;
     if (!host || !setting.key) {
         const notice = describeScore({ state: 'unset', title: '' }, { role });
         throw new ScoreUnavailable(notice.headline, notice,
@@ -394,7 +424,7 @@ export function shownScoreKey(setting) {
 // ---------------------------------------------------------------------------
 // actions of the notices (main.js routes `score-*` here)
 
-export const SCORE_ACTIONS = ['score-compute', 'score-cancel', 'score-retry', 'score-update', 'score-open', 'score-choose'];
+export const SCORE_ACTIONS = ['score-offer', 'score-compute', 'score-cancel', 'score-retry', 'score-update', 'score-open', 'score-choose'];
 
 function shownRecord(host) {
     const map = HOSTS.get(host);
@@ -435,6 +465,10 @@ export function runScoreAction(action, host) {
     switch (action) {
         case 'score-compute':
             for (const r of recordsOf(host).values()) r.handle.compute();
+            break;
+        case 'score-offer':
+            offerAgain(rec.sigId, rec.sub, rec.layer);
+            sources.recheck();
             break;
         case 'score-cancel':
             rec.handle.cancel();
@@ -507,6 +541,7 @@ export function signatureRenamed(id) {
             const title = scoreLabel(rec.setting);
             if (rec.setting.label !== title) {
                 rec.setting.label = title;
+                rec.setting.labelFull = scoreLabelLines(rec.setting).join('\n');
                 if (rec.drawnKey) refreshPanel(host);
             }
         }
@@ -594,3 +629,70 @@ registerSource({
     },
     load: (setting, opts) => loadScoreSeries(setting, opts)
 });
+
+
+/**
+ * What a signature offers its consumers, as one list of entries (method and layer together, in the
+ * order of offeredOptions). `layer` is what a consumer stores: '' for the signature's default layer.
+ * @param {string} id - a signature panel id
+ * @returns {Array<{id: string, value: string, method: string, layer: string, label: string, short: string}>}
+ */
+export function scoreOptions(id) {
+    const panel = id ? PanelManager.getPanel(id) : null;
+    if (!panel || !panel.getRecipe) return [];
+    const recipe = panel.getRecipe();
+    return offeredOptions(recipe, _datasetLayers).map(o => ({
+        id: o.id, value: o.id, method: o.method, layer: o.layer, label: o.label,
+        short: methodShort(o.method)
+    }));
+}
+
+/** The dataset's layers (X first), noted from its structure when a menu is built. */
+let _datasetLayers = null;
+export function noteDatasetLayers(list) {
+    _datasetLayers = Array.isArray(list) ? [...list] : null;
+}
+
+/** The entry a consumer's setting stands for in a signature's options, or null when it is not offered. */
+export function optionOf(setting) {
+    const sub = subKeyOf(setting);
+    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
+    // no layer: the setting follows the signature's default layer (a link made before the layer was stored)
+    const layer = layerOf(setting) || (panel && panel.getRecipe ? panel.getRecipe().input : 'X');
+    return scoreOptions(setting.key).find(o => o.method === sub && o.layer === layer) || null;
+}
+
+/** The label of an option a consumer holds that the signature no longer offers. */
+export function lapsedLabel(setting) {
+    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
+    const several = panel && panel.getRecipe ? new Set(offeredOptions(panel.getRecipe(), _datasetLayers).map(o => o.layer)).size > 1 : false;
+    const layer = layerOf(setting);
+    const base = methodShort(subKeyOf(setting));
+    return `${several || layer ? `${base} · ${layer || (panel && panel.getRecipe ? panel.getRecipe().input : 'X')}` : base} (no longer offered)`;
+}
+
+/**
+ * "Offer other scores…": open (or reopen) the signature's panel beside `nextTo`, expand its offered
+ * options and put the cursor there.
+ * @param {string} id - the signature
+ * @param {string|null} nextTo - the panel the request came from
+ */
+export function offerOtherScores(id, nextTo = null) {
+    const panel = openSignature(id, nextTo);
+    if (panel && typeof panel.revealScoresOffered === 'function') {
+        // the panel may still be building its sections
+        setTimeout(() => panel.revealScoresOffered(), 0);
+    }
+    return panel;
+}
+
+/** Offer an option again in the signature's panel (the notice's one-click action). */
+function offerAgain(id, method, layer) {
+    const panel = id ? PanelManager.getPanel(id) : null;
+    if (!panel || !panel.getRecipe || !panel.updateConfig) return false;
+    const recipe = panel.getRecipe();
+    const offered = [...new Set([...(recipe.offered || []), method])];
+    const layers = layer && !(recipe.layers || []).includes(layer) ? [...(recipe.layers || [recipe.input]), layer] : recipe.layers;
+    panel.updateConfig({ offered, ...(layers ? { layers } : {}) });
+    return true;
+}

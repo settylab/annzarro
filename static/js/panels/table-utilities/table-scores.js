@@ -112,7 +112,7 @@ function ensure(tableId, column, visible = null) {
     const key = getColumnKey(column);
     const map = tableMap(tableId);
     let entry = map.get(key);
-    if (entry && (entry.column.key !== column.key || subOf(entry.column) !== subOf(column))) {
+    if (entry && (entry.column.key !== column.key || subOf(entry.column) !== subOf(column) || (entry.column.layer || '') !== (column.layer || ''))) {
         release(tableId, key);
         entry = null;
     }
@@ -120,7 +120,7 @@ function ensure(tableId, column, visible = null) {
         entry = { tableId, key, column, sub: subOf(column), handle: null, snap: null, title: '', sig: '',
             reader: makeReader(), visible: visible || (() => tileOnScreen(tableId)) };
         entry.handle = scores().sources.watch(column.key, {
-            sub: entry.sub, host: tableId, role: 'column', visible: () => entry.visible(),
+            sub: entry.sub, layer: column.layer || '', host: tableId, role: 'column', visible: () => entry.visible(),
             onChange: (snap) => update(entry, snap)
         });
         map.set(key, entry);

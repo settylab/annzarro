@@ -231,6 +231,8 @@ const GeneSignaturePanel = (function() {
                 setRecipe(Object.fromEntries(recipeKeys.filter(k => k in config).map(k => [k, config[k]])));
                 if (_initialized) { rebuildRows(); paint(); if (_scoring && ('input' in config || 'layers' in config)) _scoring.refreshKind(); }
                 notifyChange();
+                // what consumers may pick changed: their menus follow
+                if (['offered', 'layers', 'input', 'method'].some(k => k in config)) signatureRenamed(_id);
             }
         }
 
@@ -992,6 +994,7 @@ const GeneSignaturePanel = (function() {
             getRecipe,
             getOfferedOptions,
             getRecipeHash: () => recipeHash(_recipe),
+            revealScoresOffered: () => { if (_scoring) _scoring.reveal(); },
             addGenes,
             undo,
             // for the sources that plug in (paste and upload)

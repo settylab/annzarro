@@ -41,9 +41,26 @@ export function sourcesFor(consumer, role = 'x') {
     return [..._providers.values()].filter(p => p.consumers.includes(consumer) && p.axes.includes(role));
 }
 
+/** The layer a consumer reads a score over: its own choice, or '' for the signature's input. */
+export function layerOf(setting) {
+    return setting && setting.layer ? String(setting.layer) : '';
+}
+
 /** The sub-key a setting stands for: its column, or the provider's default. */
 export function subKeyOf(setting) {
     const provider = setting && getSource(setting.type);
     if (!provider) return setting && setting.column ? String(setting.column) : '';
     return setting.column ? String(setting.column) : provider.defaultSub;
+}
+
+/**
+ * The layer a score is computed over for one consumer: its own choice, else the signature's input.
+ * The one place the raw-count warning and anything else that asks "what is this score read from"
+ * should call, so a per-consumer choice is honoured everywhere.
+ * @param {{layer?: string}} setting - the consumer's source setting
+ * @param {string} signatureInput - the signature's `input` ('X' or a layer)
+ * @returns {string}
+ */
+export function effectiveInput(setting, signatureInput = 'X') {
+    return layerOf(setting) || signatureInput || 'X';
 }

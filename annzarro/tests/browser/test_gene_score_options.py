@@ -289,7 +289,7 @@ def test_a_combination_that_cannot_be_computed_is_left_out_of_the_menu_and_the_p
     assert "counts" in page.inner_text(f"{S} [data-layer='counts'] .gsig-scoring__kind")
     assert "follows sequencing depth" in page.inner_text(f"{S} [data-method='mean']"), "said once, under the method"
     values = [v for v, _ in page.eval_on_selector_all(f"{D} select.axis-column-select[data-axis='color'] option", "els => els.map(e => [e.value, e.textContent])")]
-    assert "detected" in values, "counts is offered, so the plot may pick it"
+    assert "detected@counts" in values, "counts is offered, so the plot may pick it"
 
 
 def test_reset_to_defaults_puts_every_setting_back(page, served):
@@ -332,8 +332,9 @@ def test_layers_are_offered_in_order_and_the_first_is_where_a_new_consumer_start
 # ------------------------------------------------------------------ what plots and tables are offered
 
 def _agg_options(page, tile=C, axis="color"):
-    return page.eval_on_selector_all(f"{tile} select.axis-column-select[data-axis='{axis}'] option",
-                                     "els => els.map(e => [e.value, e.textContent])")
+    got = page.eval_on_selector_all(f"{tile} select.axis-column-select[data-axis='{axis}'] option",
+                                    "els => els.map(e => [e.value, e.textContent])")
+    return [o for o in got if o[0] != "__offer_more__"]
 
 
 def test_a_plot_is_offered_what_the_panel_offers_and_a_switched_off_option_is_kept_and_marked(page, served):
@@ -341,16 +342,16 @@ def test_a_plot_is_offered_what_the_panel_offers_and_a_switched_off_option_is_ke
     page.wait_for_selector(f"{D} .js-plotly-plot", timeout=30000)
     _wait_coloured(page, D)
     values = [v for v, _ in _agg_options(page, D)]
-    assert values == ["zscore_mean", "mean", "sum"]
+    assert values == ["zscore_mean@X", "mean@X", "sum@X"]
     _expand(page)
     _offer(page, "detected")
-    until(page, "(t) => document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option').length === 4", D)
-    assert [v for v, _ in _agg_options(page, D)] == ["zscore_mean", "mean", "sum", "detected"]
+    until(page, "(t) => document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option').length === 5", D)
+    assert [v for v, _ in _agg_options(page, D)] == ["zscore_mean@X", "mean@X", "sum@X", "detected@X"]
     _offer(page, "mean", False)                                          # the plot reads the mean
     until(page, "(t) => /no longer offered/.test(document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').textContent)", D)
     options = _agg_options(page, D)
-    assert ["mean", "Mean (no longer offered)"] in [list(o) for o in options] or any(v == "mean" and "no longer offered" in t for v, t in options)
-    assert page.eval_on_selector(f"{D} select.axis-column-select[data-axis='color']", "s => s.value") == "mean", "its setting is kept"
+    assert any(v == "mean@X" and "no longer offered" in t for v, t in options)
+    assert page.eval_on_selector(f"{D} select.axis-column-select[data-axis='color']", "s => s.value") == "mean@X", "its setting is kept"
     assert _numbers(page, D), "and it still draws"
     cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-D').getConfig().color")
     assert cfg["column"] == "mean", "the link stays valid"
@@ -362,7 +363,7 @@ def test_the_hover_picker_lists_only_what_is_offered(page, served):
     _open(page, served, plots=(("cell-plot-C", None),), sig=_sig(offered=["zscore_mean", "detected"]), sig_open=True)
     _wait_coloured(page)
     opts = page.eval_on_selector_all(f"{C} select.hover-columns-select optgroup[label='Gene scores'] option", "els => els.map(e => e.value)")
-    assert opts == [f"gene-score:{SIG}:zscore_mean", f"gene-score:{SIG}:detected"]
+    assert opts == [f"gene-score:{SIG}:zscore_mean:X", f"gene-score:{SIG}:detected:X"]
 
 
 def test_the_section_shows_which_options_plots_use(page, served):
