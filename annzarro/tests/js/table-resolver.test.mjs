@@ -328,3 +328,37 @@ test('every unresolved state has its sentence and its way out', () => {
     assert.ok(describeUnresolved({ state: 'failed', reason: 'x' }, 'T').actions.some(a => a[0] === 'retry-filter'));
     assert.ok(describeUnresolved({ state: 'refused', reason: 'size' }, 'T').actions.some(a => a[0] === 'reopen-table'));
 });
+
+// ---------------------------------------------------------------- cancel
+
+test('Cancel stops the load phase and returns to Build filter, whatever the size', async () => {
+    const t = fake();
+    t.wanted.p = 'A';
+    t.resolver.need('A', 'p');
+    await tick();
+    assert.equal(t.resolver.status('A').state, 'building');
+    assert.equal(t.resolver.cancel('A'), true);
+    await tick();
+    assert.equal(t.builds[0].job.signal.aborted, true);
+    assert.equal(t.resolver.need('A', 'p').state, 'ask');
+    await tick(20);
+    assert.equal(t.builds.length, 1, 'nothing restarts by itself');
+    t.resolver.confirm('A');
+    await tick(20);
+    assert.equal(t.builds.length, 2, 'Build filter builds again');
+});
+
+test('the last step cannot be cancelled, and the notice says so', async () => {
+    const t = fake();
+    t.wanted.p = 'A';
+    t.resolver.need('A', 'p');
+    await tick();
+    const entering = t.builds[0].job.enter();
+    assert.equal(t.resolver.status('A').frozen, true);
+    assert.equal(t.resolver.cancel('A'), false);
+    const said = describeUnresolved(t.resolver.status('A'), 'T');
+    assert.match(said.text, /cannot be cancelled/);
+    assert.ok(!said.actions.some(a => a[0] === 'cancel-filter'));
+    await entering;
+    assert.ok(describeUnresolved({ state: 'building' }, 'T').actions.some(a => a[0] === 'cancel-filter'));
+});

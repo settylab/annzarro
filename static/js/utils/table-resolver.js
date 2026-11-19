@@ -108,8 +108,15 @@ export function describeUnresolved(status, name, titleOf = (id) => id) {
     const why = status && status.reason ? status.reason : '';
     switch (state) {
         case 'building':
+            if (status.frozen) {
+                // the last step cannot be stopped; it holds the page for a moment
+                return { tag: 'Building filter', headline: 'Filter not applied yet',
+                    text: `Filtering '${name}'. This last step cannot be cancelled and takes a moment. No cells are drawn until it is ready.`,
+                    actions: [open, off] };
+            }
             return { tag: 'Building filter', headline: 'Filter not applied yet',
-                text: `Building '${name}'. No cells are drawn until it is ready.`, actions: [open, off] };
+                text: `Building '${name}'. No cells are drawn until it is ready.`,
+                actions: [['cancel-filter', 'Cancel'], open, off] };
         case 'waiting':
             if (status.reason === 'opening') {
                 return { tag: 'Opening table', headline: 'Filter not applied yet',
@@ -182,7 +189,7 @@ export function createResolver(host, options = {}) {
         let rec = records.get(id);
         if (!rec) {
             rec = { id, epoch: 0, owner: 'none', opening: false, outcome: null, state: 'idle', reason: '', detail: '',
-                cycle: null, rows: 0, key: null, confirmedKey: null, failedKey: null, controller: null,
+                cycle: null, rows: 0, key: null, confirmedKey: null, failedKey: null, heldKey: null, frozen: false, controller: null,
                 queued: false, order: 0, wanted: new Set() };
             records.set(id, rec);
         }
@@ -190,7 +197,7 @@ export function createResolver(host, options = {}) {
     }
 
     const publicStatus = (rec) => ({ state: rec.state, reason: rec.reason, detail: rec.detail,
-        cycle: rec.cycle, rows: rec.rows, epoch: rec.epoch, owner: rec.owner });
+        cycle: rec.cycle, rows: rec.rows, epoch: rec.epoch, owner: rec.owner, frozen: rec.frozen });
 
     const liveWanted = (rec) => [...rec.wanted].filter(d => host.isDependant(d, rec.id));
 
@@ -243,6 +250,7 @@ export function createResolver(host, options = {}) {
             rec.key = key;
             rec.confirmedKey = null;
             rec.failedKey = null;
+            rec.heldKey = null;
             if (rec.state !== 'building') set(rec, 'idle');
         }
         if (rec.state === 'building' || (rec.state === 'waiting' && rec.queued)) return publicStatus(rec);
@@ -254,7 +262,8 @@ export function createResolver(host, options = {}) {
             set(rec, 'refused', { reason: 'size', rows });
             return publicStatus(rec);
         }
-        if (tier === 'ask' && rec.confirmedKey !== key) {
+        // a cancelled build waits for one click, whatever its size
+        if ((tier === 'ask' && rec.confirmedKey !== key) || rec.heldKey === key) {
             set(rec, 'ask', { rows });
             return publicStatus(rec);
         }
@@ -329,10 +338,22 @@ export function createResolver(host, options = {}) {
         rec.controller = controller;
         rec.queued = false;
         rec.owner = 'background';
+        rec.frozen = false;
         set(rec, 'building', { rows: rec.rows });
         running = rec;
         builds++;
         host.notify(rec.id, panel.kind);
+        // the last step (filter and release) cannot be stopped: say so, and let the page paint it
+        const enter = async () => {
+            check();
+            rec.frozen = true;
+            host.notify(rec.id, panel.kind);
+            await new Promise(r => setTimeout(r, 60));
+            if (rec.epoch !== epoch || signal.aborted) {
+                rec.frozen = false;
+                throw abortError('The build was replaced');
+            }
+        };
         const check = () => {
             if (rec.epoch !== epoch || signal.aborted) throw abortError('The build was replaced');
             if (!liveWanted(rec).length) {
@@ -345,7 +366,7 @@ export function createResolver(host, options = {}) {
             let changed = true;
             try {
                 check();
-                const selection = await host.build({ id: rec.id, kind: panel.kind, config: panel.config, signal, check });
+                const selection = await host.build({ id: rec.id, kind: panel.kind, config: panel.config, signal, check, enter });
                 if (rec.epoch !== epoch || signal.aborted) {
                     // replaced while it ran: the owner that replaced it publishes
                     changed = false;
@@ -363,7 +384,7 @@ export function createResolver(host, options = {}) {
                     changed = false;
                 } else if (error && error.name === 'AbortError') {
                     rec.owner = 'none';
-                    set(rec, 'idle');
+                    set(rec, rec.heldKey === key ? 'ask' : 'idle', { rows: rec.rows });
                 } else {
                     rec.owner = 'none';
                     rec.failedKey = key;
@@ -371,6 +392,7 @@ export function createResolver(host, options = {}) {
                 }
             } finally {
                 if (rec.controller === controller) rec.controller = null;
+                rec.frozen = false;
                 running = null;
                 if (changed) host.notify(rec.id, panel.kind);
                 later(pump);
@@ -385,11 +407,26 @@ export function createResolver(host, options = {}) {
         const rec = record(id);
         rec.confirmedKey = host.cellsKey(panel.kind);
         rec.key = rec.confirmedKey;
+        rec.heldKey = null;
         if (rec.state === 'ask') {
             set(rec, 'idle');
             const status = need(id);
             if (status.state !== 'ask') host.notify(id, panel.kind);
         }
+    }
+
+    /**
+     * Cancel a build in its load phase: the load stops and the table returns to "Build filter".
+     * Not once the last step (filter and release) has begun.
+     * @returns {boolean} whether it was stopped
+     */
+    function cancel(id) {
+        const rec = records.get(id);
+        if (!rec || rec.state !== 'building' || rec.frozen) return false;
+        rec.heldKey = rec.key;
+        rec.confirmedKey = null;
+        stop(rec, 'Cancelled');
+        return true;
     }
 
     /** Retry a failed build. */
@@ -527,7 +564,7 @@ export function createResolver(host, options = {}) {
     }
 
     return {
-        need, gate, status, confirm, retry, claim, panelPublished, panelSettled, panelClosed, drop,
+        need, gate, status, confirm, cancel, retry, claim, panelPublished, panelSettled, panelClosed, drop,
         cellsChanged, reset, reassess, withdraw,
         /** Tests: the limits in force, and a way to tune them. */
         get limits() { return { ...limits }; },

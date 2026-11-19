@@ -44,7 +44,7 @@ export function filters(config) {
  * @param {{kind: string, config: Object, signal: AbortSignal, check: Function}} job
  * @returns {Promise<{passing, seen}>} (utils/closed-table.js)
  */
-export async function buildSelection({ kind, config, signal, check }) {
+export async function buildSelection({ kind, config, signal, check, enter }) {
     const entityType = kind === 'cell-table' ? 'cells' : 'genes';
     const settings = {
         columns: neededColumns(config),
@@ -56,7 +56,8 @@ export async function buildSelection({ kind, config, signal, check }) {
     };
     const tableData = await loadTableData(settings, entityType, signal);
     // the step below cannot be interrupted: last look at whether anyone still wants it
-    check();
+    // the last step cannot be interrupted: the resolver says so first and lets the page paint it
+    if (enter) await enter(); else check();
     const rowNames = tableData.entityIndex;
     const rows = tableData.data.length;
     const have = new Set(tableData.columns.map(c => c.data));
