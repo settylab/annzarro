@@ -100,7 +100,7 @@ def test_the_layer_round_trips_through_a_link_and_is_not_a_value(page, served):
     _ready_plot(page)
     view = page.evaluate("() => (window.SessionManager || window.sessionManager).captureView()")
     cfg = view["layer" if False else "layout"]["panelConfigs"]["cell-plot-C"]
-    assert cfg["x"]["layer"] == "counts" and "layer" not in cfg["y"]
+    assert cfg["x"]["layer"] == "counts" and cfg["y"]["layer"] == "X", "an old y with no layer was resolved once, on load"
     assert "values" not in json.dumps(view)
     other = page.context.browser.new_page()
     other.add_init_script(INIT)
@@ -205,7 +205,7 @@ def test_turning_an_option_off_keeps_a_table_column_as_it_was(page, served):
     page.click(f"#gene-score-tab-{T.TID}")
     until(page, "(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' label')].some(l => /no longer offered/.test(l.textContent))", T.TID)
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score')", T.TID)
-    assert [(c["column"], c.get("layer")) for c in cfg] == [("mean", None)], "kept as it was"
+    assert [(c["column"], c.get("layer")) for c in cfg] == [("mean", "X")], "kept on X (pinned when it was read)"
 
 
 def test_offer_other_scores_opens_the_signature_and_expands_what_it_offers(page, served):
@@ -277,12 +277,12 @@ def test_table_columns_store_their_layer_and_an_old_column_without_one_reads_the
     page.check(f"#checkbox-gene-score-{SIG}-mean-of-counts-{T.TID}")
     page.click(f"#apply-columns-{T.TID}")
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer])", T.TID)
-    assert sorted(cfg, key=str) == sorted([["mean", "X"], ["mean", "counts"], ["zscore_mean", None]], key=str), "every new choice stores its layer; the old column is kept as it was"
+    assert sorted(cfg) == [["mean", "X"], ["mean", "counts"], ["zscore_mean", "X"]], "every column stores its layer; the old one was resolved on load"
     # the signature stops offering X: the columns do not move to counts
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
     page.wait_for_timeout(800)
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer])", T.TID)
-    assert sorted(cfg, key=str) == sorted([["mean", "X"], ["mean", "counts"], ["zscore_mean", None]], key=str)
+    assert sorted(cfg) == [["mean", "X"], ["mean", "counts"], ["zscore_mean", "X"]]
 
 
 def test_plot_hover_and_table_menus_leave_out_a_combination_that_cannot_be_computed(page, served):
@@ -398,3 +398,59 @@ def test_a_score_that_lasts_is_still_said_over_the_old_plot(page, served):
     _choose_score(page, "color")
     page.wait_for_selector(f"{C} .score-notice[data-state='awaiting']", timeout=30000)
     assert _tag(page) == "Score not computed"
+
+
+def test_an_old_link_is_migrated_on_load_and_unticking_x_moves_nothing(page, served):
+    from annzarro.tests.browser import test_gene_score_tables as T
+    old_col = {"type": "gene-score", "key": SIG, "column": "zscore_mean", "label": "T cell score"}
+    filt = {"condition": ">", "data": "T cell score", "origData": "gene-score_" + SIG + "_zscore_mean", "type": "num", "value": ["0.5"]}
+    table = T._table(columns=[T.OBS, old_col], searchBuilderConfig={"criteria": [filt], "logic": "AND"})
+    plain = _cell(color={"type": "gene-score", "key": SIG, "column": "zscore_mean", "label": "T cell score"},
+                  hoverInfo=[{"type": "obs", "key": "_index"}, {"type": "gene-score", "key": SIG, "column": "mean"}])
+    T._open(page, served, table=table, plots=(("cell-plot-C", plain),), sig=TWO, sig_open=True)
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length >= 1")
+    _wait_coloured(page)
+    cfg = page.evaluate("""() => { const t = window.PanelManager.getPanel('cell-table-T').getConfig(), p = window.PanelManager.getPanel('cell-plot-C').getConfig();
+        return { cols: t.columns.filter(c => c.type === 'gene-score').map(c => c.layer), crit: JSON.stringify(t.searchBuilderConfig),
+                 color: p.color.layer, hover: p.hoverInfo.filter(h => h.type === 'gene-score').map(h => h.layer) }; }""")
+    assert cfg["cols"] == ["X"] and cfg["color"] == "X" and cfg["hover"] == ["X"], cfg
+    assert "gene-score_" + SIG + "_zscore_mean__of_X" in cfg["crit"], "the filter follows the renamed column"
+    # the user unticks X in the panel: counts becomes the signature's first layer
+    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
+    page.wait_for_timeout(1000)
+    after = page.evaluate("""() => { const t = window.PanelManager.getPanel('cell-table-T').getConfig(), p = window.PanelManager.getPanel('cell-plot-C').getConfig();
+        return { cols: t.columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer]), crit: JSON.stringify(t.searchBuilderConfig), color: [p.color.column, p.color.layer] }; }""")
+    assert after["cols"] == [["zscore_mean", "X"]] and after["color"] == ["zscore_mean", "X"], after
+    assert "__of_X" in after["crit"]
+    text = page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').selectedOptions[0].textContent", C)
+    assert "no longer offered" in text, text
+    assert set(_inputs(page)) == {"X"}, "nothing was computed over counts: it all stays on X"
+
+
+def test_a_closed_entry_is_pinned_before_the_input_changes(page, served):
+    plot = _cell(color={"type": "gene-score", "key": SIG, "column": "mean", "label": "T cell score"})
+    _open(page, served, plots=(("cell-plot-C", plot),), sig=TWO, sig_open=True, wait=False)
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
+    until(page, "() => !!window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer")
+    assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer") == "X"
+
+
+def test_a_sorted_table_with_a_hidden_column_keeps_both_after_its_score_column_is_pinned_and_the_input_changes(page, served):
+    from annzarro.tests.browser import test_gene_score_tables as T
+    old_col = {"type": "gene-score", "key": SIG, "column": "zscore_mean", "label": "T cell score"}
+    filt = {"condition": ">", "data": "T cell score", "origData": "gene-score_" + SIG + "_zscore_mean", "type": "num", "value": ["-9"]}
+    table = T._table(columns=[T.OBS, old_col], searchBuilderConfig={"criteria": [filt], "logic": "AND"})
+    T._open(page, served, table=table, sig=TWO, sig_open=True)
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 1")
+    T._wait_ready(page)
+    # sorted by the score, descending, and the obs column hidden: state the user made after the table was built
+    T._api(page, "(dt.order([[2, 'desc']]).draw(), dt.column(1).visible(false), 0)")
+    before = page.evaluate("() => window.PanelManager.getPanel('cell-table-T').getConfig().searchBuilderConfig")
+    assert "gene-score_" + SIG + "_zscore_mean__of_X" in json.dumps(before), "pinned, and its condition with it"
+    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
+    page.wait_for_timeout(1000)
+    assert T._api(page, "dt.order()") == [[2, "desc"]], "the sort stays"
+    assert T._api(page, "dt.column(1).visible()") is False, "the hidden column stays hidden"
+    after = page.evaluate("() => window.PanelManager.getPanel('cell-table-T').getConfig().searchBuilderConfig")
+    assert json.dumps(after) == json.dumps(before), "and so does the filter"

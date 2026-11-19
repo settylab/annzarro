@@ -6,7 +6,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
-import { loadTableData, initializeDataTable, releaseTable, applyLineToSettings, settleColumnChooser, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
+import { loadTableData, initializeDataTable, releaseTable, applyLineToSettings, settleColumnChooser, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders, getColumnKey } from './table-utilities/table-data.js';
 import { Coverage, GAP, classifyError } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder, showCancelled } from '../utils/panel-surface.js';
 import { beginLoad, endLoad, cancelLoads, wasCancelled } from '../utils/load-scope.js';
@@ -19,6 +19,7 @@ import { tableMayLoad } from './table-utilities/table-memory.js';
 import { TableScores } from './table-utilities/table-scores.js';
 import { bindScoreColumns } from './table-utilities/table-score-ui.js';
 import { sameScoreColumn } from '../utils/score-column.js';
+import { pinLayers } from '../utils/score-source.js';
 import { removeColumnFromChooser, buildScoreTab, syncSelectedColumns } from './table-utilities/table-ui-make.js';
 import { TableResolver } from '../utils/table-resolver.js';
 import './table-utilities/table-background.js';
@@ -160,6 +161,8 @@ const CellTablePanel = (function() {
          * @returns {Promise<void>} - Promise that resolves when the table is refreshed
          */
         async function refreshTable(signal, { inPlace = false } = {}) {
+            // a score column with no layer (an old link) is resolved now, once, with its filter conditions
+            pinLayers(_settings, getColumnKey);
             // One signal per load (utils/load-scope.js): a newer load of this
             // table, closing it and the Cancel button abort it. `signal` is
             // the one of the update that asks for it.
@@ -553,6 +556,7 @@ const CellTablePanel = (function() {
             hasColumn,
             setClosedSelection,
             refreshTable,
+            pinScoreLayers: () => pinLayers(_settings, getColumnKey),
             applyLine,
             cleanup,
             destroy,

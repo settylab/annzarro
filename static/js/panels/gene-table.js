@@ -22,7 +22,7 @@ import './table-utilities/table-background.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { createScoreOptions } from './score-options/score-options.js';
 import { normalizeOptions, storedOptions, isDefaultOptions, offeredOptions } from '../utils/signature-options.js';
-import { signatureChanged, signatureRenamed, onSignatureStatus } from '../utils/score-source.js';
+import { signatureChanged, signatureRenamed, onSignatureStatus, pinConsumersOf } from '../utils/score-source.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -478,6 +478,11 @@ const GeneTablePanel = (function() {
             // Update other settings; never the read-only views of the live
             // DataTable (searchBuilderConfig, currentEntries)
             const before = JSON.stringify(_settings.scoreOptions);
+            if ('scoreOptions' in config) {
+                const was = getScoreOptions();
+                const next = normalizeOptions(config.scoreOptions);
+                if (next.input !== was.input || JSON.stringify(next.layers) !== JSON.stringify(was.layers)) pinConsumersOf();
+            }
             assignKnownSettings(_settings, config);
             if ('scoreOptions' in config && JSON.stringify(_settings.scoreOptions) !== before) {
                 // Back and Forward, a panel set: the offer changed from outside; its readers follow
@@ -498,7 +503,10 @@ const GeneTablePanel = (function() {
 
         /** Store a patch of option fields; nothing is stored while they are the defaults. */
         function storeScoreOptions(patch) {
-            const next = normalizeOptions({ ...getScoreOptions(), ...patch });
+            const was = getScoreOptions();
+            const next = normalizeOptions({ ...was, ...patch });
+            // consumers with no layer take the input as it is now, before it changes: they never move with it
+            if (next.input !== was.input || JSON.stringify(next.layers) !== JSON.stringify(was.layers)) pinConsumersOf();
             _settings.scoreOptions = isDefaultOptions(next) ? null : storedOptions(next);
         }
 

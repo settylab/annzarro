@@ -54,3 +54,30 @@ test('links and panel sets carry no computed value: a plot config with a score h
     assert.equal(/values|Float32|score_values/.test(json), false);
     assert.deepEqual(Object.keys(plot().color).sort(), ['key', 'label', 'type']);
 });
+
+test('pinScoreLayers writes the signature input into every entry that has no layer, and renames a column with its conditions', async () => {
+    const { pinScoreLayers } = await import('../../../static/js/utils/score-column.js');
+    const { getColumnKey } = await import('../../../static/js/utils/column-key.js');
+    const old = { type: 'gene-score', key: 'sig-1', column: 'zscore_mean', label: 'T' };
+    const cfg = {
+        x: { type: 'gene-score', key: 'sig-1', column: 'mean' }, y: { type: 'obsm', key: 'X_umap', column: '1' },
+        color: { type: 'gene-score', key: 'sig-1', column: 'mean', layer: 'counts' },
+        hoverInfo: [{ type: 'obs', key: '_index' }, { type: 'gene-score', key: 'sig-1', column: 'mean' }, { type: 'gene-score', key: 'gone', column: 'mean' }],
+        columns: [{ type: 'obs', key: 'score', column: '' }, old],
+        searchBuilderConfig: { criteria: [{ condition: '>', origData: getColumnKey(old), data: 'T', value: ['1'] }], logic: 'AND' }
+    };
+    const was = getColumnKey(old);
+    assert.equal(pinScoreLayers(cfg, (id) => (id === 'sig-1' ? 'X' : null), getColumnKey), true);
+    assert.equal(cfg.x.layer, 'X');
+    assert.equal(cfg.color.layer, 'counts', 'a stored layer is never touched');
+    assert.equal('layer' in cfg.y, false);
+    assert.equal(cfg.hoverInfo[1].layer, 'X');
+    assert.equal('layer' in cfg.hoverInfo[2], false, 'a signature that is not known is left as it is');
+    assert.equal(cfg.columns[1].layer, 'X');
+    const now = getColumnKey(cfg.columns[1]);
+    assert.notEqual(now, was);
+    assert.equal(cfg.searchBuilderConfig.criteria[0].origData, now, 'the filter follows the renamed column');
+    // once: a second pass, after the signature's input changed, changes nothing
+    assert.equal(pinScoreLayers(cfg, (id) => (id === 'sig-1' ? 'counts' : null), getColumnKey), false);
+    assert.equal(cfg.x.layer, 'X');
+});
