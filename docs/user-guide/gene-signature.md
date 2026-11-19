@@ -235,9 +235,16 @@ signature. Tick **Score some genes as down** in **Scores offered** and every sel
   server for nothing; remove the down genes, or choose another option, and it comes back.
 - **Changing many at once.** In the Selected list, **Show** All, Up or Down, and **Set N shown to Up** or **Down** change
   the rows the search and the filter show, in one step.
-- **Add as.** Beside **Add from** a choice of Up or Down decides what **Add from**, the focused gene and **Paste or
-  upload** add as (the paste preview has its own **Add as**, which starts on that choice). Ticks and **Tick all**
-  add as up. A gene already in the signature stays on its side.
+- **Add as.** With the switch on, an **Add as: Up | Down** control sits in the add row, set to Up. Whatever you add next
+  follows it: **Add from** (fixed genes and gene tables), the focused gene (**+ GAPDH as down (focused)**) and
+  **Paste or upload**, whose Add button then reads "Add 12 as down". It goes back to Up when the switch is turned
+  off. Ticks and **Tick all** add as up. A gene already in the signature keeps its side when it is added again;
+  the paste preview says how many would change and offers **Change them too**, which makes the change part of the same
+  single step.
+- **A sign column.** When a pasted or uploaded table has a column such as a log fold change, choose it as **Sign
+  column** in the preview: positive values go up, negative values go down, and the Add button shows the split ("Add 3
+  genes (1 up, 2 down)"). Genes with a zero, blank or non-numeric sign are left out, and the preview counts them. The
+  choice is made for that file only; nothing is guessed.
 - **Undo** takes back every direction change, one step each; flipping several genes quickly is one step.
 - **Turning it off.** With down genes present the switch asks first: "8 down genes will count as up. **Count as up**
   **Keep**". Count as up is one step that Undo takes back.

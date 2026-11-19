@@ -211,6 +211,11 @@ def test_the_filter_lists_one_side_and_bulk_change_follows_it(page, served):
 
 # ------------------------------------------------------------------ 4. Add as
 
+def _add_as(page, side):
+    page.click(f"{S} [data-add-as-value='{side}']")
+    until(page, "([s, v]) => document.querySelector(s + ' [data-add-as-value=' + v + ']').getAttribute('aria-checked') === 'true'", [S, side])
+
+
 PASTE = f"{S} .gsig-inline[data-id=paste-upload]"
 TXT = f"{S} [data-testid=gp-text]"
 
@@ -240,7 +245,7 @@ def test_paste_adds_as_down_in_one_step_and_follows_the_add_as_choice(page, serv
     page.click(f"{S} .gsig-undo")
     _until_sides(page, ["GENE0001"], [])
     # the chooser beside Add from sets what the next preview starts on
-    page.select_option(f"{S} [data-add-as]", "down")
+    _add_as(page, "down")
     page.click(PASTE)
     page.wait_for_selector(TXT)
     _paste(page, "KLF1")
@@ -268,7 +273,7 @@ def test_the_focused_gene_and_add_from_a_table_add_as_the_chosen_side(page, serv
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     page.wait_for_selector('.tile[data-tile-id="gene-table-T"] .dataTables_scrollBody tbody tr', timeout=30000)
     until(page, "() => window.PanelManager.getPanel('gene-table-T').getConfig().currentEntries.length === 10")
-    page.select_option(f"{S} [data-add-as]", "down")
+    _add_as(page, "down")
     page.evaluate("async () => { const { DataManager } = await import('/static/js/data-manager.js'); DataManager.setFocusedGene('GAPDH'); }")
     btn = f"{S} .gsig-focused"
     until(page, "(b) => { const e = document.querySelector(b); return e && !e.hidden && e.textContent === '+ GAPDH as down (focused)'; }", btn)
@@ -285,7 +290,7 @@ def test_the_focused_gene_and_add_from_a_table_add_as_the_chosen_side(page, serv
     page.click(f"{S} .gsig-undo")
     _until_sides(page, ["KLF1"], [])
     # up again: the same menu adds as up
-    page.select_option(f"{S} [data-add-as]", "up")
+    _add_as(page, "up")
     page.click(f"{S} .gsig-addfrom")
     page.click(".gsig-menu:not([hidden]) [role=menuitem]:has-text('DE genes')")
     until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 11")
@@ -404,3 +409,115 @@ def test_a_plot_on_a_method_that_cannot_says_so_and_asks_nothing(page, served):
     note = _notice(page)
     assert note["state"] == "nodown" and "has down genes, which sum cannot score" in note["text"]
     assert _calls(page, "compute") == []
+
+
+# ------------------------------------------------------------------ Add as: one control, chosen before importing
+
+def test_add_as_is_one_segmented_control_that_shows_only_with_the_switch_and_resets_to_up(page, served):
+    _panel(page, served, genes=["GENE0001"])
+    assert page.locator(f"{S} .gsig-addas-wrap").is_hidden()
+    _switch_on(page)
+    assert page.locator(f"{S} .gsig-addas-wrap").is_visible()
+    assert page.get_attribute(f"{S} [data-add-as-value='up']", "aria-checked") == "true", "defaults to Up"
+    _add_as(page, "down")
+    assert page.get_attribute(f"{S} [data-add-as-value='up']", "aria-checked") == "false"
+    # switching off (no down genes) puts it back on Up
+    page.click(SWITCH)
+    page.wait_for_function("(s) => document.querySelector(s + ' .gsig-addas-wrap').hidden", arg=S)
+    page.click(SWITCH)
+    assert page.get_attribute(f"{S} [data-add-as-value='up']", "aria-checked") == "true"
+
+
+def test_a_fixed_gene_added_from_the_menu_follows_add_as(page, served):
+    cells = {"id": "cell-plot-C", "title": "Cell Plot 2", "z": None,
+             "x": {"type": "obsm", "key": "X_umap", "column": "0"}, "y": {"type": "obsm", "key": "X_umap", "column": "1"},
+             "color": {"type": "layer", "key": "counts", "column": "KLF1", "locked": True}}
+    _open(page, served, plots=(("cell-plot-C", cells),), sig=_sig(["GENE0001"], directions=True), sig_open=True, wait=False)
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    _add_as(page, "down")
+    page.click(f"{S} .gsig-addfrom")
+    page.click(".gsig-menu:not([hidden]) [role=menuitem]:has-text('KLF1')")
+    _until_sides(page, ["GENE0001"], ["KLF1"])
+    assert _message(page) == "Added KLF1 as down."
+
+
+def _flow(page, text):
+    page.click(PASTE)
+    page.wait_for_selector(TXT)
+    _paste(page, text)
+    page.wait_for_selector(f"{S} [data-testid=gp-counts]")
+
+
+def test_the_paste_button_says_how_many_go_down_and_each_add_is_one_undo_step(page, served):
+    _panel(page, served, genes=["GENE0001"], directions=True)
+    _add_as(page, "down")
+    _flow(page, "CD3D CD3E KLF1")
+    assert page.locator(f"{S} [data-testid=gp-add]").inner_text() == "Add 3 as down"
+    page.locator(f"{S} [data-testid=gp-add]").click()
+    _until_sides(page, ["GENE0001"], ["CD3D", "CD3E", "KLF1"])
+    page.click(f"{S} .gsig-undo")
+    _until_sides(page, ["GENE0001"], [])
+    assert page.locator(f"{S} .gsig-undo").is_disabled(), "one step"
+
+
+def test_adding_a_gene_again_keeps_its_direction_and_the_preview_offers_to_change_it(page, served):
+    _panel(page, served, genes=["GENE0001", "CD3D"], down=["CD3E"], directions=True)
+    _add_as(page, "down")
+    _flow(page, "CD3D CD3E KLF1")
+    # CD3E is already down; CD3D is up and would change; KLF1 is new
+    assert "1 selected gene would change direction" in page.inner_text(f"{S} [data-testid=gp-move-row]")
+    assert page.locator(f"{S} [data-testid=gp-add]").inner_text() == "Add 1 as down"
+    page.locator(f"{S} [data-testid=gp-add]").click()
+    _until_sides(page, ["CD3D", "GENE0001"], ["CD3E", "KLF1"])
+    assert "already selected" in _message(page) and "changed direction" not in _message(page)
+    page.click(f"{S} .gsig-undo")
+    _until_sides(page, ["CD3D", "GENE0001"], ["CD3E"])
+    # now apply it: CD3D moves, in the same single step as the add
+    _flow(page, "CD3D KLF1")
+    page.locator(f"{S} [data-testid=gp-move]").check()
+    assert page.locator(f"{S} [data-testid=gp-add]").inner_text() == "Add 1 as down"
+    page.locator(f"{S} [data-testid=gp-add]").click()
+    _until_sides(page, ["GENE0001"], ["CD3D", "CD3E", "KLF1"])
+    assert "1 gene changed direction" in _message(page)
+    page.click(f"{S} .gsig-undo")
+    _until_sides(page, ["CD3D", "GENE0001"], ["CD3E"])
+    assert page.locator(f"{S} .gsig-undo").is_disabled(), "add and change were one step"
+
+
+def test_a_move_alone_can_be_applied_when_nothing_is_new(page, served):
+    _panel(page, served, genes=["GENE0001", "CD3D"], directions=True)
+    _add_as(page, "down")
+    _flow(page, "CD3D")
+    assert page.locator(f"{S} [data-testid=gp-add]").is_disabled()
+    page.locator(f"{S} [data-testid=gp-move]").check()
+    page.locator(f"{S} [data-testid=gp-add]").click()
+    _until_sides(page, ["GENE0001"], ["CD3D"])
+
+
+def test_a_sign_column_splits_a_file_into_up_and_down(page, served):
+    _panel(page, served, genes=["GENE0001"], directions=True)
+    page.click(PASTE)
+    page.wait_for_selector(TXT)
+    csv = "gene,logfc\nCD3D,2.5\nCD3E,-1.2\nKLF1,0\nGAPDH,-0.3\nACTB,x\n"
+    page.set_input_files(f"{S} [data-testid=gp-file]", files=[{"name": "de.csv", "mimeType": "text/csv", "buffer": csv.encode()}])
+    page.wait_for_selector(f"{S} [data-testid=gp-signcol]")
+    page.select_option(f"{S} [data-testid=gp-signcol]", label="logfc")
+    page.wait_for_selector(f"{S} [data-testid=gp-unsigned]")
+    assert "2 genes have no sign" in page.inner_text(f"{S} [data-testid=gp-unsigned]")
+    assert page.locator(f"{S} [data-testid=gp-add]").inner_text() == "Add 3 genes (1 up, 2 down)"
+    assert page.locator(f"{S} [data-testid=gp-addas]").count() == 0
+    page.locator(f"{S} [data-testid=gp-add]").click()
+    _until_sides(page, ["CD3D", "GENE0001"], ["CD3E", "GAPDH"])
+    assert _message(page).startswith("Added 3 genes as up and down from file de.csv.")
+    page.click(f"{S} .gsig-undo")
+    _until_sides(page, ["GENE0001"], [])
+
+
+def test_no_sign_column_without_the_switch(page, served):
+    _panel(page, served, genes=["GENE0001"])
+    page.click(PASTE)
+    page.wait_for_selector(TXT)
+    csv = "gene,logfc\nCD3D,2.5\nCD3E,-1.2\n"
+    page.set_input_files(f"{S} [data-testid=gp-file]", files=[{"name": "de.csv", "mimeType": "text/csv", "buffer": csv.encode()}])
+    page.wait_for_selector(f"{S} [data-testid=gp-column]")
+    assert page.locator(f"{S} [data-testid=gp-signcol]").count() == 0
