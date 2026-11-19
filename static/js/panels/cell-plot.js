@@ -1,3 +1,4 @@
+import { releaseHost } from '../utils/score-source.js';
 import { cancelIndexBuild } from './plot-utilities/large-plot.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
 import { createPanelStructure, initializeUIState, checkDatasetLoadingStatus } from './plot-utilities/panel-ui-make.js';
@@ -418,6 +419,9 @@ const CellPlotPanel = (function() {
          * Clean up resources
          */
         function cleanup() {
+            // the scores this plot shows are no longer needed by it; one nothing else needs stops computing
+            if (_plotContainer) releaseHost(_plotContainer);
+
             // Remove document event listeners
             if (handleFocusedCellChanged.eventHandler) {
                 document.removeEventListener('focusedCellChanged', handleFocusedCellChanged.eventHandler);

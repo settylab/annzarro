@@ -33,6 +33,8 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { createGeneGrid } from '../utils/gene-grid.js';
 import { getFixedGenes } from './table-utilities/panel-tracker.js';
+import { signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
+import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
 import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
@@ -63,6 +65,49 @@ ADD_SOURCES.push(pasteSource);
  * and `ctx` is `{panel, id, title}`.
  */
 export const USE_IN = [];
+
+/**
+ * Make one of `plot`'s sources (x, y or colour) this signature's score, as the user would with the
+ * plot's own menus: the source becomes gene-score and its signature this one, with the default
+ * aggregation. A signature's score is computed when the plot needs it.
+ */
+async function useAs(plot, axis, id, title) {
+    const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(plot.getId())}"]`);
+    const typeSelect = tile && tile.querySelector(`select.axis-type-select[data-axis="${axis}"]`);
+    const keySelect = tile && tile.querySelector(`select.axis-key-select[data-axis="${axis}"]`);
+    const current = () => (plot.getConfig() || {})[axis] || {};
+    if (!typeSelect || !keySelect) {
+        plot.setConfig({ [axis]: { ...current(), type: 'gene-score', key: id, label: title, column: '' } });
+        if (plot.refreshPlot) await plot.refreshPlot();
+        return;
+    }
+    const fire = (select) => {
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    if (current().type !== 'gene-score') {
+        typeSelect.value = 'gene-score';
+        fire(typeSelect);
+        // the type change fills the key list (it is asynchronous)
+        for (let i = 0; i < 100 && !(current().type === 'gene-score' && [...keySelect.options].some(o => o.value === id)); i++) {
+            await new Promise(resolve => setTimeout(resolve, 30));
+        }
+    }
+    if (current().key !== id) {
+        if (![...keySelect.options].some(o => o.value === id)) return;
+        keySelect.value = id;
+        fire(keySelect);
+    }
+}
+
+/** For a chosen Cell Plot: Colour, Use as X, Use as Y. */
+USE_IN.push(({ id, title }) => PanelManager.getActivePanels()
+    .filter(panel => panel.getType() === 'cell-plot')
+    .flatMap(panel => [
+        ['color', `Colour ${panel.getTitle()}`],
+        ['x', `Use as X in ${panel.getTitle()}`],
+        ['y', `Use as Y in ${panel.getTitle()}`]
+    ].map(([axis, label]) => ({ id: `${axis}:${panel.getId()}`, label,
+        run: () => { useAs(panel, axis, id, title).catch((error) => console.error(`Use as ${axis} failed:`, error)); } }))));
 
 /** The dataset's gene index, shared by every signature (a Map of name -> position), rebuilt when the genes change. */
 let _indexCache = { key: null, index: null };
@@ -102,6 +147,7 @@ const GeneSignaturePanel = (function() {
         let _matches = null;              // names matching the search in the view, or null for no search
         let _message = _loadNotes.join(' ');
         let _timer = null;
+        let _unwatchScore = null;
         let _initialized = false;
         let _dom = null;
         let D = null;
@@ -128,6 +174,7 @@ const GeneSignaturePanel = (function() {
             if (loaded) loadGenes();
             rebuildRows({ top: true });
             paint();
+            _unwatchScore = onSignatureStatus(_id, () => paintScore());
             // a panel opened under an id the page already uses (Back and Forward, a reopened signature, a panel set)
             // is what a plot filtered by that id has not read yet; a table says as much when its rows are in
             if (loaded) announce();
@@ -146,6 +193,8 @@ const GeneSignaturePanel = (function() {
             for (const [target, type, fn] of _listeners.splice(0)) target.removeEventListener(type, fn);
             if (_grid) _grid.destroy();
             _grid = null;
+            if (_unwatchScore) _unwatchScore();
+            _unwatchScore = null;
             _initialized = false;
             _dom = null;
             _container.innerHTML = '';
@@ -206,7 +255,8 @@ const GeneSignaturePanel = (function() {
 
         function updateConfig(config) {
             if (!config) return;
-            if (config.title) _title = config.title;
+            if (config.title && config.title !== _title) { _title = config.title; signatureRenamed(_id); }
+            else if (config.title) _title = config.title;
             if (config.controlsVisible !== undefined) _controlsVisible = config.controlsVisible;
             const recipeKeys = ['genes', 'down', 'input', 'method', 'clip', 'seed'];
             if (recipeKeys.some(k => k in config)) {
@@ -218,7 +268,7 @@ const GeneSignaturePanel = (function() {
 
         function getId() { return _id; }
         function getTitle() { return _title; }
-        function setTitle(title) { _title = title; }
+        function setTitle(title) { _title = title; signatureRenamed(_id); }
         function getType() { return 'gene-signature'; }
 
         /** Tell readers (plots filtered by this signature, Gene Set Analysis) and the saved state that the genes changed. */
@@ -232,6 +282,8 @@ const GeneSignaturePanel = (function() {
 
         function notifyChange() {
             announce();
+            // plots that show this signature's score: update now, or collect the edits behind Update score
+            signatureChanged(_id);
             if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') {
                 window.sessionManager.notifyPanelUpdate();
             }
@@ -388,9 +440,10 @@ const GeneSignaturePanel = (function() {
                 on: { keydown: (e) => onMenuKey(e, 'usein') } });
             const definition = el('div', { class: 'gsig-definition', id: sid('definition') });
             const usedBy = el('div', { class: 'gsig-usedby' });
+            const scoreLine = el('div', { class: 'gsig-score', hidden: true });
             status.append(
                 el('div', { class: 'gsig-status__row' }, summary, el('span', { class: 'gsig-menu-wrap' }, useIn, useInMenu)),
-                definition, usedBy);
+                definition, usedBy, scoreLine);
 
             const search = el('input', { type: 'search', class: 'form-control form-control-sm gsig-search', id: sid('search'),
                 placeholder: 'Search genes', autocomplete: 'off', spellcheck: 'false', aria: { label: 'Search genes', describedby: sid('searchnote') },
@@ -441,7 +494,7 @@ const GeneSignaturePanel = (function() {
             root.append(status, controls, listbar, message, note, empty, _grid.element);
             _container.innerHTML = '';
             _container.appendChild(root);
-            _dom = { root, controls, flowHost: _flowHost, status, summary, useIn, useInMenu, definition, usedBy, search, regex, matchCase, tickAllBtn, searchNote,
+            _dom = { root, controls, flowHost: _flowHost, status, summary, useIn, useInMenu, definition, usedBy, scoreLine, search, regex, matchCase, tickAllBtn, searchNote,
                 addFrom, addMenu, allBtn, selBtn, undoBtn, clearBtn, listbar, message, note, empty,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
         }
@@ -510,7 +563,52 @@ const GeneSignaturePanel = (function() {
             _grid.element.hidden = !!text && _rows.length === 0;
 
             paintUsedBy();
+            paintScore();
             _dom.message.textContent = _message;
+        }
+
+        /**
+         * What the score of this signature is doing, when plots or tables show it: computing with Cancel,
+         * edits held back behind Update score, a score that asks first, a failure. Nothing when nothing needs it.
+         */
+        function paintScore() {
+            if (!_dom || !_dom.scoreLine) return;
+            const st = signatureStatus(_id);
+            const line = _dom.scoreLine;
+            D.clear(line);
+            const btn = (label, command) => D.el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link',
+                data: { scoreCommand: command }, on: { click: () => scoreCommand(_id, command) } }, label);
+            let text = '';
+            let action = null;
+            if (st.held) {
+                const n = st.held.edits;
+                text = `${n === 1 ? '1 change is' : `${n} changes are`} not applied.`
+                    + (Number.isFinite(st.held.seconds) ? ` ${durationText(st.held.seconds).replace(/^about/, 'About')}.` : '')
+                    + ' Plots show the previous score.';
+                action = btn('Update score', 'update');
+            } else if (st.dependants && ['estimating', 'computing', 'updating'].includes(st.state)) {
+                const p = st.progress;
+                text = p && p.total > 0 ? `Computing: ${fmtCount(p.done)} of ${fmtCount(p.total)} genes.` : 'Computing.';
+                action = btn('Cancel', 'cancel');
+            } else if (st.dependants && st.state === 'queued') {
+                text = 'Waiting for another score to finish.';
+                action = btn('Cancel', 'cancel');
+            } else if (st.dependants && st.state === 'awaiting') {
+                text = `This score will take ${durationText(st.estimate && st.estimate.seconds)}.`;
+                action = btn('Compute', 'compute');
+            } else if (st.dependants && st.state === 'cancelled') {
+                text = 'The score was cancelled.';
+                action = btn('Compute', 'compute');
+            } else if (st.dependants && st.state === 'failed') {
+                text = `Score not computed${st.message ? `: ${st.message.replace(/[.\s]+$/, '')}` : ''}.`;
+                action = btn('Retry', 'retry');
+            } else if (st.dependants && (st.state === 'refused' || st.state === 'noscore')) {
+                text = st.message || 'No score.';
+            } else if (st.dependants && st.state === 'ready' && st.header) {
+                text = `Score ready: ${fmtCount(st.header.n_used)} gene${st.header.n_used === 1 ? '' : 's'} used.`;
+            }
+            line.hidden = !text;
+            if (text) line.append(D.el('span', { class: 'gsig-score__text', text }), action ? ' ' : '', action || '');
         }
 
         /** The dependants: Gene Plots filtered by this signature, Gene Set Analysis panels reading it. */

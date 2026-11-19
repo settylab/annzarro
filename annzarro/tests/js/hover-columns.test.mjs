@@ -68,3 +68,19 @@ test('the panel builds the picker and the listener writes hoverInfo', () => {
     assert.match(listeners, /settings\.hoverInfo = hoverInfoFromSelection\(/);
     assert.match(listeners, /data\.hoverExtra = extra;\s*await applyHoverInfo\(plotContainer, data, settings\)/);
 });
+
+test('a cell plot lists each signature\'s score after the columns, a gene plot does not', async () => {
+    const { hoverColumnOptions: options, hoverInfoFromSelection: info, SCORE_PREFIX } =
+        await import('../../../static/js/panels/plot-utilities/hover-columns.js');
+    const sigs = [{ id: 'gene-signature-1', title: 'T cell score' }, { id: 'gene-signature-2', title: 'B cell score' }];
+    const cells = options('cells', structure, [{ type: 'gene-score', key: 'gene-signature-2' }], false, sigs);
+    const scores = cells.filter(o => o.group === 'Gene scores');
+    assert.deepEqual(scores.map(o => [o.value, o.label, o.selected]),
+        [[`${SCORE_PREFIX}gene-signature-1`, 'T cell score', false], [`${SCORE_PREFIX}gene-signature-2`, 'B cell score', true]]);
+    assert.equal(options('genes', structure, [], false, sigs).some(o => o.group), false);
+    // picking one keeps the columns and the other kinds of entries, and the pick is a gene-score entry
+    const picked = info('cells', ['Age', `${SCORE_PREFIX}gene-signature-1`], [{ type: 'obs', key: '_index' }]);
+    assert.deepEqual(picked, [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' }, { type: 'gene-score', key: 'gene-signature-1' }]);
+    // dropping it from the pick drops it from the info
+    assert.deepEqual(info('cells', ['Age'], picked), [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' }]);
+});

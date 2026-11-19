@@ -20,6 +20,7 @@
  * Everything reads `plotContainer.__largeState`, replaced on each draw, so the
  * listeners are added once per graph.
  */
+import { heldScoreValue, shownScoreKey } from '../../utils/score-source.js';
 import { DataManager } from '../../data-manager.js';
 import { nearestPoint, pointOfRow } from '../../utils/point-index.js';
 import { colourTitle } from '../../utils/plot-titles.js';
@@ -139,11 +140,16 @@ export function applyPendingClick(gd) {
   if (hit) focusRow(gd, st, hit).catch((err) => console.warn('Focus by click failed:', err && err.message));
 }
 
+/** What the remembered tooltip lines depend on: the colour setting, and for a score the score shown. */
+function colourCacheKey(colour) {
+  return JSON.stringify(colour) + (colour.type === 'gene-score' ? shownScoreKey(colour) : '');
+}
+
 /** Name and colour value of one row, from the server (remembered). */
 async function describeRow(st, row) {
   const colour = st.settings.color;
   const hasColour = colour && colour.type !== 'none';
-  const key = `${DataManager.getDatasetGeneration()}:${row}:${hasColour ? JSON.stringify(colour) : ''}`;
+  const key = `${DataManager.getDatasetGeneration()}:${row}:${hasColour ? colourCacheKey(colour) : ''}`;
   if (_cache.has(key)) return _cache.get(key);
   const [name, value] = await Promise.all([
     // the name is remembered as soon as it is here: a click needs only that
@@ -152,7 +158,9 @@ async function describeRow(st, row) {
       if (_names.size > REMEMBERED) _names.delete(_names.keys().next().value);
       return n;
     }),
-    hasColour ? DataManager.loadCellValue(colour, { shown: true, position: row }).catch(() => null)
+    // a signature's score is held as a vector: its value is read there, not asked of the server
+    hasColour ? (colour.type === 'gene-score' ? Promise.resolve(heldScoreValue(colour, row))
+      : DataManager.loadCellValue(colour, { shown: true, position: row }).catch(() => null))
       : Promise.resolve(null)
   ]);
   const out = { name, colour: value };
@@ -181,7 +189,7 @@ function showTip(gd, st, hit, clientX, clientY) {
       return d;
     }));
   };
-  const key = `${DataManager.getDatasetGeneration()}:${hit.row}:${colour && colour.type !== 'none' ? JSON.stringify(colour) : ''}`;
+  const key = `${DataManager.getDatasetGeneration()}:${hit.row}:${colour && colour.type !== 'none' ? colourCacheKey(colour) : ''}`;
   draw(_cache.get(key));
   tip.style.display = 'block';
   const w = tip.offsetWidth, h = tip.offsetHeight;

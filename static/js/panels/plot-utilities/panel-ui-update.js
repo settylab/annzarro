@@ -4,6 +4,8 @@ import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
+import { signatureList } from '../../utils/score-source.js';
+import { getSource } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
@@ -179,6 +181,18 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         keyOptions = keys.map(key => ({ value: key, text: key }));
         break;
       }
+      case 'gene-score': {
+        // every signature, open or closed, by its title; the one this setting names stays listed when it
+        // is gone, so the plot can say it was deleted
+        const list = getSource('gene-score').entities();
+        keyOptions = list.map(sig => ({ value: sig.id, text: sig.title }));
+        // (a key left over from another source type is not a deleted signature: signature ids are panel ids)
+        if (settings.key && /^gene-signature-/.test(settings.key) && !list.some(sig => sig.id === settings.key)) {
+          keyOptions.push({ value: settings.key, text: `${settings.label || settings.key} (deleted)` });
+        }
+        if (!keyOptions.length) keyOptions = [{ value: '', text: 'No signatures yet' }];
+        break;
+      }
       case 'var': {
         let columns = datasetStructure.var?.columns || Object.keys(datasetStructure.var || {});
         // Sort columns alphabetically if there are more than 10
@@ -224,7 +238,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     // Last resort: use first available key, but avoid _index if possible
     else {
       const wanted = settings.key;
-      if (wanted && !keyExistsInStructure(datasetStructure, wanted)) {
+      if (wanted && type !== 'gene-score' && !keyExistsInStructure(datasetStructure, wanted)) {
         // A key the dataset does not have at all (a deep link or panel set
         // from another dataset) is KEPT, listed as missing: the select
         // and the loader state the gap ('not in this dataset') instead of the
@@ -243,6 +257,56 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     
     // Set the select value using jQuery
     $.setSelectValue($keySelect, settings.key, false);
+    if (type === 'gene-score') $keySelect.find('option[value=""]').prop('disabled', true);
+}
+
+/**
+ * The signatures a `gene-score` key list offers, up to date: signatures were
+ * added, removed or renamed. Every key select whose type select reads
+ * gene-score keeps its value and has its options rebuilt.
+ */
+export function refreshScoreKeySelects() {
+  if (typeof document === 'undefined') return;
+  const list = signatureList();
+  for (const keySelect of document.querySelectorAll('select.axis-key-select')) {
+    const axis = keySelect.dataset.axis;
+    const typeSelect = keySelect.closest('.plot-panel')
+      && keySelect.closest('.plot-panel').querySelector(`select.axis-type-select[data-axis="${axis}"]`);
+    if (!typeSelect || typeSelect.value !== 'gene-score') continue;
+    const current = keySelect.value;
+    const options = list.map(sig => ({ value: sig.id, text: sig.title }));
+    if (current && !list.some(sig => sig.id === current)) {
+      const was = keySelect.selectedOptions[0];
+      options.push({ value: current, text: `${(was && was.textContent.replace(/ \(deleted\)$/, '')) || current} (deleted)` });
+    }
+    if (!options.length) options.push({ value: '', text: 'No signatures yet' });
+    const same = options.length === keySelect.options.length
+      && options.every((o, i) => keySelect.options[i].value === o.value && keySelect.options[i].textContent === o.text);
+    if (same) continue;
+    $.createSelect(options, jQuery(keySelect));
+    $.setSelectValue(jQuery(keySelect), current, false);
+    if (!list.length && !current) jQuery(keySelect).find('option[value=""]').prop('disabled', true);
+  }
+  // the Hover pickers list each signature's score after the columns
+  for (const select of document.querySelectorAll('select.hover-columns-select')) {
+    const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === 'Gene scores');
+    const have = group ? Array.from(group.querySelectorAll('option')) : [];
+    const chosen = new Set(have.filter(o => o.selected).map(o => o.value));
+    const same = have.length === list.length && list.every((sig, i) => have[i].value === `gene-score:${sig.id}` && have[i].textContent === sig.title);
+    if (same) continue;
+    if (group) group.remove();
+    if (!list.length) continue;
+    const next = document.createElement('optgroup');
+    next.label = 'Gene scores';
+    for (const sig of list) {
+      const opt = document.createElement('option');
+      opt.value = `gene-score:${sig.id}`;
+      opt.textContent = sig.title;
+      opt.selected = chosen.has(opt.value);
+      next.appendChild(opt);
+    }
+    select.appendChild(next);
+  }
 }
   
 /**
@@ -277,6 +341,14 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   $columnSelect.prop('disabled', false);
 
   switch (type) {
+    case 'gene-score': {
+      // level 3 of a source with three levels: the aggregation, z-score mean first (utils/source-registry.js)
+      const provider = getSource('gene-score');
+      const subs = provider ? provider.subKeys(settings.key) : [];
+      columnOptions = subs.map(sub => ({ value: sub.value, text: sub.label }));
+      if (!subs.some(sub => sub.value === settings.column)) settings.column = provider ? provider.defaultSub : '';
+      break;
+    }
     case 'obs':
     case 'var': {
       columnOptions = [{ value: '', text: 'N/A' }];
@@ -1086,4 +1158,8 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
       }
     }
   }
+}
+// signatures were added, removed or renamed
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('annzarro:panels-changed', () => refreshScoreKeySelects());
 }

@@ -49,6 +49,7 @@ import { releasePlot } from '../../utils/release-plot.js';
 import { classifyError, classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { columnsParam } from '../../utils/column-param.js';
 import { LARGE_TYPES, formatPoints, largeThreshold } from './large-plot-controls.js';
+import { loadScoreSeries } from '../../utils/score-source.js';
 import { buildPointIndexSliced } from '../../utils/point-index.js';
 import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus, applyPendingClick } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
@@ -100,8 +101,14 @@ export function largePlotReason(settings, n) {
   return largePlotRefusal(settings, n);
 }
 
-async function loadSeries(s, datasetPath, structure, signal, { axis = null } = {}) {
+async function loadSeries(s, datasetPath, structure, signal, { axis = null, host = null, role = 'x' } = {}) {
   if (s.type === 'none') return null;
+  if (s.type === 'gene-score') {
+    // the Float32Array of the score store itself: nothing is copied (utils/score-source.js);
+    // a score that is not ready throws ScoreUnavailable (a colour is drawn neutral, an axis is a placeholder)
+    const scored = await loadScoreSeries(s, { host, role, expected: (DataManager.getCells() || []).length, array: false });
+    return { values: scored.vector };
+  }
   if (s.type === 'obsm') {
     const v = await DataManager.loadVector(`${Config.API.OBSM}/${s.key}`,
       { dataset_path: datasetPath, column_name: String(s.column) }, signal);
@@ -463,7 +470,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
       return null;
     }
     try {
-      return await loadSeries(settings.color, datasetPath, structure, signal);
+      return await loadSeries(settings.color, datasetPath, structure, signal, { host: plotContainer, role: 'color' });
     } catch (err) {
       if (err && (err.name === 'AbortError' || err.name === 'AllocationProbeError')) throw err;
       console.warn('Colour data unavailable; plotting uncoloured:', err);
@@ -474,8 +481,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     }
   };
   const [xs, ys, cs] = await Promise.all([
-    loadSeries(settings.x, datasetPath, structure, signal, { axis: 'x' }),
-    loadSeries(settings.y, datasetPath, structure, signal, { axis: 'y' }),
+    loadSeries(settings.x, datasetPath, structure, signal, { axis: 'x', host: plotContainer, role: 'x' }),
+    loadSeries(settings.y, datasetPath, structure, signal, { axis: 'y', host: plotContainer, role: 'y' }),
     colour()
   ]);
   stopped();

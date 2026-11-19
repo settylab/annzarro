@@ -727,11 +727,34 @@ export function clearForDraw(plotContainer) {
  */
 export function setFilterNotice(host, notice) {
     if (!host || typeof host.querySelector !== 'function') return;
-    const old = Array.from(host.children).find(c => c.classList && c.classList.contains('filter-notice')) || null;
+    const old = Array.from(host.children).find(c => c.classList && c.classList.contains('filter-notice')
+        && !c.classList.contains('score-notice')) || null;
     if (!notice) {
         if (old) old.remove();
         return;
     }
+    putNotice(host, old, notice, '');
+}
+
+/**
+ * The notice of a gene-signature score (computing, asks first, refused,
+ * failed, out of date, deleted): the same layer as setFilterNotice, in a
+ * slot of its own so the two never remove each other. It lies over the plot
+ * area; the plot keeps its size.
+ * @param {HTMLElement} host - the plot container
+ * @param {{state: string, headline: string, text?: string, actions?: Array}|null} notice
+ */
+export function setScoreNotice(host, notice) {
+    if (!host || typeof host.querySelector !== 'function') return;
+    const old = Array.from(host.children).find(c => c.classList && c.classList.contains('score-notice')) || null;
+    if (!notice) {
+        if (old) old.remove();
+        return;
+    }
+    putNotice(host, old, notice, ' score-notice');
+}
+
+function putNotice(host, old, notice, extraClass) {
     const html = `<div class="filter-notice__card coverage-placeholder coverage-placeholder--warning">`
         + `<div class="coverage-placeholder__headline">${escapeHtml(notice.headline)}</div>`
         + (notice.text ? `<div class="filter-notice__text">${escapeHtml(notice.text)}</div>` : '')
@@ -740,7 +763,7 @@ export function setFilterNotice(host, notice) {
         + `</div>`;
     if (old && old._html === html && old.dataset.state === notice.state) return;
     const el = old || document.createElement('div');
-    el.className = 'filter-notice';
+    el.className = `filter-notice${extraClass}`;
     el.dataset.state = notice.state;
     el.setAttribute('role', 'status');
     el._html = html;

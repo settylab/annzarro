@@ -57,3 +57,13 @@ test('every colour bar and legend title goes through colourTitle', async () => {
         assert.match(src, /colourTitle\(settings\.color\)/, f);
     }
 });
+
+test('a gene score is named by its signature\'s title, in the colour bar and on an axis', async () => {
+    const { colourTitle } = await import('../../../static/js/utils/plot-titles.js');
+    const { axisTitle } = await import('../../../static/js/panels/plot-utilities/plot-make-helper.js');
+    const color = { type: 'gene-score', key: 'gene-signature-1713', label: 'T cell score', column: '' };
+    assert.equal(colourTitle(color), 'T cell score');
+    assert.equal(axisTitle({ x: color }, 'x'), 'T cell score');
+    assert.equal(axisTitle({ x: { ...color, label: undefined } }, 'x'), 'gene-signature-1713', 'the id until the title is known');
+    assert.equal(axisTitle({ x: color, xaxisTitle: 'Mine' }, 'x'), 'Mine', 'the user\'s own title still wins');
+});

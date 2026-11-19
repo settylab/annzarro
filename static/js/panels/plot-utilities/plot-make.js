@@ -29,6 +29,7 @@ import { TableResolver, describeUnresolved } from '../../utils/table-resolver.js
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
 import { NO_HOVER } from './hover-columns.js';
+import { loadScoreSeries, scoreTitle, scoreLabel, drawScorePlaceholder } from '../../utils/score-source.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
@@ -355,7 +356,7 @@ export function showHoverChoice(plotContainer, panel) {
  *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
  *    - categories: (optional) Category definitions.
  */
-export async function loadAxisData(settings, plotType = null, plotContainer = null, { role = null, panel = null, signal = null } = {}) {
+export async function loadAxisData(settings, plotType = null, plotContainer = null, { role = null, panel = null, signal = null, axis = null } = {}) {
   if (!settings) {
     throw new Error(`loadAxisData: settings is undefined`);
   }
@@ -766,6 +767,17 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         }
         break;
       }
+      case 'gene-score': {
+        // a signature's score, one value per cell shown (utils/score-source.js); a score that is not
+        // ready throws ScoreUnavailable, and the plot draws neutral points or a placeholder with the
+        // notice over it
+        if (plotType === 'genes') throw new Error('A gene score is a property of cells, not of genes.');
+        const scored = await loadScoreSeries(settings, {
+          host: plotContainer, role: role === 'colour' ? 'color' : (axis || role || 'x'), expected, unit
+        });
+        return { values: scored.values, type: 'numerical', categories: null, coverage: scored.coverage, rankOf: null,
+          ranked: false, groupNames: null };
+      }
       default:
         throw new Error(`Unknown data type: ${type}`);
     }
@@ -801,7 +813,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     return { values, type: dataType, categories, coverage, rankOf, ranked: false, groupNames };
   } catch (error) {
     // a load that was stopped is not a failed read
-    if (error && error.name === 'AbortError') throw error;
+    if (error && (error.name === 'AbortError' || error.name === 'ScoreUnavailable')) throw error;
     console.error('Error loading data for settings', settings, 'error:', error);
     const wrapped = new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
     // Carry the classification with the error so the panel can state a REASON
@@ -1112,14 +1124,14 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           throw new DOMException('X axis data loading aborted', 'AbortError');
         }
         await axesTogether;
-        data.x = await loadAxisData(settings.x, plotType, plotContainer, { signal });
+        data.x = await loadAxisData(settings.x, plotType, plotContainer, { signal, axis: 'x' });
       })(),
       (async () => {
         if (signal && signal.aborted) {
           throw new DOMException('Y axis data loading aborted', 'AbortError');
         }
         await axesTogether;
-        data.y = await loadAxisData(settings.y, plotType, plotContainer, { signal });
+        data.y = await loadAxisData(settings.y, plotType, plotContainer, { signal, axis: 'y' });
       })()
     ];
 
@@ -1130,7 +1142,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
             throw new DOMException('Z axis data loading aborted', 'AbortError');
           }
           await axesTogether;
-          data.z = await loadAxisData(settings.z, plotType, plotContainer, { signal });
+          data.z = await loadAxisData(settings.z, plotType, plotContainer, { signal, axis: 'z' });
         })()
       );
     }
@@ -1277,6 +1289,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       if (window.Config && window.Config.DEBUG_MODE) {
         console.debug('Plot loading was aborted:', error.message);
       }
+    } else if (error && error.name === 'ScoreUnavailable' && error.scoreNotice) {
+      // an axis from a gene score that cannot be drawn yet: the placeholder says why, with the way out
+      drawScorePlaceholder(plotContainer, error.scoreNotice);
     } else {
       console.error('Error loading plot data:', error);
 
@@ -1517,6 +1532,7 @@ export function knownMissingSource(structure, series, { unit, total }) {
  * @param {{type: string, key: string, column?: string}} series
  */
 export function seriesSource(series) {
+  if (series.type === 'gene-score') return `gene score ${scoreTitle(series)}`;
   return `${series.type}.${series.key}` + (series.column ? `.${series.column}` : '');
 }
 
@@ -1645,12 +1661,20 @@ export async function loadHoverColumns(settings, plotType, plotContainer = null,
     const count = (h.type === 'obs' || h.type === 'var') && !h.column ? categoryCount(structure, h.type, h.key) : null;
     if (count !== null && !(await hoverLabelsFit(datasetPath, h.type, h.key, count, points, plotContainer, signal))) continue;
     try {
+      if (h.type === 'gene-score') {
+        // a signature's score beside the obs columns; read only when ready (the plot draws again when it is)
+        if (plotType === 'genes') continue;
+        const scored = await loadScoreSeries(h, { host: plotContainer, role: 'hover', expected: points });
+        out.push({ label: scoreLabel(h), values: scored.values });
+        continue;
+      }
       const loaded = await loadAxisData({ type: h.type, key: h.key, column: h.column || '' }, plotType, null, { signal });
       if (loaded && Array.isArray(loaded.values)) {
         out.push({ label: h.column ? `${h.key}.${h.column}` : h.key, values: loaded.values });
       }
     } catch (err) {
       if (err && err.name === 'AbortError') throw err;
+      if (err && err.name === 'ScoreUnavailable') continue;     // the plot draws again when the score is ready
       console.warn(`Hover column ${h.type}.${h.key} not loaded:`, err && err.message);
     }
   }

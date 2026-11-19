@@ -104,6 +104,57 @@ A signature holds up to 2,000 genes, counting the ones already selected. Over th
 Both follow the list as you edit it. They go on working after you close the signature's panel. The
 line under the title says what uses it ("Used by 1 plot, 1 Gene Set Analysis").
 
+## Colour or position a Cell Plot by a score
+
+A signature gives every cell one number. A Cell Plot can take it as its **x**, **y**, **colour** or
+**hover**: choose **gene-score** among the sources (beside obs, obsm, obsp and layer), then pick the
+signature by name. Every signature is listed, open or closed. Or press **Use in** → **Colour Cell Plot 1**
+in the signature's panel. The score works in large-plot mode too (colour and axes; the tooltip shows the
+colour's score).
+
+A score is chosen in three steps, as an embedding is: the source (**gene-score**), the signature, and
+the **aggregation** (z-score mean, the default, or mean). Each axis, the colour and the hover can use a
+different signature or a different aggregation of the same one; the same choice on two axes is computed once.
+The score can be on any axis, x, y and z (3D) included, against another score, an obs column or a gene.
+In large-plot mode x, y and colour take a score; 3D and extra hover columns are not available there.
+**Use in** offers **Colour**, **Use as X** and **Use as Y** for each Cell Plot.
+
+The score is worked out on the server, over all the cells of the dataset, and the plot gets the value
+for the cells it shows. It is worked out when a plot needs it, with no panel open: a closed signature, or
+one restored from a link, colours its plot by itself. Nothing computed goes into a link, a panel set or the
+history; they hold the recipe only, so a link stays short and the plot is coloured again when it opens.
+Going Back to a view whose signature has not changed asks the server for nothing.
+
+### When a score is slow
+
+The server estimates the time before it reads anything, and the plot follows what the estimate says:
+
+- **Up to a minute**: it is computed at once. The points are drawn in a neutral colour with
+  "Computing 'T cell score': 31 of 50 genes" over the plot, and **Cancel** stops it for every plot that
+  shares it ("Cancel for 3 plots").
+- **From a minute to ten minutes**: the plot asks first ("'T cell score' will take about 2 minutes.") and
+  you press **Compute**.
+- **Longer**: it is not run, and the plot says why and what to do ("Use fewer genes").
+
+The notice lies over the plot and a short tag appears in the status strip, so the plot never moves.
+On an axis, where nothing can be drawn without the score, the plot area shows the same sentence instead.
+Other states say what they are: cancelled (with **Compute**), failed (with **Retry**), no genes yet, none of the
+genes in this dataset, and "Signature 'T cell score' was deleted" (with **Choose another**).
+
+### When you edit the signature
+
+Plots and tables that use it follow your edits. A quick score updates a moment after you stop editing, and
+the plot shows the previous score ("Showing the previous 'T cell score'. Updating.") until the new one is
+there. When the new score would take 5 seconds or more, edits collect instead: the plot keeps the previous
+score and says "3 changes are not applied. About 40 seconds." The signature's panel says so as well, with
+**Update score** to apply them.
+
+### Opening several at once
+
+A link can name many scores. At most two are computed at a time, those on screen first; a plot that is
+off screen starts when it comes into view. Plots that show the same score share one request, and a score
+is kept in the browser (up to 1 GiB, least recently used first) so it is not asked for twice.
+
 ## Close, reopen, share
 
 A signature is saved as configuration only: its title, its genes (sorted, so equal lists make equal

@@ -19,9 +19,9 @@
 
 /** Data sources large-plot mode can draw, per axis. */
 export const LARGE_TYPES = Object.freeze({
-  x: Object.freeze(['obsm', 'obs', 'layer']),
-  y: Object.freeze(['obsm', 'obs', 'layer']),
-  color: Object.freeze(['obsm', 'obs', 'layer', 'none'])
+  x: Object.freeze(['obsm', 'obs', 'layer', 'gene-score']),
+  y: Object.freeze(['obsm', 'obs', 'layer', 'gene-score']),
+  color: Object.freeze(['obsm', 'obs', 'layer', 'gene-score', 'none'])
 });
 
 /** Points above which a Cell Plot uses large-plot mode; `defaults` is Config.DEFAULTS. */
