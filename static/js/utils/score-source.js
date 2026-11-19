@@ -30,6 +30,49 @@ import { findCycle, TableResolver } from './table-resolver.js';
 /** What each aggregation is called where a consumer picks it (level 3). */
 const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
 
+/** States that pass by themselves: a score being asked for, queued or computed. The others last until the user acts. */
+const PENDING = ['idle', 'estimating', 'queued', 'computing', 'updating'];
+
+/** Whether a plot shows a drawing now (not a placeholder): a switch keeps it until the new data is there. */
+export function hasDrawing(host) {
+    return !!(host && host._fullLayout && Array.isArray(host.data) && host.data.length && !host.querySelector('.coverage-placeholder'));
+}
+
+/**
+ * The series of a score, waiting for it while it is pending when the plot has a drawing to keep. The old
+ * drawing stays, the plot's own loading pill shows (the caller's), and nothing is claimed about the score
+ * (no notice, no tag, no gene count) until it is known to last: refused, failed, asks first, cancelled, not
+ * offered, deleted. With no drawing yet, or in those states, it throws as loadScoreSeries does.
+ * @param {Object} setting
+ * @param {Object} opts - as loadScoreSeries
+ * @param {AbortSignal|null} [signal]
+ */
+export async function loadScoreSeriesWhenReady(setting, opts, signal = null) {
+    const keep = hasDrawing(opts.host);
+    for (;;) {
+        try {
+            const got = await loadScoreSeries(setting, { ...opts, quiet: keep });
+            const done = opts.host ? recordsOf(opts.host).get(opts.role) : null;
+            if (done) done.quiet = false;
+            return got;
+        } catch (error) {
+            if (!keep || !error || error.name !== 'ScoreUnavailable' || !PENDING.includes(error.scoreState)) {
+                // it lasts (or there is nothing to keep): say so
+                const rec = opts.host ? recordsOf(opts.host).get(opts.role) : null;
+                if (rec) { rec.quiet = false; paint(opts.host); }
+                throw error;
+            }
+            if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+            const rec = recordsOf(opts.host).get(opts.role);
+            await new Promise((resolve, reject) => {
+                if (!rec) { resolve(); return; }
+                (rec.waiters = rec.waiters || []).push(resolve);
+                if (signal) signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+            });
+        }
+    }
+}
+
 /** The last entry of a score's option list: opens the signature panel on what it offers. */
 export const OFFER_MORE = '__offer_more__';
 
@@ -170,8 +213,9 @@ export function scoreFullLabel(setting) {
 
 /** A custom error: the series cannot be drawn yet, and why. */
 export class ScoreUnavailable extends Error {
-    constructor(text, notice, coverage) {
+    constructor(text, notice, coverage, scoreState = null) {
         super(text);
+        this.scoreState = scoreState;
         this.name = 'ScoreUnavailable';
         this.scoreNotice = notice;
         this.coverage = coverage;
@@ -266,6 +310,8 @@ function schedulePaint(host) {
 
 function noticeOf(rec) {
     const snap = rec.handle.read();
+    // while a load waits for a score that is only pending, nothing is said: the plot keeps what it shows and the loading pill speaks
+    if (rec.quiet && PENDING.includes(snap.state)) return { rec, snap, notice: null };
     return { rec, snap, notice: describeScore(snap, { role: rec.role === 'color' ? 'colour' : (isHover(rec.role) ? 'hover' : rec.role), sharers: rec.handle.sharers() }) };
 }
 
@@ -330,10 +376,11 @@ function refreshPanel(host) {
 }
 
 function onChange(host, rec, snap) {
+    if (rec.waiters && rec.waiters.length) for (const wake of rec.waiters.splice(0)) wake();
     if (!host.isConnected) { release(host, rec.role); return; }
     if (!stillUsed(rec)) { release(host, rec.role); refreshPanelIfNeeded(host); return; }
     const showing = snap.values ? (snap.shownKey || snap.key) : null;
-    if (snap.state !== 'updating' && rec.drawnKey !== undefined && showing !== rec.drawnKey) {
+    if (!rec.quiet && snap.state !== 'updating' && rec.drawnKey !== undefined && showing !== rec.drawnKey) {
         refreshPanel(host);
     }
     schedulePaint(host);
@@ -378,7 +425,7 @@ function recordFor(host, role, setting) {
  *   `values` is a plain array (the regular plot's form); `vector` is the Float32Array
  * @throws {ScoreUnavailable} when no score can be drawn
  */
-export function loadScoreSeries(setting, { host, role, expected, unit = 'cells', array = true }) {
+export function loadScoreSeries(setting, { host, role, expected, unit = 'cells', array = true, quiet = false }) {
     const title = scoreLabel(setting);
     if (title && setting.label !== title) setting.label = title;
     // what the colour bar, axis titles and legends say (two lines for the bar), refreshed with the label
@@ -390,6 +437,7 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
             Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected }));
     }
     const rec = recordFor(host, role, setting);
+    rec.quiet = quiet;
     const snap = rec.handle.read();
     if (snap.values) {
         rec.drawnKey = snap.shownKey || snap.key;
@@ -403,10 +451,11 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
     rec.drawnKey = null;
     const notice = describeScore(snap, { role, sharers: rec.handle.sharers() })
         || describeScore({ ...snap, state: 'estimating' }, { role });
-    paint(host);
+    // a caller that waits for the score says nothing yet (rec.quiet): no notice and no tag until it is known to last
+    if (!(quiet && PENDING.includes(snap.state))) paint(host);
     throw new ScoreUnavailable(notice.headline, notice,
         Coverage.missing(GAP.UNAVAILABLE, `${notice.headline}${notice.text ? ` ${notice.text}` : ''}`,
-            { source: `gene score ${title}`, unit, total: expected }));
+            { source: `gene score ${title}`, unit, total: expected }), snap.state);
 }
 
 /** The record that reads this very setting object, if a plot loaded it. */

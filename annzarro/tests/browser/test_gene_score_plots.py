@@ -520,7 +520,9 @@ def test_the_source_menu_offers_gene_score_and_lists_every_signature_open_or_clo
     _wait_coloured(page)
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color")["key"] == "gene-signature-O"
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.label") == "B cell score"
-    # the colour bar names the signature
+    # the colour bar names the signature (the old colours stay until the new score is there)
+    until(page, """(t) => document.querySelector(t + ' .js-plotly-plot').data.some(d => d.marker && d.marker.colorbar && d.marker.colorbar.title
+        && String(d.marker.colorbar.title.text || d.marker.colorbar.title).startsWith('B cell score'))""", C)
     bars = page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data
         .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title))
         .filter(Boolean)""", C)
