@@ -64,10 +64,14 @@ test('clip: a number above 0, null for none, anything else the default', () => {
 });
 
 test('method, input, seed and version are taken from the config or defaulted', () => {
-    assert.equal(recipe({ method: 'mean' }).method, 'mean');
-    assert.equal(G.definitionText(recipe({ method: 'mean', input: 'counts' })), 'Mean of counts');
-    assert.equal(recipe({ method: 'control_adjusted', offered: ['control_adjusted'] }).method, 'control_adjusted');
-    assert.equal(recipe({ method: 'control_adjusted' }).method, 'zscore_mean', 'the default method is one that is offered')
+    // there is no default method to set: it is the first offered one
+    assert.equal(recipe({ method: 'mean' }).method, 'zscore_mean');
+    assert.equal(recipe({ offered: ['mean', 'sum'] }).method, 'mean');
+    assert.equal(G.definitionText({ ...recipe({ input: 'counts' }), method: 'mean' }), 'Mean of counts');
+    assert.equal(recipe({ offered: ['control_adjusted'] }).method, 'control_adjusted');
+    // nor a default layer: the first offered one, and an old link's `input` is that layer
+    assert.equal(recipe({ layers: ['counts', 'X'], input: 'counts' }).input, 'counts');
+    assert.deepEqual(recipe({ input: 'logged' }).layers, ['logged']);
     assert.equal(recipe({ method: 'nonsense' }).method, 'zscore_mean');
     assert.equal(recipe({ input: 'counts' }).input, 'counts');
     assert.equal(recipe({ input: '' }).input, 'X');
@@ -93,7 +97,7 @@ test('there is no gene limit: a list of any length is kept whole', () => {
 });
 
 test('normalising a normal recipe changes nothing (a saved config reads back as itself)', () => {
-    const once = recipe({ genes: ['B', 'A'], method: 'mean', clip: 4, seed: 3 });
+    const once = recipe({ genes: ['B', 'A'], offered: ['mean'], clip: 4, seed: 3 });
     assert.deepEqual(recipe(once), once);
     assert.deepEqual(recipe(JSON.parse(JSON.stringify(once))), once);
 });
@@ -114,7 +118,7 @@ test('the hash changes with each thing a score depends on', () => {
         recipe({ genes: ['A'] }),
         recipe({ genes: ['A', 'C'] }),
         recipe({ genes: ['A', 'B'], input: 'counts' }),
-        recipe({ genes: ['A', 'B'], method: 'mean' }),
+        { ...recipe({ genes: ['A', 'B'] }), method: 'mean' },
         recipe({ genes: ['A', 'B'], clip: 5 }),
         recipe({ genes: ['A', 'B'], clip: null }),
         recipe({ genes: ['A'], down: ['B'] })
@@ -125,7 +129,7 @@ test('the hash changes with each thing a score depends on', () => {
 
 test('a change that cannot change a number does not change the key', () => {
     // only the z-score mean clips
-    const mean = (clip) => G.recipeHash(recipe({ genes: ['A'], method: 'mean', clip }));
+    const mean = (clip) => G.recipeHash({ ...recipe({ genes: ['A'], clip }), method: 'mean' });
     assert.equal(mean(5), mean(10));
     assert.equal(mean(null), mean(3));
     // the seed means nothing but to the control-adjusted score

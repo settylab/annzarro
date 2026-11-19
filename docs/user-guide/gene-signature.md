@@ -125,6 +125,7 @@ colour's score).
 A score is chosen in three steps, as an embedding is: the source (**gene-score**), the signature, and
 the **aggregation** (z-score mean, the default, or any other the signature offers). Each axis, the colour and the hover can use a
 different signature or a different aggregation of the same one; the same choice on two axes is computed once.
+The third menu is one list of what the signature offers, method and layer together ("Z-score mean", or "Mean · counts" when several layers are offered). A cell table's **gene-score** tab lists the same options. The same signature over two layers is two scores; a layer the dataset does not have, or an option the signature stopped offering, is stated over the plot.
 The score can be on any axis, x, y and z (3D) included, against another score, an obs column or a gene.
 In large-plot mode x, y and colour take a score; 3D and extra hover columns are not available there.
 
@@ -191,11 +192,13 @@ asks first on a large dataset. **Control-adjusted** removes differences in depth
 every gene together; the same seed always gives the same controls, so a link keeps its meaning.
 
 **Layers** lists X and the dataset's layers, each with an **Offer** box and a word for what it looks like (counts,
-normalised, log-normalised, scaled). With two or more offered, **Default layer** says which a plot or table gets
-when it is made; a plot or table keeps the layer it was given. Scores are meant for normalised, log-transformed
+normalised, log-normalised, scaled). At least one layer stays offered. There is no default method or layer to
+choose: a new plot or table starts on the first entry of the menu, the first offered method on the first offered
+layer, and keeps whatever it is given. Scores are meant for normalised, log-transformed
 values. If a layer looks like raw counts, a warning says so under it ("X looks like raw counts (whole numbers up to
 557). Scores should be computed on normalised, log-transformed data, or they follow sequencing depth.") and, when
-another layer looks log-normalised and is named that way, offers **Make logged_counts the default**. The same goes
+another layer looks log-normalised and is named that way, offers **Offer logged_counts instead**: it offers that layer
+and stops offering the raw one, unless a plot or table reads the raw layer, which then stays. The same goes
 for values that are normalised but not log-transformed. It is a warning, not a block.
 
 Some combinations are meaningless and are left out of every menu, with the reason in the panel: fraction detected

@@ -72,6 +72,17 @@ export function optionsOf(panel) {
 }
 
 /**
+ * The option fields (input, method, offered, layers, clip...) of any source panel: a signature's recipe has them, a
+ * gene table keeps them apart from its genes. What a menu, a label or a notice reads of a source is only these.
+ * @param {Object} panel - a source panel
+ * @returns {Object}
+ */
+export function optionFieldsOf(panel) {
+    if (typeof panel.getScoreOptions === 'function') return optionsOf(panel);
+    return typeof panel.getRecipe === 'function' ? panel.getRecipe() : normalizeOptions({});
+}
+
+/**
  * The recipe of a gene table now: its passing genes and its option fields.
  * @param {Object} panel - a gene table
  * @param {{open: boolean, geneNames: ArrayLike<string>}} ctx
@@ -108,10 +119,11 @@ export function gateState(status) {
  * @param {(panel: Object) => boolean} host.active - the panel is open
  * @param {() => ArrayLike<string>} host.geneNames - the dataset's genes, in row order
  * @param {() => boolean} [host.off] - gene scores are turned off here
+ * @param {(recipe: Object, sub: string, layer: string) => boolean} [host.offers] - the source still offers this option
  * @param {Object} [host.resolver] - the table resolver: `need(id, dependant)`, `accept(id)`, `cancel(id)`, `retry(id)`,
  *   `cycleOf(id)` (the ids on a cycle through the table, or null)
  */
-export function createSourceAdapter({ panel, active, geneNames, off = () => false, resolver = null }) {
+export function createSourceAdapter({ panel, active, geneNames, off = () => false, offers = null, resolver = null }) {
     const titleOf = (id) => {
         const p = panel(id);
         return p && typeof p.getTitle === 'function' ? p.getTitle() : id;
@@ -156,6 +168,7 @@ export function createSourceAdapter({ panel, active, geneNames, off = () => fals
             };
         },
         off,
+        offers: offers || undefined,
         titleOf
     };
 }

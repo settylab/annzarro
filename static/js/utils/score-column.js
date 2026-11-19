@@ -45,7 +45,7 @@ export function subOf(column) {
 
 /** Whether two columns are the same score: one signature, one aggregation. */
 export function sameScoreColumn(a, b) {
-    return isScoreColumn(a) && isScoreColumn(b) && a.key === b.key && subOf(a) === subOf(b);
+    return isScoreColumn(a) && isScoreColumn(b) && a.key === b.key && subOf(a) === subOf(b) && (a.layer || '') === (b.layer || '');
 }
 
 /**

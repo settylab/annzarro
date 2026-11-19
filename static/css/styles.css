@@ -3405,6 +3405,15 @@ button.dtsb-button.dtsb-clear:hover {
     min-width: 0;
 }
 
+/* A gene score's source name is longer than the others ("gene-score"): its type select gets the room it needs,
+   and on a narrow panel the row wraps so the signature and the option are each read in full. */
+.axis-selector:has(> .axis-type-select option[value="gene-score"]:checked) > .axis-type-select { flex: 0 0 6.5rem; }
+@media (max-width: 1000px) {
+    .axis-selector:has(> .axis-type-select option[value="gene-score"]:checked) { flex-wrap: wrap; }
+    .axis-selector:has(> .axis-type-select option[value="gene-score"]:checked) > .axis-key-select { flex: 1 1 8rem; }
+    .axis-selector:has(> .axis-type-select option[value="gene-score"]:checked) > .axis-column-select { flex: 1 1 100%; }
+}
+
 /* A constant colour has no key or column: the type select says so in full. */
 .axis-selector:has(> .axis-type-select option[value="none"]:checked) > .axis-type-select {
     flex: 0 1 auto;

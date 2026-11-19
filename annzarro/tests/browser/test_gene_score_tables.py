@@ -164,7 +164,7 @@ def test_the_chooser_offers_signature_then_aggregation_and_several_at_once(page,
     assert sorted(g["title"] for g in groups) == ["Other score", "T cell score"]
     assert all(g["subs"] == ["z-score mean", "mean", "sum"] for g in groups), groups
     for sig, sub in ((SIG, "zscore_mean"), (SIG, "mean"), ("gene-signature-U", "zscore_mean")):
-        page.check(f"#checkbox-gene-score-{sig}-{sub}-{TID}")
+        page.check(f"#checkbox-gene-score-{sig}-{sub}-of-X-{TID}")
     page.click(f"#apply-columns-{TID}")
     until(page, "(box) => document.querySelectorAll(box + ' .dataTables_scrollHead th').length === 5", BOX)
     heads = _headers(page)
@@ -255,7 +255,7 @@ def test_a_failed_score_offers_retry_and_remove_and_remove_takes_the_column_out(
     until(page, "(box) => ![...document.querySelectorAll(box + ' .dataTables_scrollHead th')].some(th => th.textContent.includes('T cell score'))", BOX)
     assert page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.map(c => c.type)", TID) == ["obs"]
     assert page.locator(f"{BOX} .score-notice").count() == 0
-    assert page.evaluate(f"() => document.getElementById('checkbox-gene-score-{SIG}-zscore_mean-{TID}').checked") is False
+    assert page.evaluate(f"() => document.getElementById('checkbox-gene-score-{SIG}-zscore_mean-of-X-{TID}').checked") is False
 
 
 def test_a_refused_score_and_one_that_asks_first(page, served):
@@ -379,7 +379,7 @@ def test_export_writes_the_score_column_when_it_is_ready(page, served, tmp_path)
     path = tmp_path / "t.csv"
     info.value.save_as(str(path))
     lines = path.read_text().strip().splitlines()
-    assert lines[0].replace('"', "") == "Cell ID,score,T cell score"
+    assert lines[0].replace('"', "") == "Cell ID,score,T cell score · z-score mean · X"
     row = {l.replace('"', "").split(",")[0]: l.replace('"', "").split(",") for l in lines[1:]}
     assert len(row) == N_OBS
     assert float(row["c3"][2]) == pytest.approx(1.0, abs=1e-6)
@@ -597,7 +597,7 @@ def test_the_column_chooser_adds_the_score_to_a_cell_table_and_a_table_that_has_
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     assert page.locator(f"{S} .gsig-usein").count() == 0, "the signature panel has no Use in menu"
     page.click(f"#gene-score-tab-{TID}")
-    page.check(f"#checkbox-gene-score-{SIG}-zscore_mean-{TID}")
+    page.check(f"#checkbox-gene-score-{SIG}-zscore_mean-of-X-{TID}")
     page.click(f"#apply-columns-{TID}")
     until(page, "(box) => document.querySelectorAll(box + ' .dataTables_scrollHead th').length === 3", BOX)
     assert _headers(page)[2] == "T cell score (computing)"
@@ -606,7 +606,7 @@ def test_the_column_chooser_adds_the_score_to_a_cell_table_and_a_table_that_has_
     until(page, "() => window.__ctls.length === 1")
     _finish(page, 0)
     _wait_ready(page)
-    assert page.evaluate(f"() => document.getElementById('checkbox-gene-score-{SIG}-zscore_mean-{TID}').checked") is True
+    assert page.evaluate(f"() => document.getElementById('checkbox-gene-score-{SIG}-zscore_mean-of-X-{TID}').checked") is True
 
 
 def test_new_cells_keep_the_table_and_the_column_asks_for_its_own_score(page, served):

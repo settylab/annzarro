@@ -502,6 +502,18 @@ const GeneTablePanel = (function() {
             _settings.scoreOptions = isDefaultOptions(next) ? null : storedOptions(next);
         }
 
+        /**
+         * Offer other scores from outside the section (a plot's "Offer other scores…", a notice's one-click Offer again):
+         * stored, and told to the readers, as an edit in the section is.
+         */
+        function setScoreOptions(patch) {
+            storeScoreOptions(patch);
+            if (_scoreOptions) _scoreOptions.changed(Object.keys(patch));
+            signatureChanged(_id);
+            signatureRenamed(_id);
+            if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+        }
+
         /** What plots and tables are offered by this table's score: methods and layers that can be computed. */
         function getOfferedOptions() {
             return _scoreOptions ? _scoreOptions.getOfferedOptions() : offeredOptions(getScoreOptions());
@@ -576,7 +588,9 @@ const GeneTablePanel = (function() {
             // as a source of a gene score (utils/score-source-panels.js): the option fields; the genes are the rows
             // that pass the filter, read through the selection every reader of a table uses
             getScoreOptions,
+            setScoreOptions,
             getOfferedOptions,
+            revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
             _inspect: () => (_scoreOptions ? _scoreOptions.inspect : null)
         };
     }

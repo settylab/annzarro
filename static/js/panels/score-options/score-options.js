@@ -85,6 +85,8 @@ export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, fo
             scoring.paint();
         },
         paint: () => scoring.paint(),
+        /** Open Scores offered and put the cursor there ("Offer other scores…"). */
+        reveal: () => scoring.reveal(),
         /** The score's state changed: the section shows what is in use. */
         paintAggregations: () => scoring.paintAggregations(),
         destroy() {

@@ -274,16 +274,17 @@ def test_a_table_offers_what_its_section_says_and_stores_recipe_fields_only(page
     cfg = page.evaluate("(id) => PanelManager.getPanel(id).getConfig().scoreOptions", TAB)
     assert cfg == {**OFFER, "detect_above": 0}, cfg
     assert set(cfg) == {"input", "method", "offered", "layers", "clip", "seed", "bins", "controls", "detect_above"}
-    assert _summary(page) == "z-score mean (clip ±3), mean, fraction detected · X, counts (default X)"
+    assert _summary(page) == "z-score mean (clip ±3), mean, fraction detected · X, counts"
     # the plot's menu follows: the colour's option list is the table's offer
     labels = page.eval_on_selector_all(f"{C} select.axis-column-select[data-axis='color'] option", "els => els.map(e => e.textContent)")
-    assert "fraction detected" in labels and "sum" not in labels, labels
+    assert any(x.startswith("fraction detected") for x in labels) and not any(x.startswith("sum") for x in labels), labels
+    assert "fraction detected · counts" in labels, "one combined list of method and layer"
 
 
 def test_the_table_offer_round_trips_through_a_link_and_a_panel_set(page, served):
     _open_table_link(page, served, table=_table(scoreOptions=OFFER))
     _wait_coloured(page)
-    assert _summary(page) == "z-score mean (clip ±3), mean, fraction detected · X, counts (default X)"
+    assert _summary(page) == "z-score mean (clip ±3), mean, fraction detected · X, counts"
     root, store = served
     view = page.evaluate("() => (window.SessionManager || window.sessionManager).captureView()")
     cfg = view["layout"]["panelConfigs"][TAB]
@@ -325,6 +326,22 @@ def test_inspect_on_a_table_reads_the_score_the_plot_holds_and_follows_the_filte
     assert genes == sorted(FIRST_FIVE), genes
     _filter(page, 8)
     page.wait_for_function("(g) => document.querySelectorAll(g + ' .gsig-inspect__table [data-gene]').length === 8", arg=G, timeout=20000)
+
+
+def test_offer_other_scores_opens_the_table_and_expands_what_it_offers(page, served):
+    _open_table_link(page, served, table_open=False)
+    _wait_coloured(page)
+    assert page.locator(G).count() == 0
+    page.select_option(f"{C} select.axis-column-select[data-axis='color']", "__offer_more__")
+    page.wait_for_selector(f"{G} .gsig-scoring__toggle[aria-expanded='true']", timeout=30000)
+    assert page.evaluate("(id) => PanelManager.getActivePanels().includes(PanelManager.getPanel(id))", TAB)
+    # offering another score from the table's section reaches the plot's menu at once
+    page.click(f"{G} [data-offer-method='detected']")
+    labels = page.eval_on_selector_all(f"{C} select.axis-column-select[data-axis='color'] option", "els => els.map(e => e.textContent)")
+    assert "fraction detected" in labels, labels
+    # the notice's one-click "offer again" goes through the table's own API
+    page.evaluate("(id) => PanelManager.getPanel(id).setScoreOptions({offered: ['zscore_mean', 'mean']})", TAB)
+    assert page.evaluate("(id) => PanelManager.getPanel(id).getScoreOptions().offered", TAB) == ["zscore_mean", "mean"]
 
 
 def test_a_link_from_before_the_table_offered_scores_opens_with_the_defaults(page, served):

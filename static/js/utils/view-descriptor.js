@@ -40,7 +40,9 @@ export function coordinateId(field) {
     if (col !== undefined && col !== null && col !== '') dim = /^\d+$/.test(String(col)) ? Number(col) : String(col);
     // a gene score's sub-key is its aggregation; a link made before there was one means the default
     if (field.type === 'gene-score' && dim === null) dim = 'zscore_mean';
-    return { key: `${field.type}:${field.key}`, dim };
+    // a score over a layer is another coordinate than the same score over the signature's input
+    const layer = field.type === 'gene-score' && field.layer ? `@${field.layer}` : '';
+    return { key: `${field.type}:${field.key}${layer}`, dim };
 }
 
 const sameCoordinate = (a, b) => a.key === b.key && String(a.dim) === String(b.dim);

@@ -69,27 +69,26 @@ test('the panel builds the picker and the listener writes hoverInfo', () => {
     assert.match(listeners, /data\.hoverExtra = extra;\s*await applyHoverInfo\(plotContainer, data, settings\)/);
 });
 
-test('a cell plot lists each signature\'s score after the columns, a gene plot does not', async () => {
-    const { hoverColumnOptions: options, hoverInfoFromSelection: info, SCORE_PREFIX } =
+test('a cell plot lists each score a signature offers, the default first; a gene plot lists none', async () => {
+    const { hoverColumnOptions: options, hoverInfoFromSelection: info, scoreValue, parseScoreValue } =
         await import('../../../static/js/panels/plot-utilities/hover-columns.js');
-    const sigs = [{ id: 'gene-signature-1', title: 'T cell score' }, { id: 'gene-signature-2', title: 'B cell score' }];
+    const offers = [{ method: 'zscore_mean', layer: 'X', label: 'Z-score mean' }, { method: 'mean', layer: 'X', label: 'Mean' },
+        { method: 'mean', layer: 'counts', label: 'Mean · counts' }];
+    const sigs = [{ id: 'gene-signature-1', title: 'T cell score', input: 'X', options: offers }, { id: 'gene-signature-2', title: 'B cell score', input: 'X', options: offers.slice(0, 1) }];
     const cells = options('cells', structure, [{ type: 'gene-score', key: 'gene-signature-2' }], false, sigs);
     const scores = cells.filter(o => o.group === 'Gene scores');
-    assert.deepEqual(scores.map(o => [o.value, o.label, o.selected]),
-        [[`${SCORE_PREFIX}gene-signature-1:zscore_mean`, 'T cell score', false], [`${SCORE_PREFIX}gene-signature-1:mean`, 'T cell score · mean', false],
-            [`${SCORE_PREFIX}gene-signature-1:sum`, 'T cell score · sum', false],
-            [`${SCORE_PREFIX}gene-signature-1:control_adjusted`, 'T cell score · control-adjusted', false],
-            [`${SCORE_PREFIX}gene-signature-1:detected`, 'T cell score · fraction detected', false],
-            [`${SCORE_PREFIX}gene-signature-1:fraction_of_total`, 'T cell score · % of total', false],
-            [`${SCORE_PREFIX}gene-signature-2:zscore_mean`, 'B cell score', true], [`${SCORE_PREFIX}gene-signature-2:mean`, 'B cell score · mean', false],
-            [`${SCORE_PREFIX}gene-signature-2:sum`, 'B cell score · sum', false],
-            [`${SCORE_PREFIX}gene-signature-2:control_adjusted`, 'B cell score · control-adjusted', false],
-            [`${SCORE_PREFIX}gene-signature-2:detected`, 'B cell score · fraction detected', false],
-            [`${SCORE_PREFIX}gene-signature-2:fraction_of_total`, 'B cell score · % of total', false]]);
+    assert.deepEqual(scores.map(o => [o.value, o.label, o.selected]), [
+        ['gene-score:gene-signature-1:zscore_mean:X', 'T cell score', false], ['gene-score:gene-signature-1:mean:X', 'T cell score · Mean', false],
+        ['gene-score:gene-signature-1:mean:counts', 'T cell score · Mean · counts', false], ['gene-score:gene-signature-2:zscore_mean:X', 'B cell score', true]]);
     assert.equal(options('genes', structure, [], false, sigs).some(o => o.group), false);
-    // picking one keeps the columns and the other kinds of entries, and the pick is a gene-score entry
-    const picked = info('cells', ['Age', `${SCORE_PREFIX}gene-signature-1:mean`], [{ type: 'obs', key: '_index' }]);
-    assert.deepEqual(picked, [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' }, { type: 'gene-score', key: 'gene-signature-1', column: 'mean' }]);
-    // dropping it from the pick drops it from the info
+    // a pick the signature no longer offers is kept and marked
+    const lapsed = options('cells', structure, [{ type: 'gene-score', key: 'gene-signature-2', column: 'sum' }], false, sigs)
+        .filter(o => o.group === 'Gene scores').map(o => [o.label, o.selected]);
+    assert.deepEqual(lapsed.at(-1), ['B cell score · sum (no longer offered)', true]);
+    // a pick stores the method in column and the layer beside it (none for the default)
+    assert.deepEqual(parseScoreValue(scoreValue('gene-signature-1', 'mean', 'counts')), { key: 'gene-signature-1', column: 'mean', layer: 'counts' });
+    assert.deepEqual(parseScoreValue(scoreValue('gene-signature-1', 'mean', '')), { key: 'gene-signature-1', column: 'mean' });
+    const picked = info('cells', ['Age', scoreValue('gene-signature-1', 'mean', 'counts')], [{ type: 'obs', key: '_index' }]);
+    assert.deepEqual(picked, [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' }, { type: 'gene-score', key: 'gene-signature-1', column: 'mean', layer: 'counts' }]);
     assert.deepEqual(info('cells', ['Age'], picked), [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' }]);
 });

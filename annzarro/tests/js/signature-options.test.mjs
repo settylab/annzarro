@@ -41,21 +41,23 @@ test('by default z-score mean, mean and sum are offered on the default layer and
 test('with several layers the menu is every offered method of every offered layer, and names the layer', () => {
     const r = recipe({ offered: ['mean', 'control_adjusted', 'zscore_mean'], layers: ['counts'], input: 'X' });
     assert.deepEqual(r.offered, ['zscore_mean', 'mean', 'control_adjusted'], 'in menu order');
-    assert.deepEqual(r.layers, ['X', 'counts'], 'the default layer first');
+    assert.deepEqual(r.layers, ['X', 'counts'], 'in the order they were offered');
     const menu = O.offeredOptions(r);
     assert.equal(menu.length, 6);
-    // the default first, then by method, and within a method the default layer before the others
+    // by method, and within a method the layers in the order offered: the first entry is where a new consumer starts
     assert.deepEqual(menu.map(o => o.id), ['zscore_mean@X', 'zscore_mean@counts', 'mean@X', 'mean@counts', 'control_adjusted@X', 'control_adjusted@counts']);
     assert.equal(menu[1].label, 'z-score mean · counts');
-    assert.equal(O.offeredSummary(r), 'z-score mean, mean, control-adjusted · X, counts (default X)');
+    assert.equal(O.offeredSummary(r), 'z-score mean, mean, control-adjusted · X, counts');
     assert.equal(O.offeredSummaryShort(r), '3 methods · 2 layers');
     // an offered layer the dataset lacks is not in the menu
     assert.deepEqual(O.offeredOptions(r, ['X']).map(o => o.layer), ['X', 'X', 'X']);
     // the id is the same whether one layer or two are offered: a consumer stores {column, layer}, never the id
     assert.equal(O.offeredOptions(recipe({}))[1].id, 'mean@X');
-    // the default option leads even when it is not the first method or layer
-    const d = O.offeredOptions(recipe({ offered: ['zscore_mean', 'sum'], method: 'sum', layers: ['X', 'b'], input: 'b' }));
-    assert.deepEqual(d.map(o => o.id), ['sum@b', 'zscore_mean@b', 'zscore_mean@X', 'sum@X']);
+    // nothing is reordered for a default: the first entry is the first offered method on the first offered layer
+    const d = O.offeredOptions(recipe({ offered: ['sum', 'zscore_mean'], layers: ['b', 'X'], input: 'b' }));
+    assert.deepEqual(d.map(o => o.id), ['zscore_mean@b', 'zscore_mean@X', 'sum@b', 'sum@X']);
+    assert.ok(d.every(o => !('isDefault' in o)), 'no default flag');
+    assert.deepEqual(d[0] && [d[0].method, d[0].layer], ['zscore_mean', 'b']);
 });
 
 test('a stored list is cleaned: unknown ids dropped, duplicates once, never empty, the default always offered', () => {

@@ -9,6 +9,7 @@
  * with the page position held, where the user is (sort order, page, search and scroll stay). Utils/score-column.js holds the
  * wording; panels/table-utilities/table-scores.js the handles.
  */
+import { scoreFullLabel } from '../../utils/score-source.js';
 import { setScoreNotice, setStatusTag } from '../../utils/panel-surface.js';
 import { worstNotice } from '../../utils/score-notices.js';
 import { registerHostActions, openSignature } from '../../utils/score-source.js';
@@ -82,6 +83,7 @@ export function bindScoreColumns(dataTable, settings, container) {
             span.remove();
             adjust();
         }
+        th.dataset.exportTitle = scoreFullLabel(entry.column);
         th.classList.toggle('az-sort-off', !view.sortable);
         th.setAttribute('aria-disabled', view.sortable ? 'false' : 'true');
         th.dataset.scoreState = view.state;

@@ -1670,7 +1670,7 @@ export async function loadHoverColumns(settings, plotType, plotContainer = null,
       if (h.type === 'gene-score') {
         // a signature's score beside the obs columns; read only when ready (the plot draws again when it is)
         if (plotType === 'genes') continue;
-        const scored = await loadScoreSeries(h, { host: plotContainer, role: `hover:${h.key}:${h.column || ''}`, expected: points });
+        const scored = await loadScoreSeries(h, { host: plotContainer, role: `hover:${h.key}:${h.column || ''}:${h.layer || ''}`, expected: points });
         out.push({ label: scoreLabel(h), values: scored.values });
         continue;
       }
