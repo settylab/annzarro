@@ -516,7 +516,7 @@ def test_a_score_by_cell_store_draws_the_same_controls(client, big):
 def test_a_control_adjusted_score_with_no_possible_control_says_why(client, big):
     resp = post(client, big, {"recipe": {"genes": BIG, "method": "control_adjusted"}}, name="big.zarr")
     frames, vector = parse(resp.get_data())
-    assert frames[-1]["scored"] is False and frames[-1]["reason"] == "no_control_genes" and vector is None
+    assert frames[-1]["scored"] is False and frames[-1]["reason"] == "no_control_genes" and vector.size == 0
     assert "control genes" in frames[-1]["message"]
 
 

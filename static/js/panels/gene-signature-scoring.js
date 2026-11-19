@@ -118,6 +118,8 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         const parsed = parse(input.value);
         if (!parsed.ok) {
             const message = parsed.error;
+            const recipe = getRecipe();
+            input.value = String(key === 'clip' ? (recipe.clip === null ? lastClip : recipe.clip) : (recipe.seed === null ? DEFAULT_SEED : recipe.seed));
             paint();                                   // the last valid value comes back
             errorEl.hidden = false;
             errorEl.textContent = message;
@@ -225,7 +227,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     async function refreshKind() {
         const mine = ++kindToken;
         const input = getRecipe().input;
-        let reply = null;
+        let reply;
         try {
             reply = await getKind(input);
         } catch {
