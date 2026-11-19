@@ -641,7 +641,9 @@ export function scoreOptions(id) {
     const panel = id ? PanelManager.getPanel(id) : null;
     if (!panel || !panel.getRecipe) return [];
     const recipe = panel.getRecipe();
-    return offeredOptions(recipe, _datasetLayers).map(o => ({
+    // the panel's own graded list: a combination that cannot be computed (a share on a log layer) is left out
+    const list = typeof panel.getOfferedOptions === 'function' ? panel.getOfferedOptions() : offeredOptions(recipe, _datasetLayers);
+    return list.filter(o => !_datasetLayers || !_datasetLayers.length || _datasetLayers.includes(o.layer)).map(o => ({
         id: o.id, value: o.id, method: o.method, layer: o.layer, label: o.label,
         short: methodShort(o.method)
     }));
