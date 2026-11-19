@@ -14,6 +14,9 @@
  * renaming a signature changes nothing a score depends on.
  */
 import { setHash, stableStringify } from '../panels/gene-set-utilities/state.js';
+import { METHODS, DEFAULT_METHOD, cleanOffered, cleanLayers, paramsOf, methodInfo } from './signature-options.js';
+
+export { METHODS, DEFAULT_METHOD };
 
 /** Most genes a signature holds (up genes and down genes together), as the server's MAX_GENES. */
 export const GENE_LIMIT = 2000;
@@ -21,14 +24,14 @@ export const GENE_LIMIT = 2000;
 /** The score's algorithm version (the server's ALGORITHM_VERSION). */
 export const RECIPE_VERSION = 1;
 
-/** Methods the server computes: the aggregations a consumer can choose (level 3 of the `gene-score` source). */
-export const METHODS = ['zscore_mean', 'mean', 'control_adjusted'];
-
-export const DEFAULT_METHOD = 'zscore_mean';
 export const DEFAULT_CLIP = 10;
 export const DEFAULT_INPUT = 'X';
 /** The seed a control-adjusted score without one means (the server's DEFAULT_SEED). */
 export const DEFAULT_SEED = 0;
+export const DEFAULT_BINS = 25;
+export const DEFAULT_CONTROLS = 50;
+export const BINS_RANGE = [2, 200];
+export const CONTROLS_RANGE = [1, 1000];
 /** Largest seed the page accepts: whole numbers the browser holds exactly (the server takes up to 2^63 - 1). */
 export const MAX_SEED = Number.MAX_SAFE_INTEGER;
 
@@ -76,6 +79,11 @@ export function cleanNames(value) {
     return [...seen].sort(compareNames);
 }
 
+/** A whole number in [lo, hi], else the default. */
+export function cleanWhole(value, fallback, [lo, hi]) {
+    return Number.isInteger(value) && value >= lo && value <= hi ? value : fallback;
+}
+
 /** A clip as the recipe keeps it: a finite number above 0, `null` for none, else the default. */
 export function cleanClip(value) {
     if (value === null) return null;
@@ -108,7 +116,9 @@ export function normalizeRecipe(raw) {
         genes = genes.slice(0, GENE_LIMIT);
         notes.push(`A signature holds up to ${GENE_LIMIT.toLocaleString('en-US')} genes; ${dropped.toLocaleString('en-US')} were left out.`);
     }
-    const method = METHODS.includes(src.method) ? src.method : DEFAULT_METHOD;
+    let method = METHODS.includes(src.method) ? src.method : DEFAULT_METHOD;
+    const offered = cleanOffered(src.offered, method);
+    if (!offered.includes(method)) method = offered[0];           // the default method is always one that is offered
     const input = typeof src.input === 'string' && src.input ? src.input : DEFAULT_INPUT;
     const seed = Number.isInteger(src.seed) && src.seed >= 0 ? src.seed : null;
     return {
@@ -116,7 +126,11 @@ export function normalizeRecipe(raw) {
             genes, down, input, method,
             clip: 'clip' in src ? cleanClip(src.clip) : DEFAULT_CLIP,
             seed,
-            version: RECIPE_VERSION
+            bins: cleanWhole(src.bins, DEFAULT_BINS, BINS_RANGE),
+            controls: cleanWhole(src.controls, DEFAULT_CONTROLS, CONTROLS_RANGE),
+            version: RECIPE_VERSION,
+            offered,
+            layers: cleanLayers(src.layers, input)
         },
         notes
     };
@@ -130,8 +144,16 @@ export function normalizeRecipe(raw) {
 export function serverRecipe(recipe) {
     return {
         genes: [...recipe.genes], down: [...recipe.down], input: recipe.input, method: recipe.method,
-        clip: recipe.clip, seed: recipe.seed, version: recipe.version
+        clip: recipe.clip, seed: recipe.seed, bins: recipe.bins, controls: recipe.controls, version: recipe.version
     };
+}
+
+/**
+ * The recipe as a link, a panel set and a history entry carry it: the score route's fields and the panel's
+ * own (which methods and layers are offered to consumers). Configuration only.
+ */
+export function storedRecipe(recipe) {
+    return { ...serverRecipe(recipe), offered: [...recipe.offered], layers: [...recipe.layers] };
 }
 
 /**
@@ -143,13 +165,15 @@ export function serverRecipe(recipe) {
  * @returns {string}
  */
 export function recipeHash(recipe) {
-    const zscore = recipe.method === 'zscore_mean';
+    const params = paramsOf(recipe, recipe.method);        // only what this method reads: the others change no number
     return stableStringify({
         v: recipe.version,
         input: recipe.input,
         method: recipe.method,
-        clip: zscore ? recipe.clip : null,
-        seed: recipe.method === 'control_adjusted' ? (recipe.seed === null || recipe.seed === undefined ? DEFAULT_SEED : recipe.seed) : null,
+        clip: 'clip' in params ? params.clip : null,
+        seed: 'seed' in params ? params.seed : null,
+        bins: 'bins' in params ? params.bins : null,
+        controls: 'controls' in params ? params.controls : null,
         up: setHash(recipe.genes),
         down: setHash(recipe.down)
     });
@@ -159,8 +183,24 @@ export function recipeHash(recipe) {
 export function definitionText(recipe) {
     if (recipe.method === 'mean') return `Mean expression of ${recipe.input}`;
     if (recipe.method === 'control_adjusted') return `Control-adjusted mean of ${recipe.input}, seed ${recipe.seed === null ? DEFAULT_SEED : recipe.seed}`;
+    if (recipe.method !== 'zscore_mean') return `${(methodInfo(recipe.method) || { label: recipe.method }).label} of ${recipe.input}`;
     const clip = recipe.clip === null ? 'not clipped' : `clipped at ±${recipe.clip}`;
     return `Z-score mean of ${recipe.input}, ${clip}`;
+}
+
+/**
+ * A whole number typed into the panel, within [lo, hi].
+ * @param {string} text
+ * @param {number[]} range
+ * @returns {{ok: true, value: number} | {ok: false, error: string}}
+ */
+export function parseWholeText(text, [lo, hi]) {
+    const trimmed = String(text === undefined || text === null ? '' : text).trim();
+    const value = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
+    if (!Number.isSafeInteger(value) || value < lo || value > hi) {
+        return { ok: false, error: `Enter a whole number from ${lo.toLocaleString('en-US')} to ${hi.toLocaleString('en-US')}.` };
+    }
+    return { ok: true, value };
 }
 
 /**
@@ -172,13 +212,6 @@ export function settingsText(recipe) {
     const seed = recipe.seed === null || recipe.seed === undefined ? '' : `, seed ${recipe.seed}`;
     return `${recipe.input}, ${clip}${seed}`;
 }
-
-/** The aggregations a consumer can choose, with the plain definition the Scoring section gives each. */
-export const AGGREGATIONS = Object.freeze([
-    { value: 'zscore_mean', label: 'Z-score mean', text: 'each gene is turned into a z-score, so every gene counts equally, then averaged. Uses the clip.' },
-    { value: 'mean', label: 'Mean', text: 'the plain average of the genes, in the units of the input.' },
-    { value: 'control_adjusted', label: 'Control-adjusted', text: 'the average of your genes less the average of control genes of similar detection, which removes differences in depth and quality between cells. Uses the seed.' }
-]);
 
 /** Number with thousands separators, in the same form everywhere in the panel. */
 export function fmtCount(n) {

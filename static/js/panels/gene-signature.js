@@ -33,11 +33,11 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { createGeneGrid } from '../utils/gene-grid.js';
 import { getFixedGenes } from './table-utilities/panel-tracker.js';
-import { aggregationsInUse, signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
+import { aggregationsInUse, layersInUse, signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
 import { createScoringSection } from './gene-signature-scoring.js';
-import { createKindClient } from '../utils/matrix-kind-client.js';
+import { createKindClient, warningFor as kindWarning } from '../utils/matrix-kind-client.js';
 import { layerKeys } from '../utils/structure-keys.js';
 import { Config } from '../config.js';
 import { createInspect } from './gene-signature-inspect.js';
@@ -45,7 +45,7 @@ import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
     GENE_LIMIT, normalizeRecipe, recipeHash, definitionText, planAdd, limitMessage, searchNames, enterTarget,
-    UndoStack, fmtCount, inDatasetNames, compareNames, serverRecipe
+    UndoStack, fmtCount, inDatasetNames, compareNames, storedRecipe
 } from '../utils/gene-signature.js';
 
 /** What the inputs look like, asked once per dataset and input for the whole page. */
@@ -193,7 +193,7 @@ const GeneSignaturePanel = (function() {
 
         /** The saved configuration: the title, the recipe and the page state that is the panel's own. */
         function getConfig() {
-            const cfg = { title: _title, ...serverRecipe(_recipe) };
+            const cfg = { title: _title, ...storedRecipe(_recipe) };
             if (_controlsVisible !== undefined) cfg.controlsVisible = _controlsVisible;
             // What a reader of a gene table reads, derived and never saved: not enumerable, so it is in no link,
             // panel set, history entry or copy of the config
@@ -225,10 +225,10 @@ const GeneSignaturePanel = (function() {
             if (config.title && config.title !== _title) { _title = config.title; signatureRenamed(_id); }
             else if (config.title) _title = config.title;
             if (config.controlsVisible !== undefined) _controlsVisible = config.controlsVisible;
-            const recipeKeys = ['genes', 'down', 'input', 'method', 'clip', 'seed'];
+            const recipeKeys = ['genes', 'down', 'input', 'method', 'clip', 'seed', 'bins', 'controls', 'offered', 'layers'];
             if (recipeKeys.some(k => k in config)) {
                 setRecipe(Object.fromEntries(recipeKeys.filter(k => k in config).map(k => [k, config[k]])));
-                if (_initialized) { rebuildRows(); paint(); if (_scoring && 'input' in config) _scoring.refreshKind(); }
+                if (_initialized) { rebuildRows(); paint(); if (_scoring && ('input' in config || 'layers' in config)) _scoring.refreshKind(); }
                 notifyChange();
             }
         }
@@ -266,7 +266,9 @@ const GeneSignaturePanel = (function() {
             if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') {
                 window.sessionManager.notifyPanelUpdate();
             }
-            if ('input' in patch) _scoring.refreshKind();
+            // what plots and tables may pick changed: their menus and titles follow
+            if ('offered' in patch || 'layers' in patch || 'input' in patch || 'method' in patch) signatureRenamed(_id);
+            if ('input' in patch || 'layers' in patch) _scoring.refreshKind();
         }
 
         function notifyChange() {
@@ -429,7 +431,7 @@ const GeneSignaturePanel = (function() {
                 D, id: _id, getRecipe, apply: applyScoring,
                 getInputs: async () => layerKeys(await DataManager.getDatasetStructure(DataManager.getCurrentDataset())),
                 getKind: (input) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), input),
-                getInUse: () => aggregationsInUse(_id)
+                getInUse: () => aggregationsInUse(_id), getLayersInUse: () => layersInUse(_id), warningFor: kindWarning
             });
             status.append(
                 el('div', { class: 'gsig-status__row' }, summary),

@@ -25,6 +25,7 @@ export const SCORE_PREFIX = 'gene-score:';
 
 /** The aggregations a hover column can use, z-score mean first (the registry's list; this module has no imports). */
 export const SCORE_SUBS = Object.freeze([{ value: 'zscore_mean', label: 'z-score mean' }, { value: 'mean', label: 'mean' },
+  { value: 'sum', label: 'sum' }, { value: 'detected', label: 'detected' }, { value: 'fraction_of_total', label: 'fraction of total' },
   { value: 'control_adjusted', label: 'control-adjusted' }]);
 
 /** The picker value of one score. */
@@ -49,7 +50,10 @@ export function hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverO
     .map(c => ({ value: c, label: c, selected: !off && chosen.has(c) })));
   if (plotType !== 'genes') {
     for (const sig of signatures) {
-      subs.forEach((sub, i) => {
+      // the aggregations the signature offers, and any already chosen that it no longer offers (kept, so the plot still has it)
+      const mine = (sig.subs || subs).slice();
+      for (const sub of subs) if (!mine.some(m => m.value === sub.value) && scored.has(scoreValue(sig.id, sub.value))) mine.push({ ...sub, label: `${sub.label} (no longer offered)` });
+      mine.forEach((sub, i) => {
         const value = scoreValue(sig.id, sub.value);
         options.push({ value, label: i === 0 ? sig.title : `${sig.title} · ${sub.label}`, selected: !off && scored.has(value), group: 'Gene scores' });
       });

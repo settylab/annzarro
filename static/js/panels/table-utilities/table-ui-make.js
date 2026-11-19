@@ -350,7 +350,7 @@ export function buildScoreTab(id, settings) {
         list.innerHTML = '<div class="alert alert-secondary">No signatures yet. Add a Gene Signature panel to score cells.</div>';
         return;
     }
-    const subs = provider.subKeys();
+    const allSubs = provider.subKeys();
     const ticked = (settings.columns || []).filter(isScoreColumn);
     for (const sig of signatures) {
         const group = document.createElement('div');
@@ -361,6 +361,13 @@ export function buildScoreTab(id, settings) {
         heading.textContent = sig.title;
         heading.title = sig.open ? sig.title : `${sig.title} (closed)`;
         group.appendChild(heading);
+        // what the signature offers, and any ticked column it no longer offers (kept, so the table still has it)
+        const subs = (sig.subs || allSubs).slice();
+        for (const sub of allSubs) {
+            if (!subs.some(m => m.value === sub.value) && ticked.some(t => t.key === sig.id && (t.column || allSubs[0].value) === sub.value)) {
+                subs.push({ ...sub, label: `${sub.label} (no longer offered)` });
+            }
+        }
         for (const sub of subs) {
             const item = { type: 'gene-score', key: sig.id, column: sub.value };
             const div = document.createElement('div');

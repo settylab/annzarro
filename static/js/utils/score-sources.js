@@ -62,14 +62,18 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     const hashOf = (recipe) => recipeHash(recipe);
     // The aggregation belongs to the consumer, not the signature: a score is the signature's genes and
     // shared settings read with one method. Edits are compared without it.
-    const withMethod = (recipe, sub) => ({ ...recipe, method: sub || DEFAULT_METHOD });
+    const withMethod = (recipe, sub, layer) => ({ ...recipe, method: sub || DEFAULT_METHOD, input: layer || recipe.input });
     // An edit is a change to any score the signature could give: the genes and every shared setting. The clip only
     // reaches the z-score mean and the seed only the control-adjusted score, so the hash covers each method.
     const editHash = (recipe) => METHODS.map(m => hashOf(withMethod(recipe, m))).join('|');
     /** The aggregations the dependants of a signature read, each once. */
-    const methodsUsed = (id) => [...new Set([...handles].filter(h => h.sigId === id).map(h => h.sub || DEFAULT_METHOD))];
-    /** Whether `b` is a different score from `a` for any aggregation a dependant of `id` reads. */
-    const changesScore = (id, a, b) => methodsUsed(id).some(m => hashOf(withMethod(a, m)) !== hashOf(withMethod(b, m)));
+    const pairsUsed = (id) => {
+        const seen = new Map();
+        for (const h of handles) if (h.sigId === id) seen.set(`${h.sub || DEFAULT_METHOD}\u0001${h.layer || ''}`, { sub: h.sub || DEFAULT_METHOD, layer: h.layer || '' });
+        return [...seen.values()];
+    };
+    /** Whether `b` is a different score from `a` for any (aggregation, layer) a dependant of `id` reads. */
+    const changesScore = (id, a, b) => pairsUsed(id).some(p => hashOf(withMethod(a, p.sub, p.layer)) !== hashOf(withMethod(b, p.sub, p.layer)));
     const genesIn = (recipe) => recipe.genes.length + (recipe.down ? recipe.down.length : 0);
 
     function appliedOf(id, sig) {
@@ -119,7 +123,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             return { ...base, state: signatures.off && signatures.off() ? 'off' : 'deleted' };
         }
         handle.lastTitle = sig.title;
-        const recipe = withMethod(appliedOf(handle.sigId, sig), handle.sub);
+        const recipe = withMethod(appliedOf(handle.sigId, sig), handle.sub, handle.layer);
         const held = heldOf(handle.sigId);
         if (genesIn(recipe) === 0) {
             dropKey(handle);
@@ -203,8 +207,8 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         if (genesIn(edited) === 0) { apply(id); return; }
         const ctx = context();
         // the slowest of the scores the dependants read decides whether the edit is applied at once
-        const replies = await Promise.all(methodsUsed(id).map((m) => {
-            const live = withMethod(edited, m);
+        const replies = await Promise.all(pairsUsed(id).map((p) => {
+            const live = withMethod(edited, p.sub, p.layer);
             return store.estimateFor(live, ctx.dataset, hashOf(live))
                 .catch(() => null);   // the failure shows when the edit is applied and computed
         }));
@@ -229,9 +233,9 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
          * @param {string} id
          * @param {{onChange: (state: Object) => void, visible?: () => boolean, host?: any, role?: string}} spec
          */
-        watch(id, { onChange, visible = () => true, host = null, role = '', sub = null }) {
+        watch(id, { onChange, visible = () => true, host = null, role = '', sub = null, layer = null }) {
             const handle = {
-                sigId: id, sub, key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
+                sigId: id, sub, layer, key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
                 read() { return read(handle); },
                 release() {
                     if (handle.released) return;

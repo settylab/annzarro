@@ -118,6 +118,10 @@ def _result_frame(plan, result):
     if names["no_values"]:
         warnings.append({"code": "no_values", "names": names["no_values"],
                          "message": "These genes have no value in any cell and were left out."})
+    if plan.recipe.method == "fraction_of_total" and result.input_kind in ("log", "signed"):
+        warnings.append({"code": "fraction_not_meaningful", "names": [],
+                         "message": "This input looks " + ("log-transformed" if result.input_kind == "log" else "scaled")
+                                    + ", so the share of the total is not meaningful. Use counts or linear normalised values."})
     return {"type": "result", "algorithm_version": gene_score.ALGORITHM_VERSION,
             "recipe": plan.recipe.describe(), "scored": shown is not None, "reason": result.reason,
             "message": gene_score.NO_SCORE_MESSAGES.get(result.reason), "n_cells": result.n_cells,

@@ -291,7 +291,7 @@ export function refreshScoreKeySelects() {
   }
   // the Hover pickers list each signature's score, and each aggregation of it, after the columns
   const subs = getSource('gene-score').subKeys();
-  const wanted = list.flatMap(sig => subs.map((sub, i) => [`gene-score:${sig.id}:${sub.value}`, i === 0 ? sig.title : `${sig.title} · ${sub.label}`]));
+  const wanted = list.flatMap(sig => (sig.subs || subs).map((sub, i) => [`gene-score:${sig.id}:${sub.value}`, i === 0 ? sig.title : `${sig.title} · ${sub.label}`]));
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
     const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === 'Gene scores');
     const have = group ? Array.from(group.querySelectorAll('option')) : [];
@@ -350,7 +350,13 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
       const provider = getSource('gene-score');
       const subs = provider ? provider.subKeys(settings.key) : [];
       columnOptions = subs.map(sub => ({ value: sub.value, text: sub.label }));
-      if (!subs.some(sub => sub.value === settings.column)) settings.column = provider ? provider.defaultSub : '';
+      if (settings.column && !subs.some(sub => sub.value === settings.column) && provider) {
+        // switched off in the signature's panel since: the plot keeps it, and says so, until another is chosen
+        const all = provider.subKeys();
+        const known = all.find(sub => sub.value === settings.column);
+        if (known) columnOptions.push({ value: known.value, text: `${known.label} (no longer offered)` });
+      }
+      if (!columnOptions.some(sub => sub.value === settings.column)) settings.column = provider ? provider.defaultSub : '';
       break;
     }
     case 'obs':

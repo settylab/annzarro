@@ -37,6 +37,17 @@ export function warningFor(reply) {
 }
 
 /**
+ * The raw-count check for one layer, wherever a layer is chosen (the signature's panel, a plot, a table).
+ * @param {{kind: Function}} client - from createKindClient
+ * @param {string} dataset
+ * @param {string} layer - X or a layer's name
+ * @returns {Promise<{kind: string, text: string, suggest: (string|null)}|null>} null when the layer is fine or unknown
+ */
+export async function layerWarning(client, dataset, layer) {
+    return warningFor(await client.kind(dataset, layer));
+}
+
+/**
  * @param {{url: string, fetchImpl?: Function}} options - `url`: the route (Config.API.MATRIX_KIND)
  */
 export function createKindClient({ url, fetchImpl = (u, init) => csrfFetch(u, init) }) {

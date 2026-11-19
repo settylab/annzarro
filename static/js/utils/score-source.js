@@ -22,10 +22,11 @@ import { createScoreSources } from './score-sources.js';
 import { createScoreApi } from './gene-score-client.js';
 import { describeScore, worstNotice } from './score-notices.js';
 import { registerSource, subKeyOf } from './source-registry.js';
-import { METHODS, DEFAULT_METHOD } from './gene-signature.js';
+import { DEFAULT_METHOD } from './gene-signature.js';
+import { METHODS, methodShort, offeredOptions } from './signature-options.js';
 
 /** What each aggregation is called where a consumer picks it (level 3). */
-const SUB_LABELS = { zscore_mean: 'z-score mean', mean: 'mean', control_adjusted: 'control-adjusted' };
+const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
 
 /** The value that is not a signature: "New signature..." in the key list. */
 export const NEW_SIGNATURE = '__new_signature__';
@@ -85,12 +86,22 @@ export function _useForTest(store, sources) {
     _sources = sources;
 }
 
+/** The aggregations a signature panel offers consumers, first the default: [{value, label}]. */
+function offeredSubs(panel) {
+    if (!panel || typeof panel.getRecipe !== 'function') return METHODS.map(value => ({ value, label: SUB_LABELS[value] }));
+    const recipe = panel.getRecipe();
+    const seen = [];
+    for (const o of offeredOptions(recipe)) if (!seen.includes(o.method)) seen.push(o.method);
+    seen.sort((a, b) => (a === recipe.method ? -1 : b === recipe.method ? 1 : 0));
+    return seen.map(value => ({ value, label: SUB_LABELS[value] || value }));
+}
+
 /** Every signature panel, open or closed: [{id, title, open}]. */
 export function signatureList() {
     const open = new Set(PanelManager.getActivePanels().map(p => p.getId()));
     return PanelManager.getAllPanels()
         .filter(p => p.getType && p.getType() === 'gene-signature')
-        .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()) }));
+        .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()), subs: offeredSubs(p) }));
 }
 
 /** The title of the signature a setting names, or what it was called when last seen. */
@@ -104,7 +115,7 @@ export function scoreTitle(setting) {
 /** The name a consumer shows for a score: the signature's title, and the aggregation when it is not the default. */
 export function scoreLabel(setting) {
     const sub = subKeyOf(setting);
-    const title = scoreTitle(setting).replace(/ · (z-score mean|mean|control-adjusted)$/, '');
+    const title = scoreTitle(setting).replace(new RegExp(` · (${METHODS.map(m => SUB_LABELS[m]).join('|')})$`), '');
     return !sub || sub === DEFAULT_METHOD ? title : `${title} · ${SUB_LABELS[sub] || sub}`;
 }
 
@@ -293,9 +304,9 @@ function recordFor(host, role, setting) {
     }
     if (!rec) {
         const { sources } = scores();
-        rec = { role, sigId: setting.key, sub, setting, panelId: panelIdOf(host), drawnKey: undefined, handle: null };
+        rec = { role, sigId: setting.key, sub, layer: setting.layer || null, setting, panelId: panelIdOf(host), drawnKey: undefined, handle: null };
         rec.handle = sources.watch(setting.key, {
-            host, role, sub, visible: () => isVisible(host),
+            host, role, sub, layer: setting.layer || null, visible: () => isVisible(host),
             onChange: (snap) => onChange(host, rec, snap)
         });
         recordsOf(host).set(role, rec);
@@ -532,6 +543,16 @@ export function aggregationsInUse(id) {
     return [...counts].map(([value, count]) => ({ value, count }));
 }
 
+/** The layers in use for a signature, each with how many plots or tables read it: [{value, count}]; `null` layer is the default. */
+export function layersInUse(id) {
+    const counts = new Map();
+    for (const handle of scores().sources.handlesOf(id)) {
+        const layer = handle.layer || null;
+        counts.set(layer, (counts.get(layer) || 0) + 1);
+    }
+    return [...counts].map(([value, count]) => ({ value, count }));
+}
+
 /** The plots and other dependants that use a signature: hosts and roles. */
 export function dependantsOf(id) {
     const out = [];
@@ -558,6 +579,10 @@ registerSource({
     defaultSub: DEFAULT_METHOD,
     entities: () => signatureList(),
     /** The aggregations the server computes, z-score mean first; a new method is a new entry in METHODS. */
-    subKeys: () => METHODS.map(value => ({ value, label: SUB_LABELS[value] || value })),
+    subKeys: (id) => {
+        const panel = id ? PanelManager.getPanel(id) : null;
+        return panel && panel.getType && panel.getType() === 'gene-signature'
+            ? offeredSubs(panel) : METHODS.map(value => ({ value, label: SUB_LABELS[value] || value }));
+    },
     load: (setting, opts) => loadScoreSeries(setting, opts)
 });

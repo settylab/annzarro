@@ -9,9 +9,11 @@ Recipe (``version`` 1), a JSON object::
     {"genes": ["CD3E", "CD8A"],   # up genes, the signature; at most 2,000 distinct names
      "down": [],                  # reserved for up/down signatures; must be empty for now
      "input": "X",                # "X" or the name of a layer
-     "method": "zscore_mean",     # "zscore_mean" (default), "mean" or "control_adjusted"
+     "method": "zscore_mean",     # "zscore_mean" (default), "mean", "sum", "detected", "fraction_of_total", "control_adjusted"
      "clip": 10,                  # z-scores are clipped at +-clip: a number above 0, or null for no clipping
      "seed": null,                # control_adjusted only: the seed of the control genes (null is 0)
+     "bins": 25,                  # control_adjusted only: gene bins, 2 to 200
+     "controls": 50,              # control_adjusted only: control genes drawn per bin, 1 to 1,000
      "version": 1}                # the algorithm version
 
 Every field but ``genes`` is optional. ``down`` is accepted by the format and refused by the engine
@@ -20,6 +22,14 @@ with a reason until the step that implements it, so adding it later changes no s
 Methods
     zscore_mean  mean over genes of clip((x - mu) / sd, +-clip); mu and sd over all cells, zeros included
     mean         mean over genes of x
+    sum          sum over genes of x; a gene with no value in a cell adds nothing, a cell with no value for any gene is NaN
+    detected     the FRACTION of the signature's genes with a non-zero value in the cell, 0 to 1 (the mean of the
+                 indicator "x != 0"). A fraction rather than a count, so it means the same when a gene is missing from
+                 the dataset or has no value in a cell, and compares between signatures of different sizes.
+    fraction_of_total
+                 the signature's summed expression over the sum of the cell's values over ALL genes (percent mitochondrial
+                 is this with 100 times). Meaningful for counts and for linear normalised values; on log-transformed
+                 or scaled input the result carries a warning. Needs the total of every cell: one pass over the matrix.
     control_adjusted
                  mean over genes of x, minus the mean over control genes of x (Tirosh et al. 2016; scanpy's
                  ``score_genes``). Genes are cut into ``N_BINS`` bins by detection rate; for each bin that
@@ -67,11 +77,13 @@ MAX_NAME_CHARS = 1000
 
 DEFAULT_CLIP = 10.0
 DEFAULT_METHOD = "zscore_mean"
-METHODS = ("zscore_mean", "mean", "control_adjusted")
+METHODS = ("zscore_mean", "mean", "sum", "detected", "fraction_of_total", "control_adjusted")
 
 #: Control-adjusted scoring: gene bins and controls drawn per bin (scanpy's defaults).
 N_BINS = 25
 CTRL_SIZE = 50
+BINS_RANGE = (2, 200)
+CONTROLS_RANGE = (1, 1000)
 #: The seed a control-adjusted recipe without one means.
 DEFAULT_SEED = 0
 #: What genes are binned by: ``detection`` (the share of cells with a stored value, free in a CSC store) or
@@ -130,7 +142,7 @@ class ScoreError(Exception):
 # The recipe
 # ---------------------------------------------------------------------------
 
-_FIELDS = ("genes", "down", "input", "method", "clip", "seed", "version", "title")
+_FIELDS = ("genes", "down", "input", "method", "clip", "seed", "bins", "controls", "version", "title")
 
 
 @dataclass(frozen=True)
@@ -142,6 +154,8 @@ class Recipe:
     clip: Optional[float] = DEFAULT_CLIP
     seed: Optional[int] = None
     version: int = ALGORITHM_VERSION
+    bins: int = N_BINS
+    controls: int = CTRL_SIZE
 
     @property
     def effective_clip(self) -> Optional[float]:
@@ -155,9 +169,18 @@ class Recipe:
             return None
         return DEFAULT_SEED if self.seed is None else self.seed
 
+    @property
+    def effective_bins(self) -> Optional[int]:
+        return self.bins if self.method == "control_adjusted" else None
+
+    @property
+    def effective_controls(self) -> Optional[int]:
+        return self.controls if self.method == "control_adjusted" else None
+
     def describe(self) -> Dict[str, Any]:
         return {"method": self.method, "input": self.input, "clip": self.effective_clip,
-                "seed": self.effective_seed, "version": self.version, "genes": len(self.genes)}
+                "seed": self.effective_seed, "bins": self.effective_bins, "controls": self.effective_controls,
+                "version": self.version, "genes": len(self.genes)}
 
 
 def _names(value, field_name: str) -> Tuple[str, ...]:
@@ -184,6 +207,12 @@ def parse_clip(value) -> Optional[float]:
     return float(value)
 
 
+def _whole(value, name: str, lo: int, hi: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
+        raise ScoreError(400, f"bad_{name}", f"{name} must be a whole number from {lo} to {hi:,}.")
+    return value
+
+
 def parse_recipe(raw) -> Recipe:
     """The recipe a request names, validated; ScoreError (400/413) otherwise."""
     if not isinstance(raw, dict):
@@ -208,6 +237,8 @@ def parse_recipe(raw) -> Recipe:
     seed = raw.get("seed")
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2 ** 63):
         raise ScoreError(400, "bad_seed", "seed must be a whole number from 0 up, or null.")
+    bins = _whole(raw.get("bins", N_BINS), "bins", *BINS_RANGE)
+    controls = _whole(raw.get("controls", CTRL_SIZE), "controls", *CONTROLS_RANGE)
     source = raw.get("input", "X")
     if not isinstance(source, str) or not source or len(source) > MAX_NAME_CHARS:
         raise ScoreError(400, "bad_recipe", "input must be 'X' or the name of a layer.")
@@ -216,7 +247,8 @@ def parse_recipe(raw) -> Recipe:
         raise ScoreError(400, "unsupported_version",
                          f"This server computes scores with algorithm version {ALGORITHM_VERSION}; "
                          f"the recipe asks for {version!r}.", supported=ALGORITHM_VERSION)
-    return Recipe(genes=genes, down=down, input=source, method=method, clip=clip, seed=seed, version=ALGORITHM_VERSION)
+    return Recipe(genes=genes, down=down, input=source, method=method, clip=clip, seed=seed, version=ALGORITHM_VERSION,
+                  bins=bins, controls=controls)
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +280,10 @@ class _Source:
 
     def stat_entries(self, kind: str) -> int:
         """Stored entries (matrix elements) ``column_stat(kind)`` reads."""
+        raise NotImplementedError
+
+    def row_totals(self, should_stop: Optional[Callable[[], bool]] = None) -> np.ndarray:
+        """The sum of the finite values of every cell over all genes; float64, length ``n_obs``."""
         raise NotImplementedError
 
     def sample(self) -> np.ndarray:
@@ -337,6 +373,19 @@ class _CscSource(_Source):
     def sample(self):
         return _sample_stored(self.data)
 
+    def row_totals(self, should_stop=None):
+        total = int(self.indptr[-1])
+        step = int(min(max(STAT_CHUNK, 2 * self.n_obs), 1 << 26))
+        out = np.zeros(self.n_obs, dtype=np.float64)
+        for lo in range(0, total, step):
+            if should_stop is not None and should_stop():
+                raise ScoreCancelled()
+            hi = min(lo + step, total)
+            v = np.asarray(self.data[lo:hi], dtype=np.float64)
+            ok = np.isfinite(v)
+            out += np.bincount(np.asarray(self.indices[lo:hi], dtype=np.int64)[ok], weights=v[ok], minlength=self.n_obs)
+        return out
+
     def column_stat(self, kind, should_stop=None):
         if kind == "detection":                      # the length of each gene's range: nothing is read
             return np.diff(self.indptr).astype(np.float64) / max(self.n_obs, 1)
@@ -391,6 +440,25 @@ class _CsrSource(_Source):
 
     def sample(self):
         return _sample_stored(self.group["data"])
+
+    def row_totals(self, should_stop=None):
+        ptr = np.asarray(self.group["indptr"][:], dtype=np.int64)
+        data = self.group["data"]
+        out = np.zeros(self.n_obs, dtype=np.float64)
+        r0 = 0
+        while r0 < self.n_obs:
+            if should_stop is not None and should_stop():
+                raise ScoreCancelled()
+            r1 = int(np.searchsorted(ptr, ptr[r0] + STAT_CHUNK, side="right")) - 1
+            r1 = min(max(r1, r0 + 1), self.n_obs)
+            lo, hi = int(ptr[r0]), int(ptr[r1])
+            if hi > lo:
+                v = np.asarray(data[lo:hi], dtype=np.float64)
+                v[~np.isfinite(v)] = 0.0
+                csum = np.concatenate(([0.0], np.cumsum(v)))
+                out[r0:r1] = csum[ptr[r0 + 1:r1 + 1] - lo] - csum[ptr[r0:r1] - lo]
+            r0 = r1
+        return out
 
     def column_stat(self, kind, should_stop=None):
         indices, data = self.group["indices"], self.group["data"]
@@ -453,6 +521,17 @@ class _DenseSource(_Source):
 
     def stat_entries(self, kind):
         return self.entries(range(self.n_var))
+
+    def row_totals(self, should_stop=None):
+        out = np.zeros(self.n_obs, dtype=np.float64)
+        rows = int(max(1, min(self.n_obs, BATCH_ENTRIES // max(self.n_var, 1))))
+        for r0 in range(0, self.n_obs, rows):
+            if should_stop is not None and should_stop():
+                raise ScoreCancelled()
+            block = np.asarray(self.array[r0:r0 + rows], dtype=np.float64)
+            block[~np.isfinite(block)] = 0.0
+            out[r0:r0 + block.shape[0]] = block.sum(axis=1)
+        return out
 
     def sample(self):
         """A few blocks of whole rows, evenly spread; the zeros are left to the classifier to drop."""
@@ -711,7 +790,7 @@ class Plan:
     @property
     def vectors(self) -> int:
         """Running sums of one value per cell shown that the score holds at once."""
-        return 2 if self.recipe.method == "control_adjusted" else 1
+        return 2 if self.recipe.method in ("control_adjusted", "fraction_of_total") else 1
 
     def estimate(self) -> Dict[str, Any]:
         return {"entries": self.entries, "seconds": round(self.seconds, 2), "tier": self.tier,
@@ -771,12 +850,15 @@ def plan(reader, dataset_path: str, recipe: Recipe, binning: str = "detection") 
             stat_entries = source.stat_entries(binning)
             if stat_entries == 0:
                 controls = [int(c) for c in choose_controls(source.column_stat(binning), columns,
-                                                            recipe.effective_seed)]
+                                                            recipe.effective_seed, recipe.bins, recipe.controls)]
                 reads = columns + controls
             else:
                 taken = set(columns)
-                reads = columns + [c for c in range(min(source.n_var, len(columns) + N_BINS * CTRL_SIZE))
-                                   if c not in taken][:N_BINS * CTRL_SIZE]
+                most = recipe.bins * recipe.controls
+                reads = columns + [c for c in range(min(source.n_var, len(columns) + most)) if c not in taken][:most]
+        elif recipe.method == "fraction_of_total" and columns:
+            stat_entries = source.stat_entries("total")           # the total of every cell: one pass over the matrix
+            reads = columns
         else:
             reads = columns
         entries = source.entries(reads) + stat_entries
@@ -820,6 +902,7 @@ class ScoreResult:
     seconds: float = 0.0
     controls: Optional[List[int]] = None   # control_adjusted: the control columns used
     n_controls_used: int = 0               # control_adjusted: controls that held a value
+    input_kind: Optional[str] = None       # fraction_of_total: what the input looks like (core/matrix_kind.py)
 
 
 NO_SCORE_MESSAGES = {
@@ -849,6 +932,8 @@ class _Accumulator:
         self.recipe, self.n_obs, self.shown = recipe, n_obs, shown
         self.n_shown = n_obs if shown is None else int(shown.size)
         self.zscore = recipe.method == "zscore_mean"
+        self.indicator = recipe.method == "detected"          # a gene adds 1 where it has a non-zero value
+        self.divide = recipe.method in ("zscore_mean", "mean", "detected")   # sum and the share of the total are not averages
         self.clip = recipe.effective_clip
         self.acc = np.zeros(self.n_shown, dtype=np.float64 if self.n_shown <= FLOAT64_CELLS else np.float32)
         self.baseline = 0.0               # sum over sparse genes of the score of a cell holding zero
@@ -916,6 +1001,8 @@ class _Accumulator:
             if self.clip is not None:
                 stat.clipped = int((np.abs(z) > self.clip).sum()) / self.n_obs
             transformed = self._clip(z)
+        elif self.indicator:
+            transformed = (vf != 0).astype(np.float64)
         else:
             transformed = vf
         column = np.zeros(self.n_obs, dtype=np.float64)
@@ -976,6 +1063,8 @@ class _Accumulator:
                 if self.clip is not None:
                     over += int((np.abs(z) > self.clip).sum())
                 correction[finite] = self._clip(z) - z0
+            elif self.indicator:
+                correction[finite] = (v[finite] != 0).astype(np.float64)
             else:
                 correction[finite] = v[finite]
             pos, hit = self._positions(rows[i:j].astype(np.int64))
@@ -991,11 +1080,11 @@ class _Accumulator:
             return None
         total = self.acc + self.baseline if self.acc.dtype == np.float64 else self.acc + np.float32(self.baseline)
         if self.missing_count is None:
-            out = total / self.n_used
+            out = total / self.n_used if self.divide else total
         else:
             denom = self.n_used - self.missing_count.astype(np.int64)
             with np.errstate(divide="ignore", invalid="ignore"):
-                out = np.where(denom > 0, total / np.maximum(denom, 1), np.nan)
+                out = np.where(denom > 0, total / np.maximum(denom, 1) if self.divide else total, np.nan)
         return np.ascontiguousarray(out, dtype=np.float32)
 
 
@@ -1049,8 +1138,11 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
         yield "result", result
         return
     adjusted = recipe.method == "control_adjusted"
-    # the control-adjusted score is two plain means: of the signature, and of its controls
-    own = dataclasses.replace(recipe, method="mean") if adjusted else recipe
+    share = recipe.method == "fraction_of_total"
+    # the control-adjusted score is two plain means (of the signature, and of its controls); the share of the total
+    # is a plain sum divided by the cell's total
+    own = dataclasses.replace(recipe, method="mean") if adjusted else (
+        dataclasses.replace(recipe, method="sum") if share else recipe)
     acc = _Accumulator(own, plan_.n_obs, shown)
     control_acc = _Accumulator(own, plan_.n_obs, shown) if adjusted else None
     total = len(plan_.columns)
@@ -1058,9 +1150,14 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
     yield "progress", (0, total)
     with open_source(plan_.reader, plan_.dataset_path, recipe.input) as source:
         controls = plan_.controls
+        totals = None
+        if share:
+            totals = source.row_totals(should_stop)
+            result.input_kind = matrix_kind.classify(source.sample())["kind"]
         if adjusted and controls is None:
             stat = source.column_stat(plan_.binning, should_stop)
-            controls = [int(c) for c in choose_controls(stat, plan_.columns, recipe.effective_seed)]
+            controls = [int(c) for c in choose_controls(stat, plan_.columns, recipe.effective_seed,
+                                                        recipe.bins, recipe.controls)]
         if adjusted:
             result.controls = list(controls)
             if not controls:
@@ -1089,6 +1186,11 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
     result.values = acc.result()
     if result.values is None:
         result.reason = "no_usable_gene"
+    elif share:
+        t = totals if shown is None else totals[shown]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = result.values.astype(np.float64) / t
+        result.values = np.ascontiguousarray(np.where(t > 0, ratio, np.nan), dtype=np.float32)
     elif adjusted:
         base = control_acc.result()
         result.n_controls_used = control_acc.n_used

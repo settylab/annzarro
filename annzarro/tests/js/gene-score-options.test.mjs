@@ -72,8 +72,8 @@ test('the key moves with the input, the genes and the method, and only then with
 });
 
 test('the score route is sent the clip and the seed as the recipe holds them', () => {
-    const body = G.serverRecipe(recipe({ method: 'control_adjusted', seed: 9, clip: null, input: 'logged_counts' }));
-    assert.deepEqual(body, { genes: ['A', 'B'], down: [], input: 'logged_counts', method: 'control_adjusted', clip: null, seed: 9, version: 1 });
+    const body = G.serverRecipe(recipe({ method: 'control_adjusted', offered: ['control_adjusted'], seed: 9, clip: null, input: 'logged_counts' }));
+    assert.deepEqual(body, { genes: ['A', 'B'], down: [], input: 'logged_counts', method: 'control_adjusted', clip: null, seed: 9, bins: 25, controls: 50, version: 1 });
 });
 
 // ---------------------------------------------------------------- edits and their cost
