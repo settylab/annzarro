@@ -252,29 +252,6 @@ export function geneCsv(genes) {
     return `${lines.join('\r\n')}\r\n`;
 }
 
-/**
- * The score of each cell shown as CSV, in chunks (one string would not fit a very large set): cell name and value.
- * A cell without a score has an empty value.
- * @param {ArrayLike<string>} names - the cells shown, in order
- * @param {ArrayLike<number>} values - the held scores, the same length
- * @param {{header?: string, chunk?: number}} [opts]
- * @returns {string[]} parts to join (a Blob takes them as they are)
- * @throws {Error} when the lengths differ
- */
-export function scoreCsvParts(names, values, { header = 'score', chunk = 50000 } = {}) {
-    if (names.length !== values.length) {
-        throw new Error(`There are ${names.length} cell names for ${values.length} scores.`);
-    }
-    const parts = [`cell,${csvField(header)}\r\n`];
-    for (let start = 0; start < values.length; start += chunk) {
-        const end = Math.min(values.length, start + chunk);
-        const lines = new Array(end - start);
-        for (let i = start; i < end; i++) lines[i - start] = `${csvField(names[i], { text: true })},${float32Text(values[i])}`;
-        parts.push(`${lines.join('\r\n')}\r\n`);
-    }
-    return parts;
-}
-
 /** A file name from a signature title and what the file holds: "T cell score-genes.csv" made safe. */
 export function fileName(title, what, ext = 'csv') {
     const base = String(title || 'signature').replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, '_').replace(/^_+|_+$/g, '') || 'signature';

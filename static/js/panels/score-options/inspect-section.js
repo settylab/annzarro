@@ -19,14 +19,13 @@
  * Nothing is computed, and nothing is watched, until the section is opened.
  * Closing it lets go of the score (a score a plot still needs stays).
  */
-import { DataManager } from '../../data-manager.js';
 import { scores } from '../../utils/score-source.js';
 import { describeScore } from '../../utils/score-notices.js';
 import { DEFAULT_METHOD, definitionText, fmtCount } from '../../utils/gene-signature.js';
 import { methodShort, offeredOptions } from '../../utils/signature-options.js';
 import {
     distribution, binText, missingText, geneRows, flagSummary, sortGeneRows, GENE_COLUMNS, ROWS_FIRST,
-    fmtNum, fmtPercent, geneCsv, scoreCsvParts, fileName
+    fmtNum, fmtPercent, geneCsv, fileName
 } from '../../utils/score-inspect.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -423,10 +422,8 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         exportRow.append(
             D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { inspectExport: 'genes' },
                 disabled: !ready, title: why, on: { click: exportGenes } }, 'Export gene figures (CSV)'),
-            ' ',
-            D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { inspectExport: 'scores' },
-                disabled: !ready, title: why, on: { click: () => { exportScores().catch((error) => say(`Export failed: ${error.message}`)); } } },
-            'Export scores per cell (CSV)'));
+            D.el('div', { class: 'gsig-inspect__percell', data: { inspectPercell: '' },
+                text: 'To export scores per cell, add them as columns to a Cell Table.' }));
     }
 
     function say(text) {
@@ -448,22 +445,6 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         const genes = snap.header.genes || [];
         download(fileName(getTitle(), `${_method}_${_layer}_genes`), [geneCsv(genes)]);
         say(`Exported ${fmtCount(genes.length)} gene${genes.length === 1 ? '' : 's'}.`);
-    }
-
-    async function exportScores() {
-        const snap = _snap;
-        if (!snap || !snap.values) return;
-        const values = snap.values;
-        let names;
-        try {
-            names = await DataManager.allCellNames();
-        } catch (error) {
-            throw new Error(`the names of this many cells are not in the browser (${error.message || 'too many'})`, { cause: error });
-        }
-        if (_snap !== snap && (!_snap || _snap.values !== values)) throw new Error('the score changed while the names loaded. Try again.');
-        const parts = scoreCsvParts(names, values, { header: 'score' });
-        download(fileName(getTitle(), `${_method}_${_layer}_scores`), parts);
-        say(`Exported the score of ${fmtCount(values.length)} cell${values.length === 1 ? '' : 's'}.`);
     }
 
     function paintGenes(header) {

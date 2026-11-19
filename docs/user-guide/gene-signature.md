@@ -240,11 +240,12 @@ score**).
   cells shown. Genes that dominate the score (clipped in at least 1% of cells in a z-score mean), are
   barely detected (non-zero in under 1% of cells) or were left out (constant, or without a value) are
   flagged in words. Click a heading to sort and a gene to focus it.
-- **Export.** **Export gene figures** and **Export scores per cell** save CSV files built in the
-  browser from the score it holds: the gene figures (as fractions, not percentages), and one row per
-  cell shown with its name and score, empty where a cell has no score. A name that begins with `=`,
-  `+`, `-` or `@` is saved with a leading apostrophe, so a spreadsheet shows it as text rather than
-  running it as a formula.
+- **Export.** **Export gene figures** saves the per-gene figures of the option being inspected as a CSV (as
+  fractions, not percentages), built in the browser. A gene name that begins with `=`, `+`, `-` or `@` is saved with
+  a leading apostrophe, so a spreadsheet shows it as text rather than running it as a formula. There is no per-cell
+  export here: a signature or a gene table does not own a set of cells. Inspect says so ("To export scores per cell,
+  add them as columns to a Cell Table"). A Cell Table with the score as columns, one for each method · layer option
+  you want, exports them in its own CSV, each headed with its full label ("T cell score · z-score mean · X").
 
 In a narrow panel (under 360 px) the table keeps only the gene and its detection rate; under 280 px
 the chart is replaced by its figures.

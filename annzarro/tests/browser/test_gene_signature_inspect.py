@@ -16,7 +16,7 @@ that asks first), the page's `fetch` is replaced for the score route, as there.
 4.  The histogram: bins add up to the cells, a tooltip per bin by pointer and by keyboard.
 5.  Cells with no score are counted and said.
 6.  Flags in plain words; the table sorts; a click on a gene focuses it.
-7.  Export: the gene figures and the score of each cell, with names, equal to what the plot holds.
+7.  Export: the gene figures of the inspected option; per-cell scores are exported by a Cell Table's columns.
 8.  Every state: computing with Cancel, asks first, cancelled, refused, failed with Retry,
     out of date behind Update score, no genes.
 9.  Keyboard and ARIA.
@@ -319,7 +319,7 @@ def _download(page, button):
     return info.value.suggested_filename, open(path, encoding="utf-8").read()
 
 
-def test_export_of_the_gene_figures_and_of_the_score_of_each_cell(page, served):
+def test_export_of_the_gene_figures(page, served):
     genes = ["GENE0001", "GENE0002", "GENE0003"]
     _open_panel(page, served, sig=_sig(genes=genes), plots=(("cell-plot-C", None),))
     _wait_coloured(page)
@@ -336,29 +336,15 @@ def test_export_of_the_gene_figures_and_of_the_score_of_each_cell(page, served):
     for r, g in zip(rows[1:], header["genes"]):
         assert float(r[2]) == pytest.approx(g["detected"]) and float(r[3]) == pytest.approx(g["mean"]) and float(r[4]) == pytest.approx(g["sd"])
 
-    name, text = _download(page, "scores")
-    assert name == "T_cell_score_zscore_mean_X_scores.csv"
-    rows = list(csv.reader(io.StringIO(text)))
-    assert rows[0] == ["cell", "score"]
-    assert [r[0] for r in rows[1:]] == [f"c{i}" for i in range(N_OBS)]
-    assert len(rows) == N_OBS + 1
-    exported = [float(r[1]) for r in rows[1:]]
-    assert exported == pytest.approx(held, rel=1e-6, abs=1e-6), "the file is the vector the plot holds"
-    assert "Exported the score of 60 cells." == page.inner_text(f"{I} .gsig-inspect__result")
 
-
-def test_export_leaves_cells_without_a_score_empty(page, served):
-    _slow(page, "auto", 1)
-    _open_panel(page, served)
+def test_inspect_has_no_per_cell_export_and_says_where_it_is_done(page, served):
+    _open_panel(page, served, sig=_sig(genes=["GENE0001"]))
     _inspect(page)
-    until(page, "() => window.__ctls.length === 1")
-    vals = [None if i == 7 else i / 10 for i in range(N_OBS)]
-    page.evaluate("([v, h]) => window.__finish(0, v.map(x => x === null ? NaN : x), h)", [vals, _fake_header([_g("GENE0001")])])
     _wait_table(page)
-    _, text = _download(page, "scores")
-    rows = list(csv.reader(io.StringIO(text)))
-    assert rows[8] == ["c7", ""]
-    assert rows[2] == ["c1", "0.1"]
+    assert page.locator(f"{I} [data-inspect-export=scores]").count() == 0
+    assert "Export scores per cell" not in page.inner_text(f"{I} .gsig-inspect__body")
+    assert page.inner_text(f"{I} [data-inspect-percell]") == "To export scores per cell, add them as columns to a Cell Table."
+    assert page.locator(f"{I} [data-inspect-export=genes]").is_enabled(), "the gene figures stay"
 
 
 # --------------------------------------------------------------------------- 8

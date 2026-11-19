@@ -163,23 +163,6 @@ test('float32 values are written in the fewest digits that read back exactly', (
     }
 });
 
-test('the score csv is cell name and value, in order, with an empty value for a missing score', () => {
-    const parts = I.scoreCsvParts(['c0', 'c,1', 'c2'], new Float32Array([0.5, NaN, -2]));
-    assert.equal(parts.join(''), 'cell,score\r\nc0,0.5\r\n"c,1",\r\nc2,-2\r\n');
-});
-
-test('the score csv is built in chunks and refuses a mismatch', () => {
-    const n = 120_001;
-    const names = Array.from({ length: n }, (_, i) => `c${i}`);
-    const values = new Float32Array(n).map((_, i) => i);
-    const parts = I.scoreCsvParts(names, values, { chunk: 50000 });
-    assert.equal(parts.length, 1 + 3);
-    const lines = parts.join('').split('\r\n');
-    assert.equal(lines.length, n + 2);             // header, rows, trailing empty
-    assert.equal(lines[n], `c${n - 1},${n - 1}`);
-    assert.throws(() => I.scoreCsvParts(['a'], new Float32Array(2)), /1 cell names for 2 scores/);
-});
-
 test('file names are safe', () => {
     assert.equal(I.fileName('T cell score', 'zscore_mean_genes'), 'T_cell_score_zscore_mean_genes.csv');
     assert.equal(I.fileName('a/b\\c:d', 'x'), 'a_b_c_d_x.csv');
