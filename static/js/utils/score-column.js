@@ -207,3 +207,48 @@ export function followSignatureIds(config, idMap, keyOf) {
     walk(config.searchBuilderConfig);
     return true;
 }
+
+
+/**
+ * Write the layer explicitly into every gene-score entry that has none: an axis, the colour or a hover
+ * entry of a plot, and a score column of a table. There is no default layer: the signature's `input` is
+ * only its first offered layer and it changes when the user unticks it, so an entry that carried no layer
+ * (a link made before layers were stored) is resolved ONCE, to the input as it is at that moment, and
+ * keeps it. A column's data key names its layer, so the column is renamed and every condition of the filter
+ * that names the old key follows, in the same step.
+ * @param {Object} config - a panel's settings or config: rewritten in place
+ * @param {(signatureId: string) => (string|null|undefined)} inputOf - a signature's input now, or nothing if unknown
+ * @param {(column: Object) => string} keyOf - a table column's data key
+ * @returns {boolean} whether anything changed
+ */
+export function pinScoreLayers(config, inputOf, keyOf) {
+    if (!config || typeof config !== 'object') return false;
+    let changed = false;
+    const pin = (source) => {
+        if (!source || source.type !== 'gene-score' || typeof source.key !== 'string' || source.layer) return null;
+        const input = inputOf(source.key);
+        if (!input) return null;
+        source.layer = input;
+        changed = true;
+        return source;
+    };
+    for (const axis of ['x', 'y', 'z', 'color']) pin(config[axis]);
+    if (Array.isArray(config.hoverInfo)) config.hoverInfo.forEach(pin);
+    if (Array.isArray(config.columns)) {
+        const renames = new Map();
+        for (const column of config.columns) {
+            if (!isScoreColumn(column) || column.layer) continue;
+            const before = keyOf(column);
+            if (pin(column)) renames.set(before, keyOf(column));
+        }
+        if (renames.size) {
+            const walk = (node) => {
+                if (!node || typeof node !== 'object') return;
+                if (Array.isArray(node.criteria)) node.criteria.forEach(walk);
+                else if (typeof node.origData === 'string' && renames.has(node.origData)) node.origData = renames.get(node.origData);
+            };
+            walk(config.searchBuilderConfig);
+        }
+    }
+    return changed;
+}

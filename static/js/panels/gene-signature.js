@@ -33,7 +33,7 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { createGeneGrid } from '../utils/gene-grid.js';
 import { getFixedGenes } from './table-utilities/panel-tracker.js';
-import { aggregationsInUse, layersInUse, signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
+import { pinConsumersOf, aggregationsInUse, layersInUse, signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
 import { createScoringSection } from './gene-signature-scoring.js';
@@ -187,6 +187,8 @@ const GeneSignaturePanel = (function() {
 
         /** Replace the recipe's lists and settings (keys of a recipe), as a saved config would. */
         function setRecipe(next) {
+            // consumers with no layer take the input as it is now, before it changes: they never move with it
+            if (('input' in next && next.input !== _recipe.input) || ('layers' in next && JSON.stringify(next.layers) !== JSON.stringify(_recipe.layers))) pinConsumersOf();
             const { recipe, notes } = normalizeRecipe({ ..._recipe, ...next });
             Object.assign(_recipe, recipe);
             if (notes.length) _message = notes.join(' ');

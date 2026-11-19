@@ -22,6 +22,7 @@ import { createScoreSources } from './score-sources.js';
 import { createScoreApi } from './gene-score-client.js';
 import { describeScore, worstNotice } from './score-notices.js';
 import { registerSource, subKeyOf, layerOf } from './source-registry.js';
+import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD } from './gene-signature.js';
 import { DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
 
@@ -190,6 +191,31 @@ export function scoreLabelLines(setting) {
 /** The one-line form of scoreLabelLines: "T cell score · z-score mean · X". */
 export function scoreFullLabel(setting) {
     return scoreLabelLines(setting).join(' · ');
+}
+
+/** A signature's input now, or null when there is no such signature. */
+function inputOfSignature(id) {
+    const panel = id ? PanelManager.getPanel(id) : null;
+    return panel && panel.getType && panel.getType() === 'gene-signature' && panel.getRecipe ? panel.getRecipe().input : null;
+}
+
+/**
+ * Resolve the entries of a panel's settings that carry no layer (see pinScoreLayers), against the
+ * signatures as they are now. Called when a panel is built or drawn, and by a signature before its
+ * input or layers change, so nothing reads `input` at draw time afterwards.
+ * @param {Object} settings - a plot's or table's settings, rewritten in place
+ * @param {(column: Object) => string} keyOf - a table column's data key
+ * @returns {boolean}
+ */
+export function pinLayers(settings, keyOf) {
+    return pinScoreLayers(settings, inputOfSignature, keyOf);
+}
+
+/** Before a signature's input or layers change: every panel pins what it holds with no layer. */
+export function pinConsumersOf() {
+    for (const panel of PanelManager.getAllPanels()) {
+        if (panel && typeof panel.pinScoreLayers === 'function') panel.pinScoreLayers();
+    }
 }
 
 /** A custom error: the series cannot be drawn yet, and why. */
@@ -417,6 +443,8 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
         throw new ScoreUnavailable(notice.headline, notice,
             Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected }));
     }
+    // an entry with no layer (an old link) is resolved now, once, to the signature's input
+    if (!setting.layer) { const input = inputOfSignature(setting.key); if (input) setting.layer = input; }
     const rec = recordFor(host, role, setting);
     rec.quiet = quiet;
     const snap = rec.handle.read();

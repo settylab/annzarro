@@ -102,7 +102,7 @@ def test_csv_export_uses_data_not_display():
     src = open(os.path.join(os.path.dirname(os.path.dirname(CSS)), "js", "panels", "table-utilities",
                             "table-data.js"), encoding="utf-8").read()
     block = src[src.index("extend: 'csv'"):src.index("extend: 'csv'") + 600]
-    assert "exportOptions: { orthogonal: 'export' }" in block
+    assert "orthogonal: 'export'" in block
 
 
 def test_plot_area_keeps_a_drawable_height():

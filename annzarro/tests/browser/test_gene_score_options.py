@@ -508,16 +508,16 @@ def test_the_score_key_changes_only_when_it_should(rec, served):
     page.wait_for_timeout(600)
     assert len(_recipes(page)) == 8
 
-    # the default layer: all three
+    # a layer is stored by every consumer: unticking X moves nothing (they were pinned to X when it changed)
     _layer_offer(page, "X")                                              # counts is the first layer now
-    _wait_computes(page, 11)
-    assert sorted(r["method"] for r in _recipes(page)[-3:]) == ["control_adjusted", "mean", "zscore_mean"]
-    assert {r["input"] for r in _recipes(page)[-3:]} == {"counts"}
+    page.wait_for_timeout(800)
+    assert len(_recipes(page)) == 8, "no consumer moved to counts"
+    assert {r["input"] for r in _recipes(page)} == {"X"}
 
     # entering a value that is already there asks nothing
     _enter(page, _sel("seed"), "9")
     page.wait_for_timeout(600)
-    assert len(_recipes(page)) == 11
+    assert len(_recipes(page)) == 8
 
 
 def test_a_clip_edit_changes_nothing_a_plain_mean_shows_and_asks_the_server_nothing(rec, served):

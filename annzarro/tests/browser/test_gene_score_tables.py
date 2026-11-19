@@ -537,7 +537,7 @@ def test_a_link_keeps_the_column_reference_and_no_value(page, served):
     text = json.dumps(view)
     cfg = view["layout"]["panelConfigs"][TID]
     assert [(c["type"], c["key"], c["column"]) for c in cfg["columns"]] == [("obs", "score", ""), ("gene-score", SIG, "zscore_mean")]
-    assert cfg["searchBuilderConfig"]["criteria"][0]["origData"] == "gene-score_" + SIG + "_zscore_mean"
+    assert cfg["searchBuilderConfig"]["criteria"][0]["origData"] == "gene-score_" + SIG + "_zscore_mean__of_X", "migrated with its column"
     assert "Float32" not in text and '"values"' not in text
     assert "currentEntries" not in text and "closedSelection" not in text
     assert len(text) < 5000, "sixty scores would be hundreds of digits more"

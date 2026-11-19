@@ -1,4 +1,4 @@
-import { releaseHost } from '../utils/score-source.js';
+import { releaseHost, pinLayers } from '../utils/score-source.js';
 import { cancelIndexBuild } from './plot-utilities/large-plot.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
 import { createPanelStructure, initializeUIState, checkDatasetLoadingStatus } from './plot-utilities/panel-ui-make.js';
@@ -669,6 +669,8 @@ const CellPlotPanel = (function() {
             getConfig,
             setConfig,
             updateConfig,
+            // gene-score sources with no layer take the signature's input as it is now (utils/score-column.js)
+            pinScoreLayers: () => pinLayers(_settings, () => ''),
             onDataUpdate
         };
     }
