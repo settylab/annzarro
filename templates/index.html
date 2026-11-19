@@ -126,6 +126,11 @@
                                     <input id="share-link-field" type="text" class="form-control" readonly aria-label="Shareable link">
                                     <button id="share-link-close" class="btn btn-outline-secondary" type="button" title="Close"><i class="fas fa-times"></i></button>
                                 </div>
+                                <!-- Said when the link is long: chat and email programs cut long links (main.js, LONG_LINK_CHARS) -->
+                                <div id="share-link-note" class="share-link-fallback share-link-note" role="status" hidden>
+                                    <span id="share-link-note-text" class="flex-grow-1 small"></span>
+                                    <button id="share-link-note-close" class="btn btn-sm btn-link py-0" type="button" title="Close" aria-label="Close"><i class="fas fa-times"></i></button>
+                                </div>
                             </div>
                         </div>
                     </div>

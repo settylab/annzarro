@@ -215,6 +215,10 @@ body {
 .share-link-fallback[hidden] {
     display: none;
 }
+.share-link-note { display: flex; align-items: flex-start; padding: 0.25rem 0.5rem; border: 1px solid var(--az-border); }
+.share-link-note[hidden] { display: none; }
+/* the long-link note sits under the field when the clipboard fallback shows it too */
+.share-link-fallback:not([hidden]) ~ .share-link-note { top: calc(100% + 44px); }
 
 .app-title {
     font-size: 1.5rem;

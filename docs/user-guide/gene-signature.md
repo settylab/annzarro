@@ -338,7 +338,7 @@ links), its scoring settings and nothing computed. Share links, saved panel sets
 Forward all carry it, closed or open. The panel chooser lists a closed signature with its name; pick
 **Reopen** to open it again under the same name, so the plots and analyses that use it keep using it.
 
-**Long lists make long links.** A share link carries the whole view in the part after `#`, deflated, so it is
+**Long lists make long links.** Share Link says so when the link passes 8,000 characters, gives its length and suggests a panel set; it still copies the link. A share link carries the whole view in the part after `#`, deflated, so it is
 never sent to the server and has no server-side limit. A list of genes compresses by about half: a link holding
 one signature is about 3,400 characters at 500 gene symbols, 12,000 at 2,000, 29,000 at 5,000 and 106,000 at 20,000
 (Ensembl ids compress better: 2,100, 7,300, 18,000 and 71,000). The browser's address bar holds links of this size, but chat and

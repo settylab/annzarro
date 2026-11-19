@@ -413,3 +413,33 @@ def test_the_route_accepts_more_than_2000_genes(page, served):
     _wait_coloured(page)
     assert len(_numbers(page)) == 60
     assert len(_calls(page, "compute")[0]["genes"]) == 2500
+
+
+# ------------------------------------------------------------------ the long-link note
+
+def _share(page):
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    page.click("#btn-share-link")
+    page.wait_for_function("() => /Copied/.test(document.querySelector('#btn-share-link .btn-share-label').textContent)", timeout=20000)
+
+
+def test_a_long_link_says_so_with_its_length_and_the_copy_still_happens(page, served):
+    genes = _names(5000)
+    sig = {"id": "gene-signature-S", "title": "Big", "genes": genes}
+    page.goto(_url(served, ["cell-plot-C"], {"cell-plot-C": _cell(color=TABLE_SCORE), "gene-signature-S": sig, TAB: _table()}))
+    page.wait_for_selector(f"{C} .js-plotly-plot, {C} .coverage-placeholder", timeout=60000)
+    _share(page)
+    note = page.inner_text("#share-link-note")
+    assert page.is_visible("#share-link-note")
+    assert "This link is long (" in note and "characters" in note and "panel set" in note
+    copied = page.evaluate("() => navigator.clipboard.readText()")
+    assert f"({len(copied):,} characters)" in note and len(copied) > 8000, "the length shown is the link copied"
+    page.click("#share-link-note-close")
+    assert page.is_hidden("#share-link-note")
+
+
+def test_a_short_link_has_no_note(page, served):
+    _open_table_link(page, served)
+    _wait_coloured(page)
+    _share(page)
+    assert page.is_hidden("#share-link-note")

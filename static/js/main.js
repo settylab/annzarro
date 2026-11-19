@@ -552,6 +552,7 @@ const App = (function() {
             return;
         }
 
+        _noteLongLink(link.length);
         try {
             if (!await copyText(link)) throw new Error('copy not allowed');
             fallback.hidden = true;
@@ -568,6 +569,24 @@ const App = (function() {
         }
     }
     let _shareLabelTimer = null;
+
+    /**
+     * Links over this many characters get a note. Chat and email programs commonly cut links between 2,000 and
+     * 8,000 characters; measured, a view with one signature is about 3,400 characters at 500 gene symbols and 12,000
+     * at 2,000. The copy is never blocked.
+     */
+    const LONG_LINK_CHARS = 8000;
+
+    /** The note under Share Link: how long the link is, and the way to share a large gene list reliably. @private */
+    function _noteLongLink(length) {
+        const note = document.getElementById('share-link-note');
+        if (!note) return;
+        if (length <= LONG_LINK_CHARS) { note.hidden = true; return; }
+        document.getElementById('share-link-note-text').textContent =
+            `This link is long (${length.toLocaleString('en-US')} characters) and chat or email programs may cut it. `
+            + 'Save a panel set to share a large gene list reliably.';
+        note.hidden = false;
+    }
 
     /**
      * Said when a view is saved, or a link made, before the open store's cell
@@ -2446,6 +2465,9 @@ const App = (function() {
                 document.getElementById('share-link-fallback').hidden = true;
             });
         }
+
+        const noteClose = document.getElementById('share-link-note-close');
+        if (noteClose) noteClose.addEventListener('click', () => { document.getElementById('share-link-note').hidden = true; });
 
         // Gene and cell pickers: typeaheads that ask the server for matches
         // (see utils/name-picker.js), plus history navigation
