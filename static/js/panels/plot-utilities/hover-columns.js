@@ -20,22 +20,38 @@ export function hoverAnnotation(plotType) {
   return plotType === 'genes' ? 'var' : 'obs';
 }
 
-/** The picker's value for a signature's score: `gene-score:<the signature's panel id>`. */
+/** The picker's value for a signature's score: `gene-score:<the signature's panel id>:<aggregation>`. */
 export const SCORE_PREFIX = 'gene-score:';
 
+/** The aggregations a hover column can use, z-score mean first (the registry's list; this module has no imports). */
+export const SCORE_SUBS = Object.freeze([{ value: 'zscore_mean', label: 'z-score mean' }, { value: 'mean', label: 'mean' }]);
+
+/** The picker value of one score. */
+export const scoreValue = (id, sub) => `${SCORE_PREFIX}${id}:${sub}`;
+
+/** `{key, column}` of a picker value of a score. */
+export function parseScoreValue(value) {
+  const rest = value.slice(SCORE_PREFIX.length);
+  const at = rest.lastIndexOf(':');
+  return at < 0 ? { key: rest, column: SCORE_SUBS[0].value } : { key: rest.slice(0, at), column: rest.slice(at + 1) };
+}
+
 /** Options for the picker: "No hover", then every annotation column, selected if configured; in a cell plot then each signature's score. */
-export function hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverOff, signatures = []) {
+export function hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverOff, signatures = [], subs = SCORE_SUBS) {
   const type = hoverAnnotation(plotType);
   const off = hoverOff === true || hoverOff === 'auto';
   const info = Array.isArray(hoverInfo) ? hoverInfo : [];
   const chosen = new Set(info.filter(h => h && h.type === type && !h.column).map(h => h.key));
-  const scored = new Set(info.filter(h => h && h.type === 'gene-score').map(h => h.key));
+  const scored = new Set(info.filter(h => h && h.type === 'gene-score').map(h => scoreValue(h.key, h.column || subs[0].value)));
   const options = [{ value: NO_HOVER, label: 'No hover', selected: off }].concat((datasetStructure?.[type]?.columns || [])
     .filter(c => c !== '_index')
     .map(c => ({ value: c, label: c, selected: !off && chosen.has(c) })));
   if (plotType !== 'genes') {
     for (const sig of signatures) {
-      options.push({ value: `${SCORE_PREFIX}${sig.id}`, label: sig.title, selected: !off && scored.has(sig.id), group: 'Gene scores' });
+      subs.forEach((sub, i) => {
+        const value = scoreValue(sig.id, sub.value);
+        options.push({ value, label: i === 0 ? sig.title : `${sig.title} · ${sub.label}`, selected: !off && scored.has(value), group: 'Gene scores' });
+      });
     }
   }
   return options;
@@ -66,16 +82,16 @@ export function hoverInfoFromSelection(plotType, selected, previous) {
     .filter(h => h && !(h.type === type && !h.column && h.key !== '_index') && h.type !== 'gene-score');
   if (!kept.some(h => h.type === type && h.key === '_index')) kept.unshift({ type, key: '_index' });
   return kept.concat((selected || []).filter(k => k && k !== '_index').map(key => ({ type, key })),
-    scores.map(v => ({ type: 'gene-score', key: v.slice(SCORE_PREFIX.length) })));
+    scores.map(v => ({ type: 'gene-score', ...parseScoreValue(v) })));
 }
 
 /** Fill a <select multiple> with the options. */
-export function populateHoverSelect(select, plotType, datasetStructure, hoverInfo, hoverOff, signatures = []) {
+export function populateHoverSelect(select, plotType, datasetStructure, hoverInfo, hoverOff, signatures = [], subs = SCORE_SUBS) {
   if (!select) return;
   select.innerHTML = '';
   let group = null;
   let groupName = null;
-  for (const o of hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverOff, signatures)) {
+  for (const o of hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverOff, signatures, subs)) {
     const opt = document.createElement('option');
     opt.value = o.value;
     opt.textContent = o.label;

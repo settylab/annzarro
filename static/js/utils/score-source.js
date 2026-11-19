@@ -30,6 +30,9 @@ const SUB_LABELS = { zscore_mean: 'z-score mean', mean: 'mean' };
 /** The value that is not a signature: "New signature..." in the key list. */
 export const NEW_SIGNATURE = '__new_signature__';
 
+/** Hover entries have a role each (`hover:<signature>:<aggregation>`): one plot may show several. */
+const isHover = (role) => typeof role === 'string' && role.startsWith('hover');
+
 /** The axes a score can be an x, y or z of; the rest of the roles are colour and hover. */
 const AXIS_ROLES = ['x', 'y', 'z'];
 
@@ -179,8 +182,8 @@ function stillUsed(rec) {
     const panel = rec.panelId ? PanelManager.getPanel(rec.panelId) : null;
     if (!panel || typeof panel.getConfig !== 'function') return true;
     const cfg = panel.getConfig();
-    if (rec.role === 'hover') {
-        return (cfg.hoverInfo || []).some(h => h && h.type === 'gene-score' && h.key === rec.sigId);
+    if (isHover(rec.role)) {
+        return (cfg.hoverInfo || []).some(h => h && h.type === 'gene-score' && h.key === rec.sigId && subKeyOf(h) === rec.sub);
     }
     const s = cfg[rec.role];
     return !!(s && s.type === 'gene-score' && s.key === rec.sigId && subKeyOf(s) === rec.sub);
@@ -201,7 +204,7 @@ function schedulePaint(host) {
 
 function noticeOf(rec) {
     const snap = rec.handle.read();
-    return { rec, snap, notice: describeScore(snap, { role: rec.role === 'color' ? 'colour' : rec.role, sharers: rec.handle.sharers() }) };
+    return { rec, snap, notice: describeScore(snap, { role: rec.role === 'color' ? 'colour' : (isHover(rec.role) ? 'hover' : rec.role), sharers: rec.handle.sharers() }) };
 }
 
 /**
@@ -227,7 +230,7 @@ export function drawScorePlaceholder(host, notice, snap) {
 export function paint(host) {
     const map = HOSTS.get(host);
     if (!map || !map.size) return;
-    const entries = [...map.values()].filter(r => r.role !== 'hover').map(noticeOf);
+    const entries = [...map.values()].filter(r => !isHover(r.role)).map(noticeOf);
     const axis = worstNotice(entries.filter(e => AXIS_ROLES.includes(e.rec.role) && e.notice && e.notice.blocksAxis)
         .map(e => e.notice));
     const worst = worstNotice(entries.map(e => e.notice));
@@ -416,7 +419,7 @@ export function runScoreAction(action, host) {
             break;
         case 'score-choose': {
             const tile = host.closest ? host.closest('.tile') : null;
-            const select = tile && tile.querySelector(`.axis-key-select[data-axis="${rec.role === 'hover' ? 'color' : rec.role}"]`);
+            const select = tile && tile.querySelector(`.axis-key-select[data-axis="${isHover(rec.role) ? 'color' : rec.role}"]`);
             if (select) {
                 select.scrollIntoView && select.scrollIntoView({ block: 'nearest' });
                 select.focus();

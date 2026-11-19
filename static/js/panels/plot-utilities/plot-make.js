@@ -29,7 +29,8 @@ import { TableResolver, describeUnresolved } from '../../utils/table-resolver.js
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
 import { NO_HOVER } from './hover-columns.js';
-import { loadScoreSeries, scoreTitle, scoreLabel, drawScorePlaceholder } from '../../utils/score-source.js';
+import { describeScore } from '../../utils/score-notices.js';
+import { loadScoreSeries, scoreTitle, scoreLabel, drawScorePlaceholder, ScoreUnavailable } from '../../utils/score-source.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
@@ -771,7 +772,12 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         // a signature's score, one value per cell shown (utils/score-source.js); a score that is not
         // ready throws ScoreUnavailable, and the plot draws neutral points or a placeholder with the
         // notice over it
-        if (plotType === 'genes') throw new Error('A gene score is a property of cells, not of genes.');
+        if (plotType === 'genes') {
+          // a link can name one in a Gene Plot: that axis says so, and the rest of the link works
+          const notice = describeScore({ state: 'notcells', title: '' }, { role: role === 'colour' ? 'colour' : (axis || 'x') });
+          throw new ScoreUnavailable(notice.headline, notice,
+            Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected }));
+        }
         const scored = await loadScoreSeries(settings, {
           host: plotContainer, role: role === 'colour' ? 'color' : (axis || role || 'x'), expected, unit
         });
@@ -1664,7 +1670,7 @@ export async function loadHoverColumns(settings, plotType, plotContainer = null,
       if (h.type === 'gene-score') {
         // a signature's score beside the obs columns; read only when ready (the plot draws again when it is)
         if (plotType === 'genes') continue;
-        const scored = await loadScoreSeries(h, { host: plotContainer, role: 'hover', expected: points });
+        const scored = await loadScoreSeries(h, { host: plotContainer, role: `hover:${h.key}:${h.column || ''}`, expected: points });
         out.push({ label: scoreLabel(h), values: scored.values });
         continue;
       }

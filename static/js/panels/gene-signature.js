@@ -604,6 +604,13 @@ const GeneSignaturePanel = (function() {
                 action = btn('Retry', 'retry');
             } else if (st.dependants && (st.state === 'refused' || st.state === 'noscore')) {
                 text = st.message || 'No score.';
+            } else if (!st.dependants) {
+                // nothing shows this score, so none is computed; the genes are counted from the dataset's names
+                const all = [..._recipe.genes, ..._recipe.down];
+                if (all.length && _nameSet.size > 0) {
+                    const present = all.filter(g => _nameSet.has(g)).length;
+                    text = `Ready, ${fmtCount(present)} of ${fmtCount(all.length)} gene${all.length === 1 ? '' : 's'} in this dataset.`;
+                }
             } else if (st.dependants && st.state === 'ready' && st.header) {
                 text = `Score ready: ${fmtCount(st.header.n_used)} gene${st.header.n_used === 1 ? '' : 's'} used.`;
             }

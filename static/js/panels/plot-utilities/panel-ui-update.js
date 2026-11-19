@@ -4,7 +4,7 @@ import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
-import { signatureList } from '../../utils/score-source.js';
+import { signatureList, NEW_SIGNATURE } from '../../utils/score-source.js';
 import { getSource } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -191,6 +191,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
           keyOptions.push({ value: settings.key, text: `${settings.label || settings.key} (deleted)` });
         }
         if (!keyOptions.length) keyOptions = [{ value: '', text: 'No signatures yet' }];
+        keyOptions.push({ value: NEW_SIGNATURE, text: 'New signature…' });
         break;
       }
       case 'var': {
@@ -280,6 +281,7 @@ export function refreshScoreKeySelects() {
       options.push({ value: current, text: `${(was && was.textContent.replace(/ \(deleted\)$/, '')) || current} (deleted)` });
     }
     if (!options.length) options.push({ value: '', text: 'No signatures yet' });
+    options.push({ value: NEW_SIGNATURE, text: 'New signature…' });
     const same = options.length === keySelect.options.length
       && options.every((o, i) => keySelect.options[i].value === o.value && keySelect.options[i].textContent === o.text);
     if (same) continue;
@@ -287,22 +289,24 @@ export function refreshScoreKeySelects() {
     $.setSelectValue(jQuery(keySelect), current, false);
     if (!list.length && !current) jQuery(keySelect).find('option[value=""]').prop('disabled', true);
   }
-  // the Hover pickers list each signature's score after the columns
+  // the Hover pickers list each signature's score, and each aggregation of it, after the columns
+  const subs = getSource('gene-score').subKeys();
+  const wanted = list.flatMap(sig => subs.map((sub, i) => [`gene-score:${sig.id}:${sub.value}`, i === 0 ? sig.title : `${sig.title} · ${sub.label}`]));
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
     const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === 'Gene scores');
     const have = group ? Array.from(group.querySelectorAll('option')) : [];
     const chosen = new Set(have.filter(o => o.selected).map(o => o.value));
-    const same = have.length === list.length && list.every((sig, i) => have[i].value === `gene-score:${sig.id}` && have[i].textContent === sig.title);
+    const same = have.length === wanted.length && wanted.every(([value, text], i) => have[i].value === value && have[i].textContent === text);
     if (same) continue;
     if (group) group.remove();
-    if (!list.length) continue;
+    if (!wanted.length) continue;
     const next = document.createElement('optgroup');
     next.label = 'Gene scores';
-    for (const sig of list) {
+    for (const [value, text] of wanted) {
       const opt = document.createElement('option');
-      opt.value = `gene-score:${sig.id}`;
-      opt.textContent = sig.title;
-      opt.selected = chosen.has(opt.value);
+      opt.value = value;
+      opt.textContent = text;
+      opt.selected = chosen.has(value);
       next.appendChild(opt);
     }
     select.appendChild(next);
