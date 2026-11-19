@@ -94,12 +94,13 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     let askOff = false;                 // turned off while down genes exist: the question is in place
     const dirBox = directions ? el('input', { type: 'checkbox', class: 'gsig-scoring__offer', id: sid('directions'),
         data: { directions: '' }, on: { change: () => onDirectionSwitch(dirBox.checked) } }) : null;
+    const dirHint = directions ? el('div', { class: 'gsig-scoring__help', text: SCORING_HELP.directions }) : null;
     const dirFormula = directions ? el('div', { class: 'gsig-scoring__help', data: { directionFormula: '' } }) : null;
     const dirAsk = directions ? el('div', { class: 'gsig-scoring__notice', role: 'status', hidden: true, data: { directionAsk: '' } }) : null;
     const dirBlock = directions ? el('div', { class: 'gsig-scoring__direction', data: { directionBlock: '' } },
         el('div', { class: 'gsig-scoring__optionhead' }, dirBox,
             el('label', { for: sid('directions'), class: 'gsig-scoring__optionname', text: 'Score some genes as down' })),
-        el('div', { class: 'gsig-scoring__help', text: SCORING_HELP.directions }), dirFormula, dirAsk) : null;
+        dirHint, dirFormula, dirAsk) : null;
     const resetNote = el('div', { class: 'gsig-scoring__notice', role: 'status', hidden: true });
     const reset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-scoring__reset',
         on: { click: () => resetAll(false) } }, 'Reset to defaults');
@@ -192,6 +193,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         dirFormula.textContent = [directionFormula(recipe),
             n && !signed ? 'None of the offered methods can score down genes. Offer z-score mean, mean or control-adjusted.' : ''].filter(Boolean).join(' ');
         dirFormula.hidden = !dirFormula.textContent;
+        dirHint.hidden = !dirFormula.hidden;               // the formula with its numbers says it better than the hint
         askOff = askOff && n > 0;
         dirAsk.hidden = !askOff;
         D.clear(dirAsk);
