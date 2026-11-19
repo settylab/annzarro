@@ -6,6 +6,7 @@ layer is the recipe's `input` for that request, so two layers of one signature a
 one layer used twice is one. The store has X and one layer, `counts`.
 """
 import json
+import urllib.parse
 
 from annzarro.tests.browser.test_gene_score_plots import (  # noqa: F401
     C, S, SIG, SCORE, _calls, _cell, _numbers, _open, _tag, _notice, _wait_coloured, _ready_plot, _slow, _finish,
@@ -262,3 +263,51 @@ def test_the_selects_are_readable_at_820_and_1600_px_in_both_themes(page, served
             assert all(titles), "every select says its full text when hovered"
             page.screenshot(path=f"{SHOTS}/gs5c-{width}-{theme}.png", clip={"x": 0, "y": 100, "width": width, "height": 330})
             page.goto("about:blank")
+
+
+def test_table_columns_store_their_layer_and_an_old_column_without_one_reads_the_signatures_input(page, served):
+    from annzarro.tests.browser import test_gene_score_tables as T
+    old = {"type": "gene-score", "key": SIG, "column": "zscore_mean", "label": "T cell score"}
+    T._open(page, served, table=T._table(columns=[old]), sig=TWO)
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 1")
+    assert _inputs(page) == ["X"], "no layer: the signature's input"
+    page.click(f"#gene-score-tab-{T.TID}")
+    assert page.is_checked(f"#checkbox-gene-score-{SIG}-zscore_mean-of-X-{T.TID}"), "the old column is shown ticked on X"
+    page.check(f"#checkbox-gene-score-{SIG}-mean-of-X-{T.TID}")
+    page.check(f"#checkbox-gene-score-{SIG}-mean-of-counts-{T.TID}")
+    page.click(f"#apply-columns-{T.TID}")
+    cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer])", T.TID)
+    assert sorted(cfg) == [["mean", "X"], ["mean", "counts"], ["zscore_mean", "X"]], "every new choice stores its layer"
+    # the signature stops offering X: the columns do not move to counts
+    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
+    page.wait_for_timeout(800)
+    cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer])", T.TID)
+    assert sorted(cfg) == [["mean", "X"], ["mean", "counts"], ["zscore_mean", "X"]]
+
+
+def test_plot_hover_and_table_menus_leave_out_a_combination_that_cannot_be_computed(page, served):
+    from annzarro.tests.browser import test_gene_score_tables as T
+    def handler(route):
+        want = urllib.parse.parse_qs(urllib.parse.urlparse(route.request.url).query).get("input", ["X"])[0]
+        body = {"input": want, "kind": "signed" if want == "X" else "counts", "stats": {"max": 5}, "suggest": None, "checked": {}}
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+    page.route("**/api/v1/data/matrix_kind*", handler)
+    sig = {**TWO, "offered": ["zscore_mean", "detected", "fraction_of_total"], "layers": ["X", "counts"]}
+    cfg = _cell(hoverInfo=[{"type": "obs", "key": "_index"}])
+    T._open(page, served, table=T._table(columns=[T.OBS]), plots=(("cell-plot-C", cfg),), sig=sig, sig_open=True)
+    until(page, "(id) => window.PanelManager.getPanel(id).getOfferedOptions().length === 4", SIG)
+    # plot menu
+    opts = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option')].map(o => o.value)", C)
+    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
+    until(page, "(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option')].some(o => o.value === 'detected@counts')", C)
+    opts = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option')].map(o => o.value)", C)
+    assert "detected@X" not in opts and "fraction_of_total@X" not in opts and "detected@counts" in opts, opts
+    # hover
+    hov = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.hover-columns-select option')].map(o => o.value)", C)
+    assert not any(v.endswith(":detected:X") or v.endswith(":fraction_of_total:X") for v in hov), hov
+    assert any(v.endswith(":detected:counts") for v in hov), hov
+    # table tab
+    page.click(f"#gene-score-tab-{T.TID}")
+    boxes = page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' input.column-checkbox')].map(c => c.id)", T.TID)
+    assert not any("detected-of-X" in b or "fraction_of_total-of-X" in b for b in boxes), boxes
+    assert any("detected-of-counts" in b for b in boxes), boxes

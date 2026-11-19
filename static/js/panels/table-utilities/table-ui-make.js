@@ -327,10 +327,11 @@ async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, i
 
 /** The id of a column's checkbox in the chooser. */
 function checkboxIdFor(column, panelId) {
-    // the signature's own layer is the plain id; another layer is named in it
+    // a score's layer is always named: there is no default layer, and a column stored without one (an old
+    // link) is read on the signature's input at the time
     const sig = column.type === 'gene-score' && window.PanelManager ? window.PanelManager.getPanel(column.key) : null;
-    const own = sig && sig.getRecipe ? sig.getRecipe().input : 'X';
-    return `checkbox-${column.type}-${column.key}-${column.column}${column.type === 'gene-score' && column.layer && column.layer !== own ? `-of-${column.layer}` : ''}-${panelId}`.replace(/\s+/g, '_');
+    const layer = column.type === 'gene-score' ? (column.layer || (sig && sig.getRecipe ? sig.getRecipe().input : 'X')) : '';
+    return `checkbox-${column.type}-${column.key}-${column.column}${layer ? `-of-${layer}` : ''}-${panelId}`.replace(/\s+/g, '_');
 }
 
 /**
@@ -377,16 +378,16 @@ export function buildScoreTab(id, settings, structure = null) {
         group.appendChild(heading);
         // what the signature offers (method and layer together, as in a plot's menu), and any ticked column
         // it no longer offers (kept, so the table still has it)
-        // a column on the signature's own layer follows it (no layer stored); another layer is stored
-        const entries = scoreOptions(sig.id).map(o => ({ method: o.method, layer: o.layer === sig.input ? '' : o.layer, text: o.label }));
+        // every column stores the layer it was given: the signature's first offered layer changes when the user unticks it
+        const entries = scoreOptions(sig.id).map(o => ({ method: o.method, layer: o.layer, text: o.label }));
         for (const t of ticked) {
-            if (t.key === sig.id && !entries.some(e => e.method === (t.column || DEFAULT_METHOD) && e.layer === (t.layer || ''))) {
-                entries.push({ method: t.column || DEFAULT_METHOD, layer: t.layer || '', text: lapsedLabel(t) });
+            if (t.key === sig.id && !entries.some(e => e.method === (t.column || DEFAULT_METHOD) && e.layer === (t.layer || sig.input))) {
+                entries.push({ method: t.column || DEFAULT_METHOD, layer: t.layer || sig.input, text: lapsedLabel(t) });
             }
         }
         for (const sub of entries) {
             const layer = sub.layer;
-            const item = { type: 'gene-score', key: sig.id, column: sub.method, ...(layer ? { layer } : {}) };
+            const item = { type: 'gene-score', key: sig.id, column: sub.method, layer };
             const div = document.createElement('div');
             div.className = 'form-check py-0 ms-3';
             const checkbox = document.createElement('input');
@@ -399,7 +400,7 @@ export function buildScoreTab(id, settings, structure = null) {
             if (layer) checkbox.setAttribute('data-layer', layer);
             checkbox.setAttribute('data-label', sig.title);
             checkbox.dataset.scoreBound = '1';
-            checkbox.checked = ticked.some(c => c.key === sig.id && (c.column || DEFAULT_METHOD) === sub.method && (c.layer || '') === layer);
+            checkbox.checked = ticked.some(c => c.key === sig.id && (c.column || DEFAULT_METHOD) === sub.method && (c.layer || sig.input) === layer);
             checkbox.addEventListener('change', () => updateSelectedColumnsList(id, settings));
             const label = document.createElement('label');
             label.className = 'form-check-label';
