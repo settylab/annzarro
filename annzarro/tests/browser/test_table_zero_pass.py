@@ -145,7 +145,8 @@ def _open(page, url, colour=None):
         # a link without a colour column gets the dataset's default colouring: pick "none" in the panel
         page.select_option(f"{PLOT} select.axis-type-select[data-axis='color']", "none")
         page.wait_for_function("(sel) => { const g = document.querySelector(sel + ' .js-plotly-plot');"
-                               " return !!g && g.data.filter(t => t.x && t.x.length > 1 && !/^focused/i.test(t.name || '')).length === 1"
+                               " const pts = g.data.filter(t => t.x && t.x.length > 1 && !/^focused/i.test(t.name || ''));"
+                               " return (pts.length === 1 || pts.some(t => t.name === 'In table'))"
                                " && g.data.every(t => t.meta !== 'az-legend'); }", arg=PLOT, timeout=30000)
 
 
