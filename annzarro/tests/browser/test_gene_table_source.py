@@ -443,3 +443,19 @@ def test_a_short_link_has_no_note(page, served):
     _wait_coloured(page)
     _share(page)
     assert page.is_hidden("#share-link-note")
+
+
+def test_a_gene_tables_export_chooser_lists_its_combinations_and_exports_per_cell(page, served):
+    _open_table_link(page, served, table=_table(scoreOptions=OFFER))
+    _wait_coloured(page)
+    page.click(f"{G} .gsig-inspect__toggle")
+    page.wait_for_function("(g) => document.querySelectorAll(g + ' .gsig-inspect__table [data-gene]').length === 5", arg=G, timeout=20000)
+    page.click(f"{G} [data-inspect-export=scores]")
+    options = page.eval_on_selector_all(f"{G} .gsig-export input[type=checkbox]", "els => els.map(e => e.dataset.option)")
+    assert options == ["zscore_mean@X", "zscore_mean@counts", "mean@X", "mean@counts", "detected@X", "detected@counts"]
+    page.click(f"{G} .gsig-export input[data-option='mean@X']")
+    with page.expect_download() as info:
+        page.click(f"{G} [data-export-go]")
+    assert info.value.suggested_filename == "Gene_Table_1_scores.csv"
+    header = open(info.value.path(), encoding="utf-8").readline().strip()
+    assert header == "cell,Gene Table 1 · z-score mean · X,Gene Table 1 · mean · X"

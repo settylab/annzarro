@@ -378,6 +378,30 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             }
         },
 
+        /** Whether the score of one combination is held (ready in the store), without asking for anything. */
+        isReady(id, { sub, layer }) {
+            const sig = signatures.get(id);
+            if (!sig || gateOf(sig, { dependant: null })) return false;
+            const live = withMethod(applied.get(id) || copyRecipe(sig.recipe()), sub, layer);
+            if (genesIn(live) === 0) return false;
+            const ctx = context();
+            return store.snapshot(scoreKey({ hash: hashOf(live), dataset: ctx.dataset, subset: ctx.subset })).state === 'ready';
+        },
+
+        /**
+         * What a score would cost, asked of the server without computing anything (the estimate tiers: auto, confirm,
+         * refused). Null when the source's genes are not known yet.
+         * @returns {Promise<Object|null>} the estimate reply
+         */
+        async estimate(id, { sub, layer }) {
+            const sig = signatures.get(id);
+            if (!sig || gateOf(sig, { dependant: null })) return null;
+            const live = withMethod(applied.get(id) || copyRecipe(sig.recipe()), sub, layer);
+            if (genesIn(live) === 0) return null;
+            const ctx = context();
+            return store.estimateFor(live, ctx.dataset, hashOf(live));
+        },
+
         /** "Update score": apply the held edits now. */
         update(id) {
             const sig = signatures.get(id);

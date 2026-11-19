@@ -19,6 +19,7 @@
  * Nothing is computed, and nothing is watched, until the section is opened.
  * Closing it lets go of the score (a score a plot still needs stays).
  */
+import { createExportChooser } from './export-chooser.js';
 import { DataManager } from '../../data-manager.js';
 import { scores } from '../../utils/score-source.js';
 import { describeScore } from '../../utils/score-notices.js';
@@ -26,7 +27,7 @@ import { DEFAULT_METHOD, definitionText, fmtCount } from '../../utils/gene-signa
 import { methodShort, offeredOptions } from '../../utils/signature-options.js';
 import {
     distribution, binText, missingText, geneRows, flagSummary, sortGeneRows, GENE_COLUMNS, ROWS_FIRST,
-    fmtNum, fmtPercent, geneCsv, scoreCsvParts, fileName
+    fmtNum, fmtPercent
 } from '../../utils/score-inspect.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -422,16 +423,30 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         const why = ready ? undefined : 'Export is available when the score is up to date.';
         exportRow.append(
             D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { inspectExport: 'genes' },
-                disabled: !ready, title: why, on: { click: exportGenes } }, 'Export gene figures (CSV)'),
+                disabled: !ready, title: why, on: { click: () => chooser.open('genes') } }, 'Export gene figures (CSV)'),
             ' ',
             D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { inspectExport: 'scores' },
-                disabled: !ready, title: why, on: { click: () => { exportScores().catch((error) => say(`Export failed: ${error.message}`)); } } },
+                disabled: !ready, title: why, on: { click: () => chooser.open('scores') } },
             'Export scores per cell (CSV)'));
     }
 
     function say(text) {
         result.textContent = text;
     }
+
+    // which combinations to export: the chooser (export-chooser.js)
+    const chooser = createExportChooser({
+        D, id, getTitle, getOptions: optionsHere, getCurrent: () => ({ method: _method, layer: _layer }),
+        getNames: async () => {
+            try {
+                return await DataManager.allCellNames();
+            } catch (error) {
+                throw new Error(`the names of this many cells are not in the browser (${error.message || 'too many'})`, { cause: error });
+            }
+        },
+        download, say
+    });
+    exportRow.after(chooser.element);
 
     function download(name, parts) {
         const url = URL.createObjectURL(new Blob(parts, { type: 'text/csv;charset=utf-8' }));
@@ -440,30 +455,6 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         link.click();
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
-
-    function exportGenes() {
-        const snap = _snap;
-        if (!snap || !snap.header) return;
-        const genes = snap.header.genes || [];
-        download(fileName(getTitle(), `${_method}_${_layer}_genes`), [geneCsv(genes)]);
-        say(`Exported ${fmtCount(genes.length)} gene${genes.length === 1 ? '' : 's'}.`);
-    }
-
-    async function exportScores() {
-        const snap = _snap;
-        if (!snap || !snap.values) return;
-        const values = snap.values;
-        let names;
-        try {
-            names = await DataManager.allCellNames();
-        } catch (error) {
-            throw new Error(`the names of this many cells are not in the browser (${error.message || 'too many'})`, { cause: error });
-        }
-        if (_snap !== snap && (!_snap || _snap.values !== values)) throw new Error('the score changed while the names loaded. Try again.');
-        const parts = scoreCsvParts(names, values, { header: 'score' });
-        download(fileName(getTitle(), `${_method}_${_layer}_scores`), parts);
-        say(`Exported the score of ${fmtCount(values.length)} cell${values.length === 1 ? '' : 's'}.`);
     }
 
     function paintGenes(header) {
@@ -510,6 +501,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
     }
 
     function destroy() {
+        chooser.destroy();
         unwatch();
         if (_observer) { _observer.disconnect(); _observer = null; }
         _open = false;

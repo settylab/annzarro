@@ -275,6 +275,58 @@ export function scoreCsvParts(names, values, { header = 'score', chunk = 50000 }
     return parts;
 }
 
+/**
+ * The scores of several method · layer combinations as CSV, one row per cell shown: the cell name, then one column per
+ * combination, headed with its full label. Built in chunks; with `blobs`, each chunk becomes a Blob as soon as it is
+ * made, so the text of a large export never sits in memory all at once (1M cells x 6 columns is about 60 MB of text).
+ * A cell without a score has an empty value, and cell names that look like formulas get the apostrophe.
+ * @param {ArrayLike<string>} names
+ * @param {Array<{header: string, values: ArrayLike<number>}>} columns - each as long as `names`
+ * @param {{chunk?: number, blobs?: boolean}} [opts]
+ * @returns {Array<string|Blob>}
+ */
+export function multiScoreCsvParts(names, columns, { chunk = 50000, blobs = false } = {}) {
+    for (const c of columns) {
+        if (names.length !== c.values.length) throw new Error(`There are ${names.length} cell names for ${c.values.length} scores.`);
+    }
+    const wrap = (text) => (blobs ? new Blob([text], { type: 'text/csv' }) : text);
+    const parts = [wrap(`cell,${columns.map(c => csvField(c.header)).join(',')}\r\n`)];
+    for (let start = 0; start < names.length; start += chunk) {
+        const end = Math.min(names.length, start + chunk);
+        const lines = new Array(end - start);
+        for (let i = start; i < end; i++) {
+            let line = csvField(names[i], { text: true });
+            for (const c of columns) line += `,${float32Text(c.values[i])}`;
+            lines[i - start] = line;
+        }
+        parts.push(wrap(`${lines.join('\r\n')}\r\n`));
+    }
+    return parts;
+}
+
+/**
+ * The per-gene figures of several combinations in the LONG form: one row per combination and gene, with the
+ * combination named in the first column. Long, not one block of columns per combination, because the figures of each
+ * combination are read from its own layer (a gene can be constant in one and not in another) and the number of columns
+ * would otherwise grow with every combination; one fixed header filters, sorts and pivots in any spreadsheet or script.
+ * @param {Array<{label: string, genes: Array<Object>}>} blocks
+ */
+export function longGeneCsv(blocks) {
+    const lines = ['combination,gene,status,detected_fraction,mean,sd,clipped_fraction'];
+    for (const b of blocks) {
+        for (const g of b.genes || []) {
+            lines.push([csvField(b.label), csvField(g.name, { text: true }), csvField(g.status), figure(g.detected), figure(g.mean),
+                figure(g.sd), figure(g.clipped)].join(','));
+        }
+    }
+    return `${lines.join('\r\n')}\r\n`;
+}
+
+/** The file name of an export: one combination keeps its name; several are named for the signature alone. */
+export function exportFileName(title, what, combos) {
+    return combos.length === 1 ? fileName(title, `${combos[0].method}_${combos[0].layer}_${what}`) : fileName(title, what);
+}
+
 /** A file name from a signature title and what the file holds: "T cell score-genes.csv" made safe. */
 export function fileName(title, what, ext = 'csv') {
     const base = String(title || 'signature').replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, '_').replace(/^_+|_+$/g, '') || 'signature';

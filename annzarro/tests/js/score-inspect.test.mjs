@@ -185,3 +185,43 @@ test('file names are safe', () => {
     assert.equal(I.fileName('a/b\\c:d', 'x'), 'a_b_c_d_x.csv');
     assert.equal(I.fileName('', 'x'), 'signature_x.csv');
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// export of several method · layer combinations
+
+test('several combinations make one column each, headed with the full label, a row per cell', () => {
+    const names = ['c0', 'c1', 'c2'];
+    const parts = I.multiScoreCsvParts(names, [
+        { header: 'T · z-score mean · X', values: new Float32Array([1, 2.5, NaN]) },
+        { header: 'T · mean · counts', values: new Float32Array([0.1, 0, 7]) }], { chunk: 2 });
+    assert.deepEqual(parts, ['cell,T · z-score mean · X,T · mean · counts\r\n', 'c0,1,0.1\r\nc1,2.5,0\r\n', 'c2,,7\r\n']);
+    assert.throws(() => I.multiScoreCsvParts(['a'], [{ header: 'h', values: [1, 2] }]), /1 cell names for 2 scores/);
+});
+
+test('formula-like cell names and headers follow the same rules as one column', () => {
+    const parts = I.multiScoreCsvParts(['=SUM(A1)', '+1x', 'a,b'], [{ header: 'a,b', values: [1, 2, 3] }, { header: 'h', values: [4, 5, 6] }]);
+    assert.equal(parts[0], 'cell,"a,b",h\r\n');
+    assert.equal(parts[1], "'=SUM(A1),1,4\r\n'+1x,2,5\r\n\"a,b\",3,6\r\n");
+});
+
+test('blob parts hold the same text, and nothing is one string of the whole file', async () => {
+    const names = Array.from({ length: 120000 }, (_, i) => `c${i}`);
+    const cols = [{ header: 'h', values: new Float32Array(names.length).fill(1) }];
+    const parts = I.multiScoreCsvParts(names, cols, { blobs: true });
+    assert.equal(parts.length, 1 + 3, 'a header and three chunks of at most 50,000 rows');
+    assert.ok(parts.every(p => p instanceof Blob));
+    assert.equal(await new Blob(parts).text(), I.multiScoreCsvParts(names, cols).join(''));
+});
+
+test('gene figures of several combinations are long: one row per combination and gene', () => {
+    const csv = I.longGeneCsv([
+        { label: 'T · z-score mean · X', genes: [{ name: 'A', status: 'used', detected: 0.5, mean: 1, sd: 2, clipped: 0.1 }] },
+        { label: 'T · mean · counts', genes: [{ name: '=B', status: 'constant', detected: 1, mean: 3, sd: 0, clipped: null }] }]);
+    assert.equal(csv, 'combination,gene,status,detected_fraction,mean,sd,clipped_fraction\r\nT · z-score mean · X,A,used,0.5,1,2,0.1\r\n'
+        + "T · mean · counts,'=B,constant,1,3,0,\r\n");
+});
+
+test('file names: one combination keeps its name, several are named for the source', () => {
+    assert.equal(I.exportFileName('T cell', 'scores', [{ method: 'mean', layer: 'X' }]), 'T_cell_mean_X_scores.csv');
+    assert.equal(I.exportFileName('T cell', 'scores', [{ method: 'mean', layer: 'X' }, { method: 'sum', layer: 'X' }]), 'T_cell_scores.csv');
+});

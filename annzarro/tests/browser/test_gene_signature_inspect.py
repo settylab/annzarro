@@ -312,9 +312,16 @@ def test_a_long_gene_list_shows_the_first_hundred_and_offers_all(page, served):
 
 # --------------------------------------------------------------------------- 7
 
-def _download(page, button):
+def _download(page, button, ticks=None):
+    """Press an export button, tick what the chooser should hold (default: what it ticked), press Export."""
+    page.click(f"{I} [data-inspect-export={button}]")
+    if ticks is not None:
+        for box in page.query_selector_all(f"{I} .gsig-export input[type=checkbox]"):
+            want = box.get_attribute("data-option") in ticks
+            if box.is_checked() != want:
+                box.click()
     with page.expect_download() as info:
-        page.click(f"{I} [data-inspect-export={button}]")
+        page.click(f"{I} [data-export-go]")
     path = info.value.path()
     return info.value.suggested_filename, open(path, encoding="utf-8").read()
 
@@ -331,20 +338,21 @@ def test_export_of_the_gene_figures_and_of_the_score_of_each_cell(page, served):
     name, text = _download(page, "genes")
     assert name == "T_cell_score_zscore_mean_X_genes.csv"
     rows = list(csv.reader(io.StringIO(text)))
-    assert rows[0] == ["gene", "status", "detected_fraction", "mean", "sd", "clipped_fraction"]
-    assert [r[0] for r in rows[1:]] == [g["name"] for g in header["genes"]]
+    assert rows[0] == ["combination", "gene", "status", "detected_fraction", "mean", "sd", "clipped_fraction"]
+    assert [r[1] for r in rows[1:]] == [g["name"] for g in header["genes"]]
+    assert {r[0] for r in rows[1:]} == {"T cell score · z-score mean · X"}
     for r, g in zip(rows[1:], header["genes"]):
-        assert float(r[2]) == pytest.approx(g["detected"]) and float(r[3]) == pytest.approx(g["mean"]) and float(r[4]) == pytest.approx(g["sd"])
+        assert float(r[3]) == pytest.approx(g["detected"]) and float(r[4]) == pytest.approx(g["mean"]) and float(r[5]) == pytest.approx(g["sd"])
 
     name, text = _download(page, "scores")
     assert name == "T_cell_score_zscore_mean_X_scores.csv"
     rows = list(csv.reader(io.StringIO(text)))
-    assert rows[0] == ["cell", "score"]
+    assert rows[0] == ["cell", "T cell score · z-score mean · X"]
     assert [r[0] for r in rows[1:]] == [f"c{i}" for i in range(N_OBS)]
     assert len(rows) == N_OBS + 1
     exported = [float(r[1]) for r in rows[1:]]
     assert exported == pytest.approx(held, rel=1e-6, abs=1e-6), "the file is the vector the plot holds"
-    assert "Exported the score of 60 cells." == page.inner_text(f"{I} .gsig-inspect__result")
+    assert "Exported 1 combination per cell." == page.inner_text(f"{I} .gsig-inspect__result")
 
 
 def test_export_leaves_cells_without_a_score_empty(page, served):
@@ -566,3 +574,108 @@ def test_the_layer_a_plot_shows_is_the_one_inspected_first(page, served):
     assert page.input_value(f"{I} select.gsig-inspect__select") == "mean@counts"
     page.wait_for_timeout(500)
     assert len(_calls(page, "compute")) == 1, "the plot's score is the one inspected"
+
+
+# --------------------------------------------------------------------------- export: which combinations
+
+TWO = dict(layers=["X", "counts"])
+
+
+def _chooser_rows(page):
+    return page.eval_on_selector_all(f"{I} .gsig-export__option", "els => els.map(e => [e.querySelector('input').dataset.option, e.querySelector('input').checked, e.querySelector('.gsig-export__note').textContent.trim()])")
+
+
+def _ready_two(page, served):
+    _open_panel(page, served, sig=_sig(genes=["GENE0001", "GENE0002"], **TWO), plots=(("cell-plot-C", None),))
+    _wait_coloured(page)
+    _inspect(page)
+    _wait_table(page)
+
+
+def test_the_chooser_ticks_the_inspected_and_computed_combinations_and_states_the_rest(page, served):
+    _ready_two(page, served)
+    page.click(f"{I} [data-inspect-export=scores]")
+    rows = {r[0]: r for r in _chooser_rows(page)}
+    assert rows["zscore_mean@X"][1:] == [True, "computed"]
+    assert rows["zscore_mean@counts"][1] is False
+    until(page, "(I) => [...document.querySelectorAll(I + ' .gsig-export__note')].every(e => /computed|second|minute/.test(e.textContent) && !/^ not computed$/.test(e.textContent))", I)
+    assert "not computed, about" in dict((r[0], r[2]) for r in _chooser_rows(page))["mean@counts"]
+    assert len(_calls(page, "compute")) == 1, "nothing is computed before Export"
+
+
+def test_two_combinations_give_two_columns_with_their_own_values(page, served):
+    _ready_two(page, served)
+    first = _numbers(page)
+    name, text = _download(page, "scores", ticks={"zscore_mean@X", "mean@counts"})
+    rows = list(csv.reader(io.StringIO(text)))
+    assert name == "T_cell_score_scores.csv"
+    assert rows[0] == ["cell", "T cell score · z-score mean · X", "T cell score · mean · counts"]
+    assert [float(r[1]) for r in rows[1:]] == pytest.approx(first, rel=1e-6, abs=1e-6)
+    assert len(rows) == N_OBS + 1
+    assert "Exported 2 combinations per cell." == page.inner_text(f"{I} .gsig-inspect__result")
+
+
+def test_an_uncomputed_combination_is_computed_once_on_export_and_not_before(page, served):
+    _ready_two(page, served)
+    n = len(_calls(page, "compute"))
+    _download(page, "scores", ticks={"zscore_mean@X", "sum@counts"})
+    assert len(_calls(page, "compute")) == n + 1
+    assert [c for c in _calls(page, "compute")][-1]["method"] == "sum"
+    _download(page, "scores", ticks={"sum@counts"})
+    assert len(_calls(page, "compute")) == n + 1, "held now"
+
+
+def test_gene_figures_of_two_combinations_are_one_long_table_with_a_combination_column(page, served):
+    _ready_two(page, served)
+    name, text = _download(page, "genes", ticks={"zscore_mean@X", "zscore_mean@counts"})
+    rows = list(csv.reader(io.StringIO(text)))
+    assert name == "T_cell_score_genes.csv"
+    assert {r[0] for r in rows[1:]} == {"T cell score · z-score mean · X", "T cell score · z-score mean · counts"}
+    assert len(rows) == 1 + 2 * 2
+
+
+def test_cancel_during_an_export_leaves_no_file(page, served):
+    _ready_two(page, served)
+    _slow(page, "auto", 3)
+    downloads = []
+    page.on("download", lambda d: downloads.append(d))
+    page.click(f"{I} [data-inspect-export=scores]")
+    for box in page.query_selector_all(f"{I} .gsig-export input[type=checkbox]"):
+        if box.get_attribute("data-option") == "mean@counts" and not box.is_checked():
+            box.click()
+    page.click(f"{I} [data-export-go]")
+    page.wait_for_selector(f"{I} [data-export-cancel]", timeout=20000)
+    page.click(f"{I} [data-export-cancel]")
+    page.wait_for_timeout(500)
+    assert "Export cancelled. No file was made." in page.inner_text(f"{I} .gsig-export__status")
+    assert downloads == []
+
+
+def test_a_combination_that_asks_first_is_asked_about_and_one_that_is_refused_is_named(page, served):
+    _ready_two(page, served)
+    _slow(page, "confirm", 130)
+    page.click(f"{I} [data-inspect-export=scores]")
+    until(page, "(I) => /asks first/.test(document.querySelector(I + ' .gsig-export').textContent)", I)
+    for box in page.query_selector_all(f"{I} .gsig-export input[type=checkbox]"):
+        if box.get_attribute("data-option") == "mean@counts" and not box.is_checked():
+            box.click()
+    page.click(f"{I} [data-export-go]")
+    page.wait_for_selector(f"{I} [data-export-compute]", timeout=20000)
+    assert "will take about 2 minutes" in page.inner_text(f"{I} .gsig-export__status")
+    page.click(f"{I} [data-export-abort]")
+    assert "No file was made" in page.inner_text(f"{I} .gsig-export__status")
+
+
+def test_a_refused_combination_is_left_out_and_named_and_the_rest_is_exported(page, served):
+    _ready_two(page, served)
+    _slow(page, "refused", 4000)
+    page.click(f"{I} [data-inspect-export=scores]")
+    until(page, "(I) => /refused/.test(document.querySelector(I + ' .gsig-export').textContent)", I)
+    for box in page.query_selector_all(f"{I} .gsig-export input[type=checkbox]"):
+        if box.get_attribute("data-option") == "mean@counts" and not box.is_checked():
+            box.click()
+    with page.expect_download() as info:
+        page.click(f"{I} [data-export-go]")
+    rows = list(csv.reader(io.StringIO(open(info.value.path(), encoding="utf-8").read())))
+    assert rows[0] == ["cell", "T cell score · z-score mean · X"]
+    assert "mean · counts" in page.inner_text(f"{I} .gsig-inspect__result") and "refused" in page.inner_text(f"{I} .gsig-inspect__result")

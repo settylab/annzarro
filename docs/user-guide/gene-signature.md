@@ -240,11 +240,19 @@ score**).
   cells shown. Genes that dominate the score (clipped in at least 1% of cells in a z-score mean), are
   barely detected (non-zero in under 1% of cells) or were left out (constant, or without a value) are
   flagged in words. Click a heading to sort and a gene to focus it.
-- **Export.** **Export gene figures** and **Export scores per cell** save CSV files built in the
-  browser from the score it holds: the gene figures (as fractions, not percentages), and one row per
-  cell shown with its name and score, empty where a cell has no score. A name that begins with `=`,
-  `+`, `-` or `@` is saved with a leading apostrophe, so a spreadsheet shows it as text rather than
-  running it as a formula.
+- **Export.** **Export scores per cell** and **Export gene figures** open a small chooser of the method · layer
+  combinations the source offers (the list plots choose from), as checkboxes. The one being inspected is ticked, and
+  any already computed. Nothing is computed until you press **Export**: a combination that is not computed is worked out
+  then, under the usual cost tiers. The chooser states each estimate beside it; one that asks first (over a minute) is
+  asked about before it starts ("will take about 2 minutes. Compute / Cancel"); one that would be refused is left out
+  and named. Progress is shown with **Cancel**, and cancelling leaves no file. The scores file has one row per cell
+  shown, the cell name and one column per chosen combination, headed with its full label ("T cell score · z-score mean ·
+  X"). The gene figures are in the long form, one row per combination and gene with the combination in the first column:
+  each combination's figures come from its own layer (a gene can be constant in one layer and not in another), and a
+  fixed header filters and pivots in any spreadsheet. A file with one combination is named for it; with several, for the
+  source alone. Large exports are built in pieces, so a million cells and six columns do not hold their text in memory
+  at once. A name that begins with `=`, `+`, `-` or `@` is saved with a leading apostrophe, so a spreadsheet shows it as
+  text rather than running it as a formula. A Gene Table has the same export.
 
 In a narrow panel (under 360 px) the table keeps only the gene and its detection rate; under 280 px
 the chart is replaced by its figures.
