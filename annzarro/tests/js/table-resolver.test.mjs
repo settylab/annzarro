@@ -13,6 +13,14 @@ const { TABLE_LIMITS, tierOf, findCycle, depthOf, describeUnresolved, createReso
 
 const tick = (ms = 5) => new Promise(r => setTimeout(r, ms));
 
+/** Wait for the real condition (never for a time): `n` builds have started on the fake host. */
+async function started(t, n = 1) {
+    for (let i = 0; t.builds.length < n; i++) {
+        assert.ok(i < 2000, `build ${n} never started`);
+        await tick(1);
+    }
+}
+
 /** A host with tables `names`, builds that wait until the test lets them finish. */
 function fake({ rows = 100, tables = ['A', 'B', 'C'], depends = {}, visible = {}, guard = () => ({ ok: true }) } = {}) {
     const open = new Set();
@@ -126,7 +134,7 @@ test('the result is published once and the dependants are told once', async () =
     const t = fake();
     t.wanted.p = 'A';
     t.resolver.need('A', 'p');
-    await tick();
+    await started(t);
     const told = t.notified.length;                       // "building"
     t.builds[0].finish({ passing: ['x'], seen: ['x', 'y'] });
     await tick();
@@ -139,7 +147,7 @@ test('a build nobody wants any more ends', async () => {
     const t = fake();
     t.wanted.p = 'A';
     t.resolver.need('A', 'p');
-    await tick();
+    await started(t);
     assert.equal(t.resolver.building, 'A');
     delete t.wanted.p;
     t.resolver.reassess();
@@ -154,7 +162,7 @@ test('a queued table nobody wants any more is not built', async () => {
     Object.assign(t.wanted, { p: 'A', q: 'B' });
     t.resolver.need('A', 'p');
     t.resolver.need('B', 'q');
-    await tick();
+    await started(t);
     delete t.wanted.q;
     t.builds[0].finish({ passing: [], seen: [] });
     await tick(20);
@@ -167,7 +175,7 @@ test('opening a table during its build ends the build; its late result is discar
     const t = fake();
     t.wanted.p = 'A';
     t.resolver.need('A', 'p');
-    await tick();
+    await started(t);
     const before = t.resolver.epochOf('A');
     t.resolver.claim('A');
     assert.ok(t.resolver.epochOf('A') > before);
@@ -186,7 +194,7 @@ test('a result that arrives after the table was opened, closed and the cells cha
     const t = fake();
     t.wanted.p = 'A';
     t.resolver.need('A', 'p');
-    await tick();
+    await started(t);
     t.cells.key = 'k2';
     t.builds[0].finish({ passing: [], seen: [] });
     await tick();
@@ -230,7 +238,7 @@ test('a deleted table ends its build and leaves no record', async () => {
     const t = fake();
     t.wanted.p = 'A';
     t.resolver.need('A', 'p');
-    await tick();
+    await started(t);
     t.resolver.drop('A');
     t.builds[0].finish({ passing: [], seen: [] });
     await tick();
@@ -243,7 +251,7 @@ test('other cells end the builds for the old ones and void what was decided', as
     t.wanted.p = 'A';
     t.resolver.need('A', 'p');
     t.resolver.accept('A');
-    await tick();
+    await started(t);
     assert.equal(t.resolver.building, 'A');
     t.cells.key = 'k2';
     t.resolver.cellsChanged();
@@ -257,7 +265,7 @@ test('a dataset switch or a panel set loaded stops everything', async () => {
     Object.assign(t.wanted, { p: 'A', q: 'B' });
     t.resolver.need('A', 'p');
     t.resolver.need('B', 'q');
-    await tick();
+    await started(t);
     t.resolver.reset();
     await tick(20);
     assert.equal(t.builds[0].job.signal.aborted, true);
@@ -269,7 +277,7 @@ test('a build that fails says why, once, and Retry builds again', async () => {
     const t = fake();
     t.wanted.p = 'A';
     t.resolver.need('A', 'p');
-    await tick();
+    await started(t);
     t.builds[0].fail(new Error('a column could not be read'));
     await tick();
     const s = t.resolver.need('A', 'p');
@@ -335,7 +343,7 @@ test('Cancel stops the load phase and returns to Build filter, whatever the size
     const t = fake();
     t.wanted.p = 'A';
     t.resolver.need('A', 'p');
-    await tick();
+    await started(t);
     assert.equal(t.resolver.status('A').state, 'building');
     assert.equal(t.resolver.cancel('A'), true);
     await tick();
@@ -352,7 +360,7 @@ test('the last step cannot be cancelled, and the notice says so', async () => {
     const t = fake();
     t.wanted.p = 'A';
     t.resolver.need('A', 'p');
-    await tick();
+    await started(t);
     const entering = t.builds[0].job.enter();
     assert.equal(t.resolver.status('A').frozen, true);
     assert.equal(t.resolver.cancel('A'), false);
