@@ -1170,7 +1170,7 @@ def test_new_signature_in_the_key_list_opens_a_signature_beside_the_plot_and_wir
     page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
     until(page, "(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].some(o => o.value === '__new_signature__')", C)
     labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => [o.textContent, o.disabled])", C)
-    assert labels == [["No signatures yet", True], ["New signature…", False]]
+    assert labels == [["No signatures or tables yet", True], ["New signature…", False]]
     page.select_option(f"{C} select.axis-key-select[data-axis='color']", "__new_signature__")
     until(page, "() => window.PanelManager.getPanelsByType('gene-signature').length === 1")
     new_id = page.evaluate("() => window.PanelManager.getPanelsByType('gene-signature')[0].getId()")

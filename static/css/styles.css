@@ -5021,5 +5021,6 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 
 /* A Gene Table's Scores offered and Inspect (panels/score-options): in the settings area under the column chooser,
    collapsed until opened, so the table stays a table first */
-.az-score-options { margin-top: 0.25rem; }
+.table-controls { flex-wrap: wrap; }                                  /* the section below takes its own line */
+.az-score-options { flex: 0 0 100%; min-width: 0; margin-top: 0.25rem; }
 .az-score-options .gsig-inspect.is-open { max-height: 420px; overflow: auto; }
