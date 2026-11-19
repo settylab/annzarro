@@ -294,7 +294,7 @@ def test_there_is_no_gene_limit_every_gene_can_be_ticked(page, served):
     # a single tick past 2,000 works the same way
     page.evaluate("(g) => window.PanelManager.getPanel('gene-signature-S').updateConfig({genes: g})",
                   [f"GENE{i:04d}" for i in range(2000)])
-    _search(page, "")
+    _search(page, "^GENE2500$")
     _row(page, "GENE2500").locator("input").click()
     until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 2001")
     # the recipe the server reads holds them all, and the route's fields

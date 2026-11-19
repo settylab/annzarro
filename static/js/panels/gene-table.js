@@ -436,9 +436,12 @@ const GeneTablePanel = (function() {
          * @param {string} title - New title
          */
         function setTitle(title) {
+            const renamed = title !== _title;
             _title = title;
             // Update title in settings to ensure it's included in getConfig()
             _settings.title = title;
+            // plots that show this table's score, and the source menus, name it by its title
+            if (renamed) signatureRenamed(_id);
         }
         
         /**
@@ -467,7 +470,9 @@ const GeneTablePanel = (function() {
             
             // Update title if provided
             if (config.title) {
+                const renamed = config.title !== _title;
                 _title = config.title;
+                if (renamed) signatureRenamed(_id);
             }
             
             // Update other settings; never the read-only views of the live

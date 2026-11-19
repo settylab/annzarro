@@ -135,13 +135,14 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     function read(handle) {
         const ctx = context();
         const sig = signatures.get(handle.sigId);
-        const base = { sigId: handle.sigId, title: sig ? sig.title : handle.lastTitle || '', held: null, key: null };
+        const base = { sigId: handle.sigId, title: sig ? sig.title : handle.lastTitle || '', held: null, key: null,
+            kind: handle.lastKind || 'signature' };
         if (!sig) {
             dropKey(handle);
             return { ...base, state: signatures.off && signatures.off() ? 'off' : 'deleted' };
         }
         handle.lastTitle = sig.title;
-        base.kind = sig.kind || 'signature';
+        base.kind = handle.lastKind = sig.kind || 'signature';
         // a table whose genes are not known yet: wait for them, the score is asked for once they are
         const gate = gateOf(sig, handle);
         if (gate) {

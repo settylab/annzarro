@@ -194,6 +194,35 @@ def test_a_closed_table_that_is_building_is_waited_for_with_the_resolvers_states
     assert not _calls(page), "no score is asked for before the genes are known"
 
 
+def test_closing_the_table_keeps_its_score_and_asks_for_nothing(page, served):
+    _open_table_link(page, served)
+    _wait_coloured(page)
+    shown = _numbers(page)
+    page.evaluate("(id) => PanelManager.closePanel(id)", TAB)
+    page.wait_for_function("(id) => !PanelManager.getActivePanels().includes(PanelManager.getPanel(id))", arg=TAB)
+    page.wait_for_timeout(1500)
+    assert len(_calls(page, "compute")) == 1 and _numbers(page) == shown, "a closed table keeps the genes that passed"
+    assert page.evaluate("(id) => PanelManager.getPanel(id).getConfig().closedSelection.passing.length", TAB) == 5
+
+
+def test_a_deleted_table_says_so_and_the_plot_keeps_its_setting(page, served):
+    _open_table_link(page, served)
+    _wait_coloured(page)
+    page.evaluate("(id) => PanelManager.removePanel(id)", TAB)
+    page.wait_for_selector(f"{C} .score-notice[data-state='deleted']", timeout=20000)
+    assert "Table 'Gene Table 1' was deleted." in _notice(page)["text"]
+    assert page.evaluate("() => PanelManager.getPanel('cell-plot-C').getConfig().color.key") == TAB
+
+
+def test_renaming_the_table_renames_its_score(page, served):
+    _open_table_link(page, served)
+    _wait_coloured(page)
+    page.evaluate("(id) => PanelManager.getPanel(id).setTitle('Marker genes')", TAB)
+    page.wait_for_function("() => PanelManager.getPanel('cell-plot-C').getConfig().color.label === 'Marker genes'", timeout=20000)
+    labels = page.eval_on_selector_all(f"{C} select.axis-key-select[data-axis='color'] option", "els => els.map(e => e.textContent)")
+    assert labels == ["Marker genes", "New signature…"], labels
+
+
 # ------------------------------------------------------------------ 4. a cycle
 
 def test_a_table_filtered_by_a_table_that_reads_its_score_is_a_cycle_and_asks_for_nothing(page, served):
