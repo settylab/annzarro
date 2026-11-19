@@ -155,6 +155,34 @@ A link can name many scores. At most two are computed at a time, those on screen
 off screen starts when it comes into view. Plots that show the same score share one request, and a score
 is kept in the browser (up to 1 GiB, least recently used first) so it is not asked for twice.
 
+## Inspect a score
+
+**Inspect**, under the gene list, shows what a score is made of. It is closed when the panel opens,
+and nothing is computed until you open it. It then reads the score through the same store the plots
+use, so a score that a plot already shows is not asked for again; a score nothing shows is computed
+under the same limits and states as any other (progress with **Cancel**, a question first when it
+is slow, a refusal with the reason, a failure with **Retry**, and edits held behind **Update
+score**).
+
+- **Aggregation.** Choose the z-score mean or the mean expression. Each is a separate score, kept
+  once however many places use it.
+- **Distribution.** A histogram of the score over the cells shown. Point at a bar, or focus the
+  chart and use the arrow keys, to read its range, its cell count and its share. Cells with no score
+  (every gene is missing there) are counted and stated under the chart and are not in it.
+- **Genes.** For each gene: the share of all cells where it is detected, its mean and SD, and the
+  share of cells where its z-score is clipped. These use every cell of the dataset, not only the
+  cells shown. Genes that dominate the score (clipped in at least 1% of cells in a z-score mean), are
+  barely detected (non-zero in under 1% of cells) or were left out (constant, or without a value) are
+  flagged in words. Click a heading to sort and a gene to focus it.
+- **Export.** **Export gene figures** and **Export scores per cell** save CSV files built in the
+  browser from the score it holds: the gene figures (as fractions, not percentages), and one row per
+  cell shown with its name and score, empty where a cell has no score. A name that begins with `=`,
+  `+`, `-` or `@` is saved with a leading apostrophe, so a spreadsheet shows it as text rather than
+  running it as a formula.
+
+In a narrow panel (under 360 px) the table keeps only the gene and its detection rate; under 280 px
+the chart is replaced by its figures.
+
 ## Close, reopen, share
 
 A signature is saved as configuration only: its title, its genes (sorted, so equal lists make equal

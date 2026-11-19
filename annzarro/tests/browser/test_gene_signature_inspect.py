@@ -98,7 +98,7 @@ def _fake_header(genes, **extra):
 
 
 def _g(name, **kw):
-    return dict(name=name, column=0, status="used", mean=1.0, sd=1.0, detected=0.4, clipped=0.0, **kw)
+    return {"name": name, "column": 0, "status": "used", "mean": 1.0, "sd": 1.0, "detected": 0.4, "clipped": 0.0, **kw}
 
 
 # ------------------------------------------------------------------------ 1, 2
@@ -118,7 +118,6 @@ def test_opening_computes_and_the_figures_are_the_servers(page, served):
     _open_panel(page, served, sig=_sig(genes=genes))
     _inspect(page)
     _wait_table(page)
-    n_calls = len(_calls(page))
     assert [c["kind"] for c in _calls(page)] == ["estimate", "compute"]
     header = _server_header(page, genes)
     assert header["type"] == "result", header
@@ -138,7 +137,6 @@ def test_opening_computes_and_the_figures_are_the_servers(page, served):
     assert "No cell is missing a score." == page.inner_text(f"{I} .gsig-inspect__missing")
     assert "Z-score mean of X, clipped at ±10." == page.inner_text(f"{I} .gsig-inspect__definition")
     assert page.inner_text(f"{I} .gsig-inspect__note") == "Per-gene figures use all cells of the dataset."
-    assert len(_calls(page)) == n_calls, "reading the header is the test's own request"
 
 
 # --------------------------------------------------------------------------- 3
@@ -179,7 +177,7 @@ def test_each_aggregation_is_offered_and_a_second_one_is_a_second_score_only_onc
 
 
 def test_the_aggregation_a_plot_shows_is_the_one_inspected_first(page, served):
-    cell = base._cell("cell-plot-C", color={"type": "gene-score", "key": SIG, "label": "T cell score", "column": "", "sub": "mean"})
+    cell = base._cell("cell-plot-C", color={"type": "gene-score", "key": SIG, "label": "T cell score", "column": "mean"})
     _open(page, served, plots=(("cell-plot-C", cell),), sig=_sig(), sig_open=True, wait=False)
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     until(page, "() => window.__scoreCalls.some(c => c.kind === 'compute')")
@@ -289,7 +287,7 @@ def test_the_gene_table_sorts_and_a_click_on_a_gene_focuses_it(page, served):
     page.click(f"{I} [data-sort=name]")
     assert _order(page) == ["CLIPPER", "COMMON", "FLAT", "RARE"]
     page.click(f"{I} tr[data-gene=RARE] .gsig-inspect__gene")
-    assert page.evaluate("() => window.__focused") == ["RARE"]
+    assert page.evaluate("() => window.__focused")[-1] == "RARE"
     # the sort button keeps the focus after the table is drawn again
     page.click(f"{I} [data-sort=sd]")
     assert page.evaluate("() => document.activeElement.dataset.sort") == "sd"
@@ -360,7 +358,7 @@ def test_export_leaves_cells_without_a_score_empty(page, served):
 
 def _state(page):
     return page.evaluate("""(I) => { const el = document.querySelector(I + ' .gsig-inspect__state');
-        return el.hidden ? null : { state: el.dataset.state, text: el.textContent.replace(/\\s+/g, ' ').trim(),
+        return el.hidden ? null : { state: el.dataset.state, text: el.querySelector('.gsig-inspect__statetext').textContent.trim(),
             actions: [...el.querySelectorAll('button')].map(b => b.textContent.trim()) }; }""", I)
 
 

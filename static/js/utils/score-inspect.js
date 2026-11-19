@@ -117,7 +117,7 @@ export function missingText(dist) {
  * - **Dominates**: in a z-score mean every gene has the same spread before
  *   clipping, so a gene dominates cells where it reaches the clip (clipped in
  *   at least 1% of cells). In a plain mean a gene dominates when its spread is
- *   at least half of all genes' spread together (variance share), or at least
+ *   at least half of all genes' spread together (variance share, and well above an equal share), or at least
  *   five times its equal share and a fifth of the total.
  * - **Left out**: constant in a z-score mean, or with no value in any cell.
  *
@@ -151,7 +151,7 @@ export function geneRows(genes, method) {
                 }
             } else if (used.length >= 2 && total > 0 && row.sd !== null) {
                 const share = row.sd ** 2 / total;
-                if (share >= 0.5 || (share >= 0.2 && share >= 5 / used.length)) {
+                if ((share >= 0.5 && share > 1.5 / used.length) || (share >= 0.2 && share >= 5 / used.length)) {
                     flags.push({ kind: 'dominates', text: `Dominates: its spread is about ${Math.round(share * 100)}% of all genes' spread together.` });
                 }
             }

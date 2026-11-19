@@ -446,7 +446,7 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
         try {
             names = await DataManager.allCellNames();
         } catch (error) {
-            throw new Error(`the names of this many cells are not in the browser (${error.message || 'too many'})`);
+            throw new Error(`the names of this many cells are not in the browser (${error.message || 'too many'})`, { cause: error });
         }
         if (_snap !== snap && (!_snap || _snap.values !== values)) throw new Error('the score changed while the names loaded. Try again.');
         const parts = scoreCsvParts(names, values, { header: 'score' });

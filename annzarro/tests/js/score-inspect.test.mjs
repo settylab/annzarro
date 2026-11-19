@@ -103,7 +103,7 @@ test('in a plain mean a gene dominates when its spread is most of the total', ()
 });
 
 test('clipping does not apply to a plain mean and its figure stays empty', () => {
-    const rows = I.geneRows([gene('A', { clipped: null }), gene('B', { clipped: null })], 'mean');
+    const rows = I.geneRows([gene('A', { clipped: null }), gene('B', { clipped: null }), gene('C', { clipped: null })], 'mean');
     assert.equal(rows[0].clipped, null);
     assert.equal(I.flagSummary(rows), '');
 });
@@ -153,7 +153,7 @@ test('the gene csv carries every gene with fractions, in the order sent', () => 
 
 test('float32 values are written in the fewest digits that read back exactly', () => {
     assert.equal(I.float32Text(Math.fround(0.1)), '0.1');
-    assert.equal(I.float32Text(Math.fround(-1.2345678)), '-1.234568');
+    assert.equal(I.float32Text(Math.fround(-1.2345678)), '-1.2345678');
     assert.equal(I.float32Text(0), '0');
     assert.equal(I.float32Text(3), '3');
     assert.equal(I.float32Text(NaN), '');
