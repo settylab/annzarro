@@ -1103,12 +1103,35 @@ def test_large_plot_mode_takes_scores_on_x_y_and_colour_but_no_3d(large_page, la
     assert "3D is not available" in _placeholder(large_page)["text"]
 
 
-def test_log_scale_on_a_score_axis(page, served):
-    cfg = _cell(x={**SCORE, "log": True}, color={"type": "none", "key": "", "column": ""})
-    _open(page, served, plots=(("cell-plot-C", cfg),))
-    _ready_plot(page)
-    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot')._fullLayout.xaxis.type", C) in ("log", "linear")
-    # switching the axis to a log scale by the panel's own setting redraws without a second request
-    page.evaluate("() => { const p = window.PanelManager.getPanel('cell-plot-C'); p.setConfig({ xaxisType: 'log' }); return p.refreshPlot(); }")
-    page.wait_for_timeout(1000)
-    assert len(_calls(page, "compute")) == 1
+def test_log_colour_scale_on_a_score_says_how_many_cells_sit_at_the_floor(page, served):
+    """AnnZarro has a log COLOUR scale (the Log button, with a floor) and no log axis type: the axes of every
+    source stay linear. A z-score is mostly negative; a log scale cannot show zero or below, so those cells are
+    not dropped but drawn in the lowest colour, and the colour controls say how many."""
+    _slow(page, "auto", 1)
+    _open(page, served, plots=(("cell-plot-C", None),), wait=False)
+    until(page, "() => window.__ctls.length === 1")
+    # 30 cells below zero, 5 at zero, 25 above: 1, 2, ... 25
+    values = [-3.0 + i * 0.1 for i in range(30)] + [0.0] * 5 + [float(i) for i in range(1, 26)]
+    _finish(page, 0, values)
+    _wait_coloured(page)
+    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot')._fullLayout.xaxis.type", C) == "linear"
+    page.evaluate("() => document.getElementById('log-color-cell-plot-C').click()")
+    until(page, "() => { const h = document.getElementById('color-log-hint-cell-plot-C'); return !!h && !h.hidden && h.textContent.length > 0; }")
+    hint = page.inner_text("#color-log-hint-cell-plot-C")
+    assert "36 of 60 cells have a score at or below 1" in hint, hint
+    assert "lowest colour" in hint
+    drawn = page.evaluate("""(t) => { const g = document.querySelector(t + ' .js-plotly-plot');
+        const d = g.data.find(d => d.marker && d.marker.colorscale && (d.marker.color || []).length > 1);
+        return Array.from(d.marker.color).map(Number); }""", C)
+    assert len(drawn) == 60, "no cell is dropped"
+    floor = min(drawn)
+    assert sum(1 for v in drawn if v == floor) == 36, "the 35 at or below zero (and the first positive, 1, which is the floor) share the lowest colour"
+    assert abs(max(drawn) - 1.39794) < 1e-4, "the largest score, 25, is log10 25"
+    ticks = page.evaluate("""(t) => { const g = document.querySelector(t + ' .js-plotly-plot');
+        const d = g.data.find(d => d.marker && d.marker.colorbar && d.marker.colorbar.tickvals); return d ? d.marker.colorbar.ticktext : null; }""", C)
+    assert ticks, "the colour bar is labelled in the score's own units"
+    assert len(_calls(page, "compute")) == 1, "the scale is applied to the score the plot holds"
+    # off again: the hint goes with the log scale, and the colours are the scores
+    page.evaluate("() => document.getElementById('log-color-cell-plot-C').click()")
+    page.wait_for_timeout(600)
+    assert min(_numbers(page)) == -3.0

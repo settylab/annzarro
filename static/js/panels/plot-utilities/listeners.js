@@ -733,7 +733,23 @@ export function setupColorControls(
         // units' range (103..9950 against log10 colours) until a Refresh.
         updateColorSliderUI(controlsContainer, data, settings, id);
         _updatePlotElements({ colors: true, colorRange: true });
+        _scoreLogHint();
     };
+    // A z-score is mostly negative, and a log colour scale cannot show a value of zero or below: those
+    // cells are not dropped, they share the lowest colour (the floor). Say how many, in plain words.
+    function _scoreLogHint() {
+        if (!settings.color || settings.color.type !== 'gene-score' || !settings.color.log || !data.colorLog || !Array.isArray(data.colorRaw)) return;
+        const floor = data.colorLog.floor;
+        let low = 0, finite = 0;
+        for (const v of data.colorRaw) {
+            if (typeof v !== 'number' || Number.isNaN(v)) continue;
+            finite++;
+            if (!(v > floor)) low++;
+        }
+        if (!low) return;
+        _logHint(`Log colour scale: ${low.toLocaleString('en-US')} of ${finite.toLocaleString('en-US')} cells have a score at or below ${Number(floor.toPrecision(3))} `
+            + 'and are all drawn in the lowest colour. A log scale cannot tell them apart.');
+    }
     $logColorButton.on('click', () => {
         if (!settings.color) return;
         _logHint('');
