@@ -48,9 +48,9 @@ The focused gene is one click away: when a gene is focused, **+ CD3D (focused)**
 adds it as one step. It is greyed, with the reason as its tooltip, when the gene is already in the list or
 not in the dataset, and follows the focus.
 
-**Add from** lists:
+**Add from** lists (the focused gene has its button, so it is not repeated here):
 
-- the gene in focus, and genes locked in a plot, each with its source ("Klf1 · fixed in Cell Plot 2");
+- genes locked in a plot, each with its source ("Klf1 · fixed in Cell Plot 2");
 - every gene table, with the number of genes passing its filter ("DE genes · 42 genes"). The genes
   are copied: later changes to the table do not change the signature.
 
