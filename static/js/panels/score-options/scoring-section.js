@@ -19,11 +19,11 @@
 import {
     BINS_RANGE, CONTROLS_RANGE, DEFAULT_BINS, DEFAULT_CLIP, DEFAULT_CONTROLS, DEFAULT_INPUT, DEFAULT_SEED, parseClipText,
     parseSeedText, parseThresholdText, parseWholeText
-} from '../utils/gene-signature.js';
+} from '../../utils/gene-signature.js';
 import {
     DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, PARAM_DEFAULTS, cleanLayers, cleanOffered, gradeOption, isMethodDefault, kindWord,
     methodShort, offeredSummary, offeredSummaryShort, useText
-} from '../utils/signature-options.js';
+} from '../../utils/signature-options.js';
 
 /** The help texts, so the page and its tests say the same thing. */
 export const SCORING_HELP = Object.freeze({

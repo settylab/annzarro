@@ -2,7 +2,7 @@
  * Inspecting a gene-signature score: the distribution of the score over the
  * cells shown, the figures of each gene, the plain-words flags, and the CSV
  * of both. Pure (no DOM, no page state), so Node tests cover all of it; the
- * panel (panels/gene-signature-inspect.js) draws it.
+ * panel (panels/score-options/inspect-section.js) draws it.
  *
  * The score is the Float32Array the score store holds. Cells whose score is
  * NaN (every gene missing there) or not finite are counted as missing and left

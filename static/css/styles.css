@@ -1588,7 +1588,7 @@ button.dtsb-button.dtsb-clear:hover {
     .gsig-row { transition: none; }
 }
 
-/* Inspect (panels/gene-signature-inspect.js): the score's distribution and each gene's figures, behind one button.
+/* Inspect (panels/score-options/inspect-section.js): the score's distribution and each gene's figures, behind one button.
    Thin bars, hairline axes, text in text tokens, both themes through --az-*. */
 .gsig-inspect { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--az-border); background: var(--az-surface-2); }
 .gsig-inspect.is-open { max-height: 65%; }
@@ -5018,3 +5018,8 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .az-score-held .dataTables_wrapper > .row:not(.az-sb-row):not(.az-search-row) { display: none; }
 .az-score-held-note { margin: 0.5rem 0; padding: 0.5rem 0.75rem; font-size: 0.875rem; }
 .az-score-group-title { font-size: 0.8125rem; margin-top: 0.25rem; }
+
+/* A Gene Table's Scores offered and Inspect (panels/score-options): in the settings area under the column chooser,
+   collapsed until opened, so the table stays a table first */
+.az-score-options { margin-top: 0.25rem; }
+.az-score-options .gsig-inspect.is-open { max-height: 420px; overflow: auto; }

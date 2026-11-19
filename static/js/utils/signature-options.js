@@ -229,3 +229,137 @@ export function paramsOf(recipe, method) {
     if (need.includes('detect_above')) out.detect_above = recipe.detect_above === undefined ? 0 : recipe.detect_above;
     return out;
 }
+
+// ---------------------------------------------------------------------------
+// The shared schema of the option fields
+//
+// A gene signature and a gene table are both sources of a gene score. They differ only in how the genes are chosen
+// (handpicked, or those passing a filter), so the fields that say HOW to score and WHAT to offer are one schema,
+// kept here: the signature stores them flat in its recipe, a gene table under `scoreOptions` in its configuration.
+// A later field (up and down genes) is added to OPTION_FIELDS and to nothing else.
+
+export const DEFAULT_CLIP = 10;
+export const DEFAULT_INPUT = 'X';
+/** The seed a control-adjusted score without one means (the server's DEFAULT_SEED). */
+export const DEFAULT_SEED = 0;
+export const DEFAULT_BINS = 25;
+export const DEFAULT_CONTROLS = 50;
+export const BINS_RANGE = [2, 200];
+export const CONTROLS_RANGE = [1, 1000];
+/** Largest seed the page accepts: whole numbers the browser holds exactly (the server takes up to 2^63 - 1). */
+export const MAX_SEED = Number.MAX_SAFE_INTEGER;
+
+/**
+ * A clip typed into the panel: a number above 0 (any size, `1e3` included).
+ * @param {string} text
+ * @returns {{ok: true, value: number} | {ok: false, error: string}}
+ */
+export function parseClipText(text) {
+    const trimmed = String(text === undefined || text === null ? '' : text).trim();
+    const value = trimmed === '' ? NaN : Number(trimmed);
+    if (!Number.isFinite(value) || value <= 0) return { ok: false, error: 'Enter a number above 0.' };
+    return { ok: true, value };
+}
+
+/**
+ * A seed typed into the panel: a whole number from 0 up.
+ * @param {string} text
+ * @returns {{ok: true, value: number} | {ok: false, error: string}}
+ */
+export function parseSeedText(text) {
+    const trimmed = String(text === undefined || text === null ? '' : text).trim();
+    const value = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
+    if (!Number.isSafeInteger(value)) return { ok: false, error: 'Enter a whole number from 0 up.' };
+    return { ok: true, value };
+}
+
+/** A whole number in [lo, hi], else the default. */
+export function cleanWhole(value, fallback, [lo, hi]) {
+    return Number.isInteger(value) && value >= lo && value <= hi ? value : fallback;
+}
+
+/** A detection threshold: a finite number from 0 up, else 0. */
+export function cleanThreshold(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+/**
+ * A detection threshold typed into the panel: a number from 0 up.
+ * @param {string} text
+ * @returns {{ok: true, value: number} | {ok: false, error: string}}
+ */
+export function parseThresholdText(text) {
+    const trimmed = String(text === undefined || text === null ? '' : text).trim();
+    const value = trimmed === '' ? NaN : Number(trimmed);
+    if (!Number.isFinite(value) || value < 0) return { ok: false, error: 'Enter a number from 0 up.' };
+    return { ok: true, value };
+}
+
+/** A clip as the recipe keeps it: a finite number above 0, `null` for none, else the default. */
+export function cleanClip(value) {
+    if (value === null) return null;
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+    return DEFAULT_CLIP;
+}
+
+/**
+ * A whole number typed into the panel, within [lo, hi].
+ * @param {string} text
+ * @param {number[]} range
+ * @returns {{ok: true, value: number} | {ok: false, error: string}}
+ */
+export function parseWholeText(text, [lo, hi]) {
+    const trimmed = String(text === undefined || text === null ? '' : text).trim();
+    const value = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
+    if (!Number.isSafeInteger(value) || value < lo || value > hi) {
+        return { ok: false, error: `Enter a whole number from ${lo.toLocaleString('en-US')} to ${hi.toLocaleString('en-US')}.` };
+    }
+    return { ok: true, value };
+}
+
+
+/** The keys of the option fields, in the order they are stored. */
+export const OPTION_KEYS = Object.freeze(['input', 'method', 'offered', 'layers', 'clip', 'seed', 'bins', 'controls', 'detect_above']);
+
+/**
+ * The option fields a saved config describes, every one valid. Anything missing or invalid takes its default, so a
+ * hand-edited link still opens. The default method is always one that is offered.
+ * @param {Object} [raw]
+ * @returns {{input: string, method: string, offered: string[], layers: string[], clip: (number|null), seed: (number|null),
+ *   bins: number, controls: number, detect_above: number}}
+ */
+export function normalizeOptions(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    let method = METHODS.includes(src.method) ? src.method : DEFAULT_METHOD;
+    const offered = cleanOffered(src.offered, method);
+    if (!offered.includes(method)) method = offered[0];
+    const input = typeof src.input === 'string' && src.input ? src.input : DEFAULT_INPUT;
+    return {
+        input, method, offered, layers: cleanLayers(src.layers, input),
+        clip: 'clip' in src ? cleanClip(src.clip) : DEFAULT_CLIP,
+        seed: Number.isInteger(src.seed) && src.seed >= 0 ? src.seed : null,
+        bins: cleanWhole(src.bins, DEFAULT_BINS, BINS_RANGE),
+        controls: cleanWhole(src.controls, DEFAULT_CONTROLS, CONTROLS_RANGE),
+        detect_above: cleanThreshold(src.detect_above)
+    };
+}
+
+/** The option fields as a config stores them: a plain copy. */
+export function storedOptions(options) {
+    const o = normalizeOptions(options);
+    return { ...o, offered: [...o.offered], layers: [...o.layers] };
+}
+
+/** The option fields of anything that has them (a recipe, a config): only the schema's keys. */
+export function pickOptions(source) {
+    const out = {};
+    if (source && typeof source === 'object') for (const key of OPTION_KEYS) if (key in source) out[key] = source[key];
+    return out;
+}
+
+/** Whether the options are exactly the defaults (a gene table then stores nothing). */
+export function isDefaultOptions(options) {
+    const a = normalizeOptions(options);
+    const b = normalizeOptions({});
+    return OPTION_KEYS.every(key => JSON.stringify(a[key]) === JSON.stringify(b[key]));
+}

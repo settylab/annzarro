@@ -109,7 +109,8 @@ export function delegate(container, eventType, selector, handler) {
 
 /**
  * Create and populate a select element with options
- * @param {Array<{value: string, text: string, selected?: boolean}>} options - Array of option objects
+ * @param {Array<{value: string, text: string, selected?: boolean, group?: string}>} options - Array of option objects;
+ *   options with the same `group` (adjacent) are put under one <optgroup> of that name
  * @param {jQuery|Element|string} [select] - Existing select element to populate (optional)
  * @returns {jQuery} The populated select element
  */
@@ -129,7 +130,16 @@ export function createSelect(options, select = null) {
       $option.prop('selected', true);
     }
     
-    $select.append($option);
+    if (option.group) {
+      let $group = $select.children('optgroup').last();
+      if (!$group.length || $group.attr('label') !== option.group) {
+        $group = jQuery('<optgroup></optgroup>').attr('label', option.group);
+        $select.append($group);
+      }
+      $group.append($option);
+    } else {
+      $select.append($option);
+    }
   });
   
   return $select;

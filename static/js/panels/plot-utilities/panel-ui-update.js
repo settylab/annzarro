@@ -5,6 +5,7 @@ import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../util
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { signatureList, NEW_SIGNATURE } from '../../utils/score-source.js';
+import { entityLabel, scoreKeyOptions } from '../../utils/score-source-panels.js';
 import { getSource } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -185,12 +186,12 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         // every signature, open or closed, by its title; the one this setting names stays listed when it
         // is gone, so the plot can say it was deleted
         const list = getSource('gene-score').entities();
-        keyOptions = list.map(sig => ({ value: sig.id, text: sig.title }));
-        // (a key left over from another source type is not a deleted signature: signature ids are panel ids)
-        if (settings.key && /^gene-signature-/.test(settings.key) && !list.some(sig => sig.id === settings.key)) {
+        keyOptions = scoreKeyOptions(list);
+        // (a key left over from another source type is not a deleted source: source ids are panel ids)
+        if (settings.key && /^gene-(signature|table)-/.test(settings.key) && !list.some(sig => sig.id === settings.key)) {
           keyOptions.push({ value: settings.key, text: `${settings.label || settings.key} (deleted)` });
         }
-        if (!keyOptions.length) keyOptions = [{ value: '', text: 'No signatures yet' }];
+        if (!list.length && !keyOptions.length) keyOptions = [{ value: '', text: 'No signatures or tables yet' }];
         keyOptions.push({ value: NEW_SIGNATURE, text: 'New signature…' });
         break;
       }
@@ -292,12 +293,12 @@ export function refreshScoreKeySelects() {
       && keySelect.closest('.plot-panel').querySelector(`select.axis-type-select[data-axis="${axis}"]`);
     if (!typeSelect || typeSelect.value !== 'gene-score') continue;
     const current = keySelect.value;
-    const options = list.map(sig => ({ value: sig.id, text: sig.title }));
+    const options = scoreKeyOptions(list);
     if (current && !list.some(sig => sig.id === current)) {
       const was = keySelect.selectedOptions[0];
       options.push({ value: current, text: `${(was && was.textContent.replace(/ \(deleted\)$/, '')) || current} (deleted)` });
     }
-    if (!options.length) options.push({ value: '', text: 'No signatures yet' });
+    if (!options.length) options.push({ value: '', text: 'No signatures or tables yet' });
     options.push({ value: NEW_SIGNATURE, text: 'New signature…' });
     const same = options.length === keySelect.options.length
       && options.every((o, i) => keySelect.options[i].value === o.value && keySelect.options[i].textContent === o.text);
@@ -333,7 +334,7 @@ export function refreshScoreKeySelects() {
           mine.push({ ...sub, label: `${sub.label} (no longer offered)` });
         }
       }
-      return mine.map((sub, i) => [`gene-score:${sig.id}:${sub.value}`, i === 0 ? sig.title : `${sig.title} · ${sub.label}`]);
+      return mine.map((sub, i) => [`gene-score:${sig.id}:${sub.value}`, i === 0 ? entityLabel(sig) : `${entityLabel(sig)} · ${sub.label}`]);
     });
     const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === 'Gene scores');
     const have = group ? Array.from(group.querySelectorAll('option')) : [];

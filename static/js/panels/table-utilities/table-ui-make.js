@@ -16,6 +16,7 @@ import { isScoreColumn } from '../../utils/score-column.js';
 import { getSource } from '../../utils/source-registry.js';
 import { DEFAULT_METHOD } from '../../utils/gene-signature.js';
 import '../../utils/score-source.js';
+import { entityLabel } from '../../utils/score-source-panels.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -347,7 +348,7 @@ export function buildScoreTab(id, settings) {
     list.innerHTML = '';
     const signatures = provider.entities();
     if (!signatures.length) {
-        list.innerHTML = '<div class="alert alert-secondary">No signatures yet. Add a Gene Signature panel to score cells.</div>';
+        list.innerHTML = '<div class="alert alert-secondary">No signatures or gene tables yet. Add a Gene Signature panel, or use a Gene Table, to score cells.</div>';
         return;
     }
     const allSubs = provider.subKeys();
@@ -358,8 +359,8 @@ export function buildScoreTab(id, settings) {
         group.dataset.signature = sig.id;
         const heading = document.createElement('div');
         heading.className = 'az-score-group-title fw-semibold';
-        heading.textContent = sig.title;
-        heading.title = sig.open ? sig.title : `${sig.title} (closed)`;
+        heading.textContent = entityLabel(sig);
+        heading.title = sig.open ? entityLabel(sig) : `${entityLabel(sig)} (closed)`;
         group.appendChild(heading);
         // what the signature offers, and any ticked column it no longer offers (kept, so the table still has it)
         const subs = (sig.subs || allSubs).slice();

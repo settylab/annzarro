@@ -14,47 +14,19 @@
  * renaming a signature changes nothing a score depends on.
  */
 import { setHash, stableStringify } from '../panels/gene-set-utilities/state.js';
-import { METHODS, DEFAULT_METHOD, cleanOffered, cleanLayers, paramsOf, methodInfo } from './signature-options.js';
+import {
+    METHODS, DEFAULT_METHOD, paramsOf, methodInfo, normalizeOptions,
+    DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE, MAX_SEED,
+    parseClipText, parseSeedText, parseWholeText, parseThresholdText, cleanWhole, cleanThreshold, cleanClip
+} from './signature-options.js';
 
-export { METHODS, DEFAULT_METHOD };
+export {
+    METHODS, DEFAULT_METHOD, DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE,
+    MAX_SEED, parseClipText, parseSeedText, parseWholeText, parseThresholdText, cleanWhole, cleanThreshold, cleanClip
+};
 
 /** The score's algorithm version (the server's ALGORITHM_VERSION). */
 export const RECIPE_VERSION = 1;
-
-export const DEFAULT_CLIP = 10;
-export const DEFAULT_INPUT = 'X';
-/** The seed a control-adjusted score without one means (the server's DEFAULT_SEED). */
-export const DEFAULT_SEED = 0;
-export const DEFAULT_BINS = 25;
-export const DEFAULT_CONTROLS = 50;
-export const BINS_RANGE = [2, 200];
-export const CONTROLS_RANGE = [1, 1000];
-/** Largest seed the page accepts: whole numbers the browser holds exactly (the server takes up to 2^63 - 1). */
-export const MAX_SEED = Number.MAX_SAFE_INTEGER;
-
-/**
- * A clip typed into the panel: a number above 0 (any size, `1e3` included).
- * @param {string} text
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseClipText(text) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = trimmed === '' ? NaN : Number(trimmed);
-    if (!Number.isFinite(value) || value <= 0) return { ok: false, error: 'Enter a number above 0.' };
-    return { ok: true, value };
-}
-
-/**
- * A seed typed into the panel: a whole number from 0 up.
- * @param {string} text
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseSeedText(text) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
-    if (!Number.isSafeInteger(value)) return { ok: false, error: 'Enter a whole number from 0 up.' };
-    return { ok: true, value };
-}
 
 /** Names in the order the lists and links keep them: by code point, so no locale changes a link. */
 export function compareNames(a, b) {
@@ -76,35 +48,6 @@ export function cleanNames(value) {
     return [...seen].sort(compareNames);
 }
 
-/** A whole number in [lo, hi], else the default. */
-export function cleanWhole(value, fallback, [lo, hi]) {
-    return Number.isInteger(value) && value >= lo && value <= hi ? value : fallback;
-}
-
-/** A detection threshold: a finite number from 0 up, else 0. */
-export function cleanThreshold(value) {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
-}
-
-/**
- * A detection threshold typed into the panel: a number from 0 up.
- * @param {string} text
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseThresholdText(text) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = trimmed === '' ? NaN : Number(trimmed);
-    if (!Number.isFinite(value) || value < 0) return { ok: false, error: 'Enter a number from 0 up.' };
-    return { ok: true, value };
-}
-
-/** A clip as the recipe keeps it: a finite number above 0, `null` for none, else the default. */
-export function cleanClip(value) {
-    if (value === null) return null;
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
-    return DEFAULT_CLIP;
-}
-
 /**
  * The recipe a saved config (a link, a panel set, an older version) describes.
  * Anything missing or invalid takes its default, so a hand-edited link still
@@ -124,22 +67,12 @@ export function normalizeRecipe(raw) {
         down = down.filter(name => !up.has(name));
         notes.push(`${both.length} gene${both.length === 1 ? ' was' : 's were'} on both sides and now count as up.`);
     }
-    let method = METHODS.includes(src.method) ? src.method : DEFAULT_METHOD;
-    const offered = cleanOffered(src.offered, method);
-    if (!offered.includes(method)) method = offered[0];           // the default method is always one that is offered
-    const input = typeof src.input === 'string' && src.input ? src.input : DEFAULT_INPUT;
-    const seed = Number.isInteger(src.seed) && src.seed >= 0 ? src.seed : null;
+    // how to score and what to offer: one schema, shared with the gene table (utils/signature-options.js)
+    const options = normalizeOptions(src);
     return {
         recipe: {
-            genes, down, input, method,
-            clip: 'clip' in src ? cleanClip(src.clip) : DEFAULT_CLIP,
-            seed,
-            bins: cleanWhole(src.bins, DEFAULT_BINS, BINS_RANGE),
-            controls: cleanWhole(src.controls, DEFAULT_CONTROLS, CONTROLS_RANGE),
-            detect_above: cleanThreshold(src.detect_above),
-            version: RECIPE_VERSION,
-            offered,
-            layers: cleanLayers(src.layers, input)
+            genes, down, ...options,
+            version: RECIPE_VERSION
         },
         notes
     };
@@ -197,21 +130,6 @@ export function definitionText(recipe) {
     if (recipe.method !== 'zscore_mean') return `${(methodInfo(recipe.method) || { label: recipe.method }).label} of ${recipe.input}`;
     const clip = recipe.clip === null ? 'not clipped' : `clipped at ±${recipe.clip}`;
     return `Z-score mean of ${recipe.input}, ${clip}`;
-}
-
-/**
- * A whole number typed into the panel, within [lo, hi].
- * @param {string} text
- * @param {number[]} range
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseWholeText(text, [lo, hi]) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
-    if (!Number.isSafeInteger(value) || value < lo || value > hi) {
-        return { ok: false, error: `Enter a whole number from ${lo.toLocaleString('en-US')} to ${hi.toLocaleString('en-US')}.` };
-    }
-    return { ok: true, value };
 }
 
 /**

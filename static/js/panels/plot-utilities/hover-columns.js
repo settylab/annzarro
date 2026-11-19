@@ -55,7 +55,8 @@ export function hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverO
       for (const sub of subs) if (!mine.some(m => m.value === sub.value) && scored.has(scoreValue(sig.id, sub.value))) mine.push({ ...sub, label: `${sub.label} (no longer offered)` });
       mine.forEach((sub, i) => {
         const value = scoreValue(sig.id, sub.value);
-        options.push({ value, label: i === 0 ? sig.title : `${sig.title} · ${sub.label}`, selected: !off && scored.has(value), group: 'Gene scores' });
+        const name = sig.kind === 'table' ? `${sig.title} (table)` : sig.title;       // (utils/score-source-panels.js entityLabel; this module has no imports)
+        options.push({ value, label: i === 0 ? name : `${name} · ${sub.label}`, selected: !off && scored.has(value), group: 'Gene scores' });
       });
     }
   }
