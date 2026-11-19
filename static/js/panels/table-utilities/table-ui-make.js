@@ -866,6 +866,9 @@ function updateSelectedColumnsList(id, settings) {
     // and go when the user removes them
     const orphans = (settings.columns || []).filter(c => isScoreColumn(c)
         && !document.getElementById(checkboxIdFor({ ...c, column: c.column || DEFAULT_METHOD }, id)));
+    // the score columns as they were: one already there on the same layer is kept as it is (an old column with no
+    // layer keeps its key, and so its filter conditions); only a new tick stores its layer
+    const before = (settings.columns || []).filter(isScoreColumn);
     settings.columns = [];
     
     // Add each selected column
@@ -880,6 +883,10 @@ function updateSelectedColumnsList(id, settings) {
             entry.label = checkbox.getAttribute('data-label') || undefined;
             const layer = checkbox.getAttribute('data-layer');
             if (layer) entry.layer = layer;
+            const sig = window.PanelManager ? window.PanelManager.getPanel(key) : null;
+            const input = sig && sig.getRecipe ? sig.getRecipe().input : 'X';
+            const had = before.find(c => c.key === key && (c.column || DEFAULT_METHOD) === column && (c.layer || input) === layer);
+            if (had) { delete entry.layer; if (had.layer) entry.layer = had.layer; }
         }
         settings.columns.push(entry);
         

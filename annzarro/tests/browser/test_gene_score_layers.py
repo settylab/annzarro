@@ -277,12 +277,12 @@ def test_table_columns_store_their_layer_and_an_old_column_without_one_reads_the
     page.check(f"#checkbox-gene-score-{SIG}-mean-of-counts-{T.TID}")
     page.click(f"#apply-columns-{T.TID}")
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer])", T.TID)
-    assert sorted(cfg) == [["mean", "X"], ["mean", "counts"], ["zscore_mean", "X"]], "every new choice stores its layer"
+    assert sorted(cfg, key=str) == sorted([["mean", "X"], ["mean", "counts"], ["zscore_mean", None]], key=str), "every new choice stores its layer; the old column is kept as it was"
     # the signature stops offering X: the columns do not move to counts
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
     page.wait_for_timeout(800)
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer])", T.TID)
-    assert sorted(cfg) == [["mean", "X"], ["mean", "counts"], ["zscore_mean", "X"]]
+    assert sorted(cfg, key=str) == sorted([["mean", "X"], ["mean", "counts"], ["zscore_mean", None]], key=str)
 
 
 def test_plot_hover_and_table_menus_leave_out_a_combination_that_cannot_be_computed(page, served):
