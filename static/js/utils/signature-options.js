@@ -50,6 +50,13 @@ export const DEFAULT_OFFERED = Object.freeze(['zscore_mean', 'mean', 'sum']);
  */
 export const DOWN_METHODS = Object.freeze(['zscore_mean', 'mean', 'control_adjusted']);
 
+/** How down genes weigh in the z-score mean and the mean: each gene equally (the default) or each side equally. */
+export const DOWN_WEIGHTS = Object.freeze(['gene', 'side']);
+export const DEFAULT_DOWN_WEIGHT = 'gene';
+/** The methods that have a weighting; control-adjusted is per side by construction. */
+export const WEIGHTED_METHODS = Object.freeze(['zscore_mean', 'mean']);
+export const cleanDownWeight = (value) => (DOWN_WEIGHTS.includes(value) ? value : DEFAULT_DOWN_WEIGHT);
+
 /** Why a method cannot score down genes, in the words the panel shows under it. */
 const DOWN_REASONS = Object.freeze({
     sum: 'A signed sum depends on how many genes each side has.',

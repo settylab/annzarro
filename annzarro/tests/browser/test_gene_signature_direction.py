@@ -521,3 +521,90 @@ def test_no_sign_column_without_the_switch(page, served):
     page.set_input_files(f"{S} [data-testid=gp-file]", files=[{"name": "de.csv", "mimeType": "text/csv", "buffer": csv.encode()}])
     page.wait_for_selector(f"{S} [data-testid=gp-column]")
     assert page.locator(f"{S} [data-testid=gp-signcol]").count() == 0
+
+
+# ------------------------------------------------------------------ how down genes weigh
+
+def _weight(page, method, value):
+    page.click(f"{S} [data-method='{method}'] [data-down-weight='{value}']")
+    until(page, "([id, v]) => window.PanelManager.getPanel(id).getRecipe().down_weight === v", [SIG, value])
+
+
+def test_the_weighting_is_offered_under_the_two_means_only_with_the_switch_on(page, served):
+    _panel(page, served, genes=FIRST[:4], down=FIRST[4:], offered=ALL_METHODS)
+    _expand(page)
+    for method in ("zscore_mean", "mean"):
+        group = page.locator(f"{S} [data-method='{method}'] [data-weighting]")
+        assert group.count() == 1, method
+        assert "Down genes" in group.inner_text() and "each gene weighs equally" in group.inner_text() and "each side weighs equally" in group.inner_text()
+        assert page.is_checked(f"{S} [data-method='{method}'] [data-down-weight='gene']"), "each gene is the default"
+    assert page.locator(f"{S} [data-method='control_adjusted'] [data-weighting]").count() == 0
+    assert "so each side always weighs equally" in page.inner_text(f"{S} [data-method='control_adjusted'] [data-down-weight-why]")
+    assert page.locator(f"{S} [data-method='sum'] [data-weighting]").count() == 0
+    assert "each gene weighs equally" in page.inner_text(f"{S} [data-method='mean'] [data-signed]")
+
+
+def test_no_weighting_choice_before_the_switch(page, served):
+    _panel(page, served, genes=FIRST)
+    _expand(page)
+    assert page.locator(f"{S} [data-weighting]").count() == 0
+    assert page.locator(f"{S} [data-down-weight-why]").count() == 0
+
+
+def test_choosing_by_side_changes_the_formula_the_key_the_link_and_the_request(page, served):
+    page.add_init_script(RECORD)
+    root, store = served
+    _open(page, served, plots=(("cell-plot-C", _cell(color={**SCORE, "column": "mean"})),),
+          sig=_sig(["GENE0001", "GENE0002"], down=["GENE0003"]), sig_open=True)
+    _wait_coloured(page, C)
+    sent = [r for r in page.evaluate("() => window.__recipes") if r["for"] == "compute"]
+    assert sent[-1]["down_weight"] == "gene"
+    _expand(page)
+    key = _hash(page)
+    n = len(_calls(page, "compute"))
+    _weight(page, "mean", "side")
+    assert _hash(page) != key
+    # the other method's control follows: it is one setting
+    assert page.is_checked(f"{S} [data-method='zscore_mean'] [data-down-weight='side']")
+    assert "each side weighs equally" in page.inner_text(f"{S} [data-method='mean'] [data-signed]")
+    until(page, "(n) => window.__scoreCalls.filter(c => c.kind === 'compute').length === n + 1", n)
+    assert [r for r in page.evaluate("() => window.__recipes") if r["for"] == "compute"][-1]["down_weight"] == "side"
+    # outside the app the name says so; with the default it does not
+    lines = page.evaluate("""async (id) => { const m = await import('/static/js/utils/score-source.js');
+        return m.scoreLabelLines({ type: 'gene-score', key: id, column: 'mean', label: 'T cell score' }); }""", SIG)
+    assert lines[1].startswith("mean, each side weighs equally")
+    cfg = page.evaluate("() => window.sessionManager.captureView().layout.panelConfigs['gene-signature-S']")
+    assert cfg["down_weight"] == "side"
+    by_side = _hash(page)
+    payload = page.evaluate("""async () => { const { encodeViewPayload } = await import('/static/js/utils/deeplink.js');
+        return await encodeViewPayload(window.sessionManager.captureView()); }""")
+    page.goto("about:blank")
+    page.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={payload}")
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    assert _recipe(page)["down_weight"] == "side" and _hash(page) == by_side
+    # back to each gene: the key is the first one again and the label is plain
+    _expand(page)
+    _weight(page, "zscore_mean", "gene")
+    assert _hash(page) == key
+    assert "down_weight" not in page.evaluate("() => window.sessionManager.captureView().layout.panelConfigs['gene-signature-S']")
+    lines = page.evaluate("""async (id) => { const m = await import('/static/js/utils/score-source.js');
+        return m.scoreLabelLines({ type: 'gene-score', key: id, column: 'mean', label: 'T cell score' }); }""", SIG)
+    assert "each side" not in lines[1]
+
+
+def test_an_old_configuration_with_down_genes_reads_as_each_gene(page, served):
+    _panel(page, served, genes=FIRST[:4], down=FIRST[4:])
+    assert _recipe(page)["down_weight"] == "gene"
+    cfg = page.evaluate("() => window.sessionManager.captureView().layout.panelConfigs['gene-signature-S']")
+    assert "down_weight" not in cfg and cfg["down"] == FIRST[4:]
+
+
+def test_reset_to_defaults_puts_each_gene_back(page, served):
+    _panel(page, served, genes=FIRST[:4], down=FIRST[4:], down_weight="side")
+    _expand(page)
+    assert page.is_checked(f"{S} [data-method='mean'] [data-down-weight='side']")
+    page.click(f"{S} .gsig-scoring__reset")
+    until(page, "(id) => window.PanelManager.getPanel(id).getRecipe().down_weight === 'gene'", SIG)
+
+
+ALL_METHODS = ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"]

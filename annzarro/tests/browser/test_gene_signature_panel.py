@@ -299,7 +299,7 @@ def test_there_is_no_gene_limit_every_gene_can_be_ticked(page, served):
     until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 2001")
     # the recipe the server reads holds them all, and the route's fields
     body = page.evaluate("async () => { const m = await import('/static/js/utils/gene-signature.js'); return m.serverRecipe(window.PanelManager.getPanel('gene-signature-S').getRecipe()); }")
-    assert sorted(body) == ["bins", "clip", "controls", "detect_above", "down", "genes", "input", "method", "seed", "version"] and len(body["genes"]) == 2001
+    assert sorted(body) == ["bins", "clip", "controls", "detect_above", "down", "down_weight", "genes", "input", "method", "seed", "version"] and len(body["genes"]) == 2001
 
 
 def test_the_list_is_virtualised_and_the_last_row_is_reachable(page, served):

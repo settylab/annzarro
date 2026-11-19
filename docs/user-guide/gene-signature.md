@@ -226,6 +226,15 @@ signature. Tick **Score some genes as down** in **Scores offered** and every sel
   subtracts the mean of its own control genes, as two calls of scanpy's `score_genes` would, and the two are subtracted.
   The panel states the formula with your numbers ("Score = average of the 42 up genes minus average of the 8 down
   genes"), and the summary line says "50 genes selected: 42 up, 8 down".
+- **How down genes weigh.** For the z-score mean and the mean, **Down genes** under the method chooses between **each
+  gene weighs equally** (the default) and **each side weighs equally**. By gene, the signs of the down genes are
+  flipped and every usable gene is averaged: (sum of up - sum of down) / (number of up + number of down), so 40 up
+  genes and 4 down genes count 40 to 4. By side, it is the mean of the up genes minus the mean of the down genes, as two
+  scanpy `score_genes` calls subtracted, so the 4 down genes weigh as much as the 40 up. With equal sides the by-side
+  score is exactly twice the by-gene score. With one side empty both are the same score. A gene with no value in a cell
+  is left out of that cell's count. **Control-adjusted** has no choice: each side always subtracts its own controls.
+  The method's definition line states the formula in force, and a colour bar or CSV header says "each side weighs
+  equally" when you chose that.
 - **Only down genes** give the negative of their average, and the panel says so. A side with no usable gene (not in
   this dataset, constant, or no values) is left out, and the panel names it ("None of the 8 down genes are in this
   dataset, so only up genes are scored"). With no usable gene on either side there is no score.

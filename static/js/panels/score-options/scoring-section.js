@@ -20,9 +20,9 @@ import {
     BINS_RANGE, CONTROLS_RANGE, DEFAULT_BINS, DEFAULT_CLIP, DEFAULT_CONTROLS, DEFAULT_INPUT, DEFAULT_SEED, parseClipText,
     parseSeedText, parseThresholdText, parseWholeText
 } from '../../utils/gene-signature.js';
-import { directionFormula } from '../../utils/gene-signature.js';
+import { directionFormula, downDefinition, DEFAULT_DOWN_WEIGHT, cleanDownWeight } from '../../utils/gene-signature.js';
 import {
-    DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, canScoreDown, PARAM_DEFAULTS, cleanLayers, cleanOffered, gradeOption, isMethodDefault, kindWord,
+    DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, WEIGHTED_METHODS, canScoreDown, PARAM_DEFAULTS, cleanLayers, cleanOffered, gradeOption, isMethodDefault, kindWord,
     methodShort, offeredSummary, offeredSummaryShort, useText
 } from '../../utils/signature-options.js';
 
@@ -36,7 +36,11 @@ export const SCORING_HELP = Object.freeze({
     layers: 'Plots and tables choose among the offered layers.',
     lastLayer: 'At least one layer stays offered.',
     lastMethod: 'At least one option stays offered.',
-    directions: 'Score = average of up genes minus average of down genes.'
+    directions: 'Score = average of up genes minus average of down genes.',
+    downWeight: 'Down genes',
+    downWeightGene: 'each gene weighs equally',
+    downWeightSide: 'each side weighs equally',
+    downWeightWhy: 'Control-adjusted takes each side minus its own controls, so each side always weighs equally.'
 });
 
 /** Layers listed before "Show more": the offered ones and this many others. */
@@ -267,14 +271,15 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         notice = null;
         lastClip = DEFAULT_CLIP;
         apply({ input: DEFAULT_INPUT, clip: DEFAULT_CLIP, seed: null, bins: DEFAULT_BINS, controls: DEFAULT_CONTROLS, detect_above: 0,
-            method: DEFAULT_METHOD, offered: [...DEFAULT_OFFERED], layers: [DEFAULT_INPUT] });
+            method: DEFAULT_METHOD, offered: [...DEFAULT_OFFERED], layers: [DEFAULT_INPUT],
+            ...(directions ? { down_weight: DEFAULT_DOWN_WEIGHT } : {}) });
         paint();
     }
 
     function isDefault(recipe) {
         return recipe.input === DEFAULT_INPUT && recipe.clip === DEFAULT_CLIP && (recipe.seed === null || recipe.seed === DEFAULT_SEED)
             && recipe.bins === DEFAULT_BINS && recipe.controls === DEFAULT_CONTROLS && recipe.detect_above === 0
-            && recipe.method === DEFAULT_METHOD
+            && recipe.method === DEFAULT_METHOD && (!recipe.down_weight || recipe.down_weight === DEFAULT_DOWN_WEIGHT)
             && cleanOffered(recipe.offered, recipe.method).join() === DEFAULT_OFFERED.join()
             && cleanLayers(recipe.layers, recipe.input).join() === DEFAULT_INPUT;
     }
@@ -294,6 +299,19 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         return lines;
     }
 
+    /** "Down genes: (o) each gene weighs equally ( ) each side weighs equally", the same setting under each method it applies to. */
+    function weightControl(recipe, method) {
+        const now = cleanDownWeight(recipe.down_weight);
+        const group = `gsig-dw-${id}-${method}`;
+        const radio = (value, text) => {
+            const input = el('input', { type: 'radio', name: group, id: sid(`dw-${method}-${value}`), checked: now === value,
+                data: { downWeight: value }, on: { change: () => { if (input.checked) { apply({ down_weight: value }); paint(); } } } });
+            return el('label', { class: 'gsig-scoring__field', for: sid(`dw-${method}-${value}`) }, input, ` ${text}`);
+        };
+        return el('div', { class: 'gsig-scoring__params', role: 'radiogroup', aria: { label: SCORING_HELP.downWeight }, data: { weighting: method } },
+            el('span', { text: `${SCORING_HELP.downWeight}: ` }), radio('gene', SCORING_HELP.downWeightGene), radio('side', SCORING_HELP.downWeightSide));
+    }
+
     function paintMethods(recipe) {
         makeBoxes();
         D.clear(methodRows);
@@ -310,8 +328,13 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
             const head = el('div', { class: 'gsig-scoring__optionhead' }, box,
                 el('label', { for: sid(`offer-${info.value}`), class: 'gsig-scoring__optionname', text: info.label }),
                 use ? el('span', { class: 'gsig-scoring__use', data: { inUse: info.value }, text: use }) : null);
+            const signedText = recipe.directions ? downDefinition(recipe, info.value) : '';
             const row = el('div', { class: `gsig-scoring__option${on ? '' : ' is-off'}`, data: { method: info.value } },
-                head, el('div', { class: 'gsig-scoring__definition', text: info.definition }));
+                head, el('div', { class: 'gsig-scoring__definition', data: signedText ? { signed: '' } : {}, text: signedText || info.definition }));
+            if (on && recipe.directions && info.value === 'control_adjusted') {
+                row.append(el('div', { class: 'gsig-scoring__help', data: { downWeightWhy: '' }, text: SCORING_HELP.downWeightWhy }));
+            }
+            if (on && recipe.directions && WEIGHTED_METHODS.includes(info.value)) row.append(weightControl(recipe, info.value));
             if (on && params[info.value]) {
                 const block = params[info.value]();
                 if (!isMethodDefault(recipe, info.value)) {

@@ -37,7 +37,7 @@ function table({ id = 'gene-table-1', title = 'Gene Table 1', entries = [0, 2, 4
 }
 const signature = (id, genes) => ({ getId: () => id, getTitle: () => 'Sig', getType: () => 'gene-signature',
     getRecipe: () => ({ genes, down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, bins: 25, controls: 50, detect_above: 0,
-        version: 1, offered: ['zscore_mean', 'mean', 'sum'], layers: ['X'], directions: false }) });
+        version: 1, offered: ['zscore_mean', 'mean', 'sum'], layers: ['X'], directions: false, down_weight: 'gene' }) });
 
 function adapterOf(panels, { open = new Set(), resolver = null } = {}) {
     return P.createSourceAdapter({

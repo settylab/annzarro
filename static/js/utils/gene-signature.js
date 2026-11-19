@@ -15,13 +15,13 @@
  */
 import { setHash, stableStringify } from '../panels/gene-set-utilities/state.js';
 import {
-    METHODS, DEFAULT_METHOD, DOWN_METHODS, canScoreDown, paramsOf, methodInfo, normalizeOptions,
+    METHODS, DEFAULT_METHOD, DOWN_METHODS, DOWN_WEIGHTS, DEFAULT_DOWN_WEIGHT, WEIGHTED_METHODS, cleanDownWeight, canScoreDown, paramsOf, methodInfo, normalizeOptions,
     DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE, MAX_SEED,
     parseClipText, parseSeedText, parseWholeText, parseThresholdText, cleanWhole, cleanThreshold, cleanClip
 } from './signature-options.js';
 
 export {
-    METHODS, DEFAULT_METHOD, DOWN_METHODS, canScoreDown, DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE,
+    METHODS, DEFAULT_METHOD, DOWN_METHODS, DOWN_WEIGHTS, DEFAULT_DOWN_WEIGHT, WEIGHTED_METHODS, cleanDownWeight, canScoreDown, DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE,
     MAX_SEED, parseClipText, parseSeedText, parseWholeText, parseThresholdText, cleanWhole, cleanThreshold, cleanClip
 };
 
@@ -71,7 +71,7 @@ export function normalizeRecipe(raw) {
     const options = normalizeOptions(src);
     return {
         recipe: {
-            genes, down, ...options,
+            genes, down, down_weight: cleanDownWeight(src.down_weight), ...options,
             // the panel's own switch (Score some genes as down): on whenever there are down genes, and kept on when
             // it was left on with none. Not a score setting: it is in no cache key and not sent to the server.
             directions: src.directions === true || down.length > 0,
@@ -90,7 +90,7 @@ export function serverRecipe(recipe) {
     return {
         genes: [...recipe.genes], down: [...recipe.down], input: recipe.input, method: recipe.method,
         clip: recipe.clip, seed: recipe.seed, bins: recipe.bins, controls: recipe.controls,
-        detect_above: recipe.detect_above, version: recipe.version
+        detect_above: recipe.detect_above, version: recipe.version, down_weight: cleanDownWeight(recipe.down_weight)
     };
 }
 
@@ -100,6 +100,8 @@ export function serverRecipe(recipe) {
  */
 export function storedRecipe(recipe) {
     const stored = { ...serverRecipe(recipe), offered: [...recipe.offered], layers: [...recipe.layers] };
+    // the default is not written: a link without it means each gene weighs equally
+    if (stored.down_weight === DEFAULT_DOWN_WEIGHT) delete stored.down_weight;
     if (recipe.directions) stored.directions = true;          // absent when off: a link without down genes is what it was
     return stored;
 }
@@ -124,8 +126,28 @@ export function recipeHash(recipe) {
         controls: 'controls' in params ? params.controls : null,
         detect_above: 'detect_above' in params ? params.detect_above : null,
         up: setHash(recipe.genes),
-        down: setHash(recipe.down)
+        down: setHash(recipe.down),
+        // only where it changes a number: the two means with down genes
+        ...(effectiveDownWeight(recipe, recipe.method) ? { dw: effectiveDownWeight(recipe, recipe.method) } : {})
     });
+}
+
+/** 'gene' or 'side' when `method` of `recipe` has a weighting (the two means, with down genes), else null. */
+export function effectiveDownWeight(recipe, method) {
+    return recipe.down && recipe.down.length && WEIGHTED_METHODS.includes(method) ? cleanDownWeight(recipe.down_weight) : null;
+}
+
+/**
+ * A method's definition when the signature has down genes: the formula in plain words, with the weighting in force.
+ * @returns {string} '' when there is nothing to add (no down genes, or a method with no signed version)
+ */
+export function downDefinition(recipe, method) {
+    if (!recipe.down || !recipe.down.length || !canScoreDown(method)) return '';
+    if (method === 'control_adjusted') return 'Up genes minus their controls, less down genes minus their own controls. Each side takes its own controls, so there is no weighting to choose.';
+    const what = method === 'zscore_mean' ? 'z-scores' : 'values';
+    return effectiveDownWeight(recipe, method) === 'side'
+        ? `Mean of the up genes' ${what} minus the mean of the down genes' ${what}: each side weighs equally.`
+        : `Up genes' ${what} minus down genes' ${what}, averaged over all genes: each gene weighs equally.`;
 }
 
 // ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ import { createScoreApi } from './gene-score-client.js';
 import { describeScore, worstNotice } from './score-notices.js';
 import { registerSource, subKeyOf, layerOf } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
-import { DEFAULT_METHOD } from './gene-signature.js';
+import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
 import { DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
 import { createSourceAdapter, isSourceType, kindOfType, optionFieldsOf } from './score-source-panels.js';
 import { findCycle, TableResolver } from './table-resolver.js';
@@ -204,7 +204,10 @@ export function scoreLabelLines(setting) {
     const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
     const own = panel && isSource(panel) ? optionFieldsOf(panel).input : 'X';
     const sub = subKeyOf(setting);
-    return [title, `${SUB_LABELS[sub] || sub} · ${layerOf(setting) || own}`];
+    // down genes weighed by side (not the default) change the numbers, so the name says so wherever the score leaves the app
+    const recipe = panel && isSource(panel) && typeof panel.getRecipe === 'function' ? panel.getRecipe() : null;
+    const by = recipe && effectiveDownWeight(recipe, sub) === 'side' ? ', each side weighs equally' : '';
+    return [title, `${SUB_LABELS[sub] || sub}${by} · ${layerOf(setting) || own}`];
 }
 
 /** The one-line form of scoreLabelLines: "T cell score · z-score mean · X". */
