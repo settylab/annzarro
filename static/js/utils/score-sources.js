@@ -21,7 +21,7 @@
  * reply), and otherwise the edits collect (`held`) until `update(id)` -
  * "Update score". Dependants keep the previous score meanwhile.
  */
-import { recipeHash } from './gene-signature.js';
+import { recipeHash, DEFAULT_METHOD } from './gene-signature.js';
 import { scoreKey } from './score-store.js';
 
 /** Seconds the estimate may be to apply an edit at once, when the reply does not say. */
@@ -60,6 +60,10 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     let token = 0;
 
     const hashOf = (recipe) => recipeHash(recipe);
+    // The aggregation belongs to the consumer, not the signature: a score is the signature's genes and
+    // shared settings read with one method. Edits are compared without it.
+    const withMethod = (recipe, sub) => ({ ...recipe, method: sub || DEFAULT_METHOD });
+    const editHash = (recipe) => hashOf(withMethod(recipe, DEFAULT_METHOD));
     const genesIn = (recipe) => recipe.genes.length + (recipe.down ? recipe.down.length : 0);
 
     function appliedOf(id, sig) {
@@ -109,7 +113,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             return { ...base, state: signatures.off && signatures.off() ? 'off' : 'deleted' };
         }
         handle.lastTitle = sig.title;
-        const recipe = appliedOf(handle.sigId, sig);
+        const recipe = withMethod(appliedOf(handle.sigId, sig), handle.sub);
         const held = heldOf(handle.sigId);
         if (genesIn(recipe) === 0) {
             dropKey(handle);
@@ -175,7 +179,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         const p = pending.get(id);
         if (!sig || !p || p.token !== mine) return;
         p.timer = null;
-        const live = copyRecipe(sig.recipe());
+        const live = withMethod(copyRecipe(sig.recipe()), DEFAULT_METHOD);
         if (genesIn(live) === 0) { apply(id); return; }
         const ctx = context();
         const reply = await store.estimateFor(live, ctx.dataset, hashOf(live))
@@ -199,9 +203,9 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
          * @param {string} id
          * @param {{onChange: (state: Object) => void, visible?: () => boolean, host?: any, role?: string}} spec
          */
-        watch(id, { onChange, visible = () => true, host = null, role = '' }) {
+        watch(id, { onChange, visible = () => true, host = null, role = '', sub = null }) {
             const handle = {
-                sigId: id, key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
+                sigId: id, sub, key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
                 read() { return read(handle); },
                 release() {
                     if (handle.released) return;
@@ -243,7 +247,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             const was = applied.get(id);
             if (!was) { appliedOf(id, sig); notifySource(id); return; }
             const p = pending.get(id);
-            if (hashOf(live) === hashOf(was)) {
+            if (editHash(live) === editHash(was)) {
                 // edited back to what is shown
                 if (p && p.timer) clearTimer(p.timer);
                 pending.delete(id);
@@ -251,9 +255,9 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
                 return;
             }
             // told again of a recipe it already knows (the page rechecks after panels change): not another edit
-            if (p && p.lastHash === hashOf(live)) { notifySource(id); return; }
+            if (p && p.lastHash === editHash(live)) { notifySource(id); return; }
             const next = p || { edits: 0, seconds: null, held: false, timer: null, token: 0, lastHash: null };
-            next.lastHash = hashOf(live);
+            next.lastHash = editHash(live);
             next.edits++;
             next.token = ++token;
             next.held = false;

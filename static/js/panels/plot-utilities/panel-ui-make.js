@@ -9,6 +9,7 @@ import * as $ from '../../utils/jquery-helpers.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { populateHoverSelect } from './hover-columns.js';
 import { signatureList } from '../../utils/score-source.js';
+import { sourcesFor } from '../../utils/source-registry.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, trackValue } from '../../utils/slider-scales.js';
 
@@ -376,7 +377,8 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
         { value: 'obsm', text: 'obsm', selected: true },
         { value: 'obsp', text: 'obsp' },
         { value: 'layer', text: 'layer' },
-        { value: 'gene-score', text: 'gene-score' }
+        // the sources with three levels that a cell plot accepts for this axis (utils/source-registry.js)
+        ...sourcesFor('cell-plot', axis === 'color' ? 'color' : axis).map(p => ({ value: p.type, text: p.label }))
       ];
       
       options.forEach(opt => {

@@ -60,17 +60,17 @@ export const ADD_SOURCES = [];
 export const USE_IN = [];
 
 /**
- * Make `plot`'s colour this signature's score, as the user would with the
- * plot's own menus: the colour source becomes gene-score and its signature
- * this one. A signature's score is computed when the plot needs it.
+ * Make one of `plot`'s sources (x, y or colour) this signature's score, as the user would with the
+ * plot's own menus: the source becomes gene-score and its signature this one, with the default
+ * aggregation. A signature's score is computed when the plot needs it.
  */
-async function colourPlot(plot, id, title) {
+async function useAs(plot, axis, id, title) {
     const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(plot.getId())}"]`);
-    const typeSelect = tile && tile.querySelector('select.axis-type-select[data-axis="color"]');
-    const keySelect = tile && tile.querySelector('select.axis-key-select[data-axis="color"]');
-    const current = () => (plot.getConfig() || {}).color || {};
+    const typeSelect = tile && tile.querySelector(`select.axis-type-select[data-axis="${axis}"]`);
+    const keySelect = tile && tile.querySelector(`select.axis-key-select[data-axis="${axis}"]`);
+    const current = () => (plot.getConfig() || {})[axis] || {};
     if (!typeSelect || !keySelect) {
-        plot.setConfig({ color: { ...current(), type: 'gene-score', key: id, label: title, column: '' } });
+        plot.setConfig({ [axis]: { ...current(), type: 'gene-score', key: id, label: title, column: '' } });
         if (plot.refreshPlot) await plot.refreshPlot();
         return;
     }
@@ -92,10 +92,15 @@ async function colourPlot(plot, id, title) {
     }
 }
 
+/** For a chosen Cell Plot: Colour, Use as X, Use as Y. */
 USE_IN.push(({ id, title }) => PanelManager.getActivePanels()
     .filter(panel => panel.getType() === 'cell-plot')
-    .map(panel => ({ id: `colour:${panel.getId()}`, label: `Colour ${panel.getTitle()}`,
-        run: () => { colourPlot(panel, id, title).catch((error) => console.error('Colour by score failed:', error)); } })));
+    .flatMap(panel => [
+        ['color', `Colour ${panel.getTitle()}`],
+        ['x', `Use as X in ${panel.getTitle()}`],
+        ['y', `Use as Y in ${panel.getTitle()}`]
+    ].map(([axis, label]) => ({ id: `${axis}:${panel.getId()}`, label,
+        run: () => { useAs(panel, axis, id, title).catch((error) => console.error(`Use as ${axis} failed:`, error)); } }))));
 
 /** The dataset's gene index, shared by every signature (a Map of name -> position), rebuilt when the genes change. */
 let _indexCache = { key: null, index: null };

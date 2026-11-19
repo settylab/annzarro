@@ -21,6 +21,11 @@ import { createScoreStore } from './score-store.js';
 import { createScoreSources } from './score-sources.js';
 import { createScoreApi } from './gene-score-client.js';
 import { describeScore, worstNotice } from './score-notices.js';
+import { registerSource, subKeyOf } from './source-registry.js';
+import { METHODS, DEFAULT_METHOD } from './gene-signature.js';
+
+/** What each aggregation is called where a consumer picks it (level 3). */
+const SUB_LABELS = { zscore_mean: 'z-score mean', mean: 'mean' };
 
 /** The value that is not a signature: "New signature..." in the key list. */
 export const NEW_SIGNATURE = '__new_signature__';
@@ -86,8 +91,16 @@ export function signatureList() {
 /** The title of the signature a setting names, or what it was called when last seen. */
 export function scoreTitle(setting) {
     const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    if (panel && panel.getType && panel.getType() === 'gene-signature') return panel.getTitle();
-    return (setting && setting.label) || (setting && setting.key) || '';
+    const base = panel && panel.getType && panel.getType() === 'gene-signature' ? panel.getTitle()
+        : (setting && setting.label) || (setting && setting.key) || '';
+    return base;
+}
+
+/** The name a consumer shows for a score: the signature's title, and the aggregation when it is not the default. */
+export function scoreLabel(setting) {
+    const sub = subKeyOf(setting);
+    const title = scoreTitle(setting).replace(/ · (z-score mean|mean)$/, '');
+    return !sub || sub === DEFAULT_METHOD ? title : `${title} · ${SUB_LABELS[sub] || sub}`;
 }
 
 /** A custom error: the series cannot be drawn yet, and why. */
@@ -170,7 +183,7 @@ function stillUsed(rec) {
         return (cfg.hoverInfo || []).some(h => h && h.type === 'gene-score' && h.key === rec.sigId);
     }
     const s = cfg[rec.role];
-    return !!(s && s.type === 'gene-score' && s.key === rec.sigId);
+    return !!(s && s.type === 'gene-score' && s.key === rec.sigId && subKeyOf(s) === rec.sub);
 }
 
 // ---------------------------------------------------------------------------
@@ -268,15 +281,16 @@ function refreshPanelIfNeeded(host) {
 function recordFor(host, role, setting) {
     const map = recordsOf(host);
     let rec = map.get(role);
-    if (rec && rec.sigId !== setting.key) {
+    const sub = subKeyOf(setting);
+    if (rec && (rec.sigId !== setting.key || rec.sub !== sub)) {
         release(host, role);
         rec = null;
     }
     if (!rec) {
         const { sources } = scores();
-        rec = { role, sigId: setting.key, setting, panelId: panelIdOf(host), drawnKey: undefined, handle: null };
+        rec = { role, sigId: setting.key, sub, setting, panelId: panelIdOf(host), drawnKey: undefined, handle: null };
         rec.handle = sources.watch(setting.key, {
-            host, role, visible: () => isVisible(host),
+            host, role, sub, visible: () => isVisible(host),
             onChange: (snap) => onChange(host, rec, snap)
         });
         recordsOf(host).set(role, rec);
@@ -300,7 +314,7 @@ function recordFor(host, role, setting) {
  * @throws {ScoreUnavailable} when no score can be drawn
  */
 export function loadScoreSeries(setting, { host, role, expected, unit = 'cells', array = true }) {
-    const title = scoreTitle(setting);
+    const title = scoreLabel(setting);
     if (title && setting.label !== title) setting.label = title;
     if (!host || !setting.key) {
         const notice = describeScore({ state: 'unset', title: '' }, { role });
@@ -456,7 +470,7 @@ export function signatureRenamed(id) {
     for (const host of LIVE_HOSTS) {
         for (const rec of recordsOf(host).values()) {
             if (rec.sigId !== id) continue;
-            const title = scoreTitle(rec.setting);
+            const title = scoreLabel(rec.setting);
             if (rec.setting.label !== title) {
                 rec.setting.label = title;
                 if (rec.drawnKey) refreshPanel(host);
@@ -500,3 +514,20 @@ export function dependantsOf(id) {
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
     document.addEventListener('annzarro:panels-changed', () => panelsChanged());
 }
+
+
+// ---------------------------------------------------------------------------
+// the provider: signatures are the first source with a third level
+
+registerSource({
+    type: 'gene-score',
+    label: 'gene-score',
+    entity: 'cells',
+    consumers: ['cell-plot'],
+    axes: ['x', 'y', 'z', 'color', 'hover'],
+    defaultSub: DEFAULT_METHOD,
+    entities: () => signatureList(),
+    /** The aggregations the server computes now, z-score mean first; later methods are new entries here. */
+    subKeys: () => METHODS.map(value => ({ value, label: SUB_LABELS[value] || value })),
+    load: (setting, opts) => loadScoreSeries(setting, opts)
+});

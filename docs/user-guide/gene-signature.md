@@ -73,6 +73,13 @@ signature by name. Every signature is listed, open or closed. Or press **Use in*
 in the signature's panel. The score works in large-plot mode too (colour and axes; the tooltip shows the
 colour's score).
 
+A score is chosen in three steps, as an embedding is: the source (**gene-score**), the signature, and
+the **aggregation** (z-score mean, the default, or mean). Each axis, the colour and the hover can use a
+different signature or a different aggregation of the same one; the same choice on two axes is computed once.
+The score can be on any axis, x, y and z (3D) included, against another score, an obs column or a gene.
+In large-plot mode x, y and colour take a score; 3D and extra hover columns are not available there.
+**Use in** offers **Colour**, **Use as X** and **Use as Y** for each Cell Plot.
+
 The score is worked out on the server, over all the cells of the dataset, and the plot gets the value
 for the cells it shows. It is worked out when a plot needs it, with no panel open: a closed signature, or
 one restored from a link, colours its plot by itself. Nothing computed goes into a link, a panel set or the

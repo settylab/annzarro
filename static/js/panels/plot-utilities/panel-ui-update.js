@@ -5,6 +5,7 @@ import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../util
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { signatureList } from '../../utils/score-source.js';
+import { getSource } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
@@ -183,7 +184,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       case 'gene-score': {
         // every signature, open or closed, by its title; the one this setting names stays listed when it
         // is gone, so the plot can say it was deleted
-        const list = signatureList();
+        const list = getSource('gene-score').entities();
         keyOptions = list.map(sig => ({ value: sig.id, text: sig.title }));
         // (a key left over from another source type is not a deleted signature: signature ids are panel ids)
         if (settings.key && /^gene-signature-/.test(settings.key) && !list.some(sig => sig.id === settings.key)) {
@@ -340,9 +341,16 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   $columnSelect.prop('disabled', false);
 
   switch (type) {
-    case 'obs':
-    case 'var':
     case 'gene-score': {
+      // level 3 of a source with three levels: the aggregation, z-score mean first (utils/source-registry.js)
+      const provider = getSource('gene-score');
+      const subs = provider ? provider.subKeys(settings.key) : [];
+      columnOptions = subs.map(sub => ({ value: sub.value, text: sub.label }));
+      if (!subs.some(sub => sub.value === settings.column)) settings.column = provider ? provider.defaultSub : '';
+      break;
+    }
+    case 'obs':
+    case 'var': {
       columnOptions = [{ value: '', text: 'N/A' }];
       $columnSelect.prop('disabled', true);
       break;

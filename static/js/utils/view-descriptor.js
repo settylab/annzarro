@@ -38,6 +38,8 @@ export function coordinateId(field) {
     const col = field.column;
     let dim = null;
     if (col !== undefined && col !== null && col !== '') dim = /^\d+$/.test(String(col)) ? Number(col) : String(col);
+    // a gene score's sub-key is its aggregation; a link made before there was one means the default
+    if (field.type === 'gene-score' && dim === null) dim = 'zscore_mean';
     return { key: `${field.type}:${field.key}`, dim };
 }
 

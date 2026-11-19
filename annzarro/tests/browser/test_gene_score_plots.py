@@ -76,7 +76,7 @@ window.fetch = async (url, init) => {
     let body = {};
     try { body = JSON.parse(init.body); } catch (e) { body = {}; }
     const kind = body.estimate_only ? 'estimate' : 'compute';
-    window.__scoreCalls.push({ kind, genes: (body.recipe && body.recipe.genes) || [], confirm: !!body.confirm, subset: body.subset || null });
+    window.__scoreCalls.push({ kind, genes: (body.recipe && body.recipe.genes) || [], method: (body.recipe && body.recipe.method) || null, confirm: !!body.confirm, subset: body.subset || null });
     if (window.__scoreFake) {
       const out = window.__scoreFake(kind, body, () => real(url, init), init);
       if (out) return out;
@@ -957,3 +957,147 @@ def test_a_closed_signature_put_back_with_another_recipe_by_back_or_forward_upda
     until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
     assert _calls(page, "compute")[1]["genes"] == ["GENE0050", "GENE0060"]
     _changed_from(page, before)
+
+
+SIG2 = "gene-signature-T"
+SCORE2 = {"type": "gene-score", "key": SIG2, "label": "B cell score", "column": ""}
+OTHER = {SIG2: {"id": SIG2, "title": "B cell score", "genes": ["GENE0010", "GENE0011"]}}
+
+
+def _points(page, tile=C):
+    return page.evaluate("""(tile) => { const g = document.querySelector(tile + ' .js-plotly-plot');
+        return g.data.filter(d => (d.x || []).length > 1 || (d.z || []).length > 1).reduce((n, d) => n + Array.from(d.x).filter(v => Number.isFinite(Number(v))).length, 0); }""", tile)
+
+
+def _ready_plot(page, tile=C):
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => (d.x || []).length > 1)); }", tile)
+
+
+def test_a_score_is_selectable_on_every_axis_including_z_in_a_3d_plot(page, served):
+    cfg = _cell(x=UMAP_X, y=UMAP_Y, z=SCORE, color={"type": "none", "key": "", "column": ""})
+    _open(page, served, plots=(("cell-plot-C", cfg),))
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => d.type === 'scatter3d' && (d.z || []).length > 1)); }", C)
+    zs = page.evaluate("(t) => Array.from(document.querySelector(t + ' .js-plotly-plot').data.find(d => d.type === 'scatter3d').z).map(Number)", C)
+    assert len(zs) == 60 and len(set(round(v, 5) for v in zs)) > 1
+    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.scene.zaxis.title.text", C) == "T cell score"
+    # and the z menu offers it
+    assert "gene-score" in page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"z\"] option')].map(o => o.value)", C)
+
+
+def test_two_scores_against_each_other_one_per_signature_and_the_same_signature_on_two_axes_is_one_request(page, served):
+    cfg = _cell(x=SCORE, y=SCORE2, color={"type": "none", "key": "", "column": ""})
+    _open(page, served, plots=(("cell-plot-C", cfg),), extra_cfgs=OTHER)
+    _ready_plot(page)
+    assert sorted(c["genes"][0] for c in _calls(page, "compute")) == ["GENE0001", "GENE0010"]
+    titles = page.evaluate("(t) => { const l = document.querySelector(t + ' .js-plotly-plot').layout; return [l.xaxis.title.text, l.yaxis.title.text]; }", C)
+    assert titles == ["T cell score", "B cell score"]
+    page.goto("about:blank")
+    same = _cell(x=SCORE, y=SCORE, color=SCORE)
+    _open(page, served, plots=(("cell-plot-C", same),))
+    _ready_plot(page)
+    assert [c["kind"] for c in _calls(page)] == ["estimate", "compute"], "x, y and colour share one request"
+    xs = page.evaluate("(t) => { const d = document.querySelector(t + ' .js-plotly-plot').data.find(d => (d.x || []).length > 1); return [Array.from(d.x).map(Number), Array.from(d.y).map(Number)]; }", C)
+    assert xs[0] == xs[1]
+
+
+def test_a_score_against_an_obs_column_and_against_a_gene(page, served):
+    cfg = _cell(x=SCORE, y={"type": "obs", "key": "score", "column": ""}, color={"type": "layer", "key": "X", "column": "KLF1"})
+    _open(page, served, plots=(("cell-plot-C", cfg),))
+    _ready_plot(page)
+    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C) == "T cell score"
+
+
+def test_two_aggregations_of_one_signature_are_two_scores_and_one_aggregation_is_shared(page, served):
+    two = _cell(x={**SCORE, "column": "zscore_mean"}, y={**SCORE, "column": "mean"}, color={**SCORE, "column": "mean"})
+    _open(page, served, plots=(("cell-plot-C", two),))
+    _ready_plot(page)
+    computes = _calls(page, "compute")
+    assert sorted(c["method"] for c in computes) == ["mean", "zscore_mean"], "y and colour share the mean; x is the z-score mean"
+    assert len(_calls(page, "estimate")) == 2
+    titles = page.evaluate("(t) => { const l = document.querySelector(t + ' .js-plotly-plot').layout; return [l.xaxis.title.text, l.yaxis.title.text]; }", C)
+    assert titles == ["T cell score", "T cell score · mean"]
+    # the third level is a menu: the aggregations the server computes, z-score mean first
+    opts = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"y\"] option')].map(o => [o.value, o.textContent])", C)
+    assert opts == [["zscore_mean", "z-score mean"], ["mean", "mean"]]
+    # choosing the other aggregation in the menu moves the axis to it
+    page.select_option(f"{C} select.axis-column-select[data-axis='x']", "mean")
+    until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().x.column === 'mean'")
+    page.wait_for_timeout(800)
+    assert len(_calls(page, "compute")) == 2, "the mean was already in the store"
+    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C) == "T cell score · mean"
+
+
+def test_a_link_made_before_sub_keys_has_no_column_and_means_the_z_score_mean(page, served):
+    _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "gene-score", "key": SIG, "label": "T cell score"})),))
+    _wait_coloured(page)
+    assert _calls(page, "compute")[0]["method"] == "zscore_mean"
+    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').value", C) == "zscore_mean"
+
+
+def test_the_registry_lists_a_closed_signature_and_its_aggregations(page, served):
+    _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "none", "key": "", "column": ""})),), extra_cfgs=OTHER, sig_open=True)
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    got = page.evaluate("""async () => {
+        const reg = await import('/static/js/utils/source-registry.js');
+        const p = reg.getSource('gene-score');
+        return { entities: p.entities(), subs: p.subKeys('x'), def: p.defaultSub, entity: p.entity,
+                 forX: reg.sourcesFor('cell-plot', 'x').map(q => q.type), forZ: reg.sourcesFor('cell-plot', 'z').map(q => q.type),
+                 forGenePlot: reg.sourcesFor('gene-plot', 'x').map(q => q.type) };
+    }""")
+    assert sorted((e["id"], e["open"]) for e in got["entities"]) == [(SIG, True), (SIG2, False)], "the closed one is listed"
+    assert [s["value"] for s in got["subs"]] == ["zscore_mean", "mean"] and got["def"] == "zscore_mean"
+    assert got["forX"] == ["gene-score"] and got["forZ"] == ["gene-score"] and got["forGenePlot"] == []
+
+
+def test_cells_without_a_score_on_an_axis_follow_hide_nan_and_are_counted(page, served):
+    _slow(page, "auto", 1)
+    cfg = _cell(x=SCORE, color={"type": "none", "key": "", "column": ""})
+    _open(page, served, plots=(("cell-plot-C", cfg),), wait=False)
+    until(page, "() => window.__ctls.length === 1")
+    values = [float("nan") if i < 5 else float(i) for i in range(N_OBS)]
+    page.evaluate("([v]) => window.__finish(0, v.map(x => x === null ? NaN : x))", [[None if v != v else v for v in values]])
+    _ready_plot(page)
+    assert _points(page) == 55
+    strip = page.inner_text(f"{C} .plot-status")
+    assert "55" in strip and "60" in strip, strip
+
+
+def test_flipping_a_score_axis_and_zoom_are_kept(page, served):
+    _open(page, served, plots=(("cell-plot-C", _cell(x=SCORE, color={"type": "none", "key": "", "column": ""}, flipX=True)),))
+    _ready_plot(page)
+    assert page.evaluate("(t) => { const r = document.querySelector(t + ' .js-plotly-plot')._fullLayout.xaxis.range; return r[0] > r[1]; }", C), "flipped"
+    page.evaluate("(t) => Plotly.relayout(document.querySelector(t + ' .js-plotly-plot'), {'xaxis.range': [3, 1]})", C)
+    page.wait_for_timeout(400)
+    page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').refreshPlot()")
+    page.wait_for_timeout(1200)
+    r = page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot')._fullLayout.xaxis.range", C)
+    assert r[0] > r[1] and abs(r[0] - 3) < 1e-6, "the zoom the user chose survives a redraw"
+
+
+def test_use_in_offers_colour_x_and_y_for_a_chosen_cell_plot(page, served):
+    plain = _cell(color={"type": "none", "key": "", "column": ""})
+    _open(page, served, plots=(("cell-plot-C", plain),), sig_open=True)
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    page.click(f"{S} .gsig-usein")
+    labels = page.locator(f"{S} .gsig-menu [role=menuitem]").all_inner_texts()
+    assert {"Colour Cell Plot 1", "Use as X in Cell Plot 1", "Use as Y in Cell Plot 1"} <= set(labels), labels
+    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('Use as X in')")
+    until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().x.type === 'gene-score'")
+    page.click(f"{S} .gsig-usein")
+    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('Use as Y in')")
+    until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().y.type === 'gene-score'")
+    cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig()")
+    assert cfg["x"]["key"] == SIG and cfg["y"]["key"] == SIG and cfg["x"]["column"] == "zscore_mean"
+    _ready_plot(page)
+    assert [c["kind"] for c in _calls(page)] == ["estimate", "compute"]
+
+
+def test_large_plot_mode_takes_scores_on_x_y_and_colour_but_no_3d(large_page, large_served):
+    both = _cell(x=SCORE, y=SCORE2, color=SCORE)
+    _open(large_page, large_served, plots=(("cell-plot-C", both),), extra_cfgs=OTHER)
+    _wait_large_coloured(large_page)
+    assert sorted(c["genes"][0] for c in _calls(large_page, "compute")) == ["GENE0001", "GENE0010"]
+    large_page.goto("about:blank")
+    _open(large_page, large_served, plots=(("cell-plot-C", _cell(z=SCORE)),), wait=False)
+    large_page.wait_for_selector(f"{C} .coverage-placeholder", timeout=30000)
+    assert "3D is not available" in _placeholder(large_page)["text"]

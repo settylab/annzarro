@@ -28,7 +28,7 @@ import { selectionOnCells, staleText } from '../../utils/closed-table.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
 import { NO_HOVER } from './hover-columns.js';
-import { loadScoreSeries, scoreTitle, drawScorePlaceholder } from '../../utils/score-source.js';
+import { loadScoreSeries, scoreTitle, scoreLabel, drawScorePlaceholder } from '../../utils/score-source.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
@@ -1664,7 +1664,7 @@ export async function loadHoverColumns(settings, plotType, plotContainer = null,
         // a signature's score beside the obs columns; read only when ready (the plot draws again when it is)
         if (plotType === 'genes') continue;
         const scored = await loadScoreSeries(h, { host: plotContainer, role: 'hover', expected: points });
-        out.push({ label: scoreTitle(h), values: scored.values });
+        out.push({ label: scoreLabel(h), values: scored.values });
         continue;
       }
       const loaded = await loadAxisData({ type: h.type, key: h.key, column: h.column || '' }, plotType, null, { signal });

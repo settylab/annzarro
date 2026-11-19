@@ -325,3 +325,25 @@ test('of several scores a plot states the worst', () => {
     assert.equal(N.worstNotice([null, null]), null);
     assert.equal(N.worstNotice([t('updating'), t('computing')]).state, 'computing');
 });
+
+test('each aggregation of a signature is its own score; the same aggregation is shared; an edit follows both', async () => {
+    const w = world();
+    const sig = w.add('S1', 'T', ['A']);
+    const z = watch(w, 'S1', { sub: 'zscore_mean' }), m1 = watch(w, 'S1', { sub: 'mean' }), m2 = watch(w, 'S1', { sub: 'mean' });
+    const none = watch(w, 'S1');                              // no sub: the default
+    for (const h of [z, m1, m2, none]) h.handle.read();
+    await settle();
+    assert.deepEqual(w.calls.compute.map(c => c.recipe.method).sort(), ['mean', 'zscore_mean'], 'two scores, not four');
+    w.finish(0); w.finish(1);
+    await settle();
+    assert.equal(z.handle.read().key, none.handle.read().key, 'no sub is the z-score mean');
+    assert.notEqual(z.handle.read().key, m1.handle.read().key);
+    assert.equal(m1.handle.read().key, m2.handle.read().key);
+    assert.equal(z.handle.read().state, 'ready');
+    // the aggregation is not part of the signature: an edit is one edit for both
+    sig.genes = ['A', 'B'];
+    w.sources.recipeChanged('S1');
+    await w.fire();
+    await settle();
+    assert.equal(w.calls.compute.length, 4, 'both aggregations recomputed once');
+});
