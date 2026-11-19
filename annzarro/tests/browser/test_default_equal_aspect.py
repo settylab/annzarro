@@ -77,6 +77,9 @@ def _app(server, store):
 def _link(server, store, **fields):
     cfg = {"id": CELL, "title": "t", "z": None, "pointSize": 8, "pointOpacity": 1, "color": {"type": "none"}}
     cfg.update({k: v for k, v in fields.items() if v is not ABSENT})
+    for k, v in fields.items():
+        if v is ABSENT:
+            cfg.pop(k, None)
     view = {"v": 1, "constants": {}, "layout": {"v": 1, "hierarchy": [{"type": "tile", "id": CELL, "controlsVisible": True}],
             "controlState": {CELL: True}, "panelConfigs": {CELL: cfg}}}
     enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
