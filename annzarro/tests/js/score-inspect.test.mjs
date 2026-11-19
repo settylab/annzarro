@@ -168,3 +168,19 @@ test('file names are safe', () => {
     assert.equal(I.fileName('a/b\\c:d', 'x'), 'a_b_c_d_x.csv');
     assert.equal(I.fileName('', 'x'), 'signature_x.csv');
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// export of several method · layer combinations
+
+test('gene figures of several combinations are long: one row per combination and gene', () => {
+    const csv = I.longGeneCsv([
+        { label: 'T · z-score mean · X', genes: [{ name: 'A', status: 'used', detected: 0.5, mean: 1, sd: 2, clipped: 0.1 }] },
+        { label: 'T · mean · counts', genes: [{ name: '=B', status: 'constant', detected: 1, mean: 3, sd: 0, clipped: null }] }]);
+    assert.equal(csv, 'combination,gene,status,detected_fraction,mean,sd,clipped_fraction\r\nT · z-score mean · X,A,used,0.5,1,2,0.1\r\n'
+        + "T · mean · counts,'=B,constant,1,3,0,\r\n");
+});
+
+test('file names: one combination keeps its name, several are named for the source', () => {
+    assert.equal(I.exportFileName('T cell', 'scores', [{ method: 'mean', layer: 'X' }]), 'T_cell_mean_X_scores.csv');
+    assert.equal(I.exportFileName('T cell', 'scores', [{ method: 'mean', layer: 'X' }, { method: 'sum', layer: 'X' }]), 'T_cell_scores.csv');
+});

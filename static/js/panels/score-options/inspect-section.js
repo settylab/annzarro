@@ -19,13 +19,14 @@
  * Nothing is computed, and nothing is watched, until the section is opened.
  * Closing it lets go of the score (a score a plot still needs stays).
  */
+import { createExportChooser } from './export-chooser.js';
 import { scores } from '../../utils/score-source.js';
 import { describeScore } from '../../utils/score-notices.js';
 import { DEFAULT_METHOD, definitionText, fmtCount } from '../../utils/gene-signature.js';
 import { methodShort, offeredOptions } from '../../utils/signature-options.js';
 import {
     distribution, binText, missingText, geneRows, flagSummary, sortGeneRows, GENE_COLUMNS, ROWS_FIRST,
-    fmtNum, fmtPercent, geneCsv, fileName
+    fmtNum, fmtPercent
 } from '../../utils/score-inspect.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -421,7 +422,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         const why = ready ? undefined : 'Export is available when the score is up to date.';
         exportRow.append(
             D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { inspectExport: 'genes' },
-                disabled: !ready, title: why, on: { click: exportGenes } }, 'Export gene figures (CSV)'),
+                disabled: !ready, title: why, on: { click: () => chooser.open() } }, 'Export gene figures (CSV)'),
             D.el('div', { class: 'gsig-inspect__percell', data: { inspectPercell: '' },
                 text: 'To export scores per cell, add them as columns to a Cell Table.' }));
     }
@@ -430,6 +431,13 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         result.textContent = text;
     }
 
+    // which combinations to export: the chooser (export-chooser.js)
+    const chooser = createExportChooser({
+        D, id, getTitle, getOptions: optionsHere, getCurrent: () => ({ method: _method, layer: _layer }),
+        download, say
+    });
+    exportRow.after(chooser.element);
+
     function download(name, parts) {
         const url = URL.createObjectURL(new Blob(parts, { type: 'text/csv;charset=utf-8' }));
         const link = D.el('a', { href: url, download: name, hidden: true });
@@ -437,14 +445,6 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         link.click();
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
-
-    function exportGenes() {
-        const snap = _snap;
-        if (!snap || !snap.header) return;
-        const genes = snap.header.genes || [];
-        download(fileName(getTitle(), `${_method}_${_layer}_genes`), [geneCsv(genes)]);
-        say(`Exported ${fmtCount(genes.length)} gene${genes.length === 1 ? '' : 's'}.`);
     }
 
     function paintGenes(header) {
@@ -491,6 +491,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
     }
 
     function destroy() {
+        chooser.destroy();
         unwatch();
         if (_observer) { _observer.disconnect(); _observer = null; }
         _open = false;

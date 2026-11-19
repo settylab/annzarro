@@ -252,6 +252,29 @@ export function geneCsv(genes) {
     return `${lines.join('\r\n')}\r\n`;
 }
 
+/**
+ * The per-gene figures of several combinations in the LONG form: one row per combination and gene, with the
+ * combination named in the first column. Long, not one block of columns per combination, because the figures of each
+ * combination are read from its own layer (a gene can be constant in one and not in another) and the number of columns
+ * would otherwise grow with every combination; one fixed header filters, sorts and pivots in any spreadsheet or script.
+ * @param {Array<{label: string, genes: Array<Object>}>} blocks
+ */
+export function longGeneCsv(blocks) {
+    const lines = ['combination,gene,status,detected_fraction,mean,sd,clipped_fraction'];
+    for (const b of blocks) {
+        for (const g of b.genes || []) {
+            lines.push([csvField(b.label), csvField(g.name, { text: true }), csvField(g.status), figure(g.detected), figure(g.mean),
+                figure(g.sd), figure(g.clipped)].join(','));
+        }
+    }
+    return `${lines.join('\r\n')}\r\n`;
+}
+
+/** The file name of an export: one combination keeps its name; several are named for the signature alone. */
+export function exportFileName(title, what, combos) {
+    return combos.length === 1 ? fileName(title, `${combos[0].method}_${combos[0].layer}_${what}`) : fileName(title, what);
+}
+
 /** A file name from a signature title and what the file holds: "T cell score-genes.csv" made safe. */
 export function fileName(title, what, ext = 'csv') {
     const base = String(title || 'signature').replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, '_').replace(/^_+|_+$/g, '') || 'signature';

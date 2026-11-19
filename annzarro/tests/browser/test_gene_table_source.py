@@ -454,3 +454,22 @@ def test_a_gene_table_source_with_no_layer_is_pinned_like_a_signature(page, serv
     page.evaluate("() => window.PanelManager.getPanel('gene-table-G').setScoreOptions({ input: 'counts', layers: ['counts'] })")
     page.wait_for_timeout(800)
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer") == "X"
+
+
+def test_a_gene_tables_export_chooser_lists_its_combinations_and_exports_gene_figures(page, served):
+    _open_table_link(page, served, table=_table(scoreOptions=OFFER))
+    _wait_coloured(page)
+    page.click(f"{G} .gsig-inspect__toggle")
+    page.wait_for_function("(g) => document.querySelectorAll(g + ' .gsig-inspect__table [data-gene]').length === 5", arg=G, timeout=20000)
+    assert page.locator(f"{G} [data-inspect-export=scores]").count() == 0
+    page.click(f"{G} [data-inspect-export=genes]")
+    options = page.eval_on_selector_all(f"{G} .gsig-export input[type=checkbox]", "els => els.map(e => e.dataset.option)")
+    assert options == ["zscore_mean@X", "zscore_mean@counts", "mean@X", "mean@counts", "detected@X", "detected@counts"]
+    page.click(f"{G} .gsig-export input[data-option='mean@X']")
+    with page.expect_download() as info:
+        page.click(f"{G} [data-export-go]")
+    assert info.value.suggested_filename == "Gene_Table_1_genes.csv"
+    rows = open(info.value.path(), encoding="utf-8").read().splitlines()
+    assert rows[0] == "combination,gene,status,detected_fraction,mean,sd,clipped_fraction"
+    assert {r.split(",")[0] for r in rows[1:]} == {"Gene Table 1 · z-score mean · X", "Gene Table 1 · mean · X"}
+    assert len(rows) == 1 + 2 * 5

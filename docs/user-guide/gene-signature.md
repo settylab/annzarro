@@ -240,12 +240,20 @@ score**).
   cells shown. Genes that dominate the score (clipped in at least 1% of cells in a z-score mean), are
   barely detected (non-zero in under 1% of cells) or were left out (constant, or without a value) are
   flagged in words. Click a heading to sort and a gene to focus it.
-- **Export.** **Export gene figures** saves the per-gene figures of the option being inspected as a CSV (as
-  fractions, not percentages), built in the browser. A gene name that begins with `=`, `+`, `-` or `@` is saved with
-  a leading apostrophe, so a spreadsheet shows it as text rather than running it as a formula. There is no per-cell
-  export here: a signature or a gene table does not own a set of cells. Inspect says so ("To export scores per cell,
-  add them as columns to a Cell Table"). A Cell Table with the score as columns, one for each method · layer option
-  you want, exports them in its own CSV, each headed with its full label ("T cell score · z-score mean · X").
+- **Export.** **Export gene figures** opens a small chooser of the method · layer combinations the source offers (the
+  list plots choose from), as checkboxes. The one being inspected is ticked, and any already computed. Nothing is
+  computed until you press **Export**: a combination that is not computed is worked out then, under the usual cost
+  tiers. The chooser states each estimate beside it; one that asks first (over a minute) is asked about before it starts
+  ("will take about 2 minutes. Compute / Cancel"); one that would be refused is left out and named. Progress is shown
+  with **Cancel**, and cancelling leaves no file. The figures are in the long form, one row per combination and gene with
+  the combination in the first column, because each combination's figures come from its own layer (a gene can be
+  constant in one layer and not in another) and a fixed header filters and pivots in any spreadsheet. A file with one
+  combination is named for it; with several, for the source alone. A gene name that begins with `=`, `+`, `-` or `@` is
+  saved with a leading apostrophe, so a spreadsheet shows it as text rather than running it as a formula.
+  There is no per-cell export here: a signature or a gene table does not own a set of cells. Inspect says so ("To
+  export scores per cell, add them as columns to a Cell Table"). A Cell Table with the score as columns, one for each
+  method · layer option you want, exports them in its own CSV, each headed with its full label ("T cell score ·
+  z-score mean · X").
 
 In a narrow panel (under 360 px) the table keeps only the gene and its detection rate; under 280 px
 the chart is replaced by its figures.
