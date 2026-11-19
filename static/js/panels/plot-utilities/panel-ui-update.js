@@ -4,9 +4,9 @@ import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
-import { signatureList, NEW_SIGNATURE } from '../../utils/score-source.js';
+import { signatureList, NEW_SIGNATURE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers } from '../../utils/score-source.js';
+import { scoreValue } from './hover-columns.js';
 import { getSource } from '../../utils/source-registry.js';
-import { noteLayers, offeredLayers } from '../../utils/score-offers.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
@@ -290,9 +290,18 @@ export function refreshScoreKeySelects() {
     $.setSelectValue(jQuery(keySelect), current, false);
     if (!list.length && !current) jQuery(keySelect).find('option[value=""]').prop('disabled', true);
   }
-  // the Hover pickers list each signature's score, and each aggregation of it, after the columns
-  const subs = getSource('gene-score').subKeys();
-  const wanted = list.flatMap(sig => subs.map((sub, i) => [`gene-score:${sig.id}:${sub.value}`, i === 0 ? sig.title : `${sig.title} · ${sub.label}`]));
+  // the third menu of every score axis follows what its signature offers (a lapsed choice stays, labelled)
+  for (const select of document.querySelectorAll('select.axis-column-select')) {
+    const axis = select.dataset.axis;
+    const panelEl = select.closest('.tile');
+    const typeSelect = select.closest('.plot-panel') && select.closest('.plot-panel').querySelector(`select.axis-type-select[data-axis="${axis}"]`);
+    if (!typeSelect || typeSelect.value !== 'gene-score' || !panelEl || !window.PanelManager) continue;
+    const plot = window.PanelManager.getPanel(panelEl.dataset.tileId);
+    const cfg = plot && plot.getConfig ? plot.getConfig() : null;
+    if (cfg && cfg[axis] && cfg[axis].type === 'gene-score') fillScoreColumnSelect(select, scoreColumnOptions(cfg[axis]));
+  }
+  // the Hover pickers list each score a signature offers, after the columns
+  const wanted = list.flatMap(sig => (sig.options || []).map((o, i) => [scoreValue(sig.id, o.method, o.layer), i === 0 ? sig.title : `${sig.title} · ${o.label}`]));
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
     const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === 'Gene scores');
     const have = group ? Array.from(group.querySelectorAll('option')) : [];
@@ -323,6 +332,7 @@ export function refreshScoreKeySelects() {
  * @param {Object} datasetStructure - Structure of the loaded dataset
  */
 export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure) {
+  noteDatasetLayers(layerKeys(datasetStructure));
   // Initialize the settings history if it doesn't exist
   if (!settings.history) {
     settings.history = {};
@@ -342,16 +352,22 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   }
   
   let columnOptions = [];
+  let scoreChosen = null;
   const $columnSelect = jQuery(columnSelect);
   $columnSelect.prop('disabled', false);
 
   switch (type) {
     case 'gene-score': {
-      // level 3 of a source with three levels: the aggregation, z-score mean first (utils/source-registry.js)
-      const provider = getSource('gene-score');
-      const subs = provider ? provider.subKeys(settings.key, settings.layer || '') : [];
-      columnOptions = subs.map(sub => ({ value: sub.value, text: sub.label }));
-      if (!subs.some(sub => sub.value === settings.column)) settings.column = provider ? provider.defaultSub : '';
+      // level 3: ONE list of what the signature's panel offers, method and layer together
+      // (utils/score-source.js scoreOptions). The method is stored in `column`, the layer beside it.
+      const built = scoreColumnOptions(settings);
+      columnOptions = built.options;
+      let chosen = built.chosen;
+      if (built.adopt) {
+        settings.column = built.adopt.method;
+        if (built.adopt.layer) settings.layer = built.adopt.layer; else delete settings.layer;
+      }
+      scoreChosen = chosen;
       break;
     }
     case 'obs':
@@ -506,6 +522,12 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   // Use jQuery to populate the select element
   $.createSelect(columnOptions, $columnSelect);
 
+  if (type === 'gene-score') {
+    // the options carry the pair a consumer stores: method in `column`, layer beside it
+    fillScoreColumnSelect($columnSelect[0], { options: columnOptions, chosen: scoreChosen });
+    return;
+  }
+
   const colValues = $columnSelect.find('option').map(function() {
     return jQuery(this).val();
   }).get();
@@ -577,7 +599,6 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     populateKeySelector(settings, $keySelect[0], datasetStructure);
     limitTextAxisOptions($keySelect[0], large, textObsColumns(datasetStructure));
     populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure);
-    populateLayerSelector(settings, $container.find(`.axis-layer-select[data-axis="${axis}"]`)[0], datasetStructure);
     
     // Add or update the refocus and lock buttons for layer, obsp, and varp types
     const $axisSelector = $columnSelect.closest('.axis-selector');
@@ -1170,44 +1191,39 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
   document.addEventListener('annzarro:panels-changed', () => refreshScoreKeySelects());
 }
 
+
 /**
- * The fourth choice of a gene score: the layer it is computed over. Shown for a gene-score source
- * only. The first option is the signature's own input (stored as no layer, so a link made before
- * layers were a choice keeps its meaning); then X and each layer, as the layer source lists them.
- * @param {Object} settings - the axis settings (`layer` is set or cleared)
- * @param {HTMLSelectElement|undefined} select
- * @param {Object} datasetStructure
+ * The entries of the third menu of a gene score and the one that is chosen, without changing anything:
+ * what the signature offers, then the choice the consumer holds if it is no longer offered (kept, labelled).
+ * `adopt` is set when the consumer holds none, so the first entry becomes its choice.
  */
-export function populateLayerSelector(settings, select, datasetStructure) {
-  if (!select) return;
-  if (settings.type !== 'gene-score') {
-    select.hidden = true;
+export function scoreColumnOptions(settings) {
+  const offered = scoreOptions(settings.key);
+  const options = offered.map(o => ({ value: o.value, text: o.label, method: o.method, layer: o.layer }));
+  const wanted = optionOf(settings);
+  let chosen = wanted ? wanted.value : null;
+  let adopt = null;
+  if (!wanted && settings.key && offered.length && (settings.column || settings.layer)) {
+    chosen = `${settings.column || 'zscore_mean'}@${settings.layer || ''}`;
+    options.push({ value: chosen, text: lapsedLabel(settings), method: settings.column || 'zscore_mean', layer: settings.layer || '' });
+  } else if (!wanted && offered.length) {
+    chosen = offered[0].value;
+    adopt = { method: offered[0].method, layer: offered[0].layer };
+  }
+  return { options, chosen, adopt };
+}
+
+/** Fill a select with a gene score's options, each carrying the method and layer it stands for. */
+function fillScoreColumnSelect(select, built) {
+  const same = select.options.length === built.options.length
+    && built.options.every((o, i) => select.options[i].value === o.value && select.options[i].textContent === o.text);
+  if (!same) {
     select.innerHTML = '';
-    if (settings.layer) delete settings.layer;
-    return;
+    for (const o of built.options) select.appendChild(new Option(o.text, o.value));
   }
-  const panel = window.PanelManager && settings.key ? window.PanelManager.getPanel(settings.key) : null;
-  const recipe = panel && panel.getRecipe ? panel.getRecipe() : null;
-  const own = recipe ? recipe.input || 'X' : 'X';
-  noteLayers(layerKeys(datasetStructure));
-  // the signature decides which layers it offers; a choice is shown only when there is one to make
-  // (or when the consumer holds a layer, so it can be seen and changed)
-  const offered = recipe ? offeredLayers(recipe) : [''];
-  const wanted = settings.layer && settings.layer !== own ? settings.layer : '';
-  if (offered.length < 2 && !wanted) {
-    select.hidden = true;
-    select.innerHTML = '';
-    return;
-  }
-  const options = offered.map(l => ({ value: l, text: l ? `of ${l}` : `of ${own}` }));
-  // a layer the signature does not offer, or the dataset does not have, stays listed so the plot can say so
-  if (wanted && !offered.includes(wanted)) {
-    const known = layerKeys(datasetStructure).includes(wanted);
-    options.push({ value: wanted, text: `of ${wanted} (${known ? 'not offered' : 'not in this dataset'})` });
-  }
-  select.innerHTML = '';
-  for (const o of options) select.appendChild(new Option(o.text, o.value, false, o.value === wanted));
-  select.value = wanted;
-  select.hidden = false;
-  select.title = 'The layer the score is computed over';
+  Array.from(select.options).forEach((opt, i) => {
+    opt.dataset.method = built.options[i].method;
+    opt.dataset.layer = built.options[i].layer || '';
+  });
+  if (built.chosen !== null) select.value = built.chosen;
 }

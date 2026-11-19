@@ -15,9 +15,8 @@ import { isDerived } from '../../utils/line-select.js';
 import { isScoreColumn } from '../../utils/score-column.js';
 import { getSource } from '../../utils/source-registry.js';
 import { DEFAULT_METHOD } from '../../utils/gene-signature.js';
-import '../../utils/score-source.js';
+import { scoreOptions, lapsedLabel, noteDatasetLayers } from '../../utils/score-source.js';
 import { layerKeys } from '../../utils/structure-keys.js';
-import { noteLayers, offeredLayers } from '../../utils/score-offers.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -352,33 +351,9 @@ export function buildScoreTab(id, settings, structure = null) {
         list.innerHTML = '<div class="alert alert-secondary">No signatures yet. Add a Gene Signature panel to score cells.</div>';
         return;
     }
-    const subs = provider.subKeys();
     const ticked = (settings.columns || []).filter(isScoreColumn);
-    // The layer the scores listed here are computed over (a column's own choice, like its aggregation)
+    noteDatasetLayers(layerKeys(structure || pane.__structure || null));
     pane.__structure = structure || pane.__structure || null;
-    const layer = pane.dataset.layer || '';
-    const bar = document.createElement('div');
-    bar.className = 'd-flex align-items-center gap-2 mb-2';
-    const pick = document.createElement('select');
-    pick.className = 'form-select form-select-sm az-score-layer';
-    pick.setAttribute('aria-label', 'Layer the scores are computed over');
-    const keys = layerKeys(pane.__structure);
-    noteLayers(keys);
-    // the layers the signatures offer (each signature decides), the signature's own input first
-    const offered = new Set();
-    for (const sig of signatures) {
-        const panel = window.PanelManager && window.PanelManager.getPanel(sig.id);
-        if (panel && panel.getRecipe) for (const l of offeredLayers(panel.getRecipe())) if (l) offered.add(l);
-    }
-    pick.appendChild(new Option("of the signature's own input", '', false, !layer));
-    for (const k of offered) pick.appendChild(new Option(`of ${k}`, k, false, k === layer));
-    if (layer && !offered.has(layer) && !keys.includes(layer)) pick.appendChild(new Option(`of ${layer} (not in this dataset)`, layer, false, true));
-    pick.addEventListener('change', () => {
-        pane.dataset.layer = pick.value;
-        buildScoreTab(id, settings);
-    });
-    // a choice of layers only when the signatures offer more than their own
-    if (offered.size || layer) { bar.appendChild(pick); list.appendChild(bar); }
     for (const sig of signatures) {
         const group = document.createElement('div');
         group.className = 'az-score-group';
@@ -388,8 +363,17 @@ export function buildScoreTab(id, settings, structure = null) {
         heading.textContent = sig.title;
         heading.title = sig.open ? sig.title : `${sig.title} (closed)`;
         group.appendChild(heading);
-        for (const sub of provider.subKeys(sig.id, layer)) {
-            const item = { type: 'gene-score', key: sig.id, column: sub.value, ...(layer ? { layer } : {}) };
+        // what the signature offers (method and layer together, as in a plot's menu), and any ticked column
+        // it no longer offers (kept, so the table still has it)
+        const entries = scoreOptions(sig.id).map(o => ({ method: o.method, layer: o.layer, text: o.label }));
+        for (const t of ticked) {
+            if (t.key === sig.id && !entries.some(e => e.method === (t.column || DEFAULT_METHOD) && e.layer === (t.layer || ''))) {
+                entries.push({ method: t.column || DEFAULT_METHOD, layer: t.layer || '', text: lapsedLabel(t) });
+            }
+        }
+        for (const sub of entries) {
+            const layer = sub.layer;
+            const item = { type: 'gene-score', key: sig.id, column: sub.method, ...(layer ? { layer } : {}) };
             const div = document.createElement('div');
             div.className = 'form-check py-0 ms-3';
             const checkbox = document.createElement('input');
@@ -402,13 +386,13 @@ export function buildScoreTab(id, settings, structure = null) {
             if (layer) checkbox.setAttribute('data-layer', layer);
             checkbox.setAttribute('data-label', sig.title);
             checkbox.dataset.scoreBound = '1';
-            checkbox.checked = ticked.some(c => c.key === sig.id && (c.column || DEFAULT_METHOD) === sub.value && (c.layer || '') === layer);
+            checkbox.checked = ticked.some(c => c.key === sig.id && (c.column || DEFAULT_METHOD) === sub.method && (c.layer || '') === layer);
             checkbox.addEventListener('change', () => updateSelectedColumnsList(id, settings));
             const label = document.createElement('label');
             label.className = 'form-check-label';
             label.htmlFor = checkbox.id;
-            label.textContent = sub.label;
-            div.dataset.search = `${sig.title} ${sub.label}`.toLowerCase();
+            label.textContent = sub.text;
+            div.dataset.search = `${sig.title} ${sub.text}`.toLowerCase();
             div.append(checkbox, label);
             group.appendChild(div);
         }

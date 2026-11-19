@@ -280,7 +280,7 @@ export function setupPlotControlListeners(
       if (!off && !(await hoverPickFits(settings, plotType, plotContainer, !!data.colorRanked))) {
         Object.assign(settings, before);
         if (before.hoverOff === undefined) delete settings.hoverOff;
-        const prior = new Set((before.hoverInfo || []).map(h => h && (h.type === 'gene-score' ? `gene-score:${h.key}:${h.column || 'zscore_mean'}` : h.key)));
+        const prior = new Set((before.hoverInfo || []).map(h => h && (h.type === 'gene-score' ? `gene-score:${h.key}:${h.column || 'zscore_mean'}:${h.layer || ''}` : h.key)));
         for (const o of e.target.options) o.selected = o.value !== NO_HOVER && prior.has(o.value);
         showHoverChoice(plotContainer, settings);
         return;
@@ -1211,19 +1211,19 @@ function setupAxisSelectorListeners(
     handleAxisUpdate(axis, plotType);
   });
 
-  // The layer a gene score is computed over: its own consumer setting
-  $container.find('.axis-layer-select').on('change', function() {
-    const axis = jQuery(this).data('axis');
-    delete settings[axis].auto;
-    const value = jQuery(this).val();
-    if (value) settings[axis].layer = value; else delete settings[axis].layer;
-    handleAxisUpdate(axis, plotType);
-  });
-
   // Column selectors
   $container.find('.axis-column-select').on('change', function() {
     const axis = jQuery(this).data('axis');
     delete settings[axis].auto;
+    if (settings[axis].type === 'gene-score') {
+      // one list of the signature's offered options: the method goes in `column`, the layer beside it
+      const chosen = this.selectedOptions[0];
+      settings[axis].column = (chosen && chosen.dataset.method) || jQuery(this).val();
+      const layer = chosen && chosen.dataset.layer;
+      if (layer) settings[axis].layer = layer; else delete settings[axis].layer;
+      handleAxisUpdate(axis, plotType);
+      return;
+    }
     settings[axis].column = jQuery(this).val();
     handleAxisUpdate(axis, plotType);
   });

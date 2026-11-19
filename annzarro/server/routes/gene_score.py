@@ -7,6 +7,7 @@ A ``dataset_path`` in the body is allowed only if it names the same dataset.
 Body::
 
     {"recipe": {...},              # core/gene_score.py: genes, input, method, clip, seed, version
+                                   # (method control_adjusted draws its control genes with ``seed``)
      "subset": "<spec>" | {...},   # optional: the cells shown (as ?subset= elsewhere)
      "estimate_only": false,       # answer with the cost estimate and read nothing
      "confirm": false}             # the user accepted an estimate above ``auto_max_s``
@@ -46,6 +47,8 @@ MAX_BODY_BYTES = 1 << 20
 QUEUE_WAIT_S = 30.0
 #: Seconds a remote store may be read for one score (the request deadline ends with the request itself).
 REMOTE_COMPUTE_S = 1800.0
+#: Seconds a remote store may be sampled for the kind of an input.
+REMOTE_KIND_S = 30.0
 #: Bytes of the vector written at once, so a closed connection is noticed between writes.
 WRITE_CHUNK = 1 << 20
 
@@ -115,11 +118,17 @@ def _result_frame(plan, result):
     if names["no_values"]:
         warnings.append({"code": "no_values", "names": names["no_values"],
                          "message": "These genes have no value in any cell and were left out."})
+    if plan.recipe.method == "fraction_of_total" and result.input_kind in ("log", "signed"):
+        warnings.append({"code": "fraction_not_meaningful", "names": [],
+                         "message": "This input looks " + ("log-transformed" if result.input_kind == "log" else "scaled")
+                                    + ", so the share of the total is not meaningful. Use counts or linear normalised values."})
     return {"type": "result", "algorithm_version": gene_score.ALGORITHM_VERSION,
             "recipe": plan.recipe.describe(), "scored": shown is not None, "reason": result.reason,
             "message": gene_score.NO_SCORE_MESSAGES.get(result.reason), "n_cells": result.n_cells,
             "n_shown": result.n_shown, "n_used": result.n_used, "genes": [_gene_json(g) for g in result.genes],
             "missing": plan.missing, "duplicated": plan.duplicated, "warnings": warnings,
+            **({"n_controls": len(result.controls or ()), "n_controls_used": result.n_controls_used,
+                "binning": plan.binning} if plan.recipe.method == "control_adjusted" else {}),
             "entries_read": result.entries_read, "seconds": round(result.seconds, 3),
             "dtype": "float32", "byte_length": 0 if shown is None else int(shown.size) * 4}
 
@@ -236,7 +245,7 @@ def register_gene_score_routes(app_, api_version):
                 _slot.release()
         try:
             n_shown = plan.n_obs if shown_rows is None else int(shown_rows.size)
-            need = n_shown * (8 + 2) + min(gene_score.READ_AHEAD_ENTRIES, plan.entries) * 12
+            need = n_shown * (8 + 2) * plan.vectors + min(gene_score.READ_AHEAD_ENTRIES, plan.entries) * 12
             admitted = read_guard.admit(need)
             admitted.__enter__()
         except BaseException:
@@ -249,3 +258,30 @@ def register_gene_score_routes(app_, api_version):
         response.headers["X-Accel-Buffering"] = "no"
         response.headers["X-Annzarro-Score-Version"] = str(gene_score.ALGORITHM_VERSION)
         return response
+
+
+def register_matrix_kind_route(app_, api_version):
+    """``GET /api/v1/data/matrix_kind?dataset_path=&input=X``: what the numbers of an input look like.
+
+    ``{"input", "kind", "stats", "suggest", "checked"}``. ``kind`` is one of ``counts``, ``normalised``,
+    ``log``, ``signed``, ``other`` or ``unknown`` (core/matrix_kind.py); ``suggest`` names a layer that looks
+    log-normalised when the input does not (only then are the other matrices looked at). A sample of a few
+    thousand stored values is read, never the matrix.
+    """
+    @app_.route(f"/api/{api_version}/data/matrix_kind", methods=["GET"])
+    @access.gate("dataset")
+    def matrix_kind_route():
+        dataset_path = request.args.get("dataset_path")
+        if not dataset_path:
+            return _error(400, "bad_request", "dataset_path parameter is required")
+        name = request.args.get("input", "X")
+        if not name or len(name) > gene_score.MAX_NAME_CHARS:
+            return _error(400, "bad_request", "input must be 'X' or the name of a layer.")
+        try:
+            reader = get_reader(dataset_path)
+            with remote.deadline(REMOTE_KIND_S if remote.is_remote_path(dataset_path) else None):
+                return jsonify(gene_score.matrix_kinds(reader, dataset_path, name))
+        except gene_score.ScoreError as exc:
+            return _error(exc.status, exc.reason, exc.message, **exc.extra)
+        except Exception as exc:
+            return data_routes._reader_error_response(exc, dataset_path)

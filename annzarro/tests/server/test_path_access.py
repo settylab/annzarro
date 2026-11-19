@@ -59,6 +59,7 @@ ROUTES = [
     ("GET", "/api/v1/zarr/to_anndata?dataset_path={p}"),
     ("POST", "/api/v1/data/refresh?dataset_path={p}"),
     ("POST", "/api/v1/data/gene_score?dataset_path={p}"),
+    ("GET", "/api/v1/data/matrix_kind?dataset_path={p}&input=X"),
     ("POST", "/api/v1/cache/reset?dataset_path={p}"),
     ("GET", "/api/v1/core/datasets?dir={d}"),
     ("GET", "/api/v1/directories/list?path={d}"),

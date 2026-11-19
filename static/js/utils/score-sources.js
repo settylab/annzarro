@@ -21,7 +21,7 @@
  * reply), and otherwise the edits collect (`held`) until `update(id)` -
  * "Update score". Dependants keep the previous score meanwhile.
  */
-import { recipeHash, DEFAULT_METHOD } from './gene-signature.js';
+import { recipeHash, DEFAULT_METHOD, METHODS } from './gene-signature.js';
 import { scoreKey } from './score-store.js';
 
 /** Seconds the estimate may be to apply an edit at once, when the reply does not say. */
@@ -62,9 +62,18 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     const hashOf = (recipe) => recipeHash(recipe);
     // The aggregation belongs to the consumer, not the signature: a score is the signature's genes and
     // shared settings read with one method. Edits are compared without it.
-    // The layer is the consumer's too: it becomes the recipe's `input` for that request ('' keeps the signature's own).
-    const withMethod = (recipe, sub, layer = '') => ({ ...recipe, method: sub || DEFAULT_METHOD, ...(layer ? { input: layer } : {}) });
-    const editHash = (recipe) => hashOf(withMethod(recipe, DEFAULT_METHOD));
+    const withMethod = (recipe, sub, layer) => ({ ...recipe, method: sub || DEFAULT_METHOD, input: layer || recipe.input });
+    // An edit is a change to any score the signature could give: the genes and every shared setting. The clip only
+    // reaches the z-score mean and the seed only the control-adjusted score, so the hash covers each method.
+    const editHash = (recipe) => METHODS.map(m => hashOf(withMethod(recipe, m))).join('|');
+    /** The aggregations the dependants of a signature read, each once. */
+    const pairsUsed = (id) => {
+        const seen = new Map();
+        for (const h of handles) if (h.sigId === id) seen.set(`${h.sub || DEFAULT_METHOD}\u0001${h.layer || ''}`, { sub: h.sub || DEFAULT_METHOD, layer: h.layer || '' });
+        return [...seen.values()];
+    };
+    /** Whether `b` is a different score from `a` for any (aggregation, layer) a dependant of `id` reads. */
+    const changesScore = (id, a, b) => pairsUsed(id).some(p => hashOf(withMethod(a, p.sub, p.layer)) !== hashOf(withMethod(b, p.sub, p.layer)));
     const genesIn = (recipe) => recipe.genes.length + (recipe.down ? recipe.down.length : 0);
 
     function appliedOf(id, sig) {
@@ -117,10 +126,11 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         const applied = appliedOf(handle.sigId, sig);
         const held = heldOf(handle.sigId);
         // the signature decides what it offers: a consumer on an option it no longer offers says so
-        if (signatures.offers && !signatures.offers(applied, handle.sub, handle.layer)) {
+        if (signatures.offers && !signatures.offers(sig.recipe(), handle.sub || DEFAULT_METHOD, handle.layer || '')) {
             dropKey(handle);
             handle.shown = null;
-            return { ...base, held, state: 'notoffered', sub: handle.sub || DEFAULT_METHOD, layer: handle.layer || applied.input, ownInput: applied.input };
+            return { ...base, held, state: 'notoffered', sub: handle.sub || DEFAULT_METHOD, layer: handle.layer || applied.input,
+                ownInput: applied.input };
         }
         const recipe = withMethod(applied, handle.sub, handle.layer);
         if (genesIn(recipe) === 0) {
@@ -207,13 +217,19 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         const p = pending.get(id);
         if (!sig || !p || p.token !== mine) return;
         p.timer = null;
-        const live = withMethod(copyRecipe(sig.recipe()), DEFAULT_METHOD);
-        if (genesIn(live) === 0) { apply(id); return; }
+        const edited = copyRecipe(sig.recipe());
+        if (genesIn(edited) === 0) { apply(id); return; }
         const ctx = context();
-        const reply = await store.estimateFor(live, ctx.dataset, hashOf(live))
-            .catch(() => null);       // the failure shows when the edit is applied and computed
+        // the slowest of the scores the dependants read decides whether the edit is applied at once
+        const replies = await Promise.all(pairsUsed(id).map((p) => {
+            const live = withMethod(edited, p.sub, p.layer);
+            return store.estimateFor(live, ctx.dataset, hashOf(live))
+                .catch(() => null);   // the failure shows when the edit is applied and computed
+        }));
         const now = pending.get(id);
         if (!now || now.token !== mine) return;
+        let reply = null;
+        for (const r of replies) if (r && r.estimate && (!reply || r.estimate.seconds > reply.estimate.seconds)) reply = r;
         const estimate = reply && reply.estimate;
         const limit = estimate && typeof estimate.live_max_s === 'number' ? estimate.live_max_s : LIVE_MAX_S;
         if (!estimate || estimate.seconds < limit) {
@@ -231,7 +247,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
          * @param {string} id
          * @param {{onChange: (state: Object) => void, visible?: () => boolean, host?: any, role?: string}} spec
          */
-        watch(id, { onChange, visible = () => true, host = null, role = '', sub = null, layer = '' }) {
+        watch(id, { onChange, visible = () => true, host = null, role = '', sub = null, layer = null }) {
             const handle = {
                 sigId: id, sub, layer, key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
                 read() { return read(handle); },
@@ -285,10 +301,12 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             const was = applied.get(id);
             if (!was) { appliedOf(id, sig); notifySource(id); return; }
             const p = pending.get(id);
-            if (editHash(live) === editHash(was)) {
-                // edited back to what is shown
+            if (!changesScore(id, live, was)) {
+                // edited back to what is shown, or changed only what no dependant reads (the clip, for a plain mean):
+                // the settings are kept, and no score is asked for
                 if (p && p.timer) clearTimer(p.timer);
                 pending.delete(id);
+                if (editHash(live) !== editHash(was)) applied.set(id, copyRecipe(live));
                 notifySource(id);
                 return;
             }

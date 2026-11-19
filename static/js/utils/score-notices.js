@@ -1,4 +1,4 @@
-import { methodLabel } from './score-offers.js';
+import { methodShort as methodLabel } from './signature-options.js';
 
 /**
  * What a dependant of a gene-signature score says in each state (design 7.3,
