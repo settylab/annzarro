@@ -2261,7 +2261,8 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     const tokens = entityType === 'cells' && entities instanceof RemoteNames
       && RemoteNames.isToken((data[entityType] || [])[0]);
     let passing, unknown;
-    const noRows = !tableConfig.closedSelection;
+    // a table that holds its rows for a score has no rows to apply, whatever it kept when it was closed
+    const noRows = !tableConfig.closedSelection || !!(gated && gated.reason === 'score');
     const tableName = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
     // Rows to apply: none (restored from a link, a panel set or a step, or never loaded). Ask the
     // resolver, which builds them in the background when it may; a plot in large-plot mode applies

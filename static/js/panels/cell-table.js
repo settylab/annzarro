@@ -16,6 +16,10 @@ import { syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { assignKnownSettings, configOf } from '../utils/panel-settings.js';
 import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-guard-ui.js';
 import { tableMayLoad } from './table-utilities/table-memory.js';
+import { TableScores } from './table-utilities/table-scores.js';
+import { bindScoreColumns } from './table-utilities/table-score-ui.js';
+import { sameScoreColumn } from '../utils/score-column.js';
+import { removeColumnFromChooser, buildScoreTab, syncSelectedColumns } from './table-utilities/table-ui-make.js';
 import { TableResolver } from '../utils/table-resolver.js';
 import './table-utilities/table-background.js';
 
@@ -195,8 +199,11 @@ const CellTablePanel = (function() {
                     if (signal.aborted) {
                         throw new DOMException('Table refresh aborted after loading data', 'AbortError');
                     }
+                    TableScores.prune(_id, _settings.columns);
                     if (replaceRowsInPlace(_dataTable, tableData)) {
                         renderCoverageNotice(_tableContainer, tableData.coverage, 'cells');
+                        // the score columns say what they are for these cells
+                        bindScoreColumns(_dataTable, _settings, _tableContainer);
                         return;
                     }
                 }
@@ -225,6 +232,9 @@ const CellTablePanel = (function() {
                     throw new DOMException('Table refresh aborted after loading data', 'AbortError');
                 }
                 
+                // a score column taken out of the table stops wanting its score
+                TableScores.prune(_id, _settings.columns);
+
                 // Destroy existing DataTable if it exists
                 if (_dataTable) {
                     // the filter, the search and the rows passing them as
@@ -310,6 +320,8 @@ const CellTablePanel = (function() {
                 _dataTable = null;
             }
             forgetMemory(_id);
+            // a closed table wants its scores only when something that filters by it needs them
+            TableScores.release(_id);
             // its filter is now its closed selection (set above); nothing is rebuilt
             TableResolver.panelClosed(_id);
             
@@ -483,9 +495,62 @@ const CellTablePanel = (function() {
             return true;
         }
 
+        /**
+         * Add a column from outside the chooser (a signature's Use in > Add to this table): it is
+         * ticked in the chooser and the table is built again with it. The score is not waited
+         * for: the column says it is computing and fills in when the score arrives.
+         * @param {Object} column - `{type, key, column, label}`
+         */
+        function hasColumn(column) {
+            return (_settings.columns || []).some(c => c.type === column.type && c.key === column.key
+                && (c.column || (c.type === 'gene-score' ? 'zscore_mean' : '')) === (column.column || ''));
+        }
+
+        async function addColumn(column) {
+            const have = hasColumn(column);
+            if (!have) _settings.columns = [...(_settings.columns || []), { ...column }];
+            buildScoreTab(_id, _settings);
+            syncSelectedColumns(_id, _settings);
+            await refreshTable();
+        }
+
+        /**
+         * Take a column out of the table (a score column whose signature is gone, or that could
+         * not be computed): the chooser is unticked and the table is built again without it.
+         * @param {Object} column
+         */
+        async function removeColumn(column) {
+            removeColumnFromChooser(_id, _settings, column, sameScoreColumn);
+            await refreshTable();
+        }
+
+        /**
+         * Whether other panels may read this table's rows: not while its filter reads a score that
+         * is not ready (the rows are held, utils/score-column.js), and the plots and Gene Set
+         * Analysis panels that read it wait with it.
+         */
+        function isReady() {
+            return !_dataTable || !scoreGate();
+        }
+
+        /**
+         * What stands between this table's filter and its rows because a score the filter reads is
+         * not ready (utils/score-column.js filterGate), or null. Asking for a closed table's gate
+         * asks for its scores, for the dependants that can be seen.
+         * @param {{visible?: () => boolean}} [opts]
+         */
+        function scoreGate(opts = {}) {
+            return TableScores.gateOf(_id, { columns: _settings.columns, searchBuilderConfig: _settings.searchBuilderConfig }, opts);
+        }
+
         // Public API
         return {
             init,
+            isReady,
+            scoreGate,
+            removeColumn,
+            addColumn,
+            hasColumn,
             setClosedSelection,
             refreshTable,
             applyLine,

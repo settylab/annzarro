@@ -106,6 +106,7 @@ export function describeUnresolved(status, name, titleOf = (id) => id) {
     const off = ['table-filter-off', 'Stop filtering'];
     const state = status && status.state;
     const why = status && status.reason ? status.reason : '';
+    if (status && status.reason === 'score' && ['waiting', 'failed', 'refused'].includes(state)) return describeScoreWait(status, name);
     switch (state) {
         case 'building':
             if (status.frozen) {
@@ -152,6 +153,27 @@ export function describeUnresolved(status, name, titleOf = (id) => id) {
     }
 }
 
+/**
+ * What a plot says of a table filter that reads a gene-signature score that is not ready (the
+ * score is a dependency that resolves first, utils/score-column.js filterGate). The same words
+ * for an open table that holds its rows and a closed one that waits to be built.
+ */
+function describeScoreWait(status, name) {
+    const open = ['reopen-table', 'Open table'];
+    const off = ['table-filter-off', 'Stop filtering'];
+    const score = status.title ? `'${status.title}'` : 'a score';
+    if (status.state === 'waiting') {
+        const asks = status.scoreState === 'awaiting';
+        return { tag: 'Waiting for score', headline: 'Filter not applied yet',
+            text: asks ? `Filtering by '${name}' needs ${score}, which has not been computed. No cells are drawn until it is.`
+                : `Filtering by '${name}' needs ${score}, which is not ready yet. No cells are drawn until it is.`,
+            actions: [asks ? ['table-score-compute', 'Compute score'] : ['table-score-cancel', 'Cancel'], open, off] };
+    }
+    return { tag: 'Filter not applied', headline: 'Filter not applied',
+        text: `'${name}' is filtered by ${score}.${status.detail ? ` ${status.detail}` : ''} No cells are drawn.`,
+        actions: [...(status.scoreState === 'failed' ? [['table-score-retry', 'Retry score']] : []), open, off] };
+}
+
 function abortError(why) {
     return new DOMException(why, 'AbortError');
 }
@@ -172,6 +194,11 @@ function abortError(why) {
  * - publish(id, selection): puts the result where plots read it
  * - notify(id, kind): tells the dependants that something changed (once per change)
  * - schedule(fn): runs fn later, in a new task
+ * - scoreGate(id, {open, dependant}) -> status|null (optional): what stands between the table's
+ *   filter and its rows when the filter reads a gene-signature score that is not ready: a status
+ *   with reason 'score' (state 'waiting', 'failed' or 'refused'). For an open table it is the
+ *   table holding its rows; for a closed one it is checked before any build, after the cycle check.
+ * - releaseScores(id) (optional): a closed table's scores are not wanted any more
  *
  * @param {Object} host
  * @param {{limits?: {AUTO_ROWS: number, ASK_ROWS: number}}} [options]
@@ -243,6 +270,15 @@ export function createResolver(host, options = {}) {
             set(rec, 'cycle', { cycle });
             return publicStatus(rec);
         }
+        // A score the filter reads is resolved first: nothing is built, and nothing is asked of the
+        // score, for a table in a cycle (above). Its change tells the dependants to ask again.
+        const scoreStatus = host.scoreGate ? host.scoreGate(id, { open: false, dependant: dependantId }) : null;
+        if (scoreStatus) {
+            stop(rec, 'A score is not ready');
+            rec.key = null;
+            set(rec, 'idle');
+            return { ...scoreStatus };
+        }
         const key = host.cellsKey(panel.kind);
         if (rec.key !== key) {
             // other cells: what was decided for the old ones is void
@@ -285,9 +321,16 @@ export function createResolver(host, options = {}) {
      */
     function gate(id) {
         const rec = records.get(id);
-        if (!rec) return null;
-        if (rec.opening) return { state: 'waiting', reason: 'opening' };
-        if (rec.outcome) return { ...rec.outcome };
+        if (rec && rec.opening) return { state: 'waiting', reason: 'opening' };
+        if (rec && rec.outcome) return { ...rec.outcome };
+        // an open table whose filter reads a score that is not ready holds its rows
+        if (host.scoreGate) {
+            const panel = host.panel(id);
+            if (panel && panel.open) {
+                const held = host.scoreGate(id, { open: true });
+                if (held) return { ...held };
+            }
+        }
         return null;
     }
 
@@ -508,6 +551,7 @@ export function createResolver(host, options = {}) {
         rec.epoch++;
         stop(rec, 'The table was removed');
         records.delete(id);
+        if (host.releaseScores) host.releaseScores(id);
     }
 
     /** The cells (or the dataset) changed: builds for other cells end, what was decided is void. */
@@ -538,6 +582,8 @@ export function createResolver(host, options = {}) {
             rec.failedKey = null;
             rec.wanted.clear();
             set(rec, 'idle');
+            const panel = host.panel(rec.id);
+            if (host.releaseScores && panel && !panel.open) host.releaseScores(rec.id);
         }
     }
 
@@ -557,6 +603,30 @@ export function createResolver(host, options = {}) {
         }
     }
 
+    /**
+     * A score a closed table's filter reads changed (arrived, or was computed again for an edited
+     * signature): the selection built from the old one is void, and the dependants ask again.
+     */
+    function scoreChanged(id) {
+        const panel = host.panel(id);
+        const rec = records.get(id);
+        if (!panel || panel.open || !rec) return;
+        rec.epoch++;
+        stop(rec, 'A score changed');
+        if (rec.owner === 'background') rec.owner = 'none';
+        rec.key = null;
+        rec.failedKey = null;
+        set(rec, 'idle');
+        if (typeof host.publish === 'function') host.publish(id, null);
+        host.notify(id, panel.kind);
+    }
+
+    /** The dependants that wait on this table and are on the page. */
+    function wantedBy(id) {
+        const rec = records.get(id);
+        return rec ? liveWanted(rec) : [];
+    }
+
     /** A dependant no longer filters by this table. */
     function withdraw(dependantId) {
         for (const rec of records.values()) rec.wanted.delete(dependantId);
@@ -565,7 +635,7 @@ export function createResolver(host, options = {}) {
 
     return {
         need, gate, status, confirm, cancel, retry, claim, panelPublished, panelSettled, panelClosed, drop,
-        cellsChanged, reset, reassess, withdraw,
+        cellsChanged, reset, reassess, withdraw, scoreChanged, wantedBy,
         /** Tests: the limits in force, and a way to tune them. */
         get limits() { return { ...limits }; },
         setLimits(next) { limits = { ...TABLE_LIMITS, ...next }; },
