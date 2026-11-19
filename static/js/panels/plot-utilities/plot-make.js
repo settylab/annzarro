@@ -2141,6 +2141,7 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   // If no table filter is active, remove any existing tableEntities and tableFilterMask
   if (!hasTableFilter) {
     stale(null);
+    noCellPasses(plotContainer, data, settings, null);
     // Always treat switching to "none" as a change that needs visual update
     if (data.tableEntities || data.tableFilterMask) {
       delete data.tableEntities;
@@ -2174,6 +2175,7 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
   const closed = !!(window.PanelManager && window.PanelManager.getActivePanels
     && !window.PanelManager.getActivePanels().includes(tablePanel));
+  let outOfDate = false;      // a closed table's filter that does not know these cells: unresolved, not "no cell"
 
   if (closed) {
     // by name, on the cells shown now. A plot holding tokens (names fetched
@@ -2194,6 +2196,7 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     }
     newTableEntities = passing;
     const name = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
+    outOfDate = unknown > 0;
     stale(unknown > 0 ? { table: settings.tableFilter, unknown, text: staleText(name, unknown, entityType) } : null);
   } else {
     stale(null);
@@ -2211,6 +2214,10 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     });
   }
   
+  // A filter that resolves to no cells is its own state (not "Filter not applied")
+  noCellPasses(plotContainer, data, settings,
+    newTableEntities.size === 0 && !outOfDate ? ((tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter) : null);
+
   // Compare with existing tableEntities to see if they've changed
   let changed = false;
   if (!currentTableEntities || tableSetsDiffer(currentTableEntities, newTableEntities)) {
@@ -2230,6 +2237,37 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   }
   
   return changed;
+}
+
+/**
+ * What the plot says when the table that filters it passes no cell: the
+ * title of the table, or null when some cell passes (or there is no filter).
+ * With the excluded cells greyed, every cell is drawn grey and the strip
+ * carries a tag; with them removed nothing is drawn (createPlot draws the
+ * placeholder). Never "Filter not applied": the filter
+ * is resolved and says no cell.
+ * @param {HTMLElement|null} plotContainer
+ * @param {Object} data
+ * @param {Object} settings
+ * @param {string|null} title - the table's title when no cell passes, else null
+ */
+function noCellPasses(plotContainer, data, settings, title) {
+  data.tableFilterEmpty = title;
+  if (!plotContainer) return;
+  const unit = data.entities === 'genes' ? 'genes' : 'cells';
+  const text = title === null ? null : emptyFilterText(unit, title);
+  plotContainer.__azTableEmpty = text;
+  // greyed: every cell is drawn grey (as a hand-made filter that nothing passes always did) and
+  // the strip says why; removed: createPlot draws the placeholder instead
+  setStatusTag(plotContainer, 'table-empty', text && !settings.removeNonTableEntries
+    ? { text: 'No ' + unit + ' pass', severity: 'warning', title: text,
+        pop: { text, actions: [['reopen-table', 'Open table'], ['table-filter-off', 'Stop filtering']] } }
+    : null);
+}
+
+/** "No cells pass 'Table 1'": the state of a filter that no cell passes. */
+export function emptyFilterText(unit, title) {
+  return `No ${unit} pass '${title}'.`;
 }
 
 /**
@@ -2704,6 +2742,17 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     drawPlaceholder(plotContainer, loadCoverage.withGap(GAP.UNAVAILABLE,
       `this dataset supplied no ${unit} names, so points cannot be identified`,
       `${unit} names`), unit);
+    return;
+  }
+  // The table that filters this plot passes no cell and the cells it excludes are
+  // removed: nothing to draw. Say so, with what undoes it.
+  if (settings.removeNonTableEntries && data.tableFilterEmpty != null
+      && settings.tableFilter && settings.tableFilter !== 'none') {
+    drawPlaceholder(plotContainer, null, unit, {
+      say: { severity: 'warning', headline: emptyFilterText(unit, data.tableFilterEmpty),
+             lines: [`0 of ${entities.length} ${unit} shown`] },
+      actions: [['reopen-table', 'Open table'], ['table-filter-off', 'Stop filtering']]
+    });
     return;
   }
   if (entities.length !== data.x.values.length) {

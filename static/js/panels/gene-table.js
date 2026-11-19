@@ -7,7 +7,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
-import { loadTableData, initializeDataTable, freezeTableState, applyLineToSettings, settleColumnChooser, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
+import { loadTableData, initializeDataTable, releaseTable, applyLineToSettings, settleColumnChooser, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder, showCancelled } from '../utils/panel-surface.js';
 import { beginLoad, endLoad, cancelLoads, wasCancelled } from '../utils/load-scope.js';
@@ -159,8 +159,7 @@ const GeneTablePanel = (function() {
                 // will its rows fit next to the other panels? (utils/memory-guard-ui.js)
                 if (!tableMayLoad(_tableContainer, _id, 'gene-table', () => {
                     if (!_dataTable) return;
-                    freezeTableState(_settings);
-                    _dataTable.destroy();
+                    releaseTable(_dataTable, _settings);
                     _dataTable = null;
                 })) return;
                 // Other cells of the same table: the rows are swapped into
@@ -212,8 +211,7 @@ const GeneTablePanel = (function() {
                 if (_dataTable) {
                     // the filter, the search and the rows passing them as
                     // values: the next DataTable starts from them
-                    freezeTableState(_settings);
-                    _dataTable.destroy();
+                    releaseTable(_dataTable, _settings);
                     _dataTable = null;
                 }
                 
@@ -263,8 +261,7 @@ const GeneTablePanel = (function() {
                     // the next update (a subset that makes the rows listable again) builds a table instead of
                     // swapping rows into this detached one and leaving the placeholder up.
                     if (_dataTable) {
-                        freezeTableState(_settings);
-                        _dataTable.destroy();
+                        releaseTable(_dataTable, _settings);
                         _dataTable = null;
                     }
                 }
@@ -287,8 +284,7 @@ const GeneTablePanel = (function() {
             if (_dataTable) {
                 // what other panels still read (a plot's table filter, the
                 // panel set) stays, as values; the DataTable's rows go
-                freezeTableState(_settings, { rowNames: DataManager.getGenes(), rows: _dataTable.rows().count() });
-                _dataTable.destroy();
+                releaseTable(_dataTable, _settings, { rowNames: DataManager.getGenes(), rows: _dataTable.rows().count() });
                 _dataTable = null;
             }
             forgetMemory(_id);

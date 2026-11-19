@@ -253,12 +253,21 @@ export const DEFAULT_MODEL = {
      * character per label; the blob adds 3 B + 1 B per character per label.
      */
     hoverLabels: { perPoint: 34, perLabel: 62, perChar: 2 },
-    /** A cell table row (DataTables with deferRender): its data array and row object. Provisional. */
-    tableRow: { heap: 300 },
+    /**
+     * A cell table row (DataTables with deferRender): its data array and row object.
+     * Measured (Chromium, JS heap after GC, table shown minus before, 100,000 rows, step 0a):
+     * 388 B a row with 1 column, 460 B with 2, 652 B with 6, so about 330 B plus 54 B a
+     * column. The guard does not know the column count, so it takes the six-column
+     * figure (the default table is 6 or fewer columns). The peak while loading, read
+     * with uncollected garbage, was 969, 1,143 and 1,960 B a row; the heap is
+     * collected before it can run out, so the resident figure is the model. It
+     * was 300 before: a table of six columns was 2.2 times what the guard thought.
+     */
+    tableRow: { heap: 650 },
     /** Numbers still to be measured (listed by the docs and the report). */
     provisional: [
         'large.off split from the client cache', 'regular resident (all colours)', 'regular categorical/none peak',
-        'regular 3D factor', 'export transient (both paths)', 'recolour transient (both paths)', 'table row'
+        'regular 3D factor', 'export transient (both paths)', 'recolour transient (both paths)', 'table row peak'
     ]
 };
 

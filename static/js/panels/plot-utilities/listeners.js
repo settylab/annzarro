@@ -416,6 +416,12 @@ export function setupPlotControlListeners(
         $removeNonTableEntriesBtn.attr('title',
           `Remove non-table entries (${settings.removeNonTableEntries ? 'active' : 'inactive'})`);
         
+        // A table that passes no cell: greyed is every cell grey, removed is the placeholder.
+        // That is a different drawing, not a restyle of the points drawn
+        if (data.tableFilterEmpty != null && settings.tableFilter && settings.tableFilter !== 'none') {
+          loadDataAndCreatePlot();
+          return;
+        }
         // We don't need to rebuild the tableEntities set, just apply the new filter setting
         // Now all filtering is separated - just update filter and colors
         updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { 

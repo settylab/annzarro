@@ -1640,7 +1640,16 @@ export async function updatePlotOnTableChange(plotContainer, data, settings, ref
   }
   
   // Use the new updateTableEntities function to efficiently update table entities
+  const wasEmpty = plotContainer.__azTableEmpty != null;
   const tableEntitiesChanged = await updateTableEntities(data, settings, plotContainer);
+
+  // A filter no cell passes, or one that did not a moment ago, is drawn from
+  // the data again: the incremental restyles below keep the traces of the
+  // rows that passed (an "in table" colour on cells that do not) and cannot
+  // bring back a plot the empty state replaced by its placeholder
+  if (tableEntitiesChanged && (wasEmpty || data.tableFilterEmpty != null)) {
+    return refreshPlot();
+  }
   
   // If table entities didn't change, no need to update the plot
   if (!tableEntitiesChanged) {

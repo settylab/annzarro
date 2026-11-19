@@ -731,7 +731,7 @@ def test_table_too_big_for_an_empty_page_offers_the_subset_that_fits(server, pag
     page.evaluate("() => window.PanelManager.getPanel('cell-table-t').refreshTable()")
     text, actions = _placeholder(page, "cell-table-t")
     assert text.startswith("Too many rows for this browser"), text
-    assert re.search(r"5M rows need ~1\.8 GB; this browser gives a page at most 900 MB of JS memory\.", text), text
+    assert re.search(r"5M rows need ~3\.9 GB; this browser gives a page at most 1\.7 GB of JS memory\.", text), text
     assert "free with" not in text, text
     # nothing else is open and closing would not help; half the cells would not fit either
     assert "close-others" not in actions and "subset-half" not in actions, actions

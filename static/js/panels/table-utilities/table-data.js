@@ -752,6 +752,113 @@ export function freezeTableState(settings, { rowNames = null, rows = 0 } = {}) {
 }
 
 /**
+ * The SearchBuilder window handlers of each DataTable, by its settings object.
+ *
+ * Every condition row SearchBuilder builds adds a `resize.dtsb` handler on
+ * the window and never removes it, not even when the table is destroyed.
+ * The handler holds the condition, the condition holds the table's settings
+ * (`s.dt`), and the settings hold every row. jQuery gives no way to take off
+ * "this table's" handlers, so each is recorded for the table whose condition
+ * built it, as it is added (trackSearchBuilder).
+ */
+const ownedResize = new WeakMap();
+const claimedResize = new WeakSet();
+let tracking = false;
+
+/** The `resize.dtsb` handlers on the window, as jQuery keeps them. */
+function dtsbResizeHandlers() {
+    const events = $._data(window, 'events');
+    return ((events && events.resize) || []).filter(h => (h.namespace || '').split('.').includes('dtsb'));
+}
+
+/**
+ * Record, once, which table each new `resize.dtsb` handler belongs to.
+ * SearchBuilder adds one in the constructor of every Criteria and then calls
+ * `_buildCriteria`, which is the first place a patch can see it from outside
+ * (the constructor is reached through a private name, not the exported one).
+ */
+function trackSearchBuilder() {
+    const Criteria = $.fn.dataTable && $.fn.dataTable.Criteria;
+    if (tracking || !Criteria || typeof Criteria.prototype._buildCriteria !== 'function') return;
+    tracking = true;
+    const build = Criteria.prototype._buildCriteria;
+    Criteria.prototype._buildCriteria = function (...args) {
+        try {
+            const settings = this.s.dt.settings()[0];
+            for (const h of dtsbResizeHandlers()) {
+                if (claimedResize.has(h)) continue;
+                claimedResize.add(h);
+                if (!ownedResize.has(settings)) ownedResize.set(settings, new Set());
+                ownedResize.get(settings).add(h.handler);
+            }
+        } catch { /* the table is being built; an unclaimed handler is a small leak, never an error */ }
+        return build.apply(this, args);
+    };
+}
+
+/**
+ * Destroy a table and let go of every row it held.
+ *
+ * `DataTable.destroy()` takes the table out of the page but not out of
+ * memory: the rows stayed reachable from the settings object, and the
+ * settings from several places that outlive the table (measured: about 13 MB
+ * per table of 20,000 rows, one more with every open and close):
+ *
+ * 1. SearchBuilder's `resize.dtsb` window handlers, one per condition,
+ *    through the condition's `s.dt` (taken off here for this table only);
+ * 2. `oInit.data`, the array the table was given, and `oInit.columns`, whose
+ *    render functions close over the column arrays;
+ * 3. the column, row and display arrays of the settings;
+ * 4. the jQuery handlers and data on the table's own elements (`.remove()`
+ *    in jQuery, not `innerHTML`, which keeps them);
+ * The Select extension keeps the last table's settings in a closure it registers for
+ * ordering; the settings are hollowed (2, 3) rather than that closure replaced.
+ *
+ * The table's state other panels read (filter, search, passing rows) is kept
+ * as values first (freezeTableState).
+ * @param {Object} dataTable - DataTables API instance
+ * @param {Object} settings - the table panel's settings
+ * @param {Object} [opts] - freezeTableState's options
+ */
+export function releaseTable(dataTable, settings, opts = {}) {
+    freezeTableState(settings, opts);
+    let st = null;
+    let node = null;
+    let tableNode = null;
+    try {
+        st = dataTable.settings()[0];
+        node = dataTable.table().container();
+        tableNode = dataTable.table().node();
+    } catch { /* already destroyed */ }
+    try {
+        dataTable.destroy();
+    } finally {
+        if (st) {
+            for (const fn of ownedResize.get(st) || []) $(window).off('resize.dtsb', fn);
+            ownedResize.delete(st);
+            if (st._azOptions) for (const key of ['data', 'columns']) st._azOptions[key] = null;
+            if (st._azBox) $(st._azBox).off('.azDerived');
+            st._azOptions = st._azBox = null;
+            for (const key of Object.keys(st)) {
+                if (/^ao.*Callback$/.test(key) && Array.isArray(st[key])) st[key].length = 0;
+            }
+            // the options as given, and the copies DataTables made of them
+            // (`aoColumns`, `aaData`): their render functions close over the rows
+            if (st.oInit) {
+                for (const key of ['data', 'aaData', 'columns', 'aoColumns']) st.oInit[key] = null;
+            }
+            for (const key of ['aoData', 'aoColumns', 'aiDisplay', 'aiDisplayMaster', 'aoHeader', 'aoFooter', 'aoPreSearchCols']) {
+                if (Array.isArray(st[key])) st[key].length = 0;
+            }
+            st._panelSettings = null;
+        }
+        // handlers and data of every element of the table, the original <table>
+        // (restored where it was, outside the wrapper) included
+        for (const el of [node, tableNode]) if (el) $(el).find('*').addBack().off().removeData();
+    }
+}
+
+/**
  * Keep a table free of derived columns (the line filter's `y - m*x`, utils/line-select.js) that no
  * condition uses any more. SearchBuilder says every change of its conditions (a condition deleted
  * or its column changed, a group deleted, Clear All) on its container; each time, the derived
@@ -802,6 +909,7 @@ export function searchSmart(regex, smart) {
 }
 
 export function initializeDataTable(tableContainer, tableData, settings, entityType) {
+    trackSearchBuilder();
     // Clear the container and add a table element
     tableContainer.innerHTML = '<table class="table table-sm table-striped" style="width:100%"></table>';
     const table = tableContainer.querySelector('table');
@@ -1101,6 +1209,10 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         // From here on, edits of the filter drop a line filter's derived column that nothing uses any
         // more. Attached after the table was built, so the conditions it was built from never purge.
         watchDerivedColumns(tableContainer, dataTable, settings);
+        // what releaseTable lets go of: the options object (its `data` and `columns` are
+        // captured by DataTables' own callbacks) and the box the derived-column handlers sit on
+        dataTable.settings()[0]._azOptions = tableOptions;
+        dataTable.settings()[0]._azBox = tableContainer;
         
         setTimeout(() => {
             // Make logic buttons more visible by adding custom classes
