@@ -58,14 +58,14 @@ test('a table above the automatic limit waits for Build filter; above the other 
     assert.equal(t.resolver.need('A', 'p').state, 'ask');
     await tick();
     assert.equal(t.builds.length, 0, 'nothing is built before the click');
-    t.resolver.confirm('A');
+    t.resolver.accept('A');
     await tick();
     assert.equal(t.builds.length, 1);
 
     const big = fake({ rows: 1000001 });
     big.wanted.p = 'A';
     assert.deepEqual([big.resolver.need('A', 'p').state, big.resolver.status('A').reason], ['refused', 'size']);
-    big.resolver.confirm('A');
+    big.resolver.accept('A');
     assert.equal(big.resolver.need('A', 'p').state, 'refused', 'a click does not lift the upper limit');
     await tick();
     assert.equal(big.builds.length, 0);
@@ -242,7 +242,7 @@ test('other cells end the builds for the old ones and void what was decided', as
     const t = fake({ rows: 300000 });
     t.wanted.p = 'A';
     t.resolver.need('A', 'p');
-    t.resolver.confirm('A');
+    t.resolver.accept('A');
     await tick();
     assert.equal(t.resolver.building, 'A');
     t.cells.key = 'k2';
@@ -343,7 +343,7 @@ test('Cancel stops the load phase and returns to Build filter, whatever the size
     assert.equal(t.resolver.need('A', 'p').state, 'ask');
     await tick(20);
     assert.equal(t.builds.length, 1, 'nothing restarts by itself');
-    t.resolver.confirm('A');
+    t.resolver.accept('A');
     await tick(20);
     assert.equal(t.builds.length, 2, 'Build filter builds again');
 });

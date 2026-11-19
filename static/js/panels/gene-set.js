@@ -1243,7 +1243,7 @@ const GeneSetPanel = (function() {
                 tone = 'stale';
                 text = _source.said.text.replace(/ No cells are drawn[^.]*\./, '');
                 for (const [action, label] of _source.said.actions) {
-                    if (action === 'build-filter') barActions.appendChild(barButton(label, () => TableResolver.confirm(_settings.tableFilter)));
+                    if (action === 'build-filter') barActions.appendChild(barButton(label, () => TableResolver.accept(_settings.tableFilter)));
                     else if (action === 'retry-filter') barActions.appendChild(barButton(label, () => TableResolver.retry(_settings.tableFilter)));
                     else if (action === 'reopen-table') barActions.appendChild(barButton(label, reopenSource, 'btn-outline-secondary'));
                 }
