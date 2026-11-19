@@ -20,6 +20,7 @@ second one), and a panel closed and reopened from the closed list.
 Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
 """
+import json
 import os
 import socket
 import subprocess
@@ -188,3 +189,89 @@ def test_a_removed_table_lets_go_of_its_rows(page):
     assert growth < HEAP_GATE_MB, f"the heap grew {growth:.1f} MB over {CYCLES} more cycles ({seen})"
     assert residual < RESIDUAL_GATE_MB, (
         f"{residual:.1f} MB above the heap before any table is still held after {1 + CYCLES} cycles ({before:.1f} -> {seen})")
+
+
+# ---------------------------------------------------------------------------------------------
+# Background builds (utils/table-resolver.js, panels/table-utilities/table-background.js): the
+# detached table of a build lets go of its rows too. The same thresholds as above, not widened.
+
+# a filter on two of the six columns, so a build loads two of them (Option A-min)
+BUILD_FILTER = {"logic": "AND", "criteria": [
+    {"condition": "=", "data": "leiden", "origData": "obs_leiden_main", "type": "string", "value": ["3"]},
+    {"condition": ">", "data": "total_counts", "origData": "obs_total_counts_main", "type": "num", "value": ["5000"]}]}
+
+BUILD = """async (searchText) => {
+    const tb = await import('/static/js/panels/table-utilities/table-background.js');
+    const cfg = { columns: %s, searchBuilderConfig: %s, searchText: searchText || '' };
+    const sel = await tb.buildSelection({ kind: 'cell-table', config: cfg, signal: new AbortController().signal, check() {} });
+    return Array.from(sel.passing).length;
+}""" % (json.dumps([{"type": t, "key": k, "column": ""} for t, k in COLUMNS]), json.dumps(BUILD_FILTER))
+
+
+def test_a_background_build_lets_go_of_its_rows(page):
+    """Four builds of a filter on two of six columns, each result dropped: the heap returns to where it
+    was, and does not grow with the builds."""
+    page.wait_for_timeout(1500)
+    page.evaluate(CLEAR_CACHE)
+    before = heap_mb(page)
+    seen, passing = [], []
+    for _ in range(1 + CYCLES):
+        passing.append(page.evaluate(BUILD, ""))
+        page.evaluate(CLEAR_CACHE)
+        seen.append(heap_mb(page))
+    print(f"\nbackground builds: heap MB before {before:.1f}, after each {[round(h, 1) for h in seen]}, passing {passing[0]}")
+    assert passing[0] > 0 and len(set(passing)) == 1, passing
+    growth = seen[-1] - seen[0]
+    residual = seen[-1] - before
+    assert growth < HEAP_GATE_MB, f"the heap grew {growth:.1f} MB over {CYCLES} more builds ({seen})"
+    assert residual < RESIDUAL_GATE_MB, (
+        f"{residual:.1f} MB above the heap before any build is still held after {1 + CYCLES} builds ({before:.1f} -> {seen})")
+    # with the search text too, every column is loaded (the search spans all of them)
+    all_cols = page.evaluate(BUILD, "1")
+    page.evaluate(CLEAR_CACHE)
+    after_all = heap_mb(page)
+    print(f"all columns (search text): passing {all_cols}, heap {after_all:.1f} MB")
+    assert after_all - before < RESIDUAL_GATE_MB, f"a build of every column left {after_all - before:.1f} MB behind"
+
+
+RESOLVE = """async () => {
+    const pm = window.PanelManager;
+    const { TableResolver } = await import('/static/js/utils/table-resolver.js');
+    await import('/static/js/panels/table-utilities/table-background.js');
+    let panel = pm.getPanel('cell-table-bg');
+    if (!panel) panel = pm.registerClosedPanel('cell-table', { id: 'cell-table-bg', title: 'bg',
+        columns: %s, searchBuilderConfig: %s });
+    panel.setClosedSelection(null);
+    // a dependant on the page that wants it: a stand-in with the plot's two properties
+    const host = TableResolver.host;
+    const fake = { ...host, isDependant: (d, t) => d === 'dependant' && t === 'cell-table-bg' };
+    TableResolver.host = fake;
+    try {
+        const status = TableResolver.need('cell-table-bg', 'dependant');
+        const t = performance.now();
+        while (!panel.getConfig().closedSelection && performance.now() - t < 120000) await new Promise(r => setTimeout(r, 50));
+        return panel.getConfig().closedSelection ? Array.from(panel.getConfig().closedSelection.passing).length : -1;
+    } finally { TableResolver.host = host; }
+}""" % (json.dumps([{"type": t, "key": k, "column": ""} for t, k in COLUMNS]), json.dumps(BUILD_FILTER))
+
+
+def test_the_resolver_path_keeps_only_the_compact_selection(page):
+    """The real route (queue, build, publish): each build replaces the selection of the one before, the
+    heap does not grow with the builds, and with the selection cleared nothing of the rows is left."""
+    page.wait_for_timeout(1500)
+    page.evaluate(CLEAR_CACHE)
+    before = heap_mb(page)
+    seen = []
+    for _ in range(1 + CYCLES):
+        n = page.evaluate(RESOLVE)
+        assert n > 0, n
+        page.evaluate(CLEAR_CACHE)
+        seen.append(heap_mb(page))
+    growth = seen[-1] - seen[0]
+    page.evaluate("() => window.PanelManager.getPanel('cell-table-bg').setClosedSelection(null)")
+    page.evaluate(CLEAR_CACHE)
+    cleared = heap_mb(page)
+    print(f"\nresolver path: heap MB before {before:.1f}, after each {[round(h, 1) for h in seen]}, selection cleared {cleared:.1f}")
+    assert growth < HEAP_GATE_MB, f"the heap grew {growth:.1f} MB over {CYCLES} more builds ({seen})"
+    assert cleared - before < RESIDUAL_GATE_MB, (
+        f"{cleared - before:.1f} MB above the heap before any build is still held with the selection cleared ({before:.1f} -> {cleared:.1f})")
