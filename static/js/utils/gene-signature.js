@@ -18,9 +18,6 @@ import { METHODS, DEFAULT_METHOD, cleanOffered, cleanLayers, paramsOf, methodInf
 
 export { METHODS, DEFAULT_METHOD };
 
-/** Most genes a signature holds (up genes and down genes together), as the server's MAX_GENES. */
-export const GENE_LIMIT = 2000;
-
 /** The score's algorithm version (the server's ALGORITHM_VERSION). */
 export const RECIPE_VERSION = 1;
 
@@ -111,27 +108,21 @@ export function cleanClip(value) {
 /**
  * The recipe a saved config (a link, a panel set, an older version) describes.
  * Anything missing or invalid takes its default, so a hand-edited link still
- * opens. A gene on both sides counts as an up gene (the design's rule). A
- * list over the limit is cut at it, and the notes say so.
+ * opens. A gene on both sides counts as an up gene (the design's rule). There is no
+ * limit on the number of genes: the cost estimate is the only guard.
  * @param {Object} [raw]
  * @returns {{recipe: Object, notes: string[]}}
  */
 export function normalizeRecipe(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
     const notes = [];
-    let genes = cleanNames(src.genes);
+    const genes = cleanNames(src.genes);
     let down = cleanNames(src.down);
     const up = new Set(genes);
     const both = down.filter(name => up.has(name));
     if (both.length) {
         down = down.filter(name => !up.has(name));
         notes.push(`${both.length} gene${both.length === 1 ? ' was' : 's were'} on both sides and now count as up.`);
-    }
-    if (genes.length + down.length > GENE_LIMIT) {
-        const dropped = genes.length + down.length - GENE_LIMIT;
-        down = down.slice(0, Math.max(0, GENE_LIMIT - genes.length));
-        genes = genes.slice(0, GENE_LIMIT);
-        notes.push(`A signature holds up to ${GENE_LIMIT.toLocaleString('en-US')} genes; ${dropped.toLocaleString('en-US')} were left out.`);
     }
     let method = METHODS.includes(src.method) ? src.method : DEFAULT_METHOD;
     const offered = cleanOffered(src.offered, method);
@@ -239,16 +230,14 @@ export function fmtCount(n) {
 }
 
 /**
- * Adding names to a list. Pure: says what would happen, the caller applies it.
- * Over the limit nothing is added, whatever the list holds.
+ * Adding names to a list. Pure: says what would happen, the caller applies it. There is no limit on the
+ * length of a list.
  * @param {string[]} current - the genes now (sorted, distinct)
  * @param {Iterable<string>} incoming
- * @param {number} [limit]
- * @param {number} [others] - genes held elsewhere in the recipe that count toward the limit (the down genes)
- * @returns {{ok: boolean, added: string[], already: number, total: number, wouldBe: number, limit: number, genes: string[]}}
- *   `genes` is the list after the add (the current one when refused)
+ * @returns {{added: string[], already: number, total: number, genes: string[]}}
+ *   `genes` is the list after the add; `already` counts the incoming names the list had
  */
-export function planAdd(current, incoming, limit = GENE_LIMIT, others = 0) {
+export function planAdd(current, incoming) {
     const have = new Set(current);
     const distinct = new Set();
     for (const name of incoming) {
@@ -261,12 +250,7 @@ export function planAdd(current, incoming, limit = GENE_LIMIT, others = 0) {
         else fresh.push(name);
     }
     const added = fresh.sort(compareNames);
-    const wouldBe = current.length + added.length + others;
-    const ok = wouldBe <= limit;
-    return {
-        ok, added: ok ? added : [], already, total: ok ? current.length + added.length : current.length,
-        wouldBe, limit, genes: ok ? mergeSorted(current, added) : current
-    };
+    return { added, already, total: current.length + added.length, genes: mergeSorted(current, added) };
 }
 
 /** Two sorted lists of distinct names, merged (the shorter list walked once). */
@@ -283,17 +267,6 @@ export function mergeSorted(a, b) {
     while (i < a.length) out.push(a[i++]);
     while (j < b.length) out.push(b[j++]);
     return out;
-}
-
-/**
- * The message of a refused add, naming the limit and what the list would have been.
- * @param {{wouldBe: number, limit: number}} plan
- * @param {string} [what] - the thing refused, as "This table has 8,090 genes."
- */
-export function limitMessage(plan, what = '') {
-    const lead = what ? `${what} ` : '';
-    return `${lead}A signature holds up to ${fmtCount(plan.limit)} genes. Nothing was added. `
-        + `It would have made ${fmtCount(plan.wouldBe)}.`;
 }
 
 /**

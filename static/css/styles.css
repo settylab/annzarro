@@ -4997,8 +4997,6 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .gene-paste .gp-matchcase { margin-top: 0.3rem; justify-content: flex-end; width: 100%; }
 .gene-paste .gp-note { margin: 0.4rem 0; padding: 0.35rem 0.6rem; border: 1px solid var(--az-warn-border); background: var(--az-warn-bg); color: var(--az-warn-text); border-radius: 4px; }
 .gene-paste .gp-names { max-height: 8rem; overflow-y: auto; overflow-wrap: anywhere; font-family: var(--bs-font-monospace, monospace); font-size: 0.8125rem; user-select: text; }
-.gene-paste .gp-over { margin: 0.5rem 0; padding: 0.5rem 0.6rem; border: 1px solid var(--az-danger-border); background: var(--az-danger-bg); color: var(--az-danger-text); border-radius: 4px; display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
-.gene-paste .gp-over-count { font-weight: 600; }
 .gene-paste .gp-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.6rem; }
 
 /* Paste or upload inside the Gene Signature panel: the flow replaces the list */

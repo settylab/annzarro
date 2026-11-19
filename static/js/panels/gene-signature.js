@@ -10,7 +10,7 @@
  * working default (the z-score of each gene, then the average) and nothing to
  * configure: tick genes, or search, tick all that match, add the focused gene,
  * a gene fixed in a plot, or every gene of a gene table. Every change of the
- * list can be undone. A signature holds up to 2,000 genes.
+ * list can be undone. A signature holds any number of genes.
  *
  * It is usable wherever a Gene Table is: a Gene Plot's table filter and the
  * Gene Set Analysis source read it through the same contract a table has
@@ -45,7 +45,7 @@ import { createInspect } from './gene-signature-inspect.js';
 import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
-    GENE_LIMIT, normalizeRecipe, recipeHash, definitionText, planAdd, limitMessage, searchNames, enterTarget,
+    normalizeRecipe, recipeHash, definitionText, planAdd, searchNames, enterTarget,
     UndoStack, fmtCount, inDatasetNames, compareNames, storedRecipe
 } from '../utils/gene-signature.js';
 
@@ -315,18 +315,14 @@ const GeneSignaturePanel = (function() {
         }
 
         /**
-         * Add genes. Over the limit nothing is added and the message says so.
+         * Add genes.
          * @param {Iterable<string>} names
          * @param {{label?: string, noun?: string, outside?: number}} [opts] - `label`: where they come from ("DE genes")
          * @returns {{ok: boolean, added: number, already: number}}
          */
         function addGenes(names, { label = '', outside = 0, step = '' } = {}) {
             const list = [...names];
-            const plan = planAdd(_recipe.genes, list, GENE_LIMIT, _recipe.down.length);
-            if (!plan.ok) {
-                say(limitMessage(plan, label ? `${label} has ${fmtCount(new Set(list).size)} genes.` : ''));
-                return { ok: false, added: 0, already: plan.already };
-            }
+            const plan = planAdd(_recipe.genes, list);
             if (!plan.added.length) {
                 say(list.length ? `Nothing new: ${plan.already === 1 ? 'that gene is' : 'those genes are'} already selected.` : 'No genes to add.');
                 return { ok: true, added: 0, already: plan.already };
@@ -344,12 +340,7 @@ const GeneSignaturePanel = (function() {
         /** Tick or untick one gene. */
         function toggleGene(name, checked) {
             if (checked) {
-                const plan = planAdd(_recipe.genes, [name], GENE_LIMIT, _recipe.down.length);
-                if (!plan.ok) {
-                    say(limitMessage(plan));
-                    if (_grid) _grid.refresh();
-                    return;
-                }
+                const plan = planAdd(_recipe.genes, [name]);
                 if (plan.added.length) commit(plan.genes, `tick ${name}`, { tick: true });
                 say(`${name} selected.`);
             } else {
@@ -510,8 +501,8 @@ const GeneSignaturePanel = (function() {
             const loaded = _nameSet.size > 0;
             const missing = loaded ? [..._recipe.genes, ..._recipe.down].filter(g => !_nameSet.has(g)).length : 0;
             _dom.summary.textContent = n
-                ? `${fmtCount(n)} of ${fmtCount(GENE_LIMIT)} genes selected`
-                : `Tick genes to build a score. A signature holds up to ${fmtCount(GENE_LIMIT)} genes.`;
+                ? `${fmtCount(n)} ${n === 1 ? 'gene' : 'genes'} selected`
+                : 'Tick genes to build a score.';
             // no single definition here: a signature offers several, and the Scores offered row below states them
             _dom.definition.textContent = missing ? `${fmtCount(missing)} not in this dataset.` : '';
             _dom.definition.hidden = !missing;

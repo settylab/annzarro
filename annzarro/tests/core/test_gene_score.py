@@ -409,13 +409,13 @@ def test_a_bad_recipe_is_refused_with_a_reason(recipe, status, reason):
     assert (caught.value.status, caught.value.reason) == (status, reason)
 
 
-def test_the_gene_limit_counts_distinct_names():
-    gs.parse_recipe({"genes": [f"G{i}" for i in range(gs.MAX_GENES)]})
-    gs.parse_recipe({"genes": [f"G{i}" for i in range(gs.MAX_GENES)] * 3})      # the same names again cost nothing
-    with pytest.raises(gs.ScoreError) as caught:
-        gs.parse_recipe({"genes": [f"G{i}" for i in range(gs.MAX_GENES + 1)]})
-    assert (caught.value.status, caught.value.reason) == (413, "too_many_genes")
-    assert caught.value.extra == {"limit": 2000, "requested": 2001}
+def test_there_is_no_gene_limit_and_names_are_counted_once():
+    assert not hasattr(gs, "MAX_GENES")
+    # every gene of a large dataset, and well past it
+    assert len(gs.parse_recipe({"genes": [f"G{i}" for i in range(60000)]}).genes) == 60000
+    assert len(gs.parse_recipe({"genes": [f"G{i}" for i in range(250000)]}).genes) == 250000
+    # the same names again cost nothing
+    assert len(gs.parse_recipe({"genes": [f"G{i}" for i in range(3000)] * 3}).genes) == 3000
 
 
 def test_a_seed_is_part_of_the_format_and_kept():

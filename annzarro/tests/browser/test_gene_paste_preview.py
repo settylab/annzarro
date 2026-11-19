@@ -2,7 +2,7 @@
 
 Mounted on a minimal page, with no panel and no app server: a stdlib file server on the
 repository root, started and stopped inside the fixture. Covers the input stage (paste, typing, file by button,
-drag and drop, refusals), every preview state (list, table, GMT, over the limit, identifier mismatch,
+drag and drop, refusals), every preview state (list, table, GMT, a long list, identifier mismatch,
 nothing found), the copy buttons, the add callback (one call, the whole batch) and that no request leaves the page.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
@@ -67,9 +67,9 @@ def page(browser, root):
     ctx.close()
 
 
-def mount(page, current=(), limit=2000, genes=GENES, id_to_name=None, lookup=False):
-    page.evaluate("""([g, c, l, ids, lk]) => window.mountPaste({geneNames: g, currentGenes: c, limit: l, useLookup: lk,
-        idToName: ids ? new Map(Object.entries(ids)) : undefined})""", [genes, list(current), limit, id_to_name, lookup])
+def mount(page, current=(), genes=GENES, id_to_name=None, lookup=False):
+    page.evaluate("""([g, c, ids, lk]) => window.mountPaste({geneNames: g, currentGenes: c, useLookup: lk,
+        idToName: ids ? new Map(Object.entries(ids)) : undefined})""", [genes, list(current), id_to_name, lookup])
 
 
 def paste(page, text):
@@ -275,25 +275,17 @@ def test_grp_file(page):
     assert tid(page, "gp-add").inner_text() == "Add 2 genes"
 
 
-def test_over_the_limit_adds_nothing(page):
-    genes = [f"G{i}" for i in range(2431)]
+def test_there_is_no_limit_on_what_is_added(page):
+    genes = [f"G{i}" for i in range(24310)]
     mount(page, genes=genes)
     paste(page, "\n".join(genes))
-    assert "2,431 genes matched" in tid(page, "gp-over").inner_text()
-    assert "A signature holds up to 2,000 genes. Nothing was added." in tid(page, "gp-over").inner_text()
-    assert tid(page, "gp-add").is_disabled() and tid(page, "gp-add").inner_text() == "Add genes"
-    tid(page, "gp-add").click(force=True)
-    assert added(page) == []
-    assert tid(page, "gp-copy-matched").inner_text() == "Copy matched names"
-    # the selection counts against the limit
-    mount(page, genes=genes, current=genes[:1995], limit=2000)
-    paste(page, "\n".join(genes[1995:2006]))
-    assert tid(page, "gp-over").is_visible()
-    assert "2,000" in tid(page, "gp-over").inner_text() and "would make 2,006" in tid(page, "gp-over").inner_text()
-    # at the limit exactly is fine
-    mount(page, genes=genes, current=genes[:1995], limit=2000)
-    paste(page, "\n".join(genes[1995:2000]))
-    assert tid(page, "gp-add").inner_text() == "Add 5 genes"
+    assert page.locator("[data-testid=gp-over]").count() == 0
+    assert not tid(page, "gp-add").is_disabled()
+    assert tid(page, "gp-add").inner_text() == "Add 24,310 genes"
+    # the selection adds to it, with no ceiling
+    mount(page, genes=genes, current=genes[:20000])
+    paste(page, "\n".join(genes[19995:20006]))
+    assert tid(page, "gp-add").inner_text() == "Add 6 genes"
 
 
 def test_identifier_mismatch_messages(page):

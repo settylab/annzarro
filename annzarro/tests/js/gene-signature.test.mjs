@@ -5,8 +5,8 @@
  * The recipe is what a link, a panel set and a history entry carry, so what
  * matters here is that it is stable (equal lists are equal text), that it has
  * exactly the fields the score route reads, that its hash changes when and only
- * when a score could change, and that every list change is bounded by the
- * 2,000 gene limit and can be undone.
+ * when a score could change, and that every list change can be undone. There
+ * is no gene limit.
  *
  * Run:  node --test annzarro/tests/js/gene-signature.test.mjs
  */
@@ -49,7 +49,8 @@ test('the recipe has exactly the fields the score route reads, and no title', ()
     const py = readFileSync(path.join(here, '..', '..', 'core', 'gene_score.py'), 'utf8');
     const fields = /_FIELDS = \(([^)]*)\)/.exec(py)[1].split(',').map(s => s.trim().replace(/"/g, '')).filter(Boolean);
     assert.deepEqual(Object.keys(body).sort(), fields.filter(f => f !== 'title').sort());
-    assert.equal(G.GENE_LIMIT, Number(/MAX_GENES = (\d[\d_]*)/.exec(py)[1].replace(/_/g, '')), 'the limit is the server\'s');
+    assert.equal(G.GENE_LIMIT, undefined, 'there is no gene limit');
+    assert.ok(!/MAX_GENES/.test(py), 'the server has none either');
     assert.equal(G.RECIPE_VERSION, Number(/ALGORITHM_VERSION = (\d+)/.exec(py)[1]));
 });
 
@@ -83,12 +84,12 @@ test('a gene on both sides counts as up, and the notes say so', () => {
     assert.match(notes[0], /1 gene was on both sides/);
 });
 
-test('a list over the limit is cut at it, and the notes say so', () => {
-    const { recipe: r, notes } = G.normalizeRecipe({ genes: names(2005) });
-    assert.equal(r.genes.length, 2000);
-    assert.match(notes[0], /2,000 genes; 5 were left out/);
-    const mixed = G.normalizeRecipe({ genes: names(1500), down: names(700, 'D') }).recipe;
-    assert.equal(mixed.genes.length + mixed.down.length, 2000);
+test('there is no gene limit: a list of any length is kept whole', () => {
+    const { recipe: r, notes } = G.normalizeRecipe({ genes: names(20000) });
+    assert.equal(r.genes.length, 20000);
+    assert.deepEqual(notes, []);
+    const mixed = G.normalizeRecipe({ genes: names(30000), down: names(30000, 'D') }).recipe;
+    assert.equal(mixed.genes.length + mixed.down.length, 60000);
 });
 
 test('normalising a normal recipe changes nothing (a saved config reads back as itself)', () => {
@@ -155,35 +156,22 @@ test('the saved config carries the recipe and never a derived list', () => {
 
 test('adding genes: merged sorted, duplicates ignored, the already selected counted', () => {
     const plan = G.planAdd(['B', 'D'], ['C', 'B', 'A', 'C', '']);
-    assert.equal(plan.ok, true);
     assert.deepEqual(plan.added, ['A', 'C']);
     assert.equal(plan.already, 1);
     assert.deepEqual(plan.genes, ['A', 'B', 'C', 'D']);
     assert.equal(plan.total, 4);
 });
 
-test('the limit is 2,000: exactly 2,000 is allowed, one more adds nothing at all', () => {
-    const have = names(1990);
-    const ok = G.planAdd(have, names(10, 'X'));
-    assert.equal(ok.ok, true);
-    assert.equal(ok.genes.length, 2000);
-    const over = G.planAdd(have, names(11, 'X'));
-    assert.equal(over.ok, false);
-    assert.deepEqual(over.added, []);
-    assert.equal(over.genes, have, 'the list is untouched');
-    assert.equal(over.wouldBe, 2001);
-    assert.match(G.limitMessage(over), /holds up to 2,000 genes\. Nothing was added\. It would have made 2,001\./);
-    assert.match(G.limitMessage(over, 'This table has 8,090 genes.'), /^This table has 8,090 genes\. A signature holds up to 2,000/);
-});
-
-test('down genes count toward the limit', () => {
-    assert.equal(G.planAdd(names(1000), names(1000, 'X'), 2000, 5).ok, false);
-    assert.equal(G.planAdd(names(1000), names(995, 'X'), 2000, 5).ok, true);
+test('adding has no limit: any number of genes is merged in one step', () => {
+    const plan = G.planAdd(names(1990), names(60000, 'X'));
+    assert.equal(plan.added.length, 60000);
+    assert.equal(plan.genes.length, 61990);
+    assert.equal(plan.total, 61990);
+    assert.equal(G.limitMessage, undefined);
 });
 
 test('adding only genes already in the list changes nothing', () => {
     const plan = G.planAdd(['A', 'B'], ['B', 'A']);
-    assert.equal(plan.ok, true);
     assert.deepEqual(plan.added, []);
     assert.equal(plan.already, 2);
     assert.deepEqual(plan.genes, ['A', 'B']);

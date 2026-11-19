@@ -2,17 +2,17 @@
  * Paste or upload genes, then a preview, then one add. Self-contained: it needs the
  * dataset's gene names and the genes already selected, and hands back the genes to add
  * through onAdd (one call, so the panel makes it one undoable step). Nothing is added
- * before the preview, and nothing is added silently over the limit (design 9 and 10.4).
+ * before the preview (design 9 and 10.4).
  *
  * The text, or the file, is read and parsed in this browser (gene-paste.js); no request
  * is made.
  *
- *   const paste = mountGenePaste(container, {geneNames, currentGenes, limit, onAdd, onCancel});
+ *   const paste = mountGenePaste(container, {geneNames, currentGenes, onAdd, onCancel});
  *   paste.focus();  paste.destroy();
  */
 import { copyText } from './clipboard.js';
 import {
-    DEFAULT_LIMIT, MAX_FILE_BYTES, MESSAGES, readInput, parseGeneInput, matchGenes, countKnown, idKindOf
+    MAX_FILE_BYTES, MESSAGES, readInput, parseGeneInput, matchGenes, countKnown, idKindOf
 } from './gene-paste.js';
 
 const FORMAT_LABELS = { list: 'Gene list', table: 'Table column', gmt: 'GMT gene sets', grp: 'GRP list' };
@@ -27,7 +27,6 @@ const plural = (n, one, many) => `${fmt(n)} ${n === 1 ? one : many}`;
  * @param {Object} o
  * @param {string[]} o.geneNames the dataset's gene names
  * @param {Iterable<string>|(() => Iterable<string>)} [o.currentGenes] genes already selected (or a function giving them)
- * @param {number} [o.limit]
  * @param {Map<string,string>} [o.idToName] gene id to name, when the dataset has an id column
  * @param {(kind: 'ensembl'|'entrez') => Promise<Map<string,string>|null>} [o.idLookup] loads that map on demand,
  *   only when most pasted names turn out to be ids; null or a rejection keeps the plain mismatch message
@@ -36,7 +35,6 @@ const plural = (n, one, many) => `${fmt(n)} ${n === 1 ? one : many}`;
  */
 export function mountGenePaste(container, o) {
     const doc = container.ownerDocument;
-    const limit = o.limit || DEFAULT_LIMIT;
     const geneNames = o.geneNames || [];
     const current = () => (typeof o.currentGenes === 'function' ? o.currentGenes() : o.currentGenes) || [];
 
@@ -171,7 +169,7 @@ export function mountGenePaste(container, o) {
             fileName: st.fileName, readAs: st.readAs, header: st.header, column: st.column, setIndex: st.setIndex, score
         });
         const cur = Array.from(current());
-        const matchOpts = { geneNames, currentGenes: cur, limit, matchCase: st.matchCase, idToName: idMap };
+        const matchOpts = { geneNames, currentGenes: cur, matchCase: st.matchCase, idToName: idMap };
         const m = matchGenes(parsed.names, matchOpts);
         maybeLookUpIds(m);
         return { parsed, m, matchOpts };
@@ -211,10 +209,9 @@ export function mountGenePaste(container, o) {
 
         if (st.idLoading) previewStage.append(el('div', { class: 'gp-hint gp-loading', role: 'status', 'data-testid': 'gp-loading', text: 'Matching ids…' }));
         previewStage.append(countsBlock(parsed, m));
-        if (m.warnings.length && !m.overLimit) for (const w of st.idLoading ? m.warnings.filter(x => x.code !== 'ensembl' && x.code !== 'entrez') : m.warnings) previewStage.append(el('div', { class: 'gp-note', 'data-code': w.code, text: w.text }));
+        if (m.warnings.length) for (const w of st.idLoading ? m.warnings.filter(x => x.code !== 'ensembl' && x.code !== 'entrez') : m.warnings) previewStage.append(el('div', { class: 'gp-note', 'data-code': w.code, text: w.text }));
         if (m.unmatched.length) previewStage.append(unmatchedBlock(m));
-        if (m.overLimit) previewStage.append(overLimitBlock(m));
-        else if (m.warnings.length === 0 && !m.toAdd.length && m.matched && m.alreadySelected === m.matched) {
+        if (m.warnings.length === 0 && !m.toAdd.length && m.matched && m.alreadySelected === m.matched) {
             previewStage.append(el('div', { class: 'gp-note', text: `All ${plural(m.matched, 'matched gene is', 'matched genes are')} already selected.` }));
         }
         previewStage.append(buttons(parsed, m));
@@ -250,7 +247,7 @@ export function mountGenePaste(container, o) {
         if (!sets.length) return el('div', { class: 'gp-note', text: 'No gene sets found. A GMT line holds a name, a description and then the genes, separated by tabs.' });
         setCounts = new Map();
         const matchedIn = (i) => {
-            if (!setCounts.has(i)) setCounts.set(i, matchGenes(sets[i].genes, { ...matchOpts, currentGenes: [], limit: 1e9 }).matched);
+            if (!setCounts.has(i)) setCounts.set(i, matchGenes(sets[i].genes, { ...matchOpts, currentGenes: [] }).matched);
             return setCounts.get(i);
         };
         const filter = el('input', { type: 'search', class: 'form-control form-control-sm', placeholder: 'Find a set', 'aria-label': 'Find a set', value: st.setFilter, 'data-key': 'setfilter', 'data-testid': 'gp-setfilter' });
@@ -336,19 +333,8 @@ export function mountGenePaste(container, o) {
         ]);
     }
 
-    function overLimitBlock(m) {
-        const parts = [`A signature holds up to ${fmt(limit)} genes. Nothing was added.`];
-        if (m.resulting !== m.toAdd.length) parts.push(`${fmt(m.toAdd.length)} new genes on top of ${fmt(m.resulting - m.toAdd.length)} selected would make ${fmt(m.resulting)}.`);
-        parts.push('Shorten the list and try again.');
-        return el('div', { class: 'gp-over', role: 'alert', 'data-testid': 'gp-over' }, [
-            el('div', { class: 'gp-over-count', text: `${fmt(m.toAdd.length)} genes matched` }),
-            el('div', { text: parts.join(' ') }),
-            copyButton('Copy matched names', m.toAdd, 'gp-copy-matched')
-        ]);
-    }
-
     function buttons(parsed, m) {
-        const canAdd = !m.overLimit && m.toAdd.length > 0 && !st.idLoading;
+        const canAdd = m.toAdd.length > 0 && !st.idLoading;
         const addBtn = el('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-testid': 'gp-add', 'data-key': 'add', disabled: !canAdd,
             text: canAdd ? `Add ${plural(m.toAdd.length, 'gene', 'genes')}` : 'Add genes',
             onclick: () => {
