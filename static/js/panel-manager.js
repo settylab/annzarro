@@ -20,6 +20,7 @@ import * as LayoutMotion from './utils/layout-motion.js';
 import { viewOf } from './utils/url-history.js';
 import { dropSkeleton, panelReady } from './utils/load-progress.js';
 import { orientRange, isFlipped, autorangeValue } from './panels/plot-utilities/plot-make-helper.js';
+import { TableResolver } from './utils/table-resolver.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -569,6 +570,8 @@ const PanelManager = (function() {
 
         // Its locked cells/genes are no longer offered as table columns
         document.dispatchEvent(new CustomEvent('fixedEntitiesChanged', { detail: { closed: id } }));
+        // a build that only this panel wanted ends
+        TableResolver.reassess();
     }
     
     /**
@@ -606,6 +609,8 @@ const PanelManager = (function() {
      * @returns {Promise<void>} - Promise that resolves when all panels are updated
      */
     async function notifyPanels(updateType, data) {
+        // other cells (or another dataset): builds of closed tables for the old ones end
+        if (_WHOLE_VIEW_UPDATES.has(updateType)) TableResolver.cellsChanged();
         // A table notice waits for the whole-view update that is running; it
         // is told the table's rows as they are by then
         while (_wholeViewUpdate && !_WHOLE_VIEW_UPDATES.has(updateType)) {
@@ -1287,6 +1292,9 @@ const PanelManager = (function() {
             console.warn(`removePanel: cleanup of ${id} failed:`, error);
         }
         _panels.delete(id);
+        // a table that is gone for good: its background build ends, and a plot reading it has nothing to wait for
+        TableResolver.drop(id);
+        TableResolver.reassess();
         const byType = _panelsByType.get(panelTypeFromTileId(id));
         if (byType) byType.delete(panel);
         _panelsByType.forEach(set => set.delete(panel));

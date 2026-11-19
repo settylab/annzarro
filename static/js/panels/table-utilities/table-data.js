@@ -10,6 +10,7 @@ import { DataManager } from '../../data-manager.js';
 import { RemoteNames } from '../../utils/remote-names.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents, syncSelectedColumns } from './table-ui-make.js'
 import { freezeSelection } from '../../utils/closed-table.js';
+import { TableResolver } from '../../utils/table-resolver.js';
 import { lineSelectButton } from './line-select-ui.js';
 import {
     Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
@@ -908,7 +909,22 @@ export function searchSmart(regex, smart) {
     return !!smart && !regex;
 }
 
-export function initializeDataTable(tableContainer, tableData, settings, entityType) {
+/**
+ * Build a DataTable from loaded rows.
+ *
+ * `headless`: the detached table of a background build (utils/table-resolver.js,
+ * panels/table-utilities/table-background.js). It runs the same SearchBuilder and search code on the
+ * same options, so it selects the same rows as an open table, but it is not a panel: no search box
+ * or buttons, no sorting, no selection, no size watcher or timers, no event to other panels, and no
+ * getters on `settings` (the caller passes a copy of its own). The caller reads the rows with
+ * `dataTable.rows({search: 'applied'})` and lets it go with releaseTable.
+ * @param {HTMLElement} tableContainer
+ * @param {Object} tableData - from loadTableData
+ * @param {Object} settings - the table's settings (searchText and the toggles, searchBuilderConfig)
+ * @param {string} entityType - 'cells' or 'genes'
+ * @param {{headless?: boolean}} [options]
+ */
+export function initializeDataTable(tableContainer, tableData, settings, entityType, { headless = false } = {}) {
     trackSearchBuilder();
     // Clear the container and add a table element
     tableContainer.innerHTML = '<table class="table table-sm table-striped" style="width:100%"></table>';
@@ -921,6 +937,7 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     let useCaseInsensitive = settings.searchCaseInsensitive !== false;
     // the settings hold the toggles as they stand: a link, a panel set and a reopened table read them there
     const keepToggles = () => {
+        if (headless) return;
         settings.searchRegex = useRegex;
         settings.searchSmart = useSmart;
         settings.searchCaseInsensitive = useCaseInsensitive;
@@ -1181,6 +1198,22 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         }
     };
     
+    if (headless) {
+        // Only what the filter needs: SearchBuilder (Q) and the table (t). The search text, its toggles
+        // and the conditions are options, applied as the table is made, as for an open table.
+        tableOptions.dom = 'Qt';
+        tableOptions.ordering = false;
+        tableOptions.order = [];
+        tableOptions.info = false;
+        tableOptions.select = false;
+        tableOptions.scrollX = false;
+        tableOptions.scrollY = false;
+        tableOptions.scrollCollapse = false;
+        tableOptions.autoWidth = false;
+        delete tableOptions.buttons;
+        delete tableOptions.initComplete;
+    }
+
     // Initialize the DataTable with Bootstrap 5 styling
     let dataTable;
     try {
@@ -1219,13 +1252,13 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         dataTable = $(table).DataTable(tableOptions);
         // From here on, edits of the filter drop a line filter's derived column that nothing uses any
         // more. Attached after the table was built, so the conditions it was built from never purge.
-        watchDerivedColumns(tableContainer, dataTable, settings);
+        if (!headless) watchDerivedColumns(tableContainer, dataTable, settings);
         // what releaseTable lets go of: the options object (its `data` and `columns` are
         // captured by DataTables' own callbacks) and the box the derived-column handlers sit on
         dataTable.settings()[0]._azOptions = tableOptions;
         dataTable.settings()[0]._azBox = tableContainer;
         
-        setTimeout(() => {
+        if (!headless) setTimeout(() => {
             // Make logic buttons more visible by adding custom classes
             $(tableContainer).find('.dtsb-logicButton').each(function() {
                 const $button = $(this);
@@ -1241,6 +1274,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         console.error('Error initializing DataTable with SearchBuilder criteria:', error);
         dataTable = $(table).DataTable();
     }
+
+    // a background build reads the rows from the DataTable itself and leaves the settings alone
+    if (headless) return dataTable;
 
     Object.defineProperty(settings, 'searchBuilderConfig', {
         configurable: true,
@@ -1333,6 +1369,10 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     
     // Initialize previousEntries with a deep copy
     previousEntries = [...settings.currentEntries];
+
+    // The opened table has its rows and its filter: the plots that read it may stop waiting
+    // (utils/table-resolver.js), and are told next
+    if (settings.id) TableResolver.panelPublished(settings.id);
 
     // Notify panels that table selection changed
     window.PanelManager.notifyPanels('tableFiltered', { 

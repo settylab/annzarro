@@ -1101,3 +1101,14 @@ def test_large_plot_mode_takes_scores_on_x_y_and_colour_but_no_3d(large_page, la
     _open(large_page, large_served, plots=(("cell-plot-C", _cell(z=SCORE)),), wait=False)
     large_page.wait_for_selector(f"{C} .coverage-placeholder", timeout=30000)
     assert "3D is not available" in _placeholder(large_page)["text"]
+
+
+def test_log_scale_on_a_score_axis(page, served):
+    cfg = _cell(x={**SCORE, "log": True}, color={"type": "none", "key": "", "column": ""})
+    _open(page, served, plots=(("cell-plot-C", cfg),))
+    _ready_plot(page)
+    assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot')._fullLayout.xaxis.type", C) in ("log", "linear")
+    # switching the axis to a log scale by the panel's own setting redraws without a second request
+    page.evaluate("() => { const p = window.PanelManager.getPanel('cell-plot-C'); p.setConfig({ xaxisType: 'log' }); return p.refreshPlot(); }")
+    page.wait_for_timeout(1000)
+    assert len(_calls(page, "compute")) == 1

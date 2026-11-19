@@ -4899,3 +4899,11 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .gene-paste .gp-over { margin: 0.5rem 0; padding: 0.5rem 0.6rem; border: 1px solid var(--az-danger-border); background: var(--az-danger-bg); color: var(--az-danger-text); border-radius: 4px; display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
 .gene-paste .gp-over-count { font-weight: 600; }
 .gene-paste .gp-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.6rem; }
+
+/* Paste or upload inside the Gene Signature panel: the flow replaces the list */
+.gsig-panel.gsig-flowing > .gsig-listbar,
+.gsig-panel.gsig-flowing > .gsig-note-line,
+.gsig-panel.gsig-flowing > .gsig-empty,
+.gsig-panel.gsig-flowing > .gsig-grid { display: none; }
+.gsig-flow { padding: 4px 0; }
+.gsig-flow[hidden] { display: none; }

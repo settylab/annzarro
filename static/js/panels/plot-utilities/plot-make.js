@@ -25,6 +25,7 @@ import { Config } from '../../config.js';
 import { RemoteNames } from '../../utils/remote-names.js';
 import { colourKind, isOutOfMemory, isNetworkFailure, loadFailureText, MEMORY_ADVICE, DRAW_ANYWAY_RISK } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
+import { TableResolver, describeUnresolved } from '../../utils/table-resolver.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
 import { NO_HOVER } from './hover-columns.js';
@@ -2169,11 +2170,19 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   // Check if table filtering is active
   const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
   const wasUnresolved = !!data.tableFilterUnresolved;
-  const stale = (s) => {
+  // the plot that asks for the table's filter (utils/table-resolver.js keeps who wants what)
+  const dependant = (settings.id || (plotContainer && plotContainer.id || '').replace(/^plot-container-/, '')) || null;
+  const stale = (s, resolver = null) => {
     data.tableFilterStale = s;
     if (plotContainer) {
-      setStatusTag(plotContainer, 'table-stale', s ? { text: 'Table filter out of date', severity: 'warning', title: s.text,
-        pop: { text: s.text, actions: [['reopen-table', 'Reopen table'], ['table-filter-off', 'Stop filtering']] } } : null);
+      // a closed table whose filter is for other cells is being built again (or cannot be: it says so)
+      const extra = resolver && resolver.state !== 'ready' && resolver.state !== 'idle' && resolver.state !== 'missing'
+        ? describeUnresolved(resolver, s ? s.name : '') : null;
+      const actions = [['reopen-table', 'Reopen table'], ['table-filter-off', 'Stop filtering']];
+      if (extra) for (const a of extra.actions) if (a[0] === 'build-filter' || a[0] === 'retry-filter') actions.unshift(a);
+      const text = s ? (extra && resolver.state !== 'building' && resolver.state !== 'waiting' ? `${s.text}. ${extra.text}` : s.text) : '';
+      setStatusTag(plotContainer, 'table-stale', s ? { text: 'Table filter out of date', severity: 'warning', title: text,
+        pop: { text, actions } } : null);
     }
   };
   
@@ -2181,17 +2190,21 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   // configuration came back) is NOT applied yet. It draws no points, and says so with a notice over the
   // plot and a tag in its strip, never the grey of a filter that nothing passes. Not in large-plot mode,
   // which applies no table filter at all.
+  const largeMode = () => !!data.large || (data.entities === 'cells' && (DataManager.getCells() || []).length > largePlotPoints());
+  const titleOf = (id) => {
+    const p = window.PanelManager && window.PanelManager.getPanel(id);
+    return (p && p.getTitle && p.getTitle()) || id;
+  };
   const unresolved = (u) => {
-    const largeMode = !!data.large || (data.entities === 'cells' && (DataManager.getCells() || []).length > largePlotPoints());
-    data.tableFilterUnresolved = u && !largeMode ? u : null;
+    data.tableFilterUnresolved = u && !largeMode() ? u : null;
     const shown = data.tableFilterUnresolved;
     if (!plotContainer) return;
-    const actions = [['reopen-table', 'Open table'], ['table-filter-off', 'Stop filtering']];
-    const text = shown ? `'${shown.name}' is closed, so its filter is not applied yet. Open it to apply the filter.` : '';
-    setStatusTag(plotContainer, 'table-unresolved', shown
-      ? { text: 'Filter not applied yet', severity: 'warning', title: text, pop: { text, actions } } : null);
-    setFilterNotice(plotContainer, shown
-      ? { state: 'unresolved', headline: 'Filter not applied yet', text, actions } : null);
+    // what the resolver says of the filter: waiting, building, Build filter, refused, failed, a cycle
+    const said = shown ? describeUnresolved(shown.status || { state: 'idle' }, shown.name, titleOf) : null;
+    setStatusTag(plotContainer, 'table-unresolved', said
+      ? { text: said.tag, severity: 'warning', title: said.text, pop: { text: said.text, actions: said.actions } } : null);
+    setFilterNotice(plotContainer, said
+      ? { state: 'unresolved', headline: said.headline, text: said.text, actions: said.actions } : null);
   };
 
   // If no table filter is active, remove any existing tableEntities and tableFilterMask
@@ -2199,6 +2212,7 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     stale(null);
     noCellPasses(plotContainer, data, settings, null);
     unresolved(null);
+    TableResolver.reassess();        // a build only this plot wanted ends
     // Always treat switching to "none" as a change that needs visual update
     if (data.tableEntities || data.tableFilterMask) {
       delete data.tableEntities;
@@ -2231,9 +2245,13 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   let newTableEntities = new Set();
   const entityType = data.entities; // 'cells' or 'genes'
   const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
-  // a gene signature has no rows to freeze: its genes are its recipe, so closed it filters as open
-  const closed = !tablePanel.selectionIsLive && !!(window.PanelManager && window.PanelManager.getActivePanels
-    && !window.PanelManager.getActivePanels().includes(tablePanel));
+  // An OPEN table that has not published its rows yet (being opened, or it could not be) is read as a
+  // closed one: its closed selection, if it has one, serves until it publishes; else the plot waits
+  const gated = TableResolver.gate(settings.tableFilter);
+  // a gene signature has no rows to freeze: its genes are its recipe, so closed it filters as open.
+  // It is never queued in the table resolver (the host only knows Cell and Gene Tables).
+  const closed = !tablePanel.selectionIsLive && (!!(window.PanelManager && window.PanelManager.getActivePanels
+    && !window.PanelManager.getActivePanels().includes(tablePanel)) || !!gated);
   let outOfDate = false;      // a closed table's filter that does not know these cells: unresolved, not "no cell"
 
   if (closed) {
@@ -2245,7 +2263,12 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     let passing, unknown;
     const noRows = !tableConfig.closedSelection;
     const tableName = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
-    unresolved(noRows ? { table: settings.tableFilter, name: tableName } : null);
+    // Rows to apply: none (restored from a link, a panel set or a step, or never loaded). Ask the
+    // resolver, which builds them in the background when it may; a plot in large-plot mode applies
+    // no table filter and asks for nothing.
+    const asks = !largeMode() && !gated;
+    const resolved = noRows ? (gated || (asks ? TableResolver.need(settings.tableFilter, dependant) : { state: 'idle' })) : null;
+    unresolved(noRows ? { table: settings.tableFilter, name: tableName, status: resolved } : null);
     if (noRows) {
       passing = new Set();
       unknown = 0;
@@ -2262,7 +2285,10 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     newTableEntities = passing;
     const name = tableName;
     outOfDate = unknown > 0;
-    stale(unknown > 0 ? { table: settings.tableFilter, unknown, text: staleText(name, unknown, entityType) } : null);
+    // other cells than the table's rows were for: build the filter again for these (the old tag stays
+    // until it is, or says why it cannot be)
+    const rebuilt = unknown > 0 && !largeMode() && !gated ? TableResolver.need(settings.tableFilter, dependant) : null;
+    stale(unknown > 0 ? { table: settings.tableFilter, name, unknown, text: staleText(name, unknown, entityType) } : null, rebuilt);
   } else {
     stale(null);
     unresolved(null);

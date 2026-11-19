@@ -67,9 +67,9 @@ def page(browser, root):
     ctx.close()
 
 
-def mount(page, current=(), limit=2000, genes=GENES, id_to_name=None):
-    page.evaluate("""([g, c, l, ids]) => window.mountPaste({geneNames: g, currentGenes: c, limit: l,
-        idToName: ids ? new Map(Object.entries(ids)) : undefined})""", [genes, list(current), limit, id_to_name])
+def mount(page, current=(), limit=2000, genes=GENES, id_to_name=None, lookup=False):
+    page.evaluate("""([g, c, l, ids, lk]) => window.mountPaste({geneNames: g, currentGenes: c, limit: l, useLookup: lk,
+        idToName: ids ? new Map(Object.entries(ids)) : undefined})""", [genes, list(current), limit, id_to_name, lookup])
 
 
 def paste(page, text):
@@ -379,3 +379,60 @@ def test_narrow_screen_and_dark_theme_do_not_overflow(page):
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.evaluate("document.documentElement.setAttribute('data-theme', 'dark')")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+IDS = {f"ENSG{100000000 + i:011d}": g for i, g in enumerate(GENES)}
+
+
+def _lookup(page, body):
+    """Install the lookup the preview calls: `body` is JS returning a Map, null or a rejection, after `window.release()`."""
+    page.evaluate("""(body) => { window.lookups = []; window.lookupImpl = (k) => { window.lookups.push(k);
+        return new Promise((res, rej) => { window.release = () => { try { res(eval(body)); } catch (e) { rej(e); } }; }); }; }""", body)
+
+
+def test_ids_are_looked_up_only_for_ids_and_show_matching_state(page):
+    _lookup(page, "new Map(Object.entries(%s))" % json.dumps(IDS))
+    mount(page, lookup=True)
+    paste(page, "CD3D CD4 NOPE")                         # symbols: no lookup
+    assert page.evaluate("window.lookups") == []
+    tid(page, "gp-back").click()
+    ids = list(IDS)[:3] + [f"{list(IDS)[3]}.5", "ENSG99999999999"]
+    paste(page, "\n".join(ids))
+    assert page.evaluate("window.lookups") == ["ensembl"]
+    assert tid(page, "gp-loading").inner_text() == "Matching ids…"
+    assert tid(page, "gp-add").is_disabled(), "no add while the ids are being matched"
+    assert page.locator(".gp-note[data-code=ensembl]").count() == 0, "no mismatch message while it loads"
+    page.evaluate("window.release()")
+    tid(page, "gp-c-id").wait_for()
+    assert tid(page, "gp-loading").count() == 0
+    assert tid(page, "gp-c-id").inner_text().split()[0] == "4"
+    assert "ENSG00100000000 > CD3D" in tid(page, "gp-c-id").inner_text()
+    assert tid(page, "gp-c-unmatched").inner_text().split()[0] == "1"
+    assert tid(page, "gp-add").inner_text() == "Add 4 genes"
+    tid(page, "gp-add").click()
+    assert added(page)[0]["genes"] == GENES[:4], "names, not ids"
+
+
+def test_a_failed_or_missing_id_lookup_keeps_the_message(page):
+    _lookup(page, "null")
+    mount(page, lookup=True)
+    paste(page, "\n".join(list(IDS)[:5]))
+    assert tid(page, "gp-loading").is_visible()
+    page.evaluate("window.release()")
+    page.locator(".gp-note[data-code=ensembl]").wait_for()
+    assert "look like Ensembl ids" in page.locator(".gp-note[data-code=ensembl]").inner_text()
+    assert tid(page, "gp-loading").count() == 0 and tid(page, "gp-add").is_disabled()
+    _lookup(page, "(() => { throw new Error('read failed'); })()")
+    mount(page, lookup=True)
+    paste(page, "\n".join(list(IDS)[:5]))
+    page.evaluate("window.release()")
+    page.locator(".gp-note[data-code=ensembl]").wait_for()
+    # a lookup answering after the text was replaced is ignored
+    _lookup(page, "new Map(Object.entries(%s))" % json.dumps(IDS))
+    mount(page, lookup=True)
+    paste(page, "\n".join(list(IDS)[:5]))
+    tid(page, "gp-back").click()
+    paste(page, "CD3D CD4")
+    page.evaluate("window.release()")
+    page.wait_for_timeout(200)
+    assert tid(page, "gp-c-add").inner_text().split()[0] == "2" and tid(page, "gp-c-id").count() == 0

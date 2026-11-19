@@ -16,6 +16,8 @@ import { syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { assignKnownSettings, configOf } from '../utils/panel-settings.js';
 import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-guard-ui.js';
 import { tableMayLoad } from './table-utilities/table-memory.js';
+import { TableResolver } from '../utils/table-resolver.js';
+import './table-utilities/table-background.js';
 
 const CellTablePanel = (function() {
     /**
@@ -158,13 +160,26 @@ const CellTablePanel = (function() {
             // table, closing it and the Cancel button abort it. `signal` is
             // the one of the update that asks for it.
             signal = beginLoad(_tableContainer, 'table', signal);
+            // A table that is built from nothing (opened, or its first load) takes over the filter of
+            // any background build of it (utils/table-resolver.js): the build ends before it loads a
+            // second copy of the rows, and the plots wait for this table
+            let claimed = !inPlace && !_dataTable;
+            if (claimed) TableResolver.claim(_id);
+            const settle = (how, why) => {
+                if (!claimed) return;
+                claimed = false;
+                TableResolver.panelSettled(_id, how, why);
+            };
             try {
                 // will its rows fit next to the other panels? (utils/memory-guard-ui.js)
                 if (!tableMayLoad(_tableContainer, _id, 'cell-table', () => {
                     if (!_dataTable) return;
                     releaseTable(_dataTable, _settings);
                     _dataTable = null;
-                })) return;
+                })) {
+                    settle('refused', 'not enough browser memory');
+                    return;
+                }
                 // Other cells of the same table: the rows are swapped into
                 // the table shown, so it does not blank and keeps its state
                 let preloaded = null;
@@ -221,6 +236,7 @@ const CellTablePanel = (function() {
                 // Initialize DataTable
                 if (tableData.data.length > 0) {
                     _dataTable = initializeDataTable(_tableContainer, tableData, _settings, _plotType);
+                    claimed = false;       // initializeDataTable told the resolver and the plots
                     // its rows, in the browser memory guard's ledger (a subset change redraws them)
                     commitMemory(_id, { kind: 'cell-table', n: tableData.data.length });
                     // State what the table is NOT showing, and why. A table that
@@ -234,6 +250,7 @@ const CellTablePanel = (function() {
                     // Set up event listeners after DataTable is initialized
                     _setupEventListeners();
                 } else {
+                    settle('empty');
                     drawPlaceholder(_tableContainer,
                         (tableData.coverage && !tableData.coverage.isComplete)
                             ? tableData.coverage
@@ -251,9 +268,11 @@ const CellTablePanel = (function() {
                         console.debug(`Cell table refresh aborted for ${_id}`);
                     }
                     // the rows shown before stay (only a load into the table shown keeps them)
+                    if (wasCancelled(signal)) settle('cancelled');
                     if (wasCancelled(signal)) showCancelled(_tableContainer, 'cells', !!(inPlace && _dataTable));
                 } else {
                     // For actual errors, show error message
+                    settle('failed', error && error.message ? error.message : 'unknown error');
                     console.error('Error refreshing cell table:', error);
                     // classifyError: a limit (the names of a dataset too
                     // large to list) is not a failed read
@@ -291,6 +310,8 @@ const CellTablePanel = (function() {
                 _dataTable = null;
             }
             forgetMemory(_id);
+            // its filter is now its closed selection (set above); nothing is rebuilt
+            TableResolver.panelClosed(_id);
             
             _container.innerHTML = '';
         }
@@ -450,9 +471,22 @@ const CellTablePanel = (function() {
             return added;
         }
 
+        /**
+         * Put the filter a background build made (utils/table-resolver.js) into this CLOSED table.
+         * Refused when the table is open: an open table is its own filter.
+         * @param {{passing, seen}|null} selection - utils/closed-table.js
+         * @returns {boolean} whether it was set
+         */
+        function setClosedSelection(selection) {
+            if (_dataTable) return false;
+            _settings.closedSelection = selection ? { ...selection, toJSON: () => undefined } : null;
+            return true;
+        }
+
         // Public API
         return {
             init,
+            setClosedSelection,
             refreshTable,
             applyLine,
             cleanup,
