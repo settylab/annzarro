@@ -439,3 +439,17 @@ def test_the_real_route_answers_for_the_store_and_the_layer_not_in_the_dataset_i
         assert page2.eval_on_selector(_sel("input"), "s => s.options[s.selectedIndex].textContent") == "not_a_layer (not in this dataset)"
     finally:
         page2.close()
+
+
+def test_the_section_says_where_the_aggregation_is_chosen_lists_them_and_shows_those_in_use(page, served):
+    _open(page, served, plots=(("cell-plot-C", None), ("cell-plot-D", _cell("cell-plot-D", color=MEAN)),
+                               ("cell-plot-E", _cell("cell-plot-E", color=MEAN))), sig_open=True)
+    _wait_coloured(page)
+    _expand(page)
+    body = page.inner_text(f"{S} .gsig-scoring__body")
+    assert "How the genes are combined is chosen where the score is used" in body
+    assert "pick gene-score as the source, then this signature, then the aggregation" in body
+    items = page.eval_on_selector_all(f"{S} [data-aggregation]", "els => els.map(e => e.dataset.aggregation)")
+    assert items == ["zscore_mean", "mean", "control_adjusted"]
+    assert "less the average of control genes" in page.inner_text(f"{S} [data-aggregation='control_adjusted']")
+    until(page, "(s) => /In use now: Z-score mean \\(1\\), Mean \\(2\\)\\./.test(document.querySelector(s + ' [data-aggregations-in-use]').textContent)", S)

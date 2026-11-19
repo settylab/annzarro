@@ -1504,6 +1504,7 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-scoring__inline label { margin: 0; }
 .gsig-scoring__number { width: 6rem; }
 .gsig-scoring__number.is-invalid { border-color: var(--az-danger-text); }
+.gsig-scoring__aggs { margin: 0; padding-left: 1.1rem; font-size: 0.75rem; }
 .gsig-scoring__help { color: var(--az-muted); font-size: 0.75rem; }
 .gsig-scoring__error { color: var(--az-danger-text); font-size: 0.75rem; }
 .gsig-scoring__error[hidden], .gsig-inputwarn[hidden] { display: none; }

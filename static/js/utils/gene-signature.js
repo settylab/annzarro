@@ -173,6 +173,13 @@ export function settingsText(recipe) {
     return `${recipe.input}, ${clip}${seed}`;
 }
 
+/** The aggregations a consumer can choose, with the plain definition the Scoring section gives each. */
+export const AGGREGATIONS = Object.freeze([
+    { value: 'zscore_mean', label: 'Z-score mean', text: 'each gene is turned into a z-score, so every gene counts equally, then averaged. Uses the clip.' },
+    { value: 'mean', label: 'Mean', text: 'the plain average of the genes, in the units of the input.' },
+    { value: 'control_adjusted', label: 'Control-adjusted', text: 'the average of your genes less the average of control genes of similar detection, which removes differences in depth and quality between cells. Uses the seed.' }
+]);
+
 /** Number with thousands separators, in the same form everywhere in the panel. */
 export function fmtCount(n) {
     return Number(n).toLocaleString('en-US');

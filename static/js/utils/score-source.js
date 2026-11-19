@@ -505,6 +505,16 @@ export function onSignatureStatus(id, fn) {
     return scores().sources.onSignature(id, fn);
 }
 
+/** The aggregations in use for a signature, each with how many plots or tables read it: [{value, count}]. */
+export function aggregationsInUse(id) {
+    const counts = new Map();
+    for (const handle of scores().sources.handlesOf(id)) {
+        const sub = handle.sub || DEFAULT_METHOD;
+        counts.set(sub, (counts.get(sub) || 0) + 1);
+    }
+    return [...counts].map(([value, count]) => ({ value, count }));
+}
+
 /** The plots and other dependants that use a signature: hosts and roles. */
 export function dependantsOf(id) {
     const out = [];

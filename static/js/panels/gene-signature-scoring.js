@@ -19,7 +19,7 @@
  *
  * `makeDom(document)` and the callbacks are injected, so the section touches no page state of its own.
  */
-import { DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_METHOD, settingsText, parseClipText, parseSeedText } from '../utils/gene-signature.js';
+import { AGGREGATIONS, DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_METHOD, settingsText, parseClipText, parseSeedText } from '../utils/gene-signature.js';
 import { warningFor } from '../utils/matrix-kind-client.js';
 
 /** The help texts, so the page and its tests say the same thing. */
@@ -40,7 +40,7 @@ export const SCORING_HELP = Object.freeze({
  * @param {(input: string) => Promise<(Object|null)>} options.getKind - what an input looks like (matrix-kind-client.js)
  * @returns {{element: HTMLElement, warning: HTMLElement, paint: () => void, refreshInputs: () => Promise<void>, refreshKind: () => Promise<void>, destroy: () => void, state: () => Object}}
  */
-export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKind }) {
+export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKind, getInUse = () => [] }) {
     const { el } = D;
     const sid = (x) => `gsig-scoring-${x}-${id}`;
     let open = false;
@@ -79,6 +79,9 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     const seedError = el('div', { class: 'gsig-scoring__error', id: sid('seed-error'), role: 'alert', hidden: true });
     const seedHelp = el('div', { class: 'gsig-scoring__help', id: sid('seed-help'), text: SCORING_HELP.seed });
 
+    const aggList = el('ul', { class: 'gsig-scoring__aggs' });
+    const aggUse = el('div', { class: 'gsig-scoring__help', data: { aggregationsInUse: '' } });
+
     const reset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-scoring__reset',
         on: { click: resetAll } }, 'Reset to defaults');
 
@@ -90,6 +93,11 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
             el('div', { class: 'gsig-scoring__inline' }, clipBox, el('label', { for: sid('clipbox'), text: 'Clip z-scores at ±' }), clipInput),
             clipError, clipHelp),
         row('Seed', sid('seed'), seedInput, seedError, seedHelp),
+        el('div', { class: 'gsig-scoring__row' }, el('span', { class: 'gsig-scoring__name', text: 'Score' }),
+            el('div', { class: 'gsig-scoring__field' },
+                el('div', { class: 'gsig-scoring__help', data: { aggregationsHelp: '' },
+                    text: 'How the genes are combined is chosen where the score is used: in a plot or table, pick gene-score as the source, then this signature, then the aggregation.' }),
+                aggList, aggUse)),
         el('div', { class: 'gsig-scoring__actions' }, reset));
 
     // the warning in the status zone: seen with the section collapsed
@@ -167,8 +175,22 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         }
     }
 
+    function paintAggregations() {
+        if (destroyed) return;
+        D.clear(aggList);
+        for (const a of AGGREGATIONS) {
+            aggList.append(el('li', { data: { aggregation: a.value } }, el('strong', { text: `${a.label}: ` }), a.text));
+        }
+        const used = getInUse();
+        const names = Object.fromEntries(AGGREGATIONS.map(a => [a.value, a.label]));
+        aggUse.textContent = used.length
+            ? `In use now: ${used.map(u => `${names[u.value] || u.value} (${u.count})`).join(', ')}.`
+            : 'No plot or table uses this score yet.';
+    }
+
     function paint() {
         if (destroyed) return;
+        paintAggregations();
         const recipe = getRecipe();
         summary.textContent = settingsText(recipe);
         toggle.setAttribute('aria-expanded', String(open));
@@ -218,6 +240,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         element,
         warning: warningLine,
         paint,
+        paintAggregations,
         refreshInputs,
         refreshKind,
         destroy() { destroyed = true; },

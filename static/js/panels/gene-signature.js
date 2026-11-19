@@ -33,7 +33,7 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { createGeneGrid } from '../utils/gene-grid.js';
 import { getFixedGenes } from './table-utilities/panel-tracker.js';
-import { signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
+import { aggregationsInUse, signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
 import { createScoringSection } from './gene-signature-scoring.js';
@@ -183,7 +183,7 @@ const GeneSignaturePanel = (function() {
             rebuildRows({ top: true });
             paint();
             if (loaded) loadScoringInputs();
-            _unwatchScore = onSignatureStatus(_id, () => paintScore());
+            _unwatchScore = onSignatureStatus(_id, () => { paintScore(); if (_scoring) _scoring.paintAggregations(); });
             // a panel opened under an id the page already uses (Back and Forward, a reopened signature, a panel set)
             // is what a plot filtered by that id has not read yet; a table says as much when its rows are in
             if (loaded) announce();
@@ -477,7 +477,8 @@ const GeneSignaturePanel = (function() {
             _scoring = createScoringSection({
                 D, id: _id, getRecipe, apply: applyScoring,
                 getInputs: async () => layerKeys(await DataManager.getDatasetStructure(DataManager.getCurrentDataset())),
-                getKind: (input) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), input)
+                getKind: (input) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), input),
+                getInUse: () => aggregationsInUse(_id)
             });
             status.append(
                 el('div', { class: 'gsig-status__row' }, summary, el('span', { class: 'gsig-menu-wrap' }, useIn, useInMenu)),
