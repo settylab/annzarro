@@ -65,7 +65,7 @@ test('panel-types.json entries are complete, and config.js serves them', () => {
     }
     assert.equal(new Set(REGISTRY.map(e => e.type)).size, REGISTRY.length);
     assert.deepEqual(Config.PANEL_TYPES, REGISTRY);
-    assert.deepEqual(Config.PANEL_TYPES.map(p => p.type), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set']);
+    assert.deepEqual(Config.PANEL_TYPES.map(p => p.type), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set', 'gene-signature']);
 });
 
 const menu = () => Object.getOwnPropertyDescriptor(SelectionTile.prototype, 'panelTypes').get.call({}).map(p => p.type);
@@ -79,7 +79,7 @@ test('the panel menu offers every type when the server has no policy', async () 
 test('the panel menu leaves out the types the policy disables', async () => {
     policyReply = { status: 200, body: { version: 'v1', values: { 'panel.gene-set.enabled': false, 'panel.cell-plot.enabled': true } } };
     await Policy.load();
-    assert.deepEqual(menu(), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table']);
+    assert.deepEqual(menu(), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-signature']);
     // the config's own list still applies on top
     const saved = Config.DEFAULTS.ENABLED_PANEL_TYPES;
     Config.DEFAULTS.ENABLED_PANEL_TYPES = ['cell-plot', 'gene-set'];
@@ -177,17 +177,17 @@ test('an open panel menu is rebuilt when the policy changes, and stops listening
 
     policyReply = { status: 200, body: { version: 'v1', values: { 'panel.gene-set.enabled': false } } };
     await Policy.load();
-    assert.deepEqual(types(), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table']);
+    assert.deepEqual(types(), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-signature']);
 
     policyReply = { status: 200, body: { version: 'v2', values: { 'panel.gene-set.enabled': true, 'panel.cell-plot.enabled': false } } };
     await Policy.load();
-    assert.deepEqual(types(), ['gene-plot', 'cell-table', 'gene-table', 'gene-set']);
+    assert.deepEqual(types(), ['gene-plot', 'cell-table', 'gene-table', 'gene-set', 'gene-signature']);
 
     // a removed tile is left alone
     tile.isConnected = false;
     policyReply = { status: 200, body: { version: 'v3', values: {} } };
     await Policy.load();
-    assert.deepEqual(types(), ['gene-plot', 'cell-table', 'gene-table', 'gene-set']);
+    assert.deepEqual(types(), ['gene-plot', 'cell-table', 'gene-table', 'gene-set', 'gene-signature']);
     policyReply = { status: 404 };
     await Policy.load();
 });

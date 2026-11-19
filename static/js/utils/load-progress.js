@@ -18,7 +18,7 @@
 
 const TYPE_LABEL = {
     'cell-plot': 'Cell plot', 'gene-plot': 'Gene plot', 'cell-table': 'Cell table',
-    'gene-table': 'Gene table', 'gene-set': 'Gene set analysis'
+    'gene-table': 'Gene table', 'gene-set': 'Gene set analysis', 'gene-signature': 'Gene signature'
 };
 
 /** "X_umap" -> "UMAP", "X_pca" -> "PCA", other keys as they are. */

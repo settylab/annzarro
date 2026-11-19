@@ -1360,6 +1360,50 @@ const PanelManager = (function() {
     }
 
     /**
+     * Open a closed panel again with the same id, so everything that names it
+     * (a plot's table filter, a Gene Set Analysis source) keeps meaning it.
+     * It needs no chooser tile in the page, which `reopen-table` (main.js)
+     * does: with `nextTo` the tile of that panel is split and the panel opens
+     * in the new half; without it the panel opens where a new one would.
+     * @param {string} id - a closed panel
+     * @param {{nextTo?: string, direction?: 'horizontal'|'vertical'}} [opts]
+     * @returns {Object|null} the open panel, or null when there is no such closed panel
+     */
+    function reopenClosedPanel(id, { nextTo = null, direction = 'horizontal' } = {}) {
+        const closed = _panels.get(id);
+        if (!closed || _activePanels.has(closed)) return null;
+        const type = closed.getType();
+        const config = JSON.parse(JSON.stringify(closed.getConfig()));
+        config.id = id;
+        delete config._closed;
+        delete config.active;
+        const byType = _panelsByType.get(type);
+
+        // the closed panel steps aside while the open one takes its id; put back if opening fails
+        if (byType) byType.delete(closed);
+        _panels.delete(id);
+        let opened = null;
+        try {
+            const anchor = nextTo ? document.querySelector(`.tile[data-tile-id="${CSS.escape(nextTo)}"]`) : null;
+            if (anchor && anchor.parentElement) {
+                const split = LayoutManager.createSplit(anchor.parentElement, anchor, direction);
+                opened = createPanel(type, config, split.secondPane);
+            } else {
+                opened = createPanelInLayout(type, config);
+            }
+        } catch (error) {
+            console.error(`Could not reopen ${id}:`, error);
+        }
+        if (!opened) {
+            _panels.set(id, closed);
+            if (byType) byType.add(closed);
+            return null;
+        }
+        updateSourcePanelSelection();
+        return opened;
+    }
+
+    /**
      * The panels on the page by id: whether each is open, and its settings
      * (what a history step compares closed panels by).
      * @returns {Map<string, {open: boolean, config: Object}>}
@@ -1429,6 +1473,7 @@ const PanelManager = (function() {
         registerClosedPanel,
         canRestoreClosed,
         restoreClosedPanels,
+        reopenClosedPanel,
         panelStates,
         removePanel,
         replacePanel,
