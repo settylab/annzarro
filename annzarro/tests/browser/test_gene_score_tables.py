@@ -699,3 +699,49 @@ def test_a_subset_change_while_a_score_is_on_its_way_ends_with_the_score_of_the_
     page.wait_for_timeout(300)
     assert max(float(v) for v in _column(page, 2)) <= 29.0
     assert _headers(page)[2] == "T cell score"
+
+
+# ------------------------------------------------------ the memory guard and a table with a score column
+
+# The page's heap limit leaves room for `rows` rows of a Cell Table beside what is held now (the way
+# test_memory_guard.py sets its limits): a table of 45 rows fits, one of the 60 cells does not (the offer is then half the cells).
+SET_TABLE_ROWS_LIMIT = """async (rows) => {
+    const { Config } = await import('/static/js/config.js');
+    const g = await import('/static/js/utils/memory-guard-ui.js');
+    const m = await import('/static/js/utils/memory-guard.js');
+    const raw = m.panelCost({ kind: 'cell-table', n: rows }).peak.heap;
+    const held = g.held(g.ledger.panels().map(e => e.id)).heap;
+    Config.DEFAULTS.MEMORY = { ...(Config.DEFAULTS.MEMORY || {}), total_gb: 1e6, margin: 0.2,
+        heap_gb: (held + raw * 1.2 + 1) / (m.GB * m.HEAP_USABLE_SHARE) };
+    document.dispatchEvent(new CustomEvent(g.MEMORY_EVENT));
+}"""
+
+
+def test_a_score_column_on_a_table_the_memory_guard_refuses_asks_for_nothing_until_the_offer_is_taken(page, served):
+    _slow(page, "auto", 3)
+    _open(page, served, table=_table(columns=[OBS]))
+    page.evaluate(SET_TABLE_ROWS_LIMIT, 45)
+    # the column is added to a table that no longer fits: the refusal is the table's answer
+    page.evaluate("(id) => window.PanelManager.getPanel(id).addColumn({ type: 'gene-score', key: 'gene-signature-S', column: 'zscore_mean', label: 'T cell score' })", TID)
+    page.wait_for_selector(f"{BOX} .coverage-placeholder", timeout=30000)
+    text = page.inner_text(f"{BOX} .coverage-placeholder")
+    assert text.startswith("Not loaded: not enough JS memory"), text
+    actions = [a.get_attribute("data-ps-action") for a in page.locator(f"{BOX} .coverage-placeholder [data-ps-action]").all()]
+    assert "subset-half" in actions and "subset" in actions, actions
+    assert "Half the cells" in text
+    page.wait_for_timeout(500)
+    assert _calls(page) == [], "a refused table makes no score request"
+    assert page.evaluate("() => window.__ctls.length") == 0
+    assert page.locator(f"{BOX} .score-notice").count() == 0
+    # the column is still the table's, and the offer (half the cells) loads the table for 30 cells
+    assert [c["type"] for c in page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns", TID)] == ["obs", "gene-score"]
+    page.click(f"{BOX} [data-ps-action='subset-half']")
+    until(page, "() => window.__ctls.length === 1")
+    assert _calls(page, "compute")[0]["subset"] is not None, "the score is asked for the 30 cells now shown"
+    until(page, "(box) => document.querySelectorAll(box + ' .dataTables_scrollBody tbody tr').length > 0", BOX)
+    assert _headers(page)[2] == "T cell score (computing)"
+    _finish(page, 0, [float(i) for i in range(30)])
+    _wait_ready(page)
+    assert _api(page, "dt.rows().count()") == 30
+    assert max(float(v) for v in _column(page, 2)) <= 29.0
+    _wait_no_notice(page)
