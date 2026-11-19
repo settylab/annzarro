@@ -80,4 +80,22 @@ def slow(page, ms):
     page.route("**/api/v1/**", handler)
 
 
+def hold(page, keys=("/data/obs", "/data/obsm", "/data/X")):
+    """Hold the panels' data requests (not the ones that open the dataset) until the returned function is called (a load that stays busy for as
+    long as the test needs, however slow the machine is; ``slow`` holds for a fixed time, which a test
+    doing several steps inside it can outlast). Returns ``release()``."""
+    state = {"open": False}
+
+    def handler(route):
+        if any(k in route.request.url for k in keys):
+            while not state["open"]:
+                page.wait_for_timeout(50)
+        route.continue_()
+    page.route("**/api/v1/**", handler)
+
+    def release():
+        state["open"] = True
+    return release
+
+
 OPEN_TILES = "() => [...document.querySelectorAll('.tile-container .tile[data-tile-id]')].map(t => t.dataset.tileId)"
