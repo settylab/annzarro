@@ -76,10 +76,16 @@ The preview says how many genes **will be added**, how many were **already selec
 `cd3d > CD3D`; **Match case** turns this off) and how many are **not in this dataset**. Those names are
 listed, and **Copy** puts them on the clipboard. It also warns when:
 
-- the names look like Ensembl or Entrez ids and the dataset uses gene symbols;
+- the names look like Ensembl or Entrez ids and the dataset has no id column to translate them;
 - most matches differ only in case, so the list may come from another species (names are matched,
   not orthologs);
 - a name looks like a gene that Excel turned into a date, such as `1-Mar`.
+
+**Ids.** A list of Ensembl ids (`ENSG00000167286`, with or without a version such as `.7`) or Entrez ids
+is matched through the dataset's id column, for example `gene_ids` or `ensembl_id`. The column is read
+only when your list turns out to be ids, and the preview says "Matching ids…" for a moment. Those names
+are counted separately as **matched by id**, and the signature keeps the dataset's gene names, not the
+ids. If the dataset has no such column, or it cannot be read, the preview says so and nothing is added.
 
 A signature holds up to 2,000 genes, counting the ones already selected. Over that, the preview says so,
 **Add** is off and nothing is added; shorten the list and try again.

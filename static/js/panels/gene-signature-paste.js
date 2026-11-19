@@ -31,6 +31,7 @@ function openPaste(panel) {
         geneNames: panel.getDatasetGenes(),
         currentGenes: () => panel.getSelectedGenes(),
         limit: GENE_LIMIT,
+        idLookup: (kind) => panel.loadIdMap(kind),
         onCancel: close,
         onAdd: (genes, info) => {
             close();

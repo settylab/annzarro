@@ -12,7 +12,7 @@
  */
 import { copyText } from './clipboard.js';
 import {
-    DEFAULT_LIMIT, MAX_FILE_BYTES, MESSAGES, readInput, parseGeneInput, matchGenes, countKnown
+    DEFAULT_LIMIT, MAX_FILE_BYTES, MESSAGES, readInput, parseGeneInput, matchGenes, countKnown, idKindOf
 } from './gene-paste.js';
 
 const FORMAT_LABELS = { list: 'Gene list', table: 'Table column', gmt: 'GMT gene sets', grp: 'GRP list' };
@@ -29,6 +29,8 @@ const plural = (n, one, many) => `${fmt(n)} ${n === 1 ? one : many}`;
  * @param {Iterable<string>|(() => Iterable<string>)} [o.currentGenes] genes already selected (or a function giving them)
  * @param {number} [o.limit]
  * @param {Map<string,string>} [o.idToName] gene id to name, when the dataset has an id column
+ * @param {(kind: 'ensembl'|'entrez') => Promise<Map<string,string>|null>} [o.idLookup] loads that map on demand,
+ *   only when most pasted names turn out to be ids; null or a rejection keeps the plain mismatch message
  * @param {(genes: string[], info: Object) => void} o.onAdd
  * @param {() => void} [o.onCancel]
  */
@@ -38,9 +40,12 @@ export function mountGenePaste(container, o) {
     const geneNames = o.geneNames || [];
     const current = () => (typeof o.currentGenes === 'function' ? o.currentGenes() : o.currentGenes) || [];
 
+    let idMap = o.idToName || null;     // grows when idLookup answers
+    const loadedKinds = new Set();
+    let epoch = 0;                      // a lookup that answers after the text changed is ignored
     const st = freshState();
     function freshState() {
-        return { text: '', fileName: '', readAs: 'auto', header: 'auto', column: null, setIndex: 0, matchCase: false, showCase: false, setFilter: '', copied: '' };
+        return { idTried: {}, idLoading: null, text: '', fileName: '', readAs: 'auto', header: 'auto', column: null, setIndex: 0, matchCase: false, showCase: false, setFilter: '', copied: '' };
     }
 
     function el(tag, props = {}, kids = []) {
@@ -143,6 +148,7 @@ export function mountGenePaste(container, o) {
     }
 
     function begin(text, fileName) {
+        epoch++;
         Object.assign(st, freshState(), { text, fileName });
         showError('');
         renderPreview();
@@ -165,9 +171,26 @@ export function mountGenePaste(container, o) {
             fileName: st.fileName, readAs: st.readAs, header: st.header, column: st.column, setIndex: st.setIndex, score
         });
         const cur = Array.from(current());
-        const matchOpts = { geneNames, currentGenes: cur, limit, matchCase: st.matchCase, idToName: o.idToName };
+        const matchOpts = { geneNames, currentGenes: cur, limit, matchCase: st.matchCase, idToName: idMap };
         const m = matchGenes(parsed.names, matchOpts);
+        maybeLookUpIds(m);
         return { parsed, m, matchOpts };
+    }
+
+    /** Most names are ids the dataset does not index by: fetch the id column once, then match again. */
+    function maybeLookUpIds(m) {
+        if (!o.idLookup || o.idToName || st.idLoading) return;
+        const kind = idKindOf(m.unmatched, m.total - m.duplicates);
+        if (!kind || st.idTried[kind] || loadedKinds.has(kind)) return;
+        st.idTried[kind] = true;
+        st.idLoading = kind;
+        const mine = epoch;
+        Promise.resolve().then(() => o.idLookup(kind)).then((map) => map, () => null).then((map) => {
+            if (mine !== epoch) return;
+            st.idLoading = null;
+            if (map && map.size) { idMap = idMap ? new Map([...idMap, ...map]) : map; loadedKinds.add(kind); }
+            if (!previewStage.hidden) renderPreview();
+        });
     }
 
     function renderPreview() {
@@ -186,8 +209,9 @@ export function mountGenePaste(container, o) {
         if (parsed.format === 'table' && parsed.table) previewStage.append(tableBlock(parsed));
         if (parsed.format === 'gmt') previewStage.append(gmtBlock(parsed, matchOpts));
 
+        if (st.idLoading) previewStage.append(el('div', { class: 'gp-hint gp-loading', role: 'status', 'data-testid': 'gp-loading', text: 'Matching ids…' }));
         previewStage.append(countsBlock(parsed, m));
-        if (m.warnings.length && !m.overLimit) for (const w of m.warnings) previewStage.append(el('div', { class: 'gp-note', 'data-code': w.code, text: w.text }));
+        if (m.warnings.length && !m.overLimit) for (const w of st.idLoading ? m.warnings.filter(x => x.code !== 'ensembl' && x.code !== 'entrez') : m.warnings) previewStage.append(el('div', { class: 'gp-note', 'data-code': w.code, text: w.text }));
         if (m.unmatched.length) previewStage.append(unmatchedBlock(m));
         if (m.overLimit) previewStage.append(overLimitBlock(m));
         else if (m.warnings.length === 0 && !m.toAdd.length && m.matched && m.alreadySelected === m.matched) {
@@ -278,7 +302,10 @@ export function mountGenePaste(container, o) {
                         m.caseMatches.slice(0, SHOWN_NAMES).map(c => el('li', { text: `${c.input} > ${c.gene}` }))));
                 }
             }
-            if (m.idMatches.length) rows.push(countRow(m.idMatches.length, 'matched by id', null, 'gp-c-id'));
+            if (m.idMatches.length) {
+                const ex = m.idMatches[0];
+                rows.push(countRow(m.idMatches.length, `matched by id (${ex.input} > ${ex.gene})`, null, 'gp-c-id'));
+            }
             if (m.unmatched.length) rows.push(countRow(m.unmatched.length, 'not in this dataset', null, 'gp-c-unmatched'));
         }
         const matchCase = el('label', { class: 'gp-check gp-matchcase' }, [
@@ -321,7 +348,7 @@ export function mountGenePaste(container, o) {
     }
 
     function buttons(parsed, m) {
-        const canAdd = !m.overLimit && m.toAdd.length > 0;
+        const canAdd = !m.overLimit && m.toAdd.length > 0 && !st.idLoading;
         const addBtn = el('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-testid': 'gp-add', 'data-key': 'add', disabled: !canAdd,
             text: canAdd ? `Add ${plural(m.toAdd.length, 'gene', 'genes')}` : 'Add genes',
             onclick: () => {
@@ -336,6 +363,7 @@ export function mountGenePaste(container, o) {
     }
 
     function reset() {
+        epoch++;
         Object.assign(st, freshState());
         textarea.value = '';
         previewBtn.disabled = true;

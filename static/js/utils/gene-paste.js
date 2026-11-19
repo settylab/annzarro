@@ -411,3 +411,43 @@ export function countKnown(values, geneNames) {
     for (const v of values) if (exact.has(v) || lower.has(v.toLowerCase())) n++;
     return n;
 }
+
+const ENTREZ_COLUMNS = ['entrez', 'entrez_id', 'entrezid', 'entrez_gene_id', 'ncbi_gene_id', 'ncbi_id', 'gene_entrez', 'geneid'];
+
+/**
+ * Which var column translates pasted ids into the dataset's gene names: for Ensembl ids the first of
+ * the id columns of ID_COLUMN_PREFERENCE (gene_id, ensembl_id, gene_ids, ...), for Entrez ids a column
+ * named like one. Null when the dataset has none (a column cannot be the index).
+ * @param {'ensembl'|'entrez'} kind
+ * @param {string[]} columns the dataset's var columns
+ * @returns {string|null}
+ */
+export function pickIdColumnFor(kind, columns) {
+    const byLower = new Map();
+    for (const c of columns || []) if (typeof c === 'string' && c !== '_index' && !byLower.has(c.toLowerCase())) byLower.set(c.toLowerCase(), c);
+    const names = kind === 'entrez' ? ENTREZ_COLUMNS : ID_COLUMN_PREFERENCE.slice(0, 2).flat();
+    for (const n of names) if (byLower.has(n)) return byLower.get(n);
+    return null;
+}
+
+/** The id kind of the names that did not match, when most of them are ids: 'ensembl', 'entrez' or null. */
+export function idKindOf(unmatched, total) {
+    if (!unmatched.length || unmatched.length * 2 < total) return null;
+    const kind = detectIdType(unmatched);
+    return kind === 'ensembl' || kind === 'entrez' ? kind : null;
+}
+
+/** An id to gene name Map from a var column's values (parallel to the dataset's genes); versions stripped too. */
+export function buildIdMap(values, geneNames) {
+    const map = new Map();
+    const n = Math.min(values.length, geneNames.length);
+    for (let i = 0; i < n; i++) {
+        const v = values[i];
+        const id = v === null || v === undefined ? '' : String(v).trim();
+        if (!id) continue;
+        if (!map.has(id)) map.set(id, geneNames[i]);
+        const bare = stripVersion(id);
+        if (bare && !map.has(bare)) map.set(bare, geneNames[i]);
+    }
+    return map;
+}

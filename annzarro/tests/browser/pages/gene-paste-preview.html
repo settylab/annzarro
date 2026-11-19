@@ -22,6 +22,7 @@ window.mountPaste = (opts) => {
     window.cancelled = 0;
     window.paste = mountGenePaste(host, {
         ...opts,
+        idLookup: opts.useLookup ? (k) => window.lookupImpl(k) : undefined,
         onAdd: (genes, info) => window.added.push({ genes, info }),
         onCancel: () => { window.cancelled++; }
     });

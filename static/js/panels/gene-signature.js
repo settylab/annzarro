@@ -34,6 +34,7 @@ import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-v
 import { createGeneGrid } from '../utils/gene-grid.js';
 import { getFixedGenes } from './table-utilities/panel-tracker.js';
 import { pasteSource } from './gene-signature-paste.js';
+import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
     GENE_LIMIT, normalizeRecipe, recipeHash, definitionText, planAdd, limitMessage, searchNames, enterTarget,
@@ -106,6 +107,7 @@ const GeneSignaturePanel = (function() {
         let D = null;
         let _grid = null;
         const _undo = new UndoStack();
+        const _idMaps = new Map();        // dataset + column -> Promise of id -> gene name, read only when a paste needs it
         let _flow = null;                 // an inline flow (paste and upload) replacing the list: {node, opener, onClose}
         const _listeners = [];
 
@@ -695,6 +697,37 @@ const GeneSignaturePanel = (function() {
             return out;
         }
 
+        /**
+         * Pasted ids to gene names, for the preview: the one var column that holds them (gene_ids, ensembl_id, an
+         * Entrez column), read on first need and kept for the dataset. Null when the dataset has no such column or
+         * it cannot be read, so the preview keeps its plain "these look like ids" message.
+         * @param {'ensembl'|'entrez'} kind
+         * @returns {Promise<Map<string,string>|null>}
+         */
+        async function loadIdMap(kind) {
+            const path = DataManager.getCurrentDataset();
+            if (!path) return null;
+            let columns;
+            try {
+                const structure = await DataManager.getDatasetStructure(path);
+                const v = structure && structure.var;
+                columns = (v && (v.columns || Object.keys(v))) || [];
+            } catch { return null; }
+            const column = pickIdColumnFor(kind, columns);
+            if (!column) return null;
+            const key = `${path}\u0001${column}`;
+            if (!_idMaps.has(key)) {
+                _idMaps.set(key, (async () => {
+                    const resp = await DataManager.loadVar({ datasetPath: path, columns: [column] });
+                    const values = resp && resp.data && resp.data[column];
+                    if (!values || typeof values.length !== 'number') throw new Error(`no values for ${column}`);
+                    return buildIdMap(values, DataManager.getGenes());
+                })());
+                _idMaps.get(key).catch(() => _idMaps.delete(key));
+            }
+            try { return await _idMaps.get(key); } catch { return null; }
+        }
+
         /** The buttons of the sources that sit beside Add from (Paste or upload). */
         function inlineButtons() {
             return addSourceItems().filter(i => i.inline).map(item => D.el('button', {
@@ -841,6 +874,7 @@ const GeneSignaturePanel = (function() {
             undo,
             // for the sources that plug in (paste and upload)
             getDatasetGenes: () => DataManager.getGenes(),
+            loadIdMap,
             getSelectedGenes: () => [..._recipe.genes, ..._recipe.down],
             openFlow,
             closeFlow,
