@@ -7,10 +7,13 @@
  * configuration only:
  *
  *   offered   the methods consumers may pick, a list of method ids (default: z-score mean, mean, sum)
- *   layers    the matrices consumers may pick (default: just the default layer)
- *   input     the default layer: what a consumer that does not choose gets
- *   method    the default method (z-score mean)
- *   clip, bins, controls, seed   the parameters of the methods that have them
+ *   layers    the matrices consumers may pick, in the order they were offered (default: X)
+ *   clip, bins, controls, seed, detect_above   the parameters of the methods that have them
+ *
+ * There is no default method and no default layer to choose. The first entry of the menu, the first offered method on
+ * the first offered layer, is what a new consumer starts on. `method` and `input` stay in the recipe only as that first
+ * method and layer: the score route reads them, and a consumer saved before layers could be offered has no layer, which
+ * means `input` (X for every link made before this release). They are never shown as settings.
  *
  * Switching an option off never breaks a consumer that uses it: it keeps its setting and shows that the
  * option is no longer offered, with a way to offer it again (`offeredOptions` leaves it out, `isOffered` says).
@@ -127,13 +130,13 @@ export function isOffered(recipe, method, layer) {
 
 /**
  * Every offered method of every offered layer with its grade, `cannot` ones included: for the panel, which says why
- * an option is not in the menus. Order: the default option first, then by method (the panel's order), and within a
- * method the default layer first, then the panel's layer order.
+ * an option is not in the menus. Order: by method (the panel's order), and within a method the layers in the order
+ * they were offered, so the first entry is the first method on the first layer.
  * @param {Object} recipe - from normalizeRecipe
  * @param {string[]} [datasetLayers] - the matrices the dataset has, X first; an offered layer it lacks is left out
  * @param {Object<string, string>} [kinds] - layer -> what it looks like; a layer not listed is not graded
  * @returns {Array<{id: string, method: string, layer: string, label: string, fullLabel: string, definition: string,
- *   grade: string, reason: string, isDefault: boolean}>}
+ *   grade: string, reason: string}>}
  *   `id` is always `method@layer`, however many layers are offered, but a consumer stores `{column: method, layer}`,
  *   never the id. `label` names the layer only when several are offered; `fullLabel` always does.
  */
@@ -144,7 +147,6 @@ export function gradedOptions(recipe, datasetLayers, kinds = {}) {
         const have = new Set(datasetLayers);
         layers = layers.filter(name => have.has(name));
     }
-    layers = [recipe.input, ...layers.filter(name => name !== recipe.input)].filter(name => layers.includes(name));
     const several = layers.length > 1;
     const out = [];
     for (const method of methods) {
@@ -153,13 +155,10 @@ export function gradedOptions(recipe, datasetLayers, kinds = {}) {
             const { grade, reason } = gradeOption(method, layer, kinds[layer]);
             out.push({
                 id: `${method}@${layer}`, method, layer, label: several ? `${info.menu} · ${layer}` : info.menu,
-                fullLabel: `${info.menu} · ${layer}`, definition: info.definition, grade, reason,
-                isDefault: method === recipe.method && layer === recipe.input
+                fullLabel: `${info.menu} · ${layer}`, definition: info.definition, grade, reason
             });
         }
     }
-    const first = out.findIndex(o => o.isDefault);
-    if (first > 0) out.unshift(...out.splice(first, 1));
     return out;
 }
 
@@ -196,8 +195,7 @@ export function offeredSummary(recipe) {
         return notes.length ? `${methodShort(m)} (${notes.join(', ')})` : methodShort(m);
     }).join(', ');
     const layers = cleanLayers(recipe.layers, recipe.input);
-    const ordered = [recipe.input, ...layers.filter(n => n !== recipe.input)];
-    return `${methods} · ${ordered.length > 1 ? `${ordered.join(', ')} (default ${recipe.input})` : ordered[0]}`;
+    return `${methods} · ${layers.join(', ')}`;
 }
 
 /** The narrow form of the collapsed row: "3 methods · X". */

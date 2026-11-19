@@ -139,11 +139,9 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
         }
     }
 
-    /** The aggregation a plot already shows for this signature, else the default. */
+    /** Where inspecting starts: the first offered option. */
     function firstMethod() {
-        const { sources } = scores();
-        for (const h of sources.handlesOf(id)) if (h.role !== 'inspect' && h.sub) return h.sub;
-        return DEFAULT_METHOD;
+        return methodsHere()[0] || DEFAULT_METHOD;
     }
 
     /** The aggregations to inspect: what the signature offers, and the one being inspected if it was switched off since. */

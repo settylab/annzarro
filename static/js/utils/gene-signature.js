@@ -133,10 +133,12 @@ export function normalizeRecipe(raw) {
         genes = genes.slice(0, GENE_LIMIT);
         notes.push(`A signature holds up to ${GENE_LIMIT.toLocaleString('en-US')} genes; ${dropped.toLocaleString('en-US')} were left out.`);
     }
-    let method = METHODS.includes(src.method) ? src.method : DEFAULT_METHOD;
-    const offered = cleanOffered(src.offered, method);
-    if (!offered.includes(method)) method = offered[0];           // the default method is always one that is offered
-    const input = typeof src.input === 'string' && src.input ? src.input : DEFAULT_INPUT;
+    const offered = cleanOffered(src.offered, METHODS.includes(src.method) ? src.method : DEFAULT_METHOD);
+    const method = offered[0];                                     // the first offered method: where a new consumer starts
+    const asked = typeof src.input === 'string' && src.input ? src.input : DEFAULT_INPUT;
+    // the layers in the order they were offered; a link made before layers could be offered has `input` alone
+    const layers = cleanLayers(src.layers, asked);
+    const input = layers[0];                                       // the first offered layer (an old consumer without one means `input`)
     const seed = Number.isInteger(src.seed) && src.seed >= 0 ? src.seed : null;
     return {
         recipe: {
@@ -148,7 +150,7 @@ export function normalizeRecipe(raw) {
             detect_above: cleanThreshold(src.detect_above),
             version: RECIPE_VERSION,
             offered,
-            layers: cleanLayers(src.layers, input)
+            layers
         },
         notes
     };

@@ -8,7 +8,7 @@
  *         Clip at ± [10]  One rare gene can otherwise dominate the average.   Reset
  *   [x] Mean           Average of the genes' values.
  *         warning: On raw_counts this follows sequencing depth.
- *   Layers  [x] X  scaled   [ ] logged_counts  log-normalised   Default layer [X v]
+ *   Layers  [x] X  scaled   [ ] logged_counts  log-normalised
  *
  * A method's parameters show only while it is offered. Every setting is part of the recipe (link, panel set, score
  * key). A number is checked on Enter or on leaving the box: an invalid one keeps the last valid value and says what is
@@ -32,8 +32,8 @@ export const SCORING_HELP = Object.freeze({
     clipOff: 'Not clipped: one rare gene can dominate the average.',
     detectAbove: 'A gene counts as detected in a cell when its value is above this.',
     seed: 'The same seed gives the same control genes, so the same score.',
-    layers: 'Plots and tables choose among the offered layers. The default layer is used where none is chosen.',
-    defaultLayer: 'The default layer is always offered.',
+    layers: 'Plots and tables choose among the offered layers.',
+    lastLayer: 'At least one layer stays offered.',
     lastMethod: 'At least one option stays offered.'
 });
 
@@ -82,19 +82,15 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     methodSet.append(methodRows);
     const layerSet = el('fieldset', { class: 'gsig-scoring__set' }, el('legend', { class: 'gsig-scoring__heading', text: 'Layers' }));
     const layerRows = el('div', { class: 'gsig-scoring__layers' });
-    const defaultSelect = el('select', { class: 'form-select form-select-sm gsig-scoring__defaultselect', id: sid('default-layer'),
-        aria: { label: 'Default layer' }, on: { change: () => apply({ input: defaultSelect.value, layers: [...cleanLayers(getRecipe().layers, getRecipe().input), defaultSelect.value] }) } });
-    const defaultRow = el('div', { class: 'gsig-scoring__defaultrow', hidden: true },
-        el('label', { for: sid('default-layer'), text: 'Default layer' }), defaultSelect);
     const moreLayers = el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', hidden: true,
         on: { click: () => { showAllLayers = !showAllLayers; paint(); } } });
-    layerSet.append(layerRows, moreLayers, defaultRow, el('div', { class: 'gsig-scoring__help', text: SCORING_HELP.layers }));
+    layerSet.append(layerRows, moreLayers, el('div', { class: 'gsig-scoring__help', text: SCORING_HELP.layers }));
     const resetNote = el('div', { class: 'gsig-scoring__notice', role: 'status', hidden: true });
     const reset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-scoring__reset',
         on: { click: () => resetAll(false) } }, 'Reset to defaults');
     const body = el('div', { class: 'gsig-scoring__body', id: sid('body'), hidden: true },
         where, noticeLine, methodSet, layerSet, resetNote, el('div', { class: 'gsig-scoring__actions' }, reset));
-    // the warning for the default layer, in the status zone: seen with the section collapsed
+    // the warning for the first offered layer, in the status zone: seen with the section collapsed
     const warningLine = el('div', { class: 'gsig-inputwarn', role: 'status', hidden: true, data: { inputWarning: 'status' } });
     const element = el('section', { class: 'gsig-scoring', aria: { label: 'Scores offered' } }, toggle, body);
     const doc = () => element.ownerDocument;
@@ -184,12 +180,17 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         paint();
     }
 
+    /** Offer exactly these layers, in this order; the first is the one a new consumer starts on. */
+    function applyLayers(list) {
+        apply({ layers: list, input: list[0] });
+    }
+
     function toggleLayer(layer, on) {
         const recipe = getRecipe();
-        const before = { layers: cleanLayers(recipe.layers, recipe.input) };
+        const before = { layers: cleanLayers(recipe.layers, recipe.input), input: recipe.input };
         const next = new Set(before.layers);
         if (on) next.add(layer); else next.delete(layer);
-        apply({ layers: [...next] });
+        applyLayers([...next]);
         if (on) askKind(layer);
         const used = useText(usesOf(getLayersInUse(), layer));
         notice = !on && used ? { text: `${layer} is no longer offered. ${keepsText(used)}`, undo: before } : null;
@@ -257,7 +258,6 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
             const use = useText(usesOf(used, info.value));
             const head = el('div', { class: 'gsig-scoring__optionhead' }, box,
                 el('label', { for: sid(`offer-${info.value}`), class: 'gsig-scoring__optionname', text: info.label }),
-                on && recipe.method === info.value ? el('span', { class: 'gsig-scoring__tag', text: 'default' }) : null,
                 use ? el('span', { class: 'gsig-scoring__use', data: { inUse: info.value }, text: use }) : null);
             const row = el('div', { class: `gsig-scoring__option${on ? '' : ' is-off'}`, data: { method: info.value } },
                 head, el('div', { class: 'gsig-scoring__definition', text: info.definition }));
@@ -294,11 +294,11 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         moreLayers.textContent = showAllLayers ? 'Show fewer layers' : `Show ${hidden} more layer${hidden === 1 ? '' : 's'}`;
         const used = getLayersInUse();
         for (const name of shown) {
-            const isDefaultLayer = name === recipe.input;
+            const last = layers.has(name) && layers.size === 1;
             const known = inputs.includes(name);
             const box = el('input', { type: 'checkbox', class: 'gsig-scoring__offer', id: sid(`layer-offer-${name}`),
-                checked: layers.has(name), disabled: isDefaultLayer, data: { layerOffer: name },
-                title: isDefaultLayer ? SCORING_HELP.defaultLayer : '', on: { change: () => toggleLayer(name, box.checked) } });
+                checked: layers.has(name), disabled: last, data: { layerOffer: name },
+                title: last ? SCORING_HELP.lastLayer : '', on: { change: () => toggleLayer(name, box.checked) } });
             const word = kindWord(kinds.get(name));
             const use = useText(usesOf(used.map(u => ({ ...u, value: u.value === null ? recipe.input : u.value })), name));
             const warning = warnings.get(name);
@@ -310,20 +310,25 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
                 warning ? el('div', { class: 'gsig-inputwarn', role: 'status', data: { inputWarning: 'layer', layer: name } },
                     el('span', { 'aria-hidden': 'true', text: '⚠ ' }), warning.text,
                     warning.suggest ? [' ', el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link',
-                        data: { useInput: warning.suggest }, on: { click: () => makeDefault(warning.suggest) } },
-                    `Make ${warning.suggest} the default`)] : null) : null));
+                        data: { useInput: warning.suggest }, on: { click: () => offerInstead(name, warning.suggest) } },
+                    `Offer ${warning.suggest} instead`)] : null) : null));
         }
-        const offeredNames = names.filter(n => layers.has(n));
-        defaultRow.hidden = offeredNames.length < 2;
-        D.clear(defaultSelect);
-        for (const name of offeredNames) defaultSelect.append(el('option', { value: name, selected: name === recipe.input, text: name }));
-        defaultSelect.value = recipe.input;
     }
 
-    function makeDefault(layer) {
+    /**
+     * The raw-count warning's button: offer `better` (a layer that looks log-normalised) in place of `raw`, unless a plot
+     * or table reads `raw`, which then stays offered.
+     */
+    function offerInstead(raw, better) {
         const recipe = getRecipe();
-        apply({ input: layer, layers: [...cleanLayers(recipe.layers, recipe.input), layer] });
-        askKind(layer);
+        const layers = cleanLayers(recipe.layers, recipe.input);
+        const inUse = getLayersInUse().some(u => (u.value === null ? recipe.input : u.value) === raw && (u.plots || u.tables));
+        let next;
+        if (layers.includes(better)) next = inUse ? [...layers] : layers.filter(l => l !== raw);
+        else if (inUse) next = [...layers, better];
+        else next = layers.map(l => (l === raw ? better : l));            // in the raw layer's place, so it stays first if it was
+        applyLayers(next.length ? next : [better]);
+        askKind(better);
     }
 
     function paintWarning(recipe) {
@@ -335,7 +340,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         warningLine.append(el('span', { text: warning.text }));
         if (warning.suggest) {
             warningLine.append(' ', el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { useInput: warning.suggest },
-                on: { click: () => makeDefault(warning.suggest) } }, `Make ${warning.suggest} the default`));
+                on: { click: () => offerInstead(recipe.input, warning.suggest) } }, `Offer ${warning.suggest} instead`));
         }
     }
 
@@ -435,7 +440,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         paint();
     }
 
-    /** Ask what the default layer and every offered layer look like (answers are kept per dataset and layer). */
+    /** Ask what every offered layer looks like (answers are kept per dataset and layer). */
     function refreshKind() {
         const recipe = getRecipe();
         warnings.clear();
