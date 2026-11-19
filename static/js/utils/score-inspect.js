@@ -69,10 +69,14 @@ export function distribution(values, { bins = BINS } = {}) {
 }
 
 /** A number in three significant digits, as the panel prints figures: 0.0213, 1.2, 41, 1.2e+4. */
+/** Below this a figure is float rounding, not a value (a z-score's mean is 1e-10, never 0). */
+const FLOAT_NOISE = 1e-6;
+
 export function fmtNum(x) {
     if (x === null || x === undefined || !Number.isFinite(x)) return '';
     if (x === 0) return '0';
     const a = Math.abs(x);
+    if (a < FLOAT_NOISE) return '0';                         // 2e-10 is the mean of a z-score, not a value to show
     if (a >= 10000 || a < 0.001) return x.toExponential(1).replace('e+', 'e');
     return String(Number(x.toPrecision(3)));
 }

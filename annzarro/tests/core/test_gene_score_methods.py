@@ -40,6 +40,47 @@ def stores(tmp_path_factory, matrix):
     return out
 
 
+def detected_above(x, cols, threshold):
+    x = np.asarray(x, dtype=np.float64)[:, cols]
+    ok = np.isfinite(x)
+    present = ok.sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(present > 0, ((x > threshold) & ok).sum(axis=1) / np.maximum(present, 1), np.nan)
+
+
+@pytest.mark.parametrize("backend,layout", list(itertools.product(BACKENDS, LAYOUTS)))
+@pytest.mark.parametrize("threshold", [0, 0.5, 2.0, 1000])
+def test_detected_counts_the_genes_above_the_threshold(stores, matrix, backend, layout, threshold):
+    _, result = run(stores[backend, layout], {"genes": [gene(i) for i in GENES], "method": "detected", "detect_above": threshold})
+    np.testing.assert_allclose(result.values, detected_above(matrix, GENES, threshold), equal_nan=True, **TOL)
+
+
+def test_a_higher_threshold_never_detects_more(stores):
+    path = stores["zarr", "csc"]
+    previous = None
+    for threshold in (0, 0.5, 1, 3):
+        v = run(path, {"genes": [gene(i) for i in GENES], "method": "detected", "detect_above": threshold})[1].values
+        if previous is not None:
+            assert np.all((v <= previous + 1e-7) | np.isnan(v))
+        previous = v
+    assert run(path, {"genes": [gene(0)], "method": "detected", "detect_above": 1e9})[1].values.max() == 0
+
+
+@pytest.mark.parametrize("bad", [-0.1, float("nan"), float("inf"), "0", True, None])
+def test_the_detection_threshold_is_a_number_from_zero_up(bad):
+    with pytest.raises(gs.ScoreError) as caught:
+        gs.parse_recipe({"genes": ["A"], "method": "detected", "detect_above": bad})
+    assert caught.value.reason == "bad_detect_above"
+    ok = gs.parse_recipe({"genes": ["A"], "method": "detected", "detect_above": 2})
+    assert ok.describe()["detect_above"] == 2.0
+    assert gs.parse_recipe({"genes": ["A"], "method": "mean", "detect_above": 2}).describe()["detect_above"] is None
+
+
+def test_the_share_of_the_total_is_in_percent(stores, matrix):
+    v = run(stores["zarr", "csc"], {"genes": [gene(0)], "method": "fraction_of_total"})[1].values
+    assert 0 < np.nanmax(v) <= 100 and np.nanmax(v) > 1, "percent, not a fraction"
+
+
 def dense(x, cols, method):
     """sum, detected and fraction_of_total by their definitions, in float64; non-finite values are missing."""
     x = np.asarray(x, dtype=np.float64)[:, cols]
@@ -72,7 +113,7 @@ def test_the_fraction_of_total_matches_the_dense_reference(stores, matrix, backe
     s = dense(matrix, GENES, "sum")
     t = total_of(matrix)
     with np.errstate(invalid="ignore", divide="ignore"):
-        want = np.where(t > 0, s / t, np.nan)
+        want = np.where(t > 0, 100.0 * s / t, np.nan)
     np.testing.assert_allclose(result.values, want, equal_nan=True, rtol=1e-5, atol=1e-6)
 
 
@@ -186,5 +227,5 @@ def test_bins_and_controls_are_whole_numbers_in_range(field, bad):
 
 
 def test_the_methods_in_order_and_the_default_first():
-    assert gs.METHODS == ("zscore_mean", "mean", "sum", "detected", "fraction_of_total", "control_adjusted")
+    assert gs.METHODS == ("zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total")
     assert gs.DEFAULT_METHOD == gs.METHODS[0]

@@ -16,20 +16,24 @@
  * option is no longer offered, with a way to offer it again (`offeredOptions` leaves it out, `isOffered` says).
  */
 
-/** Every aggregation, in the order menus list them (by common use). `needs` names the parameters it uses. */
+/**
+ * Every aggregation, in the order menus list them. ONE name per method, used by every surface: `label` as a panel
+ * label (sentence case), `menu` in menus, titles and tags (lower case, after a signature's name). `needs` names the
+ * parameters it uses (the keys of the recipe).
+ */
 export const METHOD_INFO = Object.freeze([
-    { value: 'zscore_mean', label: 'Z-score mean', short: 'z-score mean', needs: ['clip'],
-        definition: 'Each gene becomes a z-score over all cells, so every gene counts equally, then the genes are averaged.' },
-    { value: 'mean', label: 'Mean', short: 'mean', needs: [],
-        definition: 'The plain average of the genes, in the units of the matrix.' },
-    { value: 'sum', label: 'Sum', short: 'sum', needs: [],
-        definition: 'The genes added up, in the units of the matrix. A gene with no value in a cell adds nothing.' },
-    { value: 'detected', label: 'Detected', short: 'detected', needs: [],
-        definition: 'The share of the genes with a non-zero value in the cell, from 0 to 1 (a share, so it compares between signatures of different sizes).' },
-    { value: 'fraction_of_total', label: 'Fraction of total', short: 'fraction of total', needs: [],
-        definition: 'The genes added up as a share of the cell\'s total over all genes, as for percent mitochondrial. Use counts or linear normalised values, not log-transformed or scaled ones.' },
-    { value: 'control_adjusted', label: 'Control-adjusted', short: 'control-adjusted', needs: ['bins', 'controls', 'seed'],
-        definition: 'The average of the genes less the average of control genes of similar detection, which removes differences in depth and quality between cells.' }
+    { value: 'zscore_mean', label: 'Z-score mean', menu: 'z-score mean', needs: ['clip'], unit: 'SD',
+        definition: 'Each gene scaled to mean 0 and SD 1 over all cells, then averaged, so every gene counts equally.' },
+    { value: 'mean', label: 'Mean', menu: 'mean', needs: [], unit: 'layer units',
+        definition: 'Average of the genes\' values, in the layer\'s units.' },
+    { value: 'sum', label: 'Sum', menu: 'sum', needs: [], unit: 'layer units',
+        definition: 'Total of the genes\' values, in the layer\'s units. Grows with the number of genes.' },
+    { value: 'control_adjusted', label: 'Control-adjusted', menu: 'control-adjusted', needs: ['bins', 'controls', 'seed'], unit: 'layer units',
+        definition: 'Mean of the genes minus the mean of control genes with similar detection, like scanpy\'s score_genes.' },
+    { value: 'detected', label: 'Fraction detected', menu: 'fraction detected', needs: ['detect_above'], unit: '0 to 1',
+        definition: 'The share of the signature\'s genes detected in the cell, from 0 to 1.' },
+    { value: 'fraction_of_total', label: '% of total', menu: '% of total', needs: [], unit: '%',
+        definition: 'The genes\' share of the cell\'s total over all genes, in percent, as for % mitochondrial.' }
 ]);
 
 export const METHODS = Object.freeze(METHOD_INFO.map(m => m.value));
@@ -39,7 +43,56 @@ export const DEFAULT_OFFERED = Object.freeze(['zscore_mean', 'mean', 'sum']);
 
 export const methodInfo = (method) => METHOD_INFO.find(m => m.value === method) || null;
 export const methodLabel = (method) => (methodInfo(method) || { label: String(method) }).label;
-export const methodShort = (method) => (methodInfo(method) || { short: String(method) }).short;
+/** The name menus, titles and tags use. */
+export const methodShort = (method) => (methodInfo(method) || { menu: String(method) }).menu;
+
+/** The defaults of each method's parameters (keys of the recipe), for "Reset" under a method. */
+export const PARAM_DEFAULTS = Object.freeze({
+    zscore_mean: Object.freeze({ clip: 10 }),
+    control_adjusted: Object.freeze({ bins: 25, controls: 50, seed: null }),
+    detected: Object.freeze({ detect_above: 0 })
+});
+
+/** Whether every parameter of `method` is at its default in `recipe`. */
+export function isMethodDefault(recipe, method) {
+    const defaults = PARAM_DEFAULTS[method];
+    if (!defaults) return true;
+    return Object.entries(defaults).every(([key, value]) => {
+        const have = recipe[key] === undefined ? null : recipe[key];
+        return key === 'seed' ? (have === null || have === 0) : have === value;
+    });
+}
+
+// ---------------------------------------------------------------------------
+// What a layer looks like decides what may be computed from it
+
+/** The word the section gives a kind (from core/matrix_kind.py): it answers "which layer should I use". */
+export function kindWord(kind) {
+    return { counts: 'counts', normalised: 'normalised', log: 'log-normalised', signed: 'scaled', other: 'other' }[kind] || '';
+}
+
+/**
+ * How one method reads one layer, from what the layer looks like: `ok`, `warn` (said once, in the panel) or `cannot`
+ * (left out of every menu, and the panel says why).
+ * @param {string} method
+ * @param {string} layer
+ * @param {string} [kind] - counts, normalised, log, signed, other or unknown (unknown: nothing is known, so ok)
+ * @returns {{grade: 'ok'|'warn'|'cannot', reason: string}}
+ */
+export function gradeOption(method, layer, kind) {
+    const ok = { grade: 'ok', reason: '' };
+    if (method === 'detected' && kind === 'signed') {
+        return { grade: 'cannot', reason: `Not offered on ${layer}: almost every value is non-zero, so every gene counts as detected.` };
+    }
+    if (method === 'fraction_of_total') {
+        if (kind === 'signed') return { grade: 'cannot', reason: `Not offered on ${layer}: ${layer} has negative values.` };
+        if (kind === 'log') return { grade: 'warn', reason: '% of total on log values is compressed. It is usually read from counts.' };
+    }
+    if (kind === 'counts' && ['zscore_mean', 'mean', 'sum', 'control_adjusted'].includes(method)) {
+        return { grade: 'warn', reason: `On '${layer}' this follows sequencing depth.` };
+    }
+    return ok;
+}
 
 /**
  * The methods a stored list stands for: known ids only, each once, in menu order; the default list when there is
@@ -73,38 +126,93 @@ export function isOffered(recipe, method, layer) {
 }
 
 /**
- * The menu a consumer shows: every offered method of every offered layer.
+ * Every offered method of every offered layer with its grade, `cannot` ones included: for the panel, which says why
+ * an option is not in the menus. Order: the default option first, then by method (the panel's order), and within a
+ * method the default layer first, then the panel's layer order.
  * @param {Object} recipe - from normalizeRecipe
  * @param {string[]} [datasetLayers] - the matrices the dataset has, X first; an offered layer it lacks is left out
- * @returns {Array<{id: string, method: string, layer: string, label: string, definition: string}>}
- *   `id` is `method` for one layer and `method@layer` for several; `label` names the layer only when there are several
+ * @param {Object<string, string>} [kinds] - layer -> what it looks like; a layer not listed is not graded
+ * @returns {Array<{id: string, method: string, layer: string, label: string, fullLabel: string, definition: string,
+ *   grade: string, reason: string, isDefault: boolean}>}
+ *   `id` is always `method@layer`, however many layers are offered, but a consumer stores `{column: method, layer}`,
+ *   never the id. `label` names the layer only when several are offered; `fullLabel` always does.
  */
-export function offeredOptions(recipe, datasetLayers) {
+export function gradedOptions(recipe, datasetLayers, kinds = {}) {
     const methods = cleanOffered(recipe.offered, recipe.method);
     let layers = cleanLayers(recipe.layers, recipe.input);
     if (Array.isArray(datasetLayers) && datasetLayers.length) {
         const have = new Set(datasetLayers);
         layers = layers.filter(name => have.has(name));
     }
+    layers = [recipe.input, ...layers.filter(name => name !== recipe.input)].filter(name => layers.includes(name));
     const several = layers.length > 1;
     const out = [];
-    for (const layer of layers) {
-        for (const method of methods) {
+    for (const method of methods) {
+        for (const layer of layers) {
             const info = methodInfo(method);
+            const { grade, reason } = gradeOption(method, layer, kinds[layer]);
             out.push({
-                id: several ? `${method}@${layer}` : method, method, layer,
-                label: several ? `${info.label} · ${layer}` : info.label, definition: info.definition
+                id: `${method}@${layer}`, method, layer, label: several ? `${info.menu} · ${layer}` : info.menu,
+                fullLabel: `${info.menu} · ${layer}`, definition: info.definition, grade, reason,
+                isDefault: method === recipe.method && layer === recipe.input
             });
         }
     }
+    const first = out.findIndex(o => o.isDefault);
+    if (first > 0) out.unshift(...out.splice(first, 1));
     return out;
 }
 
-/** The short summary the collapsed Score options row states: "Offered: z-score mean, mean, sum · layer X". */
+/** The menu a consumer shows: `gradedOptions` without the combinations that cannot be computed. */
+export function offeredOptions(recipe, datasetLayers, kinds) {
+    return gradedOptions(recipe, datasetLayers, kinds).filter(o => o.grade !== 'cannot');
+}
+
+const nonDefault = (recipe, key, fallback) => (recipe[key] === undefined || recipe[key] === null ? fallback : recipe[key]);
+
+/** A parameter that is not at its default, named after its method in the summary: "not clipped", "seed 3". */
+function paramNotes(recipe, method) {
+    const notes = [];
+    if (method === 'zscore_mean') {
+        if (recipe.clip === null) notes.push('not clipped');
+        else if (recipe.clip !== 10) notes.push(`clip ±${recipe.clip}`);
+    } else if (method === 'control_adjusted') {
+        if (nonDefault(recipe, 'bins', 25) !== 25) notes.push(`bins ${recipe.bins}`);
+        if (nonDefault(recipe, 'controls', 50) !== 50) notes.push(`controls ${recipe.controls}`);
+        if (nonDefault(recipe, 'seed', 0) !== 0) notes.push(`seed ${recipe.seed}`);
+    } else if (method === 'detected') {
+        if (nonDefault(recipe, 'detect_above', 0) !== 0) notes.push(`above ${recipe.detect_above}`);
+    }
+    return notes;
+}
+
+/**
+ * The collapsed row: offered methods, then the layers. A parameter that is not at its default follows its method.
+ * "z-score mean, mean, sum · X"; "z-score mean (not clipped), control-adjusted (seed 3) · X, logged_counts (default X)".
+ */
 export function offeredSummary(recipe) {
-    const methods = cleanOffered(recipe.offered, recipe.method).map(methodShort).join(', ');
+    const methods = cleanOffered(recipe.offered, recipe.method).map((m) => {
+        const notes = paramNotes(recipe, m);
+        return notes.length ? `${methodShort(m)} (${notes.join(', ')})` : methodShort(m);
+    }).join(', ');
     const layers = cleanLayers(recipe.layers, recipe.input);
-    return `Offered: ${methods} · ${layers.length > 1 ? `layers ${layers.join(', ')}` : `layer ${layers[0]}`}`;
+    const ordered = [recipe.input, ...layers.filter(n => n !== recipe.input)];
+    return `${methods} · ${ordered.length > 1 ? `${ordered.join(', ')} (default ${recipe.input})` : ordered[0]}`;
+}
+
+/** The narrow form of the collapsed row: "3 methods · X". */
+export function offeredSummaryShort(recipe) {
+    const n = cleanOffered(recipe.offered, recipe.method).length;
+    const layers = cleanLayers(recipe.layers, recipe.input);
+    return `${n} method${n === 1 ? '' : 's'} · ${layers.length > 1 ? `${layers.length} layers` : layers[0]}`;
+}
+
+/** Who uses an option, in words: "1 plot", "2 plots, 1 table"; empty when nothing does. */
+export function useText({ plots = 0, tables = 0 } = {}) {
+    const parts = [];
+    if (plots) parts.push(`${plots} plot${plots === 1 ? '' : 's'}`);
+    if (tables) parts.push(`${tables} table${tables === 1 ? '' : 's'}`);
+    return parts.join(', ');
 }
 
 /**
@@ -118,5 +226,6 @@ export function paramsOf(recipe, method) {
     if (need.includes('bins')) out.bins = recipe.bins;
     if (need.includes('controls')) out.controls = recipe.controls;
     if (need.includes('seed')) out.seed = recipe.seed === null || recipe.seed === undefined ? 0 : recipe.seed;
+    if (need.includes('detect_above')) out.detect_above = recipe.detect_above === undefined ? 0 : recipe.detect_above;
     return out;
 }

@@ -14,6 +14,7 @@ Recipe (``version`` 1), a JSON object::
      "seed": null,                # control_adjusted only: the seed of the control genes (null is 0)
      "bins": 25,                  # control_adjusted only: gene bins, 2 to 200
      "controls": 50,              # control_adjusted only: control genes drawn per bin, 1 to 1,000
+     "detect_above": 0,           # detected only: a gene is detected in a cell when its value is above this (0 or more)
      "version": 1}                # the algorithm version
 
 Every field but ``genes`` is optional. ``down`` is accepted by the format and refused by the engine
@@ -23,12 +24,14 @@ Methods
     zscore_mean  mean over genes of clip((x - mu) / sd, +-clip); mu and sd over all cells, zeros included
     mean         mean over genes of x
     sum          sum over genes of x; a gene with no value in a cell adds nothing, a cell with no value for any gene is NaN
-    detected     the FRACTION of the signature's genes with a non-zero value in the cell, 0 to 1 (the mean of the
-                 indicator "x != 0"). A fraction rather than a count, so it means the same when a gene is missing from
+    detected     the FRACTION of the signature's genes detected in the cell, 0 to 1: the mean of the indicator
+                 "x > detect_above" (the default 0: a non-zero value, for the non-negative matrices counts and
+                 normalised values are). A fraction rather than a count, so it means the same when a gene is missing from
                  the dataset or has no value in a cell, and compares between signatures of different sizes.
     fraction_of_total
-                 the signature's summed expression over the sum of the cell's values over ALL genes (percent mitochondrial
-                 is this with 100 times). Meaningful for counts and for linear normalised values; on log-transformed
+                 the signature's summed expression over the sum of the cell's values over ALL genes, in PERCENT (0 to
+                 100), as percent mitochondrial is reported. The denominator is every gene of the matrix, the signature's
+                 own included, and not a subset: that is what the percentage of a cell's counts means. Meaningful for counts and for linear normalised values; on log-transformed
                  or scaled input the result carries a warning. Needs the total of every cell: one pass over the matrix.
     control_adjusted
                  mean over genes of x, minus the mean over control genes of x (Tirosh et al. 2016; scanpy's
@@ -77,7 +80,7 @@ MAX_NAME_CHARS = 1000
 
 DEFAULT_CLIP = 10.0
 DEFAULT_METHOD = "zscore_mean"
-METHODS = ("zscore_mean", "mean", "sum", "detected", "fraction_of_total", "control_adjusted")
+METHODS = ("zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total")
 
 #: Control-adjusted scoring: gene bins and controls drawn per bin (scanpy's defaults).
 N_BINS = 25
@@ -142,7 +145,7 @@ class ScoreError(Exception):
 # The recipe
 # ---------------------------------------------------------------------------
 
-_FIELDS = ("genes", "down", "input", "method", "clip", "seed", "bins", "controls", "version", "title")
+_FIELDS = ("genes", "down", "input", "method", "clip", "seed", "bins", "controls", "detect_above", "version", "title")
 
 
 @dataclass(frozen=True)
@@ -156,6 +159,7 @@ class Recipe:
     version: int = ALGORITHM_VERSION
     bins: int = N_BINS
     controls: int = CTRL_SIZE
+    detect_above: float = 0.0
 
     @property
     def effective_clip(self) -> Optional[float]:
@@ -170,6 +174,10 @@ class Recipe:
         return DEFAULT_SEED if self.seed is None else self.seed
 
     @property
+    def effective_detect_above(self) -> Optional[float]:
+        return self.detect_above if self.method == "detected" else None
+
+    @property
     def effective_bins(self) -> Optional[int]:
         return self.bins if self.method == "control_adjusted" else None
 
@@ -180,7 +188,7 @@ class Recipe:
     def describe(self) -> Dict[str, Any]:
         return {"method": self.method, "input": self.input, "clip": self.effective_clip,
                 "seed": self.effective_seed, "bins": self.effective_bins, "controls": self.effective_controls,
-                "version": self.version, "genes": len(self.genes)}
+                "detect_above": self.effective_detect_above, "version": self.version, "genes": len(self.genes)}
 
 
 def _names(value, field_name: str) -> Tuple[str, ...]:
@@ -239,6 +247,10 @@ def parse_recipe(raw) -> Recipe:
         raise ScoreError(400, "bad_seed", "seed must be a whole number from 0 up, or null.")
     bins = _whole(raw.get("bins", N_BINS), "bins", *BINS_RANGE)
     controls = _whole(raw.get("controls", CTRL_SIZE), "controls", *CONTROLS_RANGE)
+    detect_above = raw.get("detect_above", 0)
+    if isinstance(detect_above, bool) or not isinstance(detect_above, (int, float)) or not math.isfinite(detect_above) \
+            or detect_above < 0:
+        raise ScoreError(400, "bad_detect_above", "detect_above must be a number from 0 up.")
     source = raw.get("input", "X")
     if not isinstance(source, str) or not source or len(source) > MAX_NAME_CHARS:
         raise ScoreError(400, "bad_recipe", "input must be 'X' or the name of a layer.")
@@ -248,7 +260,7 @@ def parse_recipe(raw) -> Recipe:
                          f"This server computes scores with algorithm version {ALGORITHM_VERSION}; "
                          f"the recipe asks for {version!r}.", supported=ALGORITHM_VERSION)
     return Recipe(genes=genes, down=down, input=source, method=method, clip=clip, seed=seed, version=ALGORITHM_VERSION,
-                  bins=bins, controls=controls)
+                  bins=bins, controls=controls, detect_above=float(detect_above))
 
 
 # ---------------------------------------------------------------------------
@@ -702,12 +714,12 @@ def kind_of(reader, dataset_path: str, name: str) -> Dict[str, Any]:
         return matrix_kind.classify(source.sample())
 
 
-def matrix_kinds(reader, dataset_path: str, name: str) -> Dict[str, Any]:
+def matrix_kinds(reader, dataset_path: str, name: str, suggest: bool = True) -> Dict[str, Any]:
     """What the input ``name`` looks like and, when that is something scores are not meant for, which other
     matrix of the dataset looks log-normalised: ``{"input", "kind", "stats", "suggest", "checked"}``."""
     stats = kind_of(reader, dataset_path, name)
     out = {"input": name, "kind": stats["kind"], "stats": stats, "suggest": None, "checked": {}}
-    if stats["kind"] in (*matrix_kind.WARN_KINDS, "signed"):
+    if suggest and stats["kind"] in (*matrix_kind.WARN_KINDS, "signed"):
         others = [n for n in input_names(reader, dataset_path) if n != name][:MAX_ALTERNATIVES]
         for other in others:
             try:
@@ -932,7 +944,8 @@ class _Accumulator:
         self.recipe, self.n_obs, self.shown = recipe, n_obs, shown
         self.n_shown = n_obs if shown is None else int(shown.size)
         self.zscore = recipe.method == "zscore_mean"
-        self.indicator = recipe.method == "detected"          # a gene adds 1 where it has a non-zero value
+        self.indicator = recipe.method == "detected"          # a gene adds 1 where its value is above detect_above
+        self.detect_above = recipe.detect_above
         self.divide = recipe.method in ("zscore_mean", "mean", "detected")   # sum and the share of the total are not averages
         self.clip = recipe.effective_clip
         self.acc = np.zeros(self.n_shown, dtype=np.float64 if self.n_shown <= FLOAT64_CELLS else np.float32)
@@ -1002,7 +1015,7 @@ class _Accumulator:
                 stat.clipped = int((np.abs(z) > self.clip).sum()) / self.n_obs
             transformed = self._clip(z)
         elif self.indicator:
-            transformed = (vf != 0).astype(np.float64)
+            transformed = (vf > self.detect_above).astype(np.float64)
         else:
             transformed = vf
         column = np.zeros(self.n_obs, dtype=np.float64)
@@ -1064,7 +1077,7 @@ class _Accumulator:
                     over += int((np.abs(z) > self.clip).sum())
                 correction[finite] = self._clip(z) - z0
             elif self.indicator:
-                correction[finite] = (v[finite] != 0).astype(np.float64)
+                correction[finite] = (v[finite] > self.detect_above).astype(np.float64)
             else:
                 correction[finite] = v[finite]
             pos, hit = self._positions(rows[i:j].astype(np.int64))
@@ -1190,7 +1203,7 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
         t = totals if shown is None else totals[shown]
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = result.values.astype(np.float64) / t
-        result.values = np.ascontiguousarray(np.where(t > 0, ratio, np.nan), dtype=np.float32)
+        result.values = np.ascontiguousarray(np.where(t > 0, 100.0 * ratio, np.nan), dtype=np.float32)
     elif adjusted:
         base = control_acc.result()
         result.n_controls_used = control_acc.n_used

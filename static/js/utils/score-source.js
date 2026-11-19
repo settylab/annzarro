@@ -95,7 +95,10 @@ function offeredSubs(panel) {
     if (!panel || typeof panel.getRecipe !== 'function') return METHODS.map(value => ({ value, label: SUB_LABELS[value] }));
     const recipe = panel.getRecipe();
     const seen = [];
-    for (const o of offeredOptions(recipe)) if (!seen.includes(o.method)) seen.push(o.method);
+    // what the panel offers (impossible combinations left out), the default first
+    for (const o of (typeof panel.getOfferedOptions === 'function' ? panel.getOfferedOptions() : offeredOptions(recipe))) {
+        if (!seen.includes(o.method)) seen.push(o.method);
+    }
     seen.sort((a, b) => (a === recipe.method ? -1 : b === recipe.method ? 1 : 0));
     return seen.map(value => ({ value, label: SUB_LABELS[value] || value }));
 }
@@ -570,22 +573,26 @@ export function onSignatureStatus(id, fn) {
 
 /** The aggregations in use for a signature, each with how many plots or tables read it: [{value, count}]. */
 export function aggregationsInUse(id) {
+    return tally(id, (handle) => handle.sub || DEFAULT_METHOD);
+}
+
+/** Who reads a signature, grouped by `keyOf(handle)`: [{value, plots, tables, count}]. The inspector is not a consumer. */
+function tally(id, keyOf) {
     const counts = new Map();
     for (const handle of scores().sources.handlesOf(id)) {
-        const sub = handle.sub || DEFAULT_METHOD;
-        counts.set(sub, (counts.get(sub) || 0) + 1);
+        if (handle.role === 'inspect') continue;
+        const value = keyOf(handle);
+        const row = counts.get(value) || { value, plots: 0, tables: 0, count: 0 };
+        if (handle.role === 'column') row.tables++; else row.plots++;
+        row.count++;
+        counts.set(value, row);
     }
-    return [...counts].map(([value, count]) => ({ value, count }));
+    return [...counts.values()];
 }
 
 /** The layers in use for a signature, each with how many plots or tables read it: [{value, count}]; `null` layer is the default. */
 export function layersInUse(id) {
-    const counts = new Map();
-    for (const handle of scores().sources.handlesOf(id)) {
-        const layer = handle.layer || null;
-        counts.set(layer, (counts.get(layer) || 0) + 1);
-    }
-    return [...counts].map(([value, count]) => ({ value, count }));
+    return tally(id, (handle) => handle.layer || null);
 }
 
 /** The plots and other dependants that use a signature: hosts and roles. */

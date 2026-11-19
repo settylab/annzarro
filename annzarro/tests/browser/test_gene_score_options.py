@@ -1,8 +1,9 @@
 """The Score options section of the Gene Signature panel in a real browser (step 8 of the gene-signature plan).
 
 The signature's panel defines which options plots and tables are offered (an aggregation, read from a layer) and how
-each is computed: the clip of z-scores, the bins, controls and seed of the control-adjusted score. Collapsed, one row
-states what is offered. Plots and tables only pick from what is offered.
+each is computed: the clip of z-scores, the bins, controls and seed of the control-adjusted score, the detection
+threshold. Collapsed, one row states what is offered. Plots and tables only pick from what is offered. A method's
+parameters show only while it is offered; impossible combinations are left out of the menus, with the reason in the panel.
 
 The store is the one of test_gene_score_plots.py (60 cells, 3,000 genes, layers `counts`). The score route is
 the real one except where a test needs a slow estimate; the route that says what an input looks like is the real
@@ -109,7 +110,7 @@ def _sig_open(page, served, **sig):
     page.wait_for_selector(f"{S} .gsig-scoring")
 
 
-ALL = ["zscore_mean", "mean", "sum", "detected", "fraction_of_total", "control_adjusted"]
+ALL = ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"]
 
 
 # ------------------------------------------------------------------ the section
@@ -118,25 +119,34 @@ def test_the_section_is_collapsed_and_states_what_is_offered_then_opens_with_eve
     _sig_open(page, served)
     assert page.get_attribute(f"{S} .gsig-scoring__toggle", "aria-expanded") == "false"
     assert page.is_hidden(f"{S} .gsig-scoring__body")
-    assert page.inner_text(f"{S} .gsig-scoring__summary") == "Offered: z-score mean, mean, sum · layer X"
-    assert "Z-score mean of X, clipped at ±10" in page.inner_text(f"{S} .gsig-definition"), "the definition line stays"
-    assert page.inner_text(f"{S} .gsig-scoring__label") == "Score options"
+    assert page.inner_text(f"{S} .gsig-scoring__label") == "Scores offered"
+    assert page.inner_text(f"{S} .gsig-scoring__summary") == "z-score mean, mean, sum · X"
+    assert page.get_attribute(f"{S} .gsig-scoring__toggle", "aria-label") == "Scores offered: z-score mean, mean, sum · X"
+    assert page.is_hidden(f"{S} .gsig-definition"), "no single definition in the status line"
     _expand(page)
     body = page.inner_text(f"{S} .gsig-scoring__body")
-    assert "choose gene-score as the source, then this signature, then the option" in body
+    assert "Plots and tables pick from these. Nothing is computed until a plot or table shows it." in body
+    assert "How the genes are combined is chosen where" not in body
     methods = page.eval_on_selector_all(f"{S} [data-method]", "els => els.map(e => e.dataset.method)")
     assert methods == ALL, "listed by common use, z-score mean first"
+    names = page.eval_on_selector_all(f"{S} [data-method] .gsig-scoring__optionname", "els => els.map(e => e.textContent)")
+    assert names == ["Z-score mean", "Mean", "Sum", "Control-adjusted", "Fraction detected", "% of total"]
     for method in ALL:
-        assert len(page.inner_text(f"{S} [data-method='{method}'] .gsig-scoring__help")) > 20
-    assert "less the average of control genes" in page.inner_text(f"{S} [data-method='control_adjusted']")
+        assert len(page.inner_text(f"{S} [data-method='{method}'] .gsig-scoring__definition")) > 20
+    assert "like scanpy's score_genes" in page.inner_text(f"{S} [data-method='control_adjusted'] .gsig-scoring__definition")
     on = page.eval_on_selector_all(f"{S} [data-offer-method]", "els => els.filter(e => e.checked).map(e => e.dataset.offerMethod)")
     assert on == ["zscore_mean", "mean", "sum"]
     assert "default" in page.inner_text(f"{S} [data-method='zscore_mean'] .gsig-scoring__optionhead")
     assert page.input_value(_sel("clip")) == "10" and page.is_checked(_sel("clipbox"))
+    # parameters show only while a method is offered
+    for key in ("bins", "controls", "seed", "detect"):
+        assert page.query_selector(f"{S} [data-method] #gsig-scoring-{key}-{SIG}") is None or not page.is_visible(_sel(key)), key
+    assert page.query_selector(f"{S} [data-method='control_adjusted'] .gsig-scoring__params") is None
     assert page.is_disabled(f"{S} .gsig-scoring__reset"), "nothing to reset"
     layers = page.eval_on_selector_all(f"{S} [data-layer]", "els => els.map(e => e.dataset.layer)")
     assert layers == ["X", "counts"], "X first, then the layers"
-    assert page.is_checked(f"{S} [data-layer-default='X']") and page.is_disabled(f"{S} [data-layer-offer='X']")
+    assert page.is_disabled(f"{S} [data-layer-offer='X']")
+    assert page.is_hidden(f"{S} .gsig-scoring__defaultrow"), "one layer offered: no default to choose"
     page.click(f"{S} .gsig-scoring__toggle")
     assert page.is_hidden(f"{S} .gsig-scoring__body")
 
@@ -146,7 +156,7 @@ def test_the_clip_takes_any_positive_number_or_none_and_keeps_the_last_valid_val
     _expand(page)
     _enter(page, _sel("clip"), "3.5")
     assert _recipe(page)["clip"] == 3.5
-    assert "clipped at ±3.5" in page.inner_text(f"{S} .gsig-definition")
+    assert page.inner_text(f"{S} .gsig-scoring__summary") == "z-score mean (clip ±3.5), mean, sum · X"
     for bad in ("abc", "0", "-2", "", "1,5"):
         page.fill(_sel("clip"), bad)
         assert page.inner_text(_sel("clip-error")) == "Enter a number above 0.", bad
@@ -159,21 +169,22 @@ def test_the_clip_takes_any_positive_number_or_none_and_keeps_the_last_valid_val
     page.click(_sel("clipbox"))                                         # off
     assert _recipe(page)["clip"] is None and page.is_disabled(_sel("clip"))
     assert "Not clipped" in page.inner_text(f"{S} [data-method='zscore_mean']")
+    assert page.inner_text(f"{S} .gsig-scoring__summary") == "z-score mean (not clipped), mean, sum · X"
     page.click(_sel("clipbox"))                                         # on again: the last number
     assert _recipe(page)["clip"] == 1000 and page.input_value(_sel("clip")) == "1000"
 
 
-def test_the_clip_is_off_with_a_reason_when_z_score_mean_is_not_offered(page, served):
+def test_the_clip_shows_only_while_z_score_mean_is_offered_and_is_kept_for_later(page, served):
     _sig_open(page, served)
     _expand(page)
+    _enter(page, _sel("clip"), "3")
     _offer(page, "zscore_mean", False)
-    assert page.is_disabled(_sel("clip")) and page.is_disabled(_sel("clipbox"))
-    assert page.inner_text(f"{S} [data-method='zscore_mean'] [data-needs-offer]") == "Offer this option to set its parameters."
+    assert page.query_selector(f"{S} [data-method='zscore_mean'] .gsig-scoring__params") is None, "parameters only under offered methods"
     r = _recipe(page)
     assert r["offered"] == ["mean", "sum"] and r["method"] == "mean", "the default moves to an offered method"
-    assert r["clip"] == 10, "the clip is kept for when it is offered again"
+    assert r["clip"] == 3, "the clip is kept for when it is offered again"
     _offer(page, "zscore_mean", True)
-    assert page.is_enabled(_sel("clip")) and _recipe(page)["offered"] == ["zscore_mean", "mean", "sum"]
+    assert page.input_value(_sel("clip")) == "3" and _recipe(page)["offered"] == ["zscore_mean", "mean", "sum"]
 
 
 def test_the_last_offered_option_cannot_be_switched_off(page, served):
@@ -186,7 +197,6 @@ def test_the_last_offered_option_cannot_be_switched_off(page, served):
 def test_control_adjusted_has_bins_controls_and_a_seed_when_offered(page, served):
     _sig_open(page, served)
     _expand(page)
-    assert page.is_disabled(_sel("bins")) and page.is_disabled(_sel("seed")), "off until offered"
     _offer(page, "control_adjusted")
     assert page.is_enabled(_sel("bins")) and page.input_value(_sel("bins")) == "25"
     assert page.input_value(_sel("controls")) == "50" and page.input_value(_sel("seed")) == "0"
@@ -206,6 +216,82 @@ def test_control_adjusted_has_bins_controls_and_a_seed_when_offered(page, served
         assert page.input_value(_sel(key)) == want and str(_recipe(page)[key]) == want, (key, bad)
 
 
+def test_the_detection_threshold_is_a_number_from_zero_up_shown_under_fraction_detected(page, served):
+    _sig_open(page, served)
+    _expand(page)
+    _offer(page, "detected")
+    assert page.input_value(_sel("detect")) == "0"
+    assert "A gene counts as detected in a cell when its value is above this." in page.inner_text(f"{S} [data-method='detected']")
+    _enter(page, _sel("detect"), "1.5")
+    assert _recipe(page)["detect_above"] == 1.5
+    assert page.inner_text(f"{S} .gsig-scoring__summary").endswith("fraction detected (above 1.5) · X")
+    for bad in ("-1", "x", ""):
+        page.fill(_sel("detect"), bad)
+        assert page.inner_text(_sel("detect-error")) == "Enter a number from 0 up."
+        page.press(_sel("detect"), "Enter")
+        assert page.input_value(_sel("detect")) == "1.5" and _recipe(page)["detect_above"] == 1.5
+    _enter(page, _sel("detect"), "0")
+    assert _recipe(page)["detect_above"] == 0
+
+
+def test_each_method_with_parameters_has_its_own_reset(page, served):
+    _sig_open(page, served)
+    _expand(page)
+    assert page.query_selector(f"{S} [data-reset-method]") is None, "nothing to reset at the defaults"
+    _enter(page, _sel("clip"), "2")
+    _offer(page, "control_adjusted")
+    _enter(page, _sel("seed"), "5")
+    _enter(page, _sel("bins"), "10")
+    assert page.query_selector(f"{S} [data-reset-method='zscore_mean']") and page.query_selector(f"{S} [data-reset-method='control_adjusted']")
+    page.click(f"{S} [data-reset-method='control_adjusted']")
+    r = _recipe(page)
+    assert (r["bins"], r["controls"], r["seed"]) == (25, 50, None) and r["clip"] == 2, "only that method is reset"
+    assert page.query_selector(f"{S} [data-reset-method='control_adjusted']") is None
+    page.click(f"{S} [data-reset-method='zscore_mean']")
+    assert _recipe(page)["clip"] == 10 and page.input_value(_sel("clip")) == "10"
+
+
+def test_switching_off_an_option_in_use_says_who_keeps_it_and_undo_puts_it_back(page, served):
+    _open(page, served, plots=(("cell-plot-D", _cell("cell-plot-D", color=MEAN)),), sig_open=True, wait=False)
+    page.wait_for_selector(f"{D} .js-plotly-plot", timeout=30000)
+    _wait_coloured(page, D)
+    _expand(page)
+    until(page, "(s) => !!document.querySelector(s + ' [data-in-use=\"mean\"]')", S)
+    assert page.inner_text(f"{S} [data-in-use='mean']") == "1 plot"
+    _offer(page, "mean", False)
+    note = page.inner_text(f"{S} .gsig-scoring__notice")
+    assert "mean is no longer offered. 1 plot keeps it and says so." in note
+    page.click(f"{S} .gsig-scoring__notice [data-undo]")
+    assert _recipe(page)["offered"] == ["zscore_mean", "mean", "sum"]
+    assert page.is_hidden(f"{S} .gsig-scoring__notice")
+    _offer(page, "sum", False)                                           # nothing uses sum: no notice
+    assert page.is_hidden(f"{S} .gsig-scoring__notice")
+
+
+def test_a_combination_that_cannot_be_computed_is_left_out_of_the_menu_and_the_panel_says_why(page, served):
+    def handler(route):
+        want = urllib.parse.parse_qs(urllib.parse.urlparse(route.request.url).query).get("input", ["X"])[0]
+        body = {"input": want, "kind": "signed" if want == "X" else "counts", "stats": {"max": 5}, "suggest": None, "checked": {}}
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+    page.route("**/api/v1/data/matrix_kind*", handler)
+    _open(page, served, plots=(("cell-plot-D", _cell("cell-plot-D", color=MEAN)),),
+          sig=_sig(offered=["zscore_mean", "mean", "detected", "fraction_of_total"], layers=["X", "counts"]), sig_open=True, wait=False)
+    page.wait_for_selector(f"{D} .js-plotly-plot", timeout=30000)
+    until(page, "(id) => window.PanelManager.getPanel(id).getOfferedOptions().length === 6", SIG)
+    ids = page.evaluate("(id) => window.PanelManager.getPanel(id).getOfferedOptions().map(o => o.id)", SIG)
+    assert "detected@X" not in ids and "fraction_of_total@X" not in ids
+    assert "detected@counts" in ids and "fraction_of_total@counts" in ids and "zscore_mean@X" in ids
+    _expand(page)
+    text = page.inner_text(f"{S} [data-method='detected']")
+    assert "Not offered on X: almost every value is non-zero, so every gene counts as detected." in text
+    assert "Not offered on X: X has negative values." in page.inner_text(f"{S} [data-method='fraction_of_total']")
+    assert "scaled" in page.inner_text(f"{S} [data-layer='X'] .gsig-scoring__kind")
+    assert "counts" in page.inner_text(f"{S} [data-layer='counts'] .gsig-scoring__kind")
+    assert "follows sequencing depth" in page.inner_text(f"{S} [data-method='mean']"), "said once, under the method"
+    values = [v for v, _ in page.eval_on_selector_all(f"{D} select.axis-column-select[data-axis='color'] option", "els => els.map(e => [e.value, e.textContent])")]
+    assert "detected" in values, "counts is offered, so the plot may pick it"
+
+
 def test_reset_to_defaults_puts_every_setting_back(page, served):
     _sig_open(page, served)
     _expand(page)
@@ -214,14 +300,14 @@ def test_reset_to_defaults_puts_every_setting_back(page, served):
     _enter(page, _sel("seed"), "5")
     _offer(page, "mean", False)
     _layer_offer(page, "counts")
-    page.click(f"{S} [data-layer-default='counts']")
+    page.select_option(_sel("default-layer"), "counts")
     r = _recipe(page)
     assert (r["clip"], r["seed"], r["input"]) == (2, 5, "counts") and r["layers"] == ["counts", "X"]
     page.click(f"{S} .gsig-scoring__reset")
     r = _recipe(page)
     assert (r["clip"], r["seed"], r["input"], r["method"]) == (10, None, "X", "zscore_mean")
     assert r["offered"] == ["zscore_mean", "mean", "sum"] and r["layers"] == ["X"]
-    assert page.inner_text(f"{S} .gsig-scoring__summary") == "Offered: z-score mean, mean, sum · layer X"
+    assert page.inner_text(f"{S} .gsig-scoring__summary") == "z-score mean, mean, sum · X"
     assert page.is_disabled(f"{S} .gsig-scoring__reset")
 
 
@@ -230,14 +316,17 @@ def test_layers_are_offered_and_one_is_the_default(page, served):
     _expand(page)
     _layer_offer(page, "counts")
     assert _recipe(page)["layers"] == ["X", "counts"] and _recipe(page)["input"] == "X"
-    assert page.inner_text(f"{S} .gsig-scoring__summary") == "Offered: z-score mean, mean, sum · layers X, counts"
-    page.click(f"{S} [data-layer-default='counts']")
+    assert page.inner_text(f"{S} .gsig-scoring__summary") == "z-score mean, mean, sum · X, counts (default X)"
+    assert page.is_visible(f"{S} .gsig-scoring__defaultrow"), "two offered: a default to choose"
+    assert page.eval_on_selector_all(_sel("default-layer") + " option", "os => os.map(o => o.value)") == ["X", "counts"]
+    page.select_option(_sel("default-layer"), "counts")
     r = _recipe(page)
     assert r["input"] == "counts" and r["layers"] == ["counts", "X"]
     assert page.is_disabled(f"{S} [data-layer-offer='counts']") and page.is_enabled(f"{S} [data-layer-offer='X']")
     _layer_offer(page, "X")
     assert _recipe(page)["layers"] == ["counts"]
-    assert page.inner_text(f"{S} .gsig-scoring__summary") == "Offered: z-score mean, mean, sum · layer counts"
+    assert page.inner_text(f"{S} .gsig-scoring__summary") == "z-score mean, mean, sum · counts"
+    assert page.is_hidden(f"{S} .gsig-scoring__defaultrow")
 
 
 # ------------------------------------------------------------------ what plots and tables are offered
@@ -283,8 +372,8 @@ def test_the_section_shows_which_options_plots_use(page, served):
     _wait_coloured(page)
     _expand(page)
     until(page, "(s) => !!document.querySelector(s + ' [data-in-use=\"mean\"]')", S)
-    assert page.inner_text(f"{S} [data-in-use='zscore_mean']") == "used by 1"
-    assert page.inner_text(f"{S} [data-in-use='mean']") == "used by 2"
+    assert page.inner_text(f"{S} [data-in-use='zscore_mean']") == "1 plot"
+    assert page.inner_text(f"{S} [data-in-use='mean']") == "2 plots"
     assert page.query_selector(f"{S} [data-in-use='sum']") is None
 
 
@@ -314,7 +403,7 @@ def test_the_options_are_in_the_link_and_the_panel_set_and_come_back_from_both(p
     _wait_coloured(page)
     _set_up(page)
     want = {"clip": 3, "seed": 7, "bins": 12, "controls": 30, "input": "X", "layers": ["X", "counts"],
-            "offered": ["zscore_mean", "mean", "detected", "control_adjusted"]}
+            "offered": ["zscore_mean", "mean", "control_adjusted", "detected"], "detect_above": 0}
     view, url = _link_of(page, served)
     cfg = view["layout"]["panelConfigs"][SIG]
     assert {k: cfg[k] for k in want} == want
@@ -326,7 +415,7 @@ def test_the_options_are_in_the_link_and_the_panel_set_and_come_back_from_both(p
         other.goto(url)
         other.wait_for_selector(f"{S} .gsig-scoring", timeout=30000)
         assert other.inner_text(f"{S} .gsig-scoring__summary") == \
-            "Offered: z-score mean, mean, detected, control-adjusted · layers X, counts"
+            "z-score mean (clip ±3), mean, control-adjusted (bins 12, controls 30, seed 7), fraction detected · X, counts (default X)"
         r = other.evaluate("(id) => window.PanelManager.getPanel(id).getRecipe()", SIG)
         assert {k: r[k] for k in want} == want
         other.click(f"{S} .gsig-scoring__toggle")
@@ -359,7 +448,7 @@ def test_a_link_from_before_the_options_existed_opens_with_the_defaults(page, se
     page.wait_for_selector(f"{S} .gsig-scoring")
     r = _recipe(page)
     assert r["offered"] == ["zscore_mean", "mean", "sum"] and r["layers"] == ["X"] and (r["bins"], r["controls"]) == (25, 50)
-    assert page.inner_text(f"{S} .gsig-scoring__summary") == "Offered: z-score mean, mean, sum · layer X"
+    assert page.inner_text(f"{S} .gsig-scoring__summary") == "z-score mean, mean, sum · X"
 
 
 def test_a_restored_config_moves_the_section_and_asks_what_the_new_input_looks_like(page, served):
@@ -368,11 +457,11 @@ def test_a_restored_config_moves_the_section_and_asks_what_the_new_input_looks_l
         status=200, content_type="application/json", body=json.dumps({**LOGGED, "input": "counts"})))[1])
     _sig_open(page, served)
     page.evaluate("(id) => window.PanelManager.getPanel(id).updateConfig({ clip: 2, seed: 3, input: 'counts', offered: ['sum'] })", SIG)
-    assert page.inner_text(f"{S} .gsig-scoring__summary") == "Offered: sum · layers counts, X"
+    assert page.inner_text(f"{S} .gsig-scoring__summary") == "sum · counts, X (default counts)"
     page.wait_for_timeout(300)
     assert any("input=counts" in u for u in calls)
     page.evaluate("(id) => window.PanelManager.getPanel(id).updateConfig({ clip: 10, seed: null, input: 'X', offered: null, layers: null })", SIG)
-    assert page.inner_text(f"{S} .gsig-scoring__summary") == "Offered: z-score mean, mean, sum · layer X"
+    assert page.inner_text(f"{S} .gsig-scoring__summary") == "z-score mean, mean, sum · X"
 
 
 # ------------------------------------------------------------------ the key
@@ -420,7 +509,7 @@ def test_the_score_key_changes_only_when_it_should(rec, served):
     assert len(_recipes(page)) == 8
 
     # the default layer: all three
-    page.click(f"{S} [data-layer-default='counts']")
+    page.select_option(_sel("default-layer"), "counts")
     _wait_computes(page, 11)
     assert sorted(r["method"] for r in _recipes(page)[-3:]) == ["control_adjusted", "mean", "zscore_mean"]
     assert {r["input"] for r in _recipes(page)[-3:]} == {"counts"}
@@ -513,10 +602,10 @@ def test_the_raw_count_warning_appears_names_a_layer_and_clears_when_it_is_chose
     page.wait_for_selector(f"{S} .gsig-inputwarn[data-input-warning='layer'][data-layer='X']", state="visible")
     assert page.is_hidden(status), "open: the warning is under the layer"
     assert "looks like raw counts" in page.inner_text(f"{S} [data-layer='X']")
+    assert page.inner_text(f"{S} [data-layer='X'] [data-use-input='counts_log']") == "Make counts_log the default"
     page.click(f"{S} [data-layer='X'] [data-use-input='counts_log']")
     until(page, "(id) => window.PanelManager.getPanel(id).getRecipe().input === 'counts_log'", SIG)
-    page.wait_for_selector(f"{S} .gsig-inputwarn[data-layer='X']", state="detached", timeout=5000) if False else None
-    assert page.is_checked(f"{S} [data-layer-default='counts_log']")
+    assert page.input_value(_sel("default-layer")) == "counts_log"
     page.click(f"{S} .gsig-scoring__toggle")
     assert page.is_hidden(status), "the default layer is fine now"
     assert len([u for u in calls if "input=X" in u]) == 1, "the answer for X is asked of the server once"
@@ -535,7 +624,7 @@ def test_each_offered_layer_is_checked_where_it_is_offered(page, served):
     _layer_offer(page, "counts")
     page.wait_for_selector(f"{S} .gsig-inputwarn[data-input-warning='layer'][data-layer='counts']", state="visible")
     text = page.inner_text(f"{S} [data-input-warning='layer'][data-layer='counts']")
-    assert text.startswith("Layer counts looks like raw counts") and "looks log-normalised" not in text
+    assert text.startswith("⚠ Layer counts looks like raw counts") and "looks log-normalised" not in text
     assert page.query_selector(f"{S} [data-input-warning='layer'][data-layer='X']") is None
 
 

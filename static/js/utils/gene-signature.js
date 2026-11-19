@@ -84,6 +84,23 @@ export function cleanWhole(value, fallback, [lo, hi]) {
     return Number.isInteger(value) && value >= lo && value <= hi ? value : fallback;
 }
 
+/** A detection threshold: a finite number from 0 up, else 0. */
+export function cleanThreshold(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+/**
+ * A detection threshold typed into the panel: a number from 0 up.
+ * @param {string} text
+ * @returns {{ok: true, value: number} | {ok: false, error: string}}
+ */
+export function parseThresholdText(text) {
+    const trimmed = String(text === undefined || text === null ? '' : text).trim();
+    const value = trimmed === '' ? NaN : Number(trimmed);
+    if (!Number.isFinite(value) || value < 0) return { ok: false, error: 'Enter a number from 0 up.' };
+    return { ok: true, value };
+}
+
 /** A clip as the recipe keeps it: a finite number above 0, `null` for none, else the default. */
 export function cleanClip(value) {
     if (value === null) return null;
@@ -128,6 +145,7 @@ export function normalizeRecipe(raw) {
             seed,
             bins: cleanWhole(src.bins, DEFAULT_BINS, BINS_RANGE),
             controls: cleanWhole(src.controls, DEFAULT_CONTROLS, CONTROLS_RANGE),
+            detect_above: cleanThreshold(src.detect_above),
             version: RECIPE_VERSION,
             offered,
             layers: cleanLayers(src.layers, input)
@@ -144,7 +162,8 @@ export function normalizeRecipe(raw) {
 export function serverRecipe(recipe) {
     return {
         genes: [...recipe.genes], down: [...recipe.down], input: recipe.input, method: recipe.method,
-        clip: recipe.clip, seed: recipe.seed, bins: recipe.bins, controls: recipe.controls, version: recipe.version
+        clip: recipe.clip, seed: recipe.seed, bins: recipe.bins, controls: recipe.controls,
+        detect_above: recipe.detect_above, version: recipe.version
     };
 }
 
@@ -174,6 +193,7 @@ export function recipeHash(recipe) {
         seed: 'seed' in params ? params.seed : null,
         bins: 'bins' in params ? params.bins : null,
         controls: 'controls' in params ? params.controls : null,
+        detect_above: 'detect_above' in params ? params.detect_above : null,
         up: setHash(recipe.genes),
         down: setHash(recipe.down)
     });
@@ -181,7 +201,7 @@ export function recipeHash(recipe) {
 
 /** How the score is defined, in words (the Scoring row states it whatever is collapsed). */
 export function definitionText(recipe) {
-    if (recipe.method === 'mean') return `Mean expression of ${recipe.input}`;
+    if (recipe.method === 'mean') return `Mean of ${recipe.input}`;
     if (recipe.method === 'control_adjusted') return `Control-adjusted mean of ${recipe.input}, seed ${recipe.seed === null ? DEFAULT_SEED : recipe.seed}`;
     if (recipe.method !== 'zscore_mean') return `${(methodInfo(recipe.method) || { label: recipe.method }).label} of ${recipe.input}`;
     const clip = recipe.clip === null ? 'not clipped' : `clipped at ±${recipe.clip}`;

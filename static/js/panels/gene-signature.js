@@ -37,6 +37,7 @@ import { aggregationsInUse, layersInUse, signatureChanged, signatureRenamed, sig
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
 import { createScoringSection } from './gene-signature-scoring.js';
+import { offeredOptions } from '../utils/signature-options.js';
 import { createKindClient, warningFor as kindWarning } from '../utils/matrix-kind-client.js';
 import { layerKeys } from '../utils/structure-keys.js';
 import { Config } from '../config.js';
@@ -233,6 +234,12 @@ const GeneSignaturePanel = (function() {
                 // what consumers may pick changed: their menus follow
                 if (['offered', 'layers', 'input', 'method'].some(k => k in config)) signatureRenamed(_id);
             }
+        }
+
+        /** What plots and tables are offered: every offered method of every offered layer, those that cannot be computed left out. */
+        function getOfferedOptions() {
+            const kinds = _scoring ? _scoring.getKinds() : {};
+            return offeredOptions(_recipe, null, kinds);
         }
 
         function getId() { return _id; }
@@ -432,7 +439,8 @@ const GeneSignaturePanel = (function() {
             _scoring = createScoringSection({
                 D, id: _id, getRecipe, apply: applyScoring,
                 getInputs: async () => layerKeys(await DataManager.getDatasetStructure(DataManager.getCurrentDataset())),
-                getKind: (input) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), input),
+                getKind: (input, opts) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), input, opts),
+                onKinds: () => { signatureRenamed(_id); },
                 getInUse: () => aggregationsInUse(_id), getLayersInUse: () => layersInUse(_id), warningFor: kindWarning
             });
             status.append(
@@ -506,7 +514,9 @@ const GeneSignaturePanel = (function() {
             _dom.summary.textContent = n
                 ? `${fmtCount(n)} of ${fmtCount(GENE_LIMIT)} genes selected`
                 : `Tick genes to build a score. A signature holds up to ${fmtCount(GENE_LIMIT)} genes.`;
-            _dom.definition.textContent = `${definitionText(_recipe)}.${missing ? ` ${fmtCount(missing)} not in this dataset.` : ''}`;
+            // no single definition here: a signature offers several, and the Scores offered row below states them
+            _dom.definition.textContent = missing ? `${fmtCount(missing)} not in this dataset.` : '';
+            _dom.definition.hidden = !missing;
             paintFocused();
 
             _dom.search.classList.toggle('is-invalid', _search.invalid);
@@ -982,6 +992,7 @@ const GeneSignaturePanel = (function() {
             selectionIsLive: true,
             // for the steps after this one
             getRecipe,
+            getOfferedOptions,
             getRecipeHash: () => recipeHash(_recipe),
             revealScoresOffered: () => { if (_scoring) _scoring.reveal(); },
             addGenes,
