@@ -391,6 +391,23 @@ export function createScoreStore({ api, budget = DEFAULT_BUDGET, maxActive = DEF
             return true;
         },
 
+        /**
+         * Forget a score that turned out not to fit the cells shown (its length is not theirs) and
+         * ask for it again. Nothing else changes: the job, its dependants and the key stay.
+         */
+        discard(key) {
+            cache.delete(key);
+            const job = jobs.get(key);
+            if (!job) return false;
+            if (job.state === 'ready' || SETTLED.includes(job.state)) {
+                job.message = null;
+                job.reason = null;
+                setState(job, 'idle');
+                pump();
+            }
+            return true;
+        },
+
         /** Compute again after a failure. */
         retry(key) {
             const job = jobs.get(key);

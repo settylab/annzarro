@@ -65,7 +65,9 @@ function signatureAdapter() {
 }
 
 function context() {
-    return { dataset: DataManager.getCurrentDataset() || '', subset: DataManager.getSubsetParam() };
+    const cells = DataManager.getCells();
+    return { dataset: DataManager.getCurrentDataset() || '', subset: DataManager.getSubsetParam(),
+        cells: cells && Number.isFinite(Number(cells.length)) ? Number(cells.length) : null };
 }
 
 /** The store and the sources, made when first needed. */

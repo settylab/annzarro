@@ -646,3 +646,56 @@ def test_added_panels_that_need_new_ids_keep_a_tables_score_column_and_its_condi
     assert old[1] == [SIG] and "gene-score_" + SIG + "_zscore_mean" in old[2]
     assert new[1] == [sigs[1]], "the added table uses the added signature"
     assert "gene-score_" + sigs[1] + "_zscore_mean" in new[2] and SIG not in new[2], "and its condition names that column"
+
+
+# ------------------------------------------- a score of another length is never waited on in silence
+
+def test_a_score_for_other_cells_is_asked_for_again_and_then_fails_with_retry_in_a_table(page, served):
+    _slow(page, "auto", 3)
+    _open(page, served)
+    until(page, "() => window.__ctls.length === 1")
+    _finish(page, 0, [float(i) for i in range(30)])             # 30 values for 60 cells
+    until(page, "() => window.__ctls.length === 2")             # asked for again, once
+    _finish(page, 1, [float(i) for i in range(30)])
+    note = _wait_notice(page, "failed")
+    assert "could not be computed: the score has 30 values for 60 cells." in note["text"]
+    assert [a.split("|")[0] for a in note["actions"]][0] == "score-retry"
+    st = _state(page)
+    assert st["header"] == "T cell score (no score)" and st["cells"] == ["no score"] and st["exportOff"]
+    page.click(f"{BOX} .score-notice [data-ps-action='score-retry']")
+    until(page, "() => window.__ctls.length === 3")
+    _finish(page, 2)
+    _wait_ready(page)
+    _wait_no_notice(page)
+
+
+def test_a_score_for_other_cells_fails_with_retry_in_a_plot_too(page, served):
+    _slow(page, "auto", 3)
+    plot = _cell("cell-plot-C", color=SCORE_COLOUR)
+    _open(page, served, table=_table(columns=[OBS]), plots=(("cell-plot-C", plot),))
+    until(page, "() => window.__ctls.length === 1")
+    _finish(page, 0, [1.0] * 30)
+    until(page, "() => window.__ctls.length === 2")
+    _finish(page, 1, [1.0] * 30)
+    page.wait_for_selector(f"{P} .score-notice[data-state='failed']", timeout=30000)
+    text = page.inner_text(f"{P} .score-notice")
+    assert "the score has 30 values for 60 cells" in text and "Retry" in text
+
+
+SCORE_COLOUR = {"type": "gene-score", "key": SIG, "label": "T cell score", "column": ""}
+
+
+def test_a_subset_change_while_a_score_is_on_its_way_ends_with_the_score_of_the_new_cells(page, served):
+    _slow(page, "auto", 3)
+    _open(page, served)
+    until(page, "() => window.__ctls.length === 1")             # the 60-cell score is in flight
+    _set_subset(page, True, 30)
+    until(page, "() => window.__ctls.length === 2")
+    _finish(page, 1, [float(i) for i in range(30)])
+    _wait_ready(page)
+    assert len(_column(page, 2)) > 0 and max(float(v) for v in _column(page, 2)) <= 29.0
+    # the late answer for the old cells changes nothing
+    page.evaluate("() => { try { window.__finish(0, new Array(60).fill(7)); } catch (e) { /* aborted */ } }")
+    page.wait_for_timeout(300)
+    assert max(float(v) for v in _column(page, 2)) <= 29.0
+    assert _headers(page)[2] == "T cell score"

@@ -74,10 +74,12 @@ function update(entry, snap, silent = false) {
     const previous = entry.reader.vec;
     entry.snap = snap;
     entry.title = scoreLabel(entry.column);
-    // values for other cells than the rows shown (a subset changed under them) are not values of these rows
+    // sources.read() already states a score of another length as failed (or asks again): the values
+    // here are the rows' own. A last look, in case the cells changed between that read and now.
     const values = snap && snap.values && snap.values.length === rowsShown() ? snap.values : null;
     entry.reader.vec = values;
-    entry.reader.view = columnView(values || !snap || !snap.values ? snap : { ...snap, state: 'estimating', values: null }, entry.title);
+    entry.reader.view = columnView(values || !snap || !snap.values ? snap
+        : { ...snap, state: 'failed', values: null, message: 'the score is for other cells' }, entry.title);
     const sig = [snap && snap.state, entry.reader.vec ? 1 : 0, snap && snap.held ? snap.held.edits : '', entry.title].join('|');
     const changed = sig !== entry.sig || previous !== entry.reader.vec;
     entry.sig = sig;
