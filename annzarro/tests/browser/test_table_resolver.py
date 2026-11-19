@@ -163,6 +163,9 @@ def wait_names(page, pattern, n=100, pid=None, timeout=30.0):
 
 def wait_notice(page, state="unresolved", pid=None, timeout=30000):
     page.wait_for_selector(f'{tile(pid or plot_id(0))} .filter-notice[data-state="{state}"]', timeout=timeout)
+    # and the plot under it has been drawn (with no points), so a read of its data is not of a plot not yet made
+    page.wait_for_function("(sel) => { const g = document.querySelector(sel); return !!(g && g.data); }",
+                           arg=f"{tile(pid or plot_id(0))} .js-plotly-plot", timeout=timeout)
 
 
 def resolver(page, js, arg=None):

@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-from annzarro.tests.browser.loading_helpers import OPEN_TILES, make_link, slow, start_server
+from annzarro.tests.browser.loading_helpers import OPEN_TILES, hold, make_link, slow, start_server
 from annzarro.tests.ui_helpers import BROWSER, wait_for_open
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
@@ -89,7 +89,8 @@ def test_link_names_every_tile_from_the_start(server, page):
 def test_tiles_are_busy_then_ready_and_a_loading_panel_closes(server, page):
     root, data = server
     link = make_link(root, data / "fixture_small.zarr")
-    slow(page, DELAY)
+    # held until released, not for a fixed time: the steps below must all happen while a panel is busy
+    release = hold(page)
     page.goto(link, wait_until="commit")
     page.wait_for_selector(".tile[data-tile-id][aria-busy='true']", timeout=60000)
     # the header, other panels and the dataset browser stay usable while a panel loads
@@ -102,6 +103,7 @@ def test_tiles_are_busy_then_ready_and_a_loading_panel_closes(server, page):
     tile_id = busy.get_attribute("data-tile-id")
     busy.locator(".tile-close").first.click()
     page.wait_for_function("(id) => !document.querySelector(`.tile[data-tile-id='${id}']`)", arg=tile_id, timeout=20000)
+    release()
     page.wait_for_function("() => document.querySelectorAll('.tile[aria-busy]').length === 0", timeout=60000)
     assert page.errors == []
 
