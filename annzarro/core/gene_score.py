@@ -7,7 +7,8 @@ reference statistics, and returns the values of the cells the caller shows.
 Recipe (``version`` 1), a JSON object::
 
     {"genes": ["CD3E", "CD8A"],   # up genes, the signature; at most 2,000 distinct names
-     "down": [],                  # reserved for up/down signatures; must be empty for now
+     "down": [],                  # down genes: the score is the up side minus the down side (methods zscore_mean, mean,
+                                  # control_adjusted only); a gene named on both sides counts as up
      "input": "X",                # "X" or the name of a layer
      "method": "zscore_mean",     # "zscore_mean" (default), "mean", "sum", "detected", "fraction_of_total", "control_adjusted"
      "clip": 10,                  # z-scores are clipped at +-clip: a number above 0, or null for no clipping
@@ -17,8 +18,18 @@ Recipe (``version`` 1), a JSON object::
      "detect_above": 0,           # detected only: a gene is detected in a cell when its value is above this (0 or more)
      "version": 1}                # the algorithm version
 
-Every field but ``genes`` is optional. ``down`` is accepted by the format and refused by the engine
-with a reason until the step that implements it, so adding it later changes no stored recipe.
+Every field but ``genes`` is optional.
+
+Up and down genes. With ``down`` non-empty the score is ``side(up) - side(down)``, each side scored on its own
+with the method: the mean of the z-scores (``zscore_mean``), the mean of the values (``mean``), or the
+control-adjusted mean (``control_adjusted``: each side subtracts the mean of ITS OWN controls, drawn outside that
+side's genes, as two calls of scanpy's ``score_genes`` would; a down gene may serve as an up gene's control).
+``sum``, ``detected`` and ``fraction_of_total`` have no signed version that means anything: a signed sum depends on
+how many genes each side has, a difference of two fractions is not a fraction, a difference of two shares is not a
+share of anything. The engine refuses them with ``method_no_down``.
+Edge cases: a side with no usable gene (absent, constant for the z-score mean, no values) is left out and the score
+is the other side, negated when it is the down side; neither side usable gives no score; a gene in both lists
+counts as up (reported as ``overlap``); a cell with no finite value on a side that has usable genes is NaN.
 
 Methods
     zscore_mean  mean over genes of clip((x - mu) / sd, +-clip); mu and sd over all cells, zeros included
@@ -79,6 +90,8 @@ MAX_NAME_CHARS = 1000
 DEFAULT_CLIP = 10.0
 DEFAULT_METHOD = "zscore_mean"
 METHODS = ("zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total")
+#: Methods that can score a signature with down genes (see the module docstring).
+DOWN_METHODS = ("zscore_mean", "mean", "control_adjusted")
 
 #: Control-adjusted scoring: gene bins and controls drawn per bin (scanpy's defaults).
 N_BINS = 25
@@ -150,6 +163,7 @@ _FIELDS = ("genes", "down", "input", "method", "clip", "seed", "bins", "controls
 class Recipe:
     genes: Tuple[str, ...]
     down: Tuple[str, ...] = ()
+    overlap: Tuple[str, ...] = ()          # named on both sides in the request; counted as up, dropped from ``down``
     input: str = "X"
     method: str = DEFAULT_METHOD
     clip: Optional[float] = DEFAULT_CLIP
@@ -186,7 +200,8 @@ class Recipe:
     def describe(self) -> Dict[str, Any]:
         return {"method": self.method, "input": self.input, "clip": self.effective_clip,
                 "seed": self.effective_seed, "bins": self.effective_bins, "controls": self.effective_controls,
-                "detect_above": self.effective_detect_above, "version": self.version, "genes": len(self.genes)}
+                "detect_above": self.effective_detect_above, "version": self.version, "genes": len(self.genes),
+                "down": len(self.down)}
 
 
 def _names(value, field_name: str) -> Tuple[str, ...]:
@@ -232,11 +247,16 @@ def parse_recipe(raw) -> Recipe:
     down = _names(raw.get("down", []), "down")
     # No gene limit: a score takes no more memory than a gene table, which has none. What bounds a request is its
     # size (the route's MAX_BODY_BYTES) and the cost estimate's tiers, which refuse what is too expensive.
-    if down:
-        raise ScoreError(400, "down_not_available", "Down genes are not available yet; send the genes in 'genes'.")
     method = raw.get("method", DEFAULT_METHOD)
     if method not in METHODS:
         raise ScoreError(400, "bad_method", f"Unknown method {method!r}; use one of {', '.join(METHODS)}.")
+    if down and method not in DOWN_METHODS:
+        raise ScoreError(400, "method_no_down",
+                         f"Down genes can be scored with {', '.join(DOWN_METHODS)}; {method} has no meaningful signed version.")
+    up_set = set(genes)
+    overlap = tuple(n for n in down if n in up_set)
+    if overlap:
+        down = tuple(n for n in down if n not in up_set)
     clip = parse_clip(raw["clip"]) if "clip" in raw else DEFAULT_CLIP
     seed = raw.get("seed")
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2 ** 63):
@@ -255,7 +275,7 @@ def parse_recipe(raw) -> Recipe:
         raise ScoreError(400, "unsupported_version",
                          f"This server computes scores with algorithm version {ALGORITHM_VERSION}; "
                          f"the recipe asks for {version!r}.", supported=ALGORITHM_VERSION)
-    return Recipe(genes=genes, down=down, input=source, method=method, clip=clip, seed=seed, version=ALGORITHM_VERSION,
+    return Recipe(genes=genes, down=down, overlap=overlap, input=source, method=method, clip=clip, seed=seed, version=ALGORITHM_VERSION,
                   bins=bins, controls=controls, detect_above=float(detect_above))
 
 
@@ -784,28 +804,38 @@ class Plan:
     layout: str
     backend: str
     remote: bool
-    columns: List[int]                     # distinct columns to read, ascending
+    columns: List[int]                     # distinct signature columns (up and down) to read, ascending
     names: Dict[int, str]                  # column -> the requested name
-    missing: List[str]                     # requested, not in the dataset
+    missing: List[str]                     # requested (up or down), not in the dataset
     duplicated: List[str]                  # requested, more than once in var (the first is used)
     entries: int
     seconds: float
     tier: str                              # "auto", "confirm" or "refused"
     binning: str = "detection"             # control_adjusted: what genes are binned by
     controls: Optional[List[int]] = None   # control_adjusted: the control columns, when known before reading
+    down_columns: List[int] = field(default_factory=list)       # the columns of the down genes (a subset of columns)
+    down_controls: Optional[List[int]] = None                   # control_adjusted: the down side's own controls
+    missing_down: List[str] = field(default_factory=list)       # the down genes not in the dataset
     stat_entries: int = 0                  # control_adjusted: entries read to bin the genes (0 on a CSC store)
 
     @property
     def vectors(self) -> int:
         """Running sums of one value per cell shown that the score holds at once."""
-        return 2 if self.recipe.method in ("control_adjusted", "fraction_of_total") else 1
+        per_side = 2 if self.recipe.method in ("control_adjusted", "fraction_of_total") else 1
+        return per_side * (2 if self.down_columns else 1)
+
+    @property
+    def up_columns(self) -> List[int]:
+        down = set(self.down_columns)
+        return [c for c in self.columns if c not in down]
 
     def estimate(self) -> Dict[str, Any]:
         return {"entries": self.entries, "seconds": round(self.seconds, 2), "tier": self.tier,
                 "live_max_s": LIVE_MAX_S, "auto_max_s": AUTO_MAX_S, "max_s": CONFIRM_MAX_S, "layout": self.layout,
-                "n_cells": self.n_obs, "genes": len(self.columns), "genes_requested": len(self.recipe.genes),
-                "genes_missing": len(self.missing),
-                **({"controls": len(self.controls) if self.controls is not None else None,
+                "n_cells": self.n_obs, "genes": len(self.columns), "genes_requested": len(self.recipe.genes) + len(self.recipe.down),
+                "genes_missing": len(self.missing), "down_requested": len(self.recipe.down),
+                **({"controls": (len(self.controls) + len(self.down_controls or ()))
+                                 if self.controls is not None else None,
                     "binning": self.binning} if self.recipe.method == "control_adjusted" else {})}
 
 
@@ -845,7 +875,8 @@ def plan(reader, dataset_path: str, recipe: Recipe, binning: str = "detection") 
     """
     if binning not in BINNINGS:
         raise ValueError(f"binning must be one of {', '.join(BINNINGS)}")
-    genes = list(recipe.genes)
+    up_names, down_names = list(recipe.genes), list(recipe.down)
+    genes = up_names + down_names
     var_names = reader.get_cell_gene_names(dataset_path, "genes") if genes else []
     with open_source(reader, dataset_path, recipe.input) as source:
         if genes and len(var_names) != source.n_var:
@@ -853,16 +884,22 @@ def plan(reader, dataset_path: str, recipe: Recipe, binning: str = "detection") 
                                                  f"the matrix ({source.n_var} columns).")
         by_name, missing, duplicated = _resolve_names(var_names, genes)
         columns = sorted(set(by_name.values()))
-        controls, stat_entries = None, 0
+        down_columns = sorted({by_name[n] for n in down_names if n in by_name})
+        up_columns = sorted({by_name[n] for n in up_names if n in by_name})
+        missing_down = [n for n in missing if n in set(down_names)]
+        controls, down_controls, stat_entries = None, None, 0
         if recipe.method == "control_adjusted" and columns:
             stat_entries = source.stat_entries(binning)
             if stat_entries == 0:
-                controls = [int(c) for c in choose_controls(source.column_stat(binning), columns,
-                                                            recipe.effective_seed, recipe.bins, recipe.controls)]
-                reads = columns + controls
+                stat = source.column_stat(binning)
+                controls = [int(c) for c in choose_controls(stat, up_columns, recipe.effective_seed,
+                                                            recipe.bins, recipe.controls)] if up_columns else []
+                down_controls = [int(c) for c in choose_controls(stat, down_columns, recipe.effective_seed,
+                                                                 recipe.bins, recipe.controls)] if down_columns else []
+                reads = sorted(set(columns) | set(controls) | set(down_controls))
             else:
                 taken = set(columns)
-                most = recipe.bins * recipe.controls
+                most = recipe.bins * recipe.controls * (2 if down_columns and up_columns else 1)
                 reads = columns + [c for c in range(min(source.n_var, len(columns) + most)) if c not in taken][:most]
         elif recipe.method == "fraction_of_total" and columns:
             stat_entries = source.stat_entries("total")           # the total of every cell: one pass over the matrix
@@ -875,7 +912,8 @@ def plan(reader, dataset_path: str, recipe: Recipe, binning: str = "detection") 
                     layout=source.layout, backend=source.backend, remote=source.remote, columns=columns,
                     names={col: name for name, col in by_name.items()}, missing=missing, duplicated=duplicated,
                     entries=entries, seconds=seconds, tier=tier_of(seconds), binning=binning, controls=controls,
-                    stat_entries=stat_entries)
+                    stat_entries=stat_entries, down_columns=down_columns, down_controls=down_controls,
+                    missing_down=missing_down)
 
 
 # ---------------------------------------------------------------------------
@@ -891,10 +929,11 @@ class GeneStat:
     sd: Optional[float] = None
     detected: Optional[float] = None     # fraction of cells with a non-zero value
     clipped: Optional[float] = None      # fraction of cells beyond the clip (z-score mean)
+    direction: str = "up"                # "up" or "down"
 
     def to_json(self) -> Dict[str, Any]:
         return {"name": self.name, "column": self.column, "status": self.status, "mean": self.mean,
-                "sd": self.sd, "detected": self.detected, "clipped": self.clipped}
+                "sd": self.sd, "detected": self.detected, "clipped": self.clipped, "direction": self.direction}
 
 
 @dataclass
@@ -910,6 +949,8 @@ class ScoreResult:
     seconds: float = 0.0
     controls: Optional[List[int]] = None   # control_adjusted: the control columns used
     n_controls_used: int = 0               # control_adjusted: controls that held a value
+    n_used_up: int = 0                     # genes that entered the up side
+    n_used_down: int = 0                   # genes that entered the down side (0 without down genes)
     input_kind: Optional[str] = None       # fraction_of_total: what the input looks like (core/matrix_kind.py)
 
 
@@ -1139,7 +1180,7 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
     shown = None if shown_rows is None else np.asarray(shown_rows, dtype=np.int64)
     n_shown = plan_.n_obs if shown is None else int(shown.size)
     result = ScoreResult(values=None, reason=None, n_cells=plan_.n_obs, n_shown=n_shown)
-    if not recipe.genes:
+    if not recipe.genes and not recipe.down:
         result.reason = "empty_signature"
     elif not plan_.columns:
         result.reason = "no_gene_present"
@@ -1152,62 +1193,103 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
     # is a plain sum divided by the cell's total
     own = dataclasses.replace(recipe, method="mean") if adjusted else (
         dataclasses.replace(recipe, method="sum") if share else recipe)
+    up_cols, down_cols = plan_.up_columns, list(plan_.down_columns)
     acc = _Accumulator(own, plan_.n_obs, shown)
-    control_acc = _Accumulator(own, plan_.n_obs, shown) if adjusted else None
+    down_acc = _Accumulator(own, plan_.n_obs, shown) if down_cols else None
+    control_acc = _Accumulator(own, plan_.n_obs, shown) if adjusted and up_cols else None
+    down_control_acc = _Accumulator(own, plan_.n_obs, shown) if adjusted and down_cols else None
     total = len(plan_.columns)
     done = 0
     yield "progress", (0, total)
     with open_source(plan_.reader, plan_.dataset_path, recipe.input) as source:
-        controls = plan_.controls
+        controls, down_controls = plan_.controls, plan_.down_controls
         totals = None
         if share:
             totals = source.row_totals(should_stop)
             result.input_kind = matrix_kind.classify(source.sample())["kind"]
         if adjusted and controls is None:
             stat = source.column_stat(plan_.binning, should_stop)
-            controls = [int(c) for c in choose_controls(stat, plan_.columns, recipe.effective_seed,
-                                                        recipe.bins, recipe.controls)]
+            controls = [int(c) for c in choose_controls(stat, up_cols, recipe.effective_seed,
+                                                        recipe.bins, recipe.controls)] if up_cols else []
+            down_controls = [int(c) for c in choose_controls(stat, down_cols, recipe.effective_seed,
+                                                             recipe.bins, recipe.controls)] if down_cols else []
         if adjusted:
-            result.controls = list(controls)
-            if not controls:
+            down_controls = down_controls or []
+            result.controls = sorted(set(controls) | set(down_controls))
+            if (up_cols and not controls) or (down_cols and not down_controls):
                 result.reason = "no_control_genes"
                 result.seconds = time.perf_counter() - started
                 yield "result", result
                 return
-            total += len(controls)
+            total += len(result.controls)
             yield "progress", (0, total)
-        signature = set(plan_.columns)
-        tasks = source.tasks(sorted(signature.union(controls or ())))
+        up_set, down_set = set(up_cols), set(down_cols)
+        up_ctrl, down_ctrl = set(controls or ()), set(down_controls or ())
+        tasks = source.tasks(sorted(up_set | down_set | up_ctrl | down_ctrl))
         for task, rows_values, peak in _pipeline(tasks, source.threads, READ_AHEAD_ENTRIES):
             if should_stop is not None and should_stop():
                 raise ScoreCancelled()
             for col, rows, values in rows_values:
-                if col in signature:
+                # one read feeds every sum that wants the gene (a gene may be one side's control and the other's gene)
+                if col in up_set:
                     acc.add(plan_.names[col], col, rows, values)
-                else:
+                if col in down_set:
+                    down_acc.add(plan_.names[col], col, rows, values)
+                if col in up_ctrl:
                     control_acc.add(f"#{col}", col, rows, values)
+                if col in down_ctrl:
+                    down_control_acc.add(f"#{col}", col, rows, values)
                 result.entries_read += int(values.size)
             result.max_in_flight_entries = max(result.max_in_flight_entries, peak)
             done += len(task.cols)
             yield "progress", (done, total)
-    result.genes = sorted(acc.stats, key=lambda g: g.column)
-    result.n_used = acc.n_used
-    result.values = acc.result()
-    if result.values is None:
+    for g in acc.stats:
+        g.direction = "up"
+    stats = list(acc.stats)
+    if down_acc is not None:
+        for g in down_acc.stats:
+            g.direction = "down"
+        stats += down_acc.stats
+    result.genes = sorted(stats, key=lambda g: g.column)
+    result.n_used_up = acc.n_used
+    result.n_used_down = down_acc.n_used if down_acc is not None else 0
+    result.n_used = result.n_used_up + result.n_used_down
+    up_values = acc.result()
+    down_values = down_acc.result() if down_acc is not None else None
+    if up_values is None and down_values is None:
         result.reason = "no_usable_gene"
     elif share:
         t = totals if shown is None else totals[shown]
         with np.errstate(divide="ignore", invalid="ignore"):
-            ratio = result.values.astype(np.float64) / t
+            ratio = up_values.astype(np.float64) / t
         result.values = np.ascontiguousarray(np.where(t > 0, 100.0 * ratio, np.nan), dtype=np.float32)
-    elif adjusted:
-        base = control_acc.result()
-        result.n_controls_used = control_acc.n_used
-        if base is None:
-            result.values, result.reason = None, "no_control_genes"
-        else:
-            result.values = np.ascontiguousarray(result.values.astype(np.float64) - base.astype(np.float64),
-                                                 dtype=np.float32)
+    else:
+        if adjusted:
+            result.n_controls_used = (control_acc.n_used if control_acc else 0) + \
+                (down_control_acc.n_used if down_control_acc else 0)
+            for side, ctrl in (("up", control_acc), ("down", down_control_acc)):
+                values = up_values if side == "up" else down_values
+                if values is None:
+                    continue
+                base = ctrl.result()
+                if base is None:
+                    up_values, down_values = None, None
+                    result.reason = "no_control_genes"
+                    break
+                adjusted_values = values.astype(np.float64) - base.astype(np.float64)
+                if side == "up":
+                    up_values = adjusted_values
+                else:
+                    down_values = adjusted_values
+        if result.reason is None:
+            # the signed combination: up minus down; a side with no usable gene is left out
+            if up_values is not None and down_values is not None:
+                combined = up_values.astype(np.float64) - down_values.astype(np.float64)
+            elif up_values is not None:
+                combined = up_values.astype(np.float64)
+            else:
+                combined = -down_values.astype(np.float64)
+            result.values = np.ascontiguousarray(combined, dtype=np.float32)
     result.seconds = time.perf_counter() - started
     yield "result", result
 

@@ -102,11 +102,11 @@ def test_a_stream_is_progress_then_a_result_then_the_vector(client, layout, matr
     assert result["scored"] and result["dtype"] == "float32" and result["byte_length"] == 4 * N_OBS
     assert (result["n_cells"], result["n_shown"], result["n_used"]) == (N_OBS, N_OBS, len(GENES))
     assert result["recipe"] == {"method": "zscore_mean", "input": "X", "clip": 10.0, "seed": None, "bins": None,
-                                "controls": None, "detect_above": None, "version": 1, "genes": len(GENES)}
+                                "controls": None, "detect_above": None, "version": 1, "genes": len(GENES), "down": 0}
     want, _ = reference(matrix, GENES)
     np.testing.assert_allclose(vector, want, rtol=2e-6, atol=2e-6)
     assert {g["name"]: g["status"] for g in result["genes"]}[gene(1)] == "used"
-    assert all(set(g) == {"name", "column", "status", "mean", "sd", "detected", "clipped"} for g in result["genes"])
+    assert all(set(g) == {"name", "column", "status", "mean", "sd", "detected", "clipped", "direction"} for g in result["genes"])
 
 
 def test_the_clip_in_the_recipe_is_honoured(client, layout, matrix):
@@ -260,7 +260,11 @@ def test_a_body_over_the_limit_is_refused_before_it_is_parsed(client, layout):
     ('{"recipe": {"genes": []}, "extra": 1}', "bad_request"),
     ('{"recipe": {"genes": []}, "estimate_only": "yes"}', "bad_request"),
     ('{"recipe": {"genes": [], "clip": 0}}', "bad_clip"), ('{"recipe": {"genes": [], "clip": -3}}', "bad_clip"),
-    ('{"recipe": {"genes": [], "down": ["A"]}}', "down_not_available"),
+    ('{"recipe": {"genes": ["A"], "down": ["B"], "method": "sum"}}', "method_no_down"),
+    ('{"recipe": {"genes": ["A"], "down": ["B"], "method": "detected"}}', "method_no_down"),
+    ('{"recipe": {"genes": ["A"], "down": ["B"], "method": "fraction_of_total"}}', "method_no_down"),
+    ('{"recipe": {"genes": ["A"], "down": "B"}}', "bad_recipe"),
+    ('{"recipe": {"genes": ["A"], "down": [3]}}', "bad_recipe"),
     ('{"recipe": {"genes": []}, "dataset_path": "/somewhere/else.zarr"}', "dataset_path_conflict"),
 ])
 def test_a_bad_request_is_a_400_with_a_reason(client, layout, body, reason):
@@ -493,7 +497,7 @@ def test_a_control_adjusted_score_reports_its_seed_and_controls(client, big):
     frames, vector = run_big(client, big, recipe)
     result = frames[-1]
     assert result["recipe"] == {"method": "control_adjusted", "input": "X", "clip": None, "seed": 5, "bins": 25,
-                                "controls": 50, "detect_above": None, "version": 1, "genes": len(SIGNATURE)}
+                                "controls": 50, "detect_above": None, "version": 1, "genes": len(SIGNATURE), "down": 0}
     assert result["binning"] == "detection" and result["n_controls"] == result["n_controls_used"] > 0
     assert result["scored"] and vector.shape == (200,)
     assert frames[0]["total"] == len(SIGNATURE) and frames[1]["total"] == len(SIGNATURE) + result["n_controls"]
@@ -608,3 +612,54 @@ def test_the_new_aggregations_stream_like_any_other(client, layout, matrix, meth
         est = post(client, layout, {"recipe": {"genes": NAMES, "method": method}, "estimate_only": True}).get_json()["estimate"]
         plain = post(client, layout, {"recipe": {"genes": NAMES, "method": "sum"}, "estimate_only": True}).get_json()["estimate"]
         assert est["entries"] > plain["entries"], "the pass over every gene is in the estimate"
+
+
+# --- up and down genes -----------------------------------------------------------------------------------
+
+def test_down_genes_are_scored_and_the_400_is_gone(client, layout, matrix):
+    frames, vector = score(client, layout, {"genes": [gene(0), gene(8)], "down": [gene(9), gene(6)]})
+    result = frames[-1]
+    want = reference(matrix, [0, 8])[0] - reference(matrix, [9, 6])[0]
+    np.testing.assert_allclose(vector, want, rtol=2e-6, atol=2e-6)
+    assert result["scored"] and result["recipe"]["down"] == 2
+    assert (result["n_used"], result["n_used_up"], result["n_used_down"]) == (4, 2, 2)
+    assert {g["name"]: g["direction"] for g in result["genes"]} == {gene(0): "up", gene(6): "down", gene(8): "up", gene(9): "down"}
+
+
+def test_only_down_genes_are_the_negated_score(client, layout, matrix):
+    frames, vector = score(client, layout, {"genes": [], "down": [gene(0), gene(8)]})
+    np.testing.assert_allclose(vector, -reference(matrix, [0, 8])[0], rtol=2e-6, atol=2e-6)
+    assert frames[-1]["scored"] and frames[-1]["n_used_up"] == 0
+
+
+def test_down_genes_are_validated_before_anything_is_read(client, layout):
+    for method in ("sum", "detected", "fraction_of_total"):
+        resp = post(client, layout, {"recipe": {"genes": NAMES, "down": [gene(9)], "method": method}})
+        assert resp.status_code == 400 and resp.get_json()["reason"] == "method_no_down"
+    for method in ("mean", "zscore_mean", "control_adjusted"):
+        resp = post(client, layout, {"recipe": {"genes": [gene(0)], "down": [gene(9)], "method": method}, "estimate_only": True})
+        assert resp.status_code == 200 and resp.get_json()["recipe"]["down"] == 1
+
+
+def test_the_result_names_a_missing_or_empty_side(client, layout):
+    frames, _ = score(client, layout, {"genes": [gene(0), gene(8)], "down": ["NOPE", gene(2)]})
+    result = frames[-1]
+    codes = {w["code"]: w for w in result["warnings"]}
+    assert result["missing"] == ["NOPE"] and result["missing_down"] == ["NOPE"]
+    assert "down_side_empty" in codes and "missing_genes" in codes and "constant_genes" in codes
+    frames, _ = score(client, layout, {"genes": ["NOPE"], "down": [gene(0), gene(8)]})
+    assert "up_side_empty" in {w["code"] for w in frames[-1]["warnings"]} and frames[-1]["missing_down"] == []
+
+
+def test_a_gene_on_both_sides_counts_as_up_and_is_reported(client, layout, matrix):
+    frames, vector = score(client, layout, {"genes": [gene(0), gene(8)], "down": [gene(8), gene(9)]})
+    result = frames[-1]
+    assert result["overlap"] == [gene(8)] and "genes_on_both_sides" in {w["code"] for w in result["warnings"]}
+    np.testing.assert_allclose(vector, reference(matrix, [0, 8])[0] - reference(matrix, [9])[0], rtol=2e-6, atol=2e-6)
+
+
+def test_the_estimate_counts_the_down_genes(client, layout):
+    resp = post(client, layout, {"recipe": {"genes": [gene(0)], "down": [gene(9), "NOPE"]}, "estimate_only": True})
+    body = resp.get_json()
+    assert body["estimate"]["genes_requested"] == 3 and body["estimate"]["down_requested"] == 2
+    assert body["missing"] == ["NOPE"] and body["missing_down"] == ["NOPE"]

@@ -21,7 +21,7 @@
  * reply), and otherwise the edits collect (`held`) until `update(id)` -
  * "Update score". Dependants keep the previous score meanwhile.
  */
-import { recipeHash, DEFAULT_METHOD, METHODS } from './gene-signature.js';
+import { recipeHash, DEFAULT_METHOD, METHODS, canScoreDown } from './gene-signature.js';
 import { scoreKey } from './score-store.js';
 
 /** Seconds the estimate may be to apply an edit at once, when the reply does not say. */
@@ -175,6 +175,11 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         if (genesIn(recipe) === 0) {
             dropKey(handle);
             return { ...base, held, state: 'nogenes' };
+        }
+        // the signature has down genes and this method has no signed version: nothing is asked of the server
+        if (recipe.down && recipe.down.length && !canScoreDown(recipe.method)) {
+            dropKey(handle);
+            return { ...base, held, state: 'nodown', method: recipe.method, layer: recipe.input };
         }
         const hash = hashOf(recipe);
         const key = scoreKey({ hash, dataset: ctx.dataset, subset: ctx.subset });

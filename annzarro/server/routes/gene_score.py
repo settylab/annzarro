@@ -6,7 +6,7 @@ A ``dataset_path`` in the body is allowed only if it names the same dataset.
 
 Body::
 
-    {"recipe": {...},              # core/gene_score.py: genes, input, method, clip, seed, version
+    {"recipe": {...},              # core/gene_score.py: genes, down, input, method, clip, seed, version
                                    # (method control_adjusted draws its control genes with ``seed``)
      "subset": "<spec>" | {...},   # optional: the cells shown (as ?subset= elsewhere)
      "estimate_only": false,       # answer with the cost estimate and read nothing
@@ -115,6 +115,16 @@ def _result_frame(plan, result):
     if plan.duplicated:
         warnings.append({"code": "duplicate_names", "names": plan.duplicated,
                          "message": "These names occur more than once in the dataset; the first was used."})
+    recipe = plan.recipe
+    if recipe.overlap:
+        warnings.append({"code": "genes_on_both_sides", "names": list(recipe.overlap),
+                         "message": f"{len(recipe.overlap)} gene(s) were named as up and as down; they count as up."})
+    if recipe.down and result.values is not None and result.n_used_down == 0:
+        warnings.append({"code": "down_side_empty", "names": [],
+                         "message": "None of the down genes could be scored, so only the up genes are scored."})
+    if recipe.genes and result.values is not None and result.n_used_up == 0:
+        warnings.append({"code": "up_side_empty", "names": [],
+                         "message": "None of the up genes could be scored, so the score is the negative of the down genes' average."})
     if names["constant"] and plan.recipe.method == "zscore_mean":
         warnings.append({"code": "constant_genes", "names": names["constant"],
                          "message": "These genes have the same value in every cell and were left out of the z-score mean."})
@@ -128,7 +138,9 @@ def _result_frame(plan, result):
     return {"type": "result", "algorithm_version": gene_score.ALGORITHM_VERSION,
             "recipe": plan.recipe.describe(), "scored": shown is not None, "reason": result.reason,
             "message": gene_score.NO_SCORE_MESSAGES.get(result.reason), "n_cells": result.n_cells,
-            "n_shown": result.n_shown, "n_used": result.n_used, "genes": [_gene_json(g) for g in result.genes],
+            "n_shown": result.n_shown, "n_used": result.n_used, "n_used_up": result.n_used_up,
+            "n_used_down": result.n_used_down, "missing_down": plan.missing_down, "overlap": list(plan.recipe.overlap),
+            "genes": [_gene_json(g) for g in result.genes],
             "missing": plan.missing, "duplicated": plan.duplicated, "warnings": warnings,
             **({"n_controls": len(result.controls or ()), "n_controls_used": result.n_controls_used,
                 "binning": plan.binning} if plan.recipe.method == "control_adjusted" else {}),
@@ -205,7 +217,8 @@ def register_gene_score_routes(app_, api_version):
         estimate = plan.estimate()
 
         if body.get("estimate_only", False):
-            return jsonify({"estimate": estimate, "missing": plan.missing, "duplicated": plan.duplicated,
+            return jsonify({"estimate": estimate, "missing": plan.missing, "missing_down": plan.missing_down,
+                            "duplicated": plan.duplicated,
                             "recipe": recipe.describe()})
         if plan.tier == "refused":
             hint = (" The matrix is stored by cell (CSR), which is slow to read by gene; a copy stored by gene "

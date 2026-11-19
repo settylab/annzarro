@@ -1582,6 +1582,18 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-tick { margin: 0; flex: 0 0 auto; }
 .gsig-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gsig-note { color: var(--az-warn-text); font-size: 0.75rem; white-space: nowrap; }
+.gsig-dir {
+    margin-left: auto; flex: 0 0 auto; min-width: 4.75rem; padding: 0 8px; font-size: 0.75rem; line-height: 1.5;
+    border: 1px solid var(--az-border-strong); background: var(--az-surface); color: inherit;
+}
+.gsig-dir:focus-visible { outline: 2px solid var(--az-link); outline-offset: 1px; }
+.gsig-dir--down { background: var(--az-surface-3); font-weight: 600; }
+.gsig-addas-wrap { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 0.8125rem; }
+.gsig-addas { width: auto; }
+.gsig-dirbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 0 8px 4px; }
+.gsig-dirbar__filter { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 0.8125rem; }
+.gsig-dirbar .form-select { width: auto; }
+.gsig-scoring__direction { padding: 3px 0 6px; border-bottom: 1px solid var(--az-border); }
 .gsig-row.is-missing .gsig-name { color: var(--az-muted); }
 .gsig-row.is-removed .gsig-name { text-decoration: line-through; color: var(--az-muted); }
 @container gsig (max-width: 360px) {
@@ -5011,6 +5023,8 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .gene-paste .gp-note { margin: 0.4rem 0; padding: 0.35rem 0.6rem; border: 1px solid var(--az-warn-border); background: var(--az-warn-bg); color: var(--az-warn-text); border-radius: 4px; }
 .gene-paste .gp-names { max-height: 8rem; overflow-y: auto; overflow-wrap: anywhere; font-family: var(--bs-font-monospace, monospace); font-size: 0.8125rem; user-select: text; }
 .gene-paste .gp-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.6rem; }
+.gene-paste .gp-addas-label { display: inline-flex; align-items: center; gap: 4px; margin: 0 auto 0 0; font-size: 0.8125rem; }
+.gene-paste .gp-addas { width: auto; }
 
 /* Paste or upload inside the Gene Signature panel: the flow replaces the list */
 .gsig-panel.gsig-flowing > .gsig-listbar,

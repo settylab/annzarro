@@ -396,7 +396,7 @@ def test_any_positive_clip_is_accepted(clip):
     ({"genes": ["x" * 1001]}, 400, "bad_recipe"), ({"genes": ["A"], "extra": 1}, 400, "bad_recipe"),
     ({"genes": ["A"], "input": ""}, 400, "bad_recipe"), ({"genes": ["A"], "input": 3}, 400, "bad_recipe"),
     ({"genes": ["A"], "method": "median"}, 400, "bad_method"),
-    ({"genes": ["A"], "down": ["B"]}, 400, "down_not_available"),
+    ({"genes": ["A"], "down": ["B"], "method": "sum"}, 400, "method_no_down"),
     ({"genes": ["A"], "down": "B"}, 400, "bad_recipe"),
     ({"genes": ["A"], "seed": -1}, 400, "bad_seed"), ({"genes": ["A"], "seed": 1.5}, 400, "bad_seed"),
     ({"genes": ["A"], "seed": True}, 400, "bad_seed"), ({"genes": ["A"], "seed": 2 ** 63}, 400, "bad_seed"),

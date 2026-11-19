@@ -44,6 +44,22 @@ export const DEFAULT_METHOD = 'zscore_mean';
 /** Offered until the panel says otherwise. */
 export const DEFAULT_OFFERED = Object.freeze(['zscore_mean', 'mean', 'sum']);
 
+/**
+ * The methods that can score a signature with down genes: score = the up side minus the down side, each side scored on
+ * its own. The others have no signed version that means anything (core/gene_score.py DOWN_METHODS).
+ */
+export const DOWN_METHODS = Object.freeze(['zscore_mean', 'mean', 'control_adjusted']);
+
+/** Why a method cannot score down genes, in the words the panel shows under it. */
+const DOWN_REASONS = Object.freeze({
+    sum: 'A signed sum depends on how many genes each side has.',
+    detected: 'The difference of two fractions is not a fraction.',
+    fraction_of_total: 'The difference of two shares is not a share of anything.'
+});
+
+/** Whether `method` can score a signature that has down genes. */
+export const canScoreDown = (method) => DOWN_METHODS.includes(method);
+
 export const methodInfo = (method) => METHOD_INFO.find(m => m.value === method) || null;
 export const methodLabel = (method) => (methodInfo(method) || { label: String(method) }).label;
 /** The name menus, titles and tags use. */
@@ -80,10 +96,14 @@ export function kindWord(kind) {
  * @param {string} method
  * @param {string} layer
  * @param {string} [kind] - counts, normalised, log, signed, other or unknown (unknown: nothing is known, so ok)
- * @returns {{grade: 'ok'|'warn'|'cannot', reason: string}}
+ * @param {boolean} [hasDown] - the signature has down genes; the methods without a signed version then cannot
+ * @returns {{grade: 'ok'|'warn'|'cannot', reason: string, down?: boolean}} `down`: the reason is the down genes, whatever the layer
  */
-export function gradeOption(method, layer, kind) {
+export function gradeOption(method, layer, kind, hasDown = false) {
     const ok = { grade: 'ok', reason: '' };
+    if (hasDown && !canScoreDown(method)) {
+        return { grade: 'cannot', down: true, reason: `Not offered with down genes. ${DOWN_REASONS[method] || ''}`.trim() };
+    }
     if (method === 'detected' && kind === 'signed') {
         return { grade: 'cannot', reason: `Not offered on ${layer}: almost every value is non-zero, so every gene counts as detected.` };
     }
@@ -148,11 +168,12 @@ export function gradedOptions(recipe, datasetLayers, kinds = {}) {
         layers = layers.filter(name => have.has(name));
     }
     const several = layers.length > 1;
+    const hasDown = Array.isArray(recipe.down) && recipe.down.length > 0;
     const out = [];
     for (const method of methods) {
         for (const layer of layers) {
             const info = methodInfo(method);
-            const { grade, reason } = gradeOption(method, layer, kinds[layer]);
+            const { grade, reason } = gradeOption(method, layer, kinds[layer], hasDown);
             out.push({
                 id: `${method}@${layer}`, method, layer, label: several ? `${info.menu} · ${layer}` : info.menu,
                 fullLabel: `${info.menu} · ${layer}`, definition: info.definition, grade, reason

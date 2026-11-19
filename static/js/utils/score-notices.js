@@ -26,7 +26,7 @@ export function durationText(seconds) {
 }
 
 /** Notice states, most urgent first: a plot with two scores states the worst. */
-export const PRIORITY = ['nolayer', 'notcells', 'unset', 'deleted', 'off', 'cycle', 'failed', 'refused', 'ask', 'awaiting', 'cancelled', 'noscore',
+export const PRIORITY = ['nolayer', 'nodown', 'notcells', 'unset', 'deleted', 'off', 'cycle', 'failed', 'refused', 'ask', 'awaiting', 'cancelled', 'noscore',
     'nogenes', 'building', 'estimating', 'queued', 'computing', 'updating', 'held', 'notoffered'];
 
 /** The sentence part of a gene count: "31 of 50 genes". */
@@ -110,6 +110,9 @@ export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
         case 'nolayer':
             return out('nolayer', 'warning', 'Layer not found', `Layer '${snap.layer || 'X'}' is not in this dataset, so ${t} has no score.`, '',
                 [open, choose]);
+        case 'nodown':
+            return out('nodown', 'warning', 'Cannot score down genes',
+                `${t} has down genes, which ${methodLabel(snap.method)} cannot score.${none}`, '', [open, choose]);
         case 'notcells':
             return out('notcells', 'notice', 'Not a cell source', 'Gene scores are a cell source; not available in a Gene Plot.', '', []);
         case 'unset':

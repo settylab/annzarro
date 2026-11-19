@@ -20,8 +20,9 @@ import {
     BINS_RANGE, CONTROLS_RANGE, DEFAULT_BINS, DEFAULT_CLIP, DEFAULT_CONTROLS, DEFAULT_INPUT, DEFAULT_SEED, parseClipText,
     parseSeedText, parseThresholdText, parseWholeText
 } from '../../utils/gene-signature.js';
+import { directionFormula } from '../../utils/gene-signature.js';
 import {
-    DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, PARAM_DEFAULTS, cleanLayers, cleanOffered, gradeOption, isMethodDefault, kindWord,
+    DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, canScoreDown, PARAM_DEFAULTS, cleanLayers, cleanOffered, gradeOption, isMethodDefault, kindWord,
     methodShort, offeredSummary, offeredSummaryShort, useText
 } from '../../utils/signature-options.js';
 
@@ -34,7 +35,8 @@ export const SCORING_HELP = Object.freeze({
     seed: 'The same seed gives the same control genes, so the same score.',
     layers: 'Plots and tables choose among the offered layers.',
     lastLayer: 'At least one layer stays offered.',
-    lastMethod: 'At least one option stays offered.'
+    lastMethod: 'At least one option stays offered.',
+    directions: 'Score = average of up genes minus average of down genes.'
 });
 
 /** Layers listed before "Show more": the offered ones and this many others. */
@@ -52,9 +54,12 @@ const LAYERS_SHOWN = 5;
  * @param {() => Array<{value: (string|null), plots: number, tables: number}>} [options.getLayersInUse] - layers they use
  * @param {(reply: Object) => (Object|null)} options.warningFor - the warning for one kind reply
  * @param {() => void} [options.onKinds] - what a layer looks like became known: menus may change
+ * @param {{countAsUp: () => void}|null} [options.directions] - the source can score genes as down (a signature can, a gene
+ *   table cannot): the section then has the switch "Score some genes as down" and the formula. `countAsUp` moves every
+ *   down gene to up as one undoable step, for the switch turned off while down genes exist.
  */
 export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKind, getInUse = () => [],
-    getLayersInUse = () => [], warningFor, onKinds = () => {} }) {
+    getLayersInUse = () => [], warningFor, onKinds = () => {}, directions = null }) {
     const { el } = D;
     const sid = (x) => `gsig-scoring-${x}-${id}`;
     let open = false;
@@ -85,11 +90,22 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     const moreLayers = el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', hidden: true,
         on: { click: () => { showAllLayers = !showAllLayers; paint(); } } });
     layerSet.append(layerRows, moreLayers, el('div', { class: 'gsig-scoring__help', text: SCORING_HELP.layers }));
+    // Score some genes as down: only for a source that can have down genes. Off by default, so nothing about direction shows.
+    let askOff = false;                 // turned off while down genes exist: the question is in place
+    const dirBox = directions ? el('input', { type: 'checkbox', class: 'gsig-scoring__offer', id: sid('directions'),
+        data: { directions: '' }, on: { change: () => onDirectionSwitch(dirBox.checked) } }) : null;
+    const dirHint = directions ? el('div', { class: 'gsig-scoring__help', text: SCORING_HELP.directions }) : null;
+    const dirFormula = directions ? el('div', { class: 'gsig-scoring__help', data: { directionFormula: '' } }) : null;
+    const dirAsk = directions ? el('div', { class: 'gsig-scoring__notice', role: 'status', hidden: true, data: { directionAsk: '' } }) : null;
+    const dirBlock = directions ? el('div', { class: 'gsig-scoring__direction', data: { directionBlock: '' } },
+        el('div', { class: 'gsig-scoring__optionhead' }, dirBox,
+            el('label', { for: sid('directions'), class: 'gsig-scoring__optionname', text: 'Score some genes as down' })),
+        dirHint, dirFormula, dirAsk) : null;
     const resetNote = el('div', { class: 'gsig-scoring__notice', role: 'status', hidden: true });
     const reset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-scoring__reset',
         on: { click: () => resetAll(false) } }, 'Reset to defaults');
     const body = el('div', { class: 'gsig-scoring__body', id: sid('body'), hidden: true },
-        where, noticeLine, methodSet, layerSet, resetNote, el('div', { class: 'gsig-scoring__actions' }, reset));
+        where, noticeLine, ...(dirBlock ? [dirBlock] : []), methodSet, layerSet, resetNote, el('div', { class: 'gsig-scoring__actions' }, reset));
     // the warning for the first offered layer, in the status zone: seen with the section collapsed
     const warningLine = el('div', { class: 'gsig-inputwarn', role: 'status', hidden: true, data: { inputWarning: 'status' } });
     const element = el('section', { class: 'gsig-scoring', aria: { label: 'Scores offered' } }, toggle, body);
@@ -157,6 +173,38 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
             field('Detected above', boxes.detect.input, sid('detect')), boxes.detect.error,
             el('span', { class: 'gsig-scoring__help', text: SCORING_HELP.detectAbove }))
     };
+
+    // ------------------------------------------------------------ direction
+
+    function onDirectionSwitch(on) {
+        const recipe = getRecipe();
+        if (on) { askOff = false; apply({ directions: true }); paint(); return; }
+        if (recipe.down.length) { askOff = true; paint(); return; }       // down genes would silently count as up: ask first
+        askOff = false;
+        apply({ directions: false });
+        paint();
+    }
+
+    function paintDirection(recipe) {
+        if (!dirBlock) return;
+        const n = recipe.down.length;
+        dirBox.checked = !!recipe.directions;
+        const signed = cleanOffered(recipe.offered, recipe.method).some(canScoreDown);
+        dirFormula.textContent = [directionFormula(recipe),
+            n && !signed ? 'None of the offered methods can score down genes. Offer z-score mean, mean or control-adjusted.' : ''].filter(Boolean).join(' ');
+        dirFormula.hidden = !dirFormula.textContent;
+        dirHint.hidden = !dirFormula.hidden;               // the formula with its numbers says it better than the hint
+        askOff = askOff && n > 0;
+        dirAsk.hidden = !askOff;
+        D.clear(dirAsk);
+        if (askOff) {
+            dirAsk.append(`${n.toLocaleString('en-US')} down gene${n === 1 ? '' : 's'} will count as up. `,
+                el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { countAsUp: '' },
+                    on: { click: () => { askOff = false; directions.countAsUp(); paint(); } } }, 'Count as up'), ' ',
+                el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { keepDown: '' },
+                    on: { click: () => { askOff = false; paint(); } } }, 'Keep'));
+        }
+    }
 
     // ------------------------------------------------------------ edits
 
@@ -234,11 +282,14 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     // ------------------------------------------------------------ painting
 
     /** The sentences that grade one method on the offered layers: said once, here, never in a plot. */
-    function gradeLines(method, layers) {
+    function gradeLines(method, layers, recipe) {
         const lines = [];
         for (const layer of layers) {
-            const g = gradeOption(method, layer, kinds.get(layer));
-            if (g.grade !== 'ok') lines.push({ grade: g.grade, text: g.reason, layer });
+            const g = gradeOption(method, layer, kinds.get(layer), !!(recipe.down && recipe.down.length));
+            if (g.grade === 'ok') continue;
+            // a reason that holds whatever the layer (down genes) is said once
+            if (g.down) { if (!lines.some(l => l.down)) lines.push({ grade: g.grade, text: g.reason, layer: '', down: true }); }
+            else lines.push({ grade: g.grade, text: g.reason, layer });
         }
         return lines;
     }
@@ -270,7 +321,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
                 row.append(block);
             }
             if (on) {
-                for (const line of gradeLines(info.value, layers)) {
+                for (const line of gradeLines(info.value, layers, recipe)) {
                     row.append(el('div', { class: `gsig-scoring__grade gsig-scoring__grade--${line.grade}`, role: 'status',
                         data: { grade: line.grade, gradeLayer: line.layer } }, el('span', { 'aria-hidden': 'true', text: '⚠ ' }), line.text));
                 }
@@ -393,6 +444,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         if ((open || methodRows.childNodes.length === 0) && !(typing && !force)) {
             // the box being used keeps the focus across the repaint
             const keep = typing ? doc().activeElement.dataset.param : null;
+            paintDirection(recipe);
             paintMethods(recipe);
             paintLayers(recipe);
             paintParams(recipe);

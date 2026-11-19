@@ -456,13 +456,16 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         if (!rows.length) { tableHost.append(D.el('div', { class: 'gsig-inspect__empty', text: 'No gene was used.' })); return; }
         const sorted = sortGeneRows(rows, _sort.key, _sort.dir);
         const shown = _showAll ? sorted : sorted.slice(0, ROWS_FIRST);
-        const head = D.el('tr', {}, ...GENE_COLUMNS.map((c) => {
+        const withDirection = rows.some(r => r.direction === 'down');          // up and down genes: say which side each is on
+        const columns = GENE_COLUMNS.map((c) => {
             const on = _sort.key === c.key;
             return D.el('th', { scope: 'col', class: `gsig-col-${c.key}${c.key === 'name' || c.key === 'detected' ? '' : ' gsig-col-extra'}`,
                 aria: { sort: on ? (_sort.dir === 'asc' ? 'ascending' : 'descending') : 'none' } },
             D.el('button', { type: 'button', class: 'gsig-inspect__sort', data: { sort: c.key }, on: { click: () => sortBy(c) } },
                 c.label, D.el('span', { class: 'gsig-inspect__arrow', aria: { hidden: 'true' }, text: on ? (_sort.dir === 'asc' ? ' ▲' : ' ▼') : '' })));
-        }));
+        });
+        if (withDirection) columns.splice(1, 0, D.el('th', { scope: 'col', class: 'gsig-col-direction', text: 'Direction' }));
+        const head = D.el('tr', {}, ...columns);
         const clippedOff = rows.every(r => r.clipped === null);
         const table = D.el('table', { class: 'gsig-inspect__genes' }, D.el('thead', {}, head),
             D.el('tbody', {}, ...shown.map((r) => D.el('tr', { class: r.flags.length ? 'has-flag' : '', data: { gene: r.name } },
@@ -470,6 +473,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
                     D.el('button', { type: 'button', class: 'gsig-inspect__gene', title: `Focus ${r.name}`,
                         on: { click: () => focusGene(r.name) } }, r.name),
                     ...r.flags.map(f => D.el('div', { class: `gsig-inspect__flag gsig-inspect__flag--${f.kind}`, text: f.text }))),
+                ...(withDirection ? [D.el('td', { class: 'gsig-col-direction', text: r.direction === 'down' ? 'Down' : 'Up' })] : []),
                 D.el('td', { class: 'gsig-col-detected', text: fmtPercent(r.detected) }),
                 D.el('td', { class: 'gsig-col-mean gsig-col-extra', text: fmtNum(r.mean) }),
                 D.el('td', { class: 'gsig-col-sd gsig-col-extra', text: fmtNum(r.sd) }),
