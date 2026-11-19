@@ -4,7 +4,7 @@
  * most). Only the rows in view (and a few beyond) are in the page.
  *
  * It is a `role="grid"` and not a listbox because a row may hold two controls
- * (the tick, and later a direction button), which a listbox option may not.
+ * (the tick, and a direction button when genes can be scored as down), which a listbox option may not.
  * The grid says its true size (`aria-rowcount`) and each row its place
  * (`aria-rowindex`), as a virtualised list must. One row is in the tab order
  * (the active one); Up, Down, Home, End, Page Up and Page Down move between
@@ -62,11 +62,13 @@ export function rowAfterKey(key, active, count, page) {
  * @param {string} opts.label - the grid's accessible name
  * @param {number} [opts.rowHeight] - px; every row has it
  * @param {(name: string, checked: boolean) => void} opts.onToggle
- * @param {(name: string) => {checked: boolean, missing?: boolean, removed?: boolean}} opts.stateOf
+ * @param {(name: string, direction: 'up'|'down') => void} [opts.onDirection] - the direction button was pressed; `direction` is the new one
+ * @param {(name: string) => {checked: boolean, missing?: boolean, removed?: boolean, direction?: ('up'|'down')}} opts.stateOf
+ *   `direction` is given only when genes can be scored as down and the gene is in the signature: the row then has its button
  * @returns {{element: HTMLElement, setRows: Function, refresh: Function, focusRow: Function,
  *   rowIndexOf: Function, rows: Function, activeName: Function, destroy: Function}}
  */
-export function createGeneGrid({ doc = document, label, rowHeight = 28, onToggle, stateOf }) {
+export function createGeneGrid({ doc = document, label, rowHeight = 28, onToggle, onDirection = () => {}, stateOf }) {
     const grid = doc.createElement('div');
     grid.className = 'gsig-grid';
     grid.setAttribute('role', 'grid');
@@ -107,7 +109,15 @@ export function createGeneGrid({ doc = document, label, rowHeight = 28, onToggle
         text.className = 'gsig-name';
         const note = doc.createElement('span');
         note.className = 'gsig-note';
-        cell.append(box, text, note);
+        const dir = doc.createElement('button');
+        dir.type = 'button';
+        dir.className = 'gsig-dir btn btn-sm';
+        dir.hidden = true;
+        dir.addEventListener('click', () => {
+            const name = rows[Number(row.dataset.index)];
+            onDirection(name, dir.dataset.direction === 'down' ? 'up' : 'down');
+        });
+        cell.append(box, text, note, dir);
         row.appendChild(cell);
         return row;
     }
@@ -128,6 +138,17 @@ export function createGeneGrid({ doc = document, label, rowHeight = 28, onToggle
         text.textContent = name;
         text.title = name;
         note.textContent = st.missing ? 'not in this dataset' : '';
+        const dir = row.querySelector('.gsig-dir');
+        dir.hidden = !st.direction;
+        if (st.direction) {
+            dir.dataset.direction = st.direction;
+            dir.textContent = st.direction === 'down' ? '↓ Down' : '↑ Up';
+            dir.classList.toggle('gsig-dir--down', st.direction === 'down');
+            dir.setAttribute('aria-label', `${name}: ${st.direction}. Press to make it ${st.direction === 'down' ? 'up' : 'down'}`);
+            dir.title = `Scored as ${st.direction}. Press to make ${name} ${st.direction === 'down' ? 'up' : 'down'}.`;
+        }
+        dir.tabIndex = i === active ? 0 : -1;
+        row.classList.toggle('is-down', st.direction === 'down');
         row.classList.toggle('is-missing', !!st.missing);
         row.classList.toggle('is-removed', !!st.removed);
     }
@@ -181,12 +202,23 @@ export function createGeneGrid({ doc = document, label, rowHeight = 28, onToggle
         const i = Number(row.dataset.index);
         if (i === active) return;
         const old = drawn.get(active);
-        if (old) old.querySelector('input').tabIndex = -1;
+        if (old) { old.querySelector('input').tabIndex = -1; old.querySelector('.gsig-dir').tabIndex = -1; }
         active = i;
         row.querySelector('input').tabIndex = 0;
+        row.querySelector('.gsig-dir').tabIndex = 0;
     });
     grid.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
+        // Left and Right move between the controls of a row (the tick and the direction button)
+        if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && e.target && e.target.closest) {
+            const row = e.target.closest('.gsig-row');
+            const dir = row && row.querySelector('.gsig-dir');
+            if (dir && !dir.hidden) {
+                const to = e.key === 'ArrowRight' ? dir : row.querySelector('input');
+                if (to !== e.target) { e.preventDefault(); to.focus({ preventScroll: true }); }
+                return;
+            }
+        }
         const page = Math.max(1, Math.floor(viewport() / rowHeight) - 1);
         const next = rowAfterKey(e.key, active, rows.length, page);
         if (next === null) return;

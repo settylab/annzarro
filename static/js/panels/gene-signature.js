@@ -41,8 +41,9 @@ import { createScoreOptions } from './score-options/score-options.js';
 import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
-    normalizeRecipe, recipeHash, planAdd, searchNames, enterTarget,
-    UndoStack, fmtCount, inDatasetNames, compareNames, storedRecipe
+    normalizeRecipe, recipeHash, searchNames, enterTarget,
+    UndoStack, fmtCount, inDatasetNames, compareNames, storedRecipe,
+    selectedNames, directionOf, planDirection, planAddAs, directionCounts, mergeSorted
 } from '../utils/gene-signature.js';
 
 /** Search runs this long after the last key, so a long list is not searched on every key. */
@@ -94,6 +95,8 @@ const GeneSignaturePanel = (function() {
         let _nameSet = new Set();
         let _view = _recipe.genes.length ? 'selected' : 'all';
         let _search = { query: '', regex: false, matchCase: false, invalid: false };
+        let _dirFilter = 'all';           // Selected view, directions on: 'all', 'up' or 'down'
+        let _addAs = 'up';                // what Add from and the focused gene add as (directions on)
         let _rows = [];                   // the names the grid shows
         let _matches = null;              // names matching the search in the view, or null for no search
         let _message = _loadNotes.join(' ');
@@ -218,7 +221,7 @@ const GeneSignaturePanel = (function() {
             if (config.title && config.title !== _title) { _title = config.title; signatureRenamed(_id); }
             else if (config.title) _title = config.title;
             if (config.controlsVisible !== undefined) _controlsVisible = config.controlsVisible;
-            const recipeKeys = ['genes', 'down', ...OPTION_KEYS];
+            const recipeKeys = ['genes', 'down', 'directions', ...OPTION_KEYS];
             if (recipeKeys.some(k => k in config)) {
                 setRecipe(Object.fromEntries(recipeKeys.filter(k => k in config).map(k => [k, config[k]])));
                 if (_initialized) { rebuildRows(); paint(); if (_scoreOptions) _scoreOptions.changed(Object.keys(config)); }
@@ -259,7 +262,12 @@ const GeneSignaturePanel = (function() {
          */
         function storeOptions(patch) {
             setRecipe(patch);
+            if ('directions' in patch) {
+                if (!_recipe.directions) { _addAs = 'up'; _dirFilter = 'all'; }
+                rebuildRows();
+            }
             paint();
+            if (_grid) _grid.refresh();
         }
 
         function notifyChange() {
@@ -275,15 +283,20 @@ const GeneSignaturePanel = (function() {
         // changing the list
 
         /**
-         * Make `genes` the up genes, as one undoable step.
+         * Make `genes` the up genes and `down` the down genes, as one undoable step: every change of the list, of a
+         * gene's direction included, goes through here, so undo restores both sides.
          * @param {string[]} genes - sorted, distinct
-         * @param {string} label - what undo says
-         * @param {{tick?: boolean}} [opts]
+         * @param {string[]} down - sorted, distinct, none of them in `genes`
+         * @param {string} label
+         * @param {{tick?: boolean, rebuild?: boolean}} [opts] - `tick`: joins the step before it when close in time;
+         *   `rebuild`: the rows are rebuilt (the default for anything but a tick)
          */
-        function commit(genes, label, opts = {}) {
-            _undo.push(label, _recipe.genes, opts);
+        function commitLists(genes, down, label, opts = {}) {
+            _undo.push(label, _recipe.genes, { tick: opts.tick, down: _recipe.down });
             _recipe.genes = genes;
-            afterChange(opts.tick ? 'tick' : 'list');
+            _recipe.down = down;
+            if (down.length) _recipe.directions = true;
+            afterChange(opts.tick && !opts.rebuild ? 'tick' : 'list');
         }
 
         function afterChange(kind) {
@@ -304,17 +317,19 @@ const GeneSignaturePanel = (function() {
          * @param {{label?: string, noun?: string, outside?: number}} [opts] - `label`: where they come from ("DE genes")
          * @returns {{ok: boolean, added: number, already: number}}
          */
-        function addGenes(names, { label = '', outside = 0, step = '' } = {}) {
+        function addGenes(names, { label = '', outside = 0, step = '', direction = 'up' } = {}) {
             const list = [...names];
-            const plan = planAdd(_recipe.genes, list);
+            const down = direction === 'down';
+            const plan = planAddAs(_recipe, list, down ? 'down' : 'up');
             if (!plan.added.length) {
                 say(list.length ? `Nothing new: ${plan.already === 1 ? 'that gene is' : 'those genes are'} already selected.` : 'No genes to add.');
                 return { ok: true, added: 0, already: plan.already };
             }
             const n = plan.added.length;
             const from = label ? ` from ${label}` : '';
-            commit(plan.genes, step || `add ${fmtCount(n)} gene${n === 1 ? '' : 's'}${from}`);
-            let text = n === 1 && !label ? `Added ${plan.added[0]}.` : `Added ${fmtCount(n)} gene${n === 1 ? '' : 's'}${from}.`;
+            const as = down ? ' as down' : '';
+            commitLists(plan.genes, plan.down, step || `add ${fmtCount(n)} gene${n === 1 ? '' : 's'}${as}${from}`);
+            let text = n === 1 && !label ? `Added ${plan.added[0]}${as}.` : `Added ${fmtCount(n)} gene${n === 1 ? '' : 's'}${as}${from}.`;
             if (plan.already) text += ` ${fmtCount(plan.already)} ${plan.already === 1 ? 'was' : 'were'} already selected.`;
             if (outside) text += ` ${fmtCount(outside)} ${outside === 1 ? 'is' : 'are'} not in this dataset.`;
             say(text);
@@ -324,14 +339,55 @@ const GeneSignaturePanel = (function() {
         /** Tick or untick one gene. */
         function toggleGene(name, checked) {
             if (checked) {
-                const plan = planAdd(_recipe.genes, [name]);
-                if (plan.added.length) commit(plan.genes, `tick ${name}`, { tick: true });
+                const plan = planAddAs(_recipe, [name], 'up');
+                if (plan.added.length) commitLists(plan.genes, plan.down, `tick ${name}`, { tick: true });
                 say(`${name} selected.`);
             } else {
-                if (!_recipe.genes.includes(name)) return;
-                commit(_recipe.genes.filter(g => g !== name), `untick ${name}`, { tick: true });
+                const side = directionOf(_recipe, name);
+                if (!side) return;
+                commitLists(side === 'up' ? _recipe.genes.filter(g => g !== name) : _recipe.genes,
+                    side === 'down' ? _recipe.down.filter(g => g !== name) : _recipe.down, `untick ${name}`, { tick: true });
                 say(`${name} unselected.`);
             }
+        }
+
+        /**
+         * Set the direction of genes in the signature, as one undoable step.
+         * @param {string[]} names
+         * @param {'up'|'down'} direction
+         */
+        function setDirection(names, direction) {
+            const plan = planDirection(_recipe, names, direction);
+            if (!plan.changed.length) {
+                say(plan.same ? `Already ${direction}.` : 'Nothing to change.');
+                return { ok: true, changed: 0 };
+            }
+            const n = plan.changed.length;
+            const filtering = _dirFilter !== 'all' && _view === 'selected';
+            // one gene flipped keeps its row where it is, like a tick; a bulk change or an active filter rebuilds the rows
+            commitLists(plan.genes, plan.down, n === 1 ? `make ${plan.changed[0]} ${direction}` : `make ${fmtCount(n)} genes ${direction}`,
+                { tick: n === 1, rebuild: filtering });
+            say(n === 1 ? `${plan.changed[0]} is now ${direction}.` : `${fmtCount(n)} genes are now ${direction}.`);
+            return { ok: true, changed: n };
+        }
+
+        /** Every gene the search and the filter show, in the Selected view, to one direction. */
+        function setShown(direction) {
+            if (_view !== 'selected') return;
+            setDirection(_rows, direction);
+        }
+
+        /** The switch turned off with down genes present: they count as up, in one undoable step. */
+        function countDownAsUp() {
+            const n = _recipe.down.length;
+            if (!n) { _recipe.directions = false; return; }
+            commitLists(mergeSorted(_recipe.genes, _recipe.down), [], `count ${fmtCount(n)} down gene${n === 1 ? '' : 's'} as up`);
+            _recipe.directions = false;
+            _addAs = 'up';
+            _dirFilter = 'all';
+            rebuildRows();
+            paint();
+            say(`${fmtCount(n)} down gene${n === 1 ? '' : 's'} now count${n === 1 ? 's' : ''} as up.`);
         }
 
         /** Tick every gene the search shows. */
@@ -346,9 +402,9 @@ const GeneSignaturePanel = (function() {
         }
 
         function clearAll() {
-            if (!_recipe.genes.length) return;
-            const n = _recipe.genes.length;
-            commit([], `clear ${fmtCount(n)} genes`);
+            const n = _recipe.genes.length + _recipe.down.length;
+            if (!n) return;
+            commitLists([], [], `clear ${fmtCount(n)} genes`);
             say(`Cleared ${fmtCount(n)} gene${n === 1 ? '' : 's'}.`);
         }
 
@@ -356,6 +412,8 @@ const GeneSignaturePanel = (function() {
             const step = _undo.pop();
             if (!step) return false;
             _recipe.genes = step.before;
+            if (step.down) _recipe.down = step.down;
+            if (_recipe.down.length) _recipe.directions = true;
             rebuildRows();
             paint();
             notifyChange();
@@ -367,7 +425,10 @@ const GeneSignaturePanel = (function() {
         // the rows
 
         function viewNames() {
-            return _view === 'all' ? _names : _recipe.genes;
+            if (_view === 'all') return _names;
+            const names = selectedNames(_recipe);
+            if (!_recipe.directions || _dirFilter === 'all') return names;
+            return _dirFilter === 'down' ? _recipe.down : _recipe.genes;
         }
 
         /** Search the view and set the rows. An invalid pattern keeps the last rows. */
@@ -390,9 +451,11 @@ const GeneSignaturePanel = (function() {
         }
 
         function stateOf(name) {
-            const checked = _recipe.genes.includes(name) || _recipe.down.includes(name);
+            const side = directionOf(_recipe, name);
+            const checked = side !== null;
             return {
                 checked,
+                direction: _recipe.directions && checked ? side : undefined,
                 missing: _nameSet.size > 0 && !_nameSet.has(name),
                 removed: _view === 'selected' && !checked
             };
@@ -411,7 +474,8 @@ const GeneSignaturePanel = (function() {
             const scoreLine = el('div', { class: 'gsig-score', hidden: true });
             _scoreOptions = createScoreOptions({
                 id: _id, D, getOptions: getRecipe, setOptions: storeOptions, getTitle: () => _title,
-                focusGene: (gene) => DataManager.setFocusedGene(gene)
+                focusGene: (gene) => DataManager.setFocusedGene(gene),
+                directions: { countAsUp: countDownAsUp }
             });
             status.append(
                 el('div', { class: 'gsig-status__row' }, summary),
@@ -435,11 +499,16 @@ const GeneSignaturePanel = (function() {
             const addMenuHome = el('span', { class: 'gsig-menu-wrap' }, addFrom, addMenu);
             const focusedBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary gsig-focused', hidden: true,
                 on: { click: addFocused } });
+            // Score some genes as down is on: what Add from, Paste and the focused gene add as
+            const addAsSel = el('select', { class: 'form-select form-select-sm gsig-addas', id: sid('addas'), data: { addAs: '' },
+                aria: { label: 'Add as' }, on: { change: () => { _addAs = addAsSel.value === 'down' ? 'down' : 'up'; paint(); } } },
+            el('option', { value: 'up', text: 'Up' }), el('option', { value: 'down', text: 'Down' }));
+            const addAsWrap = el('label', { class: 'gsig-addas-wrap', hidden: true, for: sid('addas') }, el('span', { text: 'Add as ' }), addAsSel);
             const _flowHost = el('div', { class: 'gsig-flow', hidden: true });
             const controls = el('div', { class: 'gsig-controls' },
                 el('div', { class: 'gsig-search-row' }, search, regex, matchCase, tickAllBtn),
                 searchNote,
-                el('div', { class: 'gsig-add-row' }, focusedBtn, ...inlineButtons(), addMenuHome),
+                el('div', { class: 'gsig-add-row' }, addAsWrap, focusedBtn, ...inlineButtons(), addMenuHome),
                 _flowHost);
 
             const allBtn = el('button', { type: 'button', role: 'radio', class: 'gsig-seg', on: { click: () => setView('all') } });
@@ -451,6 +520,16 @@ const GeneSignaturePanel = (function() {
             const clearBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-clear',
                 title: 'Remove every gene from the signature (can be undone)', on: { click: clearAll } }, 'Clear');
             const listbar = el('div', { class: 'gsig-listbar' }, viewSwitch, el('span', { class: 'gsig-listbar__actions' }, undoBtn, clearBtn));
+            // Selected view with directions on: a filter by direction and a bulk change of the rows shown
+            const filterSel = el('select', { class: 'form-select form-select-sm gsig-dirfilter', id: sid('dirfilter'), data: { dirFilter: '' },
+                aria: { label: 'Show genes' }, on: { change: () => { _dirFilter = ['up', 'down'].includes(filterSel.value) ? filterSel.value : 'all'; rebuildRows({ top: true }); paint(); } } },
+            el('option', { value: 'all', text: 'All' }), el('option', { value: 'up', text: 'Up' }), el('option', { value: 'down', text: 'Down' }));
+            const setUpBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { setShown: 'up' },
+                on: { click: () => setShown('up') } });
+            const setDownBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { setShown: 'down' },
+                on: { click: () => setShown('down') } });
+            const dirBar = el('div', { class: 'gsig-dirbar', hidden: true },
+                el('label', { class: 'gsig-dirbar__filter', for: sid('dirfilter') }, el('span', { text: 'Show ' }), filterSel), setUpBtn, setDownBtn);
 
             const note = el('div', { class: 'gsig-note-line' });
             const message = el('div', { class: 'gsig-message', role: 'status', aria: { live: 'polite' }, id: sid('message') });
@@ -458,7 +537,8 @@ const GeneSignaturePanel = (function() {
 
             _grid = createGeneGrid({
                 doc: document, label: 'Genes', stateOf,
-                onToggle: (name, checked) => toggleGene(name, checked)
+                onToggle: (name, checked) => toggleGene(name, checked),
+                onDirection: (name, direction) => setDirection([name], direction)
             });
 
             const root = el('div', { class: 'gsig-panel' });
@@ -466,11 +546,12 @@ const GeneSignaturePanel = (function() {
             root.addEventListener('keydown', onPanelKey);
             root.addEventListener('dragover', onPanelDragOver);
             root.addEventListener('drop', onPanelDrop);
-            root.append(status, controls, listbar, message, note, empty, _grid.element, _scoreOptions.inspect.element);
+            root.append(status, controls, listbar, dirBar, message, note, empty, _grid.element, _scoreOptions.inspect.element);
             _container.innerHTML = '';
             _container.appendChild(root);
             _dom = { root, controls, flowHost: _flowHost, status, summary, definition, usedBy, scoreLine, search, regex, matchCase, tickAllBtn, searchNote,
                 addFrom, addMenu, addMenuHome, focusedBtn, allBtn, selBtn, undoBtn, clearBtn, listbar, message, note, empty,
+                addAsWrap, addAsSel, dirBar, filterSel, setUpBtn, setDownBtn,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
         }
 
@@ -480,12 +561,14 @@ const GeneSignaturePanel = (function() {
             const n = _recipe.genes.length + _recipe.down.length;
             const loaded = _nameSet.size > 0;
             const missing = loaded ? [..._recipe.genes, ..._recipe.down].filter(g => !_nameSet.has(g)).length : 0;
+            const counts = directionCounts(_recipe);
             _dom.summary.textContent = n
-                ? `${fmtCount(n)} ${n === 1 ? 'gene' : 'genes'} selected`
+                ? `${fmtCount(n)} ${n === 1 ? 'gene' : 'genes'} selected${counts ? `: ${counts}` : ''}`
                 : 'Tick genes to build a score.';
             // no single definition here: a signature offers several, and the Scores offered row below states them
-            _dom.definition.textContent = missing ? `${fmtCount(missing)} not in this dataset.` : '';
-            _dom.definition.hidden = !missing;
+            const sides = loaded ? emptySideNote() : '';
+            _dom.definition.textContent = [missing ? `${fmtCount(missing)} not in this dataset.` : '', sides].filter(Boolean).join(' ');
+            _dom.definition.hidden = !_dom.definition.textContent;
             paintFocused();
 
             _dom.search.classList.toggle('is-invalid', _search.invalid);
@@ -502,12 +585,14 @@ const GeneSignaturePanel = (function() {
                 ? `All genes ${fmtCount(_matches.length)} ${_matches.length === 1 ? 'match' : 'matches'}` : `All genes ${fmtCount(total)}`;
             const selMatches = searching && _view === 'selected' && _matches;
             _dom.selBtn.textContent = selMatches
-                ? `Selected ${fmtCount(_matches.length)} ${_matches.length === 1 ? 'match' : 'matches'}` : `Selected ${fmtCount(n)}`;
+                ? `Selected ${fmtCount(_matches.length)} ${_matches.length === 1 ? 'match' : 'matches'}` : `Selected ${fmtCount(n)}${counts ? `: ${counts}` : ''}`;
             for (const [btn, v] of [[_dom.allBtn, 'all'], [_dom.selBtn, 'selected']]) {
                 btn.setAttribute('aria-checked', String(_view === v));
                 btn.tabIndex = _view === v ? 0 : -1;
                 btn.classList.toggle('active', _view === v);
             }
+
+            paintDirections();
 
             const canTickAll = _view === 'all' && searching && _matches && _matches.length > 0;
             _dom.tickAllBtn.hidden = !canTickAll;
@@ -542,6 +627,40 @@ const GeneSignaturePanel = (function() {
             paintScore();
             if (_scoreOptions) _scoreOptions.paint();
             _dom.message.textContent = _message;
+        }
+
+        /** "None of the 8 down genes are in this dataset, so only up genes are scored." (and the same for up). */
+        function emptySideNote() {
+            if (!_recipe.directions || !_recipe.down.length) return '';
+            const absent = (list) => list.length > 0 && list.every(g => !_nameSet.has(g));
+            const none = (list, side) => (list.length === 1 ? `The ${side} gene is` : list.length === 2 ? `Both ${side} genes are`
+                : `None of the ${fmtCount(list.length)} ${side} genes are`);
+            if (absent(_recipe.down) && !absent(_recipe.genes)) {
+                return `${none(_recipe.down, 'down')} not in this dataset, so only up genes are scored.`;
+            }
+            if (absent(_recipe.genes) && !absent(_recipe.down) && _recipe.genes.length) {
+                return `${none(_recipe.genes, 'up')} not in this dataset, so only down genes are scored.`;
+            }
+            if (!_recipe.genes.length && !absent(_recipe.down)) return 'All genes are down, so the score is the negative of their average.';
+            return '';
+        }
+
+        /** The controls that exist only while Score some genes as down is on. */
+        function paintDirections() {
+            const on = !!_recipe.directions;
+            _dom.addAsWrap.hidden = !on;
+            _dom.addAsSel.value = on ? _addAs : 'up';
+            const bar = on && _view === 'selected' && (_recipe.genes.length + _recipe.down.length) > 0;
+            _dom.dirBar.hidden = !bar;
+            if (!bar) return;
+            _dom.filterSel.value = _dirFilter;
+            const shown = _view === 'selected' ? _rows.length : 0;
+            const would = (dir) => planDirection(_recipe, _rows, dir).changed.length;
+            for (const [btn, dir] of [[_dom.setUpBtn, 'up'], [_dom.setDownBtn, 'down']]) {
+                btn.textContent = `Set ${fmtCount(shown)} shown to ${dir === 'up' ? 'Up' : 'Down'}`;
+                btn.disabled = shown === 0 || would(dir) === 0;
+                btn.title = btn.disabled ? `Every gene shown is already ${dir}` : `Make the ${fmtCount(shown)} genes shown ${dir} (can be undone)`;
+            }
         }
 
         /**
@@ -657,7 +776,7 @@ const GeneSignaturePanel = (function() {
                     if (_rows.length > 1 && !_search.invalid) say(`${fmtCount(_rows.length)} genes match. Use Tick all ${fmtCount(_rows.length)}, or type the whole name.`);
                     return;
                 }
-                if (_recipe.genes.includes(target)) say(`${target} is already selected.`);
+                if (directionOf(_recipe, target)) say(`${target} is already selected.`);
                 else toggleGene(target, true);
                 // the box is cleared and keeps the focus, so genes can be typed in a row
                 clearSearch();
@@ -776,7 +895,7 @@ const GeneSignaturePanel = (function() {
                 if (f.source === 'focused' || !f.gene || seen.has(f.gene) || !inData(f.gene)) continue;
                 seen.add(f.gene);
                 const where = `fixed in ${f.panelTitle}`;
-                items.push({ id: `gene:${f.gene}`, label: `${f.gene} · ${where}`, run: () => addGenes([f.gene]) });
+                items.push({ id: `gene:${f.gene}`, label: `${f.gene} · ${where}`, run: () => addGenes([f.gene], { direction: currentAddAs() }) });
             }
             const active = new Set(PanelManager.getActivePanels());
             for (const table of PanelManager.getPanelsByType('gene-table')) {
@@ -788,7 +907,7 @@ const GeneSignaturePanel = (function() {
                 }
                 const { names, outside } = inDatasetNames(sel.names, _nameSet);
                 items.push({ id: `table:${table.getId()}`, label: `${title} · ${fmtCount(names.length)} gene${names.length === 1 ? '' : 's'}`,
-                    run: () => addGenes(names, { label: title, outside }) });
+                    run: () => addGenes(names, { label: title, outside, direction: currentAddAs() }) });
             }
             for (const item of addSourceItems()) if (!item.inline) items.push(item);
             return items;
@@ -894,15 +1013,21 @@ const GeneSignaturePanel = (function() {
             let reason = '';
             if (_nameSet.size && !_nameSet.has(gene)) reason = `${gene} is not in this dataset`;
             else if (_recipe.genes.includes(gene) || _recipe.down.includes(gene)) reason = `${gene} is already in the list`;
-            btn.textContent = `+ ${gene} (focused)`;
+            const as = _recipe.directions && _addAs === 'down' ? ' as down' : '';
+            btn.textContent = `+ ${gene}${as} (focused)`;
             btn.disabled = !!reason;
-            btn.title = reason || `Add the focused gene ${gene}`;
-            btn.setAttribute('aria-label', reason ? `Add ${gene}, focused: unavailable, ${reason}` : `Add ${gene}, the focused gene`);
+            btn.title = reason || `Add the focused gene ${gene}${as}`;
+            btn.setAttribute('aria-label', reason ? `Add ${gene}, focused: unavailable, ${reason}` : `Add ${gene}${as}, the focused gene`);
         }
 
         function addFocused() {
             const gene = DataManager.getFocusedGene();
-            if (gene && !btnBlocked()) addGenes([gene]);
+            if (gene && !btnBlocked()) addGenes([gene], { direction: currentAddAs() });
+        }
+
+        /** What Add from and the focused gene add as: up unless Score some genes as down is on and Down is chosen. */
+        function currentAddAs() {
+            return _recipe.directions && _addAs === 'down' ? 'down' : 'up';
         }
 
         function btnBlocked() {
@@ -964,6 +1089,9 @@ const GeneSignaturePanel = (function() {
             getRecipeHash: () => recipeHash(_recipe),
             revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
             addGenes,
+            setDirection,
+            getAddAs: () => currentAddAs(),
+            directionsOn: () => !!_recipe.directions,
             undo,
             // for the sources that plug in (paste and upload)
             getDatasetGenes: () => DataManager.getGenes(),

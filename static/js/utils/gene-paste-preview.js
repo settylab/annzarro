@@ -30,7 +30,9 @@ const plural = (n, one, many) => `${fmt(n)} ${n === 1 ? one : many}`;
  * @param {Map<string,string>} [o.idToName] gene id to name, when the dataset has an id column
  * @param {(kind: 'ensembl'|'entrez') => Promise<Map<string,string>|null>} [o.idLookup] loads that map on demand,
  *   only when most pasted names turn out to be ids; null or a rejection keeps the plain mismatch message
- * @param {(genes: string[], info: Object) => void} o.onAdd
+ * @param {() => boolean} [o.directions] true when genes can be scored as down: the preview then has "Add as" (Up or Down)
+ * @param {() => ('up'|'down')} [o.defaultDirection] what "Add as" starts on
+ * @param {(genes: string[], info: Object) => void} o.onAdd   `info.direction` is 'up' or 'down'
  * @param {() => void} [o.onCancel]
  */
 export function mountGenePaste(container, o) {
@@ -38,6 +40,7 @@ export function mountGenePaste(container, o) {
     const geneNames = o.geneNames || [];
     const current = () => (typeof o.currentGenes === 'function' ? o.currentGenes() : o.currentGenes) || [];
 
+    let addAs = 'up';                   // "Add as", kept while the preview is re-drawn
     let idMap = o.idToName || null;     // grows when idLookup answers
     const loadedKinds = new Set();
     let epoch = 0;                      // a lookup that answers after the text changed is ignored
@@ -148,6 +151,7 @@ export function mountGenePaste(container, o) {
     function begin(text, fileName) {
         epoch++;
         Object.assign(st, freshState(), { text, fileName });
+        addAs = o.defaultDirection ? o.defaultDirection() : 'up';
         showError('');
         renderPreview();
         showStage('preview');
@@ -340,16 +344,22 @@ export function mountGenePaste(container, o) {
             onclick: () => {
                 if (!canAdd) return;
                 const genes = m.toAdd.slice();
-                const info = { count: genes.length, alreadySelected: m.alreadySelected, unmatched: m.unmatched.length, format: parsed.format, fileName: st.fileName };
+                const info = { count: genes.length, alreadySelected: m.alreadySelected, unmatched: m.unmatched.length, format: parsed.format, fileName: st.fileName,
+                    direction: o.directions && o.directions() ? addAs : 'up' };
                 reset();
                 o.onAdd(genes, info);
             } });
         const back = el('button', { type: 'button', class: 'btn btn-outline-secondary btn-sm', text: 'Back', 'data-testid': 'gp-back', onclick: () => { showStage('input'); textarea.focus(); } });
-        return el('div', { class: 'gp-buttons' }, [back, addBtn]);
+        const withDirection = !!(o.directions && o.directions());
+        const addAsSel = withDirection ? el('select', { class: 'form-select form-select-sm gp-addas', 'aria-label': 'Add as', 'data-key': 'addas', 'data-testid': 'gp-addas',
+            onchange: (e) => { addAs = e.target.value === 'down' ? 'down' : 'up'; } },
+        [el('option', { value: 'up', text: 'Up', selected: addAs === 'up' }), el('option', { value: 'down', text: 'Down', selected: addAs === 'down' })]) : null;
+        return el('div', { class: 'gp-buttons' }, [addAsSel ? el('label', { class: 'gp-addas-label' }, ['Add as ', addAsSel]) : null, back, addBtn]);
     }
 
     function reset() {
         epoch++;
+        addAs = o.defaultDirection ? o.defaultDirection() : 'up';
         Object.assign(st, freshState());
         textarea.value = '';
         previewBtn.disabled = true;

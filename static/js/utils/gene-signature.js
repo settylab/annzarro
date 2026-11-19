@@ -15,13 +15,13 @@
  */
 import { setHash, stableStringify } from '../panels/gene-set-utilities/state.js';
 import {
-    METHODS, DEFAULT_METHOD, paramsOf, methodInfo, normalizeOptions,
+    METHODS, DEFAULT_METHOD, DOWN_METHODS, canScoreDown, paramsOf, methodInfo, normalizeOptions,
     DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE, MAX_SEED,
     parseClipText, parseSeedText, parseWholeText, parseThresholdText, cleanWhole, cleanThreshold, cleanClip
 } from './signature-options.js';
 
 export {
-    METHODS, DEFAULT_METHOD, DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE,
+    METHODS, DEFAULT_METHOD, DOWN_METHODS, canScoreDown, DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE,
     MAX_SEED, parseClipText, parseSeedText, parseWholeText, parseThresholdText, cleanWhole, cleanThreshold, cleanClip
 };
 
@@ -72,6 +72,9 @@ export function normalizeRecipe(raw) {
     return {
         recipe: {
             genes, down, ...options,
+            // the panel's own switch (Score some genes as down): on whenever there are down genes, and kept on when
+            // it was left on with none. Not a score setting: it is in no cache key and not sent to the server.
+            directions: src.directions === true || down.length > 0,
             version: RECIPE_VERSION
         },
         notes
@@ -96,7 +99,9 @@ export function serverRecipe(recipe) {
  * own (which methods and layers are offered to consumers). Configuration only.
  */
 export function storedRecipe(recipe) {
-    return { ...serverRecipe(recipe), offered: [...recipe.offered], layers: [...recipe.layers] };
+    const stored = { ...serverRecipe(recipe), offered: [...recipe.offered], layers: [...recipe.layers] };
+    if (recipe.directions) stored.directions = true;          // absent when off: a link without down genes is what it was
+    return stored;
 }
 
 /**
@@ -121,6 +126,85 @@ export function recipeHash(recipe) {
         up: setHash(recipe.genes),
         down: setHash(recipe.down)
     });
+}
+
+// ---------------------------------------------------------------------------
+// Up and down genes
+
+/** Every gene of the signature, up and down, sorted by name (the Selected view's rows). */
+export function selectedNames(recipe) {
+    return recipe.down.length ? mergeSorted(recipe.genes, recipe.down) : recipe.genes;
+}
+
+/** 'up', 'down' or null (not in the signature). */
+export function directionOf(recipe, name) {
+    if (recipe.genes.includes(name)) return 'up';
+    if (recipe.down.includes(name)) return 'down';
+    return null;
+}
+
+/**
+ * Set the direction of genes already in the signature. Pure: says what would happen.
+ * @param {{genes: string[], down: string[]}} recipe
+ * @param {Iterable<string>} names - genes to set; those not in the signature are ignored
+ * @param {'up'|'down'} direction
+ * @returns {{genes: string[], down: string[], changed: string[], same: number}}
+ *   `changed` are the names that moved; `same` how many already had the direction
+ */
+export function planDirection(recipe, names, direction) {
+    const target = direction === 'down' ? 'down' : 'up';
+    const move = new Set();
+    let same = 0;
+    for (const name of new Set(names)) {
+        const now = directionOf(recipe, name);
+        if (now === null) continue;
+        if (now === target) same++;
+        else move.add(name);
+    }
+    if (!move.size) return { genes: recipe.genes, down: recipe.down, changed: [], same };
+    const from = target === 'up' ? recipe.down : recipe.genes;
+    const stay = from.filter(n => !move.has(n));
+    const moved = [...move].sort(compareNames);
+    return {
+        genes: target === 'up' ? mergeSorted(recipe.genes, moved) : recipe.genes.filter(n => !move.has(n)),
+        down: target === 'up' ? stay : mergeSorted(recipe.down, moved),
+        changed: moved, same
+    };
+}
+
+/**
+ * Add genes on one side. Pure; a gene already in the signature (either side) is left where it is.
+ * @returns {{genes: string[], down: string[], added: string[], already: number}}
+ */
+export function planAddAs(recipe, incoming, direction) {
+    const have = new Set([...recipe.genes, ...recipe.down]);
+    const fresh = [];
+    let already = 0;
+    for (const name of new Set(incoming)) {
+        if (typeof name !== 'string' || name === '') continue;
+        if (have.has(name)) already++;
+        else fresh.push(name);
+    }
+    const added = fresh.sort(compareNames);
+    return direction === 'down'
+        ? { genes: recipe.genes, down: mergeSorted(recipe.down, added), added, already }
+        : { genes: mergeSorted(recipe.genes, added), down: recipe.down, added, already };
+}
+
+/** "42 up, 8 down" when there are down genes, else ''. */
+export function directionCounts(recipe) {
+    return recipe.down.length ? `${fmtCount(recipe.genes.length)} up, ${fmtCount(recipe.down.length)} down` : '';
+}
+
+/**
+ * The formula in plain words, for Scores offered. Empty when the signature has no down genes (nothing to say).
+ * @param {Object} recipe - from normalizeRecipe
+ */
+export function directionFormula(recipe) {
+    if (!recipe.down.length) return '';
+    if (!recipe.genes.length) return 'All genes are down, so the score is the negative of their average.';
+    return `Score = average of the ${fmtCount(recipe.genes.length)} up genes minus average of the ${fmtCount(recipe.down.length)} down genes.`
+        + ' Control-adjusted takes each side minus its own control genes.';
 }
 
 /** How the score is defined, in words (the Scoring row states it whatever is collapsed). */
@@ -257,9 +341,10 @@ export class UndoStack {
     /**
      * @param {string} label - "add 42 genes from DE genes"
      * @param {string[]} before - the list before the change
-     * @param {{tick?: boolean, now?: number}} [opts] - `tick`: a single tick, joins the step before it when close in time
+     * @param {{tick?: boolean, now?: number, down?: string[]}} [opts] - `tick`: a single tick, joins the step before it when
+     *   close in time; `down`: the down genes before the change (kept with the step, so undo restores both sides)
      */
-    push(label, before, { tick = false, now = Date.now() } = {}) {
+    push(label, before, { tick = false, now = Date.now(), down = null } = {}) {
         const last = this.steps[this.steps.length - 1];
         if (tick && last && last.tick && now - this._lastTick <= this.coalesceMs) {
             last.count++;
@@ -267,7 +352,7 @@ export class UndoStack {
             this._lastTick = now;
             return;
         }
-        this.steps.push({ label, before: [...before], tick, count: 1 });
+        this.steps.push({ label, before: [...before], down: down ? [...down] : null, tick, count: 1 });
         if (this.steps.length > this.max) this.steps.shift();
         this._lastTick = tick ? now : 0;
     }

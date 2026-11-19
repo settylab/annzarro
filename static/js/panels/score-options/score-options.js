@@ -38,8 +38,9 @@ const MENU_KEYS = ['offered', 'layers', 'input', 'method'];
  * @param {(gene: string) => void} o.focusGene
  * @param {() => void} [o.onApplied] - after an edit was stored and told to its readers
  * @param {boolean} [o.withInspect] - make Inspect too (default true)
+ * @param {{countAsUp: () => void}|null} [o.directions] - a source whose genes can be up or down (a signature, not a table)
  */
-export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, focusGene, onApplied = () => {}, withInspect = true }) {
+export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, focusGene, onApplied = () => {}, withInspect = true, directions = null }) {
     let scoring = null;
 
     function apply(patch) {
@@ -57,7 +58,7 @@ export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, fo
         D, id, getRecipe: getOptions, apply,
         getInputs: async () => layerKeys(await DataManager.getDatasetStructure(DataManager.getCurrentDataset())),
         getKind: (input, opts) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), input, opts),
-        onKinds: () => { signatureRenamed(id); },
+        onKinds: () => { signatureRenamed(id); }, directions,
         getInUse: () => aggregationsInUse(id), getLayersInUse: () => layersInUse(id), warningFor
     });
     const inspect = withInspect ? createInspect({ id, D, getTitle, getRecipe: getOptions, getOptions: () => offeredOptions(getOptions(), null, scoring.getKinds()), focusGene }) : null;

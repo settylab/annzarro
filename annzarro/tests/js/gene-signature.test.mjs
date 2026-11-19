@@ -27,7 +27,7 @@ test('an empty or missing config is the default recipe: z-score mean of X, clipp
     for (const raw of [undefined, null, {}, 'x', 5, []]) {
         assert.deepEqual(G.normalizeRecipe(raw).recipe,
             { genes: [], down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, bins: 25, controls: 50, detect_above: 0, version: 1,
-                offered: ['zscore_mean', 'mean', 'sum'], layers: ['X'] });
+                offered: ['zscore_mean', 'mean', 'sum'], layers: ['X'], directions: false });
     }
     assert.equal(G.definitionText(recipe({})), 'Z-score mean of X, clipped at ±10');
 });

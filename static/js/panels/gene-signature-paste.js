@@ -29,11 +29,13 @@ function openPaste(panel) {
     const flow = mountGenePaste(host, {
         geneNames: panel.getDatasetGenes(),
         currentGenes: () => panel.getSelectedGenes(),
+        directions: () => panel.directionsOn(),
+        defaultDirection: () => panel.getAddAs(),
         idLookup: (kind) => panel.loadIdMap(kind),
         onCancel: close,
         onAdd: (genes, info) => {
             close();
-            panel.addGenes(genes, { label: info.fileName ? `file ${info.fileName}` : 'pasted list', outside: info.unmatched });
+            panel.addGenes(genes, { label: info.fileName ? `file ${info.fileName}` : 'pasted list', outside: info.unmatched, direction: info.direction });
         }
     });
     open.set(panel, flow);

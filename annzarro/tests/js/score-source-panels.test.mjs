@@ -37,7 +37,7 @@ function table({ id = 'gene-table-1', title = 'Gene Table 1', entries = [0, 2, 4
 }
 const signature = (id, genes) => ({ getId: () => id, getTitle: () => 'Sig', getType: () => 'gene-signature',
     getRecipe: () => ({ genes, down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, bins: 25, controls: 50, detect_above: 0,
-        version: 1, offered: ['zscore_mean', 'mean', 'sum'], layers: ['X'] }) });
+        version: 1, offered: ['zscore_mean', 'mean', 'sum'], layers: ['X'], directions: false }) });
 
 function adapterOf(panels, { open = new Set(), resolver = null } = {}) {
     return P.createSourceAdapter({
@@ -65,6 +65,14 @@ test('an open table\'s genes are the rows that pass its filter, sorted, with the
     assert.equal(r.method, 'zscore_mean');
     assert.deepEqual(r.offered, ['zscore_mean', 'mean', 'sum']);
     assert.equal(source.gate('p'), null);
+});
+
+test('a gene table has no down genes: every gene passing its filter is up, and the switch is off', () => {
+    const t = table({ options: { offered: ['mean'], layers: ['X'] } });
+    const sources = adapterOf(new Map([[t.id, t]]), { open: new Set([t.id]) });
+    const r = sources.get(t.id).recipe();
+    assert.deepEqual([r.down, r.directions], [[], false]);
+    assert.ok(r.genes.length > 0);
 });
 
 test('the same options give the same recipe fields as a signature: one schema', () => {
