@@ -5,7 +5,7 @@ import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../util
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { signatureList, NEW_SIGNATURE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers } from '../../utils/score-source.js';
-import { scoreValue } from './hover-columns.js';
+import { scoreValue, parseScoreValue } from './hover-columns.js';
 import { getSource } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -262,6 +262,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     if (type === 'gene-score') $keySelect.find('option[value=""]').prop('disabled', true);
 }
 
+
 /**
  * The signatures a `gene-score` key list offers, up to date: signatures were
  * added, removed or renamed. Every key select whose type select reads
@@ -303,6 +304,16 @@ export function refreshScoreKeySelects() {
   // the Hover pickers list each score a signature offers, after the columns
   const wanted = list.flatMap(sig => (sig.options || []).map((o, i) => [scoreValue(sig.id, o.method, o.layer), i === 0 ? sig.title : `${sig.title} · ${o.label}`]));
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
+    const picked = new Set(Array.from(select.querySelectorAll('optgroup option')).filter(o => o.selected).map(o => o.value));
+    // what each signature offers, and a pick it no longer offers (kept, and marked)
+    const wanted = list.flatMap((sig) => {
+      const mine = (sig.options || []).map(o => [scoreValue(sig.id, o.method, o.layer), o.label]);
+      for (const value of picked) {
+        const got = parseScoreValue(value);
+        if (got.key === sig.id && !mine.some(m => m[0] === value)) mine.push([value, `${got.column}${got.layer ? ` · ${got.layer}` : ''} (no longer offered)`]);
+      }
+      return mine.map(([value, text], i) => [value, i === 0 ? sig.title : `${sig.title} · ${text}`]);
+    });
     const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === 'Gene scores');
     const have = group ? Array.from(group.querySelectorAll('option')) : [];
     const chosen = new Set(have.filter(o => o.selected).map(o => o.value));

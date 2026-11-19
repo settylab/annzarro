@@ -22,14 +22,15 @@
 import { DataManager } from '../data-manager.js';
 import { scores } from '../utils/score-source.js';
 import { describeScore } from '../utils/score-notices.js';
-import { METHODS, DEFAULT_METHOD, definitionText, fmtCount } from '../utils/gene-signature.js';
+import { DEFAULT_METHOD, definitionText, fmtCount } from '../utils/gene-signature.js';
+import { cleanOffered, methodLabel } from '../utils/signature-options.js';
 import {
     distribution, binText, missingText, geneRows, flagSummary, sortGeneRows, GENE_COLUMNS, ROWS_FIRST,
     fmtNum, fmtPercent, geneCsv, scoreCsvParts, fileName
 } from '../utils/score-inspect.js';
 
 /** What each aggregation is called here. */
-const METHOD_LABELS = { zscore_mean: 'Z-score mean', mean: 'Mean expression' };
+const METHOD_LABELS = { mean: 'Mean expression' };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MARGIN = { left: 38, right: 6, top: 6, bottom: 20 };
@@ -141,8 +142,15 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
     /** The aggregation a plot already shows for this signature, else the default. */
     function firstMethod() {
         const { sources } = scores();
-        for (const h of sources.handlesOf(id)) if (h.role !== 'inspect' && METHODS.includes(h.sub)) return h.sub;
+        for (const h of sources.handlesOf(id)) if (h.role !== 'inspect' && h.sub) return h.sub;
         return DEFAULT_METHOD;
+    }
+
+    /** The aggregations to inspect: what the signature offers, and the one being inspected if it was switched off since. */
+    function methodsHere() {
+        const recipe = getRecipe();
+        const list = cleanOffered(recipe.offered, recipe.method);
+        return _method && !list.includes(_method) ? [...list, _method] : list;
     }
 
     function watch() {
@@ -176,9 +184,10 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
     function onAggKey(e) {
         if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
         e.preventDefault();
-        const i = METHODS.indexOf(_method);
+        const methods = methodsHere();
+        const i = methods.indexOf(_method);
         const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
-        const next = METHODS[(i + step + METHODS.length) % METHODS.length];
+        const next = methods[(i + step + methods.length) % methods.length];
         chooseMethod(next);
         const btn = aggregation.querySelector(`[data-method="${next}"]`);
         if (btn) btn.focus();
@@ -220,11 +229,11 @@ export function createInspect({ id, D, getTitle, getRecipe, focusGene }) {
 
     function paintAggregation() {
         D.clear(aggregation);
-        for (const method of METHODS) {
+        for (const method of methodsHere()) {
             const on = method === _method;
             aggregation.append(D.el('button', { type: 'button', role: 'radio', class: `gsig-seg${on ? ' active' : ''}`,
                 data: { method }, aria: { checked: String(on) }, tabindex: on ? '0' : '-1',
-                on: { click: () => chooseMethod(method) } }, METHOD_LABELS[method] || method));
+                on: { click: () => chooseMethod(method) } }, METHOD_LABELS[method] || methodLabel(method)));
         }
     }
 
