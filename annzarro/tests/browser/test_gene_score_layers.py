@@ -129,8 +129,12 @@ def test_a_table_column_has_its_own_layer_and_the_tab_lists_the_same_combined_op
     T._open(page, served, table=T._table(columns=[plain, col]), sig=TWO)
     until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
     assert sorted(c["input"] for c in _calls(page, "compute")) == ["X", "counts"]
+    # the requests are out, not answered: wait until both score columns are filled (a column that never fills times out here)
+    until(page, """(box) => { const ths = [...document.querySelectorAll(box + ' .dataTables_scrollHead th[data-score-state]')];
+        return ths.length === 2 && ths.every(th => th.dataset.scoreState === 'ready'); }""", T.BOX)
     heads = T._headers(page)
     assert "T cell score" in heads and any(h.startswith("T cell score · counts") for h in heads), heads
+    assert not any("computing" in h for h in heads), heads
     page.click(f"#gene-score-tab-{T.TID}")
     labels = page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' label')].map(l => l.textContent)", T.TID)
     assert labels[0] == "z-score mean · X" and "mean · counts" in labels, labels
