@@ -655,3 +655,21 @@ def test_the_menu_offers_the_panel_when_nothing_is_switched_off(page, served):
     page.wait_for_selector(".panel-type-option[data-type='gene-signature']", timeout=30000)
     types = page.locator(".panel-type-option").evaluate_all("els => els.map(e => e.dataset.type)")
     assert types[-1] == "gene-signature" and "gene-set" in types
+
+
+def test_a_new_dataset_keeps_the_recipe_and_recounts_the_missing_genes(page, served):
+    _open_signature(page, served, ["ACTB", "CD3D", "KLF1"])
+    assert "not in this dataset" not in page.inner_text(f"{S} .gsig-definition")
+    # the dataset's genes change (a switch to another store): the recipe is untouched, the count is new
+    page.evaluate("""async () => {
+        const { DataManager } = await import('/static/js/data-manager.js');
+        DataManager.getGenes = () => ['ACTB', 'GAPDH', 'OTHER1'];
+        await window.PanelManager.notifyPanels('datasetChanged', { dataset: 'x' });
+    }""")
+    until(page, "() => /2 not in this dataset/.test(document.querySelector('%s .gsig-definition').textContent)" % S)
+    assert _genes(page) == ["ACTB", "CD3D", "KLF1"]
+    # Selected lists the recipe, the two absent genes greyed; All genes lists only the new dataset's
+    assert page.locator(f"{S} .gsig-row.is-missing").count() == 2
+    page.click(f"{S} .gsig-seg:has-text('All genes')")
+    assert page.get_attribute(f"{S} .gsig-grid", "aria-rowcount") == "3"
+    assert page.locator(f"{S} .gsig-row.is-missing").count() == 0
