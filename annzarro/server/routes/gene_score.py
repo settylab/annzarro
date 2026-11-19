@@ -280,7 +280,7 @@ def register_matrix_kind_route(app_, api_version):
         try:
             reader = get_reader(dataset_path)
             with remote.deadline(REMOTE_KIND_S if remote.is_remote_path(dataset_path) else None):
-                return jsonify(gene_score.matrix_kinds(reader, dataset_path, name))
+                return jsonify(gene_score.matrix_kinds(reader, dataset_path, name, request.args.get("suggest", "1") != "0"))
         except gene_score.ScoreError as exc:
             return _error(exc.status, exc.reason, exc.message, **exc.extra)
         except Exception as exc:

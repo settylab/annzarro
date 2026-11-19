@@ -26,7 +26,7 @@ const recipe = (raw) => G.normalizeRecipe(raw).recipe;
 test('an empty or missing config is the default recipe: z-score mean of X, clipped at 10', () => {
     for (const raw of [undefined, null, {}, 'x', 5, []]) {
         assert.deepEqual(G.normalizeRecipe(raw).recipe,
-            { genes: [], down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, bins: 25, controls: 50, version: 1,
+            { genes: [], down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, bins: 25, controls: 50, detect_above: 0, version: 1,
                 offered: ['zscore_mean', 'mean', 'sum'], layers: ['X'] });
     }
     assert.equal(G.definitionText(recipe({})), 'Z-score mean of X, clipped at ±10');
@@ -41,8 +41,8 @@ test('genes are kept sorted and without duplicates, whatever order or noise a li
 
 test('the recipe has exactly the fields the score route reads, and no title', () => {
     const body = G.serverRecipe(recipe({ genes: ['B', 'A'], title: 'x' }));
-    assert.deepEqual(Object.keys(body).sort(), ['bins', 'clip', 'controls', 'down', 'genes', 'input', 'method', 'seed', 'version']);
-    assert.deepEqual(body, { genes: ['A', 'B'], down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, bins: 25, controls: 50, version: 1 });
+    assert.deepEqual(Object.keys(body).sort(), ['bins', 'clip', 'controls', 'detect_above', 'down', 'genes', 'input', 'method', 'seed', 'version']);
+    assert.deepEqual(body, { genes: ['A', 'B'], down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, bins: 25, controls: 50, detect_above: 0, version: 1 });
     // what a link carries is those fields and the panel's own: which options and layers are offered
     assert.deepEqual(Object.keys(G.storedRecipe(recipe({ genes: ['B', 'A'] }))).sort(), [...Object.keys(body), 'layers', 'offered'].sort());
     // the server's own field list: every field but the title is here
@@ -64,7 +64,7 @@ test('clip: a number above 0, null for none, anything else the default', () => {
 
 test('method, input, seed and version are taken from the config or defaulted', () => {
     assert.equal(recipe({ method: 'mean' }).method, 'mean');
-    assert.equal(G.definitionText(recipe({ method: 'mean', input: 'counts' })), 'Mean expression of counts');
+    assert.equal(G.definitionText(recipe({ method: 'mean', input: 'counts' })), 'Mean of counts');
     assert.equal(recipe({ method: 'control_adjusted', offered: ['control_adjusted'] }).method, 'control_adjusted');
     assert.equal(recipe({ method: 'control_adjusted' }).method, 'zscore_mean', 'the default method is one that is offered')
     assert.equal(recipe({ method: 'nonsense' }).method, 'zscore_mean');

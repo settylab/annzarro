@@ -30,7 +30,7 @@ import {
 } from '../utils/score-inspect.js';
 
 /** What each aggregation is called here. */
-const METHOD_LABELS = { mean: 'Mean expression' };
+const METHOD_LABELS = {};
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MARGIN = { left: 38, right: 6, top: 6, bottom: 20 };

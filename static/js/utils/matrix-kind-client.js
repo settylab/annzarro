@@ -58,11 +58,13 @@ export function createKindClient({ url, fetchImpl = (u, init) => csrfFetch(u, in
          * What `input` of `dataset` looks like; null when the server cannot say (the panel then stays quiet).
          * @param {string} dataset
          * @param {string} input
+         * @param {{suggest?: boolean}} [opts] - `suggest: false` skips looking at the other matrices for one to offer instead
          */
-        kind(dataset, input) {
-            const key = `${dataset}\u0001${input}`;
+        kind(dataset, input, { suggest = true } = {}) {
+            const key = `${dataset}\u0001${input}\u0001${suggest ? 1 : 0}`;
             if (!cache.has(key)) {
                 const query = new URLSearchParams({ dataset_path: dataset, input });
+                if (!suggest) query.set('suggest', '0');
                 cache.set(key, Promise.resolve(fetchImpl(`${url}?${query}`)).then(
                     (response) => (response.ok ? response.json() : null), () => null
                 ).then((reply) => {

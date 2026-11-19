@@ -78,14 +78,14 @@ test('a cell plot lists each signature\'s score after the columns, a gene plot d
     assert.deepEqual(scores.map(o => [o.value, o.label, o.selected]),
         [[`${SCORE_PREFIX}gene-signature-1:zscore_mean`, 'T cell score', false], [`${SCORE_PREFIX}gene-signature-1:mean`, 'T cell score · mean', false],
             [`${SCORE_PREFIX}gene-signature-1:sum`, 'T cell score · sum', false],
-            [`${SCORE_PREFIX}gene-signature-1:detected`, 'T cell score · detected', false],
-            [`${SCORE_PREFIX}gene-signature-1:fraction_of_total`, 'T cell score · fraction of total', false],
             [`${SCORE_PREFIX}gene-signature-1:control_adjusted`, 'T cell score · control-adjusted', false],
+            [`${SCORE_PREFIX}gene-signature-1:detected`, 'T cell score · fraction detected', false],
+            [`${SCORE_PREFIX}gene-signature-1:fraction_of_total`, 'T cell score · % of total', false],
             [`${SCORE_PREFIX}gene-signature-2:zscore_mean`, 'B cell score', true], [`${SCORE_PREFIX}gene-signature-2:mean`, 'B cell score · mean', false],
             [`${SCORE_PREFIX}gene-signature-2:sum`, 'B cell score · sum', false],
-            [`${SCORE_PREFIX}gene-signature-2:detected`, 'B cell score · detected', false],
-            [`${SCORE_PREFIX}gene-signature-2:fraction_of_total`, 'B cell score · fraction of total', false],
-            [`${SCORE_PREFIX}gene-signature-2:control_adjusted`, 'B cell score · control-adjusted', false]]);
+            [`${SCORE_PREFIX}gene-signature-2:control_adjusted`, 'B cell score · control-adjusted', false],
+            [`${SCORE_PREFIX}gene-signature-2:detected`, 'B cell score · fraction detected', false],
+            [`${SCORE_PREFIX}gene-signature-2:fraction_of_total`, 'B cell score · % of total', false]]);
     assert.equal(options('genes', structure, [], false, sigs).some(o => o.group), false);
     // picking one keeps the columns and the other kinds of entries, and the pick is a gene-score entry
     const picked = info('cells', ['Age', `${SCORE_PREFIX}gene-signature-1:mean`], [{ type: 'obs', key: '_index' }]);

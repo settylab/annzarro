@@ -25,8 +25,8 @@ export const SCORE_PREFIX = 'gene-score:';
 
 /** The aggregations a hover column can use, z-score mean first (the registry's list; this module has no imports). */
 export const SCORE_SUBS = Object.freeze([{ value: 'zscore_mean', label: 'z-score mean' }, { value: 'mean', label: 'mean' },
-  { value: 'sum', label: 'sum' }, { value: 'detected', label: 'detected' }, { value: 'fraction_of_total', label: 'fraction of total' },
-  { value: 'control_adjusted', label: 'control-adjusted' }]);
+  { value: 'sum', label: 'sum' }, { value: 'control_adjusted', label: 'control-adjusted' },
+  { value: 'detected', label: 'fraction detected' }, { value: 'fraction_of_total', label: '% of total' }]);
 
 /** The picker value of one score. */
 export const scoreValue = (id, sub) => `${SCORE_PREFIX}${id}:${sub}`;

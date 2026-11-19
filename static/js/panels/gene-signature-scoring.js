@@ -1,38 +1,44 @@
 /**
- * The Score options section of the Gene Signature panel: what the signature offers plots and tables, and how
- * each option is computed. A plot or table only picks from what is offered here (source gene-score, then this
- * signature, then the option); the model is utils/signature-options.js.
+ * The "Scores offered" section of the Gene Signature panel: what the signature offers plots and tables, and how each
+ * option is computed. A plot or table only picks from what is offered; the model is utils/signature-options.js.
  *
- * Collapsed, one row states what is offered ("Offered: z-score mean, mean, sum · layer X"). Open:
+ * Collapsed, one row states what is offered ("z-score mean, mean, sum · X"). Open, methods first, then layers:
  *
- *   Options   for each aggregation: [x] Offer, its one-line definition, its parameters when offered
- *               z-score mean   Clip z-scores at ± [10] (or off)
- *               control-adjusted   Bins [25]   Controls per bin [50]   Seed [0]
- *             and which options plots and tables use now
- *   Layers    for each matrix: [x] Offer, ( ) default; a warning where one looks like raw counts
+ *   [x] Z-score mean   Each gene scaled to mean 0 and SD 1, then averaged.        2 plots, 1 table
+ *         Clip at ± [10]  One rare gene can otherwise dominate the average.   Reset
+ *   [x] Mean           Average of the genes' values.
+ *         warning: On raw_counts this follows sequencing depth.
+ *   Layers  [x] X  scaled   [ ] logged_counts  log-normalised   Default layer [X v]
  *
- * Every setting is part of the recipe: it goes into the link, the panel set and the score's key. A number is
- * checked on Enter or on leaving the box: an invalid one keeps the last valid value and says what is expected.
- * Nothing here computes; the page applies an edit to plots and tables by the rules for recipe edits.
+ * A method's parameters show only while it is offered. Every setting is part of the recipe (link, panel set, score
+ * key). A number is checked on Enter or on leaving the box: an invalid one keeps the last valid value and says what is
+ * expected. Nothing here computes; the page applies an edit to plots and tables by the rules for recipe edits.
  *
  * `makeDom(document)` and the callbacks are injected, so the section touches no page state of its own.
  */
 import {
     BINS_RANGE, CONTROLS_RANGE, DEFAULT_BINS, DEFAULT_CLIP, DEFAULT_CONTROLS, DEFAULT_INPUT, DEFAULT_SEED, parseClipText,
-    parseSeedText, parseWholeText
+    parseSeedText, parseThresholdText, parseWholeText
 } from '../utils/gene-signature.js';
-import { DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, cleanLayers, cleanOffered, offeredSummary } from '../utils/signature-options.js';
+import {
+    DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, PARAM_DEFAULTS, cleanLayers, cleanOffered, gradeOption, isMethodDefault, kindWord,
+    methodShort, offeredSummary, offeredSummaryShort, useText
+} from '../utils/signature-options.js';
 
 /** The help texts, so the page and its tests say the same thing. */
 export const SCORING_HELP = Object.freeze({
-    where: 'Plots and tables pick from what is offered here: choose gene-score as the source, then this signature, then the option.',
+    where: 'Plots and tables pick from these. Nothing is computed until a plot or table shows it.',
     clip: 'One rare gene can otherwise dominate the average.',
     clipOff: 'Not clipped: one rare gene can dominate the average.',
-    needsOffer: 'Offer this option to set its parameters.',
+    detectAbove: 'A gene counts as detected in a cell when its value is above this.',
     seed: 'The same seed gives the same control genes, so the same score.',
-    layers: 'Plots and tables choose among the offered layers. The default is used where none is chosen.',
-    defaultLayer: 'The default layer is always offered.'
+    layers: 'Plots and tables choose among the offered layers. The default layer is used where none is chosen.',
+    defaultLayer: 'The default layer is always offered.',
+    lastMethod: 'At least one option stays offered.'
 });
+
+/** Layers listed before "Show more": the offered ones and this many others. */
+const LAYERS_SHOWN = 5;
 
 /**
  * @param {Object} options
@@ -41,44 +47,57 @@ export const SCORING_HELP = Object.freeze({
  * @param {() => Object} options.getRecipe - the signature's recipe now
  * @param {(patch: Object) => void} options.apply - make `patch` (keys of a recipe) part of the recipe
  * @param {() => Promise<string[]>} options.getInputs - the matrices a score can read, X first
- * @param {(input: string) => Promise<(Object|null)>} options.getKind - what a layer looks like (matrix-kind-client.js)
- * @param {() => Array<{value: string, count: number}>} [options.getInUse] - aggregations plots and tables use
- * @param {() => Array<{value: (string|null), count: number}>} [options.getLayersInUse] - layers plots and tables use
+ * @param {(input: string, opts?: Object) => Promise<(Object|null)>} options.getKind - what a layer looks like (matrix-kind-client.js)
+ * @param {() => Array<{value: string, plots: number, tables: number}>} [options.getInUse] - options plots and tables use
+ * @param {() => Array<{value: (string|null), plots: number, tables: number}>} [options.getLayersInUse] - layers they use
  * @param {(reply: Object) => (Object|null)} options.warningFor - the warning for one kind reply
+ * @param {() => void} [options.onKinds] - what a layer looks like became known: menus may change
  */
 export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKind, getInUse = () => [],
-    getLayersInUse = () => [], warningFor }) {
+    getLayersInUse = () => [], warningFor, onKinds = () => {} }) {
     const { el } = D;
     const sid = (x) => `gsig-scoring-${x}-${id}`;
-    const doc = () => element.ownerDocument;
     let open = false;
+    let showAllLayers = false;
     let inputs = [DEFAULT_INPUT];
     let lastClip = DEFAULT_CLIP;
     let destroyed = false;
+    let notice = null;                  // {text, undo: patch} after an option in use was switched off
+    let confirmReset = null;            // the sentence asking before a reset removes options in use
     const warnings = new Map();         // layer -> {kind, text, suggest}
+    const kinds = new Map();            // layer -> what it looks like
     const asked = new Map();            // layer -> token of the question in flight
 
     const toggle = el('button', { type: 'button', class: 'gsig-scoring__toggle', id: sid('toggle'),
-        aria: { expanded: 'false', controls: sid('body') }, on: { click: () => { open = !open; paint(); } } });
+        aria: { expanded: 'false', controls: sid('body') }, on: { click: () => { open = !open; if (open) askAllKinds(); paint(); } } });
     const caret = el('span', { class: 'gsig-scoring__caret', aria: { hidden: 'true' } }, '▸');
-    const label = el('span', { class: 'gsig-scoring__label', text: 'Score options' });
+    const label = el('span', { class: 'gsig-scoring__label', text: 'Scores offered' });
     const summary = el('span', { class: 'gsig-scoring__summary', id: sid('summary') });
     toggle.append(caret, ' ', label, ' ', summary);
 
     const where = el('div', { class: 'gsig-scoring__help', data: { aggregationsHelp: '' }, text: SCORING_HELP.where });
-    const optionRows = el('div', { class: 'gsig-scoring__options', role: 'group', aria: { label: 'Options offered' } });
-    const layerRows = el('div', { class: 'gsig-scoring__layers', role: 'group', aria: { label: 'Layers offered' } });
-    const layersHelp = el('div', { class: 'gsig-scoring__help', text: SCORING_HELP.layers });
+    const noticeLine = el('div', { class: 'gsig-scoring__notice', role: 'status', aria: { live: 'polite' }, hidden: true });
+    const methodSet = el('fieldset', { class: 'gsig-scoring__set' }, el('legend', { class: 'gsig-scoring__heading', text: 'Methods' }));
+    const methodRows = el('div', { class: 'gsig-scoring__options' });
+    methodSet.append(methodRows);
+    const layerSet = el('fieldset', { class: 'gsig-scoring__set' }, el('legend', { class: 'gsig-scoring__heading', text: 'Layers' }));
+    const layerRows = el('div', { class: 'gsig-scoring__layers' });
+    const defaultSelect = el('select', { class: 'form-select form-select-sm gsig-scoring__defaultselect', id: sid('default-layer'),
+        aria: { label: 'Default layer' }, on: { change: () => apply({ input: defaultSelect.value, layers: [...cleanLayers(getRecipe().layers, getRecipe().input), defaultSelect.value] }) } });
+    const defaultRow = el('div', { class: 'gsig-scoring__defaultrow', hidden: true },
+        el('label', { for: sid('default-layer'), text: 'Default layer' }), defaultSelect);
+    const moreLayers = el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', hidden: true,
+        on: { click: () => { showAllLayers = !showAllLayers; paint(); } } });
+    layerSet.append(layerRows, moreLayers, defaultRow, el('div', { class: 'gsig-scoring__help', text: SCORING_HELP.layers }));
+    const resetNote = el('div', { class: 'gsig-scoring__notice', role: 'status', hidden: true });
     const reset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-scoring__reset',
-        on: { click: resetAll } }, 'Reset to defaults');
+        on: { click: () => resetAll(false) } }, 'Reset to defaults');
     const body = el('div', { class: 'gsig-scoring__body', id: sid('body'), hidden: true },
-        where,
-        el('div', { class: 'gsig-scoring__heading', text: 'Options' }), optionRows,
-        el('div', { class: 'gsig-scoring__heading', text: 'Layers' }), layerRows, layersHelp,
-        el('div', { class: 'gsig-scoring__actions' }, reset));
+        where, noticeLine, methodSet, layerSet, resetNote, el('div', { class: 'gsig-scoring__actions' }, reset));
     // the warning for the default layer, in the status zone: seen with the section collapsed
     const warningLine = el('div', { class: 'gsig-inputwarn', role: 'status', hidden: true, data: { inputWarning: 'status' } });
-    const element = el('section', { class: 'gsig-scoring', aria: { label: 'Score options' } }, toggle, body);
+    const element = el('section', { class: 'gsig-scoring', aria: { label: 'Scores offered' } }, toggle, body);
+    const doc = () => element.ownerDocument;
 
     // ------------------------------------------------------------ numbers
 
@@ -89,8 +108,10 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
             aria: { label: name, describedby: sid(`${key}-error`) } });
         if (width) input.style.width = width;
         const error = el('div', { class: 'gsig-scoring__error', id: sid(`${key}-error`), role: 'alert', hidden: true });
-        const show = (message) => { error.hidden = !message; error.textContent = message || ''; input.classList.toggle('is-invalid', !!message); };
+        const show = (message) => { error.hidden = !message; error.textContent = message || ''; input.classList.toggle('is-invalid', !!message);
+            input.setAttribute('aria-invalid', String(!!message)); };
         input.addEventListener('input', () => { const p = parse(input.value); show(p.ok ? '' : p.error); });
+        input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { input.value = String(read(getRecipe())); show(''); } });
         input.addEventListener('change', () => {
             const p = parse(input.value);
             if (!p.ok) {
@@ -100,90 +121,161 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
             }
             show('');
             if (read(getRecipe()) !== p.value) apply(write(p.value));
-            paint();
+            paint(true);
         });
         return { input, error, show, read };
     }
 
-    const clipBox = el('input', { type: 'checkbox', class: 'gsig-scoring__clipbox', id: sid('clipbox'),
-        aria: { label: 'Clip z-scores' }, on: { change: () => apply({ clip: clipBox.checked ? lastClip : null }) } });
-    const clip = numberBox({ key: 'clip', name: 'Clip z-scores at plus and minus this value', parse: parseClipText,
-        read: (r) => (r.clip === null ? lastClip : r.clip), write: (v) => { lastClip = v; return { clip: v }; }, width: '5.5rem' });
-    const bins = numberBox({ key: 'bins', name: 'Number of gene bins', parse: (t) => parseWholeText(t, BINS_RANGE),
-        read: (r) => r.bins, write: (v) => ({ bins: v }), width: '4.5rem' });
-    const controls = numberBox({ key: 'controls', name: 'Control genes per bin', parse: (t) => parseWholeText(t, CONTROLS_RANGE),
-        read: (r) => r.controls, write: (v) => ({ controls: v }), width: '4.5rem' });
-    const seed = numberBox({ key: 'seed', name: 'Seed of the control genes', parse: parseSeedText,
-        read: (r) => (r.seed === null ? DEFAULT_SEED : r.seed), write: (v) => ({ seed: v }), width: '6rem' });
+    // The boxes are made afresh each time the rows are painted: a box that is typed in is never moved or removed
+    // while it holds the focus (that would fire its blur in the middle of the removal).
+    let boxes = {};
 
+    function makeBoxes() {
+        const clipBox = el('input', { type: 'checkbox', class: 'gsig-scoring__clipbox', id: sid('clipbox'),
+            aria: { label: 'Clip z-scores' }, on: { change: () => apply({ clip: clipBox.checked ? lastClip : null }) } });
+        boxes = {
+            clipBox,
+            clip: numberBox({ key: 'clip', name: 'Clip z-scores at plus and minus this value', parse: parseClipText,
+                read: (r) => (r.clip === null ? lastClip : r.clip), write: (v) => { lastClip = v; return { clip: v }; }, width: '5rem' }),
+            bins: numberBox({ key: 'bins', name: 'Number of gene bins', parse: (t) => parseWholeText(t, BINS_RANGE),
+                read: (r) => r.bins, write: (v) => ({ bins: v }), width: '4rem' }),
+            controls: numberBox({ key: 'controls', name: 'Control genes per bin', parse: (t) => parseWholeText(t, CONTROLS_RANGE),
+                read: (r) => r.controls, write: (v) => ({ controls: v }), width: '4.5rem' }),
+            seed: numberBox({ key: 'seed', name: 'Seed of the control genes', parse: parseSeedText,
+                read: (r) => (r.seed === null ? DEFAULT_SEED : r.seed), write: (v) => ({ seed: v }), width: '5.5rem' }),
+            detect: numberBox({ key: 'detect', name: 'A gene counts as detected above this value', parse: parseThresholdText,
+                read: (r) => r.detect_above, write: (v) => ({ detect_above: v }), width: '5rem' })
+        };
+    }
+
+    const field = (text, control, forId) => el('span', { class: 'gsig-scoring__field' }, el('label', { for: forId, text }), control);
     const params = {
         zscore_mean: () => el('div', { class: 'gsig-scoring__params' },
-            clipBox, el('label', { for: sid('clipbox'), text: 'Clip z-scores at ±' }), clip.input, clip.error,
-            el('div', { class: 'gsig-scoring__help', data: { clipHelp: '' } })),
+            el('span', { class: 'gsig-scoring__field' }, boxes.clipBox, el('label', { for: sid('clipbox'), text: 'Clip at ±' }), boxes.clip.input),
+            el('span', { class: 'gsig-scoring__help', data: { clipHelp: '' } }), boxes.clip.error),
         control_adjusted: () => el('div', { class: 'gsig-scoring__params' },
-            el('label', { for: sid('bins'), text: 'Bins' }), bins.input,
-            el('label', { for: sid('controls'), text: 'Controls per bin' }), controls.input,
-            el('label', { for: sid('seed'), text: 'Seed' }), seed.input, bins.error, controls.error, seed.error,
-            el('div', { class: 'gsig-scoring__help', text: SCORING_HELP.seed }))
+            field('Bins', boxes.bins.input, sid('bins')), field('Controls per bin', boxes.controls.input, sid('controls')),
+            field('Seed', boxes.seed.input, sid('seed')), boxes.bins.error, boxes.controls.error, boxes.seed.error,
+            el('span', { class: 'gsig-scoring__help', text: SCORING_HELP.seed })),
+        detected: () => el('div', { class: 'gsig-scoring__params' },
+            field('Detected above', boxes.detect.input, sid('detect')), boxes.detect.error,
+            el('span', { class: 'gsig-scoring__help', text: SCORING_HELP.detectAbove }))
     };
 
     // ------------------------------------------------------------ edits
 
+    const usesOf = (list, value) => {
+        const u = list.find(x => x.value === value);
+        return u ? { plots: u.plots || 0, tables: u.tables || 0 } : { plots: 0, tables: 0 };
+    };
+
+    /** "1 plot keeps it and says so." / "2 plots, 1 table keep it and say so." */
+    const keepsText = (used) => (/^1 [a-z]+$/.test(used) ? `${used} keeps it and says so.` : `${used} keep it and say so.`);
+
     function toggleMethod(method, on) {
         const recipe = getRecipe();
-        const next = new Set(cleanOffered(recipe.offered, recipe.method));
+        const before = { offered: cleanOffered(recipe.offered, recipe.method), method: recipe.method };
+        const next = new Set(before.offered);
         if (on) next.add(method); else next.delete(method);
-        apply({ offered: [...next], ...(on ? {} : (recipe.method === method ? { method: cleanOffered([...next])[0] } : {})) });
+        const nextList = cleanOffered([...next], recipe.method);
+        apply({ offered: nextList, ...(on || recipe.method !== method ? {} : { method: nextList[0] }) });
+        const used = useText(usesOf(getInUse(), method));
+        notice = !on && used ? { text: `${methodShort(method)} is no longer offered. ${keepsText(used)}`, undo: before } : null;
+        paint();
     }
 
     function toggleLayer(layer, on) {
         const recipe = getRecipe();
-        const next = new Set(cleanLayers(recipe.layers, recipe.input));
+        const before = { layers: cleanLayers(recipe.layers, recipe.input) };
+        const next = new Set(before.layers);
         if (on) next.add(layer); else next.delete(layer);
         apply({ layers: [...next] });
         if (on) askKind(layer);
+        const used = useText(usesOf(getLayersInUse(), layer));
+        notice = !on && used ? { text: `${layer} is no longer offered. ${keepsText(used)}`, undo: before } : null;
+        paint();
     }
 
-    function resetAll() {
+    function resetMethod(method) {
+        const patch = { ...PARAM_DEFAULTS[method] };
+        if (method === 'zscore_mean') lastClip = DEFAULT_CLIP;
+        apply(patch);
+    }
+
+    function resetAll(confirmed) {
+        const recipe = getRecipe();
+        const keep = new Set(cleanOffered(DEFAULT_OFFERED, DEFAULT_METHOD));
+        const removed = cleanOffered(recipe.offered, recipe.method).filter(m => !keep.has(m)).concat(
+            cleanLayers(recipe.layers, recipe.input).filter(l => l !== DEFAULT_INPUT));
+        const inUse = getInUse().filter(u => removed.includes(u.value)).reduce((n, u) => n + u.plots + u.tables, 0)
+            + getLayersInUse().filter(u => u.value && removed.includes(u.value)).reduce((n, u) => n + u.plots + u.tables, 0);
+        if (inUse && !confirmed) {
+            confirmReset = inUse === 1 ? '1 plot or table uses an option this removes.' : `${inUse} plots and tables use options this removes.`;
+            paint();
+            return;
+        }
+        confirmReset = null;
+        notice = null;
         lastClip = DEFAULT_CLIP;
-        apply({ input: DEFAULT_INPUT, clip: DEFAULT_CLIP, seed: null, bins: DEFAULT_BINS, controls: DEFAULT_CONTROLS,
+        apply({ input: DEFAULT_INPUT, clip: DEFAULT_CLIP, seed: null, bins: DEFAULT_BINS, controls: DEFAULT_CONTROLS, detect_above: 0,
             method: DEFAULT_METHOD, offered: [...DEFAULT_OFFERED], layers: [DEFAULT_INPUT] });
+        paint();
     }
 
     function isDefault(recipe) {
         return recipe.input === DEFAULT_INPUT && recipe.clip === DEFAULT_CLIP && (recipe.seed === null || recipe.seed === DEFAULT_SEED)
-            && recipe.bins === DEFAULT_BINS && recipe.controls === DEFAULT_CONTROLS && recipe.method === DEFAULT_METHOD
+            && recipe.bins === DEFAULT_BINS && recipe.controls === DEFAULT_CONTROLS && recipe.detect_above === 0
+            && recipe.method === DEFAULT_METHOD
             && cleanOffered(recipe.offered, recipe.method).join() === DEFAULT_OFFERED.join()
             && cleanLayers(recipe.layers, recipe.input).join() === DEFAULT_INPUT;
     }
 
     // ------------------------------------------------------------ painting
 
-    function paintOptions(recipe) {
-        D.clear(optionRows);
+    /** The sentences that grade one method on the offered layers: said once, here, never in a plot. */
+    function gradeLines(method, layers) {
+        const lines = [];
+        for (const layer of layers) {
+            const g = gradeOption(method, layer, kinds.get(layer));
+            if (g.grade !== 'ok') lines.push({ grade: g.grade, text: g.reason, layer });
+        }
+        return lines;
+    }
+
+    function paintMethods(recipe) {
+        makeBoxes();
+        D.clear(methodRows);
         const offered = new Set(cleanOffered(recipe.offered, recipe.method));
-        const used = new Map(getInUse().map(u => [u.value, u.count]));
+        const layers = cleanLayers(recipe.layers, recipe.input);
+        const used = getInUse();
         for (const info of METHOD_INFO) {
             const on = offered.has(info.value);
+            const last = on && offered.size === 1;
             const box = el('input', { type: 'checkbox', class: 'gsig-scoring__offer', id: sid(`offer-${info.value}`), checked: on,
-                data: { offerMethod: info.value }, disabled: on && offered.size === 1,
-                title: on && offered.size === 1 ? 'At least one option stays offered.' : '',
+                data: { offerMethod: info.value }, disabled: last, title: last ? SCORING_HELP.lastMethod : '',
                 on: { change: () => toggleMethod(info.value, box.checked) } });
-            const count = used.get(info.value) || 0;
+            const use = useText(usesOf(used, info.value));
+            const head = el('div', { class: 'gsig-scoring__optionhead' }, box,
+                el('label', { for: sid(`offer-${info.value}`), class: 'gsig-scoring__optionname', text: info.label }),
+                on && recipe.method === info.value ? el('span', { class: 'gsig-scoring__tag', text: 'default' }) : null,
+                use ? el('span', { class: 'gsig-scoring__use', data: { inUse: info.value }, text: use }) : null);
             const row = el('div', { class: `gsig-scoring__option${on ? '' : ' is-off'}`, data: { method: info.value } },
-                el('div', { class: 'gsig-scoring__optionhead' }, box,
-                    el('label', { for: sid(`offer-${info.value}`), class: 'gsig-scoring__optionname', text: info.label }),
-                    on && recipe.method === info.value ? el('span', { class: 'gsig-scoring__tag', text: 'default' }) : null,
-                    count ? el('span', { class: 'gsig-scoring__tag gsig-scoring__tag--use', data: { inUse: info.value },
-                        text: `used by ${count}` }) : null),
-                el('div', { class: 'gsig-scoring__help', text: info.definition }));
-            if (params[info.value]) {
+                head, el('div', { class: 'gsig-scoring__definition', text: info.definition }));
+            if (on && params[info.value]) {
                 const block = params[info.value]();
-                for (const control of block.querySelectorAll('input')) control.disabled = !on;
-                if (!on) block.append(el('div', { class: 'gsig-scoring__help', data: { needsOffer: '' }, text: SCORING_HELP.needsOffer }));
+                if (!isMethodDefault(recipe, info.value)) {
+                    block.append(el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link gsig-scoring__resetmethod',
+                        data: { resetMethod: info.value }, on: { click: () => resetMethod(info.value) } }, 'Reset'));
+                }
                 row.append(block);
             }
-            optionRows.append(row);
+            if (on) {
+                for (const line of gradeLines(info.value, layers)) {
+                    row.append(el('div', { class: `gsig-scoring__grade gsig-scoring__grade--${line.grade}`, role: 'status',
+                        data: { grade: line.grade, gradeLayer: line.layer } }, el('span', { 'aria-hidden': 'true', text: '⚠ ' }), line.text));
+                }
+            }
+            methodRows.append(row);
         }
     }
 
@@ -191,28 +283,47 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         D.clear(layerRows);
         const layers = new Set(cleanLayers(recipe.layers, recipe.input));
         const names = [...new Set([...inputs, ...layers])];
-        const used = new Map(getLayersInUse().map(u => [u.value === null ? recipe.input : u.value, u.count]));
+        // the offered layers and the first few others; the rest behind "Show more"
+        const shown = [];
+        let others = 0;
         for (const name of names) {
+            if (layers.has(name) || showAllLayers || others < LAYERS_SHOWN) { shown.push(name); if (!layers.has(name)) others++; }
+        }
+        const hidden = names.length - shown.length;
+        moreLayers.hidden = !hidden && !showAllLayers;
+        moreLayers.textContent = showAllLayers ? 'Show fewer layers' : `Show ${hidden} more layer${hidden === 1 ? '' : 's'}`;
+        const used = getLayersInUse();
+        for (const name of shown) {
             const isDefaultLayer = name === recipe.input;
             const known = inputs.includes(name);
             const box = el('input', { type: 'checkbox', class: 'gsig-scoring__offer', id: sid(`layer-offer-${name}`),
                 checked: layers.has(name), disabled: isDefaultLayer, data: { layerOffer: name },
                 title: isDefaultLayer ? SCORING_HELP.defaultLayer : '', on: { change: () => toggleLayer(name, box.checked) } });
-            const radio = el('input', { type: 'radio', name: sid('default-layer'), class: 'gsig-scoring__defaultlayer',
-                id: sid(`layer-default-${name}`), checked: isDefaultLayer, data: { layerDefault: name },
-                aria: { label: `Default layer ${name}` }, on: { change: () => { if (radio.checked) apply({ input: name, layers: [...layers, name] }); if (radio.checked) askKind(name); } } });
+            const word = kindWord(kinds.get(name));
+            const use = useText(usesOf(used.map(u => ({ ...u, value: u.value === null ? recipe.input : u.value })), name));
             const warning = warnings.get(name);
-            const count = used.get(name) || 0;
             layerRows.append(el('div', { class: 'gsig-scoring__layer', data: { layer: name } },
                 el('div', { class: 'gsig-scoring__optionhead' }, box,
                     el('label', { for: sid(`layer-offer-${name}`), class: 'gsig-scoring__optionname', text: known ? name : `${name} (not in this dataset)` }),
-                    el('label', { class: 'gsig-scoring__default', for: sid(`layer-default-${name}`) }, radio, ' default'),
-                    count ? el('span', { class: 'gsig-scoring__tag gsig-scoring__tag--use', text: `used by ${count}` }) : null),
+                    word ? el('span', { class: 'gsig-scoring__kind', data: { kind: kinds.get(name) }, text: word }) : null,
+                    use ? el('span', { class: 'gsig-scoring__use', text: use }) : null),
                 warning ? el('div', { class: 'gsig-inputwarn', role: 'status', data: { inputWarning: 'layer', layer: name } },
-                    warning.text, warning.suggest ? [' ', el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link',
-                        data: { useInput: warning.suggest }, on: { click: () => { apply({ input: warning.suggest, layers: [...layers, warning.suggest] }); askKind(warning.suggest); } } },
-                        `Use ${warning.suggest}`)] : null) : null));
+                    el('span', { 'aria-hidden': 'true', text: '⚠ ' }), warning.text,
+                    warning.suggest ? [' ', el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link',
+                        data: { useInput: warning.suggest }, on: { click: () => makeDefault(warning.suggest) } },
+                    `Make ${warning.suggest} the default`)] : null) : null));
         }
+        const offeredNames = names.filter(n => layers.has(n));
+        defaultRow.hidden = offeredNames.length < 2;
+        D.clear(defaultSelect);
+        for (const name of offeredNames) defaultSelect.append(el('option', { value: name, selected: name === recipe.input, text: name }));
+        defaultSelect.value = recipe.input;
+    }
+
+    function makeDefault(layer) {
+        const recipe = getRecipe();
+        apply({ input: layer, layers: [...cleanLayers(recipe.layers, recipe.input), layer] });
+        askKind(layer);
     }
 
     function paintWarning(recipe) {
@@ -224,8 +335,23 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         warningLine.append(el('span', { text: warning.text }));
         if (warning.suggest) {
             warningLine.append(' ', el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { useInput: warning.suggest },
-                on: { click: () => { apply({ input: warning.suggest, layers: [...cleanLayers(recipe.layers, recipe.input), warning.suggest] }); askKind(warning.suggest); } } },
-            `Use ${warning.suggest}`));
+                on: { click: () => makeDefault(warning.suggest) } }, `Make ${warning.suggest} the default`));
+        }
+    }
+
+    function paintNotice() {
+        D.clear(noticeLine);
+        noticeLine.hidden = !notice;
+        if (notice) {
+            noticeLine.append(notice.text, ' ', el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { undo: '' },
+                on: { click: () => { const undo = notice.undo; notice = null; apply(undo); paint(); } } }, 'Undo'));
+        }
+        D.clear(resetNote);
+        resetNote.hidden = !confirmReset;
+        if (confirmReset) {
+            resetNote.append(confirmReset, ' ',
+                el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { resetAnyway: '' }, on: { click: () => resetAll(true) } }, 'Reset anyway'), ' ',
+                el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', on: { click: () => { confirmReset = null; paint(); } } }, 'Cancel'));
         }
     }
 
@@ -233,33 +359,40 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     function paintParams(recipe) {
         const clipOn = recipe.clip !== null;
         if (clipOn) lastClip = recipe.clip;
-        const offered = cleanOffered(recipe.offered, recipe.method);
         const focused = doc().activeElement;
-        const set = (box, value) => { if (focused !== box.input && box.input.isConnected) box.input.value = String(value); };
-        set(clip, clipOn ? recipe.clip : lastClip);
-        set(bins, recipe.bins);
-        set(controls, recipe.controls);
-        set(seed, recipe.seed === null ? DEFAULT_SEED : recipe.seed);
-        clipBox.checked = clipOn;
-        clip.input.disabled = !clipOn || !offered.includes('zscore_mean');
-        clipBox.disabled = !offered.includes('zscore_mean');
+        const set = (box, value) => { if (focused !== box.input) box.input.value = String(value); };
+        set(boxes.clip, clipOn ? recipe.clip : lastClip);
+        set(boxes.bins, recipe.bins);
+        set(boxes.controls, recipe.controls);
+        set(boxes.seed, recipe.seed === null ? DEFAULT_SEED : recipe.seed);
+        set(boxes.detect, recipe.detect_above);
+        boxes.clipBox.checked = clipOn;
+        boxes.clip.input.disabled = !clipOn;
         const help = element.querySelector('[data-clip-help]');
-        if (help) {
-            help.textContent = !offered.includes('zscore_mean') ? '' : clipOn ? SCORING_HELP.clip : SCORING_HELP.clipOff;
-        }
+        if (help) help.textContent = clipOn ? SCORING_HELP.clip : SCORING_HELP.clipOff;
     }
 
-    function paint() {
+    function paint(force = false) {
         if (destroyed) return;
         const recipe = getRecipe();
-        summary.textContent = offeredSummary(recipe);
+        const full = offeredSummary(recipe);
+        summary.textContent = full;
+        summary.title = full;
+        toggle.setAttribute('aria-label', `Scores offered: ${full}`);
         toggle.setAttribute('aria-expanded', String(open));
+        toggle.dataset.short = offeredSummaryShort(recipe);
         caret.textContent = open ? '▾' : '▸';
         body.hidden = !open;
-        if (open || optionRows.childNodes.length === 0) {
-            paintOptions(recipe);
+        const typing = doc().activeElement && doc().activeElement.dataset && doc().activeElement.dataset.param
+            && body.contains(doc().activeElement);
+        if ((open || methodRows.childNodes.length === 0) && !(typing && !force)) {
+            // the box being used keeps the focus across the repaint
+            const keep = typing ? doc().activeElement.dataset.param : null;
+            paintMethods(recipe);
             paintLayers(recipe);
             paintParams(recipe);
+            paintNotice();
+            if (keep) { const again = element.querySelector(`[data-param="${keep}"]`); if (again) again.focus(); }
         }
         reset.disabled = isDefault(recipe);
         paintWarning(recipe);
@@ -267,19 +400,28 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
 
     // ------------------------------------------------------------ what the layers look like
 
-    async function askKind(layer) {
+    async function askKind(layer, { suggest = true } = {}) {
         const mine = (asked.get(layer) || 0) + 1;
         asked.set(layer, mine);
         let reply;
         try {
-            reply = await getKind(layer);
+            reply = await getKind(layer, { suggest });
         } catch {
             reply = null;
         }
         if (destroyed || asked.get(layer) !== mine) return;
+        const before = kinds.get(layer);
+        if (reply && reply.kind) kinds.set(layer, reply.kind);
         const warning = reply && warningFor ? warningFor(reply) : null;
         if (warning) warnings.set(layer, warning); else warnings.delete(layer);
         paint();
+        if (reply && reply.kind && before !== reply.kind) onKinds();
+    }
+
+    /** What every listed layer looks like (one sample each, no look at the others): for the kind word and the grades. */
+    function askAllKinds() {
+        const offered = new Set(cleanLayers(getRecipe().layers, getRecipe().input));
+        for (const name of inputs) if (!offered.has(name) && !kinds.has(name)) askKind(name, { suggest: false });
     }
 
     async function refreshInputs() {
@@ -296,20 +438,20 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     /** Ask what the default layer and every offered layer look like (answers are kept per dataset and layer). */
     function refreshKind() {
         const recipe = getRecipe();
-        const layers = cleanLayers(recipe.layers, recipe.input);
         warnings.clear();
-        return Promise.all(layers.map(askKind));
+        return Promise.all(cleanLayers(recipe.layers, recipe.input).map(l => askKind(l)));
     }
 
     return {
         element,
         warning: warningLine,
         paint,
-        paintAggregations: () => { if (!destroyed && open) { const r = getRecipe(); paintOptions(r); paintLayers(r); paintParams(r); } },
+        paintAggregations: () => { if (!destroyed && open) paint(); },
         refreshInputs,
         refreshKind,
+        getKinds: () => Object.fromEntries(kinds),
         destroy() { destroyed = true; },
         /** For tests. */
-        state: () => ({ open, inputs: [...inputs], warnings: [...warnings.keys()], lastClip })
+        state: () => ({ open, inputs: [...inputs], warnings: [...warnings.keys()], kinds: Object.fromEntries(kinds), lastClip })
     };
 }

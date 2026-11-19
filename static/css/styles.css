@@ -1488,28 +1488,43 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-summary { font-weight: 600; }
 .gsig-definition, .gsig-usedby { color: var(--az-muted); font-size: 0.75rem; }
 
-/* Scoring: the settings a signature shares with every score made from it */
+/* Scores offered: what the signature offers plots and tables, and how each option is computed */
 .gsig-scoring { border-top: 1px solid var(--az-border); margin-top: 2px; padding-top: 2px; }
 .gsig-scoring__toggle { display: flex; align-items: baseline; gap: 4px; width: 100%; border: 0; background: none;
     padding: 2px 0; text-align: left; color: inherit; font-size: 0.8125rem; }
 .gsig-scoring__toggle:focus-visible { outline: 2px solid var(--az-link); outline-offset: 1px; }
-.gsig-scoring__label { font-weight: 600; }
+.gsig-scoring__label { font-weight: 600; flex: 0 0 auto; }
 .gsig-scoring__summary { color: var(--az-muted); font-size: 0.75rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gsig-scoring__body { padding: 4px 0 2px; display: flex; flex-direction: column; gap: 6px; }
+.gsig-scoring__body { padding: 4px 0 2px; display: flex; flex-direction: column; gap: 6px; font-size: 0.8125rem; }
 .gsig-scoring__body[hidden] { display: none; }
-.gsig-scoring__row { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); gap: 2px 8px; align-items: start; font-size: 0.8125rem; }
-.gsig-scoring__name { margin: 0; padding-top: 3px; font-weight: 600; }
-.gsig-scoring__field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.gsig-scoring__inline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.gsig-scoring__inline label { margin: 0; }
-.gsig-scoring__number { width: 6rem; }
+.gsig-scoring__set { border: 0; margin: 0; padding: 0; min-width: 0; }
+.gsig-scoring__heading { float: none; width: auto; margin: 4px 0 2px; padding: 0; font-size: 0.8125rem; font-weight: 600; }
+.gsig-scoring__option, .gsig-scoring__layer { padding: 3px 0; display: flex; flex-direction: column; gap: 2px; }
+.gsig-scoring__option + .gsig-scoring__option, .gsig-scoring__layer + .gsig-scoring__layer { border-top: 1px solid var(--az-border); }
+.gsig-scoring__optionhead { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.gsig-scoring__optionhead input[type="checkbox"] { margin: 0; flex: 0 0 auto; }
+.gsig-scoring__optionname { margin: 0; font-weight: 600; }
+.gsig-scoring__option.is-off .gsig-scoring__optionname { font-weight: 400; }
+.gsig-scoring__tag, .gsig-scoring__kind { font-size: 0.6875rem; line-height: 1.4; padding: 0 6px; border-radius: 999px;
+    border: 1px solid var(--az-border-strong); color: var(--az-muted); white-space: nowrap; }
+.gsig-scoring__use { margin-left: auto; font-size: 0.75rem; color: var(--az-muted); white-space: nowrap; }
+.gsig-scoring__definition, .gsig-scoring__help { color: var(--az-muted); font-size: 0.75rem; }
+.gsig-scoring__definition { padding-left: 1.5rem; }
+.gsig-scoring__params { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 2px 0 2px 1.5rem; }
+.gsig-scoring__field { display: inline-flex; align-items: center; gap: 4px; }
+.gsig-scoring__field label, .gsig-scoring__params label { margin: 0; }
+.gsig-scoring__params .form-control-sm { padding-top: 1px; padding-bottom: 1px; }
 .gsig-scoring__number.is-invalid { border-color: var(--az-danger-text); }
-.gsig-scoring__aggs { margin: 0; padding-left: 1.1rem; font-size: 0.75rem; }
-.gsig-scoring__help { color: var(--az-muted); font-size: 0.75rem; }
-.gsig-scoring__error { color: var(--az-danger-text); font-size: 0.75rem; }
-.gsig-scoring__error[hidden], .gsig-inputwarn[hidden] { display: none; }
+.gsig-scoring__error { flex-basis: 100%; color: var(--az-danger-text); font-size: 0.75rem; }
+.gsig-scoring__error[hidden], .gsig-inputwarn[hidden], .gsig-scoring__notice[hidden] { display: none; }
+.gsig-scoring__grade, .gsig-inputwarn { color: var(--az-warn-text); font-size: 0.75rem; padding-left: 1.5rem; }
+.gsig-scoring__notice { font-size: 0.75rem; padding: 3px 6px; border-left: 3px solid var(--az-border-strong); background: var(--az-surface-3); }
+.gsig-scoring__defaultrow { display: flex; align-items: center; gap: 8px; padding: 4px 0 0 0; }
+.gsig-scoring__defaultrow label { margin: 0; font-weight: 600; }
+.gsig-scoring__defaultselect { width: auto; max-width: 100%; }
 .gsig-scoring__actions { display: flex; justify-content: flex-end; }
-.gsig-inputwarn { color: var(--az-warn-text); font-size: 0.75rem; }
+.gsig-inputwarn { padding-left: 0; }
+.gsig-scoring__layer .gsig-inputwarn { padding-left: 1.5rem; }
 .gsig-menu-wrap { position: relative; }
 /* Add from: a fixed popover under body, above every panel (placed by the panel from its button) */
 .gsig-menu { position: fixed; right: auto; z-index: 3000; overflow-y: auto; max-width: calc(100vw - 8px); }
