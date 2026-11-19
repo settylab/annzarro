@@ -258,6 +258,7 @@ export function pickGeneColumn(rows, headerRow, score) {
  * @param {'auto'|'list'|'table'|'gmt'|'grp'} [o.readAs]
  * @param {'auto'|boolean} [o.header] table: first row is names
  * @param {number|null} [o.column] table: gene column (null = pick)
+ * @param {number|null} [o.signColumn] table: a column whose sign says up (positive) or down (negative); null for none
  * @param {number} [o.setIndex] gmt: which set
  * @param {(values: string[]) => number} [o.score] table: dataset matches in a column
  * @returns {{format: string, detected: string, names: string[], empty: boolean, table?: Object, sets?: Object[], setIndex?: number}}
@@ -288,7 +289,18 @@ export function parseGeneInput(text, o = {}) {
         ? o.column : pickGeneColumn(rows, headerRow, o.score);
     const columns = Array.from({ length: width }, (_, i) => (headerRow && headerRow[i]) || `Column ${i + 1}`);
     const names = rows.map(r => cleanName(r[column] || '')).filter(Boolean);
-    return { ...base, names, table: { delimiter, header, columns, column, sample: all.slice(0, header ? 6 : 5) } };
+    // the sign of the first row that names each gene (NaN: not a number or zero), for a table that has a sign column
+    let signs = null;
+    if (Number.isInteger(o.signColumn) && o.signColumn >= 0 && o.signColumn < width && o.signColumn !== column) {
+        signs = new Map();
+        for (const r of rows) {
+            const name = cleanName(r[column] || '');
+            if (!name || signs.has(name)) continue;
+            const v = Number(String(r[o.signColumn] == null ? '' : r[o.signColumn]).trim());
+            signs.set(name, Number.isFinite(v) && v !== 0 ? Math.sign(v) : NaN);
+        }
+    }
+    return { ...base, names, signs, table: { delimiter, header, columns, column, sample: all.slice(0, header ? 6 : 5) } };
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +347,7 @@ export function matchGenes(names, o) {
     const current = new Set(o.currentGenes || []);
     const idToName = o.idToName || null;
     const seen = new Set(), resolved = new Set();
+    const inputOf = new Map(), alreadyNames = [];
     const toAdd = [], caseMatches = [], idMatches = [], unmatched = [], ambiguous = [];
     let duplicates = 0, alreadySelected = 0, exactCount = 0, total = 0;
     for (const raw of names) {
@@ -365,10 +378,11 @@ export function matchGenes(names, o) {
         if (kind === 'case') caseMatches.push({ input: name, gene });
         else if (kind === 'id') idMatches.push({ input: name, gene });
         else exactCount++;
-        if (current.has(gene)) alreadySelected++; else toAdd.push(gene);
+        inputOf.set(gene, name);
+        if (current.has(gene)) { alreadySelected++; alreadyNames.push(gene); } else toAdd.push(gene);
     }
     const result = {
-        total, toAdd, alreadySelected, duplicates, exactCount, caseMatches, idMatches, unmatched, ambiguous,
+        total, toAdd, alreadyNames, inputOf, alreadySelected, duplicates, exactCount, caseMatches, idMatches, unmatched, ambiguous,
         matched: toAdd.length + alreadySelected, warnings: []
     };
     result.warnings = mismatchWarnings(result, o);

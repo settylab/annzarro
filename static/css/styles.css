@@ -1557,10 +1557,10 @@ button.dtsb-button.dtsb-clear:hover {
 }
 .gsig-listbar__actions { display: flex; gap: 4px; }
 .gsig-viewswitch { display: inline-flex; border: 1px solid var(--az-border-strong); border-radius: 4px; overflow: hidden; }
-.gsig-seg { border: 0; background: var(--az-surface); padding: 2px 10px; font-size: 0.8125rem; color: inherit; }
-.gsig-seg + .gsig-seg { border-left: 1px solid var(--az-border-strong); }
-.gsig-seg.active { background: var(--az-muted); color: var(--az-surface); }
-.gsig-seg:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
+.gsig-seg, .gsig-segopt { border: 0; background: var(--az-surface); padding: 2px 10px; font-size: 0.8125rem; color: inherit; }
+.gsig-seg + .gsig-seg, .gsig-segopt + .gsig-segopt { border-left: 1px solid var(--az-border-strong); }
+.gsig-seg.active, .gsig-segopt.active { background: var(--az-muted); color: var(--az-surface); }
+.gsig-seg:focus-visible, .gsig-segopt:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
 .gsig-message { padding: 0 8px 4px; color: var(--az-muted); font-size: 0.75rem; }
 .gsig-message:empty { display: none; }
 .gsig-empty { padding: 8px; color: var(--az-muted); }
@@ -1589,7 +1589,7 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-dir:focus-visible { outline: 2px solid var(--az-link); outline-offset: 1px; }
 .gsig-dir--down { background: var(--az-surface-3); font-weight: 600; }
 .gsig-addas-wrap { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 0.8125rem; }
-.gsig-addas { width: auto; }
+.gsig-addas { display: inline-flex; border: 1px solid var(--az-border-strong); border-radius: 4px; overflow: hidden; }
 .gsig-dirbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 0 8px 4px; }
 .gsig-dirbar__filter { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 0.8125rem; }
 .gsig-dirbar .form-select { width: auto; }

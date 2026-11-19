@@ -31,6 +31,7 @@ const plural = (n, one, many) => `${fmt(n)} ${n === 1 ? one : many}`;
  * @param {(kind: 'ensembl'|'entrez') => Promise<Map<string,string>|null>} [o.idLookup] loads that map on demand,
  *   only when most pasted names turn out to be ids; null or a rejection keeps the plain mismatch message
  * @param {() => boolean} [o.directions] true when genes can be scored as down: the preview then has "Add as" (Up or Down)
+ * @param {Iterable<string>|(() => Iterable<string>)} [o.currentDown] the selected genes that are down (to say how many would change)
  * @param {() => ('up'|'down')} [o.defaultDirection] what "Add as" starts on
  * @param {(genes: string[], info: Object) => void} o.onAdd   `info.direction` is 'up' or 'down'
  * @param {() => void} [o.onCancel]
@@ -46,7 +47,7 @@ export function mountGenePaste(container, o) {
     let epoch = 0;                      // a lookup that answers after the text changed is ignored
     const st = freshState();
     function freshState() {
-        return { idTried: {}, idLoading: null, text: '', fileName: '', readAs: 'auto', header: 'auto', column: null, setIndex: 0, matchCase: false, showCase: false, setFilter: '', copied: '' };
+        return { idTried: {}, idLoading: null, text: '', fileName: '', readAs: 'auto', header: 'auto', column: null, setIndex: 0, signColumn: null, moveAlready: false, matchCase: false, showCase: false, setFilter: '', copied: '' };
     }
 
     function el(tag, props = {}, kids = []) {
@@ -170,7 +171,7 @@ export function mountGenePaste(container, o) {
     function compute() {
         const score = (values) => countKnown(values, geneNames);
         const parsed = parseGeneInput(st.text, {
-            fileName: st.fileName, readAs: st.readAs, header: st.header, column: st.column, setIndex: st.setIndex, score
+            fileName: st.fileName, readAs: st.readAs, header: st.header, column: st.column, setIndex: st.setIndex, score, signColumn: st.signColumn
         });
         const cur = Array.from(current());
         const matchOpts = { geneNames, currentGenes: cur, matchCase: st.matchCase, idToName: idMap };
@@ -232,13 +233,18 @@ export function mountGenePaste(container, o) {
             onchange: (e) => { st.column = Number(e.target.value); renderPreview(); } },
             t.columns.map((c, i) => el('option', { value: String(i), text: c, selected: i === t.column })));
         const headerBox = el('input', { type: 'checkbox', checked: t.header, 'data-key': 'header', 'data-testid': 'gp-header',
-            onchange: (e) => { st.header = e.target.checked; st.column = null; renderPreview(); } });
+            onchange: (e) => { st.header = e.target.checked; st.column = null; st.signColumn = null; renderPreview(); } });
+        const signSel = o.directions && o.directions() ? el('select', { class: 'form-select form-select-sm', 'aria-label': 'Sign column', 'data-key': 'signcol', 'data-testid': 'gp-signcol',
+            onchange: (e) => { st.signColumn = e.target.value === '' ? null : Number(e.target.value); renderPreview(); } },
+        [el('option', { value: '', text: 'None', selected: st.signColumn === null }),
+            ...t.columns.map((c, i) => (i === t.column ? null : el('option', { value: String(i), text: c, selected: i === st.signColumn })))]) : null;
         const shownCols = Math.min(t.columns.length, 6);
         const head = el('tr', {}, t.columns.slice(0, shownCols).map((c, i) => el('th', { class: i === t.column ? 'gp-genecol' : '', text: t.header ? c : '' })));
         const body = t.sample.slice(t.header ? 1 : 0).map(r => el('tr', {}, t.columns.slice(0, shownCols).map((_, i) => el('td', { class: i === t.column ? 'gp-genecol' : '', text: r[i] == null ? '' : r[i] }))));
         return el('div', { class: 'gp-table-block' }, [
             el('div', { class: 'gp-controls' }, [
                 el('label', {}, ['Gene column ', colSel]),
+                signSel ? el('label', { title: 'Positive values go up, negative values go down' }, ['Sign column ', signSel]) : null,
                 el('label', { class: 'gp-check' }, [headerBox, ' Header row'])
             ]),
             el('div', { class: 'gp-sample' }, [el('table', { class: 'table table-sm gp-sample-table', 'aria-label': 'First rows of the table' },
@@ -337,24 +343,67 @@ export function mountGenePaste(container, o) {
         ]);
     }
 
+    /** Which side each matched gene would go to: the Add as choice, or the sign of the sign column. */
+    function assignment(parsed, m) {
+        const on = !!(o.directions && o.directions());
+        const matched = [...m.toAdd, ...m.alreadyNames];
+        if (!on) return { on, up: matched, down: [], skipped: 0, split: false };
+        if (parsed.signs) {
+            const up = [], down = [];
+            let skipped = 0;
+            for (const g of matched) {
+                const sign = parsed.signs.get(m.inputOf.get(g));
+                if (sign > 0) up.push(g); else if (sign < 0) down.push(g); else skipped++;
+            }
+            return { on, up, down, skipped, split: true };
+        }
+        return addAs === 'down' ? { on, up: [], down: matched, skipped: 0, split: false } : { on, up: matched, down: [], skipped: 0, split: false };
+    }
+
+    /** How many already selected genes the add would put on the other side. */
+    function wouldMove(a) {
+        if (!a.on) return 0;
+        const down = new Set(typeof o.currentDown === 'function' ? o.currentDown() : o.currentDown || []);
+        const have = new Set(current());
+        return a.up.filter(g => have.has(g) && down.has(g)).length + a.down.filter(g => have.has(g) && !down.has(g)).length;
+    }
+
     function buttons(parsed, m) {
-        const canAdd = m.toAdd.length > 0 && !st.idLoading;
-        const addBtn = el('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-testid': 'gp-add', 'data-key': 'add', disabled: !canAdd,
-            text: canAdd ? `Add ${plural(m.toAdd.length, 'gene', 'genes')}` : 'Add genes',
+        const a = assignment(parsed, m);
+        const moving = wouldMove(a);
+        const newUp = a.up.filter(g => m.toAdd.includes(g)).length, newDown = a.down.filter(g => m.toAdd.includes(g)).length;
+        const adding = newUp + newDown;
+        const moves = st.moveAlready ? moving : 0;
+        const canAdd = (adding > 0 || moves > 0) && !st.idLoading;
+        let text = 'Add genes';
+        if (canAdd) {
+            if (a.split) text = `Add ${plural(adding, 'gene', 'genes')} (${fmt(newUp)} up, ${fmt(newDown)} down)`;
+            else if (a.on && addAs === 'down') text = `Add ${fmt(adding)} as down`;
+            else text = `Add ${plural(adding, 'gene', 'genes')}`;
+        }
+        const addBtn = el('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-testid': 'gp-add', 'data-key': 'add', disabled: !canAdd, text,
             onclick: () => {
                 if (!canAdd) return;
                 const genes = m.toAdd.slice();
                 const info = { count: genes.length, alreadySelected: m.alreadySelected, unmatched: m.unmatched.length, format: parsed.format, fileName: st.fileName,
-                    direction: o.directions && o.directions() ? addAs : 'up' };
+                    direction: a.on ? addAs : 'up', up: a.up, down: a.down, move: !!st.moveAlready };
                 reset();
                 o.onAdd(genes, info);
             } });
         const back = el('button', { type: 'button', class: 'btn btn-outline-secondary btn-sm', text: 'Back', 'data-testid': 'gp-back', onclick: () => { showStage('input'); textarea.focus(); } });
-        const withDirection = !!(o.directions && o.directions());
-        const addAsSel = withDirection ? el('select', { class: 'form-select form-select-sm gp-addas', 'aria-label': 'Add as', 'data-key': 'addas', 'data-testid': 'gp-addas',
-            onchange: (e) => { addAs = e.target.value === 'down' ? 'down' : 'up'; } },
+        const addAsSel = a.on && !a.split ? el('select', { class: 'form-select form-select-sm gp-addas', 'aria-label': 'Add as', 'data-key': 'addas', 'data-testid': 'gp-addas',
+            onchange: (e) => { addAs = e.target.value === 'down' ? 'down' : 'up'; st.moveAlready = false; renderPreview(); } },
         [el('option', { value: 'up', text: 'Up', selected: addAs === 'up' }), el('option', { value: 'down', text: 'Down', selected: addAs === 'down' })]) : null;
-        return el('div', { class: 'gp-buttons' }, [addAsSel ? el('label', { class: 'gp-addas-label' }, ['Add as ', addAsSel]) : null, back, addBtn]);
+        const notes = [];
+        if (a.split && a.skipped) notes.push(el('div', { class: 'gp-note', 'data-testid': 'gp-unsigned', text: `${plural(a.skipped, 'gene has', 'genes have')} no sign (blank, zero or not a number) and ${a.skipped === 1 ? 'is' : 'are'} left out.` }));
+        if (moving) {
+            notes.push(el('label', { class: 'gp-check gp-move', 'data-testid': 'gp-move-row' }, [
+                el('input', { type: 'checkbox', checked: st.moveAlready, 'data-key': 'move', 'data-testid': 'gp-move',
+                    onchange: (e) => { st.moveAlready = e.target.checked; renderPreview(); } }),
+                ` ${plural(moving, 'selected gene would', 'selected genes would')} change direction. Change ${moving === 1 ? 'it' : 'them'} too`]));
+        }
+        return el('div', { class: 'gp-footer' }, [...notes,
+            el('div', { class: 'gp-buttons' }, [addAsSel ? el('label', { class: 'gp-addas-label' }, ['Add as ', addAsSel]) : null, back, addBtn])]);
     }
 
     function reset() {
