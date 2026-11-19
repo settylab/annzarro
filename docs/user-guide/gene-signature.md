@@ -101,7 +101,10 @@ A signature holds up to 2,000 genes, counting the ones already selected. Over th
 - **Analyse in** *a Gene Set Analysis panel*: the panel takes the signature's genes as its source,
   with no "(closed)" mark, because a signature needs no rows of its own.
 
-Both follow the list as you edit it. They go on working after you close the signature's panel. The
+- **Add to** *a Cell Table*: the signature's score becomes a column of the table (see
+  [Rank cells in a Cell Table](#rank-cells-in-a-cell-table)).
+
+Both of the first two follow the list as you edit it. They go on working after you close the signature's panel. The
 line under the title says what uses it ("Used by 1 plot, 1 Gene Set Analysis").
 
 ## Colour or position a Cell Plot by a score
@@ -154,6 +157,55 @@ score and says "3 changes are not applied. About 40 seconds." The signature's pa
 A link can name many scores. At most two are computed at a time, those on screen first; a plot that is
 off screen starts when it comes into view. Plots that show the same score share one request, and a score
 is kept in the browser (up to 1 GiB, least recently used first) so it is not asked for twice.
+
+## Rank cells in a Cell Table
+
+A Cell Table can show a signature's score as a column, so you can sort the cells by it, filter on it and
+export it. Either press **Use in** → **Add to Cell Table 1** in the signature's panel, or open the table's
+column chooser, choose the **gene-score** tab, and tick a signature and then the aggregation under it
+(z-score mean or mean). Tick as many as you like: several signatures, and several aggregations of one, are
+several columns, and each is computed once however many plots and tables use it.
+
+The table appears at once. A score that is not there yet shows as `T cell score (computing)`, with
+`computing…` in its cells, and the column fills in where it is when the score arrives: the table is not
+built again, so your sort order, page, search and scroll stay as they were. Every state says what it is,
+in the words a plot uses and with the same buttons (**Compute**, **Cancel**, **Retry**, **Update score**,
+**Open signature**), over the table and as a tag in its status strip:
+
+| The score is | The column says | Sort | Filter | Export |
+|---|---|---|---|---|
+| ready | `T cell score` | on | on | on |
+| being updated after an edit | `T cell score (updating)`, the previous values | on, on the previous values | on, on the previous values | off until it is updated |
+| computing or waiting its turn | `T cell score (computing)`, `computing…` | off | holds the rows (below) | off, "Available when 'T cell score' is ready" |
+| waiting for **Compute** | `T cell score (not computed)` | off | holds the rows | off |
+| cancelled, refused, failed or with no genes in this dataset | `T cell score (no score)`, `no score` | off | holds the rows | off, naming the column |
+| its signature was deleted | `T cell score (deleted)`, `no score` | off | holds the rows | off |
+
+The states with no score add **Remove column**. A column whose signature is deleted stays in the table, and
+in the chooser's selected list, until you remove it.
+
+**Sorting and filtering** run in the browser, on the numbers the table holds, as for any numeric column:
+use the column header, the **Filter** conditions (a score is a number, so it offers greater than, less than,
+between and the rest), or the search box. The CSV has the score at the precision a score has (about seven
+digits), as a number.
+
+**A filter on a score that is not ready holds the table.** The rows are not shown and not counted:
+"Filter on 'T cell score' not applied yet. Rows appear when the score is ready." The table does not pass
+unfiltered rows to anything that reads it. A plot filtered by the table says "Filtering by 'Cell Table 1'
+needs 'T cell score', which is not ready yet. No cells are drawn until it is." and draws no cells. If the score cannot be computed, they say why and offer **Retry**,
+**Open table** or **Stop filtering**. This also holds for a table you have closed, or one that came from a link:
+the page computes the score first, then builds the table's filter in the background as it does for any closed
+table, and the plot draws when both are done. A table that depends on another that depends on it, through a
+hand-edited link, is named in the plot and asks for no score.
+
+A link, a panel set and the history keep the column's reference (the signature and the aggregation) and the
+filter conditions, never the numbers; the column is computed again when the table opens. A signature that
+changes id when a panel set is added beside open panels takes the table's columns and conditions with it.
+
+The score stays in the browser as one list of numbers shared by every plot and table that uses it. A column
+adds no property to the table's rows, so on a table of a million cells it costs about 34 bytes a cell of
+the browser's memory, against about 71 for an ordinary numeric column. The table's usual memory check
+still decides whether a table of that size opens.
 
 ## Close, reopen, share
 
