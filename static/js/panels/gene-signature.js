@@ -221,7 +221,7 @@ const GeneSignaturePanel = (function() {
             if (config.title && config.title !== _title) { _title = config.title; signatureRenamed(_id); }
             else if (config.title) _title = config.title;
             if (config.controlsVisible !== undefined) _controlsVisible = config.controlsVisible;
-            const recipeKeys = ['genes', 'down', 'directions', ...OPTION_KEYS];
+            const recipeKeys = ['genes', 'down', 'down_weight', 'directions', ...OPTION_KEYS];
             if (recipeKeys.some(k => k in config)) {
                 setRecipe(Object.fromEntries(recipeKeys.filter(k => k in config).map(k => [k, config[k]])));
                 if (_initialized) { rebuildRows(); paint(); if (_scoreOptions) _scoreOptions.changed(Object.keys(config)); }
