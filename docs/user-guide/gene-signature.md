@@ -215,6 +215,38 @@ after a short pause, and one that would take 5 seconds or more waits behind **Up
 the server for nothing when no plot shows a z-score mean, a seed edit recomputes only control-adjusted scores, and
 choosing what is offered changes no score.
 
+### Score some genes as down
+
+Some signatures have genes that should count against the score, such as an exhaustion marker in an activation
+signature. Tick **Score some genes as down** in **Scores offered** and every selected gene gets a direction button,
+**↑ Up** or **↓ Down**; one press flips it. Until you tick it nothing about direction appears.
+
+- **The score** is the average of the up genes minus the average of the down genes, each side scored on its own.
+  For the z-score mean and the mean that is the difference of two means. For **control-adjusted**, each side
+  subtracts the mean of its own control genes, as two calls of scanpy's `score_genes` would, and the two are subtracted.
+  The panel states the formula with your numbers ("Score = average of the 42 up genes minus average of the 8 down
+  genes"), and the summary line says "50 genes selected: 42 up, 8 down".
+- **Only down genes** give the negative of their average, and the panel says so. A side with no usable gene (not in
+  this dataset, constant, or no values) is left out, and the panel names it ("None of the 8 down genes are in this
+  dataset, so only up genes are scored"). With no usable gene on either side there is no score.
+- **Sum, fraction detected and % of total** are not offered while a signature has down genes, and the panel says why under
+  each: a signed sum depends on how many genes each side has, the difference of two fractions is not a fraction, and
+  the difference of two shares is not a share of anything. A plot or table that already uses one says so and asks the
+  server for nothing; remove the down genes, or choose another option, and it comes back.
+- **Changing many at once.** In the Selected list, **Show** All, Up or Down, and **Set N shown to Up** or **Down** change
+  the rows the search and the filter show, in one step.
+- **Add as.** Beside **Add from** a choice of Up or Down decides what **Add from**, the focused gene and **Paste or
+  upload** add as (the paste preview has its own **Add as**, which starts on that choice). Ticks and **Tick all**
+  add as up. A gene already in the signature stays on its side.
+- **Undo** takes back every direction change, one step each; flipping several genes quickly is one step.
+- **Turning it off.** With down genes present the switch asks first: "8 down genes will count as up. **Count as up**
+  **Keep**". Count as up is one step that Undo takes back.
+- **Links.** The down genes are part of the recipe and of the score's key, so flipping a gene asks the server again and
+  Undo does not (the earlier score is still held). A link made before this has no down genes.
+- **Gene tables** have no direction: every gene passing the filter is up. To get a table's genes into a signature as
+  down, use **Add from** with Add as set to Down. A table has no per-gene sign column here because guessing the sign
+  convention of a fold change wrong would flip a score silently.
+
 ### Opening several at once
 
 A link can name many scores. At most two are computed at a time, those on screen first; a plot that is

@@ -170,3 +170,17 @@ test('a consumer on a method that cannot score down genes asks nothing of the se
     sources.update('S1');                      // Update score: the edit is applied
     assert.notEqual(sum.read().state, 'nodown');
 });
+
+// ------------------------------------------------------------------ Inspect
+
+test('Inspect names each gene\'s side only when there are down genes, and the CSV keeps its header otherwise', async () => {
+    const I = await import('../../../static/js/utils/score-inspect.js');
+    const up = [{ name: 'A', status: 'used', detected: 0.5, mean: 1, sd: 1, clipped: 0, direction: 'up' }];
+    assert.equal(I.geneCsv(up).split('\r\n')[0], 'gene,status,detected_fraction,mean,sd,clipped_fraction');
+    const both = [...up, { name: 'B', status: 'used', detected: 0.25, mean: 2, sd: 1, clipped: 0, direction: 'down' }];
+    const lines = I.geneCsv(both).split('\r\n');
+    assert.equal(lines[0], 'gene,direction,status,detected_fraction,mean,sd,clipped_fraction');
+    assert.deepEqual(lines.slice(1, 3).map(l => l.split(',').slice(0, 2).join(',')), ['A,up', 'B,down']);
+    assert.equal(I.geneRows(both, 'mean').find(r => r.name === 'B').direction, 'down');
+    assert.equal(I.geneRows([{ name: 'C', status: 'used', detected: 0.1, mean: 1, sd: 1, clipped: 0 }], 'mean')[0].direction, 'up', 'an older reply has none: up');
+});

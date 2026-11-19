@@ -138,7 +138,7 @@ export function geneRows(genes, method) {
     return list.map((g) => {
         const flags = [];
         const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
-        const row = { name: g.name, status: g.status, detected: num(g.detected), mean: num(g.mean), sd: num(g.sd),
+        const row = { name: g.name, direction: g.direction === 'down' ? 'down' : 'up', status: g.status, detected: num(g.detected), mean: num(g.mean), sd: num(g.sd),
             clipped: num(g.clipped), flags };
         if (g.status === 'constant') {
             flags.push({ kind: 'left-out', text: method === 'zscore_mean'
@@ -244,10 +244,12 @@ function figure(x) {
  * @param {Array<Object>} genes - `header.genes`
  */
 export function geneCsv(genes) {
-    const lines = ['gene,status,detected_fraction,mean,sd,clipped_fraction'];
+    // a signature with down genes says which side each gene is on; without any the file is what it always was
+    const withDirection = (genes || []).some(g => g.direction === 'down');
+    const lines = [`gene,${withDirection ? 'direction,' : ''}status,detected_fraction,mean,sd,clipped_fraction`];
     for (const g of genes || []) {
-        lines.push([csvField(g.name, { text: true }), csvField(g.status), figure(g.detected), figure(g.mean), figure(g.sd),
-            figure(g.clipped)].join(','));
+        lines.push([csvField(g.name, { text: true }), ...(withDirection ? [g.direction === 'down' ? 'down' : 'up'] : []), csvField(g.status),
+            figure(g.detected), figure(g.mean), figure(g.sd), figure(g.clipped)].join(','));
     }
     return `${lines.join('\r\n')}\r\n`;
 }
