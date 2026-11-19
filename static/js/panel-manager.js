@@ -1417,6 +1417,28 @@ const PanelManager = (function() {
     }
 
     /**
+     * Open a new panel beside an open one: the tile of `nextTo` splits and the panel opens in the new half.
+     * @param {string} type
+     * @param {string} nextTo - the id of an open panel
+     * @param {Object} [config]
+     * @param {'horizontal'|'vertical'} [direction]
+     * @returns {Object|null} the open panel, or null
+     */
+    function createPanelNextTo(type, nextTo, config = {}, direction = 'horizontal') {
+        const anchor = nextTo ? document.querySelector(`.tile[data-tile-id="${CSS.escape(nextTo)}"]`) : null;
+        try {
+            if (anchor && anchor.parentElement) {
+                const split = LayoutManager.createSplit(anchor.parentElement, anchor, direction);
+                return createPanel(type, config, split.secondPane);
+            }
+            return createPanelInLayout(type, config);
+        } catch (error) {
+            console.error(`Could not open a ${type} next to ${nextTo}:`, error);
+            return null;
+        }
+    }
+
+    /**
      * The panels on the page by id: whether each is open, and its settings
      * (what a history step compares closed panels by).
      * @returns {Map<string, {open: boolean, config: Object}>}
@@ -1469,6 +1491,7 @@ const PanelManager = (function() {
         registerPanelType,
         createPanel,
         createPanelInLayout,
+        createPanelNextTo,
         ensureWelcomeFallback,
         closePanel,
         getPanel,

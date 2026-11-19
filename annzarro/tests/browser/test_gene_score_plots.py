@@ -495,7 +495,7 @@ def test_a_deleted_signature_says_so_and_the_plot_keeps_its_setting(page, served
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.key") == SIG
     # the key list still names it, as deleted
     assert page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => o.textContent)", C) \
-        == ["T cell score (deleted)"]
+        == ["T cell score (deleted)", "New signature…"]
 
 
 def test_the_source_menu_offers_gene_score_and_lists_every_signature_open_or_closed(page, served):
@@ -509,9 +509,10 @@ def test_the_source_menu_offers_gene_score_and_lists_every_signature_open_or_clo
         assert "gene-score" in page.evaluate(
             "([t, a]) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"' + a + '\"] option')].map(o => o.value)", [C, axis])
     page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
-    until(page, "(t) => document.querySelector(t + ' select.axis-key-select[data-axis=\"color\"]').options.length === 2", C)
+    until(page, "(t) => document.querySelector(t + ' select.axis-key-select[data-axis=\"color\"]').options.length === 3", C)
     labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => o.textContent)", C)
-    assert labels == ["T cell score", "B cell score"] or sorted(labels) == ["B cell score", "T cell score"], labels
+    assert labels[-1] == "New signature…"
+    assert sorted(labels[:-1]) == ["B cell score", "T cell score"], labels
     assert not any("closed" in l.lower() for l in labels), "no suffix: the chooser alone says Closed"
     # the second is closed (not in the layout) and still offered; pick it
     page.select_option(f"{C} select.axis-key-select[data-axis='color']", "gene-signature-O")
@@ -573,14 +574,14 @@ def test_hover_lists_the_score_beside_the_columns_and_labels_it_by_title(page, s
     _open(page, served, plots=(("cell-plot-C", cfg),))
     options = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.hover-columns-select optgroup[label="Gene scores"] option')]
         .map(o => [o.value, o.textContent, o.selected])""", C)
-    assert options == [[f"gene-score:{SIG}", "T cell score", True]]
+    assert options == [[f"gene-score:{SIG}:zscore_mean", "T cell score", True], [f"gene-score:{SIG}:mean", "T cell score · mean", False]]
     until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score')))); }", C)
     text = page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data.flatMap(d => d.hovertext || []).filter(h => String(h).includes('T cell score'))[0]""", C)
     assert "T cell score:" in text
     # picking it in the Hover list writes the setting
     page.goto("about:blank")
     _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "none", "key": "", "column": ""})),))
-    page.select_option(f"{C} select.hover-columns-select", [f"gene-score:{SIG}"])
+    page.select_option(f"{C} select.hover-columns-select", [f"gene-score:{SIG}:zscore_mean"])
     until(page, "() => (window.PanelManager.getPanel('cell-plot-C').getConfig().hoverInfo || []).some(h => h.type === 'gene-score' && h.key === 'gene-signature-S')")
 
 
@@ -945,7 +946,7 @@ def test_renaming_a_signature_retitles_its_plots_without_computing_again(page, s
         return !!g && g.data.some(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title) === 'Exhaustion score'); }""", C)
     assert len(_calls(page, "compute")) == 1, "a title is not part of the recipe"
     labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => o.textContent)", C)
-    assert labels == ["Exhaustion score"]
+    assert labels == ["Exhaustion score", "New signature…"]
 
 
 def test_a_closed_signature_put_back_with_another_recipe_by_back_or_forward_updates_its_plots(page, served):
@@ -1135,3 +1136,83 @@ def test_log_colour_scale_on_a_score_says_how_many_cells_sit_at_the_floor(page, 
     page.evaluate("() => document.getElementById('log-color-cell-plot-C').click()")
     page.wait_for_timeout(600)
     assert min(_numbers(page)) == -3.0
+
+
+G = '.tile[data-tile-id="gene-plot-G"]'
+VAR_MEAN = {"type": "var", "key": "mean", "column": ""}
+
+
+def _gene_plot(**extra):
+    return {"id": "gene-plot-G", "title": "Gene Plot 1", "x": VAR_MEAN, "y": VAR_MEAN, "z": None, "color": VAR_MEAN, **extra}
+
+
+def test_a_gene_plot_with_a_gene_score_link_says_it_is_a_cell_source_and_the_rest_works(page, served):
+    # as colour: the genes are drawn, in neutral points, with the sentence
+    _open(page, served, plots=(("gene-plot-G", _gene_plot(color=SCORE)),), wait=False)
+    page.wait_for_selector(f"{G} .js-plotly-plot", timeout=30000)
+    until(page, "(t) => !!(document.querySelector(t + ' .plot-status') || {}).textContent && document.querySelector(t + ' .plot-status').textContent.includes('Gene scores are a cell source')", G)
+    assert _calls(page) == [], "nothing is asked of the server"
+    # as an axis: the placeholder says so
+    page.goto("about:blank")
+    _open(page, served, plots=(("gene-plot-G", _gene_plot(x=SCORE)),), wait=False)
+    page.wait_for_selector(f"{G} .coverage-placeholder", timeout=30000)
+    text = page.inner_text(f"{G} .coverage-placeholder")
+    assert "Gene scores are a cell source; not available in a Gene Plot." in text
+    assert "Failed" not in text
+    # the type menu of a Gene Plot never offered it
+    assert "gene-score" not in page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"x\"] option')].map(o => o.value)", G)
+
+
+def test_new_signature_in_the_key_list_opens_a_signature_beside_the_plot_and_wires_the_axis(page, served):
+    _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "obs", "key": "score", "column": ""})),), sig=False)
+    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
+    until(page, "(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].some(o => o.value === '__new_signature__')", C)
+    labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => [o.textContent, o.disabled])", C)
+    assert labels == [["No signatures yet", True], ["New signature…", False]]
+    page.select_option(f"{C} select.axis-key-select[data-axis='color']", "__new_signature__")
+    until(page, "() => window.PanelManager.getPanelsByType('gene-signature').length === 1")
+    new_id = page.evaluate("() => window.PanelManager.getPanelsByType('gene-signature')[0].getId()")
+    page.wait_for_selector(f'.tile[data-tile-id="{new_id}"] .gsig-grid .gsig-row', timeout=30000)
+    until(page, "(id) => window.PanelManager.getPanel('cell-plot-C').getConfig().color.key === id", new_id)
+    assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.type") == "gene-score"
+    page.wait_for_selector(f"{C} .score-notice[data-state='nogenes']")
+    # genes ticked in the new signature colour the plot
+    page.evaluate("(id) => window.PanelManager.getPanel(id).addGenes(['GENE0001', 'GENE0002'])", new_id)
+    _wait_coloured(page)
+
+
+def test_an_open_signature_nobody_uses_states_its_genes_without_computing(page, served):
+    _open(page, served, plots=(), sig=_sig(genes=("GENE0001", "GENE0002", "NOT_A_GENE")), sig_open=True, wait=False)
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    until(page, "(s) => !!document.querySelector(s + ' .gsig-score') && !document.querySelector(s + ' .gsig-score').hidden", S)
+    assert page.inner_text(f"{S} .gsig-score") == "Ready, 2 of 3 genes in this dataset."
+    page.wait_for_timeout(800)
+    assert _calls(page) == [], "no score is computed for a score nobody uses"
+
+
+def test_hover_offers_each_aggregation(page, served):
+    cfg = _cell(hoverInfo=[{"type": "obs", "key": "_index"}, {"type": "gene-score", "key": SIG, "column": "mean"}],
+                color={"type": "none", "key": "", "column": ""})
+    _open(page, served, plots=(("cell-plot-C", cfg),))
+    sel = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.hover-columns-select optgroup[label="Gene scores"] option')]
+        .map(o => [o.textContent, o.selected])""", C)
+    assert sel == [["T cell score", False], ["T cell score · mean", True]]
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score · mean:')))); }", C)
+    assert _calls(page, "compute")[0]["method"] == "mean"
+    # both at once: two scores in the hover, two requests
+    page.select_option(f"{C} select.hover-columns-select", [f"gene-score:{SIG}:zscore_mean", f"gene-score:{SIG}:mean"])
+    until(page, "() => (window.PanelManager.getPanel('cell-plot-C').getConfig().hoverInfo || []).filter(h => h.type === 'gene-score').length === 2")
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score:') && String(h).includes('T cell score · mean:')))); }", C)
+    assert sorted(c["method"] for c in _calls(page, "compute")) == ["mean", "zscore_mean"]
+
+
+def test_signatures_turned_off_by_the_administrator_says_so_over_the_plot(page, served):
+    stub = {"version": "v1", "values": {"panel.gene-signature.enabled": False}}
+    page.route("**/api/v1/policy/effective*", lambda route: route.fulfill(
+        status=200, body=json.dumps(stub), headers={"Content-Type": "application/json", "X-AnnZarro-Policy": "v1"}))
+    _open(page, served, wait=False)
+    page.wait_for_selector(f"{C} .score-notice[data-state='off']", timeout=30000)
+    assert "Gene signatures are turned off on this server." in _notice(page)["text"]
+    assert _tag(page) == "Turned off"
+    assert _calls(page) == []
+    assert _drawn(page), "the plot is drawn, in neutral points"

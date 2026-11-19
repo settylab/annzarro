@@ -1,3 +1,4 @@
+import { NEW_SIGNATURE } from '../../utils/score-source.js';
 import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
@@ -279,7 +280,7 @@ export function setupPlotControlListeners(
       if (!off && !(await hoverPickFits(settings, plotType, plotContainer, !!data.colorRanked))) {
         Object.assign(settings, before);
         if (before.hoverOff === undefined) delete settings.hoverOff;
-        const prior = new Set((before.hoverInfo || []).map(h => h && (h.type === 'gene-score' ? `gene-score:${h.key}` : h.key)));
+        const prior = new Set((before.hoverInfo || []).map(h => h && (h.type === 'gene-score' ? `gene-score:${h.key}:${h.column || 'zscore_mean'}` : h.key)));
         for (const o of e.target.options) o.selected = o.value !== NO_HOVER && prior.has(o.value);
         showHoverChoice(plotContainer, settings);
         return;
@@ -1154,8 +1155,17 @@ function setupAxisSelectorListeners(
   // Key selectors
   $container.find('.axis-key-select').on('change', async function() {
     const axis = jQuery(this).data('axis');
-    const newKey = jQuery(this).val();
+    let newKey = jQuery(this).val();
     const $columnSelect = $container.find(`.axis-column-select[data-axis="${axis}"]`);
+
+    // "New signature…": a Gene Signature opens beside this plot and this axis takes it
+    if (settings[axis].type === 'gene-score' && newKey === NEW_SIGNATURE) {
+      const made = window.PanelManager && window.PanelManager.createPanelNextTo('gene-signature', id);
+      if (!made) { jQuery(this).val(settings[axis].key || ''); return; }
+      newKey = made.getId();
+      settings[axis].label = made.getTitle();
+      settings[axis].column = '';
+    }
 
     if (!$columnSelect.length) {
       console.error(`Missing column select for ${axis}`);
