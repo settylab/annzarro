@@ -14,9 +14,14 @@ the filter. Now a closed table's filter is kept by name (utils/closed-table.js):
    Stop filtering shows every cell and drops the tag;
 3. an open table on the same steps still filters by its own rows: the plot
    follows the table, with no tag;
-4. a panel set restored with the table closed (registerClosedPanel) carries
-   no row indexes or names; the plot says its filter is out of date for
-   every cell. (A share link keeps no closed panels at all.)
+4. a link or panel set restored with the table closed carries its
+   configuration only, no row indexes or names. The plot keeps the table
+   selected and draws NO points, in a state of its own (a notice over the
+   plot and the tag "Filter not applied yet", not the "out of date" tag of a
+   closed table whose rows were known). When the table is opened its rows are
+   computed and the plot updates by itself. (Until step 0b of the
+   gene-signature plan this case registered the panel by hand, a link kept no
+   closed panel, and the plot read "out of date for every cell".)
 
 Every case asserts that no cell outside the table's filter is ever shown.
 
@@ -65,14 +70,14 @@ def page(server):
             browser.close()
 
 
-def _link(root, subset, table_open=True):
+def _link(root, subset, table_open=True, table_cfg=None):
     x = {"type": "obsm", "key": "X_umap", "column": "0"}
     y = {"type": "obsm", "key": "X_umap", "column": "1"}
     cfgs = {"cell-plot-B": {"id": "cell-plot-B", "x": x, "y": y, "z": None,
                             "color": {"type": "obs", "key": "cell_type", "column": ""},
                             "tableFilter": "cell-table-A", "removeNonTableEntries": True},
             "cell-table-A": {"id": "cell-table-A", "title": "Table 1",
-                             "columns": [{"type": "obs", "key": "cell_type", "column": ""}]}}
+                             "columns": [{"type": "obs", "key": "cell_type", "column": ""}], **(table_cfg or {})}}
     tiles = [{"type": "tile", "id": "cell-plot-B", "controlsVisible": True}]
     if table_open:
         tiles.append({"type": "tile", "id": "cell-table-A", "controlsVisible": True})
@@ -201,21 +206,27 @@ def test_open_table_still_filters_by_its_own_rows(page, server):
 
 
 def test_restored_closed_table_carries_no_rows(page, server):
-    # a panel set with the table closed: session-manager registers it with
-    # PanelManager.registerClosedPanel, from its saved config (no row indexes)
-    page.goto(_link(server, None, table_open=False))
+    # a link with the table closed: it is restored from its configuration (no row indexes or names),
+    # BEFORE the plot is built, so the plot keeps the table selected
+    page.goto(_link(server, None, table_open=False, table_cfg={"searchText": "cell_01"}))
     page.wait_for_selector(f"{B} .js-plotly-plot", timeout=30000)
-    page.evaluate("""async () => {
-        window.PanelManager.registerClosedPanel('cell-table', { id: 'cell-table-A', title: 'Table 1',
-            columns: [{ type: 'obs', key: 'cell_type', column: '' }] });
-        const b = window.PanelManager.getPanel('cell-plot-B');
-        b.setConfig({ tableFilter: 'cell-table-A', removeNonTableEntries: true });
-        await b.refreshPlot();
-    }""")
-    page.wait_for_selector(f'{B} .ps-tag[data-tag="table-stale"]', state="attached", timeout=20000)
+    page.wait_for_selector(f'{B} .filter-notice[data-state="unresolved"]', timeout=20000)
     s = _state(page)
     assert s["names"] == []
-    assert s["tag"] == "Table filter from closed 'Table 1' is out of date: 200 cells were not in it"
+    assert s["tag"] is None                      # not the "out of date" tag of known rows
+    unresolved = page.locator(f'{B} .ps-tag[data-tag="table-unresolved"]')
+    assert unresolved.count() == 1
+    assert unresolved.get_attribute("title").startswith("'Table 1' is closed")
+    assert page.locator(f'{B} select.table-filter-select').input_value() == "cell-table-A"
     # the closed table's config holds no row indexes or names
     cfg = page.evaluate("() => JSON.stringify(window.PanelManager.getPanel('cell-table-A').getConfig())")
     assert '"closedSelection"' not in cfg
+    # opened, its subset is computed and the plot updates by itself: no reload, no re-selection
+    origin = page.evaluate("() => performance.timeOrigin")
+    page.click('.panel-closed-btn[data-id="cell-table-A"]')
+    page.wait_for_selector(f'{B} .filter-notice', state="detached", timeout=30000)
+    until(page, f"() => document.querySelectorAll('{B} .ps-tag[data-tag=\"table-unresolved\"]').length === 0")
+    s = _state(page)
+    assert len(s["names"]) == 100 and all(PASS.match(c) for c in s["names"])
+    assert page.evaluate("() => performance.timeOrigin") == origin
+    assert page.locator(f'{B} select.table-filter-select').input_value() == "cell-table-A"

@@ -18,6 +18,7 @@ import { createPlaceholderPanel } from './utils/placeholder-panel.js';
 import { Policy } from './policy.js';
 import * as LayoutMotion from './utils/layout-motion.js';
 import { viewOf } from './utils/url-history.js';
+import { dropSkeleton, panelReady } from './utils/load-progress.js';
 import { orientRange, isFlipped, autorangeValue } from './panels/plot-utilities/plot-make-helper.js';
 
 const PanelManager = (function() {
@@ -273,10 +274,12 @@ const PanelManager = (function() {
         _setupTileEventHandlers(tileElement, id);
         
         // Initialize the panel; a history step waits on initDone
+        // aria-busy from now until it is drawn (or failed): a screen reader hears "busy", then the panel
+        tileElement.setAttribute('aria-busy', 'true');
         const initial = panel.init();
         panel.initDone = Promise.resolve(initial).then(() => {}, error => {
             console.error(`Error initializing panel ${id}:`, error);
-        });
+        }).then(() => { tileElement.removeAttribute('aria-busy'); panelReady(id); });
         
         // Apply control panel visibility if specified
         if (Object.prototype.hasOwnProperty.call(config, 'controlsVisible')) {
@@ -777,6 +780,9 @@ const PanelManager = (function() {
             }
         }
         
+        // the named skeleton of the view gives way to the real tiles, built next
+        dropSkeleton();
+
         // Clear the active panels set - we'll repopulate it
         _activePanels.clear();
         
@@ -848,6 +854,10 @@ const PanelManager = (function() {
                     if (cloneSection) cloneSection.style.display = 'block';
                 }
             }
+
+            // The closed panels a view restored are offered by the chooser from here on: the notice
+            // of a plot filtered by a closed table (second pass) offers "Open table" through it
+            updateSourcePanelSelection();
 
             // Set up all the handle resizing
             document.querySelectorAll('.split-handle').forEach(handle => {
@@ -951,7 +961,9 @@ const PanelManager = (function() {
                 const savedVisible = layout.controlState && layout.controlState[id] !== undefined
                     ? layout.controlState[id]
                     : panelConfig.controlsVisible;
+                tileElement.setAttribute('aria-busy', 'true');
                 promise = new Promise(resolve => {
+                    const settle = () => { tileElement.removeAttribute('aria-busy'); panelReady(id); resolve(); };
                     Promise.resolve().then(() => {
                         try {
                             const pending = panel.init();
@@ -960,9 +972,9 @@ const PanelManager = (function() {
                         } catch (error) {
                             console.error(`Error initializing restored panel ${id}:`, error);
                         }
-                    }).then(resolve, error => {
+                    }).then(settle, error => {
                         console.error(`Error initializing restored panel ${id}:`, error);
-                        resolve();
+                        settle();
                     });
                 });
                 
@@ -1316,6 +1328,53 @@ const PanelManager = (function() {
     }
     
     /**
+     * Whether a closed panel of this type can be restored: registered, and not
+     * switched off by the administrator (utils/closed-restore.js).
+     * @param {string} type
+     * @returns {boolean}
+     */
+    function canRestoreClosed(type) {
+        return _panelTypes.has(type) && Policy.panelEnabled(type);
+    }
+
+    /**
+     * Register the closed panels a view lists, from their saved configuration
+     * only (utils/closed-restore.js). Called BEFORE the open panels are built,
+     * so a plot filtered by a closed table finds it. A panel of the same id
+     * that is closed is replaced by the saved one; an OPEN one is left alone.
+     * @param {Array<{id: string, type: string, config: Object}>} entries
+     * @returns {string[]} the ids registered
+     */
+    function restoreClosedPanels(entries) {
+        const done = [];
+        for (const { id, type, config } of entries || []) {
+            if (!canRestoreClosed(type)) continue;
+            const have = _panels.get(id);
+            if (have && _activePanels.has(have)) continue;
+            if (have) removePanel(id);
+            const panel = registerClosedPanel(type, JSON.parse(JSON.stringify(config)), { keepTitle: true });
+            if (panel) done.push(panel.getId());
+        }
+        if (done.length) updateSourcePanelSelection();
+        return done;
+    }
+
+    /**
+     * The panels on the page by id: whether each is open, and its settings
+     * (what a history step compares closed panels by).
+     * @returns {Map<string, {open: boolean, config: Object}>}
+     */
+    function panelStates() {
+        const out = new Map();
+        _panels.forEach((panel, id) => {
+            let config = {};
+            try { config = panel.getConfig ? panel.getConfig() : {}; } catch { /* a panel mid-teardown */ }
+            out.set(id, { open: _activePanels.has(panel), config });
+        });
+        return out;
+    }
+
+    /**
      * Get all panels (both active and closed)
      * @returns {Array} - Array of all panel instances
      */
@@ -1368,6 +1427,9 @@ const PanelManager = (function() {
         applyLayoutStep,
         applyViewport,
         registerClosedPanel,
+        canRestoreClosed,
+        restoreClosedPanels,
+        panelStates,
         removePanel,
         replacePanel,
         showControls,

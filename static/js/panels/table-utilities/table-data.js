@@ -915,9 +915,17 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     const table = tableContainer.querySelector('table');
 
     // State‐holders for our toggles:
-    let useRegex          = false;
-    let useSmart          = true;
-    let useCaseInsensitive = true;
+    // (as saved with the panel, so a restored table selects the same rows)
+    let useRegex          = settings.searchRegex === true;
+    let useSmart          = settings.searchSmart !== false;
+    let useCaseInsensitive = settings.searchCaseInsensitive !== false;
+    // the settings hold the toggles as they stand: a link, a panel set and a reopened table read them there
+    const keepToggles = () => {
+        settings.searchRegex = useRegex;
+        settings.searchSmart = useSmart;
+        settings.searchCaseInsensitive = useCaseInsensitive;
+    };
+    keepToggles();
     
     // Configure DataTables options
     const tableOptions = {
@@ -1084,8 +1092,8 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                             title="Regular Expression Mode">
                         .*
                     </button>
-                    <button id="${btnSmartId}" class="dt-search-option btn btn-sm${useSmart ? ' active' : ''}" 
-                            title="Smart Search (default)">
+                    <button id="${btnSmartId}" class="dt-search-option btn btn-sm${useSmart ? ' active' : ''}"${useRegex ? ' disabled' : ''}
+                            title="${useRegex ? 'Smart search does not apply to a regular expression' : 'Smart Search (default)'}">
                         <i class="fas fa-magic"></i>
                     </button>
                     <button id="${btnCaseId}" class="dt-search-option btn btn-sm${!useCaseInsensitive ? ' active' : ''}" 
@@ -1145,18 +1153,21 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 // 6) Wire up clicks
                 $(`#${btnRegexId}`).on('click', function() {
                     useRegex = !useRegex;
+                    keepToggles();
                     $(this).toggleClass('active', useRegex);
                     applySearch();
                 });
                 
                 $(`#${btnSmartId}`).on('click', function() {
                     useSmart = !useSmart;
+                    keepToggles();
                     $(this).toggleClass('active', useSmart);
                     applySearch();
                 });
                 
                 $(`#${btnCaseId}`).on('click', function() {
                     useCaseInsensitive = !useCaseInsensitive;
+                    keepToggles();
                     // Treating button as "Case Sensitive" - active when useCaseInsensitive is false
                     $(this).toggleClass('active', !useCaseInsensitive);
                     applySearch();

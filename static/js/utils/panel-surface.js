@@ -374,7 +374,7 @@ function wireStrips() {
     }, true);
     document.addEventListener('click', (e) => {
         // an action offered by a placeholder (drawPlaceholder's actions)
-        const placeholder = e.target.closest && e.target.closest('.coverage-placeholder');
+        const placeholder = e.target.closest && (e.target.closest('.filter-notice') || e.target.closest('.coverage-placeholder'));
         const placed = placeholder && e.target.closest('[data-ps-action]');
         if (placed && placeholder.parentNode) {
             _actions.run(placed.dataset.psAction, placeholder.parentNode);
@@ -703,13 +703,52 @@ export function clearForDraw(plotContainer) {
     const live = plotContainer._fullLayout && plotContainer.querySelector(':scope > .plot-container');
     if (live) {
         for (const child of Array.from(plotContainer.children)) {
-            if (!child.classList.contains('plot-container') && !child.classList.contains('loading-overlay')) child.remove();
+            if (!child.classList.contains('plot-container') && !child.classList.contains('loading-overlay')
+                && !child.classList.contains('filter-notice')) child.remove();
         }
         return;
     }
     // the WebGL side too: Plotly.purge leaves it to the garbage collector
     if (plotContainer._fullLayout) releasePlot(plotContainer);
+    // the notice over the plot (setFilterNotice) outlives the drawing under it
+    const notice = Array.from(plotContainer.children).find(c => c.classList && c.classList.contains('filter-notice'));
     plotContainer.innerHTML = '';
+    if (notice) plotContainer.appendChild(notice);
+}
+
+/**
+ * A notice laid OVER the plot area, with the actions that end it (a table
+ * filter that is not applied yet). It is a layer inside `host`, so the plot
+ * beneath keeps its size and its place: nothing moves when the notice comes
+ * or goes. Idempotent: the same notice again changes nothing; `null` takes it
+ * away. The actions are the strip's ([action, label] pairs, registerStatusActions).
+ * @param {HTMLElement} host - the plot container
+ * @param {{state: string, headline: string, text?: string, actions?: Array}|null} notice
+ */
+export function setFilterNotice(host, notice) {
+    if (!host || typeof host.querySelector !== 'function') return;
+    const old = Array.from(host.children).find(c => c.classList && c.classList.contains('filter-notice')) || null;
+    if (!notice) {
+        if (old) old.remove();
+        return;
+    }
+    const html = `<div class="filter-notice__card coverage-placeholder coverage-placeholder--warning">`
+        + `<div class="coverage-placeholder__headline">${escapeHtml(notice.headline)}</div>`
+        + (notice.text ? `<div class="filter-notice__text">${escapeHtml(notice.text)}</div>` : '')
+        + (notice.actions && notice.actions.length
+            ? `<div class="coverage-placeholder__do">${actionButtons(notice.actions, host)}</div>` : '')
+        + `</div>`;
+    if (old && old._html === html && old.dataset.state === notice.state) return;
+    const el = old || document.createElement('div');
+    el.className = 'filter-notice';
+    el.dataset.state = notice.state;
+    el.setAttribute('role', 'status');
+    el._html = html;
+    el.innerHTML = html;
+    if (!old) {
+        if (typeof getComputedStyle === 'function' && getComputedStyle(host).position === 'static') host.style.position = 'relative';
+        host.appendChild(el);
+    }
 }
 
 /** A trace uid that is a valid CSS id fragment (legend-entries.js, where the uids are given). */

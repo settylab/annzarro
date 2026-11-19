@@ -44,6 +44,10 @@ const GeneTablePanel = (function() {
             fixedHeader: true, // Always use fixed header
             searchBuilderConfig: { criteria: [] },
             searchText: '',
+            // the search box's toggles (regex, smart, case): saved with the panel
+            searchRegex: false,
+            searchSmart: true,
+            searchCaseInsensitive: true,
             currentEntries: [],
             filteredGenes: null
         };

@@ -351,8 +351,15 @@ links, so a shared layout opens with the same proportions on any screen.
 
 ## Loading, and stopping a load
 
-While a panel reads its data or builds its plot, a small box at the top left of the plot says
-"Loading axis data…". A table shows a spinner, or the same box when it keeps its rows while it
+A share link or a loaded panel set shows what it is opening from the start: each panel appears as a
+named tile ("Cell plot · UMAP · coloured by cell_type") with a status line, and the dataset bar
+carries one line ("Opening link: pbmc.zarr, 4 panels (2 ready)") until everything is drawn. Nothing is
+covered: the header, the dataset browser and the other panels stay usable while it loads, and
+choosing another dataset ends the load you no longer want. Only the controls that depend on data
+still being read (a panel's axis and colour pickers) are off until it arrives.
+
+While a panel reads its data or builds its plot, a small box at the top left of the plot says what
+it is doing ("Reading coordinates…", "Drawing…", "Recolouring…"). A table shows a spinner, or the same box when it keeps its rows while it
 loads other cells. A load that takes longer than about a second and a half adds a **Cancel**
 button to the box (a quick load never flashes it).
 

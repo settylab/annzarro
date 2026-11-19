@@ -9,7 +9,7 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
+    parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, failureLine, authIndicator, refreshPlan, partialRefreshNotice, signOut } from './utils/session-permissions.js';
@@ -56,6 +56,8 @@ import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
 import { mountDatasetInfo } from './utils/dataset-info-dialog.js';
 import { defaultHierarchy } from './utils/deeplink.js';
+import * as LoadProgress from './utils/load-progress.js';
+import { closedPanelsOfView, mergeClosedPlans, reconcileClosed } from './utils/closed-restore.js';
 import { createHistoryPolicy, diffViews, layoutStep, viewMismatch, unrecordedChange, viewDiffers } from './utils/url-history.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
@@ -150,6 +152,11 @@ const App = (function() {
             if (themeHost) mountThemeToggle(themeHost);
             // Desktop app on Windows: the window controls take the header's colours
             startDesktopFrame();
+
+            // A link names its dataset and panels: say so now, before the policy, the listings and the
+            // store are read (that can take seconds on a slow disk), with each tile named where it will be
+            const earlyLink = await _parseDeepLink();
+            let linkLoad = earlyLink ? _beginLinkLoad(earlyLink) : null;
             
             // Check for autosave session before initializing panel manager.
             //
@@ -195,7 +202,7 @@ const App = (function() {
             // likely) left a marker: that session is not drawn by itself again
             SessionManager.initLastSessions();
             const autosave = SessionManager.getAutosaveSession();
-            let deepLink = await _parseDeepLink();
+            let deepLink = earlyLink;
             // nothing is opened by itself after a session that did not finish: the welcome screen offers it
             let holdBack = !!autosave && SessionManager.didNotFinish(autosave);
             if (deepLink && deepLink.view && SessionManager.linkDidNotFinishHere()) {
@@ -204,6 +211,7 @@ const App = (function() {
                 // offered first on the welcome screen instead (Restore)
                 console.warn('The view in the address did not finish loading last time; it is not drawn by itself.');
                 deepLink = null;
+                if (linkLoad !== null) { LoadProgress.end(linkLoad); linkLoad = null; }
                 try { history.replaceState(history.state, '', bareUrl(window.location)); } catch { /* sandboxed frame */ }
             }
             // ui.autosave.auto_restore (utils/last-sessions.js): by default only a
@@ -248,14 +256,18 @@ const App = (function() {
                 // Materialize the shared view. Guard against a throwing or empty
                 // apply: on ANY failure, or a deep-link that opens no panels, fall
                 // back to the Welcome screen rather than leaving a spinner up.
+                LoadProgress.setSkeletonStatus('Looking for the dataset…');
                 try {
                     await _applyDeepLink(deepLink);
                 } catch (error) {
                     console.error('Deep-link application failed:', error);
                     _showNotification('Shared link not opened', error.message || 'Could not open the shared view.', 'error');
+                } finally {
+                    if (linkLoad !== null) LoadProgress.end(linkLoad);
                 }
                 PanelManager.ensureWelcomeFallback();
             } else if (!hasAutosave && !holdBack) {
+                if (linkLoad !== null) LoadProgress.end(linkLoad);
                 // Nothing was asked for: the only dataset there is, else none (the welcome screen, with
                 // the last sessions and the recent datasets). Never an arbitrary store of several: on a
                 // shared server that can be a billion-cell one. A tab that had a dataset open names it
@@ -308,6 +320,19 @@ const App = (function() {
         } finally {
             _bootDone();
         }
+    }
+
+    /**
+     * A link opens: the line in the dataset bar, and (for a link with panels) the named skeleton of its
+     * layout, until the real tiles are built. Returns the load's token.
+     * @private
+     */
+    function _beginLinkLoad(link) {
+        const layout = link.view && link.view.layout;
+        const ids = layout ? collectTileIds(layout.hierarchy) : [];
+        const token = LoadProgress.begin({ kind: 'link', name: storeName(link.datasetPath) || link.datasetPath, ids });
+        if (ids.length) LoadProgress.showSkeleton(document.getElementById('tile-container'), layout, 'Getting ready…');
+        return token;
     }
 
     // ── The current dataset (utils/dataset-state.js) ──────────────────────
@@ -366,6 +391,7 @@ const App = (function() {
 
     /** The tab title, the dataset button and the dataset bar follow the state. @private */
     function _followDatasetState(state, previous = null) {
+        if (state.status === 'opening') LoadProgress.setSkeletonStatus('Opening dataset…');
         const app = document.querySelector('.app-title');
         document.title = documentTitle(state, (app && app.textContent.trim()) || 'AnnZarro');
         if (_datasetButton) _datasetButton.update(state, previous);
@@ -871,6 +897,8 @@ const App = (function() {
         try {
             _adoptViewStyle(target);
             await _applyFocusSteps(live.constants || {}, target.constants || {}, link.datasetPath);
+            // the closed panels the entry lists are on the page before any panel is built or rebuilt
+            _reconcileClosedPanels(target);
             const layout = target.layout;
             // animated only when it is the one step: not while another is queued or a motion still runs
             const step = diff.kind === 'layout' && !_historyAgain && !LayoutMotion.moving() ? layoutStep(live, target) : null;
@@ -963,8 +991,10 @@ const App = (function() {
     async function _applyView(target, options = {}) {
         // the restore marker stands until every panel is drawn (session-manager.js)
         SessionManager.beginRestore('view');
+        // a newer view, or the user choosing a dataset, ends this one (see _viewSuperseded)
+        const epoch = ++_viewEpoch;
         try {
-            return await _applyViewNow(target, options);
+            return await _applyViewNow(target, { ...options, epoch });
         } finally {
             SessionManager.endRestore();
         }
@@ -1015,13 +1045,20 @@ const App = (function() {
                 { source: constants.taxonomySource === 'inferred' ? 'inferred' : 'explicit' });
         }
     }
-    async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false } = {}) {
+    // Counts the views being applied and the datasets the user chose. A view that finds the count moved
+    // on after an await was overtaken: it builds nothing more (no late panels on the wrong dataset).
+    let _viewEpoch = 0;
+    const _superseded = { status: 'cancelled', message: 'Another dataset or view was opened first.' };
+
+    async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false, epoch = _viewEpoch, closedPanels = [] } = {}) {
+        const gone = () => epoch !== _viewEpoch;
         _adoptViewStyle(view);
         // Where the view's store is here: its path, the path relative to the
         // data directory, or a store in the data directory with the same
         // cells and genes (or, for a view without a fingerprint, the same
         // name). Not found: the layout opens without data.
         located = located || await _locateStore(datasetPath, view, { exact });
+        if (gone()) return _superseded;
         if (!located.path) {
             await _applyViewWithoutData(view, located);
             return { status: 'no-data', message: `${located.missing || datasetPath} was not found` };
@@ -1050,6 +1087,7 @@ const App = (function() {
         // path for it, or the path relative to the data directory
         // (rel_path, as a share link or saved set records it).
         datasetPath = await _listedPathFor(datasetPath, located.probe && located.probe.relPath);
+        if (gone()) return _superseded;
         _leaveNoDataMode();
 
         // 0. The cells the view shows. A view without `subset` keeps the
@@ -1068,10 +1106,12 @@ const App = (function() {
         // 1. Load the dataset through the normal (non-silent) path so selectors
         //    and dataset info populate exactly as a manual selection would.
         await DatasetState.open(datasetPath, { source: 'view' });
+        if (gone()) return _superseded;
 
         if (view) {
             // 2. Restore the focused gene (drives highlighting + the gene selector), the cell, the species.
             await _applyConstants(view.constants || {}, datasetPath);
+            if (gone()) return _superseded;
 
             // 3. Materialize the panels. Two shapes, one preferred:
             //
@@ -1093,6 +1133,9 @@ const App = (function() {
             //
             //    normalizeView (utils/deeplink.js) guarantees at most one of these
             //    is set, with layout winning when both were supplied.
+            //    The panels that were CLOSED come back first, from their saved settings alone
+            //    (utils/closed-restore.js): a plot filtered by a closed table finds it registered.
+            _restoreClosedOf(view, closedPanels);
             if (view.layout) {
                 await PanelManager.restoreLayout(view.layout);
             } else {
@@ -1107,6 +1150,30 @@ const App = (function() {
         }
         _afterViewOpened(view, located, cmp, trust && said ? { ...said, strong: false } : said);
         return { status: 'success' };
+    }
+
+    /**
+     * Back and Forward: the closed panels the entry lists, on the page. One that is missing is
+     * registered; one that is closed with other settings is replaced; one the page has and the entry
+     * does not list is kept (a step never throws a closed panel away). Nothing is built, so the
+     * address does not change and no history entry is added.
+     * @private
+     */
+    function _reconcileClosedPanels(view) {
+        const can = (type) => PanelManager.canRestoreClosed(type);
+        const { add, replace } = reconcileClosed(closedPanelsOfView(view, can).closed, PanelManager.panelStates());
+        return PanelManager.restoreClosedPanels([...add, ...replace]);
+    }
+
+    /**
+     * Register the closed panels a view lists (and those a caller lists beside it:
+     * a legacy panel set keeps them apart). Configuration only; nothing is built.
+     * @private
+     */
+    function _restoreClosedOf(view, extra = []) {
+        const can = (type) => PanelManager.canRestoreClosed(type);
+        const planned = mergeClosedPlans(closedPanelsOfView(view, can).closed, extra, can);
+        return PanelManager.restoreClosedPanels(planned);
     }
 
     // ── Where a view's store is, and a view without one ───────────────────
@@ -1555,7 +1622,20 @@ const App = (function() {
             return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
         }
         const total = closePlanPanels(plan).closedPanels.length;
+        // From here the page says what is loading: its name, the named tiles, the line in the dataset bar
+        const layout = plan.view && plan.view.layout;
+        const ids = layout ? collectTileIds(layout.hierarchy) : [];
+        const progress = LoadProgress.begin({ kind: 'set', name, ids });
+        if (ids.length) LoadProgress.showSkeleton(document.getElementById('tile-container'), layout, 'Looking for the dataset…');
+        try {
+            return await _applyPanelSetOpen({ plan, name, current, located, target, listing, total, chosen });
+        } finally {
+            LoadProgress.end(progress);
+        }
+    }
 
+    /** The part of _applyPanelSet that opens the dataset and the panels. @private */
+    async function _applyPanelSetOpen({ plan, name, current, located, target, listing, total, chosen }) {
         // The set replaces the open view. Open panels are closed (they stay
         // available to reopen); a panel with an id the set brings is removed,
         // so the set's panel gets that id back unchanged.
@@ -1568,19 +1648,15 @@ const App = (function() {
 
         // keep the open store's own path when the set names it differently
         if (current && located.path && sameDatasetPath(located.path, current, listing)) located.path = current;
-        const applied = await _applyView({ datasetPath: target, view: plan.view }, { located, trust: !!chosen });
+        const applied = await _applyView({ datasetPath: target, view: plan.view }, { located, trust: !!chosen, closedPanels: plan.closedPanels });
+        // the user opened something else meanwhile: this set builds nothing more
+        if (applied && applied.status === 'cancelled') return applied;
         const datasetPath = located.path || target;
 
-        // Panels that were closed when the set was saved come back closed.
-        const idMap = new Map();
-        const closedConfigs = plan.closedPanels.map(p => {
-            const config = JSON.parse(JSON.stringify(p.config));
-            PanelManager.registerClosedPanel(p.type, config);
-            if (p.id && config.id !== p.id) idMap.set(p.id, config.id);
-            return config;
-        });
-        if (idMap.size) remapPanelReferences(closedConfigs, idMap);
-
+        // The panels that were closed when the set was saved came back closed before the open ones
+        // were built (_applyViewNow), so a plot filtered by one found it.
+        // A set opened without data (its store is not here) did not get that far: they are listed closed now
+        if (applied && applied.status === 'no-data') _restoreClosedOf(plan.view, plan.closedPanels);
         PanelManager.updateSourcePanelSelection();
         PanelManager.ensureWelcomeFallback();
         const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
@@ -2599,7 +2675,7 @@ const App = (function() {
     function _openDataset(datasetPath, { source = 'user' } = {}) {
         if (!datasetPath) return Promise.resolve();
         const chosen = isUserSource(source);
-        if (chosen) _markUserChoice(datasetPath);
+        if (chosen) { _markUserChoice(datasetPath); _viewEpoch++; }
         // a view open without data opens on the chosen dataset
         if (chosen && _noDataView) {
             return _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
@@ -2608,7 +2684,16 @@ const App = (function() {
         // a switch under open panels redraws them all: the restore marker stands until they are drawn
         if (PanelManager.getActivePanels().length) {
             SessionManager.beginRestore('switch');
-            const end = () => SessionManager.endRestore();
+            // The open panels stay usable, dimmed, with a pill saying what comes; clicking in them is fine
+            // (the switch is superseded cleanly, not blocked). The panels' own overlays take over as they redraw.
+            const name = _labelOf(datasetPath);
+            const progress = LoadProgress.begin({ kind: 'switch', name });
+            showSubsetLoading(`Switching to ${name}…`, null);
+            const end = () => {
+                SessionManager.endRestore();
+                if (LoadProgress.isCurrent(progress)) hideSubsetLoading();
+                LoadProgress.end(progress);
+            };
             return _openDatasetNow(datasetPath, chosen, source)
                 .then(value => { end(); return value; }, (error) => { end(); throw error; });
         }
@@ -3569,7 +3654,7 @@ const App = (function() {
             onLoad: async (mode) => {
                 actions.setBusy(true);
                 try {
-                    await _runLoad(() => SessionManager.loadSession(name, { mode }), card);
+                    await _runLoad(() => SessionManager.loadSession(name, { mode }), card, { close: mode !== 'add' });
                 } finally {
                     actions.setBusy(false);
                 }
@@ -3593,14 +3678,19 @@ const App = (function() {
      * @param {HTMLElement} [host]
      * @private
      */
-    async function _runLoad(load, host = null) {
+    async function _runLoad(load, host = null, { close = false } = {}) {
         _dialogNote(host, '');
+        // A load that opens panels leaves the dialog at once: the load shows in the page (the named tiles
+        // and the line in the dataset bar), and nothing stays covered while it runs
+        if (close) _hideSessionModal();
         const result = await load();
         if (result.status === 'success' || result.status === 'no-data') {
             _hideSessionModal();
         } else if (result.status !== 'cancelled') {
             // (a cancelled load is the user closing the dataset picker: nothing to report)
-            _dialogNote(host, failureLine(result, 'Loading this panel set'));
+            const said = failureLine(result, 'Loading this panel set');
+            if (close) _showNotification('Panel set not loaded', said, 'error');
+            else _dialogNote(host, said);
         }
         return result;
     }
@@ -3704,7 +3794,7 @@ const App = (function() {
                         _dialogNote(host, failureLine(imported, 'Importing this file'));
                         return;
                     }
-                    await _runLoad(() => SessionManager.loadSession(imported.name, { mode }), host);
+                    await _runLoad(() => SessionManager.loadSession(imported.name, { mode }), host, { close: mode !== 'add' });
                 } catch (error) {
                     _dialogNote(host, `Importing this file failed: ${error.message}`);
                 } finally {

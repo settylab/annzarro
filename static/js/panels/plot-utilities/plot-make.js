@@ -17,7 +17,7 @@ import {
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
 import { unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
-import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag } from '../../utils/panel-surface.js';
+import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag, setFilterNotice } from '../../utils/panel-surface.js';
 import { largePlotPoints, largePlotRefusal, createLargePlot, cancelIndexBuild, showProbeFailure } from './large-plot.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
@@ -38,6 +38,17 @@ import {
   takeTurn, bindTurn, releaseTurn, noteOutOfMemory, bindingLabel, otherPlotCount
 } from '../../utils/memory-guard-ui.js';
 
+const escapeHtmlText = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+/** What each loading overlay says: the step the panel is on (a status line per panel). */
+const OPERATION_TEXT = {
+  'axis-data': 'Reading coordinates…',
+  'names': 'Reading cell names…',
+  'full-plot': 'Drawing…',
+  'recolour': 'Recolouring…',
+  'refresh': 'Refreshing…',
+  'table-data': 'Reading table…'
+};
 // the loads of a panel that the Cancel button can stop (utils/load-scope.js)
 const CANCELLABLE = new Set(['full-plot', 'axis-data', 'recolour', 'table-data']);
 
@@ -117,8 +128,9 @@ class LoadingIndicator {
       overlay.dataset.containerId = containerId; // Store containerId for fallback cleanup
       // Cancel appears after a moment (css), so a quick load does not flash it
       const cancellable = CANCELLABLE.has(operation);
-      overlay.innerHTML = '<div class="spinner"></div> Loading axis data...' + (cancellable
+      overlay.innerHTML = '<div class="spinner"></div> ' + escapeHtmlText(OPERATION_TEXT[operation] || 'Loading…') + (cancellable
         ? '<button type="button" class="btn btn-sm btn-outline-secondary load-cancel" title="Stop loading and keep what is shown">Cancel</button>' : '');
+      overlay.setAttribute('role', 'status');
       if (cancellable) {
         overlay.onclick = (e) => {
           if (e.target.closest('.load-cancel')) cancelLoads(plotContainer, true);
@@ -1971,10 +1983,12 @@ export function createFilterMask(data, settings) {
   // Table filtering uses pre-populated tableEntities and tableFilterMask
   const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
   const tableEntities = data.tableEntities;
+  // A filter that is not applied yet draws no points, whatever "Remove" says (updateTableEntities)
+  const removesOthers = !!settings.removeNonTableEntries || !!data.tableFilterUnresolved;
   
   // Calculate table filtering statistics
   if (hasTableFilter && tableEntities) {
-    if (settings.removeNonTableEntries) {
+    if (removesOthers) {
       const entityType = data.entities; // 'cells' or 'genes'
       // Calculate how many entities are not in the table when we want to remove them
       const nonTableCount = data[entityType].filter(entity => !tableEntities.has(entity)).length;
@@ -2075,7 +2089,7 @@ export function createFilterMask(data, settings) {
   // Only apply these filters if the corresponding settings are enabled
   if (colorValidMask && settings.hideNaN) masks.push(colorValidMask);
   if (colorRangeMask && settings.hideOutliers) masks.push(colorRangeMask);
-  if (tableFilterMask && settings.removeNonTableEntries) masks.push(tableFilterMask);
+  if (tableFilterMask && removesOthers) masks.push(tableFilterMask);
 
   // 6. Build the final indexMask
   // (a point passes when every mask has it)
@@ -2099,7 +2113,7 @@ export function createFilterMask(data, settings) {
   // 8. Each hidden point once, under the first reason that applies, so the
   // reasons the panel names add up to `filtered` (classifyFilterStats)
   const only = { coords: 0, table: 0, nan: 0, outliers: 0 };
-  const table = tableFilterMask && settings.removeNonTableEntries ? tableFilterMask : null;
+  const table = tableFilterMask && removesOthers ? tableFilterMask : null;
   const nan = colorValidMask && settings.hideNaN ? colorValidMask : null;
   const outliers = colorRangeMask && settings.hideOutliers ? colorRangeMask : null;
   for (let i = 0; i < totalPts; i++) {
@@ -2130,6 +2144,7 @@ export function createFilterMask(data, settings) {
 export async function updateTableEntities(data, settings, plotContainer = null) {
   // Check if table filtering is active
   const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
+  const wasUnresolved = !!data.tableFilterUnresolved;
   const stale = (s) => {
     data.tableFilterStale = s;
     if (plotContainer) {
@@ -2138,10 +2153,28 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     }
   };
   
+  // A filter by a closed table whose rows are not known (restored from a link or a panel set: only its
+  // configuration came back) is NOT applied yet. It draws no points, and says so with a notice over the
+  // plot and a tag in its strip, never the grey of a filter that nothing passes. Not in large-plot mode,
+  // which applies no table filter at all.
+  const unresolved = (u) => {
+    const largeMode = !!data.large || (data.entities === 'cells' && (DataManager.getCells() || []).length > largePlotPoints());
+    data.tableFilterUnresolved = u && !largeMode ? u : null;
+    const shown = data.tableFilterUnresolved;
+    if (!plotContainer) return;
+    const actions = [['reopen-table', 'Open table'], ['table-filter-off', 'Stop filtering']];
+    const text = shown ? `'${shown.name}' is closed, so its filter is not applied yet. Open it to apply the filter.` : '';
+    setStatusTag(plotContainer, 'table-unresolved', shown
+      ? { text: 'Filter not applied yet', severity: 'warning', title: text, pop: { text, actions } } : null);
+    setFilterNotice(plotContainer, shown
+      ? { state: 'unresolved', headline: 'Filter not applied yet', text, actions } : null);
+  };
+
   // If no table filter is active, remove any existing tableEntities and tableFilterMask
   if (!hasTableFilter) {
     stale(null);
     noCellPasses(plotContainer, data, settings, null);
+    unresolved(null);
     // Always treat switching to "none" as a change that needs visual update
     if (data.tableEntities || data.tableFilterMask) {
       delete data.tableEntities;
@@ -2159,6 +2192,7 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   const tablePanel = window.PanelManager && window.PanelManager.getPanel(settings.tableFilter);
   if (!tablePanel) {
     console.warn(`Table panel ${settings.tableFilter} not found`);
+    unresolved(null);
     return false;
   }
   
@@ -2184,7 +2218,13 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     const tokens = entityType === 'cells' && entities instanceof RemoteNames
       && RemoteNames.isToken((data[entityType] || [])[0]);
     let passing, unknown;
-    if (tokens) {
+    const noRows = !tableConfig.closedSelection;
+    const tableName = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
+    unresolved(noRows ? { table: settings.tableFilter, name: tableName } : null);
+    if (noRows) {
+      passing = new Set();
+      unknown = 0;
+    } else if (tokens) {
       const selection = tableConfig.closedSelection || null;
       const names = selection ? await entities.all() : [];
       const found = selectionOnCells(selection, names);
@@ -2195,11 +2235,12 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
       ({ passing, unknown } = selectionOnCells(tableConfig.closedSelection || null, data[entityType] || []));
     }
     newTableEntities = passing;
-    const name = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
+    const name = tableName;
     outOfDate = unknown > 0;
     stale(unknown > 0 ? { table: settings.tableFilter, unknown, text: staleText(name, unknown, entityType) } : null);
   } else {
     stale(null);
+    unresolved(null);
     // Get entity names based on indices in the table; a plot holding tokens
     // (names fetched when needed) is filtered by the rows' tokens
     const byToken = entityType === 'cells' && RemoteNames.isToken((data[entityType] || [])[0]) &&
@@ -2214,9 +2255,11 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     });
   }
   
-  // A filter that resolves to no cells is its own state (not "Filter not applied")
+  // A filter that resolves to no cells is its own state (not "Filter not applied yet"). A filter
+  // that is not applied yet (a closed table with no rows) or out of date has not resolved to
+  // anything: that state takes precedence.
   noCellPasses(plotContainer, data, settings,
-    newTableEntities.size === 0 && !outOfDate ? ((tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter) : null);
+    newTableEntities.size === 0 && !outOfDate && !data.tableFilterUnresolved ? ((tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter) : null);
 
   // Compare with existing tableEntities to see if they've changed
   let changed = false;
@@ -2235,6 +2278,8 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     
     changed = true;
   }
+  // Filter not applied yet, or applied now: the plot is drawn again even when the cells that pass are the same (none)
+  if (wasUnresolved !== !!data.tableFilterUnresolved) changed = true;
   
   return changed;
 }
@@ -2793,9 +2838,11 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   
   // Apply the filter mask only if explicit filtering is enabled
   let filteredData = data;
-  if (settings.hideNaN || settings.hideOutliers) {
+  if (settings.hideNaN || settings.hideOutliers || data.tableFilterUnresolved) {
     filteredData = applyFilterMask(data, indexMask);
   }
+  // what this graph was drawn for: an incremental update would not undo a filter that was not applied
+  plotContainer.__drawnUnresolved = !!data.tableFilterUnresolved;
   
   // Prepare base trace (works for numerical and constant coloring)
   const baseTrace = {
