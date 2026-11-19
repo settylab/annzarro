@@ -411,12 +411,24 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
     }
 
     // Only set default x and y if they're not already defined
-    if (!settings.x || !settings.x.type) {
+    const fillX = !settings.x || !settings.x.type;
+    const fillY = !settings.y || !settings.y.type;
+    if (fillX) {
       settings.x = defaults.x;
     }
 
-    if (!settings.y || !settings.y.type) {
+    if (fillY) {
       settings.y = defaults.y;
+    }
+
+    // Equal aspect starts on for a cell plot whose x AND y were both filled
+    // here from one embedding (UMAP, t-SNE, PCA, spatial): one unit is as long
+    // on both axes, whatever the tile's shape. Absent means "not chosen": a
+    // value the user, a link, a panel set or a session set (true or false) is
+    // never touched, and a link that fixes its own axes keeps opening as it did.
+    if (fillX && fillY && !isGenePlot && settings.equalAspect === undefined
+        && defaults.x.type === 'obsm' && defaults.x.key === defaults.y.key) {
+      settings.equalAspect = true;
     }
 
     // Only suggest z-axis if there's a third column available and z is undefined
@@ -480,6 +492,9 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   // Try to set defaults but don't force them
   trySetDefaultAxes();
   trySetDefaultColor();
+
+  // the button follows the setting: the listeners may have been set up before the dataset came
+  $.updateButtonState($container.find(`#equal-aspect-${id}`), !!settings.equalAspect);
 
   // Ensure all settings objects are properly initialized
   settings.x = settings.x || {};
