@@ -103,7 +103,7 @@ def table_id(i):
     return f"cell-table-t{i}"
 
 
-def _link(root, tables=(("cell_01", False),), plots=(0,), subset=None, plot_extra=None, filters=None):
+def _link(root, tables=(("cell_01", False),), plots=(0,), subset=None, plot_extra=None, filters=None, table_extra=None):
     """Plots p0.. filtered by tables t0.. (plot i by table `filters[i]`, default i), tables with search text."""
     cfgs, tiles = {}, []
     for k, i in enumerate(plots):
@@ -113,7 +113,8 @@ def _link(root, tables=(("cell_01", False),), plots=(0,), subset=None, plot_extr
                             "removeNonTableEntries": True, **(plot_extra or {})}
         tiles.append({"type": "tile", "id": plot_id(i), "controlsVisible": True})
     for i, (text, is_open) in enumerate(tables):
-        cfgs[table_id(i)] = {"id": table_id(i), "title": f"Table {i + 1}", "columns": [CT], "searchText": text}
+        cfgs[table_id(i)] = {"id": table_id(i), "title": f"Table {i + 1}", "columns": [CT], "searchText": text,
+                         **((table_extra or {}).get(i) or {})}
         if is_open:
             tiles.append({"type": "tile", "id": table_id(i), "controlsVisible": True})
     def split(items):

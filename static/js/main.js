@@ -1954,7 +1954,7 @@ const App = (function() {
             case 'close-others': return _otherPlots(id).length > 0;
             case 'reopen-table': return !!document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
             case 'table-filter-off': return !!_tableFilterSelect(id);
-            case 'build-filter': case 'retry-filter': return !!_tableFilterOf(id);
+            case 'build-filter': case 'retry-filter': case 'cancel-filter': return !!_tableFilterOf(id);
             default: return scoreActionAvailable(action, host);
         }
     }
@@ -2049,6 +2049,12 @@ const App = (function() {
                 // one click: the table's size is allowed for these cells (utils/table-resolver.js)
                 const table = _tableFilterOf(id);
                 if (table) TableResolver.confirm(table);
+                break;
+            }
+            case 'cancel-filter': {
+                // stops the load phase of the build and returns to Build filter
+                const table = _tableFilterOf(id);
+                if (table) TableResolver.cancel(table);
                 break;
             }
             case 'retry-filter': {
