@@ -157,56 +157,58 @@ score and says "3 changes are not applied. About 40 seconds." The signature's pa
 **Update score** to apply them.
 
 (gene-signature-scoring)=
-### Score options: what the signature offers
+### Scores offered: what the signature offers
 
-Under **Score options** in the signature's panel you decide what plots and tables are offered and how each
+Under **Scores offered** in the signature's panel you decide what plots and tables are offered and how each
 option is computed. A plot or table only picks from what is offered: choose **gene-score** as the source,
-then the signature, then the option. The collapsed row always states it ("Offered: z-score mean, mean, sum ·
-layer X"), so a link opened with other settings is never hidden.
+then the signature, then the option. Plots and tables pick from these, and nothing is computed until a plot or
+table shows one. The collapsed row always states what is offered ("z-score mean, mean, sum · X"), so a link
+opened with other settings is never hidden.
 
-An option is an **aggregation** read from a **layer**. Each aggregation has a **Offer** box and a
-one-line definition in the panel, and its parameters appear beside it:
+An option is a **method** read from a **layer**. Each method has an **Offer** box and a one-line definition, and
+its parameters appear under it while it is offered, with **Reset** for that method when one is changed:
 
-| Aggregation | What it gives | Parameters |
+| Method | What it gives | Parameters |
 |---|---|---|
-| **Z-score mean** (default) | each gene becomes a z-score over all cells, so every gene counts equally, then the genes are averaged | **Clip z-scores at ±** (default 10, any number above 0, or off) |
-| **Mean** | the plain average of the genes, in the units of the matrix | none |
-| **Sum** | the genes added up; a gene with no value in a cell adds nothing | none |
-| **Detected** | the share of the genes with a non-zero value in the cell, from 0 to 1 | none |
-| **Fraction of total** | the genes added up as a share of the cell's total over all genes, as for percent mitochondrial | none |
-| **Control-adjusted** (Tirosh et al. 2016, as scanpy's `score_genes`) | the average of the genes less the average of control genes of similar detection | **Bins** (25), **Controls per bin** (50), **Seed** (0) |
+| **Z-score mean** (default) | each gene scaled to mean 0 and SD 1 over all cells, then averaged, so every gene counts equally | **Clip at ±** (default 10, any number above 0, or off) |
+| **Mean** | the average of the genes' values, in the layer's units | none |
+| **Sum** | the total of the genes' values, in the layer's units; it grows with the number of genes | none |
+| **Control-adjusted** | the mean of the genes minus the mean of control genes with similar detection, like scanpy's `score_genes` (genes are binned by detection, not by mean) | **Bins** (25), **Controls per bin** (50), **Seed** (0) |
+| **Fraction detected** | the share of the signature's genes detected in the cell, from 0 to 1 | **Detected above** (0): a gene is detected when its value is above this |
+| **% of total** | the genes' share of the cell's total over all genes, in percent, as for % mitochondrial | none |
 
 Z-score mean, mean and sum are offered at first; switch the others on with one click. At least one option stays
 offered. The clip stops one rare gene dominating the average (its z-score can reach the hundreds when a gene is
-detected in a handful of cells); it applies to the z-score mean only, so its box is off, with the reason, when
-that option is not offered. A number that is not valid is refused ("Enter a number above 0.") and the last good
-value stays.
+detected in a handful of cells). A number that is not valid is refused ("Enter a number above 0.") and the last good
+value stays; Esc puts the last good value back.
 
-**Detected** is a share, not a count, so it means the same when a gene is missing from the dataset and compares
-between signatures of different sizes. **Fraction of total** needs the total of every cell, which is one pass over
-the whole matrix, so it takes longer than the others and asks first on a large dataset. It is meaningful for raw
-counts and for normalised values that are not log-transformed; on log-transformed or scaled values the result
-carries a warning. **Control-adjusted** removes differences in depth and quality between cells that move every
-gene together; it needs genes that differ in how often they are detected, so it means little on scaled data. The
-same seed always gives the same controls, so a link keeps its meaning.
+**Fraction detected** is a share, not a count, so it means the same when a gene is missing from the dataset and
+compares between signatures of different sizes. **% of total** divides by the cell's total over every gene of the
+matrix, the signature's own included, which needs one pass over the whole matrix: it takes longer than the others and
+asks first on a large dataset. **Control-adjusted** removes differences in depth and quality between cells that move
+every gene together; the same seed always gives the same controls, so a link keeps its meaning.
 
-**Layers** lists X and the dataset's layers, each with an **Offer** box and one marked **default**, which is used
-where a plot or table does not choose. The default layer is always offered. Scores are meant for normalised,
-log-transformed values. If a layer looks like raw counts, a warning says so under it ("X looks like raw counts
-(whole numbers up to 557). Scores should be computed on normalised, log-transformed data, or they follow
-sequencing depth.") and, when another layer looks log-normalised and is named that way, offers it with **Use
-logged_counts**; the same goes for values that are normalised but not log-transformed. It is a warning, not a
-block. With the section closed, the warning for the default layer shows under the row.
+**Layers** lists X and the dataset's layers, each with an **Offer** box and a word for what it looks like (counts,
+normalised, log-normalised, scaled). With two or more offered, **Default layer** says which a plot or table gets
+when it is made; a plot or table keeps the layer it was given. Scores are meant for normalised, log-transformed
+values. If a layer looks like raw counts, a warning says so under it ("X looks like raw counts (whole numbers up to
+557). Scores should be computed on normalised, log-transformed data, or they follow sequencing depth.") and, when
+another layer looks log-normalised and is named that way, offers **Make logged_counts the default**. The same goes
+for values that are normalised but not log-transformed. It is a warning, not a block.
 
-Each option also says how many plots and tables use it ("used by 2"). Switching an option off never breaks
-a plot or table that uses it: it keeps its setting, marks it "(no longer offered)" and keeps drawing, and
-switching the option on again clears the mark. Links and panel sets keep the options, the layers and every
-parameter.
+Some combinations are meaningless and are left out of every menu, with the reason in the panel: fraction detected
+and % of total on a scaled layer (almost every value is non-zero; the values are negative). Others are allowed with
+a warning under the method, said once: the mean, sum, z-score mean and control-adjusted on raw counts follow
+sequencing depth, and % of total on log values is compressed.
+
+Each option and layer says who uses it ("1 plot", "2 plots, 1 table"). Switching an option off never breaks a
+plot or table that uses it: it keeps its setting, is marked "(no longer offered)" in its menu and keeps drawing, and the panel says who
+keeps it, with **Undo**. Links and panel sets keep the options, the layers and every parameter.
 
 A change to a setting that changes a score is an edit of the signature, like a tick: a quick score updates
 after a short pause, and one that would take 5 seconds or more waits behind **Update score**. A clip edit asks
-the server for nothing when the plots in use show another aggregation, and a seed edit recomputes only
-control-adjusted scores. Choosing what is offered changes no score.
+the server for nothing when no plot shows a z-score mean, a seed edit recomputes only control-adjusted scores, and
+choosing what is offered changes no score.
 
 ### Opening several at once
 
