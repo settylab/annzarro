@@ -162,7 +162,7 @@ def test_the_chooser_offers_signature_then_aggregation_and_several_at_once(page,
     page.click(f"#gene-score-tab-{TID}")
     groups = page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' .az-score-group')].map(g => ({ title: g.querySelector('.az-score-group-title').textContent, subs: [...g.querySelectorAll('label')].map(l => l.textContent) }))", TID)
     assert sorted(g["title"] for g in groups) == ["Other score", "T cell score"]
-    assert all(g["subs"] == ["z-score mean", "mean"] for g in groups), groups
+    assert all(g["subs"] == ["z-score mean", "mean", "sum"] for g in groups), groups
     for sig, sub in ((SIG, "zscore_mean"), (SIG, "mean"), ("gene-signature-U", "zscore_mean")):
         page.check(f"#checkbox-gene-score-{sig}-{sub}-{TID}")
     page.click(f"#apply-columns-{TID}")

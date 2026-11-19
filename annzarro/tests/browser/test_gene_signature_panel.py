@@ -306,7 +306,7 @@ def test_the_limit_is_2000_and_one_more_adds_nothing(page, served):
     assert not _row(page, "GENE0000").locator("input").is_checked()
     # the recipe the server reads has 2,000 genes and the route's fields
     body = page.evaluate("async () => { const m = await import('/static/js/utils/gene-signature.js'); return m.serverRecipe(window.PanelManager.getPanel('gene-signature-S').getRecipe()); }")
-    assert sorted(body) == ["clip", "down", "genes", "input", "method", "seed", "version"] and len(body["genes"]) == 2000
+    assert sorted(body) == ["bins", "clip", "controls", "down", "genes", "input", "method", "seed", "version"] and len(body["genes"]) == 2000
 
 
 def test_the_list_is_virtualised_and_the_last_row_is_reachable(page, served):
@@ -518,7 +518,7 @@ def test_link_round_trip_carries_the_recipe_and_nothing_computed(page, served):
     assert cfg["genes"] == ["GENE0001", "GENE0002", "KLF1"] and cfg["clip"] == 4 and cfg["method"] == "zscore_mean"
     assert cfg["version"] == 1 and cfg["down"] == [] and cfg["input"] == "X" and cfg["seed"] is None
     assert "currentEntries" not in cfg and "closedSelection" not in cfg, sorted(cfg)
-    assert set(cfg) <= {"id", "title", "genes", "down", "input", "method", "clip", "seed", "version", "controlsVisible"}
+    assert set(cfg) <= {"id", "title", "genes", "down", "input", "method", "clip", "seed", "bins", "controls", "offered", "layers", "version", "controlsVisible"}
     recipe_hash = page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getRecipeHash()")
 
     # the plot's filter was saved by id; closed, the signature goes into the link too

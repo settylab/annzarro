@@ -160,7 +160,7 @@ def test_each_aggregation_is_offered_and_a_second_one_is_a_second_score_only_onc
     _inspect(page)
     _wait_table(page)
     labels = page.eval_on_selector_all(f"{I} .gsig-inspect__agg [role=radio]", "els => els.map(e => e.textContent + '|' + e.getAttribute('aria-checked'))")
-    assert labels == ["Z-score mean|true", "Mean expression|false"]
+    assert labels == ["Z-score mean|true", "Mean expression|false", "Sum|false"]
     assert len(_calls(page, "compute")) == 1
     page.click(f"{I} .gsig-inspect__agg [data-method=mean]")
     until(page, "(I) => /Mean expression of X/.test((document.querySelector(I + ' .gsig-inspect__definition') || {}).textContent || '')", I)

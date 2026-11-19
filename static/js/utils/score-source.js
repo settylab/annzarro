@@ -23,7 +23,7 @@ import { createScoreApi } from './gene-score-client.js';
 import { describeScore, worstNotice } from './score-notices.js';
 import { registerSource, subKeyOf } from './source-registry.js';
 import { DEFAULT_METHOD } from './gene-signature.js';
-import { METHODS, methodShort, offeredOptions } from './signature-options.js';
+import { DEFAULT_OFFERED, METHODS, methodShort, offeredOptions } from './signature-options.js';
 
 /** What each aggregation is called where a consumer picks it (level 3). */
 const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
@@ -581,8 +581,9 @@ registerSource({
     /** The aggregations the server computes, z-score mean first; a new method is a new entry in METHODS. */
     subKeys: (id) => {
         const panel = id ? PanelManager.getPanel(id) : null;
-        return panel && panel.getType && panel.getType() === 'gene-signature'
-            ? offeredSubs(panel) : METHODS.map(value => ({ value, label: SUB_LABELS[value] || value }));
+        if (panel && panel.getType && panel.getType() === 'gene-signature') return offeredSubs(panel);
+        // no id: every aggregation; an id nothing answers to (a deleted signature): the ones offered by default
+        return (id ? DEFAULT_OFFERED : METHODS).map(value => ({ value, label: SUB_LABELS[value] || value }));
     },
     load: (setting, opts) => loadScoreSeries(setting, opts)
 });

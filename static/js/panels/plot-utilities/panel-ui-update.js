@@ -262,6 +262,23 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
 }
 
 /**
+ * The aggregations a plot may pick for a signature: what its panel offers, and the one the plot already uses when
+ * the panel has switched it off since (kept, and marked, until another is chosen).
+ * @returns {Array<{value: string, text: string}>}
+ */
+function scoreColumnOptions(key, current) {
+  const provider = getSource('gene-score');
+  if (!provider) return [];
+  const subs = provider.subKeys(key);
+  const options = subs.map(sub => ({ value: sub.value, text: sub.label }));
+  if (current && !subs.some(sub => sub.value === current)) {
+    const known = provider.subKeys().find(sub => sub.value === current);
+    if (known) options.push({ value: known.value, text: `${known.label} (no longer offered)` });
+  }
+  return options;
+}
+
+/**
  * The signatures a `gene-score` key list offers, up to date: signatures were
  * added, removed or renamed. Every key select whose type select reads
  * gene-score keeps its value and has its options rebuilt.
@@ -289,10 +306,35 @@ export function refreshScoreKeySelects() {
     $.setSelectValue(jQuery(keySelect), current, false);
     if (!list.length && !current) jQuery(keySelect).find('option[value=""]').prop('disabled', true);
   }
+  // the aggregation lists follow what each signature offers now
+  for (const columnSelect of document.querySelectorAll('select.axis-column-select')) {
+    const axis = columnSelect.dataset.axis;
+    const panel = columnSelect.closest('.plot-panel');
+    const typeSelect = panel && panel.querySelector(`select.axis-type-select[data-axis="${axis}"]`);
+    const keySelect = panel && panel.querySelector(`select.axis-key-select[data-axis="${axis}"]`);
+    if (!typeSelect || typeSelect.value !== 'gene-score' || !keySelect) continue;
+    const current = columnSelect.value;
+    const options = scoreColumnOptions(keySelect.value, current);
+    const same = options.length === columnSelect.options.length
+      && options.every((o, i) => columnSelect.options[i].value === o.value && columnSelect.options[i].textContent === o.text);
+    if (same) continue;
+    $.createSelect(options, jQuery(columnSelect));
+    $.setSelectValue(jQuery(columnSelect), current, false);
+  }
   // the Hover pickers list each signature's score, and each aggregation of it, after the columns
   const subs = getSource('gene-score').subKeys();
-  const wanted = list.flatMap(sig => (sig.subs || subs).map((sub, i) => [`gene-score:${sig.id}:${sub.value}`, i === 0 ? sig.title : `${sig.title} · ${sub.label}`]));
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
+    const picked = new Set(Array.from(select.querySelectorAll('optgroup option')).filter(o => o.selected).map(o => o.value));
+    // what each signature offers, and a pick it no longer offers (kept, and marked)
+    const wanted = list.flatMap((sig) => {
+      const mine = (sig.subs || subs).slice();
+      for (const sub of subs) {
+        if (!mine.some(m => m.value === sub.value) && picked.has(`gene-score:${sig.id}:${sub.value}`)) {
+          mine.push({ ...sub, label: `${sub.label} (no longer offered)` });
+        }
+      }
+      return mine.map((sub, i) => [`gene-score:${sig.id}:${sub.value}`, i === 0 ? sig.title : `${sig.title} · ${sub.label}`]);
+    });
     const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === 'Gene scores');
     const have = group ? Array.from(group.querySelectorAll('option')) : [];
     const chosen = new Set(have.filter(o => o.selected).map(o => o.value));
@@ -348,14 +390,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
     case 'gene-score': {
       // level 3 of a source with three levels: the aggregation, z-score mean first (utils/source-registry.js)
       const provider = getSource('gene-score');
-      const subs = provider ? provider.subKeys(settings.key) : [];
-      columnOptions = subs.map(sub => ({ value: sub.value, text: sub.label }));
-      if (settings.column && !subs.some(sub => sub.value === settings.column) && provider) {
-        // switched off in the signature's panel since: the plot keeps it, and says so, until another is chosen
-        const all = provider.subKeys();
-        const known = all.find(sub => sub.value === settings.column);
-        if (known) columnOptions.push({ value: known.value, text: `${known.label} (no longer offered)` });
-      }
+      columnOptions = scoreColumnOptions(settings.key, settings.column);
       if (!columnOptions.some(sub => sub.value === settings.column)) settings.column = provider ? provider.defaultSub : '';
       break;
     }
